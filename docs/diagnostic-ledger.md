@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-09-28
+**Last updated:** 2026-10-01
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -46,6 +46,13 @@ dated productization control-plane path is compatibility lookup only.
   that must survive worktrees belong under `local_validation_artifacts/`.
   Small diagnostic snapshots that must survive worktrees belong under
   `docs/superpowers/fixtures/` with a source note and hash.
+- Keep an entry only while it still decides whether to rerun or which result to use,
+  binds a current stable input, or supplies evidence for an open issue.
+- Delete an entry once later evidence supersedes or disproves it, or its bound
+  implementation or diagnostic tool is retired. Git retains the history; do
+  not create a separate archive.
+- Fold issue-named sections into dated entries under Known Diagnostic
+  Conclusions when their conclusions still meet this rule.
 - If a rerun changes a durable conclusion, update this ledger in the same PR.
 - If a later status-index or authority-manifest entry changes maturity tier,
   writer scope, or product authority after a ledger entry was written, defer to
@@ -323,7 +330,7 @@ differs, and one full85 run cannot show output parity for a new default.
 
 ### 2026-09-22 The Three Open Questions, Answered
 
-Closes the open questions the entry above it left before any implementation.
+Closes the open questions about replacing the diagnostic report with an index, before implementation.
 
 - On-demand rebuild is not slower at the median; it is slower in the tail.
   Reading one candidate from the 9.39 GB SQLite is a 12.8 ms median over 10
@@ -428,7 +435,7 @@ Closes the open questions the entry above it left before any implementation.
 
 ### 2026-09-22 An Unread Output Sets The Shape Of Everything Upstream
 
-Supersedes the interpretation of the entry below it. Growing the object graph is
+Supersedes the earlier partition object-graph interpretation. Growing the object graph is
 the cost, not moving it, and the graph exists to feed one report nobody reads.
 
 - Pickle restore prices the wrong thing. Protocol 5 reduces a frozen/slots
@@ -523,87 +530,6 @@ the cost, not moving it, and the graph exists to feed one report nobody reads.
   has no counterpart in the partition files. Evidence is `diagnostic_only` and
   grants no Matrix, writer, activation or scientific authority. No new 8RAW or
   85RAW run was launched.
-
-### 2026-09-22 The Partition Object Graph Is Real But Shrinking It Buys Almost No Time
-
-- Substrate: the retained partition
-  `output/issue423-evidence-duplication-20260922/set-scan-1/store/00000000.pickle`,
-  115,074,919 bytes. It holds 52 records; each is pickled with its own memo plus
-  a 41,364-byte shared-owner prefix, so the prefixes alone are 2,150,928 bytes
-  (1.9%). Every number below is a deterministic offline census of that file, not
-  a new pipeline run. Reuse `output/issue423-object-graph-census-20260922/`;
-  `scripts/` there reproduces each table. Shared owners load as placeholders, so
-  the census measures what the file materialises, not the parent's transient
-  composition graph.
-- Census: 3,767,316 graph nodes counted with per-record identity. `float` is
-  2,617,369 (69.5%), `str` 543,714 (14.4%), `tuple` 236,584 (6.3%).
-  `EvidenceArtifactRef` and `ArtifactContentIdentity` are 28,998 each over
-  19,269 distinct values; `ArtifactSemanticContractRef` is 5,269 over 12 values;
-  `SignalProcessingProfile` is 2,199 over exactly 1 value;
-  `FinalGroupCellObservation` is 9,520.
-- One diagnostic-only field owns most of the graph. 2,162,260 floats sit inside
-  scalar tuples and 1,979,050 of them (91.5%) are the five parallel tuples of
-  `PreparedSignal`: that is 52.5% of every node in the partition. All 5,731
-  `PreparedSignal` reach the file through exactly one edge,
-  `PhysicalPeakEvaluation.retained_prepared_signal`
-  (`xic_extractor/peak_detection/physical_peak_models.py:174`, declared
-  `compare=False` and commented diagnostic-only), and all 2,199
-  `SignalProcessingProfile` reach it through `PreparedSignal.profile`. The field
-  is populated unconditionally at
-  `xic_extractor/peak_detection/physical_peak_evaluation.py:715` and
-  `xic_extractor/peak_detection/capture.py:357`; there is no retention gate.
-- Byte ceiling per lever, against a 110,697,625-byte re-pickled baseline, each
-  applied independently: dropping `retained_prepared_signal` saves 17.66%;
-  dropping every `*.artifact` `EvidenceArtifactRef` 10.09%; interning equal
-  strings inside a record 9.29%; `EvidenceArtifactRef.content_identity = None`
-  3.77%; `upstream_artifact_ids = ()` 1.96%; `PeakObservationContent.rt` and
-  `.intensity` 1.50%; storing the signal as `array('d')` instead of tuples of
-  boxed floats 1.29%. Reuse `ablate_full.txt`.
-- The levers do not buy time. Serialising the whole partition costs 1.325 s and
-  restoring it 1.305 s. Dropping `retained_prepared_signal`, which removes
-  1,979,050 float objects and 17.66% of the bytes, moves those to 1.248 s and
-  1.138 s: 0.077 s and 0.167 s. The store's `_OwnerPickler` with 5,170 shared
-  objects costs 3% more than a plain protocol-5 pickler, and SHA-256 over the
-  finished 115 MB file is 0.062 s. Serialisation, memoisation and hashing
-  therefore cost about 2.7 s per partition in total, and the largest available
-  object-graph reduction recovers about a quarter of a second of it. Reuse
-  `cost_model_full.txt` and `owner_pickler_cost.py`.
-- Two named B-prime targets are falsified as duplication problems.
-  `ArtifactContentIdentity` is 28,998 instances over 19,269 distinct content
-  digests, so interning recovers 33.5% of the instances at best and removing the
-  type entirely is worth 3.77% of bytes; it is genuinely unique content
-  identity, not repeated bookkeeping. `SignalProcessingProfile` does collapse to
-  one value, but it is 0.06% of nodes and is reached only through the retained
-  signal, so it is a side effect of that lever rather than a lever of its own.
-- The per-cell derived relations are small. `ProductionCellDecision`,
-  `FinalGroupCellObservation`, `CrossSampleCoveragePositionAssociation`,
-  `OwnerBackfillPlanningPosition` and `GroupCellSubject` are each exactly 9,520,
-  one per cell, and together they are 1.3% of the graph. Rebuilding them from
-  membership cannot pay for itself at this size.
-- Duplicate strings are diffuse, not one boundary. Ten records carry 1,354,650
-  redundant string bytes spread over more than thirty fields, led by
-  `ArtifactSemanticContractRef.semantic_contract_id` (1,091 equal-but-distinct
-  objects) and `PreparedSignalProjection.prepared_signal_id` (1,275). Producer
-  modules mint those contracts as module-level singletons, so the copies arrive
-  when the parent restores worker results: the worker pool's shared-object
-  tuples in `xic_extractor/extraction/untargeted_cid_nl_bounded_runtime.py:719`
-  and `:739` carry the plan owners but not the artifact semantic contracts or
-  the profile. That is the one clean boundary behind the 9.29% interning lever.
-- Disposition. Reducing the resident object graph is feasible and the
-  boundaries are exact. The remaining cost is inside parent composition outside
-  serialisation, distributed across `_build_production_composition_inputs` and
-  the streamed store writes. Evidence is `diagnostic_only` and grants no Matrix,
-  writer, activation or scientific authority. No new 8RAW or 85RAW run was
-  launched.
-- **Corrected the same day** by the entry above it, which measured the
-  construction path this entry never touched. Two claims here were wrong and are
-  withdrawn. "It is a memory and legibility change, not a performance fix" was
-  too broad: cost does not scale with float nodes, but it does scale with
-  dataclass nodes, and constructing one partition's dataclasses costs 2.237 s
-  against 1.325 s to serialise it. "Do not open it as a wall-time lever" is
-  withdrawn outright. The measurements in this entry stand; only their
-  interpretation was wrong, because pickle restore bypasses `__post_init__`
-  entirely and therefore prices moving a graph rather than growing one.
 
 ### 2026-09-22 Composing A Partition In A Worker Costs More Than It Saves
 
@@ -749,2097 +675,6 @@ the cost, not moving it, and the graph exists to feed one report nobody reads.
   not accepted as the optimization goal. Output-only changes can be checked
   against these retained artifacts without another RAW run.
 
-### 2026-09-22 Explanation Storage Reuses Candidate Sets And Curve Encoding
-
-- The explanation writer now interns each candidate/sample relation set once
-  and attaches records to that set. `links` remains the same four-column
-  logical relation, expanded through an indexed SQLite view. Repeated or
-  overlapping attachments retain exact set-union semantics. Reader APIs,
-  record/curve identities, diagnostic facts and atomic publication are unchanged;
-  no writable-view trigger or scientific reconstruction is introduced.
-- In the completed process12 DB, links plus their index occupy 4,083,286,016
-  bytes and records plus their index occupy 4,581,982,208 bytes; curves plus
-  indexes occupy 685,834,240 bytes. A bounded 128-candidate extraction supplies
-  22,611 real edges. Factorized link storage takes 2,736,128 bytes versus
-  11,612,160 for the previous table and 5,799,936 for a flat `WITHOUT ROWID`
-  competitor. These selected edges do not represent complete groups.
-- The normalized view preserves all extracted edges and indexed candidate
-  filtering. Its prototype candidate query median is 0.413 ms versus 0.287 ms
-  for the flat table. A current-writer/frozen-`645fd3f2` comparison preserves
-  metadata relations and all 128 candidate query results; build times are
-  0.1680 / 0.1943 seconds and report sizes 12,255,232 / 21,299,200 bytes.
-  Record bodies in this comparison are synthetic. It predates the final compact
-  record-JSON change and is not an end-to-end or complete-report speed claim.
-- Curve storage now owns the single compact JSON encoding used for both its
-  unchanged content-derived ID and zlib payload. All 2,000 retained sampled
-  payload IDs and decoded objects match. Local encoding/compression falls from
-  0.7114 to 0.4608 seconds, with 1.76% fewer compressed bytes. A separate
-  persisted writer check also preserves exact curve ID/envelope; its total DB
-  timing includes the concurrent normalized-link schema change and does not
-  isolate curve encoding.
-- The same retained probe measures compact zlib1 compression at 0.168806
-  seconds versus 0.243262 seconds for zlib6, with 5,906,043 versus 5,697,884
-  compressed bytes (3.65% more). The writer now uses level 1; the codec and
-  pre-compression content-ID basis are unchanged. This is local compression
-  work, not a full85 speedup measurement. The 76 affected tests, Ruff and mypy
-  pass again; a current/frozen persisted writer check preserves the decoded
-  envelope, ID and binding. Reuse `fusion-ab/owner-checks/zlib1-focused-receipt.md`
-  and `zlib1-writer-ab/curve-writer-ab.json` below that owner-checks directory;
-  earlier writer artifacts are not overwritten.
-- Scalar record JSON also omits insignificant whitespace. On 1,792 retained
-  records, bytes fall from 5,655,944 to 5,508,510 (2.607%) with exact decoded
-  objects and effectively unchanged encoding time (0.033917 / 0.033985 seconds).
-  Record compression is not adopted: its smaller payload adds encode/decode
-  work without a demonstrated writer-wall improvement. The misrouted initial
-  records probe actually sampled curves and is explicitly excluded.
-- All 76 affected explanation, curve and Inspector tests pass after the final
-  serialization change. Ruff, mypy and the architecture census pass.
-  Persisted regression oracles cover overlapping relation sets, the
-  legacy flat table, unchanged curve IDs and complete decoded curve envelopes.
-- Reuse `explanation-cost/curve-payload-codec-probe.json`,
-  `curve-writer-ab.json`, `records-compact-text.json` and
-  `records-compact-inputs.jsonl`, plus
-  `fusion-ab/explanation-cost/link-factorization/writer-real-edge-ab.json`
-  and `fusion-ab/owner-checks/explanation-link-normalization-checks.md`, all
-  under `output/issue422-bounded-worksets-20260921/`. Evidence remains
-  `diagnostic_only`; the process12 full85 timing belongs to its older source.
-
-### 2026-09-22 Composition Reuses Minted Identities And Recovery Results
-
-- Identity owners now return the canonical basis and digest from one encoding;
-  cell observation, decision and subject minting no longer decode and validate
-  the bytes they just produced. Standalone byte replay remains strict. Recovery
-  composition uses the producer-sealed result and computes each recovery
-  universe's request population once; the standalone recovery projection still
-  rejects changed acquisition or truncated result provenance.
-- Against `d7aaba96`, the same retained partition (46 children) takes 4.593
-  seconds for formal composition plus spool writes versus 6.070 seconds
-  (24.3% less wall time); CPU falls from 4.500 to 3.313 seconds (26.4%).
-  Preparation is 2.139 versus 2.912 seconds and child composition totals
-  1.043 versus 1.764 seconds. `store.seal()` is outside this measured span.
-  Both spool files contain 115,074,919 bytes; their pickle hashes differ.
-  This is a single-partition stage measurement, not full85 end-to-end timing.
-- All 46 children preserve the retained scientific oracle: 9,520 cells and
-  9,520 decisions, their actual canonical bases/IDs, physical integrals,
-  sample/group provenance, group membership and row/value/state. Coverage
-  comparisons directly check populated position IDs, planning reasons and
-  proof IDs; nonexistent position group/sample/proof-basis attributes are
-  excluded from the claim. No acquisition, grouping or Discovery is rerun.
-- Focused identity/recovery tests pass (59), as do final cell, decision and
-  pre-cell projection tests (80). The multi-group suite's nine old no-input
-  predecessor assumptions also fail at `d7aaba96`; updated oracles derive
-  initial evidence from fixture candidates and positions from associations,
-  retaining physical, recovery, ambiguity and standalone rejection assertions.
-  All 25 multi-group tests pass, including explicit empty predecessor assertions
-  for no-input positions. Ruff, mypy, architecture census and shard checks pass.
-- Evidence: `diagnostic_only`. Reuse
-  `fusion-ab/current-composition-cost/timing-pair-summary.json`,
-  `candidate-partition0-acceptance-summary.json`,
-  `candidate-partition0-acceptance-amendment.md` and the saved native stores in
-  `timing-baseline-retry/` and `timing-candidate/`, under
-  `output/issue422-bounded-worksets-20260921/`. The initial baseline helper
-  import failure is retained separately; it occurred before science or input
-  loading. The full85 optimization objective remains open.
-- A subsequent output-only measurement restores the saved store and consumes
-  these 46 children without reacquisition, grouping or composition. Explanation
-  preparation takes 1.384 seconds and child consumption 0.546 seconds; total
-  including input restoration is 5.269 seconds (2.734 CPU). It writes 9,520
-  observations, 9,520 decisions and 2,515 curves into a 110,329,856-byte partial
-  SQLite file. No Matrix is available for this slice, so formal explanation
-  finalization is deliberately unmeasured. Reuse
-  `fusion-ab/current-explanation-cost/run-20260922-storeindex/receipt.json` and
-  its explicitly unpublished partial DB. The earlier diagnostic stalls were
-  contaminated by enormous object representations and abandoned diagnostic
-  processes; they are not evidence of slow product pickle decoding.
-
-### 2026-09-22 Current Four-Partition Scheduler And Cache Attribution
-
-- Source `29ff04a3` completes the same four partitions and 85 samples in
-  70.301941 seconds, versus the retained `dd120300` run's 67.052493 seconds.
-  All 150 scalar and typed child results are exact against that current
-  comparison. This does not demonstrate an end-to-end speedup. Eight workers,
-  two acquisition lanes and three resident partitions produce the same IPC
-  byte counts; native opens, cache misses, writes and rejections are all zero.
-- Across overlapping worker tasks, `Path.read_bytes` totals 140.220 seconds
-  for 952,428,976 bytes. The enclosing cache reader totals 146.312 seconds;
-  neither sum is cohort wall time. MS2 numeric decoding occurs outside that
-  reader; the separately reported request decoder measures IPC, not MS2.
-  Peak tree RSS is 4,000,444,416 bytes and private bytes are 10,992,189,440.
-- An offline replay of the saved partition-0 diagnostic observers takes
-  0.182843 seconds for 46 children (capture 0.050729, typed observer 0.070568,
-  JSON/file writes 0.061546), with exact applicable scalar and typed facts.
-  Restoration is measured separately. This cost does not explain the
-  concurrent composition interval. No scientific work is repeated.
-- A separate warm file/SQLite probe covers only 264 files and 2,933,020 bytes.
-  File reads take 0.03543/0.03731 seconds; packed reads 0.01726/0.01571 seconds,
-  plus 0.06628 seconds to build the pack. Exact bytes match, but this small,
-  single-process sample does not explain the scheduler's read time or justify
-  a persistent cache-format change. No such change is adopted from it.
-- The MS2 cache decoder now returns the validated selected spectra without
-  re-encoding the entire cached window solely to compare JSON formatting.
-  Source/request/schema/content-hash checks, duplicate-key rejection, exact
-  window binding and selected spectrum/numeric validation remain. Six cache
-  replay/window tests, three source/request tests and seven adapter/strict-scan
-  tests pass, along with source Ruff and mypy. No performance claim follows
-  from this removal alone. Reuse `fusion-ab/owner-checks/ms2-cache-decode-checks/`.
-- Evidence is `diagnostic_only`; the optimization objective remains open.
-  Reuse `fusion-ab/owner-checks/shared-pool-29ff-run-report.md`,
-  `shared-pool-pair-comparison-29ff.json`,
-  `observer-overhead/observer-overhead-summary.md`, and
-  `cache-io-packing-decision.md` under
-  `output/issue422-bounded-worksets-20260921/`.
-
-### 2026-09-22 Three-Partition Admission And Process11 Acceptance
-
-- At `38e9d092`, the real scheduler/adapter completes four retained partitions
-  and all 85 samples in 71.539890 seconds: 150 children (46/20/44/40), 680
-  worker tasks, eight process workers, two acquisition lanes and at most three
-  resident partitions. Peak tree RSS is 4,050,800,640 bytes. There are 11,420
-  cache reads and zero cache misses, writes, rejections or native-open attempts.
-- All 150 typed evidence states, direct physical identities and integrals match
-  the retained same-source oracle. Scalar parity passes only after the already
-  approved, baseline-proven synthetic-no-input administrative normalization;
-  strict byte parity remains false (48,636 administrative differences). This
-  diagnostic does not publish a formal Matrix. Reuse
-  `fusion-ab/owner-checks/capacity3-150-comparison.json` and
-  `capacity3-overlap-and-init.json` under
-  `output/issue422-bounded-worksets-20260921/`.
-- The small slice has no composition interval with two active acquisitions.
-  Its exact timeline shows that partition 1 is ready before partition 0,
-  partition 2 starts before partition 0 composes, and partition 3 starts after
-  partition 0 releases. This is not evidence of another scheduler blockage.
-  Per-worker native initialization max is 1.244 seconds; overlapping sums are
-  not critical-path wall time.
-- Full85 process11 at the same source still fails the cooperative execution
-  budget: 39/46 partitions complete, three fail and four cancel. Elapsed time
-  is 1,092.188 seconds including finalization/cleanup; tree RSS peaks at
-  6,421,622,784 bytes. Request/response transport is 783,389,295 /
-  1,207,508,903 bytes. The 2,555 retained child captures have no recorded capture
-  error, but there is no formal Matrix and the verifier is UNKNOWN. Native/cache
-  counters and exact cancellation/cleanup boundary timestamps were not recorded;
-  do not replace them with zero or attribute the excess to a specific phase.
-  Reuse `alignment85-process11/process11-final-report.md`, its failed receipt
-  and retained spools. No unchanged retry or Discovery rerun is justified.
-- The seventh configured ISTD, `[13C,15N2]-8-oxo-Guo`, is an RNA/NL132 target.
-  This retained Discovery uses `dna_dr`/NL116. The two mixed DNA/RNA samples have
-  target-like precursor rows, but none under RNA/NL132. That does not prove RAW
-  MS1 absence and is not a split-group failure. Report six DNA labels separately
-  and keep RNA coverage unmet/unknown; do not claim seven-label acceptance or
-  synthesize a feature. Reuse `fusion-ab/owner-checks/istd7-label-gap.md`.
-- `43d41eee` removes read-side reconstruction of the private cache transport
-  envelope. Source, request key, schema and numeric payload hashes remain
-  checked, along with unique envelope fields and valid base64. Cache payloads
-  and writer format are unchanged; byte-for-byte outer JSON formatting is no
-  longer an acceptance condition. Three focused cache checks and the normal
-  staged-file checks pass; no throughput claim is inferred from the call removal.
-- `6d182f7b` shares one process-worker budget across acquisition lanes instead
-  of reserving half for each lane. Lazy executor creation and transport counters
-  support overlapping batches; a small first batch no longer permanently shrinks
-  a reusable process executor. The three-partition residency limit is unchanged.
-  Mocked process concurrency, real spawn/shared-owner identity and the affected
-  90-test runtime/engine suite pass, as do Ruff, mypy and normal commit checks.
-  A prior failure assertion incorrectly excluded a partition already admitted
-  before global cancellation was published; it now preserves the actual budget,
-  original error-cause and failed-terminal-outcome oracles. Reuse
-  `fusion-ab/owner-checks/shared-pool-cache-checks.md`.
-- At `dd120300`, the shared-pool candidate completes the same four partitions,
-  85 samples and 680 tasks in 67.052493 seconds. All 150 scalar and typed child
-  records are exact against the preceding capacity-three candidate. One pool
-  serves eight worker PIDs; peak tree RSS is 3,996,311,552 bytes, maximum resident
-  partitions remains three, and all 11,420 cache reads complete with zero
-  misses, writes, rejections or native attempts. This single diagnostic pair
-  does not isolate a speedup. Worker start/end times are unavailable, so active
-  acquisition-lane overlap must not be reported as active worker concurrency.
-  Reuse `fusion-ab/owner-checks/shared-pool-candidate-report.md`; full-cohort
-  acceptance remains incomplete.
-- The runtime owner now reserves resources and applies ordered open/cleanup
-  reports in batches. Each batch builds one resource-key index and one validated
-  immutable state, instead of rescanning and rebuilding the growing complete
-  ledger for every resource. Resource order, event sequence, failure deduplication
-  and canonical terminal bytes match the frozen `dd120300` reducers at 40 and
-  1,000 resources; all 58 affected runtime owner/finalization tests pass. At
-  1,000 resources the new reserve/open/cleanup batch takes 0.008643 seconds.
-  The retained old measurement covers reservation only (0.232470 seconds), so
-  these are not equal phase timings. This is synthetic mechanical evidence,
-  not an attributed saving from the failed full85 run. A candidate-only
-  7,820-resource case completes reserve/open/cleanup in 0.018875 / 0.065829 /
-  0.040426 seconds with exactly one full-state validation per phase and 23,460
-  ordered events. Ruff, mypy and architecture census pass. Reuse
-  `fusion-ab/owner-checks/runtime-resource-batch-checks.md`.
-
-### 2026-09-22 Retained Owner Results And Partition Lifetime
-
-- `207d9bd5` removes a second decision-basis derivation inside sealed decision
-  construction. Explicit boundary validation remains available. Luna's retained
-  remint preserves all 9,520 decisions across 46 children exactly, including
-  basis, IDs, payloads and subject/evidence references; 74 affected tests pass.
-- `f1b7f8e7` returns only exclusion IDs and child positions after persisting a
-  partition. Full exclusion assessments and child captures remain in the result
-  store; the global parent scope no longer retains the same physical capture
-  graphs. A retained-input replay preserves all 46 scalar/typed child oracles
-  and all 80,610,468 child bytes. Store size changes from 119,655,479 to
-  112,863,383 bytes, removing 6,792,096 bytes of duplicate metadata. The affected
-  183-test suite, Ruff and mypy pass.
-- The same checkpoint removes unconditional full-heap `gc.collect()` after
-  every partition; ordinary automatic GC remains active. Both serial/overlap
-  regressions and all 39 execution-engine tests pass. Completed process10
-  timeline gaps do not isolate GC time, so no cohort speedup is attributed to
-  this removal.
-- The current-source p00000 acquisition profile completed 170 sample jobs
-  with 3,552 cache hits and no native opens, misses, rejection or writes.
-  Acquisition wall was 43.889 seconds; aggregate worker process CPU was
-  24.672 seconds. `_capture_physical_peak` repeated physical evaluation 967
-  times. Cache-read cumulative CPU was 0.797 seconds, which does not measure
-  filesystem waiting. These data do not justify a cache-format rewrite or
-  explain the full wall-time gap. The p00013 attempt stopped before acquisition
-  because the retained snapshot set only covers p00000 through p00003.
-- Evidence is `diagnostic_only`; full85 remains incomplete after process10's
-  cancellation. Reuse `fusion-ab/owner-checks/decision-basis-checks.md`,
-  `retention-checks.md`, and
-  `fusion-ab/profile-acquisition-00000-current/profile-report-corrected.md`
-  under `output/issue422-bounded-worksets-20260921/`. The corrected profile
-  counts 925 adapter calls; the earlier value 85 counted containing profiles,
-  not calls. Do not repeat those probes to reconstruct missing wall phases.
-- Process10's 34 completed partitions span 741.725080 seconds. Their
-  acquisition union is 602.293858 seconds and composition union is 345.063952
-  seconds. Composition overlaps zero active acquisition spans for 131.144384
-  seconds, one for 213.919568 seconds, and two for zero seconds. The scheduler
-  has two acquisition lanes but only two admission credits, held through
-  composition and artifact creation. This supports investigating admission
-  capacity; it does not measure worker-idle time or make all 131 seconds
-  recoverable. Reuse `alignment85-process10/process10-overlap-attribution.md`
-  and the completed timing artifact instead of rerunning the old scheduler.
-- Same-question capture now verifies the raw trace, prepared projection and
-  physical question context, then reuses the bound physical answer instead of
-  repeating segmentation and integration. Fresh diagnostic curves remain
-  available; changed acquisition still evaluates its new question. Luna's
-  same-boundary comparison against `f1b7f8e7` uses 64 retained captures (58
-  available, six unavailable): all hypotheses, detections, physical evaluations,
-  trace groups and observation content/provenance match exactly; evaluation
-  calls change from 64 to zero. The 37 affected tests, three existing
-  missing-signal/empty-trace cases, Ruff and mypy pass. Reuse
-  `fusion-ab/owner-checks/same-boundary-f1b7f8e7-vs-current-64.json` and
-  `physical-capture-reuse-check.md`. Comparing the historical post-binding
-  hypothesis with pre-binding capture had shown a cross-stage representation
-  difference; the same-boundary comparison closes that uncertainty without
-  rerunning acquisition or composition.
-- `2ac8a9d5` gives the scheduler one composition slot alongside its acquisition
-  lanes: a single lane retains a two-partition limit; two lanes retain three.
-  The four-partition event-gated regression demonstrates that partition 2 can
-  acquire while partition 0 composes, while partition 3 remains blocked until
-  a credit is released. Both capacity cases and ten affected overlap,
-  cancellation and failure tests pass; Ruff/mypy and the normal commit checks
-  pass. Actual multi-partition throughput and memory acceptance remain pending;
-  the unit result alone is not evidence of a full85 speedup.
-
-### 2026-09-21 Owner Construction Avoids Revalidating Its Own Results
-
-- Product changes remove duplicate validation from private final-cell
-  construction, duplicate predecessor content/artifact checks within its mint,
-  repeated same-attempt group SUPPORT checks, duplicate proof hashing and
-  repeated physical-evaluation validation inside SearchScope identity
-  projection. Input joins, direct/replacement construction and external
-  population validation retain their boundaries. Persisted fields, canonical
-  bytes and IDs are unchanged. The old final-cell validator and basis parser
-  are removed rather than cached.
-- Luna compared original owner code at `817c93c2` (product `dfc22127`) with
-  these changes in the same process, using AB/BA/AB order and the sealed first
-  partition: 46 children, 85 samples, 9,520 cells, 6,965 proofs and 1,005
-  physical capture bindings. Timers exclude loading and parity checks; proof
-  builder preparation is included. Median seconds:
-
-  | Owner operation | Original | Candidate |
-  | --- | ---: | ---: |
-  | Final-cell composition | 2.9712 | 1.9218 |
-  | Predecessor mint | 2.7691 | 2.4185 |
-  | Conservative proof mint | 1.5529 | 0.9849 |
-  | SearchScope construction over retained bindings | 0.1466 | 0.0259 |
-
-- Every arm passes its exact oracle: final-cell IDs/basis/states/integrals and
-  provenance; predecessor artifact IDs/content bytes and assessment/peak refs;
-  proof IDs and decision/sample/group/completion refs; scope equality and exact
-  request/binding refs. This is owner-function evidence, not end-to-end or
-  full85 speedup. Child scopes are not worker sample scopes. No acquisition,
-  grouping, RAW, Discovery or full workflow was run by these probes.
-- Focused regressions pass: 74 cell/finalization/decision/projection tests,
-  37 search-scope/capture/adapter tests and four known-ISTD/recovery tests.
-  Four-source Ruff and mypy pass. Testing exposed an existing explicit
-  `cell.__post_init__()` call; the new construction-only argument now defaults
-  to `None`, retaining that complete validation call. Only failed checks were
-  rerun after correction. No accepted benchmark arm was repeated.
-- Workflow verdict `optimized` for the bounded construction changes;
-  candidate disposition `keep`; Evidence `diagnostic_only`. Integration and
-  full85 acceptance remain open. Exact worker requests/responses were not
-  retained, so previous artifacts cannot establish worker codec cost. Measure
-  that boundary during necessary candidate integration, not a separate
-  recapture workflow. Reuse prepared inputs and B1 physical facts for the
-  four-partition/all85 candidate integration; keep the completed baseline.
-- Artifacts under
-  `output/issue422-bounded-worksets-20260921/fusion-ab/`:
-  `composition-replay/owner-pairs.json`, `cell-proof-owner-pairs.json` and
-  `search-scope-owner-pairs.json` in the same directory; commands/results in
-  `owner-checks/owner-checks.md`, `search-scope-checks.md` and
-  `corrective-checks.md`. Task-local `composition-replay/optimization.md`
-  records the changed boundary and acceptance scope.
-
-#### Candidate integration and assessment construction
-
-- Luna completed the four-partition/all85 candidate integration at `1fb63bbd`
-  using the retained prepared plan and B1 physical facts. All 150 children
-  (46/20/44/40) preserve the complete captured scientific oracle with no
-  excluded fields. Wall time was 98.578 s; acquisition 48.113 s and composition
-  44.978 s. The retained baseline was 106.141 s; this single historical
-  comparison does not establish a general end-to-end speedup. No Discovery,
-  native RAW acquisition or completed baseline was repeated.
-- Actual process codec measurements cover 680 worker calls across four PIDs:
-  84,013,663 request bytes and 107,225,783 response bytes. Summed worker decode
-  and encode times were 1.202/3.831 s; parent encode/decode were 2.152/2.883 s.
-  Parent encode includes shared bootstrap. These sums are not additive wall
-  phases, exclude executor framing and do not measure IPC transfer duration.
-  RSS was unavailable in this run. Four workers were active; this probe uses
-  one acquisition lane and does not halve the per-partition worker budget.
-- Method-assessment construction now also avoids repeating canonical
-  normalization and artifact hashing immediately after its owner factory
-  derived those exact values. Direct and replacement construction still run
-  their checks. Luna's AB/BA/AB replay against `1fb63bbd` preserves exact
-  artifact IDs, content bytes and upstream object refs for 6,481 retained
-  assessments. Median original/candidate time is 2.4131/1.7954 s. The three
-  affected CID-NL test files pass all 56 tests. These are separate function
-  timings, not a claim that acquisition or full85 acceptance is complete.
-- Reuse `science-owner-candidate/{receipt,parity,codec-parent}.json`, its
-  `codec-worker-*.jsonl`, `owner-checks/integration-report.md`,
-  `composition-replay/assessment-owner-pairs.json` and
-  `owner-checks/assessment-checks.md` under the same artifact root above.
-  Evidence remains `diagnostic_only`; continue with coarse parent-phase
-  attribution and cohort acceptance rather than another baseline rerun.
-
-#### Grouping reuses the worker's completed capture
-
-- `prepare_untargeted_cid_nl_grouping` now asks the capture owner to move an
-  existing capture into its workset scope. It requires the same Untargeted
-  request, candidate binding and method constraints; it preserves the exact
-  trace, hypotheses, physical answer, integration and observation provenance.
-  Grouping preparation no longer repeats sample-local signal processing just
-  because the enclosing scope changes. No cache or scientific selection rule
-  was added.
-- Luna's four-partition/all85 integration reused 3,924 captures in 0.404 s and
-  preserved all 150 scientific children exactly. Parent physical preparation
-  and evaluation wrappers observed no calls. The 2-second native memory sampler
-  measured peak process-tree RSS 2,284,892,160 bytes and parent RSS 751,259,648
-  bytes. These are sampled bounds on this four-partition run, not full85 bounds.
-  Wall time was 133.562 s, with acquisition 64.943 s and composition 62.140 s;
-  both phases slowed relative to the prior observation. This run therefore
-  does not prove an end-to-end speedup. Its first-input diagnostic retention
-  costs 2.677 s and 50,888,945 bytes, included in acquisition wall time.
-- That retained input permits a same-process AB/BA/AB comparison of original
-  grouping preparation (`c477c551`) and capture reuse without acquisition or
-  workflow repetition. All six arms preserve exact groups, captures and scope
-  for 46 children and 925 initial jobs. Each original arm performs 1,005
-  physical preparations and evaluations; every candidate arm performs zero.
-  Wall medians are 3.2404/1.2732 s; process CPU medians are
-  1.4531/0.6094 s. GC is measured without policy changes and is not dominant.
-- Focused capture/production/adapter tests: 104 passed; affected source mypy
-  and Ruff pass. The capture tests also reject changed questions and prove
-  no signal evaluation during equivalent physical/nonphysical scope changes.
-- Evidence remains `diagnostic_only`, disposition `keep` for this measured
-  removal. Full85 acceptance remains open. Artifacts under the same root:
-  `science-capture-reuse/{receipt,parity,owner-costs,input-capture}.json`,
-  `composition-replay/grouping-owner-pairs.json`,
-  `owner-checks/capture-scope-checks.md`, `capture-scope-integration.md` and
-  `grouping-owner-pairs.md`. Reuse `first-acquisition.pickle` for further
-  parent-owner checks instead of repeating sample execution.
-
-- The capture label projection also uses the method-subject owner's existing
-  request index. Its former per-feature linear scan visits 98,330,284 subject
-  entries for the retained 41,741 candidate memberships across 4,819 subjects.
-  Luna's AB/BA/AB metadata-only comparison against `6bf3a12e` preserves every
-  context label; median original/indexed times are 2.0064/0.0381 s. The operation
-  count is derived from membership order, not a full-runtime counter. No new
-  cache is added. All 51 affected scope/golden-path/adapter tests, Ruff and mypy
-  pass; the scope test proves the real capture-label path does not iterate the
-  global subject population and rejects an ID outside the request. Artifacts:
-  `composition-replay/subject-lookup-pairs.json` and
-  `owner-checks/subject-lookup-checks.md` under the same root.
-
-- Canonical cell and assessment JSON now projects immutable tuple fields
-  directly instead of recursively copying their primitive IDs before encoding.
-  Nested dataclass records retain their explicit projection. Luna's AB/BA/AB
-  replay preserves all bytes for 9,520 cells (25,132,741 bytes) and 6,481
-  assessments (9,383,606 bytes). Median original/candidate seconds are
-  0.2048/0.1633 and 0.1473/0.1250: a small serialization saving, not a cohort
-  speed claim. The final source recheck passes 55 tests, Ruff and two-source
-  mypy after the earlier commit-hook stash window. No accepted benchmark arm
-  was repeated. Artifacts: `composition-replay/immutable-json-pairs.json` and
-  `owner-checks/full85-prep-and-json-recheck.md` under the same root.
-
-#### Full85 completion failure and further exact reuse
-
-- Process9 at `f3715ce7` completed all 46 partitions with eight process workers,
-  then failed global closure: `Method exclusion requires exact complete sample
-  coverage`. Wall time was 1,978.297 s; sampled tree RSS peaked at
-  10,072,944,640 bytes. Acquisition and composition sums were 1,736.619 and
-  1,074.701 s; overlapping sums are not additive wall time. Transport payloads
-  totalled 883,151,798 request bytes and 1,414,753,069 response bytes.
-- No formal Matrix was published. Cleanup removed the typed result store;
-  3,710 child diagnostic records remain, not a resumable scientific result.
-  Six DNA ISTD labels each occur in one final group. Bound physical sample
-  counts are 85/78/82/69/64/81 respectively for 15N5-8-oxodG, d3-5-hmdC,
-  d3-5-medC, d3-N6-medA, d3-dG-C8-MeIQx and d4-N6-2HE-dA. The seventh configured
-  standard uses NL132 and has no binding in this DNA NL116 run. These facts do
-  not pass the seven-label or formal Matrix/integral/provenance acceptance.
-- A synthetic no-input case reproduces the closure failure. The owner now
-  requires assessment coverage for the subject's request-bound input samples,
-  with no empty assessment required from other samples. Missing input-sample
-  evidence, duplicate artifacts and crossed bindings remain rejected. The
-  focused case changes from FAIL to PASS without RAW execution.
-- The common artifact factory no longer recomputes identities immediately
-  after deriving them, and final-cell closure reuses the predecessor artifact's
-  content digest. AB/BA/AB retained-input comparisons preserve all IDs, values
-  and lineage: 16,001 artifact constructions take median 1.1619/0.4610 s;
-  9,520 final cells take 2.0431/1.6177 s. The latter CPU medians are both
-  0.90625 s, so its wall difference is not a demonstrated CPU speedup.
-- Seven affected regression files pass all 194 tests; three-source mypy and
-  changed-source/test Ruff pass. Evidence remains `diagnostic_only`; cohort
-  acceptance and elimination of avoidable restart costs remain open.
-  Reuse `alignment85-process9/` and `fusion-ab/owner-checks/completed-run-analysis.md`
-  under `output/issue422-bounded-worksets-20260921/`; paired receipts are
-  `fusion-ab/composition-replay/{artifact-owner-pairs,final-closure-digest-pairs}.json`.
-
-- Group subject, SUPPORT artifact and owner-ID tuples are now computed once in
-  the immutable group context. A retained-input remint preserves all 9,520 cell
-  IDs, canonical bytes and assessment/peak references across 112 groups;
-  113 affected tests and source Ruff/mypy pass. This is exact reuse evidence,
-  not a whole-run timing claim. Receipt:
-  `fusion-ab/composition-replay/group-context-reuse.json`.
-- Failed execution now retains completed typed partition files and a read-only
-  shared-owner snapshot instead of deleting them. The 36 execution-engine tests
-  pass. A fresh-process, child-at-a-time restore preserves all 46 retained
-  children, IDs, integrals, provenance and shared request/attempt/sample refs.
-  Store/snapshot sizes are 138,945,861/50,384,430 bytes; producer/consumer walls
-  are 8.382/2.370 s. This enables diagnostic replay, not automatic workflow
-  resume or publication. The existing process9 store was already deleted and
-  cannot be recovered by this change. Receipt:
-  `fusion-ab/owner-checks/failure-store-replay-checks.md`.
-- Process9's scalar capture has 678,470 group/sample positions, including
-  533,671 `not_searched` positions. This is population evidence, not timing
-  attribution. Composition now omits synthetic no-input assessments and
-  predecessor cells, while retaining explicit `no_discovery_input` coverage
-  and the final empty Matrix position. Actual negative searches, failures,
-  ambiguity, physical observations and integrals remain evidence-bearing.
-  Conservative eligibility still uses the complete sample denominator.
-  Shared no-request source populations are checked once per group facts object.
-- The no-input production case changed from RED to GREEN; 216 affected tests,
-  six-source mypy and source/test Ruff pass. Final-cell canonical schema is v3;
-  sparse conservative proof bases include declared unsearched sample IDs in v2.
-  These administrative identities intentionally change; scientific output
-  parity and cost remain pending the retained-fact candidate run. Receipts:
-  `fusion-ab/owner-checks/sparse-{affected-suite-rerun,static-final}.txt` and
-  `sparse-replay-green-final.txt` in that same directory.
-
-#### Sparse evidence parity and native execution serialization
-
-- Sparse no-input composition initially exposed a recovery lookup that could
-  borrow an assessment from another group. Recovery now uses its exact
-  group/sample/subject binding; fallback considers initial assessments only.
-  Retained-input replays at `7c46b9ab`, `69da3a97` and `39113cf8` each preserve
-  the accepted B1 scalar and typed scientific oracle for 46 children, 112
-  groups and 9,520 group/sample positions. Allowed differences are restricted
-  to administrative evidence for baseline-proven unsearched positions; states,
-  physical IDs, integrals and provenance remain exact. No acquisition,
-  Discovery or completed baseline was repeated.
-- Feature selection is indexed once per request. Final-cell assembly also
-  indexes terminal and association joins and reuses its immutable group
-  identity. The regression oracle observes zero reconstructed group identities
-  in final-cell handoff; the affected cell/production tests pass all 81 cases.
-  The `69da3a97` uninstrumented composition took 10.1033 s versus the earlier
-  9.9006 s, so that pair does not establish a stage speedup.
-- The existing-input composition profile at `69da3a97` attributes 7,531,953
-  Python callbacks to the private pickle encoder's per-object `persistent_id`.
-  Execution transport and partition storage now seed the native encoder memo
-  with the exact shared authorities. A small explicit pickle prefix establishes
-  those references in the native decoder; numeric trace values no longer call
-  back into Python. The private encoding changes, not scientific identities or
-  RAW-cache facts. Old diagnostic inputs use a task-local legacy reader.
-- At `39113cf8`, the real payload comparison covers 2,113 sample results and
-  5,170 shared objects. Exact typed values and declared shared-object identity
-  pass for both codecs. One legacy/native observation measured encoding
-  1.6422/1.0096 s and decoding 1.3971/1.0832 s; payload sizes are
-  50,389,388/50,702,747 bytes. These are bounded codec timings, not a cohort
-  performance claim.
-- One unprofiled composition-only replay at `39113cf8` completed in 7.2922 s,
-  with 1.3088 s input loading and 8.6038 s total elapsed. Scalar and typed
-  comparisons both report zero mismatches. The new store is 119,655,479 bytes,
-  compared with 115,846,583 bytes in the retained `7c46b9ab` store: the faster
-  measured path has a 3.29% storage increase. Independent records were decoded
-  and released without loading the complete child graph.
-- Execution-engine, bounded-runtime and finalized-result suites pass all 115
-  cases; affected source Ruff/mypy and commit checks pass. Failure retention
-  adds the checkpoint locator to the original exception instead of replacing
-  its cause. Cache retry coverage measures actual avoided native work and
-  permits fully cached samples to open no native handle.
-- Evidence remains `diagnostic_only`; full85 formal completion and scaling
-  acceptance remain open. Reuse the same artifact root above:
-  `sparse-composition-39113cf8/receipt.json`,
-  `owner-checks/sparse-composition-39113cf8-comparison.json`,
-  `owner-checks/real-payload-codec-check-v2.json`,
-  `owner-checks/memo-codec-tests-final.txt` and
-  `owner-checks/sparse-composition-profile-69da3a97.md`.
-
-#### Full85 at `39113cf8`: composition improves, acquisition remains dominant
-
-- Process10 reused the existing Discovery85 and a compatible private copy of
-  the acquisition cache, with eight process workers in two acquisition lanes.
-  It exited 2 after 1,030.266 s through cooperative cancellation. Of 46
-  partitions, 34 completed, partition 34 failed after sealing its store, and
-  the remaining 11 were cancelled. The 35 retained partition files contain
-  4,449,968,836 bytes; no formal Matrix, identity or review output was published.
-- The common 34 completed partitions have acquisition/composition inclusive
-  sums of 964.181/345.064 s, versus process9's 1,087.834/653.789 s. These spans
-  overlap and are not additive wall time or an isolated causal A/B experiment.
-  Composition decreased substantially; acquisition remains the next target.
-- Runtime wall is 929.905 s. Separately recorded preparation includes physical
-  indexing 27.684 s, source verification 10.855 s, feature preparation 8.693 s
-  and candidate reading 6.600 s. Peak sampled process-tree RSS is
-  8,013,565,952 bytes; private bytes are 15,012,491,264.
-- The two pools each report 202,113,168 bootstrap bytes. Task requests total
-  704,996,967 bytes and responses total 1,102,524,110 bytes. The retained child
-  capture contains 2,021 rows in 388,370,526 bytes. Cache-read/decode, native
-  calls, serialization and IPC-wait durations were not isolated by this run.
-- Evidence remains `diagnostic_only`: `run_ok=false`, scientific verifier
-  `UNKNOWN` because the completion receipt failed. Partial output does not
-  establish known-ISTD, integration/provenance or formal batch closure. No
-  unchanged retry was started. Reuse `alignment85-process10/` under the same
-  task root, especially `process10-final-report.md`,
-  `process10-cost-diagnosis.md` and the retained private partition spool.
-
-### 2026-09-21 Sealed Composition Replay Shows Distributed Construction Cost
-
-- Decision: isolate composition costs without repeating acquisition or grouping.
-  Evidence is `diagnostic_only`, product source `dfc22127`. Luna replayed the
-  retained first-partition B1 store and portable plan: 46 scientific children,
-  all 85 samples, 9,520 predecessor/final cells. These are 46 children of one
-  partition, not 46 mass partitions. No Discovery, RAW, harvest, or full85 run.
-- Completed coarse replay preserves proof IDs, association handoff IDs/bases,
-  final-cell scalar content and projection scalar content for all 46 children.
-  Separately timed function totals are proof remint 1.692 s, association handoff
-  0.141 s, final-cell composition 3.319 s, cell decision 1.216 s, pre/post
-  projection 0.020/0.009 s, and child serialization 1.502 s. Final-cell timing
-  here includes source extraction and parity bookkeeping; it is an inclusive
-  upper bound, not pure owner-function time. Serialization produces 88,539,573
-  bytes but excludes disk/hash-writer I/O and process transport.
-- A separate replay of `mint_cell_observation_ref` reconstructs 9,520
-  predecessor cells in 2.691 s. All artifact IDs, canonical cell content bytes,
-  and assessment/peak/hypothesis reference identities match. This partition
-  has zero recovery cells, so the replay says nothing about recovery-cell
-  admission cost. Group-context construction and empty assessments are also
-  outside its timing.
-- The diagnostic final-cell lookup candidate indexes position associations
-  and predecessor groups while retaining the original join validators. Three
-  paired function-only trials, AB/BA/AB, include candidate index construction
-  and exclude input loading, source extraction and parity comparison. A/B
-  seconds are 3.412/3.003, 3.077/2.839, and 2.919/2.816. All six arms preserve
-  all 9,520 final-cell scalar oracles, including IDs, basis bytes, states,
-  provenance IDs and integrals. Median A/B is 3.077/2.839 s: only 0.238 s
-  (7.74%) difference. Baseline range is 0.493 s and the paired gains decrease;
-  this does not establish a stable cohort-speed benefit. Malformed-input error
-  behavior was not accepted as part of this valid-input prototype.
-- Interpretation: measured composition work is spread across predecessor
-  construction, proof minting, final-cell construction, decisions and large
-  object serialization. The association lookup alone does not explain the
-  historical 14.350-second first-partition composition. Do not sum these
-  independently replayed timings and subtract them from that historical span:
-  warm state, reused intermediates and timing coverage differ. Worker codec,
-  group-context/empty-assessment preparation and final store I/O remain
-  unattributed. No dominant remaining mechanism or full85 speedup is proved.
-- Workflow verdict `diagnosis_ready`; lookup performance verdict
-  `inconclusive`; candidate disposition `retain_unaccepted` in ignored
-  diagnostic scripts only. No product implementation change. The next decision
-  is whether worker encoding/decoding and retained object volume dominate
-  acquisition/composition; reuse the sealed inputs and measure the actual codec
-  boundary before considering transport or representation changes. Do not
-  repeat completed replay arms or full workflows to repair reporting gaps.
-- Artifacts under
-  `output/issue422-bounded-worksets-20260921/fusion-ab/`:
-  `composition-replay/report.json`, `composition-replay/index-pairs.json`,
-  `composition-replay/predecessor-mint.json`; runnable task-local drivers are
-  `composition-replay/composition_replay.py`, `composition_index_pairs.py`
-  and `predecessor_cell_replay.py`. These receipts establish bounded replay
-  equality, not full85 Matrix or known-ISTD acceptance.
-
-### 2026-09-21 Frozen-Fact Profile Identifies Repeated Request-Wide Validation
-
-- Decision: locate scientific acquisition/composition costs remaining after the
-  four-partition cached data-plane comparison. Product source remains `dfc22127`;
-  this diagnostic makes no product change or readiness claim.
-- Reused the saved plan and B1 physical facts for `partition-00000`, all 85
-  samples, four process workers. No Discovery, RAW acquisition, new harvest, or
-  full85 run. Artifacts:
-  `output/issue422-bounded-worksets-20260921/fusion-ab/science-profile-00000/`
-  and `fusion-ab/scientific-cpu-source-map.md` under the same task root.
-- The corrected instrumentation saved 170 worker profiles (85 initial and 85
-  recovery) and the parent acquisition profile. It observed 925 initial subject
-  adaptations and 3,548,070 generator calls in `search_scope.py`'s request-wide
-  `alignment_feature_candidate_ids` validation. `_request_sample_candidate_ids`
-  includes sample scope in its one-entry memoization key, so changing samples
-  repeats the global feature-list traversal. This proves repeated work, not its
-  uninstrumented contribution to total alignment time.
-- `cProfile(time.process_time)` acquisition wall was 117.557 s; the earlier
-  uninstrumented first-partition acquisition was 19.152 s. These are not a
-  comparable performance pair. The diagnostic reached its 300 s cancellation
-  cap during composition; only 31 of 46 scientific rows were captured, all 31
-  equal to the retained harvest. Complete scientific/ambiguity parity remains
-  **UNKNOWN**. No composition profile survived exceptional exit.
-- Do not sum cumulative function times: nested calls overlap. In particular,
-  the generated 739.453125 s cumulative sum is not worker CPU or elapsed time.
-  Do not infer production speed from the profiled run or label this gate PASS.
-- The uninstrumented request-only microprobe ran three A-then-B comparisons
-  over 85 samples and 41,741 feature IDs. Current helper times were
-  0.533689/0.365622/0.317895 s. This measured absolute cost is too small to
-  explain the workflow's large remaining cost. Prototype lookup times were
-  0.054102/0.046764/0.035398 s with exact per-sample set equality, but its set
-  preparation was outside the timer and some validation was omitted. Thus B
-  is an optimistic valid-input lookup, not an isolated production speedup or
-  error-semantics proof. The union field compares unions of sample results,
-  not a separate all-sample scope invocation. Receipt:
-  `science-profile-00000/candidate-scope-microprobe.json`.
-- Disposition: `diagnosis_ready`, `diagnostic_only`; no product candidate to
-  accept. Do not turn this small repeated scan into the primary optimization
-  claim. Composition attribution and worker-side codec costs remain unknown:
-  worker profiles start after request decoding and stop before response encoding.
-  Reuse these artifacts; do not replay the workflow merely to repair profiling
-  or reporting gaps. Any further probe must isolate a new decision and avoid
-  per-call process-time instrumentation of the complete workflow.
-
-### 2026-09-21 Four-Partition RAW-Major Replay Does Not Establish A Scheduler Win
-
-- Evidence: `diagnostic_only`, product source `dfc22127`, fixed canonical
-  partitions 00000–00003 and all 85 samples. Reused Discovery and cache; no
-  additional full85 or Discovery run. Task-local drivers freeze actual initial
-  and recovery requests before comparing the physical execution axes.
-- Three paired four-process replays (A→B, B→A, A→B) have partition-major A
-  wall median/range 9.069/9.023–9.758 seconds and sample-major B
-  8.799/8.238–9.239 seconds. Diagnostic artifact persistence medians are
-  1.261 and 0.225 seconds. Timing overlaps and this measurement overhead is
-  larger than the median wall difference; a production broker benefit is not
-  established. OS cache is warm, and both arms make zero native opens/calls.
-- Sessions fall from 680 to 85, but logical XIC requests remain 6,934 and
-  cache bytes only fall from 952,428,976 to 920,637,788. All 5,166 query results
-  in every arm exactly match the harvested serialized facts, with per-partition
-  coverage. B facts actually reproduce all 150 captured scientific children.
-  Additional read-only extraction from sealed stores confirms 391 initial
-  groups' ambiguity/inference decisions and final disposition/route reasons;
-  no rerun was needed to recover those omitted scalar fields.
-- With compact frozen facts, scientific replay still takes 106.141 seconds:
-  adapter acquisition phase 50.723 seconds and composition 51.209 seconds.
-  That acquisition phase includes scientific computation and object transport;
-  do not equate it with the isolated physical replay. The original 140.984-second
-  harvest had 118.470 summed worker seconds of cache file reads versus roughly
-  2–3 in warm replay; cache/OS state prevents a simple causal subtraction.
-- Architecture-adoption verdict: `inconclusive`; no production scheduler
-  change. Reuse retained facts to separate scientific computation/transport
-  from physical I/O before another rewrite. This does not test cold native
-  batching or establish full85/ISTD acceptance. Prior process8 failed after
-  1,985.016 seconds, with 40/46 partitions and no formal Matrix.
-- Artifacts: `output/issue422-bounded-worksets-20260921/fusion-ab/`:
-  `decision-report.md`, `physical-parity-123.json`, `scientific-parity-1.json`,
-  `ambiguity-parity-1.json`, frozen `prepared/`, requests/facts under `harvest/`,
-  and per-arm receipts. These are task-local diagnostic evidence, not a new
-  reusable public cache or store format. Do not repeat preparation, harvesting,
-  or completed arms merely to repair reporting.
-
-### 2026-09-21 Cached Acquisition Still Hydrates Unrequested MS2 Spectra
-
-- At `259b8c9d`, a diagnostic profile of partition 00000 (65 subjects,
-  1,005 memberships, 85 samples) observed 3,470 cache-hit events and no
-  cache-miss or native-open event. Acquisition wall time was 58.235 seconds;
-  its 46 initial grouping calls took 1.484 cumulative profile seconds.
-  This does not identify the assignment solver as the dominant cost.
-- The two worker profiles reconstructed 71,157 and 81,010 MS2 scan objects.
-  `strict_seed_receipts._read_exact_scans` requested a complete RT window,
-  then discarded all events outside already-declared scan IDs. Full-window
-  decoding took 6.028 and 6.884 cumulative seconds. Cache file reads separately
-  took 16.149 and 16.094 cumulative seconds; these are actual payload reads,
-  not guard-log writes. Nested durations must not be added as wall time.
-- The bounded probe was interrupted without completed composition or scientific
-  output. Its 8.019-second composition profile is partial; it is not the full
-  composition cost. Only text profiles were saved: the diagnostic runner did
-  not implement binary pstats export. Do not repeat this probe to recover a
-  missing pstats file or treat its timeout as a scientific failure.
-- Evidence: `diagnostic_only`; artifacts are under
-  `output/issue422-bounded-worksets-20260921/profile-first-cached-partition-current-259b8c9d-cost/`.
-  Selective materialization of declared MS2 scans is implemented in `13d39594`,
-  preserving the native RT-to-scan window and missing/duplicate-scan rejection.
-  Unknown-scan recovery still requires the complete window.
-- A single retained 233-scan payload reconstructs one selected spectrum with
-  exact serialized bytes: 233 versus one hydration, 11.28 versus 1.62 ms.
-  Timing excludes file opening and is not a cohort-speed claim. The no-RAW
-  receipt is `ms2-subset-decode-probe/receipt.json` under the same issue output
-  root. All 83 affected raw-reader, adapter and runtime regressions pass,
-  along with three-source mypy, Ruff and normal commit hooks. The tests retain
-  complete-window cache isolation and reject missing/duplicate/failed scans.
-
-### 2026-09-21 Native Recovery Queries Can Share Scan-Window Reads
-
-- The retained full85 resource receipts split the 3,359 native opens into
-  680 initial and 2,679 recovery opens. Chromatogram call counts lack phase
-  binding; do not label all 51,956 calls as recovery.
-- On `BenignfatBC0979_DNA.raw`, a single-handle probe used the canonical first
-  50 of 1,429 retained recovery requests. Direct acquisition made 48 native
-  chromatogram calls in 0.678907 seconds; the existing `RawSuperWindowSource`
-  made two calls in 0.029216 seconds. All 50 serialized acquired traces were
-  byte-identical, including the original request, native coordinates and
-  14,571 total points. No Discovery or full85 rerun was performed.
-- Untargeted acquisition now uses that existing bounded super-window adapter
-  for missing native facts and uncached batches. Cache keys and scientific
-  requests remain unchanged; each returned trace is cropped to its original
-  scan window. Cold/warm regression cases preserve exact trace bytes and warm
-  replay performs no native open. This establishes the tested acquisition
-  mechanism, not a full-cohort speedup or completed scientific acceptance.
-- Evidence: `diagnostic_only`, source `23985f13` plus recorded dirty source
-  hashes; receipts are `raw-native-recovery-parity-{receipt,result}.json` under
-  `output/issue422-bounded-worksets-20260921/`.
-
-### 2026-09-21 Full85 Remains Incomplete After Recovery Admission Fix
-
-- Evidence: `diagnostic_only`, producer `97bb9225f79a5d2665b9775c13d9125a851ef108`.
-  The four-process run reused Discovery, the verified 595 ISTD coordinates,
-  and acquisition cache. It cancelled at the 1,800-second budget and returned
-  failure after 1,931.625 seconds. The coordinator records 33 of 46 partitions
-  complete; no formal Matrix or final known-ISTD/integration acceptance exists.
-- Recorded partial-work counters: 3,359 RAW opens, 51,956 chromatogram calls,
-  96,003 logical XIC requests, and sampled tree peak RSS 7,063,678,976 bytes.
-  Largest assignment component: four owners and seven features. These counters
-  do not establish which phase dominates wall time. Per-partition timing and
-  cache-hit/miss breakdown were not retained and remain unknown.
-- The CLI returned from its error handler before writing `--timing-output`.
-  Timing publication now runs after sampler shutdown in `finally`; the failure
-  regression checks both stage records and sampled-memory observations.
-- Receipt, live timing, transport records, and acceptance report are under
-  `output/issue422-bounded-worksets-20260921/alignment85-process7/`.
-  Keep the acquisition cache and prior runtime marker. Quarantined work-unit
-  artifacts cannot resume scientific composition. Do not rerun Discovery or
-  the completed baseline, or automatically retry this full-cohort attempt.
-
-### 2026-09-21 Successful Recovery Must Admit Its Missing Sample
-
-- The existing composite CID-NL `intersection-recovery_complete` fixture
-  reproduced a production composition failure on both `c095cbb7` and the
-  subsequent lazy-RAW change: recovery returned SUPPORT, but frozen initial
-  membership left that observation outside every group. This was a membership
-  admission defect, not a cache miss or a reason to rerun Discovery.
-- The grouping owner now preserves all original members and admits a uniquely
-  supported missing sample into its requested group with explicit lineage.
-  Shared eligible claims remain unresolved. Final cells retain predecessor
-  provenance and the recovery observation's original integration.
-- Evidence remains engineering regression coverage until the complete85
-  acceptance finishes. The composition fixture checks three original members,
-  one admitted member, one successor, exact recovery assessment/integration,
-  and a numeric S4 Matrix cell. Local logs are under
-  `output/issue422-bounded-worksets-20260921/`; this does not certify the full
-  cohort or replace the known-ISTD acceptance oracle.
-
-### 2026-09-21 Completed Representative Acquisition And Composition
-
-- Evidence: `diagnostic_only`, not full85 acceptance. At `c095cbb7`, the same
-  65-subject / 1,005-membership / 85-sample workset completed acquisition in
-  81.141 seconds and composition in 42.719 seconds (124.485 seconds including
-  setup). It sealed 46 children, then stopped at the diagnostic sentinel before
-  final Matrix publication. Peak sampled tree RSS was 9.41 GiB. Receipt and
-  parent/worker profile excerpts are in
-  `output/issue422-bounded-worksets-20260921/profile-first-cached-partition-recovery-300s/`.
-- Initial grouping took 1.594 cumulative seconds; 5,017 owner-edge evaluations
-  and 18 solver calls were recorded. Each worker spent about 26.6 seconds in
-  native RAW `Dispose()`. Composition's 27.423-second append span includes its
-  21.868-second child generator; these are not additive serialization costs.
-  Reconstructing source cells for downstream validation occurred 28,560 times
-  (6.882 cumulative seconds). Cache telemetry reports 3,531 hits; RAW attempt
-  and success counters disagree (169/170), so those counters remain partial.
-- Only profile text excerpts were saved, not complete pstats. The sealed spool
-  is a same-process store and cannot be reopened from its path after exit;
-  its presence does not prove scientific or writer acceptance. The next formal
-  run must capture scientific checks and publish outputs before closing the
-  process. Reuse acquisition facts and existing Discovery; do not repeat this
-  diagnostic to regenerate a richer profile or reopen its spool.
-
-### 2026-09-21 Representative Workset After Recovery Normalization
-
-- Evidence: `diagnostic_only`, incomplete. At launch SHA `19b43756`, the
-  65-subject / 1,005-membership / 85-sample workset passed acquisition in
-  130.797 seconds and entered composition. The runner's actual 180-second
-  profile budget cancelled it at 180.406 seconds; the intended 300-second
-  budget was not applied. There is no sealed child or final Matrix. Receipt,
-  finally-saved profiles and timing are under
-  `output/issue422-bounded-worksets-20260921/profile-first-cached-partition-recovery-normalized/`.
-- Acquisition recorded 170 RAW opens, 2,834 cache hits, 707 misses and 708
-  writes. Peak sampled tree RSS was 7,061,385,216 bytes. The parent profiler
-  attributes 117.202 cumulative seconds to worker waiting; child RAW/cache/
-  analysis time is not separately measured. Group preparation is 12.563
-  cumulative seconds, including capture work. Do not call the total grouping
-  time or infer a completed full85 speedup.
-- Composition's partial profile contains 9,520 cell-mint calls (20.198
-  cumulative seconds), 6,965 no-request-proof calls (13.072 seconds) and
-  213,578 JSON dumps. These overlapping cumulative values are attribution,
-  not additive stage durations. Later source edits are not part of this
-  launch's evidence. Retain the existing acquisition facts; do not rerun
-  Discovery or this completed diagnostic merely to correct its timeout label.
-- The subsequent no-RAW artifact probe compares the `19b43756` implementation
-  with direct length/SHA verification of an already-bound immutable reference.
-  Content, evidence and upstream identities match exactly; changed bytes,
-  length, non-bytes payloads and duplicate upstreams remain rejected. For
-  10,240 valid checks, observed baseline/current time is `0.29843 / 0.02086 s`
-  and profiler call counts are `696,321 / 71,681`. Minting itself did not show
-  a wall-time improvement in this probe. Evidence is in
-  `output/issue422-bounded-worksets-20260921/evidence-artifact-paired-probe/`;
-  do not extrapolate these isolated timings to full85.
-
-### 2026-09-21 Recovery Query Order In Real Workset Acceptance
-
-- Evidence: `diagnostic_only`; the 65-subject, 85-sample representative workset
-  stopped during acquisition before composition. The retained receipt is
-  `output/issue422-bounded-worksets-20260921/profile-first-cached-partition-current/receipt.json`.
-  Its 64.25-second profile span includes 0.391-second setup and 63.859-second
-  acquisition/cleanup, not the earlier input-indexing stages. It records
-  2,027 cache hits and 7,443,505,152-byte peak tree RSS. There is no final Matrix
-  and no function-level profile from this failed invocation.
-- The acquisition adapter rejected group-ordered recovery requests because it
-  required callers to supply unique RT-sorted `(subject ID, center)` keys.
-  The acquisition boundary now canonicalizes those query keys; every
-  group-bound recovery attempt remains separate. This is not group merging or
-  a new cache format. The c76ab790 adapter reproduces the rejection; the fixed
-  adapter suite passes 23 cases and two shared-support/group-binding cases pass.
-  Receipts remain under the same task root, including
-  `adapter-recovery-canonical-red.log`.
-- Existing Discovery, verified ISTD coordinates and source-bound acquisition
-  facts remain reusable. The failed invocation did not retain an initial
-  assessment or prepared-group checkpoint, so a corrected workset validation
-  must rebuild that in-memory state. Do not treat its partial timing as a
-  completed speedup measurement or rerun the whole cohort to test this fix.
-
-### 2026-09-21 RT Feasibility And Scalar Assignment Cost
-
-- Evidence: `diagnostic_only`; bounded synthetic parity/cost evidence against
-  `3c6a4453`, not full-cohort acceptance. The retained receipt is
-  `output/issue422-bounded-worksets-20260921/grouping-final-validation-receipt.md`,
-  with exact baseline/candidate source hashes and command/log locators.
-- Same-mass RT-wide populations retain identical membership at 100 and 1,000
-  owners. Recorded baseline/current times are `0.1337 / 0.0062 s` and
-  `13.4429 / 0.4235 s`; the candidate omits 9,900 and 999,000 impossible RT
-  candidates. These are single paired mechanism measurements, not a general
-  speedup estimate. Omitted sparse decisions mean not evaluated.
-- Raw fallback, available corrected RT, unavailable correction, drift and
-  competing-track fixtures retain their scientific outcomes. Scalar assignment
-  handles 1xN and Nx1 components without a dense matrix or general solver.
-  Exact ties may use a different stable diagnostic representative than SciPy;
-  ambiguity still prevents membership. Exhaustive 2x2/2x3/3x2 comparisons have
-  no exact mismatches. The focused feature suite passes 22 cases.
-- Unchanged index extrema no longer trigger removal/reinsertion. Inference
-  counters and largest competition sizes flow into existing runtime timing.
-  Writer projection drops a redundant global cell-key set, and cell/integration
-  TSV formatting is incremental. Production (67), finalized-matrix/TSV (67),
-  timing (32), and streaming (3) test cases pass; changed-source mypy, Ruff and
-  architecture census pass. These checks do not establish real-cohort cost.
-- The 5,000-cell writer probe preserves exact TSV bytes and SHA-256, including
-  4,545 integration-audit rows and distinct sample values. Baseline/current
-  `tracemalloc` peaks are `11,314.97 / 1,308.78 KiB` for cells and
-  `5,559.79 / 1,306.50 KiB` for integration audit. These are Python allocation
-  peaks, not process RSS. The source-bound receipt is
-  `output/issue422-bounded-worksets-20260921/writer-streaming-parity-receipt.md`.
-- Reuse existing Discovery85, verified ISTD coordinates and compatible
-  acquisition cache. Current real-workset and cohort completion must be
-  established separately; historical failed process5/process6 attempts do not
-  supply final Matrix or current-version acceptance.
-
-### 2026-09-21 One Production Grouping Before Recovery
-
-- Evidence: `diagnostic_only`; synthetic production-interface checks. Formal
-  CID-NL worksets now group initial evidence once with known-ISTD context and
-  reuse that result for recovery and final composition. Runtime result schema
-  v2 seals recovery group IDs alongside sample/subject/query provenance.
-- The four-sample fixture has two compatible subjects, each with one distinct
-  supporting sample (5 ppm resolver windows, 8 ppm precursor separation).
-  The group meets K=2: the formal route executes two initial jobs and two
-  missing-sample recoveries, retaining one group through persisted composition.
-  The same fixture on the single-subject planning path has two runtime results
-  and zero recoveries. This is an expected recovery-coverage change, not a
-  byte-identical performance refactor.
-- Luna's bounded suite passes 49 tests; production coverage closes 67 cases
-  (62 passed initially, then the five failed cases passed after correction),
-  and 18 legacy runtime cases pass. The known-ISTD production regression
-  retains its one-group and physical-value oracles. Initial-read failure still
-  follows the existing atomic runtime finalization instead of entering grouping.
-  Receipts:
-  `output/issue422-bounded-worksets-20260921/bounded-full-final2.stdout.log`,
-  `formal-cross-subject-after-tolerance.stdout.log`, and
-  `cross-subject-legacy-low-level-probe.log`, `production-repaired-five.log`, and
-  `legacy-runtime-synthetic-regression.log` in the same directory.
-- Grouping now falls within the acquisition callback's elapsed span. Compare
-  total workset time, not composition time alone. No RAW/Discovery/85RAW run was
-  launched for this slice; full-cohort performance and scientific acceptance
-  remain unestablished.
-
-### 2026-09-21 Sparse Alignment Acquisition Work
-
-- Evidence: `diagnostic_only`; synthetic bounded-entry and dense/sparse
-  composition oracles, not a new RAW run. The bounded entry dispatches only
-  sample/subject pairs with candidates, creates missing recovery jobs after
-  the complete-population support threshold, and leaves unsearched assessments
-  to final cell composition. Runtime result counts describe actual work.
-- The recovery fixture preserves complete children, initial groups/edges, and
-  candidate exclusions against the dense direct interface. Source integration
-  and sample provenance remain in those owner results. Focused receipts are in
-  `output/issue422-bounded-worksets-20260921/sparse-recovery-parity.stdout.log`.
-- Parallel validation reproduced Windows `PermissionError` during cache
-  publication when an identical destination was already committed. That exact
-  winning fact is accepted without retry; missing or conflicting facts still
-  fail. Three deterministic cases and the original parallel node pass.
-- These operation-boundary checks do not establish 85RAW wall time or complete
-  scientific acceptance. Preserve existing Discovery and interrupted-run cache;
-  do not repeat the full cohort merely to re-prove these local mechanisms.
-
-### 2026-09-21 Interrupted 85RAW Alignment Runtime Cost
-
-- Evidence: `diagnostic_only`; run at `2f7e89ec`, `dna_dr`, four process
-  workers, retained Discovery85 and 595 verified ISTD coordinates. Cooperative
-  1800s cancellation ended execution after 1973.109s without a final Matrix or
-  groups. Known-ISTD grouping and complete scientific acceptance remain unknown.
-- Input preparation took about 56s; the enclosing runtime span took 1889.818s.
-  The 22 observed pool records carried 1982.0 MiB of shared bootstrap,
-  916.6 MiB of requests and 645.6 MiB of responses. They do not identify
-  individual acquisition, serialization or scientific-composition elapsed costs;
-  these totals cannot rank the runtime's internal bottlenecks.
-- The failed run retained 50,420 XIC and 22,535 MS2 cache entries across 85
-  sources (3,774,874,608 bytes). These are acquisition facts, not resumable
-  grouping results. A fresh attempt can reuse the same output-local cache;
-  changing output directories alone does not carry that cache forward.
-- Partition acquisition/composition spans were emitted but absent from the live
-  timing projection. `f6e17624` preserves them on receipt, including failure
-  paths; it cannot reconstruct the discarded spans from this earlier run.
-- Retain this evidence for bounded runtime diagnosis. The previous input-only
-  270.890s measurement is not a comparable full-runtime baseline.
-- Locators: `output/issue422-bounded-worksets-20260921/alignment85-process5-report.md`
-  and `alignment85-process5-diagnosis.md` in the same directory.
-- An isolated process-pool comparison at `f6e17624` plus the pool-reuse change
-  used identical 45 MiB owners, two lanes with two workers each, and three
-  batches per lane. Across three interleaved pairs, median elapsed time fell
-  from 3.139s to 1.222s and bootstrap bytes from 540 MiB to 180 MiB; output
-  digests and parent-owner identity matched. This establishes lifecycle and
-  transport savings only, not an 85RAW speedup or scientific acceptance.
-  Evidence: `diagnostic_only`; receipt and report are under
-  `output/issue422-bounded-worksets-20260921/pool-reuse-probe/`.
-- The retained first-partition probe used 65 subjects with cache-only numeric
-  facts: acquisition took 88.343s and composition 74.422s under profiling.
-  Composition called assessment binding 551,894 times and SHA validation
-  975,366 times. Per-cell no-request proof construction revisited every source
-  cell in the same frozen group. The production path now binds that group once
-  and checks each proof's exact group, sample and decision separately; proof
-  identity content is unchanged. SHA syntax checks use an equivalent compiled
-  full-string match. These changes do not establish an end-to-end speedup.
-  Parent profile costs overlap and exclude child CPU attribution; the retained
-  report is `output/issue422-bounded-worksets-20260921/profile-first-cached-partition/report.md`.
-
-### 2026-09-20 Shared-Profile 8RAW Completion With Background Qualification
-
-- Evidence: `diagnostic_only`; engineering completion and publication binding
-  passed for the eight-sample CID-NL tissue subset. This is not independent
-  scientific acceptance or an 85RAW/readiness claim.
-- Discovery at `e94fb11e` completed in 89.546s with background qualification
-  enabled: 30,864 archived candidates, including 2,423 background exclusions
-  retained as review-only evidence. Alignment at `afbf4500` reused these
-  Discovery outputs and completed in 171.140s with seven targets-CSV ISTDs and
-  serial Alignment. The shared saved parallel budget was 11, capped to eight
-  Discovery samples.
-- The official explanation reader reports eight samples and
-  `post_matrix_publication`; its 382 Matrix rows and Matrix SHA-256 match the
-  published TSV (`3d8efbc7e69b9cee35469ed0aab3abaeeb8336d7edce1b868c0710e5bd397dec`).
-- Two pre-completion failures were repaired: settings copying duplicated the
-  neutral-loss alias, and the validation adapter omitted Alignment's explicit
-  background-library binding. Discovery was not repeated after completion;
-  the resumed Alignment's complete run-spec hash matches its persisted input.
-  No global free-memory kill rule was used. These timings do not establish a
-  speedup against background-off or differently configured historical runs.
-- Receipts: `output/8raw-rerun-20260920/verification.json`,
-  `reuse-verification.json`, `launch-run2.json`, and
-  `alignment-resume-receipt.json`. Final outputs are under
-  `output/8raw-rerun-20260920/alignment-resumed/`; Discovery is retained under
-  `output/8raw-rerun-20260920/run2/discovery/`.
-
-### 2026-09-20 Automatic Completion And Hypothesis Handoffs
-
-- Evidence: `diagnostic_only`; lane `exact_safe`, scoped verdict `optimized`.
-  Against cumulative baseline `f0a55121`, the retained four-sample, 12-job,
-  two-child composition replay preserves all scientific values, all IDs and
-  Matrix bytes exactly. No RAW rerun or readiness promotion.
-- Scientific completion and Untarget projection bind their direct immutable
-  owner answers instead of recursively digesting the retained graph at each
-  handoff. Construction retains scientific validation; the private same-process
-  spool retains export binding, shared-reference and record-cardinality checks.
-  Recursive completion digests fall from 12 to zero in this replay.
-- Capture, bootstrap, recovery preparation and cell composition pass existing
-  sample/assessment-bound hypotheses forward. Missing assessments retain the
-  ordinary composer. Hypothesis-universe compositions fall from 28 to 12;
-  integrated tests also cover observation-only/MS1 reuse and sample attribution.
-- Seven pairs per backend compare identical backends separately. Native
-  composition medians are 82.391 -> 45.988 ms (44.18% lower); Python medians
-  are 153.427 -> 47.111 ms (69.29% lower). Every candidate composition is faster
-  than its paired baseline. These are bounded composition results, not complete
-  acquisition/RAW analysis times or a claim about memory release speed.
-- Local receipts: `output/data-flow-efficiency-20260920/automatic-handoffs/`
-  `paired-native-final/receipt.json`, `paired-python-final/receipt.json`,
-  `boundaries.md`, `hypothesis.md` and `verification.md`. Reuse this diagnosis
-  unless the authoritative handoff or hypothesis binding changes; do not restore
-  recursive frozen-object mutation audits to normal downstream execution.
-
-### 2026-09-20 Alignment Preparation And Output Reuse
-
-- Evidence: `diagnostic_only`; optimization lane `exact_safe`, scoped verdict
-  `optimized`. These are synthetic engineering measurements; product validation
-  status and the incomplete 85RAW conclusion below are unchanged. No RAW run.
-- Alignment physical replay and production preparation now share the existing
-  stat-bound acquisition expectation: one full source hash instead of two.
-  Nine warm-cache paired runs over a 36 MiB synthetic source measured median
-  preparation time 67.537 -> 34.554 ms; every pair improved by 32.478–34.181 ms.
-  Processing spec/request/candidates matched, and mutation during hashing or
-  between owners was rejected. Standalone preparation still fingerprints.
-- Matrix projection now hands each loaded child directly to the explanation
-  transaction. Three file-backed partitions/four synthetic samples required
-  three child restores instead of six, including the associated completion-seal
-  reconstruction. Five paired output runs measured median 46.780 -> 33.835 ms;
-  every candidate observation was faster. Matrix bytes and all logical SQLite
-  rows, including retained curves, matched the isolated pre-change writer.
-- This removes repeated restoration, not all output memory. A separate
-  tracemalloc pass measured 1,454,401 -> 1,763,665 peak bytes. Pipeline tests
-  verify earlier children are released as streaming advances, official reader
-  parity, and temporary-report cleanup on projection/Matrix failure.
-- Local evidence: `output/data-flow-efficiency-20260920/fix-verification.md`,
-  `fingerprint/candidate-timing.json` and `writer-paired-probe/receipt.json`
-  below that same root. Durable oracles are the source-reuse tests in
-  `tests/test_untargeted_cid_nl_production_batch.py` and the partition-streaming
-  test in `tests/test_untargeted_application.py`.
-- Do not infer full-cohort wall time or a memory-pressure fix from these probes.
-  Rerun a bounded comparison if source ownership or the child-consumption path
-  changes. A real-data speed claim needs its own approved comparable run.
-  Explanation work now spans preparation, shared projection, and finalization;
-  the old explanation timing stage alone is no longer a comparable metric.
-
-### 2026-09-11 Eight-Sample Eligibility And HOLD Verification
-
-- Evidence: `diagnostic_only`; clean producing SHA `b8157555`. One real
-  Alignment run reused the retained eight-sample Discovery, `dna_dr`, production
-  output and four thread RAW workers. All 25 input hashes matched the
-  `full8-overlap-w4` baseline; no Discovery rerun or 85 RAW run.
-- Completed with exit 0 in 411.843 supervised seconds (6m52s), versus 452.234
-  seconds previously: an observed 40.391 seconds / 8.93% reduction. Sampled
-  process-tree peak private memory was 3,334,225,920 bytes, versus 3,895,476,224
-  bytes (14.41% lower), using the same `run.json` measurement fields. No memory
-  guard or task time ceiling fired.
-- Matrix remained byte-identical (1,387 rows). Assessments fell from 96,383 to
-  26,095: 70,288 ineligible empty assessments are no longer emitted; 18,078
-  retained initial empty HOLD records became
-  `not_evaluated / None / no_search_eligible_discovery_input`. The remaining
-  8,017 evaluated scientific payloads match after removing run-local wrappers.
-- All 21,973 exclusion IDs and their order match; 14,207 proof changes reflect
-  direct eligibility exclusion, and all 120 references in the 15 remaining
-  unsupported-method proofs resolve with valid sample coverage and negative
-  evidence. Excluded plus terminal candidates close the 30,570-candidate
-  universe without overlap or gaps. Expected-diff verification passes.
-- The baseline-to-current stack also includes scheduler, CLI and timing changes;
-  filesystem cache and single-run variation remain uncontrolled. Optimization
-  causality is `inconclusive`; this observation does not isolate the HOLD fix or
-  establish 85 RAW throughput or scientific readiness.
-- Locator: `output/cid-nl-bounded-runtime/full8-eligibility-hold-w4/report.md`,
-  with `launch-contract.md`, `preflight.json`, `run.json`,
-  `semantics-comparison.md`, `alignment-timing.json` and `memory.jsonl`.
-  Reuse this one-run result unless a relevant input, owner, implementation or
-  observable failure changes; no automatic rerun is needed.
-
-### 2026-09-10 Eight-Sample Streaming Measurement
-
-- Evidence: `diagnostic_only`; producing SHA `bfd23198`, clean code, one real
-  Alignment run using the accepted eight-sample Discovery, `dna_dr`, production
-  output and four RAW workers. No Discovery rerun or 85 RAW run.
-- Completed with exit 0 in 605.015 supervised seconds (10m05s). Compared with
-  `full8-source-reuse-w4` at 624.844 seconds, the observed difference is 19.829
-  seconds / 3.17% shorter. The 528.418-second target remains unmet.
-- Sampled peak private memory was 2,441,687,040 bytes (2.274 GiB), versus
-  2.201 GiB previously. No memory guard fired. Both runs use the same supervisor
-  wall scope, timeout, memory guard, command except output paths, and all 25
-  input hashes. Filesystem cache and single-run variation remain uncontrolled;
-  this is not a noise-qualified causal speedup claim.
-- Matrix remained byte-identical (1,387 rows, zero changed cells). SQLite
-  integrity and table counts matched; all 16 official candidate-reader probes
-  passed. Runtime completed 32 coarse work units. Full cross-attempt semantic
-  graph parity is not claimed.
-- Formal stage times: runtime 434.543 seconds (previously 438.768), explanation
-  writer 54.610 seconds (previously 65.021), read candidates 2.238 seconds,
-  Matrix writer 0.059 seconds. Do not sum nested spans or assign remaining wall
-  time to RAW acquisition without a measured span.
-- Locator: `output/cid-nl-bounded-runtime/full8-streaming-w4/report.md`, with
-  `preflight.json`, `run.json`, `verification.json`, `alignment-timing.json`
-  and `memory.jsonl`. Completion/parity pass; speed threshold fails;
-  optimization causality remains `inconclusive`. No automatic rerun is needed
-  for this requested one-run measurement. 85 RAW remains unverified.
-
-### 2026-09-10 Runtime Optimization Experiments
-
-- Evidence: `diagnostic_only`; no new RAW acquisition. Historical first-128
-  subject / 1,024-job composition replay produced 37 children. This is local
-  phase evidence, not a replacement full8 timing or scientific promotion.
-- Paired sequential store reads reduced opens from 37 to 1 and median iteration
-  from 0.312702 to 0.301611 seconds. Native scalar-token specialization reduced
-  historical graph digest median from 77.6742 to 67.4535 ms with exact native/
-  Python token and digest parity. Same-partition streaming compose/persist
-  reduced median from 2.227870 to 2.061405 seconds across three uninstrumented
-  pairs; all spool byte counts and SHA-256 comparisons matched.
-- The integrated production compose/persist API was then compared against
-  eager + append with the rebuilt native extension on both sides: median
-  1.944615 to 1.845387 seconds, two of three candidate observations lower. Exact
-  spool SHA/bytes, formal child validation, owner identity, order, indexed
-  reads and metadata fields passed; zero RAW opens. This 5.1% phase result
-  supersedes the prototype percentage for claims about the integrated path.
-- Applied locally in `bd525b8d` (native scalar labels) and `5d23426c` (streaming
-  composition/store and sequential iteration). The native extension rebuilt;
-  42 receipt/finalization and 108 store/runtime tests passed. Final staged-file
-  Ruff, mypy, tests, shard coverage and diff check passed. This is engineering
-  regression evidence only.
-- The eight-direction disposition report defers compact closure receipts,
-  process composition, acquisition/composition overlap, query cache, sparse
-  job integration and a larger default partition budget. Actual CPU-process
-  and cross-partition overlap schedulers were not benchmarked. Zero duplicate
-  exact queries in the fixture is not evidence about every RAW workload.
-- Locator: `output/cid-nl-bounded-runtime/experiments/report.md`, especially
-  `representative/sequential/receipt.json`, `representative/variants/receipt.json`
-  and `representative/integrated-final/receipt.json`.
-  Reopen deferred directions only for their named falsifiers and cost evidence.
-- The latest real full8 run remains 624.844 seconds; its 528.418-second target
-  remains unmet. Do not sum local percentage improvements or launch another
-  RAW run merely to refresh this record. 85 RAW remains unverified.
-
-### 2026-09-10 Eight-Sample Source-Reuse Run
-
-- Evidence: `diagnostic_only`; producing SHA `0bc02c91`, clean code, retained
-  eight-sample Discovery, `dna_dr`, production output and four RAW workers.
-- One real RAW Alignment completed with exit 0 in 624.844 supervised seconds.
-  The 528.418-second whole-run target was not met. Sampled private memory peaked
-  at approximately 2.20 GiB; the existing memory stop condition did not trigger.
-- Matrix is byte-identical to the accepted 1,387-row baseline. SQLite integrity,
-  baseline table counts and 16 official candidate-reader probes passed. Summary
-  differences are limited to Matrix path and processing attempt ID; full
-  cross-attempt semantic-graph parity is not claimed. All 25 retained input
-  hashes match the accepted baseline.
-- Formal timing: runtime 438.768 seconds; explanation writer 65.021 seconds.
-  The non-overlapping recorded stages total 506.528 seconds; remaining wall time
-  is outside those spans and must not be silently attributed to RAW acquisition.
-- Historical `full8` took 2,279.765 supervised seconds, but its overlapping
-  replay, worker setting, code changes and uncontrolled cache prevent an isolated
-  speedup claim. The current one-run result does not characterize timing noise.
-- Locator: `output/cid-nl-bounded-runtime/full8-source-reuse-w4/report.md`, with
-  `preflight.json`, `run.json`, `verification.json`, `memory.jsonl` and formal
-  timing in that directory. This supersedes the unverified full-8 status below
-  for `0bc02c91`; 85 RAW completion remains unverified.
-- No automatic rerun is needed to answer this one-run request. Any follow-up
-  optimization should use these timings before deciding whether another RAW
-  run is necessary.
-
-### 2026-09-10 CID-NL Source Verification And Sample Parallelism
-
-- Evidence: `diagnostic_only`; synthetic file-backed and runtime integration.
-- `untargeted_cid_nl_real_data_inputs` fingerprints each source once and binds
-  the verified path state into the production jobs. Runtime opens reuse the
-  existing `raw_reader` source-expectation contract; source edits/replacements
-  still reject, including changes during fingerprinting or vendor open.
-- `untargeted_cid_nl_bounded_runtime` keeps partition sizing independent of
-  workers. `untargeted_cid_nl_real_data_runtime` parallelizes samples within
-  each phase, with a complete initial barrier before Recovery. The fixture
-  retains 2 partitions and 8 opens/acquisitions for workers 1, 2, and 4;
-  simultaneous handles stay at or below workers. Default workers remains 1.
-- Handles remain phase-scoped and close on their owning thread. Cancellation
-  and failure drain admitted work before returning resource receipts. Persistent
-  cross-phase handles are not required for this correction: they would require
-  a different thread-affinity and cohort resource lifecycle.
-- Verification: 41 production tests, 46 runtime/bounded/batch tests, 58
-  pipeline/reader tests, and 7 current architecture census checks passed;
-  changed-file Ruff/mypy, import contracts, and shard coverage also passed.
-  Production checks cover persisted outcomes and source mutation rejection;
-  bounded checks cover Matrix/explanation parity and cancellation cleanup.
-- Evidence locators: `output/cid-nl-bounded-runtime/source-reuse-report.md`,
-  `source-reuse-tests.xml`, and `source-reuse-integration.xml` in that directory.
-- No new RAW run was launched. Full analysis completion, peak memory, and total
-  elapsed-time acceptance remain unverified for this code. Existing RAW timings
-  cannot establish the benefit of the new scheduler/source-verification path.
-
-### 2026-09-10 CID-NL Composition Capture Reuse
-
-**Evidence:** `diagnostic_only`; no new RAW acquisition or readiness promotion.
-The production composition owner passes its completed, hypothesis-bound
-captures to subject composition. The workflow checks their scope and input
-bindings and reuses them; standalone workflows retain their capture path.
-The public capture-argument field schema is unchanged.
-
-A no-RAW replay compared base `e939063b` with this change on the same historical
-eight-sample slice: 16 subjects, 128 jobs, six children, and 13 included bindings.
-After one explicit warmup per variant, seven interleaved pairs all favored
-reuse. Composition medians were 247.165 ms before and 230.319 ms after;
-paired reductions ranged from 12.728 to 35.132 ms. Capture calls fell from 26
-to 13, and hypothesis binds from 20 to 10. Every pair preserved all scientific
-values, IDs, arrays, and complete sealed-store bytes (1,421,996 bytes;
-SHA-256 `6718508ab5a434dfc7f6518ee38c53f9a0678191d604ba960d2a4eba4ef57359`).
-Process-local completion seals passed their formal owner validators.
-
-Evidence locators: `output/cid-nl-next-runtime/paired-warm-final/receipt.json`
-and `capture-focused-final.xml` under the same task directory. The 118 focused
-tests cover workflow contracts, production and bounded execution, including
-Matrix and explanation interfaces. This is a warmed composition-slice result;
-it does not update full 8RAW or 85RAW elapsed-time or memory claims.
-
-### 2026-09-10 CID-NL Stored-Result Read And Digest Costs
-
-**Evidence:** `diagnostic_only`; no new RAW acquisition or readiness promotion.
-`PartitionResultStore` now reads field records and selected exclusions without
-restoring unrelated scientific children. The explanation projection consumes
-each child once and reuses typed artifact bindings. Native completion digests
-retain the exact token stream while buffering at most 64 KiB of token bytes.
-
-The final no-RAW replay reused eight-sample historical results with 3,127
-children. Matrix bytes matched SHA-256
-`075578a42860fb8e9b9e9fe9aadab59288630b40e877e095b6a8043824eb165f`;
-all SQLite rows matched the retained pre-change writer: 30,570 candidates,
-263,841 records, and 341,721 links. Eight official reader queries also matched.
-The writer restored 3,127 scientific children, versus 12,509 for the old writer
-on the same field store. Final replay writer elapsed was 68.124 s, versus the
-retained old-writer observation of 339.919 s in an earlier process. These are
-source-qualified observations, not a controlled end-to-end RAW speed ratio.
-Peak sampled private memory for the final replay was 2,702,323,712 bytes.
-
-Evidence locators are `output/cid-nl-bounded-runtime/correction-report.md`,
-`stored-replay/receipt.json`, and `stored-replay-final/receipt.json` beneath
-that task output directory. They are local diagnostic receipts, not shipped
-fixtures or a public spool-reopen contract. Field records increase the two
-partition files from 368,767,337 to 663,826,992 bytes by dropping cross-record
-pickle memo sharing; this trades disk size for bounded, selective reads.
-
-The formal Alignment CLI accepts bounded partition concurrency through
-`--raw-workers` (default 1), and its process-tree sampler supplies the runtime
-RSS receipt plus foreground RSS/private timing observations. Thread overlap,
-cleanup, and persisted telemetry have non-RAW coverage; actual RAW speedup is
-unverified. New 8RAW and 85RAW runs remain paused by the operator. Do not infer
-the outstanding full-run speed target from stored-result replay.
-
-### 2026-09-09 Full-Cohort Runtime Resource Pressure
-
-**Evidence:** `diagnostic_only`; no product or scientific-readiness promotion.
-At clean `82d06563`, native `dna_dr` Discovery with four workers completed
-85RAW in 914.494892 seconds and published 306,619 candidates. Source hashes and
-all 85 candidate artifact hashes passed post-run checks. The overlapping eight
-samples had identical review bytes and 30,570 candidate rows differing only in
-the `raw_file` location; all other CSV fields matched.
-
-Canonical 85RAW Alignment required `validation-minimal`; its corrected preflight
-passed. Runtime expanded to 3,671,150 work units. The run was deliberately stopped
-after 8,073.131497 seconds because private allocated memory exceeded 65 GB on a
-roughly 32 GB physical-memory host, with observed system paging and delayed
-status queries. This was a controlled resource stop, not a spontaneous CLI error
-or the four-hour timeout. No Matrix or explanation database was published.
-
-The runtime marker existed roughly 16 minutes after launch and later emitted
-successful work-unit heartbeats. Missing completed spans do not justify labeling
-the entire remaining time as preparation. Full Alignment timing and output parity
-remain unestablished. Do not extrapolate the 8RAW timings or repeat full RAW
-Discovery to diagnose this memory problem; retain the completed Discovery and
-first isolate runtime memory costs with a bounded measurement.
-Receipts: `output/cid-nl-85raw-20260909/` (`report.md`, `stop-receipt.json`,
-`partial-verification.json`, and the stage run/timing files).
-
-### 2026-09-09 Remaining Context/Formatting Work Deferred
-
-**Evidence:** `diagnostic_only`; no product change. At `b4c3c669`, a fresh context
-rebuilt from the bound eight-sample checkpoint in 13.398067 seconds, with the
-same request identity and canonical samples. Profiling identified repeated
-candidate-universe and physical-evaluation validation, but the entire context
-is only about 2.5% of the prior full CLI. Keep the current-acquisition/receipt
-binding and defer new validation-cache or proof mechanisms for this small
-remaining surface.
-
-A process-local physical-float formatting simplification failed its performance
-gate: three interleaved reader pairs had medians 6.792880 versus 6.821382 seconds,
-with overlapping ranges (6.764442–6.908842 versus 6.732014–7.056653). All 4,375
-records matched and input hashes were unchanged; two pairs regressed. The
-experiment was not applied to product source. Reuse this rejection before
-retrying the same scalar-format change. No RAW extraction or full CLI rerun was
-performed. Receipts: `output/cid-nl-context-optimization/` (`report.md`,
-`context-profile.json`, `context.pstats`, `paired-final.json`,
-`profile_context.py`, `format_trial.py`).
-
-### 2026-09-09 Physical-Record Decoder Canonical Reuse
-
-**Evidence:** `diagnostic_only`; exact-output decoder optimization, no scientific
-or writer-authority promotion. The acquisition decoder reuses its checked
-canonical content and ID for the final byte comparison, and checks Python
-float finiteness with `math.isfinite`. The physical evaluation decoder reuses
-checked profile/trace envelopes while rebuilding evaluation from its live-owner
-rehydrated result. All identity/profile/trace checks, live prepare/evaluate
-equality and canonical-byte rejection remain; no schema or cross-call cache
-was added.
-
-Three interleaved, warmed 4,375-record sidecar pairs against `8aed27f2` reduced
-median reader time from 9.198867 to 6.902826 seconds (ranges 9.081716–9.991312
-and 6.881034–6.960742). An eight-sample pair with alternating version order
-reduced summed reads from 69.501646 to 50.843587 seconds (26.85%). All 31,819
-sidecar records matched completely and input hashes were unchanged; this
-population includes records beyond the 30,570 selected Alignment candidates.
-The 103 related tests passed, including canonical numeric spelling, reordered
-envelopes, whitespace and resealed-tamper rejection. Scoped Ruff and mypy
-passed. These are reader measurements; no new full CLI or RAW extraction was
-run. The 26.85% reduction applies only to summed sidecar reads, not to the
-528.418216-second Alignment CLI below, which predates this decoder change.
-Whole-Alignment and continuous Discovery-plus-Alignment wall time after this
-change remain unmeasured; capture them during a future otherwise-needed run,
-not by subtracting this reader delta from an earlier CLI time.
-Reuse this proof before repeating expensive validation. Receipts:
-`output/cid-nl-reader-optimization/` (`report.md`, `benchmark.py`,
-`paired-final.json`, `full-pair.json`).
-
-### 2026-09-09 Unrecorded Alignment Preparation Costs
-
-**Evidence:** `diagnostic_only`; diagnosis only, no product change. The final
-CLI's 109.818505-second stage-coverage gap includes work before the runtime
-timer: physical replay loading and production-batch construction. An unchanged
-CLI preparation replay at `5f406d64` stopped before runtime execution with the
-same request ID, eight samples, 30,570 physical records and 95,320 jobs.
-Preparation took 90.226132 seconds, including 68.610764 seconds in physical
-load/restore and 19.129912 in batch construction (nested context 14.038702,
-sample-job builders 4.409692). Imports took another 1.894250 seconds; candidate
-reading inside preparation took 2.251868 seconds and was already stage-timed.
-These separate-run observations identify the missing category, not an exact
-allocation of every second of the prior run.
-
-One 4,375-record / 41.26 MB sidecar read took 9.173092 seconds normally and
-19.333716 under cProfile, with identical returned records and unchanged input
-SHA. Profiled file reading was 0.0124 seconds; decoding, canonical float/JSON
-conversion, content checks and live-owner physical rehydration dominated.
-Prioritize exact-output reader experiments that reuse unchanged parsed/canonical
-representations while preserving corruption rejection and rehydration. This
-does not justify changing SQLite format or dropping persisted-input validation.
-Final writer-input projection remains untimed; prior retained checkpoints are
-pre-compose, so measure it during a future otherwise-needed CLI run instead of
-rerunning composition solely for that timer. Receipts and source locators:
-`output/cid-nl-unassigned-diagnosis/` (`report.md`, `preparation.json`,
-`sidecar-profile.json`, `sidecar.pstats`, `probe.py`, `profile_sidecar.py`).
-
-### 2026-09-09 Final Eight-Sample Alignment Acceptance
-
-**Evidence:** `diagnostic_only`; no scientific or writer-authority promotion.
-At `a3c5f793459bb667550cb475f8308c833c7c7385`, the unprofiled official
-Alignment CLI completed in 528.418216 seconds (exit 0), using the accepted
-corrected eight-sample Discovery batch, `dna_dr`, RAW backend, full-audit and
-production output. Discovery was reused, not rerun. Input hashes were unchanged.
-Recorded spans were runtime 203.826137 seconds, compose 174.721 seconds and
-explanation writing 37.658 seconds; these spans do not cover all CLI wall time.
-The 528.418216 seconds excludes Discovery execution and precedes the decoder
-optimization above. It is not a speedup pair with the historical 467.197-second
-native-receipt replay below: that replay opened no RAW and produced a different
-1,499-row Matrix, whereas this run used the RAW backend and produced 1,387 rows.
-
-The final 1,387-row/eight-sample Matrix was byte-identical to the prior full run
-(`075578a42860fb8e9b9e9fe9aadab59288630b40e877e095b6a8043824eb165f`).
-The public explanation summary matched after excluding only output path and
-attempt ID; SQLite integrity/schema passed, with the same request ID and a new
-attempt ID. All 96,383 assessment sample/subject/content bindings matched.
-Strict SQLite logical parity remained **FAIL** in records and links; all table
-counts matched. Fresh attempt-bound artifact references can change nested
-content identities, but the supplemental checks do not prove complete
-cross-attempt graph equivalence. Do not report full explanation parity or
-repeat RAW merely to obtain identical fresh-attempt IDs.
-
-Formal execution owner: `scripts.run_alignment`; acceptance receipts:
-`output/cid-nl-final-acceptance/` (`run.json`, `alignment-timing.json`,
-`verification.json`, `report.md`). This run includes the predecessor context
-reuse below and supersedes its missing whole-Alignment timing observation.
-
-### 2026-09-09 Predecessor Group-Context Validation Reuse
-
-**Evidence:** `diagnostic_only`; output-preserving owner reuse, no scientific
-or writer-authority promotion. `alignment.cell_observations` reuses its existing
-synchronous validation scope for the exact contexts it just constructed before
-minting predecessor cells. Constructor validation and per-cell subject, attempt,
-SUPPORT, sibling and artifact checks remain. The prior scope is restored after
-success/error; no cached proof survives the call.
-
-A fresh official runtime at `9c009c85` completed the corrected eight-sample,
-95,320-job universe in 210.971554 seconds. Initial/recovery assessment contents
-and observation contents/provenance matched the original results; the canonical
-receipt retained 16 RAW opens/XIC batches, 8,565 logical requests, 8,388 adapter
-calls and 390,262 trace points. Recovery preparation still cost 29.520 seconds.
-This runtime observation predates the context-reuse candidate and is not its
-whole-runtime timing. Exact recovery centers were retained for later replay.
-
-No-RAW preparation profiling found repeated reconstruction of already-validated
-contexts. Three interleaved 128-subject pairs reduced median time from 1.289269
-to 0.728087 seconds (ranges 1.283881–1.292316 and 0.717954–0.743617). Context
-validation calls fell from 3,282 to 266. A complete 11,915-subject pair took
-31.307167 versus 18.147998 seconds; all 50,760 cell contents/artifacts and recovery
-outputs/centers were identical. These are actual component measurements, not
-scaled runtime estimates. Eighty related tests and scoped Ruff/format/mypy passed;
-an existing-fixture smoke also preserved sibling rejection and nested-scope cleanup.
-
-The smallest scan-window cache was not pursued: only 158 of 8,713 exact windows
-repeat (1.81%). Do not infer broader scan-cache benefit from this count. Reuse the
-new runtime ranking and preparation proof before another RAW run. Artifacts:
-`output/cid-nl-runtime-remaining/` (`report.md`, `run.json`, `runtime-spans.json`,
-`prepare-profile.json`, `prepare-paired.json`, `scope-smoke.json`).
-
-### 2026-09-09 Physical Recovery Request/Profile Reuse
-
-**Evidence:** `diagnostic_only`; output-preserving binding optimization, no
-scientific or writer-authority promotion. `search_scope` owns the existing
-latest-exact-JSON parsed-input cache and shared physical-profile predicate;
-recovery capture consumes the predicate while retaining full subject, profile,
-trace and scientific checks. No new cache or configuration was added.
-
-Fresh official reconstruction reproduced the corrected eight-sample request,
-11,915 subjects and 95,320 jobs with zero RAW opens. The physical recovery
-predicate reparsed the same 24,786,542-byte request on each call. Three
-interleaved 128-check pairs against `d0e6acc7` reduced median binding time from
-7.104811 to 0.001378 seconds (ranges 7.093051–7.144369 and 0.001274–0.001390).
-The first candidate check retained one cache miss and cost 0.058256 seconds;
-warm whole-request parsing fell from 128 calls to zero. Small profile parsing
-and changed-profile rejection remain. The five affected suites passed 87 tests,
-including physical recovery values, empty signal and profile rejection; scoped
-Ruff, format, mypy and diff checks passed.
-
-These are exact request/profile suboperation measurements, not whole-recovery
-or runtime timings. Full recovery replay cannot use this checkpoint alone:
-the original `group_center_rt` is absent and subtracting the half-window from
-stored bounds fails exact floating-point reconstruction. Do not approximate it
-or infer current runtime totals from the earlier full run. Reuse the established
-binding result; any later complete replay needs the actual recovery centers.
-Receipts: `output/cid-nl-recovery-cost/` (`plan.md`, `binding-baseline.json`,
-`binding-paired.json`, `report.md`, `verification.md`).
-
-### 2026-09-09 Indexed CID-NL Request Subject Binding
-
-**Evidence:** `diagnostic_only`; output-preserving owner lookup, no scientific
-or writer-authority promotion. `cid_nl_method_subject` keeps the strict parsed
-configuration and immutable subject-ID index in its existing latest-exact-input
-LRU entry. Lookup still compares the complete subject, preserves strict parsing
-on request change, and does not alter Targeted binding or canonical payloads.
-
-Fresh reconstruction through the official production builder reproduced the
-current eight-sample request, 11,915 subjects and 95,320 jobs without RAW
-acquisition. There were 73,037 empty-candidate jobs. A 256-job empty-branch probe
-matched the original assessment contents and showed two linear subject-binding
-checks per job dominating its profile (0.967229 of 1.096706 instrumented seconds).
-
-Against frozen `9d4c440e` binding, all 95,320 real adapter-input validations
-remained accepted and summed wall time fell from 112.831309 to 0.261387 seconds
-in sample-interleaved pairs. Three interleaved 256-job full empty-adapter pairs
-fell from median 0.649267 to 0.045170 seconds; ranges were 0.643945–0.650129 and
-0.044003–0.047905. Complete returned results and artifact IDs were identical.
-These are actual component measurements, not scaled estimates or a new whole
-runtime time. No RAW was opened; populated adapter branches were not replayed.
-
-The six related golden-path/adapter/runtime/batch/Targeted suites passed 94
-tests; scoped Ruff, format and mypy passed. New preservation coverage verifies
-same-ID/different-content rejection and request-switch isolation. Source/hash,
-fresh-input and paired receipts: `output/cid-nl-adapter-cost/` (`plan.md`,
-`probe.json`, `paired.json`, `report.md`). Reuse the indexed binding when
-diagnosing remaining runtime cost; do not repeat the already-measured full
-validation scan or infer new RAW requirements from the old adapter remainder.
-
-### 2026-09-09 Stage-Local Live Heartbeat Coalescing
-
-**Evidence:** `diagnostic_only`; timing publication optimization, no scientific
-or writer-authority promotion. The existing `TimingRecorder` retains every
-latest heartbeat in memory while coalescing repeated updates within active
-stages to the next callback after one second. First updates, stage transitions,
-explicit failures and completed counts publish immediately. Unscoped updates
-remain immediate, and stage exit flushes on success or exception. Abrupt process
-termination can leave sub-second progress unpublished; no timer thread exists.
-
-Three interleaved, warmed 5,000-event real-file replays against `1e8bb6c9` reduced
-median callback/stage-flush wall time from 9.281337 to 0.014635 seconds. Baseline
-range was 9.047228–9.840014; candidate range was 0.011993–0.014919. Replacement
-attempts including transient retries were 5,040/5,047/5,039 versus 2/2/2. The
-candidate loop completes within one second, so its writes are first and final;
-clock-controlled tests separately verify interval refresh. All final live and
-full timing payloads were identical. No RAW was opened and this is not a measured
-whole-runtime speedup. The prior 158.681-second real-runtime callback cost is
-motivation, not a quantity that can simply be subtracted from pipeline time.
-
-The timing, Alignment CLI and provisional-matrix CLI suites passed 82 tests,
-including new baseline-red real-file coverage for coalescing and final/latest
-state preservation. Scoped Ruff/mypy passed. Receipts and source bindings:
-`output/cid-nl-live-progress/{plan.md,report.md,benchmark.json,benchmark.py}`.
-Keep this optimization within the timing owner; no scientific identity or
-runtime-owner validation changes are needed to retain its benefit.
-
-### 2026-09-09 Current Eight-Sample Runtime Owner Timing
-
-**Evidence:** `diagnostic_only`; measured at `f50d5ed7`, with no product change.
-One instrumented real Alignment run reused corrected Discovery inputs and
-verified the source RAW/DLL/reference hashes. The runtime completed 95,320 work
-units in 701.894 seconds (267.438 process CPU seconds). This is a single-run
-owner diagnosis, not a paired speedup result.
-
-The initial Discovery adapter accounted for 331.715 seconds, including 38.598
-seconds across 22,283 complete-seed reads. Its 282.882-second exclusive remainder
-still needs internal attribution before changing validation or assessment mint.
-Live-progress callbacks consumed 158.681 seconds across 95,320 events, including
-157.465 seconds rewriting JSON and 15.685 seconds in file-replacement retry
-sleeps. These quantities overlap. This run enabled live output; the earlier
-502.517-second runtime did not, so progress I/O cannot explain that earlier cost.
-
-Other disjoint costs were recovery-adapter exclusive work (67.994 seconds),
-RAW XIC extraction (30.929), recovery preparation (30.075), per-job finalization
-exclusive work (29.967), and runtime-attempt finalization exclusive work (20.208).
-Remaining measured work and enclosing residual account for 32.325 seconds.
-The formal call-cost projection reports 16 RAW opens, 16 XIC batches, 8,565
-logical XIC requests, 8,388 adapter chromatogram calls and 390,262 trace points.
-
-Next candidates are bounded live-progress publication in the existing timing
-owner and a faithful fresh-input profile of the existing Discovery adapter.
-Do not infer removable work from the adapter remainder, extrapolate synthetic
-jobs to this workload, or prioritize a RAW/parallelism rewrite from these data.
-No optimization is applied or claimed here. Whole-runtime RAW replay needs a
-named missing-input or changed-behavior reason; the post-runtime composition
-checkpoint alone does not establish faithful runtime replay.
-
-Receipts: `output/cid-nl-runtime-diagnosis/` contains `run.json`,
-`instrumentation.json`, `runtime-spans.json`, `runtime-result-summary.json` and
-`report.md`. Exclusive spans sum to the runtime root; uninstrumented work remains
-inside the corresponding owner's exclusive time. Host/cache and wrapper costs
-are uncontrolled, so historical totals are not comparable speedup evidence.
-
-The full CLI completed in 1,037.371 seconds. Matrix bytes and the public
-explanation summary matched the prior fresh-mint replay, and SQLite integrity
-passed. Exact SQLite logical parity did not pass: the new runtime has fresh
-attempt-bound assessment and downstream IDs, while all 96,383 assessment content
-IDs with sample/subject bindings match. `verification.json` preserves the failed
-strict verdict; it is not a relaxed optimization acceptance oracle.
-
-### 2026-09-09 Captured Observation Mint Reuses Closed Physical Facts
-
-**Evidence:** `diagnostic_only`; no scientific or writer authority promotion.
-The physical branch of `peak_detection.capture.mint_captured_peak_observation`
-shares the capture binder's seal, current trace-content hash and selected
-integration receipt checks, then projects the already computed selection facts.
-The observation owner retains processing/sample/trace/acquisition/integration
-input validation and artifact mint. Public observation mint still performs full
-numerical validation; the nonphysical capture path is unchanged.
-
-Five repeats over the same 128 reached captures reduced mint median from
-0.233861 to 0.063112 seconds, with nonoverlapping ranges. Prepare/evaluate calls
-fell from 128 each to zero; canonical observation payload hashes match. The
-binder control still performs zero reevaluations. Focused capture, observation,
-runtime, adapter and production coverage passed 118 tests, including real writer
-output and rejection after an in-place mutable trace change.
-
-The complete 3,127-child no-RAW CLI pair passed exact Matrix bytes, public
-explanation and SQLite logical parity with only the existing path/attempt
-provenance exclusions. Composition was 168.885 versus 160.760 seconds;
-preparation fell from 65.303 to 57.388 seconds while batch composition remained
-similar. Full-run timing is one sequential pair with uncontrolled host/cache
-variance; repeated micro timing and eliminated calls support the local gain.
-Receipts: `output/cid-nl-preparation-cost/{candidate,mint-reuse}-capture-benchmark.json`,
-`output/cid-nl-resource-optimization/{fresh-decisions,fresh-mint}/` and
-`verification-fresh-decisions-fresh-mint.json`. Revisit if the capture seal,
-trace-content binding or observation contract changes. Runtime-to-composition
-recapture under a new child scope is a separate input boundary; this conclusion
-does not authorize reusing a completed graph across that boundary.
-
-### 2026-09-09 Group Decisions Reuse Fresh Scientific Owners
-
-**Evidence:** `diagnostic_only`; no scientific or writer authority promotion.
-The synchronous workflow uses a private cell-decision owner handoff over its
-just-finalized scientific core and just-projected pre-cell population. It skips
-reprojection/recomposition while keeping exact request/owner bindings, immutable
-typed populations, unique/equal Group×sample key sets, sealed decision selection,
-basis/ID mint and canonical ordering. Public decision methods still deep-validate.
-
-The existing real runtime/Matrix/writer fixture first reproduced repeated owner
-calls, then passed with both expensive cell-decision aliases called zero times.
-Public cell-decision, workflow and production tests passed 69 cases. On the same
-3,127-child input with no RAW opens, pre-cell projection calls fell from 12,508
-to 9,381, `_finish_variant` from 52.282 to 35.428 seconds, and composition from
-187.218 to 168.885 seconds. Preparation remained similar (64.959/65.303 seconds).
-Complete Matrix/explanation/SQLite parity passes under the existing path/attempt
-provenance exclusions. Receipts:
-`output/cid-nl-resource-optimization/{fresh-cells,fresh-decisions}/` and
-`verification-fresh-cells-fresh-decisions.json`. Revisit if a callback/new input
-enters the immediate scientific→pre-cell→decision handoff or decision semantics
-change; retained public inputs remain a deep-validation boundary.
-
-### 2026-09-09 Scientific Finalization Reuses Its Composed Cells
-
-**Evidence:** `diagnostic_only`; no scientific or writer authority promotion.
-The scientific finalizer transfers the formal cell composer's exact just-built
-population into its result. A private fresh-cell mint path checks canonical
-Group×sample cardinality, order and identities while retaining all scientific
-scope, terminal, handoff and sample-universe checks. Existing direct construction
-and public cell-population validation keep deep recomposition and nested-tamper
-rejection. There is no callback between composition and result mint.
-
-A bounded first-128 profile showed 256 composer calls before the change. The
-updated real-owner regression fixture proves one composition and exact tuple
-reuse. On the full same-input replay (3,127 children, no RAW), scientific result
-validation fell from 13.657 to 0.386 seconds; scientific finalization fell from
-40.395 to 26.680 seconds. Composition was 200.390 versus 187.218 seconds in one
-sequential pair. Matrix bytes, public explanation summaries and SQLite logical
-contents match with only the existing path/attempt provenance exclusions.
-Focused scientific, cell, projection, application and workflow coverage passed
-207 tests. Receipts: `output/cid-nl-resource-optimization/{fresh-closure,fresh-cells}/`,
-`scientific-profile-128/`, and `verification-fresh-closure-fresh-cells.json`.
-Revisit when the immediate composer-to-result handoff or cell-population
-contract changes; do not reintroduce full same-input construction downstream
-without a changed input or trust boundary.
-
-### 2026-09-09 Fresh Application Closure Reuses Component Completion
-
-**Evidence:** `diagnostic_only`; no scientific or writer authority promotion.
-The application-result owner consumes freshly completed scientific/post-cell
-owners inside the synchronous `_finish_variant` chain. It retains exact type,
-request, sample, core and projection bindings without recomputing their seals.
-Public finalization and batch aggregation after all adapter callbacks still
-perform full completion checks; later callbacks prevent reusing the earlier
-proof at the batch boundary.
-
-On the same corrected eight-sample input (3,127 children, zero RAW opens),
-scientific and post-cell receipt checks each fell from 6,254 to 3,127. Their
-combined measured time fell from 43.920 to 20.549 seconds. Composition wall time
-was 240.447 versus 200.390 seconds in one sequential pair; other stages also
-varied, so the entire 40.056-second difference is not attributed to this edit.
-Exact Matrix bytes, public explanation summaries and SQLite logical contents
-match; only existing output-path/attempt provenance is excluded. Relevant
-ordinary-CI coverage passed 110 tests, including public tamper rejection and
-real runtime/writer checks of one deep completion pass per batch child.
-
-Receipts: `output/cid-nl-resource-optimization/{baseline,fresh-closure}/`,
-`verification-baseline-fresh-closure.json`, and `plan.md`. Revisit when the
-callback-free owner handoff, component mutability, inputs or completion contract
-changes. The same investigation rejected a single-root post-cell digest merge
-(five interleaved 128-result medians 0.39345/0.39236 seconds, overlapping ranges)
-and child threads (128-child medians serial/2/4 threads 4.983/5.124/5.294 seconds,
-same observable signatures); do not re-propose them without changed evidence.
-
-### 2026-09-09 Physical Capture Binding Reuses Closed Facts
-
-Evidence: `diagnostic_only`. The physical branch of
-`peak_detection.capture.bind_owner_backed_capture_hypothesis` consumes the
-existing capture seal, checks current RT/raw content, and compares exact
-observation content/provenance through the observation owner's shared
-projection. It does not repeat physical selection. Public capture, observation
-mint, generic trace validation, and nonphysical binding retain their numerical
-validation; there is no new cache, public parameter, or persisted schema.
-
-For 128 reached captures, five warm binding repeats fell from median 0.222525
-seconds (0.210051–0.224202) to 0.047272 (0.046110–0.050236), with identical
-payload hashes. Each repeat removed 128 physical prepare/evaluate calls from
-binding; mint retained all 128. A same-input eight-sample CLI replay pair
-observed composition at 269.206 versus 239.510 seconds and all 8,171 production
-bindings at 14.934 versus 3.101 seconds. Whole-run host/cache variation remains
-uncontrolled; the repeated local measurements establish the binding gain.
-Both replays completed with zero RAW opens. Matrix bytes and complete SQLite
-logical contents match, excluding only `matrix_path` and `processing_attempt_id`.
-All 121 related regressions pass, including changed-source and mutable-trace
-rejection. Receipts: `output/cid-nl-preparation-cost/verification.json` and
-`*-capture-benchmark.json` (host-local evidence, not portable inputs).
-
-Reuse while the capture seal, immutable physical projection, current trace
-content check, and observation projection remain unchanged. A changed owner
-handoff or output contract invalidates this conclusion; it does not establish
-whole-RAW speedup or production readiness.
-
-### 2026-09-09 Batch Finalization Reuses Owner Validation
-
-Evidence: `diagnostic_only`. `UntargetBatchApplicationResultRequest` validates
-the immutable batch once; the application-result finalizer transfers those
-validated fields under the existing exact-type and private mint gates. The
-finalizer and minted result do not repeat full cohort validation.
-
-One sequential replay pair of the same corrected eight-sample composition
-input reduced full batch validation calls from three to one and composition
-time from 392.690 to 324.718 seconds (17.3%). Both public CLI replays completed
-with zero RAW opens. Matrix bytes match each other and the corrected-input
-reference; public explanation reading and complete SQLite logical contents
-match, excluding only run-specific `matrix_path` and `processing_attempt_id`.
-All 78 related regression tests pass, including the production writer-path
-assertion that full batch validation runs once. Receipts are under
-`output/cid-nl-batch-validation-fix/verification.json`; this is a host-local
-evidence locator, not a portable input. The single pair does not establish
-whole-RAW speedup or production readiness.
-
-Reuse this conclusion while request immutability, direct field transfer, and
-the finalizer/mint boundary remain unchanged. Changed batch inputs or a new
-mutable handoff require reevaluating validation ownership.
-
-### 2026-09-08 Discovery Physical Context And Known-ISTD Competition
-
-Evidence: `diagnostic_only`; physical correction `481be6c3` and compatible-group
-ranking correction `ec17b55e`. The formal physical owner clamps negative AsLS
-background before subtraction and rejects selected intervals reaching an
-acquired-trace edge. Discovery applies its physical context minimum to inferred
-precursors and uses its existing single reacquisition pass for incomplete
-context. The fixed signal profile changes; old-profile physical artifacts do
-not establish corrected behavior. No merge-predicate or Matrix writer change
-was necessary.
-
-The original NormalBC2263 scan 14712 false peak was already published by
-Discovery, independently of main scan 14922. Exact retained original input
-replay reproduced all four relevant physical fact IDs. Fresh Discovery removes
-physical values for scans 14067/14291/14712 and preserves main apex 18.4559.
-BC1055 scans 32781/33151 consolidate at apex 38.1901; QC3's confirmed distinct
-apices 15.0077/15.2552 remain distinct. Portable numerical trace regressions
-live under `tests/fixtures/` and exercise the formal Discovery output path.
-
-The first eight-sample run exposed d3-N6-medA splitting despite intact unique
-reference bindings: grouping admitted corrected edges but ranked compatible
-groups by raw RT, allowing different tumor peaks to take the main peaks'
-places. The existing ranking owner now uses the already-bound known-ISTD pair
-distance; unbound pairs and admission gates are unchanged. A public three-owner
-regression is red before and green after this correction.
-
-Clean `ec17b55e` completed the public eight-sample Alignment CLI in 924.102
-seconds using fresh corrected Discovery, `dna_dr`, and the same source-hashed
-known-ISTD workbook. The Matrix has 1,387 rows / 5,189 numeric cells, SHA256
-`075578a42860fb8e9b9e9fe9aadab59288630b40e877e095b6a8043824eb165f`.
-All three manual controls and six baseline ISTD coverage/co-grouping checks
-pass; an independent source-membership check confirms all eight actual medA
-main peaks occupy the same final group. d3-5-hmdC already had two partial rows
-in the baseline; that pattern is unchanged. Public explanation reading,
-Matrix hash binding, and SQLite integrity pass. Receipts and the qualified
-report are under `output/cid-nl-discovery-fix/`; these are local evidence
-locators, not portable runtime inputs.
-
-Reuse this evidence unless physical selection/context, reference binding,
-group ranking, source identities, or named-control behavior changes. It does
-not classify every removed candidate as chemically false, decide 649/1060
-cross-sample grouping, or establish 85RAW/production readiness.
-
-### 2026-09-08 Formal Native Receipt And Population Proof Reuse
-
-Evidence: `diagnostic_only`; engineering implementation `4152f1bc` applies the
-combined optimization to the formal receipt and CellObservation owners. The
-receipt owner automatically selects the packaged native encoder, with the
-equivalent Python path retained for source/no-compiler consumers. The normal
-setuptools/uv build includes native source in its build inputs and cache keys.
-Clean wheel build/install checks require native activation on the verified
-Windows CPython 3.12 host.
-
-Population proof reuse is bound to the exact predecessor context objects of
-one synchronous owner call. Inputs are materialized before entering that scope;
-successful context checks are shared, per-cell relation and artifact checks
-remain live, and the scope is reset on success or failure. Nothing persists as
-a cross-call context proof. The existing canonical-byte proof cache remains
-active. No identity encoding, schema, scientific selection, or writer authority
-changed.
-
-The clean formal commit completed the same eight-sample retained public replay
-in 467.197 seconds, versus the stacked prototype's 491.616 seconds. This is a
-single-run observation, not a repeated benchmark or a RAW-acquisition time.
-The installed native encoder was selected with no experimental overlay. RAW
-opens were zero. The 1,499-row Matrix was byte-identical, preserving all 5,615
-numeric cells and 48 known-ISTD cells; the public explanation reader and all
-SQLite logical/schema/integrity oracles passed. Evidence and exact commands
-are under `output/cid-nl-formal-combined/`, with native build evidence under
-`output/cid-nl-native-product/`. The historical prototypes below are no longer
-needed to activate this optimization in the formal flow.
-
-### 2026-09-08 Canonical Identity Byte Proof Reuse
-
-Evidence: `diagnostic_only`; commit `de1e4bc8` applies the engineering change
-in `processing_identity`, without scientific or product-authority promotion.
-Repeated owner checks still rebuild and compare their live identity bases;
-only successful canonical-JSON validation and SHA-256 of equal built-in bytes
-are reused. Prefix checks remain per call. The bounded cache retains at most
-4,096 entries of at most 4,096 bytes each; larger inputs and bytes subclasses
-retain the original path. Identity bytes, schemas, and algorithms are unchanged.
-
-Three interleaved fresh-child repetitions with the original Python graph and
-context checks reduced the nine-case median from 18.333 to 14.446 seconds.
-All 54 results passed original validation and content/aliasing parity. The
-skewed sample's 21.2% reduction must not be extrapolated to the entire batch.
-The applied code passed 153 focused tests, Ruff, staged mypy, and shard checks.
-
-The clean product commit completed the same eight-sample public CLI retained
-replay in 788.555 seconds versus the P1 baseline's 826.857 seconds: an observed
-38.301-second (4.6%) reduction, not a breakthrough or repeated whole-run
-benchmark. Batch composition/finalization took 573.947 versus 616.613 seconds.
-RAW opens remained zero. The 1,499-row Matrix was byte-identical, preserving
-5,615 numeric cells and 48 known-ISTD cells; the public explanation reader and
-all SQLite logical/schema/integrity comparisons passed, excluding only existing
-path/attempt provenance. No native or population-validation overlay was applied.
-
-A separate lifetime experiment confirmed three population passes reuse the
-same predecessor cells. After the prior population-call prototype, extending
-reuse with full dependency fingerprints increased the nine-case median from
-9.568 to 15.882 seconds; that version was not adopted. The 86 sampled contexts
-used `KnownIstdOwnerLookup`, including its mutable `_by_owner` cache. Unchecked
-cross-pass reuse remains an optimistic diagnostic, not a valid owner proof.
-The new profile instead motivated the immutable-byte change above. Commands,
-code/input hashes, comparisons, and full parity receipts remain under
-`output/cid-nl-context-lifetime/`; no RAW rerun is needed for these conclusions.
-
-A complete stacked replay at clean revision `0c264e04` then applied the same
-formal byte cache on top of the unchanged native/population prototype below.
-Against that prototype's 559.197 seconds, the stacked run took 491.616 seconds:
-an observed additional 67.581-second (12.1%) reduction. This answers cumulative
-prototype improvement; the separate 4.6% product-only comparison does not.
-The original overlay source and binary hashes matched, and both runs recorded
-the same context-check/reuse counts. Matrix bytes, the public explanation
-reader, and every SQLite logical/schema/integrity oracle passed again, with
-zero RAW opens. Evidence is under `output/cid-nl-stacked-proof/`. This remains
-a single-run retained-input comparison, and the native/population components
-remain diagnostic prototypes rather than applied product changes.
-
-### 2026-09-08 CID-NL Population And Native-Encoding Prototype
-
-Evidence: `diagnostic_only`; isolated prototype, not an applied product change.
-The current retained child path has an actual repeated grouping calculation:
-`_validate_source_cell` reconstructs `CellObservationRef`, whose outside-group
-relation revalidates both local and sibling `CidNlCellGroupContext` objects.
-Those context checks recreate support owners and run peak-group construction.
-A 325-capture/408-cell case called that construction 3,150 times. This is
-distinct from the already-removed historical scientific-finalizer replay.
-Association/member joins were below 0.2% in nine profiled cases and did not
-justify a columnar rewrite.
-
-An experiment validated each exact context once within each synchronous
-population call while retaining per-cell relation checks. On nine structurally
-selected children, three interleaved runs reduced full context oracle calls
-from 6,588 to 258 per run and median composition from 16.908 to 11.553 seconds.
-Combining that with a native contiguous-buffer implementation of the exact
-existing receipt bytes reduced composition to 9.270 seconds. All 81 fresh child
-executions passed content/aliasing parity and the original owner validator.
-The sample is skewed (792 cells, including a 408-cell case); its speed ratio
-must not be extrapolated to the complete batch.
-
-The complete eight-sample public CLI replay with the separately hash-bound
-overlay took 559.197 seconds versus the P1 baseline's 826.857 seconds: an
-observed single-run reduction of 32.4%, not an order-of-magnitude result or a
-repeated whole-run benchmark. Batch composition took 347.480 versus 616.613
-seconds. RAW opens remained zero. The 1,499-row Matrix was byte-identical,
-preserving 5,615 numeric cells and all 48 known-ISTD cells; the public
-explanation reader, SQLite integrity/schema, and all candidate/record/link
-payloads passed exact parity, excluding only existing path/attempt provenance.
-The combined prototype also passed 114 existing owner/projection tests.
-
-The prototype does not establish a cross-call immutable proof. Drift lookup
-methods consume mutable cached dictionaries omitted by dataclass-field
-digests; production reuse would need an explicit population-owner input
-binding. Native packaging and cross-platform delivery were not implemented.
-No prototype hook, native backend, build dependency, or scientific change was
-applied to the product. Evidence and the executable prototype remain under
-`output/cid-nl-breakthrough/`; `experiment-report.md` records the adoption limits.
-
-### 2026-09-08 CID-NL Request Digest Optimization
-
-Evidence: `diagnostic_only`; engineering performance and persisted-output
-parity, with no scientific or product-authority promotion. Commit `f7c0762f`
-applies the existing immutable processing-request identity boundary to the
-Untarget post-cell rows receipt. Result content and retained owner identities
-remain checked. The 52 affected tests, scoped Ruff/mypy, and diff check pass.
-
-The fresh public CLI replay of the retained eight-sample inputs, including the
-same known-ISTD reference, completed in 826.857 seconds with zero RAW opens.
-The historical reference-enabled replay took 1,950.698 seconds: this observed
-single-run reduction is 57.6%, not a repeated whole-run benchmark. Batch
-composition/finalization took 616.613 versus 1,745.872 seconds. Three
-interleaved digest repetitions per mode support the local mechanism for median
-and late cases; the largest case showed no improvement. Host contention and
-filesystem cache were uncontrolled.
-
-Against the final writer baseline at `ca3b36e9`, the 1,499-row Matrix is byte
-identical, preserving 5,615 numeric cells and all 48 known-ISTD cells. The
-public explanation reader, SQLite integrity, schema, and all candidate,
-record, and link payloads pass exact parity. Only output-path and attempt-ID
-provenance are excluded from comparison. Source and candidate refs, checkpoint
-and reference hashes, commands, timings, and parity receipts are retained under
-`output/cid-nl-performance/`.
-
-On six structurally selected children, three interleaved repetitions with
-1/2/4/6 threads took median 10.956/11.945/11.850/12.145 seconds. All 72 child
-executions passed the original owner validator and content/aliasing comparison;
-no thread setting was adopted. This skewed sample covers 0.1752% of children
-and 1.1951% of cells, so it does not establish general parallelism limits.
-Peak RSS was 2.590 GB with at least 9.363 GB available. A single input-bundle
-roundtrip took 18.887 seconds for 180.6 MB and lost parent request identity;
-a completed-result roundtrip failed the existing completion-seal validator.
-An ordinary process pool therefore cannot directly return these retained
-graphs; this experiment does not evaluate a redesigned computation boundary.
-
-### 2026-09-08 CID-NL Composition Cost After Retention Repair
-
-Evidence: `diagnostic_only`; diagnosis and plan only. The reference-enabled
-eight-sample retained-runtime replay at `17e41279` took 1,950.698 seconds with
-zero RAW opens. Batch composition/finalization accounts for 1,745.872 seconds
-(89.5%); explanation writing takes 61.327 seconds and Matrix writing 0.104
-seconds. These writer spans are nested, not additional wall time. The final
-writer-only commit `ca3b36e9` leaves that composition code unchanged.
-
-The 982.916 seconds after child 3,250 includes the remaining 174 children and
-batch closure; the original timing does not separate them. Retained results
-show those children contain only 1,912 of 38,824 cells, without a large-child
-concentration. Current source validates the complete batch three times during
-request/finalizer/result construction, and rebuilds each pre-cell projection
-at least four times. The current batch checks use retained graph digests; do
-not attribute already-removed historical policy replay to this run.
-
-An actual rows evidence chain reaches the shared processing request, including
-25,016,161 bytes of normalized scientific-input JSON. Unlike the scientific
-and pre-cell digests, its rows digest does not use the existing request
-identity-only boundary. Two bounded, interleaved traversal probes measured
-82.913–91.879 ms versus 6.039–10.056 ms, and 100.169–105.233 ms versus
-32.786–34.655 ms when applying that boundary. This prioritizes a small
-post-cell receipt slice; it is not correctness acceptance or a whole-run win.
-
-The explanation's per-subject global membership scan performs 265,609,180
-predicate comparisons for this artifact. A lookup-only experiment preserving
-every subject's candidate set took about 11.03 seconds for the current scan
-and 0.017 seconds including a subject index build. The output stage is a
-secondary target. There is no systematic peak-memory, GC, page-fault, or host
-contention trace; serialized payload size does not establish RAM pressure.
-
-Task-local evidence and the ordered exact-safe plan are under
-`output/cid-nl-performance/`. Start with the rows request traversal, then
-remeasure before changing batch closure or projection construction. Preserve
-Matrix values, membership, reasons and persisted identities; writer-only
-validation can reuse the completed result. No product optimization or RAW
-rerun was performed for this diagnosis.
-
-### 2026-09-07 CID-NL 8RAW Runtime and Composition
-
-Evidence: `diagnostic_only`; the eight-RAW engineering completion target passed.
-This is not analytical parity or scientific/production readiness evidence.
-Feature-retention validation failed: the closest prior eight-RAW matrix has
-816 rows and six historical ISTD coordinate matches in all eight samples; this
-29-row matrix contains none of those matches, even within a diagnostic window
-of 50 ppm and three minutes. All eight RAW content identities match, but the
-prior runner and algorithm revision differ. Do not use the engineering
-completion receipt as acceptance of feature retention.
-
-The current direct-evidence adapter omitted every mixed Discovery candidate,
-including their measured direct scans. Its strict receipt reader also treated
-an MS1-merged inferred member as though it had to match the final representative
-product window. Both handoff defects are corrected. Direct evidence keeps its
-existing scientific thresholds; inferred members do not become strict support.
-The corrected reader reconstructed all 2,448 direct/mixed candidates across
-eight RAW files without errors. The direct/mixed-only run completed with 124
-matrix rows, but still failed six-ISTD sample-cell retention. The prior
-d4-N6-2HE-dA row used inferred precursor evidence and MS1 integration/rescue.
-The operator authorized restoring MS1-backed inferred evidence. That path now
-preserves the measured scan precursor separately from the product-plus-loss
-precursor and retains the existing mass/RT checks. All 9,925 eligible candidates
-across eight RAW files reconstructed without receipt errors or duplicate
-scan/loss evidence. The inferred-evidence run completed runtime finalization,
-but timed out during batch composition at 1,800.011 seconds without a matrix.
-That interrupted receipt did not establish matrix retention or a successful run.
-Captured hmdC assessments also show adjacent integration intervals sharing only
-a valley endpoint. Their strictly interior MS2 events have unique peak
-containment, but the previous method contract treated all touching intervals as
-set-level ambiguity. The operator authorized unique interior support when there
-is no positive-width overlap; exact-boundary events and genuine overlaps retain
-HOLD.
-The completed replay with that rule published 653 rows and 45 of 48 named ISTD
-cells. A further production handoff omitted the complete batch and injection
-context when forming groups and reconstructing their cell proofs. Commit
-`f1039945` preserves that context through the existing grouping owner. Its
-retained-runtime public CLI replay completed in 1,457.416 seconds without RAW
-opens and published 1,499 rows, 5,614 finite values, and 47 of 48 named ISTD
-cells. SQLite integrity and public artifact checks passed. Coordinate matches
-against the prior 816-row matrix increased from 444 to 744; this is a retention
-diagnostic, not chemical identity or area parity.
-Of the 72 coordinate-unmatched prior rows, six already have current Matrix
-lineage, seven lack current method support, one has no eligible source, and 58
-remain in the provisional/archive route. Those 58 comprise 27 with only one
-exact-source supported sample, 12 with a mass-envelope conflict in the connected
-population, 11 with an uncorrected RT gap, seven split across method subjects,
-and one with weak peak quality. These are queryable current-policy conditions,
-not authorization to align unknown compounds or restore old areas. One prior
-family, `FAM002914`, lacks baseline cell receipts for its eight published values.
-
-The last missing named cell was TumorBC2263 N6-medA at 24.2694 minutes. The operator
-confirmed that the eight RAWs are a sparse sample of a smoothly drifting cohort
-and supplied the full targeted report. Its observed RT agrees with the current
-RAW peak. The existing local-jitter reader does not represent the between-sample
-RT trend. A per-target known-reference coordinate probe joined all eight N6
-owners with unchanged gates and kept two other RT peaks separate. The operator
-authorized formal use of that report only for known-ISTD alignment. The public
-CLI now accepts it explicitly, binds unique supported owners to the same declared
-target, and retains the complete binding context through cell proof. Reference
-areas are never inputs. Production explanation summaries retain the workbook
-fingerprint, target snapshot, and policy.
-
-The reference-enabled public CLI replay at `17e41279` completed in 1,950.698
-seconds without RAW opens. It published 1,499 rows and 5,615 finite values;
-all 48 named ISTD sample cells passed the original retention probe. Public
-artifact checks and SQLite integrity passed, with no orphan record links.
-The prior-matrix comparison still matches 744 of 816 rows, with 3,117 shared
-sample cells and 363 matched rows retaining every prior sample. The 72 unmatched
-rows retain the explanations above; this does not establish full historical
-algorithm parity. Exact comparison with the batch-context replay preserved
-unknown-owner partitions and all 8,969 owners' physical observations, areas,
-sources, and variants. Public Matrix changes trace only to formally bound
-known-ISTD owners. Two off-target singleton groups have 16 reminted cell receipt
-IDs from the updated context, with their grouping and values unchanged.
-Task-local receipts are under
-`output/cid-nl-feature-loss/`.
-
-Clean `39cfa36ad3457febf85da49f1bfebe6ec5343759` completed fresh Discovery and
-Alignment on eight tissue validation RAW files with `dna_dr`, production output,
-four Discovery workers and the existing single-worker Alignment route. Discovery
-took 81.455 s and Alignment 663.566 s, totalling 745.021 s of sequential CLI wall
-time (12 min 25 s; excludes input hashing and harness setup). Both exited zero.
-The workload contained 30,748 Discovery candidates and 95,320 runtime jobs.
-Production composition took 200.721 s, including 184.236 s of nested batch
-composition; these overlapping spans must not be added.
-
-The decisive repeated cost was rebuilding `ProcessingOwnerReferences` for each
-of 27,926 method-excluded candidates. Each construction reparsed the same
-25,016,161-byte request, and batch validation ran three times. Five bounded
-construction measurements took 0.0619–0.0642 s each. The validator now retains
-one shared owner per invocation, and canonical-subject membership lookup uses
-one set instead of a full membership scan per subject. Completion receipts
-retain the identity of the already-validated frozen processing request without
-rehashing its contents for every child. The remaining binding checks are kept.
-Compatible historical eight-RAW inputs replayed without RAW opens in 217.505 s,
-with all 877 row/group/subject identities and routes preserved versus the
-owner-hoist-only replay. This replay is mechanism evidence, not full-run parity.
-
-Current production builds initial CrossSample groups and passes their context
-directly to workflow, without ModeTrack fitting, assignment, split/merge
-proposals, or FitOnceSource construction. It preserves initial pair diagnostics
-and indexes bindings/cells once. Assessment handoffs check
-request, attempt, sample, subject and acquisition bindings without reminting the
-method decision. Conservative Backfill carries its existing frozen decisions;
-position and coverage consumers do not reconstruct the proof, group facts or
-mapper result. Construction checks and current consumer cell/population bindings
-remain. Closed production cells pass their coverage directly to scientific
-finalization without requesting another repair epoch.
-Changed physical acquisition questions are evaluated once at the capture owner;
-same-question comparisons and persisted physical-answer revalidation remain.
-
-The runtime uses the selected Alignment configuration consistently. Unresolved
-candidate assessments retain HOLD and blank quantities. Writer presentation
-includes physical observations only when they belong to the formal group;
-nonmember HOLD evidence remains queryable. The duplicate-observation guard
-remains enabled. This removes the old writer failure without promoting HOLD
-values or changing scientific thresholds.
-
-The completed matrix contains 29 primary rows across eight sample columns,
-77 finite numeric values and 155 blanks. Explanation SQLite retains 877 groups,
-7,016 cell decisions and all 30,748 candidates. The public reader, matrix hash,
-exact matrix sample-column order, sample population, SQLite integrity and
-record-link checks passed. The explanation enumerates canonical samples, so its
-sample order need not match the Discovery index or matrix columns. The focused
-workflow, result, projection and production tests passed (133 tests); commit
-checks also passed. These checks establish engineering behavior coverage.
-
-Task-local evidence, commands and RAW/DLL/source hashes are under
-`output/cid-nl-end-to-end/composition-e2e/` (`run.json`, `alignment.log`,
-`artifact-verification.json`) and `composition-cost/`. These ignored host-local
-artifacts are not reusable clean-checkout inputs. The task harness retains
-coarse progress and final timing without per-job live timing-file rewrites;
-product timing behavior is unchanged.
-
 ### 2026-08-26 Issue #303 ModeTrack Neighborhood Budget
 
 Verdict: `diagnosis_ready / diagnostic_only`. The retained Gate B receipt
@@ -2859,21 +694,276 @@ changes materially. This receipt grants no product activation, scientific
 readiness, Matrix, Backfill, or writer authority, and does not justify another
 RAW run.
 
-### Retired AsLS / Linear-Edge Decision Gates
+### 2026-08-20 Urine MeIQx Discovery-window versus group-centered Backfill
 
-Verdict: old P2/P2b/P2c AsLS-versus-linear-edge diagnostics are closed history,
-not active decision surfaces. Current area authority is owned by the LC-MS/MS
-evidence rules, morphology-aware area policy, and product projection contracts.
-Historical notes may mention linear-edge comparison, but active code and future
-diagnostics must not provide a linear-edge fallback, comparator, or truth gate
-unless a new product contract explicitly reopens that decision.
+**Current classification:** the bounded cases support the existing Alignment
+fallback; they do not justify a broader Discovery window or a new
+sample-specific RT predictor.
 
-Use current owners instead:
+At clean tracked revision `c0b9f0fc`, the current 54RAW urine Discovery
+artifacts and no-RAW grouping replay produced MeIQx `FAM000012` with 44 owners,
+center m/z `482.2098181818182`, center RT `40.933679545454545 min`, and
+`owner_targeted_istd_trajectory` evidence. The source group, owner, and batch
+index SHA-256 values were respectively
+`7add582ead91bb5e8ca394a190d474a9ea4d508e2e0ff24076a1fc8118fa3599`,
+`76c1c402744f28509fc1ce40f29ccc8aed2fdefeb37cbdeb1acdfb83a45541c8`,
+and `53f85766145deac4ca844ca67c810b983cade983366e5b028c12e7bcb1f9da3b`.
 
-- `docs/product/quant-matrix.md` for matrix authority and historical AsLS policy
-  supersession.
-- `docs/product/peak-model-selection.md` for baseline-aware local S/N evidence.
-- `docs/lc-msms-evidence-rules.md` for evidence semantics and area policy.
+One foreground three-RAW probe passed the current group through the existing
+Owner Backfill request plan and canonical physical-peak selector. It issued one
+logical request per sample, using the existing group-centered `±3 min` request
+window and `±1 min` maximum preferred-query delta:
+
+| Sample | Backfill state | Selected apex RT | Manual-review context |
+| --- | --- | ---: | --- |
+| `BC1165_control` | `rescued` | `40.9387127544` | positive at `40.98` |
+| `BC2264_cancer` | `rescued` | `40.8554188371` | positive at `40.90` |
+| `BC1028_control` | `unchecked/no_selection` | unavailable | negative; Discovery peak near `43.66` |
+
+The two selected positive apexes were each within `0.045 min` of the
+low-confidence manual review, while the off-trajectory BC1028 Discovery peak
+did not become a Backfill rescue. The oracle was also exercised with a displaced
+positive apex and a forged rescued negative; both perturbations failed it.
+
+Observed interpretation: BC2264 was a Discovery seed-window miss, not a
+demonstrated final Backfill miss. BC1165 already had multiple Discovery peaks,
+but the established cross-sample group supplied enough RT context for Backfill
+to select the locally compatible peak. This evidence is `diagnostic_only`; it
+grants no Matrix, selected-value, counted-detection, writer, or product
+authority.
+
+Do not widen every Untargeted Discovery request or add a second RT control plane
+to address these cases. Reopen a sample-specific trajectory/interpolation
+implementation only when a bounded real case has an established cross-sample
+group and a compatible physical peak, yet the current group-centered Backfill
+misses because the group-center query is materially displaced. No full urine,
+8RAW, or 85RAW Alignment run was launched for this loop.
+
+### 2026-08-11 CID-NL Discovery MS1 Native Batching Decision
+
+On 2026-08-11 the GitHub Issue #234 body and maintainer receipt were refrozen so
+that a positive exact-window opportunity below 20% may proceed to a bounded
+candidate. Paired 2RAW must beat observed noise with exact parity before paired
+8RAW; Terminal B still requires the complete three-pair 8RAW oracle. The
+production candidate changes only the internal Discovery MS1 batch maximum from
+1 to 256 at commit `8beebe46`. Revision `bf5fd79e` additionally applies the
+existing bounded Windows atomic-replace retry pattern to `TimingRecorder` after
+two excluded runs independently reproduced `PermissionError: [WinError 5]`
+while updating a live timing sidecar. That runtime fix changes neither the
+candidate nor scalar acquisition path.
+
+The scalar and candidate variants used the same clean `bf5fd79e` code,
+environment, Thermo RawFileReader 4.0.19.0, DLL SHA-256
+`ca452149b7fd4a7dd99b1b86daea4b23485ec87c43fda213e9f9ab97bbcf240d`,
+default `scripts.run_discovery` CID-NL/peak settings, sequential worker budget,
+full Discovery candidate/review CSV output, and no application XIC cache. A
+task-local diagnostic wrapper changed only the private batch maximum to 1 for
+scalar and 256 for candidate. One scalar and one candidate warmup were excluded
+at each tier; the three recorded scalar/candidate observations were interleaved.
+OS filesystem cache remained externally uncontrolled after warmup. Each run had
+a 600-second foreground timeout and used the live/final `timing.json` sidecar.
+
+Paired 2RAW reused `NormalBC2312_DNA.raw` and `TumorBC2312_DNA.raw` through the
+same task-local hardlinks. Recorded wall seconds were scalar
+`32.720, 31.695, 32.512` and candidate `31.471, 34.572, 30.729`. Scalar wall
+median was `32.512 s`, candidate median was `31.471 s`, scalar wall noise was
+`3.155%`, and integrated gain was `3.204%`. The `discover.ms1_backfill` median
+was `11.093 -> 9.713 s`: `12.440%` gain against `5.165%` scalar stage noise.
+Every run preserved 7,150 logical requests and 108,738 trace points; calls were
+`7,150 -> 6,605`. The same five Discovery CSV hashes were byte-identical in all
+six runs. The paired 2RAW gate therefore passed, narrowly on whole-run wall and
+more clearly on the isolated MS1 stage.
+
+Paired 8RAW used the documented validation directory's eight files:
+`BenignfatBC1055_DNA.raw`, `BenignfatBC1151_DNA.raw`,
+`Breast_Cancer_Tissue_pooled_QC3.raw`,
+`Breast_Cancer_Tissue_pooled_QC5.raw`, `NormalBC2263_DNA.raw`,
+`NormalBC2312_DNA.raw`, `TumorBC2263_DNA.raw`, and
+`TumorBC2312_DNA.raw`, totaling 1,601,282,569 bytes.
+
+| Pair | Scalar wall (s) | Candidate wall (s) | Scalar MS1 (s) | Candidate MS1 (s) |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 158.494 | 146.622 | 61.147 | 49.327 |
+| 2 | 166.620 | 149.663 | 66.300 | 51.634 |
+| 3 | 160.238 | 146.829 | 62.603 | 49.556 |
+
+Scalar wall median was `160.238 s`, candidate wall median was `146.829 s`,
+scalar wall noise was `5.071%`, and integrated gain was `8.368%`. The
+`discover.ms1_backfill` median was `62.603 -> 49.556 s`: `20.840%` gain against
+`8.232%` scalar stage noise. Every candidate repetition was faster than its
+paired scalar repetition. Logical requests remained 31,819 and trace points
+remained 454,223. Mechanical batches changed `31,819 -> 128`; physical vendor
+calls changed `31,819 -> 29,148`, a reduction of 2,671 calls (`8.394%`).
+
+All 17 Discovery CSV artifacts were byte-identical across all six recorded
+8RAW runs. The common batch-index SHA-256 was
+`1a634ab3648bb26f1b96fe8e85078fae62ed9edaf3fe77741fa3adc7d489fbbf`.
+The sequential runner emits no process IPC metric. Worker and process-tree RSS
+remained explicitly unavailable with the unchanged truthful reason
+`unsupported: Discovery runner has no owner-bound RSS sampler`; no measured RSS
+claim is made. No super-window, cache, public tuning/configuration, Matrix,
+writer, scientific-rule, Pt/composite, Alignment, or Backfill change occurred.
+
+The exact-safe correctness oracle and the integrated noise rule both pass.
+Superseding disposition: **`RETAIN_NATIVE_BATCHING`** (Terminal B). Validation
+status remains `diagnostic_only`; this performance result grants no new Matrix,
+writer, activation, publication, or scientific authority. No 85RAW run was
+launched.
+
+#### Two-worker process confirmation
+
+The highest-value residual evidence loop fixed both variants to the current
+two-worker Windows process backend at clean revision `29d02d0a`. It reused the
+same two RAW hardlinks, Python 3.12.13, DLL identity, default Discovery settings,
+full CSV outputs, and foreground timing contract. A task-local ignored wrapper
+applied the scalar `1` or candidate `256` batch maximum at module import so the
+override executed inside each spawned RAW-owning worker, not only in the parent.
+One warmup per variant was excluded. The formal order was
+`S1 C1 / C2 S2 / S3 C3`; OS filesystem cache remained uncontrolled.
+
+| Pair | Scalar wall (s) | Candidate wall (s) | Paired gain |
+| --- | ---: | ---: | ---: |
+| 1 | 22.149 | 20.654 | 6.753% |
+| 2 | 21.797 | 21.203 | 2.726% |
+| 3 | 21.429 | 20.796 | 2.956% |
+
+Scalar wall median was `21.797 s`, candidate wall median was `20.796 s`, and
+the median gain was `4.594%` against `3.303%` scalar range-over-median noise.
+Every paired candidate was faster. Because samples execute concurrently, the
+process-stage decision metric is the maximum per-sample
+`discover.ms1_backfill` span per run rather than the sum: its median was
+`6.360 -> 5.648 s`, an `11.195%` gain against `4.194%` scalar stage noise.
+
+All six formal runs preserved 7,150 logical requests, 108,738 trace points, and
+the five byte-identical Discovery CSV hashes listed in the corrective receipt below. Mechanical
+batches changed `7,150 -> 29`; physical vendor calls changed `7,150 -> 6,605`.
+The worker-emitted batch-maximum observations summed to 2 for scalar and 512 for
+candidate, confirming that the intended variant reached both spawned workers.
+Partial pickled request/result payload observations changed
+`3,722,849 -> 3,566,259 bytes`; they still exclude executor framing and confirmed
+transport bytes. Worker and process-tree RSS remain unavailable with the owner
+reason `unsupported: Discovery runner has no owner-bound RSS sampler`.
+
+This confirmation closes the process-backend uncertainty for the bounded 2RAW
+lane and strengthens, but does not broaden, Terminal B. It does not establish a
+universal dataset gain, an RSS bound, or product/scientific authority. No
+additional 8RAW or 85RAW run was launched for this loop.
+
+#### Corrective owner-bound RAW-open receipt confirmation
+
+The review-corrective receipt seam was validated in one fresh two-worker 2RAW
+process smoke at clean producing revision `633c4d80`. The final #234 delivery
+keeps that acquisition/runtime/Discovery code unchanged; it only removes the
+separable `TimingRecorder` retry into follow-up #236 and adds this durable
+receipt. The smoke used Python 3.12.13, Thermo RawFileReader 4.0.19.0, and DLL
+SHA-256
+`ca452149b7fd4a7dd99b1b86daea4b23485ec87c43fda213e9f9ab97bbcf240d`.
+
+Inputs were the same task-local hardlinks used by the earlier 2RAW lane:
+
+- `NormalBC2312_DNA.raw`: 199,440,593 bytes, SHA-256
+  `74bbf71d3ebc85d944b23cbd5b5487bdbc5d38a1b57f56bbf0ee43f20ff729bf`;
+- `TumorBC2312_DNA.raw`: 202,128,099 bytes, SHA-256
+  `cbf020359be2249e800825ad810a3ea38ea990599da08ba0f165ac60e13a7a1f`.
+
+The task-local wrapper selected the retained private candidate batch maximum
+`256`, default Discovery CID-NL/peak settings, full candidate/review CSV output,
+and exactly two process workers. No application XIC cache was enabled; OS
+filesystem cache remained uncontrolled. One repetition was run in the
+foreground. Wall elapsed was 22.628193 s, which is recorded only as smoke
+provenance and is not a new performance comparison.
+
+Both RAW-owning workers returned a typed `RawAcquisitionSessionReceipt` that
+`execution_runtime_owner.derive_runtime_raw_open_metrics` validated against the
+parent-minted capability:
+
+| Sample | `raw_open_count` | Availability | Reason |
+| --- | ---: | --- | --- |
+| NormalBC2312_DNA | 1 | measured | empty |
+| TumorBC2312_DNA | 1 | measured | empty |
+
+The five persisted Discovery CSV artifacts matched the accepted exact-safe
+oracle:
+
+- batch index:
+  `beb8e4e1d376a573386d93a751f5e70179d0dfb32d0cf490b1bda8cf7e1b7164`;
+- Normal candidates/review:
+  `68510b5fff4f0b87d20d18e70168498f970d0af68ef9222d6a4e814ea11ecafc` /
+  `b1bbdd591345ee8c80e8124091f631495deedaedbf4a82aff3d701448ff09bfd`;
+- Tumor candidates/review:
+  `58e016b5f5bab1b30f96e7e93b5c41d0a0bfe46f9380fc5fe423e5a1ec9743ce` /
+  `723278e68109898707fddadaf82c2a8f9ebc180e1facc096cc5743e386773184`.
+
+`run_ok` and the owner-receipt/parity gate both passed. This closes only the
+review-found RAW-open observability gap: it does not repeat or broaden the
+paired performance evidence, and the Terminal B disposition remains
+**`RETAIN_NATIVE_BATCHING`** with `diagnostic_only` evidence status. No new
+8RAW or 85RAW run was launched.
+
+### 2026-07-24 Acquisition Source And Reusable Artifact Capability
+
+Issue #124 is source-qualified in
+`docs/superpowers/validation/acquisition_source_capability_probe/README.md`.
+
+Reusable conclusion:
+
+- Keep Thermo vendor XIC as the current acquisition oracle. Of the two
+  vendor-backed modes measured in the current probe, super-window was faster
+  and still obtained XIC through the vendor API; point-by-point trace parity
+  between those two vendor modes was not established.
+- The local MS1 scan index is useful diagnostic/replay evidence, not an exact
+  vendor-XIC substitute. Current one-RAW evidence matched trace length and RT
+  grid for 100/100 requests but had only 77/100 apexes within 0.05 min, 2.595%
+  median area relative delta, and 1048.47% p95 area relative delta.
+- The one-RAW NPZ was 1.6435 times the RAW size. Do not assume a whole-scan
+  index is a storage win.
+- mzML is not implemented as an acquisition adapter. Do not treat legacy
+  `.mzML Peak area` columns or format expressibility as RAW-to-mzML fidelity.
+- Existing overlay caches and Pt trace manifests prove diagnostic-specific
+  no-RAW reuse patterns, not a universal persistent `EvidenceArtifact`.
+
+Rerun policy:
+
+1. Use this packet to avoid rerunning 8RAW/85RAW merely to re-prove the
+   directional scan-index non-parity result. Exact replay additionally requires
+   the hash-bound ignored `output/` inputs and RAW named in the packet; a clean
+   checkout does not contain them. If those inputs cannot be restored and exact
+   adjudication is required, produce a new source-qualified bounded probe.
+2. Reopen a bounded RAW scan-mode probe only when profile/centroid or native
+   controller identity can change the implementation decision.
+3. Run a RAW-to-mzML crosswalk only when a real consumer requires mzML input;
+   pin converter version and all precision/centroiding options.
+4. Route retry, partial-result, cleanup, and cache lifecycle decisions to #128.
+
+Status remains `diagnostic_only`. This entry grants no product-write authority.
+
+### 2026-06-29 Rejected One-Shot Performance Candidates
+
+Verdict: `rejected` for the measured Owner Backfill scan-index/span variants
+and for wiring Standard Peak `--best-shift-only` into the one-shot matrix-only
+preset. These remain diagnostic or explicit options; they are not accepted
+performance defaults.
+
+Key facts:
+
+- On 8RAW, `ms1-index-hybrid` preserved checked public hashes but slowed
+  `alignment.owner_backfill` from 14.56 s to 64.89 s. The `ms1-index`
+  owner-backfill and owner-build variants both changed public outputs and were
+  also slower than the exact baseline.
+- Super-window span factor 1 preserved public TSV hashes but increased RAW calls
+  from 72 to 17,910 and slowed Owner Backfill to 50.55 s. Factor 3 increased
+  point volume from 9.16M to 15.62M without a useful timing margin over factor
+  2.
+- Standard Peak `--best-shift-only` improved a no-RAW replay from 13.546 s to
+  9.201 s with identical best-shift summaries, but the complete 8RAW target
+  stage did not improve: shift batch moved 18.903 s to 19.123 s and chunk moved
+  26.033 s to 26.742 s.
+
+Do not rerun 85RAW or promote any of these candidates from a microbenchmark.
+Reopen a bounded 8RAW comparison only after the implementation changes RAW
+locality, removes duplicated exact work, changes the complete Standard Peak
+stage cost, or new evidence contradicts these measurements. Any public-output
+change remains an expected-diff product decision, not a performance-only edit.
 
 ### 2026-06-16/17 5-hmdC Own-Max Support Limited Rescue Smoke
 
@@ -2995,6 +1085,30 @@ selected-candidate semantics, matrix writing, or the cited artifacts become
 stale. If only the human review wording changes, reuse the 85RAW artifacts
 above.
 
+### 2026-06-15 Replay Executor Validation
+
+Verdict: `run_ok` and `gate_ok` for targeted CLI CSV/workbook replay parity on
+the reviewed 8RAW and 85RAW replay surfaces. This validates replayed analytical
+output equivalence for the named contract; it is not a full exact artifact
+replay, GUI parity proof, or timestamped workbook hash guarantee.
+
+Durable closeout:
+retired private-history replay note; the current durable facts are the verdict,
+key facts, and rerun rule in this ledger section.
+
+Key facts:
+
+- CSV replay parity passed for the reviewed 8RAW and 85RAW surfaces.
+- Workbook analytical parity passed for the reviewed 8RAW and 85RAW surfaces.
+- Replay validation intentionally excluded full byte-identical artifact replay
+  where timestamped workbook metadata makes exact hashes unsuitable.
+- GUI replay parity was not part of the accepted gate.
+
+Do not rerun replay validation just to re-prove these surfaces. Rerun only after
+current code changes method-manifest binding, replay CLI behavior,
+settings/targets artifact resolution, CSV/workbook writer semantics, or the
+cited artifacts become stale or contradictory.
+
 ### 2026-06-05 Gaussian15 MS1 Morphology Primary Area Owner
 
 Verdict: `production_ready` for the Gaussian15 MS1 morphology ownership
@@ -3058,153 +1172,7 @@ only after current code changes targeted candidate MS2/NL evidence ownership,
 chrom peak segment selection, candidate-table projection, or the cited artifacts
 are stale or contradictory.
 
-### 2026-05-24 Resolver Default Switch / P2 Entry Gate
-
-Verdict: `production_candidate` for P2 entry on the 8RAW method gate after the
-hotfix evidence-chain continuation. This is not an 85RAW clearance and not
-`production_ready`.
-
-Durable closeout:
-retired private-history validation note; the current durable facts are the
-verdict, key facts, and rerun rule in this ledger section.
-
-Key facts:
-
-- The stale pre-hotfix artifact state was `NO-GO`; do not use it to block or
-  approve current P2 work.
-- The hotfix restored untargeted alignment production peak picking to
-  `local_minimum` while keeping `region_first_safe_merge` as audit context for
-  alignment runs.
-- The strict ISTD blocker on `15N5-8-oxodG` was resolved in hotfix artifacts.
-- Reviewed identity-coherence controls passed acceptance, and the
-  hotfix-reviewed identity-family decisions were byte-identical to the
-  pre-change baseline.
-- The same-surface `d3-N6-medA` probe reclassified the
-  apparent mismatch as a mixed-surface diagnostic artifact, not a standalone
-  evidence-spine blocker.
-
-Do not rerun the P1/P2 resolver default gate just to re-prove P2 entry. Rerun
-only after current code changes resolver default routing, candidate selection,
-selected boundaries, strict ISTD benchmark behavior, identity-coherence
-decisions, or the cited artifacts become stale or contradictory.
-
-### 2026-05-26 P8b 85RAW Super-Window Acceptance
-
-Verdict: `production_candidate` for explicit opt-in
-`validation-minimal + production-equivalent + validation-fast + super-window`
-85RAW alignment validation. This is a validated runner/performance mode, not a
-new default behavior and not `production_ready` by itself.
-
-Durable closeout:
-retired private-history runtime note; the current durable facts are the
-validated command profile and rerun rule in this ledger section.
-
-Key facts:
-
-- The 85RAW super-window run completed and emitted the expected machine
-  artifacts.
-- Matrix, cells, and review surfaces were byte-identical to the accepted
-  P8b exact-window reference for the checked contract.
-- No new RT, identity, or coverage failure was introduced by super-window.
-- The CLI default remained exact-window batching; super-window stayed explicit
-  opt-in.
-- Known targeted-benchmark warnings from the prior accepted surface remained
-  warning-class follow-up, not super-window regressions.
-
-Do not rerun 85RAW just to re-prove super-window acceptance. Rerun only after
-current code changes RAW locality, owner-backfill request grouping,
-super-window batching/cropping, validation-fast settings, output surfaces used
-by the gate, or the cited artifacts become stale or contradictory.
-
-### 2026-06-29 Rejected One-Shot Performance Candidates
-
-Verdict: `rejected` for the measured Owner Backfill scan-index/span variants
-and for wiring Standard Peak `--best-shift-only` into the one-shot matrix-only
-preset. These remain diagnostic or explicit options; they are not accepted
-performance defaults.
-
-Key facts:
-
-- On 8RAW, `ms1-index-hybrid` preserved checked public hashes but slowed
-  `alignment.owner_backfill` from 14.56 s to 64.89 s. The `ms1-index`
-  owner-backfill and owner-build variants both changed public outputs and were
-  also slower than the exact baseline.
-- Super-window span factor 1 preserved public TSV hashes but increased RAW calls
-  from 72 to 17,910 and slowed Owner Backfill to 50.55 s. Factor 3 increased
-  point volume from 9.16M to 15.62M without a useful timing margin over factor
-  2.
-- Standard Peak `--best-shift-only` improved a no-RAW replay from 13.546 s to
-  9.201 s with identical best-shift summaries, but the complete 8RAW target
-  stage did not improve: shift batch moved 18.903 s to 19.123 s and chunk moved
-  26.033 s to 26.742 s.
-
-Do not rerun 85RAW or promote any of these candidates from a microbenchmark.
-Reopen a bounded 8RAW comparison only after the implementation changes RAW
-locality, removes duplicated exact work, changes the complete Standard Peak
-stage cost, or new evidence contradicts these measurements. Any public-output
-change remains an expected-diff product decision, not a performance-only edit.
-
-### 2026-06-15 Replay Executor Validation
-
-Verdict: `run_ok` and `gate_ok` for targeted CLI CSV/workbook replay parity on
-the reviewed 8RAW and 85RAW replay surfaces. This validates replayed analytical
-output equivalence for the named contract; it is not a full exact artifact
-replay, GUI parity proof, or timestamped workbook hash guarantee.
-
-Durable closeout:
-retired private-history replay note; the current durable facts are the verdict,
-key facts, and rerun rule in this ledger section.
-
-Key facts:
-
-- CSV replay parity passed for the reviewed 8RAW and 85RAW surfaces.
-- Workbook analytical parity passed for the reviewed 8RAW and 85RAW surfaces.
-- Replay validation intentionally excluded full byte-identical artifact replay
-  where timestamped workbook metadata makes exact hashes unsuitable.
-- GUI replay parity was not part of the accepted gate.
-
-Do not rerun replay validation just to re-prove these surfaces. Rerun only after
-current code changes method-manifest binding, replay CLI behavior,
-settings/targets artifact resolution, CSV/workbook writer semantics, or the
-cited artifacts become stale or contradictory.
-
-### 2026-05-28 Qualitative Selection / Owner-Backfill Scan Support Gate
-
-Verdict: `production_candidate` for the qualitative selected-peak / Backfill
-promotion blocker on the current production-equivalent alignment path.
-This closes the qualitative promotion blocker for the next product-decision PR;
-it does not declare the whole product `production_ready`.
-
-Durable closeout:
-retired private-history gate note; the current durable facts are the verdict,
-key facts, and retained fixtures in this ledger section.
-
-Key facts:
-
-- The earlier `NO_GO` was valid, but the root cause was narrower than Backfill
-  itself: `owner_backfill` was used as a support label without emitting the
-  independent `scan_support_score` required by the shared promotion policy.
-- Owner-backfill cells now compute `scan_support_score` from the extracted XIC
-  trace and selected peak boundary.
-- `trace_quality=owner_backfill` remains insufficient as independent support by
-  itself.
-- High-backfill promotion requires either at least two detected identity cells
-  or one detected seed plus product-authorized same-peak rescue evidence; a
-  single detected seed cannot promote a mostly backfilled row from local MS1
-  peak presence alone.
-- Supported high-backfill rows are capped at medium confidence and marked with
-  `high_backfill_dependency_capped`.
-- The accepted 85RAW foreground run used the canonical
-  production-equivalent, audit-off, validation-fast, super-window, heartbeat
-  command shape and produced the cited durable fixture summaries.
-
-Do not rerun this gate just to re-prove the owner-backfill scan-support fix.
-Rerun only after current code changes owner-backfill trace support emission,
-promotion-policy support semantics, selected peak boundaries, high-backfill
-confidence/flag projection, or the cited artifacts become stale or
-contradictory.
-
-### d3-N6-medA
+### 2026-05-28 d3-N6-medA
 
 **Current classification:** known RT-drift / same-surface case; not a standalone
 RT blocker.
@@ -3307,598 +1275,30 @@ Recommended next check:
    production behavior change or if a current artifact contradicts the 85RAW
    summary fixture.
 
-## 2026-07-24 Acquisition Source And Reusable Artifact Capability
-
-Issue #124 is source-qualified in
-`docs/superpowers/validation/acquisition_source_capability_probe/README.md`.
-
-Reusable conclusion:
-
-- Keep Thermo vendor XIC as the current acquisition oracle. Of the two
-  vendor-backed modes measured in the current probe, super-window was faster
-  and still obtained XIC through the vendor API; point-by-point trace parity
-  between those two vendor modes was not established.
-- The local MS1 scan index is useful diagnostic/replay evidence, not an exact
-  vendor-XIC substitute. Current one-RAW evidence matched trace length and RT
-  grid for 100/100 requests but had only 77/100 apexes within 0.05 min, 2.595%
-  median area relative delta, and 1048.47% p95 area relative delta.
-- The one-RAW NPZ was 1.6435 times the RAW size. Do not assume a whole-scan
-  index is a storage win.
-- mzML is not implemented as an acquisition adapter. Do not treat legacy
-  `.mzML Peak area` columns or format expressibility as RAW-to-mzML fidelity.
-- Existing overlay caches and Pt trace manifests prove diagnostic-specific
-  no-RAW reuse patterns, not a universal persistent `EvidenceArtifact`.
-
-Rerun policy:
-
-1. Use this packet to avoid rerunning 8RAW/85RAW merely to re-prove the
-   directional scan-index non-parity result. Exact replay additionally requires
-   the hash-bound ignored `output/` inputs and RAW named in the packet; a clean
-   checkout does not contain them. If those inputs cannot be restored and exact
-   adjudication is required, produce a new source-qualified bounded probe.
-2. Reopen a bounded RAW scan-mode probe only when profile/centroid or native
-   controller identity can change the implementation decision.
-3. Run a RAW-to-mzML crosswalk only when a real consumer requires mzML input;
-   pin converter version and all precision/centroiding options.
-4. Route retry, partial-result, cleanup, and cache lifecycle decisions to #128.
-
-Status remains `diagnostic_only`. This entry grants no product-write authority.
-
-## Reusable Diagnostics
-
-Prefer existing tools before creating a new diagnostic:
-
-| Question | Existing diagnostic |
-| --- | --- |
-| Targeted-vs-untargeted checkpoint for named targets | `tools/diagnostics/targeted_gt_alignment_audit.py` |
-| Single-dR production gate pressure | `tools/diagnostics/single_dr_production_gate_decision_report.py` |
-| Low-seed / high-backfill family review queue | `tools/diagnostics/family_ms1_backfill_review_report.py` |
-| Alignment decision summary with known exceptions | `tools/diagnostics/alignment_decision_report.py` |
-| RT normalization / target trend context | `tools/diagnostics/analyze_rt_normalization_anchors.py` |
-
-If these tools cannot answer the current question, record why in the new plan or
-validation note before adding another diagnostic.
-
-## Current Tool Coverage
-
-For the original product-priority 8RAW gate, the pre-fix tool coverage snapshot
-is:
-
-`docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/diagnostic_tool_usage_current_8raw.tsv`
-
-Pre-fix summary:
-
-- `tools/diagnostics/INDEX.md` was consulted before adding the ledger.
-- `single_dr_production_gate_decision_report.py` was run on the current 8RAW
-  alignment. It found 269 single-dR primary rows and 0 risky weak-seed or
-  extreme-backfill primary rows. This confirms the current issue is not a bad
-  primary row already leaking into the matrix.
-- `family_ms1_backfill_review_report.py` was run on the current 8RAW alignment
-  with `DNA_dR` scope. It queued 0 primary families, which is expected because
-  `FAM000264` is excluded before primary-family review.
-- `owner_backfill_request_economics.py` was run on the current 8RAW alignment.
-  It found 2756 request targets, with 733 production targets and 2023 non-primary
-  targets. This supports keeping reruns narrow and not treating broad evidence
-  expansion as free.
-- `alignment_decision_report.py` was run on the current 8RAW alignment and
-  returned `WARN` with `d3-N6-medA` declared as a known exception.
-- `targeted_gt_alignment_audit.py` was run on the current 8RAW alignment using
-  the default positive checkpoint `5-medC / d3-5-medC`. It used the stable
-  targeted GT 8RAW workbook under `local_validation_artifacts/` and found
-  `PASS 8 / 8`, with `SPLIT 0`, `DRIFT 0`, `DUPLICATE 0`, and `MISS 0`.
-  Do not use the 85-sample workbook against an 8RAW alignment: that creates
-  off-scope `MISS` rows and is a workbook/sample-set mismatch, not a product
-  signal.
-- `targeted_istd_benchmark.py`, `analyze_rt_normalization_anchors.py`, and
-  `evidence_spine_consistency.py` were not rerun from stale worktree-specific
-  targeted workbook artifacts. Their prior conclusions are reused from the
-  authoritative notes listed above.
-
-Post-fix coverage:
-
-- Foreground 8RAW validation-minimal run:
-  `output/product_priority_reset_phase1/alignment_8raw_primary_delivery_fix`.
-- `phase1_review_matrix_resolved_primary_delivery_fix.tsv` has
-  `GO blocker count: 0`.
-- `single_dr_production_gate_decision_report.py` on the post-fix 8RAW alignment
-  found `282` single-dR primary rows and `0` risky weak-seed or
-  extreme-backfill primary rows.
-- `targeted_gt_alignment_audit.py` default checkpoint remains `PASS 8 / 8`.
-- `alignment_decision_report.py` returns `WARN`, not `FAIL`, because `40`
-  primary rows are `rescue_heavy`; the 13 newly promoted rows are all flagged
-  `rescue_heavy;weak_seed_tolerated`.
-
-85RAW post-fix coverage:
-
-- Foreground 85RAW run:
-  `output/product_priority_reset_phase1/alignment_85raw_primary_delivery_fix`.
-- `alignment_matrix.tsv` has `597` primary rows and SHA256
-  `53EC16DA87D7BC3AE02C88120E5FBBD22CB45BB4C7FFCA07F605EE7D9EA8564D`.
-- `single_dr_production_gate_decision_report.py` found `0` risky weak-seed,
-  extreme-backfill, or duplicate-rescue-pressure primary rows.
-- `alignment_decision_report.py` returned `WARN`, not `FAIL`.
-- `targeted_istd_benchmark.py` failed only the known strict area mismatch rows:
-  `d4-N6-2HE-dA` and `d3-N6-medA`.
-
-This coverage is enough to stop treating `d3-N6-medA` as a qualitative blocker.
-The remaining risk is explicit watch surface, not a GO/NO-GO blocker: five
-85RAW primary rows carry `rescue_heavy;weak_seed_tolerated`, and strict area
-benchmark mismatches stay in the quantitative follow-up lane.
-
-## Issue #195 no-RAW Backfill decision ledger
-
-The retained 85RAW artifact whose legacy manifest asserts revision
-`7eef01e273ee62b91bd6c07e4a455994f76ca37b` was read without opening RAW files.
-The retired `tools/diagnostics/backfill_decision_ledger.py` rehydrated every
-Discovery CSV through its owner receipt and streamed each large alignment
-projection once. It was retired in #490 because current Alignment no longer
-produces `consolidation_state`, so its winner/loser settlement layer cannot be
-observed in a current artifact.
-
-The complete owner rehydration accepted `317,036` rows. Its parser requires a
-unique `sample + neutral_loss_tag + ms1_feature_row_id` for every feature-backed
-candidate; all `79,443` feature-backed populated identities passed that
-invariant, no non-feature-backed row carried a populated identity, and
-`59,214` accepted candidates retained multiple seed scans. The reported zero is
-therefore an owner-invariant acceptance result, not a second post-owner counter
-that could independently reproduce duplicates. The proposed candidate-layer
-defect—retaining other MS2 scans creates duplicate candidates for the same
-physical MS1 feature—was not reproduced within that owner invariant domain. The display grouping
-still contains `14,133` multi-candidate groups and `13,852` multi-best-scan
-groups, but those fields do not prove one physical peak.
-
-The retained final projection has `36,608 / 48,139` `primary_loser` rows
-(`76.0464%`). Owner Backfill cost was `909.689 s`, `1,843,631` XIC extractions,
-`761` RAW calls, and `878,879,685` points. The displayed-coordinate request
-proxy reproduced `133,547 / 3,083,400` duplicates (`4.331%`), but exact logical
-request identity, equivalence classes, and request-to-batch/call/point lineage
-are absent. Those claims remain explicitly unavailable; no savings estimate is
-made.
-
-Decision ranking is accepted only when the timing projection declares
-`backfill_scope=full-audit`, its input/backfill/skipped feature counts close with
-zero skipped features, and its Backfill feature count exactly matches the
-review-group universe. Candidate projection links additionally bind
-`sample_stem + source_candidate_id`, and request-proxy per-group counts use a
-stable group representative so equivalent row reordering cannot change the
-ledger.
-
-The retained manifest is legacy `untargeted_provisional_matrix_run` and is
-rejected by the current manifest owner. The diagnostic records that
-rehydration gap explicitly instead of promoting legacy embedded assertions,
-including the asserted producer revision.
-Its A–E layer verdicts are: A not reproduced at the owner-bound candidate
-identity layer; B inconclusive without the physical-peak owner payload; C
-aggregate-only/partial; D final-projection-only with pre-Backfill knowability
-unavailable; and E unavailable without exact request and batch lineage.
-
-## Issue #195 owner-minted exact request reuse
-
-Issue #210 implements the current in-process owner path for exact Backfill
-request equivalence and typed result fan-out. The request-plan owner binds the
-canonical sample, full `AcquisitionSourceIdentity`, exact m/z/RT/ppm request,
-backend, window strategy, validation phase, and trace-result semantics. Every
-hypothesis-bound logical request belongs to exactly one deterministic class.
-The extraction owner evaluates one representative per class and fans the typed
-trace back to the complete logical population before the unchanged
-per-hypothesis peak, candidate-audit, claim-registry, consolidation, Matrix, and
-writer owners run.
-
-No RAW, 2RAW, 8RAW, or 85RAW input was opened for this slice. Deterministic
-owner fixtures observed two logical requests in one canonical class, one
-extraction request, and two hypothesis-bound results. Mutation and negative
-oracles separate sample/acquisition, m/z, both RT bounds, ppm, backend, window,
-validation, and result semantics; missing or mismatched acquisition ownership
-cannot emit an exact-equivalence observation. Synthetic baseline-versus-exact
-cells, candidate audit, final claim/consolidation Matrix, row identity, and the
-rendered cells TSV are hard-zero, including byte-for-byte writer parity.
-
-The PR #207 displayed-coordinate proxy remains historical diagnostic context,
-not proof. Its exact-owner debt is closed for the current owner-closed in-process
-runtime, but the retained stale-revision artifact still lacks the typed request
-population and therefore cannot be rehydrated into current exact class counts.
-No comparable current owner-correlated population, elapsed-time, RAW-call,
-chromatogram-call, point-count, or monetary evidence exists, so no savings or
-real-dataset prevalence claim is made. PR #209's early-loser shadow remains
-`diagnostic_only`, does not feed Backfill or Pass B, and is not used by this
-reuse path. PR E streaming/artifact format and PR F recovery/checkpoint scope
-remain excluded.
-
-Decision: `GO` for the exact-safe implementation under owner closure, with
-validation status `diagnostic_only` and synthetic/no-RAW evidence only.
-Any incomplete owner partition, cross-semantics reuse, logical fan-out loss, or
-nonzero final scientific/output diff is `KILL / REDESIGN`.
-
-## Issue #195 streamed provisional publication
-
-Issue #212 replaces retained dense provisional matrix, identity, and cell-
-provenance row dictionaries with an immutable Alignment-owned projection plan.
-The existing provisional writers consume that plan as bounded row streams; the
-existing whole-set temporary-file/rename publication owner remains the only
-final visibility path. Matrix values, row identity, schema, ordering, filenames,
-summary content, and atomic visibility are unchanged. PR #211 exact request
-identity is consumed only through the typed Matrix input and is not reconstructed
-from a persisted projection. PR #209 remains an opt-in shadow and is not an
-execution input.
-
-No RAW, 2RAW, 8RAW, or 85RAW input was opened. A deterministic no-RAW allocation
-probe over 400 groups by 100 samples retained zero dense row objects, zero cells,
-and 400 compact per-row count entries. Building the compact projection peaked at
-130,364 traced bytes; materializing the legacy-compatible 40,000-row provenance
-view peaked at 18,940,952 bytes (145.29 times the compact peak). This bounded
-probe is mechanism evidence only, not a real-population elapsed-time or savings
-claim. Frozen representative and formula/unquantified edge-case byte hashes,
-schema/order/identity oracles, and whole-bundle failure tests remain hard-zero.
-
-The reproducible probe owner and assertion are
-`tests/test_alignment_provisional_matrix.py::test_projection_has_bounded_no_raw_peak_allocation`.
-The exact observation above is emitted with:
-
-```powershell
-@'
-import json, runpy
-probe = runpy.run_path('tests/test_alignment_provisional_matrix.py')['_allocation_probe']
-observed = probe()
-observed['peak_ratio'] = round(observed['materialized_provenance_peak_bytes'] / observed['compact_projection_peak_bytes'], 2)
-print(json.dumps(observed, sort_keys=True))
-'@ | .venv\Scripts\python.exe -
-```
-
-The compact-plan build retains its shared measured stage. Per-artifact lazy row
-projection is interleaved with rendering and temporary-file writes, so those
-phases remain explicitly unavailable or partial rather than receiving fabricated
-attribution; rename and final-file hash remain measured. Manifest-bound immutable
-hashing and directory publication belong to Issue #213, which is sequentially
-blocked by #212; recovery/checkpoint work remains excluded as PR F.
-
-Decision: `GO` for retaining the exact-safe W5a streaming implementation with
-validation status `diagnostic_only`. Any byte/schema/order/identity/atomic-
-visibility difference is `KILL`; a need to reconstruct semantic truth from a
-projection or to combine W5a with manifest ownership is `REDESIGN`.
-
-## Issue #213 manifest-bound atomic publication
-
-Issue #213 closes W5b inside the existing provisional-run manifest owner. The
-runner now submits one complete attempt directory to
-`publish_provisional_run_bundle_atomic`. Its upstream Alignment writer supplies
-one complete owner-minted writer fingerprint batch containing the four
-provisional artifacts, and the publication owner mints a path/root-bound receipt
-while verifying the retained sample-metadata copy. The manifest owner reuses
-those five facts, hashes the Discovery batch index once while building the
-manifest, and validates the
-exact owner serialization against a private six-role transaction. Before every
-directory-replace attempt it fully rehashes all six bound files, compares the
-owner-written `run_manifest.json` to the exact in-memory bytes, and makes the
-whole directory visible with one atomic rename. No filesystem timestamp is used
-as a byte-identity oracle. This is a closed single-writer visibility contract:
-the publication owner and its in-process collaborators stop writing staging
-before binding, but W5b does not claim an OS-level seal against another
-same-permission process writing during the final check-to-rename interval. A
-stronger concurrent-writer threat model is a separate storage/lifecycle redesign;
-visible bundles remain untrusted until the independent validator rehashes them.
-Foreign receipts or transactions, duplicate or
-missing roles, path/schema substitution, valid manifest substitution, same-size
-artifact mutation with restored mtime, and retry-time artifact or manifest
-mutation fail before the final directory exists. The public
-`validate_provisional_run_manifest` path is unchanged and still reads and hashes
-the visible bytes independently.
-
-The PR-family finding census classified the two hosted P2 findings plus the
-follow-up cross-role substitution findings as trust-boundary re-derivation. The
-bounded Alignment ingress is four manifest roles within the Alignment writer's
-complete receipt batch: publication requires each role to map to one unique
-receipt path and its canonical writer filename before assigning schema or
-SHA/size facts. Other owner receipts remain an unclaimed part of the complete
-writer census. The class oracles enumerate all 23 non-identity role
-permutations plus a duplicate-path census and reject each before manifest write
-or final visibility; a real no-RAW writer integration proves the normal eight-
-receipt batch can publish its four manifest-bound artifacts.
-
-Manifest schema, claim levels, relative paths, artifact SHA/size rows, and exact
-manifest plus bound-artifact bytes are hard-zero against the legacy write path.
-The private transaction identity, writer batch, and metadata receipt are not
-persisted; the manifest remains byte-bound only and gains no authenticity,
-semantic replay, scientific, Matrix, writer, or activation authority. PR #209
-remains shadow-only, PR #211 exact request identity remains typed upstream input,
-W5a remains the merged projection prerequisite, PR #216 is the sequential E2a
-writer-receipt prerequisite, and PR F recovery/checkpoint work is excluded.
-
-A 9-pair, order-interleaved, no-RAW probe used one 8 MiB synthetic provisional
-matrix plus the five smaller bound files. The legacy manifest write/immediate-
-validation path observed 12 fingerprint calls and 16,779,410 bytes per run;
-median summed fingerprint time was 0.022091 s (range 0.020313-0.024616 s). The
-closed atomic-bundle path observed 7 calls and 8,390,689 bytes per run: one
-Discovery-index hash while building, followed by one full six-file confirmation
-before publication. Median summed fingerprint time was 0.011333 s (range
-0.010254-0.013194 s); the paired median removed fingerprint time was 0.010464 s.
-All nine pairs preserved exact file bytes. This is synthetic owner-call,
-byte, and function-time evidence only; it is not physical disk I/O, end-to-end
-elapsed, RAW-call, chromatogram-call, point-count, monetary, or real-population
-savings evidence.
-
-Focused no-RAW manifest/runner/projection/atomic regressions passed 88 tests.
-The principal census/parity oracle is
-`tests/test_alignment_provisional_run_manifest.py::test_manifest_bound_atomic_publish_reuses_owner_fingerprints_without_diff`;
-the exact-manifest substitution, same-size restored-mtime mutation, retry-time
-artifact/manifest mutation, and publication-failure tests in the same file prove
-no partial final directory. Validation status remains `diagnostic_only`.
-
-Decision: `GO` for the exact-safe W5b mechanism when all remaining static,
-architecture, whole-PR review, and independent QA gates pass. Any manifest or
-bound-artifact byte diff, caller-minted authority, skipped independent validator,
-or partial final visibility within the closed single-writer protocol is `KILL`;
-a requirement to resist another same-permission writer during publication, or a
-schema/lifecycle/recovery dependency, is `REDESIGN`.
-
-## Issue #234 CID-NL Discovery MS1 telemetry and batching gate
-
-Issue #234 initially recorded Terminal A at clean revision `3b891479`; that
-threshold-only disposition is superseded by the maintainer refreeze and paired
-evidence below. Transaction 1
-maps every non-empty `DiscoverySeedGroup` to one canonical ordered `XICRequest`,
-acquires singleton owner-minted `TraceAcquisitionBatch` receipts, and preserves
-the existing peak/candidate path. `execution_runtime_owner` alone aggregates the
-accepted acquisition receipts into sealed request, batch, adapter-call, and
-trace-point metrics; `TimingRecorder` renders those values plus the Discovery
-input census and exact native-scan-window characterization. Worker projections
-cannot submit those counts. RSS remains explicitly unsupported with the reason
-`unsupported: Discovery runner has no owner-bound RSS sampler`.
-
-Focused no-RAW verification used the Discovery MS1/pipeline, acquisition
-contract, and runtime-observability suites: 100 tests passed. Scalar-versus-owner
-candidate equality, duplicate logical members, input population completeness,
-wrong cardinality, caller-forged counts, duplicate/unknown measurement fields,
-terminal peak failure, RAW disposal, and original-exception preservation were
-covered. Ruff, focused mypy, the architecture census (42 tests plus the direct
-script smoke), and commit hooks passed.
-
-The fresh current 2RAW characterization used the historical CID-NL 8RAW lane's
-`NormalBC2312_DNA.raw` (199,440,593 bytes) and `TumorBC2312_DNA.raw`
-(202,128,099 bytes), exposed through task-local hardlinks. The clean producing
-revision, default `scripts.run_discovery` CID-NL/peak settings, Python project
-environment, and Thermo RawFileReader 4.0.19.0 were fixed across both runs; the
-RawFileReader DLL SHA-256 was
-`ca452149b7fd4a7dd99b1b86daea4b23485ec87c43fda213e9f9ab97bbcf240d`.
-No application XIC cache was enabled. OS filesystem cache was uncontrolled: the
-one-worker scalar run executed first and the two-worker process smoke second.
-Both used full Discovery candidate/review CSV output and one repetition. Shell
-elapsed observations were approximately 42.0 s scalar and 23.7 s process; these
-single, ordered runs are process-smoke evidence, not a benchmark conclusion.
-
-| Sample | N logical | U exact windows | C256 | Predicted reduction | Singleton batches/calls | Trace points | Candidate rows |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| NormalBC2312_DNA | 3,358 | 3,102 | 3,102 | 7.62% | 3,358 / 3,358 | 50,703 | 3,358 |
-| TumorBC2312_DNA | 3,792 | 3,502 | 3,503 | 7.62% | 3,792 / 3,792 | 58,035 | 3,789 |
-| Aggregate | 7,150 | 6,604 | 6,605 | 7.6224% | 7,150 / 7,150 | 108,738 | 7,147 |
-
-For both samples `input_group_count = empty_group_count + N`, with zero empty
-groups, and singleton physical calls equal logical requests. The process run
-reported identical owner counts and characterization. Its pickled request/result
-payload observations were 3,646/1,739,270 bytes for Normal and
-3,645/1,976,216 bytes for Tumor; these are explicitly partial IPC observations
-and exclude executor/framework overhead.
-
-Scalar-versus-process artifacts were byte-identical:
-
-- batch index:
-  `beb8e4e1d376a573386d93a751f5e70179d0dfb32d0cf490b1bda8cf7e1b7164`;
-- Normal candidates/review:
-  `68510b5fff4f0b87d20d18e70168498f970d0af68ef9222d6a4e814ea11ecafc` /
-  `b1bbdd591345ee8c80e8124091f631495deedaedbf4a82aff3d701448ff09bfd`;
-- Tumor candidates/review:
-  `58e016b5f5bab1b30f96e7e93b5c41d0a0bfe46f9380fc5fe423e5a1ec9743ce` /
-  `723278e68109898707fddadaf82c2a8f9ebc180e1facc096cc5743e386773184`.
-
-The original aggregate promotion result was `7.6224% < 20%`. Under the initial
-hard-threshold wording, Transaction 2 was not authorized, the internal batch
-maximum remained 1, and no paired 8RAW or 85RAW run was launched. The original
-disposition was **`KILL_BATCHING_NO_VALUE`**. The acceptance owner subsequently
-clarified that 20% is an advisory strong signal rather than a hard prohibition;
-the current positive, bounded, reversible exact-safe candidate was authorized
-for paired measurement. The superseding result follows.
-
-### Maintainer soft-gate refreeze and Terminal B evidence
-
-On 2026-08-11 the GitHub Issue #234 body and maintainer receipt were refrozen so
-that a positive exact-window opportunity below 20% may proceed to a bounded
-candidate. Paired 2RAW must beat observed noise with exact parity before paired
-8RAW; Terminal B still requires the complete three-pair 8RAW oracle. The
-production candidate changes only the internal Discovery MS1 batch maximum from
-1 to 256 at commit `8beebe46`. Revision `bf5fd79e` additionally applies the
-existing bounded Windows atomic-replace retry pattern to `TimingRecorder` after
-two excluded runs independently reproduced `PermissionError: [WinError 5]`
-while updating a live timing sidecar. That runtime fix changes neither the
-candidate nor scalar acquisition path.
-
-The scalar and candidate variants used the same clean `bf5fd79e` code,
-environment, Thermo RawFileReader 4.0.19.0, DLL SHA-256
-`ca452149b7fd4a7dd99b1b86daea4b23485ec87c43fda213e9f9ab97bbcf240d`,
-default `scripts.run_discovery` CID-NL/peak settings, sequential worker budget,
-full Discovery candidate/review CSV output, and no application XIC cache. A
-task-local diagnostic wrapper changed only the private batch maximum to 1 for
-scalar and 256 for candidate. One scalar and one candidate warmup were excluded
-at each tier; the three recorded scalar/candidate observations were interleaved.
-OS filesystem cache remained externally uncontrolled after warmup. Each run had
-a 600-second foreground timeout and used the live/final `timing.json` sidecar.
-
-Paired 2RAW reused `NormalBC2312_DNA.raw` and `TumorBC2312_DNA.raw` through the
-same task-local hardlinks. Recorded wall seconds were scalar
-`32.720, 31.695, 32.512` and candidate `31.471, 34.572, 30.729`. Scalar wall
-median was `32.512 s`, candidate median was `31.471 s`, scalar wall noise was
-`3.155%`, and integrated gain was `3.204%`. The `discover.ms1_backfill` median
-was `11.093 -> 9.713 s`: `12.440%` gain against `5.165%` scalar stage noise.
-Every run preserved 7,150 logical requests and 108,738 trace points; calls were
-`7,150 -> 6,605`. The same five Discovery CSV hashes were byte-identical in all
-six runs. The paired 2RAW gate therefore passed, narrowly on whole-run wall and
-more clearly on the isolated MS1 stage.
-
-Paired 8RAW used the documented validation directory's eight files:
-`BenignfatBC1055_DNA.raw`, `BenignfatBC1151_DNA.raw`,
-`Breast_Cancer_Tissue_pooled_QC3.raw`,
-`Breast_Cancer_Tissue_pooled_QC5.raw`, `NormalBC2263_DNA.raw`,
-`NormalBC2312_DNA.raw`, `TumorBC2263_DNA.raw`, and
-`TumorBC2312_DNA.raw`, totaling 1,601,282,569 bytes.
-
-| Pair | Scalar wall (s) | Candidate wall (s) | Scalar MS1 (s) | Candidate MS1 (s) |
-| --- | ---: | ---: | ---: | ---: |
-| 1 | 158.494 | 146.622 | 61.147 | 49.327 |
-| 2 | 166.620 | 149.663 | 66.300 | 51.634 |
-| 3 | 160.238 | 146.829 | 62.603 | 49.556 |
-
-Scalar wall median was `160.238 s`, candidate wall median was `146.829 s`,
-scalar wall noise was `5.071%`, and integrated gain was `8.368%`. The
-`discover.ms1_backfill` median was `62.603 -> 49.556 s`: `20.840%` gain against
-`8.232%` scalar stage noise. Every candidate repetition was faster than its
-paired scalar repetition. Logical requests remained 31,819 and trace points
-remained 454,223. Mechanical batches changed `31,819 -> 128`; physical vendor
-calls changed `31,819 -> 29,148`, a reduction of 2,671 calls (`8.394%`).
-
-All 17 Discovery CSV artifacts were byte-identical across all six recorded
-8RAW runs. The common batch-index SHA-256 was
-`1a634ab3648bb26f1b96fe8e85078fae62ed9edaf3fe77741fa3adc7d489fbbf`.
-The sequential runner emits no process IPC metric. Worker and process-tree RSS
-remained explicitly unavailable with the unchanged truthful reason
-`unsupported: Discovery runner has no owner-bound RSS sampler`; no measured RSS
-claim is made. No super-window, cache, public tuning/configuration, Matrix,
-writer, scientific-rule, Pt/composite, Alignment, or Backfill change occurred.
-
-The exact-safe correctness oracle and the integrated noise rule both pass.
-Superseding disposition: **`RETAIN_NATIVE_BATCHING`** (Terminal B). Validation
-status remains `diagnostic_only`; this performance result grants no new Matrix,
-writer, activation, publication, or scientific authority. No 85RAW run was
-launched.
-
-### Two-worker process confirmation
-
-The highest-value residual evidence loop fixed both variants to the current
-two-worker Windows process backend at clean revision `29d02d0a`. It reused the
-same two RAW hardlinks, Python 3.12.13, DLL identity, default Discovery settings,
-full CSV outputs, and foreground timing contract. A task-local ignored wrapper
-applied the scalar `1` or candidate `256` batch maximum at module import so the
-override executed inside each spawned RAW-owning worker, not only in the parent.
-One warmup per variant was excluded. The formal order was
-`S1 C1 / C2 S2 / S3 C3`; OS filesystem cache remained uncontrolled.
-
-| Pair | Scalar wall (s) | Candidate wall (s) | Paired gain |
-| --- | ---: | ---: | ---: |
-| 1 | 22.149 | 20.654 | 6.753% |
-| 2 | 21.797 | 21.203 | 2.726% |
-| 3 | 21.429 | 20.796 | 2.956% |
-
-Scalar wall median was `21.797 s`, candidate wall median was `20.796 s`, and
-the median gain was `4.594%` against `3.303%` scalar range-over-median noise.
-Every paired candidate was faster. Because samples execute concurrently, the
-process-stage decision metric is the maximum per-sample
-`discover.ms1_backfill` span per run rather than the sum: its median was
-`6.360 -> 5.648 s`, an `11.195%` gain against `4.194%` scalar stage noise.
-
-All six formal runs preserved 7,150 logical requests, 108,738 trace points, and
-the five byte-identical Discovery CSV hashes already listed above. Mechanical
-batches changed `7,150 -> 29`; physical vendor calls changed `7,150 -> 6,605`.
-The worker-emitted batch-maximum observations summed to 2 for scalar and 512 for
-candidate, confirming that the intended variant reached both spawned workers.
-Partial pickled request/result payload observations changed
-`3,722,849 -> 3,566,259 bytes`; they still exclude executor framing and confirmed
-transport bytes. Worker and process-tree RSS remain unavailable with the owner
-reason `unsupported: Discovery runner has no owner-bound RSS sampler`.
-
-This confirmation closes the process-backend uncertainty for the bounded 2RAW
-lane and strengthens, but does not broaden, Terminal B. It does not establish a
-universal dataset gain, an RSS bound, or product/scientific authority. No
-additional 8RAW or 85RAW run was launched for this loop.
-
-### Corrective owner-bound RAW-open receipt confirmation
-
-The review-corrective receipt seam was validated in one fresh two-worker 2RAW
-process smoke at clean producing revision `633c4d80`. The final #234 delivery
-keeps that acquisition/runtime/Discovery code unchanged; it only removes the
-separable `TimingRecorder` retry into follow-up #236 and adds this durable
-receipt. The smoke used Python 3.12.13, Thermo RawFileReader 4.0.19.0, and DLL
-SHA-256
-`ca452149b7fd4a7dd99b1b86daea4b23485ec87c43fda213e9f9ab97bbcf240d`.
-
-Inputs were the same task-local hardlinks used by the earlier 2RAW lane:
-
-- `NormalBC2312_DNA.raw`: 199,440,593 bytes, SHA-256
-  `74bbf71d3ebc85d944b23cbd5b5487bdbc5d38a1b57f56bbf0ee43f20ff729bf`;
-- `TumorBC2312_DNA.raw`: 202,128,099 bytes, SHA-256
-  `cbf020359be2249e800825ad810a3ea38ea990599da08ba0f165ac60e13a7a1f`.
-
-The task-local wrapper selected the retained private candidate batch maximum
-`256`, default Discovery CID-NL/peak settings, full candidate/review CSV output,
-and exactly two process workers. No application XIC cache was enabled; OS
-filesystem cache remained uncontrolled. One repetition was run in the
-foreground. Wall elapsed was 22.628193 s, which is recorded only as smoke
-provenance and is not a new performance comparison.
-
-Both RAW-owning workers returned a typed `RawAcquisitionSessionReceipt` that
-`execution_runtime_owner.derive_runtime_raw_open_metrics` validated against the
-parent-minted capability:
-
-| Sample | `raw_open_count` | Availability | Reason |
-| --- | ---: | --- | --- |
-| NormalBC2312_DNA | 1 | measured | empty |
-| TumorBC2312_DNA | 1 | measured | empty |
-
-The five persisted Discovery CSV artifacts matched the accepted exact-safe
-oracle:
-
-- batch index:
-  `beb8e4e1d376a573386d93a751f5e70179d0dfb32d0cf490b1bda8cf7e1b7164`;
-- Normal candidates/review:
-  `68510b5fff4f0b87d20d18e70168498f970d0af68ef9222d6a4e814ea11ecafc` /
-  `b1bbdd591345ee8c80e8124091f631495deedaedbf4a82aff3d701448ff09bfd`;
-- Tumor candidates/review:
-  `58e016b5f5bab1b30f96e7e93b5c41d0a0bfe46f9380fc5fe423e5a1ec9743ce` /
-  `723278e68109898707fddadaf82c2a8f9ebc180e1facc096cc5743e386773184`.
-
-`run_ok` and the owner-receipt/parity gate both passed. This closes only the
-review-found RAW-open observability gap: it does not repeat or broaden the
-paired performance evidence, and the Terminal B disposition remains
-**`RETAIN_NATIVE_BATCHING`** with `diagnostic_only` evidence status. No new
-8RAW or 85RAW run was launched.
-
-## Urine MeIQx Discovery-window versus group-centered Backfill
-
-**Current classification:** the bounded cases support the existing Alignment
-fallback; they do not justify a broader Discovery window or a new
-sample-specific RT predictor.
-
-At clean tracked revision `c0b9f0fc`, the current 54RAW urine Discovery
-artifacts and no-RAW grouping replay produced MeIQx `FAM000012` with 44 owners,
-center m/z `482.2098181818182`, center RT `40.933679545454545 min`, and
-`owner_targeted_istd_trajectory` evidence. The source group, owner, and batch
-index SHA-256 values were respectively
-`7add582ead91bb5e8ca394a190d474a9ea4d508e2e0ff24076a1fc8118fa3599`,
-`76c1c402744f28509fc1ce40f29ccc8aed2fdefeb37cbdeb1acdfb83a45541c8`,
-and `53f85766145deac4ca844ca67c810b983cade983366e5b028c12e7bcb1f9da3b`.
-
-One foreground three-RAW probe passed the current group through the existing
-Owner Backfill request plan and canonical physical-peak selector. It issued one
-logical request per sample, using the existing group-centered `±3 min` request
-window and `±1 min` maximum preferred-query delta:
-
-| Sample | Backfill state | Selected apex RT | Manual-review context |
-| --- | --- | ---: | --- |
-| `BC1165_control` | `rescued` | `40.9387127544` | positive at `40.98` |
-| `BC2264_cancer` | `rescued` | `40.8554188371` | positive at `40.90` |
-| `BC1028_control` | `unchecked/no_selection` | unavailable | negative; Discovery peak near `43.66` |
-
-The two selected positive apexes were each within `0.045 min` of the
-low-confidence manual review, while the off-trajectory BC1028 Discovery peak
-did not become a Backfill rescue. The oracle was also exercised with a displaced
-positive apex and a forged rescued negative; both perturbations failed it.
-
-Observed interpretation: BC2264 was a Discovery seed-window miss, not a
-demonstrated final Backfill miss. BC1165 already had multiple Discovery peaks,
-but the established cross-sample group supplied enough RT context for Backfill
-to select the locally compatible peak. This evidence is `diagnostic_only`; it
-grants no Matrix, selected-value, counted-detection, writer, or product
-authority.
-
-Do not widen every Untargeted Discovery request or add a second RT control plane
-to address these cases. Reopen a sample-specific trajectory/interpolation
-implementation only when a bounded real case has an established cross-sample
-group and a compatible physical peak, yet the current group-centered Backfill
-misses because the group-center query is materially displaced. No full urine,
-8RAW, or 85RAW Alignment run was launched for this loop.
+### 2026-05-26 P8b 85RAW Super-Window Acceptance
+
+Verdict: `production_candidate` for explicit opt-in
+`validation-minimal + production-equivalent + validation-fast + super-window`
+85RAW alignment validation. This is a validated runner/performance mode, not a
+new default behavior and not `production_ready` by itself.
+
+Durable closeout:
+retired private-history runtime note; the current durable facts are the
+validated command profile and rerun rule in this ledger section.
+
+Key facts:
+
+- The 85RAW super-window run completed and emitted the expected machine
+  artifacts.
+- Matrix, cells, and review surfaces were byte-identical to the accepted
+  P8b exact-window reference for the checked contract.
+- No new RT, identity, or coverage failure was introduced by super-window.
+- The CLI default remained exact-window batching; super-window stayed explicit
+  opt-in.
+- Known targeted-benchmark warnings from the prior accepted surface remained
+  warning-class follow-up, not super-window regressions.
+
+Do not rerun 85RAW just to re-prove super-window acceptance. Rerun only after
+current code changes RAW locality, owner-backfill request grouping,
+super-window batching/cropping, validation-fast settings, output surfaces used
+by the gate, or the cited artifacts become stale or contradictory.
