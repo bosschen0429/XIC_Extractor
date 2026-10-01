@@ -51,6 +51,9 @@ from xic_extractor.alignment.cid_nl_evidence_spine import (
 from xic_extractor.alignment.cid_nl_inputs import (
     CID_NL_ALIGNMENT_CONFIG,
 )
+from xic_extractor.alignment.cid_nl_predecessor_cells import (
+    compose_cid_nl_predecessor_cells,
+)
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample import (
     build_cross_sample_association_lineage_handoff,
@@ -136,7 +139,7 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
     fixture, assessments, groups = _outside_group_fixture(tmp_path, support_centers)
     original_contents = None
     for ordered_groups in (groups, tuple(reversed(groups))):
-        cells = cell_owner.compose_cid_nl_predecessor_cells(
+        cells = compose_cid_nl_predecessor_cells(
             processing_owners=fixture.owners,
             groups=ordered_groups,
             sample_assessments=tuple(assessments),
@@ -209,7 +212,7 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
         and cell.peak_observation is not None
     )
     with pytest.raises(ValueError, match="one exact sibling SUPPORT context"):
-        cell_owner.compose_cid_nl_predecessor_cells(
+        compose_cid_nl_predecessor_cells(
             processing_owners=fixture.owners,
             groups=(third_group,),
             sample_assessments=tuple(assessments),
@@ -219,7 +222,7 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
 
 def _outside_population_handoff(tmp_path: Path):
     fixture, assessments, groups = _outside_group_fixture(tmp_path, (8.0, 12.0))
-    cells = cell_owner.compose_cid_nl_predecessor_cells(
+    cells = compose_cid_nl_predecessor_cells(
         processing_owners=fixture.owners,
         groups=groups,
         sample_assessments=assessments,
@@ -330,7 +333,7 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
         candidate_peaks=(recovered_peak,),
     )
     assert backfill_assessment.content.method_result == "HOLD"
-    cells = cell_owner.compose_cid_nl_predecessor_cells(
+    cells = compose_cid_nl_predecessor_cells(
         processing_owners=fixture.owners,
         groups=groups,
         sample_assessments=((initial_sample, initial_assessment),),

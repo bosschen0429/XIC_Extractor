@@ -18,6 +18,8 @@ from xic_extractor.alignment.backfill_request_plan import (
 )
 from xic_extractor.alignment.cell_observations import (
     CellObservationRef,
+)
+from xic_extractor.alignment.cid_nl_predecessor_cells import (
     compose_cid_nl_predecessor_cells,
 )
 from xic_extractor.alignment.completion import (
