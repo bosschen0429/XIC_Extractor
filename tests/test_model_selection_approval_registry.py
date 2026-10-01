@@ -25,7 +25,7 @@ def test_load_expected_diff_approval_registry_reads_approved_tsv(
                 "expected_diff",
                 "approved",
                 "targeted_benchmark",
-                "peak_candidate_table;peak_candidate_boundaries",
+                "selected_rt;boundary",
                 "area_value_changed",
                 "rt;shape",
                 "benchmark supports successor peak",
@@ -44,8 +44,8 @@ def test_load_expected_diff_approval_registry_reads_approved_tsv(
     assert approval.legacy_selected_candidate_id == "legacy"
     assert approval.successor_selected_candidate_id == "successor"
     assert approval.public_outputs_touched == (
-        "peak_candidate_table",
-        "peak_candidate_boundaries",
+        "selected_rt",
+        "boundary",
     )
     assert approval.matrix_value_impact == "area_value_changed"
     assert approval.evidence_sources == ("rt", "shape")
@@ -74,7 +74,7 @@ def test_load_expected_diff_approval_registry_rejects_duplicate_stable_row_id(
             "expected_diff",
             "approved",
             "targeted_benchmark",
-            "peak_candidate_table",
+            "selected_rt",
             "none",
             "rt",
             "reviewed",

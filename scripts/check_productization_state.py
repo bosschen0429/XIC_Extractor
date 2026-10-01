@@ -147,9 +147,6 @@ REQUIRED_CONTROL_PLANE_ANCHORS = {
     ),
     "sample_metadata_order_projection": "sample_metadata cross-module parity",
     "sample_metadata_role_value_behavior": "role/value behavior remains blocked",
-    "review_action_candidate_sidecar": (
-        "candidate-sidecar verifier is now production_candidate"
-    ),
     "review_action_selected_candidate_switch": (
         "selected candidate / manual boundary writer parked"
     ),

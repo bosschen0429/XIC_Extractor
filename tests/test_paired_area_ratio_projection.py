@@ -434,7 +434,7 @@ def _hypothesis(
         role="ISTD" if target.is_istd else "Analyte",
         istd_pair=target.istd_pair,
         analysis_mode="targeted",
-        resolver_mode="region_first_safe_merge",
+        resolver_mode="local_minimum",
         integration=IntegrationResult(
             rt_left_min=8.4,
             rt_apex_min=8.5,

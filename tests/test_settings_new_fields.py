@@ -40,7 +40,6 @@ def test_new_keys_present() -> None:
         "target_pair_rt_calibration_path": "",
         "emit_score_breakdown": "false",
         "emit_review_report": "false",
-        "emit_peak_candidates": "false",
         "keep_intermediate_csv": "false",
         "model_selection_expected_diff_approval_registry": "",
         "targeted_ms1_shape_identity_support_tsv": "",
@@ -59,7 +58,6 @@ def test_new_settings_are_in_canonical_defaults_and_descriptions() -> None:
         "target_pair_rt_calibration_path",
         "emit_score_breakdown",
         "emit_review_report",
-        "emit_peak_candidates",
         "keep_intermediate_csv",
         "model_selection_expected_diff_approval_registry",
         "targeted_ms1_shape_identity_support_tsv",
@@ -71,7 +69,7 @@ def test_new_settings_are_in_canonical_defaults_and_descriptions() -> None:
     assert "RAW mtime" in CANONICAL_SETTINGS_DESCRIPTIONS["injection_order_source"]
     assert "developer/debug" in CANONICAL_SETTINGS_DESCRIPTIONS["rt_prior_library_path"]
     assert "leave empty" in CANONICAL_SETTINGS_DESCRIPTIONS["rt_prior_library_path"]
-    assert "shadow auto-reselection" in CANONICAL_SETTINGS_DESCRIPTIONS[
+    assert "RT priors" in CANONICAL_SETTINGS_DESCRIPTIONS[
         "target_pair_rt_calibration_path"
     ]
     assert "expected-diff" in CANONICAL_SETTINGS_DESCRIPTIONS[
@@ -120,7 +118,6 @@ def test_load_config_parses_scoring_settings(tmp_path: Path) -> None:
         "targeted_ms1_shape_identity_activation_policy": "limited_5hmdc_5medc",
         "emit_score_breakdown": "true",
         "emit_review_report": "true",
-        "emit_peak_candidates": "true",
         "keep_intermediate_csv": "true",
     }
 
@@ -166,7 +163,6 @@ def test_load_config_parses_scoring_settings(tmp_path: Path) -> None:
     )
     assert config.emit_score_breakdown is True
     assert config.emit_review_report is True
-    assert config.emit_peak_candidates is True
     assert config.keep_intermediate_csv is True
     assert config.ms1_morphology_smoothing_window_points == 21
     assert config.config_hash == compute_config_hash(targets_path, settings_path)
@@ -236,7 +232,6 @@ def test_load_config_defaults_scoring_settings_for_legacy_settings_csv(
     )
     assert config.emit_score_breakdown is False
     assert config.emit_review_report is False
-    assert config.emit_peak_candidates is False
     assert config.keep_intermediate_csv is False
 
 

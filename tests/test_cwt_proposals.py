@@ -177,7 +177,7 @@ def test_cwt_evidence_reaches_peak_hypothesis_without_selection_authority() -> N
         target_label="Analyte",
         role="Analyte",
         istd_pair="",
-        resolver_mode="region_first_safe_merge",
+        resolver_mode="local_minimum",
         peak_result=audited,
     )
 
@@ -244,7 +244,7 @@ def _config() -> ExtractionConfig:
         peak_min_prominence_ratio=0.05,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
-        resolver_mode="region_first_safe_merge",
+        resolver_mode="local_minimum",
         resolver_min_scans=3,
         resolver_min_absolute_height=10.0,
         resolver_min_relative_height=0.01,

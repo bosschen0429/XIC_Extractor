@@ -2079,7 +2079,7 @@ def _cell(
         region_review_reason="same envelope" if region else "",
         region_decision_status="evaluated" if region else "",
         region_decision_class="merge_suggested" if region else "",
-        region_product_action="safe_merge_eligible" if region else "",
+        region_product_action="no_change" if region else "",
         region_promotion_reason=("adjacent_wis_local_minimum_merge" if region else ""),
         region_baseline_method="asls" if region else "",
         integration_audit=(

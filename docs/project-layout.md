@@ -23,7 +23,8 @@ XIC_Extractor/
 │   ├── acquisition/           量測來源定位與有界資料擷取 adapter
 │   ├── evidence/              已擷取資料的純科學證據解讀
 │   ├── discovery/              候選探索、證據及 receipt-bound CSV 載入
-│   ├── extraction/             Targeted 擷取／workflow adapter 與保留的 Untargeted 執行 adapter
+│   ├── extraction/             Targeted 擷取／workflow adapter
+│   ├── untargeted_execution/    保留的 Untargeted 規劃、partition 執行與完成 adapter
 │   ├── peak_detection/         單次觀察、峰假設、選擇與積分
 │   ├── alignment/              跨樣本組合、Backfill、格值決策及其交付 adapter
 │   │   ├── completion.py       已取得 evidence → 完成的科學結果；不呼叫 runtime

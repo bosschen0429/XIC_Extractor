@@ -604,7 +604,6 @@ def _method_settings(config: ExtractionConfig) -> dict[str, object]:
         "parallel_workers": config.parallel_workers,
         "emit_score_breakdown": config.emit_score_breakdown,
         "emit_review_report": config.emit_review_report,
-        "emit_peak_candidates": config.emit_peak_candidates,
         "keep_intermediate_csv": config.keep_intermediate_csv,
     }
 

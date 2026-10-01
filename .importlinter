@@ -31,6 +31,7 @@ forbidden_modules =
     xic_extractor.diagnostics
     xic_extractor.discovery
     xic_extractor.extraction
+    xic_extractor.untargeted_execution
     xic_extractor.output
     xic_extractor.raw_reader
 allow_indirect_imports = False
@@ -45,6 +46,7 @@ forbidden_modules =
     xic_extractor.diagnostics
     xic_extractor.discovery
     xic_extractor.extraction
+    xic_extractor.untargeted_execution
     xic_extractor.output
     xic_extractor.peak_detection
     xic_extractor.raw_reader
@@ -58,6 +60,7 @@ source_modules =
 forbidden_modules =
     xic_extractor.applications
     xic_extractor.extraction
+    xic_extractor.untargeted_execution
     xic_extractor.extractor
     xic_extractor.raw_reader
 allow_indirect_imports = False
@@ -73,6 +76,7 @@ source_modules =
     xic_extractor.evidence
     xic_extractor.execution
     xic_extractor.extraction
+    xic_extractor.untargeted_execution
     xic_extractor.output
     xic_extractor.peak_detection
 forbidden_modules =
@@ -91,8 +95,16 @@ source_modules =
     xic_extractor.evidence
     xic_extractor.execution
     xic_extractor.extraction
+    xic_extractor.untargeted_execution
     xic_extractor.output
     xic_extractor.peak_detection
 forbidden_modules =
     xic_extractor.applications
 allow_indirect_imports = False
+
+[importlinter:contract:targeted-untargeted-independent]
+name = Targeted extraction and Untargeted execution are independent
+type = independence
+modules =
+    xic_extractor.extraction
+    xic_extractor.untargeted_execution

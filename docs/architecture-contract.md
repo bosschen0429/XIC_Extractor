@@ -46,6 +46,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | Targeted 正式選峰與 successor approval | `extraction/targeted_peak_selection.py` | 組合 hypotheses 與 Targeted 選峰政策，交出選定的峰、trace 和 decision；單峰演算法仍在 `peak_detection/` |
 | Targeted 輸入轉成共用峰假設 | `extraction/targeted_peak_hypotheses.py` | 選峰、candidate table 與 boundary callers 共用同一 translation；audit callers 不依賴正式選峰政策 |
 | Targeted 計數、角色例外與 review 原因 | `extraction/targeted_product_projection.py` | 消費已完成的科學結果，決定產品狀態；純結果模型在 `output/targeted_product_model.py`，writer 只呈現它 |
+| Untargeted 保留批次執行 | `untargeted_execution/` | 規劃、partition 與 completion adapter；科學決策仍由 Alignment，發布由 application／output 負責 |
 | 跨樣本配對、RT 漂移、群組 | `alignment/grouping_workflow.py`、`alignment/cross_sample/` | 群組決定先完成，Backfill 與格值決策消費同一結果 |
 | 從已取得的 evidence 完成科學結果 | `alignment/completion.py` | Targeted／Untargeted 共用 capture、grouping、cell 與 projection；不執行 runtime 或保存暫存 |
 | Untargeted CID-NL 的 sample assessment／Backfill inputs | `alignment/cid_nl_inputs.py` | 正式 partition 與 diagnostic projection 共用相同 input types、payload validation 和 method default；不依賴 artifact rendering |
@@ -60,7 +61,8 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | 欄位、workbook 或 Matrix 格式 | `output/`；Alignment Matrix 的 schema、格式及 atomic publishing 在 `output/alignment/` | 呈現 owner 的答案；不要從格式變更反向改變選峰或計數 |
 
 Package 名稱不是可強制的分層證明：`alignment/` 包含科學與外層 adapter，
-`extraction/` 也承載保留的 Untargeted 執行。純計算 module 的約束見下文；
+`extraction/` 只負責 Targeted 抽取；`untargeted_execution/` 擁有保留的 Untargeted
+執行。純計算 module 的約束見下文；
 實際 import 例外由 [`.importlinter`](../.importlinter) 明列，不能把通過該檢查
 解讀成所有 I/O 已經隔離。
 
@@ -182,6 +184,10 @@ result writers consume the completed groups and cells.
 
 ## Dependency Direction
 
+`extraction/` 與 `untargeted_execution/` 互不依賴；兩者共用的科學設定欄位由
+`configuration/scientific_settings.py` 擁有。`.importlinter` 的 independence
+contract 沒有 ignore，並包含間接依賴。
+
 - Domain algorithms may depend on arrays, typed configuration/context, and
   small domain models.
 - Domain algorithms must not import GUI, workbook builders, CLI scripts,
@@ -193,7 +199,7 @@ result writers consume the completed groups and cells.
   must not import or invoke the Inspector.
 - `applications.untargeted.application.run_untargeted_application` prepares
   inputs, rejects output collisions before acquisition, and invokes retained
-  CID-NL execution in `extraction/`. Its publication boundary consumes the
+  CID-NL execution in `untargeted_execution/`. Its publication boundary consumes the
   completed typed batch, delegates Matrix publishing to `output/alignment/`,
   and closes its private stores on every exit;
   [Alignment outputs](product/alignment.md#surfaces) owns streaming/materialization policy.
@@ -213,12 +219,12 @@ result writers consume the completed groups and cells.
   existing finalized application results; the
   [Targeted acquisition handoff](product/execution-runtime.md#current-implementation-gaps) owns pre-acknowledgement population validation.
   Untargeted execution combines the same completion with partition persistence;
-  its `untargeted_execution_result` carrier binds runtime success to the
+  its `untargeted_execution.execution_result` carrier binds runtime success to the
   finalized batch and owns the close action. Application publication consumes
   that carrier, while Matrix projection receives only the pure finalized batch.
 - `diagnostics/` is an outer layer. Inner packages (`acquisition`, `alignment`,
   `configuration`, `discovery`, `evidence`, `execution`, `extraction`,
-  `output`, `peak_detection`) never import it; applications may compose its
+  `untargeted_execution`, `output`, `peak_detection`) never import it; applications may compose its
   explanation persistence. A schema that production reads lives with its
   production reader, and diagnostic producers import it from there.
 - `applications/` is the outermost composition layer. The inner packages above
@@ -249,7 +255,8 @@ Use this map to choose the reason a package changes. File placement is owned by
 | `applications/untargeted/` | Untargeted input preparation, Discovery-to-provisional-Matrix composition, execution-to-publication orchestration, cancellation, completed-store and explanation lifetime; delegates Matrix publishing to `output/alignment/` | scientific grouping, cell decisions, a second runtime owner or writer algorithm |
 | `discovery/` | general candidate discovery, seed generation, workflow-neutral discovery facts, receipt-bound CSV reading and bounded candidate loading | matrix decisions or target-list policy |
 | `execution/` | generic attempt execution/finalization, partition scheduling, worker execution, cancellation, cleanup, reusable worker admission pools, one-shot process jobs, streamed result storage, recovery, and runtime timing/process-memory measurement | method-specific science, subject splitting, or writer authority |
-| `extraction/` | Targeted acquisition adapters, result models and product projection (product state, role/applicability policy, counted detection and reason overlays), jobs, windowing, drift, backend coordination, output dispatch, and retained Untargeted batch execution (`untargeted_input_planning`, `untargeted_execution`, `untargeted_partition_composition`, `untargeted_alignment`) | application composition, GUI, or Alignment decisions |
+| `extraction/` | Targeted acquisition adapters, result models and product projection (product state, role/applicability policy, counted detection and reason overlays), jobs, windowing, drift, backend coordination, output dispatch, and Targeted input binding | application composition, GUI, or Alignment decisions |
+| `untargeted_execution/` | retained Untargeted input planning, acquisition cache, partition execution/composition, completion, result stores and provisional run manifests | Targeted extraction policy, application composition, Matrix writing or a second runtime owner |
 | `peak_detection/` | physical observations, hypotheses, resolvers, boundaries, integration, evidence composition | cross-sample grouping, workflow policy, or writers |
 | `alignment/` | cross-sample grouping, refinement/repair composition, Alignment adapters and renderers | a second runtime owner, mutable transport authority, or Targeted-only science |
 | `output/` | workbook/TSV/HTML schema rendering and the pure Targeted product result model they render; `output/alignment/` owns Matrix artifact selection, streaming/materialization coordination, atomic writes and fingerprint receipts | evidence recomputation, application store lifetime or RAW access |

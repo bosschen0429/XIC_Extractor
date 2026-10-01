@@ -25,7 +25,6 @@
   "required_lane_ids": [
     "targeted_ms1_shape_identity_limited_rescue",
     "sample_metadata_order_projection",
-    "review_action_candidate_sidecar",
     "targeted_ms1_shape_identity_broader_targets",
     "sample_metadata_role_value_behavior",
     "review_action_selected_candidate_switch",
@@ -53,9 +52,7 @@
       "targeted_ms1_shape_identity_limited_rescue",
       "sample_metadata_order_projection"
     ],
-    "production_candidate_lanes": [
-      "review_action_candidate_sidecar"
-    ],
+    "production_candidate_lanes": [],
     "blocked_or_parked_lanes_have_no_allowed_effect": true,
     "targeted_limited_scope": [
       "limited_5hmdc_5medc",
@@ -63,7 +60,6 @@
       "5-medC"
     ],
     "targeted_limited_effect": "detected_flagged_only",
-    "sample_metadata_effect": "no_output_order_projection",
-    "review_action_candidate_sidecar_effect": "identity_verification_only"
+    "sample_metadata_effect": "no_output_order_projection"
   }
 }

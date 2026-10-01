@@ -220,11 +220,11 @@ def test_merged_physical_candidate_persists_representative_search_window(
         write_dual_csvs,
     )
     from xic_extractor.execution.timing import TimingRecorder
-    from xic_extractor.extraction.untargeted_alignment import (
-        _restore_physical_candidate,
-    )
     from xic_extractor.peak_detection.physical_peak_codec import (
         serialize_physical_peak_evaluation,
+    )
+    from xic_extractor.untargeted_execution.alignment import (
+        _restore_physical_candidate,
     )
 
     raw_path = tmp_path / "TumorBC2312_DNA.raw"

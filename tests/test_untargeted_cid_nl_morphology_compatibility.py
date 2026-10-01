@@ -35,19 +35,6 @@ from xic_extractor.discovery.ms1_backfill import (
 from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
 from xic_extractor.execution.attempt import start_runtime_attempt
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
-from xic_extractor.extraction.untargeted_partition.cid_nl_acquisition import (
-    CidNlAcquisitionError,
-    adapt_current_discovery_sample_subject,
-    method_label,
-)
-from xic_extractor.extraction.untargeted_partition.execution import (
-    execute_attempt,
-    runtime_call_cost,
-)
-from xic_extractor.extraction.untargeted_partition.models import UntargetedPartitionJob
-from xic_extractor.extraction.untargeted_partition.request import (
-    build_partition_context,
-)
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
 )
@@ -60,6 +47,19 @@ from xic_extractor.raw_reader import (
     THERMO_RAW_OBSERVATION_NAMESPACE,
 )
 from xic_extractor.sample_metadata import SampleMetadata
+from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
+    CidNlAcquisitionError,
+    adapt_current_discovery_sample_subject,
+    method_label,
+)
+from xic_extractor.untargeted_execution.partition.execution import (
+    execute_attempt,
+    runtime_call_cost,
+)
+from xic_extractor.untargeted_execution.partition.models import UntargetedPartitionJob
+from xic_extractor.untargeted_execution.partition.request import (
+    build_partition_context,
+)
 from xic_extractor.xic_models import XICRequest
 
 

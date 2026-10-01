@@ -66,7 +66,7 @@ def test_build_peak_hypotheses_marks_selected_and_rejected_candidates() -> None:
         target_label="Analyte",
         role="Analyte",
         istd_pair="ISTD",
-        resolver_mode="region_first_safe_merge",
+        resolver_mode="local_minimum",
         peak_result=result,
         candidate_ms2_evidence={
             selected: _ms2_evidence(nl_match=True),
@@ -182,7 +182,7 @@ def test_build_peak_hypotheses_projects_scorer_facts_to_successor_evidence() -> 
         target_label="Analyte",
         role="Analyte",
         istd_pair="ISTD",
-        resolver_mode="region_first_safe_merge",
+        resolver_mode="local_minimum",
         peak_result=result,
         candidate_ms2_evidence={selected: ms2_evidence},
     )[0]

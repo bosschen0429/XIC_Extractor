@@ -390,7 +390,7 @@ def test_partition_result_store_cleanup(tmp_path: Path) -> None:
 def test_preserved_index_reads_one_record_in_a_separate_process(tmp_path, monkeypatch):
     """A moved preserved spool is readable by a reader that never held the graph."""
     from tests.test_untargeted_cid_nl_bounded_runtime import _plan
-    from xic_extractor.extraction.untargeted_execution import (
+    from xic_extractor.untargeted_execution.execution import (
         _sample_worker_shared_objects,
         materialize_untargeted_partition,
     )
@@ -429,7 +429,7 @@ def test_preserved_index_reads_one_record_in_a_separate_process(tmp_path, monkey
         from xic_extractor.execution.result_store import (
             open_preserved_results,
         )
-        from xic_extractor.extraction.untargeted_partition.models import (
+        from xic_extractor.untargeted_execution.partition.models import (
             UntargetedPartitionJob,
         )
 

@@ -23,21 +23,21 @@ from tests.test_untargeted_cid_nl_real_data_runtime import (
 from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.execution.attempt import start_runtime_attempt
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
-from xic_extractor.extraction.untargeted_partition.execution import (
-    CID_NL_ALIGNMENT_CONFIG,
-    execute_attempt,
-    execute_partition,
-)
-from xic_extractor.extraction.untargeted_partition.models import UntargetedPartitionJob
-from xic_extractor.extraction.untargeted_partition.request import (
-    build_partition_context,
-)
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
     mint_untargeted_cid_nl_method_subject,
     mint_untargeted_cid_nl_method_subject_batch,
 )
 from xic_extractor.sample_metadata import SampleMetadata
+from xic_extractor.untargeted_execution.partition.execution import (
+    CID_NL_ALIGNMENT_CONFIG,
+    execute_attempt,
+    execute_partition,
+)
+from xic_extractor.untargeted_execution.partition.models import UntargetedPartitionJob
+from xic_extractor.untargeted_execution.partition.request import (
+    build_partition_context,
+)
 
 
 def test_runtime_batch_request_shares_initial_acquisition_across_exact_subjects(
@@ -180,7 +180,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         )
         source_raws[raw_paths[2]] = source_raw
         candidates_by_sample["Missing"] = candidates
-        from xic_extractor.extraction.untargeted_partition import cid_nl_acquisition
+        from xic_extractor.untargeted_execution.partition import cid_nl_acquisition
 
         acquire_peaks = cid_nl_acquisition._reacquire_peak_observations
 

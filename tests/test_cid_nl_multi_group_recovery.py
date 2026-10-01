@@ -35,16 +35,6 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
 )
 from xic_extractor.execution.attempt import start_runtime_attempt
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
-from xic_extractor.extraction.untargeted_partition import cid_nl_acquisition
-from xic_extractor.extraction.untargeted_partition import models as partition_models
-from xic_extractor.extraction.untargeted_partition.execution import execute_attempt
-from xic_extractor.extraction.untargeted_partition.models import (
-    UntargetedPartitionJob,
-    project_completed_backfill,
-)
-from xic_extractor.extraction.untargeted_partition.request import (
-    build_partition_context,
-)
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     is_ms1_only_cid_nl_backfill_assessment,
 )
@@ -52,6 +42,16 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
 )
 from xic_extractor.sample_metadata import SampleMetadata
+from xic_extractor.untargeted_execution.partition import cid_nl_acquisition
+from xic_extractor.untargeted_execution.partition import models as partition_models
+from xic_extractor.untargeted_execution.partition.execution import execute_attempt
+from xic_extractor.untargeted_execution.partition.models import (
+    UntargetedPartitionJob,
+    project_completed_backfill,
+)
+from xic_extractor.untargeted_execution.partition.request import (
+    build_partition_context,
+)
 
 
 @pytest.mark.parametrize(
@@ -233,7 +233,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
             == decision.matrix_value
         )
 
-        from xic_extractor.extraction.untargeted_partition.cid_nl_acquisition import (
+        from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
             backfill_untargeted_cid_nl_sample_subject,
         )
 
@@ -1394,8 +1394,8 @@ def _assert_alignment_uses_configured_recovery_groups(
         project_completed_untarget_batch_writer_inputs,
     )
     from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
-    from xic_extractor.extraction import untargeted_execution as bounded_runtime
-    from xic_extractor.extraction.untargeted_alignment import (
+    from xic_extractor.untargeted_execution import execution as bounded_runtime
+    from xic_extractor.untargeted_execution.alignment import (
         complete_untargeted_alignment,
     )
 

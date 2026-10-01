@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig
+from xic_extractor.configuration.scientific_settings import SCIENTIFIC_SETTING_FIELDS
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -67,18 +68,6 @@ TARGETED_REAL_DATA_DISCOVERY_SETTINGS_INPUT_KEY = (
 )
 TARGETED_REAL_DATA_DISCOVERY_SETTINGS_SCHEMA_VERSION = (
     "targeted_real_data_discovery_settings"
-)
-TARGETED_SCIENTIFIC_SETTING_FIELDS = (
-    "ms2_precursor_tol_da",
-    "nl_min_intensity_ratio",
-    "ms1_morphology_smoothing_window_points",
-    "count_no_ms2_as_detected",
-    "nl_rt_anchor_search_margin_min",
-    "nl_rt_anchor_half_window_min",
-    "nl_fallback_half_window_min",
-    "rolling_window_size",
-    "dirty_matrix_mode",
-    "baseline_audit_method",
 )
 
 
@@ -181,7 +170,7 @@ def build_targeted_processing_request_identity(
     scientific_inputs = {
         "settings": {
             field: getattr(config, field)
-            for field in TARGETED_SCIENTIFIC_SETTING_FIELDS
+            for field in SCIENTIFIC_SETTING_FIELDS
         },
         "target_list_snapshot": target_list_snapshot_payload(target_snapshot),
         "rt_prior_library": _rt_prior_snapshot(resolved_inputs.rt_prior_library),

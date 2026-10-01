@@ -897,10 +897,10 @@ def test_default_production_activation_loci_are_exact() -> None:
     }
     assert production_calls["complete_untargeted_alignment"] == {application_path}
     assert production_calls["execute_untargeted_plan"] == {
-        Path("xic_extractor/extraction/untargeted_alignment.py")
+        Path("xic_extractor/untargeted_execution/alignment.py")
     }
     assert production_calls['execute_partition'] == {
-        Path("xic_extractor/extraction/untargeted_execution.py")
+        Path("xic_extractor/untargeted_execution/execution.py")
     }
 
 
@@ -1039,12 +1039,21 @@ def test_import_linter_config_owns_the_static_dependency_contracts() -> None:
         "importlinter:contract:output-does-not-read-raw",
         "importlinter:contract:inner-layers-do-not-import-diagnostics",
         "importlinter:contract:inner-layers-do-not-import-applications",
+        "importlinter:contract:targeted-untargeted-independent",
     }
+    independence_section = "importlinter:contract:targeted-untargeted-independent"
     assert all(
         config[section]["type"] == "forbidden"
         and not config[section].getboolean("allow_indirect_imports")
-        for section in contracts
+        for section in contracts - {independence_section}
     )
+    independence = config[independence_section]
+    assert independence["type"] == "independence"
+    assert independence["modules"].split() == [
+        "xic_extractor.extraction",
+        "xic_extractor.untargeted_execution",
+    ]
+    assert not independence.get("ignore_imports", "").strip()
 
 
 def test_import_linter_static_scope_does_not_claim_dynamic_resolution(

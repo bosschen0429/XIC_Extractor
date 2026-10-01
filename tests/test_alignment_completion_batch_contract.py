@@ -8,7 +8,7 @@ import pytest
 
 import xic_extractor.alignment.completion as workflow_owner
 import xic_extractor.alignment.result.application_result as application_result_owner
-import xic_extractor.extraction.untargeted_execution_result as execution_result_owner
+import xic_extractor.untargeted_execution.execution_result as execution_result_owner
 from tests.test_search_scope_capture import _capture_binding, _peak_config
 from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
@@ -33,9 +33,6 @@ from xic_extractor.discovery.batch_contract import (
     validate_candidate_universe_payload,
 )
 from xic_extractor.execution._lifecycle import AttemptTerminalOutcome
-from xic_extractor.extraction.untargeted_execution_result import (
-    CompletedUntargetBatchWorkflowResult,
-)
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
@@ -54,6 +51,9 @@ from xic_extractor.processing_identity import (
     build_processing_request_identity,
     issue_processing_attempt,
     resolve_request_acquisition_source,
+)
+from xic_extractor.untargeted_execution.execution_result import (
+    CompletedUntargetBatchWorkflowResult,
 )
 
 

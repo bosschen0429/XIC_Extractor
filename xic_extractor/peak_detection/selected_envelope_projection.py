@@ -24,10 +24,6 @@ from xic_extractor.peak_detection.selected_envelope import (
     SelectedEnvelopePolicy,
     evaluate_selected_envelope_boundary,
 )
-from xic_extractor.peak_detection.selected_envelope_diagnostics import (
-    SelectedEnvelopeDiagnosticRow,
-    selected_envelope_diagnostic_row,
-)
 
 
 def selected_envelope_evaluation_from_hypothesis(
@@ -114,36 +110,6 @@ def selected_envelope_promoted_hypothesis_from_hypothesis(
         baseline=baseline,
     )
     return replace(hypothesis, integration=promoted_integration), evaluation
-
-
-def selected_envelope_diagnostic_row_from_hypothesis(
-    *,
-    sample_name: str,
-    hypothesis: PeakHypothesis,
-    rt_values: Any,
-    intensity_values: Any,
-    quantitation_context_rt_start: float,
-    quantitation_context_rt_end: float,
-    policy: SelectedEnvelopePolicy | None = None,
-    blank_like_context: bool = False,
-    plot_path: str = "",
-) -> SelectedEnvelopeDiagnosticRow:
-    evaluation = selected_envelope_evaluation_from_hypothesis(
-        hypothesis,
-        rt_values=rt_values,
-        intensity_values=intensity_values,
-        quantitation_context_rt_start=quantitation_context_rt_start,
-        quantitation_context_rt_end=quantitation_context_rt_end,
-        policy=policy,
-        blank_like_context=blank_like_context,
-    )
-    return selected_envelope_diagnostic_row(
-        sample_name=sample_name,
-        target_label=hypothesis.target_label,
-        role=hypothesis.role,
-        evaluation=evaluation,
-        plot_path=plot_path,
-    )
 
 
 def _promoted_integration(

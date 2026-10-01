@@ -121,12 +121,6 @@ class AuditTrail:
     proposal_sources: tuple[str, ...] = ()
     source_apex_rank: int | None = None
     merge_note: str = ""
-    safe_merge_rejection_reason: str = ""
-    safe_merge_promotion_source: str = ""
-    safe_merge_promotion_shadow_boundary_id: str = ""
-    safe_merge_promotion_area_ratio: float | None = None
-    safe_merge_promotion_selected_interval_count: int | None = None
-    safe_merge_promotion_selected_interval_gap_max_min: float | None = None
     selected: bool = False
     selection_rank: int | None = None
     selection_reference_rt_min: float | None = None
@@ -307,20 +301,6 @@ def build_peak_hypotheses(
                     proposal_sources=candidate.proposal_sources,
                     source_apex_rank=candidate.source_apex_rank,
                     merge_note=candidate.merge_note,
-                    safe_merge_rejection_reason=(candidate.safe_merge_rejection_reason),
-                    safe_merge_promotion_source=(candidate.safe_merge_promotion_source),
-                    safe_merge_promotion_shadow_boundary_id=(
-                        candidate.safe_merge_promotion_shadow_boundary_id
-                    ),
-                    safe_merge_promotion_area_ratio=(
-                        candidate.safe_merge_promotion_area_ratio
-                    ),
-                    safe_merge_promotion_selected_interval_count=(
-                        candidate.safe_merge_promotion_selected_interval_count
-                    ),
-                    safe_merge_promotion_selected_interval_gap_max_min=(
-                        candidate.safe_merge_promotion_selected_interval_gap_max_min
-                    ),
                     selected=is_selected,
                     selection_rank=rank_by_candidate.get(candidate),
                     selection_reference_rt_min=peak_result.selection_reference_rt,

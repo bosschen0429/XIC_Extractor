@@ -14,8 +14,8 @@ conservative decision in `xic_extractor.alignment.conservative_backfill`.
 1. Normal Untargeted GUI runs, Alignment CLI runs, and preset runs enter the
    retained CID-NL workflow through `applications.untargeted.application.run_untargeted_application`.
 2. The runtime schedules bounded per-sample Backfill work in
-   `extraction.untargeted_partition.workers`.
-3. Production composition in `extraction.untargeted_partition_composition` maps the
+   `untargeted_execution.partition.workers`.
+3. Production composition in `untargeted_execution.partition_composition` maps the
    resulting evidence through the conservative Backfill decision.
 4. The Untargeted route does not execute the retained `ObservationRevisit`
    transaction.

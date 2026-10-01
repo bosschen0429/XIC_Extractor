@@ -8,6 +8,9 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from xic_extractor.configuration.models import ExtractionConfig
+from xic_extractor.configuration.scientific_settings import (
+    SCIENTIFIC_SETTING_FIELDS,
+)
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -24,9 +27,6 @@ from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryPhysicalFactRecord,
     validate_discovery_physical_fact_record,
-)
-from xic_extractor.extraction.targeted_inputs import (
-    TARGETED_SCIENTIFIC_SETTING_FIELDS,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     REQUEST_INPUT_KEY,
@@ -344,7 +344,7 @@ def compose_partition_context(
             CANDIDATE_UNIVERSE_INPUT_KEY: candidate_universe,
             PEAK_SETTINGS_INPUT_KEY: {
                 field: getattr(peak_config, field)
-                for field in TARGETED_SCIENTIFIC_SETTING_FIELDS
+                for field in SCIENTIFIC_SETTING_FIELDS
             },
             **(
                 {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture}

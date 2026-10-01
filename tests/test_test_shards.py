@@ -30,14 +30,6 @@ _ALLOWED_SHARD_OVERLAPS: dict[Path, tuple[str, ...]] = {
     Path("tests/test_ms1_scan_index.py"): ("alignment-core", "product-gates-evidence"),
     Path("tests/test_peak_model_selection.py"): ("docs-config", "targeted-core"),
     Path("tests/test_pt_pattern_presets.py"): ("docs-config", "alignment-core"),
-    Path("tests/test_target_pair_expected_diff_approval_registry_tool.py"): (
-        "targeted-core",
-        "product-gates-evidence",
-    ),
-    Path("tests/test_target_pair_rt_auto_reselection.py"): (
-        "targeted-core",
-        "product-gates-evidence",
-    ),
     Path("tests/test_target_pair_rt_calibration.py"): (
         "targeted-core",
         "product-gates-evidence",

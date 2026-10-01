@@ -41,9 +41,6 @@ from xic_extractor.discovery.csv_reader import (
 )
 from xic_extractor.execution.process_memory import ProcessTreeMemorySampler
 from xic_extractor.execution.timing import TimingRecorder
-from xic_extractor.extraction.untargeted_input_planning import (
-    is_supported_alignment_discovery,
-)
 from xic_extractor.presets import (
     BoundCidNlRecipe,
     PresetError,
@@ -53,6 +50,9 @@ from xic_extractor.presets import (
 from xic_extractor.presets.models import Preset
 from xic_extractor.raw_reader import RawReaderError
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
+from xic_extractor.untargeted_execution.input_planning import (
+    is_supported_alignment_discovery,
+)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

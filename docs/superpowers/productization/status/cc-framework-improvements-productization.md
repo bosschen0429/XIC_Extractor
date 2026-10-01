@@ -27,7 +27,6 @@ Promotion requirements belong to
 - `targeted_ms1_shape_identity_broader_targets`
 - `sample_metadata_order_projection`
 - `sample_metadata_role_value_behavior`
-- `review_action_candidate_sidecar`
 - `review_action_selected_candidate_switch`
 - `review_action_manual_boundary_area_writer`
 - `calibration_normalization_activation`
