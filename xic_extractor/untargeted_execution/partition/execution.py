@@ -47,11 +47,16 @@ from xic_extractor.execution.attempt import (
 )
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.execution.workers import WorkerAdmissionPool
-from xic_extractor.extraction.untargeted_partition.cid_nl_acquisition import (
+from xic_extractor.processing_identity import (
+    canonical_current_attempt_artifact_closure,
+    resolve_request_acquisition_source,
+)
+from xic_extractor.raw_reader import _ensure_assemblies_loaded
+from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
     _PartitionWorkObserver,
     _supports_direct_precursor_assessment,
 )
-from xic_extractor.extraction.untargeted_partition.models import (
+from xic_extractor.untargeted_execution.partition.models import (
     _RUNTIME_COMPATIBILITY_TOKEN,
     RUNTIME_CALL_COST_METRIC_NAMES,
     UntargetedInitialSampleResult,
@@ -67,7 +72,7 @@ from xic_extractor.extraction.untargeted_partition.models import (
     _request_uses_subject_batch,
     _SampleResultContext,
 )
-from xic_extractor.extraction.untargeted_partition.workers import (
+from xic_extractor.untargeted_execution.partition.workers import (
     _backfill_support_context,
     _BatchSamplePhaseState,
     _execute_backfill,
@@ -84,11 +89,6 @@ from xic_extractor.extraction.untargeted_partition.workers import (
     _SampleInitialWorkerRequest,
     _SampleInitialWorkerResponse,
 )
-from xic_extractor.processing_identity import (
-    canonical_current_attempt_artifact_closure,
-    resolve_request_acquisition_source,
-)
-from xic_extractor.raw_reader import _ensure_assemblies_loaded
 from xic_extractor.validation_primitives import require_owner_normalized_text
 
 

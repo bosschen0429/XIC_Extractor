@@ -49,16 +49,6 @@ from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.execution.result_store import StreamedResultStore
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.execution.workers import WorkerAdmissionPool
-from xic_extractor.extraction.untargeted_execution import (
-    execute_untargeted_plan,
-)
-from xic_extractor.extraction.untargeted_execution_result import (
-    CompletedUntargetBatchWorkflowResult,
-)
-from xic_extractor.extraction.untargeted_input_planning import (
-    prepare_eager_untargeted_plan,
-    prepare_indexed_untargeted_plan,
-)
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.processing_run_spec import (
@@ -66,6 +56,16 @@ from xic_extractor.processing_run_spec import (
     ProcessingRunSpec,
 )
 from xic_extractor.sample_metadata import SampleMetadata
+from xic_extractor.untargeted_execution.execution import (
+    execute_untargeted_plan,
+)
+from xic_extractor.untargeted_execution.execution_result import (
+    CompletedUntargetBatchWorkflowResult,
+)
+from xic_extractor.untargeted_execution.input_planning import (
+    prepare_eager_untargeted_plan,
+    prepare_indexed_untargeted_plan,
+)
 
 _SAMPLE_IDENTITY_NAMESPACE = "alignment-untargeted-cid-nl"
 _RUNTIME_ARTIFACT_NAMESPACE = "untargeted-cid-nl-alignment"

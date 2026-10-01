@@ -36,6 +36,9 @@ from xic_extractor.alignment.grouping_bootstrap import (
 )
 from xic_extractor.alignment.grouping_result import CrossSampleGroupingResult
 from xic_extractor.configuration.models import ExtractionConfig
+from xic_extractor.configuration.scientific_settings import (
+    SCIENTIFIC_SETTING_FIELDS,
+)
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
@@ -57,23 +60,6 @@ from xic_extractor.execution._lifecycle import WorkUnitTerminalOutcome
 from xic_extractor.execution.attempt import (
     RuntimeAcquisitionReceipt,
     RuntimeWorkerBatchReceipt,
-)
-from xic_extractor.extraction.targeted_inputs import (
-    TARGETED_SCIENTIFIC_SETTING_FIELDS,
-)
-from xic_extractor.extraction.untargeted_partition.cid_nl_acquisition import (
-    CidNlAcquisitionResult,
-    UntargetedCidNlBackfillAttemptResult,
-    _bounded_subject_candidates,
-)
-from xic_extractor.extraction.untargeted_partition.request import (
-    DISCOVERY_SETTINGS_INPUT_KEY,
-    PEAK_SETTINGS_INPUT_KEY,
-    UNTARGETED_CID_NL_PROCESSING_ALGORITHM_VERSION,
-    UNTARGETED_CID_NL_PROCESSING_CONTRACT_VERSION,
-    UNTARGETED_CID_NL_PROCESSING_INPUT_SCHEMA_VERSION,
-    candidate_universe_payload,
-    discovery_settings_payload,
 )
 from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -97,6 +83,20 @@ from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
     ResolvedCanonicalSampleIdentity,
     resolve_request_acquisition_source,
+)
+from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
+    CidNlAcquisitionResult,
+    UntargetedCidNlBackfillAttemptResult,
+    _bounded_subject_candidates,
+)
+from xic_extractor.untargeted_execution.partition.request import (
+    DISCOVERY_SETTINGS_INPUT_KEY,
+    PEAK_SETTINGS_INPUT_KEY,
+    UNTARGETED_CID_NL_PROCESSING_ALGORITHM_VERSION,
+    UNTARGETED_CID_NL_PROCESSING_CONTRACT_VERSION,
+    UNTARGETED_CID_NL_PROCESSING_INPUT_SCHEMA_VERSION,
+    candidate_universe_payload,
+    discovery_settings_payload,
 )
 from xic_extractor.validation_primitives import (
     require_owner_normalized_text,
@@ -989,7 +989,7 @@ def _validate_request_bound_inputs(
         )
     expected_peak_settings = {
         field: getattr(job.peak_config, field)
-        for field in TARGETED_SCIENTIFIC_SETTING_FIELDS
+        for field in SCIENTIFIC_SETTING_FIELDS
     }
     if request_inputs.get(PEAK_SETTINGS_INPUT_KEY) != expected_peak_settings:
         raise UntargetedPartitionError(

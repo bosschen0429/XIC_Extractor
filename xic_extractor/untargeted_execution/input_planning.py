@@ -33,15 +33,6 @@ from xic_extractor.discovery.physical_fact_persistence import (
     IndexedDiscoveryPhysicalFacts,
 )
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
-from xic_extractor.extraction.untargeted_partition.models import (
-    UntargetedPartitionJob,
-    build_sample_jobs,
-)
-from xic_extractor.extraction.untargeted_partition.request import (
-    UntargetedPartitionContext,
-    build_partition_context,
-    compose_partition_context,
-)
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlComposition,
     CidNlMethodSubject,
@@ -57,6 +48,15 @@ from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
 from xic_extractor.sample_metadata import (
     SampleMetadata,
+)
+from xic_extractor.untargeted_execution.partition.models import (
+    UntargetedPartitionJob,
+    build_sample_jobs,
+)
+from xic_extractor.untargeted_execution.partition.request import (
+    UntargetedPartitionContext,
+    build_partition_context,
+    compose_partition_context,
 )
 
 

@@ -36,43 +36,43 @@ def test_alignment_modules_do_not_import_pipeline_or_io_boundaries():
     allowed_composition_imports = {
         (
             "pipeline.py",
-            "xic_extractor.extraction.untargeted_alignment",
+            "xic_extractor.untargeted_execution.alignment",
         ),
         (
             "pipeline.py",
-            "xic_extractor.extraction.untargeted_alignment."
+            "xic_extractor.untargeted_execution.alignment."
             "complete_untargeted_alignment",
         ),
         (
             "pipeline.py",
-            "xic_extractor.extraction.untargeted_alignment."
+            "xic_extractor.untargeted_execution.alignment."
             "complete_untargeted_alignment",
         ),
         (
             "pipeline.py",
-            "xic_extractor.extraction.untargeted_partition_composition",
+            "xic_extractor.untargeted_execution.partition_composition",
         ),
         (
             "pipeline.py",
-            "xic_extractor.extraction.untargeted_partition_composition."
+            "xic_extractor.untargeted_execution.partition_composition."
             "is_supported_alignment_discovery",
         ),
         (
             "pipeline.py",
-            "xic_extractor.extraction.untargeted_alignment",
+            "xic_extractor.untargeted_execution.alignment",
         ),
         (
             "pipeline.py",
-            "xic_extractor.extraction.untargeted_alignment."
+            "xic_extractor.untargeted_execution.alignment."
             "complete_untargeted_alignment",
         ),
         (
             "pipeline.py",
-            "xic_extractor.extraction.untargeted_partition_composition",
+            "xic_extractor.untargeted_execution.partition_composition",
         ),
         (
             "pipeline.py",
-            "xic_extractor.extraction.untargeted_partition_composition."
+            "xic_extractor.untargeted_execution.partition_composition."
             "is_supported_alignment_discovery",
         ),
     }

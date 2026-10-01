@@ -78,13 +78,13 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
 from xic_extractor.alignment.completion import complete_analysis
-from xic_extractor.extraction.untargeted_execution_result import (
+from xic_extractor.untargeted_execution.execution_result import (
     CompletedUntargetBatchWorkflowResult,
 )
-from xic_extractor.extraction.untargeted_alignment import (
+from xic_extractor.untargeted_execution.alignment import (
     complete_untargeted_alignment,
 )
-from xic_extractor.extraction.untargeted_input_planning import (
+from xic_extractor.untargeted_execution.input_planning import (
     is_pure_single_provider_cid_nl,
 )
 from xic_extractor.extraction.targeted_peak_hypotheses import (
@@ -100,15 +100,15 @@ from xic_extractor.execution.partitions import PartitionPipelineScheduler
 from xic_extractor.execution.result_store import StreamedResultStore
 from xic_extractor.execution.workers import WorkerAdmissionPool, execute_process_jobs
 from xic_extractor.extraction.jobs import RawFileJob
-from xic_extractor.extraction.untargeted_partition.execution import execute_partition
-from xic_extractor.extraction.untargeted_partition.models import UntargetedPartitionJob
-from xic_extractor.extraction.untargeted_partition.request import (
+from xic_extractor.untargeted_execution.partition.execution import execute_partition
+from xic_extractor.untargeted_execution.partition.models import UntargetedPartitionJob
+from xic_extractor.untargeted_execution.partition.request import (
     build_partition_context,
 )
-from xic_extractor.extraction.untargeted_partition.workers import (
+from xic_extractor.untargeted_execution.partition.workers import (
     _SampleInitialWorkerRequest,
 )
-from xic_extractor.extraction.untargeted_partition.cid_nl_acquisition import (
+from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
     CidNlAcquisitionResult,
 )
 from xic_extractor.presets import bind_cid_nl_recipe, load_preset

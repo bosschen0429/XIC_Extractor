@@ -41,10 +41,6 @@ from xic_extractor.discovery.csv_reader import read_discovery_batch_index
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.execution.timing import TimingRecorder
-from xic_extractor.extraction.untargeted_alignment import complete_untargeted_alignment
-from xic_extractor.extraction.untargeted_input_planning import (
-    is_supported_alignment_discovery,
-)
 from xic_extractor.output.alignment.output_levels import (
     AlignmentOutputLevel,
     artifact_names_for_output_level,
@@ -55,6 +51,10 @@ from xic_extractor.output.alignment.pipeline_outputs import (
     output_paths,
 )
 from xic_extractor.sample_metadata import SampleMetadata
+from xic_extractor.untargeted_execution.alignment import complete_untargeted_alignment
+from xic_extractor.untargeted_execution.input_planning import (
+    is_supported_alignment_discovery,
+)
 
 
 class AlignmentProcessExecutionError(RuntimeError):

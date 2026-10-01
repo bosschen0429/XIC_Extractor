@@ -28,28 +28,6 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution._finalization import RuntimeResourceCleanupOutcome
-from xic_extractor.extraction.untargeted_acquisition_cache import (
-    CachedUntargetedRaw,
-    bind_untargeted_acquisition_cache,
-)
-from xic_extractor.extraction.untargeted_partition import cid_nl_acquisition
-from xic_extractor.extraction.untargeted_partition.cid_nl_acquisition import (
-    CidNlAcquisitionResult,
-    UntargetedCidNlBackfillAttemptResult,
-    UntargetedCidNlBackfillTarget,
-    UntargetedCidNlBackfillTraceBatch,
-    UntargetedCidNlSampleTraceBatch,
-    _PartitionWorkObserver,
-    adapt_current_discovery_sample_subject,
-    backfill_untargeted_cid_nl_sample_subject,
-)
-from xic_extractor.extraction.untargeted_partition.models import (
-    UntargetedPartitionError,
-    UntargetedPartitionJob,
-    UntargetedPreparedGrouping,
-    _request_subject_candidates,
-    _request_subject_physical_records,
-)
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
     is_cid_nl_missing_ms1_rejection,
@@ -65,6 +43,28 @@ from xic_extractor.raw_reader import (
     _bind_expected_path_identity,
     _ensure_assemblies_loaded,
     open_raw,
+)
+from xic_extractor.untargeted_execution.acquisition_cache import (
+    CachedUntargetedRaw,
+    bind_untargeted_acquisition_cache,
+)
+from xic_extractor.untargeted_execution.partition import cid_nl_acquisition
+from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
+    CidNlAcquisitionResult,
+    UntargetedCidNlBackfillAttemptResult,
+    UntargetedCidNlBackfillTarget,
+    UntargetedCidNlBackfillTraceBatch,
+    UntargetedCidNlSampleTraceBatch,
+    _PartitionWorkObserver,
+    adapt_current_discovery_sample_subject,
+    backfill_untargeted_cid_nl_sample_subject,
+)
+from xic_extractor.untargeted_execution.partition.models import (
+    UntargetedPartitionError,
+    UntargetedPartitionJob,
+    UntargetedPreparedGrouping,
+    _request_subject_candidates,
+    _request_subject_physical_records,
 )
 
 

@@ -21,12 +21,12 @@ from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.pipeline import run_discovery_batch
 from xic_extractor.execution.timing import TimingRecorder
-from xic_extractor.extraction.untargeted_input_planning import (
-    is_pure_single_provider_cid_nl,
-)
 from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
+from xic_extractor.untargeted_execution.input_planning import (
+    is_pure_single_provider_cid_nl,
+)
 
 
 @dataclass(frozen=True, slots=True)

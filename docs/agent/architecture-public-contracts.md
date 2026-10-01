@@ -30,8 +30,8 @@ schema versions, and command flags. Do not copy those inventories here.
 - The Untargeted application invokes retained CID-NL execution; Alignment has
   no extraction imports. Alignment owns the pure finalized Matrix projection;
   `output/alignment/` owns artifact selection, formatting, streaming or
-  materialization, atomic writing and fingerprint receipts. The extraction
-  adapter never writes. Application publication owns cancellation, the
+  materialization, atomic writing and fingerprint receipts. The Untargeted
+  execution adapter never writes. Application publication owns cancellation, the
   completed result's private stores and explanation lifetime through writing;
   GUI and CLI receive durable published outputs only.
   `tests/test_docs_architecture_census.py` pins these execution boundaries;

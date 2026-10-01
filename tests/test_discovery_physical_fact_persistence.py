@@ -189,7 +189,7 @@ def _population(spec, acquisition_input):
 
 
 def _physical_index_jobs(tmp_path: Path, *, count: int):
-    from xic_extractor.extraction.untargeted_alignment import _PhysicalIndexJob
+    from xic_extractor.untargeted_execution.alignment import _PhysicalIndexJob
 
     raw_paths = tuple(tmp_path / f"sample_{index}.raw" for index in range(count))
     for raw_path in raw_paths:
@@ -886,7 +886,7 @@ def test_parallel_physical_indexing_is_deterministic_and_transfers_spool_ownersh
     backend: str,
     workers: int,
 ) -> None:
-    from xic_extractor.extraction.untargeted_alignment import (
+    from xic_extractor.untargeted_execution.alignment import (
         _index_discovery_physical_sources,
     )
 
@@ -922,7 +922,7 @@ def test_threaded_physical_indexing_bounds_active_jobs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from xic_extractor.extraction import untargeted_alignment as owner
+    from xic_extractor.untargeted_execution import alignment as owner
 
     jobs, _expected, _spool_dir = _physical_index_jobs(tmp_path, count=4)
     original = owner._index_discovery_physical_source
@@ -960,7 +960,7 @@ def test_parallel_physical_indexing_cleans_adopted_spools_after_failure(
 ) -> None:
     from dataclasses import replace as dataclass_replace
 
-    from xic_extractor.extraction.untargeted_alignment import (
+    from xic_extractor.untargeted_execution.alignment import (
         _index_discovery_physical_sources,
     )
 

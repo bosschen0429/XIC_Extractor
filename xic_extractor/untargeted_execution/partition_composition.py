@@ -66,20 +66,6 @@ from xic_extractor.execution.result_store import (
     SealedPartition,
     StreamedResultStore,
 )
-from xic_extractor.extraction.untargeted_input_planning import (
-    alignment_subject_worksets,
-)
-from xic_extractor.extraction.untargeted_partition.models import (
-    UntargetedInitialSampleResult,
-    UntargetedPartitionJob,
-    UntargetedPreparedGrouping,
-    UntargetedSampleResult,
-    UntargetedWorksetGrouping,
-    _SampleResultContext,
-)
-from xic_extractor.extraction.untargeted_partition.request import (
-    UntargetedPartitionContext,
-)
 from xic_extractor.peak_detection.capture import (
     SampleLocalCapture,
     bind_owner_backed_capture_hypothesis,
@@ -103,6 +89,20 @@ from xic_extractor.peak_detection.search_scope import (
     EvidenceProviderBinding,
     UntargetedSearchScope,
     require_capture_binding,
+)
+from xic_extractor.untargeted_execution.input_planning import (
+    alignment_subject_worksets,
+)
+from xic_extractor.untargeted_execution.partition.models import (
+    UntargetedInitialSampleResult,
+    UntargetedPartitionJob,
+    UntargetedPreparedGrouping,
+    UntargetedSampleResult,
+    UntargetedWorksetGrouping,
+    _SampleResultContext,
+)
+from xic_extractor.untargeted_execution.partition.request import (
+    UntargetedPartitionContext,
 )
 
 

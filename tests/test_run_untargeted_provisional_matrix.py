@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 import scripts.run_untargeted_provisional_matrix as runner
-import xic_extractor.extraction.provisional_run_manifest as manifest_owner
 import xic_extractor.output.alignment.artifact_write_receipts as alignment_receipt_owner
+import xic_extractor.untargeted_execution.provisional_run_manifest as manifest_owner
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.applications.untargeted.application import (
     validate_untargeted_application_options,
