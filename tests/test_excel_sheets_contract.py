@@ -7,8 +7,11 @@ from openpyxl import load_workbook
 from xic_extractor import extractor
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extraction.output_dispatch import write_outputs
-from xic_extractor.extractor import DiagnosticRecord, RunOutput
+from xic_extractor.extraction.result_models import RunOutput
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
+from xic_extractor.output.messages import DiagnosticRecord
+
+_OPEN_RAW_SEAM = "xic_extractor.extraction.target_extraction.open_raw"
 
 
 @pytest.fixture(autouse=True)
@@ -120,7 +123,7 @@ def _run_pipeline(
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     target = _target("Analyte")
 
-    monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
+    monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
 
     run_output = extractor.acquire(config, [target])
     write_outputs(config, [target], run_output)

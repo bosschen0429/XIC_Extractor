@@ -12,7 +12,10 @@ from xic_extractor.rt_prior_library import LibraryEntry
 
 if TYPE_CHECKING:
     from xic_extractor.extraction.jobs import ScoringInputs
-    from xic_extractor.extractor import RawFileExtractionResult, RunOutput
+    from xic_extractor.extraction.result_models import (
+        RawFileExtractionResult,
+        RunOutput,
+    )
 
 
 def run_process(
@@ -28,7 +31,7 @@ def run_process(
     acquisition_sources_by_sample: Mapping[str, AcquisitionSourceExpectation]
     | None = None,
 ) -> RunOutput:
-    from xic_extractor import extractor
+    from xic_extractor.extraction import result_models
     from xic_extractor.extraction.jobs import ScoringInputs
 
     istd_targets = tuple(target for target in targets if target.is_istd)
@@ -62,7 +65,7 @@ def run_process(
     for result in raw_results:
         diagnostics.extend(result.diagnostics)
 
-    return extractor.RunOutput(file_results=file_results, diagnostics=diagnostics)
+    return result_models.RunOutput(file_results=file_results, diagnostics=diagnostics)
 
 
 def collect_raw_file_results_process(

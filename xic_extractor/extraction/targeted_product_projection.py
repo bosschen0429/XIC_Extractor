@@ -22,7 +22,7 @@ from xic_extractor.target_sample_applicability import (
 )
 
 if TYPE_CHECKING:
-    from xic_extractor.extractor import ExtractionResult
+    from xic_extractor.extraction.result_models import ExtractionResult
 
 
 def project_targeted_result(

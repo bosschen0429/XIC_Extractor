@@ -20,7 +20,7 @@ def test_worker_job_and_result_objects_are_pickleable(tmp_path: Path) -> None:
         WorkerError,
         validate_job_payload,
     )
-    from xic_extractor.extractor import RawFileExtractionResult
+    from xic_extractor.extraction.result_models import RawFileExtractionResult
 
     job = RawFileJob(
         raw_index=3,
@@ -67,7 +67,7 @@ def test_worker_job_and_result_objects_are_pickleable(tmp_path: Path) -> None:
 
 def test_aggregation_sorts_successful_results_by_raw_index(tmp_path: Path) -> None:
     from xic_extractor.extraction.jobs import collect_ordered_results
-    from xic_extractor.extractor import RawFileExtractionResult
+    from xic_extractor.extraction.result_models import RawFileExtractionResult
 
     result_b = RawFileExtractionResult(
         raw_index=2,
@@ -289,7 +289,7 @@ def test_parallel_full_extraction_submits_pickleable_scoring_jobs_and_sorts(
     from xic_extractor.extraction.process_backend import (
         collect_raw_file_results_process,
     )
-    from xic_extractor.extractor import (
+    from xic_extractor.extraction.result_models import (
         FileResult,
         RawFileExtractionResult,
     )
@@ -415,7 +415,10 @@ def test_raw_worker_rebuilds_scoring_factory_inside_worker(
         rebuilt["worker_factory"] = scoring_context_factory
         rebuilt["worker_rt_prior_library"] = rt_prior_library
         rebuilt["approvals"] = model_selection_expected_diff_approvals
-        from xic_extractor.extractor import FileResult, RawFileExtractionResult
+        from xic_extractor.extraction.result_models import (
+            FileResult,
+            RawFileExtractionResult,
+        )
 
         return RawFileExtractionResult(
             raw_index=raw_index,
@@ -466,7 +469,10 @@ def test_process_run_writes_output_only_after_collecting_worker_results(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from xic_extractor.extraction.pipeline import run_pipeline
-    from xic_extractor.extractor import FileResult, RawFileExtractionResult
+    from xic_extractor.extraction.result_models import (
+        FileResult,
+        RawFileExtractionResult,
+    )
 
     config = replace(
         _config(tmp_path),

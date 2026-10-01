@@ -5,7 +5,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
-from xic_extractor.extractor import FileResult, RawFileExtractionResult
+from xic_extractor.extraction.result_models import FileResult, RawFileExtractionResult
 
 
 def test_raw_job_runner_reports_progress_and_cancels_pending_futures(

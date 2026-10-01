@@ -11,7 +11,8 @@ from xic_extractor.applications.targeted.output_boundary import (
     TargetedOutputBoundaryError,
 )
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
-from xic_extractor.extractor import DiagnosticRecord, RunOutput
+from xic_extractor.extraction.result_models import RunOutput
+from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.output.method_manifest import (
     MethodManifestContext,
     write_method_manifest,

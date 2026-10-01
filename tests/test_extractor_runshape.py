@@ -1,4 +1,4 @@
-from xic_extractor.extractor import RunOutput
+from xic_extractor.extraction.result_models import RunOutput
 
 
 def test_run_output_has_expected_fields() -> None:

@@ -21,7 +21,7 @@ from xic_extractor.rt_prior_library import LibraryEntry
 from .targeted_inputs import resolve_targeted_inputs, resolve_targeted_raw_paths
 
 if TYPE_CHECKING:
-    from xic_extractor.extractor import RunOutput
+    from xic_extractor.extraction.result_models import RunOutput
 
 
 def run_pipeline(

@@ -10,8 +10,8 @@ from xic_extractor.applications.targeted.application import (
     build_targeted_application_request,
 )
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
+from xic_extractor.extraction.result_models import FileResult, RunOutput
 from xic_extractor.extraction.targeted_inputs import resolve_targeted_inputs
-from xic_extractor.extractor import FileResult, RunOutput
 
 
 def test_cli_and_gui_use_same_targeted_application_service() -> None:

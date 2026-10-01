@@ -15,12 +15,12 @@ from xic_extractor.extraction.paired_area_ratio_projection import (
     assess_paired_area_ratio,
 )
 from xic_extractor.extraction.result_assembly import build_extraction_result
+from xic_extractor.extraction.result_models import FileResult, RunOutput
 from xic_extractor.extraction.targeted_ms1_shape_identity_projection import (
     TargetedMs1ShapeIdentitySupport,
     apply_targeted_ms1_shape_identity_projection,
     result_with_targeted_ms1_shape_identity_support,
 )
-from xic_extractor.extractor import FileResult, RunOutput
 from xic_extractor.output.targeted_product_model import (
     OWN_MAX_SAME_PEAK_SUPPORT_REASON,
 )

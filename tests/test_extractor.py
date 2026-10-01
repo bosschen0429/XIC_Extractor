@@ -7,7 +7,7 @@ import pytest
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
-from xic_extractor.extractor import ExtractionResult
+from xic_extractor.extraction.result_models import ExtractionResult
 from xic_extractor.peak_detection.evidence_facts import (
     build_candidate_evidence_facts,
 )
@@ -19,6 +19,8 @@ from xic_extractor.peak_detection.models import (
 )
 from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.raw_reader import RawReaderError
+
+_OPEN_RAW_SEAM = "xic_extractor.extraction.target_extraction.open_raw"
 
 _active_nl_fixture_result: NLResult | None = None
 
@@ -49,7 +51,7 @@ def test_run_raises_before_processing_when_reader_preflight_fails(
         raising=False,
     )
     monkeypatch.setattr(
-        "xic_extractor.extractor.open_raw",
+        _OPEN_RAW_SEAM,
         lambda *_args: pytest.fail(
             "open_raw should not be called after preflight failure"
         ),
@@ -69,7 +71,7 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [_target("NoNL", neutral_loss_da=None), _target("WithNL")]
     monkeypatch.setattr(
-        "xic_extractor.extractor.open_raw",
+        _OPEN_RAW_SEAM,
         _open_raw_factory(peak_centers=[8.5, 9.5]),
     )
     monkeypatch.setattr(
@@ -172,7 +174,7 @@ def test_outside_strong_peak_cannot_erase_in_window_peak(
             outside = outside_height * np.exp(-0.5 * ((rt - 6.0) / 0.04) ** 2)
             return rt, 10.0 + inside + outside
 
-    monkeypatch.setattr("xic_extractor.extractor.open_raw", lambda *_args: Raw())
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args: Raw())
     target = replace(_target("Inside", neutral_loss_da=None), rt_min=4.5, rt_max=5.5)
     output = _run(config, [target])
     result = output.file_results[0].results["Inside"]
@@ -195,7 +197,7 @@ def test_peak_only_outside_selection_still_answers_physical_question(
             outside = 5000.0 * np.exp(-0.5 * ((rt - 6.0) / 0.04) ** 2)
             return rt, 10.0 + outside
 
-    monkeypatch.setattr("xic_extractor.extractor.open_raw", lambda *_args: Raw())
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args: Raw())
     target = replace(_target("Empty", neutral_loss_da=None), rt_min=4.5, rt_max=5.5)
     output = _run(config, [target])
     result = output.file_results[0].results["Empty"]
@@ -236,7 +238,7 @@ def test_formal_target_ranks_only_physically_supported_signal(
             fragmented[int(np.argmin(np.abs(rt - 6.0)))] = 1000.0
             return rt, raw + fragmented
 
-    monkeypatch.setattr("xic_extractor.extractor.open_raw", lambda *_args: Raw())
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args: Raw())
     output = _run(config, [target])
     result = output.file_results[0].results[target.label]
     evaluation = result.physical_evaluation
@@ -298,7 +300,7 @@ def test_formal_target_drops_selection_when_final_physical_owner_is_unavailable(
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     target = _target("Rejected", neutral_loss_da=None)
     monkeypatch.setattr(
-        "xic_extractor.extractor.open_raw", _open_raw_factory(peak_centers=[9.0])
+        _OPEN_RAW_SEAM, _open_raw_factory(peak_centers=[9.0])
     )
 
     def unavailable_answer(prepared, universe, question):
@@ -352,7 +354,7 @@ def test_no_selected_apex_does_not_capture_a_broad_tail(
             return rt, 5000.0 * np.exp(-0.5 * ((rt - 12.6) / 0.8) ** 2)
 
     monkeypatch.setattr(
-        "xic_extractor.extractor.open_raw", lambda *_args, **_kwargs: BroadTailRaw()
+        _OPEN_RAW_SEAM, lambda *_args, **_kwargs: BroadTailRaw()
     )
     monkeypatch.setattr(
         "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
@@ -416,7 +418,7 @@ def test_target_selection_window_uses_one_wide_physical_context(
     targets = [_target("NoNL", neutral_loss_da=None), _target("WithNL")]
     raw = _WidePhysicalContextRaw()
     monkeypatch.setattr(
-        "xic_extractor.extractor.open_raw",
+        _OPEN_RAW_SEAM,
         lambda *_args, **_kwargs: raw,
     )
     monkeypatch.setattr(
@@ -460,7 +462,7 @@ def test_run_multi_sample_preserves_sample_attribution_and_ordering(
     targets = [_target("Analyte", neutral_loss_da=None)]
 
     monkeypatch.setattr(
-        "xic_extractor.extractor.open_raw",
+        _OPEN_RAW_SEAM,
         _open_raw_factory(
             peak_centers_by_sample={
                 "SampleA.raw": [8.50],
@@ -543,7 +545,7 @@ def test_run_wires_candidate_ms2_evidence_into_scoring_context(
         return _ok_peak(8.5, 1200.0, 3400.25)
 
     monkeypatch.setattr(
-        "xic_extractor.extractor.open_raw",
+        _OPEN_RAW_SEAM,
         _open_raw_factory(),
     )
     monkeypatch.setattr(
@@ -573,7 +575,7 @@ def test_run_does_not_write_intermediate_csv_by_default(
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [_target("NoNL", neutral_loss_da=None)]
     monkeypatch.setattr(
-        "xic_extractor.extractor.open_raw",
+        _OPEN_RAW_SEAM,
         _open_raw_factory(),
     )
     monkeypatch.setattr(
@@ -604,7 +606,7 @@ def test_run_writes_peak_candidate_table_when_enabled(
         emit_peak_candidates=True,
     )
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
-    monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
+    monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
 
     _run(config, [_target("NoNL", neutral_loss_da=None)])
 
@@ -665,7 +667,7 @@ def test_targeted_extraction_passes_trace_group_to_peak_audit(
     def _fake_append_peak_audit_rows(**kwargs: object) -> None:
         captured["trace_group"] = kwargs["trace_group"]
 
-    monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
+    monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
     monkeypatch.setattr(
         "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence([_ok_peak(8.5, 1200.0, 3400.25)]),
@@ -693,7 +695,7 @@ def test_peak_candidate_table_does_not_echo_unused_anchor_as_selection_reference
     )
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     peak_result = _ok_peak(8.5, 1200.0, 3400.25)
-    monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
+    monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
     monkeypatch.setattr(
         "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
         _anchor_sequence([8.45]),
@@ -721,7 +723,7 @@ def test_run_selected_output_is_unchanged_when_peak_candidate_table_enabled(
     (disabled_config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     (enabled_config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     peak_result = _ok_peak_with_rejected_candidate(8.5, 1200.0, 3400.25)
-    monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
+    monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
     monkeypatch.setattr(
         "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence([peak_result, peak_result]),
@@ -748,7 +750,7 @@ def test_run_loads_scoring_inputs_from_config_paths(
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [_target("NoNL", neutral_loss_da=None)]
     calls: dict[str, object] = {}
-    monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
+    monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
     monkeypatch.setattr(
         "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence([_ok_peak(8.5, 1200.0, 3400.25)]),
@@ -786,7 +788,7 @@ def test_run_falls_back_to_main_pass_when_prepass_returns_none(
     config = _config(tmp_path)
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [_target("ISTD", is_istd=True), _target("Analyte", istd_pair="ISTD")]
-    monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
+    monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
     monkeypatch.setattr(
         "xic_extractor.extraction.istd_prepass.extract_istd_anchors_only",
         lambda *_args, **_kwargs: None,
@@ -811,7 +813,7 @@ def test_prepass_excludes_flagged_istd_anchor_from_prior_map(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from xic_extractor.extraction.istd_prepass import extract_istd_anchors_only
-    from xic_extractor.extractor import ExtractionResult
+    from xic_extractor.extraction.result_models import ExtractionResult
 
     config = _config(tmp_path)
     raw_path = config.data_dir / "SampleA.raw"
@@ -869,7 +871,7 @@ def test_prepass_uses_selected_istd_rt_instead_of_window_anchor(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from xic_extractor.extraction.istd_prepass import extract_istd_anchors_only
-    from xic_extractor.extractor import ExtractionResult
+    from xic_extractor.extraction.result_models import ExtractionResult
 
     config = _config(tmp_path)
     raw_path = config.data_dir / "SampleA.raw"
@@ -924,7 +926,7 @@ def test_run_reextracts_istd_in_main_pass_to_keep_scoring_metadata(
     config = _config(tmp_path)
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [_target("ISTD", is_istd=True)]
-    monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
+    monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
     monkeypatch.setattr(
         "xic_extractor.extraction.istd_prepass.extract_istd_anchors_only",
         lambda *_args, **_kwargs: (
@@ -974,7 +976,7 @@ def test_run_writes_nd_for_peak_failure_but_keeps_nl_result(
             return rt, np.full(len(rt), 10.0)
 
     monkeypatch.setattr(
-        "xic_extractor.extractor.open_raw", lambda *_args, **_kwargs: FlatRaw()
+        _OPEN_RAW_SEAM, lambda *_args, **_kwargs: FlatRaw()
     )
     monkeypatch.setattr(
         "xic_extractor.extraction.diagnostics.check_nl",
@@ -1003,7 +1005,7 @@ def test_run_projects_very_low_for_nd_rows_with_failed_nl(
     config = _config(tmp_path)
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [_target("WithNL")]
-    monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
+    monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
     monkeypatch.setattr(
         "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence(
@@ -1056,7 +1058,7 @@ def test_run_leaves_confidence_blank_for_file_error_rows(
     (config.data_dir / "Bad.raw").write_text("", encoding="utf-8")
     targets = [_target("WithNL")]
     monkeypatch.setattr(
-        "xic_extractor.extractor.open_raw",
+        _OPEN_RAW_SEAM,
         _open_raw_factory(errors={"Bad.raw": RuntimeError("file locked")}),
     )
 
@@ -1094,7 +1096,7 @@ def test_run_writes_file_error_row_and_continues(
     (config.data_dir / "Good.raw").write_text("", encoding="utf-8")
     targets = [_target("NoNL", neutral_loss_da=None), _target("WithNL")]
     monkeypatch.setattr(
-        "xic_extractor.extractor.open_raw",
+        _OPEN_RAW_SEAM,
         _open_raw_factory(errors={"Bad.raw": RuntimeError("file locked")}),
     )
     monkeypatch.setattr(
@@ -1200,7 +1202,7 @@ def test_run_writes_neutral_loss_diagnostics(
     config = _config(tmp_path)
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [_target("WithNL")]
-    monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
+    monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
     monkeypatch.setattr(
         "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence([_ok_peak(8.5, 1000.0, 2000.0)]),
@@ -1226,7 +1228,7 @@ def test_istd_no_ms2_keeps_ms1_peak_and_writes_confidence_flags(
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [_target("ISTD", is_istd=True)]
     monkeypatch.setattr(
-        "xic_extractor.extractor.open_raw",
+        _OPEN_RAW_SEAM,
         _open_raw_factory(peak_centers=[9.05]),
     )
     monkeypatch.setattr(
@@ -1273,7 +1275,7 @@ def test_run_reports_progress_and_stops_between_files(
     (config.data_dir / "B.raw").write_text("", encoding="utf-8")
     targets = [_target("NoNL", neutral_loss_da=None)]
     progress_calls: list[tuple[int, int, str]] = []
-    monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
+    monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
     monkeypatch.setattr(
         "xic_extractor.extraction.target_extraction.find_peak_and_area_from_candidates",
         _peak_sequence([_ok_peak(8.5, 1000.0, 2000.0)]),
@@ -1305,7 +1307,7 @@ def test_paired_analyte_uses_strict_anchor_peak_selection(
     strict_flags: list[bool] = []
 
     monkeypatch.setattr(
-        "xic_extractor.extractor.open_raw",
+        _OPEN_RAW_SEAM,
         _open_raw_factory(peak_centers=[13.70, 13.75]),
     )
     monkeypatch.setattr(
@@ -1376,7 +1378,7 @@ def test_istd_anchor_keeps_strongest_anchor_when_far_from_target_center(
             ),
         )
 
-    monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
+    monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
     monkeypatch.setattr(
         "xic_extractor.extraction.istd_prepass.extract_istd_anchors_only",
         lambda *_args, **_kwargs: None,
@@ -1438,7 +1440,7 @@ def test_istd_anchor_keeps_strongest_anchor_when_it_is_near_target_center(
             ),
         )
 
-    monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
+    monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
     monkeypatch.setattr(
         "xic_extractor.extraction.istd_prepass.extract_istd_anchors_only",
         lambda *_args, **_kwargs: None,
@@ -1471,7 +1473,7 @@ def test_istd_peak_not_found_does_not_reacquire_context(
     raw = _RecordingRaw()
 
     monkeypatch.setattr(
-        "xic_extractor.extractor.open_raw",
+        _OPEN_RAW_SEAM,
         lambda *_args, **_kwargs: raw,
     )
     monkeypatch.setattr(
@@ -1516,7 +1518,7 @@ def test_istd_no_signal_does_not_reacquire_context(
     raw = NoSignalRaw()
 
     monkeypatch.setattr(
-        "xic_extractor.extractor.open_raw",
+        _OPEN_RAW_SEAM,
         lambda *_args, **_kwargs: raw,
     )
     monkeypatch.setattr(
@@ -1553,7 +1555,7 @@ def test_istd_weak_peak_keeps_single_complete_context(
     raw = _RecordingRaw()
 
     monkeypatch.setattr(
-        "xic_extractor.extractor.open_raw",
+        _OPEN_RAW_SEAM,
         lambda *_args, **_kwargs: raw,
     )
     monkeypatch.setattr(
@@ -1601,7 +1603,7 @@ def test_istd_low_confidence_peak_keeps_single_complete_context(
     raw = _RecordingRaw()
 
     monkeypatch.setattr(
-        "xic_extractor.extractor.open_raw",
+        _OPEN_RAW_SEAM,
         lambda *_args, **_kwargs: raw,
     )
     monkeypatch.setattr(
@@ -1653,7 +1655,7 @@ def test_paired_analyte_preserves_mismatched_target_anchor_peak_as_ambiguous(
 
     raw = _RecordingRaw(peak_centers=[13.70, 13.06])
     monkeypatch.setattr(
-        "xic_extractor.extractor.open_raw",
+        _OPEN_RAW_SEAM,
         lambda *_args, **_kwargs: raw,
     )
     monkeypatch.setattr(
@@ -1724,7 +1726,7 @@ def test_paired_analyte_accepts_peak_close_to_target_anchor_even_if_farther_from
     ]
 
     monkeypatch.setattr(
-        "xic_extractor.extractor.open_raw",
+        _OPEN_RAW_SEAM,
         _open_raw_factory(peak_centers=[13.70, 13.95]),
     )
     monkeypatch.setattr(
@@ -1804,7 +1806,7 @@ def test_paired_analyte_keeps_target_nl_anchor_far_from_istd_anchor(
             ),
         )
 
-    monkeypatch.setattr("xic_extractor.extractor.open_raw", lambda *_args: raw)
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args: raw)
     monkeypatch.setattr(
         "xic_extractor.extraction.istd_prepass.extract_istd_anchors_only",
         lambda *_args, **_kwargs: None,
@@ -1845,7 +1847,7 @@ def test_paired_analyte_istd_rt_fallback_does_not_force_counted_detection(
 
     raw = _RecordingRaw(peak_centers=[13.70, 13.72])
     monkeypatch.setattr(
-        "xic_extractor.extractor.open_raw",
+        _OPEN_RAW_SEAM,
         lambda *_args, **_kwargs: raw,
     )
     monkeypatch.setattr(
@@ -1908,7 +1910,7 @@ def test_paired_analyte_fallback_preserves_not_counted_peak_in_matrix(
 
     raw = _RecordingRaw(peak_centers=[13.70, 14.31])
     monkeypatch.setattr(
-        "xic_extractor.extractor.open_raw",
+        _OPEN_RAW_SEAM,
         lambda *_args, **_kwargs: raw,
     )
     monkeypatch.setattr(

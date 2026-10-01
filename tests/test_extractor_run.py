@@ -7,11 +7,11 @@ import numpy as np
 import pytest
 
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
+from xic_extractor.extraction.result_models import RunOutput
 from xic_extractor.extraction.targeted_inputs import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
 )
-from xic_extractor.extractor import RunOutput
 from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecord
 from xic_extractor.processing_identity import (
     AcquisitionSourceExpectation,
@@ -21,6 +21,8 @@ from xic_extractor.rt_prior_library import LibraryEntry
 from xic_extractor.target_pair_rt_calibration import (
     TARGET_PAIR_RT_CALIBRATION_FIELDS,
 )
+
+_OPEN_RAW_SEAM = "xic_extractor.extraction.target_extraction.open_raw"
 
 
 @pytest.fixture(autouse=True)
@@ -172,7 +174,7 @@ def test_run_no_nl_reference_selects_each_samples_component(
             pytest.fail("no-NL must not query MS2")
 
     monkeypatch.setattr(
-        extractor, "open_raw", lambda path, _dll, **_kwargs: Raw(path.stem)
+        _OPEN_RAW_SEAM, lambda path, _dll, **_kwargs: Raw(path.stem)
     )
     monkeypatch.setattr(
         "xic_extractor.extraction.istd_prepass.open_raw",
@@ -238,7 +240,6 @@ def test_process_file_opens_raw_with_expected_acquisition_source(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from xic_extractor import extractor
     from xic_extractor.extraction.target_extraction import process_file
 
     config = _config(tmp_path, keep_intermediate_csv=False)
@@ -282,7 +283,7 @@ def test_process_file_opens_raw_with_expected_acquisition_source(
         captured["path_identity"] = _expected_path_identity
         return _OpenedRaw()
 
-    monkeypatch.setattr(extractor, "open_raw", open_raw)
+    monkeypatch.setattr(_OPEN_RAW_SEAM, open_raw)
 
     file_result, diagnostics = process_file(
         config,
@@ -766,7 +767,7 @@ def test_serial_backend_keeps_sorted_raw_output_order(
     (config.data_dir / "B.raw").write_text("", encoding="utf-8")
     (config.data_dir / "A.raw").write_text("", encoding="utf-8")
     targets = [_target("Analyte")]
-    monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
+    monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
 
     output = acquire(config, targets)
 
@@ -786,7 +787,7 @@ def test_per_file_result_primitive_returns_worker_payload_and_is_pickleable(
     raw_path = config.data_dir / "SampleA.raw"
     raw_path.write_text("", encoding="utf-8")
     targets = [_target("Analyte")]
-    monkeypatch.setattr("xic_extractor.extractor.open_raw", _open_raw_factory())
+    monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
 
     result = extract_raw_file_result(
         7,
@@ -819,7 +820,7 @@ def test_per_file_result_primitive_captures_file_errors(
     raw_path.write_text("", encoding="utf-8")
     targets = [_target("Analyte")]
     monkeypatch.setattr(
-        "xic_extractor.extractor.open_raw",
+        _OPEN_RAW_SEAM,
         _open_raw_factory(errors={"Bad.raw": RuntimeError("file locked")}),
     )
 
@@ -840,13 +841,6 @@ def test_per_file_result_primitive_captures_file_errors(
     assert not hasattr(result, "long_rows")
     assert not hasattr(result, "score_breakdown_rows")
     assert result.diagnostics[0].issue == "FILE_ERROR"
-
-
-def test_raw_file_extraction_result_remains_internal() -> None:
-    from xic_extractor import extractor
-
-    assert hasattr(extractor, "RawFileExtractionResult")
-    assert "RawFileExtractionResult" not in extractor.__all__
 
 
 def _config(tmp_path: Path, *, keep_intermediate_csv: bool) -> ExtractionConfig:

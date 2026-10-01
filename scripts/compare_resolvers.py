@@ -7,7 +7,7 @@ from typing import Sequence
 
 from xic_extractor import extractor
 from xic_extractor.configuration.loader import load_config
-from xic_extractor.extractor import RunOutput
+from xic_extractor.extraction.result_models import RunOutput
 from xic_extractor.tabular_io import write_delimited_rows
 
 _DEFAULT_FOCUS_TARGETS = ("d3-N6-medA", "d3-5-hmdC", "8-oxo-Guo", "8-oxodG")

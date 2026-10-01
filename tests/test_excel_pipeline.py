@@ -5,12 +5,12 @@ from openpyxl import load_workbook
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import NLResult
-from xic_extractor.extractor import (
-    DiagnosticRecord,
+from xic_extractor.extraction.result_models import (
     ExtractionResult,
     FileResult,
     RunOutput,
 )
+from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.output.schema import TARGETED_PRODUCT_PROJECTION_HEADERS
 from xic_extractor.output.targeted_product_model import (
     TargetedProductProjection,

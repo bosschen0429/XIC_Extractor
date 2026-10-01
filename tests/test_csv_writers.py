@@ -8,11 +8,11 @@ import pytest
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.extraction.result_assembly import build_extraction_result
+from xic_extractor.extraction.result_models import ExtractionResult, FileResult
 from xic_extractor.extraction.targeted_peak_selection import (
     build_production_peak_hypotheses,
     selected_peak_hypothesis,
 )
-from xic_extractor.extractor import DiagnosticRecord, ExtractionResult, FileResult
 from xic_extractor.output.csv_writers import (
     _long_output_rows,
     _output_row,
@@ -22,6 +22,7 @@ from xic_extractor.output.csv_writers import (
     write_score_breakdown_csv,
     write_wide_csv,
 )
+from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.output.schema import TARGETED_PRODUCT_PROJECTION_HEADERS
 from xic_extractor.output.targeted_product_model import (
     TargetedProductProjection,

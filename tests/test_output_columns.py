@@ -6,7 +6,7 @@ from openpyxl.utils import get_column_letter
 from scripts import csv_to_excel
 from xic_extractor import extractor as extractor_module
 from xic_extractor.configuration.models import ExtractionConfig, Target
-from xic_extractor.extractor import (
+from xic_extractor.extraction.result_models import (
     ExtractionResult,
     FileResult,
     RunOutput,

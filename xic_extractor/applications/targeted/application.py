@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from xic_extractor.applications.targeted.production_workflow import (
         TargetedProductionInputSnapshot,
     )
-    from xic_extractor.extractor import RunOutput
+    from xic_extractor.extraction.result_models import RunOutput
     from xic_extractor.peak_detection.model_selection import (
         ExpectedDiffApprovalRecord,
     )
@@ -149,7 +149,7 @@ class TargetedApplicationService:
         try:
             input_snapshot = snapshot_targeted_production_inputs(resolved_request)
         except FingerprintCancelledError:
-            from xic_extractor.extractor import RunOutput
+            from xic_extractor.extraction.result_models import RunOutput
 
             return TargetedApplicationExecution(
                 active_output=RunOutput(file_results=[], diagnostics=[])

@@ -11,9 +11,9 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.extraction.istd_prepass import extract_istd_anchors_only
 from xic_extractor.extraction.ms2_selection import selected_candidate_ms2_evidence
+from xic_extractor.extraction.result_models import ExtractionResult
 from xic_extractor.extraction.rt_windows import get_rt_window
 from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
-from xic_extractor.extractor import ExtractionResult
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.output.targeted_product_model import (
     TargetedProductProjection,
@@ -46,6 +46,8 @@ from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
 )
 from xic_extractor.rt_prior_library import LibraryEntry
+
+_OPEN_RAW_SEAM = "xic_extractor.extraction.target_extraction.open_raw"
 
 
 def test_selected_candidate_builds_missing_ms2_evidence() -> None:
@@ -412,7 +414,7 @@ def test_targeted_shape_routes_use_cached_canonical_signal(
 
     raw = _Raw()
     monkeypatch.setattr(
-        "xic_extractor.extractor.open_raw", lambda *_args, **_kwargs: raw
+        _OPEN_RAW_SEAM, lambda *_args, **_kwargs: raw
     )
     monkeypatch.setattr(
         "xic_extractor.extraction.istd_prepass.open_raw", lambda *_args, **_kwargs: raw

@@ -12,9 +12,6 @@ from xic_extractor.applications.targeted import production_workflow
 from xic_extractor.applications.targeted.application import (
     build_targeted_application_request,
 )
-from xic_extractor.applications.targeted.product_projection import (
-    build_targeted_product_projection,
-)
 from xic_extractor.applications.targeted.production_workflow import (
     execute_targeted_production_workflow,
 )
@@ -29,11 +26,18 @@ from xic_extractor.execution._observability import (
     canonical_runtime_observability_ledger_bytes,
 )
 from xic_extractor.extraction import pipeline as extraction_pipeline
+from xic_extractor.extraction.result_models import (
+    ExtractionResult,
+    FileResult,
+    RunOutput,
+)
 from xic_extractor.extraction.targeted_inputs import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
 )
-from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
+from xic_extractor.extraction.targeted_product_projection import (
+    build_targeted_product_projection,
+)
 from xic_extractor.output.targeted_product_model import (
     TargetedProductContext,
 )

@@ -10,11 +10,11 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.evidence_semantics import EvidenceDecisionSemantics
 from xic_extractor.extraction.result_assembly import build_extraction_result
+from xic_extractor.extraction.result_models import ExtractionResult
 from xic_extractor.extraction.targeted_peak_selection import (
     build_production_peak_hypotheses,
     selected_peak_hypothesis,
 )
-from xic_extractor.extractor import ExtractionResult
 from xic_extractor.output.targeted_product_model import (
     OWN_MAX_SAME_PEAK_SUPPORT_REASON,
 )

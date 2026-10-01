@@ -12,7 +12,7 @@ from xic_extractor.applications.targeted.application import (
 )
 from xic_extractor.configuration import loader as config_loader
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
-from xic_extractor.extractor import ExtractionResult, RunOutput
+from xic_extractor.extraction.result_models import ExtractionResult, RunOutput
 from xic_extractor.output.method_manifest import MethodManifestContext
 from xic_extractor.raw_reader import RawReaderError
 

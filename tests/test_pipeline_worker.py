@@ -7,7 +7,11 @@ import pytest
 from gui.workers.pipeline_worker import PipelineWorker
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import NLResult
-from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
+from xic_extractor.extraction.result_models import (
+    ExtractionResult,
+    FileResult,
+    RunOutput,
+)
 from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 from xic_extractor.raw_reader import RawReaderError
 

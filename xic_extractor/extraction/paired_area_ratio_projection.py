@@ -13,7 +13,7 @@ from xic_extractor.peak_detection.selection_decision import (
 from xic_extractor.target_sample_applicability import target_sample_exclusion_reasons
 
 if TYPE_CHECKING:
-    from xic_extractor.extractor import ExtractionResult, RunOutput
+    from xic_extractor.extraction.result_models import ExtractionResult, RunOutput
 
 MIN_PAIRED_AREA_RATIO_REFERENCE_POINTS = 3
 PAIRED_AREA_RATIO_REFERENCE_BASIS = "leave_one_sample_out_counted_area_over_istd_area"
