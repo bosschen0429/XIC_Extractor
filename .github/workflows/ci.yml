@@ -13,6 +13,7 @@ concurrency:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
@@ -47,6 +48,7 @@ jobs:
 
   typecheck:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v8.2.0
@@ -64,6 +66,7 @@ jobs:
   test:
     name: test (Python 3.12)
     runs-on: self-hosted
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
         with:
