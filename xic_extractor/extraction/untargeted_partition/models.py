@@ -12,7 +12,7 @@ from pathlib import Path
 from types import MappingProxyType
 
 from xic_extractor.acquisition_contract import AcquiredTrace, TraceAcquisitionBatch
-from xic_extractor.alignment.backfill.evaluation_coverage import (
+from xic_extractor.alignment.backfill.completion_evidence import (
     _COMPLETED_BACKFILL_CONTRACT,
     BackfillCompletionProjection,
     _completed_backfill_projection_bytes,

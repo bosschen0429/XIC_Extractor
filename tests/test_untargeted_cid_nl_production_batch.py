@@ -1208,7 +1208,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     monkeypatch.setattr(
         bounded_owner, "materialize_untargeted_partition", retain_batch
     )
-    from xic_extractor.alignment import cell_observations as cell_owner
+    from xic_extractor.alignment import (
+        cid_nl_predecessor_cells as predecessor_cell_owner,
+    )
     from xic_extractor.alignment import completion as workflow_owner
     from xic_extractor.alignment import grouping_bootstrap as bootstrap_owner
     from xic_extractor.alignment.projection.untarget import post_cell as post_cell_owner
@@ -1366,7 +1368,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     for owner_name, owner in (
         ("production", production),
         ("bootstrap", bootstrap_owner),
-        ("cell", cell_owner),
+        ("cell", predecessor_cell_owner),
     ):
         monkeypatch.setattr(
             owner,
