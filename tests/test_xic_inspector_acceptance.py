@@ -34,6 +34,7 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
     )
     report_path = write_cid_nl_explanation(
         tmp_path / "cid_nl_explanation.sqlite",
+        full_audit=True,
         completed=completed,
         writer_inputs=writer,
         candidates_by_sample=candidates,
@@ -127,6 +128,7 @@ def test_acceptance_a4_zero_curve_read_on_metadata_query(tmp_path, monkeypatch) 
     )
     report_path = write_cid_nl_explanation(
         tmp_path / "cid_nl_explanation.sqlite",
+        full_audit=True,
         completed=completed,
         writer_inputs=writer,
         candidates_by_sample=candidates,
@@ -158,6 +160,7 @@ def test_cli_callable_emits_embedded_html(tmp_path, monkeypatch) -> None:
     )
     report_path = write_cid_nl_explanation(
         tmp_path / "cid_nl_explanation.sqlite",
+        full_audit=True,
         completed=completed,
         writer_inputs=writer,
         candidates_by_sample=candidates,
@@ -213,6 +216,7 @@ def test_acceptance_a7_cancel_and_atomic_replace(tmp_path, monkeypatch) -> None:
     )
     report_path = write_cid_nl_explanation(
         tmp_path / "cid_nl_explanation.sqlite",
+        full_audit=True,
         completed=completed,
         writer_inputs=writer,
         candidates_by_sample=candidates,

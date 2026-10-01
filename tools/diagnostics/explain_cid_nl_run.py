@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 
 from xic_extractor.diagnostics.alignment_explanation import (
     ExplanationError,
@@ -23,10 +24,67 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--json", action="store_true", help="Emit machine-readable JSON"
     )
+    parser.add_argument(
+        "--compact-to",
+        type=Path,
+        help="Write compact review facts from a full report, without RAW or Backfill",
+    )
+    parser.add_argument(
+        "--curve-bundle",
+        type=Path,
+        help="Acquire selected candidate/group XIC windows into an Inspector bundle",
+    )
+    parser.add_argument(
+        "--group-id", help="Exact group ID for selected curve acquisition"
+    )
+    parser.add_argument("--raw-dir", type=Path)
+    parser.add_argument("--dll-dir", type=Path)
+    parser.add_argument("--curve-padding-min", type=float, default=0.5)
+    parser.add_argument("--curve-ppm", type=float, default=5.0)
     args = parser.parse_args(argv)
+    if args.group_id is not None and args.curve_bundle is None:
+        parser.error("--group-id requires --curve-bundle")
     try:
+        if args.curve_bundle is not None:
+            if (
+                args.compact_to is not None
+                or args.raw_dir is None
+                or args.dll_dir is None
+            ):
+                parser.error(
+                    "--curve-bundle needs --raw-dir and --dll-dir "
+                    "and cannot accompany --compact-to"
+                )
+            from tools.diagnostics.explanation_curves import (
+                export_explanation_curves,
+            )
+
+            result = export_explanation_curves(
+                Path(args.report),
+                args.curve_bundle,
+                raw_dir=args.raw_dir,
+                dll_dir=args.dll_dir,
+                candidate_id=args.candidate_id,
+                group_id=args.group_id,
+                padding_min=args.curve_padding_min,
+                ppm=args.curve_ppm,
+            )
+            print(json.dumps(result, indent=2))
+            return 0
+        if args.compact_to is not None:
+            from xic_extractor.diagnostics.explanation_conversion import (
+                compact_explanation,
+            )
+
+            result = compact_explanation(
+                Path(args.report),
+                args.compact_to,
+                progress=lambda message: print(message, file=sys.stderr, flush=True),
+            )
+            print(json.dumps(result, indent=2))
+            return 0
         result = read_cid_nl_explanation(args.report, candidate_id=args.candidate_id)
-    except ExplanationError as exc:
+    except (ExplanationError, OSError) as exc:
         if args.json:
             print(
                 json.dumps(

@@ -38,6 +38,7 @@ def read_evidence_summary(path):
 
     return read_summary(path)
 
+
 StrategyKind = Literal["sample", "attention", "query"]
 CapabilityKind = Literal["retained_curves", "metadata_only"]
 ProgressStage = Literal["metadata", "selection", "curves", "render", "write"]
@@ -243,9 +244,7 @@ def generate_report(
     except ExplanationUnavailableError as exc:
         raise InspectorError(3, str(exc), cause=exc) from exc
     except ExplanationError as exc:
-        raise InspectorError(
-            4, f"Invalid source: {exc}", cause=exc
-        ) from exc
+        raise InspectorError(4, f"Invalid source: {exc}", cause=exc) from exc
 
     schema_version = summary["schema_version"]
     req_id = summary.get("processing_request_id", "")
@@ -303,10 +302,14 @@ def generate_report(
     capability: CapabilityKind = summary.get(
         "plot_evidence_capability", "metadata_only"
     )
-    if capability == "metadata_only" and (
-        selection.strategy == "attention"
-        or selection.rt_min is not None
-        or selection.rt_max is not None
+    if (
+        capability == "metadata_only"
+        and (
+            selection.strategy == "attention"
+            or selection.rt_min is not None
+            or selection.rt_max is not None
+        )
+        and summary.get("selection_evidence_capability") != "recorded_decisions"
     ):
         raise InspectorError(
             5, "Source lacks the metadata required for attention/RT selection"

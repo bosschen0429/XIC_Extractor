@@ -107,8 +107,10 @@ models because their output schemas are intentionally different; see
 compact summary or exact candidate details without reading RAW.
 **Owner**: [Alignment execution explanations](../../docs/product/alignment.md#cid-nl-execution-explanations).
 **Input**: `cid_nl_explanation.sqlite`, optionally an exact candidate ID.
-**Output**: Readable text or JSON on stdout; no file or product mutation.
-**Status**: Maintained diagnostic reader. Retains owner assessment, initial
+**Output**: Readable text or JSON; `--compact-to` writes compact review from an
+existing full report; `--curve-bundle` acquires only explicitly selected windows
+for Inspector. [Retention and curve export](../../docs/product/xic-inspector.md#lightweight-alignment-review).
+**Status**: Maintained diagnostic workflow. Retains owner assessment, initial
 CrossSample and final disposition facts; does not recalculate decisions or grant
 Matrix authority. Existing `alignment_health_packet.py` summarizes machine-level
 health; it does not contain excluded candidate and initial weak-edge facts from

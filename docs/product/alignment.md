@@ -56,6 +56,12 @@ the full workflow remains the owner of final Backfill and Matrix output.
 
 ## Execution Boundary
 
+Explanation output defaults to compact decision review, without all curves or
+full per-cell artifact expansion. Full audit and selected-curve retention are
+explicit options. [Lightweight Alignment review](xic-inspector.md#lightweight-alignment-review)
+owns the retention choices, legacy-report conversion and bounded curve export.
+These diagnostic choices do not change grouping, Backfill or Matrix values.
+
 ### Job planning and acquisition
 
 The bounded production entry creates initial jobs only for sample/subject pairs
