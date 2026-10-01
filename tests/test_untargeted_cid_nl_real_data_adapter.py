@@ -606,6 +606,68 @@ def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
     assert vendor_raw.chromatogram_request_counts == [1]
 
 
+def test_adapter_retains_completed_relation_before_later_evidence_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from xic_extractor.untargeted_execution.partition import cid_nl_acquisition
+
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True
+    )
+    source_raw = _FakeRaw((7.98, 8.02))
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    candidates = _current_candidates(
+        source_raw,
+        raw_file=fixture.source_paths["S1"],
+        settings=settings,
+        peak_config=peak_config,
+    )
+    raw, _vendor_raw = _open_bound_raw(
+        fixture, "S1", source_raw, tmp_path=tmp_path
+    )
+    observer = cid_nl_acquisition._PartitionWorkObserver(fixture.owners)
+    resolve_relations = cid_nl_acquisition.resolve_cid_nl_method_relations
+    successful_relations = []
+
+    def fail_later_relation(**kwargs):
+        if successful_relations:
+            raise RuntimeError("later relation resolution failed")
+        resolved = resolve_relations(**kwargs)
+        successful_relations.append(resolved)
+        return resolved
+
+    monkeypatch.setattr(
+        cid_nl_acquisition, "resolve_cid_nl_method_relations", fail_later_relation
+    )
+    with pytest.raises(RuntimeError, match="later relation resolution failed"):
+        adapt_current_discovery_sample_subject(
+            processing_owners=fixture.owners,
+            sample=fixture.sample("S1"),
+            method_subject=fixture.method_subject,
+            candidates=candidates,
+            settings=settings,
+            peak_config=peak_config,
+            raw=raw,
+            _observer=observer,
+        )
+
+    ((support,), set_relations), = successful_relations
+    assert set_relations == ()
+    retained = observer.artifact_closure()
+    retained_ids = {artifact.evidence_artifact_id for artifact in retained}
+    assert support.artifact in retained
+    assert set(support.artifact.upstream_artifact_ids).issubset(retained_ids)
+    assert all(
+        artifact.producer_processing_request_id
+        == fixture.owners.request.processing_request_id
+        and artifact.producer_processing_attempt_id
+        == fixture.owners.attempt.processing_attempt_id
+        for artifact in retained
+    )
+    assert observer.initial_acquisition is not None
+
+
 def test_adapter_preserves_strict_scans_within_mixed_candidate(
     tmp_path: Path,
 ) -> None:

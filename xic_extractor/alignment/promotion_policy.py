@@ -72,14 +72,6 @@ _INTERFERENCE_NOT_ASSESSED_MARKERS = (
     "neighbor_interference_not_assessed",
     "neighboring_interference_not_assessed",
 )
-_INTERFERING_LOCAL_MIXTURE_DIAGNOSTICS = frozenset(
-    {
-        "ambiguous_adjacent_split",
-        "two_peak_supported",
-        "competing_boundary_model",
-    },
-)
-_LOW_COVERAGE_LOCAL_MIXTURE_DIAGNOSTICS = frozenset({"insufficient_evidence"})
 _LOW_COVERAGE_MARKERS = (
     "low_scan_support",
     "skipped_low_scan_support",
@@ -128,11 +120,6 @@ class BackfillCellEvidence:
     scan_support_score: float | None = None
     source_candidate_id: str = ""
     reason: str = ""
-    region_local_mixture_diagnostic: str = ""
-    region_local_mixture_reason: str = ""
-    region_review_reason: str = ""
-    region_shadow_status: str = ""
-    region_shadow_verdict: str = ""
     group_hypothesis_id: str = ""
 
     @property
@@ -201,86 +188,27 @@ class BackfillCellEvidence:
         return _contains_marker(self.reason, _CHEMICAL_MARKERS)
 
     @property
-    def selected_peak_dominance(self) -> bool:
-        text = " ".join(
-            (
-                self.region_local_mixture_diagnostic,
-                self.region_local_mixture_reason,
-                self.region_review_reason,
-                self.region_shadow_status,
-                self.region_shadow_verdict,
-            ),
-        ).lower()
-        return (
-            "one_envelope_supported" in text
-            or "selected_apex" in text
-            or "selected_region" in text
-            or "dominant" in text
-        )
-
-    @property
     def high_neighbor_interference(self) -> bool:
-        if (
-            _normalize(self.region_local_mixture_diagnostic)
-            in _INTERFERING_LOCAL_MIXTURE_DIAGNOSTICS
-        ):
-            return True
-        text = _normalize(
-            " ".join(
-                (
-                    self.reason,
-                    self.region_local_mixture_diagnostic,
-                    self.region_local_mixture_reason,
-                    self.region_review_reason,
-                    self.region_shadow_status,
-                    self.region_shadow_verdict,
-                ),
-            ),
-        )
+        text = _normalize(self.reason)
         for marker in _INTERFERENCE_NOT_ASSESSED_MARKERS:
             text = text.replace(marker, "")
         return any(marker in text for marker in _INTERFERENCE_MARKERS)
 
     @property
     def low_assessable_coverage(self) -> bool:
-        if (
-            _normalize(self.region_local_mixture_diagnostic)
-            in _LOW_COVERAGE_LOCAL_MIXTURE_DIAGNOSTICS
-        ):
-            return True
-        text = " ".join(
-            (
-                self.reason,
-                self.region_local_mixture_diagnostic,
-                self.region_local_mixture_reason,
-                self.region_review_reason,
-                self.region_shadow_status,
-                self.region_shadow_verdict,
-            ),
-        ).lower()
+        text = self.reason.lower()
         return self.low_scan_support or any(
             marker in text for marker in _LOW_COVERAGE_MARKERS
         )
 
     @property
     def hypothesis_or_claim_blocked(self) -> bool:
-        text = " ".join(
-            (
-                self.reason,
-                self.region_review_reason,
-                self.region_shadow_status,
-                self.region_shadow_verdict,
-            ),
-        ).lower()
+        text = self.reason.lower()
         return any(marker in text for marker in _HYPOTHESIS_BLOCKING_MARKERS)
 
     @property
     def additional_ms1_support(self) -> bool:
-        return (
-            self.scan_support
-            or self.trace_continuity
-            or self.selected_peak_dominance
-        )
+        return self.scan_support or self.trace_continuity
 
     @property
     def rt_evidence_supported(self) -> bool:
@@ -654,11 +582,6 @@ def _cell_from_aligned(
         scan_support_score=cell.scan_support_score,
         source_candidate_id=cell.source_candidate_id or "",
         reason=cell.reason,
-        region_local_mixture_diagnostic=cell.region_local_mixture_diagnostic,
-        region_local_mixture_reason=cell.region_local_mixture_reason,
-        region_review_reason=cell.region_review_reason,
-        region_shadow_status=cell.region_shadow_status,
-        region_shadow_verdict=cell.region_shadow_verdict,
         group_hypothesis_id=cell.group_hypothesis_id,
     )
 

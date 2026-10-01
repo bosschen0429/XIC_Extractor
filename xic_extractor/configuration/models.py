@@ -55,7 +55,6 @@ class ExtractionConfig:
     emit_score_breakdown: bool = False
     emit_review_report: bool = False
     keep_intermediate_csv: bool = False
-    baseline_audit_method: str = ""
     baseline_integration_method: str = "asls"
     parallel_mode: str = "serial"
     parallel_workers: int = field(default_factory=default_parallel_workers)

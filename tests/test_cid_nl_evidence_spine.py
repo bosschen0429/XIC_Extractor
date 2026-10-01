@@ -390,6 +390,34 @@ def test_assessment_distinguishes_adjacent_interior_from_boundary_and_overlap(
             individual_support_refs=individual_refs,
             set_relation_refs=set_refs,
         )
+        resolved_individual, resolved_sets = (
+            assessment_module.resolve_cid_nl_method_relations(
+                processing_owners=fixture.owners,
+                sample=sample,
+                evidence_refs=(evidence,),
+                candidate_peaks=peaks,
+                policy=cid_nl_support_policy(),
+            )
+        )
+        assert resolved_individual == individual_refs
+        assert resolved_sets == set_refs
+        resolved_assessment = mint_cid_nl_method_assessment_ref(
+            processing_owners=fixture.owners,
+            sample=sample,
+            target=fixture.target,
+            detector_invocation_id="adjacent-peaks",
+            evaluation_receipt=_completed_receipt(scanned_event_count=1),
+            candidate_peaks=peaks,
+            evidence_refs=(evidence,),
+            individual_support_refs=resolved_individual,
+            set_relation_refs=resolved_sets,
+        )
+        assert resolved_assessment == assessment
+        assert assessment_module.canonical_cid_nl_method_assessment_bytes(
+            resolved_assessment.content
+        ) == assessment_module.canonical_cid_nl_method_assessment_bytes(
+            assessment.content
+        )
         assert assessment.content.method_result == expected_result
         if expected_result == "SUPPORT":
             assert individual_refs[0].content.peak_observation_content_id == (
@@ -410,6 +438,44 @@ def test_assessment_distinguishes_adjacent_interior_from_boundary_and_overlap(
             assert set_refs[0].content.matched_candidate_content_ids == tuple(
                 sorted(peak.content.peak_observation_content_id for peak in peaks)
             )
+
+
+@pytest.mark.parametrize(
+    "case",
+    ["empty", "no_evidence", "no_candidates", "outside_interval", "outside_mass"],
+)
+def test_method_relation_resolution_preserves_unrelated_and_empty_facts(
+    tmp_path: Path, case: str
+) -> None:
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("unrelated",)
+    )
+    peaks = (
+        cid_nl_peak(
+            fixture,
+            "unrelated",
+            mz=PRECURSOR_MZ + (0.02 if case == "outside_mass" else 0.0),
+        ),
+    )
+    evidence = (
+        cid_nl_evidence(
+            fixture,
+            "unrelated",
+            scan_number=47,
+            scan_rt_min=8.25 if case == "outside_interval" else 8.0,
+        ),
+    )
+    if case in {"empty", "no_evidence"}:
+        evidence = ()
+    if case in {"empty", "no_candidates"}:
+        peaks = ()
+    assert assessment_module.resolve_cid_nl_method_relations(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("unrelated"),
+        evidence_refs=evidence,
+        candidate_peaks=peaks,
+        policy=cid_nl_support_policy(),
+    ) == ((), ())
 
 
 def test_reference_spine_mints_once_and_fans_out_same_cell(
@@ -809,6 +875,13 @@ def test_assessment_preserves_mixed_individual_and_set_scan_relations(
     assert assessment.content.method_result == "SUPPORT"
     assert assessment.individual_support_refs == (individual,)
     assert assessment.set_relation_refs == (set_relation,)
+    assert assessment_module.resolve_cid_nl_method_relations(
+        processing_owners=fixture.owners,
+        sample=sample,
+        evidence_refs=(boundary, interior),
+        candidate_peaks=peaks,
+        policy=cid_nl_support_policy(),
+    ) == ((individual,), (set_relation,))
     assert set_relation.content.matched_candidate_content_ids == tuple(
         sorted(item.content.peak_observation_content_id for item in peaks)
     )

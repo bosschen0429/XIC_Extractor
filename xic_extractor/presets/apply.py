@@ -2,13 +2,9 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterable, Mapping
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.discovery.detected_features import (
-    DeltaMassPatternSettings,
-    PtPatternDiscoveryStrategy,
-)
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.presets.loader import (
     DISCOVERY_TUNING_OVERRIDE_KEYS,
@@ -22,6 +18,12 @@ from xic_extractor.presets.recipe_models import (
     CidNlRecipeRoute,
 )
 from xic_extractor.settings_schema import RESOLVER_MODES, normalize_resolver_mode
+
+if TYPE_CHECKING:
+    from xic_extractor.discovery.delta_mass_strategy import (
+        DeltaMassPatternSettings,
+        PtPatternDiscoveryStrategy,
+    )
 
 _POSITIVE_FLOAT_FIELDS = frozenset(
     {
@@ -220,6 +222,8 @@ def resolve_pt_pattern_discovery(preset_name: str) -> PtPatternDiscoveryStrategy
             "'delta_mass' tag); use a Pt pattern preset such as 'pt_pattern' "
             "or 'pt_pattern_cid_nl_dr'"
         )
+    from xic_extractor.discovery.delta_mass_strategy import PtPatternDiscoveryStrategy
+
     return PtPatternDiscoveryStrategy(
         label=preset_name,
         settings=apply_to_delta_mass_discovery(preset),
@@ -256,6 +260,8 @@ def apply_to_delta_mass_discovery(preset: Preset) -> DeltaMassPatternSettings:
             f"preset {preset.name!r} must set [discovery] method_label for "
             "delta_mass presets"
         )
+
+    from xic_extractor.discovery.delta_mass_strategy import DeltaMassPatternSettings
 
     defaults = DeltaMassPatternSettings()
     return DeltaMassPatternSettings(

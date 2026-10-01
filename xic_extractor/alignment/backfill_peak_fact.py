@@ -29,7 +29,6 @@ from xic_extractor.alignment.backfill_evaluation import (
     _backfill_feature_sample_trace,
     _backfill_unchecked_cell,
     _chunk_prepared_signal_cache,
-    _emit_region_audit_for_family,
     _keep_best_backfill_outcome_cell,
 )
 from xic_extractor.alignment.backfill_request_plan import (
@@ -104,8 +103,6 @@ def build_backfill_result(
     owner_backfill_superwindow_span_factor: int = 2,
     candidate_index_offset: int = 0,
     validation_candidate_index_offset: int | None = None,
-    emit_region_audit: bool = False,
-    region_audit_family_ids: frozenset[str] | None = None,
     audit_evidence_mode: str = "full",
     emit_candidate_audit_rows: bool = True,
     evaluation_coverage_context: BackfillEvaluationCoverageContext | None = None,
@@ -166,7 +163,6 @@ def build_backfill_result(
             expected_acquisition_sources=expected_acquisition_sources,
             source_label="validation",
         )
-    effective_emit_region_audit = emit_region_audit and audit_evidence_mode != "none"
     cells: list[AlignedCell] = []
     candidate_records: list[_BackfillCandidateRecord] = []
     request_reuse_observations: list[BackfillRequestReuseObservation] = []
@@ -331,11 +327,6 @@ def build_backfill_result(
                         request_identity=request_identity,
                     ),
                     require_sealed_facts=logical_request is not None,
-                    emit_region_audit=_emit_region_audit_for_family(
-                        effective_emit_region_audit,
-                        feature.feature_family_id,
-                        region_audit_family_ids,
-                    ),
                 )
                 cell = evaluation.cell
                 _append_candidate_record(
@@ -618,11 +609,6 @@ def build_backfill_result(
                             request_identity=request_identity,
                         ),
                         require_sealed_facts=logical_request is not None,
-                        emit_region_audit=_emit_region_audit_for_family(
-                            effective_emit_region_audit,
-                            feature.feature_family_id,
-                            region_audit_family_ids,
-                        ),
                     )
                     cell = evaluation.cell
                     _append_candidate_record(

@@ -25,8 +25,8 @@ from xic_extractor.processing_identity import (
 )
 
 
-def test_alignment_metadata_records_baseline_audit_method() -> None:
-    peak_config = replace(_peak_config(), baseline_audit_method="asls")
+def test_alignment_metadata_records_method_and_output_contract() -> None:
+    peak_config = _peak_config()
 
     metadata = alignment_metadata(
         discovery_batch_index=Path("batch.csv"),
@@ -61,7 +61,7 @@ def test_alignment_metadata_records_baseline_audit_method() -> None:
     assert (
         metadata["matrix_value_policy"] == "canonical_signal_profile_selected_area"
     )
-    assert metadata["baseline_audit_method"] == "asls"
+    assert metadata["baseline_integration_method"] == "asls"
     assert metadata["owner_build_xic_backend"] == "raw"
     assert metadata["backfill_scope"] == "full-audit"
     assert metadata["output_scope"] == "full-audit"

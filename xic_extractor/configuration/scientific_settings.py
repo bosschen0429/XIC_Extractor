@@ -10,5 +10,4 @@ SCIENTIFIC_SETTING_FIELDS = (
     "nl_fallback_half_window_min",
     "rolling_window_size",
     "dirty_matrix_mode",
-    "baseline_audit_method",
 )

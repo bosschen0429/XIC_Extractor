@@ -32,9 +32,7 @@ from xic_extractor.alignment.sample_rt_calibration import (
 )
 from xic_extractor.discovery.csv_reader import read_discovery_batch_index
 from xic_extractor.discovery.input_source import DiscoveryInputSource
-from xic_extractor.peak_detection.integration_audit import CellIntegrationAuditSummary
 from xic_extractor.peak_detection.integration_result import IntegrationResult
-from xic_extractor.peak_detection.region_audit import PeakRegionAuditSummary
 from xic_extractor.tabular_io import write_delimited_rows
 
 
@@ -207,14 +205,8 @@ def _read_owner(value: dict[str, Any]) -> SampleLocalMS1Owner:
         integration["raw_scan_indices"] = tuple(integration["raw_scan_indices"])
         integration["boundary_sources"] = tuple(integration["boundary_sources"])
         value["selected_integration"] = IntegrationResult(**integration)
-    region = value["region_audit"]
-    if region is not None:
-        region["selected_proposal_sources"] = tuple(region["selected_proposal_sources"])
-        audit = region["integration_audit"]
-        region["integration_audit"] = (
-            CellIntegrationAuditSummary(**audit) if audit is not None else None
-        )
-        value["region_audit"] = PeakRegionAuditSummary(**region)
+    # Retained snapshots may include the retired, non-semantic audit envelope.
+    value.pop("region_audit", None)
     member = value["cross_sample_member_subject"]
     member["physical_observation_ids"] = tuple(member["physical_observation_ids"])
     member["basis_bytes"] = member["basis_bytes"].encode("utf-8")

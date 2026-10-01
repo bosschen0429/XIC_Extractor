@@ -30,9 +30,11 @@ from xic_extractor.discovery.delta_mass_patterns import (
     PtPatternCandidate,
     match_delta_mass_pattern,
 )
+from xic_extractor.discovery.delta_mass_strategy import (
+    PtPatternDiscoveryStrategy,
+)
 from xic_extractor.discovery.detected_features import (
     ComparableDetectedFeatureIdentity,
-    PtPatternDiscoveryStrategy,
     comparable_cid_nl_identity,
     detected_feature_identity,
     load_external_feature_table_tsv,

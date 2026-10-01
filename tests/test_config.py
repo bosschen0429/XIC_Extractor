@@ -130,7 +130,6 @@ def test_load_config_derives_output_paths_and_creates_output_dir(
     assert config.resolver_min_scans == 5
     assert config.parallel_mode == "process"
     assert config.parallel_workers == default_parallel_workers()
-    assert config.baseline_audit_method == ""
     assert config.target_pair_rt_calibration_path is None
     assert config.target_config_hash == compute_target_config_hash(
         config_dir / "targets.csv"
@@ -624,16 +623,6 @@ def test_load_config_rejects_istd_owned_paired_rt_relation(
     )
 
 
-def test_load_config_accepts_asls_baseline_audit_method(tmp_path: Path) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(config_dir, {"baseline_audit_method": "asls"})
-    _write_targets(config_dir)
-
-    config, _ = load_config(config_dir)
-
-    assert config.baseline_audit_method == "asls"
-
-
 def test_load_config_defaults_baseline_integration_method_to_asls(
     tmp_path: Path,
 ) -> None:
@@ -646,23 +635,11 @@ def test_load_config_defaults_baseline_integration_method_to_asls(
     assert config.baseline_integration_method == "asls"
 
 
-def test_load_config_rejects_unknown_baseline_audit_method(tmp_path: Path) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(config_dir, {"baseline_audit_method": "airpls"})
-    _write_targets(config_dir)
-
-    with pytest.raises(ConfigError) as exc_info:
-        load_config(config_dir)
-
-    _assert_error(exc_info, "settings.csv", "baseline_audit_method", "airpls")
-
-
 def test_canonical_settings_defaults_include_parallel_settings() -> None:
     assert CANONICAL_SETTINGS_DEFAULTS["parallel_mode"] == "process"
     assert CANONICAL_SETTINGS_DEFAULTS["parallel_workers"] == str(
         default_parallel_workers()
     )
-    assert CANONICAL_SETTINGS_DEFAULTS["baseline_audit_method"] == ""
     assert "baseline_integration_method" not in CANONICAL_SETTINGS_DEFAULTS
     assert CANONICAL_SETTINGS_DEFAULTS["signal_processing_method"] == "gaussian"
     assert CANONICAL_SETTINGS_DEFAULTS["signal_processing_window_points"] == "15"
@@ -734,7 +711,6 @@ def test_settings_example_omits_machine_specific_worker_count() -> None:
 
     assert rows["parallel_mode"] == "process"
     assert "parallel_workers" not in rows
-    assert rows["baseline_audit_method"] == ""
     assert "baseline_integration_method" not in rows
     assert rows["signal_processing_method"] == "gaussian"
     assert rows["signal_processing_window_points"] == "15"

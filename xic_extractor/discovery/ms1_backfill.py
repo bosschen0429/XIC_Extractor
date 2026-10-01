@@ -55,6 +55,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
     PreparedSignalResult,
 )
+from xic_extractor.peak_detection.scoring_metrics import short_scale_noise_mad
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.raw_superwindow_source import RawSuperWindowSource
 from xic_extractor.xic_models import XICRequest
@@ -1025,19 +1026,12 @@ def _physical_ms1_peak_fields(
                     intensity[seg.start_index : seg.end_index], dtype=float
                 )
                 rt_seg = np.asarray(rt[seg.start_index : seg.end_index], dtype=float)
-                if len(raw_seg) >= 3:
-                    w = (rt_seg[2:] - rt_seg[1:-1]) / (rt_seg[2:] - rt_seg[:-2])
-                    res = (
-                        w * raw_seg[:-2] + (1.0 - w) * raw_seg[2:] - raw_seg[1:-1]
-                    ) / np.sqrt(1.0 + w**2 + (1.0 - w) ** 2)
-                    mad = float(np.median(np.abs(res - np.median(res))))
-                else:
-                    mad = 0.0
+                raw_noise_mad = short_scale_noise_mad(rt_seg, raw_seg)
                 if fields.trace_quality == "clean" and is_provisional_peak_shape(
                     rt_seg,
                     raw_seg,
                     apex_index=seg.apex_index - seg.start_index,
-                    raw_noise_mad=mad,
+                    raw_noise_mad=raw_noise_mad,
                 ):
                     fields.trace_quality = "provisional"
                 break

@@ -28,10 +28,12 @@ from xic_extractor.discovery.delta_mass_pipeline import (
     DeltaMassDiscoveryOutputs,
     run_pt_pattern_discovery,
 )
-from xic_extractor.discovery.detected_features import (
-    CID_NL_SHARED_IDENTITY_SOURCE,
+from xic_extractor.discovery.delta_mass_strategy import (
     DeltaMassPatternSettings,
     PtPatternDiscoveryStrategy,
+)
+from xic_extractor.discovery.detected_features import (
+    CID_NL_SHARED_IDENTITY_SOURCE,
 )
 from xic_extractor.discovery.pt_pattern_artifact_contract import (
     pt_pattern_candidate_assignment_fingerprint,

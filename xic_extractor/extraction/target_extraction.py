@@ -24,6 +24,7 @@ from xic_extractor.extraction.diagnostics import (
     istd_anchor_missing_diagnostic,
 )
 from xic_extractor.extraction.drift import estimate_sample_drift
+from xic_extractor.extraction.ms2_selection import selected_candidate_ms2_evidence
 from xic_extractor.extraction.result_assembly import build_extraction_result
 from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.extraction.rt_windows import get_rt_window
@@ -36,6 +37,7 @@ from xic_extractor.extraction.scoring_factory import (
 from xic_extractor.extraction.targeted_peak_selection import (
     select_targeted_peak,
 )
+from xic_extractor.extraction.trace_context import targeted_extraction_trace_group
 from xic_extractor.output.messages import (
     DiagnosticRecord,
     build_diagnostic_records,
@@ -53,33 +55,22 @@ from xic_extractor.peak_detection.models import (
     PeakCandidatesResult,
     PeakDetectionResult,
 )
-from xic_extractor.peak_detection.observations import (
-    physical_peak_observation_integration,
-)
 from xic_extractor.peak_detection.peak_selection import (
     select_peak_and_area,
 )
 from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
     physical_candidates_result,
-    selected_physical_segment,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
-    answer_physical_peak_question,
     enumerate_physical_segment_universe,
-    mint_physical_peak_question,
     physical_segment_has_incomplete_context,
     prepare_physical_signal,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
-    PHYSICAL_PEAK_NO_SELECTION_POLICY,
-    PHYSICAL_PEAK_POINT_POLICY,
     PhysicalSegmentUniverse,
     PreparedSignalResult,
 )
 from xic_extractor.peak_detection.scoring_models import ScoredCandidate, ScoringContext
-from xic_extractor.peak_detection.selection_decision import (
-    selection_decision_from_hypothesis,
-)
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.raw_reader import open_raw
 
@@ -482,98 +473,36 @@ def extract_one_target(
             paired_istd_anchor_rt=istd_rt_in_this_sample,
         )
     candidate = selected_candidate(peak_result)
-    handoff_peak = select_targeted_peak(
-        config=selection_config,
+    trace_group = targeted_extraction_trace_group(
         sample_name=sample_name,
         target=target,
-        peak_result=peak_result,
-        candidate=candidate,
-        candidate_ms2_cache=candidate_ms2_cache,
-        candidate_ms2_builder=_cached_candidate_ms2_builder,
+        config=selection_config,
         rt=rt,
         intensity=intensity,
         rt_min=context_rt_min,
         rt_max=context_rt_max,
         expected_rt_min=anchor_rt,
+    )
+    candidate_ms2_evidence = selected_candidate_ms2_evidence(
+        candidate,
+        candidate_ms2_cache,
+        _cached_candidate_ms2_builder,
+    )
+    handoff_peak = select_targeted_peak(
+        config=selection_config,
+        target=target,
+        peak_result=peak_result,
+        trace_group=trace_group,
+        candidate_ms2_evidence=candidate_ms2_evidence,
+        prepared_result=prepared,
+        universe=universe,
+        selection_rt_min=selection_rt_min,
+        selection_rt_max=selection_rt_max,
         paired_istd_anchor_rt=istd_rt_in_this_sample,
         model_selection_expected_diff_approvals=model_selection_expected_diff_approvals,
     )
-    physical_evaluation = None
-    if handoff_peak.trace_group is not None:
-        selected_segment = selected_physical_segment(
-            selected_candidate(peak_result), universe
-        )
-        query_rt_min = (
-            selected_segment.apex_rt_min if selected_segment is not None else None
-        )
-        if query_rt_min is None and universe.state != "available":
-            acquisition_trace = handoff_peak.trace_group.primary_trace
-            query_rt_min = (acquisition_trace.rt_min + acquisition_trace.rt_max) / 2
-        elif query_rt_min is None:
-            # The wide physical context can hold segments while the selection
-            # window holds none; the retained trace still needs its answer.
-            query_rt_min = (selection_rt_min + selection_rt_max) / 2
-        if query_rt_min is not None:
-            question = mint_physical_peak_question(
-                prepared.projection,
-                universe,
-                selection_subject_id=target.label,
-                query_rt_min=query_rt_min,
-                selection_policy_version=(
-                    PHYSICAL_PEAK_POINT_POLICY
-                    if selected_segment is not None
-                    else PHYSICAL_PEAK_NO_SELECTION_POLICY
-                ),
-            )
-            physical_evaluation = answer_physical_peak_question(
-                prepared,
-                universe,
-                question,
-            )
-        if physical_evaluation is not None and physical_evaluation.state != "available":
-            # The final owner state withdraws the ranked value and selection
-            # authority; no legacy peak may restore unavailable physical facts.
-            peak_result = replace(
-                peak_result,
-                status=(
-                    "NO_SIGNAL"
-                    if physical_evaluation.reason == "no_signal_above_baseline"
-                    else "PEAK_NOT_FOUND"
-                ),
-                peak=None,
-                candidates=(),
-                n_prominent_peaks=0,
-                confidence=None,
-                reason=physical_evaluation.reason,
-                severities=(),
-                score_breakdown=(),
-                candidate_scores=(),
-            )
-            candidate = None
-            handoff_peak = replace(
-                handoff_peak,
-                candidate_ms2_evidence=None,
-                selected_hypothesis=None,
-                selection_decision=None,
-                model_selection_result=None,
-            )
-        elif (
-            handoff_peak.selected_hypothesis is not None
-            and physical_evaluation is not None
-            and physical_evaluation.integration is not None
-        ):
-            physical_hypothesis = replace(
-                handoff_peak.selected_hypothesis,
-                integration=physical_peak_observation_integration(physical_evaluation),
-            )
-            handoff_peak = replace(
-                handoff_peak,
-                selected_hypothesis=physical_hypothesis,
-                selection_decision=selection_decision_from_hypothesis(
-                    physical_hypothesis,
-                    peak_result=peak_result,
-                ),
-            )
+    peak_result = handoff_peak.peak_result
+    candidate = selected_candidate(peak_result)
 
     shape_metrics = selected_shape_metrics(prepared, peak_result)
     if shape_metrics_by_label is not None and shape_metrics is not None:
@@ -589,12 +518,8 @@ def extract_one_target(
         selected_hypothesis=handoff_peak.selected_hypothesis,
         selection_decision=handoff_peak.selection_decision,
         model_selection_result=handoff_peak.model_selection_result,
-        acquisition_trace=(
-            None
-            if handoff_peak.trace_group is None
-            else handoff_peak.trace_group.primary_trace
-        ),
-        physical_evaluation=physical_evaluation,
+        acquisition_trace=handoff_peak.trace_group.primary_trace,
+        physical_evaluation=handoff_peak.physical_evaluation,
         sample_name=sample_name,
     )
     results[target.label] = result

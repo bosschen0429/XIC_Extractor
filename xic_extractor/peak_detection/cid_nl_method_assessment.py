@@ -25,6 +25,7 @@ from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelationContractError,
     DdaCidNlCandidateSetRelationRef,
+    resolve_dda_cid_nl_candidate_set_relation_ref,
     validate_dda_cid_nl_candidate_set_relation_binding,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
@@ -45,6 +46,7 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportContractError,
     DdaCidNlPeakSupportPolicy,
     DdaCidNlPeakSupportRef,
+    resolve_dda_cid_nl_peak_support_ref,
     validate_dda_cid_nl_peak_support_binding,
 )
 from xic_extractor.peak_detection.observations import (
@@ -392,6 +394,78 @@ class CidNlMethodAssessmentRef:
             raise CidNlMethodAssessmentContractError(
                 "assessment mismatches its immutable artifact"
             ) from exc
+
+
+def resolve_cid_nl_method_relations(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    evidence_refs: tuple[CidNlEvidenceRef, ...],
+    candidate_peaks: tuple[PeakObservationRef, ...],
+    policy: DdaCidNlPeakSupportPolicy,
+) -> tuple[
+    tuple[DdaCidNlPeakSupportRef, ...],
+    tuple[DdaCidNlCandidateSetRelationRef, ...],
+]:
+    """Resolve measured events to individual or set-level candidate relations.
+
+    An unrelated event retains no relation. Individual support requires a scan
+    strictly inside one peak whose interval has no positive-width overlap with
+    another mass-compatible candidate; boundary and overlapping cases remain
+    set-level evidence.
+    """
+    individual_refs: list[DdaCidNlPeakSupportRef] = []
+    set_refs: list[DdaCidNlCandidateSetRelationRef] = []
+    for evidence in evidence_refs:
+        observation = evidence.observation
+        mz_compatible = tuple(
+            peak
+            for peak in candidate_peaks
+            if abs(observation.precursor_mz - peak.content.mz)
+            <= policy.precursor_tolerance_da
+        )
+        containing = tuple(
+            peak
+            for peak in mz_compatible
+            if peak.content.integration.rt_left_min
+            <= observation.scan_rt_min
+            <= peak.content.integration.rt_right_min
+        )
+        if not containing:
+            continue
+        selected = containing[0]
+        interval = selected.content.integration
+        strictly_unique = (
+            len(containing) == 1
+            and interval.rt_left_min < observation.scan_rt_min < interval.rt_right_min
+            and not any(
+                peak is not selected
+                and interval.rt_left_min < peak.content.integration.rt_right_min
+                and peak.content.integration.rt_left_min < interval.rt_right_min
+                for peak in mz_compatible
+            )
+        )
+        if strictly_unique:
+            individual_refs.append(
+                resolve_dda_cid_nl_peak_support_ref(
+                    processing_owners=processing_owners,
+                    sample=sample,
+                    canonical_evidence=evidence,
+                    candidate_peaks=candidate_peaks,
+                    policy=policy,
+                )
+            )
+        else:
+            set_refs.append(
+                resolve_dda_cid_nl_candidate_set_relation_ref(
+                    processing_owners=processing_owners,
+                    sample=sample,
+                    canonical_evidence=evidence,
+                    candidate_peaks=candidate_peaks,
+                    policy=policy,
+                )
+            )
+    return tuple(individual_refs), tuple(set_refs)
 
 
 def mint_cid_nl_method_assessment_ref(
@@ -1251,5 +1325,6 @@ __all__ = [
     "SCHEMA_VERSION",
     "canonical_cid_nl_method_assessment_bytes",
     "mint_cid_nl_method_assessment_ref",
+    "resolve_cid_nl_method_relations",
     "validate_cid_nl_method_assessment_binding",
 ]

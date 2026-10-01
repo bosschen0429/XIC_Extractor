@@ -43,7 +43,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | 想改什麼 | 先找哪裡 | 交接時要分清的責任 |
 | --- | --- | --- |
 | 峰選擇、邊界、面積 | `peak_detection/`（`signal_processing.py` 只保留公開的 `find_peak_and_area` 入口） | 單峰／單次觀察的答案；跨樣本群組在 Alignment |
-| Targeted 正式選峰與 successor approval | `extraction/targeted_peak_selection.py` | 組合 hypotheses 與 Targeted 選峰政策，交出選定的峰、trace 和 decision；單峰演算法仍在 `peak_detection/` |
+| Targeted 正式選峰與 successor approval | `extraction/targeted_peak_selection.py` | 消費已取得的 trace／MS2 evidence，組合 Targeted 選峰政策並完成 physical answer 與選峰事實同步；[Targeted selection](product/targeted-selection.md#physical-evaluation) 定義完成責任，單峰演算法仍在 `peak_detection/` |
 | Targeted 輸入轉成共用峰假設 | `extraction/targeted_peak_hypotheses.py` | 選峰、candidate table 與 boundary callers 共用同一 translation；audit callers 不依賴正式選峰政策 |
 | Targeted 計數、角色例外與 review 原因 | `extraction/targeted_product_projection.py` | 消費已完成的科學結果，決定產品狀態；純結果模型在 `output/targeted_product_model.py`，writer 只呈現它 |
 | Untargeted 保留批次執行 | `untargeted_execution/` | 規劃、partition 與 completion adapter；科學決策仍由 Alignment，發布由 application／output 負責 |
@@ -83,6 +83,11 @@ Package 名稱不是可強制的分層證明：`alignment/` 包含科學與外�
   a hypothetical future value does not justify a new setting.
 - Preserve public contracts unless an approved change names the consumer,
   observable delta, and rollback.
+- When changing a public entry point, use existing tests or a minimal example
+  to show required inputs, expected outputs, and the meaning of key failures,
+  so consumers can use it correctly without tracing its implementation. Reuse
+  the current contract's tests or documentation; the
+  [testing contract](agent/testing.md) governs new regression coverage.
 
 ## Change Locality
 

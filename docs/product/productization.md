@@ -59,6 +59,14 @@ allowlist does not register a writer or authorize any cell.
 - The compatibility index preserves stable lookup keys only. It must not grow a
   new maintenance log or duplicate rule prose from canonical owners.
 
+## CLI And GUI Delivery Order
+
+CLI and GUI target the same application capabilities and scientific contracts.
+Develop and validate capabilities through the CLI first so agents can exercise
+them directly, then bring the GUI up to the same capability. A temporary GUI
+gap describes delivery progress, not a permanently narrower product scope.
+Both surfaces use the same application and scientific owners.
+
 ## Work Intake And Closeout
 
 Each maintenance cycle keeps at most one lane of each kind:

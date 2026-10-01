@@ -7,7 +7,6 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
-from xic_extractor.peak_detection.region_audit import PeakRegionAuditSummary
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.cross_sample_peak_groups import (
@@ -46,7 +45,6 @@ class SampleLocalMS1Owner:
     supporting_events: tuple[IdentityEvent, ...]
     identity_conflict: bool
     assignment_reason: str
-    region_audit: PeakRegionAuditSummary | None = None
     selected_integration: IntegrationResult | None = None
     quantification_eligible: bool = True
     quantification_exclusion_reason: str = ""
