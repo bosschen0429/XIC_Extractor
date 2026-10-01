@@ -62,6 +62,13 @@ Grouping does not reselect peaks or add a cohort RT review policy.
 
 ### Physical evaluation
 
+The Targeted selection module consumes an acquired TraceGroup, selected MS2
+evidence, and the shared prepared signal and segment universe. It completes the
+physical answer and synchronizes the final peak, hypothesis, and selection
+decision before returning them. RAW acquisition owns trace construction and
+MS2 reads; it consumes the completed selection without withdrawing or rebuilding
+those facts itself.
+
 - Acquisition enumerates the shared physical segment universe for the
   configured signal profile.
 - Targeted scoring and identity evidence choose a component. The physical
