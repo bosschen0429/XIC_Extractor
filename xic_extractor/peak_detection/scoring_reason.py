@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from xic_extractor.peak_detection.peak_scoring_evidence import EvidenceScore
 from xic_extractor.peak_detection.scoring_models import Confidence
-from xic_extractor.peak_scoring_evidence import EvidenceScore
 
 _EVIDENCE_REASON_LABELS = {
     "strict_nl_ok": "strict NL OK",

@@ -8,6 +8,7 @@ import pytest
 
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.extraction.result_models import RunOutput
+from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.extraction.targeted_inputs import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
@@ -17,7 +18,6 @@ from xic_extractor.processing_identity import (
     AcquisitionSourceExpectation,
     build_acquisition_source_identity,
 )
-from xic_extractor.rt_prior_library import LibraryEntry
 from xic_extractor.target_pair_rt_calibration import (
     TARGET_PAIR_RT_CALIBRATION_FIELDS,
 )

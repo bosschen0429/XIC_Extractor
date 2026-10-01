@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from xic_extractor.review_actions_schema import (
+from xic_extractor.review_actions.schema import (
     PRODUCT_MUTATING_REVIEW_ACTIONS,
     ReviewActionType,
 )
@@ -141,7 +141,7 @@ class ReviewActionApplyOutput:
 
     @property
     def summary(self) -> dict[str, object]:
-        from xic_extractor.review_actions_rows import (
+        from xic_extractor.review_actions.rows import (
             summarize_review_action_apply_output,
         )
 

@@ -26,7 +26,7 @@ from xic_extractor.processing_identity import (
     compose_processing_owner_references,
     issue_processing_attempt,
 )
-from xic_extractor.review_actions_models import ReviewAction
+from xic_extractor.review_actions.models import ReviewAction
 from xic_extractor.review_records import (
     ImmutableReviewRecordRef,
     ResolvedReviewRecordRef,

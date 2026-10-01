@@ -18,6 +18,7 @@ from xic_extractor.execution.attempt import (
     RuntimeTelemetryProvider,
 )
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
+from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.extraction.targeted_inputs import (
     resolve_model_selection_expected_diff_approvals,
 )
@@ -27,7 +28,6 @@ from xic_extractor.extraction.targeted_runtime_adapter import (
     TargetedRuntimeWorkerBatch,
     execute_targeted_runtime_lifecycle,
 )
-from xic_extractor.rt_prior_library import LibraryEntry
 
 if TYPE_CHECKING:
     from xic_extractor.applications.targeted.production_workflow import (

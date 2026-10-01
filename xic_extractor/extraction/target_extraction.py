@@ -26,6 +26,7 @@ from xic_extractor.extraction.diagnostics import (
 from xic_extractor.extraction.drift import estimate_sample_drift
 from xic_extractor.extraction.peak_candidate_audit import append_peak_audit_rows
 from xic_extractor.extraction.result_assembly import build_extraction_result
+from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.extraction.rt_windows import get_rt_window
 from xic_extractor.extraction.scoring_factory import (
     allow_prepass_anchor,
@@ -82,7 +83,6 @@ from xic_extractor.peak_detection.selection_decision import (
 )
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.raw_reader import open_raw
-from xic_extractor.rt_prior_library import LibraryEntry
 
 if TYPE_CHECKING:
     from xic_extractor.extraction.result_models import (

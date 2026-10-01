@@ -282,7 +282,6 @@ Cross-cutting owners remain focused:
 | `processing_identity.py` | request, attempt, source, and retry-predecessor identity |
 | `execution/attempt.py` | sole attempt construction, execution, settlement and finalization authority; private lifecycle/receipt/observability companions support it |
 | `acquisition_contract.py` | capability-bound acquisition batches and mechanical call/point facts |
-| `delivery_lineage.py` | Targeted delivery-cell, revision, stage, and seal-candidate identity |
 
 Exact model fields, companion modules, public exports, and allowed construction
 sites are source-owned. Query CBM and inspect the current consumer before moving

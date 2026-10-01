@@ -7,12 +7,12 @@ from typing import TYPE_CHECKING
 
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.extraction.istd_prepass import extract_istd_anchors_only
+from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
 from xic_extractor.extraction.target_extraction import extract_raw_file_result
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecords
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
-from xic_extractor.rt_prior_library import LibraryEntry
 
 if TYPE_CHECKING:
     from xic_extractor.extraction.result_models import FileResult, RunOutput

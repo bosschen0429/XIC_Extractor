@@ -8,7 +8,7 @@ from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from xic_extractor.artifact_paths import require_disjoint_artifact_paths
+from xic_extractor.discovery.artifact_paths import require_disjoint_artifact_paths
 from xic_extractor.discovery.pt_pattern_artifact_contract import (
     PT_PATTERN_CANDIDATE_ASSIGNMENT_COLUMNS,
     PT_PATTERN_CANDIDATE_ASSIGNMENT_SHA256_FIELD,

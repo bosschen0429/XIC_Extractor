@@ -1,9 +1,9 @@
+from xic_extractor.peak_detection.peak_scoring_evidence import EvidenceScore
 from xic_extractor.peak_detection.scoring_reason import (
     build_evidence_reason,
     build_reason,
     score_breakdown_fields,
 )
-from xic_extractor.peak_scoring_evidence import EvidenceScore
 
 
 def test_reason_all_pass() -> None:

@@ -4,6 +4,10 @@ import math
 from typing import TYPE_CHECKING
 
 from xic_extractor.configuration.models import Target
+from xic_extractor.extraction.target_sample_applicability import (
+    target_sample_exclusion_reasons,
+    target_sample_is_applicable,
+)
 from xic_extractor.output.targeted_product_model import (
     OWN_MAX_SAME_PEAK_SUPPORT_REASON,
     ProductState,
@@ -15,10 +19,6 @@ from xic_extractor.peak_detection.evidence_semantics import EvidenceDecisionSema
 from xic_extractor.peak_detection.scoring_quality import hard_quality_flags
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
-)
-from xic_extractor.target_sample_applicability import (
-    target_sample_exclusion_reasons,
-    target_sample_is_applicable,
 )
 
 if TYPE_CHECKING:

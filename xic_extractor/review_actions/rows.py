@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from xic_extractor.review_actions_models import (
+from xic_extractor.review_actions.models import (
     ReviewAction,
     ReviewActionApplication,
     ReviewActionApplyChangeset,
@@ -14,7 +14,7 @@ from xic_extractor.review_actions_models import (
     ReviewActionExpectedDiffApproval,
     ReviewActionExpectedDiffTemplate,
 )
-from xic_extractor.review_actions_schema import (
+from xic_extractor.review_actions.schema import (
     REVIEW_ACTION_APPLICATION_PLAN_SCHEMA_VERSION,
     REVIEW_ACTION_APPLY_AUDIT_SCHEMA_VERSION,
     REVIEW_ACTION_APPLY_CHANGESET_SCHEMA_VERSION,

@@ -14,13 +14,13 @@ planned seal changes the current product writer.
 | --- | --- | --- |
 | Processing identity (`xic_extractor/processing_identity.py`) | Which request and attempt ran, over which RAW sources | Implemented; production Alignment, Backfill, and Discovery modules use it |
 | Target identity (`TargetKey`, `TargetListSnapshot` in `xic_extractor/configuration/target_identity.py`) | Which exact target list a run used | Implemented; production Targeted modules use it |
-| Targeted delivery lineage (`TargetedDeliveryCellKey`, revision/stage/seal candidates in `xic_extractor/delivery_lineage.py`) | Per-cell Targeted lineage candidates | Diagnostic-only; reached through `applications.targeted.application`, with no product seal or publication authority |
+| Targeted delivery lineage | Per-cell Targeted revisions, stages, and seals | Planned; no current implementation or product publication authority |
 | Untargeted row identity (`UntargetRowKey`) | A stable identity for one Untargeted Matrix row | Implemented in `alignment/projection/untarget/pre_cell.py` |
 | Untargeted per-cell delivery lineage | A retained revision/evidence bundle for each Matrix cell | Not planned; see [Untargeted delivery decision](#untargeted-delivery-decision) |
 | Untargeted output-level seal | One sealed manifest for one complete Untargeted Matrix delivery | Planned; not implemented |
 
 Status source: module definitions and production import paths, checked on
-2026-09-30. A status row is not validation evidence.
+2026-10-01. A status row is not validation evidence.
 
 ### Untargeted Delivery Decision
 
@@ -573,10 +573,10 @@ The model fails and must be narrowed or redrawn if:
   artifact-closure identities. Its full-file source fingerprint and diagnostic
   owner references are not a production artifact registry or writer authority.
 - `configuration/target_identity.py` owns Targeted keys, exact definitions, and
-  ordered snapshots. `delivery_lineage.py` owns Targeted per-cell revision,
-  stage, and seal **candidates**. The current Targeted service does not
-  publish a product seal. A migration must reuse these owners, not mint
-  parallel Targeted IDs.
+  ordered snapshots. Targeted per-cell revisions, stages, and seals remain
+  planned without a current implementation. The current Targeted service does
+  not publish a product seal. Future delivery integration must reuse the
+  target-identity owner rather than mint parallel Targeted IDs.
 - Alignment already mints request-scoped `UntargetRowKey` values from finalized
   canonical groups in `alignment/projection/untarget/pre_cell.py`. The ordinal
   `FAM000...` label is not that key. Untargeted output-level sealing remains
@@ -615,7 +615,6 @@ The existing modules have distinct responsibilities:
 | `peak_detection` CID-NL owners | Mint owner-backed physical `PeakObservationRef`, DDA/ddMS2 scan support, chromatographic support event, and one bounded CID-NL `PeakHypothesis` from exact evidence. The hypothesis grants no Targeted label, role, pairing, selection, group, count, or output authority. |
 | Discovery batch contract and Untargeted CID-NL adapter | Bind a self-validating candidate-universe receipt to the exact acquisition source and request, rejecting changed candidate bytes or source content before vendor allocation. This closes the caller-completeness premise for that explicit input contract only. |
 | Alignment group, cell, and Untargeted projection owners | Keep scientific group and `CellObservationRef` authority; mint `UntargetRowKey` from finalized canonical groups and preserve row × sample subjects, including explicit absence. They do not mint Untargeted per-cell delivery revisions. |
-| `delivery_lineage` and Targeted diagnostic delivery | Mint and validate Targeted cell/revision/stage/seal candidates in memory. Existing writers remain authoritative; these candidates are not product seals or current-delivery pointers. |
 
 The physical peak owner verifies the supplied raw and selection traces against
 integration bounds, apex, height, area, baseline, and declared smoothing facts

@@ -153,7 +153,6 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_csv_to_excel.py",
             "tests/test_cwt_*.py",
             "tests/test_dda_cid_nl_peak_support_refs.py",
-            "tests/test_delivery_lineage.py",
             "tests/test_excel_*.py",
             "tests/test_extraction_*.py",
             "tests/test_execution_engine.py",

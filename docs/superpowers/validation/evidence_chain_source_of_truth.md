@@ -166,7 +166,7 @@ replay.
 
 Owners:
 
-- `xic_extractor/rt_prior_library.py`
+- `xic_extractor/extraction/rt_prior_library.py`
 - `xic_extractor/target_pair_rt_calibration.py`
 - `xic_extractor/peak_detection/evidence_facts.py`
 - `xic_extractor/alignment/shared_peak_identity_explanation/*`
@@ -194,7 +194,7 @@ Owners:
 - `xic_extractor/output/schema.py`
 - `xic_extractor/output/csv_writers.py`
 - `xic_extractor/output/detection.py`
-- `xic_extractor/review_actions.py`
+- `xic_extractor/review_actions/workflows.py`
 - `docs/product/decision-policy.md`
 - `tests/test_targeted_product_projection.py`
 - `tests/test_review_actions.py`

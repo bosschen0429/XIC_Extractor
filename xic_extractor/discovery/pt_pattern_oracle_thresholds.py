@@ -8,8 +8,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from xic_extractor.artifact_paths import require_disjoint_artifact_paths
 from xic_extractor.discovery import pt_pattern_evidence_rule as evidence_rule
+from xic_extractor.discovery.artifact_paths import require_disjoint_artifact_paths
 from xic_extractor.discovery.pt_pattern_blind_overlay import classify_machine_call
 from xic_extractor.discovery.pt_pattern_oracle_promotion import (
     load_verified_oracle_promotion_bundle,

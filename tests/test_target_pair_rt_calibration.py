@@ -6,14 +6,16 @@ import pytest
 
 from xic_extractor.configuration.hashing import compute_target_config_hash
 from xic_extractor.configuration.models import ConfigError, Target
-from xic_extractor.rt_prior_library import LibraryEntry
+from xic_extractor.extraction.rt_prior_library import (
+    LibraryEntry,
+    calibration_rows_from_rt_prior_library,
+    rt_prior_library_from_target_pair_calibration,
+)
 from xic_extractor.target_pair_rt_calibration import (
     TARGET_PAIR_RT_CALIBRATION_FIELDS,
     TARGET_PAIR_RT_CALIBRATION_SCHEMA_VERSION,
     TargetPairRTCalibrationRow,
-    calibration_rows_from_rt_prior_library,
     load_target_pair_rt_calibration,
-    rt_prior_library_from_target_pair_calibration,
     write_target_pair_rt_calibration_tsv,
 )
 

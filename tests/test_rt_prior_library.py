@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from xic_extractor.rt_prior_library import (
+from xic_extractor.extraction.rt_prior_library import (
     LIBRARY_FIELDNAMES,
     LibraryEntry,
     load_library,

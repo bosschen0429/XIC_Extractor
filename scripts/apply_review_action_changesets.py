@@ -6,8 +6,8 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from xic_extractor.review_actions import (
-    ReviewActionError,
+from xic_extractor.review_actions.models import ReviewActionError
+from xic_extractor.review_actions.workflows import (
     apply_review_action_changeset_rows,
     load_review_action_apply_changeset_rows,
     load_targeted_long_rows,

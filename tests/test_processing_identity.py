@@ -13,6 +13,7 @@ import xic_extractor.processing_identity as processing_identity_module
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.target_identity import mint_target_list_snapshot
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
+from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.extraction.targeted_inputs import (
     TARGETED_PROCESSING_ALGORITHM_VERSION,
     TARGETED_PROCESSING_CONTRACT_VERSION,
@@ -35,7 +36,6 @@ from xic_extractor.processing_identity import (
     fingerprint_file_content,
     issue_processing_attempt,
 )
-from xic_extractor.rt_prior_library import LibraryEntry
 from xic_extractor.sample_metadata import (
     SAMPLE_METADATA_COLUMNS,
     SAMPLE_METADATA_SCHEMA_VERSION,

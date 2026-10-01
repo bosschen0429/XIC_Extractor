@@ -9,6 +9,7 @@ from xic_extractor.extraction.output_dispatch import write_outputs
 from xic_extractor.extraction.paired_area_ratio_projection import (
     apply_paired_area_ratio_projection,
 )
+from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.extraction.targeted_ms1_shape_identity_projection import (
     apply_targeted_ms1_shape_identity_projection,
     load_targeted_ms1_shape_identity_supports,
@@ -16,7 +17,6 @@ from xic_extractor.extraction.targeted_ms1_shape_identity_projection import (
 from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecords
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.raw_reader import RawReaderError, preflight_raw_reader
-from xic_extractor.rt_prior_library import LibraryEntry
 
 from .targeted_inputs import resolve_targeted_inputs, resolve_targeted_raw_paths
 

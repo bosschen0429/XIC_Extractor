@@ -10,9 +10,9 @@ from typing import Any
 
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
-from xic_extractor.review_actions import parse_review_actions
-from xic_extractor.review_actions_models import ReviewAction, ReviewActionError
-from xic_extractor.review_actions_schema import REVIEW_ACTION_SCHEMA_VERSION
+from xic_extractor.review_actions.models import ReviewAction, ReviewActionError
+from xic_extractor.review_actions.schema import REVIEW_ACTION_SCHEMA_VERSION
+from xic_extractor.review_actions.workflows import parse_review_actions
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 from xic_extractor.validation_primitives import (
     require_lower_sha256,

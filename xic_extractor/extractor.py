@@ -7,10 +7,10 @@ from typing import Any, Literal
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extraction.result_models import RunOutput
+from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.peak_detection.model_selection import (
     ExpectedDiffApprovalRecords,
 )
-from xic_extractor.rt_prior_library import LibraryEntry
 
 __all__ = ["acquire", "run"]
 
