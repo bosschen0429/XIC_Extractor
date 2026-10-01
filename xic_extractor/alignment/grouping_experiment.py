@@ -1,0 +1,86 @@
+"""Replay the formal grouping decisions over retained, curve-free observations."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+
+from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    CrossSamplePeakGroupHypothesis,
+)
+from xic_extractor.alignment.feature_membership_inference import (
+    BatchRtWarp,
+    RtCoordinates,
+)
+from xic_extractor.alignment.grouping_workflow import group_cid_nl_owners
+from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+from xic_extractor.alignment.sample_rt_calibration import (
+    BatchRtCalibration,
+    RtCalibrationPolicy,
+    build_batch_rt_calibration,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class GroupingWorkset:
+    key: str
+    owners: tuple[SampleLocalMS1Owner, ...]
+    known_identity_bindings: tuple[tuple[str, str], ...]
+    rt_warp: BatchRtWarp | None
+
+
+@dataclass(frozen=True, slots=True)
+class GroupingInputs:
+    sample_stems: tuple[str, ...]
+    injection_order: Mapping[str, int]
+    alignment_config: AlignmentConfig
+    backfill_half_window_min: float
+    worksets: tuple[GroupingWorkset, ...]
+    candidate_ids_by_owner: Mapping[str, tuple[str, ...]]
+
+
+def replay_grouping(
+    inputs: GroupingInputs,
+    *,
+    config: AlignmentConfig | None = None,
+    rt_coordinates: RtCoordinates | None = None,
+) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
+    """Reuse membership and post-grouping rules without acquisition or Backfill."""
+    return tuple(
+        group
+        for workset in inputs.worksets
+        for group in group_cid_nl_owners(
+            workset.owners,
+            config=config or inputs.alignment_config,
+            sample_universe=frozenset(inputs.sample_stems),
+            injection_order=inputs.injection_order,
+            rt_warp=rt_coordinates if rt_coordinates is not None else workset.rt_warp,
+            backfill_half_window_min=inputs.backfill_half_window_min,
+            known_identity_bindings=workset.known_identity_bindings,
+        )
+    )
+
+
+def calibrate_grouping(
+    inputs: GroupingInputs,
+    groups: tuple[CrossSamplePeakGroupHypothesis, ...],
+    *,
+    policy: RtCalibrationPolicy,
+) -> BatchRtCalibration:
+    """Fit the existing RT model from directly observed stable initial groups."""
+    observations = {
+        group.group_hypothesis_id: {
+            owner.sample_stem: owner.owner_apex_rt
+            for owner in group.owners
+            if not owner.is_provisional
+        }
+        for group in groups
+        if group.disposition == "established"
+    }
+    return build_batch_rt_calibration(
+        observations,
+        sample_stems=inputs.sample_stems,
+        prior_injections={},
+        policy=policy,
+    )

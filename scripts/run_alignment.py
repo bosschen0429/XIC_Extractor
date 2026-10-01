@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import cProfile
 import io
+import math
 import os
 import pstats
 import sys
@@ -214,6 +215,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "output_level": args.output_level,
             "emit_alignment_cells": args.emit_alignment_cells,
             "emit_cid_nl_explanation": args.emit_cid_nl_explanation,
+            "explanation_full_audit": args.explanation_full_audit,
+            "explanation_curve_mz_ranges": tuple(args.explanation_curve_mz_range),
             "retain_acquisition_cache": args.retain_acquisition_cache,
             "acquisition_cache_dir": args.acquisition_cache_dir,
             "emit_alignment_status_matrix": args.emit_alignment_status_matrix,
@@ -534,10 +537,22 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--emit-cid-nl-explanation",
         action="store_true",
         help=(
-            "write cid_nl_explanation.sqlite, a per-cell projection of results "
-            "already written elsewhere; the debug and validation levels "
-            "include it already"
+            "write a compact decision review without full audit or curve arrays; "
+            "debug and validation levels include it already"
         ),
+    )
+    parser.add_argument(
+        "--explanation-full-audit",
+        action="store_true",
+        help="Explicitly retain the expensive full explanation and all curves",
+    )
+    parser.add_argument(
+        "--explanation-curve-mz-range",
+        action="append",
+        default=[],
+        type=_mz_range,
+        metavar="LOWER:UPPER",
+        help="Retain curves only in this m/z range (repeatable); implies explanation",
     )
     parser.add_argument(
         "--baseline-integration-method",
@@ -776,6 +791,18 @@ def _print_owner_build_route_preflight(owner_build_xic_backend: str) -> None:
     print("Effective owner-build route: <not executed>")
     print("Effective route validation: not_executed")
     print("ProcessingRunSpec identity: <none; CID-NL Alignment CLI is align-only>")
+
+
+def _mz_range(value: str) -> tuple[float, float]:
+    try:
+        lower, upper = map(float, value.split(":"))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("Use LOWER:UPPER") from exc
+    if not math.isfinite(lower + upper) or not 0 < lower <= upper:
+        raise argparse.ArgumentTypeError(
+            "m/z bounds must be positive, finite and ordered"
+        )
+    return lower, upper
 
 
 def _positive_int(value: str) -> int:

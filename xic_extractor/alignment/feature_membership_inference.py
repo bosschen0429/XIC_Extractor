@@ -6,7 +6,7 @@ from bisect import bisect_left, bisect_right, insort
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import Literal, Protocol, cast
 
 import numpy as np
 from scipy.optimize import linear_sum_assignment
@@ -173,6 +173,12 @@ class BatchRtWarp:
         return owner.owner_apex_rt - self.offset_min(
             owner.sample_stem, owner.owner_apex_rt
         )
+
+
+class RtCoordinates(Protocol):
+    """Supply comparison coordinates while retaining measured peak positions."""
+
+    def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float: ...
 
 
 def estimate_batch_rt_warp(
@@ -470,7 +476,7 @@ def infer_feature_memberships(
     drift_lookup: DriftLookupProtocol | None,
     known_identity_bindings: Sequence[tuple[str, str]] = (),
     bootstrap: bool = False,
-    rt_warp: BatchRtWarp | None = None,
+    rt_warp: RtCoordinates | None = None,
 ) -> FeatureMembershipInferenceResult:
     """Infer ordinary whole-window bands, preserving exact known identities.
 
@@ -835,7 +841,7 @@ def _window_inference(
     *,
     config: AlignmentConfig,
     injection_order: Mapping[str, int],
-    rt_warp: BatchRtWarp | None,
+    rt_warp: RtCoordinates | None,
     counts: Counter[str],
 ) -> tuple[tuple[FeatureMembershipGroup, ...], tuple[SparseFeatureDecision, ...]]:
     """Find all RT bands in each mass neighbourhood in one finite pass.

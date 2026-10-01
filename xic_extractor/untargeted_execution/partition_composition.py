@@ -632,6 +632,7 @@ def prepare_untargeted_partition_grouping(
         worksets=tuple(final_worksets),
         alignment_config=alignment_config,
         known_istd_reference=requested_reference,
+        rt_warp=rt_warp,
     )
 
 

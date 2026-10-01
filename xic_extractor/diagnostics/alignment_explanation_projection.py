@@ -17,6 +17,7 @@ from xic_extractor.alignment.cross_sample_neighborhood_graph import (
     UNLISTED_PAIR_DISPOSITION,
 )
 from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
+from xic_extractor.diagnostics.explanation_review import review_cell, review_record
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     cid_nl_method_subject_batch_from_request,
 )
@@ -102,6 +103,11 @@ def _emit_curve_payload(
 ) -> None:
     """Serialize retained owner values; missing processing remains unavailable."""
     content = ref.content if ref is not None else None
+    mz = trace.mz if trace is not None else content.mz if content is not None else None
+    if sink.review_only and not any(
+        lower <= mz <= upper for lower, upper in sink.curve_mz_ranges if mz is not None
+    ):
+        return
     if evaluation is None and ref is not None:
         evaluation = ref.physical_evaluation
     prepared = evaluation.retained_prepared_signal if evaluation is not None else None
@@ -223,6 +229,8 @@ def write_cid_nl_explanation(
     alignment_config: AlignmentConfig,
     known_istd_reference_provenance: Mapping[str, object] | None = None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+    full_audit: bool = False,
+    curve_mz_ranges: Sequence[tuple[float, float]] = (),
 ) -> Path:
     """Persist exact owner identities, reasons and Matrix publication provenance."""
     with prepare_alignment_explanation(
@@ -232,6 +240,8 @@ def write_cid_nl_explanation(
         alignment_config=alignment_config,
         known_istd_reference_provenance=known_istd_reference_provenance,
         progress_callback=progress_callback,
+        full_audit=full_audit,
+        curve_mz_ranges=curve_mz_ranges,
     ) as explanation:
         for child in completed.application_result.children:
             explanation.consume_child(child)
@@ -247,9 +257,15 @@ def prepare_alignment_explanation(
     alignment_config: AlignmentConfig,
     known_istd_reference_provenance: Mapping[str, object] | None = None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+    full_audit: bool = False,
+    curve_mz_ranges: Sequence[tuple[float, float]] = (),
 ) -> Iterator[PreparedAlignmentExplanation]:
     """Keep one bounded transaction while outputs share the loaded children."""
-    with ExplanationReportWriter(path) as sink:
+    with ExplanationReportWriter(
+        path,
+        review_only=not full_audit,
+        curve_mz_ranges=curve_mz_ranges,
+    ) as sink:
         application = completed.application_result
         request = application.processing_request
         request_id = request.processing_request_id
@@ -257,6 +273,10 @@ def prepare_alignment_explanation(
         memberships = dict(subjects.candidate_memberships)
         samples = {
             sample.metadata.raw_stem: sample for sample in application.canonical_samples
+        }
+        sample_ordinals = {
+            sample.identity.sample_identity_id: index
+            for index, sample in enumerate(samples.values())
         }
         reasons: Counter[str] = Counter()
         subject_candidates: dict[str, set[tuple[str, str]]] = defaultdict(set)
@@ -305,7 +325,12 @@ def prepare_alignment_explanation(
         def add(
             kind: str, identity: str, payload: dict[str, Any], related: Any
         ) -> None:
-            if sink.add_record(kind, identity, payload, related):
+            if sink.add_record(
+                kind,
+                identity,
+                payload if full_audit else review_record(kind, payload),
+                related,
+            ):
                 if kind == "method_assessments":
                     reasons.update(payload["reason_codes"])
                 elif kind == "exclusions":
@@ -346,7 +371,12 @@ def prepare_alignment_explanation(
                 )
 
         for record in phase_items(
-            "discovery_physical", getattr(completed, "discovery_physical_records", ())
+            "discovery_physical",
+            (
+                getattr(completed, "discovery_physical_records", ())
+                if full_audit or curve_mz_ranges
+                else ()
+            ),
         ):
             work = record.work_item
             sid = samples[work.sample_stem].identity.sample_identity_id
@@ -398,7 +428,10 @@ def prepare_alignment_explanation(
             )
 
         capture_evidence = getattr(completed, "capture_evidence", ())
-        for evidence in phase_items("capture_evidence", capture_evidence):
+        for evidence in phase_items(
+            "capture_evidence",
+            capture_evidence if full_audit or curve_mz_ranges else (),
+        ):
             sid = evidence.canonical_sample_identity_id
             related = (
                 {(evidence.candidate_id, sid)}
@@ -514,11 +547,18 @@ def prepare_alignment_explanation(
                         "set_relation_artifact_content_ids",
                     ),
                     "method_subject_id": content.method_subject.method_subject_id,
-                    "evaluation_receipt": asdict(content.evaluation_receipt),
-                    "artifact": _artifact(assessment.artifact),
-                    "evidence_refs": [
-                        _artifact(ref.artifact) for ref in assessment.evidence_refs
-                    ],
+                    **(
+                        {
+                            "evaluation_receipt": asdict(content.evaluation_receipt),
+                            "artifact": _artifact(assessment.artifact),
+                            "evidence_refs": [
+                                _artifact(ref.artifact)
+                                for ref in assessment.evidence_refs
+                            ],
+                        }
+                        if full_audit
+                        else {}
+                    ),
                 },
                 related,
             )
@@ -675,7 +715,9 @@ def prepare_alignment_explanation(
             for group in core.final_population:
                 emit_group("final_groups", group, methods)
 
-            for observation in child.scientific_core.cell_observations:
+            for observation in (
+                child.scientific_core.cell_observations if full_audit else ()
+            ):
                 related = group_candidates[observation.group.group_hypothesis_id]
                 add(
                     "cell_observations",
@@ -731,6 +773,14 @@ def prepare_alignment_explanation(
                     },
                     related,
                 )
+                if not full_audit:
+                    sink.add_row_cells(
+                        row.row_key.untarget_row_key_id,
+                        group_id,
+                        [review_cell(decision) for decision in row.decisions],
+                        sample_ordinals,
+                    )
+                    continue
                 for decision in row.decisions:
                     add(
                         "cell_decisions",
@@ -826,6 +876,14 @@ def prepare_alignment_explanation(
                 "alignment_config": asdict(alignment_config),
                 "reason_counts": dict(sorted(reasons.items())),
                 "record_counts": dict(sink.record_counts),
+                "retention": "full_audit" if full_audit else "review",
+                "selection_evidence_capability": "recorded_decisions",
+                "curve_retention": "all"
+                if full_audit
+                else "selected"
+                if curve_mz_ranges
+                else "none",
+                "curve_mz_ranges": list(curve_mz_ranges),
                 "initial_edge_coverage": {
                     "policy": INITIAL_GROUPING_POLICY,
                     "unlisted_pairs": UNLISTED_PAIR_DISPOSITION,

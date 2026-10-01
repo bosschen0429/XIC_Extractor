@@ -37,6 +37,7 @@ workflow owner rather than chaining similarly named commands.
 | Build a solvent-blank background library | `scripts.extract_blank_library`; `xic_extractor.discovery.blank_qualification` owns extraction and serialization |
 | Prepare targeted review actions | [Review Roundtrip commands](../../docs/product/review-roundtrip.md#operator-commands) distinguish candidate verification, copy-state edits, and peak-editing authority |
 | Run tissue validation | `scripts.run_tissue_validation`; [execution settings](../../docs/agent/parameter-settings.md#validation-scale) own prerequisites |
+| Query Discovery or experiment with grouping / RT calibration | `tools.diagnostics.grouping_experiment query/prepare/replay`; [Alignment experiments](../../docs/product/alignment.md#grouping-experiments) owns the input and output boundary |
 | Maintain CI or command safety | `tools.testing.test_shards` and `tools.command_policy` serve CI/hooks; they have no GUI workflow |
 
 The sections below index maintained diagnostics. Retired tools are recovered
@@ -106,8 +107,11 @@ models because their output schemas are intentionally different; see
 compact summary or exact candidate details without reading RAW.
 **Owner**: [Alignment execution explanations](../../docs/product/alignment.md#cid-nl-execution-explanations).
 **Input**: `cid_nl_explanation.sqlite`, optionally an exact candidate ID.
-**Output**: Readable text or JSON on stdout; no file or product mutation.
-**Status**: Maintained diagnostic reader. Retains owner assessment, initial
+**Output**: Readable text or JSON; `--compact-to` writes compact review from an
+existing full report; `--index-query-to` copies an older compact review with an
+current query/sample/attention index; `--curve-bundle` acquires only explicitly selected windows
+for Inspector. [Retention and curve export](../../docs/product/xic-inspector.md#lightweight-alignment-review).
+**Status**: Maintained diagnostic workflow. Retains owner assessment, initial
 CrossSample and final disposition facts; does not recalculate decisions or grant
 Matrix authority. Existing `alignment_health_packet.py` summarizes machine-level
 health; it does not contain excluded candidate and initial weak-edge facts from
@@ -933,6 +937,25 @@ failure probe; use a fixture known to exercise Backfill when requiring its
 evidence sidecar.
 
 ---
+
+### `grouping_experiment.py`
+
+**Purpose:** Query arbitrary measured-mass ranges in saved Discovery, prepare
+complete selected partitions once, and replay grouping with parameter or RT
+coordinate changes without RAW or Backfill.
+
+**Owner:** `xic_extractor.untargeted_execution.grouping_experiment` owns bounded
+preparation; `xic_extractor.alignment.grouping_experiment` delegates replay to
+the formal grouping owner. Snapshot and table I/O live in
+`xic_extractor.diagnostics.grouping_experiment_io`.
+
+**Usage and artifacts:** [Grouping experiments](../../docs/product/alignment.md#grouping-experiments).
+Run `python -m tools.diagnostics.grouping_experiment --help` for the three commands.
+Results stay under ignored task-specific `output/` directories.
+
+**Status:** Maintained scalar CID-NL developer workflow. Existing RT calibration
+tools produce coordinates; this tool makes those coordinates consumable by
+grouping replay. Initial-grouping output does not include final Backfill results.
 
 ## Shared Infrastructure
 

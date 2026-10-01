@@ -122,9 +122,7 @@ def _owner_run(tmp_path, monkeypatch, scenario):
         ),
         alignment_config=config,
     )
-    completed = complete_dense_partition(
-        batch, runtime, alignment_config=config
-    )
+    completed = complete_dense_partition(batch, runtime, alignment_config=config)
     writer = project_completed_untarget_batch_writer_inputs(
         completed.application_result
     )
@@ -145,6 +143,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
     )
     report = write_cid_nl_explanation(
         tmp_path / "report.sqlite",
+        full_audit=True,
         completed=completed,
         writer_inputs=writer,
         candidates_by_sample=candidates,
@@ -274,6 +273,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
     with pytest.raises(FileExistsError):
         write_cid_nl_explanation(
             report,
+            full_audit=True,
             completed=completed,
             writer_inputs=writer,
             candidates_by_sample=candidates,
@@ -286,6 +286,7 @@ def test_owner_facts_survive_persisted_candidate_query(tmp_path, monkeypatch, sc
         )
         missing_audit_report = write_cid_nl_explanation(
             tmp_path / "missing_audit.sqlite",
+            full_audit=True,
             completed=missing_audit,
             writer_inputs=writer,
             candidates_by_sample=candidates,
@@ -334,7 +335,10 @@ def test_exclusions_load_once_with_restored_duplicate_assessments(
         alignment_config=config,
     )
     original = write_cid_nl_explanation(
-        tmp_path / "original.sqlite", completed=completed, **kwargs
+        tmp_path / "original.sqlite",
+        completed=completed,
+        **kwargs,
+        full_audit=True,
     )
     store = StreamedResultStore(tmp_path / "assessment-store", ())
     store.append("one", _AssessmentBatch(completed.method_assessments))
@@ -376,6 +380,7 @@ def test_exclusions_load_once_with_restored_duplicate_assessments(
     with recorder.stage("alignment.write_cid_nl_explanation"):
         report = write_cid_nl_explanation(
             tmp_path / "duplicated.sqlite",
+            full_audit=True,
             completed=duplicated,
             progress_callback=progress,
             **kwargs,
@@ -416,7 +421,10 @@ def test_explanation_loads_each_file_backed_child_once(tmp_path, monkeypatch, sc
         alignment_config=config,
     )
     original = write_cid_nl_explanation(
-        tmp_path / "memory.sqlite", completed=completed, **kwargs
+        tmp_path / "memory.sqlite",
+        completed=completed,
+        **kwargs,
+        full_audit=True,
     )
     store = StreamedResultStore(
         tmp_path / "child-store",
@@ -449,6 +457,7 @@ def test_explanation_loads_each_file_backed_child_once(tmp_path, monkeypatch, sc
     loads = 0
     report = write_cid_nl_explanation(
         tmp_path / "stored.sqlite",
+        full_audit=True,
         completed=replace(completed, application_result=restored),
         **kwargs,
     )
@@ -474,6 +483,7 @@ def test_explanation_progress_failure_does_not_publish_report(tmp_path, monkeypa
     with pytest.raises(OSError, match="progress unavailable"):
         write_cid_nl_explanation(
             report,
+            full_audit=True,
             completed=completed,
             writer_inputs=writer,
             candidates_by_sample=candidates,

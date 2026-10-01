@@ -71,6 +71,71 @@ seed 0.
 - Exact-ID queries remain available for any row, group, or ungrouped
   candidate.
 
+## Lightweight Alignment review
+
+New Alignment explanations default to `alignment_explanation_review`. They
+retain the full candidate/group population, grouping reasons, compact method
+conclusions and sample cell values. Cell values are stored once per row; full
+artifact envelopes and curve arrays are not included by default. Query,
+attention and RT selection use the saved observation coordinates and decisions,
+so a report without curves remains selectable. Inspector builds detailed cell
+and grouping records for selected items after population selection.
+
+New review reports index candidate coordinates, membership and sample scope
+at publication. SQLite applies query predicates, counts and offset/limit before
+Inspector loads the selected page's witnesses and details.
+New reports store row sample membership separately from the packed cell values,
+so checking scope does not require decoding all values. Sample and attention
+selection use persisted per-sample fact masks, including observed coverage,
+attention, exclusion, null/zero values and support origins. Changing sample
+scope intersects these masks rather than decoding the retained records/cells.
+Seeded balanced sampling still ranks the compact eligible identities to preserve
+its exact deterministic algorithm. Detailed reasons, sample
+statuses and presentation are built only for selected items and displayed peers.
+
+Use `scripts.run_alignment --explanation-curve-mz-range LOWER:UPPER` to retain
+curves only for requested regions (repeatable), or `--explanation-full-audit`
+to explicitly pay for the full audit and all curves. These options imply
+explanation output. Existing full reports remain readable. Missing unretained
+curves are shown as unavailable; they are not interpreted as zero signal.
+
+An existing full report can be reduced without RAW or another Alignment run:
+
+```powershell
+.venv/Scripts/python.exe -m tools.diagnostics.explain_cid_nl_run --report <full.sqlite> --compact-to <review.sqlite>
+```
+
+The source is preserved. Conversion retains values, membership and review
+reasons, omitting curve payloads and duplicated artifact chains. Compact review
+cell references are display positions, not scientific decision IDs; full audit
+retains the latter. The bound Matrix file must remain available.
+
+An older compact review can gain or upgrade the selection index without losing retained facts
+or curves. This writes a new file and requires no RAW access:
+
+```powershell
+.venv/Scripts/python.exe -m tools.diagnostics.explain_cid_nl_run --report <review.sqlite> --index-query-to <indexed-review.sqlite>
+```
+
+Older reports without the current index remain readable through population
+selection. Query-only indexes remain usable for query selection until upgraded.
+
+For a curve not retained in the report, acquire only the requested candidate's
+or group's observed windows into a portable bundle:
+
+```powershell
+.venv/Scripts/python.exe -m tools.diagnostics.explain_cid_nl_run --report <review.sqlite> --candidate-id <id> --curve-bundle output/selected-curves.json --raw-dir <raw-directory> --dll-dir <dll-directory>
+.venv/Scripts/python.exe -m xic_inspector output/selected-curves.json --no-open
+```
+
+Use `--group-id` instead of `--candidate-id` for the group's retained candidate
+observations. `--curve-padding-min` defaults to 0.5 minutes around each saved
+apex; `--curve-ppm` defaults to 5. These are explicitly labelled new diagnostic
+extractions from the supplied RAW files, using the current signal profile.
+They do not rerun Backfill, choose peaks, integrate areas or replace recorded
+quantification. Unobserved samples are not acquired implicitly. The Inspector
+itself remains acquisition-free.
+
 ## Source and ownership boundary
 
 The common API, selection model, and renderer consume canonical review items,

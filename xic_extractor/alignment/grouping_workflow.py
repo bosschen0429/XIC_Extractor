@@ -22,9 +22,9 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.feature_membership_inference import (
-    BatchRtWarp,
     FeatureInferenceOperationCounts,
     FeatureMembershipGroup,
+    RtCoordinates,
     supports_existing_feature,
 )
 from xic_extractor.alignment.grouping_bootstrap import (
@@ -254,13 +254,13 @@ def regroup_cid_nl_cross_sample_groups(
     grouping_result: CrossSampleGroupingResult,
     alignment_config: AlignmentConfig,
     injection_order: Mapping[str, int],
-    rt_warp: BatchRtWarp,
+    rt_warp: RtCoordinates,
     backfill_half_window_min: float,
     operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
 ) -> tuple[InitialGroupingScope, CrossSampleGroupingResult]:
     """Reconsider every ordinary owner after the batch anchor warp is known."""
     owners = tuple(owner for group in grouping_scope.groups for owner in group.owners)
-    groups = construct_cross_sample_peak_group_hypotheses(
+    groups = group_cid_nl_owners(
         owners,
         config=alignment_config,
         sample_universe=frozenset(
@@ -269,15 +269,8 @@ def regroup_cid_nl_cross_sample_groups(
         injection_order=injection_order,
         drift_lookup=grouping_result.drift_lookup,
         rt_warp=rt_warp,
+        backfill_half_window_min=backfill_half_window_min,
         operation_counts_sink=operation_counts_sink,
-    )
-    groups = reject_shoulder_groups(
-        merge_sample_disjoint_groups(
-            groups,
-            config=alignment_config,
-            backfill_half_window_min=backfill_half_window_min,
-        ),
-        config=alignment_config,
     )
     identities = tuple(
         validate_cross_sample_peak_group_identity(group, require_canonical=True)
@@ -302,6 +295,39 @@ def regroup_cid_nl_cross_sample_groups(
         drift_lookup=grouping_result.drift_lookup,
     )
     return scope, result
+
+
+def group_cid_nl_owners(
+    owners: Sequence[SampleLocalMS1Owner],
+    *,
+    config: AlignmentConfig,
+    sample_universe: frozenset[str],
+    injection_order: Mapping[str, int],
+    rt_warp: RtCoordinates | None,
+    backfill_half_window_min: float,
+    drift_lookup: DriftLookupProtocol | None = None,
+    known_identity_bindings: Sequence[tuple[str, str]] = (),
+    operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
+) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
+    """Run the shared membership, disjoint-merge and shoulder decisions."""
+    groups = construct_cross_sample_peak_group_hypotheses(
+        tuple(owners),
+        config=config,
+        sample_universe=sample_universe,
+        injection_order=injection_order,
+        drift_lookup=drift_lookup,
+        known_identity_bindings=known_identity_bindings,
+        rt_warp=rt_warp,
+        operation_counts_sink=operation_counts_sink,
+    )
+    return reject_shoulder_groups(
+        merge_sample_disjoint_groups(
+            groups,
+            config=config,
+            backfill_half_window_min=backfill_half_window_min,
+        ),
+        config=config,
+    )
 
 
 def admit_cid_nl_group_backfills(

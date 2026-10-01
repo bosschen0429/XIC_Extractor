@@ -203,6 +203,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
         )
         report = write_cid_nl_explanation(
             tmp_path / "explanation.sqlite",
+            full_audit=True,
             completed=completed,
             writer_inputs=writer,
             candidates_by_sample=candidates,

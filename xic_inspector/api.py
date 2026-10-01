@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import math
+import sqlite3
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,13 +15,10 @@ from xic_inspector.rendering.html_builder import (
     build_report_html,
     write_report_atomically,
 )
-from xic_inspector.selection.canonical import (
-    CanonicalItem,
-)
 from xic_inspector.selection.query import filter_by_attention, filter_by_query
 from xic_inspector.selection.sampler import (
     SAMPLING_ALGORITHM,
-    review_case_key,
+    review_case,
     sample_cross_sample_sha256,
 )
 from xic_inspector.sources import (
@@ -37,6 +36,7 @@ def read_evidence_summary(path):
     from xic_inspector.sources.cid_nl import read_summary
 
     return read_summary(path)
+
 
 StrategyKind = Literal["sample", "attention", "query"]
 CapabilityKind = Literal["retained_curves", "metadata_only"]
@@ -238,14 +238,12 @@ def generate_report(
         raise InspectorError(3, f"Source unavailable: {report_path}")
 
     try:
-        source = open_source(report_path)
+        source = open_source(report_path, query_only=selection.strategy == "query")
         summary = source.summary
     except ExplanationUnavailableError as exc:
         raise InspectorError(3, str(exc), cause=exc) from exc
     except ExplanationError as exc:
-        raise InspectorError(
-            4, f"Invalid source: {exc}", cause=exc
-        ) from exc
+        raise InspectorError(4, f"Invalid source: {exc}", cause=exc) from exc
 
     schema_version = summary["schema_version"]
     req_id = summary.get("processing_request_id", "")
@@ -303,10 +301,14 @@ def generate_report(
     capability: CapabilityKind = summary.get(
         "plot_evidence_capability", "metadata_only"
     )
-    if capability == "metadata_only" and (
-        selection.strategy == "attention"
-        or selection.rt_min is not None
-        or selection.rt_max is not None
+    if (
+        capability == "metadata_only"
+        and (
+            selection.strategy == "attention"
+            or selection.rt_min is not None
+            or selection.rt_max is not None
+        )
+        and summary.get("selection_evidence_capability") != "recorded_decisions"
     ):
         raise InspectorError(
             5, "Source lacks the metadata required for attention/RT selection"
@@ -334,47 +336,61 @@ def generate_report(
 
     # Stage: Selection
     normalized_set = set(normalized_sample_ids)
-    try:
-        all_items = source.load_items(normalized_set)
-    except ExplanationError as exc:
-        raise InspectorError(4, str(exc), cause=exc) from exc
-    run_total = len(all_items)
-
-    # Eligible population
-    if not normalized_set:
-        eligible_items = []
+    if hasattr(source, "select_items"):
+        try:
+            (
+                selected_items,
+                run_total,
+                eligible_count,
+                matched_count,
+                missing_rt_count,
+            ) = source.select_items(normalized_set, selection)
+        except sqlite3.Error as exc:
+            raise InspectorError(4, f"Invalid query index: {exc}", cause=exc) from exc
     else:
-        eligible_items = [
-            it for it in all_items if any(s in normalized_set for s in it.sample_ids)
-        ]
+        try:
+            all_items = source.load_items(normalized_set)
+        except ExplanationError as exc:
+            raise InspectorError(4, str(exc), cause=exc) from exc
+        run_total = len(all_items)
 
-    eligible_count = len(eligible_items)
-    selected_items: list[CanonicalItem] = []
-    matched_count = 0
-    missing_rt_count = 0
+        # Eligible population
+        if not normalized_set:
+            eligible_items = []
+        else:
+            eligible_items = [
+                it
+                for it in all_items
+                if any(s in normalized_set for s in it.sample_ids)
+            ]
 
-    if selection.strategy == "sample":
-        selected_items = sample_cross_sample_sha256(
-            eligible_items, limit=selection.limit, seed=selection.seed
-        )
-        matched_count = eligible_count
-    elif selection.strategy == "attention":
-        selected_items, matched_count = filter_by_attention(
-            eligible_items, limit=selection.limit
-        )
-    elif selection.strategy == "query":
-        selected_items, matched_count, missing_rt_count = filter_by_query(
-            eligible_items,
-            sample_ids=selection.sample_ids,
-            candidate_ids=selection.candidate_ids,
-            group_ids=selection.group_ids,
-            mz_min=selection.mz_min,
-            mz_max=selection.mz_max,
-            rt_min=selection.rt_min,
-            rt_max=selection.rt_max,
-            offset=selection.offset,
-            limit=selection.limit,
-        )
+        eligible_count = len(eligible_items)
+        selected_items = []
+        matched_count = 0
+        missing_rt_count = 0
+
+        if selection.strategy == "sample":
+            selected_items = sample_cross_sample_sha256(
+                eligible_items, limit=selection.limit, seed=selection.seed
+            )
+            matched_count = eligible_count
+        elif selection.strategy == "attention":
+            selected_items, matched_count = filter_by_attention(
+                eligible_items, limit=selection.limit
+            )
+        elif selection.strategy == "query":
+            selected_items, matched_count, missing_rt_count = filter_by_query(
+                eligible_items,
+                sample_ids=selection.sample_ids,
+                candidate_ids=selection.candidate_ids,
+                group_ids=selection.group_ids,
+                mz_min=selection.mz_min,
+                mz_max=selection.mz_max,
+                rt_min=selection.rt_min,
+                rt_max=selection.rt_max,
+                offset=selection.offset,
+                limit=selection.limit,
+            )
 
     selected_count = len(selected_items)
     if on_progress:
@@ -408,6 +424,18 @@ def generate_report(
     _check_cancel()
 
     # Stage: Render
+    case_counts = Counter(
+        "/".join(
+            review_case(
+                item["kind"],
+                item["stratum"],
+                item["review_summary"]["observed_sample_count"],
+                item["review_summary"]["scope_sample_count"],
+                item["review_summary"]["origin_kinds"],
+            )
+        )
+        for item in rendered_items
+    )
     payload_dict = {
         "summary": summary,
         "selection": {
@@ -416,12 +444,7 @@ def generate_report(
             "seed": selection.seed,
             "limit": selection.limit,
             "offset": selection.offset,
-            "case_counts": {
-                "/".join(case): sum(
-                    review_case_key(item) == case for item in selected_items
-                )
-                for case in sorted({review_case_key(item) for item in selected_items})
-            },
+            "case_counts": dict(sorted(case_counts.items())),
             "sample_ids": selection.sample_ids,
             "candidate_ids": selection.candidate_ids,
             "group_ids": selection.group_ids,

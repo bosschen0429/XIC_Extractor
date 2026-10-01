@@ -46,6 +46,8 @@ def publish_untargeted_outputs(
     alignment_config: AlignmentConfig,
     output_level: AlignmentOutputLevel,
     emit_cid_nl_explanation: bool,
+    explanation_full_audit: bool = False,
+    explanation_curve_mz_ranges: tuple[tuple[float, float], ...] = (),
     known_istd_reference: KnownIstdReference | None,
     metadata: dict[str, str],
     timing_recorder: TimingRecorder,
@@ -59,8 +61,12 @@ def publish_untargeted_outputs(
             output_stack.callback(completed.close)
         _ensure_output_publication_not_cancelled(should_cancel)
         matrix_path = outputs.matrix_tsv
-        write_explanation = emit_cid_nl_explanation or EXPLANATION_ARTIFACT_NAME in (
-            artifact_names_for_output_level(output_level)
+        write_explanation = (
+            emit_cid_nl_explanation
+            or explanation_full_audit
+            or bool(explanation_curve_mz_ranges)
+            or EXPLANATION_ARTIFACT_NAME
+            in (artifact_names_for_output_level(output_level))
         )
         if write_explanation and matrix_path is None:
             raise RuntimeError("CID-NL explanation requires the published Matrix")
@@ -84,6 +90,8 @@ def publish_untargeted_outputs(
                             else known_istd_reference.explanation_provenance
                         ),
                         progress_callback=timing_recorder.heartbeat_event,
+                        full_audit=explanation_full_audit,
+                        curve_mz_ranges=explanation_curve_mz_ranges,
                     )
                 )
         ms1_apex_mz_by_candidate = (
@@ -144,7 +152,9 @@ def publish_untargeted_outputs(
                 matrix_sha256=matrix_sha256,
                 processing_request_id=getattr(req, "processing_request_id", ""),
                 processing_attempt_id=getattr(att, "processing_attempt_id", ""),
-                schema_version="alignment_explanation",
+                schema_version="alignment_explanation"
+                if explanation_full_audit
+                else "alignment_explanation_review",
             )
 
         return replace(

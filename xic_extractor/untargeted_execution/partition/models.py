@@ -30,6 +30,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
+from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
 from xic_extractor.alignment.grouping_bootstrap import (
     InitialGroupingScope,
     RetainedGroupingCandidate,
@@ -454,6 +455,7 @@ class UntargetedPreparedGrouping:
     worksets: tuple[UntargetedWorksetGrouping, ...]
     alignment_config: AlignmentConfig
     known_istd_reference: KnownIstdReference | None
+    rt_warp: BatchRtWarp | None = None
 
 
 @dataclass(frozen=True, slots=True)

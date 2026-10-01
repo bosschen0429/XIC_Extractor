@@ -490,6 +490,18 @@ class UntargetedPartitionPipelineAdapter:
     def get_shared_objects(self) -> tuple[object, ...]:
         return _shared_objects(self._plan)
 
+    def materialize_partition(
+        self, partition: WorkPartition[tuple[CidNlMethodSubject, ...]]
+    ) -> UntargetedPartitionInputs:
+        """Load the same complete worksets for execution or initial-only replay."""
+        return materialize_untargeted_partition(
+            self._plan,
+            self._partition_subject_batches[partition.partition_key],
+            prepared_worksets=self._prepared_worksets,
+            acquisition_cache_dir=self._acquisition_cache_dir,
+            sparse=True,
+        )
+
     def execute_acquisition(
         self,
         partition: WorkPartition[tuple[CidNlMethodSubject, ...]],
@@ -502,14 +514,7 @@ class UntargetedPartitionPipelineAdapter:
             UntargetedPartitionResult,
         ]
     ]:
-        subject_batch = self._partition_subject_batches[partition.partition_key]
-        batch = materialize_untargeted_partition(
-            self._plan,
-            subject_batch,
-            prepared_worksets=self._prepared_worksets,
-            acquisition_cache_dir=self._acquisition_cache_dir,
-            sparse=True,
-        )
+        batch = self.materialize_partition(partition)
         if self._raw_worker_backend == "process":
             if self._process_pools_closed:
                 raise RuntimeError("process worker pools are already closed")

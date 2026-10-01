@@ -160,6 +160,7 @@ def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeyp
     assert expected
     report = write_cid_nl_explanation(
         tmp_path / "metadata.sqlite",
+        full_audit=True,
         completed=completed,
         writer_inputs=writer,
         candidates_by_sample=candidates,

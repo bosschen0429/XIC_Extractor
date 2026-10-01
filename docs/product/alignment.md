@@ -8,7 +8,59 @@ operation. The immutable workflow result exists only after cell decision and
 projection completion. Alignment does not use a mutable Matrix as its internal
 transport contract or let writers recompute science.
 
+## Grouping experiments
+
+`python -m tools.diagnostics.grouping_experiment` provides a developer feedback
+loop over saved Discovery candidates for scalar CID-NL presets:
+
+```powershell
+.venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment query --discovery-batch-index <index.csv> --mz-range 242.12:242.13 --output-dir output/query
+.venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment prepare --discovery-batch-index <index.csv> --mz-range 396.19:396.21 --raw-dir <raw-directory> --dll-dir <dll-directory> --acquisition-cache-dir <cache-directory> --output-dir output/grouping
+.venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment replay --inputs output/grouping/grouping-inputs.json.gz --set preferred_rt_sec=30 --output-dir output/grouping-tight
+.venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment replay --inputs output/grouping/grouping-inputs.json.gz --calibrate --output-dir output/grouping-calibrated
+```
+
+Repeat `--mz-range LOWER:UPPER` for several regions. Query reads Discovery only
+and reports measured-mass candidates plus every sample, including zero-match
+samples. A query is a lookup in the saved Discovery population, not a fresh
+extraction at that mass.
+
+Prepare retains the complete sample population and selects **whole original
+partitions** intersecting the requested intervals. These additional masses
+preserve the baseline partition's RT-warp context. It runs the formal initial
+assessment and grouping owners, then stops before Backfill. Its summary reports
+selected versus total partition counts. Initial preparation requires the matching
+RAW files and current Discovery owner-closure artifacts. `--sample-metadata`
+and `--known-istd-reference` accept existing metadata and reference artifacts.
+
+The compressed `grouping-inputs.json.gz` retains scalar observations, exact
+member identities, baseline warp and configuration. It omits chromatogram
+arrays. Prepare checks snapshot replay against the formal initial grouping.
+Replay needs only that snapshot, with no RAW, DLL, acquisition or Backfill.
+`--set FIELD=JSON` changes an `AlignmentConfig` value; only fields consumed by
+grouping affect replay. Owner detection and integration changes require prepare.
+
+`--calibrate` fits the existing sample RT calibration model from established
+baseline groups (default anchor presence: 94% of samples). Use
+`--anchor-min-sample-fraction` to change that selection, or `--rt-calibration`
+to supply an existing `sample_rt_calibration` JSON. Coordinates outside a
+sample's calibrated span retain their observed RT. Calibration changes the
+comparison coordinate, not measured RT or area.
+
+`groups.tsv` and `members.tsv` report grouping and observed/comparison RT;
+`decisions.tsv` exposes the grouping decisions when present. `changes.tsv`
+compares each observation's membership and disposition with baseline;
+`samples.tsv` retains zero-observation samples. `summary.json` records counts,
+parameters and elapsed time. These are initial-grouping experiment results;
+the full workflow remains the owner of final Backfill and Matrix output.
+
 ## Execution Boundary
+
+Explanation output defaults to compact decision review, without all curves or
+full per-cell artifact expansion. Full audit and selected-curve retention are
+explicit options. [Lightweight Alignment review](xic-inspector.md#lightweight-alignment-review)
+owns the retention choices, legacy-report conversion and bounded curve export.
+These diagnostic choices do not change grouping, Backfill or Matrix values.
 
 ### Job planning and acquisition
 

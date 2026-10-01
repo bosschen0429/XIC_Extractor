@@ -801,6 +801,29 @@ def _execute_sample_initial_worker(
     )
 
 
+def assess_initial_sample_jobs(
+    jobs: tuple[UntargetedPartitionJob, ...],
+) -> tuple[CidNlAcquisitionResult, ...]:
+    """Use the production initial worker without scheduling missing-cell work."""
+    response = _execute_sample_initial_worker(
+        _SampleInitialWorkerRequest(
+            jobs=jobs,
+            initial_resource_key=(
+                f"grouping-experiment:{jobs[0].sample.identity.sample_identity_id}"
+            ),
+            partition_candidates=True,
+        )
+    )
+    results = []
+    for result, error in zip(response.adapter_results, response.errors, strict=True):
+        if error is not None:
+            raise error
+        if result is None:
+            raise UntargetedPartitionError("initial assessment returned no result")
+        results.append(result)
+    return tuple(results)
+
+
 @dataclass(slots=True)
 class _SampleBackfillWorkerRequest:
     jobs: tuple[UntargetedPartitionJob, ...]

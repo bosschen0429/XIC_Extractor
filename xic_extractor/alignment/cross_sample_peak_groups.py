@@ -46,9 +46,9 @@ from xic_extractor.alignment.edge_scoring import (
     RTEvidenceBasis,
 )
 from xic_extractor.alignment.feature_membership_inference import (
-    BatchRtWarp,
     FeatureInferenceOperationCounts,
     FeatureMembershipGroup,
+    RtCoordinates,
     SparseFeatureDecision,
     infer_feature_memberships,
 )
@@ -280,7 +280,7 @@ def construct_cross_sample_peak_group_hypotheses(
     known_identity_bindings: Sequence[tuple[str, str]] = (),
     operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
     bootstrap: bool = False,
-    rt_warp: BatchRtWarp | None = None,
+    rt_warp: RtCoordinates | None = None,
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
     """Infer feature membership and mint its canonical CrossSample identity.
 
