@@ -21,7 +21,7 @@ from xic_extractor.discovery.batch_contract import (
     discovery_receipt_index_fields,
 )
 from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
-from xic_extractor.discovery.pipeline import _BATCH_INDEX_COLUMNS
+from xic_extractor.discovery.output_publication import _BATCH_INDEX_COLUMNS
 from xic_extractor.sample_metadata import (
     SAMPLE_METADATA_COLUMNS,
     SAMPLE_METADATA_SCHEMA_VERSION,
