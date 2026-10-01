@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-10-01
+**Last updated:** 2026-10-02
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -1312,3 +1312,109 @@ Recommended next check:
 5. Do not rerun 85RAW just to re-prove this fix. Rerun 85RAW only after a new
    production behavior change or if a current artifact contradicts the 85RAW
    summary fixture.
+
+### 2026-10-02 Discovery Early Precursor Rejection Reduces Merge Cost
+
+Issue #699. Baseline `e46ed6f41b28ea15aabde7a5a3262ead1db5b512`; candidate
+`candidate_merge.py` SHA-256
+`537142ccc76da424c3cde7f189117b927b5e4316580c8432bac74e088597e176`.
+The matching loop rejects precursor pairs outside twice the configured ppm
+window using the existing mass-accuracy predicate before checking provenance
+and peaks. Every merge route already requires that condition. First-match
+order, representative selection, lineage and scientific thresholds stay intact.
+
+One RAW, `BenignfatBC1055_DNA`, with `dna_dr`, identical single-RAW CLI settings,
+no application cache, previously warmed but uncontrolled OS cache, and no
+profiler: order B1/C1/C2/B2 produced wall times 31.665/27.655/27.293/30.807 s.
+Wall median improved 31.236 -> 27.474 s (12.04%); baseline range was 0.857 s.
+MS1 Backfill median improved 17.780 -> 14.246 s (19.88%); baseline range was
+0.449 s. Both paired candidates were faster. All four runs exactly match the
+same candidate CSV, review CSV and physical-facts JSON bytes. The baseline
+wrapper restores the exact HEAD matching function; its extra Git startup is
+included in wall time but excluded from the Backfill stage measurement.
+
+Evidence: `diagnostic_only`, oracle `exact_safe`; 146 affected engineering tests
+passed. This supports the local optimization, not a cohort-wide percentage or
+scientific readiness. Receipts and exact diff:
+`output/alignment-worker-memory/merge-trial-v1/receipt.json` and `candidate.diff`.
+Rerun if merge eligibility/order, input population or the claimed performance
+scope changes.
+
+The preceding current-head 8RAW Alignment profile identified acquisition and
+cache persistence as follow-up targets: across 64 Backfill batches, 87.81
+profiled worker-seconds included 58.41 in acquisition/cache, with 31.35 in vendor
+extraction and 15.78 in 2,517 fsync calls. These are nested, instrumentation-
+affected worker sums, not whole-run wall savings. All six public TSVs matched.
+No cache durability or runtime default was changed. Profile receipts live in
+`output/alignment-worker-memory/backfill-profile-v1/`.
+
+### 2026-10-02 Recomputable Alignment Cache Avoids Per-Entry Disk Synchronization
+
+Issue #699; accepted cumulative baseline `332f19f4`. The candidate removes only
+`_FactCache.write`'s per-entry `os.fsync`, retaining flush/close before atomic
+replacement, identity/checksum validation and concurrent-writer handling. This
+cache can be reacquired after power loss; durable terminal acknowledgements
+and public artifact writers are unchanged.
+
+Same current 8RAW Discovery, `dna_dr`, four process workers, compact explanation,
+full Alignment CLI with acquisition and publication, and initially empty,
+separate application caches: B1/C1/C2/B2 wall times were
+94.158/80.630/79.673/114.089 s. Median improved 104.123 -> 80.151 s (23.02%),
+a 23.972 s gain versus a 19.931 s baseline range. Both paired candidates were
+faster. Baseline variation is substantial; these two pairs establish a bounded
+local gain, not a universal percentage. OS cache was uncontrolled; no profiler
+was active. Discovery preparation was excluded.
+
+Warm replays using B1/C1 caches took 70.336/69.181 s; this single warm pair
+validates reuse, not warm-cache acceleration. All six public TSV artifacts
+match byte-for-byte in all six runs. Cold runtime counters agree: 128 RAW opens,
+1,091 adapter calls, 6,492 logical requests, 350,647 points. Both warm runs report
+zero native RAW opens and adapter calls with unchanged requests/points.
+
+Evidence: `diagnostic_only`, oracle `exact_safe`. The production writer AST
+matches the tested candidate exactly; its source SHA-256 is
+`9cd9ce593aee9d3cdc13000f06b4b8dd300f62c893f31379cd664486cbea1a13`.
+All 21 owner/runtime tests passed, including cache corruption recovery and
+Windows publication races. Sudden power loss itself was not simulated; recent
+cache entries may require reacquisition. No scientific-readiness or memory
+improvement claim is made.
+
+Receipts: `output/alignment-worker-memory/cache-trial-v1/receipt.json` and
+`adoption-check.json`. Rerun for changed cache persistence/recovery semantics,
+worker/storage configuration, or a broader performance claim.
+
+### 2026-10-02 Remaining Runtime Candidates And Local Worker Choice
+
+Issue #699, accepted cumulative code `f30d42ac`. A one-entry immutable
+prepared-signal memo avoided 1,481 repeated preparations per run, but the
+unprofiled 8RAW B1/C1/C2/B2 wall times were
+81.401/80.443/80.859/86.756 s. Median gain 3.427 s was below the 5.355 s
+baseline range. All six public TSVs matched. The candidate and its dedicated
+test were removed: local avoided computation alone did not justify retaining
+another mechanism. Evidence: `diagnostic_only`; disposition `rejected` for
+adoption. Do not repeat without a larger removed cost or a changed workload.
+Receipt: `output/alignment-worker-memory/prepare-trial-v1/receipt.json`.
+
+After per-entry cache fsync removal, four versus eight process workers was
+reopened because the previous comparison included that I/O bottleneck.
+Same 8RAW Discovery, compact explanation, full Alignment CLI, separate empty
+acquisition caches, uncontrolled OS cache, and B1/C1/C2/B2 order gave
+84.272/80.765/79.877/83.950 s. Four-worker median 84.111 s versus eight-worker
+80.321 s is a 4.51% gain, above the four-worker 0.321 s range; both paired
+candidates were faster. All six public TSVs are byte-identical in all runs.
+
+This host had 12 logical CPUs and 34.09 GB RAM, with 16.69 GB available before
+the experiment. Maximum sampled process-tree RSS across each pair increased
+2.452 -> 3.942 GB; maximum private bytes increased 6.261 -> 10.622 GB.
+RSS and private bytes describe different quantities and must not be added.
+Eight workers is the local runtime-first choice for this measured cohort;
+keep the shared default at four because larger-cohort and other-host memory
+bounds were not established. Use the existing `--raw-workers 8` override (or
+`--alignment-workers 8` in tissue validation), not a new setting mechanism.
+
+Evidence: `diagnostic_only`, oracle `exact_safe`, local worker choice
+`optimized`. Receipt:
+`output/alignment-worker-memory/workers-trial-v1/receipt.json`.
+Rerun for changed host resources, workload or runtime locality, not merely to
+search a wider worker-count grid. These independent trials do not establish a
+combined Discovery-plus-Alignment percentage.

@@ -108,7 +108,15 @@ def _matching_ms1_peak_candidate(
 ) -> tuple[int, DiscoveryCandidate | None] | None:
     """The merge target and, for one measured ion, the candidate that holds it."""
 
+    # Every merge path requires precursor agreement; the measured-ion path
+    # permits twice the extraction tolerance. Reject distant ions before the
+    # more expensive provenance, peak and centroid checks, retaining scan order.
+    precursor_tolerance = 2 * settings.precursor_mz_tolerance_ppm
     for index, existing in enumerate(merged):
+        if not _within_ppm(
+            existing.precursor_mz, candidate.precursor_mz, precursor_tolerance
+        ):
+            continue
         if _can_merge_by_ms1_peak(existing, candidate, settings=settings):
             return index, None
         if not _tags_can_merge(existing, candidate, settings=settings):

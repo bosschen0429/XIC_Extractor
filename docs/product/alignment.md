@@ -93,6 +93,10 @@ query changes require acquisition for the affected entries. Sample batches with
 an input-owner-verified source check its current path identity before replay;
 they open a native RAW handle only when a missing query or metadata needs it.
 Runtime resource receipts report whether that native open actually occurred.
+Cache entries are closed before atomic replacement and validated on read, but
+are not individually forced to stable storage. Power loss can require
+reacquisition of recent entries; this cache does not provide durable runtime
+acknowledgements.
 Without a verified source expectation, the existing native-open source check
 remains in force. This cache does
 not preserve completed grouping graphs or turn an old failed attempt into a
