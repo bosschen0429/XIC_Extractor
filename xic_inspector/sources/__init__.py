@@ -1,10 +1,10 @@
 """Current evidence source binding for the shared Inspector workflow."""
 
-from xic_extractor.diagnostics.cid_nl_explanation import (
-    EvidenceLocator,
+from xic_extractor.diagnostics.alignment_explanation import (
     ExplanationError,
     ExplanationUnavailableError,
 )
+from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_inspector.sources.curve_bundle import CurveBundleLocator, CurveBundleSource
 
 

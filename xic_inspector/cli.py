@@ -8,7 +8,7 @@ import webbrowser
 from pathlib import Path
 from typing import Sequence
 
-from xic_extractor.diagnostics.cid_nl_explanation import REPORT_FILENAME
+from xic_extractor.diagnostics.alignment_explanation import REPORT_FILENAME
 from xic_inspector.api import (
     InspectorCancelled,
     InspectorError,

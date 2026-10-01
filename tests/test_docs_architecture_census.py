@@ -885,7 +885,7 @@ def test_default_production_activation_loci_are_exact() -> None:
     assert outer_callers == {
         Path("scripts/run_alignment.py"),
         Path("gui/workers/discovery_worker.py"),
-        Path("xic_extractor/extraction/untargeted_provisional_matrix_workflow.py"),
+        Path("xic_extractor/applications/untargeted/provisional_matrix.py"),
     }
     application_path = Path("xic_extractor/applications/untargeted/application.py")
     activation_loci = outer_callers | {application_path}
@@ -893,7 +893,7 @@ def test_default_production_activation_loci_are_exact() -> None:
         application_path,
         Path("scripts/run_alignment.py"),
         Path("gui/workers/discovery_worker.py"),
-        Path("xic_extractor/extraction/untargeted_provisional_matrix_workflow.py"),
+        Path("xic_extractor/applications/untargeted/provisional_matrix.py"),
     }
     assert production_calls["complete_untargeted_alignment"] == {application_path}
     assert production_calls["execute_untargeted_plan"] == {
@@ -1019,7 +1019,7 @@ def test_git_subprocess_environment_drops_hook_repository_bindings(
     assert environment["CENSUS_TEST_UNRELATED"] == "preserved"
 
 
-def test_import_linter_config_owns_the_four_static_dependency_contracts() -> None:
+def test_import_linter_config_owns_the_static_dependency_contracts() -> None:
     config = configparser.ConfigParser()
     config.read(ROOT / ".importlinter", encoding="utf-8")
 
@@ -1037,6 +1037,7 @@ def test_import_linter_config_owns_the_four_static_dependency_contracts() -> Non
         "importlinter:contract:peak-detection-stays-inner",
         "importlinter:contract:configuration-stays-inner",
         "importlinter:contract:output-does-not-read-raw",
+        "importlinter:contract:inner-layers-do-not-import-diagnostics",
     }
     assert all(
         config[section]["type"] == "forbidden"

@@ -243,7 +243,6 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
     tmp_path: Path, preset: str | None, enabled: bool,
 ):
     from scripts.run_discovery import _discovery_settings, _parse_args
-    from xic_extractor.diagnostics.timing import TimingRecorder
     from xic_extractor.discovery.blank_qualification import (
         BlankBackgroundIon,
         BlankBackgroundLibrary,
@@ -253,6 +252,7 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
     from xic_extractor.discovery.processing_run_spec_adapter import (
         compile_discovery_processing_run_spec,
     )
+    from xic_extractor.execution.timing import TimingRecorder
 
     lib = BlankBackgroundLibrary(
         ions=(

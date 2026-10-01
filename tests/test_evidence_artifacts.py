@@ -7,7 +7,6 @@ import pytest
 
 from xic_extractor.diagnostics.targeted_ms1_shape_identity import (
     ARTIFACT_SEMANTIC_ROLE,
-    SCHEMA_VERSION,
     TargetedMs1ShapeCandidate,
     build_targeted_ms1_shape_identity_rows,
     canonical_targeted_ms1_shape_identity_bytes,
@@ -17,6 +16,9 @@ from xic_extractor.diagnostics.targeted_ms1_shape_identity import (
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactContractError,
     verify_evidence_artifact_payload,
+)
+from xic_extractor.extraction.targeted_ms1_shape_identity_projection import (
+    SCHEMA_VERSION,
 )
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,

@@ -17,7 +17,6 @@ from xic_extractor.acquisition_contract import (
     mint_raw_acquisition_session_capability,
 )
 from xic_extractor.configuration.models import ExtractionConfig
-from xic_extractor.diagnostics.timing import TimingRecord, TimingRecorder
 from xic_extractor.discovery.csv_reader import (
     read_discovery_batch_index,
     read_owner_bound_discovery_candidates_csv,
@@ -48,6 +47,7 @@ from xic_extractor.discovery.pipeline import (
     run_discovery,
     run_discovery_batch,
 )
+from xic_extractor.execution.timing import TimingRecord, TimingRecorder
 from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,

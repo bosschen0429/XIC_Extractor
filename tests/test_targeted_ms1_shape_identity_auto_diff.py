@@ -3,11 +3,11 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from xic_extractor.diagnostics.targeted_ms1_shape_identity import (
-    TARGETED_MS1_SHAPE_IDENTITY_COLUMNS,
-)
 from xic_extractor.diagnostics.targeted_ms1_shape_identity_auto_diff import (
     write_targeted_ms1_shape_identity_auto_diff_artifacts,
+)
+from xic_extractor.extraction.targeted_ms1_shape_identity_projection import (
+    TARGETED_MS1_SHAPE_IDENTITY_COLUMNS,
 )
 
 

@@ -18,7 +18,6 @@ from tests.test_discovery_pipeline import _settings
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.ms1_backfill import (
     _backfill_ms1_candidates_with_acquisition,
@@ -30,6 +29,7 @@ from xic_extractor.discovery.pipeline import _write_dual_csvs
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
+from xic_extractor.execution.timing import TimingRecorder
 
 
 def test_physical_sidecar_and_publication_timing_cover_canonical_bytes_without_rework(

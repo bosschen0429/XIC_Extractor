@@ -6,7 +6,7 @@ import argparse
 import json
 import sys
 
-from xic_extractor.diagnostics.cid_nl_explanation import (
+from xic_extractor.diagnostics.alignment_explanation import (
     ExplanationError,
     read_cid_nl_explanation,
 )

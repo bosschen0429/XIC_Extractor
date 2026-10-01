@@ -17,8 +17,11 @@ from xic_extractor.alignment.config import (
     BackfillXicBackend,
     OwnerBuildXicBackend,
 )
-from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.applications.untargeted.provisional_matrix import (
+    run_untargeted_provisional_matrix_workflow,
+)
 from xic_extractor.discovery.models import DiscoverySettings
+from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.extraction.provisional_run_manifest import (
     ProvisionalRunRuntimeConfiguration,
     mint_retained_sample_metadata_fingerprint_receipt,
@@ -26,9 +29,6 @@ from xic_extractor.extraction.provisional_run_manifest import (
 )
 from xic_extractor.extraction.untargeted_input_planning import (
     is_pure_single_provider_cid_nl,
-)
-from xic_extractor.extraction.untargeted_provisional_matrix_workflow import (
-    run_untargeted_provisional_matrix_workflow,
 )
 from xic_extractor.output.alignment.artifact_write_receipts import (
     AlignmentArtifactFingerprintBatch,

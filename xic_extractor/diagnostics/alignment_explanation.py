@@ -45,18 +45,6 @@ ALLOWED_CURVE_PAYLOAD_KEYS = frozenset(
 )
 
 
-@dataclass(frozen=True, slots=True)
-class EvidenceLocator:
-    """Immutable provenance locator pointing to a completed evidence DB."""
-
-    report_path: Path
-    matrix_path: Path
-    matrix_sha256: str
-    processing_request_id: str
-    processing_attempt_id: str
-    schema_version: str
-
-
 class ExplanationError(ValueError):
     """The requested diagnostic cannot be interpreted."""
 

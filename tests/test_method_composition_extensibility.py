@@ -10,7 +10,7 @@ from typing import Mapping
 
 from scripts.run_alignment import _parse_args, _resolve_preset
 from tests.test_processing_run_spec import _compile_paths, _raws
-from xic_extractor.diagnostics.cid_nl_explanation import (
+from xic_extractor.diagnostics.alignment_explanation import (
     GENERIC_REPORT_FILENAME,
     ExplanationReportWriter,
     read_alignment_curves,
@@ -18,7 +18,7 @@ from xic_extractor.diagnostics.cid_nl_explanation import (
     read_cid_nl_curves,
     read_cid_nl_explanation,
 )
-from xic_extractor.diagnostics.cid_nl_explanation_projection import (
+from xic_extractor.diagnostics.alignment_explanation_projection import (
     write_alignment_explanation,
     write_cid_nl_explanation,
 )

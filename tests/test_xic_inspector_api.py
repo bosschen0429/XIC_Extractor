@@ -11,9 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from xic_extractor.diagnostics.cid_nl_explanation import (
-    ExplanationReportWriter,
-)
+from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
 from xic_inspector.api import (
     InspectorCancelled,
     InspectorError,
@@ -186,7 +184,7 @@ def _create_mock_db(
 
 
 def test_normalized_links_preserve_candidate_query_and_inspector_scope(tmp_path):
-    from xic_extractor.diagnostics.cid_nl_explanation import read_cid_nl_explanation
+    from xic_extractor.diagnostics.alignment_explanation import read_cid_nl_explanation
 
     report, _, _ = _create_mock_db(tmp_path)
     detail = read_cid_nl_explanation(report, candidate_id="C1")

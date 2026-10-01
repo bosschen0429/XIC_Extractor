@@ -46,8 +46,8 @@ from xic_extractor.discovery.pt_pattern_discovery_evidence import (
 from xic_extractor.tabular_io import file_sha256, read_delimited_rows
 
 if TYPE_CHECKING:
-    from xic_extractor.diagnostics.timing import TimingRecorder
     from xic_extractor.discovery.detected_features import DetectedFeature
+    from xic_extractor.execution.timing import TimingRecorder
 
 _ALLOWED_CID_NL_TAG = "DNA_dR"
 _ALLOWED_CID_NL_STATES = frozenset(

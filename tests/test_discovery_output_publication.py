@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 
 from tests.test_discovery_pipeline import _settings
-from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.models import (
     DISCOVERY_BRIEF_COLUMNS,
     DISCOVERY_CANDIDATE_COLUMNS,
@@ -15,6 +14,7 @@ from xic_extractor.discovery.pipeline import _write_dual_csvs
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
+from xic_extractor.execution.timing import TimingRecorder
 
 
 @pytest.mark.parametrize(

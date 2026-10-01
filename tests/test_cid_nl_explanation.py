@@ -35,7 +35,7 @@ from xic_extractor.alignment.result.application_result import (
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
-from xic_extractor.diagnostics.cid_nl_explanation import (
+from xic_extractor.diagnostics.alignment_explanation import (
     CandidateNotFoundError,
     ExplanationError,
     read_cid_nl_curves,
@@ -43,7 +43,7 @@ from xic_extractor.diagnostics.cid_nl_explanation import (
     read_explanation_metadata,
     write_explanation_report,
 )
-from xic_extractor.diagnostics.cid_nl_explanation_projection import (
+from xic_extractor.diagnostics.alignment_explanation_projection import (
     write_cid_nl_explanation,
 )
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
@@ -56,7 +56,7 @@ from xic_extractor.sample_metadata import SampleMetadata
 
 
 def test_missing_report_is_unavailable(tmp_path):
-    from xic_extractor.diagnostics.cid_nl_explanation import (
+    from xic_extractor.diagnostics.alignment_explanation import (
         ExplanationUnavailableError,
         read_cid_nl_explanation,
     )
@@ -322,7 +322,7 @@ class _AssessmentBatch:
 def test_exclusions_load_once_with_restored_duplicate_assessments(
     tmp_path, monkeypatch
 ):
-    from xic_extractor.diagnostics.timing import TimingRecorder
+    from xic_extractor.execution.timing import TimingRecorder
 
     completed, writer, candidates, matrix, config = _owner_run(
         tmp_path, monkeypatch, "all_hold"
@@ -486,7 +486,7 @@ def test_explanation_progress_failure_does_not_publish_report(tmp_path, monkeypa
 
 
 def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path):
-    from xic_extractor.diagnostics.cid_nl_explanation import ExplanationReportWriter
+    from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
 
     report = tmp_path / "stream.sqlite"
     with ExplanationReportWriter(report) as writer:
@@ -510,7 +510,7 @@ def test_incremental_report_deduplicates_and_aborts_conflicts(tmp_path):
 
 
 def test_related_set_links_preserve_union_order_and_legacy_read(tmp_path):
-    from xic_extractor.diagnostics.cid_nl_explanation import ExplanationReportWriter
+    from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
 
     report = tmp_path / "normalized.sqlite"
     with ExplanationReportWriter(report) as writer:

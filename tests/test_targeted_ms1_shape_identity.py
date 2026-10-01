@@ -9,13 +9,15 @@ from xic_extractor.applications.targeted.product_model import (
     OWN_MAX_SAME_PEAK_SUPPORT_REASON,
 )
 from xic_extractor.diagnostics.targeted_ms1_shape_identity import (
+    TargetedMs1ShapeCandidate,
+    build_targeted_ms1_shape_identity_rows,
+    write_targeted_ms1_shape_identity_tsv,
+)
+from xic_extractor.extraction.targeted_ms1_shape_identity_projection import (
     DECISION_AUTHORITY,
     SCHEMA_VERSION,
     TARGETED_MS1_SHAPE_IDENTITY_COLUMNS,
     VALIDATION_LABEL,
-    TargetedMs1ShapeCandidate,
-    build_targeted_ms1_shape_identity_rows,
-    write_targeted_ms1_shape_identity_tsv,
 )
 
 

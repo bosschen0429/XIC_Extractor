@@ -8,7 +8,6 @@ from typing import Any
 
 from xic_extractor.configuration.execution_profile import load_execution_profile
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig
-from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.blank_qualification import (
     extract_blank_background_library,
 )
@@ -25,6 +24,7 @@ from xic_extractor.discovery.tag_profiles import (
     load_feature_tag_profiles,
     resolve_selected_tag_profiles,
 )
+from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.presets import PresetError, bind_cid_nl_recipe, load_preset
 from xic_extractor.raw_reader import RawReaderError, read_analysis_set
 from xic_extractor.sample_metadata import SampleMetadataError, load_sample_metadata

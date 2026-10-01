@@ -13,6 +13,12 @@ from xic_extractor.evidence_artifacts import (
     _mint_artifact_semantic_contract_ref,
     _mint_evidence_artifact_ref,
 )
+from xic_extractor.extraction.targeted_ms1_shape_identity_projection import (
+    DECISION_AUTHORITY,
+    SCHEMA_VERSION,
+    TARGETED_MS1_SHAPE_IDENTITY_COLUMNS,
+    VALIDATION_LABEL,
+)
 from xic_extractor.peak_detection.ms1_shape_identity import (
     DEFAULT_COMPETING_EXCLUSION_WINDOW_MIN,
     DEFAULT_COMPETING_MIN_RATIO,
@@ -28,9 +34,6 @@ from xic_extractor.tabular_io import (
     write_tsv,
 )
 
-SCHEMA_VERSION = "targeted_ms1_shape_identity"
-VALIDATION_LABEL = "diagnostic_only"
-DECISION_AUTHORITY = "diagnostic_only_no_product_write"
 DEFAULT_MIN_OWN_MAX_SIMILARITY = 0.80
 DEFAULT_STRONG_COMPETING_PEAK_RATIO = 0.65
 ARTIFACT_OWNER_NAMESPACE = "xic_extractor.diagnostics.targeted_ms1_shape_identity"
@@ -38,35 +41,6 @@ ARTIFACT_SEMANTIC_ROLE = "targeted_ms1_shape_identity_evidence"
 ARTIFACT_MEDIA_TYPE = "text/tab-separated-values; charset=utf-8"
 ARTIFACT_SERIALIZATION_FORMAT = "targeted_ms1_shape_identity_tsv"
 
-TARGETED_MS1_SHAPE_IDENTITY_COLUMNS = (
-    "schema_version",
-    "validation_label",
-    "decision_authority",
-    "sample_name",
-    "target_name",
-    "target_role",
-    "paired_istd",
-    "source_row_id",
-    "candidate_state",
-    "reference_source",
-    "candidate_rt_min",
-    "reference_rt_min",
-    "candidate_anchor_rt_delta_min",
-    "paired_istd_rt_min",
-    "candidate_pair_rt_delta_min",
-    "target_window_status",
-    "own_max_same_peak_status",
-    "own_max_same_peak_supported",
-    "own_max_same_peak_support_reason",
-    "own_max_same_peak_similarity",
-    "own_max_compared_point_count",
-    "strongest_peak_rt_min",
-    "strongest_peak_own_max_ratio",
-    "strongest_competing_peak_rt_min",
-    "strongest_competing_peak_own_max_ratio",
-    "competing_peak_status",
-    "reason",
-)
 
 _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace=ARTIFACT_OWNER_NAMESPACE,

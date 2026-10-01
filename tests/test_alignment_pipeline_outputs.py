@@ -9,7 +9,7 @@ from tests.alignment_pipeline_helpers import matrix as _matrix
 from tests.alignment_pipeline_helpers import peak_config as _peak_config
 from xic_extractor.alignment import AlignmentConfig
 from xic_extractor.alignment.production_decisions import build_production_decisions
-from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment import artifact_write_receipts as receipts_module
 from xic_extractor.output.alignment.artifact_write_receipts import (
     AlignmentArtifactFingerprintBatch,
