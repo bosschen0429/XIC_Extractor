@@ -153,19 +153,19 @@ def test_candidate_id_is_deterministic() -> None:
     first = candidate_audit_id(
         sample_name="SampleA",
         target_label="Analyte",
-        resolver_mode="legacy_savgol",
+        resolver_mode="savgol",
         candidate=candidate,
     )
     second = candidate_audit_id(
         sample_name="SampleA",
         target_label="Analyte",
-        resolver_mode="legacy_savgol",
+        resolver_mode="savgol",
         candidate=candidate,
     )
 
     assert first == second
     assert first == (
-        "SampleA|Analyte|legacy_savgol|legacy_savgol|"
+        "SampleA|Analyte|savgol|legacy_savgol|"
         "8.12346|8.00123|8.65432"
     )
 
@@ -286,7 +286,7 @@ def test_build_rows_formats_missing_candidate_ms2_diagnostics_as_blank() -> None
         target_label="Analyte",
         role="Analyte",
         istd_pair="",
-        resolver_mode="legacy_savgol",
+        resolver_mode="savgol",
         peak_result=result,
     )[0]
 
@@ -378,7 +378,7 @@ def test_build_rows_can_emit_baseline_corrected_audit_area() -> None:
         target_label="Analyte",
         role="Analyte",
         istd_pair="",
-        resolver_mode="legacy_savgol",
+        resolver_mode="savgol",
         peak_result=result,
         rt=np.asarray([8.0, 8.1, 8.2, 8.3, 8.4]),
         intensity=np.asarray([10.0, 25.0, 50.0, 35.0, 20.0]),
@@ -434,14 +434,14 @@ def test_build_rows_prefers_shared_trace_group_arrays() -> None:
         target_label="Analyte",
         role="Analyte",
         istd_pair="",
-        resolver_mode="legacy_savgol",
+        resolver_mode="savgol",
         peak_result=result,
         rt=np.asarray([8.0, 8.1, 8.2, 8.3, 8.4]),
         intensity=np.zeros(5),
         trace_group=targeted_trace_group(
             trace,
             target_label="Analyte",
-            resolver_mode="legacy_savgol",
+            resolver_mode="savgol",
         ),
     )
 
@@ -811,7 +811,7 @@ def test_write_peak_candidates_tsv_serializes_rows_safely(tmp_path: Path) -> Non
         target_label="Analyte",
         role="Analyte",
         istd_pair="",
-        resolver_mode="legacy_savgol",
+        resolver_mode="savgol",
         peak_result=PeakDetectionResult(
             status="OK",
             peak=_candidate(8.5).peak,

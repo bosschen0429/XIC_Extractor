@@ -16,7 +16,7 @@ from xic_extractor.peak_detection.models import (
 )
 
 
-def find_peak_candidates_legacy_savgol(
+def find_peak_candidates_savgol(
     rt: np.ndarray,
     intensity: np.ndarray,
     config: ExtractionConfig,

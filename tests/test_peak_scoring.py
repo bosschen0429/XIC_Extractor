@@ -9,7 +9,6 @@ from xic_extractor.peak_detection.candidate_scoring import (
 from xic_extractor.peak_detection.candidate_selection import (
     select_candidate_with_confidence,
 )
-from xic_extractor.peak_detection.engine_scoring import score_with_context
 from xic_extractor.peak_detection.hypotheses import EvidenceVector
 from xic_extractor.peak_detection.models import PeakCandidate, PeakResult
 from xic_extractor.peak_detection.peak_scoring_evidence import (
@@ -22,6 +21,7 @@ from xic_extractor.peak_detection.scoring_models import (
     ScoringContext,
     confidence_from_total,
 )
+from xic_extractor.peak_detection.scoring_summary import score_with_context
 
 
 @pytest.mark.parametrize(

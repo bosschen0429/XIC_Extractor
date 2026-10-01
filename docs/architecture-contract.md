@@ -295,6 +295,14 @@ the pure `output.targeted_product_model` without importing orchestration. Becaus
 the shared layer, changes there have cross-path blast radius. The complete
 resolution order is in [`decision-policy.md`](product/decision-policy.md).
 
+Peak detection has two explicit entries: `peak_detection/peak_integration.py`
+searches resolver candidates and selects/scores them; `peak_detection/peak_selection.py`
+selects/scores a supplied candidate result. Formal Targeted passes its physical
+candidates directly to selection, with preferred-RT recovery restricted to that
+set. Discovery, capture, QC, Alignment Backfill, CID-NL acquisition and ISTD
+reference use the full integration entry. The public
+`xic_extractor.signal_processing.find_peak_and_area` remains the integration entry.
+
 ## Module Naming
 
 Name new or renamed modules and commands for the capability they provide and

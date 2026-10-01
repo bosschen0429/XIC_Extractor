@@ -547,7 +547,7 @@ nl_min_intensity_ratio = 0.37
     assert code == 0
     settings = captured["discovery_settings"]
     peak_config = captured["peak_config"]
-    assert peak_config.resolver_mode == settings.resolver_mode == "legacy_savgol"
+    assert peak_config.resolver_mode == settings.resolver_mode == "savgol"
     assert (
         peak_config.nl_min_intensity_ratio
         == settings.nl_min_intensity_ratio

@@ -6,7 +6,7 @@ import pytest
 
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.peak_detection.candidate_scoring import score_candidate
-from xic_extractor.peak_detection.facade import find_peak_and_area
+from xic_extractor.peak_detection.peak_integration import find_peak_and_area
 from xic_extractor.peak_detection.scoring_models import ScoringContext
 
 
@@ -22,7 +22,7 @@ def _cfg() -> ExtractionConfig:
         peak_min_prominence_ratio=0.1,
         ms2_precursor_tol_da=1.6,
         nl_min_intensity_ratio=0.01,
-        resolver_mode="legacy_savgol",
+        resolver_mode="savgol",
         resolver_chrom_threshold=0.05,
         resolver_min_search_range_min=0.04,
         resolver_min_relative_height=0.05,
@@ -45,7 +45,7 @@ def test_find_peak_and_area_without_scoring_context_unchanged() -> None:
 
 @pytest.mark.parametrize(
     "resolver_mode",
-    ["legacy_savgol", "local_minimum"],
+    ["savgol", "local_minimum"],
 )
 def test_find_peak_and_area_with_scoring_returns_same_best_for_clean_peak(
     resolver_mode: str,
@@ -429,7 +429,7 @@ def test_typed_recovery_selection_ignores_legacy_confidence_monkeypatch(
         )
 
     monkeypatch.setattr(
-        "xic_extractor.peak_detection.facade.score_candidate",
+        "xic_extractor.peak_detection.peak_integration.score_candidate",
         _score_candidate,
     )
 
@@ -480,7 +480,7 @@ def test_recovery_candidate_uses_single_scored_selection_pass(
         )
 
     monkeypatch.setattr(
-        "xic_extractor.peak_detection.facade.select_candidate_by_evidence",
+        "xic_extractor.peak_detection.peak_integration.select_candidate_by_evidence",
         _select_once,
     )
 
@@ -536,7 +536,7 @@ def test_find_peak_and_area_passes_context_prior_into_scoring(
         )
 
     monkeypatch.setattr(
-        "xic_extractor.peak_detection.facade.score_candidate",
+        "xic_extractor.peak_detection.peak_integration.score_candidate",
         _score_candidate,
     )
 

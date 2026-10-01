@@ -6,7 +6,10 @@ from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     resolve_signal_processing_profile,
 )
-from xic_extractor.settings_schema import CANONICAL_RESOLVER_MODE
+from xic_extractor.settings_schema import (
+    CANONICAL_RESOLVER_MODE,
+    normalize_resolver_mode,
+)
 from xic_extractor.targeted_ms1_shape_identity_policy import (
     EXPLICIT_SUPPORT_TSV_POLICY,
 )
@@ -65,6 +68,9 @@ class ExtractionConfig:
     )
 
     def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "resolver_mode", normalize_resolver_mode(self.resolver_mode)
+        )
         resolve_signal_processing_profile(
             signal_processing_method=self.signal_processing_method,
             signal_processing_window_points=self.signal_processing_window_points,

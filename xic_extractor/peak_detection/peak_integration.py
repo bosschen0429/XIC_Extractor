@@ -5,39 +5,24 @@ from collections.abc import Callable
 import numpy as np
 
 from xic_extractor.configuration.models import ExtractionConfig
-from xic_extractor.peak_detection import engine_candidates as candidate_flow
+from xic_extractor.peak_detection import candidate_search
 from xic_extractor.peak_detection.candidate_scoring import score_candidate
 from xic_extractor.peak_detection.candidate_selection import (
     select_candidate_by_evidence,
 )
-from xic_extractor.peak_detection.engine import (
-    find_peak_and_area as _find_peak_and_area,
-)
-from xic_extractor.peak_detection.engine import (
-    find_peak_candidates as _find_peak_candidates,
+from xic_extractor.peak_detection.local_minimum import (
+    find_peak_candidates_local_minimum,
 )
 from xic_extractor.peak_detection.models import (
     PeakCandidate,
     PeakCandidatesResult,
     PeakDetectionResult,
 )
+from xic_extractor.peak_detection.peak_selection import select_peak_and_area
+from xic_extractor.peak_detection.relaxed_search import preferred_rt_relaxed_search
+from xic_extractor.peak_detection.savgol import find_peak_candidates_savgol
 from xic_extractor.peak_detection.scoring_models import ScoringContext
-
-find_peak_candidates_legacy_savgol = (
-    candidate_flow.find_peak_candidates_legacy_savgol
-)
-find_peak_candidates_local_minimum = (
-    candidate_flow.find_peak_candidates_local_minimum
-)
-
-__all__ = [
-    "find_peak_and_area",
-    "find_peak_candidates",
-    "score_candidate",
-    "select_candidate_by_evidence",
-    "find_peak_candidates_legacy_savgol",
-    "find_peak_candidates_local_minimum",
-]
+from xic_extractor.peak_detection.selection import select_candidate
 
 
 def find_peak_and_area(
@@ -53,9 +38,28 @@ def find_peak_and_area(
     istd_pair: str = "",
     paired_istd_anchor_rt: float | None = None,
 ) -> PeakDetectionResult:
-    return _find_peak_and_area(
+    """Search resolver candidates, recover near preferred RT, then select and score."""
+    candidates_result = find_peak_candidates(rt, intensity, config)
+    preliminary_candidate = (
+        select_candidate(
+            candidates_result.candidates,
+            preferred_rt=preferred_rt,
+            strict_preferred_rt=strict_preferred_rt,
+        )
+        if candidates_result.status == "OK"
+        else None
+    )
+    recovery = preferred_rt_relaxed_search(
         rt,
         intensity,
+        config,
+        preferred_rt=preferred_rt,
+        strict_preferred_rt=strict_preferred_rt,
+        current_candidate=preliminary_candidate,
+        candidate_finder=find_peak_candidates,
+    )
+    return select_peak_and_area(
+        candidates_result,
         config,
         preferred_rt=preferred_rt,
         strict_preferred_rt=strict_preferred_rt,
@@ -64,7 +68,7 @@ def find_peak_and_area(
         evidence_role=evidence_role,
         istd_pair=istd_pair,
         paired_istd_anchor_rt=paired_istd_anchor_rt,
-        candidate_finder=find_peak_candidates,
+        preferred_rt_recovery=recovery,
         score_candidate_func=score_candidate,
         evidence_selector=select_candidate_by_evidence,
     )
@@ -77,11 +81,11 @@ def find_peak_candidates(
     *,
     peak_min_prominence_ratio: float | None = None,
 ) -> PeakCandidatesResult:
-    return _find_peak_candidates(
+    return candidate_search.find_peak_candidates(
         rt,
         intensity,
         config,
         peak_min_prominence_ratio=peak_min_prominence_ratio,
         local_minimum_finder=find_peak_candidates_local_minimum,
-        legacy_savgol_finder=find_peak_candidates_legacy_savgol,
+        savgol_finder=find_peak_candidates_savgol,
     )

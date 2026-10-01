@@ -296,7 +296,7 @@ def test_build_boundary_rows_projects_from_peak_hypothesis_spine(monkeypatch) ->
         target_label="LegacyTarget",
         role="Analyte",
         istd_pair="LegacyPair",
-        resolver_mode="legacy_savgol",
+        resolver_mode="savgol",
         peak_result=peak_result,
         rt=rt,
         intensity=intensity,
@@ -324,7 +324,7 @@ def test_write_peak_candidate_boundaries_tsv_serializes_rows_safely(
         target_label="Analyte",
         role="Analyte",
         istd_pair="",
-        resolver_mode="legacy_savgol",
+        resolver_mode="savgol",
         peak_result=PeakDetectionResult(
             status="OK",
             peak=_candidate(8.30, left=8.00, right=8.60).peak,

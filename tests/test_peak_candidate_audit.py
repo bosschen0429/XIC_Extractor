@@ -278,7 +278,7 @@ def test_peak_audit_appender_uses_shared_trace_group_for_audit_rows(
         trace_group=targeted_trace_group(
             trace,
             target_label="Analyte",
-            resolver_mode="legacy_savgol",
+            resolver_mode="savgol",
         ),
     )
 

@@ -45,9 +45,6 @@ from xic_extractor.output.messages import (
 from xic_extractor.peak_detection.candidate_selection import (
     select_candidate_by_evidence,
 )
-from xic_extractor.peak_detection.engine import (
-    find_peak_and_area as find_peak_and_area_from_candidates,
-)
 from xic_extractor.peak_detection.evidence_facts import (
     decision_semantics_from_candidate_facts,
 )
@@ -59,6 +56,9 @@ from xic_extractor.peak_detection.models import (
 )
 from xic_extractor.peak_detection.observations import (
     physical_peak_observation_integration,
+)
+from xic_extractor.peak_detection.peak_selection import (
+    select_peak_and_area,
 )
 from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
     physical_candidates_result,
@@ -424,14 +424,9 @@ def extract_one_target(
     ) -> PeakDetectionResult:
         _, _, candidates_result = _physical_trace_owners(rt_values, intensity_values)
 
-        def _find_candidates(*_args: object, **_kwargs: object) -> PeakCandidatesResult:
-            return candidates_result
-
-        return find_peak_and_area_from_candidates(
-            np.asarray(rt_values, dtype=float),
-            np.asarray(intensity_values, dtype=float),
+        return select_peak_and_area(
+            candidates_result,
             selection_config,
-            candidate_finder=_find_candidates,
             preferred_rt=preferred_rt,
             strict_preferred_rt=strict_preferred_rt,
             scoring_context_builder=scoring_context_builder,

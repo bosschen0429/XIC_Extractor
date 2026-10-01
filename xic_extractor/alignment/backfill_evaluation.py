@@ -46,8 +46,8 @@ from xic_extractor.peak_detection.evidence_facts import (
     TraceWindowEvidenceFacts,
     peak_trace_evidence,
 )
-from xic_extractor.peak_detection.facade import find_peak_and_area
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
+from xic_extractor.peak_detection.peak_integration import find_peak_and_area
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,

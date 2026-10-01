@@ -202,3 +202,35 @@ def test_invalid_export_preserves_existing_destination(
         save_preset(invalid_preset, destination)
 
     assert destination.read_bytes() == previous
+
+
+@pytest.mark.parametrize("resolver_mode", ["savgol", "legacy_savgol"])
+def test_resolver_input_exports_only_canonical_savgol(
+    tmp_path: Path, resolver_mode: str
+) -> None:
+    """Remove the alias case only after existing user presets have migrated."""
+    original = load_preset("dna_dr")
+    settings = apply_to_discovery(
+        original, explicit_tuning_overrides={"resolver_mode": resolver_mode}
+    )
+    assert settings.resolver_mode == "savgol"
+    reloaded = save_preset(
+        original,
+        tmp_path / "savgol.toml",
+        discovery_overrides={"resolver_mode": resolver_mode},
+    )
+    parsed = tomllib.loads((tmp_path / "savgol.toml").read_text(encoding="utf-8"))
+    assert parsed["discovery"]["resolver_mode"] == "savgol"
+    assert apply_to_discovery(reloaded) == settings
+    # Exercise saved user input through the TOML loader, not only apply overrides.
+    saved_text = (tmp_path / "savgol.toml").read_text(encoding="utf-8")
+    (tmp_path / "savgol.toml").write_text(
+        saved_text.replace(
+            'resolver_mode = "savgol"', f'resolver_mode = "{resolver_mode}"'
+        ),
+        encoding="utf-8",
+    )
+    assert (
+        load_preset(tmp_path / "savgol.toml").discovery_overrides["resolver_mode"]
+        == "savgol"
+    )

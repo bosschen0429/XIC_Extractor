@@ -1,18 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-
-import numpy as np
+from dataclasses import replace
 
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.peak_detection import (
-    engine_candidates as candidate_flow,
+    detection_result as output_flow,
 )
 from xic_extractor.peak_detection import (
-    engine_output as output_flow,
-)
-from xic_extractor.peak_detection import (
-    engine_scoring as scoring_flow,
+    scoring_summary as scoring_flow,
 )
 from xic_extractor.peak_detection.candidate_scoring import score_candidate
 from xic_extractor.peak_detection.candidate_selection import (
@@ -24,7 +20,9 @@ from xic_extractor.peak_detection.models import (
     PeakCandidatesResult,
     PeakDetectionResult,
 )
-from xic_extractor.peak_detection.relaxed_search import preferred_rt_relaxed_search
+from xic_extractor.peak_detection.relaxed_search import (
+    preferred_rt_recovery_from_candidates,
+)
 from xic_extractor.peak_detection.scoring_models import (
     ScoredCandidate,
     ScoringContext,
@@ -36,9 +34,8 @@ from xic_extractor.peak_detection.selection import (
 )
 
 
-def find_peak_and_area(
-    rt: np.ndarray,
-    intensity: np.ndarray,
+def select_peak_and_area(
+    candidates_result: PeakCandidatesResult,
     config: ExtractionConfig,
     *,
     preferred_rt: float | None = None,
@@ -48,48 +45,47 @@ def find_peak_and_area(
     evidence_role: str = "",
     istd_pair: str = "",
     paired_istd_anchor_rt: float | None = None,
-    candidate_finder: Callable[..., PeakCandidatesResult] | None = None,
+    preferred_rt_recovery: (
+        tuple[PeakCandidate | None, PeakCandidatesResult | None] | None
+    ) = None,
     score_candidate_func: Callable[..., ScoredCandidate] = score_candidate,
     evidence_selector: Callable[..., ScoredCandidate] = select_candidate_by_evidence,
 ) -> PeakDetectionResult:
-    candidate_finder = candidate_finder or find_peak_candidates
-    candidates_result = candidate_finder(rt, intensity, config)
+    """Select and score supplied candidates without invoking a resolver.
+
+    With no search recovery supplied, preferred-RT recovery is restricted to
+    this candidate set, preserving the physical-candidate selection policy.
+    """
+    if preferred_rt_recovery is None:
+        preferred_rt_recovery = preferred_rt_recovery_from_candidates(
+            candidates_result,
+            config,
+            preferred_rt=preferred_rt,
+            strict_preferred_rt=strict_preferred_rt,
+        )
+    relaxed_candidate, relaxed_search_result = preferred_rt_recovery
     chosen_confidence: str | None = None
     chosen_reason: str | None = None
     chosen_severities: tuple[tuple[int, str], ...] = ()
     chosen_score_breakdown: tuple[tuple[str, str], ...] = ()
     candidate_scores: tuple[PeakCandidateScore, ...] = ()
     if candidates_result.status == "OK":
-        preliminary_candidate = select_candidate(
-            candidates_result.candidates,
-            preferred_rt=preferred_rt,
-            strict_preferred_rt=strict_preferred_rt,
-        )
-        relaxed_candidate, relaxed_search_result = preferred_rt_relaxed_search(
-            rt,
-            intensity,
-            config,
-            preferred_rt=preferred_rt,
-            strict_preferred_rt=strict_preferred_rt,
-            current_candidate=preliminary_candidate,
-            candidate_finder=candidate_finder,
-        )
         all_candidates = candidates_result.candidates
         result_for_output = candidates_result
         if relaxed_candidate is not None and relaxed_search_result is not None:
             relaxed_candidate, relaxed_search_result = (
-                candidate_flow.mark_relaxed_candidate(
+                mark_relaxed_candidate(
                     relaxed_candidate,
                     relaxed_search_result,
                 )
             )
             all_candidates, relaxed_candidate = (
-                candidate_flow.append_or_merge_relaxed_candidate(
+                append_or_merge_relaxed_candidate(
                     all_candidates,
                     relaxed_candidate,
                 )
             )
-            result_for_output = candidate_flow.with_candidates(
+            result_for_output = with_candidates(
                 candidates_result,
                 all_candidates,
             )
@@ -150,18 +146,9 @@ def find_peak_and_area(
             paired_istd_anchor_rt=paired_istd_anchor_rt,
         )
 
-    relaxed_candidate, relaxed_search_result = preferred_rt_relaxed_search(
-        rt,
-        intensity,
-        config,
-        preferred_rt=preferred_rt,
-        strict_preferred_rt=strict_preferred_rt,
-        current_candidate=None,
-        candidate_finder=candidate_finder,
-    )
     if relaxed_candidate is not None and relaxed_search_result is not None:
         relaxed_candidate, relaxed_search_result = (
-            candidate_flow.mark_relaxed_candidate(
+            mark_relaxed_candidate(
                 relaxed_candidate,
                 relaxed_search_result,
             )
@@ -199,25 +186,83 @@ def find_peak_and_area(
     return output_flow.detection_failure(candidates_result)
 
 
-def find_peak_candidates(
-    rt: np.ndarray,
-    intensity: np.ndarray,
-    config: ExtractionConfig,
-    *,
-    peak_min_prominence_ratio: float | None = None,
-    local_minimum_finder: Callable[
-        [np.ndarray, np.ndarray, ExtractionConfig],
-        PeakCandidatesResult,
-    ] = candidate_flow.find_peak_candidates_local_minimum,
-    legacy_savgol_finder: Callable[..., PeakCandidatesResult] = (
-        candidate_flow.find_peak_candidates_legacy_savgol
-    ),
+def append_or_merge_relaxed_candidate(
+    candidates: tuple[PeakCandidate, ...],
+    candidate: PeakCandidate,
+) -> tuple[tuple[PeakCandidate, ...], PeakCandidate]:
+    merged_candidates = list(candidates)
+    for index, existing in enumerate(merged_candidates):
+        if not _same_peak_candidate_identity(existing, candidate):
+            continue
+        merged_candidate = replace(
+            existing,
+            proposal_sources=_combine_proposal_sources(existing, candidate),
+        )
+        merged_candidates[index] = merged_candidate
+        return tuple(merged_candidates), merged_candidate
+    return (*candidates, candidate), candidate
+
+
+def mark_relaxed_candidate(
+    relaxed_candidate: PeakCandidate,
+    relaxed_search_result: PeakCandidatesResult,
+) -> tuple[PeakCandidate, PeakCandidatesResult]:
+    marked_candidate = _with_added_proposal_source(
+        relaxed_candidate,
+        "preferred_rt_recovery",
+    )
+    marked_candidates = tuple(
+        marked_candidate
+        if candidate is relaxed_candidate or candidate == relaxed_candidate
+        else candidate
+        for candidate in relaxed_search_result.candidates
+    )
+    return marked_candidate, with_candidates(relaxed_search_result, marked_candidates)
+
+
+def with_candidates(
+    candidates_result: PeakCandidatesResult,
+    candidates: tuple[PeakCandidate, ...],
 ) -> PeakCandidatesResult:
-    return candidate_flow.find_peak_candidates(
-        rt,
-        intensity,
-        config,
-        peak_min_prominence_ratio=peak_min_prominence_ratio,
-        local_minimum_finder=local_minimum_finder,
-        legacy_savgol_finder=legacy_savgol_finder,
+    return PeakCandidatesResult(
+        status=candidates_result.status,
+        candidates=candidates,
+        n_points=candidates_result.n_points,
+        max_smoothed=candidates_result.max_smoothed,
+        n_prominent_peaks=candidates_result.n_prominent_peaks,
+    )
+
+
+def _combine_proposal_sources(
+    first: PeakCandidate,
+    second: PeakCandidate,
+) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            source
+            for source in (*first.proposal_sources, *second.proposal_sources)
+            if source
+        )
+    )
+
+
+def _same_peak_candidate_identity(
+    first: PeakCandidate,
+    second: PeakCandidate,
+) -> bool:
+    return (
+        first.selection_apex_rt == second.selection_apex_rt
+        and first.peak == second.peak
+    )
+
+
+def _with_added_proposal_source(
+    candidate: PeakCandidate,
+    source: str,
+) -> PeakCandidate:
+    return replace(
+        candidate,
+        proposal_sources=tuple(
+            dict.fromkeys((*candidate.proposal_sources, source))
+        ),
     )

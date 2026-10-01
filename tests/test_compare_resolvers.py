@@ -14,7 +14,7 @@ from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 
 
 def test_compare_rows_reports_flips_rt_area_istd_and_confidence_changes() -> None:
-    legacy_output = RunOutput(
+    savgol_output = RunOutput(
         file_results=[
             FileResult(
                 sample_name="SampleA",
@@ -78,7 +78,7 @@ def test_compare_rows_reports_flips_rt_area_istd_and_confidence_changes() -> Non
     )
 
     report = compare_rows(
-        legacy_output,
+        savgol_output,
         local_output,
         focus_targets={"d3-N6-medA", "d3-5-hmdC", "8-oxo-Guo", "8-oxodG"},
         rt_delta_threshold=0.05,
@@ -113,7 +113,7 @@ def test_compare_resolvers_main_runs_both_modes_and_writes_csv(
         return config, targets
 
     def _run(config_arg, _targets):
-        if config_arg.resolver_mode == "legacy_savgol":
+        if config_arg.resolver_mode == "savgol":
             return RunOutput(
                 file_results=[
                     FileResult(
@@ -201,7 +201,7 @@ def test_compare_resolvers_main_runs_both_modes_and_writes_csv(
     assert "SampleA,d3-N6-medA,ISTD,FLIP_DETECTED_TO_ND" in csv_text
     assert "SampleA,8-oxo-Guo,Analyte,FLIP_ND_TO_DETECTED" in csv_text
     stdout = capsys.readouterr().out
-    assert "legacy_savgol vs local_minimum" in stdout
+    assert "savgol vs local_minimum" in stdout
     assert "Detected->ND: 1" in stdout
 
 

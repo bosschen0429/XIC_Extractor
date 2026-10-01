@@ -15,7 +15,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     cid_nl_method_subject_from_request,
     validate_cid_nl_method_subject_binding,
 )
-from xic_extractor.peak_detection.facade import find_peak_and_area
 from xic_extractor.peak_detection.hypotheses import (
     AuditTrail,
     EvidenceVector,
@@ -42,6 +41,7 @@ from xic_extractor.peak_detection.observations import (
     physical_peak_observation_integration,
     validate_peak_observation_trace_binding,
 )
+from xic_extractor.peak_detection.peak_integration import find_peak_and_area
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,

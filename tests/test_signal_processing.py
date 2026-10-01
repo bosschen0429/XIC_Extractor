@@ -6,7 +6,6 @@ import pytest
 from scipy.signal import savgol_filter
 
 from xic_extractor.configuration.models import ExtractionConfig
-from xic_extractor.peak_detection.facade import find_peak_candidates
 from xic_extractor.peak_detection.integration import peak_bounds
 from xic_extractor.peak_detection.local_minimum import _local_minimum_regions
 from xic_extractor.peak_detection.models import (
@@ -14,6 +13,7 @@ from xic_extractor.peak_detection.models import (
     PeakCandidatesResult,
     PeakResult,
 )
+from xic_extractor.peak_detection.peak_integration import find_peak_candidates
 from xic_extractor.signal_processing import find_peak_and_area
 
 
@@ -23,7 +23,7 @@ def _config(
     smooth_polyorder: int = 3,
     peak_rel_height: float = 0.95,
     peak_min_prominence_ratio: float = 0.10,
-    resolver_mode: str = "legacy_savgol",
+    resolver_mode: str = "savgol",
     resolver_chrom_threshold: float = 0.05,
     resolver_min_search_range_min: float = 0.04,
     resolver_min_relative_height: float = 0.05,
@@ -451,7 +451,7 @@ def test_area_is_reported_in_counts_seconds_not_counts_minutes() -> None:
     assert result.peak.area == pytest.approx(area_counts_minutes * 60.0, rel=1e-6)
 
 
-def test_legacy_savgol_resolver_mode_preserves_existing_candidate_behavior() -> None:
+def test_savgol_resolver_mode_preserves_existing_candidate_behavior() -> None:
     rt = np.linspace(8.0, 10.0, 401)
     intensity = _gaussian(rt, center=8.7, sigma=0.05, height=500.0)
     intensity += _gaussian(rt, center=9.4, sigma=0.06, height=1200.0)
@@ -459,7 +459,7 @@ def test_legacy_savgol_resolver_mode_preserves_existing_candidate_behavior() -> 
     result = find_peak_candidates(
         rt,
         intensity,
-        _config(resolver_mode="legacy_savgol"),
+        _config(resolver_mode="savgol"),
     )
 
     assert result.status == "OK"
@@ -609,7 +609,7 @@ def test_local_minimum_resolver_uses_valley_minimum_as_region_boundary() -> None
     legacy_result = find_peak_candidates(
         rt,
         intensity,
-        _config(resolver_mode="legacy_savgol"),
+        _config(resolver_mode="savgol"),
     )
 
     assert local_result.status == "OK"
@@ -728,7 +728,7 @@ def test_unknown_resolver_mode_is_rejected() -> None:
 def test_preferred_rt_relaxed_search_candidate_preserves_provenance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from xic_extractor.peak_detection import facade
+    from xic_extractor.peak_detection import peak_integration
 
     far_candidate = _candidate_for_provenance(
         9.50,
@@ -752,9 +752,9 @@ def test_preferred_rt_relaxed_search_candidate_preserves_provenance(
             n_prominent_peaks=1,
         )
 
-    monkeypatch.setattr(facade, "find_peak_candidates", _fake_candidates)
+    monkeypatch.setattr(peak_integration, "find_peak_candidates", _fake_candidates)
 
-    result = facade.find_peak_and_area(
+    result = peak_integration.find_peak_and_area(
         np.asarray([8.0, 8.5, 9.0, 9.5], dtype=float),
         np.asarray([1.0, 10.0, 4.0, 9.0], dtype=float),
         _config(),
@@ -771,7 +771,7 @@ def test_preferred_rt_relaxed_search_candidate_preserves_provenance(
 def test_preferred_rt_relaxed_search_merges_existing_peak_candidate(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from xic_extractor.peak_detection import facade
+    from xic_extractor.peak_detection import peak_integration
 
     near_candidate = _candidate_for_provenance(
         8.95,
@@ -806,9 +806,9 @@ def test_preferred_rt_relaxed_search_merges_existing_peak_candidate(
             n_prominent_peaks=len(candidates),
         )
 
-    monkeypatch.setattr(facade, "find_peak_candidates", _fake_candidates)
+    monkeypatch.setattr(peak_integration, "find_peak_candidates", _fake_candidates)
 
-    result = facade.find_peak_and_area(
+    result = peak_integration.find_peak_and_area(
         np.asarray([8.0, 8.5, 9.0, 9.5], dtype=float),
         np.asarray([1.0, 10.0, 4.0, 2000.0], dtype=float),
         _config(),
@@ -831,7 +831,7 @@ def test_preferred_rt_relaxed_search_merges_existing_peak_candidate(
 def test_selection_reference_rt_is_empty_when_preferred_rt_is_not_used(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from xic_extractor.peak_detection import facade
+    from xic_extractor.peak_detection import peak_integration
 
     weak_near_candidate = _candidate_for_provenance(
         8.95,
@@ -844,7 +844,7 @@ def test_selection_reference_rt_is_empty_when_preferred_rt_is_not_used(
         selection_apex_intensity=100.0,
     )
     monkeypatch.setattr(
-        facade,
+        peak_integration,
         "find_peak_candidates",
         lambda *_args, **_kwargs: PeakCandidatesResult(
             status="OK",
@@ -855,7 +855,7 @@ def test_selection_reference_rt_is_empty_when_preferred_rt_is_not_used(
         ),
     )
 
-    result = facade.find_peak_and_area(
+    result = peak_integration.find_peak_and_area(
         np.asarray([8.0, 8.5, 9.0, 9.5], dtype=float),
         np.asarray([1.0, 10.0, 4.0, 9.0], dtype=float),
         _config(),
@@ -869,7 +869,7 @@ def test_selection_reference_rt_is_empty_when_preferred_rt_is_not_used(
 def test_selection_reference_rt_records_preferred_rt_when_it_controls_selection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from xic_extractor.peak_detection import facade
+    from xic_extractor.peak_detection import peak_integration
 
     near_candidate = _candidate_for_provenance(
         8.95,
@@ -882,7 +882,7 @@ def test_selection_reference_rt_records_preferred_rt_when_it_controls_selection(
         selection_apex_intensity=100.0,
     )
     monkeypatch.setattr(
-        facade,
+        peak_integration,
         "find_peak_candidates",
         lambda *_args, **_kwargs: PeakCandidatesResult(
             status="OK",
@@ -893,7 +893,7 @@ def test_selection_reference_rt_records_preferred_rt_when_it_controls_selection(
         ),
     )
 
-    result = facade.find_peak_and_area(
+    result = peak_integration.find_peak_and_area(
         np.asarray([8.0, 8.5, 9.0, 9.5], dtype=float),
         np.asarray([1.0, 10.0, 4.0, 9.0], dtype=float),
         _config(),

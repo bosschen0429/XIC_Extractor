@@ -227,7 +227,7 @@ pipeline's design goals.
 
 | Method | Theoretical advantage | Why it conflicts with smoothed-everywhere |
 | --- | --- | --- |
-| Savitzky-Golay | Preserves peak height/width better via local polynomial fit | Introduces oscillation (ringing) near sharp features; adds a polynomial-order parameter; retired from this pipeline (`legacy_savgol`) |
+| Savitzky-Golay | Preserves peak height/width better via local polynomial fit | Introduces oscillation (ringing) near sharp features; adds a polynomial-order parameter; not the formal Targeted smoothing profile; used by the `savgol` candidate resolver |
 | Wavelet denoising | Scale-adaptive; preserves sharp features while removing noise | Behavior varies with peak shape, reducing cross-sample predictability — directly opposes the stability goal |
 | Whittaker smoother | Continuous smoothness/fidelity trade-off; mathematically elegant | Additional parameters; higher computational cost; tunable fidelity is a liability when the design goal is uniform smoothing |
 | Median filter | Extremely robust to spikes and outliers | Distorts continuous peak shapes; not suitable for chromatographic signals |

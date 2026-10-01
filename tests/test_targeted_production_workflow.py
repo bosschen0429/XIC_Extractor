@@ -42,11 +42,11 @@ from xic_extractor.output.targeted_product_model import (
     TargetedProductContext,
 )
 from xic_extractor.peak_detection import capture as capture_owner
-from xic_extractor.peak_detection.facade import find_peak_and_area
 from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses
 from xic_extractor.peak_detection.observations import (
     physical_peak_observation_integration,
 )
+from xic_extractor.peak_detection.peak_integration import find_peak_and_area
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
     prepare_physical_signal,
