@@ -81,10 +81,11 @@ from xic_extractor.peak_detection.selection_decision import (
     selection_decision_from_hypothesis,
 )
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
+from xic_extractor.raw_reader import open_raw
 from xic_extractor.rt_prior_library import LibraryEntry
 
 if TYPE_CHECKING:
-    from xic_extractor.extractor import (
+    from xic_extractor.extraction.result_models import (
         ExtractionResult,
         FileResult,
         RawFileExtractionResult,
@@ -102,7 +103,7 @@ def extract_raw_file_result(
     model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
     expected_acquisition_source: AcquisitionSourceExpectation | None = None,
 ) -> RawFileExtractionResult:
-    from xic_extractor import extractor
+    from xic_extractor.extraction import result_models
 
     file_result, diagnostics = process_file(
         config,
@@ -113,7 +114,7 @@ def extract_raw_file_result(
         model_selection_expected_diff_approvals=model_selection_expected_diff_approvals,
         expected_acquisition_source=expected_acquisition_source,
     )
-    return extractor.RawFileExtractionResult(
+    return result_models.RawFileExtractionResult(
         raw_index=raw_index,
         sample_name=file_result.sample_name,
         file_result=file_result,
@@ -135,15 +136,15 @@ def process_file(
     model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
     expected_acquisition_source: AcquisitionSourceExpectation | None = None,
 ) -> tuple[FileResult, list[DiagnosticRecord]]:
-    from xic_extractor import extractor
+    from xic_extractor.extraction import result_models
 
     sample_name = raw_path.stem
     approval_records = model_selection_expected_diff_approvals
     try:
         raw_context = (
-            extractor.open_raw(raw_path, config.dll_dir)
+            open_raw(raw_path, config.dll_dir)
             if expected_acquisition_source is None
-            else extractor.open_raw(
+            else open_raw(
                 raw_path,
                 config.dll_dir,
                 expected_acquisition_source=expected_acquisition_source.source,
@@ -242,7 +243,7 @@ def process_file(
                         istd_shape_metrics_by_label,
                     ),
                 )
-            return extractor.FileResult(
+            return result_models.FileResult(
                 sample_name=sample_name,
                 results=results,
                 peak_candidate_rows=peak_candidate_rows,
@@ -252,7 +253,7 @@ def process_file(
     except Exception as exc:
         reason = f"Failed to open .raw: {type(exc).__name__}: {exc}"
         return (
-            extractor.FileResult(sample_name=sample_name, results={}, error=reason),
+            result_models.FileResult(sample_name=sample_name, results={}, error=reason),
             [DiagnosticRecord(sample_name, "", "FILE_ERROR", reason)],
         )
 

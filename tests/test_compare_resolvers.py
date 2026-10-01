@@ -5,7 +5,11 @@ from scripts.compare_resolvers import (
     main,
 )
 from xic_extractor.configuration.models import ExtractionConfig, Target
-from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
+from xic_extractor.extraction.result_models import (
+    ExtractionResult,
+    FileResult,
+    RunOutput,
+)
 from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 
 

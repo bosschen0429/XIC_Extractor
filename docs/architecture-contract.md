@@ -31,7 +31,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | --- | --- | --- |
 | GUI 建立視窗與工作 | [`gui/main.py`](../gui/main.py)、[`gui/main_window.py`](../gui/main_window.py) | `views/`、`sections/` 處理互動；`workers/` 將設定轉成工作要求 |
 | Targeted 分析與交付 | [`scripts/run_extraction.py`](../scripts/run_extraction.py)、[`gui/workers/pipeline_worker.py`](../gui/workers/pipeline_worker.py) | [`TargetedApplicationService.execute_application`](../xic_extractor/applications/targeted/application.py) 組合 acquisition、科學處理與交付；同一 module 組裝正式 application |
-| 既有 Python Targeted 入口 | [`extractor.run`](../xic_extractor/extractor.py) | 進入同一 application；`extractor.acquire` 是它使用的 acquisition 入口 |
+| 既有 Python Targeted 入口 | [`extractor.run`](../xic_extractor/extractor.py) | 進入同一 application；`extractor.acquire` 是它使用的 acquisition 入口；結果模型在 `extraction/result_models.py` |
 | Discovery 候選產生 | [`scripts/run_discovery.py`](../scripts/run_discovery.py) | [`discovery/pipeline.py`](../xic_extractor/discovery/pipeline.py) 的 `run_discovery`／`run_discovery_batch`，交出候選檔與 batch index |
 | Untargeted GUI 全流程 | [`gui/workers/discovery_worker.py`](../gui/workers/discovery_worker.py) | 呼叫 Discovery，再將 batch index 交給 Alignment |
 | Untargeted Alignment 與 Matrix | [`scripts/run_alignment.py`](../scripts/run_alignment.py)、[`gui/workers/discovery_worker.py`](../gui/workers/discovery_worker.py) | [`run_untargeted_application`](../xic_extractor/applications/untargeted/application.py) 準備輸入並呼叫 retained execution；[`publication`](../xic_extractor/applications/untargeted/publication.py) 消費完成結果、發布 [`AlignmentRunOutputs`](../xic_extractor/output/alignment/pipeline_outputs.py) 並關閉暫存 |
@@ -45,7 +45,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | 峰選擇、邊界、面積 | `peak_detection/`（`signal_processing.py` 只保留公開的 `find_peak_and_area` 入口） | 單峰／單次觀察的答案；跨樣本群組在 Alignment |
 | Targeted 正式選峰與 successor approval | `extraction/targeted_peak_selection.py` | 組合 hypotheses 與 Targeted 選峰政策，交出選定的峰、trace 和 decision；單峰演算法仍在 `peak_detection/` |
 | Targeted 輸入轉成共用峰假設 | `extraction/targeted_peak_hypotheses.py` | 選峰、candidate table 與 boundary callers 共用同一 translation；audit callers 不依賴正式選峰政策 |
-| Targeted 計數、角色例外與 review 原因 | `applications/targeted/product_projection.py` | 消費已完成的科學結果，決定產品狀態；純結果模型在 `output/targeted_product_model.py`，writer 只呈現它 |
+| Targeted 計數、角色例外與 review 原因 | `extraction/targeted_product_projection.py` | 消費已完成的科學結果，決定產品狀態；純結果模型在 `output/targeted_product_model.py`，writer 只呈現它 |
 | 跨樣本配對、RT 漂移、群組 | `alignment/grouping_workflow.py`、`alignment/cross_sample/` | 群組決定先完成，Backfill 與格值決策消費同一結果 |
 | 從已取得的 evidence 完成科學結果 | `alignment/completion.py` | Targeted／Untargeted 共用 capture、grouping、cell 與 projection；不執行 runtime 或保存暫存 |
 | Untargeted CID-NL 的 sample assessment／Backfill inputs | `alignment/cid_nl_inputs.py` | 正式 partition 與 diagnostic projection 共用相同 input types、payload validation 和 method default；不依賴 artifact rendering |
@@ -234,6 +234,9 @@ policy; result writers consume the completed groups and cells.
   `output`, `peak_detection`) never import it; applications may compose its
   explanation persistence. A schema that production reads lives with its
   production reader, and diagnostic producers import it from there.
+- `applications/` is the outermost composition layer. The inner packages above
+  and `diagnostics` never import it; `extractor.run` is the public root entry
+  that calls into it.
 - Keep a compatibility facade only for a current public/downstream contract or
   real external consumer. Tests and historical artifacts are not consumers.
 - When replacing an internal surface, remove its obsolete implementation,
@@ -255,11 +258,11 @@ Use this map to choose the reason a package changes. File placement is owned by
 | Surface | Owns | Does not own |
 | --- | --- | --- |
 | `configuration/` | settings, target/config loading, validation, typed runtime settings | extraction or rendering |
-| `applications/targeted/` | Formal Targeted application composition and request/result interface, its production workflow and output boundary; product state, role/applicability policy, counted detection and reason overlays | scientific peak selection, numeric cell decisions, RAW acquisition or rendering |
+| `applications/targeted/` | Formal Targeted application composition and request/result interface, its production workflow and output boundary | scientific peak selection, numeric cell decisions, RAW acquisition or rendering |
 | `applications/untargeted/` | Untargeted input preparation, Discovery-to-provisional-Matrix composition, execution-to-publication orchestration, cancellation, completed-store and explanation lifetime; delegates Matrix publishing to `output/alignment/` | scientific grouping, cell decisions, a second runtime owner or writer algorithm |
 | `discovery/` | general candidate discovery, seed generation, workflow-neutral discovery facts, receipt-bound CSV reading and bounded candidate loading | matrix decisions or target-list policy |
 | `execution/` | generic attempt execution/finalization, partition scheduling, reusable worker admission pools, one-shot process jobs, streamed result storage, recovery, and runtime timing/process-memory measurement | method-specific science, subject splitting, or writer authority |
-| `extraction/` | Targeted acquisition adapters, jobs, windowing, drift, backend coordination, output dispatch, and retained Untargeted batch execution (`untargeted_input_planning`, `untargeted_execution`, `untargeted_partition_composition`, `untargeted_alignment`) | application composition, GUI, or Alignment decisions |
+| `extraction/` | Targeted acquisition adapters, result models and product projection (product state, role/applicability policy, counted detection and reason overlays), jobs, windowing, drift, backend coordination, output dispatch, and retained Untargeted batch execution (`untargeted_input_planning`, `untargeted_execution`, `untargeted_partition_composition`, `untargeted_alignment`) | application composition, GUI, or Alignment decisions |
 | `peak_detection/` | physical observations, hypotheses, resolvers, boundaries, integration, evidence composition | cross-sample grouping, workflow policy, or writers |
 | `alignment/` | cross-sample grouping, refinement/repair composition, Alignment adapters and renderers | a second runtime owner, mutable transport authority, or Targeted-only science |
 | `output/` | workbook/TSV/HTML schema rendering and the pure Targeted product result model they render; `output/alignment/` owns Matrix artifact selection, streaming/materialization coordination, atomic writes and fingerprint receipts | evidence recomputation, application store lifetime or RAW access |
@@ -299,8 +302,8 @@ architecture boundaries.
   and focused output oracle.
 
 `xic_extractor.evidence_semantics` is role-neutral and serves both candidate
-selection and product projection. Targeted role policy belongs in the Targeted
-application's `product_projection` owner. `extraction.result_assembly` creates
+selection and product projection. Targeted role policy belongs in
+`extraction.targeted_product_projection`. `extraction.result_assembly` creates
 the extraction result and delegates to `project_targeted_result`; writers consume
 the pure `output.targeted_product_model` without importing orchestration. Because Alignment also consumes
 the shared layer, changes there have cross-path blast radius. The complete

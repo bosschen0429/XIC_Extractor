@@ -87,3 +87,21 @@ source_modules =
 forbidden_modules =
     xic_extractor.diagnostics
 allow_indirect_imports = False
+
+[importlinter:contract:inner-layers-do-not-import-applications]
+name = Inner layers do not import applications
+type = forbidden
+source_modules =
+    xic_extractor.acquisition
+    xic_extractor.alignment
+    xic_extractor.configuration
+    xic_extractor.diagnostics
+    xic_extractor.discovery
+    xic_extractor.evidence
+    xic_extractor.execution
+    xic_extractor.extraction
+    xic_extractor.output
+    xic_extractor.peak_detection
+forbidden_modules =
+    xic_extractor.applications
+allow_indirect_imports = False

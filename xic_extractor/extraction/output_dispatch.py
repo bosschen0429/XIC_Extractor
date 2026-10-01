@@ -27,7 +27,7 @@ from xic_extractor.output.selected_envelope_diagnostics import (
 )
 
 if TYPE_CHECKING:
-    from xic_extractor.extractor import RunOutput
+    from xic_extractor.extraction.result_models import RunOutput
 
 
 def write_outputs(

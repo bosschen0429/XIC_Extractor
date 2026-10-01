@@ -12,7 +12,7 @@ from xic_extractor.alignment.primary_matrix_area import (
     MISSING_MS1_MORPHOLOGY_AREA,
     primary_matrix_area_from_integration,
 )
-from xic_extractor.extractor import ExtractionResult
+from xic_extractor.extraction.result_models import ExtractionResult
 from xic_extractor.output.schema import LONG_COLUMNS
 from xic_extractor.peak_detection.hypotheses import (
     AuditTrail,

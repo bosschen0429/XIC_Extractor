@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
-from xic_extractor.applications.targeted.product_projection import (
-    project_targeted_result,
-)
 from xic_extractor.configuration.models import Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
+from xic_extractor.extraction.targeted_product_projection import (
+    project_targeted_result,
+)
 from xic_extractor.peak_detection.hypotheses import (
     PeakHypothesis,
     validate_peak_hypothesis_selection_authority,
@@ -25,7 +25,7 @@ from xic_extractor.peak_detection.selection_decision import (
 from xic_extractor.peak_detection.traces import Trace
 
 if TYPE_CHECKING:
-    from xic_extractor.extractor import ExtractionResult
+    from xic_extractor.extraction.result_models import ExtractionResult
 
 
 def build_extraction_result(
@@ -48,7 +48,7 @@ def build_extraction_result(
             selected_hypothesis,
             consumer="build_extraction_result",
         )
-    from xic_extractor import extractor
+    from xic_extractor.extraction import result_models
 
     resolved_selection_decision = _result_selection_decision(
         peak_result,
@@ -63,7 +63,7 @@ def build_extraction_result(
             str(flag) for flag in getattr(candidate, "quality_flags", ())
         )
 
-    result = extractor.ExtractionResult(
+    result = result_models.ExtractionResult(
         peak_result=peak_result,
         nl=nl_result,
         candidate_ms2_evidence=candidate_ms2_evidence,

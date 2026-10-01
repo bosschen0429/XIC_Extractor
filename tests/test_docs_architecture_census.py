@@ -1038,6 +1038,7 @@ def test_import_linter_config_owns_the_static_dependency_contracts() -> None:
         "importlinter:contract:configuration-stays-inner",
         "importlinter:contract:output-does-not-read-raw",
         "importlinter:contract:inner-layers-do-not-import-diagnostics",
+        "importlinter:contract:inner-layers-do-not-import-applications",
     }
     assert all(
         config[section]["type"] == "forbidden"

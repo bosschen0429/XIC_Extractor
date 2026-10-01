@@ -10,7 +10,7 @@ from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.raw_reader import open_raw
 
 if TYPE_CHECKING:
-    from xic_extractor.extractor import ExtractionResult
+    from xic_extractor.extraction.result_models import ExtractionResult
 
 
 def extract_istd_anchors_only(

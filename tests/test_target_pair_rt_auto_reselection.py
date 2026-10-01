@@ -4,11 +4,11 @@ from types import SimpleNamespace
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extraction.output_dispatch import write_outputs
+from xic_extractor.extraction.result_models import FileResult, RunOutput
 from xic_extractor.extraction.target_pair_rt_auto_reselection import (
     build_target_pair_rt_auto_reselection_rows,
     summarize_target_pair_rt_auto_reselection_rows,
 )
-from xic_extractor.extractor import FileResult, RunOutput
 from xic_extractor.output.target_pair_rt_auto_reselection import (
     TARGET_PAIR_RT_AUTO_RESELECTION_HEADERS,
     write_target_pair_rt_auto_reselection_tsv,

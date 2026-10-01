@@ -15,7 +15,7 @@ from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.rt_prior_library import LibraryEntry
 
 if TYPE_CHECKING:
-    from xic_extractor.extractor import FileResult, RunOutput
+    from xic_extractor.extraction.result_models import FileResult, RunOutput
 
 
 def run_serial(
@@ -31,7 +31,7 @@ def run_serial(
     acquisition_sources_by_sample: Mapping[str, AcquisitionSourceExpectation]
     | None = None,
 ) -> RunOutput:
-    from xic_extractor import extractor
+    from xic_extractor.extraction import result_models
 
     istd_targets = [target for target in targets if target.is_istd]
     istd_rts_by_sample: dict[str, dict[str, float]] = {}
@@ -93,7 +93,7 @@ def run_serial(
         if index % 50 == 0:
             gc.collect()
 
-    return extractor.RunOutput(file_results=file_results, diagnostics=diagnostics)
+    return result_models.RunOutput(file_results=file_results, diagnostics=diagnostics)
 
 
 def _expected_source(

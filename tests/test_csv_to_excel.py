@@ -19,7 +19,7 @@ from scripts.csv_to_excel import (
 )
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import NLResult
-from xic_extractor.extractor import ExtractionResult
+from xic_extractor.extraction.result_models import ExtractionResult
 from xic_extractor.output.detection import MissingTargetedProductProjectionError
 from xic_extractor.output.messages import build_diagnostic_records
 from xic_extractor.output.schema import (

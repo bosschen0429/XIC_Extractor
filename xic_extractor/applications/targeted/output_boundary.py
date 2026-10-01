@@ -23,7 +23,11 @@ from xic_extractor.applications.targeted.production_workflow import (
     acquisition_snapshot_for_publication,
 )
 from xic_extractor.extraction.output_dispatch import write_outputs
-from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
+from xic_extractor.extraction.result_models import (
+    ExtractionResult,
+    FileResult,
+    RunOutput,
+)
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 from xic_extractor.output.method_manifest import (
     MethodManifestContext,

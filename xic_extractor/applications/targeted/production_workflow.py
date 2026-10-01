@@ -61,6 +61,11 @@ from xic_extractor.execution.attempt import (
     runtime_started_worker_keys,
     start_runtime_attempt,
 )
+from xic_extractor.extraction.result_models import (
+    ExtractionResult,
+    FileResult,
+    RunOutput,
+)
 from xic_extractor.extraction.targeted_inputs import (
     ResolvedTargetedInputs,
     bind_targeted_physical_capture_request,
@@ -68,7 +73,6 @@ from xic_extractor.extraction.targeted_inputs import (
     resolve_targeted_inputs,
     resolve_targeted_raw_paths,
 )
-from xic_extractor.extractor import ExtractionResult, FileResult, RunOutput
 from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.peak_detection.capture import (
     SampleLocalCapture,

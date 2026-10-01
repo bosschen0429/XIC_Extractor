@@ -22,6 +22,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from xic_extractor import extractor
 from xic_extractor.configuration.loader import load_config
 from xic_extractor.configuration.models import ConfigError, Target
+from xic_extractor.extraction.result_models import RunOutput
 from xic_extractor.raw_reader import RawReaderError
 from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,
@@ -301,7 +302,7 @@ def _write_settings_csv(path: Path, settings: dict[str, str]) -> None:
 
 
 def _collect_program_rows(
-    run_output: extractor.RunOutput,
+    run_output: RunOutput,
     targets: list[Target],
 ) -> list[ProgramPeakRow]:
     rows: list[ProgramPeakRow] = []
