@@ -4,11 +4,11 @@ from types import SimpleNamespace
 from xic_extractor.peak_detection.candidate_selection import (
     select_candidate_with_confidence,
 )
+from xic_extractor.peak_detection.peak_scoring_evidence import EvidenceScore
 from xic_extractor.peak_detection.scoring_models import (
     Confidence,
     ScoredCandidate,
 )
-from xic_extractor.peak_scoring_evidence import EvidenceScore
 
 
 @dataclass

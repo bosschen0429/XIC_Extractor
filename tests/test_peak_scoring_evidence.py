@@ -1,6 +1,6 @@
 import pytest
 
-from xic_extractor.peak_scoring_evidence import (
+from xic_extractor.peak_detection.peak_scoring_evidence import (
     ConfidenceCap,
     EvidenceSignal,
     apply_confidence_caps,

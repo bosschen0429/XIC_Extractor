@@ -19,8 +19,8 @@ from xic_extractor.peak_detection.evidence_facts import (
     build_candidate_evidence_facts,
 )
 from xic_extractor.peak_detection.models import PeakCandidate, PeakResult
+from xic_extractor.peak_detection.peak_scoring_evidence import EvidenceScore
 from xic_extractor.peak_detection.scoring_models import ScoredCandidate, ScoringContext
-from xic_extractor.peak_scoring_evidence import EvidenceScore
 
 
 def test_typed_selector_ignores_adversarial_legacy_raw_score_and_labels() -> None:

@@ -101,7 +101,7 @@ approved product changes.
 ## Operator commands
 
 Use `python -m scripts.<name>`. The implementation owner is
-`xic_extractor.review_actions`.
+`xic_extractor.review_actions.workflows`.
 
 | Need | Command | Result and limit |
 | --- | --- | --- |

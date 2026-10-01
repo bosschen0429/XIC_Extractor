@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
-from xic_extractor.artifact_paths import require_disjoint_artifact_paths
+from xic_extractor.discovery.artifact_paths import require_disjoint_artifact_paths
 from xic_extractor.discovery.pt_pattern_review_bundle import (
     VerifiedReviewPacketCollection,
     load_verified_blind_overlay_bundle,

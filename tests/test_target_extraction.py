@@ -12,6 +12,7 @@ from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.extraction.istd_prepass import extract_istd_anchors_only
 from xic_extractor.extraction.ms2_selection import selected_candidate_ms2_evidence
 from xic_extractor.extraction.result_models import ExtractionResult
+from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.extraction.rt_windows import get_rt_window
 from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
@@ -45,7 +46,6 @@ from xic_extractor.peak_detection.physical_peak_models import (
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
 )
-from xic_extractor.rt_prior_library import LibraryEntry
 
 _OPEN_RAW_SEAM = "xic_extractor.extraction.target_extraction.open_raw"
 

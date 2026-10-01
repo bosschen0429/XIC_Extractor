@@ -6,12 +6,14 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from xic_extractor.review_actions import (
-    ReviewActionError,
-    load_review_action_expected_diff_approvals,
-    load_review_actions,
+from xic_extractor.review_actions.models import ReviewActionError
+from xic_extractor.review_actions.rows import (
     summarize_review_action_expected_diff_approvals,
     summarize_review_actions,
+)
+from xic_extractor.review_actions.workflows import (
+    load_review_action_expected_diff_approvals,
+    load_review_actions,
 )
 
 

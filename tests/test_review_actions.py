@@ -10,7 +10,24 @@ from scripts import (
     plan_review_action_candidate_sidecars,
     validate_review_actions,
 )
-from xic_extractor.review_actions import (
+from xic_extractor.review_actions.models import (
+    ReviewAction,
+    ReviewActionError,
+    ReviewActionTargetState,
+)
+from xic_extractor.review_actions.rows import (
+    review_action_application_to_row,
+    review_action_apply_changeset_to_row,
+    review_action_apply_readiness_to_row,
+    review_action_candidate_sidecar_to_row,
+    review_action_expected_diff_template_to_row,
+    summarize_review_action_applications,
+    summarize_review_action_apply_changeset_plan,
+    summarize_review_action_apply_readiness_plan,
+    summarize_review_action_candidate_sidecars,
+    summarize_review_actions,
+)
+from xic_extractor.review_actions.schema import (
     REVIEW_ACTION_APPLICATION_PLAN_SCHEMA_VERSION,
     REVIEW_ACTION_APPLY_AUDIT_SCHEMA_VERSION,
     REVIEW_ACTION_APPLY_CHANGESET_SCHEMA_VERSION,
@@ -20,36 +37,25 @@ from xic_extractor.review_actions import (
     REVIEW_ACTION_EXPECTED_DIFF_COLUMNS,
     REVIEW_ACTION_EXPECTED_DIFF_SCHEMA_VERSION,
     REVIEW_ACTION_SCHEMA_VERSION,
-    ReviewAction,
-    ReviewActionError,
-    ReviewActionTargetState,
+)
+from xic_extractor.review_actions.workflows import (
     apply_review_action_changeset_rows,
     load_review_action_expected_diff_approvals,
     load_review_actions,
     parse_review_actions,
     plan_review_action_expected_diff_templates,
-    review_action_application_to_row,
-    review_action_apply_changeset_to_row,
-    review_action_apply_readiness_to_row,
-    review_action_candidate_sidecar_to_row,
     review_action_expected_diff_stable_row_id,
-    review_action_expected_diff_template_to_row,
-    summarize_review_action_applications,
-    summarize_review_action_apply_changeset_plan,
-    summarize_review_action_apply_readiness_plan,
-    summarize_review_action_candidate_sidecars,
-    summarize_review_actions,
 )
-from xic_extractor.review_actions import (
+from xic_extractor.review_actions.workflows import (
     plan_review_action_applications as build_review_action_application_plan,
 )
-from xic_extractor.review_actions import (
+from xic_extractor.review_actions.workflows import (
     plan_review_action_apply_changesets as build_review_action_apply_changesets,
 )
-from xic_extractor.review_actions import (
+from xic_extractor.review_actions.workflows import (
     plan_review_action_apply_readiness as build_review_action_apply_readiness,
 )
-from xic_extractor.review_actions import (
+from xic_extractor.review_actions.workflows import (
     plan_review_action_candidate_sidecars as build_review_action_candidate_sidecars,
 )
 

@@ -13,6 +13,9 @@ from xic_extractor.extraction.paired_area_ratio_projection import (
     PAIRED_AREA_RATIO_ROBUST_BASIS,
     assess_paired_area_ratio_values,
 )
+from xic_extractor.extraction.target_sample_applicability import (
+    target_sample_exclusion_reasons,
+)
 from xic_extractor.output.target_pair_rt_auto_reselection import (
     write_target_pair_rt_auto_reselection_summary_tsv,
     write_target_pair_rt_auto_reselection_tsv,
@@ -22,7 +25,6 @@ from xic_extractor.target_pair_rt_calibration import (
     TargetPairRTCalibrationRow,
     load_target_pair_rt_calibration,
 )
-from xic_extractor.target_sample_applicability import target_sample_exclusion_reasons
 
 _PRODUCT_CALIBRATION_LEVELS = frozenset({"biological_transfer", "row_approved"})
 _PRODUCT_TRANSFER_STATUSES = frozenset({"validated", "row_approved"})

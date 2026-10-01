@@ -8,6 +8,11 @@ from xic_extractor.peak_detection.evidence_facts import (
     projected_confidence_from_candidate_facts,
     projected_reason_from_candidate_facts,
 )
+from xic_extractor.peak_detection.peak_scoring_evidence import (
+    ConfidenceCap,
+    EvidenceSignal,
+    score_evidence,
+)
 from xic_extractor.peak_detection.scoring_cwt_support import (
     CWT_SAME_APEX_SUPPORT_POINTS,
     has_same_apex_cwt_support,
@@ -40,11 +45,6 @@ from xic_extractor.peak_detection.scoring_quality import (
     has_adap_like_quality_flags,
     trace_quality_cap_required,
     trace_quality_severities,
-)
-from xic_extractor.peak_scoring_evidence import (
-    ConfidenceCap,
-    EvidenceSignal,
-    score_evidence,
 )
 
 

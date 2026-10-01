@@ -7,10 +7,12 @@ from typing import TYPE_CHECKING
 
 from xic_extractor.configuration.models import Target
 from xic_extractor.extraction.result_assembly import reproject_extraction_result
+from xic_extractor.extraction.target_sample_applicability import (
+    target_sample_exclusion_reasons,
+)
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
 )
-from xic_extractor.target_sample_applicability import target_sample_exclusion_reasons
 
 if TYPE_CHECKING:
     from xic_extractor.extraction.result_models import ExtractionResult, RunOutput

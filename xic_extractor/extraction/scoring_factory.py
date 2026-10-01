@@ -5,6 +5,7 @@ import numpy as np
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
+from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.injection_rolling import rolling_median_rt
 from xic_extractor.peak_detection import ms1_morphology
 from xic_extractor.peak_detection.models import PeakCandidate, PeakDetectionResult
@@ -18,7 +19,6 @@ from xic_extractor.peak_detection.physical_peak_models import PreparedSignalResu
 from xic_extractor.peak_detection.scoring_metrics import compute_local_sn_cache
 from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.peak_detection.scoring_quality import hard_quality_flags
-from xic_extractor.rt_prior_library import LibraryEntry
 
 
 def build_scoring_context_factory(

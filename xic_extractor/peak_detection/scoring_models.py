@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from xic_extractor.ms2_trace_evidence import MS2TraceStrength
-from xic_extractor.peak_scoring_evidence import EvidenceScore
+from xic_extractor.peak_detection.peak_scoring_evidence import EvidenceScore
 
 if TYPE_CHECKING:
     from xic_extractor.peak_detection.evidence_facts import CandidateEvidenceFacts

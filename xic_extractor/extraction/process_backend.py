@@ -5,10 +5,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
+from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecords
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
-from xic_extractor.rt_prior_library import LibraryEntry
 
 if TYPE_CHECKING:
     from xic_extractor.extraction.jobs import ScoringInputs

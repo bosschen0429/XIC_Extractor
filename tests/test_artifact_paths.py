@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from xic_extractor.artifact_paths import require_disjoint_artifact_paths
+from xic_extractor.discovery.artifact_paths import require_disjoint_artifact_paths
 
 
 def test_artifact_paths_reject_exact_input_output_collision(

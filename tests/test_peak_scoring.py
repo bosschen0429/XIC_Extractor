@@ -12,15 +12,15 @@ from xic_extractor.peak_detection.candidate_selection import (
 from xic_extractor.peak_detection.engine_scoring import score_with_context
 from xic_extractor.peak_detection.hypotheses import EvidenceVector
 from xic_extractor.peak_detection.models import PeakCandidate, PeakResult
+from xic_extractor.peak_detection.peak_scoring_evidence import (
+    EvidenceSignal,
+    score_evidence,
+)
 from xic_extractor.peak_detection.scoring_models import (
     Confidence,
     ScoredCandidate,
     ScoringContext,
     confidence_from_total,
-)
-from xic_extractor.peak_scoring_evidence import (
-    EvidenceSignal,
-    score_evidence,
 )
 
 

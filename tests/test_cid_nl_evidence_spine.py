@@ -53,7 +53,7 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportContractError,
 )
 from xic_extractor.processing_identity import compose_processing_owner_references
-from xic_extractor.review_actions_models import ReviewAction
+from xic_extractor.review_actions.models import ReviewAction
 from xic_extractor.review_records import (
     mint_review_record_reference,
     mint_review_record_registry_snapshot,

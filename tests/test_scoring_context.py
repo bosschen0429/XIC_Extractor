@@ -12,6 +12,7 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
+from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
 from xic_extractor.ms2_trace_evidence import MS2TraceEvidence
 from xic_extractor.peak_detection.candidate_scoring import score_candidate
@@ -27,7 +28,6 @@ from xic_extractor.peak_detection.ms1_morphology import (
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
-from xic_extractor.rt_prior_library import LibraryEntry
 
 
 def test_istd_context_uses_rolling_median_prior() -> None:

@@ -7,7 +7,7 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from xic_extractor.artifact_paths import require_disjoint_artifact_paths
+from xic_extractor.discovery.artifact_paths import require_disjoint_artifact_paths
 from xic_extractor.discovery.pt_pattern_blind_overlay_call import (
     validate_packet_rows,
 )
