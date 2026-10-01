@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import replace
 from time import perf_counter
 from typing import TypeAlias
 
@@ -29,7 +28,6 @@ from xic_extractor.alignment.backfill_scope import (
     any_detected_owner_can_be_superseded,
     backfill_seed_centers,
 )
-from xic_extractor.alignment.cell_region_audit import with_region_audit
 from xic_extractor.alignment.matrix import AlignedCell
 from xic_extractor.alignment.matrix_handoff import integration_from_peak
 from xic_extractor.alignment.owner_area import median_owner_area, positive_finite
@@ -52,11 +50,7 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
-    PhysicalPeakEvaluation,
     PreparedSignalResult,
-)
-from xic_extractor.peak_detection.region_audit import (
-    PeakRegionAuditSummary,
 )
 from xic_extractor.xic_models import XICRequest, XICTrace
 
@@ -87,7 +81,6 @@ def _backfill_feature_sample_trace(
     selection_subject_id: str,
     prepared_signal_cache: _ChunkPreparedSignalCache,
     require_sealed_facts: bool = False,
-    emit_region_audit: bool = False,
 ) -> _BackfillTraceEvaluation:
     if signal_processing_profile is None:
         return _backfill_feature_sample_trace_legacy_audit(
@@ -107,7 +100,6 @@ def _backfill_feature_sample_trace(
         preferred_rt=preferred_rt,
         peak_config=peak_config,
         maximum_query_delta_min=maximum_query_delta_min,
-        emit_region_audit=emit_region_audit,
         signal_processing_profile=signal_processing_profile,
         selection_subject_id=selection_subject_id,
         prepared_signal_cache=prepared_signal_cache,
@@ -262,7 +254,6 @@ def _backfill_feature_sample_trace_canonical(
     preferred_rt: float | None,
     peak_config: ExtractionConfig,
     maximum_query_delta_min: float,
-    emit_region_audit: bool,
     signal_processing_profile: SignalProcessingProfile,
     selection_subject_id: str,
     prepared_signal_cache: _ChunkPreparedSignalCache,
@@ -338,11 +329,6 @@ def _backfill_feature_sample_trace_canonical(
     integration = physical_evaluation.integration
     if integration is None:
         raise ValueError("available physical evaluation lacks raw descriptor")
-    if emit_region_audit:
-        physical_evaluation = replace(
-            physical_evaluation,
-            operations=(*physical_evaluation.operations, "region_audit_projection"),
-        )
     peak_fact_receipt = BackfillPeakFactReceipt(
         integration=integration,
         physical_evaluation=physical_evaluation,
@@ -395,11 +381,6 @@ def _backfill_feature_sample_trace_canonical(
             missing_observation_state="queried_and_detected",
         ),
     )
-    if emit_region_audit:
-        cell = with_region_audit(
-            cell,
-            _canonical_region_audit(physical_evaluation, signal_processing_profile),
-        )
     return _BackfillTraceEvaluation(
         cell=cell,
         peak_facts=peak_fact_receipt,
@@ -407,38 +388,6 @@ def _backfill_feature_sample_trace_canonical(
         physical_evaluation=physical_evaluation,
         trace_rt_start_min=(float(trace.rt[0]) if len(trace.rt) else None),
         trace_rt_end_min=(float(trace.rt[-1]) if len(trace.rt) else None),
-    )
-
-
-def _canonical_region_audit(
-    evaluation: PhysicalPeakEvaluation,
-    profile: SignalProcessingProfile,
-) -> PeakRegionAuditSummary:
-    facts = evaluation.facts
-    if facts is None:
-        return PeakRegionAuditSummary(
-            candidate_count=len(evaluation.segment_universe.segments),
-            shadow_status="evaluated",
-            shadow_verdict=evaluation.reason,
-            review_reason="canonical physical owner returned no selected segment",
-            baseline_method=profile.baseline_method,
-        )
-    return PeakRegionAuditSummary(
-        candidate_count=len(evaluation.segment_universe.segments),
-        selected_proposal_sources=("canonical_physical_segment",),
-        selected_merge_note="canonical owner; no audit merge",
-        shadow_status="evaluated",
-        shadow_verdict="canonical_selected_segment",
-        merge_suggestion_source="canonical_physical_owner",
-        selected_interval_count=1,
-        local_mixture_diagnostic="canonical_closed_segment",
-        local_mixture_reason="audit projects the selected canonical segment",
-        review_reason="diagnostic projection; no selection authority",
-        decision_status="review_only",
-        decision_class="canonical_owner_projection",
-        product_action="no_change",
-        promotion_reason="selected value remains owned by canonical physical facts",
-        baseline_method=profile.baseline_method,
     )
 
 
@@ -503,18 +452,6 @@ def _detected_owner_can_be_superseded(
     if family_area is None:
         return False
     return detected_area <= family_area * 0.25
-
-
-def _emit_region_audit_for_family(
-    emit_region_audit: bool,
-    family_id: str,
-    region_audit_family_ids: frozenset[str] | None,
-) -> bool:
-    if not emit_region_audit:
-        return False
-    if region_audit_family_ids is None:
-        return True
-    return family_id in region_audit_family_ids
 
 
 def _keep_best_backfill_outcome_cell(

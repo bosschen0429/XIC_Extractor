@@ -260,54 +260,6 @@ def test_run_alignment_rejects_retired_linear_edge_baseline_env(
     )
 
 
-def test_run_alignment_env_enables_asls_baseline_audit(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
-    raw_dir = tmp_path / "raws"
-    raw_dir.mkdir()
-    dll_dir = tmp_path / "dll"
-    dll_dir.mkdir()
-    output_dir = tmp_path / "alignment"
-    captured = {}
-    execution_root = tmp_path / "runtime"
-    (execution_root / "config").mkdir(parents=True)
-    (execution_root / "config" / "settings.csv").write_text(
-        "key,value\nparallel_workers,7\n", encoding="utf-8"
-    )
-    from xic_extractor.configuration import execution_profile as execution_settings
-
-    monkeypatch.setattr(execution_settings, "_runtime_root", lambda: execution_root)
-
-    def fake_run_alignment(**kwargs):
-        captured.update(kwargs)
-        return AlignmentRunOutputs()
-
-    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
-    monkeypatch.setenv("BASELINE_AUDIT_METHOD", "asls")
-
-    code = run_alignment.main(
-        [
-            "--preset",
-            "dna_dr",
-            "--discovery-batch-index",
-            str(batch_index),
-            "--raw-dir",
-            str(raw_dir),
-            "--dll-dir",
-            str(dll_dir),
-            "--output-dir",
-            str(output_dir),
-        ]
-    )
-
-    assert code == 0
-    assert captured["peak_config"].baseline_audit_method == "asls"
-    assert captured["raw_workers"] == 4
-
-
 @pytest.mark.parametrize("raw_workers", [1, 2])
 def test_run_alignment_cli_accepts_output_level_debug(
     monkeypatch: pytest.MonkeyPatch,

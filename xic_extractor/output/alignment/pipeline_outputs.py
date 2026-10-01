@@ -249,7 +249,6 @@ def alignment_metadata(
         ),
         "output_level": output_level,
         "resolver_mode": peak_config.resolver_mode,
-        "baseline_audit_method": peak_config.baseline_audit_method,
         "baseline_integration_method": peak_config.baseline_integration_method,
         "backfill_scope": backfill_scope,
         "output_scope": output_scope,

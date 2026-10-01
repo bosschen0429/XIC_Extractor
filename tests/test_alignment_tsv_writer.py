@@ -16,7 +16,6 @@ from xic_extractor.alignment.production_decisions import (
 )
 from xic_extractor.output.alignment.tsv_writer import ALIGNMENT_CELLS_COLUMNS
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
-from xic_extractor.peak_detection.integration_audit import CellIntegrationAuditSummary
 
 REVIEW_COLUMNS = [
     "feature_family_id",
@@ -1629,7 +1628,6 @@ def test_debug_tsvs_write_cells_and_status_matrix(tmp_path: Path):
                 "detected",
                 area=10.0,
                 candidate_id="sample-a#1",
-                region=True,
             ),
             _cell("sample-b", "unchecked"),
         ),
@@ -1690,7 +1688,6 @@ def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
                 cluster_id="ALN000001",
                 area=10.0,
                 candidate_id="sample-a#1",
-                region=True,
             ),
             _cell("sample-b", "backfilled", cluster_id="ALN000001", area=8.0),
             _cell("sample-c", "unchecked", cluster_id="ALN000001"),
@@ -1700,7 +1697,6 @@ def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
                 cluster_id="ALN000002",
                 area=20.0,
                 candidate_id="sample-a#2",
-                region=True,
             ),
         ),
         sample_order=("sample-a", "sample-b", "sample-c"),
@@ -2027,8 +2023,6 @@ def _cell(
     candidate_id: str | None = None,
     apex_rt: float = 8.49,
     trace_quality: str | None = None,
-    region: bool = False,
-    integration: bool = False,
     backfill_seed: bool = False,
     selected_integration: IntegrationResult | None = None,
 ) -> AlignedCell:
@@ -2060,45 +2054,6 @@ def _cell(
         scan_support_score=0.8 if area is not None else None,
         source_candidate_id=candidate_id,
         reason="cell reason",
-        region_candidate_count=2 if region else None,
-        region_selected_proposal_sources=(
-            ("local_minimum", "centwave_cwt") if region else ()
-        ),
-        region_shadow_status="evaluated" if region else "",
-        region_shadow_verdict="merge_suggested" if region else "",
-        region_merge_suggestion_source=(
-            "adjacent_wis_local_minimum_merge" if region else ""
-        ),
-        region_area_ratio=1.04 if region else None,
-        region_selected_interval_count=2 if region else None,
-        region_selected_interval_gap_max_min=0.04 if region else None,
-        region_local_mixture_diagnostic=("one_envelope_supported" if region else ""),
-        region_local_mixture_reason=(
-            "adjacent intervals support one envelope" if region else ""
-        ),
-        region_review_reason="same envelope" if region else "",
-        region_decision_status="evaluated" if region else "",
-        region_decision_class="merge_suggested" if region else "",
-        region_product_action="no_change" if region else "",
-        region_promotion_reason=("adjacent_wis_local_minimum_merge" if region else ""),
-        region_baseline_method="asls" if region else "",
-        integration_audit=(
-            CellIntegrationAuditSummary(
-                raw_area=area,
-                area_baseline_corrected=8.0,
-                area_uncertainty=2.0,
-                area_uncertainty_formula_version="baseline_residual_mad",
-                baseline_residual_mad=0.5,
-                area_uncertainty_noise_source="asls_residual",
-                baseline_type="asls",
-                baseline_score=0.8,
-                uncertainty_fraction=0.2,
-                baseline_fraction=0.8,
-                integration_scan_count=5,
-            )
-            if integration
-            else None
-        ),
         selected_integration=selected_integration,
         backfill_seed_mz=500.222 if backfill_seed else None,
         backfill_seed_rt=8.55 if backfill_seed else None,

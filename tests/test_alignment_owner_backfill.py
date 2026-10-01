@@ -46,7 +46,6 @@ def test_owner_backfill_backfills_missing_sample_from_feature_center() -> None:
         raw_sources={"sample-b": source},
         alignment_config=AlignmentConfig(max_rt_sec=60.0),
         peak_config=replace(_peak_config(), resolver_min_scans=10),
-        emit_region_audit=True,
     )
 
     assert len(cells) == 1
@@ -72,9 +71,6 @@ def test_owner_backfill_backfills_missing_sample_from_feature_center() -> None:
     assert cell.gap_fill_reason == "group_centered_query_detected"
     assert cell.missing_observation_state == "queried_and_detected"
     assert cell.scan_support_score == 0.9
-    assert cell.region_candidate_count is None
-    assert cell.region_shadow_status == ""
-    assert cell.region_local_mixture_diagnostic == ""
     assert source.calls == [(500.0, 7.5, 9.5, 20.0)]
 
 
@@ -369,18 +365,8 @@ def test_owner_backfill_accepts_delivery_contract_feature_without_legacy_dto() -
     assert source.calls == [(500.0, 7.5, 9.5, 20.0)]
 
 
-def test_owner_backfill_region_audit_is_opt_in(monkeypatch) -> None:
+def test_owner_backfill_retains_selected_values_without_audit_evidence() -> None:
     source = _dense_peak_source(center=8.50, height=120.0)
-
-    def fail_region_audit(*args, **kwargs):
-        raise AssertionError("region audit should be debug/validation opt-in")
-
-    monkeypatch.setattr(
-        owner_backfill_evaluation_module,
-        "_canonical_region_audit",
-        fail_region_audit,
-    )
-
     cells = _backfill_cells(
         (_feature(),),
         sample_order=("sample-a", "sample-b"),
@@ -388,67 +374,14 @@ def test_owner_backfill_region_audit_is_opt_in(monkeypatch) -> None:
         signal_processing_profile=_TEST_SIGNAL_PROCESSING_PROFILE,
         alignment_config=AlignmentConfig(max_rt_sec=60.0),
         peak_config=_peak_config(),
-    )
-
-    assert len(cells) == 1
-    assert cells[0].region_candidate_count is None
-    assert cells[0].region_shadow_status == ""
-
-
-def test_owner_backfill_audit_mode_none_skips_all_heavy_audit(monkeypatch) -> None:
-    source = _dense_peak_source(center=8.50, height=120.0)
-    calls = {"region": 0}
-
-    def fail_region_audit(*args, **kwargs):
-        calls["region"] += 1
-        raise AssertionError("heavy audit must not run when audit_evidence_mode=none")
-
-    monkeypatch.setattr(
-        owner_backfill_evaluation_module,
-        "_canonical_region_audit",
-        fail_region_audit,
-    )
-
-    cells = _backfill_cells(
-        (_feature(),),
-        sample_order=("sample-a", "sample-b"),
-        raw_sources={"sample-b": source},
-        signal_processing_profile=_TEST_SIGNAL_PROCESSING_PROFILE,
-        alignment_config=AlignmentConfig(max_rt_sec=60.0),
-        peak_config=replace(_peak_config(), baseline_audit_method="asls"),
-        emit_region_audit=True,
         audit_evidence_mode="none",
     )
 
     assert len(cells) == 1
-    assert calls["region"] == 0
-    assert cells[0].region_candidate_count is None
     assert cells[0].selected_integration is not None
     assert cells[0].selected_integration.baseline_type == "asls_rt"
     assert cells[0].selected_integration.area_ms1_morphology is not None
     assert cells[0].matrix_area == cells[0].selected_integration.area_ms1_morphology
-
-
-def test_owner_backfill_region_audit_honors_family_allowlist(monkeypatch) -> None:
-    source = _dense_peak_source(center=8.50, height=120.0)
-    cells = _backfill_cells(
-        (
-            _feature(feature_family_id="FAM000001", mz=500.0),
-            _feature(feature_family_id="FAM000002", mz=501.0),
-        ),
-        sample_order=("sample-a", "sample-b"),
-        raw_sources={"sample-b": source},
-        signal_processing_profile=_TEST_SIGNAL_PROCESSING_PROFILE,
-        alignment_config=AlignmentConfig(max_rt_sec=60.0),
-        peak_config=_peak_config(),
-        emit_region_audit=True,
-        region_audit_family_ids=frozenset({"FAM000002"}),
-    )
-
-    by_family = {cell.cluster_id: cell for cell in cells}
-    assert by_family["FAM000001"].region_candidate_count is None
-    assert by_family["FAM000002"].region_candidate_count is not None
-    assert by_family["FAM000002"].region_shadow_status == "evaluated"
 
 
 def test_owner_backfill_skips_review_only_identity_conflicts() -> None:

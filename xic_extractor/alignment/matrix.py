@@ -7,7 +7,6 @@ from xic_extractor.alignment.models import AlignmentCluster
 from xic_extractor.alignment.primary_matrix_area import (
     primary_matrix_area_from_integration,
 )
-from xic_extractor.peak_detection.integration_audit import CellIntegrationAuditSummary
 
 if TYPE_CHECKING:
     from xic_extractor.peak_detection.hypotheses import IntegrationResult
@@ -47,24 +46,6 @@ class AlignedCell:
     scan_support_score: float | None
     source_candidate_id: str | None
     reason: str
-    region_candidate_count: int | None = None
-    region_selected_proposal_sources: tuple[str, ...] = ()
-    region_selected_merge_note: str = ""
-    region_shadow_status: str = ""
-    region_shadow_verdict: str = ""
-    region_merge_suggestion_source: str = ""
-    region_area_ratio: float | None = None
-    region_selected_interval_count: int | None = None
-    region_selected_interval_gap_max_min: float | None = None
-    region_local_mixture_diagnostic: str = ""
-    region_local_mixture_reason: str = ""
-    region_review_reason: str = ""
-    region_decision_status: str = ""
-    region_decision_class: str = ""
-    region_product_action: str = ""
-    region_promotion_reason: str = ""
-    region_baseline_method: str = ""
-    integration_audit: CellIntegrationAuditSummary | None = None
     selected_integration: IntegrationResult | None = None
     backfill_seed_mz: float | None = None
     backfill_seed_rt: float | None = None

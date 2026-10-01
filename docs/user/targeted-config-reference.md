@@ -58,7 +58,6 @@ reference and ISTD evidence select a component without recomputing its area.
 | `keep_intermediate_csv` | bool | `false` | Retain intermediate CSV files |
 | `emit_score_breakdown` | bool | `false` | Add Score Breakdown sheet to workbook |
 | `emit_review_report` | bool | `false` | Generate Review Report HTML |
-| `baseline_audit_method` | enum | *(empty)* | Shadow baseline method: empty or `asls` |
 
 ### Parallelization
 

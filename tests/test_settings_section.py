@@ -21,7 +21,6 @@ def _canonical_settings() -> dict[str, str]:
         "targeted_ms1_shape_identity_activation_policy": "limited_5hmdc_5medc",
         "emit_score_breakdown": "false",
         "emit_review_report": "false",
-        "baseline_audit_method": "",
         "keep_intermediate_csv": "false",
         "nl_rt_anchor_search_margin_min": "2.0",
         "nl_rt_anchor_half_window_min": "1.0",
@@ -66,6 +65,7 @@ def test_settings_section_drops_obsolete_peak_keys_on_save(qtbot) -> None:
             "peak_min_prominence_ratio": "0.2",
             "resolver_min_scans": "9",
             "baseline_integration_method": "linear_edge",
+            "baseline_audit_method": "asls",
         }
     )
 
@@ -83,6 +83,7 @@ def test_settings_section_drops_obsolete_peak_keys_on_save(qtbot) -> None:
     assert "peak_min_prominence_ratio" not in values
     assert "resolver_min_scans" not in values
     assert "baseline_integration_method" not in values
+    assert "baseline_audit_method" not in values
 
 
 def test_settings_section_exposes_new_processing_controls(qtbot) -> None:
