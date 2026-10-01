@@ -14,7 +14,6 @@ class AdvancedControls:
     keep_intermediate_csv_checkbox: QCheckBox
     emit_score_breakdown_checkbox: QCheckBox
     emit_review_report_checkbox: QCheckBox
-    emit_peak_candidates_checkbox: QCheckBox
     dirty_matrix_mode_checkbox: QCheckBox
     count_no_ms2_checkbox: QCheckBox
     rolling_window_size_spin: QSpinBox

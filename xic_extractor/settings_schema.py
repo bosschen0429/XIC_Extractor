@@ -44,7 +44,6 @@ CANONICAL_SETTINGS_DEFAULTS: dict[str, str] = {
     "targeted_ms1_shape_identity_activation_policy": LIMITED_HMDC_MEDC_POLICY,
     "emit_score_breakdown": "false",
     "emit_review_report": "false",
-    "emit_peak_candidates": "false",
     "keep_intermediate_csv": "false",
     "baseline_audit_method": "",
     "nl_rt_anchor_search_margin_min": "2.0",
@@ -88,8 +87,8 @@ CANONICAL_SETTINGS_DESCRIPTIONS: dict[str, str] = {
         "developer/debug RT prior library CSV path; leave empty for normal use"
     ),
     "target_pair_rt_calibration_path": (
-        "target pair RT calibration TSV path for shadow auto-reselection "
-        "diagnostics; leave empty to disable"
+        "target pair RT calibration TSV path for RT priors; "
+        "leave empty to disable"
     ),
     "model_selection_expected_diff_approval_registry": (
         "Durable expected-diff approval registry TSV for selected-hypothesis "
@@ -109,7 +108,6 @@ CANONICAL_SETTINGS_DESCRIPTIONS: dict[str, str] = {
     ),
     "emit_score_breakdown": "是否輸出 Score Breakdown sheet（預設關閉）",
     "emit_review_report": "是否輸出 Review Report HTML（預設關閉）",
-    "emit_peak_candidates": "是否輸出 Peak Candidate TSV（除錯/審計用，預設關閉）",
     "keep_intermediate_csv": "是否保留中間 CSV 檔（除錯用，預設關閉）",
     "baseline_audit_method": (
         "Integration audit baseline shadow method; leave empty for default TSV "

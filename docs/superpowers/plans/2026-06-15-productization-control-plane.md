@@ -79,12 +79,6 @@ Lane key: `sample_metadata_role_value_behavior`
 
 Routes: [state](../validation/productization_status_index.tsv), [writer authority](../productization/status/productization_authority_manifest.json), [stable capability](../../product/productization.md).
 
-### candidate-sidecar verifier is now production_candidate
-
-Lane key: `review_action_candidate_sidecar`
-
-Routes: [state](../validation/productization_status_index.tsv), [writer authority](../productization/status/productization_authority_manifest.json), [stable capability](../../product/productization.md).
-
 ### selected candidate / manual boundary writer parked
 
 Lane key: `review_action_selected_candidate_switch`

@@ -8,9 +8,6 @@ REVIEW_ACTION_EXPECTED_DIFF_SCHEMA_VERSION = "review_action_expected_diff"
 REVIEW_ACTION_APPLY_READINESS_SCHEMA_VERSION = "review_action_apply_readiness"
 REVIEW_ACTION_APPLY_CHANGESET_SCHEMA_VERSION = "review_action_apply_changeset"
 REVIEW_ACTION_APPLY_AUDIT_SCHEMA_VERSION = "review_action_apply_audit"
-REVIEW_ACTION_CANDIDATE_SIDECAR_SCHEMA_VERSION = (
-    "review_action_candidate_sidecar"
-)
 REVIEW_ACTION_COLUMNS: tuple[str, ...] = (
     "schema_version",
     "sample_name",
@@ -193,31 +190,6 @@ REVIEW_ACTION_APPLY_AUDIT_COLUMNS: tuple[str, ...] = (
     "expected_diff_stable_row_id",
     "expected_diff_validation_tier",
     "reason",
-    "reviewer",
-    "reviewed_at",
-    "comment",
-)
-PEAK_CANDIDATE_SIDECAR_REQUIRED_COLUMNS: tuple[str, ...] = (
-    "sample_name",
-    "target_label",
-    "candidate_id",
-    "selected",
-)
-REVIEW_ACTION_CANDIDATE_SIDECAR_COLUMNS: tuple[str, ...] = (
-    "schema_version",
-    "sample_name",
-    "target_label",
-    "action_type",
-    "candidate_id",
-    "candidate_sidecar_status",
-    "candidate_sidecar_reason",
-    "candidate_row_sha256",
-    "candidate_selected",
-    "candidate_confidence",
-    "candidate_rt_left_min",
-    "candidate_rt_apex_min",
-    "candidate_rt_right_min",
-    "candidate_area_baseline_corrected",
     "reviewer",
     "reviewed_at",
     "comment",

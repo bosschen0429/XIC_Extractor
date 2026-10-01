@@ -7,7 +7,6 @@ from scripts import (
     apply_review_action_changesets,
     plan_review_action_applications,
     plan_review_action_apply_changesets,
-    plan_review_action_candidate_sidecars,
     validate_review_actions,
 )
 from xic_extractor.review_actions.models import (
@@ -19,12 +18,10 @@ from xic_extractor.review_actions.rows import (
     review_action_application_to_row,
     review_action_apply_changeset_to_row,
     review_action_apply_readiness_to_row,
-    review_action_candidate_sidecar_to_row,
     review_action_expected_diff_template_to_row,
     summarize_review_action_applications,
     summarize_review_action_apply_changeset_plan,
     summarize_review_action_apply_readiness_plan,
-    summarize_review_action_candidate_sidecars,
     summarize_review_actions,
 )
 from xic_extractor.review_actions.schema import (
@@ -32,7 +29,6 @@ from xic_extractor.review_actions.schema import (
     REVIEW_ACTION_APPLY_AUDIT_SCHEMA_VERSION,
     REVIEW_ACTION_APPLY_CHANGESET_SCHEMA_VERSION,
     REVIEW_ACTION_APPLY_READINESS_SCHEMA_VERSION,
-    REVIEW_ACTION_CANDIDATE_SIDECAR_SCHEMA_VERSION,
     REVIEW_ACTION_COLUMNS,
     REVIEW_ACTION_EXPECTED_DIFF_COLUMNS,
     REVIEW_ACTION_EXPECTED_DIFF_SCHEMA_VERSION,
@@ -54,9 +50,6 @@ from xic_extractor.review_actions.workflows import (
 )
 from xic_extractor.review_actions.workflows import (
     plan_review_action_apply_readiness as build_review_action_apply_readiness,
-)
-from xic_extractor.review_actions.workflows import (
-    plan_review_action_candidate_sidecars as build_review_action_candidate_sidecars,
 )
 
 
@@ -849,227 +842,6 @@ def test_plan_review_action_apply_readiness_cli_rejects_unused_approval(
     assert not out_path.exists()
 
 
-def test_review_action_candidate_sidecar_plan_verifies_select_candidate() -> None:
-    actions = parse_review_actions(
-        [
-            _row(
-                sample_name="S1.raw",
-                target_label="5-mdC",
-                action_type="select_candidate",
-                candidate_id="candidate-b",
-                expected_diff_required="TRUE",
-                reviewer="analyst",
-                reviewed_at="2026-06-17T10:00:00",
-                comment="switch to the stronger candidate",
-            )
-        ]
-    )
-
-    checks = build_review_action_candidate_sidecars(
-        actions,
-        [
-            _peak_candidate_row("S1.raw", "5-mdC", "candidate-a", selected="TRUE"),
-            _peak_candidate_row(
-                "S1.raw",
-                "5-mdC",
-                "candidate-b",
-                selected="FALSE",
-                confidence="high",
-                rt_left_min="8.10",
-                rt_apex_min="8.42",
-                rt_right_min="8.80",
-                area_baseline_corrected="12345.6",
-            ),
-        ],
-    )
-    row = review_action_candidate_sidecar_to_row(checks[0])
-
-    assert row["schema_version"] == REVIEW_ACTION_CANDIDATE_SIDECAR_SCHEMA_VERSION
-    assert row["candidate_sidecar_status"] == "candidate_verified"
-    assert row["candidate_sidecar_reason"] == "candidate_id_matched_sidecar"
-    assert row["candidate_row_sha256"]
-    assert row["candidate_selected"] == "FALSE"
-    assert row["candidate_confidence"] == "high"
-    assert row["candidate_rt_apex_min"] == "8.42"
-    assert summarize_review_action_candidate_sidecars(checks) == {
-        "schema_version": REVIEW_ACTION_CANDIDATE_SIDECAR_SCHEMA_VERSION,
-        "row_count": 1,
-        "verified_count": 1,
-        "blocked_count": 0,
-        "noop_current_selection_count": 0,
-        "counts_by_status": {"candidate_verified": 1},
-    }
-
-
-def test_review_action_candidate_sidecar_plan_marks_current_selection_noop() -> None:
-    actions = parse_review_actions(
-        [
-            _row(
-                sample_name="S1.raw",
-                target_label="5-mdC",
-                action_type="select_candidate",
-                candidate_id="candidate-a",
-                expected_diff_required="TRUE",
-            )
-        ]
-    )
-
-    checks = build_review_action_candidate_sidecars(
-        actions,
-        [_peak_candidate_row("S1.raw", "5-mdC", "candidate-a", selected="TRUE")],
-    )
-    row = review_action_candidate_sidecar_to_row(checks[0])
-
-    assert row["candidate_sidecar_status"] == "candidate_current_selection"
-    assert row["candidate_sidecar_reason"] == "candidate_id_already_current_selected"
-    assert row["candidate_selected"] == "TRUE"
-    assert summarize_review_action_candidate_sidecars(checks) == {
-        "schema_version": REVIEW_ACTION_CANDIDATE_SIDECAR_SCHEMA_VERSION,
-        "row_count": 1,
-        "verified_count": 0,
-        "blocked_count": 0,
-        "noop_current_selection_count": 1,
-        "counts_by_status": {"candidate_current_selection": 1},
-    }
-
-
-def test_review_action_candidate_sidecar_plan_fails_closed() -> None:
-    actions = parse_review_actions(
-        [
-            _row(
-                sample_name="S1.raw",
-                target_label="5-mdC",
-                action_type="select_candidate",
-                candidate_id="missing-candidate",
-                expected_diff_required="TRUE",
-            ),
-            _row(
-                sample_name="S2.raw",
-                target_label="5-hmdC",
-                action_type="select_candidate",
-                candidate_id="duplicate-candidate",
-                expected_diff_required="TRUE",
-            ),
-            _row(
-                sample_name="S3.raw",
-                target_label="5-fC",
-                action_type="select_candidate",
-                candidate_id="no-target-rows",
-                expected_diff_required="TRUE",
-            ),
-        ]
-    )
-
-    checks = build_review_action_candidate_sidecars(
-        actions,
-        [
-            _peak_candidate_row("S1.raw", "5-mdC", "other-candidate"),
-            _peak_candidate_row("S2.raw", "5-hmdC", "duplicate-candidate"),
-            _peak_candidate_row("S2.raw", "5-hmdC", "duplicate-candidate"),
-        ],
-    )
-    rows = [review_action_candidate_sidecar_to_row(check) for check in checks]
-
-    assert [row["candidate_sidecar_status"] for row in rows] == [
-        "candidate_missing",
-        "candidate_duplicate",
-        "target_candidate_rows_missing",
-    ]
-    assert summarize_review_action_candidate_sidecars(checks)["blocked_count"] == 3
-
-
-def test_review_action_candidate_sidecar_plan_blocks_duplicate_actions() -> None:
-    actions = parse_review_actions(
-        [
-            _row(
-                sample_name="S1.raw",
-                target_label="5-mdC",
-                action_type="select_candidate",
-                candidate_id="candidate-a",
-                expected_diff_required="TRUE",
-            ),
-            _row(
-                sample_name="S1.raw",
-                target_label="5-mdC",
-                action_type="select_candidate",
-                candidate_id="candidate-b",
-                expected_diff_required="TRUE",
-            ),
-        ]
-    )
-
-    checks = build_review_action_candidate_sidecars(
-        actions,
-        [
-            _peak_candidate_row("S1.raw", "5-mdC", "candidate-a"),
-            _peak_candidate_row("S1.raw", "5-mdC", "candidate-b"),
-        ],
-    )
-    rows = [review_action_candidate_sidecar_to_row(check) for check in checks]
-
-    assert [row["candidate_sidecar_status"] for row in rows] == [
-        "action_duplicate",
-        "action_duplicate",
-    ]
-    assert {row["candidate_sidecar_reason"] for row in rows} == {
-        "multiple_select_candidate_actions_for_target"
-    }
-    assert summarize_review_action_candidate_sidecars(checks) == {
-        "schema_version": REVIEW_ACTION_CANDIDATE_SIDECAR_SCHEMA_VERSION,
-        "row_count": 2,
-        "verified_count": 0,
-        "blocked_count": 2,
-        "noop_current_selection_count": 0,
-        "counts_by_status": {"action_duplicate": 2},
-    }
-
-
-def test_plan_review_action_candidate_sidecars_cli_writes_plan(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    actions_path = tmp_path / "review_actions.tsv"
-    peak_candidates_path = tmp_path / "peak_candidates.tsv"
-    output_path = tmp_path / "review_action_candidate_sidecars.tsv"
-    _write_tsv(
-        actions_path,
-        [
-            _row(
-                sample_name="S1.raw",
-                target_label="5-mdC",
-                action_type="select_candidate",
-                candidate_id="candidate-b",
-                expected_diff_required="TRUE",
-            )
-        ],
-    )
-    _write_peak_candidates_tsv(
-        peak_candidates_path,
-        [_peak_candidate_row("S1.raw", "5-mdC", "candidate-b")],
-    )
-
-    assert (
-        plan_review_action_candidate_sidecars.main(
-            [
-                "--review-actions",
-                str(actions_path),
-                "--peak-candidates-tsv",
-                str(peak_candidates_path),
-                "--output-candidate-sidecar-tsv",
-                str(output_path),
-                "--summary-json",
-            ]
-        )
-        == 0
-    )
-
-    summary = json.loads(capsys.readouterr().out)
-    assert summary["verified_count"] == 1
-    assert REVIEW_ACTION_CANDIDATE_SIDECAR_SCHEMA_VERSION in output_path.read_text(
-        encoding="utf-8"
-    )
-
-
 def test_review_action_apply_changesets_describe_pending_operations(
     tmp_path: Path,
 ) -> None:
@@ -1733,54 +1505,6 @@ def _write_expected_diff_tsv(path: Path, rows: list[dict[str, object]]) -> None:
                 for header in REVIEW_ACTION_EXPECTED_DIFF_COLUMNS
             )
             for row in rows
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-
-def _peak_candidate_row(
-    sample_name: str,
-    target_label: str,
-    candidate_id: str,
-    *,
-    selected: str = "FALSE",
-    confidence: str = "medium",
-    rt_left_min: str = "8.0",
-    rt_apex_min: str = "8.4",
-    rt_right_min: str = "8.8",
-    area_baseline_corrected: str = "1000",
-) -> dict[str, str]:
-    return {
-        "sample_name": sample_name,
-        "target_label": target_label,
-        "candidate_id": candidate_id,
-        "selected": selected,
-        "confidence": confidence,
-        "rt_left_min": rt_left_min,
-        "rt_apex_min": rt_apex_min,
-        "rt_right_min": rt_right_min,
-        "area_baseline_corrected": area_baseline_corrected,
-    }
-
-
-def _write_peak_candidates_tsv(path: Path, rows: list[dict[str, str]]) -> None:
-    headers = (
-        "sample_name",
-        "target_label",
-        "candidate_id",
-        "selected",
-        "confidence",
-        "rt_left_min",
-        "rt_apex_min",
-        "rt_right_min",
-        "area_baseline_corrected",
-    )
-    path.write_text(
-        "\t".join(headers)
-        + "\n"
-        + "\n".join(
-            "\t".join(row.get(header, "") for header in headers) for row in rows
         )
         + "\n",
         encoding="utf-8",

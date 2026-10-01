@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import inspect
 from dataclasses import fields
 from types import SimpleNamespace
 
 import pytest
 
-import xic_extractor.extraction.peak_candidate_boundaries as boundary_rows
 from xic_extractor.alignment.primary_matrix_area import (
     ASLS_PRIMARY_MATRIX_AREA_SOURCE,
     MISSING_MS1_MORPHOLOGY_AREA,
@@ -159,22 +157,15 @@ def test_integration_result_carries_ms1_morphology_fields() -> None:
     assert "boundary_change_class" not in field_names
 
 
-def test_peak_candidate_boundaries_recompute_baseline_for_rendering() -> None:
-    source = inspect.getsource(boundary_rows._row_from_boundary)
-
-    assert "integrate_with_baseline(" in source
-    assert "baseline_score=baseline.baseline_score" in source
-
-
 def _hypothesis(integration: IntegrationResult) -> PeakHypothesis:
     return PeakHypothesis(
         hypothesis_id="hypothesis-fe0",
-        trace_group_id="SampleA|Analyte|region_first_safe_merge",
+        trace_group_id="SampleA|Analyte|local_minimum",
         target_label="Analyte",
         role="Analyte",
         istd_pair="",
         analysis_mode="targeted",
-        resolver_mode="region_first_safe_merge",
+        resolver_mode="local_minimum",
         integration=integration,
         evidence=EvidenceVector(),
         audit=AuditTrail(selected=True),

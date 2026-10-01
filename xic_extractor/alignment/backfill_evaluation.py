@@ -37,7 +37,6 @@ from xic_extractor.alignment.owner_group_delivery import (
     delivery_cell_projection,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
-from xic_extractor.alignment.trace_context import alignment_trace_group
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -58,7 +57,6 @@ from xic_extractor.peak_detection.physical_peak_models import (
 )
 from xic_extractor.peak_detection.region_audit import (
     PeakRegionAuditSummary,
-    build_peak_region_audit_summary,
 )
 from xic_extractor.xic_models import XICRequest, XICTrace
 
@@ -68,7 +66,6 @@ _RequestItem = BackfillRequestItem
 # recycled id() can never alias a different trace.
 _ChunkPreparedSignalCache: TypeAlias = dict[int, tuple[XICTrace, PreparedSignalResult]]
 _RequestGroupKey = tuple[str, int | float, int | float]
-
 
 
 def _chunk_prepared_signal_cache() -> _ChunkPreparedSignalCache:
@@ -101,7 +98,6 @@ def _backfill_feature_sample_trace(
             preferred_rt=preferred_rt,
             peak_config=peak_config,
             require_sealed_facts=require_sealed_facts,
-            emit_region_audit=emit_region_audit,
         )
     return _backfill_feature_sample_trace_canonical(
         feature,
@@ -127,7 +123,6 @@ def _backfill_feature_sample_trace_legacy_audit(
     preferred_rt: float | None,
     peak_config: ExtractionConfig,
     require_sealed_facts: bool,
-    emit_region_audit: bool,
 ) -> _BackfillTraceEvaluation:
     peak_preferred_rt = (
         feature.family_center_rt if preferred_rt is None else preferred_rt
@@ -172,7 +167,6 @@ def _backfill_feature_sample_trace_legacy_audit(
         )
     rt_array = detection.rt
     intensity_array = detection.intensity
-    result = detection.result
     peak = detection.peak
     base_integration = integration_from_peak(
         peak,
@@ -218,36 +212,6 @@ def _backfill_feature_sample_trace_legacy_audit(
             peak_facts=peak_facts,
             peak_fact_elapsed_seconds=fact_elapsed_seconds,
         )
-    trace_group = (
-        alignment_trace_group(
-            sample_stem=sample_stem,
-            family_id=feature.feature_family_id,
-            mz=request.mz,
-            rt_values=rt_array,
-            intensity_values=intensity_array,
-            rt_min=request.rt_min,
-            rt_max=request.rt_max,
-            ppm_tol=request.ppm_tol,
-            expected_rt_min=feature.family_center_rt,
-            neutral_loss_tag=feature.neutral_loss_tag,
-            product_mz=feature.family_product_mz,
-            observed_neutral_loss_da=feature.family_observed_neutral_loss_da,
-            source="owner_backfill_batch",
-        )
-        if emit_region_audit
-        else None
-    )
-    region_audit = (
-        build_peak_region_audit_summary(
-            rt_array,
-            intensity_array,
-            result,
-            peak_config,
-            trace_group=trace_group,
-        )
-        if emit_region_audit
-        else None
-    )
     cell = AlignedCell(
         sample_stem=sample_stem,
         cluster_id=feature.feature_family_id,
@@ -283,7 +247,7 @@ def _backfill_feature_sample_trace_legacy_audit(
         ),
     )
     return _BackfillTraceEvaluation(
-        cell=with_region_audit(cell, region_audit),
+        cell=cell,
         peak_facts=peak_facts,
         peak_fact_elapsed_seconds=fact_elapsed_seconds,
     )

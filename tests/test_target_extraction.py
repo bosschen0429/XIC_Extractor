@@ -160,7 +160,6 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
         peak_min_prominence_ratio=0.1,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
-        emit_peak_candidates=True,
         resolver_mode=resolver_mode,
     )
     target = Target(
@@ -223,11 +222,6 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
         target_extraction,
         "check_target_nl",
         lambda *_args, **_kwargs: NLResult("NO_MS2", None, None, 0, 0, 0),
-    )
-    monkeypatch.setattr(
-        target_extraction,
-        "append_peak_audit_rows",
-        lambda **_kwargs: None,
     )
 
     def _fake_build_extraction_result(**kwargs):
@@ -575,7 +569,6 @@ def test_targeted_shape_routes_use_cached_canonical_signal(
         # a candidate-apex restriction rather than a truncation of the trace.
         assert 0.8 <= candidate.selection_apex_rt <= 1.2
         assert len(builders) == 1
-
 
 
 def test_physical_candidate_projection_preserves_owner_values_and_segment_order(

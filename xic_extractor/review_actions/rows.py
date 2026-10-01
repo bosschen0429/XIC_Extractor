@@ -10,7 +10,6 @@ from xic_extractor.review_actions.models import (
     ReviewActionApplyOutput,
     ReviewActionApplyReadiness,
     ReviewActionApplyReadinessPlan,
-    ReviewActionCandidateSidecarCheck,
     ReviewActionExpectedDiffApproval,
     ReviewActionExpectedDiffTemplate,
 )
@@ -19,7 +18,6 @@ from xic_extractor.review_actions.schema import (
     REVIEW_ACTION_APPLY_AUDIT_SCHEMA_VERSION,
     REVIEW_ACTION_APPLY_CHANGESET_SCHEMA_VERSION,
     REVIEW_ACTION_APPLY_READINESS_SCHEMA_VERSION,
-    REVIEW_ACTION_CANDIDATE_SIDECAR_SCHEMA_VERSION,
     REVIEW_ACTION_EXPECTED_DIFF_SCHEMA_VERSION,
     REVIEW_ACTION_SCHEMA_VERSION,
     REVIEW_ACTION_TYPES,
@@ -125,32 +123,6 @@ def summarize_review_action_apply_readiness_plan(
     }
 
 
-def summarize_review_action_candidate_sidecars(
-    checks: Sequence[ReviewActionCandidateSidecarCheck],
-) -> dict[str, object]:
-    counts_by_status: dict[str, int] = {}
-    verified_count = 0
-    blocked_count = 0
-    noop_current_selection_count = 0
-    for check in checks:
-        status = check.candidate_sidecar_status
-        counts_by_status[status] = counts_by_status.get(status, 0) + 1
-        if status == "candidate_verified":
-            verified_count += 1
-        elif status == "candidate_current_selection":
-            noop_current_selection_count += 1
-        else:
-            blocked_count += 1
-    return {
-        "schema_version": REVIEW_ACTION_CANDIDATE_SIDECAR_SCHEMA_VERSION,
-        "row_count": len(checks),
-        "verified_count": verified_count,
-        "blocked_count": blocked_count,
-        "noop_current_selection_count": noop_current_selection_count,
-        "counts_by_status": dict(sorted(counts_by_status.items())),
-    }
-
-
 def summarize_review_action_apply_changeset_plan(
     plan: ReviewActionApplyChangesetPlan,
 ) -> dict[str, object]:
@@ -244,33 +216,6 @@ def review_action_application_to_row(
         "expected_diff_required": action.expected_diff_required,
         "expected_diff_status": application.expected_diff_status,
         "reason": application.reason,
-        "reviewer": action.reviewer,
-        "reviewed_at": action.reviewed_at,
-        "comment": action.comment,
-    }
-
-
-def review_action_candidate_sidecar_to_row(
-    check: ReviewActionCandidateSidecarCheck,
-) -> dict[str, object]:
-    action = check.action
-    return {
-        "schema_version": REVIEW_ACTION_CANDIDATE_SIDECAR_SCHEMA_VERSION,
-        "sample_name": action.sample_name,
-        "target_label": action.target_label,
-        "action_type": action.action_type,
-        "candidate_id": action.candidate_id,
-        "candidate_sidecar_status": check.candidate_sidecar_status,
-        "candidate_sidecar_reason": check.candidate_sidecar_reason,
-        "candidate_row_sha256": check.candidate_row_sha256,
-        "candidate_selected": check.candidate_selected,
-        "candidate_confidence": check.candidate_confidence,
-        "candidate_rt_left_min": check.candidate_rt_left_min,
-        "candidate_rt_apex_min": check.candidate_rt_apex_min,
-        "candidate_rt_right_min": check.candidate_rt_right_min,
-        "candidate_area_baseline_corrected": (
-            check.candidate_area_baseline_corrected
-        ),
         "reviewer": action.reviewer,
         "reviewed_at": action.reviewed_at,
         "comment": action.comment,

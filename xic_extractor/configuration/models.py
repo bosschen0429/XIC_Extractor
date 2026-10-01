@@ -51,7 +51,6 @@ class ExtractionConfig:
     targeted_ms1_shape_identity_activation_policy: str = EXPLICIT_SUPPORT_TSV_POLICY
     emit_score_breakdown: bool = False
     emit_review_report: bool = False
-    emit_peak_candidates: bool = False
     keep_intermediate_csv: bool = False
     baseline_audit_method: str = ""
     baseline_integration_method: str = "asls"

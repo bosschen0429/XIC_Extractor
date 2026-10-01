@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.extraction.scoring_factory import selected_candidate
@@ -159,11 +159,6 @@ class FileResult:
     results: dict[str, ExtractionResult]
     group: str | None = None
     error: str | None = None
-    peak_candidate_rows: list[dict[str, str]] = field(default_factory=list)
-    peak_candidate_boundary_rows: list[dict[str, str]] = field(default_factory=list)
-    selected_envelope_diagnostic_rows: list[dict[str, str]] = field(
-        default_factory=list
-    )
 
     @property
     def extraction_results(self) -> list[ExtractionResult]:

@@ -46,7 +46,7 @@ def test_status_schema_matches_index_header() -> None:
     assert tuple(schema) == CONTROL_PLANE_SCHEMA_FIELDS
     assert tuple(header) == STATUS_INDEX_FIELDS
     assert tuple(schema["required_lane_ids"]) == REQUIRED_LANE_IDS
-    assert len(rows) == len(REQUIRED_LANE_IDS) == 13
+    assert len(rows) == len(REQUIRED_LANE_IDS) == 12
     assert schema["required_control_plane_anchors"] == {
         row["lane_id"]: row["control_plane_anchor"] for row in rows
     }
@@ -348,7 +348,7 @@ def test_checker_rejects_non_exact_anchor_registry(
 
     problems = check_productization_state(schema_path=mutated)
 
-    assert any("ordered 13-anchor" in problem for problem in problems)
+    assert any("ordered 12-anchor" in problem for problem in problems)
 
 
 def test_checker_rejects_crossed_or_active_dependent_status_row(
@@ -594,7 +594,7 @@ def test_checker_rejects_non_writer_matrix_touch_without_write_flag(
 ) -> None:
     mutated = _mutated_index(
         tmp_path,
-        "review_action_candidate_sidecar",
+        "review_action_selected_candidate_switch",
         {
             "write_authority": "FALSE",
             "product_authority_scope": "",

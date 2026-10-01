@@ -561,36 +561,6 @@ def test_neutral_loss_disabled_target_publishes_ms1_backfill(
     assert row["Reason"].startswith("MS1 peak measured")
 
 
-def test_render_diagnostics_remain_appendable_until_writers_finish(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.target_pair_rt_calibration import (
-        write_target_pair_rt_calibration_tsv,
-    )
-
-    config, target, output = production_case(tmp_path)
-    calibration_path = tmp_path / "calibration.tsv"
-    write_target_pair_rt_calibration_tsv(calibration_path, [])
-    config = replace(
-        config,
-        keep_intermediate_csv=True,
-        target_pair_rt_calibration_path=calibration_path,
-        emit_peak_candidates=False,
-    )
-    request = build_targeted_application_request(
-        config,
-        [target],
-        injection_order={"SampleA": 1},
-    )
-    finalized = execute_targeted_production_workflow(request, output)
-
-    publication = publish_targeted_outputs(request, finalized, output)
-
-    assert any(
-        item.issue == "TARGET_PAIR_RT_AUTO_RESELECTION_SKIPPED"
-        for item in publication.output.diagnostics
-    )
-    assert config.diagnostics_csv in publication.paths
 
 
 def test_acquisition_baseline_projection_preserves_not_counted_cells(

@@ -314,7 +314,7 @@ legacy settings key `ms1_morphology_smoothing_window_points` is accepted only
 as a one-way load-time alias to `signal_processing_window_points`. Canonical
 and legacy values may coexist only when equal. Savitzky–Golay and resolver
 settings are not aliases. The 15-point default is scan-rate sensitive — non-default windows require
-`gaussian15_area_pressure_audit.py` review per
+a method-appropriate area-ratio and smoothing-duration review per
 [`lc-msms-evidence-rules.md`](../lc-msms-evidence-rules.md).
 
 ## Evidence Status And Activation

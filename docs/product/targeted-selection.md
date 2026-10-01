@@ -177,10 +177,9 @@ Grouping does not reselect peaks or add a cohort RT review policy.
   broad NL_FAIL rescue. These extensions require a new target-family evidence
   gate.
 - Current lane readiness lives in the status index.
-- Target-pair RT auto-reselection and calibration artifacts are
-  activation-gated selection aids. These aids are not default authority unless
-  the status index, authority manifest, promotion contract, and focused tests
-  say so.
+- `target_pair_rt_calibration_path` supplies validated calibration rows to the
+  existing RT-prior library. It does not emit auto-reselection shadow tables
+  or grant selected-peak or writer authority.
 
 ### Expected-diff inputs
 
@@ -218,7 +217,7 @@ Grouping does not reselect peaks or add a cohort RT review policy.
 | `Product State` / `Counted Detection` / `Review State` | Advanced product-policy fields; do not veto a retained numeric value |
 | Confidence | Advanced review context rendered from typed projection decisions |
 | Region and selected-envelope candidates | Boundary and model-selection evidence |
-| Target-pair RT calibration artifacts | Activation-gated selection support |
+| Target-pair RT calibration artifacts | Validated RT-prior inputs; no shadow output or writer authority |
 | Expected-diff packets | Required gate for output-changing behavior |
 
 ## Boundaries
@@ -269,3 +268,14 @@ Grouping does not reselect peaks or add a cohort RT review policy.
 - [Quantitation context](quantitation-context.md) | [Review roundtrip](review-roundtrip.md)
 - [Peak model selection](peak-model-selection.md)
 - [Decision policy](decision-policy.md)
+
+## Retired candidate audit outputs
+
+`emit_peak_candidates` and its candidate, boundary, region shadow, selected-envelope,
+and target-pair RT auto-reselection TSV outputs are removed. Remove this key from
+existing settings CSVs; there is no compatibility alias. Candidate-sidecar
+verification and the dedicated shadow/pressure review commands are unavailable.
+Use [XIC Inspector](xic-inspector.md) for visual review of its supported retained
+evidence sources. Inspector does not apply candidate switches or generate RT
+reselection comparison tables. `target_pair_rt_calibration_path` remains an
+RT-prior input; formal peak selection and numerical output remain owner-controlled.

@@ -101,20 +101,6 @@ class ReviewActionApplyReadinessPlan:
 
 
 @dataclass(frozen=True)
-class ReviewActionCandidateSidecarCheck:
-    action: ReviewAction
-    candidate_sidecar_status: str
-    candidate_sidecar_reason: str
-    candidate_row_sha256: str = ""
-    candidate_selected: str = ""
-    candidate_confidence: str = ""
-    candidate_rt_left_min: str = ""
-    candidate_rt_apex_min: str = ""
-    candidate_rt_right_min: str = ""
-    candidate_area_baseline_corrected: str = ""
-
-
-@dataclass(frozen=True)
 class ReviewActionApplyChangeset:
     readiness: ReviewActionApplyReadiness
     changeset_status: str
