@@ -241,6 +241,13 @@ positive evidence ref is therefore not treated as proof that a search
 completed, and technical failure cannot become REJECT or a human
 `unassessable` disposition.
 
+The method-assessment owner resolves measured evidence against the supplied
+physical candidate universe and constructs the individual or set-level relations.
+Untargeted acquisition consumes those completed refs without choosing the
+scientific relation kind. It retains scan acquisition, observer timing and
+lineage collection. Assessment minting still validates explicitly supplied refs;
+it does not replace missing or conflicting relations on a caller's behalf.
+
 The initial Untargeted Discovery adapter records `not_evaluated` with
 `method_result=None` and `no_search_eligible_discovery_input` when it has neither
 an eligible scan-seed input nor a feature-backed MS1 candidate. This includes an
