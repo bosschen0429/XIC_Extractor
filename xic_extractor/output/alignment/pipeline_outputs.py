@@ -12,7 +12,7 @@ if TYPE_CHECKING:
         FinalizedUntargetApplicationResult,
         FinalizedUntargetBatchApplicationResult,
     )
-    from xic_extractor.diagnostics.alignment_explanation import EvidenceLocator
+    from xic_extractor.evidence_artifacts import EvidenceLocator
 
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillEvaluationCoverageBatch,
@@ -45,7 +45,7 @@ from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
 )
-from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment.artifact_write_receipts import (
     AlignmentArtifactFingerprintBatch,
     AlignmentArtifactFingerprintReceipt,

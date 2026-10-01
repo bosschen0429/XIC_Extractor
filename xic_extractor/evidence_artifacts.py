@@ -12,12 +12,25 @@ import hashlib
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import InitVar, dataclass, field
+from pathlib import Path
 from typing import Any
 
 from xic_extractor.validation_primitives import (
     require_lower_sha256,
     require_owner_normalized_text,
 )
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceLocator:
+    """Immutable provenance locator pointing to a completed evidence DB."""
+
+    report_path: Path
+    matrix_path: Path
+    matrix_sha256: str
+    processing_request_id: str
+    processing_attempt_id: str
+    schema_version: str
 
 
 class EvidenceArtifactContractError(ValueError):

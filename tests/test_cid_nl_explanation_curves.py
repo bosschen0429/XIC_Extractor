@@ -12,13 +12,13 @@ from pathlib import Path
 
 import pytest
 
-from xic_extractor.diagnostics.cid_nl_explanation import (
-    EvidenceLocator,
+from xic_extractor.diagnostics.alignment_explanation import (
     ExplanationError,
     ExplanationReportWriter,
     read_cid_nl_curves,
     read_cid_nl_explanation,
 )
+from xic_extractor.evidence_artifacts import EvidenceLocator
 
 
 def test_cid_nl_evidence_locator_immutability() -> None:
@@ -134,7 +134,7 @@ def test_rejects_undeclared_curve_kind_and_keys() -> None:
 
 def test_actual_observation_apex_is_retained_in_query_metadata(tmp_path, monkeypatch):
     from tests.test_cid_nl_explanation import _owner_run
-    from xic_extractor.diagnostics.cid_nl_explanation_projection import (
+    from xic_extractor.diagnostics.alignment_explanation_projection import (
         write_cid_nl_explanation,
     )
 

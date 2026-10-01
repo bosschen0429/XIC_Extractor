@@ -351,7 +351,7 @@ def test_prepared_calibration_receipt_preserves_owner_map_without_refitting(
     assert interpolate_calibrated_rt_min(14, knots) == pytest.approx(15.5)
     assert interpolate_calibrated_rt_min(7, knots) is None
     assert interpolate_calibrated_rt_min(41, knots) is None
-    from xic_extractor.diagnostics.cid_nl_explanation import (
+    from xic_extractor.diagnostics.alignment_explanation import (
         ExplanationReportWriter,
         read_cid_nl_explanation,
     )

@@ -215,9 +215,9 @@ def test_merged_physical_candidate_persists_representative_search_window(
     tmp_path: Path, combine_mode: str
 ) -> None:
     from xic_extractor.acquisition_contract import serialize_acquired_trace
-    from xic_extractor.diagnostics.timing import TimingRecorder
     from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
     from xic_extractor.discovery.pipeline import _write_dual_csvs
+    from xic_extractor.execution.timing import TimingRecorder
     from xic_extractor.extraction.untargeted_alignment import (
         _restore_physical_candidate,
     )

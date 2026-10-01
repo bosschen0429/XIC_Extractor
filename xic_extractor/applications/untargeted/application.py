@@ -37,10 +37,10 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
     resolve_signal_processing_profile,
 )
-from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.csv_reader import read_discovery_batch_index
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.discovery.models import DiscoverySettings
+from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.extraction.untargeted_alignment import complete_untargeted_alignment
 from xic_extractor.extraction.untargeted_input_planning import (
     is_supported_alignment_discovery,

@@ -229,6 +229,11 @@ policy; result writers consume the completed groups and cells.
   its `untargeted_execution_result` carrier binds runtime success to the
   finalized batch and owns the close action. Application publication consumes
   that carrier, while Matrix projection receives only the pure finalized batch.
+- `diagnostics/` is an outer layer. Inner packages (`acquisition`, `alignment`,
+  `configuration`, `discovery`, `evidence`, `execution`, `extraction`,
+  `output`, `peak_detection`) never import it; applications may compose its
+  explanation persistence. A schema that production reads lives with its
+  production reader, and diagnostic producers import it from there.
 - Keep a compatibility facade only for a current public/downstream contract or
   real external consumer. Tests and historical artifacts are not consumers.
 - When replacing an internal surface, remove its obsolete implementation,
@@ -251,9 +256,9 @@ Use this map to choose the reason a package changes. File placement is owned by
 | --- | --- | --- |
 | `configuration/` | settings, target/config loading, validation, typed runtime settings | extraction or rendering |
 | `applications/targeted/` | Formal Targeted application composition and request/result interface; product state, role/applicability policy, counted detection and reason overlays; pure product result model | scientific peak selection, numeric cell decisions, RAW acquisition or rendering |
-| `applications/untargeted/` | Untargeted input preparation, execution-to-publication orchestration, cancellation, completed-store and explanation lifetime; delegates Matrix publishing to `output/alignment/` | scientific grouping, cell decisions, a second runtime owner or writer algorithm |
+| `applications/untargeted/` | Untargeted input preparation, Discovery-to-provisional-Matrix composition, execution-to-publication orchestration, cancellation, completed-store and explanation lifetime; delegates Matrix publishing to `output/alignment/` | scientific grouping, cell decisions, a second runtime owner or writer algorithm |
 | `discovery/` | general candidate discovery, seed generation, workflow-neutral discovery facts, receipt-bound CSV reading and bounded candidate loading | matrix decisions or target-list policy |
-| `execution/` | generic attempt execution/finalization, partition scheduling, reusable worker admission pools, one-shot process jobs, streamed result storage, and recovery | method-specific science, subject splitting, or writer authority |
+| `execution/` | generic attempt execution/finalization, partition scheduling, reusable worker admission pools, one-shot process jobs, streamed result storage, recovery, and runtime timing/process-memory measurement | method-specific science, subject splitting, or writer authority |
 | `extraction/` | Targeted acquisition and production workflow adapters, jobs, windowing, drift, backend coordination, publication mechanics, and retained Untargeted batch execution (`untargeted_input_planning`, `untargeted_execution`, `untargeted_partition_composition`, `untargeted_alignment`) | application composition, GUI, or Alignment decisions |
 | `peak_detection/` | physical observations, hypotheses, resolvers, boundaries, integration, evidence composition | cross-sample grouping, workflow policy, or writers |
 | `alignment/` | cross-sample grouping, refinement/repair composition, Alignment adapters and renderers | a second runtime owner, mutable transport authority, or Targeted-only science |
@@ -270,7 +275,7 @@ Cross-cutting owners remain focused:
 | `sample_metadata.py` | canonical sample identity and immutable metadata snapshots |
 | `feature_quality.py` / `feature_quality_io.py` | post-finalization feature availability/selection and its bound analysis-set export; never Alignment decisions or normalization |
 | `review_records.py` | review subject/action identity and supersession |
-| `evidence_artifacts.py` / `artifact_lineage.py` | exact-byte artifact identity and supplied-lineage validation |
+| `evidence_artifacts.py` / `artifact_lineage.py` | exact-byte artifact identity, completed-evidence locators, and supplied-lineage validation |
 | `processing_identity.py` | request, attempt, source, and retry-predecessor identity |
 | `execution/attempt.py` | sole attempt construction, execution, settlement and finalization authority; private lifecycle/receipt/observability companions support it |
 | `acquisition_contract.py` | capability-bound acquisition batches and mechanical call/point facts |

@@ -11,13 +11,11 @@ from dataclasses import asdict
 import pytest
 
 from tests.test_cid_nl_explanation import _owner_run
-from xic_extractor.diagnostics.cid_nl_explanation import (
-    EvidenceLocator,
-    read_cid_nl_explanation,
-)
-from xic_extractor.diagnostics.cid_nl_explanation_projection import (
+from xic_extractor.diagnostics.alignment_explanation import read_cid_nl_explanation
+from xic_extractor.diagnostics.alignment_explanation_projection import (
     write_cid_nl_explanation,
 )
+from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_inspector.api import (
     InspectorCancelled,
     InspectorError,
@@ -63,7 +61,7 @@ def test_acceptance_a1_production_owner_pipeline_fidelity(
         [
             sys.executable,
             "-c",
-            "import json,sys; from xic_extractor.diagnostics.cid_nl_explanation "
+            "import json,sys; from xic_extractor.diagnostics.alignment_explanation "
             "import read_cid_nl_curves; "
             "print(json.dumps(read_cid_nl_curves(sys.argv[1])))",
             str(report_path),
@@ -103,7 +101,7 @@ def test_missing_bound_matrix_rejects_generation(
     # 1. Illegal: missing matrix
     fake_db = tmp_path / "fake.sqlite"
     matrix_file = tmp_path / "missing_matrix.tsv"
-    from xic_extractor.diagnostics.cid_nl_explanation import ExplanationReportWriter
+    from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
 
     with ExplanationReportWriter(fake_db) as writer:
         writer.finalize(

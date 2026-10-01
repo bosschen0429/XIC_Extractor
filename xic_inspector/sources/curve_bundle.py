@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.diagnostics.cid_nl_explanation import ExplanationError
+from xic_extractor.diagnostics.alignment_explanation import ExplanationError
 from xic_inspector.selection.canonical import (
     CanonicalItem,
     Witness,

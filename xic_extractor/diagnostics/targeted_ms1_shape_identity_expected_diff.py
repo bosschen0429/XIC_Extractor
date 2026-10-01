@@ -5,10 +5,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from xic_extractor.diagnostics.targeted_ms1_shape_identity import (
-    TARGETED_MS1_SHAPE_IDENTITY_COLUMNS,
-)
 from xic_extractor.extraction.targeted_ms1_shape_identity_projection import (
+    TARGETED_MS1_SHAPE_IDENTITY_COLUMNS,
     TargetedMs1ShapeIdentitySupport,
     targeted_ms1_shape_identity_supports_from_rows,
 )

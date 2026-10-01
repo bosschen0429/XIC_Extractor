@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from xic_extractor.alignment.drift_evidence import interpolate_calibrated_rt_min
-from xic_extractor.diagnostics.cid_nl_explanation import (
+from xic_extractor.diagnostics.alignment_explanation import (
     ExplanationError,
     read_cid_nl_curves,
     read_cid_nl_explanation,

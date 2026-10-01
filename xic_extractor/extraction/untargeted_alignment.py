@@ -21,8 +21,6 @@ from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.diagnostics.process_memory import ProcessMemoryPeak
-from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.batch_contract import (
     DiscoveryCandidateUniverseReceipt,
 )
@@ -46,8 +44,10 @@ from xic_extractor.execution.attempt import (
     RuntimeWorkerPeakRssSample,
     runtime_started_worker_keys,
 )
+from xic_extractor.execution.process_memory import ProcessMemoryPeak
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.execution.result_store import StreamedResultStore
+from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.execution.workers import WorkerAdmissionPool
 from xic_extractor.extraction.untargeted_execution import (
     execute_untargeted_plan,

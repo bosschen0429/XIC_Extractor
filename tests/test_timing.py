@@ -4,12 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from xic_extractor.diagnostics.process_memory import (
+from xic_extractor.execution.process_memory import (
     ProcessMemoryPeak,
     ProcessMemorySample,
     ProcessTreeMemorySampler,
 )
-from xic_extractor.diagnostics.timing import TimingRecorder
+from xic_extractor.execution.timing import TimingRecorder
 
 
 def test_timing_recorder_records_stage_metrics_and_writes_json(tmp_path: Path) -> None:
@@ -187,7 +187,7 @@ def test_live_output_replace_failure_preserves_last_good_artifact(
         return original_replace(path, target)
 
     monkeypatch.setattr(Path, "replace", _fail_live_replace)
-    monkeypatch.setattr("xic_extractor.diagnostics.timing.sleep", lambda _: None)
+    monkeypatch.setattr("xic_extractor.execution.timing.sleep", lambda _: None)
     recorder = TimingRecorder("alignment", live_output_path=live_path)
 
     with pytest.raises(PermissionError, match="replace blocked"):
@@ -216,7 +216,7 @@ def test_live_output_replace_retries_transient_windows_lock(
 
     monkeypatch.setattr(Path, "replace", _transient_live_replace)
     monkeypatch.setattr(
-        "xic_extractor.diagnostics.timing.sleep",
+        "xic_extractor.execution.timing.sleep",
         delays.append,
     )
     recorder = TimingRecorder("alignment", live_output_path=live_path)
@@ -369,7 +369,7 @@ def test_live_heartbeat_coalesces_bursts_and_flushes_at_stage_exit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fail_stage: bool
 ) -> None:
     now = 0.0
-    monkeypatch.setattr("xic_extractor.diagnostics.timing.perf_counter", lambda: now)
+    monkeypatch.setattr("xic_extractor.execution.timing.perf_counter", lambda: now)
     live_path = tmp_path / "live.json"
     recorder = TimingRecorder(
         "alignment", live_output_path=live_path, timer=_Timer([10.0, 11.0])
@@ -416,7 +416,7 @@ def test_live_heartbeat_coalesces_bursts_and_flushes_at_stage_exit(
 def test_live_heartbeat_publishes_transitions_failures_completion_and_unscoped_updates(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("xic_extractor.diagnostics.timing.perf_counter", lambda: 0.0)
+    monkeypatch.setattr("xic_extractor.execution.timing.perf_counter", lambda: 0.0)
     live_path = tmp_path / "live.json"
     recorder = TimingRecorder("alignment", live_output_path=live_path)
     with recorder.stage("runtime"):

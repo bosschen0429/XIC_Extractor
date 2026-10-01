@@ -14,13 +14,13 @@ from xic_extractor.alignment.owner_build_route_receipt import (
 from xic_extractor.applications.untargeted.application import (
     AlignmentProcessExecutionError,
 )
-from xic_extractor.diagnostics.process_memory import ProcessMemoryPeak
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
     DISCOVERY_BATCH_RECEIPT_COLUMNS,
     discovery_receipt_index_fields,
     mint_discovery_candidate_universe_receipt,
 )
+from xic_extractor.execution.process_memory import ProcessMemoryPeak
 from xic_extractor.output.alignment.pipeline_outputs import (
     AlignmentRunOutputs as _AlignmentRunOutputs,
 )

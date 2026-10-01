@@ -185,8 +185,10 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
             is None
         )
 
-        from xic_extractor.diagnostics.cid_nl_explanation import read_cid_nl_explanation
-        from xic_extractor.diagnostics.cid_nl_explanation_projection import (
+        from xic_extractor.diagnostics.alignment_explanation import (
+            read_cid_nl_explanation,
+        )
+        from xic_extractor.diagnostics.alignment_explanation_projection import (
             write_cid_nl_explanation,
         )
         from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv

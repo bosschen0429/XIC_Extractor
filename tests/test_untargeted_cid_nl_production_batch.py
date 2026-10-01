@@ -51,12 +51,6 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
-from xic_extractor.diagnostics.process_memory import (
-    ProcessMemoryPeak,
-    ProcessMemorySample,
-    ProcessTreeMemorySampler,
-)
-from xic_extractor.diagnostics.timing import TimingRecorder
 from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
 from xic_extractor.discovery.models import (
     MS1_FEATURE_BACKED_STATES,
@@ -67,7 +61,13 @@ from xic_extractor.discovery.processing_run_spec_adapter import (
 )
 from xic_extractor.execution._lifecycle import AttemptTerminalOutcome
 from xic_extractor.execution._observability import RuntimeMetricAvailability
+from xic_extractor.execution.process_memory import (
+    ProcessMemoryPeak,
+    ProcessMemorySample,
+    ProcessTreeMemorySampler,
+)
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
+from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.extraction.untargeted_execution import (
     execute_untargeted_plan,
 )
@@ -794,8 +794,9 @@ for name in (
     'rehydrate_physical_peak_evaluation',
 ):
     setattr(evidence_facts, name, forbidden)
-from xic_extractor.diagnostics.cid_nl_explanation import (
-    read_cid_nl_curves, read_cid_nl_explanation,
+from xic_extractor.diagnostics.alignment_explanation import (
+    read_cid_nl_curves,
+    read_cid_nl_explanation,
 )
 curves = read_cid_nl_curves(sys.argv[1])
 links = {
@@ -1744,7 +1745,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     with matrix_path.open(encoding="utf-8", newline="") as handle:
         matrix_rows = tuple(csv.DictReader(handle, delimiter="\t"))
-    from xic_extractor.diagnostics.cid_nl_explanation_projection import (
+    from xic_extractor.diagnostics.alignment_explanation_projection import (
         write_cid_nl_explanation,
     )
 
@@ -2196,8 +2197,8 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     # The actual recovery owner ran above under this request and attempt.
     # Exercise its production sink directly, without altering the completed
     # scientific population or manufacturing a new recovery identity.
-    from xic_extractor.diagnostics.cid_nl_explanation import ExplanationReportWriter
-    from xic_extractor.diagnostics.cid_nl_explanation_projection import (
+    from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
+    from xic_extractor.diagnostics.alignment_explanation_projection import (
         _emit_curve_payload,
     )
 

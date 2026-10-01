@@ -13,10 +13,10 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.applications.untargeted.application import (
     validate_untargeted_application_options,
 )
-from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
-from xic_extractor.extraction.untargeted_provisional_matrix_workflow import (
+from xic_extractor.applications.untargeted.provisional_matrix import (
     UntargetedProvisionalMatrixRun,
 )
+from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.processing_identity import fingerprint_file_content
 from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS, SampleMetadata

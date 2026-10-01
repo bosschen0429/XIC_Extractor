@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter, sleep
 
-from xic_extractor.diagnostics.process_memory import (
+from xic_extractor.execution.process_memory import (
     ProcessMemoryCollector,
     ProcessMemoryPeak,
     ProcessTreeMemorySampler,
@@ -354,7 +354,7 @@ class TimingRecorder:
         self._write_live()
 
     def to_json_dict(self) -> dict[str, object]:
-        from xic_extractor.diagnostics.timing_summary import summarize_timing_records
+        from xic_extractor.execution.timing_summary import summarize_timing_records
 
         result: dict[str, object] = {
             "schema_version": "timing",

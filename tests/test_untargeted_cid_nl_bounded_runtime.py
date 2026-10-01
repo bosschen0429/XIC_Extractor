@@ -790,7 +790,7 @@ def test_bounded_runtime_skips_subjects_without_ms1_features(
             if assessment.content.method_subject.method_subject_id
             in eligible_subject_ids
         }
-    from xic_extractor.diagnostics.cid_nl_explanation_projection import (
+    from xic_extractor.diagnostics.alignment_explanation_projection import (
         write_cid_nl_explanation,
     )
     from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
@@ -829,8 +829,8 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     subjects_per_partition: int,
     raw_workers: int,
 ):
-    import xic_extractor.diagnostics.timing as timing_owner
-    from xic_extractor.diagnostics.timing import TimingRecorder
+    import xic_extractor.execution.timing as timing_owner
+    from xic_extractor.execution.timing import TimingRecorder
     from xic_extractor.extraction.untargeted_execution import (
         execute_untargeted_plan,
         prepare_untargeted_alignment_worksets,
@@ -1003,8 +1003,8 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
 
 
 def _assert_explanation_parity(tmp_path, plan, config, eager, bounded):
-    from xic_extractor.diagnostics.cid_nl_explanation import read_cid_nl_explanation
-    from xic_extractor.diagnostics.cid_nl_explanation_projection import (
+    from xic_extractor.diagnostics.alignment_explanation import read_cid_nl_explanation
+    from xic_extractor.diagnostics.alignment_explanation_projection import (
         write_cid_nl_explanation,
     )
     from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
