@@ -116,7 +116,7 @@ default runs.
 ---
 
 CLI reports and audits over alignment outputs (cells, families, owner
-decisions, RT normalization, matrix identity).
+decisions, RT calibration, matrix identity).
 
 ### `row_completion_confidence.py`
 
@@ -174,15 +174,6 @@ authority.
 
 ---
 
-### `analyze_rt_normalization_anchors.py`
-
-**Purpose**: Analyze anchor-based RT normalization for alignment outputs.
-**Topic group**: `analyze_rt_normalization_anchors.py` + `rt_normalization_anchor_{loaders, models, analysis, writers}` (5 files)
-**Originating spec**: (none found; rt_normalization pipeline behavior lives in `xic_extractor/alignment/rt_normalization.py`)
-**Naming note**: The entry-point uses `analyze_*` prefix while helpers use `rt_normalization_anchor_*` prefix — pending rename per audit-note Cluster discussion.
-
----
-
 ### `build_sample_rt_calibration.py`
 
 - **Role:** evidence producer; maintained operator interface.
@@ -193,8 +184,7 @@ authority.
   `alignment_cells.tsv` plus an optional injection timeline JSON. It does not
   read RAW.
 - **Authority:** `diagnostic_only`; no grouping, selection, RT, or value
-  authority. Keep until a correspondence owner adopts the same model; the older
-  `analyze_rt_normalization_anchors.py` uses Targeted-workbook anchors instead.
+  authority. Keep until a correspondence owner adopts the same model.
 
 ---
 
@@ -417,7 +407,7 @@ support evidence, run extraction, or mutate product outputs.
   authority. Keep as the batch chronology producer for offline diagnostics;
   retire if run metadata adopts the same producer and sidecar contract.
 
-The Instrument QC suite is a coherent product surface; six entry-points
+The Instrument QC suite is a coherent product surface; its entry-points
 share the `instrument_qc_*` prefix. Per the lifecycle spec, several of
 these are candidates for "seasonal cadence" declarations (calibration runs
 are not daily).
@@ -458,13 +448,6 @@ are not daily).
 **Purpose**: Build manifest-backed instrument QC calibration evidence bundle and optional matrix preview sidecar.
 **Originating spec**: `retired-provenance:5cd57a52f007`
 **Recent doc**: `retired-provenance:7626f95b0a28`
-
----
-
-### `instrument_qc_decision_report.py`
-
-**Purpose**: Render a compact instrument QC decision report.
-**Originating spec**: `retired-provenance:9b1b633f6f09`
 
 ---
 
