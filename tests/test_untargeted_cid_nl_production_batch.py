@@ -15,10 +15,10 @@ import pytest
 import xic_extractor.alignment.result.application_result as application_result_owner
 import xic_extractor.alignment.untargeted_finalized_matrix as finalized_matrix
 import xic_extractor.discovery.processing_run_spec_adapter as processing_spec_adapter
-import xic_extractor.extraction.untargeted_alignment as alignment_adapter
-import xic_extractor.extraction.untargeted_partition.request as input_owner
 import xic_extractor.processing_identity as identity_owner
 import xic_extractor.raw_reader as raw_reader_owner
+import xic_extractor.untargeted_execution.alignment as alignment_adapter
+import xic_extractor.untargeted_execution.partition.request as input_owner
 from tests.cid_nl_raw_fixture import (
     _multi_tag_settings,
     _peak_config,
@@ -68,25 +68,6 @@ from xic_extractor.execution.process_memory import (
 )
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.execution.timing import TimingRecorder
-from xic_extractor.extraction.untargeted_execution import (
-    execute_untargeted_plan,
-)
-from xic_extractor.extraction.untargeted_execution_result import (
-    CompletedUntargetBatchWorkflowResult,
-)
-from xic_extractor.extraction.untargeted_input_planning import (
-    prepare_eager_untargeted_plan,
-)
-from xic_extractor.extraction.untargeted_partition import models as partition_models
-from xic_extractor.extraction.untargeted_partition import workers as partition_workers
-from xic_extractor.extraction.untargeted_partition.models import (
-    UntargetedPartitionError,
-    UntargetedPartitionJob,
-    build_sample_jobs,
-)
-from xic_extractor.extraction.untargeted_partition_composition import (
-    compose_untargeted_partition,
-)
 from xic_extractor.output.alignment.pipeline_outputs import (
     alignment_metadata,
     output_paths,
@@ -102,6 +83,25 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
 from xic_extractor.sample_metadata import SampleMetadata
+from xic_extractor.untargeted_execution.execution import (
+    execute_untargeted_plan,
+)
+from xic_extractor.untargeted_execution.execution_result import (
+    CompletedUntargetBatchWorkflowResult,
+)
+from xic_extractor.untargeted_execution.input_planning import (
+    prepare_eager_untargeted_plan,
+)
+from xic_extractor.untargeted_execution.partition import models as partition_models
+from xic_extractor.untargeted_execution.partition import workers as partition_workers
+from xic_extractor.untargeted_execution.partition.models import (
+    UntargetedPartitionError,
+    UntargetedPartitionJob,
+    build_sample_jobs,
+)
+from xic_extractor.untargeted_execution.partition_composition import (
+    compose_untargeted_partition,
+)
 
 
 def _physical_subject_facts(candidates, records):
@@ -1196,7 +1196,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     monkeypatch.setattr(
         capture_owner, "capture_reacquired_physical_peak", retain_reacquired_capture
     )
-    from xic_extractor.extraction import untargeted_execution as bounded_owner
+    from xic_extractor.untargeted_execution import execution as bounded_owner
 
     materialize_batch = bounded_owner.materialize_untargeted_partition
 
@@ -1215,8 +1215,8 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     from xic_extractor.alignment import grouping_bootstrap as bootstrap_owner
     from xic_extractor.alignment.projection.untarget import post_cell as post_cell_owner
     from xic_extractor.alignment.result import application_result as result_owner
-    from xic_extractor.extraction import untargeted_partition_composition as production
     from xic_extractor.peak_detection import observations as observation_owner
+    from xic_extractor.untargeted_execution import partition_composition as production
 
     mint_captured = production.mint_captured_peak_observation
     mint_rechecks = []
@@ -2044,14 +2044,14 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             ),
         )
     batch = captured_batches[0]
-    from xic_extractor.extraction.untargeted_partition.cid_nl_acquisition import (
-        CidNlAcquisitionError,
-        backfill_untargeted_cid_nl_sample_subject,
-    )
     from xic_extractor.peak_detection.cid_nl_peak_support import (
         DdaCidNlPeakSupportPolicy,
     )
     from xic_extractor.processing_identity import resolve_request_acquisition_source
+    from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
+        CidNlAcquisitionError,
+        backfill_untargeted_cid_nl_sample_subject,
+    )
 
     job = batch.jobs[0]
     recovery_raw = partition_workers.open_raw(
@@ -2235,7 +2235,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     _assert_fresh_process_curve_parity(
         recovery_path, [_expected_capture_curve(item) for item in recovery_sources]
     )
-    from xic_extractor.extraction.untargeted_partition.models import (
+    from xic_extractor.untargeted_execution.partition.models import (
         UntargetedPartitionError,
     )
 
@@ -2507,7 +2507,7 @@ def test_physical_subject_units_require_complete_common_proof(
 def test_subject_planning_uses_physical_mass_without_rewriting_seed_receipts(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.extraction.untargeted_input_planning import (
+    from xic_extractor.untargeted_execution.input_planning import (
         prepare_untargeted_subject_membership,
     )
 
@@ -2574,7 +2574,7 @@ def test_physical_subject_units_keep_unproven_candidates_singleton(
 def test_proven_subject_unit_is_not_split_by_lower_fixed_anchor(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from xic_extractor.extraction import untargeted_input_planning as planning_owner
+    from xic_extractor.untargeted_execution import input_planning as planning_owner
 
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"lower-anchor-subject-unit:S1")
@@ -3994,7 +3994,7 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
     monkeypatch: pytest.MonkeyPatch,
     supported_samples: int,
 ) -> None:
-    from xic_extractor.extraction import untargeted_partition_composition as production
+    from xic_extractor.untargeted_execution import partition_composition as production
 
     stems = ("Early", "Middle", "Late")
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
@@ -4367,11 +4367,11 @@ def _assert_conservative_proof_seals(
         _derive_lane_evidence_state,
         canonical_cell_observation_bytes,
     )
-    from xic_extractor.extraction.untargeted_partition.models import (
+    from xic_extractor.processing_identity import issue_processing_attempt
+    from xic_extractor.untargeted_execution.partition.models import (
         canonical_sample_result_bytes,
         project_completed_backfill,
     )
-    from xic_extractor.processing_identity import issue_processing_attempt
 
     # The group binding is shared across cell proofs; minting again must keep
     # identical persisted identities without revisiting all source assessments.
@@ -4733,7 +4733,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
             threshold=recovery_case == "threshold",
         )
         return
-    from xic_extractor.extraction.untargeted_partition.models import (
+    from xic_extractor.untargeted_execution.partition.models import (
         project_completed_backfill,
     )
 

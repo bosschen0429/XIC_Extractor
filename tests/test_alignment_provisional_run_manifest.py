@@ -13,9 +13,9 @@ from types import SimpleNamespace
 
 import pytest
 
-import xic_extractor.extraction.provisional_run_manifest as manifest_owner
 import xic_extractor.output.alignment.artifact_write_receipts as alignment_receipt_owner
 import xic_extractor.output.alignment.pipeline_outputs as pipeline_outputs_owner
+import xic_extractor.untargeted_execution.provisional_run_manifest as manifest_owner
 from tests.test_alignment_provisional_matrix import (
     _representative_matrix,
 )
@@ -29,13 +29,6 @@ from xic_extractor.discovery.batch_contract import (
 )
 from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
-from xic_extractor.extraction.provisional_run_manifest import (
-    PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION,
-    ProvisionalRunRuntimeConfiguration,
-    publish_provisional_run_bundle_atomic,
-    validate_provisional_run_manifest,
-    write_provisional_run_manifest,
-)
 from xic_extractor.processing_identity import (
     build_acquisition_source_identity,
     fingerprint_file_content,
@@ -43,6 +36,13 @@ from xic_extractor.processing_identity import (
 from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
+)
+from xic_extractor.untargeted_execution.provisional_run_manifest import (
+    PROVISIONAL_RUN_MANIFEST_SCHEMA_VERSION,
+    ProvisionalRunRuntimeConfiguration,
+    publish_provisional_run_bundle_atomic,
+    validate_provisional_run_manifest,
+    write_provisional_run_manifest,
 )
 
 

@@ -1,8 +1,8 @@
 import ast
 from pathlib import Path
 
-from xic_extractor.extraction.untargeted_partition import cid_nl_acquisition
 from xic_extractor.peak_detection import capture as capture_owner
+from xic_extractor.untargeted_execution.partition import cid_nl_acquisition
 
 
 def test_current_adapter_cannot_bypass_shared_capture_implementation() -> None:
@@ -52,7 +52,7 @@ def test_direct_hypothesis_owner_consumers_match_the_finite_census() -> None:
 
     assert direct_importers == {
         "extraction/targeted_peak_hypotheses.py",
-        "extraction/untargeted_partition/cid_nl_acquisition.py",
+        "untargeted_execution/partition/cid_nl_acquisition.py",
         "peak_detection/capture.py",
     }
 

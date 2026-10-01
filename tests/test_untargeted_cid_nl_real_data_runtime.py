@@ -44,27 +44,6 @@ from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.execution._finalization import RuntimeResourceOpenOutcome
 from xic_extractor.execution.attempt import start_runtime_attempt
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
-from xic_extractor.extraction.untargeted_acquisition_cache import (
-    CachedUntargetedRaw,
-    acquire_untargeted_trace_batch,
-    bind_untargeted_acquisition_cache,
-)
-from xic_extractor.extraction.untargeted_partition import cid_nl_acquisition
-from xic_extractor.extraction.untargeted_partition import execution as runtime_module
-from xic_extractor.extraction.untargeted_partition import models as partition_models
-from xic_extractor.extraction.untargeted_partition import workers as partition_workers
-from xic_extractor.extraction.untargeted_partition.execution import (
-    execute_attempt,
-    runtime_call_cost,
-)
-from xic_extractor.extraction.untargeted_partition.models import (
-    UntargetedPartitionError,
-    UntargetedPartitionJob,
-    build_sample_jobs,
-)
-from xic_extractor.extraction.untargeted_partition.request import (
-    build_partition_context,
-)
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
@@ -86,6 +65,27 @@ from xic_extractor.raw_reader import (
     reset_reader_state,
 )
 from xic_extractor.sample_metadata import SampleMetadata
+from xic_extractor.untargeted_execution.acquisition_cache import (
+    CachedUntargetedRaw,
+    acquire_untargeted_trace_batch,
+    bind_untargeted_acquisition_cache,
+)
+from xic_extractor.untargeted_execution.partition import cid_nl_acquisition
+from xic_extractor.untargeted_execution.partition import execution as runtime_module
+from xic_extractor.untargeted_execution.partition import models as partition_models
+from xic_extractor.untargeted_execution.partition import workers as partition_workers
+from xic_extractor.untargeted_execution.partition.execution import (
+    execute_attempt,
+    runtime_call_cost,
+)
+from xic_extractor.untargeted_execution.partition.models import (
+    UntargetedPartitionError,
+    UntargetedPartitionJob,
+    build_sample_jobs,
+)
+from xic_extractor.untargeted_execution.partition.request import (
+    build_partition_context,
+)
 from xic_extractor.xic_models import XICRequest
 
 
@@ -96,7 +96,7 @@ def _disable_real_dll_loading(monkeypatch) -> None:
 
 @pytest.mark.parametrize("winner", [b"same facts", b"different facts", None])
 def test_acquisition_cache_windows_publish_race(tmp_path, monkeypatch, winner):
-    from xic_extractor.extraction import untargeted_acquisition_cache as cache_owner
+    from xic_extractor.untargeted_execution import acquisition_cache as cache_owner
 
     cache = cache_owner._FactCache(tmp_path, "source")
     key = b"query"
@@ -126,7 +126,7 @@ def test_acquisition_cache_windows_publish_race(tmp_path, monkeypatch, winner):
 def test_fact_cache_read_preserves_facts_without_outer_reencoding(
     tmp_path: Path, monkeypatch
 ) -> None:
-    from xic_extractor.extraction import untargeted_acquisition_cache as cache_owner
+    from xic_extractor.untargeted_execution import acquisition_cache as cache_owner
 
     cache = cache_owner._FactCache(tmp_path, "source")
     key = b"numeric-fact-key"
@@ -151,7 +151,7 @@ def test_fact_cache_read_preserves_facts_without_outer_reencoding(
 
 
 def test_fact_cache_rejects_wrong_identity_and_invalid_base64(tmp_path: Path) -> None:
-    from xic_extractor.extraction import untargeted_acquisition_cache as cache_owner
+    from xic_extractor.untargeted_execution import acquisition_cache as cache_owner
 
     mutations = {
         "schema_version": "wrong-schema",
@@ -324,7 +324,7 @@ def test_warm_ms2_full_window_subset_hydrates_selected_scan_without_opening_raw(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from xic_extractor.extraction import untargeted_acquisition_cache as cache_module
+    from xic_extractor.untargeted_execution import acquisition_cache as cache_module
 
     fixture = build_targeted_processing_identity_raw_fixture(
         tmp_path,
@@ -501,7 +501,7 @@ def test_untargeted_acquisition_batches_overlapping_scan_windows_exactly(
 def test_lazy_acquisition_cache_replay_skips_opener_and_opens_once_on_miss(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.extraction import untargeted_acquisition_cache as cache_owner
+    from xic_extractor.untargeted_execution import acquisition_cache as cache_owner
 
     fixture = build_targeted_processing_identity_raw_fixture(
         tmp_path,
@@ -696,7 +696,7 @@ def test_runtime_delivers_one_real_subject_cohort_into_golden_path(
         )
         for sample in context.samples
     )
-    from xic_extractor.extraction.untargeted_partition.workers import _open_job_raw
+    from xic_extractor.untargeted_execution.partition.workers import _open_job_raw
 
     changed_path = tmp_path / "Support.changed.synthetic"
     changed_path.write_bytes(b"changed-after-source-verification")
@@ -1365,7 +1365,7 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
 def test_partition_runtime_job_requires_exact_local_feature_membership(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.extraction.untargeted_partition import models as models_owner
+    from xic_extractor.untargeted_execution.partition import models as models_owner
 
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"partition-runtime")
@@ -2036,7 +2036,7 @@ def _assert_partition_matches_runtime(jobs, full_result, monkeypatch):
         assert progress[-1]["completed"] == progress[-1]["total"]
     # An acquisition failure must settle its jobs and return all resource cleanup facts.
     monkeypatch.setattr(partition_workers, "open_raw", forbidden)
-    from xic_extractor.extraction.untargeted_partition import workers as worker_module
+    from xic_extractor.untargeted_execution.partition import workers as worker_module
 
     monkeypatch.setattr(worker_module, "open_raw", forbidden)
     failed_jobs = tuple(replace(job, acquisition_cache_dir=None) for job in jobs)

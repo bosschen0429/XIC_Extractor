@@ -25,16 +25,16 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
 )
 from xic_extractor.discovery.models import DiscoveryCandidate
-from xic_extractor.extraction.untargeted_partition.cid_nl_acquisition import (
+from xic_extractor.peak_detection.cid_nl_peak_support import (
+    DdaCidNlPeakSupportPolicy,
+)
+from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
     CidNlAcquisitionError,
     UntargetedCidNlBackfillTarget,
     acquire_untargeted_cid_nl_backfill_trace_batch,
     acquire_untargeted_cid_nl_sample_trace_batch,
     adapt_current_discovery_sample_subject,
     backfill_untargeted_cid_nl_sample_subject,
-)
-from xic_extractor.peak_detection.cid_nl_peak_support import (
-    DdaCidNlPeakSupportPolicy,
 )
 
 
@@ -59,9 +59,6 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     )
     from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
     from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
-    from xic_extractor.extraction.untargeted_partition import (
-        cid_nl_acquisition as adapter,
-    )
     from xic_extractor.peak_detection import capture as capture_owner
     from xic_extractor.peak_detection.observations import (
         physical_peak_observation_integration,
@@ -79,6 +76,9 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         build_processing_request_identity,
         compose_processing_owner_references,
         issue_processing_attempt,
+    )
+    from xic_extractor.untargeted_execution.partition import (
+        cid_nl_acquisition as adapter,
     )
 
     fixture = build_untargeted_cid_nl_no_raw_fixture(

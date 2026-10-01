@@ -32,7 +32,7 @@ from xic_extractor.output.alignment.pipeline_outputs import (
 )
 
 if TYPE_CHECKING:
-    from xic_extractor.extraction.untargeted_execution_result import (
+    from xic_extractor.untargeted_execution.execution_result import (
         CompletedUntargetBatchWorkflowResult,
     )
 

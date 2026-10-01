@@ -51,26 +51,6 @@ from xic_extractor.execution.partitions import (
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.execution.result_store import StreamedResultStore
 from xic_extractor.execution.workers import WorkerAdmissionPool, WorkerTransportMetrics
-from xic_extractor.extraction.untargeted_execution_result import (
-    CompletedUntargetBatchWorkflowResult,
-)
-from xic_extractor.extraction.untargeted_input_planning import (
-    PreparedUntargetedAlignmentWorksets,
-    UntargetedInputPlan,
-    prepare_untargeted_alignment_worksets,
-)
-from xic_extractor.extraction.untargeted_partition.execution import execute_partition
-from xic_extractor.extraction.untargeted_partition.models import (
-    UntargetedPartitionJob,
-    UntargetedPartitionResult,
-    build_sample_jobs,
-)
-from xic_extractor.extraction.untargeted_partition_composition import (
-    PersistedUntargetedPartition,
-    UntargetedPartitionInputs,
-    compose_and_persist_untargeted_partition,
-    prepare_untargeted_partition_grouping,
-)
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
@@ -85,6 +65,26 @@ from xic_extractor.peak_detection.search_scope import (
 )
 from xic_extractor.processing_identity import resolve_request_acquisition_source
 from xic_extractor.raw_reader import _ensure_assemblies_loaded
+from xic_extractor.untargeted_execution.execution_result import (
+    CompletedUntargetBatchWorkflowResult,
+)
+from xic_extractor.untargeted_execution.input_planning import (
+    PreparedUntargetedAlignmentWorksets,
+    UntargetedInputPlan,
+    prepare_untargeted_alignment_worksets,
+)
+from xic_extractor.untargeted_execution.partition.execution import execute_partition
+from xic_extractor.untargeted_execution.partition.models import (
+    UntargetedPartitionJob,
+    UntargetedPartitionResult,
+    build_sample_jobs,
+)
+from xic_extractor.untargeted_execution.partition_composition import (
+    PersistedUntargetedPartition,
+    UntargetedPartitionInputs,
+    compose_and_persist_untargeted_partition,
+    prepare_untargeted_partition_grouping,
+)
 
 _PARTITION_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.untargeted_cid_nl_bounded_runtime",

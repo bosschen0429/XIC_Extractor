@@ -4,10 +4,6 @@ from unittest.mock import patch
 
 import pytest
 
-from xic_extractor.extraction.untargeted_partition.request import (
-    IdentityContractError,
-    _metadata_by_stem,
-)
 from xic_extractor.raw_reader import (
     RawSampleHeader,
     derive_sample_metadata_from_raw_files,
@@ -15,6 +11,10 @@ from xic_extractor.raw_reader import (
 from xic_extractor.sample_metadata import (
     SampleMetadata,
     infer_sample_role,
+)
+from xic_extractor.untargeted_execution.partition.request import (
+    IdentityContractError,
+    _metadata_by_stem,
 )
 
 

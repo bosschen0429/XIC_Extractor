@@ -23,9 +23,6 @@ from xic_extractor.diagnostics.alignment_explanation_projection import (
     write_cid_nl_explanation,
 )
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
-from xic_extractor.extraction.untargeted_input_planning import (
-    is_supported_alignment_discovery,
-)
 from xic_extractor.presets import PresetTag, load_preset
 from xic_extractor.processing_run_spec import (
     DiscoveryMethodSpec,
@@ -36,6 +33,9 @@ from xic_extractor.processing_run_spec import (
     register_discovery_method_codec,
     serialize_processing_run_spec,
     unregister_discovery_method_codec,
+)
+from xic_extractor.untargeted_execution.input_planning import (
+    is_supported_alignment_discovery,
 )
 
 

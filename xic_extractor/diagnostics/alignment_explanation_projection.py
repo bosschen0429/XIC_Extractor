@@ -31,11 +31,11 @@ if TYPE_CHECKING:
         CompletedUntargetBatchWriterInputs,
     )
     from xic_extractor.discovery.models import DiscoveryCandidate
-    from xic_extractor.extraction.untargeted_execution_result import (
-        CompletedUntargetBatchWorkflowResult,
-    )
     from xic_extractor.peak_detection.cid_nl_method_assessment import (
         CidNlMethodAssessmentRef,
+    )
+    from xic_extractor.untargeted_execution.execution_result import (
+        CompletedUntargetBatchWorkflowResult,
     )
 
 

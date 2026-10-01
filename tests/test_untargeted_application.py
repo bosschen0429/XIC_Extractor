@@ -498,10 +498,10 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
     )
     from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
     from xic_extractor.execution.result_store import StreamedResultStore
-    from xic_extractor.extraction.untargeted_execution import (
+    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
+    from xic_extractor.untargeted_execution.execution import (
         execute_untargeted_plan,
     )
-    from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 
     plan, _ = _plan(tmp_path, monkeypatch)
     config = AlignmentConfig(anchor_min_seed_events=1)

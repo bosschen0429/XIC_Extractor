@@ -49,10 +49,6 @@ from xic_extractor.discovery.strict_seed_receipts import (
     read_complete_discovery_scan_seeds,
 )
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
-from xic_extractor.extraction.untargeted_acquisition_cache import (
-    acquire_untargeted_trace_batch,
-    require_owner_bound_untargeted_raw,
-)
 from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
@@ -116,6 +112,10 @@ from xic_extractor.raw_reader import (
     RawReaderError,
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+from xic_extractor.untargeted_execution.acquisition_cache import (
+    acquire_untargeted_trace_batch,
+    require_owner_bound_untargeted_raw,
+)
 from xic_extractor.xic_models import XICRequest
 
 VALIDATION_STATUS = "diagnostic_only"
