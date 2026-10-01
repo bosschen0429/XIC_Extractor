@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-10-01
+**Last updated:** 2026-10-02
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -1312,3 +1312,38 @@ Recommended next check:
 5. Do not rerun 85RAW just to re-prove this fix. Rerun 85RAW only after a new
    production behavior change or if a current artifact contradicts the 85RAW
    summary fixture.
+
+### 2026-10-02 Discovery Early Precursor Rejection Reduces Merge Cost
+
+Issue #699. Baseline `e46ed6f41b28ea15aabde7a5a3262ead1db5b512`; candidate
+`candidate_merge.py` SHA-256
+`537142ccc76da424c3cde7f189117b927b5e4316580c8432bac74e088597e176`.
+The matching loop rejects precursor pairs outside twice the configured ppm
+window using the existing mass-accuracy predicate before checking provenance
+and peaks. Every merge route already requires that condition. First-match
+order, representative selection, lineage and scientific thresholds stay intact.
+
+One RAW, `BenignfatBC1055_DNA`, with `dna_dr`, identical single-RAW CLI settings,
+no application cache, previously warmed but uncontrolled OS cache, and no
+profiler: order B1/C1/C2/B2 produced wall times 31.665/27.655/27.293/30.807 s.
+Wall median improved 31.236 -> 27.474 s (12.04%); baseline range was 0.857 s.
+MS1 Backfill median improved 17.780 -> 14.246 s (19.88%); baseline range was
+0.449 s. Both paired candidates were faster. All four runs exactly match the
+same candidate CSV, review CSV and physical-facts JSON bytes. The baseline
+wrapper restores the exact HEAD matching function; its extra Git startup is
+included in wall time but excluded from the Backfill stage measurement.
+
+Evidence: `diagnostic_only`, oracle `exact_safe`; 146 affected engineering tests
+passed. This supports the local optimization, not a cohort-wide percentage or
+scientific readiness. Receipts and exact diff:
+`output/alignment-worker-memory/merge-trial-v1/receipt.json` and `candidate.diff`.
+Rerun if merge eligibility/order, input population or the claimed performance
+scope changes.
+
+The preceding current-head 8RAW Alignment profile identified acquisition and
+cache persistence as follow-up targets: across 64 Backfill batches, 87.81
+profiled worker-seconds included 58.41 in acquisition/cache, with 31.35 in vendor
+extraction and 15.78 in 2,517 fsync calls. These are nested, instrumentation-
+affected worker sums, not whole-run wall savings. All six public TSVs matched.
+No cache durability or runtime default was changed. Profile receipts live in
+`output/alignment-worker-memory/backfill-profile-v1/`.
