@@ -7,6 +7,7 @@ import pytest
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.extraction import targeted_peak_selection
+from xic_extractor.extraction.trace_context import targeted_extraction_trace_group
 from xic_extractor.peak_detection.model_selection import (
     ExpectedDiffApprovalRecord,
     expected_diff_stable_row_id,
@@ -180,7 +181,7 @@ def test_selected_hypothesis_uses_final_peak_result_confidence_when_score_is_sta
     )
 
 
-def test_select_targeted_peak_uses_model_selection_gate_for_selected_hypothesis(
+def test_hypothesis_policy_uses_model_selection_gate_for_selected_hypothesis(
     tmp_path,
 ) -> None:
     candidate = _candidate(8.50)
@@ -196,19 +197,21 @@ def test_select_targeted_peak_uses_model_selection_gate_for_selected_hypothesis(
         candidate_scores=(_score(candidate, confidence="HIGH"),),
     )
 
-    handoff = targeted_peak_selection.select_targeted_peak(
+    handoff = targeted_peak_selection._select_targeted_hypothesis(
         config=_config(tmp_path),
-        sample_name="SampleA",
         target=_target(),
         peak_result=peak_result,
-        candidate=candidate,
-        candidate_ms2_cache={},
-        candidate_ms2_builder=lambda _candidate: None,
-        rt=np.asarray([8.3, 8.5, 8.7]),
-        intensity=np.asarray([10.0, 100.0, 20.0]),
-        rt_min=8.0,
-        rt_max=9.0,
-        expected_rt_min=8.5,
+        candidate_ms2_evidence=None,
+        trace_group=targeted_extraction_trace_group(
+            config=_config(tmp_path),
+            sample_name="SampleA",
+            target=_target(),
+            rt=np.asarray([8.3, 8.5, 8.7]),
+            intensity=np.asarray([10.0, 100.0, 20.0]),
+            rt_min=8.0,
+            rt_max=9.0,
+            expected_rt_min=8.5,
+        ),
     )
 
     assert handoff.model_selection_result is not None
@@ -226,7 +229,7 @@ def test_select_targeted_peak_uses_model_selection_gate_for_selected_hypothesis(
     )
 
 
-def test_select_targeted_peak_keeps_trace_group_without_candidate_table_output(
+def test_hypothesis_policy_keeps_trace_group_without_candidate_table_output(
     tmp_path,
 ) -> None:
     candidate = _candidate(8.50)
@@ -242,30 +245,30 @@ def test_select_targeted_peak_keeps_trace_group_without_candidate_table_output(
         candidate_scores=(_score(candidate, confidence="HIGH"),),
     )
     rt = np.asarray([8.3, 8.5, 8.7, 9.2])
-    handoff = targeted_peak_selection.select_targeted_peak(
+    trace_group = targeted_extraction_trace_group(
         config=_config(tmp_path),
         sample_name="SampleA",
         target=_target(),
-        peak_result=peak_result,
-        candidate=candidate,
-        candidate_ms2_cache={},
-        candidate_ms2_builder=lambda _candidate: None,
         rt=rt,
         intensity=np.asarray([10.0, 100.0, 20.0, 15.0]),
         rt_min=8.0,
         rt_max=9.0,
         expected_rt_min=8.5,
     )
-
-    assert handoff.trace_group is not None
-    assert handoff.trace_group.primary_trace.rt[-1] == pytest.approx(9.2)
-    assert handoff.selected_hypothesis is not None
-    assert (
-        handoff.selected_hypothesis.trace_group_id == handoff.trace_group.trace_group_id
+    handoff = targeted_peak_selection._select_targeted_hypothesis(
+        config=_config(tmp_path),
+        target=_target(),
+        peak_result=peak_result,
+        candidate_ms2_evidence=None,
+        trace_group=trace_group,
     )
 
+    assert trace_group.primary_trace.rt[-1] == pytest.approx(9.2)
+    assert handoff.selected_hypothesis is not None
+    assert handoff.selected_hypothesis.trace_group_id == trace_group.trace_group_id
 
-def test_select_targeted_peak_falls_back_on_unapproved_successor_diff(
+
+def test_hypothesis_policy_falls_back_on_unapproved_successor_diff(
     tmp_path,
 ) -> None:
     legacy_selected = _candidate(8.50)
@@ -285,19 +288,21 @@ def test_select_targeted_peak_falls_back_on_unapproved_successor_diff(
         ),
     )
 
-    handoff = targeted_peak_selection.select_targeted_peak(
+    handoff = targeted_peak_selection._select_targeted_hypothesis(
         config=_config(tmp_path),
-        sample_name="SampleA",
         target=_target(),
         peak_result=peak_result,
-        candidate=legacy_selected,
-        candidate_ms2_cache={},
-        candidate_ms2_builder=lambda _candidate: None,
-        rt=np.asarray([8.3, 8.5, 8.55, 8.7]),
-        intensity=np.asarray([10.0, 80.0, 100.0, 20.0]),
-        rt_min=8.0,
-        rt_max=9.0,
-        expected_rt_min=8.5,
+        candidate_ms2_evidence=None,
+        trace_group=targeted_extraction_trace_group(
+            config=_config(tmp_path),
+            sample_name="SampleA",
+            target=_target(),
+            rt=np.asarray([8.3, 8.5, 8.55, 8.7]),
+            intensity=np.asarray([10.0, 80.0, 100.0, 20.0]),
+            rt_min=8.0,
+            rt_max=9.0,
+            expected_rt_min=8.5,
+        ),
     )
 
     assert handoff.model_selection_result is not None
@@ -320,7 +325,7 @@ def test_select_targeted_peak_falls_back_on_unapproved_successor_diff(
     )
 
 
-def test_select_targeted_peak_promotes_rna_containing_strict_nl_successor(
+def test_hypothesis_policy_promotes_rna_containing_strict_nl_successor(
     tmp_path,
 ) -> None:
     legacy_selected = _candidate(12.76, area=49_350.0)
@@ -357,14 +362,11 @@ def test_select_targeted_peak_promotes_rna_containing_strict_nl_successor(
         ),
     )
 
-    handoff = targeted_peak_selection.select_targeted_peak(
+    handoff = targeted_peak_selection._select_targeted_hypothesis(
         config=_config(tmp_path),
-        sample_name="TumorBC2304_DNAandRNA",
         target=_target(sample_applicability="rna_containing"),
         peak_result=peak_result,
-        candidate=legacy_selected,
-        candidate_ms2_cache={},
-        candidate_ms2_builder=lambda _candidate: CandidateMS2Evidence(
+        candidate_ms2_evidence=CandidateMS2Evidence(
             ms2_present=True,
             nl_match=True,
             nl_status="OK",
@@ -375,11 +377,16 @@ def test_select_targeted_peak_promotes_rna_containing_strict_nl_successor(
             best_product_base_ratio=0.8,
             alignment_source="region",
         ),
-        rt=np.asarray([12.6, 12.76, 12.9, 13.08, 13.2]),
-        intensity=np.asarray([10.0, 49_000.0, 2_000.0, 5_500_000.0, 3_000_000.0]),
-        rt_min=12.5,
-        rt_max=13.3,
-        expected_rt_min=13.0,
+        trace_group=targeted_extraction_trace_group(
+            config=_config(tmp_path),
+            sample_name="TumorBC2304_DNAandRNA",
+            target=_target(sample_applicability="rna_containing"),
+            rt=np.asarray([12.6, 12.76, 12.9, 13.08, 13.2]),
+            intensity=np.asarray([10.0, 49_000.0, 2_000.0, 5_500_000.0, 3_000_000.0]),
+            rt_min=12.5,
+            rt_max=13.3,
+            expected_rt_min=13.0,
+        ),
     )
 
     assert handoff.model_selection_result is not None
@@ -395,7 +402,7 @@ def test_select_targeted_peak_promotes_rna_containing_strict_nl_successor(
     assert "13.08000" in handoff.selected_hypothesis.hypothesis_id
 
 
-def test_select_targeted_peak_switches_on_approved_expected_diff(
+def test_hypothesis_policy_switches_on_approved_expected_diff(
     tmp_path,
 ) -> None:
     legacy_selected = _candidate(8.50)
@@ -449,23 +456,23 @@ def test_select_targeted_peak_switches_on_approved_expected_diff(
         final_label="expected_diff",
     )
 
-    handoff = targeted_peak_selection.select_targeted_peak(
+    handoff = targeted_peak_selection._select_targeted_hypothesis(
         config=_config(tmp_path),
-        sample_name="SampleA",
         target=_target(),
         peak_result=peak_result,
-        candidate=legacy_selected,
-        candidate_ms2_cache={},
-        candidate_ms2_builder=lambda _candidate: None,
-        rt=np.asarray([8.3, 8.5, 8.55, 8.7]),
-        intensity=np.asarray([10.0, 80.0, 100.0, 20.0]),
-        rt_min=8.0,
-        rt_max=9.0,
-        expected_rt_min=8.5,
+        candidate_ms2_evidence=None,
+        trace_group=targeted_extraction_trace_group(
+            config=_config(tmp_path),
+            sample_name="SampleA",
+            target=_target(),
+            rt=np.asarray([8.3, 8.5, 8.55, 8.7]),
+            intensity=np.asarray([10.0, 80.0, 100.0, 20.0]),
+            rt_min=8.0,
+            rt_max=9.0,
+            expected_rt_min=8.5,
+        ),
         paired_istd_anchor_rt=8.5,
-        model_selection_expected_diff_approvals={
-            approval.stable_row_id: approval
-        },
+        model_selection_expected_diff_approvals={approval.stable_row_id: approval},
     )
 
     assert handoff.model_selection_result is not None
@@ -484,7 +491,7 @@ def test_select_targeted_peak_switches_on_approved_expected_diff(
     )
 
 
-def test_select_targeted_peak_can_switch_to_paired_ratio_supported_nl_dropout(
+def test_hypothesis_policy_can_switch_to_paired_ratio_supported_nl_dropout(
     tmp_path,
 ) -> None:
     legacy_selected = _candidate(16.43, area=1_000.0, quality_flags=())
@@ -525,23 +532,19 @@ def test_select_targeted_peak_can_switch_to_paired_ratio_supported_nl_dropout(
     approval = ExpectedDiffApprovalRecord(
         stable_row_id=expected_diff_stable_row_id(
             legacy_selected_candidate_id=(
-                "BenignfatBC1055_DNA|Analyte|local_minimum||"
-                "16.43000|16.33000|16.53000"
+                "BenignfatBC1055_DNA|Analyte|local_minimum||16.43000|16.33000|16.53000"
             ),
             successor_selected_candidate_id=(
-                "BenignfatBC1055_DNA|Analyte|local_minimum||"
-                "17.18000|17.08000|17.28000"
+                "BenignfatBC1055_DNA|Analyte|local_minimum||17.18000|17.08000|17.28000"
             ),
         ),
         sample_name="BenignfatBC1055_DNA",
         target_label="Analyte",
         legacy_selected_candidate_id=(
-            "BenignfatBC1055_DNA|Analyte|local_minimum||"
-            "16.43000|16.33000|16.53000"
+            "BenignfatBC1055_DNA|Analyte|local_minimum||16.43000|16.33000|16.53000"
         ),
         successor_selected_candidate_id=(
-            "BenignfatBC1055_DNA|Analyte|local_minimum||"
-            "17.18000|17.08000|17.28000"
+            "BenignfatBC1055_DNA|Analyte|local_minimum||17.18000|17.08000|17.28000"
         ),
         public_outputs_touched=(
             "candidate table selected marker",
@@ -564,23 +567,25 @@ def test_select_targeted_peak_can_switch_to_paired_ratio_supported_nl_dropout(
         final_label="expected_diff",
     )
 
-    handoff = targeted_peak_selection.select_targeted_peak(
+    handoff = targeted_peak_selection._select_targeted_hypothesis(
         config=_config(tmp_path),
-        sample_name="BenignfatBC1055_DNA",
         target=_target(),
         peak_result=peak_result,
-        candidate=legacy_selected,
-        candidate_ms2_cache={},
-        candidate_ms2_builder=lambda _candidate: None,
-        rt=np.asarray([16.3, 16.43, 16.53, 17.08, 17.18, 17.28]),
-        intensity=np.asarray([10.0, 16_000.0, 5_000.0, 60_000.0, 125_000.0, 40_000.0]),
-        rt_min=16.0,
-        rt_max=17.5,
-        expected_rt_min=16.43,
+        candidate_ms2_evidence=None,
+        trace_group=targeted_extraction_trace_group(
+            config=_config(tmp_path),
+            sample_name="BenignfatBC1055_DNA",
+            target=_target(),
+            rt=np.asarray([16.3, 16.43, 16.53, 17.08, 17.18, 17.28]),
+            intensity=np.asarray(
+                [10.0, 16_000.0, 5_000.0, 60_000.0, 125_000.0, 40_000.0]
+            ),
+            rt_min=16.0,
+            rt_max=17.5,
+            expected_rt_min=16.43,
+        ),
         paired_istd_anchor_rt=17.15,
-        model_selection_expected_diff_approvals={
-            approval.stable_row_id: approval
-        },
+        model_selection_expected_diff_approvals={approval.stable_row_id: approval},
     )
 
     assert handoff.model_selection_result is not None
@@ -601,7 +606,7 @@ def test_select_targeted_peak_can_switch_to_paired_ratio_supported_nl_dropout(
     assert handoff.selection_decision.projected_confidence == "VERY_LOW"
 
 
-def test_select_targeted_peak_blocks_approved_expected_diff_for_unpaired_target(
+def test_hypothesis_policy_blocks_approved_expected_diff_for_unpaired_target(
     tmp_path,
 ) -> None:
     legacy_selected = _candidate(8.50)
@@ -655,22 +660,22 @@ def test_select_targeted_peak_blocks_approved_expected_diff_for_unpaired_target(
         final_label="expected_diff",
     )
 
-    handoff = targeted_peak_selection.select_targeted_peak(
+    handoff = targeted_peak_selection._select_targeted_hypothesis(
         config=_config(tmp_path),
-        sample_name="SampleA",
         target=replace(_target(), istd_pair=""),
         peak_result=peak_result,
-        candidate=legacy_selected,
-        candidate_ms2_cache={},
-        candidate_ms2_builder=lambda _candidate: None,
-        rt=np.asarray([8.3, 8.5, 8.55, 8.7]),
-        intensity=np.asarray([10.0, 80.0, 100.0, 20.0]),
-        rt_min=8.0,
-        rt_max=9.0,
-        expected_rt_min=8.5,
-        model_selection_expected_diff_approvals={
-            approval.stable_row_id: approval
-        },
+        candidate_ms2_evidence=None,
+        trace_group=targeted_extraction_trace_group(
+            config=_config(tmp_path),
+            sample_name="SampleA",
+            target=replace(_target(), istd_pair=""),
+            rt=np.asarray([8.3, 8.5, 8.55, 8.7]),
+            intensity=np.asarray([10.0, 80.0, 100.0, 20.0]),
+            rt_min=8.0,
+            rt_max=9.0,
+            expected_rt_min=8.5,
+        ),
+        model_selection_expected_diff_approvals={approval.stable_row_id: approval},
     )
 
     assert handoff.model_selection_result is not None
@@ -687,7 +692,7 @@ def test_select_targeted_peak_blocks_approved_expected_diff_for_unpaired_target(
     )
 
 
-def test_select_targeted_peak_blocks_pair_switch_without_same_sample_istd_anchor(
+def test_hypothesis_policy_blocks_pair_switch_without_same_sample_istd_anchor(
     tmp_path,
 ) -> None:
     legacy_selected = _candidate(8.50)
@@ -741,22 +746,22 @@ def test_select_targeted_peak_blocks_pair_switch_without_same_sample_istd_anchor
         final_label="expected_diff",
     )
 
-    handoff = targeted_peak_selection.select_targeted_peak(
+    handoff = targeted_peak_selection._select_targeted_hypothesis(
         config=_config(tmp_path),
-        sample_name="SampleA",
         target=_target(),
         peak_result=peak_result,
-        candidate=legacy_selected,
-        candidate_ms2_cache={},
-        candidate_ms2_builder=lambda _candidate: None,
-        rt=np.asarray([8.3, 8.5, 8.55, 8.7]),
-        intensity=np.asarray([10.0, 80.0, 100.0, 20.0]),
-        rt_min=8.0,
-        rt_max=9.0,
-        expected_rt_min=8.55,
-        model_selection_expected_diff_approvals={
-            approval.stable_row_id: approval
-        },
+        candidate_ms2_evidence=None,
+        trace_group=targeted_extraction_trace_group(
+            config=_config(tmp_path),
+            sample_name="SampleA",
+            target=_target(),
+            rt=np.asarray([8.3, 8.5, 8.55, 8.7]),
+            intensity=np.asarray([10.0, 80.0, 100.0, 20.0]),
+            rt_min=8.0,
+            rt_max=9.0,
+            expected_rt_min=8.55,
+        ),
+        model_selection_expected_diff_approvals={approval.stable_row_id: approval},
     )
 
     assert handoff.model_selection_result is not None
@@ -773,7 +778,7 @@ def test_select_targeted_peak_blocks_pair_switch_without_same_sample_istd_anchor
     )
 
 
-def test_select_targeted_peak_ignores_wrong_expected_diff_approval(
+def test_hypothesis_policy_ignores_wrong_expected_diff_approval(
     tmp_path,
 ) -> None:
     legacy_selected = _candidate(8.50)
@@ -827,22 +832,22 @@ def test_select_targeted_peak_ignores_wrong_expected_diff_approval(
         final_label="expected_diff",
     )
 
-    handoff = targeted_peak_selection.select_targeted_peak(
+    handoff = targeted_peak_selection._select_targeted_hypothesis(
         config=_config(tmp_path),
-        sample_name="SampleA",
         target=_target(),
         peak_result=peak_result,
-        candidate=legacy_selected,
-        candidate_ms2_cache={},
-        candidate_ms2_builder=lambda _candidate: None,
-        rt=np.asarray([8.3, 8.5, 8.55, 8.7]),
-        intensity=np.asarray([10.0, 80.0, 100.0, 20.0]),
-        rt_min=8.0,
-        rt_max=9.0,
-        expected_rt_min=8.5,
-        model_selection_expected_diff_approvals={
-            approval.stable_row_id: approval
-        },
+        candidate_ms2_evidence=None,
+        trace_group=targeted_extraction_trace_group(
+            config=_config(tmp_path),
+            sample_name="SampleA",
+            target=_target(),
+            rt=np.asarray([8.3, 8.5, 8.55, 8.7]),
+            intensity=np.asarray([10.0, 80.0, 100.0, 20.0]),
+            rt_min=8.0,
+            rt_max=9.0,
+            expected_rt_min=8.5,
+        ),
+        model_selection_expected_diff_approvals={approval.stable_row_id: approval},
     )
 
     assert handoff.model_selection_result is not None
@@ -854,7 +859,7 @@ def test_select_targeted_peak_ignores_wrong_expected_diff_approval(
     )
 
 
-def test_select_targeted_peak_blocks_audit_overlay_expected_diff_approval(
+def test_hypothesis_policy_blocks_audit_overlay_expected_diff_approval(
     tmp_path,
 ) -> None:
     legacy_selected = _candidate(8.50)
@@ -873,9 +878,7 @@ def test_select_targeted_peak_blocks_audit_overlay_expected_diff_approval(
             _score(successor_candidate, confidence="HIGH"),
         ),
     )
-    legacy_id = (
-        "SampleA|Analyte|local_minimum||8.50000|8.40000|8.60000"
-    )
+    legacy_id = "SampleA|Analyte|local_minimum||8.50000|8.40000|8.60000"
     audit_overlay_successor_id = (
         "SampleA|Analyte|local_minimum|"
         "chrom_peak_segment;centwave_cwt|8.55000|8.45000|8.65000"
@@ -907,23 +910,23 @@ def test_select_targeted_peak_blocks_audit_overlay_expected_diff_approval(
         final_label="expected_diff",
     )
 
-    handoff = targeted_peak_selection.select_targeted_peak(
+    handoff = targeted_peak_selection._select_targeted_hypothesis(
         config=_config(tmp_path),
-        sample_name="SampleA",
         target=_target(),
         peak_result=peak_result,
-        candidate=legacy_selected,
-        candidate_ms2_cache={},
-        candidate_ms2_builder=lambda _candidate: None,
-        rt=np.asarray([8.3, 8.5, 8.55, 8.7]),
-        intensity=np.asarray([10.0, 80.0, 100.0, 20.0]),
-        rt_min=8.0,
-        rt_max=9.0,
-        expected_rt_min=8.5,
+        candidate_ms2_evidence=None,
+        trace_group=targeted_extraction_trace_group(
+            config=_config(tmp_path),
+            sample_name="SampleA",
+            target=_target(),
+            rt=np.asarray([8.3, 8.5, 8.55, 8.7]),
+            intensity=np.asarray([10.0, 80.0, 100.0, 20.0]),
+            rt_min=8.0,
+            rt_max=9.0,
+            expected_rt_min=8.5,
+        ),
         paired_istd_anchor_rt=8.55,
-        model_selection_expected_diff_approvals={
-            approval.stable_row_id: approval
-        },
+        model_selection_expected_diff_approvals={approval.stable_row_id: approval},
     )
 
     assert handoff.model_selection_result is not None

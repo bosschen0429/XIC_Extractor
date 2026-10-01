@@ -1,15 +1,15 @@
-"""Select the Targeted product peak from hypothesis and approval evidence."""
+"""Complete Targeted selection against the shared physical peak owner."""
 
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import cast
 
+import numpy as np
+
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
-from xic_extractor.extraction.ms2_selection import selected_candidate_ms2_evidence
 from xic_extractor.extraction.scoring_factory import selected_candidate
 from xic_extractor.extraction.target_sample_applicability import (
     TARGET_SAMPLE_APPLICABILITY_RNA_CONTAINING,
@@ -18,7 +18,6 @@ from xic_extractor.extraction.target_sample_applicability import (
 from xic_extractor.extraction.targeted_peak_hypotheses import (
     build_targeted_peak_hypotheses as build_peak_hypotheses,
 )
-from xic_extractor.extraction.trace_context import targeted_extraction_trace_group
 from xic_extractor.peak_detection.baseline import BaselineMethod
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.model_selection import (
@@ -28,9 +27,26 @@ from xic_extractor.peak_detection.model_selection import (
     expected_diff_approval_for_result,
     model_select_peak_hypothesis,
 )
-from xic_extractor.peak_detection.models import PeakCandidate, PeakDetectionResult
+from xic_extractor.peak_detection.models import PeakDetectionResult
 from xic_extractor.peak_detection.ms1_morphology import (
     configured_morphology_window_points,
+)
+from xic_extractor.peak_detection.observations import (
+    physical_peak_observation_integration,
+)
+from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
+    selected_physical_segment,
+)
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    answer_physical_peak_question,
+    mint_physical_peak_question,
+)
+from xic_extractor.peak_detection.physical_peak_models import (
+    PHYSICAL_PEAK_NO_SELECTION_POLICY,
+    PHYSICAL_PEAK_POINT_POLICY,
+    PhysicalPeakEvaluation,
+    PhysicalSegmentUniverse,
+    PreparedSignalResult,
 )
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
@@ -41,11 +57,20 @@ from xic_extractor.peak_detection.traces import TraceGroup
 
 @dataclass(frozen=True)
 class TargetedPeakSelection:
+    peak_result: PeakDetectionResult
+    physical_evaluation: PhysicalPeakEvaluation
     candidate_ms2_evidence: CandidateMS2Evidence | None
     selected_hypothesis: PeakHypothesis | None
     selection_decision: PeakHypothesisSelectionDecision | None
-    trace_group: TraceGroup | None
+    trace_group: TraceGroup
     model_selection_result: PeakModelSelectionResult | None = None
+
+
+@dataclass(frozen=True)
+class _TargetedHypothesisSelection:
+    selected_hypothesis: PeakHypothesis | None
+    selection_decision: PeakHypothesisSelectionDecision | None
+    model_selection_result: PeakModelSelectionResult | None
 
 
 def build_production_peak_hypotheses(
@@ -104,43 +129,120 @@ def selected_peak_hypothesis(
 def select_targeted_peak(
     *,
     config: ExtractionConfig,
-    sample_name: str,
     target: Target,
     peak_result: PeakDetectionResult,
-    candidate: PeakCandidate | None,
-    candidate_ms2_cache: dict[PeakCandidate, CandidateMS2Evidence],
-    candidate_ms2_builder: Callable[[PeakCandidate], CandidateMS2Evidence | None],
-    rt: object,
-    intensity: object,
-    rt_min: float,
-    rt_max: float,
-    expected_rt_min: float | None,
+    trace_group: TraceGroup,
+    candidate_ms2_evidence: CandidateMS2Evidence | None,
+    prepared_result: PreparedSignalResult,
+    universe: PhysicalSegmentUniverse,
+    selection_rt_min: float,
+    selection_rt_max: float,
     paired_istd_anchor_rt: float | None = None,
     model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
 ) -> TargetedPeakSelection:
-    trace_group = targeted_extraction_trace_group(
-        sample_name=sample_name,
-        target=target,
+    """Return selection facts synced with physical availability and integration."""
+    hypothesis_selection = _select_targeted_hypothesis(
         config=config,
-        rt=rt,
-        intensity=intensity,
-        rt_min=rt_min,
-        rt_max=rt_max,
-        expected_rt_min=expected_rt_min,
+        target=target,
+        peak_result=peak_result,
+        trace_group=trace_group,
+        candidate_ms2_evidence=candidate_ms2_evidence,
+        paired_istd_anchor_rt=paired_istd_anchor_rt,
+        model_selection_expected_diff_approvals=model_selection_expected_diff_approvals,
     )
-    candidate_ms2_evidence = selected_candidate_ms2_evidence(
-        candidate,
-        candidate_ms2_cache,
-        candidate_ms2_builder,
+    selected_segment = selected_physical_segment(
+        selected_candidate(peak_result), universe
     )
+    if selected_segment is not None:
+        query_rt_min = selected_segment.apex_rt_min
+    elif universe.state != "available":
+        acquisition_trace = trace_group.primary_trace
+        query_rt_min = (acquisition_trace.rt_min + acquisition_trace.rt_max) / 2
+    else:
+        # A wide context may contain segments outside the selection window.
+        query_rt_min = (selection_rt_min + selection_rt_max) / 2
+    question = mint_physical_peak_question(
+        prepared_result.projection,
+        universe,
+        selection_subject_id=target.label,
+        query_rt_min=query_rt_min,
+        selection_policy_version=(
+            PHYSICAL_PEAK_POINT_POLICY
+            if selected_segment is not None
+            else PHYSICAL_PEAK_NO_SELECTION_POLICY
+        ),
+    )
+    physical_evaluation = answer_physical_peak_question(
+        prepared_result, universe, question
+    )
+    if physical_evaluation.state != "available":
+        # The final physical owner withdraws the ranked value and selection authority.
+        peak_result = replace(
+            peak_result,
+            status=(
+                "NO_SIGNAL"
+                if physical_evaluation.reason == "no_signal_above_baseline"
+                else "PEAK_NOT_FOUND"
+            ),
+            peak=None,
+            candidates=(),
+            n_prominent_peaks=0,
+            confidence=None,
+            reason=physical_evaluation.reason,
+            severities=(),
+            score_breakdown=(),
+            candidate_scores=(),
+        )
+        candidate_ms2_evidence = None
+        hypothesis_selection = _TargetedHypothesisSelection(None, None, None)
+    elif (
+        hypothesis_selection.selected_hypothesis is not None
+        and physical_evaluation.integration is not None
+    ):
+        physical_hypothesis = replace(
+            hypothesis_selection.selected_hypothesis,
+            integration=physical_peak_observation_integration(physical_evaluation),
+        )
+        hypothesis_selection = replace(
+            hypothesis_selection,
+            selected_hypothesis=physical_hypothesis,
+            selection_decision=selection_decision_from_hypothesis(
+                physical_hypothesis,
+                peak_result=peak_result,
+            ),
+        )
+    return TargetedPeakSelection(
+        peak_result=peak_result,
+        physical_evaluation=physical_evaluation,
+        candidate_ms2_evidence=candidate_ms2_evidence,
+        selected_hypothesis=hypothesis_selection.selected_hypothesis,
+        selection_decision=hypothesis_selection.selection_decision,
+        trace_group=trace_group,
+        model_selection_result=hypothesis_selection.model_selection_result,
+    )
+
+
+def _select_targeted_hypothesis(
+    *,
+    config: ExtractionConfig,
+    target: Target,
+    peak_result: PeakDetectionResult,
+    trace_group: TraceGroup,
+    candidate_ms2_evidence: CandidateMS2Evidence | None,
+    paired_istd_anchor_rt: float | None = None,
+    model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
+) -> _TargetedHypothesisSelection:
+    """Apply approval and Targeted role policy to the ranked peak hypotheses."""
+    sample_name = trace_group.sample_name
+    trace = trace_group.primary_trace
     hypotheses = build_production_peak_hypotheses(
         config=config,
         sample_name=sample_name,
         target=target,
         peak_result=peak_result,
         selected_candidate_ms2_evidence=candidate_ms2_evidence,
-        rt=rt,
-        intensity=intensity,
+        rt=np.asarray(trace.rt, dtype=float),
+        intensity=np.asarray(trace.intensity, dtype=float),
         trace_group=trace_group,
     )
     model_selection_result = _model_selection_result_for_handoff(
@@ -162,8 +264,7 @@ def select_targeted_peak(
         model_selection_result,
         legacy_selected_hypothesis,
     )
-    return TargetedPeakSelection(
-        candidate_ms2_evidence=candidate_ms2_evidence,
+    return _TargetedHypothesisSelection(
         selected_hypothesis=selected_hypothesis,
         selection_decision=(
             selection_decision_from_hypothesis(
@@ -173,7 +274,6 @@ def select_targeted_peak(
             if selected_hypothesis is not None
             else None
         ),
-        trace_group=trace_group,
         model_selection_result=model_selection_result,
     )
 
