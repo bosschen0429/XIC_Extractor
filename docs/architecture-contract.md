@@ -45,7 +45,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | 峰選擇、邊界、面積 | `peak_detection/`（`signal_processing.py` 只保留公開的 `find_peak_and_area` 入口） | 單峰／單次觀察的答案；跨樣本群組在 Alignment |
 | Targeted 正式選峰與 successor approval | `extraction/targeted_peak_selection.py` | 組合 hypotheses 與 Targeted 選峰政策，交出選定的峰、trace 和 decision；單峰演算法仍在 `peak_detection/` |
 | Targeted 輸入轉成共用峰假設 | `extraction/targeted_peak_hypotheses.py` | 選峰、candidate table 與 boundary callers 共用同一 translation；audit callers 不依賴正式選峰政策 |
-| Targeted 計數、角色例外與 review 原因 | `applications/targeted/product_projection.py` | 消費已完成的科學結果，決定產品狀態；純結果模型在同目錄 `product_model.py`，writer 只呈現它 |
+| Targeted 計數、角色例外與 review 原因 | `applications/targeted/product_projection.py` | 消費已完成的科學結果，決定產品狀態；純結果模型在 `output/targeted_product_model.py`，writer 只呈現它 |
 | 跨樣本配對、RT 漂移、群組 | `alignment/grouping_workflow.py`、`alignment/cross_sample/` | 群組決定先完成，Backfill 與格值決策消費同一結果 |
 | 從已取得的 evidence 完成科學結果 | `alignment/completion.py` | Targeted／Untargeted 共用 capture、grouping、cell 與 projection；不執行 runtime 或保存暫存 |
 | Untargeted CID-NL 的 sample assessment／Backfill inputs | `alignment/cid_nl_inputs.py` | 正式 partition 與 diagnostic projection 共用相同 input types、payload validation 和 method default；不依賴 artifact rendering |
@@ -255,14 +255,14 @@ Use this map to choose the reason a package changes. File placement is owned by
 | Surface | Owns | Does not own |
 | --- | --- | --- |
 | `configuration/` | settings, target/config loading, validation, typed runtime settings | extraction or rendering |
-| `applications/targeted/` | Formal Targeted application composition and request/result interface; product state, role/applicability policy, counted detection and reason overlays; pure product result model | scientific peak selection, numeric cell decisions, RAW acquisition or rendering |
+| `applications/targeted/` | Formal Targeted application composition and request/result interface, its production workflow and output boundary; product state, role/applicability policy, counted detection and reason overlays | scientific peak selection, numeric cell decisions, RAW acquisition or rendering |
 | `applications/untargeted/` | Untargeted input preparation, Discovery-to-provisional-Matrix composition, execution-to-publication orchestration, cancellation, completed-store and explanation lifetime; delegates Matrix publishing to `output/alignment/` | scientific grouping, cell decisions, a second runtime owner or writer algorithm |
 | `discovery/` | general candidate discovery, seed generation, workflow-neutral discovery facts, receipt-bound CSV reading and bounded candidate loading | matrix decisions or target-list policy |
 | `execution/` | generic attempt execution/finalization, partition scheduling, reusable worker admission pools, one-shot process jobs, streamed result storage, recovery, and runtime timing/process-memory measurement | method-specific science, subject splitting, or writer authority |
-| `extraction/` | Targeted acquisition and production workflow adapters, jobs, windowing, drift, backend coordination, publication mechanics, and retained Untargeted batch execution (`untargeted_input_planning`, `untargeted_execution`, `untargeted_partition_composition`, `untargeted_alignment`) | application composition, GUI, or Alignment decisions |
+| `extraction/` | Targeted acquisition adapters, jobs, windowing, drift, backend coordination, output dispatch, and retained Untargeted batch execution (`untargeted_input_planning`, `untargeted_execution`, `untargeted_partition_composition`, `untargeted_alignment`) | application composition, GUI, or Alignment decisions |
 | `peak_detection/` | physical observations, hypotheses, resolvers, boundaries, integration, evidence composition | cross-sample grouping, workflow policy, or writers |
 | `alignment/` | cross-sample grouping, refinement/repair composition, Alignment adapters and renderers | a second runtime owner, mutable transport authority, or Targeted-only science |
-| `output/` | workbook/TSV/HTML schema rendering; `output/alignment/` owns Matrix artifact selection, streaming/materialization coordination, atomic writes and fingerprint receipts | evidence recomputation, application store lifetime or RAW access |
+| `output/` | workbook/TSV/HTML schema rendering and the pure Targeted product result model they render; `output/alignment/` owns Matrix artifact selection, streaming/materialization coordination, atomic writes and fingerprint receipts | evidence recomputation, application store lifetime or RAW access |
 | `diagnostics/` | reusable diagnostic models, summaries, classification, and alignment explanation persistence (`alignment_explanation`) | CLI parsing, production mutation, or domain recomputation |
 | `xic_inspector/` | installed read-only review API/CLI, source adapters, canonical selection, and self-contained offline HTML rendering | RAW acquisition, scientific recomputation, identity/Matrix decisions, or write authority |
 | `gui/` and `scripts/` | interaction and thin orchestration | reusable domain behavior |
@@ -302,7 +302,7 @@ architecture boundaries.
 selection and product projection. Targeted role policy belongs in the Targeted
 application's `product_projection` owner. `extraction.result_assembly` creates
 the extraction result and delegates to `project_targeted_result`; writers consume
-the pure `product_model` without importing orchestration. Because Alignment also consumes
+the pure `output.targeted_product_model` without importing orchestration. Because Alignment also consumes
 the shared layer, changes there have cross-path blast radius. The complete
 resolution order is in [`decision-policy.md`](product/decision-policy.md).
 

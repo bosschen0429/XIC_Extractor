@@ -30,7 +30,7 @@ from xic_extractor.extraction.targeted_runtime_adapter import (
 from xic_extractor.rt_prior_library import LibraryEntry
 
 if TYPE_CHECKING:
-    from xic_extractor.extraction.targeted_production_workflow import (
+    from xic_extractor.applications.targeted.production_workflow import (
         TargetedProductionInputSnapshot,
     )
     from xic_extractor.extractor import RunOutput
@@ -139,7 +139,7 @@ class TargetedApplicationService:
         resolved_request = _isolate_application_request(
             _resolve_application_request(request)
         )
-        from xic_extractor.extraction.targeted_production_workflow import (
+        from xic_extractor.applications.targeted.production_workflow import (
             complete_prepared_targeted_production_workflow,
             prepare_targeted_production_workflow,
             snapshot_targeted_production_inputs,
@@ -195,7 +195,7 @@ class TargetedApplicationService:
                 active_output=active_output,
                 finalized_results=finalized_results,
             )
-        from xic_extractor.extraction.targeted_output_boundary import (
+        from xic_extractor.applications.targeted.output_boundary import (
             publish_targeted_outputs,
         )
 

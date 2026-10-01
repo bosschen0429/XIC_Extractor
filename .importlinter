@@ -65,6 +65,7 @@ type = forbidden
 source_modules =
     xic_extractor.output
 forbidden_modules =
+    xic_extractor.applications
     xic_extractor.extraction
     xic_extractor.extractor
     xic_extractor.raw_reader

@@ -3,9 +3,6 @@ from typing import Literal
 
 import pytest
 
-from xic_extractor.applications.targeted.product_model import (
-    OWN_MAX_SAME_PEAK_SUPPORT_REASON,
-)
 from xic_extractor.configuration.models import Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.evidence_semantics import EvidenceDecisionSemantics
@@ -24,6 +21,9 @@ from xic_extractor.extraction.targeted_ms1_shape_identity_projection import (
     result_with_targeted_ms1_shape_identity_support,
 )
 from xic_extractor.extractor import FileResult, RunOutput
+from xic_extractor.output.targeted_product_model import (
+    OWN_MAX_SAME_PEAK_SUPPORT_REASON,
+)
 from xic_extractor.peak_detection.hypotheses import (
     AuditTrail,
     EvidenceVector,

@@ -5,9 +5,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.applications.targeted.product_model import (
-    OWN_MAX_SAME_PEAK_SUPPORT_REASON,
-)
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
     _mint_artifact_semantic_contract_ref,
@@ -18,6 +15,9 @@ from xic_extractor.extraction.targeted_ms1_shape_identity_projection import (
     SCHEMA_VERSION,
     TARGETED_MS1_SHAPE_IDENTITY_COLUMNS,
     VALIDATION_LABEL,
+)
+from xic_extractor.output.targeted_product_model import (
+    OWN_MAX_SAME_PEAK_SUPPORT_REASON,
 )
 from xic_extractor.peak_detection.ms1_shape_identity import (
     DEFAULT_COMPETING_EXCLUSION_WINDOW_MIN,

@@ -125,7 +125,7 @@ from xic_extractor.sample_metadata import (
 _IDENTITY_NAMESPACE = "targeted-production"
 _TRACE_SOURCE = "xic_extractor.targeted_production_workflow:retained-acquisition"
 _NO_OBSERVATION_ARTIFACT_CONTRACT = _mint_artifact_semantic_contract_ref(
-    owner_namespace="xic_extractor.extraction.targeted_production_workflow",
+    owner_namespace="xic_extractor.applications.targeted.production_workflow",
     semantic_role="retained_no_observation_capture_population",
     schema_version="targeted_no_observation_capture",
     validation_status="production_input",

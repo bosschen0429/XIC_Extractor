@@ -5,9 +5,6 @@ from openpyxl.utils import get_column_letter
 
 from scripts import csv_to_excel
 from xic_extractor import extractor as extractor_module
-from xic_extractor.applications.targeted.product_model import (
-    TargetedProductProjection,
-)
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extractor import (
     ExtractionResult,
@@ -18,6 +15,9 @@ from xic_extractor.output.csv_writers import (
     _long_output_rows,
     _output_row,
     write_all,
+)
+from xic_extractor.output.targeted_product_model import (
+    TargetedProductProjection,
 )
 from xic_extractor.peak_detection.models import (
     PeakCandidate,
