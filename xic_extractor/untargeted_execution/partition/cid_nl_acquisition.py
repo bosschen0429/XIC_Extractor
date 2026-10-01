@@ -53,7 +53,6 @@ from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelationRef,
-    resolve_dda_cid_nl_candidate_set_relation_ref,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceRef,
@@ -66,6 +65,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlTechnicalState,
     is_cid_nl_missing_ms1_rejection,
     mint_cid_nl_method_assessment_ref,
+    resolve_cid_nl_method_relations,
     validate_cid_nl_method_assessment_binding,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -80,7 +80,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportPolicy,
     DdaCidNlPeakSupportRef,
-    resolve_dda_cid_nl_peak_support_ref,
 )
 from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
@@ -838,33 +837,21 @@ def adapt_current_discovery_sample_subject(
         if _observer is not None:
             _observer.record_artifact(evidence.artifact)
             _observer.record_artifact(projection.artifact)
-        relation_kind = _relation_kind(
-            evidence=evidence,
+        resolved_support, resolved_sets = resolve_cid_nl_method_relations(
+            processing_owners=processing_owners,
+            sample=sample,
+            evidence_refs=(evidence,),
             candidate_peaks=candidate_universe,
             policy=support_policy,
         )
-        if relation_kind == "individual":
-            support = resolve_dda_cid_nl_peak_support_ref(
-                processing_owners=processing_owners,
-                sample=sample,
-                canonical_evidence=evidence,
-                candidate_peaks=candidate_universe,
-                policy=support_policy,
-            )
-            individual_refs.append(support)
-            if _observer is not None:
-                _observer.record_artifact(support.artifact)
-        elif relation_kind == "set":
-            relation = resolve_dda_cid_nl_candidate_set_relation_ref(
-                processing_owners=processing_owners,
-                sample=sample,
-                canonical_evidence=evidence,
-                candidate_peaks=candidate_universe,
-                policy=support_policy,
-            )
-            set_refs.append(relation)
-            if _observer is not None:
-                _observer.record_artifact(relation.artifact)
+        individual_refs.extend(resolved_support)
+        set_refs.extend(resolved_sets)
+        if _observer is not None:
+            resolved_relations: tuple[
+                DdaCidNlPeakSupportRef | DdaCidNlCandidateSetRelationRef, ...
+            ] = (*resolved_support, *resolved_sets)
+            for ref in resolved_relations:
+                _observer.record_artifact(ref.artifact)
 
     assessment = _mint_assessment(
         processing_owners=processing_owners,
@@ -1140,33 +1127,13 @@ def backfill_untargeted_cid_nl_sample_subject(
             for ref in initial_assessment.evidence_refs
             if query_rt_min <= ref.observation.scan_rt_min <= query_rt_max
         )
-        individual_refs = []
-        set_refs = []
-        for evidence in backfill_evidence:
-            kind = _relation_kind(
-                evidence=evidence, candidate_peaks=observations, policy=support_policy
-            )
-            if kind == "individual":
-                individual_refs.append(
-                    resolve_dda_cid_nl_peak_support_ref(
-                        processing_owners=processing_owners,
-                        sample=sample,
-                        canonical_evidence=evidence,
-                        candidate_peaks=observations,
-                        policy=support_policy,
-                    )
-                )
-            elif kind == "set":
-                set_refs.append(
-                    resolve_dda_cid_nl_candidate_set_relation_ref(
-                        processing_owners=processing_owners,
-                        sample=sample,
-                        canonical_evidence=evidence,
-                        candidate_peaks=observations,
-                        policy=support_policy,
-                    )
-                )
-        backfill_support, backfill_sets = tuple(individual_refs), tuple(set_refs)
+        backfill_support, backfill_sets = resolve_cid_nl_method_relations(
+            processing_owners=processing_owners,
+            sample=sample,
+            evidence_refs=backfill_evidence,
+            candidate_peaks=observations,
+            policy=support_policy,
+        )
         scanned_count = len({ref.observation.scan_number for ref in backfill_evidence})
         if _observer is not None:
             backfill_relations: tuple[
@@ -1341,29 +1308,15 @@ def _composite_backfill_evidence(
                 product_intensity=seed.product_intensity,
             )
             evidence_refs.append(evidence)
-            kind = _relation_kind(
-                evidence=evidence, candidate_peaks=observations, policy=support_policy
+            resolved_support, resolved_sets = resolve_cid_nl_method_relations(
+                processing_owners=processing_owners,
+                sample=sample,
+                evidence_refs=(evidence,),
+                candidate_peaks=observations,
+                policy=support_policy,
             )
-            if kind == "individual":
-                individual_refs.append(
-                    resolve_dda_cid_nl_peak_support_ref(
-                        processing_owners=processing_owners,
-                        sample=sample,
-                        canonical_evidence=evidence,
-                        candidate_peaks=observations,
-                        policy=support_policy,
-                    )
-                )
-            elif kind == "set":
-                set_refs.append(
-                    resolve_dda_cid_nl_candidate_set_relation_ref(
-                        processing_owners=processing_owners,
-                        sample=sample,
-                        canonical_evidence=evidence,
-                        candidate_peaks=observations,
-                        policy=support_policy,
-                    )
-                )
+            individual_refs.extend(resolved_support)
+            set_refs.extend(resolved_sets)
     return (
         tuple(evidence_refs),
         tuple(individual_refs),
@@ -1566,54 +1519,6 @@ def method_label(candidate: DiscoveryCandidate) -> str:
     return (
         f"untargeted:{candidate.precursor_mz:.8g}:"
         f"NL{candidate.configured_neutral_loss_da:.8g}"
-    )
-
-
-def _relation_kind(
-    *,
-    evidence: CidNlEvidenceRef,
-    candidate_peaks: tuple[PeakObservationRef, ...],
-    policy: DdaCidNlPeakSupportPolicy,
-) -> str | None:
-    observation = evidence.observation
-    mz_compatible = tuple(
-        peak
-        for peak in candidate_peaks
-        if abs(observation.precursor_mz - peak.content.mz)
-        <= policy.precursor_tolerance_da
-    )
-    containing = tuple(
-        peak
-        for peak in mz_compatible
-        if peak.content.integration.rt_left_min
-        <= observation.scan_rt_min
-        <= peak.content.integration.rt_right_min
-    )
-    if not containing:
-        return None
-    if len(containing) != 1:
-        return "set"
-    selected = containing[0]
-    interval = selected.content.integration
-    if not interval.rt_left_min < observation.scan_rt_min < interval.rt_right_min:
-        return "set"
-    if any(
-        peak is not selected and _intervals_overlap(selected, peak)
-        for peak in mz_compatible
-    ):
-        return "set"
-    return "individual"
-
-
-def _intervals_overlap(
-    left: PeakObservationRef,
-    right: PeakObservationRef,
-) -> bool:
-    left_interval = left.content.integration
-    right_interval = right.content.integration
-    return (
-        left_interval.rt_left_min < right_interval.rt_right_min
-        and right_interval.rt_left_min < left_interval.rt_right_min
     )
 
 
