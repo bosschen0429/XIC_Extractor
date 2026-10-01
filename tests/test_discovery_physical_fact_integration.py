@@ -216,7 +216,9 @@ def test_merged_physical_candidate_persists_representative_search_window(
 ) -> None:
     from xic_extractor.acquisition_contract import serialize_acquired_trace
     from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
-    from xic_extractor.discovery.pipeline import _write_dual_csvs
+    from xic_extractor.discovery.output_publication import (
+        write_dual_csvs,
+    )
     from xic_extractor.execution.timing import TimingRecorder
     from xic_extractor.extraction.untargeted_alignment import (
         _restore_physical_candidate,
@@ -279,7 +281,7 @@ def test_merged_physical_candidate_persists_representative_search_window(
     before_evaluation = serialize_physical_peak_evaluation(
         selected.rt, selected.raw, profile=profile, evaluation=selected.evaluation
     )
-    outputs = _write_dual_csvs(
+    outputs = write_dual_csvs(
         tmp_path / "discovery",
         (candidate,),
         timing_recorder=TimingRecorder.disabled("discovery"),
@@ -421,7 +423,7 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
         return write_discovery_physical_fact_sidecar(path, **kwargs)
 
     monkeypatch.setattr(
-        "xic_extractor.discovery.pipeline.write_discovery_physical_fact_sidecar",
+        "xic_extractor.discovery.output_publication.write_discovery_physical_fact_sidecar",
         capture_sidecar,
     )
 
@@ -544,7 +546,7 @@ def test_sparse_trace_outside_actual_context_persists_truthful_unavailable(
         return write_discovery_physical_fact_sidecar(path, **kwargs)
 
     monkeypatch.setattr(
-        "xic_extractor.discovery.pipeline.write_discovery_physical_fact_sidecar",
+        "xic_extractor.discovery.output_publication.write_discovery_physical_fact_sidecar",
         capture_sidecar,
     )
 

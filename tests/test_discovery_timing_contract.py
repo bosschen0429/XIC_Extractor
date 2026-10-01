@@ -22,10 +22,12 @@ from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.ms1_backfill import (
     _backfill_ms1_candidates_with_acquisition,
 )
+from xic_extractor.discovery.output_publication import (
+    write_dual_csvs,
+)
 from xic_extractor.discovery.physical_fact_persistence import (
     read_discovery_physical_fact_records,
 )
-from xic_extractor.discovery.pipeline import _write_dual_csvs
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
@@ -85,7 +87,7 @@ def test_physical_sidecar_and_publication_timing_cover_canonical_bytes_without_r
     monkeypatch.setattr(owner, "evaluate_physical_peak", unexpected_evaluate)
     recorder = TimingRecorder("discovery", run_id="timed-publication")
 
-    outputs = _write_dual_csvs(
+    outputs = write_dual_csvs(
         tmp_path / "out",
         result.candidates,
         timing_recorder=recorder,
@@ -134,7 +136,7 @@ def test_discovery_output_timing_records_failure_boundary(
     output_dir = tmp_path / "out"
     if failure == "sidecar":
         monkeypatch.setattr(
-            "xic_extractor.discovery.pipeline."
+            "xic_extractor.discovery.output_publication."
             "write_discovery_physical_fact_sidecar",
             lambda *_args, **_kwargs: (_ for _ in ()).throw(
                 OSError("timed sidecar failure")
@@ -154,7 +156,7 @@ def test_discovery_output_timing_records_failure_boundary(
         monkeypatch.setattr(Path, "replace", fail_publish)
 
     with pytest.raises(OSError, match=f"timed {failure} failure"):
-        _write_dual_csvs(
+        write_dual_csvs(
             output_dir,
             (),
             timing_recorder=recorder,
@@ -174,7 +176,7 @@ def test_discovery_output_timing_records_failure_boundary(
 def test_legacy_publication_times_only_two_public_outputs(tmp_path: Path) -> None:
     recorder = TimingRecorder("discovery", run_id="legacy-publication")
 
-    outputs = _write_dual_csvs(
+    outputs = write_dual_csvs(
         tmp_path / "out",
         (),
         timing_recorder=recorder,
