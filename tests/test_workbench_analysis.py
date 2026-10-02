@@ -27,6 +27,75 @@ def _terminal(jobs):
     return jobs.state()
 
 
+@pytest.mark.parametrize("outcome", ["succeeded", "failed", "cancelled"])
+def test_next_job_keeps_running_clock_after_previous_job_finishes(
+    tmp_path, monkeypatch, outcome
+):
+    jobs = AnalysisJobs(tmp_path)
+    terminal_visible = threading.Event()
+    finish_previous = threading.Event()
+    next_running = threading.Event()
+    finish_next = threading.Event()
+    clock = [100.0]
+    monkeypatch.setattr("xic_workbench.jobs.time.time", lambda: clock[0])
+
+    class PauseAfterTerminal:
+        """Let a request arrive as soon as the previous terminal state is visible."""
+
+        def __init__(self):
+            self.lock = threading.RLock()
+            self.paused = False
+
+        def __enter__(self):
+            self.lock.acquire()
+            return self
+
+        def __exit__(self, *args):
+            pause = (
+                threading.current_thread().name.startswith("xic-analysis")
+                and not self.paused
+                and jobs._current["status"] == outcome
+            )
+            if pause:
+                self.paused = True
+            self.lock.release()
+            if pause:
+                terminal_visible.set()
+                assert finish_previous.wait(5)
+
+    def run(kind, values):
+        if values["name"] == "next":
+            next_running.set()
+            assert finish_next.wait(5)
+        elif outcome == "failed":
+            raise ValueError("first failed")
+        elif outcome == "cancelled":
+            raise InterruptedError("first cancelled")
+        return values
+
+    jobs._lock = PauseAfterTerminal()
+    monkeypatch.setattr(jobs, "_run", run)
+    try:
+        jobs.start("samples", {"name": "first"})
+        assert terminal_visible.wait(5)
+        clock[0] = 200.0
+        next_job = jobs.start("samples", {"name": "next"})["job"]
+        finish_previous.set()
+        assert next_running.wait(5)
+        clock[0] = 207.0
+        state = jobs.state()["job"]
+        assert state["job_id"] == next_job["job_id"]
+        assert state["status"] == "running"
+        assert "finished_at" not in state
+        assert state["elapsed_seconds"] == 7.0
+        clock[0] = 211.0
+        assert jobs.state()["job"]["elapsed_seconds"] == 11.0
+    finally:
+        finish_previous.set()
+        finish_next.set()
+        jobs.close()
+
+
 def test_analysis_failure_and_cancel_retain_previous_published_results(
     tmp_path, monkeypatch
 ):

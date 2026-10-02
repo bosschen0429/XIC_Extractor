@@ -93,24 +93,26 @@ class AnalysisJobs:
             result = self._run(kind, values)
             with self._lock:
                 assert self._current is not None
-                self._current.update(status="succeeded", result=result)
+                self._current.update(
+                    status="succeeded", result=result, finished_at=time.time()
+                )
                 self._results[kind] = copy.deepcopy(result)
         except InterruptedError as exc:
             with self._lock:
                 assert self._current is not None
                 self._current.update(
-                    status="cancelled", error=str(exc) or "工作已停止。"
+                    status="cancelled",
+                    error=str(exc) or "工作已停止。",
+                    finished_at=time.time(),
                 )
         except Exception as exc:
             with self._lock:
                 assert self._current is not None
                 self._current.update(
-                    status="failed", error=str(exc) or type(exc).__name__
+                    status="failed",
+                    error=str(exc) or type(exc).__name__,
+                    finished_at=time.time(),
                 )
-        finally:
-            with self._lock:
-                assert self._current is not None
-                self._current["finished_at"] = time.time()
 
     def _run(self, kind: str, values: dict[str, Any]) -> dict[str, Any]:
         if kind == "targeted":

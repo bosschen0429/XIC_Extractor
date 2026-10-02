@@ -859,11 +859,12 @@
     };
     $("target-reset").onclick = () => {
       const values = settingsValues();
-      renderSettings({
+      state.config.settings = {
         ...state.config.targeted_form.defaults,
         data_dir: values.data_dir,
         dll_dir: values.dll_dir,
-      });
+      };
+      renderSettings(state.config.settings);
       dirty("targeted");
     };
     $("target-edit").onclick = () => {
