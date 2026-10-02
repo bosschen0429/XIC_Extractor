@@ -1418,3 +1418,32 @@ Evidence: `diagnostic_only`, oracle `exact_safe`, local worker choice
 Rerun for changed host resources, workload or runtime locality, not merely to
 search a wider worker-count grid. These independent trials do not establish a
 combined Discovery-plus-Alignment percentage.
+
+### 2026-10-02 Discovery Precursor Index Preserves First-Match Merges
+
+Baseline `00a7c96d3eec1c2bd7005faae4cd5212bc37cde4`; candidate
+`candidate_merge.py` SHA-256
+`f500a36452a860f3dd74092f493fdecaa39a3b4e27b7bdee5febede43777e3af`.
+A private precursor-mass index limits the existing exact matching predicate to
+nearby representatives. Candidate ordinals remain in original order, and a
+changed representative updates the index. The ppm boundary epsilon, merge
+eligibility, representative selection and lineage retain their existing rules.
+
+One RAW, `BenignfatBC1055_DNA`, with `dna_dr`, identical single-RAW CLI settings,
+no application cache, uncontrolled warm OS cache and no profiler: B1/C1/C2/B2
+wall times were 32.400/28.558/28.612/32.104 s. The MS1 Backfill stage is the
+decision metric: median 17.537 -> 14.124 s (19.46%), a 3.413 s gain versus a
+0.214 s baseline range. Both paired candidates were faster. Whole-command wall
+median was 32.252 -> 28.585 s (11.37%); baseline range was 0.296 s. Baseline
+restoration executes the exact module from the baseline Git object before the
+CLI imports it; that Git startup is included only in whole-command wall time.
+
+All four runs produced byte-identical candidate CSV, review CSV and
+physical-facts JSON. Eighty-one affected engineering tests passed, including
+first-match order, representative changes and ppm-boundary lineage parity.
+Evidence: `diagnostic_only`, oracle `exact_safe`, disposition `optimized`.
+This establishes a local single-RAW gain, not a cohort-wide percentage or
+scientific readiness. Raw timings, commands, output hashes and source binding:
+`output/core-selection-and-search/discovery/merge-mass-index-v1/receipt.json`.
+Rerun if merge eligibility/order, input population or the performance scope
+changes.

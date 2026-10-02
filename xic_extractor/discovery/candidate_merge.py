@@ -15,7 +15,11 @@ from xic_extractor.discovery.models import (
 from xic_extractor.discovery.priority import (
     assign_review_priority,
 )
-from xic_extractor.mass_accuracy import neutral_loss_match, within_ppm
+from xic_extractor.mass_accuracy import (
+    PPM_BOUNDARY_EPSILON,
+    neutral_loss_match,
+    within_ppm,
+)
 
 _TagIntersectionStatus = Literal["not_required", "complete", "incomplete"]
 
@@ -35,6 +39,85 @@ class DiscoveryCandidateMergeBinding:
 class DiscoveryCandidateMergeResult:
     candidates: tuple[DiscoveryCandidate, ...]
     bindings: tuple[DiscoveryCandidateMergeBinding, ...]
+
+
+class _PrecursorMassIndex:
+    """Candidate ordinals bucketed by precursor m/z for exact merge filtering."""
+
+    _BUCKET_WIDTH_DA = 1.0
+
+    def __init__(self) -> None:
+        self._buckets: dict[int, set[int]] = {}
+
+    def add(self, ordinal: int, precursor_mz: float) -> None:
+        bucket = self._bucket(precursor_mz)
+        if bucket is not None:
+            self._buckets.setdefault(bucket, set()).add(ordinal)
+
+    def remove(self, ordinal: int, precursor_mz: float) -> None:
+        bucket = self._bucket(precursor_mz)
+        if bucket is None:
+            return
+        ordinals = self._buckets.get(bucket)
+        if ordinals is None:
+            return
+        ordinals.discard(ordinal)
+        if not ordinals:
+            del self._buckets[bucket]
+
+    def candidate_ordinals(
+        self, reference_mz: float, tolerance_ppm: float
+    ) -> tuple[int, ...]:
+        if (
+            not math.isfinite(reference_mz)
+            or not math.isfinite(tolerance_ppm)
+            or reference_mz <= 0
+            or tolerance_ppm < 0
+        ):
+            return ()
+        radius_da = (
+            reference_mz * tolerance_ppm * 1e-6
+            + reference_mz * PPM_BOUNDARY_EPSILON * 1e-6
+        )
+        if not math.isfinite(radius_da):
+            return self._all_ordinals()
+        radius_da = math.nextafter(radius_da, math.inf)
+        first_bucket = math.floor(
+            (reference_mz - radius_da) / self._BUCKET_WIDTH_DA
+        )
+        last_bucket = math.floor(
+            (reference_mz + radius_da) / self._BUCKET_WIDTH_DA
+        )
+        bucket_span = last_bucket - first_bucket + 1
+        if bucket_span <= max(64, 2 * len(self._buckets)):
+            ordinals = {
+                ordinal
+                for bucket in range(first_bucket, last_bucket + 1)
+                for ordinal in self._buckets.get(bucket, ())
+            }
+        else:
+            ordinals = {
+                ordinal
+                for bucket, bucket_ordinals in self._buckets.items()
+                if first_bucket <= bucket <= last_bucket
+                for ordinal in bucket_ordinals
+            }
+        return tuple(sorted(ordinals))
+
+    def _all_ordinals(self) -> tuple[int, ...]:
+        return tuple(
+            sorted(
+                ordinal
+                for bucket_ordinals in self._buckets.values()
+                for ordinal in bucket_ordinals
+            )
+        )
+
+    @classmethod
+    def _bucket(cls, precursor_mz: float) -> int | None:
+        if not math.isfinite(precursor_mz) or precursor_mz <= 0:
+            return None
+        return math.floor(precursor_mz / cls._BUCKET_WIDTH_DA)
 
 
 def merge_candidates_by_ms1_peak(
@@ -57,14 +140,23 @@ def merge_candidates_by_ms1_peak_with_lineage(
     ms1_centroid_mz: MS1CentroidMz | None = None,
 ) -> DiscoveryCandidateMergeResult:
     merged: list[DiscoveryCandidate] = []
+    mass_index = _PrecursorMassIndex()
     member_source_ordinals: list[list[int]] = []
     representative_source_ordinals: list[int] = []
     for source_ordinal, candidate in enumerate(candidates):
         match = _matching_ms1_peak_candidate(
-            candidate, merged, settings=settings, ms1_centroid_mz=ms1_centroid_mz
+            candidate,
+            merged,
+            settings=settings,
+            ms1_centroid_mz=ms1_centroid_mz,
+            candidate_ordinals=mass_index.candidate_ordinals(
+                candidate.precursor_mz,
+                2 * settings.precursor_mz_tolerance_ppm,
+            ),
         )
         if match is None:
             merged.append(candidate)
+            mass_index.add(len(merged) - 1, candidate.precursor_mz)
             member_source_ordinals.append([source_ordinal])
             representative_source_ordinals.append(source_ordinal)
             continue
@@ -75,12 +167,15 @@ def merge_candidates_by_ms1_peak_with_lineage(
             candidate,
             settings=settings,
         )
-        merged[merge_index] = _merge_candidate_pair(
+        mass_index.remove(merge_index, current.precursor_mz)
+        merged_candidate = _merge_candidate_pair(
             current,
             candidate,
             settings=settings,
             representative=representative,
         )
+        merged[merge_index] = merged_candidate
+        mass_index.add(merge_index, merged_candidate.precursor_mz)
         member_source_ordinals[merge_index].append(source_ordinal)
         if representative is candidate:
             representative_source_ordinals[merge_index] = source_ordinal
@@ -105,6 +200,7 @@ def _matching_ms1_peak_candidate(
     *,
     settings: DiscoverySettings,
     ms1_centroid_mz: MS1CentroidMz | None = None,
+    candidate_ordinals: Iterable[int] | None = None,
 ) -> tuple[int, DiscoveryCandidate | None] | None:
     """The merge target and, for one measured ion, the candidate that holds it."""
 
@@ -112,7 +208,9 @@ def _matching_ms1_peak_candidate(
     # permits twice the extraction tolerance. Reject distant ions before the
     # more expensive provenance, peak and centroid checks, retaining scan order.
     precursor_tolerance = 2 * settings.precursor_mz_tolerance_ppm
-    for index, existing in enumerate(merged):
+    ordinals = range(len(merged)) if candidate_ordinals is None else candidate_ordinals
+    for index in ordinals:
+        existing = merged[index]
         if not _within_ppm(
             existing.precursor_mz, candidate.precursor_mz, precursor_tolerance
         ):

@@ -8,8 +8,10 @@ import pytest
 
 from xic_extractor.acquisition_contract import AcquisitionContractError
 from xic_extractor.configuration.models import ExtractionConfig
+from xic_extractor.discovery import candidate_merge as candidate_merge_module
 from xic_extractor.discovery.candidate_merge import (
     merge_candidates_by_ms1_peak,
+    merge_candidates_by_ms1_peak_with_lineage,
 )
 from xic_extractor.discovery.grouping import group_discovery_seeds
 from xic_extractor.discovery.models import (
@@ -370,10 +372,6 @@ def test_cross_tag_candidates_merge_only_when_ms1_peak_overlaps() -> None:
 
 
 def test_merge_with_lineage_preserves_candidate_policy_and_source_ordinals() -> None:
-    from xic_extractor.discovery.candidate_merge import (
-        merge_candidates_by_ms1_peak_with_lineage,
-    )
-
     settings = _multi_tag_settings()
     first = replace(
         _candidate("dR"),
@@ -402,6 +400,100 @@ def test_merge_with_lineage_preserves_candidate_policy_and_source_ordinals() -> 
         )
         for binding in result.bindings
     ] == [(0, 1, (0, 1))]
+
+
+def test_precursor_mass_index_tracks_a_representative_mass_change() -> None:
+    settings = _multi_tag_settings()
+    first = replace(
+        _candidate("R"),
+        precursor_mz=400.0,
+        best_ms2_scan_id=101,
+        seed_scan_ids=(101,),
+        ms1_height=500.0,
+    )
+    representative = replace(
+        _candidate("dR"),
+        precursor_mz=400.012,
+        best_ms2_scan_id=102,
+        seed_scan_ids=(102,),
+        ms1_height=1_000.0,
+    )
+    after_move = replace(
+        _candidate("dR"),
+        precursor_mz=400.0199,
+        best_ms2_scan_id=103,
+        seed_scan_ids=(103,),
+    )
+    centroid = _ms1_scans({first.ms1_apex_rt: (400.006,)})
+
+    result = merge_candidates_by_ms1_peak_with_lineage(
+        (first, representative, after_move),
+        settings=settings,
+        ms1_centroid_mz=centroid,
+    )
+
+    assert len(result.candidates) == 1
+    assert result.candidates[0].precursor_mz == representative.precursor_mz
+    assert result.bindings[0].member_source_ordinals == (0, 1, 2)
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_precursor_mass_index_matches_linear_scan_at_boundaries_and_invalid_masses(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    reverse: bool,
+) -> None:
+    settings = _multi_tag_settings()
+    candidates = [
+        replace(_candidate("dR"), precursor_mz=50_001.0),
+        replace(_candidate("dR"), precursor_mz=50_000.0),
+        replace(_candidate("R"), precursor_mz=750.0, ms1_apex_rt=6.0),
+        replace(_candidate("R"), precursor_mz=float("nan")),
+        replace(_candidate("MeR"), precursor_mz=float("inf")),
+        replace(_candidate("MeR"), precursor_mz=0.0),
+    ]
+    if reverse:
+        candidates.reverse()
+    indexed = merge_candidates_by_ms1_peak_with_lineage(candidates, settings=settings)
+    assert len(indexed.candidates) == 5
+    assert any(len(binding.member_source_ordinals) == 2 for binding in indexed.bindings)
+    indexed_signature = [
+        (
+            candidate.seed_scan_ids,
+            candidate.precursor_mz,
+            binding.member_source_ordinals,
+            binding.representative_source_ordinal,
+        )
+        for candidate, binding in zip(indexed.candidates, indexed.bindings, strict=True)
+    ]
+    indexed_matching = candidate_merge_module._matching_ms1_peak_candidate
+
+    def linear_matching(candidate, merged, *, settings, ms1_centroid_mz, **_kwargs):
+        return indexed_matching(
+            candidate,
+            merged,
+            settings=settings,
+            ms1_centroid_mz=ms1_centroid_mz,
+            candidate_ordinals=None,
+        )
+
+    monkeypatch.setattr(
+        candidate_merge_module,
+        "_matching_ms1_peak_candidate",
+        linear_matching,
+    )
+    linear = merge_candidates_by_ms1_peak_with_lineage(candidates, settings=settings)
+    linear_signature = [
+        (
+            candidate.seed_scan_ids,
+            candidate.precursor_mz,
+            binding.member_source_ordinals,
+            binding.representative_source_ordinal,
+        )
+        for candidate, binding in zip(linear.candidates, linear.bindings, strict=True)
+    ]
+
+    assert indexed_signature == linear_signature
 
 
 def test_merge_candidates_preserves_same_tag_evidence_details() -> None:
