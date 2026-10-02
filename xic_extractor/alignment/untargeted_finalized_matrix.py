@@ -29,7 +29,6 @@ from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
     ObservedSearchSubject,
 )
-from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     validate_bounded_physical_peak_evaluation,
 )
@@ -450,7 +449,7 @@ def _aligned_cell(
     if type(evidence) is not FinalGroupCellObservation:
         raise TypeError("writer cell requires final group-cell evidence")
     status = _cell_status(owner_decision, evidence)
-    integration = _selected_integration(owner_decision, evidence)
+    integration = owner_decision.selected_integration
     source_id, repaired = _selected_cell_source(
         owner_decision,
         evidence,
@@ -501,20 +500,6 @@ def _aligned_cell(
             owner_decision.variant if owner_decision.value is None else ""
         ),
     )
-
-
-def _selected_integration(
-    decision: OwnerProductionCellDecision,
-    evidence: FinalGroupCellObservation,
-) -> IntegrationResult | None:
-    integrations = evidence.integrations
-    if decision.value is not None:
-        if len(integrations) != 1:
-            raise ValueError("numeric writer cell requires one exact integration")
-        return integrations[0]
-    if decision.variant == "not_quantifiable" and len(integrations) == 1:
-        return integrations[0]
-    return None
 
 
 def _selected_cell_source(

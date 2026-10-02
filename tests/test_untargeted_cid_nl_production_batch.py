@@ -5068,12 +5068,18 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     no_peak = owner_decisions["NoPeak"]
     assert no_peak.value is None
     assert no_peak.variant == "unavailable"
+    assert no_peak.selected_integration is None
     assert all(owner_decisions[stem].variant == "numeric" for stem in sample_stems[:3])
     assert len({owner_decisions[stem].value for stem in sample_stems[:4]}) == 4
 
     writer_inputs = project_completed_untarget_batch_writer_inputs(
         completed.application_result
     )
+    for cell in writer_inputs.matrix.cells:
+        assert (
+            cell.selected_integration
+            is owner_decisions[cell.sample_stem].selected_integration
+        )
     outputs = output_paths(
         tmp_path / "writer",
         output_level="machine",

@@ -132,6 +132,8 @@ class ProductionCellDecision:
     evidence: CellEvidence
     payload: CellDecisionPayload
     basis_bytes: bytes
+    # Retain the chosen observation even when its area is not quantifiable.
+    selected_integration: IntegrationResult | None
     _mint_token: InitVar[object] = field(kw_only=True, repr=False)
 
     def __post_init__(self, _mint_token: object) -> None:
@@ -409,9 +411,12 @@ def validate_production_cell_decision(decision: ProductionCellDecision) -> None:
         decision.subject,
         evidence=decision.evidence,
     )
-    if decision != expected:
+    if (
+        decision != expected
+        or decision.selected_integration is not expected.selected_integration
+    ):
         raise CellDecisionContractError(
-            "production cell decision payload was substituted"
+            "production cell decision payload or selected integration was substituted"
         )
 
 
@@ -425,22 +430,29 @@ def _decide_sealed_subject(
             raise CellDecisionContractError(
                 "Target decision crossed its exact terminal subject"
             )
-        payload = _decide_target(subject)
+        payload, integration = _decide_target(subject)
     elif type(subject) is GroupCellSubject:
         if type(evidence) is not FinalGroupCellObservation:
             raise CellDecisionContractError(
                 "Group decision requires an exact final cell observation"
             )
         _validate_group_binding(subject, evidence)
-        payload = _decide_group(subject, evidence)
+        payload, integration = _decide_group(subject, evidence)
     else:
         raise CellDecisionContractError(
             "cell decision requires an exact TargetCellSubject or GroupCellSubject"
         )
-    return _mint_decision(subject=subject, evidence=evidence, payload=payload)
+    return _mint_decision(
+        subject=subject,
+        evidence=evidence,
+        payload=payload,
+        selected_integration=integration,
+    )
 
 
-def _decide_target(subject: TargetCellSubject) -> CellDecisionPayload:
+def _decide_target(
+    subject: TargetCellSubject,
+) -> tuple[CellDecisionPayload, IntegrationResult | None]:
     terminal = subject.terminal_subject
     sample_id = subject.canonical_sample.identity.sample_identity_id
     if terminal.canonical_sample_identity_id != sample_id:
@@ -448,7 +460,7 @@ def _decide_target(subject: TargetCellSubject) -> CellDecisionPayload:
             "Target terminal crossed the exact canonical sample"
         )
     if type(terminal) is SearchedNoObservationSubject:
-        return NoWriteCellDecision("searched_no_observation")
+        return NoWriteCellDecision("searched_no_observation"), None
     if type(terminal) is not ObservedSearchSubject:
         raise CellDecisionContractError(
             "Target terminal uses an unsupported or partial variant"
@@ -458,13 +470,14 @@ def _decide_target(subject: TargetCellSubject) -> CellDecisionPayload:
         raise CellDecisionContractError(
             "Target observed terminal requires an owner-backed PeakHypothesis"
         )
-    return _payload_from_integration(hypothesis.integration)
+    integration = hypothesis.integration
+    return _payload_from_integration(integration), integration
 
 
 def _decide_group(
     subject: GroupCellSubject,
     observation: FinalGroupCellObservation,
-) -> CellDecisionPayload:
+) -> tuple[CellDecisionPayload, IntegrationResult | None]:
     state = observation.evidence_state
     states = observation.evidence_states
     value_state_count = sum(item in _GROUP_VALUE_STATES for item in states)
@@ -476,7 +489,8 @@ def _decide_group(
                 raise CellDecisionContractError(
                     "Group numeric decision requires exactly one integration"
                 )
-            return _payload_from_integration(integrations[0])
+            integration = integrations[0]
+            return _payload_from_integration(integration), integration
         if value_state_count > 1:
             raise CellDecisionContractError(
                 "Group closure contains competing observation evidence"
@@ -493,8 +507,9 @@ def _decide_group(
         # leaves the single MS1 peak as unresolved.
         integrations = observation.integrations
         if state == "ms1_only_backfill_observation" and len(integrations) == 1:
-            return _payload_from_integration(integrations[0])
-        return NoWriteCellDecision("unresolved")
+            integration = integrations[0]
+            return _payload_from_integration(integration), integration
+        return NoWriteCellDecision("unresolved"), None
     if state == "mixed":
         raise CellDecisionContractError(
             "Group closure contains unsupported mixed terminal states"
@@ -503,7 +518,7 @@ def _decide_group(
         raise CellDecisionContractError(
             "Group closure uses an unsupported or partial evidence state"
         )
-    return NoWriteCellDecision(cast(NoWriteState, state))
+    return NoWriteCellDecision(cast(NoWriteState, state)), None
 
 
 def _payload_from_integration(integration: IntegrationResult) -> CellDecisionPayload:
@@ -681,6 +696,7 @@ def _mint_decision(
     subject: CellSubject,
     evidence: CellEvidence,
     payload: CellDecisionPayload,
+    selected_integration: IntegrationResult | None,
 ) -> ProductionCellDecision:
     identity, basis = mint_typed_identity(
         _DECISION_PREFIX,
@@ -692,6 +708,7 @@ def _mint_decision(
         evidence=evidence,
         payload=payload,
         basis_bytes=basis,
+        selected_integration=selected_integration,
         _mint_token=_DECISION_MINT_TOKEN,
     )
 

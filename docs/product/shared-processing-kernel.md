@@ -171,6 +171,13 @@ the grouping result or trigger another grouping pass.
 Group subject and is the sole selected-value owner. A Backfill observation is
 not automatically group membership or a writable value.
 
+The decision retains its selected `IntegrationResult` for downstream peak
+coordinates and shape fields, including when that observation is not
+quantifiable. A no-observation or unresolved decision carries no selected
+integration. Matrix projection consumes this answer without selecting again;
+the existing evidence and value/no-write basis continue to define decision
+identity.
+
 Projection remains workflow-specific. Targeted retains one row per `TargetKey`
 and applies its fixed-row inclusion/count/review policy. Untargeted derives one
 request-scoped group-row key per finalized group and applies its Matrix/review
