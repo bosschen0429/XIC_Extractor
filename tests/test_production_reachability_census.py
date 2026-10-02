@@ -25,7 +25,7 @@ def test_reports_symbols_that_only_tests_or_their_own_body_reach(
         tmp_path / "xic_extractor" / "stage.py",
         "__all__ = ['exported_only']\n"
         "\n"
-        "def used_by_gui():\n"
+        "def used_by_workbench():\n"
         "    return 1\n"
         "\n"
         "def exported_only():\n"
@@ -51,10 +51,10 @@ def test_reports_symbols_that_only_tests_or_their_own_body_reach(
         "    return Store().read()\n",
     )
     _write(
-        tmp_path / "gui" / "view.py",
+        tmp_path / "xic_workbench" / "view.py",
         "from xic_extractor import stage\n"
         "\n"
-        "stage.used_by_gui()\n"
+        "stage.used_by_workbench()\n"
         "stage.uses_store()\n",
     )
     _write(

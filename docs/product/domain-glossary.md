@@ -64,7 +64,7 @@ Queue/archive routing, and delivery shape. These are two ordered operations of
 one projection owner, not two owners.
 
 Targeted and Untargeted may apply different search scopes, priors, projection
-rules, GUI flows, and output contracts. Evidence or output authority from one
+rules, application flows, and output contracts. Evidence or output authority from one
 projection does not grant write authority in the other without an explicit
 contract, expected-diff evidence, and focused tests. Different projections do
 not imply different capture, group, ObservationRevisit, or cell-decision

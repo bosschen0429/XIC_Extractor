@@ -12,7 +12,7 @@ this page is the target design.
 
 | Part | Plain meaning | Status |
 | --- | --- | --- |
-| `AttemptRuntime` and its finalization, marker, and receipt modules (`xic_extractor/execution/`) | One state machine for one run attempt | Implemented; the Targeted path (`applications.targeted.application`), the Untargeted path (`untargeted_execution.partition.execution`, `untargeted_execution.execution`), and the GUI pipeline worker use it |
+| `AttemptRuntime` and its finalization, marker, and receipt modules (`xic_extractor/execution/`) | One state machine for one run attempt | Implemented; the Targeted path (`applications.targeted.application`) and Untargeted path (`untargeted_execution.partition.execution`, `untargeted_execution.execution`) use it; the HTML adapters call those application paths |
 | `RequiredWorkManifest`, `WorkUnit` | The closed list of work one attempt must finish | Implemented inside the runtime |
 | `RuntimeEvent` | One ordered event log for scheduling, resources, outcome, cleanup, and cache | Not implemented |
 | `ValidatedDependencyToken` | Approval to reuse a prior attempt's output during retry or resume | Not implemented; retry and resume from prior work are not available |
@@ -37,7 +37,7 @@ Matrix, workbook, Backfill-write, activation, publication, or export authority.
 
 `xic_extractor.configuration.execution_profile` owns the shared execution profile and worker
 defaults. The existing `config/settings.csv` owns the saved `parallel_workers`
-value used by Targeted, Discovery CLI/GUI, and tissue validation. When absent,
+value used by Targeted, Discovery CLI/HTML, and tissue validation. When absent,
 the profile supplies the CPU-count-minus-one default (at least one). An explicit
 CLI override takes precedence for that invocation; it does not rewrite saved
 settings. Scientific presets do not carry machine resource settings.
@@ -583,7 +583,7 @@ attempt; an opaque string is no longer sufficient.
 
 The foreground Targeted entry is
 `TargetedApplicationService.execute_application`, shared by Python, CLI, and
-GUI. Its acquisition runner is called with `publish_outputs=False`; partial or
+the HTML adapter. Its acquisition runner is called with `publish_outputs=False`; partial or
 failed file populations are rejected before the retained-acquisition handoff.
 Serial/process backends own foreground scheduling and cancellation, while
 `RawFileHandle` owns vendor-handle disposal. The per-Target Runtime manifest
@@ -719,10 +719,10 @@ does not select a peak or interpret the integration.
 
 1. Targeted process execution can stop scheduling and cancel pending futures,
    but running work drains and no attempt/dependency state exists.
-2. Targeted GUI cancellation can suppress later workbook/summary work after
+2. Targeted HTML cancellation can suppress later workbook/summary work after
    extraction has already produced partial files; CLI has no equivalent stop
    surface.
-3. Untargeted GUI checks interruption mainly between phases; Alignment workers
+3. Untargeted HTML checks interruption mainly between phases; Alignment workers
    do not share the Targeted cancellation contract.
 4. Targeted and Alignment aggregate process-worker errors, while serial and
    diagnostic paths preserve different partial-result shapes.

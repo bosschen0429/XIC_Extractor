@@ -14,11 +14,7 @@ from typing import Sequence
 
 ShardPatterns = OrderedDict[str, tuple[str, ...]]
 
-_ALIGNMENT_CORE_EXCLUDED_PATHS = frozenset(
-    {
-        "tests/test_discovery_method_persistence.py",
-    }
-)
+_ALIGNMENT_CORE_EXCLUDED_PATHS = frozenset()
 
 # Register-snapshot tests are excluded from CI by MARKER, not by file. They
 # assert that checked-in registers under docs/superpowers/validation/ still
@@ -60,7 +56,7 @@ RELEVANCE_RULES: dict[str, re.Pattern[str]] = {
         r"^((pyproject\.toml|uv\.lock|xic_extractor\.spec)$"
         r"|\.github/workflows/(build|ci)\.yml$"
         r"|tests/test_(pyinstaller_spec|test_shards)\.py$"
-        r"|(xic_extractor|xic_inspector|gui|scripts|tools|assets|config)/)"
+        r"|(xic_extractor|xic_inspector|xic_workbench|scripts|tools|assets|config)/)"
     ),
     "product_governance": re.compile(
         r"^(scripts/check_productization_state\.py|tests/test_productization_state_index\.py"
@@ -122,21 +118,12 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_test_shards.py",
             "tests/test_validation_artifact_*.py",
         ),
-        "gui": (
+        "workbench": (
+            "tests/test_workbench_*.py",
             "tests/test_discovery_worker.py",
-            "tests/test_discovery_method_section.py",
-            "tests/test_discovery_method_persistence.py",
-            "tests/test_discovery_samples_section.py",
-            "tests/test_gui_*.py",
-            "tests/test_main_window_layout.py",
             "tests/test_messages.py",
             "tests/test_method_manifest.py",
-            "tests/test_pipeline_worker.py",
-            "tests/test_results_section.py",
             "tests/test_settings_*.py",
-            "tests/test_targets_section.py",
-            "tests/test_untargeted_view.py",
-            "tests/test_wheel_guard.py",
             "tests/test_xlsx_to_targets.py",
         ),
         "targeted-core": (
@@ -248,6 +235,7 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_shift_aware_*.py",
             "tests/test_tier2_*.py",
             "tests/test_xic_inspector_*.py",
+            "tests/test_xic_workbench.py",
         ),
         "product-gates-evidence": (
             "tests/test_evidence_*.py",

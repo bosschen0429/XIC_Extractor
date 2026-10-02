@@ -12,7 +12,6 @@
 
 ```text
 XIC_Extractor/
-├── gui/                         桌面互動；views/、sections/ 組畫面，workers/ 啟動工作
 ├── scripts/                     已宣告 CLI、操作與驗證入口
 ├── xic_extractor/               分析產品的實作
 │   ├── configuration/          載入設定與 target；驗證設定值
@@ -47,6 +46,9 @@ XIC_Extractor/
 │   ├── sources/               解讀來源證據
 │   ├── selection/             選擇要呈現的記錄
 │   └── rendering/             離線 HTML
+├── xic_workbench/              本機 HTML 分析、結果檢閱、進度／取消及按需 XIC
+│   ├── assets/                分析／檢閱 HTML、JavaScript 與 CSS
+│   └── *.py                   loopback server、設定、工作與 workflow adapters
 ├── tools/                     維護工具；diagnostics/ 為診斷，testing/ 管測試分片
 ├── tests/                     行為測試與小型 fixtures
 ├── docs/                      文件依用途分流；不以 HTML 外觀判定權威
@@ -77,7 +79,7 @@ XIC_Extractor/
 | --- | --- |
 | [`README.md`](../README.md) | 使用者入口與文件索引 |
 | [`AGENTS.md`](../AGENTS.md) | 高頻 agent guardrails 與 owner routing |
-| [`docs/user/`](user/) | GUI/CLI 操作手冊、欄位參考與概念 HTML 導覽 |
+| [`docs/user/`](user/) | HTML 工作區／CLI 操作手冊、欄位參考與概念 HTML 導覽 |
 | [`docs/product/`](product/) | 維護中的產品語義與 topic authority |
 | [`docs/agent/`](agent/) | 執行、驗證、文件、架構與 PR 契約 |
 | [`docs/architecture-contract.md`](architecture-contract.md) | dependency direction 與 ownership map |
@@ -104,7 +106,7 @@ XIC_Extractor/
 | --- | --- |
 | `xic_extractor/` | Domain 與 pipeline package |
 | `xic_inspector/` | Installed read-only evidence review package；source adapters、共同 selection/API 與 self-contained offline renderer |
-| `gui/` | PyQt6 GUI adapters |
+| `xic_workbench/` | Local HTML analysis and review application；HTTP transport、session、設定與 workflow adapters |
 | `scripts/` | Public CLI、product adapters、validation scripts |
 | `tools/diagnostics/` | Maintained product-adjacent diagnostics 與 docs governance |
 | `tests/` | pytest tests 與小型 fixtures |
@@ -186,27 +188,29 @@ fixture。完整 workbook、full matrix、RAW-derived dump 與 exploratory repor
 
 ### Package discovery
 
-`pyproject.toml` 的 `packages.find` 包含 `gui*`、`scripts*`、`tools*`、
-`xic_extractor*`、`xic_inspector*`，並排除 `tests*`。這些 package roots 必須維持在 repo root；搬移
+`pyproject.toml` 的 `packages.find` 包含 `scripts*`、`tools*`、
+`xic_extractor*`、`xic_inspector*`、`xic_workbench*`，並排除 `tests*`。這些 package roots 必須維持在 repo root；搬移
 時要同步驗證 installed CLI/package closure。
 
 ### Frozen bundle
 
-`xic_extractor.spec` 以相對路徑收集 `assets/`、config examples、`scripts/`、
-`gui/main.py`、app icon 與 preset TOML。移動其中任一路徑必須同步更新 spec 與
-build workflow，並驗證 dev/frozen 兩種模式。
+`xic_extractor.spec` starts `xic_workbench/__main__.py` and bundles the app
+icon, config examples, workbench/Inspector assets, preset TOMLs, and required
+package data. Moving those paths requires a matching spec/build-workflow update
+and dev/frozen verification. The source entry point does not prove the frozen
+artifact.
 
 ### Config/output siblings
 
 `xic_extractor/configuration/loader.py` 由 config parent 導出 `output/`。移動
-`config/` 或 `output/` 時，必須同步驗證 GUI 與 CLI 的路徑導航。
+`config/` 或 `output/` 時，必須同步驗證 HTML 工作區與 CLI 的路徑導航。
 
 ## § 5 新檔案 routing
 
-1. GUI code → `gui/`。
+1. HTML application interaction, local transport, or workflow adapter → `xic_workbench/`。
 2. Public CLI/product adapter → `scripts/`，public CLI 同步註冊 entry point。
 3. Reusable domain logic → `xic_extractor/<owner>/`；owner 查 architecture contract。
-4. Installed evidence review、source adapter、selection 或 renderer → `xic_inspector/`。
+4. Installed offline evidence source adapter、selection 或 renderer → `xic_inspector/`。
 5. Maintained diagnostic → `tools/diagnostics/`，並更新 `tools/diagnostics/INDEX.md`。
 6. Tests → `tests/test_<module>_<behavior>.py`；shared fixture → `tests/fixtures/`。
 7. Stable product/user/agent/architecture rule → 對應 canonical owner。

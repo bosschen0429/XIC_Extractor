@@ -947,7 +947,7 @@ def test_processing_identity_owner_has_no_runtime_writer_or_raw_dependency() -> 
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     imports = _imports(tree)
     forbidden = (
-        "gui",
+        "xic_workbench",
         "scripts",
         "xic_extractor.extraction",
         "xic_extractor.output",

@@ -278,7 +278,7 @@ denominator recomputation. `validate_manifest_seal` and
 `validate_review_label_seal` enforce the supplied seal contract and byte bindings.
 
 These inputs grant no compound-identification, selected-area, counted-detection,
-Matrix, Backfill-write, workbook, GUI, activation, or export authority.
+Matrix, Backfill-write, workbook, UI, activation, or export authority.
 [Product Validation](../agent/product-validation-contract.md) owns readiness and
 promotion semantics; [Result Traceability](processing-lineage.md) owns the
 canonical lineage identities.

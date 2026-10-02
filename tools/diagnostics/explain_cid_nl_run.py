@@ -81,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
                     "--curve-bundle needs --raw-dir and --dll-dir "
                     "and cannot accompany --compact-to"
                 )
-            from tools.diagnostics.explanation_curves import (
+            from xic_workbench.acquisition import (
                 export_explanation_curves,
             )
 

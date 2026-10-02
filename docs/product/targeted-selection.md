@@ -194,7 +194,7 @@ those facts itself.
 - The bounded headless `5-hmdC + 5-medC` contract is the only MS1
   shape-identity rescue scope with accepted `detected_flagged` expected-diff
   evidence.
-- That contract grants no authority to broader targets, GUI wiring, or default
+- That contract grants no authority to broader targets, application wiring, or default
   broad NL_FAIL rescue. These extensions require a new target-family evidence
   gate.
 - Current lane readiness lives in the status index.

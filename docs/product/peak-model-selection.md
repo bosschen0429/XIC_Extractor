@@ -55,7 +55,7 @@ through parity or explicit expected-diff approval.
 ## Boundaries
 
 - **Owns:** model-selection policy, invariant class definitions, parity and expected-diff gates between legacy and successor scoring.
-- **Does not own:** selected-candidate switching in product outputs, workbook/TSV/GUI/ProductWriter behavior, or current parity gate implementation details.
+- **Does not own:** selected-candidate switching in product outputs, workbook/TSV/HTML/ProductWriter behavior, or current parity gate implementation details.
 - Legacy scoring coverage stays in place until a successor invariant covers the same public behavior.
 
 ## Verification

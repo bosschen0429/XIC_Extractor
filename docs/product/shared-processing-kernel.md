@@ -42,7 +42,7 @@ A configured Target constrains search and fixes a projection row. A
 configured Target does not prove a sample-local observation, group
 membership, or selected value.
 Untargeted derives group rows from finalized CrossSample groups. The two
-applications keep separate GUI flow, row policy, output schemas, and writer
+applications keep separate HTML flow, row policy, output schemas, and writer
 authority over the same finalized scientific-owner results.
 
 ## Deep Interfaces

@@ -121,7 +121,7 @@ Invariants:
 - Counted detection and detection summaries read `projection.counted_detection`
   and `product_state`, not `Confidence`, neutral loss flags, scores, or caps.
   CSV and workbook numeric columns render the retained finalized peak even
-  when `counted_detection` is false. GUI median area uses the retained numeric
+  when `counted_detection` is false. The HTML summary median uses the retained numeric
   population independently of its detection tally.
 - `_display_confidence` may demote projected rows to `VERY_LOW`; it must not
   promote rows. If a row should read higher, fix the projection decision.

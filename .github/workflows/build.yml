@@ -113,7 +113,6 @@ jobs:
           Expand-Archive -LiteralPath $archivePath -DestinationPath $smokeRoot
           $exe = Join-Path $smokeRoot "$artifactStem/XIC_Extractor.exe"
           $reportPath = Join-Path $smokeRoot "smoke.json"
-          $env:QT_QPA_PLATFORM = "offscreen"
           $process = Start-Process -FilePath $exe -ArgumentList @("--smoke-test", "`"$reportPath`"") -WorkingDirectory $smokeRoot -WindowStyle Hidden -PassThru
           if (-not $process.WaitForExit(60000)) {
             Stop-Process -Id $process.Id -Force
@@ -123,7 +122,7 @@ jobs:
             throw "Delivered archive smoke failed (exit $($process.ExitCode)): $reportPath"
           }
           $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
-          if ($report.status -ne "passed" -or -not $report.frozen -or -not $report.qt_started -or -not $report.preset_roundtrip) {
+          if ($report.status -ne "passed" -or -not $report.frozen -or -not $report.server_started -or -not $report.preset_roundtrip) {
             throw "Delivered archive smoke did not complete: $reportPath"
           }
           if ((Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash -ne $archiveHash) {

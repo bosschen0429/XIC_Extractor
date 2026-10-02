@@ -1,0 +1,391 @@
+<nav class="workspace-nav" aria-label="工作區">
+  <button type="button" data-view="untargeted">Untargeted 分析</button>
+  <button type="button" data-view="targeted">Targeted 分析</button>
+  <button type="button" data-view="review">結果檢閱</button>
+  <span class="nav-spacer"></span>
+  <button type="button" id="theme-toggle" class="text-button">深色模式</button>
+  <button type="button" id="about-workspace" class="text-button">關於</button>
+  <button type="button" id="shutdown-workspace" class="text-button">
+    結束工作區
+  </button>
+</nav>
+<div id="analysis-status" class="status" role="status" aria-live="polite">
+  正在載入分析設定…
+</div>
+<section id="analysis-job" class="source-card job-card" hidden>
+  <div class="section-heading">
+    <h2 id="analysis-job-title">執行中</h2>
+    <button type="button" id="analysis-stop">停止工作</button>
+  </div>
+  <progress id="analysis-progress"></progress>
+  <p id="analysis-job-message"></p>
+  <p class="subtle" id="analysis-job-time"></p>
+  <div id="analysis-job-outputs" class="artifact-list"></div>
+</section>
+<main id="workspace-targeted" class="analysis-page" hidden>
+  <section class="source-card">
+    <div class="section-heading">
+      <div>
+        <h2>Targeted Extraction</h2>
+        <p class="subtle">依目標清單擷取 XIC、整合並輸出結果。</p>
+      </div>
+      <div class="button-row">
+        <button id="target-new" type="button" data-analysis-idle>
+          開始新批次</button
+        ><button id="target-reset" type="button" data-analysis-idle>
+          回到預設
+        </button>
+      </div>
+    </div>
+    <form id="targeted-form">
+      <div id="targeted-settings"></div>
+      <div class="run-bar">
+        <span id="target-dirty" class="subtle"></span
+        ><button type="button" id="target-save" data-analysis-idle>
+          儲存設定與目標</button
+        ><button type="submit" class="primary" data-analysis-idle>
+          開始 Targeted 分析
+        </button>
+      </div>
+    </form>
+  </section>
+  <section class="source-card">
+    <div class="section-heading">
+      <h2>目標清單 <span id="target-count" class="subtle"></span></h2>
+      <button type="button" id="target-edit" data-analysis-idle>
+        檢視與編輯
+      </button>
+    </div>
+    <div class="import-line">
+      <label for="target-import-path">CSV / TSV / Excel</label
+      ><input
+        id="target-import-path"
+        type="text"
+        placeholder="選擇要匯入的目標清單"
+        data-analysis-idle
+      /><button
+        type="button"
+        data-browse="target-import-path"
+        data-kind="targets"
+        data-analysis-idle
+      >
+        瀏覽</button
+      ><select
+        id="target-import-sheet"
+        aria-label="Excel 工作表"
+        data-analysis-idle
+      >
+        <option value="both">DNA 與 RNA</option>
+        <option value="DNA">DNA</option>
+        <option value="RNA">RNA</option></select
+      ><button id="target-import" type="button" data-analysis-idle>
+        匯入取代清單
+      </button>
+    </div>
+  </section>
+  <section id="target-result" class="source-card" hidden></section>
+</main>
+<main id="workspace-untargeted" class="analysis-page" hidden>
+  <form id="untargeted-form">
+    <section class="source-card">
+      <div class="section-heading">
+        <div>
+          <h2>Untargeted Discovery</h2>
+          <p class="subtle">探索候選、跨樣本對齊，完成後直接檢閱。</p>
+        </div>
+        <div class="button-row">
+          <button id="untargeted-new" type="button" data-analysis-idle>
+            開始新批次</button
+          ><button id="untargeted-clear" type="button" data-analysis-idle>
+            清空來源
+          </button>
+        </div>
+      </div>
+      <label class="field"
+        >執行模式<select id="u-mode" data-analysis-idle>
+          <option value="full">完整分析 · Discovery → Alignment</option>
+          <option value="discovery_only">只做 Discovery · 單一 RAW</option>
+          <option value="align_only">
+            只做 Alignment · 使用既有 Discovery
+          </option>
+        </select></label
+      >
+      <div id="untargeted-paths"></div>
+      <details class="method-section">
+        <summary>內標清單</summary>
+        <div id="istd-path-field"></div>
+        <p id="istd-summary" class="subtle"></p>
+        <div class="button-row">
+          <button type="button" id="istd-reload" data-analysis-idle>
+            重新載入</button
+          ><button type="button" id="istd-copy" data-analysis-idle>
+            另存可編輯副本</button
+          ><button type="button" id="istd-open" data-analysis-idle>
+            開啟清單
+          </button>
+        </div>
+      </details>
+    </section>
+    <section class="source-card">
+      <div class="section-heading">
+        <h2>分析方法</h2>
+        <div class="button-row">
+          <button type="button" id="method-import" data-analysis-idle>
+            匯入 preset</button
+          ><button type="button" id="method-new" data-analysis-idle>
+            新增方法</button
+          ><button type="button" id="method-edit" data-analysis-idle>
+            編輯方法
+          </button>
+        </div>
+      </div>
+      <label class="field"
+        >方法<select id="u-preset" data-analysis-idle></select
+      ></label>
+      <p id="method-preview" class="subtle"></p>
+      <details>
+        <summary>調整本次方法參數</summary>
+        <div id="method-tuning" class="settings-grid"></div>
+      </details>
+    </section>
+    <section class="source-card" id="sample-section">
+      <div class="section-heading">
+        <h2>樣本與上機資訊</h2>
+        <span id="samples-count" class="subtle">尚未讀取</span>
+      </div>
+      <div class="import-line">
+        <label for="sequence-source">上機資訊</label
+        ><input
+          id="sequence-source"
+          placeholder="Word / Excel / CSV / TSV（選用）"
+          data-analysis-idle
+        /><button
+          type="button"
+          data-browse="sequence-source"
+          data-kind="metadata"
+          data-analysis-idle
+        >
+          瀏覽</button
+        ><button type="button" id="samples-import" data-analysis-idle>
+          匯入上機資訊</button
+        ><button type="button" id="samples-refresh" data-analysis-idle>
+          讀取 RAW 樣本
+        </button>
+      </div>
+      <div class="button-row">
+        <button type="button" id="samples-edit" data-analysis-idle>
+          檢視樣本明細</button
+        ><button type="button" id="samples-export" data-analysis-idle>
+          匯出樣本資料
+        </button>
+      </div>
+      <p id="samples-summary" class="subtle"></p>
+    </section>
+    <section class="run-bar source-card">
+      <span id="untargeted-dirty" class="subtle"></span
+      ><button type="button" id="untargeted-save" data-analysis-idle>
+        儲存批次設定</button
+      ><button type="submit" class="primary" data-analysis-idle>
+        開始 Untargeted 分析
+      </button>
+    </section>
+  </form>
+  <section id="untargeted-result" class="source-card" hidden></section>
+</main>
+<dialog id="target-editor" class="wide-dialog">
+  <div class="section-heading">
+    <h2>編輯目標清單</h2>
+    <button type="button" data-close="target-editor">關閉</button>
+  </div>
+  <p class="subtle">未顯示的原始欄位與精度會保留。中性損失可輸入自訂 Da。</p>
+  <div class="table-scroll">
+    <table>
+      <thead id="target-head"></thead>
+      <tbody id="target-rows"></tbody>
+    </table>
+  </div>
+  <div class="button-row">
+    <button id="target-add" type="button">新增目標</button
+    ><button id="target-editor-save" type="button" class="primary">
+      儲存目標
+    </button>
+  </div>
+</dialog>
+<dialog id="sample-editor" class="wide-dialog">
+  <div class="section-heading">
+    <h2>樣本明細</h2>
+    <button type="button" data-close="sample-editor">完成</button>
+  </div>
+  <div class="button-row">
+    <input
+      id="sample-filter"
+      type="search"
+      placeholder="篩選名稱或批次"
+    /><select id="sample-bulk-role" aria-label="批次角色"></select
+    ><button id="sample-apply-role" type="button">套用到勾選樣本</button>
+  </div>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>選取</th>
+          <th>RAW 檔名</th>
+          <th>批次</th>
+          <th>進樣順序</th>
+          <th>樣品名稱</th>
+          <th>角色</th>
+        </tr>
+      </thead>
+      <tbody id="sample-rows"></tbody>
+    </table>
+  </div>
+</dialog>
+<dialog id="method-editor" class="wide-dialog">
+  <div class="section-heading">
+    <h2>編輯分析方法</h2>
+    <button type="button" data-close="method-editor">取消</button>
+  </div>
+  <div class="settings-grid">
+    <label class="field">名稱<input id="method-name" /></label
+    ><label class="field">說明<input id="method-description" /></label
+    ><label class="field"
+      >組合方式<select id="method-combine">
+        <option value="single">single</option>
+        <option value="union">union</option>
+        <option value="intersection">intersection</option>
+      </select></label
+    >
+  </div>
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>啟用</th>
+          <th>標籤名稱</th>
+          <th>Neutral loss (Da)</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="method-tags"></tbody>
+    </table>
+  </div>
+  <p id="method-error" class="status error" hidden></p>
+  <div class="button-row">
+    <button id="method-add-tag" type="button">新增 neutral loss</button
+    ><button id="method-save-as" type="button">另存 preset</button
+    ><button id="method-apply" type="button" class="primary">
+      套用至本次執行
+    </button>
+  </div>
+</dialog>
+<dialog id="quality-dialog">
+  <div class="section-heading">
+    <h2>篩選並匯出分析矩陣</h2>
+    <button type="button" data-close="quality-dialog">關閉</button>
+  </div>
+  <p class="subtle">
+    依研究樣本的有效值比例篩選；0 算有效，空白不算。原始矩陣會保留。
+  </p>
+  <form id="quality-form">
+    <div id="quality-paths"></div>
+    <label class="field"
+      >最低有效值比例<input
+        id="quality-threshold"
+        type="number"
+        min="0"
+        max="1"
+        step="any"
+        placeholder="請指定 0 至 1"
+        required /></label
+    ><button type="submit" class="primary">開始匯出</button>
+  </form>
+</dialog>
+<dialog id="inspector-export-dialog" class="wide-dialog">
+  <div class="section-heading">
+    <h2>自訂 Inspector 匯出</h2>
+    <button type="button" data-close="inspector-export-dialog">關閉</button>
+  </div>
+  <form id="inspector-export-form">
+    <div class="settings-grid">
+      <label class="field"
+        >選取策略<select id="export-strategy">
+          <option value="sample">隨機抽樣</option>
+          <option value="attention">需要注意的項目</option>
+          <option value="query">條件查詢</option>
+        </select></label
+      ><label class="field"
+        >項目上限<input
+          id="export-limit"
+          type="number"
+          min="1"
+          max="50"
+          value="30"
+          required /></label
+      ><label class="field"
+        >抽樣 seed<input
+          id="export-seed"
+          type="number"
+          step="1"
+          value="0"
+          required
+      /></label>
+    </div>
+    <div id="export-query" class="settings-grid" hidden>
+      <label class="field"
+        >m/z 下限<input id="export-mz-min" type="number" step="any" /></label
+      ><label class="field"
+        >m/z 上限<input id="export-mz-max" type="number" step="any" /></label
+      ><label class="field"
+        >RT 下限 (min)<input
+          id="export-rt-min"
+          type="number"
+          step="any" /></label
+      ><label class="field"
+        >RT 上限 (min)<input
+          id="export-rt-max"
+          type="number"
+          step="any" /></label
+      ><label class="field"
+        >略過項目數<input id="export-offset" type="number" min="0" value="0"
+      /></label>
+      <details>
+        <summary>進階 ID 定位</summary>
+        <label class="field"
+          >Candidate IDs（每行一個）<textarea
+            id="export-candidates"
+          ></textarea></label
+        ><label class="field"
+          >Group IDs（每行一個）<textarea id="export-groups"></textarea>
+        </label>
+      </details>
+    </div>
+    <details>
+      <summary>選取樣本（未勾選時使用預設範圍）</summary>
+      <div id="export-samples" class="sample-list"></div>
+    </details>
+    <label class="field"
+      >HTML 儲存位置<input id="export-output" required /></label
+    ><button type="submit" class="primary">匯出 HTML</button>
+  </form>
+</dialog>
+<dialog id="path-dialog">
+  <form method="dialog">
+    <div class="section-heading">
+      <h2 id="path-dialog-title">輸入檔案位置</h2>
+      <button value="cancel" formnovalidate>取消</button>
+    </div>
+    <label class="field"
+      >完整路徑<input id="path-dialog-value" required
+    /></label>
+    <div class="button-row">
+      <button value="ok" class="primary">確定</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="artifact-dialog" class="wide-dialog">
+  <div class="section-heading">
+    <h2 id="artifact-title">分析報告</h2>
+    <button type="button" data-close="artifact-dialog">關閉</button>
+  </div>
+  <iframe id="artifact-frame" title="分析報告"></iframe>
+</dialog>

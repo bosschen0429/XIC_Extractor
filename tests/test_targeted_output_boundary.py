@@ -604,8 +604,10 @@ def test_acquisition_baseline_projection_preserves_not_counted_cells(
     assert publication.output is not output
 
 
-def test_gui_summary_consumes_the_finalized_publication_view(tmp_path: Path) -> None:
-    from gui.workers.pipeline_worker import build_summary
+def test_workbench_summary_consumes_the_finalized_publication_view(
+    tmp_path: Path,
+) -> None:
+    from xic_workbench.targeted import build_summary
 
     config, target, output = production_case(tmp_path)
     config = replace(config, keep_intermediate_csv=True)
@@ -1492,15 +1494,15 @@ def test_cancellation_during_input_fingerprint_skips_acquisition_and_finalizatio
     assert execution.published_paths == ()
 
 
-def test_cli_and_gui_route_through_acquisition_service_boundary() -> None:
-    import gui.workers.pipeline_worker as gui_module
+def test_cli_and_workbench_route_through_acquisition_service_boundary() -> None:
     import scripts.run_extraction as cli_module
+    import xic_workbench.targeted as workbench_module
 
     cli_source = inspect.getsource(cli_module)
-    gui_source = inspect.getsource(gui_module)
+    workbench_source = inspect.getsource(workbench_module)
     assert "extractor.run" not in cli_source
-    assert "extractor.run" not in gui_source
+    assert "extractor.run" not in workbench_source
     assert "extractor.acquire" in cli_source
-    assert "extractor.acquire" in gui_source
+    assert "extractor.acquire" in workbench_source
     assert "write_excel_from_run_output" not in cli_source
-    assert "write_excel_from_run_output" not in gui_source
+    assert "write_excel_from_run_output" not in workbench_source

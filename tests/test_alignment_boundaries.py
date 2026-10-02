@@ -63,7 +63,7 @@ def test_alignment_edge_scoring_stays_domain_focused():
         / "edge_scoring.py"
     )
     banned_roots = (
-        "gui",
+        "xic_workbench",
         "openpyxl",
         "scripts",
         "xic_extractor.alignment.process_backend",

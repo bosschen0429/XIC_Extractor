@@ -14,10 +14,10 @@ from xic_extractor.extraction.result_models import FileResult, RunOutput
 from xic_extractor.extraction.targeted_inputs import resolve_targeted_inputs
 
 
-def test_cli_and_gui_use_same_targeted_application_service() -> None:
+def test_cli_and_html_use_same_targeted_application_service() -> None:
     for path in (
         Path("scripts/run_extraction.py"),
-        Path("gui/workers/pipeline_worker.py"),
+        Path("xic_workbench/targeted.py"),
     ):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         calls = [

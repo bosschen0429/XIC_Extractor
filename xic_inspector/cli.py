@@ -14,6 +14,7 @@ from xic_inspector.api import (
     InspectorError,
     SelectionRequest,
     generate_report,
+    resolve_source,
 )
 
 DEFAULT_OUTPUT_NAME = "xic_inspector.html"
@@ -126,16 +127,6 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _resolve_source(path: Path) -> Path:
-    """Return the evidence file for a file path or an alignment output folder."""
-    if not path.is_dir():
-        return path
-    for candidate in (path / REPORT_FILENAME, path / "alignment" / REPORT_FILENAME):
-        if candidate.is_file():
-            return candidate
-    raise FileNotFoundError(f"No {REPORT_FILENAME} in {path} or its alignment folder")
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     try:
@@ -148,7 +139,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2 if exc.code != 0 else 0
 
     try:
-        report = _resolve_source(args.source or args.report)
+        report = resolve_source(args.source or args.report)
     except FileNotFoundError as exc:
         sys.stderr.write(f"Error [code 3]: Source unavailable: {exc}\n")
         return 3

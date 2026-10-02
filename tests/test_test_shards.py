@@ -20,9 +20,7 @@ from tools.testing.test_shards import (
 _ALLOWED_SHARD_OVERLAPS: dict[Path, tuple[str, ...]] = {
     Path("tests/test_config_hash.py"): ("docs-config", "targeted-core"),
     Path("tests/test_config_io.py"): ("docs-config", "targeted-core"),
-    Path("tests/test_discovery_method_section.py"): ("gui", "alignment-core"),
-    Path("tests/test_discovery_samples_section.py"): ("gui", "alignment-core"),
-    Path("tests/test_discovery_worker.py"): ("gui", "alignment-core"),
+    Path("tests/test_discovery_worker.py"): ("workbench", "alignment-core"),
     Path("tests/test_matrix_identity_blast_radius.py"): (
         "alignment-core",
         "product-gates-evidence",
@@ -46,7 +44,6 @@ _ALLOWED_SHARD_OVERLAPS: dict[Path, tuple[str, ...]] = {
         "targeted-core",
         "product-gates-evidence",
     ),
-    Path("tests/test_untargeted_view.py"): ("gui", "alignment-core"),
     Path("tests/test_validate_ms1_scan_index_xic.py"): (
         "alignment-core",
         "diagnostics-tools",
@@ -105,8 +102,6 @@ def test_test_shards_keep_changed_shard_contracts() -> None:
     assigned = assign_shards(
         (
             Path("tests/test_discovery_worker.py"),
-            Path("tests/test_discovery_method_section.py"),
-            Path("tests/test_discovery_method_persistence.py"),
             Path("tests/test_pyinstaller_spec.py"),
             Path("tests/test_peak_model_selection.py"),
             Path("tests/test_alignment_pipeline_outputs.py"),
@@ -120,10 +115,8 @@ def test_test_shards_keep_changed_shard_contracts() -> None:
         )
     )
 
-    assert assigned["gui"] == (
+    assert assigned["workbench"] == (
         Path("tests/test_discovery_worker.py"),
-        Path("tests/test_discovery_method_section.py"),
-        Path("tests/test_discovery_method_persistence.py"),
     )
     assert assigned["docs-config"] == (
         Path("tests/test_pyinstaller_spec.py"),
@@ -148,11 +141,6 @@ def test_test_shards_keep_changed_shard_contracts() -> None:
     for path in exact_alignment_paths:
         assert _matching_shards(path) == ("alignment-core",)
         assert shard_for_path(path) == "alignment-core"
-    discovery_method_persistence_path = Path(
-        "tests/test_discovery_method_persistence.py"
-    )
-    assert _matching_shards(discovery_method_persistence_path) == ("gui",)
-    assert shard_for_path(discovery_method_persistence_path) == "gui"
     assert assigned["product-gates-evidence"] == (
         Path("tests/test_targeted_ms1_shape_identity.py"),
     )
@@ -381,7 +369,7 @@ def test_snapshot_runner_rejects_malformed_marker_before_pytest(
             {"packaging_build"},
         ),
         ("xic_inspector/api.py", {"packaging_build"}),
-        ("gui/pipeline_worker.py", {"packaging_build"}),
+        ("xic_workbench/targeted.py", {"packaging_build"}),
         ("tools/diagnostics/targeted_istd_benchmark_loaders.py", {"packaging_build"}),
         ("xic_extractor/presets/data/dna_dr.toml", {"packaging_build"}),
         ("docs/product/backfill.md", {"product_governance"}),

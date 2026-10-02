@@ -63,7 +63,7 @@ def test_run_spec_runtime_local_imports_keep_forbidden_modules_absent() -> None:
             "xic_extractor.discovery.ms2_seeds",
             "xic_extractor.discovery.csv_writer",
             "xic_extractor.raw_reader",
-            "gui",
+            "xic_workbench",
             "scripts.run_discovery",
         }
 

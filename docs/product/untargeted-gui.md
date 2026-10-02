@@ -1,279 +1,158 @@
-# Untargeted GUI
+# Local HTML Analysis Workbench
 
-![Untargeted Discovery workspace](../../assets/screenshots/untargeted-workspace.png)
-
-![Untargeted Discovery in Graphite / Amber](../../assets/screenshots/untargeted-workspace-dark.png)
-
-The Untargeted workspace is the human GUI surface for Discovery, alignment,
-and reviewable output access. The workspace orchestrates existing product
-workflows. The workspace does not create a separate product-authority lane.
+The local HTML workbench is the human surface for Targeted and Untargeted
+analysis, result actions, and completed-evidence review. It orchestrates the
+existing application, writer, Feature Quality, and Inspector owners. It does
+not create another scientific or product-authority lane. This page keeps its
+historical filename as the stable topic locator.
 
 ## Contract
 
-### Workspaces and theme
+### Launch and workspace
 
-- The main window exposes **Targeted Extraction** and **Untargeted Discovery**
-  as first-class workspaces.
-- The application provides Porcelain / Indigo (light) and Graphite / Amber
-  (dark) themes. The operator switches themes with the button below the
-  sidebar brand, **檢視 → 深色模式**, or `Ctrl+D`.
-- Both workspaces update immediately after a theme switch. The theme choice
-  survives restart through the existing `QSettings` preference of the main
-  window.
-- `gui/styles.py` owns the shared palette, including method-editor actions.
-- Untargeted settings are local GUI state in `config/discovery_gui.json`. That
-  file stays ignored.
+- `xic-extractor`, `xic-workbench`, and `python -m xic_workbench` start the
+  same workbench through `xic_workbench.cli`.
+- The server binds to `127.0.0.1`. The default port is chosen by the operating
+  system, and the default browser opens the printed URL.
+- `--no-open` suppresses browser opening. `--port` selects the local port.
+  `--config-dir` selects the writable settings directory.
+- The navigation exposes Targeted, Untargeted, and completed-result review in
+  one HTML application. Theme and last view are machine-local preferences.
+- One analysis or export job runs at a time. The workbench reports stage,
+  progress, elapsed time, terminal status, and outputs.
+- Targeted, Untargeted, and Inspector jobs accept cooperative cancellation.
+  Feature Quality and sample export finish their active write.
 
-### Batch setup
+### Targeted
 
-- Batch setup uses a scrollable overview with shared run feedback below it.
-- Sample and target tables open in a full-height detail workspace.
-  **返回批次設定** (`Alt+Left`) restores the overview without rebuilding data or
-  discarding edits.
-- Table filtering, role correction, import, and export retain their existing
-  owners.
-- DLL and internal-standard inputs show compact status summaries when valid.
-  Invalid restored inputs expand for correction. **查看問題** reveals the
-  relevant setup section.
-- Method selection and editing share one row. Import and creation are
-  available under **更多**.
+- The primary Targeted path is RAW folder, target list, then Run.
+- The standard method is the default. Advanced method settings stay collapsed
+  until the operator opens them. The separate DLL section expands when its
+  value needs attention.
+- A persisted setting that differs from the canonical method is labelled
+  `自訂方法 · N 項調整`. **回到預設** restores the canonical method settings.
+- The target table supports CSV, TSV, and Excel import plus in-workspace edit.
+  Unknown source columns and numeric text survive edits where the target owner
+  permits them.
+- Save writes `settings.csv` and `targets.csv` in the selected config
+  directory. Run calls the canonical Targeted application and publishes its
+  workbook and result summary.
+- **開始新批次** changes the output paths for another run and keeps the current
+  method and target list. It does not silently reset a custom method.
 
-### DLL directory memory
+### Untargeted modes
 
-- An existing DLL directory entered in either workspace is remembered
-  immediately in the machine-local `QSettings` of the main window. Saving or
-  running is not required.
-- Startup reuses the remembered DLL directory in both workspaces, ahead of
-  batch-config defaults.
-- A valid existing workspace path seeds this preference on first use.
-- A missing remembered path remains visible for correction. The GUI does not
-  silently select another path.
-
-### New batch and reset
-
-- **開始新批次** preserves the selected method, explicit overrides, internal
-  standards, DLL, and mode.
-- **開始新批次** clears RAW/batch-index/output inputs, sample roles,
-  acquisition-source binding, and displayed results.
-- **清空來源** retains the existing reset behavior, including resetting the
-  method to dR.
-
-### Run feedback and stop
-
-- Completion, failure, and stopping feedback survive readiness refreshes.
-- Editing settings after a run labels the results of that run as previous
-  results. Starting another run or batch clears them.
-- Stop remains disabled while cancellation is pending.
-- These feedback states describe worker feedback, not scientific acceptance.
-- Stop requests cancellation, then waits for the current worker stage to
-  yield.
-
-### Method selection and editing
-
-- Method settings come from built-in presets or imported TOML methods through
-  the same `xic_extractor.presets` loader that the CLI uses.
-- The method section exposes create, import, edit, Apply, and Save As
-  operations for CID-NL methods.
-- The starting choices are dR, R, and MeR. The editor selects and combines
-  their tags, or adds custom neutral losses.
-- This GUI does not expose Delta Mass, HCD-PI, or mixed methods. An
-  unsupported import leaves the selected method intact.
-- The operator configures Discovery tags, their combination, Discovery tuning,
-  and dataset inputs. Alignment and Backfill strategy remain platform-owned.
-- Advanced values are explicit user overrides layered on the selected preset.
-- The GUI uses an explicit RT range of 0–60 minutes for built-in starting
-  methods. This override travels with the request and the exported TOML. CLI
-  defaults are unchanged.
-- An imported out-of-range method is rejected, not clipped.
-- Save As materializes the effective method values through the preset owner.
-  The result can be used directly with CLI `--preset`.
-- Apply stores an effective method through the same owner in local
-  `config/current_discovery_method.toml`, without a Save As dialog.
-- Cancelling the editor or rejecting an import preserves the current method.
-- The GUI stores only the selected locator and overrides in its local config.
-  The local config is not a second method format.
-- A run uses the method snapshot that the GUI displays. External edits to the
-  source file do not silently change that run. Re-import selects the new
-  content.
-- On restart, the GUI loads the locator normally. A missing or invalid
-  persisted method remains visible and blocks Run until the operator selects a
-  valid method.
-
-### XIC Inspector export
-
-- A completed alignment with a published evidence locator starts the default
-  report in the background and writes `xic_inspector.html` beside the evidence.
-  **開啟 Inspector** opens it once ready; the default report does not open a
-  browser by itself.
-- **自訂匯出…** opens the settings dialog for another selection or path.
-- The settings dialog reads source sample metadata in the background. The
-  dialog displays stems and submits canonical sample IDs.
-- The dialog offers:
-  - Sample, Attention, and Query selection;
-  - a 1–50 limit (default 30) and a seed (default 0);
-  - query candidate/group IDs;
-  - m/z and RT bounds (minutes);
-  - a query offset;
-  - an HTML output path.
-- **Export and Open** opens the completed HTML in the default browser.
-  **開啟 Inspector** can later reopen the latest HTML without the source files.
-- The report uses the [shared Inspector API](xic-inspector.md), including its
-  source binding and error/cancellation rules.
-- The GUI does not re-read RAW or alter the Matrix.
-- A new run or batch clears the current locator and the Open target.
-- A running report keeps its original locator. The completion message
-  identifies the original request/attempt of that report.
-
-### Analysis matrix export
-
-- **篩選匯出…** uses the completed Matrix and its bound identity. It is enabled
-  only when the result includes both paths.
-- The operator selects a sample-metadata TSV, explicitly enters a minimum
-  finite-value fraction, and chooses a new output folder. The sample table's
-  **匯出樣品資料** action supports TSV (default) and CSV.
-- The dialog calls the existing [Feature Quality](feature-quality.md) owner in
-  a background thread. There is no GUI-specific filtering rule or default
-  threshold. The source Matrix is unchanged.
-- A failed export leaves the dialog open with an error; a successful export
-  opens the new analysis-set folder. Closing waits for an active export.
-
-### Packaging
-
-- Frozen builds bundle preset TOMLs and the Inspector modules that manual
-  export uses.
-
-### Sample sequence and metadata
-
-- Selecting a RAW directory lists files without assigning injection order.
-- The imported acquisition-information document supplies injection order
-  through the shared sample-metadata loader and matcher.
-- The GUI persists the source of that document and reloads it before explicit
-  role corrections. A folder change clears the old sequence binding.
-- Matching uses the RAW files enumerated from the selected directory. Existing
-  sequence rows are never treated as RAW files.
-- Without enumerated RAW files, importing another source replaces the
-  sequence table.
-- The sample table edits a view of the complete imported metadata record.
-- Undisplayed fields, including exclusions and their reasons, survive visible
-  edits, filtering, request construction, and CSV export.
-- Filters change only visibility, not the submitted population.
-- Importing a replacement source uses the records of that source. Clearing or
-  changing the RAW source removes the previous records.
-- A failed explicit import preserves the current data.
-- A failed persisted-source restore still clears injection order, so a run
-  cannot use stale acquisition order.
-- Generic CSV/TSV and XLSX sequences share the finite header aliases of the
-  sample-metadata owner.
-- Header matching normalizes case, spaces, underscores, and punctuation before
-  exact matching. `Sample ID`, `Injection Order`, `Sample Type`, and
-  `Batch ID` have distinct meanings.
-- Missing sample identity, duplicate semantic columns, and header-only inputs
-  are import errors.
-- Word inputs retain the shared document parser.
-- Unsupported decorated headers are not guessed by substring.
-
-### Internal-standard targets
-
-- The shared targets example is loaded by default.
-- Untargeted uses only rows marked `is_istd=TRUE` through
-  `read_istd_targets`. Alignment CLI consumes the same selection.
-- The GUI reports the selected and skipped row counts.
-- Other analytes do not become expected detections or constrain Discovery.
-- A supplied list without internal standards is invalid. An empty input opts
-  out.
-- Opening the bundled targets example for external editing first saves a user
-  copy. Reload validates external edits through the shared targets reader.
-
-## Modes
-
-| Mode | GUI input | Runs |
+| Mode | Inputs | Runs |
 | --- | --- | --- |
-| `full` | RAW directory, DLL directory, output directory | Batch discovery, alignment |
-| `discovery_only` | Single RAW file, DLL directory, output directory | Single-file discovery |
+| `full` | RAW directory, DLL directory, output directory | Batch Discovery, then Alignment |
+| `discovery_only` | One RAW file, DLL directory, output directory | Single-file Discovery |
 | `align_only` | RAW directory, `discovery_batch_index.csv`, DLL directory, output directory | Alignment |
 
-Batch Discovery-only remains a CLI surface. To run directory-level Discovery
-plus alignment from the GUI, use `full`.
+Batch Discovery-only remains a CLI surface. The HTML workbench uses `full` for
+directory-level Discovery followed by Alignment.
+
+### Untargeted method and sample setup
+
+- Built-in and imported TOML methods use `xic_extractor.presets`. The HTML
+  editor supports pure CID-NL methods, including tag selection, custom neutral
+  losses, `union` or `intersection`, and the exposed tuning values.
+- The editor supports import, create, edit, Apply, and Save As. Apply stores the
+  effective method as `current_discovery_method.toml`; Save As writes a portable
+  TOML accepted by the CLI.
+- A run uses the displayed method snapshot. A later external file edit cannot
+  change the in-flight request.
+- Invalid or unsupported imports preserve the selected method. The workbench
+  rejects methods outside its 0–60 minute RT range rather than clipping them.
+- The advanced method section stays closed until needed. Explicit tuning values
+  are overrides on the selected method.
+- **讀取 RAW 樣本** reads names, roles, and injection order through the shared
+  RAW-header metadata owner. Optional Word, Excel, CSV, or TSV acquisition
+  metadata overrides matched fields; missing injection order is completed by
+  that same header owner. Saved acquisition metadata and role corrections also
+  apply when an analysis starts without opening the sample editor first.
+- The sample editor retains undisplayed metadata fields. Filters change only
+  visibility. Role corrections and the source locator persist in
+  `discovery_gui.json`.
+- The internal-standard list uses only rows marked `is_istd=TRUE`. An empty
+  input opts out; a non-empty list without an internal standard is invalid.
+
+### Results and exports
+
+- Targeted and Untargeted results appear in the same HTML workbench that
+  launched the run. Available artifacts remain links to owner-published files.
+- A completed Alignment result can start Feature Quality export with its bound
+  Matrix identity and an explicit sample-metadata file and threshold. The
+  source Matrix remains unchanged.
+- A completed evidence locator can open the Inspector review view directly or
+  generate a custom standalone Inspector HTML report.
+- Inspector selection and rendering use `xic_inspector`. On-demand XIC uses
+  the saved observation binding and does not choose peaks, integrate, or write
+  Matrix values.
+- Sample metadata export supports TSV and CSV. Custom sample-role corrections
+  are included in the submitted and exported population.
+
+### Local persistence and packaging
+
+- `xic_workbench.config_io` owns Targeted settings and targets.
+  `xic_workbench.discovery_config_io` owns Untargeted local state.
+- `workbench.json` stores the last view, theme, and DLL directory. A supplied
+  `--config-dir` relocates these writable files together.
+- `xic_extractor.spec` starts `xic_workbench/__main__.py`, excludes Qt, and
+  declares the HTML/JavaScript/CSS, Inspector, preset, and package-data closure.
+- The spec and packaging tests define the frozen-build contract. A final frozen
+  artifact is not considered verified until the release build and smoke gate
+  pass for that artifact.
 
 ## Surfaces
 
 | Surface | Role |
 | --- | --- |
-| `gui/views/untargeted_view.py` | Workspace state and run lifecycle |
-| `gui/ui.py` | Shared overview/detail layout; moves the same editor widget and keeps execution feedback visible |
-| `gui/sections/discovery_source_section.py` | RAW, DLL, output, mode, batch-index inputs, and the shared internal-standard list |
-| `gui/sections/discovery_samples_section.py` | Acquisition-document matching, displayed sequence, and role corrections |
-| `gui/sections/discovery_method_section.py` | Method selection/import, displayed snapshot, and advanced overrides |
-| `gui/method_editor.py` | Name, tag, and composition editing; delegates TOML saving to the preset owner |
-| `gui/sections/discovery_results_section.py` | Output links, analysis-set export, run summary, and Inspector Export/Open state |
-| `gui/feature_quality_dialog.py` | Explicit selection inputs and background export through the Feature Quality owner |
-| `gui/inspector_export_dialog.py` | One-report selection and output settings |
-| `gui/workers/inspector_report_worker.py` | Background Inspector metadata/report calls and cooperative cancellation |
-| `gui/workers/discovery_worker.py` | Threaded mode dispatch; passes the published evidence locator and Matrix identity |
-| `gui/discovery_config_io.py` | Local persisted Untargeted settings |
-| `xic_extractor.spec` | Frozen-release resource bundle contract |
-
-User-visible outputs surfaced by the GUI:
-
-- `discovery_candidates.csv`
-- `discovery_review.csv`
-- `discovery_batch_index.csv`
-- `alignment_matrix.tsv`
-
-The GUI Alignment route uses the existing `machine` output level so its Matrix
-has a bound identity for analysis-set export. That level also retains the
-owner/backfill provenance and Alignment review TSV. Curve review uses Inspector;
-the GUI has no separate Backfill gallery entry. CLI output defaults are unchanged.
+| `xic_workbench/cli.py` | Loopback launch, browser behavior, port, config directory |
+| `xic_workbench/server.py` | Local routes and packaged assets |
+| `xic_workbench/analysis_workspace.py` | Settings, method, sample, and artifact operations |
+| `xic_workbench/jobs.py` | Single-job lifecycle and owner dispatch |
+| `xic_workbench/targeted.py` | Targeted form metadata, canonical application adapter, result summary |
+| `xic_workbench/untargeted.py` | Untargeted mode dispatch and application adapter |
+| `xic_workbench/methods.py` | CID-NL method editing and portable preset serialization |
+| `xic_workbench/samples.py` | Sample metadata matching, role correction, and export |
+| `xic_workbench/workspace.py` | Completed evidence selection and on-demand XIC jobs |
+| `xic_workbench/assets/` | Unified analysis and review HTML, JavaScript, and CSS |
 
 ## Boundaries
 
-- Owns: workspace layout, run/stop lifecycle, local config persistence,
-  preset loading, mode dispatch, and output link presentation.
-- Does not own: product authority, selected Backfill values, counted
-  detections, matrix publication, maturity tier, or RAW-tier production
-  readiness. Those belong to [Discovery](discovery.md),
-  [Alignment](alignment.md), [Presets](presets.md), and
-  [Productization](productization.md).
-- If a GUI change alters matrix values, schemas, selected peaks, counted
-  detections, or product authority, update the owning product docs first.
+- **Owns:** local navigation, form state, run/stop feedback, writable config,
+  owner dispatch, and output presentation.
+- **Does not own:** peak selection, grouping, Backfill, counted detection,
+  Matrix publication, Feature Quality rules, Inspector evidence meaning,
+  product maturity, or release readiness.
+- [Discovery](discovery.md), [Alignment](alignment.md),
+  [Targeted Selection](targeted-selection.md), [Feature Quality](feature-quality.md),
+  [XIC Inspector](xic-inspector.md), and [Productization](productization.md)
+  remain the respective behavior and authority owners.
 
 ## Verification
 
-| Change area | Focused tests |
+| Contract | Focused checks |
 | --- | --- |
-| Main-window routing | `tests/test_gui_main.py`, `tests/test_main_window_layout.py` |
-| Local GUI config | `tests/test_gui_config_io.py` |
-| Method editing and portable TOML | `tests/test_gui_method_editor.py`, `tests/test_presets_serialization.py` |
-| Untargeted run/stop behavior | `tests/test_untargeted_view.py` |
-| Worker mode dispatch | `tests/test_discovery_worker.py` |
-| Shared run controls | `tests/test_pipeline_worker.py` |
-| Matrix identity and analysis-set export | `tests/test_discovery_worker.py`, `tests/test_feature_quality.py` |
-| Manual Inspector Export/Open | `tests/test_gui_inspector_export.py` and source/frozen GUI browser receipts |
-| Alignment output surfaces | `tests/test_alignment_output_levels.py`, `tests/test_alignment_pipeline_outputs.py` |
-| Frozen preset bundling | `tests/test_pyinstaller_spec.py` |
+| Launch, loopback routes, and review | `tests/test_xic_workbench.py`, `tests/test_workbench_analysis.py` |
+| Targeted config, labels, reset, and execution adapter | `tests/test_workbench_config.py`, `tests/test_workbench_targeted.py`, `tests/test_targeted_service_contract.py` |
+| Untargeted config, methods, samples, and three modes | `tests/test_workbench_config.py`, `tests/test_workbench_untargeted.py`, `tests/test_processing_run_spec_entrypoints.py` |
+| Frozen resource and entry-point contract | `tests/test_pyinstaller_spec.py` |
 
-Full PR gate:
-
-```powershell
-$env:UV_CACHE_DIR='.uv-cache'; uv run ruff check xic_extractor tests
-$env:UV_CACHE_DIR='.uv-cache'; uv run python scripts/check_diagnostics_index.py
-$env:UV_CACHE_DIR='.uv-cache'; uv run mypy xic_extractor
-$env:UV_CACHE_DIR='.uv-cache'; uv run python -m tools.testing.test_shards --check
-$env:UV_CACHE_DIR='.uv-cache'; uv run python -m tools.testing.test_shards docs-config -- -v --tb=short -x
-$env:UV_CACHE_DIR='.uv-cache'; uv run python -m tools.testing.test_shards gui -- -v --tb=short -x
-$env:UV_CACHE_DIR='.uv-cache'; uv run python -m tools.testing.test_shards targeted-core -- -v --tb=short -x
-$env:UV_CACHE_DIR='.uv-cache'; uv run python -m tools.testing.test_shards alignment-core -- -v --tb=short -x
-$env:UV_CACHE_DIR='.uv-cache'; uv run python -m tools.testing.test_shards product-gates-activation -- -v --tb=short -x
-$env:UV_CACHE_DIR='.uv-cache'; uv run python -m tools.testing.test_shards product-gates-evidence -- -v --tb=short -x
-$env:UV_CACHE_DIR='.uv-cache'; uv run python -m tools.testing.test_shards diagnostics-tools -- -v --tb=short -x
-```
+Source tests verify the current Python and resource contract. Only a completed
+artifact build and frozen smoke run verify the distributable application.
 
 ## Pitfalls
 
-- Adding a preset but forgetting the PyInstaller data bundle.
-- Committing machine-specific GUI state.
-- Starting Inspector or browser automatically on science completion.
-- Re-enabling controls immediately after Stop while the worker is still
-  alive.
-- Letting the GUI recompute domain evidence or override Discovery/Alignment
-  ownership rules.
+- Treating the browser UI or its local JSON as a second scientific owner.
+- Treating a custom-method label as a new method schema or readiness claim.
+- Treating an acquired review curve as a replacement product measurement.
+- Claiming a frozen release from source tests without its build and smoke
+  evidence.
+
+## See Also
+
+- [XIC Inspector](xic-inspector.md)
+- [Presets](presets.md)
+- [Feature Quality](feature-quality.md)
+- [Architecture contract](../architecture-contract.md)

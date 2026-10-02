@@ -3,10 +3,10 @@
 [importlinter]
 root_packages =
     xic_extractor
-    gui
     scripts
     tools
     xic_inspector
+    xic_workbench
 exclude_type_checking_imports = False
 
 [importlinter:contract:domain-no-outer-layer]
@@ -15,10 +15,10 @@ type = forbidden
 source_modules =
     xic_extractor
 forbidden_modules =
-    gui
     scripts
     tools
     xic_inspector
+    xic_workbench
 allow_indirect_imports = False
 
 [importlinter:contract:peak-detection-stays-inner]

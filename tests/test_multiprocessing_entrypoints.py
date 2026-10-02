@@ -8,8 +8,8 @@ def test_cli_entrypoint_calls_freeze_support_first() -> None:
     assert first_call == "multiprocessing.freeze_support"
 
 
-def test_gui_entrypoint_calls_freeze_support_first() -> None:
-    first_call = _first_call_in_main(Path("gui/main.py"))
+def test_html_entrypoint_calls_freeze_support_first() -> None:
+    first_call = _first_call_in_main(Path("xic_workbench/cli.py"))
 
     assert first_call == "multiprocessing.freeze_support"
 

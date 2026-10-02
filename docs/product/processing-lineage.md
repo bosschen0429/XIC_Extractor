@@ -129,7 +129,7 @@ These are internal lineage concepts, not additional user-visible review tags.
 | `TargetKey` | One target-list-owner namespace plus its stable normalized target label | An exact m/z/RT/transition definition or row number |
 | `TargetDefinition` | One exact normalized Target definition under a `TargetKey` | A mutable CSV row or label alone |
 | `TargetListSnapshot` | One immutable ordered set of owner-minted target definitions used by a processing request | `target_config_hash`, a path, or a caller-owned mutable list |
-| `ProcessingRequest` | One normalized scientific computation request over identified sources, effective method/evidence settings, workflow constraints, and contract versions | An execution, output folder, timestamp, or GUI session |
+| `ProcessingRequest` | One normalized scientific computation request over identified sources, effective method/evidence settings, workflow constraints, and contract versions | An execution, output folder, timestamp, or UI session |
 | `ProcessingAttempt` | One execution of a `ProcessingRequest`; every retry receives a new identity | The logical request or the product delivery |
 | `EvidenceArtifact` | One immutable artifact instance identified by producer attempt, content digest, schema, semantic role, and lineage references | A mutable path, cache entry, or authority decision |
 | `DeliveryCellKey` | Targeted projection-owned product position: canonical sample identity plus target identity | An acquisition-source identity, kernel `CellObservation`, or ordinal group ID |

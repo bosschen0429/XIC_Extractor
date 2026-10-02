@@ -1,6 +1,6 @@
 # Feature Quality And Selection
 
-The GUI's **篩選匯出…** action and `xic-feature-quality` evaluate a finalized
+The HTML workbench's **Feature Quality** action and `xic-feature-quality` evaluate a finalized
 Alignment Matrix and write a separate analysis set. `xic_extractor.feature_quality` owns the in-memory
 calculation; `feature_quality_io` owns input binding and bundle serialization.
 The command does not reopen RAW files or change Alignment decisions, counted
@@ -66,15 +66,15 @@ filtering. QC drift correction and normalization belong to the analysis backend.
 
 ## Usage and verification
 
-In the Untargeted GUI, export the sample table as TSV with **匯出樣品資料**.
-After Alignment finishes, choose **篩選匯出…** in the results, select that TSV,
+In the Untargeted HTML view, export the sample table as TSV with **匯出樣品資料**.
+After Alignment finishes, choose **Feature Quality** in the results, select that TSV,
 enter an explicit minimum finite-value fraction and choose a new output folder.
-The GUI binds the Matrix and identity from the completed result and runs the
+The workbench binds the Matrix and identity from the completed result and runs the
 same `export_feature_quality` owner in a background thread. It opens the output
 folder only after the manifest is published. Export failures remain in the
 dialog for correction. No scientific threshold is preselected.
 
-GUI Alignment uses the existing `machine` output level to retain its bound
+HTML Alignment uses the existing `machine` output level to retain its bound
 identity. Older results without identity cannot be filtered through this
 action; rerun Alignment rather than reconstructing identity from coordinates.
 
