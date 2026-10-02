@@ -896,7 +896,6 @@
       act(async () => {
         const result = await api("/api/targets/import", {
           path: $("target-import-path").value,
-          sheet: $("target-import-sheet").value,
         });
         state.targets = result.targets;
         targetCount();
