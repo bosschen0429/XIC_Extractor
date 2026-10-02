@@ -49,6 +49,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | Untargeted 保留批次執行 | `untargeted_execution/` | 規劃、partition 與 completion adapter；科學決策仍由 Alignment，發布由 application／output 負責 |
 | 跨樣本配對、RT 漂移、群組 | `alignment/grouping_workflow.py`、`alignment/cross_sample/` | 群組決定先完成，Backfill 與格值決策消費同一結果 |
 | 從已取得的 evidence 完成科學結果 | `alignment/completion.py` | Targeted／Untargeted 共用 capture、grouping、cell 與 projection；不執行 runtime 或保存暫存 |
+| Untargeted CID-NL 群組到完整格值結果 | `alignment/cid_nl_completion.py` | 接納 Backfill、同步群組 identity、組裝格值觀察及完成 coverage；只向 runtime 要求已完成查詢的 receipt，再交回完整 application result |
 | Untargeted CID-NL 的 sample assessment／Backfill inputs | `alignment/cid_nl_inputs.py` | 正式 partition 與 diagnostic projection 共用相同 input types、payload validation 和 method default；不依賴 artifact rendering |
 | 版本化 Matrix 的 artifact projection 與 acceptance | `diagnostics/quant_matrix/` | `golden_path.py` 組合 owner facts；`acceptance.py` 驗 manifest snapshot／source hashes 並 mint checked receipt；`version.py` 投影 table rows；不改 default product authority |
 | Packaged quantitative-effect promotion authority | `alignment/quantitative_projection_authority.py` | 封住 packaged resource、strict manifest rehydration 與 canonical rendering；是 promotion contract boundary，不是數值算法或 active application guard |

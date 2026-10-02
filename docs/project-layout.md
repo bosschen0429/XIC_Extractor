@@ -28,6 +28,7 @@ XIC_Extractor/
 │   ├── peak_detection/         單次觀察、峰假設、選擇與積分
 │   ├── alignment/              跨樣本組合、Backfill、格值決策及其交付 adapter
 │   │   ├── completion.py       已取得 evidence → 完成的科學結果；不呼叫 runtime
+│   │   ├── cid_nl_completion.py 群組及已取得證據 → 完整 CID-NL 格值結果
 │   │   ├── cid_nl_inputs.py    正式 partition／diagnostic 共用的純 CID-NL input contract
 │   │   ├── quantitative_projection_authority.py  Packaged promotion contract boundary
 │   │   ├── cross_sample/       跨樣本關聯

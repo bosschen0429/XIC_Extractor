@@ -6,36 +6,20 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import cast
 
-from xic_extractor.alignment.backfill.evaluation_coverage import (
-    BackfillPlanningPosition,
-    ConservativeNoRequestProofBuilder,
-    build_backfill_evaluation_coverage,
-    mint_backfill_planning_epoch,
-    mint_backfill_position_id,
+from xic_extractor.alignment.backfill.completion_evidence import (
+    BackfillCompletionProjection,
 )
-from xic_extractor.alignment.backfill_request_plan import (
-    BACKFILL_TRACE_RESULT_SEMANTICS,
-)
-from xic_extractor.alignment.cell_observations import (
-    CellObservationRef,
-)
-from xic_extractor.alignment.cid_nl_predecessor_cells import (
-    compose_cid_nl_predecessor_cells,
+from xic_extractor.alignment.cid_nl_completion import (
+    CidNlWorksetCompletion,
+    CidNlWorksetEvidence,
+    CidNlWorksetGrouping,
+    prepare_cid_nl_workset,
 )
 from xic_extractor.alignment.completion import (
     CaptureWorkflowArguments,
-    UntargetWorkflowAdapter,
-    UntargetWorkflowBundle,
     UntargetWorkflowCompositionRequest,
-    compose_untarget_subject,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.conservative_backfill import (
-    ConservativeBackfillCandidateUniverse,
-    assess_conservative_backfill_group,
-    map_conservative_backfill_candidates,
-    mint_conservative_backfill_candidate_universe,
-)
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleNeighborhoodEdge,
     CrossSamplePeakGroupHypothesis,
@@ -46,9 +30,7 @@ from xic_extractor.alignment.feature_membership_inference import (
     estimate_batch_rt_warp,
 )
 from xic_extractor.alignment.grouping_workflow import (
-    admit_cid_nl_group_backfills,
     build_initial_cid_nl_cross_sample_groups,
-    contested_backfill_peaks,
     regroup_cid_nl_cross_sample_groups,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
@@ -80,7 +62,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     UntargetedCidNlMethodSubjectBatch,
 )
-from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import RetainedCaptureEvidence
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
@@ -98,7 +79,6 @@ from xic_extractor.untargeted_execution.partition.models import (
     UntargetedPartitionJob,
     UntargetedPreparedGrouping,
     UntargetedSampleResult,
-    UntargetedWorksetGrouping,
     _SampleResultContext,
 )
 from xic_extractor.untargeted_execution.partition.request import (
@@ -174,15 +154,9 @@ def compose_and_persist_untargeted_partition(
 
     def children():
         nonlocal child_count
-        for bundle, captures in zip(
-            inputs.bundles, inputs.completed_captures, strict=True
-        ):
+        for completion, receipts in inputs.completions:
             check_cancellation()
-            child = compose_untarget_subject(
-                cast(UntargetWorkflowCompositionRequest, bundle.request),
-                bundle.adapter,
-                completed_captures=captures,
-            )
+            child = completion.complete(receipts)
             child_count += 1
             child_order_keys.append(
                 min(
@@ -224,11 +198,12 @@ def compose_and_persist_untargeted_partition(
 @dataclass(frozen=True, slots=True)
 class _ProductionCompositionInputs:
     request: UntargetWorkflowCompositionRequest
-    bundles: tuple[UntargetWorkflowBundle, ...]
+    completions: tuple[
+        tuple[CidNlWorksetCompletion, tuple[BackfillCompletionProjection, ...]], ...
+    ]
     method_assessments: tuple[CidNlMethodAssessmentRef, ...]
     initial_groups: tuple[CrossSamplePeakGroupHypothesis, ...]
     initial_edges: tuple[CrossSampleNeighborhoodEdge, ...]
-    completed_captures: tuple[tuple[SampleLocalCapture, ...], ...]
     capture_evidence: tuple[RetainedCaptureEvidence, ...] = ()
 
 
@@ -248,14 +223,7 @@ def compose_untargeted_partition(
     )
     return UntargetedPartitionComposition(
         children=tuple(
-            compose_untarget_subject(
-                cast(UntargetWorkflowCompositionRequest, bundle.request),
-                bundle.adapter,
-                completed_captures=captures,
-            )
-            for bundle, captures in zip(
-                inputs.bundles, inputs.completed_captures, strict=True
-            )
+            completion.complete(receipts) for completion, receipts in inputs.completions
         ),
         excluded_candidates=inputs.request.excluded_candidates,
         capture_bindings=inputs.request.scope.capture_bindings,
@@ -556,7 +524,7 @@ def prepare_untargeted_partition_grouping(
             operation_counts_sink=operation_counts,
         )
         prepared_worksets.append(
-            UntargetedWorksetGrouping(
+            CidNlWorksetGrouping(
                 subjects=subject_workset,
                 scope=child_scope,
                 captures=captures,
@@ -644,8 +612,7 @@ def _build_production_composition_inputs(
     known_istd_reference: KnownIstdReference | None,
 ) -> _ProductionCompositionInputs:
     if type(sample_results) is not tuple or any(
-        type(result) is not UntargetedSampleResult
-        for result in sample_results
+        type(result) is not UntargetedSampleResult for result in sample_results
     ):
         raise TypeError("sample_results must be an immutable typed runtime population")
     if not isinstance(alignment_config, AlignmentConfig):
@@ -727,32 +694,9 @@ def _build_production_composition_inputs(
         and prepared.known_istd_reference != known_istd_reference
     ):
         raise RuntimeError("grouping context must be supplied before backfill")
-    parent_request = prepared.request
-    bundles = []
-    completed_captures = []
-    initial_groups: list[CrossSamplePeakGroupHypothesis] = []
-    initial_edges: list[CrossSampleNeighborhoodEdge] = []
-    ordered_samples = tuple(
-        sorted(
-            batch.context.samples, key=lambda sample: sample.identity.sample_identity_id
-        )
-    )
-    sample_universe = frozenset(sample.metadata.raw_stem for sample in ordered_samples)
-    injection_order = {
-        sample.metadata.raw_stem: sample.metadata.injection_order
-        for sample in ordered_samples
-        if sample.metadata.injection_order is not None
-    }
-    raw_sample_stems = frozenset(batch.context.raw_paths_by_sample)
-    empty_family_ids: frozenset[str] = frozenset()
+    completions = []
     for workset in prepared.worksets:
         subject_workset = workset.subjects
-        child_scope = workset.scope
-        captures = workset.captures
-        capture_inputs = workset.capture_inputs
-        grouping_scope = workset.grouping_scope
-        grouping_result = workset.grouping_result
-        retained_candidates = workset.retained_candidates
         assessments = tuple(
             (result.job.sample, assessment)
             for subject in subject_workset
@@ -760,7 +704,6 @@ def _build_production_composition_inputs(
             for assessment in result.effective_assessments
             if not is_unsearched_cid_nl_discovery_assessment(assessment)
         )
-        initial_groups.extend(grouping_scope.groups)
         subject_order = {
             subject.method_subject_id: index
             for index, subject in enumerate(subject_workset)
@@ -781,18 +724,6 @@ def _build_production_composition_inputs(
             for assessment in (result.adapter_result.assessment_input.assessment,)
             if not is_unsearched_cid_nl_discovery_assessment(assessment)
         )
-        retained_cell_hypotheses: dict[tuple[str, str], list[PeakHypothesis]] = {}
-        for candidate in retained_candidates:
-            assessment = candidate.direct_support_assessment
-            if assessment is None:
-                continue
-            retained_cell_hypotheses.setdefault(
-                (
-                    candidate.canonical_sample_identity_id,
-                    assessment.artifact.content_identity.artifact_content_id,
-                ),
-                [],
-            ).append(candidate.peak_hypothesis)
         group_backfills = {
             (
                 group.group_hypothesis_id,
@@ -802,13 +733,8 @@ def _build_production_composition_inputs(
             for subject in subject_workset
             for sample_result in results_by_subject.get(subject.method_subject_id, ())
             if sample_result.backfill_attempts
-            for group in grouping_scope.groups
+            for group in workset.grouping_scope.groups
             if group.group_center_rt is not None
-            and not any(
-                member.canonical_sample_identity_id
-                == sample_result.job.sample.identity.sample_identity_id
-                for member in group.member_subjects
-            )
             and (
                 backfill := sample_result.backfill_for_group(
                     group.group_center_rt, group_hypothesis_id=group.group_hypothesis_id
@@ -816,238 +742,35 @@ def _build_production_composition_inputs(
             )
             is not None
         }
-        grouping_result, backfilled_groups, successor_ids, backfilled_hypotheses = (
-            admit_cid_nl_group_backfills(
-                result=grouping_result,
-                groups=grouping_scope.groups,
-                backfills=group_backfills,
-                alignment_config=alignment_config,
-            )
-        )
-        backfilled_positions = frozenset(
-            (group_id, sample_id)
-            for (group_id, sample_id, _), (_, assessment) in group_backfills.items()
-            if assessment.content.method_result == "SUPPORT"
-        )
-        predecessor_cells = compose_cid_nl_predecessor_cells(
-            processing_owners=batch.context.processing_owners,
-            groups=grouping_scope.groups,
-            sample_assessments=initial_assessments,
-            alignment_config=alignment_config,
-            drift_lookup=grouping_result.drift_lookup,
-            sample_universe=sample_universe,
-            injection_order=injection_order,
-            backfill_assessments_by_group={
-                key: pair
-                for key, pair in group_backfills.items()
-                if pair[1].content.method_result != "SUPPORT"
-            },
-            retained_hypotheses_by_assessment={
-                key: tuple(hypotheses)
-                for key, hypotheses in retained_cell_hypotheses.items()
-            },
-            contested_backfill_peaks=contested_backfill_peaks(
-                groups=backfilled_groups,
-                backfills=group_backfills,
-                alignment_config=alignment_config,
+        completion = prepare_cid_nl_workset(
+            workset,
+            CidNlWorksetEvidence(
+                sample_assessments=assessments,
+                initial_assessments=initial_assessments,
+                group_backfills=group_backfills,
             ),
-        )
-        backfill_cells = (
-            compose_cid_nl_predecessor_cells(
-                processing_owners=batch.context.processing_owners,
-                groups=backfilled_groups,
-                sample_assessments=initial_assessments,
-                alignment_config=alignment_config,
-                drift_lookup=grouping_result.drift_lookup,
-                sample_universe=sample_universe,
-                injection_order=injection_order,
-                backfill_assessments_by_group={
-                    (successor_ids[group_id], sample_id, subject_id): pair
-                    for (
-                        group_id,
-                        sample_id,
-                        subject_id,
-                    ), pair in group_backfills.items()
-                    if pair[1].content.method_result == "SUPPORT"
-                },
-                retained_hypotheses_by_assessment={
-                    **{
-                        key: tuple(hypotheses)
-                        for key, hypotheses in retained_cell_hypotheses.items()
-                    },
-                    **backfilled_hypotheses,
-                },
-                selected_cells=frozenset(
-                    (successor_ids[group_id], sample_id)
-                    for group_id, sample_id in backfilled_positions
-                ),
-            )
-            if backfilled_positions
-            else ()
-        )
-        cell_by_key = {}
-        cells_by_group: dict[str, list[CellObservationRef]] = {}
-        for predecessor_cell in predecessor_cells:
-            group_id = predecessor_cell.content.group_hypothesis_id
-            sample_id = predecessor_cell.content.canonical_sample_identity_id
-            cell_by_key[(group_id, sample_id)] = predecessor_cell
-            cells_by_group.setdefault(group_id, []).append(predecessor_cell)
-        repair_groups = grouping_result.initial_population
-        no_request_proofs = {}
-        for group in repair_groups:
-            group_cells = tuple(cells_by_group[group.group_hypothesis_id])
-            searched_sample_ids = {
-                cell.content.canonical_sample_identity_id for cell in group_cells
-            }
-            facts = assess_conservative_backfill_group(
-                group_cells,
-                sample_population=batch.context.samples,
-                unsearched_sample_ids=tuple(
-                    sample.identity.sample_identity_id
-                    for sample in ordered_samples
-                    if sample.identity.sample_identity_id not in searched_sample_ids
-                ),
-            )
-            proof_builder = None
-            for sample in batch.context.samples:
-                key = (group.group_hypothesis_id, sample.identity.sample_identity_id)
-                cell = cell_by_key.get(key)
-                if cell is None or key in backfilled_positions:
-                    continue
-                if (
-                    cell.content.method_result != "HOLD"
-                    or cell.peak_observation is not None
-                ):
-                    continue
-                completion = None
-                universes: tuple[ConservativeBackfillCandidateUniverse, ...] = ()
-                if facts.may_attempt_backfill:
-                    if cell.method_assessment.candidate_peaks:
-                        continue
-                    method_subject_id = (
-                        cell.method_assessment.content.method_subject.method_subject_id
-                    )
-                    sample_result = result_by_key.get(
-                        (sample.metadata.raw_stem, method_subject_id)
-                    )
-                    if (
-                        sample_result is None
-                        or facts.group_context.group.group_center_rt is None
-                        or sample_result.backfill_for_group(
-                            facts.group_context.group.group_center_rt,
-                            group_hypothesis_id=group.group_hypothesis_id,
-                        )
-                        is None
-                    ):
-                        continue
-                    completion = result_context.project_completed_backfill(
-                        sample_result, group_context=facts.group_context
-                    )
-                    universes = (
-                        mint_conservative_backfill_candidate_universe(
-                            processing_owners=batch.context.processing_owners,
-                            sample=sample,
-                            group_facts=(facts,),
-                            candidate_assessment=completion.backfill_assessment,
-                        ),
-                    )
-                (decision,) = map_conservative_backfill_candidates(
-                    (facts,), sample=sample, candidate_universes=universes
-                )
-                if proof_builder is None:
-                    proof_builder = ConservativeNoRequestProofBuilder(
-                        processing_owners=batch.context.processing_owners,
-                        group_identity=group,
-                        group_facts=facts,
-                    )
-                no_request_proofs[key] = proof_builder.mint(
-                    sample=sample,
-                    decision=decision,
-                    completion=completion,
-                )
-        positions = tuple(
-            BackfillPlanningPosition(
-                position_id=mint_backfill_position_id(
-                    processing_request_id=group.processing_request_id,
-                    group_hypothesis_id=group.group_hypothesis_id,
-                    sample_identity_id=sample.identity.sample_identity_id,
-                ),
-                group_identity=group,
-                sample=sample,
-                planning_state="not_planned",
-                planning_reason=(
-                    "no_discovery_input"
-                    if cell is None
-                    else no_request_proofs[
-                        (group.group_hypothesis_id, sample.identity.sample_identity_id)
-                    ].planning_reason
-                    if (group.group_hypothesis_id, sample.identity.sample_identity_id)
-                    in no_request_proofs
-                    else "local_owner_not_supersedable"
-                    if cell.content.outside_group is not None
-                    else "retained_unresolved_candidates"
-                    if (
-                        cell.content.technical_state == "evaluated"
-                        and cell.content.method_result == "HOLD"
-                        and cell.peak_observation is None
-                        and len(cell.method_assessment.candidate_peaks) >= 2
-                    )
-                    else "retained_local_owner"
-                ),
-                primary_logical_requests=(),
-                conservative_no_request_proof=no_request_proofs.get(
-                    (group.group_hypothesis_id, sample.identity.sample_identity_id)
-                ),
-            )
-            for group in repair_groups
-            for sample in batch.context.samples
-            for cell in (
-                cell_by_key.get(
-                    (group.group_hypothesis_id, sample.identity.sample_identity_id)
-                ),
-            )
-        )
-        epoch = mint_backfill_planning_epoch(
-            processing_owners=batch.context.processing_owners,
-            group_identities=repair_groups,
             samples=batch.context.samples,
-            raw_sample_stems=raw_sample_stems,
             alignment_config=alignment_config,
-            backend="raw",
-            window_strategy="exact",
-            superwindow_span_factor=2,
-            validation_mode="primary",
-            result_semantics=BACKFILL_TRACE_RESULT_SEMANTICS,
-            scope="full-audit",
-            selected_family_ids=empty_family_ids,
-            positions=positions,
+            raw_sample_stems=frozenset(batch.context.raw_paths_by_sample),
         )
-        coverage = build_backfill_evaluation_coverage(epoch, ())
-        bundles.append(
-            UntargetWorkflowBundle(
-                request=UntargetWorkflowCompositionRequest(
-                    scope=child_scope,
-                    processing_request=parent_request.processing_request,
-                    processing_attempt=parent_request.processing_attempt,
-                ),
-                adapter=UntargetWorkflowAdapter(
-                    capture_inputs=capture_inputs,
-                    completed_grouping=grouping_result,
-                    sample_assessments=assessments,
-                    closed_cell_coverage=coverage,
-                    predecessor_cell_observations=predecessor_cells,
-                    backfill_cell_observations=backfill_cells,
-                ),
+        receipts = tuple(
+            result_context.project_completed_backfill(
+                result_by_key[(sample.metadata.raw_stem, context.method_subject_id)],
+                group_context=context,
             )
+            for sample, context in completion.completion_requests
         )
-        completed_captures.append(captures)
+        completions.append((completion, receipts))
     return _ProductionCompositionInputs(
-        request=parent_request,
-        bundles=tuple(bundles),
+        request=prepared.request,
+        completions=tuple(completions),
         method_assessments=tuple(final_method_assessments),
-        initial_groups=tuple(initial_groups),
-        initial_edges=tuple(initial_edges),
-        completed_captures=tuple(completed_captures),
+        initial_groups=tuple(
+            group
+            for workset in prepared.worksets
+            for group in workset.grouping_scope.groups
+        ),
+        initial_edges=(),
         capture_evidence=tuple(
             evidence
             for result in sample_results
