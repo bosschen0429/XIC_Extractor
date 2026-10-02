@@ -122,7 +122,18 @@ def test_http_query_detail_export_and_invalid_open_preserve_source(tmp_path):
         {"X-XIC-Client": ""},
     ],
 )
-def test_http_rejects_cross_origin_or_unidentified_api_calls(headers):
+@pytest.mark.parametrize("body_delay", [0, 0.05])
+def test_http_rejects_cross_origin_or_unidentified_api_calls(
+    headers, body_delay, monkeypatch
+):
+    send = http.client.HTTPConnection.send
+
+    def delayed_body(connection, data):
+        if isinstance(data, bytes) and data.startswith(b"{"):
+            time.sleep(body_delay)
+        return send(connection, data)
+
+    monkeypatch.setattr(http.client.HTTPConnection, "send", delayed_body)
     with _client(ReviewWorkspace()) as request:
         assert request("/api/open", {"source": "."}, headers=headers)[0] == 403
 

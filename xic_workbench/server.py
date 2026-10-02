@@ -237,13 +237,16 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
             self._handle(self._post)
 
         def _post(self):
-            self._guard(api=True)
-            if self.headers.get_content_type() != "application/json":
-                raise ValueError("請以 JSON 傳送要求。")
             length = int(self.headers.get("Content-Length", "0"))
             if not 0 < length <= 2 * 1024 * 1024:
                 raise ValueError("要求大小超過限制。")
-            values = json.loads(self.rfile.read(length))
+            # Consume the bounded body before rejecting headers: closing while
+            # the client is still sending can reset the connection on Windows.
+            body = self.rfile.read(length)
+            self._guard(api=True)
+            if self.headers.get_content_type() != "application/json":
+                raise ValueError("請以 JSON 傳送要求。")
+            values = json.loads(body)
             if not isinstance(values, dict):
                 raise ValueError("要求必須是 JSON 物件。")
             path = urlsplit(self.path).path
