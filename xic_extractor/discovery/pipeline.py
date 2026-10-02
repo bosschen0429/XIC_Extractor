@@ -50,7 +50,6 @@ from xic_extractor.discovery.physical_fact_record import (
     DiscoveryCandidatePhysicalBinding,
     DiscoveryPhysicalFactRecord,
     bind_physical_facts_to_final_candidates,
-    order_physical_bindings_for_candidate_csv,
 )
 from xic_extractor.discovery.processing_run_spec_adapter import (
     processing_run_input_for_path,
@@ -97,7 +96,7 @@ RawOpener = Callable[[Path, Path], AbstractContextManager[DiscoveryRawHandle]]
 
 
 @dataclass(frozen=True)
-class _DiscoveryRawFileResult:
+class _DiscoverySampleResult:
     candidates: tuple[DiscoveryCandidate, ...]
     ms1_measurements: _DiscoveryMs1Measurements | None
     raw_open_receipt: RawAcquisitionSessionReceipt | None
@@ -175,19 +174,6 @@ class DiscoveryProcessExecutionError(RuntimeError):
         self.profile_id = first_failure.profile_id
         self.acquisition_source_id = first_failure.acquisition_source_id
         super().__init__(f"{first_failure.raw_name}: {first_failure.message}")
-
-
-def _finalize_physical_bindings_for_output(
-    *,
-    run_spec: ProcessingRunSpec | None,
-    bindings: tuple[DiscoveryCandidatePhysicalBinding, ...],
-    candidates: tuple[DiscoveryCandidate, ...],
-) -> tuple[DiscoveryCandidatePhysicalBinding, ...]:
-    if run_spec is None:
-        return ()
-    return order_physical_bindings_for_candidate_csv(
-        bind_physical_facts_to_final_candidates(bindings, candidates)
-    )
 
 
 @lru_cache(maxsize=2)
@@ -282,7 +268,7 @@ def run_discovery(
     else:
         raw_session_capability = None
         opener = raw_opener
-    discovery_result = _discover_raw_file_with_runtime_projection(
+    discovery_result = _discover_completed_sample_with_runtime_projection(
         raw_path,
         settings=settings,
         peak_config=peak_config,
@@ -292,42 +278,17 @@ def run_discovery(
         run_spec=run_spec,
         acquisition_input=acquisition_input,
     )
-    _record_discovery_ms1_measurements(
-        recorder,
-        discovery_result.ms1_measurements,
-        sample_stem,
-    )
-    discovered = discovery_result.candidates
-    with recorder.stage(
-        "discover.peak_anchor",
-        sample_stem=sample_stem,
-        metrics={"input_count": len(discovered)},
-    ) as stage:
-        candidates = assign_peak_anchors(discovered, settings=settings)
-        stage.metrics["candidate_count"] = len(candidates)
-    candidates = _apply_blank_qualification_if_enabled(
-        candidates,
-        raw_path=raw_path,
-        settings=settings,
-        timing_recorder=recorder,
-        sample_stem=sample_stem,
-        acquisition_input=acquisition_input,
-    )
     _raise_if_discovery_cancelled(should_cancel)
     return output_publication.write_dual_csvs(
         output_dir,
-        candidates,
+        discovery_result.candidates,
         timing_recorder=recorder,
         sample_stem=sample_stem,
         run_spec=run_spec,
         acquisition_input=acquisition_input,
         physical_work_manifest=discovery_result.physical_work_manifest,
         physical_evaluations=discovery_result.physical_evaluations,
-        physical_bindings=_finalize_physical_bindings_for_output(
-            run_spec=run_spec,
-            bindings=discovery_result.physical_bindings,
-            candidates=candidates,
-        ),
+        physical_bindings=discovery_result.physical_bindings,
     )
 
 
@@ -401,7 +362,7 @@ def run_discovery_batch(
         else:
             raw_session_capability = None
             opener = raw_opener
-        discovery_result = _discover_raw_file_with_runtime_projection(
+        discovery_result = _discover_completed_sample_with_runtime_projection(
             raw_path,
             settings=settings,
             peak_config=peak_config,
@@ -411,27 +372,7 @@ def run_discovery_batch(
             run_spec=run_spec,
             acquisition_input=acquisition_input,
         )
-        _record_discovery_ms1_measurements(
-            recorder,
-            discovery_result.ms1_measurements,
-            sample_stem,
-        )
-        discovered = discovery_result.candidates
-        with recorder.stage(
-            "discover.peak_anchor",
-            sample_stem=sample_stem,
-            metrics={"input_count": len(discovered)},
-        ) as stage:
-            candidates = assign_peak_anchors(discovered, settings=settings)
-            stage.metrics["candidate_count"] = len(candidates)
-        candidates = _apply_blank_qualification_if_enabled(
-            candidates,
-            raw_path=raw_path,
-            settings=settings,
-            timing_recorder=recorder,
-            sample_stem=sample_stem,
-            acquisition_input=acquisition_input,
-        )
+        candidates = discovery_result.candidates
         sample_output_dir = output_dir / sample_stem
         outputs = output_publication.write_dual_csvs(
             sample_output_dir,
@@ -442,11 +383,7 @@ def run_discovery_batch(
             acquisition_input=acquisition_input,
             physical_work_manifest=discovery_result.physical_work_manifest,
             physical_evaluations=discovery_result.physical_evaluations,
-            physical_bindings=_finalize_physical_bindings_for_output(
-                run_spec=run_spec,
-                bindings=discovery_result.physical_bindings,
-                candidates=candidates,
-            ),
+            physical_bindings=discovery_result.physical_bindings,
         )
         per_sample.append(outputs)
         candidates = output_publication.persisted_discovery_candidates(candidates)
@@ -739,7 +676,7 @@ def _run_discovery_sample_process_job(
 
     try:
         _validate_discovery_process_job_binding(job)
-        discovery_result = _discover_raw_file(
+        discovery_result = _discover_completed_sample(
             job.raw_path,
             settings=job.settings,
             peak_config=job.peak_config,
@@ -754,22 +691,7 @@ def _run_discovery_sample_process_job(
             acquisition_input=job.acquisition_input,
         )
         sample_stem = job.raw_path.stem
-        discovered = discovery_result.candidates
-        with recorder.stage(
-            "discover.peak_anchor",
-            sample_stem=sample_stem,
-            metrics={"input_count": len(discovered)},
-        ) as stage:
-            candidates = assign_peak_anchors(discovered, settings=job.settings)
-            stage.metrics["candidate_count"] = len(candidates)
-        candidates = _apply_blank_qualification_if_enabled(
-            candidates,
-            raw_path=job.raw_path,
-            settings=job.settings,
-            timing_recorder=recorder,
-            sample_stem=sample_stem,
-            acquisition_input=job.acquisition_input,
-        )
+        candidates = discovery_result.candidates
         outputs = output_publication.write_dual_csvs(
             job.output_dir / sample_stem,
             candidates,
@@ -779,11 +701,7 @@ def _run_discovery_sample_process_job(
             acquisition_input=job.acquisition_input,
             physical_work_manifest=discovery_result.physical_work_manifest,
             physical_evaluations=discovery_result.physical_evaluations,
-            physical_bindings=_finalize_physical_bindings_for_output(
-                run_spec=job.run_spec,
-                bindings=discovery_result.physical_bindings,
-                candidates=candidates,
-            ),
+            physical_bindings=discovery_result.physical_bindings,
         )
         candidates = output_publication.persisted_discovery_candidates(candidates)
         receipt = mint_discovery_candidate_universe_receipt(
@@ -887,7 +805,7 @@ def _discovery_process_error(
     )
 
 
-def _discover_raw_file_with_runtime_projection(
+def _discover_completed_sample_with_runtime_projection(
     raw_path: Path,
     *,
     settings: DiscoverySettings,
@@ -897,9 +815,11 @@ def _discover_raw_file_with_runtime_projection(
     raw_session_capability: RawAcquisitionSessionCapability | None,
     run_spec: ProcessingRunSpec | None = None,
     acquisition_input: ProcessingAcquisitionInput | None = None,
-) -> _DiscoveryRawFileResult:
+) -> _DiscoverySampleResult:
+    """Return candidates ready for publication after projecting owner metrics."""
     observed_receipt: RawAcquisitionSessionReceipt | None = None
     receipt_observed = False
+    acquisition_projected = False
 
     def _capture_receipt(receipt: RawAcquisitionSessionReceipt | None) -> None:
         nonlocal observed_receipt, receipt_observed
@@ -908,35 +828,110 @@ def _discover_raw_file_with_runtime_projection(
         receipt_observed = True
         observed_receipt = receipt
 
+    def _project_acquisition(result: _DiscoverySampleResult) -> None:
+        nonlocal acquisition_projected
+        acquisition_projected = True
+        _record_raw_open_metrics(
+            timing_recorder,
+            raw_session_capability,
+            result.raw_open_receipt,
+            raw_path.stem,
+        )
+        _record_discovery_ms1_measurements(
+            timing_recorder,
+            result.ms1_measurements,
+            raw_path.stem,
+        )
+
     try:
-        result = _discover_raw_file(
+        result = _discover_completed_sample(
             raw_path,
             settings=settings,
             peak_config=peak_config,
             raw_opener=raw_opener,
             timing_recorder=timing_recorder,
             raw_open_receipt_observer=_capture_receipt,
+            acquisition_observer=_project_acquisition,
             run_spec=run_spec,
             acquisition_input=acquisition_input,
         )
     except Exception:
-        _record_raw_open_metrics(
-            timing_recorder,
-            raw_session_capability,
-            observed_receipt,
-            raw_path.stem,
-        )
+        if not acquisition_projected:
+            _record_raw_open_metrics(
+                timing_recorder,
+                raw_session_capability,
+                observed_receipt,
+                raw_path.stem,
+            )
         raise
-    _record_raw_open_metrics(
-        timing_recorder,
-        raw_session_capability,
-        result.raw_open_receipt,
-        raw_path.stem,
-    )
     return result
 
 
-def _discover_raw_file(
+def _discover_completed_sample(
+    raw_path: Path,
+    *,
+    settings: DiscoverySettings,
+    peak_config: ExtractionConfig,
+    raw_opener: RawOpener,
+    timing_recorder: TimingRecorder,
+    measurement_observer: Callable[[_DiscoveryMs1Measurements], None] | None = None,
+    raw_open_receipt_observer: (
+        Callable[[RawAcquisitionSessionReceipt | None], None] | None
+    ) = None,
+    acquisition_observer: Callable[[_DiscoverySampleResult], None] | None = None,
+    run_spec: ProcessingRunSpec | None = None,
+    acquisition_input: ProcessingAcquisitionInput | None = None,
+) -> _DiscoverySampleResult:
+    """Acquire one RAW, close it, then complete its candidate facts."""
+
+    acquired = _acquire_discovery_sample(
+        raw_path,
+        settings=settings,
+        peak_config=peak_config,
+        raw_opener=raw_opener,
+        timing_recorder=timing_recorder,
+        measurement_observer=measurement_observer,
+        raw_open_receipt_observer=raw_open_receipt_observer,
+        run_spec=run_spec,
+        acquisition_input=acquisition_input,
+    )
+    if acquisition_observer is not None:
+        acquisition_observer(acquired)
+    sample_stem = raw_path.stem
+    with timing_recorder.stage(
+        "discover.peak_anchor",
+        sample_stem=sample_stem,
+        metrics={"input_count": len(acquired.candidates)},
+    ) as stage:
+        candidates = assign_peak_anchors(acquired.candidates, settings=settings)
+        stage.metrics["candidate_count"] = len(candidates)
+    candidates = _apply_blank_qualification_if_enabled(
+        candidates,
+        raw_path=raw_path,
+        settings=settings,
+        timing_recorder=timing_recorder,
+        sample_stem=sample_stem,
+        acquisition_input=acquisition_input,
+    )
+    physical_bindings = (
+        ()
+        if run_spec is None
+        else bind_physical_facts_to_final_candidates(
+            acquired.physical_bindings,
+            candidates,
+        )
+    )
+    return _DiscoverySampleResult(
+        candidates=candidates,
+        ms1_measurements=acquired.ms1_measurements,
+        raw_open_receipt=acquired.raw_open_receipt,
+        physical_work_manifest=acquired.physical_work_manifest,
+        physical_evaluations=acquired.physical_evaluations,
+        physical_bindings=physical_bindings,
+    )
+
+
+def _acquire_discovery_sample(
     raw_path: Path,
     *,
     settings: DiscoverySettings,
@@ -949,7 +944,7 @@ def _discover_raw_file(
     ) = None,
     run_spec: ProcessingRunSpec | None = None,
     acquisition_input: ProcessingAcquisitionInput | None = None,
-) -> _DiscoveryRawFileResult:
+) -> _DiscoverySampleResult:
     if (run_spec is None) != (acquisition_input is None):
         raise ValueError("Discovery ProcessingRunSpec input binding is partial")
     if run_spec is not None and acquisition_input is not None:
@@ -1055,7 +1050,7 @@ def _discover_raw_file(
                     physical_bindings = ()
                 stage.metrics["candidate_count"] = len(candidates)
             completed = True
-            return _DiscoveryRawFileResult(
+            return _DiscoverySampleResult(
                 candidates=candidates,
                 ms1_measurements=ms1_measurements,
                 raw_open_receipt=raw_open_receipt,
@@ -1304,9 +1299,7 @@ def _record_raw_open_metrics(
         value=metrics.raw_open_count,
         scope=sample_stem,
         unit="opens",
-        source=(
-            "xic_extractor.execution.attempt.derive_runtime_raw_open_metrics"
-        ),
+        source=("xic_extractor.execution.attempt.derive_runtime_raw_open_metrics"),
         availability=(
             "measured" if metrics.raw_open_count is not None else "unavailable"
         ),

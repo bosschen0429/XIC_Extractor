@@ -42,7 +42,7 @@ from xic_extractor.discovery.pipeline import (
     DiscoverySampleProcessError,
     DiscoverySampleProcessJob,
     DiscoverySampleProcessResult,
-    _discover_raw_file,
+    _acquire_discovery_sample,
     _reject_caller_authored_discovery_ms1_measurement,
     _run_discovery_sample_process_job,
     _validate_discovery_ms1_observations,
@@ -874,7 +874,7 @@ def test_discovery_worker_disabled_mode_omits_diagnostic_payload(
         raise RuntimeError("owner boom")
 
     monkeypatch.setattr(
-        "xic_extractor.discovery.pipeline._discover_raw_file",
+        "xic_extractor.discovery.pipeline._discover_completed_sample",
         _fail_with_diagnostics,
     )
     job = DiscoverySampleProcessJob(
@@ -928,7 +928,7 @@ def test_discovery_worker_failure_carries_own_partial_diagnostics(
         raise RuntimeError("owner boom")
 
     monkeypatch.setattr(
-        "xic_extractor.discovery.pipeline._discover_raw_file",
+        "xic_extractor.discovery.pipeline._discover_completed_sample",
         _fail_with_diagnostics,
     )
     job = DiscoverySampleProcessJob(
@@ -1022,7 +1022,7 @@ def test_discovery_raw_failure_preserves_open_and_adapter_measurements(
     )
 
     with pytest.raises(RuntimeError, match="scan failed"):
-        _discover_raw_file(
+        _acquire_discovery_sample(
             raw_path,
             settings=_settings(),
             peak_config=_peak_config(tmp_path),
@@ -1064,7 +1064,7 @@ def test_discovery_peak_failure_preserves_owner_acquisition_measurements(
     )
 
     with pytest.raises(RuntimeError, match="peak failed"):
-        _discover_raw_file(
+        _acquire_discovery_sample(
             raw_path,
             settings=_settings(),
             peak_config=_peak_config(tmp_path),
@@ -1100,7 +1100,7 @@ def test_adapter_counter_failure_does_not_mask_discovery_failure(
     )
 
     with pytest.raises(RuntimeError, match="scan failed"):
-        _discover_raw_file(
+        _acquire_discovery_sample(
             tmp_path / "sample.raw",
             settings=_settings(),
             peak_config=_peak_config(tmp_path),
