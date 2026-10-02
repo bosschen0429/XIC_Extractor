@@ -212,10 +212,9 @@ def estimate_batch_rt_warp(
         if len(ordered) < _WARP_ANCHOR_MIN_MEMBERS:
             continue
         accepted += 1
+        trends = _NearestInjectionMedians.prepare(ordered, injection_order)
         for owner in ordered:
-            trend = _nearest_injection_median(
-                owner, ordered, injection_order, exclude_owner_id=owner.owner_id
-            )
+            trend = trends.median(owner, exclude_owner_id=owner.owner_id)
             if trend is not None:
                 observations[owner.sample_stem].append(
                     (trend, owner.owner_apex_rt - trend)
@@ -234,38 +233,76 @@ def estimate_batch_rt_warp(
     return BatchRtWarp(tuple(sample_knots), accepted)
 
 
-def _nearest_injection_median(
-    target: SampleLocalMS1Owner,
-    members: Sequence[SampleLocalMS1Owner],
-    injection_order: Mapping[str, int],
-    *,
-    exclude_owner_id: str | None = None,
-    corrected_rt: Mapping[str, float] | None = None,
-) -> float | None:
-    target_order = injection_order.get(target.sample_stem)
-    if target_order is None:
-        return None
-    nearest = sorted(
-        (
-            owner
-            for owner in members
-            if owner.owner_id != exclude_owner_id
-            and owner.sample_stem in injection_order
-        ),
-        key=lambda owner: (
-            abs(injection_order[owner.sample_stem] - target_order),
-            injection_order[owner.sample_stem],
-            owner.owner_id,
-        ),
-    )[:_FEATURE_TREND_NEIGHBORS]
-    if not nearest:
-        return None
-    return statistics.median(
-        corrected_rt[owner.owner_id]
-        if corrected_rt is not None
-        else owner.owner_apex_rt
-        for owner in nearest
-    )
+@dataclass(frozen=True, slots=True)
+class _NearestInjectionMedians:
+    """Reuse one ordered member population for bounded local trend queries."""
+
+    orders: tuple[int, ...]
+    owners_by_order: tuple[tuple[SampleLocalMS1Owner, ...], ...]
+    injection_order: Mapping[str, int]
+    corrected_rt: Mapping[str, float] | None
+
+    @classmethod
+    def prepare(
+        cls,
+        members: Sequence[SampleLocalMS1Owner],
+        injection_order: Mapping[str, int],
+        corrected_rt: Mapping[str, float] | None = None,
+    ) -> _NearestInjectionMedians:
+        grouped: dict[int, list[SampleLocalMS1Owner]] = defaultdict(list)
+        for owner in members:
+            order = injection_order.get(owner.sample_stem)
+            if order is not None:
+                grouped[order].append(owner)
+        orders = tuple(sorted(grouped))
+        return cls(
+            orders,
+            tuple(
+                tuple(sorted(grouped[order], key=lambda owner: owner.owner_id))
+                for order in orders
+            ),
+            injection_order,
+            corrected_rt,
+        )
+
+    def median(
+        self,
+        target: SampleLocalMS1Owner,
+        *,
+        exclude_owner_id: str | None = None,
+    ) -> float | None:
+        target_order = self.injection_order.get(target.sample_stem)
+        if target_order is None:
+            return None
+        right = bisect_left(self.orders, target_order)
+        left = right - 1
+        nearest: list[SampleLocalMS1Owner] = []
+        while len(nearest) < _FEATURE_TREND_NEIGHBORS and (
+            left >= 0 or right < len(self.orders)
+        ):
+            use_left = right >= len(self.orders) or (
+                left >= 0
+                and (target_order - self.orders[left], self.orders[left])
+                <= (self.orders[right] - target_order, self.orders[right])
+            )
+            index = left if use_left else right
+            for owner in self.owners_by_order[index]:
+                if owner.owner_id != exclude_owner_id:
+                    nearest.append(owner)
+                    if len(nearest) == _FEATURE_TREND_NEIGHBORS:
+                        break
+            if use_left:
+                left -= 1
+            else:
+                right += 1
+        if not nearest:
+            return None
+        return statistics.median(
+            self.corrected_rt[owner.owner_id]
+            if self.corrected_rt is not None
+            else owner.owner_apex_rt
+            for owner in nearest
+        )
 
 
 @dataclass(slots=True)
@@ -1136,6 +1173,7 @@ def _window_inference(
             )
         )
         feature_key = f"window:{owner_ids[0]}"
+        trends = _NearestInjectionMedians.prepare(group_owners, orders, corrected_rt)
         for owner in group_owners:
             witness = min(
                 (item for item in group_owners if item.owner_id != owner.owner_id),
@@ -1146,13 +1184,7 @@ def _window_inference(
                 default=None,
             )
             trend = (
-                _nearest_injection_median(
-                    owner,
-                    group_owners,
-                    orders,
-                    exclude_owner_id=owner.owner_id,
-                    corrected_rt=corrected_rt,
-                )
+                trends.median(owner, exclude_owner_id=owner.owner_id)
                 if witness is not None
                 else None
             )
@@ -1206,14 +1238,9 @@ def _trend_supports_union(
     combined = tuple((*left, *right))
     if len(combined) < 10:
         return True
+    trends = _NearestInjectionMedians.prepare(combined, orders, corrected_rt)
     for owner in combined:
-        expected = _nearest_injection_median(
-            owner,
-            combined,
-            orders,
-            exclude_owner_id=owner.owner_id,
-            corrected_rt=corrected_rt,
-        )
+        expected = trends.median(owner, exclude_owner_id=owner.owner_id)
         if expected is not None and abs(
             corrected_rt[owner.owner_id] - expected
         ) * 60.0 > min(_WINDOW_TREND_TOLERANCE_SEC, max_rt_sec):
@@ -1340,6 +1367,11 @@ def _assign_window_singletons(
     bands = {key: tuple(group) for key, group in members.items() if len(group) >= 2}
     if not bands:
         return
+    band_trends = {
+        key: _NearestInjectionMedians.prepare(band, orders, corrected_rt)
+        for key, band in bands.items()
+        if len(band) >= 10
+    }
     by_sample: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
     candidates_by_owner: dict[str, tuple[_Candidate, ...]] = {}
     for group in members.values():
@@ -1366,9 +1398,7 @@ def _assign_window_singletons(
                 if item.primary_identity_event is not None
             )
             if len(band) >= 10:
-                expected = _nearest_injection_median(
-                    owner, band, orders, corrected_rt=corrected_rt
-                )
+                expected = band_trends[key].median(owner)
                 tolerance_sec = min(
                     config.max_rt_sec,
                     max(_WINDOW_TREND_TOLERANCE_SEC, config.preferred_rt_sec),

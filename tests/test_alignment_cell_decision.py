@@ -139,6 +139,16 @@ def test_target_population_emits_one_numeric_or_no_write_per_exact_subject(
     numeric = next(item for item in decisions if item.variant == "numeric")
     assert numeric.value is not None and numeric.value > 0
     assert numeric.source
+    assert (
+        numeric.selected_integration
+        is numeric.subject.terminal_subject.hypothesis.integration
+    )
+    assert (
+        next(
+            item for item in decisions if item.variant == "searched_no_observation"
+        ).selected_integration
+        is None
+    )
     assert all(
         item.subject is subject
         for item, subject in zip(decisions, projection.subjects, strict=True)
@@ -181,12 +191,17 @@ def test_target_censored_observed_area_survives_public_decision_and_pickle(
     assert decision.variant == "numeric"
     assert decision.value == expected_area
     assert decision.source == "trapezoid_counts_seconds_on_observed_censored_signal"
+    assert decision.selected_integration is integration
     assert "near_detection_limit" in integration.boundary_sources
     restored = pickle.loads(pickle.dumps(decision))
     validate_production_cell_decision(restored)
     assert restored.value == expected_area
     assert restored.source == decision.source
     assert restored.subject.terminal_subject.hypothesis.integration == integration
+    assert (
+        restored.selected_integration
+        is restored.subject.terminal_subject.hypothesis.integration
+    )
 
 
 @pytest.mark.parametrize("variant", ["missing", "duplicate", "substituted"])
@@ -254,6 +269,8 @@ def test_group_population_preserves_complete_member_and_nonmember_positions(
     )
     evidence = cast(FinalGroupCellObservation, by_member[True].evidence)
     integration = evidence.integrations[0]
+    assert by_member[True].selected_integration is integration
+    assert by_member[False].selected_integration is None
     original_area = integration.area_raw_counts_seconds
     object.__setattr__(integration, "area_raw_counts_seconds", original_area + 1.0)
     with pytest.raises(CellDecisionContractError, match="basis|substituted"):
@@ -365,6 +382,11 @@ def test_group_closed_state_table_maps_owner_observations_without_reason_parsing
         "rejected_observation",
         "unavailable",
     }
+    for decision in decisions:
+        if decision.variant == "not_quantifiable":
+            assert decision.selected_integration is decision.evidence.integrations[0]
+        else:
+            assert decision.selected_integration is None
 
     direct = next(
         item for item in observations if item.evidence_state == "direct_observation"
@@ -862,8 +884,16 @@ def test_decision_is_immutable_sealed_and_invalidates_payload_substitution(
             evidence=decision.evidence,
             payload=decision.payload,
             basis_bytes=decision.basis_bytes,
+            selected_integration=decision.selected_integration,
             _mint_token=object(),
         )
+    assert decision.selected_integration is not None
+    changed = copy(decision)
+    object.__setattr__(
+        changed, "selected_integration", copy(decision.selected_integration)
+    )
+    with pytest.raises(CellDecisionContractError, match="substituted"):
+        validate_production_cell_decision(changed)
     object.__setattr__(
         decision,
         "payload",

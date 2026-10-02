@@ -18,11 +18,11 @@ from xic_extractor.alignment.backfill.completion_evidence import (
     _completed_backfill_projection_bytes,
 )
 from xic_extractor.alignment.cell_observations import CidNlCellGroupContext
+from xic_extractor.alignment.cid_nl_completion import CidNlWorksetGrouping
 from xic_extractor.alignment.cid_nl_inputs import (
     UntargetedCidNlBackfillInput,
 )
 from xic_extractor.alignment.completion import (
-    CaptureWorkflowArguments,
     UntargetWorkflowCompositionRequest,
 )
 from xic_extractor.alignment.config import AlignmentConfig
@@ -31,11 +31,6 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
-from xic_extractor.alignment.grouping_bootstrap import (
-    InitialGroupingScope,
-    RetainedGroupingCandidate,
-)
-from xic_extractor.alignment.grouping_result import CrossSampleGroupingResult
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.scientific_settings import (
     SCIENTIFIC_SETTING_FIELDS,
@@ -62,7 +57,6 @@ from xic_extractor.execution.attempt import (
     RuntimeAcquisitionReceipt,
     RuntimeWorkerBatchReceipt,
 )
-from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
     validate_cid_nl_method_assessment_binding,
@@ -75,7 +69,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 )
 from xic_extractor.peak_detection.search_scope import (
     PHYSICAL_CAPTURE_INPUT_KEY,
-    UntargetedSearchScope,
     physical_capture_input_payload,
 )
 from xic_extractor.processing_identity import (
@@ -437,22 +430,9 @@ class UntargetedInitialSampleResult:
 
 
 @dataclass(frozen=True, slots=True)
-class UntargetedWorksetGrouping:
-    """The existing grouping owner's answer and its exact capture inputs."""
-
-    subjects: tuple[CidNlMethodSubject, ...]
-    scope: UntargetedSearchScope
-    captures: tuple[SampleLocalCapture, ...]
-    capture_inputs: tuple[CaptureWorkflowArguments, ...]
-    grouping_scope: InitialGroupingScope
-    grouping_result: CrossSampleGroupingResult
-    retained_candidates: tuple[RetainedGroupingCandidate, ...]
-
-
-@dataclass(frozen=True, slots=True)
 class UntargetedPreparedGrouping:
     request: UntargetWorkflowCompositionRequest
-    worksets: tuple[UntargetedWorksetGrouping, ...]
+    worksets: tuple[CidNlWorksetGrouping, ...]
     alignment_config: AlignmentConfig
     known_istd_reference: KnownIstdReference | None
     rt_warp: BatchRtWarp | None = None

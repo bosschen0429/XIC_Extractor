@@ -12,6 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import xic_extractor.alignment.cid_nl_completion as cid_nl_completion_owner
 import xic_extractor.alignment.result.application_result as application_result_owner
 import xic_extractor.alignment.untargeted_finalized_matrix as finalized_matrix
 import xic_extractor.discovery.processing_run_spec_adapter as processing_spec_adapter
@@ -1386,7 +1387,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     retained_cell_batches = []
     build_initial_context = production.build_initial_cid_nl_cross_sample_groups
     regroup_initial_context = production.regroup_cid_nl_cross_sample_groups
-    compose_predecessor_cells = production.compose_cid_nl_predecessor_cells
+    compose_predecessor_cells = cid_nl_completion_owner.compose_cid_nl_predecessor_cells
     finalize_scientific = workflow_owner.finalize_scientific_alignment
 
     def retain_initial_context(**kwargs):
@@ -1422,7 +1423,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         retain_regrouped_context,
     )
     monkeypatch.setattr(
-        production,
+        cid_nl_completion_owner,
         "compose_cid_nl_predecessor_cells",
         retain_predecessor_cells,
     )
@@ -4033,7 +4034,7 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
     initial_edges = []
     cell_contexts = []
     build_context = production.build_initial_cid_nl_cross_sample_groups
-    compose_cells = production.compose_cid_nl_predecessor_cells
+    compose_cells = cid_nl_completion_owner.compose_cid_nl_predecessor_cells
 
     def retain_context(**kwargs):
         result = build_context(**kwargs)
@@ -4049,7 +4050,9 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
         cell_contexts.extend(cell.group_context for cell in cells)
         return cells
 
-    monkeypatch.setattr(production, "compose_cid_nl_predecessor_cells", retain_cells)
+    monkeypatch.setattr(
+        cid_nl_completion_owner, "compose_cid_nl_predecessor_cells", retain_cells
+    )
     progress_events = []
     runtime = execute_dense_partition(
         batch,
@@ -5065,12 +5068,18 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     no_peak = owner_decisions["NoPeak"]
     assert no_peak.value is None
     assert no_peak.variant == "unavailable"
+    assert no_peak.selected_integration is None
     assert all(owner_decisions[stem].variant == "numeric" for stem in sample_stems[:3])
     assert len({owner_decisions[stem].value for stem in sample_stems[:4]}) == 4
 
     writer_inputs = project_completed_untarget_batch_writer_inputs(
         completed.application_result
     )
+    for cell in writer_inputs.matrix.cells:
+        assert (
+            cell.selected_integration
+            is owner_decisions[cell.sample_stem].selected_integration
+        )
     outputs = output_paths(
         tmp_path / "writer",
         output_level="machine",
