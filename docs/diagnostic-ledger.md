@@ -1447,3 +1447,40 @@ scientific readiness. Raw timings, commands, output hashes and source binding:
 `output/core-selection-and-search/discovery/merge-mass-index-v1/receipt.json`.
 Rerun if merge eligibility/order, input population or the performance scope
 changes.
+
+### 2026-10-02 Alignment Reuses Injection Ordering Within Each Grouping Population
+
+Baseline `00a7c96d3eec1c2bd7005faae4cd5212bc37cde4`; candidate
+`feature_membership_inference.py` SHA-256
+`62353049aae84105b59e289f85d361018e978955de4eb4f2154eca397d459590`.
+The inference owner prepares injection ordering once per current group, union
+or singleton-assignment band. Neighbor queries preserve the existing six-member
+limit, injection-order/owner-ID ties, exclusions and raw/corrected RT basis.
+Preparation is local to the unchanged membership population, with no cache
+across membership changes.
+
+The retained `prepare-396/grouping-inputs.json.gz` snapshot has 85 samples,
+1,003 observations and 127 worksets from one complete original partition
+selected by m/z 396.19-396.21. Its SHA-256 is
+`dd72adbf567d553bb0280804b57f60f10f53cb2f6431e5a04dc4e293cfeb20bd`.
+Warm in-process grouping replay used two warmups per variant and twelve
+measurements per variant with alternating BC/CB pairs. Median grouping time
+improved 0.1556 -> 0.1154 s (25.82%). All twelve paired deltas were positive;
+paired median improvement was 0.0390 s, with median absolute deviation 0.0143 s.
+The timed scope excludes imports, source loading/binding, snapshot read, RAW
+acquisition, Backfill and output writes. This is a local grouping-stage result,
+not a whole-Alignment acceleration claim.
+
+The baseline uses unmodified function ASTs extracted from the exact Git object,
+including all five changed functions and their original shared call chain;
+function installation happens outside the timer. All 175 complete group
+objects are equal, scientific groups/decisions serialize identically, and all
+five TSVs emitted by the existing grouping experiment writer are byte-identical.
+The 55 existing membership/window engineering tests passed. Evidence:
+`diagnostic_only`, oracle `exact_safe`, disposition `optimized`.
+
+Current receipt:
+`output/core-selection-and-search/alignment-trend/benchmark-exact-baseline-results.json`.
+It supersedes the earlier handwritten-wrapper comparison. Rerun for changed
+neighbor semantics, grouping population or a broader performance scope; this
+snapshot alone does not establish scientific or production readiness.
