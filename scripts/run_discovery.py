@@ -289,8 +289,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--ms2-precursor-tol-da",
         type=_positive_float,
         help=(
-            "MS2 filter precursor / isolation window tolerance in Da for "
-            "product+neutral-loss inferred discovery seeds."
+            "Maximum isolation radius in Da for product+neutral-loss inference; "
+            "scan-specific isolation width and offset take precedence within this cap."
         ),
     )
     parser.add_argument("--nl-min-intensity-ratio", type=_positive_float)

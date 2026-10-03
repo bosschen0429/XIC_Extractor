@@ -11,6 +11,7 @@ import math
 import os
 import tempfile
 from collections.abc import Callable, Iterator
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,7 @@ from xic_extractor.acquisition_contract import (
     deserialize_acquired_trace,
     serialize_acquired_trace,
 )
+from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.raw_reader import (
     Ms2Scan,
@@ -35,6 +37,7 @@ from xic_extractor.raw_superwindow_source import RawSuperWindowSource
 from xic_extractor.xic_models import XICRequest
 
 _CACHE_SCHEMA = "untargeted_raw_fact_cache"
+_MS2_SCHEMA = "untargeted_ms2_precursor_facts_v2"
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -387,7 +390,7 @@ def _encode_ms2_events(
 ) -> bytes:
     return _canonical_json(
         {
-            "schema_version": _CACHE_SCHEMA,
+            "schema_version": _MS2_SCHEMA,
             "rt_min": _float_text(rt_min),
             "rt_max": _float_text(rt_max),
             "events": [_ms2_event_payload(event) for event in events],
@@ -416,7 +419,7 @@ def _decode_ms2_events(
     }:
         raise UntargetedAcquisitionCacheError("cached MS2 event envelope is malformed")
     if (
-        value["schema_version"] != _CACHE_SCHEMA
+        value["schema_version"] != _MS2_SCHEMA
         or value["rt_min"] != _float_text(rt_min)
         or value["rt_max"] != _float_text(rt_max)
         or not isinstance(value["events"], list)
@@ -452,6 +455,9 @@ def _ms2_event_payload(event: Ms2ScanEvent) -> dict[str, object]:
                 "masses": [_float_text(item) for item in scan.masses],
                 "intensities": [_float_text(item) for item in scan.intensities],
                 "base_peak": _float_text(scan.base_peak),
+                "precursor_metadata": asdict(scan.precursor_metadata)
+                if scan.precursor_metadata is not None
+                else None,
             }
         ),
     }
@@ -489,6 +495,7 @@ def _ms2_event_from_payload(value: object) -> Ms2ScanEvent:
             "masses",
             "intensities",
             "base_peak",
+            "precursor_metadata",
         }
     ):
         raise UntargetedAcquisitionCacheError("cached MS2 scan is malformed")
@@ -503,10 +510,32 @@ def _ms2_event_from_payload(value: object) -> Ms2ScanEvent:
         masses=masses,
         intensities=intensities,
         base_peak=_float(raw_scan["base_peak"], field="base_peak"),
+        precursor_metadata=_precursor_metadata_from_payload(
+            raw_scan["precursor_metadata"]
+        ),
     )
     if scan.scan_number != scan_number:
         raise UntargetedAcquisitionCacheError("cached MS2 scan number changed")
     return Ms2ScanEvent(scan, None, scan_number)
+
+
+def _precursor_metadata_from_payload(value: object) -> Ms2PrecursorMetadata | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) != {
+        "monoisotopic_mz",
+        "charge",
+        "isolation_width_da",
+        "isolation_offset_da",
+        "master_scan_number",
+    }:
+        raise UntargetedAcquisitionCacheError("cached precursor metadata is malformed")
+    try:
+        return Ms2PrecursorMetadata(**value)
+    except (TypeError, ValueError) as exc:
+        raise UntargetedAcquisitionCacheError(
+            "cached precursor metadata is malformed"
+        ) from exc
 
 
 def _float_array(value: object, *, field: str) -> np.ndarray:

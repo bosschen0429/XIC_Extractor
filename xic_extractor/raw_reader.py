@@ -27,7 +27,7 @@ from xic_extractor.injection_timeline import (
     ScheduledInjection,
     build_injection_timeline,
 )
-from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
+from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata, Ms2Scan, Ms2ScanEvent
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     IdentityContractError,
@@ -280,6 +280,9 @@ class RawFileHandle:
                         masses=masses,
                         intensities=intensities,
                         base_peak=base_peak,
+                        precursor_metadata=_read_precursor_metadata(
+                            self._raw_file, filter_obj, scan_number
+                        ),
                     ),
                     parse_error=None,
                     scan_number=scan_number,
@@ -963,11 +966,53 @@ def _extract_precursor_mz(filter_obj: Any) -> float:
     return precursor
 
 
-def _positive_float_or_none(value: Any) -> float | None:
+def _read_precursor_metadata(
+    raw: Any, filter_obj: Any, scan_number: int
+) -> Ms2PrecursorMetadata:
+    trailer_reader = getattr(raw, "GetTrailerExtraInformation", None)
+    trailer = trailer_reader(scan_number) if callable(trailer_reader) else None
+    values = {
+        str(label).strip().rstrip(":").casefold(): value
+        for label, value in zip(
+            getattr(trailer, "Labels", ()), getattr(trailer, "Values", ())
+        )
+    }
+    get_reaction = getattr(filter_obj, "GetReaction", None)
+    reaction = None
+    if callable(get_reaction):
+        try:
+            reaction = get_reaction(0)
+        except (AttributeError, IndexError, TypeError, ValueError):
+            pass
+    if reaction is None:
+        reactions = getattr(getattr(filter_obj, "Filter", None), "Reactions", ())
+        reaction = reactions[0] if reactions else None
+    width = _positive_float_or_none(getattr(reaction, "IsolationWidth", None))
+    if width is None:
+        width = _positive_float_or_none(values.get("ms2 isolation width"))
+    offset = _finite_float_or_none(getattr(reaction, "IsolationWidthOffset", None))
+    return Ms2PrecursorMetadata(
+        monoisotopic_mz=_positive_float_or_none(values.get("monoisotopic m/z")),
+        charge=_positive_integer_or_none(values.get("charge state")),
+        isolation_width_da=width,
+        isolation_offset_da=offset,
+        master_scan_number=_positive_integer_or_none(values.get("master scan number")),
+    )
+
+
+def _positive_integer_or_none(value: Any) -> int | None:
+    parsed = _positive_float_or_none(value)
+    return int(parsed) if parsed is not None and parsed.is_integer() else None
+
+
+def _finite_float_or_none(value: Any) -> float | None:
     try:
         parsed = float(value)
     except (TypeError, ValueError):
         return None
-    if not math.isfinite(parsed) or parsed <= 0.0:
-        return None
-    return parsed
+    return parsed if math.isfinite(parsed) else None
+
+
+def _positive_float_or_none(value: Any) -> float | None:
+    parsed = _finite_float_or_none(value)
+    return parsed if parsed is not None and parsed > 0.0 else None

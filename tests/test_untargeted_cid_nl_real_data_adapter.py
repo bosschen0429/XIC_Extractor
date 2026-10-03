@@ -623,9 +623,7 @@ def test_adapter_retains_completed_relation_before_later_evidence_failure(
         settings=settings,
         peak_config=peak_config,
     )
-    raw, _vendor_raw = _open_bound_raw(
-        fixture, "S1", source_raw, tmp_path=tmp_path
-    )
+    raw, _vendor_raw = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
     observer = cid_nl_acquisition._PartitionWorkObserver(fixture.owners)
     resolve_relations = cid_nl_acquisition.resolve_cid_nl_method_relations
     successful_relations = []
@@ -652,7 +650,7 @@ def test_adapter_retains_completed_relation_before_later_evidence_failure(
             _observer=observer,
         )
 
-    ((support,), set_relations), = successful_relations
+    (((support,), set_relations),) = successful_relations
     assert set_relations == ()
     retained = observer.artifact_closure()
     retained_ids = {artifact.evidence_artifact_id for artifact in retained}
@@ -1776,4 +1774,45 @@ def _without_ms1_peak(candidate: DiscoveryCandidate) -> DiscoveryCandidate:
         ms1_seed_delta_min=None,
         discovery_candidate_state="review_only_orphan_nl",
         ms1_feature_row_id="",
+    )
+
+
+def test_strict_replay_retains_two_recorded_precursors_from_one_scan(tmp_path):
+    from xic_extractor.discovery.strict_seed_receipts import (
+        read_complete_discovery_scan_seeds,
+    )
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+
+    source_raw = _FakeRaw((7.98, 8.02))
+    source_raw.scans = tuple(
+        replace(
+            scan,
+            precursor_metadata=Ms2PrecursorMetadata(
+                monoisotopic_mz=scan.precursor_mz - 1.0035,
+                charge=1,
+                isolation_width_da=1.6,
+            ),
+            masses=np.concatenate((scan.masses, scan.masses - 1.0035)),
+            intensities=np.concatenate((scan.intensities, scan.intensities)),
+        )
+        for scan in source_raw.scans
+    )
+    settings = _settings()
+    candidates = _current_candidates(
+        source_raw,
+        raw_file=tmp_path / "S1.RAW",
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+    )
+    assert len(candidates) == 2
+    seeds = read_complete_discovery_scan_seeds(
+        source_raw, candidates=candidates, settings=settings
+    )
+    assert len(seeds) == 4
+    assert {seed.precursor_mz_basis for _, seed in seeds} == {
+        "scan_precursor",
+        "scan_monoisotopic",
+    }
+    assert all(
+        seed.precursor_metadata == scan.precursor_metadata for scan, seed in seeds
     )

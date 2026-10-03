@@ -34,7 +34,7 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   label. Only `ms1_feature_nl_supported` and `ms1_feature_nl_rescued` are
   MS1-feature-backed inputs to Alignment RAW owner build. Candidate and review
   CSVs retain all feature-backed rows and only non-feature rows with a
-  `scan_precursor` or `mixed` precursor basis. These review-only rows do not
+  `scan_precursor`, `scan_monoisotopic`, or `mixed` precursor basis. These review-only rows do not
   independently authorize another RAW XIC search, cross-sample grouping,
   Matrix identity, or Backfill. Pure CID-NL production planning preserves the complete canonical
   subject membership and query centers, but excludes subjects with no
@@ -110,22 +110,32 @@ Producing a library alone does not enable qualification.
   the matched blank's maximum intensity. Below 3×, it becomes
   `review_only_orphan_nl`, loses its feature-row binding, and is excluded from
   MS1-feature-backed owner build. Its candidate and review rows persist only
-  with a `scan_precursor` or `mixed` basis. Qualification classifies downstream
+  with a `scan_precursor`, `scan_monoisotopic`, or `mixed` basis. Qualification classifies downstream
   eligibility; it does not undo the physical trace-shape result or change the
   selected peak's boundaries, apex, or integrated area.
 
 ### Precursor inference
 
-- CID-NL precursor inference supports both direct scan-precursor seeds and the
-  bounded `product_mz + neutral_loss` basis when the inferred precursor remains
-  within `DiscoverySettings.ms2_precursor_tol_da` of the measured filter/
-  isolation precursor. The installed CLI exposes the same setting as
-  `--ms2-precursor-tol-da`.
-- The default inference radius is 0.8 Da, the nominal half-width of the
-  1.6 Da isolation method. This bound limits a product-plus-loss hypothesis;
-  it does not establish precursor identity or replace the direct NL mass
-  tolerance. Methods with a different isolation width require an explicit
-  matching radius. Saved explicit settings remain effective.
+- CID-NL direct seeds use either the selected scan precursor (`scan_precursor`)
+  or a distinguishable vendor-recorded monoisotopic precursor
+  (`scan_monoisotopic`). The latter is recorded evidence independent of the
+  product-plus-loss calculation. Selected m/z remains unchanged; charge, master
+  MS1 scan number, isolation width and offset remain attached to the evidence.
+  A missing/zero vendor value is unavailable, not a measured zero. This method
+  assumes singly charged ions and rejects known incompatible charge.
+- Product-plus-loss inference stays inside the recorded isolation window:
+  center = selected m/z + isolation offset, radius = the smaller of half the
+  recorded width and `DiscoverySettings.ms2_precursor_tol_da`. When width is
+  unavailable, the configured radius supplies the bound. The installed CLI
+  exposes the same setting as `--ms2-precursor-tol-da`; the default is 0.8 Da,
+  the nominal half-width of the 1.6 Da method. Saved explicit settings remain
+  effective as the configured cap. Inference does not establish precursor
+  identity or replace the direct NL mass tolerance.
+- MS2 cache and canonical CID-NL evidence retain the typed precursor metadata.
+  Old MS2 cache payloads lacking this contract are reacquired from RAW. Direct
+  monoisotopic evidence remains direct during strict replay and Backfill;
+  isotope-related ions remain distinct candidates. Vendor assignment alone
+  does not establish compound identity.
 - Physical trace context and precursor-identity confidence are separate. A
   `product_mz + neutral_loss` group starts with the bounded configured RT
   context; when that trace is too short for the active signal-processing
@@ -145,7 +155,7 @@ Producing a library alone does not enable qualification.
   Capture authorizes the current physical query separately from the mass used
   by its retained evaluation. Alignment evaluates a changed mass afresh even
   when the two XICs contain identical signal arrays. Readings spread wider than 5 ppm
-  come from two ions and report none. A selected (`scan_precursor` or `mixed`)
+  come from two ions and report none. A selected (`scan_precursor`, `scan_monoisotopic`, or `mixed`)
   precursor reports none: in full85, about half of the selected precursors a
   reading would have moved landed on a neighbouring ion present at the selected
   m/z when the scan was triggered.

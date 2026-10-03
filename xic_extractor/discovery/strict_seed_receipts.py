@@ -18,6 +18,7 @@ from xic_extractor.discovery.models import (
 from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
 from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
+from xic_extractor.precursor_evidence import DIRECT_PRECURSOR_BASES
 
 _WRITER_ROUNDING_ABS_TOL = 5e-6
 _WRITER_ROUNDING_REL_TOL = 5e-6
@@ -64,8 +65,8 @@ def read_complete_discovery_scan_seeds(
                     seed.configured_neutral_loss_da
                     if preserve_configured_losses
                     else 0.0,
-                    seed.precursor_mz if include_inferred else 0.0,
-                    seed.product_mz if include_inferred else 0.0,
+                    seed.precursor_mz,
+                    seed.product_mz,
                 )
                 existing = by_scan.get(key)
                 if existing is not None and existing[1] != seed:
@@ -147,6 +148,7 @@ def _same_scan_numerics(left: Ms2Scan, right: Ms2Scan) -> bool:
         and left.rt == right.rt
         and left.precursor_mz == right.precursor_mz
         and left.base_peak == right.base_peak
+        and left.precursor_metadata == right.precursor_metadata
         and np.array_equal(left.masses, right.masses)
         and np.array_equal(left.intensities, right.intensities)
     )
@@ -178,7 +180,7 @@ def _read_exact_seed(
         for seed in scan_seeds
         if seed.scan_number in candidate.seed_scan_ids
         and (
-            seed.precursor_mz_basis == "scan_precursor"
+            seed.precursor_mz_basis in DIRECT_PRECURSOR_BASES
             or candidate.precursor_mz_basis == "mixed"
             or include_inferred
         )
@@ -272,7 +274,7 @@ def _read_exact_seed(
         return tuple(
             seed
             for seed in matches
-            if include_inferred or seed.precursor_mz_basis == "scan_precursor"
+            if include_inferred or seed.precursor_mz_basis in DIRECT_PRECURSOR_BASES
         )
     if include_inferred:
         selected_tag = min(
@@ -287,7 +289,7 @@ def _read_exact_seed(
     # product window. They only account for declared scans here; the direct
     # product check still applies to every seed returned as strict evidence.
     matches = tuple(
-        seed for seed in matches if seed.precursor_mz_basis == "scan_precursor"
+        seed for seed in matches if seed.precursor_mz_basis in DIRECT_PRECURSOR_BASES
     )
     if not matches:
         return ()

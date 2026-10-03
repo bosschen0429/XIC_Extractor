@@ -538,7 +538,7 @@ def _expanded_physical_request_plan(
     if precursor_mz_basis == "product_plus_neutral_loss":
         if not _has_strong_inferred_precursor_support(plan.group, settings=settings):
             return None
-    elif precursor_mz_basis not in {"scan_precursor", "mixed"}:
+    elif precursor_mz_basis not in {"scan_precursor", "scan_monoisotopic", "mixed"}:
         return None
 
     extra_point_count = profile.window_points - point_count + 2

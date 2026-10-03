@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
+from dataclasses import asdict
 from pathlib import Path
 from typing import Protocol
 
@@ -15,6 +16,10 @@ from xic_extractor.discovery.models import (
 )
 from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
+from xic_extractor.precursor_evidence import (
+    direct_precursor_references,
+    precursor_inference_bounds,
+)
 
 
 class MS2ScanSource(Protocol):
@@ -72,8 +77,8 @@ def _seeds_from_scan_profile(
     profile: NeutralLossProfile,
 ) -> tuple[DiscoverySeed, ...]:
     neutral_loss_da = profile.neutral_loss_da
-    expected_product = scan.precursor_mz - neutral_loss_da
-    if expected_product <= 0.0 or scan.base_peak <= 0.0 or neutral_loss_da <= 0.0:
+    references = direct_precursor_references(scan, settings.nl_tolerance_ppm)
+    if not references or scan.base_peak <= 0.0 or neutral_loss_da <= 0.0:
         return ()
 
     masses = np.asarray(scan.masses, dtype=float)
@@ -92,20 +97,13 @@ def _seeds_from_scan_profile(
         & np.isfinite(masses)
         & np.isfinite(intensities)
     )
-    direct_mask = _direct_product_mask(
-        masses,
-        intensities,
-        scan=scan,
-        settings=settings,
-        neutral_loss_da=neutral_loss_da,
-        intensity_floor=intensity_floor,
+    lower, upper = precursor_inference_bounds(
+        scan.precursor_mz, scan.precursor_metadata, settings.ms2_precursor_tol_da
     )
     inferred_precursors = masses + neutral_loss_da
     inferred_mask = (
-        (
-            np.abs(scan.precursor_mz - inferred_precursors)
-            <= settings.ms2_precursor_tol_da
-        )
+        (inferred_precursors >= lower)
+        & (inferred_precursors <= upper)
         & (intensities >= intensity_floor)
         & np.isfinite(masses)
         & np.isfinite(intensities)
@@ -114,42 +112,51 @@ def _seeds_from_scan_profile(
     )
 
     candidates: list[DiscoverySeed] = []
-    direct_candidates: list[DiscoverySeed] = []
     direct_indices: set[int] = set()
-    for index in np.flatnonzero(direct_mask & finite_signal_mask):
-        direct_indices.add(int(index))
-        product_mz = float(masses[int(index)])
-        observed_loss_da = scan.precursor_mz - product_mz
-        observed_loss_error_ppm = (
-            abs(observed_loss_da - neutral_loss_da) / neutral_loss_da * 1_000_000.0
+    for precursor_mz, basis in references:
+        direct_mask = _direct_product_mask(
+            masses,
+            intensities,
+            precursor_mz=precursor_mz,
+            settings=settings,
+            neutral_loss_da=neutral_loss_da,
+            intensity_floor=intensity_floor,
         )
-        _, _, matches = neutral_loss_match(
-            scan.precursor_mz,
-            product_mz,
-            neutral_loss_da,
-            settings.nl_tolerance_ppm,
-            observed_loss_da=observed_loss_da,
-        )
-        if not matches:
-            continue
-
-        direct_candidates.append(
-            _build_seed(
-                raw_file=raw_file,
-                scan=scan,
-                profile=profile,
-                precursor_mz=scan.precursor_mz,
-                product_mz=product_mz,
-                product_intensity=float(intensities[int(index)]),
-                neutral_loss_da=neutral_loss_da,
-                observed_loss_da=observed_loss_da,
-                observed_loss_error_ppm=observed_loss_error_ppm,
-                tolerance_ppm=settings.nl_tolerance_ppm,
-                precursor_mz_basis="scan_precursor",
+        direct_candidates: list[DiscoverySeed] = []
+        for index in np.flatnonzero(direct_mask & finite_signal_mask):
+            direct_indices.add(int(index))
+            product_mz = float(masses[int(index)])
+            observed_loss_da = precursor_mz - product_mz
+            observed_loss_error_ppm = (
+                abs(observed_loss_da - neutral_loss_da) / neutral_loss_da * 1_000_000.0
             )
-        )
-    if direct_candidates:
-        candidates.append(min(direct_candidates, key=_seed_candidate_rank))
+            _, _, matches = neutral_loss_match(
+                precursor_mz,
+                product_mz,
+                neutral_loss_da,
+                settings.nl_tolerance_ppm,
+                observed_loss_da=observed_loss_da,
+            )
+            if not matches:
+                continue
+
+            direct_candidates.append(
+                _build_seed(
+                    raw_file=raw_file,
+                    scan=scan,
+                    profile=profile,
+                    precursor_mz=precursor_mz,
+                    product_mz=product_mz,
+                    product_intensity=float(intensities[int(index)]),
+                    neutral_loss_da=neutral_loss_da,
+                    observed_loss_da=observed_loss_da,
+                    observed_loss_error_ppm=observed_loss_error_ppm,
+                    tolerance_ppm=settings.nl_tolerance_ppm,
+                    precursor_mz_basis=basis,
+                )
+            )
+        if direct_candidates:
+            candidates.append(min(direct_candidates, key=_seed_candidate_rank))
 
     for index in np.flatnonzero(inferred_mask & finite_signal_mask):
         if int(index) in direct_indices:
@@ -189,17 +196,17 @@ def _direct_product_mask(
     masses: np.ndarray,
     intensities: np.ndarray,
     *,
-    scan: Ms2Scan,
+    precursor_mz: float,
     settings: DiscoverySettings,
     neutral_loss_da: float,
     intensity_floor: float,
 ) -> np.ndarray:
-    expected_product = scan.precursor_mz - neutral_loss_da
+    expected_product = precursor_mz - neutral_loss_da
     if expected_product <= 0.0:
         return np.zeros_like(masses, dtype=bool)
     effective_product_search_ppm = max(
         settings.product_search_ppm,
-        2.0 * scan.precursor_mz * settings.nl_tolerance_ppm / expected_product,
+        2.0 * precursor_mz * settings.nl_tolerance_ppm / expected_product,
     )
     product_window_ppm = (
         np.abs(masses - expected_product) / expected_product * 1_000_000.0
@@ -252,6 +259,7 @@ def _build_seed(
         ),
         scan_precursor_mz=scan.precursor_mz,
         precursor_mz_basis=precursor_mz_basis,
+        precursor_metadata=scan.precursor_metadata,
     )
 
 
@@ -301,6 +309,9 @@ def _tag_evidence_json(
             "rt_max": scan.rt,
             "precursor_mz_basis": precursor_mz_basis,
             "scan_precursor_mz": scan.precursor_mz,
+            "precursor_metadata": asdict(scan.precursor_metadata)
+            if scan.precursor_metadata is not None
+            else None,
             "scan_precursor_delta_da": scan_precursor_delta_da,
             "product_mz": product_mz,
             "max_intensity": product_intensity,

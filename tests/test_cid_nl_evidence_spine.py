@@ -83,7 +83,7 @@ def test_inferred_evidence_persists_scan_provenance_and_exact_projection(
         precursor_inference_tolerance_da=0.25,
     )
     payload = json.loads(canonical_cid_nl_evidence_bytes(inferred.observation))
-    assert payload["schema_version"] == "cid_nl_evidence_observation"
+    assert payload["schema_version"] == "cid_nl_evidence_observation_v2"
     assert payload["precursor_mz_basis"] == "product_plus_neutral_loss"
     assert payload["scan_precursor_mz"] == observation.precursor_mz + 0.25
     assert payload["precursor_inference_tolerance_da"] == 0.25
@@ -1674,3 +1674,61 @@ def _support_assessment(
         evidence_refs=evidence_refs,
         individual_support_refs=support_refs,
     )
+
+
+def test_monoisotopic_canonical_evidence_binds_vendor_metadata(tmp_path):
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+
+    fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("s1",))
+    direct = cid_nl_evidence(fixture, "s1", scan_number=42, scan_rt_min=8.0)
+    observed = direct.observation
+    metadata = Ms2PrecursorMetadata(
+        monoisotopic_mz=observed.precursor_mz,
+        charge=1,
+        isolation_width_da=1.6,
+        isolation_offset_da=0.2,
+        master_scan_number=40,
+    )
+    mono = mint_cid_nl_evidence_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("s1"),
+        **{
+            field.name: getattr(observed, field.name)
+            for field in fields(observed)
+            if field.name
+            not in {
+                "canonical_sample_identity_id",
+                "acquisition_source_id",
+                "acquisition_mode",
+                "precursor_mz_basis",
+                "scan_precursor_mz",
+                "precursor_metadata",
+            }
+        },
+        precursor_mz_basis="scan_monoisotopic",
+        scan_precursor_mz=observed.precursor_mz + 1.0035,
+        precursor_metadata=metadata,
+    )
+    payload = json.loads(canonical_cid_nl_evidence_bytes(mono.observation))
+    assert payload["precursor_metadata"]["master_scan_number"] == 40
+    assert payload["precursor_mz_basis"] == "scan_monoisotopic"
+    assert payload["scan_precursor_mz"] != payload["precursor_mz"]
+    with pytest.raises(CidNlEvidenceContractError, match="recorded precursor"):
+        replace(mono.observation, precursor_metadata=None)
+    with pytest.raises(CidNlEvidenceContractError, match="singly charged"):
+        replace(mono.observation, precursor_metadata=replace(metadata, charge=2))
+    with pytest.raises(CidNlEvidenceContractError, match="mismatches"):
+        replace(
+            mono,
+            observation=replace(
+                mono.observation,
+                precursor_metadata=replace(metadata, master_scan_number=39),
+            ),
+        )
+    # A product-derived claim still obeys physical isolation bounds.
+    with pytest.raises(CidNlEvidenceContractError, match="inference tolerance"):
+        replace(
+            mono.observation,
+            precursor_mz_basis="product_plus_neutral_loss",
+            precursor_inference_tolerance_da=1.2,
+        )

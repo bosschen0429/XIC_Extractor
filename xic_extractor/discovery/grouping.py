@@ -1,6 +1,7 @@
 import json
 import math
 from collections.abc import Iterable
+from dataclasses import asdict
 from pathlib import Path
 from typing import cast
 
@@ -142,6 +143,9 @@ def _merge_seed_evidence(
                 "rt_max": seed.rt,
                 "precursor_mz_basis": seed.precursor_mz_basis,
                 "scan_precursor_mz": seed.scan_precursor_mz,
+                "precursor_metadata": asdict(seed.precursor_metadata)
+                if seed.precursor_metadata is not None
+                else None,
                 "scan_precursor_delta_da": _scan_precursor_delta_da(seed),
                 "max_scan_precursor_abs_delta_da": abs(
                     _scan_precursor_delta_da(seed) or 0.0
@@ -171,6 +175,11 @@ def _merge_seed_evidence(
             entry["product_mz"] = seed.product_mz
             entry["max_intensity"] = seed.product_intensity
             entry["neutral_loss_error_ppm"] = seed.observed_loss_error_ppm
+            entry["precursor_metadata"] = (
+                asdict(seed.precursor_metadata)
+                if seed.precursor_metadata is not None
+                else None
+            )
             entry["scan_precursor_mz"] = seed.scan_precursor_mz
             entry["scan_precursor_delta_da"] = delta_da
         if (
@@ -204,6 +213,8 @@ def _group_precursor_mz_basis(
     values = {seed.precursor_mz_basis for seed in seeds}
     if values == {"scan_precursor"}:
         return "scan_precursor"
+    if values == {"scan_monoisotopic"}:
+        return "scan_monoisotopic"
     if values == {"product_plus_neutral_loss"}:
         return "product_plus_neutral_loss"
     return "mixed"
@@ -215,12 +226,16 @@ def _group_neutral_loss_error_basis(
     values = {_neutral_loss_error_basis(seed) for seed in seeds}
     if values == {"measured_scan_precursor_product"}:
         return "measured_scan_precursor_product"
+    if values == {"recorded_monoisotopic_precursor_product"}:
+        return "recorded_monoisotopic_precursor_product"
     if values == {"configured_loss_inferred_precursor"}:
         return "configured_loss_inferred_precursor"
     return "mixed"
 
 
 def _neutral_loss_error_basis(seed: DiscoverySeed) -> NeutralLossErrorBasis:
+    if seed.precursor_mz_basis == "scan_monoisotopic":
+        return "recorded_monoisotopic_precursor_product"
     if seed.precursor_mz_basis == "product_plus_neutral_loss":
         return "configured_loss_inferred_precursor"
     return "measured_scan_precursor_product"

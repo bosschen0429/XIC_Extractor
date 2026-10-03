@@ -815,6 +815,65 @@ def test_iter_ms2_scans_reads_precursor_from_scan_filter_get_reaction() -> None:
     assert events[0].scan.precursor_mz == pytest.approx(537.0779)
 
 
+@pytest.mark.parametrize(
+    ("number", "selected", "mono", "parent", "product"),
+    [
+        (19261, 301.1651916503906, 300.1616, 19218, 184.11317443847656),
+        (19561, 301.16497802734375, 300.1615, 19522, 184.1132354736328),
+    ],
+)
+def test_raw_monoisotopic_precursor_recovers_direct_nl_without_widening_isolation(
+    number: int,
+    selected: float,
+    mono: float,
+    parent: int,
+    product: float,
+) -> None:
+    from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
+    from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
+    from xic_extractor.raw_reader import RawFileHandle
+
+    scan_filter = _FakeScanFilterWithReaction(precursor_mz=selected)
+    scan_filter.reaction.IsolationWidth = 1.6
+    scan_filter.reaction.IsolationWidthOffset = 0.0
+    raw = _FakeRaw(
+        filters={number: scan_filter},
+        scans={number: _FakeScan([product, 185.115845], [278825.7, 367660.1])},
+    )
+    raw.ScanNumberFromRetentionTime = lambda rt: number
+    raw.GetTrailerExtraInformation = lambda scan_number: SimpleNamespace(
+        Labels=["Monoisotopic M/Z:", "Charge State:", "Master Scan Number:"],
+        Values=[str(mono), "1", str(parent)],
+    )
+    handle = RawFileHandle(raw, _fake_thermo(raw))
+    (event,) = handle.iter_ms2_scans(22.0, 25.0)
+
+    assert event.parse_error is None
+    assert event.scan is not None
+    assert event.scan.precursor_mz == selected
+    metadata = event.scan.precursor_metadata
+    assert metadata is not None
+    assert metadata.monoisotopic_mz == mono
+    assert metadata.charge == 1
+    assert metadata.master_scan_number == parent
+    assert metadata.isolation_width_da == 1.6
+    assert metadata.isolation_offset_da == 0.0
+    seeds = discovery_seeds_from_scan(
+        event.scan,
+        raw_file=Path("TumorBC2312_DNA.raw"),
+        settings=DiscoverySettings(
+            neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474),
+            ms2_precursor_tol_da=0.8,
+        ),
+    )
+    recovered = [s for s in seeds if abs(s.precursor_mz - 300.1605) < 0.0061]
+    assert len(recovered) == 1
+    assert recovered[0].precursor_mz == mono
+    assert recovered[0].product_mz == product
+    assert recovered[0].precursor_mz_basis == "scan_monoisotopic"
+    assert recovered[0].scan_precursor_mz == selected
+
+
 def test_iter_ms2_scans_yields_parse_error_events() -> None:
     from xic_extractor.raw_reader import RawFileHandle
 
@@ -1021,3 +1080,23 @@ class _FakeScan:
     def __init__(self, masses, intensities) -> None:
         self.Masses = masses
         self.Intensities = intensities
+
+
+@pytest.mark.parametrize("value", ("0", "NaN", ""))
+def test_unavailable_vendor_precursor_fields_do_not_replace_selected_mass(value):
+    from xic_extractor.raw_reader import RawFileHandle
+
+    raw = _FakeRaw(
+        filters={1: _FakeFilter(is_ms2=True, precursor_mz=300.2)},
+        scans={1: _FakeScan([184.1], [100.0])},
+    )
+    raw.GetTrailerExtraInformation = lambda _: SimpleNamespace(
+        Labels=["Monoisotopic M/Z:", "Charge State:", "Master Scan Number:"],
+        Values=[value, value, value],
+    )
+    event = next(RawFileHandle(raw, _fake_thermo(raw)).iter_ms2_scans(8.0, 8.0))
+    assert event.parse_error is None
+    assert event.scan.precursor_mz == 300.2
+    assert event.scan.precursor_metadata.monoisotopic_mz is None
+    assert event.scan.precursor_metadata.charge is None
+    assert event.scan.precursor_metadata.master_scan_number is None

@@ -7,6 +7,8 @@ from xic_extractor.discovery.evidence_config import (
     DEFAULT_EVIDENCE_PROFILE,
     DiscoveryEvidenceProfile,
 )
+from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+from xic_extractor.precursor_evidence import PrecursorMzBasis as PrecursorMzBasis
 from xic_extractor.settings_schema import normalize_resolver_mode
 
 if TYPE_CHECKING:
@@ -15,10 +17,12 @@ if TYPE_CHECKING:
     )
 
 ReviewPriority = Literal["HIGH", "MEDIUM", "LOW"]
-PrecursorMzBasis = Literal["scan_precursor", "product_plus_neutral_loss"]
-GroupPrecursorMzBasis = Literal["scan_precursor", "product_plus_neutral_loss", "mixed"]
+GroupPrecursorMzBasis = Literal[
+    "scan_precursor", "scan_monoisotopic", "product_plus_neutral_loss", "mixed"
+]
 NeutralLossErrorBasis = Literal[
     "measured_scan_precursor_product",
+    "recorded_monoisotopic_precursor_product",
     "configured_loss_inferred_precursor",
     "mixed",
 ]
@@ -201,6 +205,7 @@ class DiscoverySeed:
     tag_evidence_json: str = "{}"
     scan_precursor_mz: float | None = None
     precursor_mz_basis: PrecursorMzBasis = "scan_precursor"
+    precursor_metadata: Ms2PrecursorMetadata | None = None
     acquisition_source_id: str = ""
 
 

@@ -75,11 +75,13 @@ _FLOAT_FIELDS = {
 
 _ALLOWED_PRECURSOR_MZ_BASIS = {
     "scan_precursor",
+    "scan_monoisotopic",
     "product_plus_neutral_loss",
     "mixed",
 }
 _ALLOWED_NEUTRAL_LOSS_ERROR_BASIS = {
     "measured_scan_precursor_product",
+    "recorded_monoisotopic_precursor_product",
     "configured_loss_inferred_precursor",
     "mixed",
 }

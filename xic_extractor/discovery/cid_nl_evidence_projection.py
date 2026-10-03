@@ -162,6 +162,10 @@ def mint_untargeted_cid_nl_projection_ref(
         )
 
     observation = canonical_evidence.observation
+    if discovery_seed.precursor_metadata != observation.precursor_metadata:
+        raise UntargetedCidNlProjectionError(
+            "Discovery precursor metadata mismatches canonical evidence"
+        )
     if discovery_seed.acquisition_source_id != observation.acquisition_source_id:
         raise UntargetedCidNlProjectionError(
             "Discovery acquisition source mismatches canonical CID-NL evidence"

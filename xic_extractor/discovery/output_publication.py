@@ -69,7 +69,8 @@ def persisted_discovery_candidates(
         candidate
         for candidate in candidates
         if _is_feature_backed_candidate(candidate)
-        or candidate.precursor_mz_basis in {"scan_precursor", "mixed"}
+        or candidate.precursor_mz_basis
+        in {"scan_precursor", "scan_monoisotopic", "mixed"}
     )
 
 

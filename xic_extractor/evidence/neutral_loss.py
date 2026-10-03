@@ -4,12 +4,17 @@ from typing import Literal
 import numpy as np
 
 from xic_extractor.mass_accuracy import neutral_loss_match
-from xic_extractor.ms2_scan_models import Ms2Scan, Ms2Window
+from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata, Ms2Scan, Ms2Window
 from xic_extractor.ms2_trace_evidence import (
     MS2TraceEvidence,
     MS2TracePoint,
     empty_ms2_trace_evidence,
     summarize_ms2_trace,
+)
+from xic_extractor.precursor_evidence import (
+    DirectPrecursorMzBasis,
+    direct_precursor_references,
+    scan_supports_precursor,
 )
 
 NL_DIAGNOSTIC_PPM_FLOOR = 500.0
@@ -50,6 +55,9 @@ class MS2ProductEvidence:
     observed_loss_error_ppm: float
     scan_number: int | None = None
     acquisition_source_id: str = ""
+    precursor_mz_basis: DirectPrecursorMzBasis = "scan_precursor"
+    scan_precursor_mz: float | None = None
+    precursor_metadata: Ms2PrecursorMetadata | None = None
 
 
 def _matches_loss(
@@ -199,7 +207,9 @@ def find_nl_anchor_rt(
     for event in window.events:
         if event.parse_error is not None or event.scan is None:
             continue
-        if abs(event.scan.precursor_mz - precursor_mz) > ms2_precursor_tol_da:
+        if not scan_supports_precursor(
+            event.scan, precursor_mz, ms2_precursor_tol_da, nl_ppm_max
+        ):
             continue
         evidence = _best_product_evidence(
             event.scan,
@@ -255,7 +265,9 @@ def check_nl(
             continue
 
         valid_count += 1
-        if abs(event.scan.precursor_mz - precursor_mz) > ms2_precursor_tol_da:
+        if not scan_supports_precursor(
+            event.scan, precursor_mz, ms2_precursor_tol_da, nl_ppm_max
+        ):
             continue
 
         matched_count += 1
@@ -334,7 +346,9 @@ def collect_candidate_ms2_evidence(
         if event.parse_error is not None or event.scan is None:
             continue
         scan = event.scan
-        if abs(scan.precursor_mz - precursor_mz) > ms2_precursor_tol_da:
+        if not scan_supports_precursor(
+            scan, precursor_mz, ms2_precursor_tol_da, nl_ppm_max
+        ):
             continue
 
         inside_candidate_region = peak_start <= scan.rt <= peak_end
@@ -585,7 +599,19 @@ def _best_product_probe(
     min_intensity_ratio: float,
     diagnostic_ppm: float,
 ) -> MS2ProductProbe:
-    expected_product = scan.precursor_mz - neutral_loss_da
+    references = direct_precursor_references(scan, nl_ppm_max)
+    if not references:
+        return MS2ProductProbe(
+            evidence=None,
+            absence_reason="unsupported_precursor_charge",
+            nearest_product_mz=None,
+            nearest_product_loss_ppm=None,
+            nearest_product_base_ratio=None,
+        )
+    precursor_mz, precursor_basis = min(
+        references, key=lambda reference: abs(reference[0] - target_precursor_mz)
+    )
+    expected_product = precursor_mz - neutral_loss_da
     if expected_product <= 0.0 or target_precursor_mz <= 0.0 or scan.base_peak <= 0.0:
         return MS2ProductProbe(
             evidence=None,
@@ -615,14 +641,14 @@ def _best_product_probe(
     )
     nearest_index = int(np.argmin(scan_product_ppm))
     nearest_product_mz = float(masses[nearest_index])
-    nearest_observed_loss_da = scan.precursor_mz - nearest_product_mz
+    nearest_observed_loss_da = precursor_mz - nearest_product_mz
     nearest_product_loss_ppm = (
         abs(nearest_observed_loss_da - neutral_loss_da) / neutral_loss_da * 1_000_000.0
     )
     nearest_product_base_ratio = float(intensities[nearest_index] / scan.base_peak)
     effective_diagnostic_ppm = max(
         diagnostic_ppm,
-        2.0 * scan.precursor_mz * nl_ppm_max / expected_product,
+        2.0 * precursor_mz * nl_ppm_max / expected_product,
     )
     mask = (intensities >= intensity_floor) & (
         scan_product_ppm <= effective_diagnostic_ppm
@@ -655,21 +681,21 @@ def _best_product_probe(
     candidates: list[MS2ProductEvidence] = []
     for index in np.flatnonzero(mask):
         product_mz = float(masses[int(index)])
-        observed_loss_da = scan.precursor_mz - product_mz
+        observed_loss_da = precursor_mz - product_mz
         observed_loss_error_ppm = (
             abs(observed_loss_da - neutral_loss_da) / neutral_loss_da * 1_000_000.0
         )
         if (
             observed_loss_error_ppm > max(diagnostic_ppm, 3.0 * nl_ppm_max)
             and not neutral_loss_match(
-                scan.precursor_mz, product_mz, neutral_loss_da, nl_ppm_max
+                precursor_mz, product_mz, neutral_loss_da, nl_ppm_max
             )[2]
         ):
             continue
         candidates.append(
             MS2ProductEvidence(
                 scan_rt=scan.rt,
-                precursor_mz=scan.precursor_mz,
+                precursor_mz=precursor_mz,
                 product_mz=product_mz,
                 product_intensity=float(intensities[int(index)]),
                 product_base_ratio=float(intensities[int(index)] / scan.base_peak),
@@ -679,6 +705,9 @@ def _best_product_probe(
                 observed_loss_da=observed_loss_da,
                 observed_loss_error_ppm=observed_loss_error_ppm,
                 scan_number=scan.scan_number,
+                precursor_mz_basis=precursor_basis,
+                scan_precursor_mz=scan.precursor_mz,
+                precursor_metadata=scan.precursor_metadata,
             )
         )
 

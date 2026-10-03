@@ -10,14 +10,18 @@ from __future__ import annotations
 import json
 import math
 import re
-from dataclasses import dataclass
-from typing import Literal
+from dataclasses import asdict, dataclass
 
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
     _mint_artifact_semantic_contract_ref,
     _mint_evidence_artifact_ref,
     verify_evidence_artifact_payload,
+)
+from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+from xic_extractor.precursor_evidence import (
+    PrecursorMzBasis,
+    precursor_inference_bounds,
 )
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
@@ -27,7 +31,7 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-SCHEMA_VERSION = "cid_nl_evidence_observation"
+SCHEMA_VERSION = "cid_nl_evidence_observation_v2"
 ARTIFACT_SEMANTIC_ROLE = "canonical_cid_nl_observation"
 VALIDATION_STATUS = "diagnostic_only"
 MEDIA_TYPE = "application/json"
@@ -70,9 +74,10 @@ class CidNlEvidenceObservation:
     observed_loss_error_ppm: float
     scan_rt_min: float
     product_intensity: float
-    precursor_mz_basis: Literal["scan_precursor", "product_plus_neutral_loss"]
+    precursor_mz_basis: PrecursorMzBasis
     scan_precursor_mz: float
     precursor_inference_tolerance_da: float | None
+    precursor_metadata: Ms2PrecursorMetadata | None = None
 
     def __post_init__(self) -> None:
         _validate_typed_id(
@@ -116,10 +121,31 @@ class CidNlEvidenceObservation:
             )
         if self.scan_precursor_mz <= 0.0:
             raise CidNlEvidenceContractError("scan_precursor_mz must be positive")
+        if self.precursor_metadata is not None:
+            if not isinstance(self.precursor_metadata, Ms2PrecursorMetadata):
+                raise CidNlEvidenceContractError(
+                    "precursor_metadata must be typed vendor facts"
+                )
+            if self.precursor_metadata.charge not in (None, 1):
+                raise CidNlEvidenceContractError(
+                    "CID-NL evidence requires singly charged or unknown charge"
+                )
         if self.precursor_mz_basis == "scan_precursor":
             if self.scan_precursor_mz != self.precursor_mz:
                 raise CidNlEvidenceContractError(
                     "direct scan_precursor_mz must equal precursor_mz"
+                )
+            if self.precursor_inference_tolerance_da is not None:
+                raise CidNlEvidenceContractError(
+                    "direct evidence cannot declare precursor inference tolerance"
+                )
+        elif self.precursor_mz_basis == "scan_monoisotopic":
+            if (
+                self.precursor_metadata is None
+                or self.precursor_metadata.monoisotopic_mz != self.precursor_mz
+            ):
+                raise CidNlEvidenceContractError(
+                    "monoisotopic evidence requires its recorded precursor"
                 )
             if self.precursor_inference_tolerance_da is not None:
                 raise CidNlEvidenceContractError(
@@ -148,7 +174,10 @@ class CidNlEvidenceObservation:
                 raise CidNlEvidenceContractError(
                     "inferred precursor_mz must equal product_mz + configured loss"
                 )
-            if abs(self.scan_precursor_mz - self.precursor_mz) > tolerance:
+            lower, upper = precursor_inference_bounds(
+                self.scan_precursor_mz, self.precursor_metadata, tolerance
+            )
+            if not lower <= self.precursor_mz <= upper:
                 raise CidNlEvidenceContractError(
                     "scan_precursor_mz exceeds precursor inference tolerance"
                 )
@@ -244,11 +273,10 @@ def mint_cid_nl_evidence_ref(
     observed_loss_error_ppm: float,
     scan_rt_min: float,
     product_intensity: float,
-    precursor_mz_basis: Literal[
-        "scan_precursor", "product_plus_neutral_loss"
-    ] = "scan_precursor",
+    precursor_mz_basis: PrecursorMzBasis = "scan_precursor",
     scan_precursor_mz: float | None = None,
     precursor_inference_tolerance_da: float | None = None,
+    precursor_metadata: Ms2PrecursorMetadata | None = None,
 ) -> CidNlEvidenceRef:
     """Mint source-bound evidence without reading an acquisition source.
 
@@ -290,6 +318,7 @@ def mint_cid_nl_evidence_ref(
         precursor_mz_basis=precursor_mz_basis,
         scan_precursor_mz=scan_precursor_mz,
         precursor_inference_tolerance_da=precursor_inference_tolerance_da,
+        precursor_metadata=precursor_metadata,
     )
     artifact = _mint_evidence_artifact_ref(
         producer_processing_request_id=processing_owners.request.processing_request_id,
@@ -319,6 +348,9 @@ def canonical_cid_nl_evidence_bytes(
         "precursor_mz": observation.precursor_mz,
         "precursor_mz_basis": observation.precursor_mz_basis,
         "scan_precursor_mz": observation.scan_precursor_mz,
+        "precursor_metadata": asdict(observation.precursor_metadata)
+        if observation.precursor_metadata is not None
+        else None,
         "precursor_inference_tolerance_da": (
             observation.precursor_inference_tolerance_da
         ),
