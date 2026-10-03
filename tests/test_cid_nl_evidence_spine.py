@@ -83,7 +83,7 @@ def test_inferred_evidence_persists_scan_provenance_and_exact_projection(
         precursor_inference_tolerance_da=0.25,
     )
     payload = json.loads(canonical_cid_nl_evidence_bytes(inferred.observation))
-    assert payload["schema_version"] == "cid_nl_evidence_observation_v2"
+    assert payload["schema_version"] == "cid_nl_evidence_observation"
     assert payload["precursor_mz_basis"] == "product_plus_neutral_loss"
     assert payload["scan_precursor_mz"] == observation.precursor_mz + 0.25
     assert payload["precursor_inference_tolerance_da"] == 0.25

@@ -37,7 +37,7 @@ from xic_extractor.raw_superwindow_source import RawSuperWindowSource
 from xic_extractor.xic_models import XICRequest
 
 _CACHE_SCHEMA = "untargeted_raw_fact_cache"
-_MS2_SCHEMA = "untargeted_ms2_precursor_facts_v2"
+_MS2_SCHEMA = "untargeted_ms2_precursor_facts"
 _LOGGER = logging.getLogger(__name__)
 
 
