@@ -701,22 +701,8 @@ def _physical_segment_support_failure(
         left > 0.0 and right > 0.0 for left, right in zip(original, original[1:])
     ):
         return "insufficient_original_xic_continuity"
-    # Sparse tail hits do not turn an ordinary continuous core into censoring.
-    selected_signal = np.asarray(
-        prepared.positive_signal[selected.start_index : selected.end_index]
-    )
-    core = np.flatnonzero(selected_signal >= 0.2 * selected.height)
-    core_raw = acquired[core[0] : core[-1] + 1]
-    if (
-        _positive_runs(core_raw) >= 3
-        and not _has_continuous_core_support(
-            original[core[0] : core[-1] + 1], prepared.profile.window_points
-        )
-        and not _hit_enrichment(
-            np.asarray(prepared.raw), selected.start_index, selected.end_index
-        )
-    ):
-        return "insufficient_local_hit_enrichment"
+    # Hit density can identify additional censored clusters; it does not
+    # establish the absence of an already observed morphology peak.
     left, right, apex = (
         selected.start_index, selected.end_index, selected.apex_index
     )

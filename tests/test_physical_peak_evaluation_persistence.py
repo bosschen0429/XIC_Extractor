@@ -78,6 +78,52 @@ def _context_sensitive_trace() -> tuple[np.ndarray, np.ndarray]:
     return np.arange(len(raw), dtype=float) * 0.025, raw
 
 
+def _short_peak_with_separate_noise_hits() -> tuple[np.ndarray, np.ndarray]:
+    rt = np.arange(387, dtype=float) * 0.04
+    raw = np.zeros_like(rt)
+    # A ten-scan observed peak rises and falls. Earlier, smaller hits and
+    # scattered background observations do not establish its absence.
+    raw[187:206] = 10000.0 * np.asarray([
+        .103516, .173885, .172859, .126381, .229408, 0.0, .072839,
+        0.0, 0.0, .065716, .194376, .324126, .648833, 1.0,
+        .789331, .598496, .262206, .122555, .023368,
+    ])
+    raw[[
+        219, 220, 241, 244, 256, 260, 268, 270, 272, 274, 281, 283,
+        284, 290, 296, 299, 301, 303, 309, 310, 323, 326, 354, 371,
+    ]] = 120.0
+    return rt, raw
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize(
+    "policy", [PHYSICAL_PEAK_POINT_POLICY, DISCOVERY_PHYSICAL_PEAK_POINT_POLICY]
+)
+def test_supported_short_peak_survives_noise_hits_and_persistence(
+    reverse: bool, policy: str,
+) -> None:
+    rt, raw = _short_peak_with_separate_noise_hits()
+    if reverse:
+        raw = raw[::-1].copy()
+    apex_index = int(np.argmax(raw))
+    prepared = prepare_physical_signal(rt, raw)
+    result = evaluate_physical_peak(
+        prepared, selection_subject_id="supported-short-peak",
+        query_rt_min=rt[apex_index], selection_policy_version=policy,
+    )
+    assert result.state == "available"
+    assert result.facts is not None and result.integration is not None
+    assert result.facts.apex_rt_min == pytest.approx(rt[apex_index])
+    candidates = physical_candidates_result(prepared, result.segment_universe)
+    assert any(c.peak.rt == result.facts.apex_rt_min for c in candidates.candidates)
+    assert "near_detection_limit" not in result.integration.boundary_sources
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=SignalProcessingProfile(), evaluation=result,
+    )
+    *_, restored = deserialize_physical_peak_evaluation(payload)
+    assert restored == result
+
+
 def test_exterior_context_change_keeps_observed_near_baseline_peak_available() -> None:
     rt, raw = _context_sensitive_trace()
     full_signal = prepare_physical_signal(rt, raw)
@@ -217,23 +263,26 @@ def test_original_continuity_accepts_a_pair_despite_another_isolated_point(
         (PHYSICAL_PEAK_WINDOW_POLICY, 0.5),
     ],
 )
-def test_fragmented_original_peak_is_not_backfilled_by_smoothed_envelope(
+def test_observed_peak_with_acquisition_gaps_keeps_physical_facts(
     policy: str, query_rt: float,
 ) -> None:
     rt = np.linspace(0.0, 10.0, 101)
     raw = 1000.0 * np.exp(-0.5 * ((rt - 5.0) / 0.8) ** 2)
     raw[::2] = 0.0
-    raw[50] = 1000.0  # An adjacent pair does not repair repeated interruptions.
+    # Known Gaussian signal with acquisition gaps still supplies observed
+    # adjacent support at its apex; missing detections do not prove absence.
+    raw[50] = 1000.0
     profile = SignalProcessingProfile()
     prepared = prepare_physical_signal(rt, raw, profile=profile)
     fresh = evaluate_physical_peak(
         prepared, selection_subject_id="fragmented-envelope", query_rt_min=query_rt,
         selection_policy_version=policy,
     )
-    assert fresh.state == "unavailable"
-    assert fresh.reason == "insufficient_local_hit_enrichment"
-    assert fresh.facts is None and fresh.integration is None
-    assert fresh.answer.physical_segment_id is None
+    assert fresh.state == "available" and fresh.reason == ""
+    assert fresh.facts is not None and fresh.integration is not None
+    assert fresh.facts.apex_rt_min == pytest.approx(5.0)
+    assert fresh.facts.area_source == "trapezoid_counts_seconds_on_canonical_signal"
+    assert fresh.answer.physical_segment_id == fresh.facts.physical_segment_id
     fresh_payload = serialize_physical_peak_evaluation(
         rt, raw, profile=profile, evaluation=fresh,
     )
