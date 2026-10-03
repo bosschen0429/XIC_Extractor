@@ -183,8 +183,10 @@ def backfill_ms1_candidates(
                 peak_config=peak_config,
             )
         )
-    verified = _verify_precursor_evidence(raw, candidates, plans, settings=settings)
-    return candidate_merge.merge_candidates_by_ms1_peak(verified, settings=settings)
+    merged = candidate_merge.merge_candidates_by_ms1_peak_with_lineage(
+        candidates, settings=settings
+    )
+    return _verify_precursor_evidence(raw, merged, plans, settings=settings).candidates
 
 
 def _backfill_ms1_candidates_with_acquisition(
@@ -399,11 +401,13 @@ def _backfill_ms1_candidates_with_acquisition(
             if len(physical_evaluations) != len(physical_fact_by_index) + 1:
                 raise ValueError("Discovery physical evaluation was not recorded once")
             physical_fact_by_index[physical_index] = physical_evaluations[-1]
-    verified = _verify_precursor_evidence(raw, candidates, plans, settings=settings)
     merge_result = candidate_merge.merge_candidates_by_ms1_peak_with_lineage(
-        verified,
+        candidates,
         settings=settings,
         ms1_centroid_mz=ms1_centroid_mz,
+    )
+    merge_result = _verify_precursor_evidence(
+        raw, merge_result, plans, settings=settings
     )
     if doubly_charged_indexes:
         merge_result = _hold_doubly_charged_candidates(
@@ -466,28 +470,36 @@ def _backfill_ms1_candidates_with_acquisition(
 
 def _verify_precursor_evidence(
     raw: object,
-    candidates: Sequence[DiscoveryCandidate],
+    merged: candidate_merge.DiscoveryCandidateMergeResult,
     plans: Sequence[_DiscoveryMs1RequestPlan],
     *,
     settings: DiscoverySettings,
-) -> tuple[DiscoveryCandidate, ...]:
-    """After physical capture, verify candidate origins without moving the peak."""
+) -> candidate_merge.DiscoveryCandidateMergeResult:
+    """Verify member evidence against the final retained physical peak."""
+    seed_groups = tuple(
+        tuple(
+            seed
+            for source in binding.member_source_ordinals
+            for seed in plans[source].group.seeds
+        )
+        for binding in merged.bindings
+    )
     retained_seeds = tuple(
         seed
-        for candidate, plan in zip(candidates, plans, strict=True)
+        for candidate, seeds in zip(merged.candidates, seed_groups, strict=True)
         if candidate.ms1_peak_found
-        for seed in plan.group.seeds
+        for seed in seeds
     )
     measured = read_parent_ms1_observations(
         raw, retained_seeds, tolerance_ppm=settings.precursor_mz_tolerance_ppm
     )
     by_seed = dict(zip(retained_seeds, measured, strict=True))
     verified: list[DiscoveryCandidate] = []
-    for candidate, plan in zip(candidates, plans, strict=True):
+    for candidate, original_seeds in zip(merged.candidates, seed_groups, strict=True):
         if not candidate.ms1_peak_found:
             verified.append(candidate)
             continue
-        seeds = [by_seed[seed] for seed in plan.group.seeds]
+        seeds = [by_seed[seed] for seed in original_seeds]
         has_support = False
         for seed in seeds:
             assessment = seed.assess_precursor_loss(settings.nl_tolerance_ppm)
@@ -517,7 +529,7 @@ def _verify_precursor_evidence(
                 ),
             )
         )
-    return tuple(verified)
+    return replace(merged, candidates=tuple(verified))
 
 
 def _discovery_ms1_request_plan(

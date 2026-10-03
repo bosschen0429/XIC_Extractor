@@ -117,8 +117,9 @@ Producing a library alone does not enable qualification.
 ### Precursor inference
 
 - CID-NL Discovery runs in this order: acquire MS2 search seeds, group nearby
-  seeds, capture and qualify their MS1 peaks, verify precursor evidence against
-  those peaks, then merge and persist candidates. Search provenance does not
+  seeds, capture and qualify their MS1 peaks, merge candidates sharing a peak,
+  verify precursor evidence against the retained peak, then persist candidates.
+  Search provenance does not
   decide the final support label. A feature with an independently compatible
   precursor and product inside its peak interval is `ms1_feature_nl_supported`;
   a feature lacking that relation remains `ms1_feature_nl_rescued`. These labels

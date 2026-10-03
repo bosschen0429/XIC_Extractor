@@ -422,6 +422,59 @@ def test_backfill_merges_candidates_inside_same_ms1_peak_boundary(
     )
 
 
+def test_merged_peak_does_not_inherit_support_outside_its_retained_interval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+    from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+
+    first = replace(
+        _seed(scan_number=10, rt=7.8, product_intensity=9000.0),
+        precursor_mz_basis="scan_monoisotopic",
+        scan_precursor_mz=501.0,
+        precursor_metadata=Ms2PrecursorMetadata(
+            monoisotopic_mz=500.0, isolation_width_da=1.6, isolation_offset_da=0.0
+        ),
+    )
+    second = replace(
+        _seed(scan_number=20, rt=8.04, product_intensity=3000.0),
+        precursor_mz_basis="product_plus_neutral_loss",
+        observed_loss_error_ppm=None,
+        scan_precursor_mz=500.5,
+        precursor_metadata=Ms2PrecursorMetadata(
+            master_scan_number=19, isolation_width_da=1.6, isolation_offset_da=0.0
+        ),
+    )
+    raw = _FakeRaw(
+        rt=np.array([7.7, 7.92, 8.1]), intensity=np.array([20.0, 900.0, 25.0])
+    )
+    peaks = iter(
+        (
+            _ok_peak(rt=7.92, intensity=900.0, area=1234.5, start=7.7, end=8.0),
+            _ok_peak(rt=7.92, intensity=900.0, area=1300.0, start=7.7, end=8.1),
+        )
+    )
+    monkeypatch.setattr(
+        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        lambda *args, **kwargs: next(peaks),
+    )
+    monkeypatch.setattr(
+        _FakeRaw,
+        "read_ms1_mass_windows",
+        lambda self, requests: (Ms1PrecursorObservation(19, 8.02, (500.001,)),),
+        raising=False,
+    )
+    candidate, = backfill_ms1_candidates(
+        raw, (_group((first,)), _group((second,))),
+        settings=_settings(), peak_config=_peak_config(),
+    )
+    assert candidate.best_ms2_scan_id == 10
+    assert candidate.ms1_area == 1234.5
+    assert candidate.ms1_peak_rt_end == 8.0
+    assert candidate.seed_scan_ids == (10, 20)
+    assert candidate.discovery_candidate_state == "ms1_feature_nl_rescued"
+
+
 def test_cross_tag_candidates_merge_only_when_ms1_peak_overlaps() -> None:
     settings = _multi_tag_settings()
     candidates = [

@@ -856,8 +856,9 @@ def test_inferred_precursor_retains_physical_peak_without_strict_nl_support(
         assert result.acquisition is None
 
 
+@pytest.mark.parametrize("cached", [False, True])
 def test_inferred_precursor_can_gain_support_from_measured_parent_ms1(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cached: bool
 ) -> None:
     from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 
@@ -912,6 +913,14 @@ def test_inferred_precursor_can_gain_support_from_measured_parent_ms1(
     monkeypatch.setattr(
         type(raw), "read_ms1_mass_windows", read_parent_windows, raising=False
     )
+    if cached:
+        from xic_extractor.untargeted_execution.acquisition_cache import (
+            CachedUntargetedRaw,
+        )
+
+        raw = CachedUntargetedRaw(
+            raw, source=raw.acquisition_source, cache_dir=tmp_path / "raw-facts"
+        )
     result = adapt_current_discovery_sample_subject(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),

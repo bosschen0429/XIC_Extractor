@@ -10,7 +10,7 @@ import logging
 import math
 import os
 import tempfile
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -26,6 +26,7 @@ from xic_extractor.acquisition_contract import (
     serialize_acquired_trace,
 )
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.raw_reader import (
     Ms2Scan,
@@ -100,6 +101,11 @@ class CachedUntargetedRaw:
 
     def scan_window_for_request(self, request: XICRequest) -> tuple[int, int]:
         return self._raw.scan_window_for_request(request)
+
+    def read_ms1_mass_windows(
+        self, requests: Sequence[tuple[int, float, float]]
+    ) -> tuple[Ms1PrecursorObservation | None, ...]:
+        return self._raw.read_ms1_mass_windows(requests)
 
     def iter_ms2_scans(self, rt_min: float, rt_max: float) -> Iterator[Ms2ScanEvent]:
         yield from self._iter_ms2_scans(rt_min, rt_max, scan_numbers=None)
