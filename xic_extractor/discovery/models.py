@@ -148,7 +148,7 @@ class DiscoverySettings:
     precursor_mz_tolerance_ppm: float = 20.0
     product_mz_tolerance_ppm: float = 20.0
     product_search_ppm: float = 50.0
-    ms2_precursor_tol_da: float = 1.1
+    ms2_precursor_tol_da: float = 0.8
     nl_min_intensity_ratio: float = 0.01
     seed_rt_gap_min: float = 0.20
     ms1_search_padding_min: float = 0.35

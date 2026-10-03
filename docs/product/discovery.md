@@ -121,6 +121,11 @@ Producing a library alone does not enable qualification.
   within `DiscoverySettings.ms2_precursor_tol_da` of the measured filter/
   isolation precursor. The installed CLI exposes the same setting as
   `--ms2-precursor-tol-da`.
+- The default inference radius is 0.8 Da, the nominal half-width of the
+  1.6 Da isolation method. This bound limits a product-plus-loss hypothesis;
+  it does not establish precursor identity or replace the direct NL mass
+  tolerance. Methods with a different isolation width require an explicit
+  matching radius. Saved explicit settings remain effective.
 - Physical trace context and precursor-identity confidence are separate. A
   `product_mz + neutral_loss` group starts with the bounded configured RT
   context; when that trace is too short for the active signal-processing

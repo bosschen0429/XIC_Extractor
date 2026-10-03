@@ -240,7 +240,7 @@ def test_same_ms2_scan_can_emit_direct_and_inferred_precursor_seeds() -> None:
     seeds = collect_strict_nl_seeds(
         raw,
         raw_file=RAW_FILE,
-        settings=_settings(),
+        settings=_settings(ms2_precursor_tol_da=1.1),
     )
 
     seeds_by_product = {round(seed.product_mz, 6): seed for seed in seeds}
@@ -282,18 +282,19 @@ def test_inferred_precursor_seed_respects_ms2_precursor_window() -> None:
 @pytest.mark.parametrize(
     ("scan_offset_da", "expected_seed_count"),
     [
-        # d4-N6-2HE-dA triggered 1.006 Da low (D/H) still transmits at the edge.
-        (-1.006, 1),
-        (0.816, 1),
-        (1.15, 0),
-        (-1.15, 0),
+        (-0.799, 1),
+        (0.799, 1),
+        (-0.801, 0),
+        (0.801, 0),
+        (-1.006, 0),
+        (1.006, 0),
     ],
 )
-def test_default_inferred_precursor_radius_covers_isolation_edge_only(
+def test_default_inferred_precursor_radius_uses_nominal_isolation_half_width(
     scan_offset_da: float,
     expected_seed_count: int,
 ) -> None:
-    # 1.6 Da isolation width (+/-0.8) plus observed edge transmission (#466).
+    # The method's full isolation width is 1.6 Da, so its nominal radius is 0.8.
     product_mz = 184.11322021484375
     inferred_precursor_mz = product_mz + NEUTRAL_LOSS_DA
     raw = _FakeRaw(
