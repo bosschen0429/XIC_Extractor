@@ -750,6 +750,97 @@ def test_paired_analyte_fallback_window_uses_target_region_not_istd_rt(
     assert anchor_rt == pytest.approx(17.0)
 
 
+@pytest.mark.parametrize("search_margin", [2.0, 0.05])
+def test_istd_peak_survives_displaced_or_missing_nl_anchor(
+    tmp_path, search_margin: float
+) -> None:
+    config = ExtractionConfig(
+        data_dir=tmp_path,
+        dll_dir=tmp_path,
+        output_csv=tmp_path / "xic_results.csv",
+        diagnostics_csv=tmp_path / "diagnostics.csv",
+        smooth_window=15,
+        smooth_polyorder=3,
+        peak_rel_height=0.95,
+        peak_min_prominence_ratio=0.1,
+        ms2_precursor_tol_da=1.1,
+        nl_min_intensity_ratio=0.01,
+        nl_rt_anchor_search_margin_min=search_margin,
+        nl_rt_anchor_half_window_min=1.0,
+        nl_fallback_half_window_min=0.5,
+    )
+    target = Target(
+        label="ISTD",
+        mz=289.0841,
+        rt_min=16.0,
+        rt_max=18.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0474,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=50.0,
+        is_istd=True,
+        istd_pair="",
+    )
+    rt = np.linspace(14.0, 20.0, 601)
+    intensity = 20.0 + 1e6 * np.exp(-0.5 * ((rt - 16.4) / 0.1) ** 2)
+
+    class _Raw:
+        def extract_xic(self, _mz, rt_min, rt_max, _ppm):
+            mask = (rt >= rt_min) & (rt <= rt_max)
+            return rt[mask], intensity[mask]
+
+        def iter_ms2_scans(self, rt_min, rt_max):
+            # A different precursor with the same NL wins the broad DDA search.
+            for scan_id, scan_rt, mz, height in (
+                (1, 15.2, 288.066, 1e8),
+                (2, 16.4, target.mz, 1e6),
+            ):
+                if rt_min <= scan_rt <= rt_max:
+                    yield Ms2ScanEvent(
+                        Ms2Scan(
+                            scan_id,
+                            scan_rt,
+                            mz,
+                            np.array([mz - 116.0474]),
+                            np.array([height]),
+                            height,
+                        ),
+                        None,
+                        scan_id,
+                    )
+
+    raw = _Raw()
+    window = get_rt_window(
+        raw, target, config, sample_key="fixture", reference_rt=None
+    )
+    assert window[2:] == (
+        (True, 15.2) if search_margin == 2.0 else (False, None)
+    )
+    results = {}
+    target_extraction.extract_one_target(
+        raw,
+        config,
+        "fixture",
+        target,
+        reference_rt=None,
+        results=results,
+        diagnostics=[],
+        scoring_context_factory=build_scoring_context_factory(
+            config=config,
+            injection_order={"fixture": 1},
+            istd_rts_by_sample={},
+            rt_prior_library={},
+        ),
+    )
+    result = results[target.label]
+    assert result.reported_rt == pytest.approx(16.4, abs=0.01)
+    assert result.reported_peak_area is not None and result.reported_peak_area > 0
+    assert result.physical_evaluation is not None
+    assert result.physical_evaluation.state == "available"
+    assert result.candidate_ms2_evidence is not None
+    assert result.candidate_ms2_evidence.nl_status == "OK"
+
+
 def test_paired_analyte_fallback_window_uses_learned_target_reference(
     tmp_path,
     monkeypatch,

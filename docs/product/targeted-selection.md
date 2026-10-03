@@ -88,6 +88,13 @@ those facts itself.
 
 ### Target identity and search scope
 
+- ISTD selection retains the complete configured RT window. A DDA NL anchor
+  remains a selection reference; a displaced or absent anchor does not exclude
+  an otherwise qualified ISTD MS1 component inside that window.
+- Among non-strict ISTD candidates in the same eligibility class, local chemical
+  support precedes the number of review reasons. Rolling-RT disagreement remains
+  reported review evidence; exclusion, ambiguity, and hard-quality classes keep
+  their precedence.
 - For no-NL inputs, the configured RT-window center participates in component
   identity while the complete acquisition context remains available to the
   shared physical owner. The supplied group reference is encoded in that

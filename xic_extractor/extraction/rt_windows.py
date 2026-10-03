@@ -80,6 +80,10 @@ def get_rt_window(
         nl_min_intensity_ratio=config.nl_min_intensity_ratio,
         reference_rt=anchor_reference_rt,
     )
+    if target.is_istd:
+        # A DDA NL anchor is a reference, not proof that the exact-mass MS1
+        # component is confined to its narrow neighborhood.
+        return target.rt_min, target.rt_max, anchor_rt is not None, anchor_rt
     if anchor_rt is not None:
         if _paired_target_anchor_is_too_far_from_reference(
             anchor_rt,
