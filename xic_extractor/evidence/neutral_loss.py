@@ -12,9 +12,10 @@ from xic_extractor.ms2_trace_evidence import (
     summarize_ms2_trace,
 )
 from xic_extractor.precursor_evidence import (
-    DirectPrecursorMzBasis,
-    direct_precursor_references,
-    scan_supports_precursor,
+    RecordedPrecursorMzBasis,
+    recorded_precursor_references,
+    scan_has_precursor_candidate,
+    supports_direct_nl,
 )
 
 NL_DIAGNOSTIC_PPM_FLOOR = 500.0
@@ -55,7 +56,7 @@ class MS2ProductEvidence:
     observed_loss_error_ppm: float
     scan_number: int | None = None
     acquisition_source_id: str = ""
-    precursor_mz_basis: DirectPrecursorMzBasis = "scan_precursor"
+    precursor_mz_basis: RecordedPrecursorMzBasis = "scan_precursor"
     scan_precursor_mz: float | None = None
     precursor_metadata: Ms2PrecursorMetadata | None = None
 
@@ -63,13 +64,21 @@ class MS2ProductEvidence:
 def _matches_loss(
     evidence: MS2ProductEvidence, expected_loss_da: float, tolerance_ppm: float
 ) -> bool:
-    return neutral_loss_match(
-        evidence.precursor_mz,
-        evidence.product_mz,
-        expected_loss_da,
-        tolerance_ppm,
-        observed_loss_da=evidence.observed_loss_da,
-    )[2]
+    return (
+        supports_direct_nl(
+            evidence.precursor_mz_basis,
+            evidence.precursor_mz,
+            evidence.scan_precursor_mz,
+            evidence.precursor_metadata,
+        )
+        and neutral_loss_match(
+            evidence.precursor_mz,
+            evidence.product_mz,
+            expected_loss_da,
+            tolerance_ppm,
+            observed_loss_da=evidence.observed_loss_da,
+        )[2]
+    )
 
 
 @dataclass(frozen=True)
@@ -207,7 +216,7 @@ def find_nl_anchor_rt(
     for event in window.events:
         if event.parse_error is not None or event.scan is None:
             continue
-        if not scan_supports_precursor(
+        if not scan_has_precursor_candidate(
             event.scan, precursor_mz, ms2_precursor_tol_da, nl_ppm_max
         ):
             continue
@@ -265,7 +274,7 @@ def check_nl(
             continue
 
         valid_count += 1
-        if not scan_supports_precursor(
+        if not scan_has_precursor_candidate(
             event.scan, precursor_mz, ms2_precursor_tol_da, nl_ppm_max
         ):
             continue
@@ -346,7 +355,7 @@ def collect_candidate_ms2_evidence(
         if event.parse_error is not None or event.scan is None:
             continue
         scan = event.scan
-        if not scan_supports_precursor(
+        if not scan_has_precursor_candidate(
             scan, precursor_mz, ms2_precursor_tol_da, nl_ppm_max
         ):
             continue
@@ -599,7 +608,7 @@ def _best_product_probe(
     min_intensity_ratio: float,
     diagnostic_ppm: float,
 ) -> MS2ProductProbe:
-    references = direct_precursor_references(scan, nl_ppm_max)
+    references = recorded_precursor_references(scan, nl_ppm_max)
     if not references:
         return MS2ProductProbe(
             evidence=None,

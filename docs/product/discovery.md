@@ -116,13 +116,18 @@ Producing a library alone does not enable qualification.
 
 ### Precursor inference
 
-- CID-NL direct seeds use either the selected scan precursor (`scan_precursor`)
+- CID-NL mass references use either the selected scan precursor (`scan_precursor`)
   or a distinguishable vendor-recorded monoisotopic precursor
   (`scan_monoisotopic`). The latter is recorded evidence independent of the
   product-plus-loss calculation. Selected m/z remains unchanged; charge, master
   MS1 scan number, isolation width and offset remain attached to the evidence.
   A missing/zero vendor value is unavailable, not a measured zero. This method
   assumes singly charged ions and rejects known incompatible charge.
+  Source and support are separate: `precursor_evidence` assesses nominal
+  isolation membership. A monoisotopic reference needs known in-window geometry
+  before it can support strict NL; outside/unknown references remain recorded
+  mass-compatible candidates. The selected precursor retains the existing method
+  when geometry is unavailable. Neither case proves unique chemical parentage.
 - Product-plus-loss inference stays inside the recorded isolation window:
   center = selected m/z + isolation offset, radius = the smaller of half the
   recorded width and `DiscoverySettings.ms2_precursor_tol_da`. When width is
@@ -132,10 +137,9 @@ Producing a library alone does not enable qualification.
   effective as the configured cap. Inference does not establish precursor
   identity or replace the direct NL mass tolerance.
 - MS2 cache and canonical CID-NL evidence retain the typed precursor metadata.
-  Old MS2 cache payloads lacking this contract are reacquired from RAW. Direct
-  monoisotopic evidence remains direct during strict replay and Backfill;
-  isotope-related ions remain distinct candidates. Vendor assignment alone
-  does not establish compound identity.
+  Old MS2 cache payloads lacking this contract are reacquired from RAW. Replay
+  retains recorded references and applies the same isolation assessment for
+  strict support and Backfill; isotope-related ions remain distinct candidates.
 - Physical trace context and precursor-identity confidence are separate. A
   `product_mz + neutral_loss` group starts with the bounded configured RT
   context; when that trace is too short for the active signal-processing
@@ -170,6 +174,11 @@ Producing a library alone does not enable qualification.
   rows cannot collide, and `tag_evidence_json` must retain precursor-basis,
   measured scan-precursor, and delta provenance. This is a public identity and
   replay contract even when the CSV column set is unchanged.
+  `tag_evidence_json.scan_receipts` retains each scan's precursor/product, source,
+  selected m/z, RT, independent loss error, and isolation/support assessment.
+  A strongest representative or `mixed` summary does not replace these receipts.
+  Product-plus-loss errors are null in JSON and blank in CSV; derived equality
+  supplies no independent error measurement and gets no zero-error ranking bonus.
 - Candidate CSV preserves the full floating-point representation of
   `configured_neutral_loss_da`. Downstream replay compares this configured
   method value with the bound preset; display rounding must not change it.
@@ -184,8 +193,9 @@ Producing a library alone does not enable qualification.
   assessment alongside direct evidence. Canonical evidence retains the precursor
   basis, actual scan precursor, and configured inference bound; an inferred
   precursor and its derived loss are not reported as directly measured facts.
-  Inferred evidence requires a qualifying relation to a usable physical MS1
-  peak to support the method. CrossSample and cell-decision owners still decide
+  An inferred precursor alone cannot grant a strict NL relation or detection
+  count. Its physical MS1 quantitation remains subject to the existing method
+  assessment and cell-decision policy. CrossSample and cell-decision owners decide
   identity, Backfill, and Matrix publication. Candidate eligibility alone
   grants none of these authorities.
 

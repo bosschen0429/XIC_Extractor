@@ -213,7 +213,7 @@ def test_isolation_offset_product_infers_monoisotopic_precursor_seed() -> None:
     assert seed.precursor_mz == pytest.approx(product_mz + NEUTRAL_LOSS_DA)
     assert seed.product_mz == pytest.approx(product_mz)
     assert seed.observed_neutral_loss_da == pytest.approx(NEUTRAL_LOSS_DA)
-    assert seed.observed_loss_error_ppm == 0.0
+    assert seed.observed_loss_error_ppm is None
     evidence = json.loads(seed.tag_evidence_json)
     assert evidence["DNA_dR"]["precursor_mz_basis"] == "product_plus_neutral_loss"
     assert evidence["DNA_dR"]["scan_precursor_mz"] == pytest.approx(
@@ -335,9 +335,7 @@ def test_observed_loss_error_equal_to_tolerance_is_accepted() -> None:
     assert seeds[0].observed_loss_error_ppm == pytest.approx(10.0)
 
 
-def test_matching_products_rank_by_loss_error_then_intensity() -> (
-    None
-):
+def test_matching_products_rank_by_loss_error_then_intensity() -> None:
     precursor_mz = 258.1085
     best_by_error = _product_for_loss_ppm(precursor_mz=precursor_mz, ppm=3.0)
     tied_higher_intensity = _product_for_loss_ppm(precursor_mz=precursor_mz, ppm=-3.0)

@@ -375,7 +375,7 @@ def _parse_candidate_row(
         configured_neutral_loss_da=_parse_float(
             path, row_number, row, "configured_neutral_loss_da"
         ),
-        neutral_loss_mass_error_ppm=_parse_float(
+        neutral_loss_mass_error_ppm=_parse_optional_float(
             path, row_number, row, "neutral_loss_mass_error_ppm"
         ),
         neutral_loss_error_basis=_parse_neutral_loss_error_basis(

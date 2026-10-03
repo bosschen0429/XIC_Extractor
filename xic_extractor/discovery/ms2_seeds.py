@@ -17,8 +17,8 @@ from xic_extractor.discovery.models import (
 from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 from xic_extractor.precursor_evidence import (
-    direct_precursor_references,
     precursor_inference_bounds,
+    recorded_precursor_references,
 )
 
 
@@ -77,7 +77,7 @@ def _seeds_from_scan_profile(
     profile: NeutralLossProfile,
 ) -> tuple[DiscoverySeed, ...]:
     neutral_loss_da = profile.neutral_loss_da
-    references = direct_precursor_references(scan, settings.nl_tolerance_ppm)
+    references = recorded_precursor_references(scan, settings.nl_tolerance_ppm)
     if not references or scan.base_peak <= 0.0 or neutral_loss_da <= 0.0:
         return ()
 
@@ -173,7 +173,7 @@ def _seeds_from_scan_profile(
                 product_intensity=float(intensities[int(index)]),
                 neutral_loss_da=neutral_loss_da,
                 observed_loss_da=neutral_loss_da,
-                observed_loss_error_ppm=0.0,
+                observed_loss_error_ppm=None,
                 tolerance_ppm=settings.nl_tolerance_ppm,
                 precursor_mz_basis="product_plus_neutral_loss",
             )
@@ -229,7 +229,7 @@ def _build_seed(
     product_intensity: float,
     neutral_loss_da: float,
     observed_loss_da: float,
-    observed_loss_error_ppm: float,
+    observed_loss_error_ppm: float | None,
     tolerance_ppm: float,
     precursor_mz_basis: PrecursorMzBasis,
 ) -> DiscoverySeed:
@@ -282,7 +282,13 @@ def _dedupe_seed_candidates(
 
 
 def _seed_candidate_rank(seed: DiscoverySeed) -> tuple[float, float, int]:
-    return (seed.observed_loss_error_ppm, -seed.product_intensity, seed.scan_number)
+    return (
+        seed.observed_loss_error_ppm
+        if seed.observed_loss_error_ppm is not None
+        else float("inf"),
+        -seed.product_intensity,
+        seed.scan_number,
+    )
 
 
 def _tag_evidence_json(
@@ -292,7 +298,7 @@ def _tag_evidence_json(
     precursor_mz: float,
     product_mz: float,
     product_intensity: float,
-    observed_loss_error_ppm: float,
+    observed_loss_error_ppm: float | None,
     neutral_loss_da: float,
     tolerance_ppm: float,
     precursor_mz_basis: PrecursorMzBasis,
@@ -316,7 +322,9 @@ def _tag_evidence_json(
             "product_mz": product_mz,
             "max_intensity": product_intensity,
             "neutral_loss_error_ppm": observed_loss_error_ppm,
-            "neutral_loss_error_da": loss_error_da,
+            "neutral_loss_error_da": loss_error_da
+            if observed_loss_error_ppm is not None
+            else None,
             "neutral_loss_window_da": loss_window_da,
         }
     }

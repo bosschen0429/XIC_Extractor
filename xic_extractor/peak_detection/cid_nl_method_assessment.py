@@ -418,6 +418,8 @@ def resolve_cid_nl_method_relations(
     set_refs: list[DdaCidNlCandidateSetRelationRef] = []
     for evidence in evidence_refs:
         observation = evidence.observation
+        if not observation.supports_direct_nl:
+            continue
         mz_compatible = tuple(
             peak
             for peak in candidate_peaks
@@ -940,6 +942,8 @@ def _validate_upstream_bindings(
     settled_evidence_ids = individual_evidence_ids | set_relation_evidence_ids
     for evidence_content_id, evidence in evidence_by_content_id.items():
         observation = evidence.observation
+        if not observation.supports_direct_nl:
+            continue
         if not neutral_loss_match(
             observation.precursor_mz,
             observation.product_mz,
@@ -1063,7 +1067,8 @@ def _method_result(
     if set_relation_refs:
         return "HOLD", ("set_level_relation",)
     if not candidate_peaks and any(
-        neutral_loss_match(
+        evidence.observation.supports_direct_nl
+        and neutral_loss_match(
             evidence.observation.precursor_mz,
             evidence.observation.product_mz,
             evidence.observation.configured_neutral_loss_da,

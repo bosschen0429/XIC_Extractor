@@ -22,6 +22,8 @@ from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 from xic_extractor.precursor_evidence import (
     PrecursorMzBasis,
     precursor_inference_bounds,
+    precursor_isolation_membership,
+    supports_direct_nl,
 )
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
@@ -59,8 +61,8 @@ class CidNlEvidenceContractError(ValueError):
 class CidNlEvidenceObservation:
     """CID-NL facts with an explicit measured or product-derived precursor.
 
-    For inferred precursors, observed loss and its error describe the derived
-    precursor minus product; ``scan_precursor_mz`` retains the actual scan value.
+    Inferred loss is a derivation with no independent error measurement.
+    ``scan_precursor_mz`` retains the actual selected scan value.
     """
 
     canonical_sample_identity_id: str
@@ -71,13 +73,22 @@ class CidNlEvidenceObservation:
     product_mz: float
     configured_neutral_loss_da: float
     observed_neutral_loss_da: float
-    observed_loss_error_ppm: float
+    observed_loss_error_ppm: float | None
     scan_rt_min: float
     product_intensity: float
     precursor_mz_basis: PrecursorMzBasis
     scan_precursor_mz: float
     precursor_inference_tolerance_da: float | None
     precursor_metadata: Ms2PrecursorMetadata | None = None
+
+    @property
+    def supports_direct_nl(self) -> bool:
+        return supports_direct_nl(
+            self.precursor_mz_basis,
+            self.precursor_mz,
+            self.scan_precursor_mz,
+            self.precursor_metadata,
+        )
 
     def __post_init__(self) -> None:
         _validate_typed_id(
@@ -105,7 +116,6 @@ class CidNlEvidenceObservation:
             "product_mz",
             "configured_neutral_loss_da",
             "observed_neutral_loss_da",
-            "observed_loss_error_ppm",
             "scan_rt_min",
             "product_intensity",
             "scan_precursor_mz",
@@ -191,7 +201,27 @@ class CidNlEvidenceObservation:
             raise CidNlEvidenceContractError(
                 "observed_neutral_loss_da must be positive"
             )
-        if self.observed_loss_error_ppm < 0.0:
+        if self.precursor_mz_basis == "product_plus_neutral_loss":
+            if self.observed_loss_error_ppm is not None:
+                raise CidNlEvidenceContractError(
+                    "inferred precursor has no independent observed_loss_error_ppm"
+                )
+        else:
+            if self.observed_loss_error_ppm is None:
+                raise CidNlEvidenceContractError(
+                    "recorded precursor requires observed_loss_error_ppm"
+                )
+            object.__setattr__(
+                self,
+                "observed_loss_error_ppm",
+                _finite_float(
+                    self.observed_loss_error_ppm, field="observed_loss_error_ppm"
+                ),
+            )
+        if (
+            self.observed_loss_error_ppm is not None
+            and self.observed_loss_error_ppm < 0.0
+        ):
             raise CidNlEvidenceContractError(
                 "observed_loss_error_ppm must be non-negative"
             )
@@ -215,7 +245,7 @@ class CidNlEvidenceObservation:
             / self.configured_neutral_loss_da
             * 1_000_000.0
         )
-        if not math.isclose(
+        if self.observed_loss_error_ppm is not None and not math.isclose(
             self.observed_loss_error_ppm,
             expected_error_ppm,
             rel_tol=1e-12,
@@ -270,7 +300,7 @@ def mint_cid_nl_evidence_ref(
     product_mz: float,
     configured_neutral_loss_da: float,
     observed_neutral_loss_da: float,
-    observed_loss_error_ppm: float,
+    observed_loss_error_ppm: float | None,
     scan_rt_min: float,
     product_intensity: float,
     precursor_mz_basis: PrecursorMzBasis = "scan_precursor",
@@ -347,6 +377,12 @@ def canonical_cid_nl_evidence_bytes(
         "scan_number": observation.scan_number,
         "precursor_mz": observation.precursor_mz,
         "precursor_mz_basis": observation.precursor_mz_basis,
+        "precursor_isolation_membership": precursor_isolation_membership(
+            observation.precursor_mz,
+            observation.scan_precursor_mz,
+            observation.precursor_metadata,
+        ),
+        "supports_direct_nl": observation.supports_direct_nl,
         "scan_precursor_mz": observation.scan_precursor_mz,
         "precursor_metadata": asdict(observation.precursor_metadata)
         if observation.precursor_metadata is not None

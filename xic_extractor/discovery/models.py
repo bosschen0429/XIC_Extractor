@@ -9,6 +9,7 @@ from xic_extractor.discovery.evidence_config import (
 )
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 from xic_extractor.precursor_evidence import PrecursorMzBasis as PrecursorMzBasis
+from xic_extractor.precursor_evidence import supports_direct_nl
 from xic_extractor.settings_schema import normalize_resolver_mode
 
 if TYPE_CHECKING:
@@ -200,13 +201,22 @@ class DiscoverySeed:
     neutral_loss_tag: str
     configured_neutral_loss_da: float
     observed_neutral_loss_da: float
-    observed_loss_error_ppm: float
+    observed_loss_error_ppm: float | None
     matched_tag_names: tuple[str, ...] = ()
     tag_evidence_json: str = "{}"
     scan_precursor_mz: float | None = None
     precursor_mz_basis: PrecursorMzBasis = "scan_precursor"
     precursor_metadata: Ms2PrecursorMetadata | None = None
     acquisition_source_id: str = ""
+
+    @property
+    def supports_direct_nl(self) -> bool:
+        return supports_direct_nl(
+            self.precursor_mz_basis,
+            self.precursor_mz,
+            self.scan_precursor_mz,
+            self.precursor_metadata,
+        )
 
 
 @dataclass(frozen=True)
@@ -219,7 +229,7 @@ class DiscoverySeedGroup:
     precursor_mz: float
     product_mz: float
     observed_neutral_loss_da: float
-    neutral_loss_mass_error_ppm: float
+    neutral_loss_mass_error_ppm: float | None
     rt_seed_min: float
     rt_seed_max: float
     matched_tag_names: tuple[str, ...] = ()
@@ -348,7 +358,7 @@ class DiscoveryCandidate:
     seed_scan_ids: tuple[int, ...]
     neutral_loss_tag: str
     configured_neutral_loss_da: float
-    neutral_loss_mass_error_ppm: float
+    neutral_loss_mass_error_ppm: float | None
     rt_seed_min: float
     rt_seed_max: float
     ms1_search_rt_min: float
@@ -401,7 +411,7 @@ class DiscoveryCandidate:
         seed_scan_ids: tuple[int, ...],
         neutral_loss_tag: str,
         configured_neutral_loss_da: float,
-        neutral_loss_mass_error_ppm: float,
+        neutral_loss_mass_error_ppm: float | None,
         rt_seed_min: float,
         rt_seed_max: float,
         ms1_search_rt_min: float,
@@ -431,6 +441,7 @@ class DiscoveryCandidate:
         discovery_candidate_state = assign_discovery_candidate_state(
             ms1_peak_found=ms1_peak_found,
             precursor_mz_basis=precursor_mz_basis,
+            has_direct_nl_support=best_seed.supports_direct_nl,
         )
         return cls(
             review_priority=review_priority,
@@ -570,10 +581,14 @@ def assign_discovery_candidate_state(
     *,
     ms1_peak_found: bool,
     precursor_mz_basis: GroupPrecursorMzBasis,
+    has_direct_nl_support: bool,
 ) -> DiscoveryCandidateState:
     if not ms1_peak_found:
         return "review_only_orphan_nl"
-    if precursor_mz_basis in {"product_plus_neutral_loss", "mixed"}:
+    if not has_direct_nl_support or precursor_mz_basis in {
+        "product_plus_neutral_loss",
+        "mixed",
+    }:
         return "ms1_feature_nl_rescued"
     return "ms1_feature_nl_supported"
 

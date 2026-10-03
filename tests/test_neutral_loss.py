@@ -1057,8 +1057,11 @@ class _FakeCandidate:
 
 
 @pytest.mark.parametrize("charge", (None, 1, 2))
+@pytest.mark.parametrize("width,supported", [(1.6, False), (2.4, True)])
 def test_targeted_monoisotopic_evidence_uses_recorded_precursor_and_counts_scan_once(
     charge,
+    width,
+    supported,
 ):
     from dataclasses import replace
 
@@ -1067,7 +1070,8 @@ def test_targeted_monoisotopic_evidence_uses_recorded_precursor_and_counts_scan_
     metadata = Ms2PrecursorMetadata(
         monoisotopic_mz=300.1615,
         charge=charge,
-        isolation_width_da=1.6,
+        isolation_width_da=width,
+        isolation_offset_da=0.0,
         master_scan_number=19522,
     )
     event = _scan_event(
@@ -1100,9 +1104,10 @@ def test_targeted_monoisotopic_evidence_uses_recorded_precursor_and_counts_scan_
         assert result.status == "NO_MS2"
         assert evidence.best_product_evidence is None
         return
-    assert anchor == 8.1
-    assert result.status == "OK"
-    assert evidence.strict_nl_scan_count == evidence.trigger_scan_count == 1
+    assert anchor == (8.1 if supported else None)
+    assert result.status == ("OK" if supported else "NL_FAIL")
+    assert evidence.trigger_scan_count == 1
+    assert evidence.strict_nl_scan_count == int(supported)
     product = evidence.best_product_evidence
     assert product.precursor_mz == 300.1615
     assert product.scan_precursor_mz == event.scan.precursor_mz

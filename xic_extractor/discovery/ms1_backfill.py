@@ -72,9 +72,6 @@ _APEX_ION_SPREAD_PPM = 5.0
 _DOUBLY_CHARGED_ISOTOPE_SPACING_MZ = 1.0033548 / 2
 
 
-
-
-
 class MS1XicSource(Protocol):
     def extract_xic(
         self,
@@ -1137,7 +1134,9 @@ def _best_seed(seeds: Iterable[DiscoverySeed]) -> DiscoverySeed:
         seeds,
         key=lambda seed: (
             -seed.product_intensity,
-            abs(seed.observed_loss_error_ppm),
+            abs(seed.observed_loss_error_ppm)
+            if seed.observed_loss_error_ppm is not None
+            else float("inf"),
             seed.rt,
             seed.scan_number,
         ),

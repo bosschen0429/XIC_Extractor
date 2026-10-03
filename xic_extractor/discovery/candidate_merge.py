@@ -358,6 +358,10 @@ def _merge_candidate_pair(
         discovery_candidate_state=assign_discovery_candidate_state(
             ms1_peak_found=True,
             precursor_mz_basis=precursor_mz_basis,
+            has_direct_nl_support=any(
+                item.discovery_candidate_state == "ms1_feature_nl_supported"
+                for item in (first, second)
+            ),
         ),
         ms1_feature_row_id=build_ms1_feature_row_id(
             sample_stem=representative.sample_stem,
@@ -511,7 +515,9 @@ def _representative_candidate(
         key=lambda candidate: (
             _tag_rank(candidate.neutral_loss_tag, settings=settings),
             -candidate.ms2_product_max_intensity,
-            abs(candidate.neutral_loss_mass_error_ppm),
+            abs(candidate.neutral_loss_mass_error_ppm)
+            if candidate.neutral_loss_mass_error_ppm is not None
+            else float("inf"),
             candidate.best_seed_rt,
             candidate.best_ms2_scan_id,
         ),
@@ -699,6 +705,8 @@ def _merge_tag_evidence_entry(
     }
     if scan_receipts:
         merged["scan_receipts"] = scan_receipts
+    if first.get("precursor_mz_basis") != second.get("precursor_mz_basis"):
+        merged["precursor_mz_basis"] = "mixed"
 
     scan_ids = sorted(
         set(_int_values(first.get("scan_ids")))
@@ -772,6 +780,9 @@ def _merge_max_intensity_fields(
         "neutral_loss_error_ppm",
         "neutral_loss_error_da",
         "neutral_loss_window_da",
+        "scan_precursor_mz",
+        "precursor_metadata",
+        "scan_precursor_delta_da",
     ):
         if key in winner:
             merged[key] = winner[key]

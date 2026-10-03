@@ -375,6 +375,10 @@ def _set_level_members(
     policy: DdaCidNlPeakSupportPolicy,
 ) -> tuple[PeakObservationRef, ...]:
     observation = canonical_evidence.observation
+    if not observation.supports_direct_nl:
+        raise DdaCidNlCandidateSetRelationContractError(
+            "CID-NL evidence lacks independent precursor isolation support"
+        )
     mz_compatible = tuple(
         peak
         for peak in candidate_peaks

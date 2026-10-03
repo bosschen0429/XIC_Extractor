@@ -209,12 +209,22 @@ def mint_untargeted_cid_nl_projection_ref(
         observation.observed_neutral_loss_da,
         field="observed_neutral_loss_da",
     )
-    _require_close(
-        discovery_seed.observed_loss_error_ppm,
-        observation.observed_loss_error_ppm,
-        field="observed_loss_error_ppm",
-        abs_tol=1e-9,
-    )
+    if (
+        discovery_seed.observed_loss_error_ppm is None
+        or observation.observed_loss_error_ppm is None
+    ):
+        if (
+            discovery_seed.observed_loss_error_ppm
+            != observation.observed_loss_error_ppm
+        ):
+            raise UntargetedCidNlProjectionError("observed_loss_error_ppm mismatches")
+    else:
+        _require_close(
+            discovery_seed.observed_loss_error_ppm,
+            observation.observed_loss_error_ppm,
+            field="observed_loss_error_ppm",
+            abs_tol=1e-9,
+        )
 
     projection = UntargetedCidNlProjectionRef(
         canonical_sample_identity_id=sample.identity.sample_identity_id,

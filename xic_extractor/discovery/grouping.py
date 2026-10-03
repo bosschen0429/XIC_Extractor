@@ -13,6 +13,7 @@ from xic_extractor.discovery.models import (
     NeutralLossErrorBasis,
 )
 from xic_extractor.mass_accuracy import neutral_loss_match, within_ppm
+from xic_extractor.precursor_evidence import precursor_isolation_membership
 
 
 def group_discovery_seeds(
@@ -119,7 +120,9 @@ def _best_seed(seeds: Iterable[DiscoverySeed]) -> DiscoverySeed:
         seeds,
         key=lambda seed: (
             -seed.product_intensity,
-            abs(seed.observed_loss_error_ppm),
+            abs(seed.observed_loss_error_ppm)
+            if seed.observed_loss_error_ppm is not None
+            else float("inf"),
             seed.rt,
             seed.scan_number,
         ),
@@ -133,12 +136,14 @@ def _merge_seed_evidence(
     seeds: list[DiscoverySeed], *, settings: DiscoverySettings
 ) -> str:
     by_tag: dict[str, dict[str, object]] = {}
+    best_seed = _best_seed(seeds)
     for seed in seeds:
         entry = by_tag.setdefault(
             seed.neutral_loss_tag,
             {
                 "scan_count": 0,
                 "scan_ids": [],
+                "scan_receipts": {},
                 "rt_min": seed.rt,
                 "rt_max": seed.rt,
                 "precursor_mz_basis": seed.precursor_mz_basis,
@@ -168,9 +173,22 @@ def _merge_seed_evidence(
         scan_ids = list(cast(list[int], entry["scan_ids"]))
         scan_ids.append(seed.scan_number)
         entry["scan_ids"] = sorted(set(scan_ids))
+        receipts = cast(dict[str, object], entry["scan_receipts"])
+        receipts[str(seed.scan_number)] = {
+            "precursor_mz": seed.precursor_mz,
+            "product_mz": seed.product_mz,
+            "scan_rt": seed.rt,
+            "precursor_mz_basis": seed.precursor_mz_basis,
+            "scan_precursor_mz": seed.scan_precursor_mz,
+            "neutral_loss_error_ppm": seed.observed_loss_error_ppm,
+            "precursor_isolation_membership": precursor_isolation_membership(
+                seed.precursor_mz, seed.scan_precursor_mz, seed.precursor_metadata
+            ),
+            "supports_direct_nl": seed.supports_direct_nl,
+        }
         entry["rt_min"] = min(cast(float, entry["rt_min"]), seed.rt)
         entry["rt_max"] = max(cast(float, entry["rt_max"]), seed.rt)
-        strongest_scan = seed.product_intensity > cast(float, entry["max_intensity"])
+        strongest_scan = seed is best_seed
         if strongest_scan:
             entry["product_mz"] = seed.product_mz
             entry["max_intensity"] = seed.product_intensity
@@ -196,7 +214,9 @@ def _merge_seed_evidence(
                 settings.nl_tolerance_ppm,
                 observed_loss_da=seed.observed_neutral_loss_da,
             )
-            entry["neutral_loss_error_da"] = loss_error_da
+            entry["neutral_loss_error_da"] = (
+                loss_error_da if seed.observed_loss_error_ppm is not None else None
+            )
             entry["neutral_loss_window_da"] = loss_window_da
     return json.dumps(by_tag, sort_keys=True, separators=(",", ":"))
 

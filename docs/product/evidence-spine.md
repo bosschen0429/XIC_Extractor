@@ -24,8 +24,11 @@ workflow owns those decisions.
   - The Targeted adapter must also match the exact request-pinned target
     snapshot and scan number. Its measured scan precursor must remain within
     the ppm tolerance of that exact target.
-  - Direct Discovery must carry a finite measured `scan_precursor_mz` equal to
-    the canonical evidence precursor.
+  - Discovery preserves selected m/z separately from vendor monoisotopic
+    assignment and product-plus-loss derivation. Canonical evidence retains
+    nominal isolation membership independently from source; inferred loss error
+    is unavailable, not zero. Recorded mass compatibility alone grants no
+    precursor–product relation.
   - Neither projection artifact is a selection or delivery decision.
 - The existing `peak_detection` owner exposes a bounded `PeakObservationRef`.
   - The physical content of a `PeakObservationRef` is canonical sample
@@ -46,6 +49,12 @@ workflow owns those decisions.
   artifact to exactly one physical MS1 peak within the exact supplied candidate
   universe. DIA is outside this contract because there is no mature lab DIA
   analysis method.
+  Strict relations require an independent precursor reference with compatible
+  nominal isolation. An outside/unknown monoisotopic assignment or product-based
+  derivation remains evidence without individual or candidate-set NL support.
+  The selected scan precursor retains acquisition support when geometry is
+  unavailable. Final detection and numeric authority remain with the existing
+  method assessment and cell-decision owners.
 - `CidNlChromatographicSupportRef` then preserves one or more exact strict DDA
   scan relations while collapsing them to one chromatographic support event
   for that physical peak. Scan reorder is identity-neutral; duplicate scans or

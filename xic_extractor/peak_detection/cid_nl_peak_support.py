@@ -57,6 +57,10 @@ def resolve_dda_cid_nl_peak_support_ref(
     )
 
     observation = canonical_evidence.observation
+    if not observation.supports_direct_nl:
+        raise DdaCidNlPeakSupportContractError(
+            "CID-NL evidence lacks independent precursor isolation support"
+        )
     if not neutral_loss_match(
         observation.precursor_mz,
         observation.product_mz,
@@ -200,6 +204,7 @@ def _support_content(
     observation = canonical_evidence.observation
     peak_content = peak_observation.content
     integration = peak_content.integration
+    assert observation.observed_loss_error_ppm is not None
     return DdaCidNlPeakSupportContent(
         canonical_sample_identity_id=sample.identity.sample_identity_id,
         cid_nl_evidence_content_id=(
@@ -235,7 +240,8 @@ def _matches_observation(
     peak_content = peak_observation.content
     integration = peak_content.integration
     return (
-        integration.rt_left_min
+        observation.supports_direct_nl
+        and integration.rt_left_min
         <= observation.scan_rt_min
         <= integration.rt_right_min
         and abs(observation.precursor_mz - peak_content.mz) <= precursor_tolerance_da

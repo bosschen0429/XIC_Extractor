@@ -101,7 +101,6 @@ from xic_extractor.peak_detection.search_scope import (
     UntargetedSearchScope,
 )
 from xic_extractor.peak_detection.traces import Trace, trace_from_xic_request
-from xic_extractor.precursor_evidence import DIRECT_PRECURSOR_BASES
 from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
     canonical_current_attempt_artifact_closure,
@@ -891,11 +890,7 @@ def adapt_current_discovery_sample_subject(
         captures=captures,
         source_candidate_ids=tuple(item.candidate_id for item in bounded),
         strict_scan_count=len(
-            {
-                scan.scan_number
-                for scan, seed in scan_seeds
-                if seed.precursor_mz_basis in DIRECT_PRECURSOR_BASES
-            }
+            {scan.scan_number for scan, seed in scan_seeds if seed.supports_direct_nl}
         ),
         lineage_artifacts=lineage,
         capture_evidence=tuple(capture_evidence),
@@ -1293,7 +1288,7 @@ def _composite_backfill_evidence(
         for seed in discovery_seeds_from_scan(
             scan, raw_file=Path(sample.metadata.raw_stem), settings=settings
         ):
-            if seed.precursor_mz_basis not in DIRECT_PRECURSOR_BASES or not _within_ppm(
+            if not seed.supports_direct_nl or not _within_ppm(
                 seed.precursor_mz,
                 method_subject.precursor_mz,
                 method_subject.precursor_tolerance_ppm,
@@ -1699,13 +1694,12 @@ def _untargeted_search_scope(
         raise CidNlAcquisitionError(str(exc)) from exc
 
 
-def _supports_direct_precursor_assessment(
+def _has_recorded_precursor_reference(
     candidates: tuple[DiscoveryCandidate, ...],
 ) -> bool:
-    """Return whether the universe contains exact scan-precursor evidence."""
-
+    """Schedule RAW assessment; source labels alone do not grant NL support."""
     return any(
-        candidate.precursor_mz_basis in DIRECT_PRECURSOR_BASES
+        candidate.precursor_mz_basis in {"scan_precursor", "scan_monoisotopic"}
         for candidate in candidates
     )
 
@@ -1889,8 +1883,8 @@ __all__ = [
     "UNTARGETED_CID_NL_CAPTURE_TRACE_SOURCE",
     "UntargetedCidNlSampleTraceBatch",
     "UntargetedCidNlBackfillTraceBatch",
-    'CidNlAcquisitionError',
-    'CidNlAcquisitionResult',
+    "CidNlAcquisitionError",
+    "CidNlAcquisitionResult",
     "acquire_untargeted_cid_nl_sample_trace_batch",
     "acquire_untargeted_cid_nl_backfill_trace_batch",
 ]

@@ -533,7 +533,8 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
         physical_records=(record,),
     )
     assessment = result.assessment_input.assessment
-    assert assessment.content.method_result == "SUPPORT"
+    assert assessment.content.method_result == "HOLD"
+    assert not assessment.individual_support_refs
     assert {e.observation.scan_number for e in assessment.evidence_refs} == {
         scan.scan_number for scan in source_raw.scans
     }
@@ -792,7 +793,7 @@ def test_adapter_preserves_strict_support_after_ms1_merge_of_inferred_scan(
 
 
 @pytest.mark.parametrize("ms1_present", [True, False])
-def test_inferred_precursor_support_requires_a_physical_ms1_peak(
+def test_inferred_precursor_retains_physical_peak_without_strict_nl_support(
     tmp_path: Path,
     ms1_present: bool,
 ) -> None:
@@ -830,7 +831,8 @@ def test_inferred_precursor_support_requires_a_physical_ms1_peak(
     assessment = result.assessment_input.assessment
     assert result.strict_scan_count == 0
     if ms1_present:
-        assert assessment.content.method_result == "SUPPORT"
+        assert assessment.content.method_result == "HOLD"
+        assert not assessment.individual_support_refs
         assert len(assessment.candidate_peaks) == 1
         assert {ref.observation.scan_number for ref in assessment.evidence_refs} == {
             scan.scan_number for scan in source_raw.scans
@@ -1815,4 +1817,8 @@ def test_strict_replay_retains_two_recorded_precursors_from_one_scan(tmp_path):
     }
     assert all(
         seed.precursor_metadata == scan.precursor_metadata for scan, seed in seeds
+    )
+    assert all(
+        seed.supports_direct_nl == (seed.precursor_mz_basis == "scan_precursor")
+        for _, seed in seeds
     )
