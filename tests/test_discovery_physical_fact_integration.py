@@ -1413,3 +1413,74 @@ def test_a_selected_precursor_carries_a_peak_with_two_ions(
         "ms1_feature_nl_supported",
         "ms1_feature_nl_rescued",
     }
+
+
+@pytest.mark.parametrize("has_isotope", [False, True])
+@pytest.mark.parametrize("shared_request_count", [1, 2])
+def test_inferred_precursor_rechecks_isotope_after_point_reacquisition(
+    tmp_path: Path, has_isotope: bool, shared_request_count: int,
+) -> None:
+    raw_path = tmp_path / "TumorBC2312_DNA.raw"
+    raw_path.write_bytes(b"owner-bound-discovery")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    full_rt = np.arange(11.05, 13.25, 0.10, dtype=float)
+    full_intensity = 100.0 + 10_000.0 * np.exp(
+        -0.5 * ((full_rt - 12.15) / 0.03) ** 2
+    )
+    raw = _CadenceBoundRaw(source, full_rt, full_intensity)
+    profile = SignalProcessingProfile(window_points=15)
+    # Inferred-only basis exercises apex/isotope reading. Two high-intensity
+    # inferred seeds provide the existing authority for point reacquisition.
+    group = _group(
+        tuple(
+            replace(
+                _seed(scan_number=scan, rt=rt, product_intensity=1_000_000.0),
+                precursor_mz_basis="product_plus_neutral_loss",
+            )
+            for scan, rt in ((10, 12.063), (11, 12.181))
+        )
+    )
+    assert group.precursor_mz_basis == "product_plus_neutral_loss"
+    ion_mz = group.precursor_mz * (1 + 1e-6)
+    isotope_mz = ion_mz + 1.0033548 / 2
+
+    readings = []
+
+    def read_ion(rt: float, low: float, high: float) -> float | None:
+        readings.append((rt, low, high))
+        ions = (ion_mz, isotope_mz) if has_isotope else (ion_mz,)
+        return next((mz for mz in ions if low <= mz <= high), None)
+
+    result = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        (group,) * shared_request_count,
+        acquisition_source=source,
+        run_spec_id=_TEST_RUN_SPEC_ID,
+        settings=_backfill_settings(),
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=profile,
+        ms1_centroid_mz=read_ion,
+    )
+    first, reacquired = result.measurements.acquisition_batches
+    assert result.measurements.reacquisition_request_count == 1
+    assert first.traces[0].coordinate.trace_point_count < profile.window_points
+    assert reacquired.traces[0].coordinate.trace_point_count >= profile.window_points
+    (record,) = result.physical_evaluations
+    assert record.evaluation.state == "available"
+    (candidate,) = result.candidates
+    assert candidate.ms1_peak_found is True
+    expected_state = (
+        "review_only_ambiguous_coisolation" if has_isotope else "ms1_feature_nl_rescued"
+    )
+    assert candidate.discovery_candidate_state == expected_state
+    assert ("doubly charged" in candidate.reason) is has_isotope
+    assert candidate.ms1_apex_mz == pytest.approx(ion_mz)
+    (binding,) = result.physical_bindings
+    assert binding.candidate.discovery_candidate_state == expected_state
+    # Three final apex scans, each read for ion and isotope, once per physical
+    # request even when two seed groups reuse the resulting fact.
+    assert len(readings) == 6

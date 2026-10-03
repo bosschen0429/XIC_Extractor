@@ -283,13 +283,6 @@ def _backfill_ms1_candidates_with_acquisition(
             zip(physical_plans, acquired_traces, strict=True)
         ):
             evaluation = initial_physical_facts[physical_index].evaluation
-            ion_mz, doubly_charged = _apex_ion_reading(
-                plan, acquired, evaluation, ms1_centroid_mz=ms1_centroid_mz
-            )
-            if ion_mz is not None:
-                apex_ion_mz_by_index[physical_index] = ion_mz
-            if doubly_charged:
-                doubly_charged_indexes.add(physical_index)
             expanded = _expanded_physical_request_plan(
                 plan,
                 acquired,
@@ -364,6 +357,7 @@ def _backfill_ms1_candidates_with_acquisition(
     for plan, physical_index in zip(plans, physical_indices, strict=True):
         acquired = acquired_traces[physical_index]
         existing_fact = physical_fact_by_index.get(physical_index)
+        first_physical_use = existing_fact is None
         if existing_fact is None:
             existing_fact = initial_physical_facts.get(physical_index)
             if existing_fact is not None:
@@ -386,6 +380,23 @@ def _backfill_ms1_candidates_with_acquisition(
             physical_work_observer=physical_work_manifest.append,
             physical_evaluation_observer=physical_evaluations.append,
         )
+        if signal_processing_profile is not None and existing_fact is None:
+            if len(physical_evaluations) != len(physical_fact_by_index) + 1:
+                raise ValueError("Discovery physical evaluation was not recorded once")
+            physical_fact_by_index[physical_index] = physical_evaluations[-1]
+        if signal_processing_profile is not None and first_physical_use:
+            # The apex belongs to the final evaluation, including reacquisition.
+            # Shared groups consume the same ion/isotope reading once.
+            ion_mz, doubly_charged = _apex_ion_reading(
+                physical_plans[physical_index],
+                acquired,
+                physical_fact_by_index[physical_index].evaluation,
+                ms1_centroid_mz=ms1_centroid_mz,
+            )
+            if ion_mz is not None:
+                apex_ion_mz_by_index[physical_index] = ion_mz
+            if doubly_charged:
+                doubly_charged_indexes.add(physical_index)
         if physical_index in apex_ion_mz_by_index:
             candidate = replace(
                 candidate, ms1_apex_mz=apex_ion_mz_by_index[physical_index]
@@ -393,10 +404,6 @@ def _backfill_ms1_candidates_with_acquisition(
         candidates.append(candidate)
         if signal_processing_profile is not None:
             physical_trace_qualities[physical_index] = candidate.ms1_trace_quality
-        if signal_processing_profile is not None and existing_fact is None:
-            if len(physical_evaluations) != len(physical_fact_by_index) + 1:
-                raise ValueError("Discovery physical evaluation was not recorded once")
-            physical_fact_by_index[physical_index] = physical_evaluations[-1]
     merge_result = candidate_merge.merge_candidates_by_ms1_peak_with_lineage(
         candidates,
         settings=settings,
