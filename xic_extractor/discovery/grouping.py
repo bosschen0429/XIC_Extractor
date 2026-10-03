@@ -106,7 +106,7 @@ def _build_group(
         rt_seed_min=min(seed.rt for seed in seeds),
         rt_seed_max=max(seed.rt for seed in seeds),
         matched_tag_names=(best_seed.neutral_loss_tag,),
-        tag_evidence_json=_merge_seed_evidence(seeds, settings=settings),
+        tag_evidence_json=merge_seed_evidence(seeds, settings=settings),
         precursor_mz_basis=_group_precursor_mz_basis(seeds),
         neutral_loss_error_basis=_group_neutral_loss_error_basis(seeds),
         scan_precursor_mz=best_seed.scan_precursor_mz,
@@ -132,7 +132,7 @@ def _best_seed(seeds: Iterable[DiscoverySeed]) -> DiscoverySeed:
 _within_ppm = within_ppm
 
 
-def _merge_seed_evidence(
+def merge_seed_evidence(
     seeds: list[DiscoverySeed], *, settings: DiscoverySettings
 ) -> str:
     by_tag: dict[str, dict[str, object]] = {}
@@ -186,6 +186,16 @@ def _merge_seed_evidence(
             ),
             "supports_direct_nl": seed.supports_direct_nl,
         }
+        if seed.precursor_mz_basis == "product_plus_neutral_loss":
+            receipt = cast(dict[str, object], receipts[str(seed.scan_number)])
+            receipt["ms1_precursor_observation"] = (
+                asdict(seed.ms1_precursor_observation)
+                if seed.ms1_precursor_observation is not None
+                else None
+            )
+            receipt["precursor_verification"] = asdict(
+                seed.assess_precursor_loss(settings.nl_tolerance_ppm)
+            )
         entry["rt_min"] = min(cast(float, entry["rt_min"]), seed.rt)
         entry["rt_max"] = max(cast(float, entry["rt_max"]), seed.rt)
         strongest_scan = seed is best_seed

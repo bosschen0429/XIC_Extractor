@@ -47,6 +47,7 @@ from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRe
 from xic_extractor.discovery.strict_seed_receipts import (
     StrictSeedReceiptError,
     read_complete_discovery_scan_seeds,
+    read_parent_ms1_observations,
 )
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.mass_accuracy import within_ppm
@@ -807,7 +808,16 @@ def adapt_current_discovery_sample_subject(
             key=lambda item: item.content.peak_observation_content_id,
         )
     )
-    for _scan, raw_seed in scan_seeds:
+    verified_seeds = (
+        read_parent_ms1_observations(
+            bound_raw,
+            tuple(seed for _scan, seed in scan_seeds),
+            tolerance_ppm=settings.precursor_mz_tolerance_ppm,
+        )
+        if candidate_universe
+        else tuple(seed for _scan, seed in scan_seeds)
+    )
+    for raw_seed in verified_seeds:
         seed = replace(raw_seed, acquisition_source_id=source.acquisition_source_id)
         evidence = mint_cid_nl_evidence_ref(
             processing_owners=processing_owners,
@@ -823,6 +833,7 @@ def adapt_current_discovery_sample_subject(
             precursor_mz_basis=seed.precursor_mz_basis,
             scan_precursor_mz=seed.scan_precursor_mz,
             precursor_metadata=seed.precursor_metadata,
+            ms1_precursor_observation=seed.ms1_precursor_observation,
             precursor_inference_tolerance_da=(
                 settings.ms2_precursor_tol_da
                 if seed.precursor_mz_basis == "product_plus_neutral_loss"
@@ -890,7 +901,13 @@ def adapt_current_discovery_sample_subject(
         captures=captures,
         source_candidate_ids=tuple(item.candidate_id for item in bounded),
         strict_scan_count=len(
-            {scan.scan_number for scan, seed in scan_seeds if seed.supports_direct_nl}
+            {
+                ref.observation.scan_number
+                for ref in evidence_refs
+                if ref.observation.assess_precursor_loss(
+                    settings.nl_tolerance_ppm
+                ).supports_nl
+            }
         ),
         lineage_artifacts=lineage,
         capture_evidence=tuple(capture_evidence),

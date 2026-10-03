@@ -28,6 +28,7 @@ from xic_extractor.injection_timeline import (
     build_injection_timeline,
 )
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata, Ms2Scan, Ms2ScanEvent
+from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     IdentityContractError,
@@ -72,6 +73,7 @@ class _ThermoApi:
     trace_settings_factory: Callable[..., Any]
     mass_range_trace_type: Any
     ms2_order: Any
+    ms1_order: Any = None
 
 
 @dataclass(frozen=True)
@@ -237,6 +239,39 @@ class RawFileHandle:
         if not inside.any():
             return None
         return float(masses[inside][np.argmax(intensities[inside])])
+
+    def read_ms1_mass_windows(
+        self, requests: Sequence[tuple[int, float, float]]
+    ) -> tuple[Ms1PrecursorObservation | None, ...]:
+        """Read all positive centroids, once per exact MS1 scan in this batch."""
+        by_scan: dict[int, list[tuple[int, float, float]]] = defaultdict(list)
+        for index, (scan_number, low, high) in enumerate(requests):
+            by_scan[scan_number].append((index, low, high))
+        results: list[Ms1PrecursorObservation | None] = [None] * len(requests)
+        raw = self._raw_file
+        for scan_number, windows in by_scan.items():
+            if self._thermo.ms1_order is None or getattr(
+                raw.GetFilterForScanNumber(scan_number), "MSOrder", None
+            ) != self._thermo.ms1_order:
+                continue
+            spectrum = raw.GetCentroidStream(scan_number, False)
+            masses = np.asarray(getattr(spectrum, "Masses", None) or [], dtype=float)
+            intensities = np.asarray(
+                getattr(spectrum, "Intensities", None) or [], dtype=float
+            )
+            valid = (
+                np.isfinite(masses)
+                & np.isfinite(intensities)
+                & (masses > 0)
+                & (intensities > 0)
+            )
+            rt = float(raw.RetentionTimeFromScanNumber(scan_number))
+            for index, low, high in windows:
+                inside = valid & (masses >= low) & (masses <= high)
+                results[index] = Ms1PrecursorObservation(
+                    scan_number, rt, tuple(float(mz) for mz in masses[inside])
+                )
+        return tuple(results)
 
     def iter_ms2_scans(self, rt_min: float, rt_max: float) -> Iterator[Ms2ScanEvent]:
         yield from self._iter_ms2_scans(rt_min, rt_max, scan_numbers=None)
@@ -930,6 +965,7 @@ def _load_thermo_api(import_module_func: Callable[[str], Any]) -> _ThermoApi:
         trace_settings_factory=business.ChromatogramTraceSettings,
         mass_range_trace_type=business.TraceType.MassRange,
         ms2_order=filter_enums.MSOrderType.Ms2,
+        ms1_order=filter_enums.MSOrderType.Ms,
     )
 
 

@@ -856,6 +856,87 @@ def test_inferred_precursor_retains_physical_peak_without_strict_nl_support(
         assert result.acquisition is None
 
 
+def test_inferred_precursor_can_gain_support_from_measured_parent_ms1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True
+    )
+    source_raw = _FakeRaw((7.98, 8.0, 8.02))
+    source_raw.scans = tuple(
+        replace(
+            scan,
+            precursor_mz=500.5,
+            precursor_metadata=Ms2PrecursorMetadata(
+                charge=1,
+                isolation_width_da=1.6,
+                isolation_offset_da=0.0,
+                master_scan_number=scan.scan_number - 1,
+            ),
+        )
+        for scan in source_raw.scans
+    )
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    candidates = _current_candidates(
+        source_raw,
+        raw_file=fixture.source_paths["S1"],
+        settings=settings,
+        peak_config=peak_config,
+    )
+    raw, _vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+    monkeypatch.setattr(
+        type(raw),
+        "iter_ms2_scan_subset",
+        lambda self, lo, hi, ids: (
+            event
+            for event in source_raw.iter_ms2_scans(lo, hi)
+            if event.scan_number in ids
+        ),
+    )
+
+    def read_parent_windows(self, requests):
+        from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+
+        return tuple(
+            Ms1PrecursorObservation(
+                scan_number=number,
+                rt_min=float(source_raw.rt[number - 1]),
+                centroid_mzs=(500.001,),
+            )
+            for number, _low, _high in requests
+        )
+
+    monkeypatch.setattr(
+        type(raw), "read_ms1_mass_windows", read_parent_windows, raising=False
+    )
+    result = adapt_current_discovery_sample_subject(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        method_subject=fixture.method_subject,
+        candidates=candidates,
+        settings=settings,
+        peak_config=peak_config,
+        raw=raw,
+    )
+    assessment = result.assessment_input.assessment
+    assert assessment.content.method_result == "SUPPORT"
+    assert result.strict_scan_count == 3
+    assert len(assessment.candidate_peaks) == 1
+    assert len(assessment.individual_support_refs) == 3
+    for evidence in assessment.evidence_refs:
+        assert evidence.observation.precursor_mz_basis == "product_plus_neutral_loss"
+        assert evidence.observation.precursor_mz == 500.0
+        assert evidence.observation.observed_loss_error_ppm is None
+    for relation in assessment.individual_support_refs:
+        assert relation.content.precursor_mz == 500.001
+        assert relation.content.observed_loss_error_ppm == pytest.approx(
+            0.001 / 116.0474 * 1e6
+        )
+
+
 @pytest.mark.parametrize("moved_field", ["precursor_mz", "product_mz"])
 def test_inferred_precursor_off_its_scan_receipt_is_rejected(
     tmp_path: Path, moved_field: str

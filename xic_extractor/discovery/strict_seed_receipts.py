@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Protocol
 
@@ -34,6 +35,43 @@ class StrictSeedReceiptRaw(Protocol):
         rt_min: float,
         rt_max: float,
     ) -> Iterator[Ms2ScanEvent]: ...
+
+
+def read_parent_ms1_observations(
+    raw: object,
+    seeds: tuple[DiscoverySeed, ...],
+    *,
+    tolerance_ppm: float,
+) -> tuple[DiscoverySeed, ...]:
+    """Attach fresh parent-MS1 facts without changing a seed's search provenance."""
+    read_windows = getattr(raw, "read_ms1_mass_windows", None)
+    if not callable(read_windows):
+        return seeds
+    windows: dict[int, tuple[int, float, float]] = {}
+    for index, seed in enumerate(seeds):
+        metadata = seed.precursor_metadata
+        if (
+            seed.precursor_mz_basis != "product_plus_neutral_loss"
+            or metadata is None
+            or metadata.master_scan_number is None
+        ):
+            continue
+        radius = seed.precursor_mz * tolerance_ppm * 1e-6
+        windows[index] = (
+            metadata.master_scan_number,
+            seed.precursor_mz - radius,
+            seed.precursor_mz + radius,
+        )
+    if not windows:
+        return seeds
+    requests = tuple(dict.fromkeys(windows.values()))
+    observations = dict(zip(requests, read_windows(requests), strict=True))
+    return tuple(
+        replace(seed, ms1_precursor_observation=observations[windows[index]])
+        if index in windows
+        else seed
+        for index, seed in enumerate(seeds)
+    )
 
 
 def read_complete_discovery_scan_seeds(
@@ -391,4 +429,5 @@ __all__ = [
     "StrictSeedReceiptError",
     "StrictSeedReceiptRaw",
     "read_complete_discovery_scan_seeds",
+    "read_parent_ms1_observations",
 ]

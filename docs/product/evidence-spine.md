@@ -29,6 +29,11 @@ workflow owns those decisions.
     nominal isolation membership independently from source; inferred loss error
     is unavailable, not zero. Recorded mass compatibility alone grants no
     precursor–product relation.
+    A separate `Ms1PrecursorObservation` may retain the exact parent scan, RT
+    and positive centroids in an inferred precursor's search window. The pure
+    `precursor_evidence` owner assesses this measurement without rewriting the
+    candidate's origin; relation owners consume its mass/isolation answer and
+    qualify the physical peak interval.
   - Neither projection artifact is a selection or delivery decision.
 - The existing `peak_detection` owner exposes a bounded `PeakObservationRef`.
   - The physical content of a `PeakObservationRef` is canonical sample
@@ -50,8 +55,14 @@ workflow owns those decisions.
   universe. DIA is outside this contract because there is no mature lab DIA
   analysis method.
   Strict relations require an independent precursor reference with compatible
-  nominal isolation. An outside/unknown monoisotopic assignment or product-based
-  derivation remains evidence without individual or candidate-set NL support.
+  nominal isolation. An outside/unknown monoisotopic assignment or unverified
+  product-based derivation remains evidence without individual or candidate-set
+  NL support. An inferred seed can gain support from one independently measured
+  parent-MS1 centroid: measured precursor minus product must satisfy the existing
+  NL tolerance, the measured precursor must be inside nominal isolation, and
+  both parent MS1 and MS2 must lie inside the peak. Missing or ambiguous parent
+  ions do not qualify. Relations report the measured mass and actual residual;
+  the original inferred evidence retains its null loss error.
   The selected scan precursor retains acquisition support when geometry is
   unavailable. Final detection and numeric authority remain with the existing
   method assessment and cell-decision owners.

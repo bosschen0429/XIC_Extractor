@@ -60,6 +60,74 @@ def test_backfill_runs_real_peak_detection_with_extraction_config() -> None:
     assert candidate.ms1_seed_delta_min == pytest.approx(0.02)
 
 
+@pytest.mark.parametrize(
+    ("masses", "parent_rt", "status", "state"),
+    [
+        ((500.001,), 8.99, "compatible", "ms1_feature_nl_supported"),
+        ((), 8.99, "parent_ms1_ion_missing", "ms1_feature_nl_rescued"),
+        (
+            (500.001, 500.002),
+            8.99,
+            "parent_ms1_ion_ambiguous",
+            "ms1_feature_nl_rescued",
+        ),
+        ((500.001,), 8.6, "compatible", "ms1_feature_nl_rescued"),
+    ],
+)
+def test_discovery_verifies_inferred_seeds_after_ms1_without_moving_peak(
+    monkeypatch: pytest.MonkeyPatch, masses, parent_rt, status, state
+) -> None:
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+    from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+
+    group = _group(
+        tuple(
+            replace(
+                _seed(scan_number=number, rt=rt),
+                precursor_mz_basis="product_plus_neutral_loss",
+                observed_loss_error_ppm=None,
+                scan_precursor_mz=500.5,
+                precursor_metadata=Ms2PrecursorMetadata(
+                    master_scan_number=9,
+                    charge=1,
+                    isolation_width_da=1.6,
+                    isolation_offset_da=0.0,
+                ),
+            )
+            for number, rt in ((10, 9.0), (11, 9.01))
+        )
+    )
+    rt = np.linspace(8.6, 9.4, 161)
+    raw = _FakeRaw(rt=rt, intensity=_gaussian(rt, center=9.02, sigma=0.04, height=1000))
+    settings = _settings(ms1_search_padding_min=0.3)
+    baseline = backfill_ms1_candidates(
+        raw, (group,), settings=settings, peak_config=_peak_config()
+    )[0]
+    batches = []
+
+    def read_windows(self, requests):
+        batches.append(requests)
+        return (Ms1PrecursorObservation(9, parent_rt, masses),)
+
+    monkeypatch.setattr(_FakeRaw, "read_ms1_mass_windows", read_windows, raising=False)
+    candidate = backfill_ms1_candidates(
+        raw, (group,), settings=settings, peak_config=_peak_config()
+    )[0]
+    assert len(batches) == 1 and len(batches[0]) == 1
+    assert candidate.discovery_candidate_state == state
+    assert candidate.precursor_mz_basis == "product_plus_neutral_loss"
+    assert candidate.ms1_area == baseline.ms1_area
+    assert candidate.ms1_apex_rt == baseline.ms1_apex_rt
+    assert candidate.ms1_peak_rt_start == baseline.ms1_peak_rt_start
+    assert candidate.ms1_peak_rt_end == baseline.ms1_peak_rt_end
+    receipts = json.loads(candidate.tag_evidence_json)["DNA_dR"]["scan_receipts"]
+    assert set(receipts) == {"10", "11"}
+    for receipt in receipts.values():
+        assert receipt["precursor_verification"]["status"] == status
+        assert receipt["neutral_loss_error_ppm"] is None
+        assert receipt["precursor_mz"] == 500.0
+
+
 def test_backfill_extracts_group_precursor_xic_with_padded_rt_window_and_ppm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

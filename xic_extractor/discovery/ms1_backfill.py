@@ -19,12 +19,14 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.discovery import candidate_merge
+from xic_extractor.discovery.grouping import merge_seed_evidence
 from xic_extractor.discovery.models import (
     DiscoveryCandidate,
     DiscoveryPhysicalWorkItem,
     DiscoverySeed,
     DiscoverySeedGroup,
     DiscoverySettings,
+    assign_discovery_candidate_state,
     build_discovery_physical_selection_subject_id,
 )
 from xic_extractor.discovery.physical_fact_record import (
@@ -36,7 +38,8 @@ from xic_extractor.discovery.priority import (
     assign_review_priority,
     build_candidate_reason,
 )
-from xic_extractor.mass_accuracy import weighted_ion_mz
+from xic_extractor.discovery.strict_seed_receipts import read_parent_ms1_observations
+from xic_extractor.mass_accuracy import weighted_ion_mz, within_ppm
 from xic_extractor.peak_detection.background_shape import is_provisional_peak_shape
 from xic_extractor.peak_detection.models import PeakResult
 from xic_extractor.peak_detection.ms1_morphology import DEFAULT_GAUSSIAN15_WINDOW_POINTS
@@ -162,7 +165,8 @@ def backfill_ms1_candidates(
     """Preserve the scalar compatibility path for non-owner-bound callers."""
 
     candidates: list[DiscoveryCandidate] = []
-    for plan in _discovery_ms1_request_plan(groups, settings=settings):
+    plans = _discovery_ms1_request_plan(groups, settings=settings)
+    for plan in plans:
         request = plan.request
         rt, intensity = raw.extract_xic(
             request.mz,
@@ -179,7 +183,8 @@ def backfill_ms1_candidates(
                 peak_config=peak_config,
             )
         )
-    return candidate_merge.merge_candidates_by_ms1_peak(candidates, settings=settings)
+    verified = _verify_precursor_evidence(raw, candidates, plans, settings=settings)
+    return candidate_merge.merge_candidates_by_ms1_peak(verified, settings=settings)
 
 
 def _backfill_ms1_candidates_with_acquisition(
@@ -394,8 +399,9 @@ def _backfill_ms1_candidates_with_acquisition(
             if len(physical_evaluations) != len(physical_fact_by_index) + 1:
                 raise ValueError("Discovery physical evaluation was not recorded once")
             physical_fact_by_index[physical_index] = physical_evaluations[-1]
+    verified = _verify_precursor_evidence(raw, candidates, plans, settings=settings)
     merge_result = candidate_merge.merge_candidates_by_ms1_peak_with_lineage(
-        candidates,
+        verified,
         settings=settings,
         ms1_centroid_mz=ms1_centroid_mz,
     )
@@ -456,6 +462,62 @@ def _backfill_ms1_candidates_with_acquisition(
         ),
         physical_bindings=physical_bindings,
     )
+
+
+def _verify_precursor_evidence(
+    raw: object,
+    candidates: Sequence[DiscoveryCandidate],
+    plans: Sequence[_DiscoveryMs1RequestPlan],
+    *,
+    settings: DiscoverySettings,
+) -> tuple[DiscoveryCandidate, ...]:
+    """After physical capture, verify candidate origins without moving the peak."""
+    retained_seeds = tuple(
+        seed
+        for candidate, plan in zip(candidates, plans, strict=True)
+        if candidate.ms1_peak_found
+        for seed in plan.group.seeds
+    )
+    measured = read_parent_ms1_observations(
+        raw, retained_seeds, tolerance_ppm=settings.precursor_mz_tolerance_ppm
+    )
+    by_seed = dict(zip(retained_seeds, measured, strict=True))
+    verified: list[DiscoveryCandidate] = []
+    for candidate, plan in zip(candidates, plans, strict=True):
+        if not candidate.ms1_peak_found:
+            verified.append(candidate)
+            continue
+        seeds = [by_seed[seed] for seed in plan.group.seeds]
+        has_support = False
+        for seed in seeds:
+            assessment = seed.assess_precursor_loss(settings.nl_tolerance_ppm)
+            parent = seed.ms1_precursor_observation
+            support_rt = seed.rt if parent is None else parent.rt_min
+            if (
+                assessment.supports_nl
+                and assessment.reference_mz is not None
+                and within_ppm(
+                    assessment.reference_mz,
+                    candidate.physical_mz,
+                    settings.precursor_mz_tolerance_ppm,
+                )
+                and candidate.ms1_peak_rt_start is not None
+                and candidate.ms1_peak_rt_end is not None
+                and candidate.ms1_peak_rt_start <= support_rt
+                and seed.rt <= candidate.ms1_peak_rt_end
+            ):
+                has_support = True
+                break
+        verified.append(
+            replace(
+                candidate,
+                tag_evidence_json=merge_seed_evidence(seeds, settings=settings),
+                discovery_candidate_state=assign_discovery_candidate_state(
+                    ms1_peak_found=True, has_nl_support=has_support
+                ),
+            )
+        )
+    return tuple(verified)
 
 
 def _discovery_ms1_request_plan(

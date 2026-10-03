@@ -20,7 +20,10 @@ from xic_extractor.evidence_artifacts import (
 )
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 from xic_extractor.precursor_evidence import (
+    Ms1PrecursorObservation,
+    PrecursorLossAssessment,
     PrecursorMzBasis,
+    assess_precursor_loss,
     precursor_inference_bounds,
     precursor_isolation_membership,
     supports_direct_nl,
@@ -80,6 +83,27 @@ class CidNlEvidenceObservation:
     scan_precursor_mz: float
     precursor_inference_tolerance_da: float | None
     precursor_metadata: Ms2PrecursorMetadata | None = None
+    ms1_precursor_observation: Ms1PrecursorObservation | None = None
+
+    @property
+    def support_rt_min(self) -> float:
+        """Both the parent ion observation and its MS2 event must fit the peak."""
+        parent = self.ms1_precursor_observation
+        return self.scan_rt_min if parent is None else parent.rt_min
+
+    def assess_precursor_loss(self, tolerance_ppm: float) -> PrecursorLossAssessment:
+        return assess_precursor_loss(
+            basis=self.precursor_mz_basis,
+            precursor_mz=self.precursor_mz,
+            product_mz=self.product_mz,
+            neutral_loss_da=self.configured_neutral_loss_da,
+            observed_loss_da=self.observed_neutral_loss_da,
+            observed_loss_error_ppm=self.observed_loss_error_ppm,
+            tolerance_ppm=tolerance_ppm,
+            selected_mz=self.scan_precursor_mz,
+            metadata=self.precursor_metadata,
+            ms1_observation=self.ms1_precursor_observation,
+        )
 
     @property
     def supports_direct_nl(self) -> bool:
@@ -193,6 +217,18 @@ class CidNlEvidenceObservation:
                 )
         else:
             raise CidNlEvidenceContractError("precursor_mz_basis is not supported")
+        parent = self.ms1_precursor_observation
+        if parent is not None and (
+            not isinstance(parent, Ms1PrecursorObservation)
+            or self.precursor_mz_basis != "product_plus_neutral_loss"
+            or self.precursor_metadata is None
+            or parent.scan_number != self.precursor_metadata.master_scan_number
+            or parent.scan_number >= self.scan_number
+            or parent.rt_min > self.scan_rt_min
+        ):
+            raise CidNlEvidenceContractError(
+                "MS1 observation does not match the recorded parent"
+            )
         if self.configured_neutral_loss_da <= 0.0:
             raise CidNlEvidenceContractError(
                 "configured_neutral_loss_da must be positive"
@@ -307,6 +343,7 @@ def mint_cid_nl_evidence_ref(
     scan_precursor_mz: float | None = None,
     precursor_inference_tolerance_da: float | None = None,
     precursor_metadata: Ms2PrecursorMetadata | None = None,
+    ms1_precursor_observation: Ms1PrecursorObservation | None = None,
 ) -> CidNlEvidenceRef:
     """Mint source-bound evidence without reading an acquisition source.
 
@@ -349,6 +386,7 @@ def mint_cid_nl_evidence_ref(
         scan_precursor_mz=scan_precursor_mz,
         precursor_inference_tolerance_da=precursor_inference_tolerance_da,
         precursor_metadata=precursor_metadata,
+        ms1_precursor_observation=ms1_precursor_observation,
     )
     artifact = _mint_evidence_artifact_ref(
         producer_processing_request_id=processing_owners.request.processing_request_id,
@@ -383,6 +421,9 @@ def canonical_cid_nl_evidence_bytes(
             observation.precursor_metadata,
         ),
         "supports_direct_nl": observation.supports_direct_nl,
+        "ms1_precursor_observation": asdict(observation.ms1_precursor_observation)
+        if observation.ms1_precursor_observation is not None
+        else None,
         "scan_precursor_mz": observation.scan_precursor_mz,
         "precursor_metadata": asdict(observation.precursor_metadata)
         if observation.precursor_metadata is not None

@@ -12,6 +12,38 @@ def test_importing_raw_reader_does_not_import_clr() -> None:
     assert "clr" not in module.__dict__
 
 
+def test_parent_ms1_mass_windows_keep_ambiguity_and_share_one_spectrum_read():
+    from xic_extractor.raw_reader import RawFileHandle
+
+    calls = []
+
+    def centroid_stream(scan_number, _centroid):
+        calls.append(scan_number)
+        return SimpleNamespace(
+            Masses=[500.0, 500.003, 600.0, 500.002, float("nan")],
+            Intensities=[10.0, 1000.0, 50.0, 0.0, 100.0],
+        )
+
+    vendor = SimpleNamespace(
+        GetFilterForScanNumber=lambda scan: SimpleNamespace(
+            MSOrder="Ms1" if scan == 1 else "Ms2"
+        ),
+        GetCentroidStream=centroid_stream,
+        RetentionTimeFromScanNumber=lambda scan: 7.9,
+    )
+    raw = RawFileHandle(vendor, SimpleNamespace(ms1_order="Ms1", ms2_order="Ms2"))
+    observations = raw.read_ms1_mass_windows(
+        ((1, 499.999, 500.004), (1, 599.0, 601.0), (1, 699.0, 701.0), (2, 499.0, 501.0))
+    )
+    assert calls == [1]
+    assert observations[0].centroid_mzs == (500.0, 500.003)
+    assert observations[1].centroid_mzs == (600.0,)
+    assert observations[2].centroid_mzs == ()
+    assert observations[3] is None
+    assert observations[0].scan_number == 1
+    assert observations[0].rt_min == 7.9
+
+
 def test_preflight_reports_missing_pythonnet(tmp_path: Path) -> None:
     from xic_extractor.raw_reader import preflight_raw_reader
 

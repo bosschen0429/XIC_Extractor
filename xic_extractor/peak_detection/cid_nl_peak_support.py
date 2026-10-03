@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from xic_extractor.evidence_artifacts import _mint_evidence_artifact_ref
-from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceContractError,
     CidNlEvidenceRef,
@@ -57,17 +56,15 @@ def resolve_dda_cid_nl_peak_support_ref(
     )
 
     observation = canonical_evidence.observation
-    if not observation.supports_direct_nl:
+    precursor = observation.assess_precursor_loss(policy.neutral_loss_tolerance_ppm)
+    if precursor.reference_mz is None or precursor.status not in {
+        "compatible",
+        "neutral_loss_mismatch",
+    }:
         raise DdaCidNlPeakSupportContractError(
             "CID-NL evidence lacks independent precursor isolation support"
         )
-    if not neutral_loss_match(
-        observation.precursor_mz,
-        observation.product_mz,
-        observation.configured_neutral_loss_da,
-        policy.neutral_loss_tolerance_ppm,
-        observed_loss_da=observation.observed_neutral_loss_da,
-    )[2]:
+    if not precursor.supports_nl:
         raise DdaCidNlPeakSupportContractError(
             "CID-NL evidence does not satisfy the strict neutral-loss tolerance"
         )
@@ -77,7 +74,7 @@ def resolve_dda_cid_nl_peak_support_ref(
         if _matches_observation(
             canonical_evidence,
             peak,
-            precursor_tolerance_da=policy.precursor_tolerance_da,
+            policy=policy,
         )
     )
     if not matching_peaks:
@@ -204,7 +201,9 @@ def _support_content(
     observation = canonical_evidence.observation
     peak_content = peak_observation.content
     integration = peak_content.integration
-    assert observation.observed_loss_error_ppm is not None
+    precursor = observation.assess_precursor_loss(policy.neutral_loss_tolerance_ppm)
+    assert precursor.reference_mz is not None
+    assert precursor.observed_loss_error_ppm is not None
     return DdaCidNlPeakSupportContent(
         canonical_sample_identity_id=sample.identity.sample_identity_id,
         cid_nl_evidence_content_id=(
@@ -219,10 +218,10 @@ def _support_content(
         scan_rt_min=observation.scan_rt_min,
         peak_rt_min=integration.rt_left_min,
         peak_rt_max=integration.rt_right_min,
-        precursor_mz=observation.precursor_mz,
+        precursor_mz=precursor.reference_mz,
         peak_mz=peak_content.mz,
-        precursor_delta_da=observation.precursor_mz - peak_content.mz,
-        observed_loss_error_ppm=observation.observed_loss_error_ppm,
+        precursor_delta_da=precursor.reference_mz - peak_content.mz,
+        observed_loss_error_ppm=precursor.observed_loss_error_ppm,
         observed_product_mz=observation.product_mz,
         configured_neutral_loss_da=observation.configured_neutral_loss_da,
         policy=policy,
@@ -234,17 +233,19 @@ def _matches_observation(
     canonical_evidence: CidNlEvidenceRef,
     peak_observation: PeakObservationRef,
     *,
-    precursor_tolerance_da: float,
+    policy: DdaCidNlPeakSupportPolicy,
 ) -> bool:
     observation = canonical_evidence.observation
     peak_content = peak_observation.content
     integration = peak_content.integration
+    precursor = observation.assess_precursor_loss(policy.neutral_loss_tolerance_ppm)
     return (
-        observation.supports_direct_nl
-        and integration.rt_left_min
-        <= observation.scan_rt_min
-        <= integration.rt_right_min
-        and abs(observation.precursor_mz - peak_content.mz) <= precursor_tolerance_da
+        precursor.supports_nl
+        and precursor.reference_mz is not None
+        and integration.rt_left_min <= observation.support_rt_min
+        and observation.scan_rt_min <= integration.rt_right_min
+        and abs(precursor.reference_mz - peak_content.mz)
+        <= policy.precursor_tolerance_da
     )
 
 
@@ -260,7 +261,7 @@ def _matching_peaks(
         if _matches_observation(
             canonical_evidence,
             peak,
-            precursor_tolerance_da=policy.precursor_tolerance_da,
+            policy=policy,
         )
     )
 

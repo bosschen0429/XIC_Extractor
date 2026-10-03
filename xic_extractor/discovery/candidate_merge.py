@@ -357,8 +357,7 @@ def _merge_candidate_pair(
         ),
         discovery_candidate_state=assign_discovery_candidate_state(
             ms1_peak_found=True,
-            precursor_mz_basis=precursor_mz_basis,
-            has_direct_nl_support=any(
+            has_nl_support=any(
                 item.discovery_candidate_state == "ms1_feature_nl_supported"
                 for item in (first, second)
             ),

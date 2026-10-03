@@ -116,6 +116,13 @@ Producing a library alone does not enable qualification.
 
 ### Precursor inference
 
+- CID-NL Discovery runs in this order: acquire MS2 search seeds, group nearby
+  seeds, capture and qualify their MS1 peaks, verify precursor evidence against
+  those peaks, then merge and persist candidates. Search provenance does not
+  decide the final support label. A feature with an independently compatible
+  precursor and product inside its peak interval is `ms1_feature_nl_supported`;
+  a feature lacking that relation remains `ms1_feature_nl_rescued`. These labels
+  authorize downstream assessment, not detection or Matrix publication.
 - CID-NL mass references use either the selected scan precursor (`scan_precursor`)
   or a distinguishable vendor-recorded monoisotopic precursor
   (`scan_monoisotopic`). The latter is recorded evidence independent of the
@@ -194,7 +201,19 @@ Producing a library alone does not enable qualification.
   basis, actual scan precursor, and configured inference bound; an inferred
   precursor and its derived loss are not reported as directly measured facts.
   An inferred precursor alone cannot grant a strict NL relation or detection
-  count. Its physical MS1 quantitation remains subject to the existing method
+  count. After physical qualification, Discovery reads the exact recorded parent
+  MS1 scan in the existing precursor ppm window. One positive centroid supplies
+  an independent reference; missing scans, missing ions, or multiple centroids
+  leave the inference unresolved. The measured mass must satisfy the nominal
+  isolation window and the existing per-ion NL tolerance, and both parent MS1
+  and MS2 times must lie inside the physical peak. This is method support, not
+  proof of a unique chemical precursor–product pairing.
+  `tag_evidence_json.scan_receipts` adds the parent observation and a separate
+  `precursor_verification` result; original inferred m/z, source and null loss
+  error stay unchanged. Alignment reacquires these facts from RAW before minting
+  canonical evidence and relations; a saved CSV verification result supplies no
+  authority. Parent scans are read once per acquisition batch, with all requested
+  mass windows evaluated against the same scan. MS1 quantitation remains subject to the existing method
   assessment and cell-decision policy. CrossSample and cell-decision owners decide
   identity, Backfill, and Matrix publication. Candidate eligibility alone
   grants none of these authorities.

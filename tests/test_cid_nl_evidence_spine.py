@@ -122,6 +122,78 @@ def test_recorded_monoisotopic_reference_requires_isolation_support(
     )
 
 
+@pytest.mark.parametrize(
+    "centroids,selected,width,offset,parent_rt,status,supported",
+    [
+        ((500.001,), 500.5, 1.6, 0.0, 7.99, "compatible", True),
+        ((), 500.5, 1.6, 0.0, 7.99, "parent_ms1_ion_missing", False),
+        ((500.001, 500.002), 500.5, 1.6, 0.0, 7.99, "parent_ms1_ion_ambiguous", False),
+        ((500.05,), 500.5, 1.6, 0.0, 7.99, "neutral_loss_mismatch", False),
+        ((500.001,), 499.2005, 1.6, 0.0, 7.99, "outside_nominal_isolation", False),
+        ((500.001,), 500.5, None, None, 7.99, "isolation_unavailable", False),
+        ((500.001,), 500.5, 1.6, 0.0, 7.8, "compatible", False),
+    ],
+)
+def test_parent_ms1_measurement_qualifies_inference_without_rewriting_origin(
+    tmp_path, centroids, selected, width, offset, parent_rt, status, supported
+):
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+    from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+
+    fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("s1",))
+    evidence = mint_cid_nl_evidence_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("s1"),
+        scan_number=42,
+        precursor_mz=500.0,
+        product_mz=500.0 - 116.0474,
+        configured_neutral_loss_da=116.0474,
+        observed_neutral_loss_da=116.0474,
+        observed_loss_error_ppm=None,
+        scan_rt_min=8.0,
+        product_intensity=400.0,
+        precursor_mz_basis="product_plus_neutral_loss",
+        scan_precursor_mz=selected,
+        precursor_inference_tolerance_da=0.8,
+        precursor_metadata=Ms2PrecursorMetadata(
+            charge=1,
+            isolation_width_da=width,
+            isolation_offset_da=offset,
+            master_scan_number=41,
+        ),
+        ms1_precursor_observation=Ms1PrecursorObservation(41, parent_rt, centroids),
+    )
+    policy = cid_nl_support_policy()
+    verdict = evidence.observation.assess_precursor_loss(
+        policy.neutral_loss_tolerance_ppm
+    )
+    assert verdict.status == status
+    individual, sets = assessment_module.resolve_cid_nl_method_relations(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("s1"),
+        evidence_refs=(evidence,),
+        candidate_peaks=(cid_nl_peak(fixture, "s1"),),
+        policy=policy,
+    )
+    assert bool(individual) is supported
+    assert not sets
+    payload = json.loads(canonical_cid_nl_evidence_bytes(evidence.observation))
+    assert payload["precursor_mz_basis"] == "product_plus_neutral_loss"
+    assert payload["precursor_mz"] == 500.0
+    assert payload["observed_loss_error_ppm"] is None
+    assert payload["ms1_precursor_observation"]["centroid_mzs"] == list(centroids)
+    if supported:
+        assert individual[0].content.precursor_mz == 500.001
+        assert individual[0].content.observed_loss_error_ppm == pytest.approx(
+            0.001 / 116.0474 * 1e6
+        )
+    with pytest.raises(CidNlEvidenceContractError, match="recorded parent"):
+        replace(
+            evidence.observation,
+            ms1_precursor_observation=Ms1PrecursorObservation(40, 7.99, (500.001,)),
+        )
+
+
 def test_inferred_evidence_persists_scan_provenance_and_exact_projection(
     tmp_path: Path,
 ) -> None:

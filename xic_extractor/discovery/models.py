@@ -8,8 +8,13 @@ from xic_extractor.discovery.evidence_config import (
     DiscoveryEvidenceProfile,
 )
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+from xic_extractor.precursor_evidence import (
+    Ms1PrecursorObservation,
+    PrecursorLossAssessment,
+    assess_precursor_loss,
+    supports_direct_nl,
+)
 from xic_extractor.precursor_evidence import PrecursorMzBasis as PrecursorMzBasis
-from xic_extractor.precursor_evidence import supports_direct_nl
 from xic_extractor.settings_schema import normalize_resolver_mode
 
 if TYPE_CHECKING:
@@ -208,6 +213,21 @@ class DiscoverySeed:
     precursor_mz_basis: PrecursorMzBasis = "scan_precursor"
     precursor_metadata: Ms2PrecursorMetadata | None = None
     acquisition_source_id: str = ""
+    ms1_precursor_observation: Ms1PrecursorObservation | None = None
+
+    def assess_precursor_loss(self, tolerance_ppm: float) -> PrecursorLossAssessment:
+        return assess_precursor_loss(
+            basis=self.precursor_mz_basis,
+            precursor_mz=self.precursor_mz,
+            product_mz=self.product_mz,
+            neutral_loss_da=self.configured_neutral_loss_da,
+            observed_loss_da=self.observed_neutral_loss_da,
+            observed_loss_error_ppm=self.observed_loss_error_ppm,
+            tolerance_ppm=tolerance_ppm,
+            selected_mz=self.scan_precursor_mz,
+            metadata=self.precursor_metadata,
+            ms1_observation=self.ms1_precursor_observation,
+        )
 
     @property
     def supports_direct_nl(self) -> bool:
@@ -440,8 +460,10 @@ class DiscoveryCandidate:
     ) -> "DiscoveryCandidate":
         discovery_candidate_state = assign_discovery_candidate_state(
             ms1_peak_found=ms1_peak_found,
-            precursor_mz_basis=precursor_mz_basis,
-            has_direct_nl_support=best_seed.supports_direct_nl,
+            has_nl_support=(
+                best_seed.supports_direct_nl
+                and precursor_mz_basis in {"scan_precursor", "scan_monoisotopic"}
+            ),
         )
         return cls(
             review_priority=review_priority,
@@ -580,15 +602,11 @@ def build_discovery_physical_selection_subject_id(
 def assign_discovery_candidate_state(
     *,
     ms1_peak_found: bool,
-    precursor_mz_basis: GroupPrecursorMzBasis,
-    has_direct_nl_support: bool,
+    has_nl_support: bool,
 ) -> DiscoveryCandidateState:
     if not ms1_peak_found:
         return "review_only_orphan_nl"
-    if not has_direct_nl_support or precursor_mz_basis in {
-        "product_plus_neutral_loss",
-        "mixed",
-    }:
+    if not has_nl_support:
         return "ms1_feature_nl_rescued"
     return "ms1_feature_nl_supported"
 
