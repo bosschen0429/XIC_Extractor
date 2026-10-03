@@ -39,7 +39,9 @@ def group_discovery_seeds(
         else:
             matching_group.append(seed)
 
-    return tuple(_build_group(group, settings=settings) for group in active_groups)
+    return tuple(
+        build_discovery_seed_group(group, settings=settings) for group in active_groups
+    )
 
 
 def _matching_active_group(
@@ -88,9 +90,10 @@ def _can_join_group(
     )
 
 
-def _build_group(
+def build_discovery_seed_group(
     seeds: list[DiscoverySeed], *, settings: DiscoverySettings
 ) -> DiscoverySeedGroup:
+    """Bind representative mass and complete evidence to one retained seed set."""
     best_seed = _best_seed(seeds)
     scan_precursor_delta_da = _scan_precursor_delta_da(best_seed)
     return DiscoverySeedGroup(

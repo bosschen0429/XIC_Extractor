@@ -197,6 +197,12 @@ Producing a library alone does not enable qualification.
   deleting either. Candidates that remain physically ambiguous still follow
   the `review_only_ambiguous_coisolation` gate. Downstream cell-decision owners
   enforce one final Matrix value per feature/sample cell.
+  One RT seed group can contain multiple physical peaks. Its seeds are
+  partitioned by the physical owner's point-selection result, retaining a
+  candidate for each seeded peak while sharing the acquired MS1 trace.
+  Outside or ambiguous scans stay with the original representative; they do
+  not supply support to another peak. Each retained candidate keeps its own
+  physical question and persisted answer binding.
 - Untargeted CID-NL carries eligible inferred evidence into the shared method
   assessment alongside direct evidence. Canonical evidence retains the precursor
   basis, actual scan precursor, and configured inference bound; an inferred

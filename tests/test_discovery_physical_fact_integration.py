@@ -68,6 +68,105 @@ class _OwnerBoundBatchRaw(_BatchRaw):
         self.intensity = np.asarray([0.0, 0.0, 0.0, 10.0, 100.0, 10.0, 0.0, 0.0, 0.0])
 
 
+@pytest.mark.parametrize("strongest_first", [True, False])
+@pytest.mark.parametrize("second_seed_rt", [10.02, 10.15])
+def test_pipeline_retains_each_seeded_physical_peak_from_one_rt_group(
+    tmp_path: Path,
+    strongest_first: bool,
+    second_seed_rt: float,
+) -> None:
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.physical_fact_persistence import (
+        IndexedDiscoveryPhysicalFacts,
+    )
+
+    raw_path = tmp_path / "two-peaks.raw"
+    raw_path.write_bytes(b"two analytical peaks in one RT seed group")
+    settings = _settings()
+    spec = compile_discovery_processing_run_spec(
+        (raw_path,),
+        discovery_settings=settings,
+        signal_processing_profile=SignalProcessingProfile(),
+    )
+    rt = np.arange(9.3, 10.9, 0.002)
+    intensity = (
+        100.0
+        + 10_000 * np.exp(-0.5 * ((rt - 10.00) / 0.012) ** 2)
+        + 15_000 * np.exp(-0.5 * ((rt - 10.15) / 0.012) ** 2)
+    )
+    raw = _OwnerBoundFakeRawHandle(
+        spec.acquisition_inputs[0].acquisition_source,
+        [
+            _scan_event(
+                scan_number=100,
+                rt=10.00,
+                precursor_mz=500.0,
+                product_intensity=20_000 if strongest_first else 10_000,
+            ),
+            _scan_event(
+                scan_number=200,
+                rt=second_seed_rt,
+                precursor_mz=500.0,
+                product_intensity=10_000 if strongest_first else 20_000,
+            ),
+        ],
+        rt=rt,
+        intensity=intensity,
+    )
+    outputs = run_discovery(
+        raw_path,
+        output_dir=tmp_path / "out",
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+        raw_opener=lambda *_args: raw,
+        run_spec=spec,
+    )
+    candidates = sorted(
+        read_discovery_candidates_csv(outputs.candidates_csv),
+        key=lambda candidate: candidate.ms1_apex_rt,
+    )
+    expected_apices = [10.00] if second_seed_rt == 10.02 else [10.00, 10.15]
+    assert [candidate.ms1_apex_rt for candidate in candidates] == pytest.approx(
+        expected_apices,
+    )
+    assert len(_read_csv(outputs.review_csv)) == len(expected_apices)
+    assert [candidate.ms1_area for candidate in candidates] == pytest.approx(
+        [
+            height * 0.012 * np.sqrt(2 * np.pi) * 60
+            for height in [10_000, 15_000][: len(expected_apices)]
+        ],
+        rel=0.03,
+    )
+    assert all(
+        candidate.discovery_candidate_state == "ms1_feature_nl_supported"
+        for candidate in candidates
+    )
+    assert sorted(
+        scan for candidate in candidates for scan in candidate.seed_scan_ids
+    ) == [100, 200]
+    # More physical questions must not repeat RAW acquisition or lose their
+    # independent candidate -> physical-answer binding after persistence.
+    assert raw.raw_chromatogram_call_count == 1
+    assert outputs.physical_facts_json is not None
+    saved = IndexedDiscoveryPhysicalFacts(
+        outputs.physical_facts_json,
+        expected_run_spec=spec,
+        expected_acquisition_input=spec.acquisition_inputs[0],
+        candidate_ids=frozenset(candidate.candidate_id for candidate in candidates),
+    )
+    try:
+        records = saved.load_candidates(
+            [candidate.candidate_id for candidate in candidates]
+        )
+        for candidate in candidates:
+            record = records[candidate.candidate_id]
+            assert record.evaluation.facts is not None
+            assert record.evaluation.facts.apex_rt_min == candidate.ms1_apex_rt
+            assert record.evaluation.facts.area_counts_seconds == candidate.ms1_area
+    finally:
+        saved.close()
+
+
 @pytest.mark.parametrize(
     ("fixture_name", "expected_apices", "representative_scan"),
     (
