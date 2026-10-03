@@ -1098,12 +1098,16 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
     }
 
 
-@pytest.mark.parametrize("trace_case", ["exterior_context_crop", "separate_noise_hits"])
+@pytest.mark.parametrize("trace_case", [
+    "exterior_context_crop", "separate_noise_hits", "alternating_amplitude",
+    "overlapping_components",
+])
 def test_discovery_publishes_supported_peak(
     tmp_path: Path, trace_case: str,
 ) -> None:
     from tests.test_physical_peak_evaluation_persistence import (
         _context_sensitive_trace,
+        _overlapping_triplet_trace,
         _short_peak_with_separate_noise_hits,
     )
 
@@ -1112,9 +1116,17 @@ def test_discovery_publishes_supported_peak(
         rt, intensity = _context_sensitive_trace()
         rt = query_rt + rt[:-1] - rt[23]
         intensity = intensity[:-1]
-    else:
+    elif trace_case == "separate_noise_hits":
         rt, intensity = _short_peak_with_separate_noise_hits()
         rt = query_rt + rt - rt[int(np.argmax(intensity))]
+    elif trace_case == "alternating_amplitude":
+        rt = np.linspace(0.0, 10.0, 101)
+        intensity = 1000.0 * np.exp(-0.5 * ((rt - 5.0) / 0.5) ** 2)
+        intensity[::2] *= 0.1
+        rt += query_rt - 5.0
+    else:
+        rt, intensity = _overlapping_triplet_trace()
+        rt += query_rt - 5.0
     profile = SignalProcessingProfile(window_points=15)
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"owner-bound-supported-peak")
@@ -1139,10 +1151,33 @@ def test_discovery_publishes_supported_peak(
     assert evaluation.state == "available"
     assert evaluation.facts is not None
     assert candidate.ms1_peak_found is True
-    assert candidate.ms1_apex_rt == pytest.approx(query_rt)
+    assert candidate.ms1_apex_rt == evaluation.facts.apex_rt_min
+    assert candidate.ms1_apex_rt == pytest.approx(
+        query_rt, abs=0.15 if trace_case == "overlapping_components" else 1e-8,
+    )
     assert candidate.ms1_area == evaluation.facts.area_counts_seconds
     assert rt[0] < evaluation.facts.left_rt_min < query_rt
     assert query_rt < evaluation.facts.right_rt_min < rt[-1]
+    if trace_case == "overlapping_components":
+        assert candidate.ms1_trace_quality == "physical_shoulder_overlap"
+        assert candidate.is_provisional
+        assert candidate.review_priority == "MEDIUM"
+        assert "physical_shoulder_overlap" in candidate.reason
+
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
+
+    path = write_discovery_candidates_csv(
+        tmp_path / "candidates.csv", result.candidates,
+    )
+    (published,) = read_discovery_candidates_csv(path)
+    assert published.ms1_peak_found
+    assert published.ms1_area == pytest.approx(candidate.ms1_area)
+    assert published.ms1_apex_rt == pytest.approx(candidate.ms1_apex_rt)
+    assert published.ms1_trace_quality == candidate.ms1_trace_quality
+    assert published.is_provisional == candidate.is_provisional
+    assert published.reason == candidate.reason
+    assert published.review_priority == candidate.review_priority
 
 
 @pytest.mark.parametrize("same_question", [True, False])

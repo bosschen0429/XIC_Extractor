@@ -135,7 +135,12 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   relative to fluctuations. The fixed factor 2 is a minimum contrast policy,
   not a detection significance or universally calibrated S/N claim.
   These checks are necessary lower bounds, not sufficient proof of chemical
-  identity or quantification readiness. Qualification neither
+  identity or quantification readiness. Discovery uses the same original-support
+  and local-contrast qualification as Targeted. Alternating acquired amplitudes,
+  elevated valley floors, or poor agreement with a monotone peak shape do not
+  independently establish peak absence. Existing overlap and provisional-quality
+  evidence remains available for review; an available overlapping interval does
+  not establish a pure constituent area. Qualification neither
   changes integration nor removes weak segments to resolve ambiguity. Fresh
   policies use segment-universe-v3; questions cannot cross boundary-policy
   families. Legacy

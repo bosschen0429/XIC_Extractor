@@ -15,11 +15,7 @@ from xic_extractor.discovery.physical_fact_persistence import (
     write_discovery_physical_fact_sidecar,
 )
 from xic_extractor.peak_detection.background_shape import (
-    has_deficient_monotone_run,
-    has_unresolved_valley_floors,
-    is_background_like_peak,
     is_provisional_peak_shape,
-    is_unresolved_shoulder_peak,
 )
 from xic_extractor.peak_detection.models import PeakCandidatesResult
 from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
@@ -617,9 +613,6 @@ def test_whole_trend_has_matching_target_and_discovery_facts(
     )
 
 
-
-
-
 @pytest.mark.parametrize("pattern", ["alternating", "random", "random_amplitude"])
 @pytest.mark.parametrize(
     "policy",
@@ -649,8 +642,11 @@ def test_sparse_stationary_background_is_not_a_peak(
 
 
 @pytest.mark.parametrize("background_fragments", [False, True])
+@pytest.mark.parametrize(
+    "policy", [PHYSICAL_PEAK_POINT_POLICY, DISCOVERY_PHYSICAL_PEAK_POINT_POLICY]
+)
 def test_original_jaggedness_does_not_replace_peak_evidence(
-    background_fragments: bool,
+    background_fragments: bool, policy: str,
 ) -> None:
     rt = np.linspace(0.0, 10.0, 101)
     raw = 1000.0 * np.exp(-0.5 * ((rt - 5.0) / 0.5) ** 2)
@@ -662,6 +658,7 @@ def test_original_jaggedness_does_not_replace_peak_evidence(
     prepared = prepare_physical_signal(rt, raw)
     result = evaluate_physical_peak(
         prepared, selection_subject_id="supported-original-peak", query_rt_min=5.0,
+        selection_policy_version=policy,
     )
     assert result.state == "available"
     if not background_fragments:
@@ -673,6 +670,51 @@ def test_original_jaggedness_does_not_replace_peak_evidence(
         original = raw[selected.start_index:selected.end_index]
         assert noise_shape_severity(original)[0] == 2
     assert result.integration is not None
+
+
+def _overlapping_triplet_trace(
+    point_count: int = 1001, width: float = 0.65,
+) -> tuple[np.ndarray, np.ndarray]:
+    rt = np.linspace(0.0, 10.0, point_count)
+    raw = 100.0 + sum(
+        height * np.exp(-0.5 * ((rt - center) / width) ** 2)
+        for height, center in ((1000.0, 3.0), (1500.0, 5.0), (2000.0, 7.0))
+    )
+    return rt, raw
+
+
+@pytest.mark.parametrize("point_count", [1001, 2001])
+@pytest.mark.parametrize("width", [0.65, 0.75])
+def test_overlapping_component_keeps_measurement_and_review(
+    point_count: int, width: float,
+) -> None:
+    # Three analytically present components have elevated intervening valleys.
+    # Their measured intervals remain available without claiming deconvolution.
+    rt, raw = _overlapping_triplet_trace(point_count, width)
+    profile = SignalProcessingProfile()
+    prepared = prepare_physical_signal(rt, raw, profile=profile)
+    targeted, discovery = (
+        evaluate_physical_peak(
+            prepared, selection_subject_id="overlapping-middle-component",
+            query_rt_min=5.0, selection_policy_version=policy,
+        )
+        for policy in (
+            PHYSICAL_PEAK_POINT_POLICY, DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+        )
+    )
+    assert targeted.state == discovery.state == "available"
+    assert discovery.facts is not None
+    assert discovery.facts.apex_rt_min == pytest.approx(5.0, abs=0.15)
+    assert 3.0 < discovery.facts.left_rt_min < 5.0
+    assert 5.0 < discovery.facts.right_rt_min < 7.0
+    assert discovery.integration == targeted.integration
+    assert discovery.requires_overlap_review
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=profile, evaluation=discovery,
+    )
+    *_, restored = deserialize_physical_peak_evaluation(payload)
+    assert restored == discovery
+    assert restored.requires_overlap_review
 
 
 @pytest.mark.parametrize("scale,background", [(1.0, 0.0), (1000.0, 100000.0)])
@@ -799,52 +841,6 @@ def test_current_discovery_qualification_persists_exactly(
         ) == payload
 
 
-def test_background_qualification_rejects_insufficient_edge_contrast() -> None:
-    rt = np.linspace(0.0, 3.0, 31)
-    # A shallow plateau whose apex is less than 1.2x above edge baseline in both views
-    raw = 100.0 + np.array([
-        0.0, 0.0, 5.0, 8.0, 10.0, 8.0, 5.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-    ])
-    baseline = np.full_like(raw, 50.0)
-    assert is_background_like_peak(
-        rt, raw, baseline, apex_index=4, raw_noise_mad=1.0,
-    )
-    # A resolved peak with peak-to-edge >= 1.2 in both views remains available
-    prominent_raw = 100.0 + 100.0 * np.exp(-0.5 * ((rt - 0.4) / 0.15) ** 2)
-    assert not is_background_like_peak(
-        rt, prominent_raw, baseline, apex_index=4, raw_noise_mad=1.0,
-    )
-
-
-def test_background_qualification_rejects_unresolved_shoulder_candidate() -> None:
-    assert not is_unresolved_shoulder_peak(
-        segment_class="separate_peak",
-        apex_height=100.0,
-        left_valley=40.0,
-        right_valley=30.0,
-    )
-    assert is_unresolved_shoulder_peak(
-        segment_class="shoulder_candidate",
-        apex_height=100.0,
-        left_valley=30.0,
-        right_valley=40.0,
-    )
-    assert not is_unresolved_shoulder_peak(
-        segment_class="shoulder_candidate",
-        apex_height=100.0,
-        left_valley=10.0,
-        right_valley=50.0,
-    )
-    assert not is_unresolved_shoulder_peak(
-        segment_class="shoulder_candidate",
-        apex_height=100.0,
-        left_valley=30.0,
-        right_valley=20.0,
-    )
-
-
 def test_is_provisional_peak_shape() -> None:
     # Silent baseline (noise_mad == 0.0): genuine sparse peaks like C010 / C060
     rt_sparse = np.array([8.0, 8.1, 8.2])
@@ -867,49 +863,6 @@ def test_is_provisional_peak_shape() -> None:
     assert is_provisional_peak_shape(
         rt_noisy, raw_noisy, apex_index=3, raw_noise_mad=10.0
     )
-
-
-def test_has_deficient_monotone_run() -> None:
-    # Sparse peak (< 6 points): exempted to preserve authentic sparse peaks
-    short_raw = np.array([0.0, 500.0, 0.0])
-    assert not has_deficient_monotone_run(short_raw, apex_index=1)
-
-    # Authentic chromatographic peak: >= 2 consecutive monotonic steps on flank
-    good_peak = np.array([10.0, 50.0, 200.0, 800.0, 300.0, 50.0, 10.0])
-    # Up flank: 10 -> 50 -> 200 -> 800 (run of 3)
-    assert not has_deficient_monotone_run(good_peak, apex_index=3)
-
-    # High-frequency alternating chatter (jitter): max consecutive run <= 1
-    # 7 points alternating back and forth around apex (index 4, 110.0):
-    # Up: 100 -> 95 -> 105 -> 98 -> 110 (max up run = 1)
-    # Down: 110 -> 102 -> 108 (max down run = 1)
-    jitter = np.array([100.0, 95.0, 105.0, 98.0, 110.0, 102.0, 108.0])
-    assert has_deficient_monotone_run(jitter, apex_index=4)
-
-
-def test_has_unresolved_valley_floors() -> None:
-    # Clean resolved peak with valley return to 0: passes
-    assert not has_unresolved_valley_floors(
-        apex_height=1000.0, left_valley=0.0, right_valley=0.0
-    )
-
-    # Asymmetric peak with one elevated flank (shoulder) but one clean baseline
-    # return: passes
-    assert not has_unresolved_valley_floors(
-        apex_height=1000.0, left_valley=500.0, right_valley=50.0
-    )
-
-    # Both flanks elevated above 20% (unresolved saddle / floating feature): rejected
-    assert has_unresolved_valley_floors(
-        apex_height=1000.0, left_valley=250.0, right_valley=210.0
-    )
-
-    # Edge cases: zero or negative apex height rejected
-    assert has_unresolved_valley_floors(
-        apex_height=0.0, left_valley=0.0, right_valley=0.0
-    )
-
-
 
 
 @pytest.mark.parametrize(
