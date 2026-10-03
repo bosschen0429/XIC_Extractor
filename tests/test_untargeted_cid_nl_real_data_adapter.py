@@ -9,6 +9,7 @@ import pytest
 from tests.cid_nl_raw_fixture import (
     _current_candidates,
     _FakeRaw,
+    _multi_tag_settings,
     _open_bound_raw,
     _peak_config,
     _settings,
@@ -854,6 +855,225 @@ def test_inferred_precursor_retains_physical_peak_without_strict_nl_support(
         assert not assessment.candidate_peaks
         assert not assessment.individual_support_refs
         assert result.acquisition is None
+
+
+@pytest.mark.parametrize("reverse_products", [False, True])
+@pytest.mark.parametrize("parent_supported", [False, True])
+@pytest.mark.parametrize("composite", [False, True])
+def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    reverse_products: bool,
+    parent_supported: bool,
+    composite: bool,
+) -> None:
+    import json
+    from types import SimpleNamespace
+
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+    from xic_extractor.peak_detection.cid_nl_method_subject import (
+        REQUEST_INPUT_KEY,
+        CidNlComposition,
+        mint_untargeted_cid_nl_method_subject,
+    )
+    from xic_extractor.processing_identity import (
+        build_processing_request_identity,
+        compose_processing_owner_references,
+        issue_processing_attempt,
+    )
+
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True
+    )
+    source_raw = _FakeRaw((8.0,))
+    scan = source_raw.scans[0]
+    # The weaker product's parent window contains one ion. The stronger
+    # product's shifted window contains both ions and cannot supply support.
+    products = (383.9526, 383.9536)
+    intensities = (11900.0, 12000.0) if parent_supported else (12000.0, 11900.0)
+    if composite:
+        products += (367.9577, 367.9587)
+        intensities += intensities
+    if reverse_products:
+        products = products[::-1]
+        intensities = intensities[::-1]
+    source_raw.scans = (
+        replace(
+            scan,
+            precursor_mz=500.5,
+            precursor_metadata=Ms2PrecursorMetadata(
+                charge=1,
+                isolation_width_da=1.6,
+                isolation_offset_da=0.0,
+                master_scan_number=scan.scan_number - 1,
+            ),
+            masses=np.asarray(products),
+            intensities=np.asarray(intensities),
+            base_peak=12000.0,
+        ),
+    )
+    settings = (
+        replace(_multi_tag_settings(), tag_combine_mode="intersection")
+        if composite
+        else _settings()
+    )
+    if composite:
+        subject = mint_untargeted_cid_nl_method_subject(
+            precursor_mz=500.0,
+            precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
+            composition=CidNlComposition(
+                tags=tuple(
+                    (profile.tag, profile.neutral_loss_da)
+                    for profile in settings.neutral_loss_profiles
+                ),
+                combine_mode=settings.tag_combine_mode,
+            ),
+        )
+        old_request = fixture.owners.request
+        request = build_processing_request_identity(
+            acquisition_sources=old_request.acquisition_sources,
+            acquisition_bindings=old_request.acquisition_bindings,
+            scientific_input_schema_version=old_request.scientific_input_schema_version,
+            processing_algorithm_version=old_request.processing_algorithm_version,
+            processing_contract_version=old_request.processing_contract_version,
+            scientific_inputs=json.loads(old_request.normalized_scientific_inputs_json)
+            | {REQUEST_INPUT_KEY: subject.request_payload()},
+        )
+        fixture = replace(
+            fixture,
+            method_subject=subject,
+            owners=compose_processing_owner_references(
+                request=request,
+                attempt=issue_processing_attempt(request),
+                sample_snapshot=fixture.owners.sample_snapshot,
+                sample_resolutions=fixture.samples,
+            ),
+        )
+    peak_config = _peak_config(tmp_path)
+    candidates = _current_candidates(
+        source_raw,
+        raw_file=fixture.source_paths["S1"],
+        settings=settings,
+        peak_config=peak_config,
+    )
+    raw, vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+    # Supply only the vendor boundary; RAW metadata parsing and the batched
+    # parent mass-window owner remain active.
+    original_filter = vendor.GetFilterForScanNumber
+
+    def scan_filter(number):
+        result = original_filter(number)
+        if number == scan.scan_number:
+            reaction = result.Filter.Reactions[0]
+            reaction.IsolationWidth = 1.6
+            reaction.IsolationWidthOffset = 0.0
+        return result
+
+    monkeypatch.setattr(vendor, "GetFilterForScanNumber", scan_filter)
+    monkeypatch.setattr(
+        vendor,
+        "GetTrailerExtraInformation",
+        lambda number: SimpleNamespace(
+            Labels=("Charge State:", "Master Scan Number:"),
+            Values=(1, number - 1),
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(raw._thermo, "ms1_order", "Ms1", raising=False)
+    parent_reads = []
+
+    def parent_centroids(number, _profile):
+        parent_reads.append(number)
+        return SimpleNamespace(
+            Masses=[500.0, 500.0105] if parent_supported else [],
+            Intensities=[1000.0, 500.0] if parent_supported else [],
+        )
+
+    monkeypatch.setattr(vendor, "GetCentroidStream", parent_centroids, raising=False)
+    try:
+        result = adapt_current_discovery_sample_subject(
+            processing_owners=fixture.owners,
+            sample=fixture.sample("S1"),
+            method_subject=fixture.method_subject,
+            candidates=candidates[::-1] if reverse_products else candidates,
+            settings=settings,
+            peak_config=peak_config,
+            raw=raw,
+        )
+    finally:
+        raw.__exit__(None, None, None)
+    assessment = result.assessment_input.assessment
+    assert assessment.content.method_result == (
+        "SUPPORT" if parent_supported else "HOLD"
+    )
+    assert result.strict_scan_count == int(parent_supported)
+    assert len(assessment.candidate_peaks) == 1
+    event_count = 2 if composite else 1
+    assert len(assessment.evidence_refs) == event_count
+    products_by_loss = {
+        ref.observation.configured_neutral_loss_da: ref.observation.product_mz
+        for ref in assessment.evidence_refs
+    }
+    assert products_by_loss == (
+        {116.0474: 383.9526, 132.0423: 367.9577}
+        if composite
+        else {116.0474: 383.9526}
+    )
+    for ref in assessment.evidence_refs:
+        evidence = ref.observation
+        assert evidence.scan_number == scan.scan_number
+        assert evidence.precursor_mz_basis == "product_plus_neutral_loss"
+        assert evidence.scan_precursor_mz == 500.5
+        assert evidence.precursor_mz == pytest.approx(500.0)
+        assert evidence.observed_loss_error_ppm is None
+    assert len(assessment.individual_support_refs) == (
+        event_count if parent_supported else 0
+    )
+    assert parent_reads == [scan.scan_number - 1]
+    if parent_supported:
+        for ref in assessment.individual_support_refs:
+            relation = ref.content
+            assert relation.precursor_mz == 500.0
+            assert relation.observed_loss_error_ppm == pytest.approx(0.0, abs=1e-8)
+
+
+@pytest.mark.parametrize("reverse_products", [False, True])
+def test_scan_event_prefers_independent_direct_loss_over_stronger_inference(
+    tmp_path: Path, reverse_products: bool
+) -> None:
+    from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
+    from xic_extractor.discovery.strict_seed_receipts import (
+        resolve_discovery_scan_events,
+    )
+
+    source_raw = _FakeRaw((8.0,))
+    products = (383.9526, 383.9826)
+    intensities = (11900.0, 12000.0)
+    if reverse_products:
+        products = products[::-1]
+        intensities = intensities[::-1]
+    scan = replace(
+        source_raw.scans[0],
+        masses=np.asarray(products),
+        intensities=np.asarray(intensities),
+        base_peak=12000.0,
+    )
+    settings = _settings()
+    seeds = discovery_seeds_from_scan(
+        scan, raw_file=tmp_path / "S1.RAW", settings=settings
+    )
+    assert len(seeds) == 2
+    assert {seed.precursor_mz_basis for seed in seeds} == {
+        "scan_precursor", "product_plus_neutral_loss"
+    }
+    forward = resolve_discovery_scan_events(seeds, settings=settings)
+    reverse = resolve_discovery_scan_events(seeds[::-1], settings=settings)
+    assert forward == reverse
+    (event,) = forward
+    assert event.precursor_mz_basis == "scan_precursor"
+    assert event.product_mz == 383.9526
+    assert event.product_intensity == 11900.0
+    assert event.assess_precursor_loss(settings.nl_tolerance_ppm).supports_nl
 
 
 @pytest.mark.parametrize("cached", [False, True])

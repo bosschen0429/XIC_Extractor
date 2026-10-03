@@ -317,8 +317,15 @@ evidence ref for each exact `(acquisition_source_id, scan_number)` key.
 Composite methods add the configured loss to that evidence key, so one physical
 scan can support two distinct required losses without being counted as two scans.
 Duplicate evidence for the same scan/loss is rejected. Multiple matched product
-centroids for one loss must be resolved by the evidence provider before
-assessment minting. When multiple distinct strict scans support one physical
+centroids for one loss are resolved by the evidence provider after all parent-MS1
+windows have been read and before assessment minting. Receipt reconstruction
+retains every alternative. The method event prefers independently compatible
+precursor/loss evidence, then the independent loss error, product intensity,
+configured tag order, and stable mass/source tie-breaks. An inferred equality
+never supplies a zero-error advantage. If no alternative supports the loss,
+one unresolved event remains; all physical candidates still participate in
+individual/set relations. Composite methods retain one event per configured
+loss. When multiple distinct strict scans support one physical
 peak for a single-loss method, the Alignment adapter projects their arithmetic
 mean measured product m/z and observed neutral loss as one order-neutral
 chromatographic identity event. The exact per-scan evidence remains preserved

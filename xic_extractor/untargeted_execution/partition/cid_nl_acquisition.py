@@ -48,6 +48,7 @@ from xic_extractor.discovery.strict_seed_receipts import (
     StrictSeedReceiptError,
     read_complete_discovery_scan_seeds,
     read_parent_ms1_observations,
+    resolve_discovery_scan_events,
 )
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.mass_accuracy import within_ppm
@@ -817,7 +818,11 @@ def adapt_current_discovery_sample_subject(
         if candidate_universe
         else tuple(seed for _scan, seed in scan_seeds)
     )
-    for raw_seed in verified_seeds:
+    for raw_seed in resolve_discovery_scan_events(
+        verified_seeds,
+        settings=settings,
+        preserve_configured_losses=method_subject.composition is not None,
+    ):
         seed = replace(raw_seed, acquisition_source_id=source.acquisition_source_id)
         evidence = mint_cid_nl_evidence_ref(
             processing_owners=processing_owners,

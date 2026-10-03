@@ -116,6 +116,46 @@ def read_complete_discovery_scan_seeds(
     return tuple(by_scan[scan_number] for scan_number in sorted(by_scan))
 
 
+def resolve_discovery_scan_events(
+    seeds: tuple[DiscoverySeed, ...],
+    *,
+    settings: DiscoverySettings,
+    preserve_configured_losses: bool = False,
+) -> tuple[DiscoverySeed, ...]:
+    """Resolve one evidence event per scan/loss after all parent facts are read.
+
+    Receipt replay retains alternatives. The provider prefers independent NL
+    compatibility, then measured loss accuracy and intensity. An unresolved
+    event remains available to the method owner without gaining strict support.
+    The caller supplies one owner-bound acquisition batch.
+    """
+    tag_precedence = {
+        tag: index for index, tag in enumerate(settings.selected_tag_names)
+    }
+
+    def rank(seed: DiscoverySeed) -> tuple[bool, float, float, int, float, float, str]:
+        assessment = seed.assess_precursor_loss(settings.nl_tolerance_ppm)
+        error = assessment.observed_loss_error_ppm
+        return (
+            not assessment.supports_nl,
+            abs(error) if error is not None else float("inf"),
+            -seed.product_intensity,
+            tag_precedence.get(seed.neutral_loss_tag, len(tag_precedence)),
+            seed.precursor_mz,
+            seed.product_mz,
+            seed.precursor_mz_basis,
+        )
+
+    by_event: dict[tuple[int, float], DiscoverySeed] = {}
+    for seed in sorted(seeds, key=rank):
+        key = (
+            seed.scan_number,
+            seed.configured_neutral_loss_da if preserve_configured_losses else 0.0,
+        )
+        by_event.setdefault(key, seed)
+    return tuple(by_event[key] for key in sorted(by_event))
+
+
 def _read_exact_scans(
     raw: StrictSeedReceiptRaw,
     candidate: DiscoveryCandidate,
@@ -429,5 +469,6 @@ __all__ = [
     "StrictSeedReceiptError",
     "StrictSeedReceiptRaw",
     "read_complete_discovery_scan_seeds",
+    "resolve_discovery_scan_events",
     "read_parent_ms1_observations",
 ]
