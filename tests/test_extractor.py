@@ -235,7 +235,8 @@ def test_formal_target_ranks_only_physically_supported_signal(
             fragmented = 1000.0 * np.exp(-0.5 * ((rt - 6.0) / 0.12) ** 2)
             fragmented[fragmented < 1e-4] = 0.0
             fragmented[::2] = 0.0
-            # One dense censored cluster is qualified by local hit enrichment.
+            # The observed apex supplies adjacent acquired support. With empty
+            # flanks, this cluster also qualifies through local hit enrichment.
             fragmented[int(np.argmin(np.abs(rt - 6.0)))] = 1000.0
             return rt, raw + fragmented
 
@@ -260,14 +261,14 @@ def test_formal_target_ranks_only_physically_supported_signal(
         assert evaluation.state == "available"
         assert evaluation.facts is not None
         assert result.reported_peak_area == evaluation.facts.area_counts_seconds
-        # Qualification changes eligibility, not the existing shape review policy.
+        # Both analytic components have acquired support and local contrast.
+        # Keep them available without changing ranking or shape review.
         assert projection.product_state == "ambiguous"
         assert projection.counted_detection is False
         assert "trace_morphology_conflict" in projection.conflict_reasons
-        assert all(
-            candidate.selection_apex_rt < 5.0
-            for candidate in result.peak_result.candidates
-        )
+        assert sorted(
+            candidate.selection_apex_rt for candidate in result.peak_result.candidates
+        ) == pytest.approx([4.7, 6.0], abs=0.04)
         assert long_rows[0]["Counted Detection"] == "FALSE"
     else:
         # A dense hit cluster with empty flanks is acquired censored support.
