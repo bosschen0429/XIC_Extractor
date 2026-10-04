@@ -139,7 +139,12 @@ def merge_seed_evidence(
     seeds: list[DiscoverySeed], *, settings: DiscoverySettings
 ) -> str:
     by_tag: dict[str, dict[str, object]] = {}
-    best_seed = _best_seed(seeds)
+    seeds_by_tag: dict[str, list[DiscoverySeed]] = {}
+    for seed in seeds:
+        seeds_by_tag.setdefault(seed.neutral_loss_tag, []).append(seed)
+    best_seed_by_tag = {
+        tag: _best_seed(tag_seeds) for tag, tag_seeds in seeds_by_tag.items()
+    }
     for seed in seeds:
         entry = by_tag.setdefault(
             seed.neutral_loss_tag,
@@ -201,7 +206,7 @@ def merge_seed_evidence(
             )
         entry["rt_min"] = min(cast(float, entry["rt_min"]), seed.rt)
         entry["rt_max"] = max(cast(float, entry["rt_max"]), seed.rt)
-        strongest_scan = seed is best_seed
+        strongest_scan = seed is best_seed_by_tag[seed.neutral_loss_tag]
         if strongest_scan:
             entry["product_mz"] = seed.product_mz
             entry["max_intensity"] = seed.product_intensity
