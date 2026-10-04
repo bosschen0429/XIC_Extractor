@@ -156,10 +156,11 @@ Producing a library alone does not enable qualification.
   high-intensity threshold. Reacquisition keeps the original MS2 query RT and
   m/z tolerance. It supplies enough points to answer the physical peak question;
   it does not upgrade inferred precursor identity or grant Matrix authority.
-- When the first acquisition of a pure `product_mz + neutral_loss` group
-  resolves a peak, Discovery reads the ion at the apex scan and one MS1 scan on
-  each side, inside the request, and reports the intensity-weighted reading as
-  `ms1_apex_mz`. MS1 is the method's accurate-mass scan, while ddMS2 runs at a
+- When the final physical evaluation of a pure `product_mz + neutral_loss`
+  group resolves a peak, including after point reacquisition, Discovery reads
+  the ion at the apex scan and one MS1 scan on each side, inside the final
+  request, and reports the intensity-weighted reading as `ms1_apex_mz`. Groups
+  sharing a physical request reuse the same final ion/isotope reading. MS1 is the method's accurate-mass scan, while ddMS2 runs at a
   quarter of its resolution, so product + loss only points at the ion. The
   reading supplies Alignment's physical XIC and grouping mass. The candidate's
   original precursor and product remain the keys for exact MS2 scan replay;

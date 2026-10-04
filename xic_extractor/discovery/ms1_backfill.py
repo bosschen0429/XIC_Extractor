@@ -282,14 +282,6 @@ def _backfill_ms1_candidates_with_acquisition(
             zip(physical_plans, acquired_traces, strict=True)
         ):
             evaluation = initial_physical_facts[physical_index].evaluation
-            ion_mz, doubly_charged = _apex_ion_reading(
-                plan, acquired, evaluation, ms1_centroid_mz=ms1_centroid_mz
-            )
-            if ion_mz is not None:
-                apex_ion_mz_by_index[physical_index] = ion_mz
-            if doubly_charged:
-                doubly_charged_indexes.add(physical_index)
-            apex_read_indexes.add(physical_index)
             expanded = _expanded_physical_request_plan(
                 plan,
                 acquired,
@@ -444,6 +436,8 @@ def _backfill_ms1_candidates_with_acquisition(
                     physical_fact_by_index[index] = fact
                     physical_trace_qualities[index] = candidate.ms1_trace_quality
                 if index not in apex_read_indexes:
+                    # Read the retained peak after reacquisition and seed
+                    # partitioning; shared physical questions reuse the reading.
                     ion_mz, doubly_charged = _apex_ion_reading(
                         candidate_plan,
                         candidate_trace,
