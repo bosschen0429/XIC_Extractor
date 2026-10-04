@@ -141,6 +141,63 @@ def test_typed_selector_demotes_nl_fail_candidate_far_from_paired_istd() -> None
     assert selected.candidate is near_anchor
 
 
+@pytest.mark.parametrize("hard_quality_conflict", [False, True])
+def test_istd_selector_preserves_nl_identity_over_rolling_rt_review(
+    hard_quality_conflict: bool,
+) -> None:
+    supported = _candidate(8.33, area=7_000_000.0)
+    dropout = _candidate(8.99, area=20_000.0)
+    supported_facts = _facts(
+        supported,
+        rt=8.33,
+        abundance=7_000_000.0,
+        ms2_trace_strength="moderate",
+        shape_quality="clean",
+    )
+    supported_facts = replace(
+        supported_facts,
+        rt=replace(
+            supported_facts.rt,
+            role="ISTD",
+            rt_prior_min=9.0,
+            rt_prior_delta_min=0.67,
+            rt_prior_status="borderline",
+        ),
+        trace=replace(
+            supported_facts.trace,
+            hard_quality_flags=("ambiguous_peak",) if hard_quality_conflict else (),
+        ),
+    )
+    dropout_facts = _facts(
+        dropout,
+        rt=8.99,
+        abundance=20_000.0,
+        ms2_trace_strength="none",
+        shape_quality="clean",
+        nl_match=False,
+    )
+    dropout_facts = replace(
+        dropout_facts,
+        rt=replace(
+            dropout_facts.rt,
+            role="ISTD",
+            rt_prior_min=9.0,
+            rt_prior_delta_min=0.01,
+        ),
+    )
+    supported_score = _scored_with_facts(supported, supported_facts)
+    dropout_score = _scored_with_facts(dropout, dropout_facts)
+    selected = select_candidate_by_evidence([dropout_score, supported_score])
+
+    assert selected.candidate is (dropout if hard_quality_conflict else supported)
+    if not hard_quality_conflict:
+        decision = candidate_selection_decision_record(
+            selected, [dropout_score, supported_score]
+        )
+        assert decision.decision_class == "review"
+        assert "targeted_rt_review" in decision.blockers
+
+
 def test_strict_selector_prefers_paired_rt_chrom_segment_over_weak_ms2_nl() -> None:
     paired_rt_segment = _candidate(
         10.02,

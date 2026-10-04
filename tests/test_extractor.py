@@ -1160,7 +1160,7 @@ def test_paired_analyte_uses_strict_anchor_peak_selection(
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [
         _target("Analyte", istd_pair="ISTD"),
-        _target("ISTD", is_istd=True),
+        _target("ISTD", is_istd=True, rt_min=12.7, rt_max=14.7),
     ]
     strict_flags: list[bool] = []
 
@@ -1504,7 +1504,7 @@ def test_paired_analyte_preserves_mismatched_target_anchor_peak_as_ambiguous(
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [
         _target("Analyte", istd_pair="ISTD"),
-        _target("ISTD", is_istd=True),
+        _target("ISTD", is_istd=True, rt_min=12.7, rt_max=14.7),
     ]
 
     raw = _RecordingRaw(peak_centers=[13.70, 13.06])
@@ -1576,7 +1576,7 @@ def test_paired_analyte_accepts_peak_close_to_target_anchor_even_if_farther_from
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [
         _target("Analyte", istd_pair="ISTD"),
-        _target("ISTD", is_istd=True),
+        _target("ISTD", is_istd=True, rt_min=12.7, rt_max=14.7),
     ]
 
     monkeypatch.setattr(
@@ -1629,7 +1629,7 @@ def test_paired_analyte_keeps_target_nl_anchor_far_from_istd_anchor(
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [
         _target("Analyte", istd_pair="ISTD"),
-        _target("ISTD", is_istd=True),
+        _target("ISTD", is_istd=True, rt_min=12.7, rt_max=14.7),
     ]
     raw = _RecordingRaw(peak_centers=[13.70, 15.12])
     preferred_rts: list[float | None] = []
@@ -1693,8 +1693,8 @@ def test_paired_analyte_istd_rt_fallback_does_not_force_counted_detection(
     config = _config(tmp_path)
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [
-        _target("Analyte", istd_pair="ISTD"),
-        _target("ISTD", is_istd=True),
+        _target("Analyte", istd_pair="ISTD", rt_min=12.7, rt_max=14.7),
+        _target("ISTD", is_istd=True, rt_min=12.7, rt_max=14.7),
     ]
 
     raw = _RecordingRaw(peak_centers=[13.70, 13.72])
@@ -1756,8 +1756,8 @@ def test_paired_analyte_fallback_preserves_not_counted_peak_in_matrix(
     config = _config(tmp_path)
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [
-        _target("Analyte", istd_pair="ISTD"),
-        _target("ISTD", is_istd=True),
+        _target("Analyte", istd_pair="ISTD", rt_min=12.7, rt_max=14.7),
+        _target("ISTD", is_istd=True, rt_min=12.7, rt_max=14.7),
     ]
 
     raw = _RecordingRaw(peak_centers=[13.70, 14.31])
@@ -1867,12 +1867,14 @@ def _target(
     neutral_loss_da: float | None = 116.0474,
     is_istd: bool = False,
     istd_pair: str = "",
+    rt_min: float = 8.0,
+    rt_max: float = 10.0,
 ) -> Target:
     return Target(
         label=label,
         mz=258.1085,
-        rt_min=8.0,
-        rt_max=10.0,
+        rt_min=rt_min,
+        rt_max=rt_max,
         ppm_tol=20.0,
         neutral_loss_da=neutral_loss_da,
         nl_ppm_warn=20.0 if neutral_loss_da is not None else None,
