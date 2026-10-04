@@ -47,6 +47,8 @@ from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRe
 from xic_extractor.discovery.strict_seed_receipts import (
     StrictSeedReceiptError,
     read_complete_discovery_scan_seeds,
+    read_parent_ms1_observations,
+    resolve_discovery_scan_events,
 )
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.mass_accuracy import within_ppm
@@ -696,7 +698,8 @@ def adapt_current_discovery_sample_subject(
     seed_candidates = tuple(
         candidate
         for candidate in bounded
-        if candidate.precursor_mz_basis in {"scan_precursor", "mixed"}
+        if candidate.precursor_mz_basis
+        in {"scan_precursor", "scan_monoisotopic", "mixed"}
         or (
             candidate.ms1_peak_found
             and candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
@@ -711,7 +714,8 @@ def adapt_current_discovery_sample_subject(
     support_seed_candidates = tuple(
         candidate
         for candidate in support_bounded
-        if candidate.precursor_mz_basis in {"scan_precursor", "mixed"}
+        if candidate.precursor_mz_basis
+        in {"scan_precursor", "scan_monoisotopic", "mixed"}
     )
     if not seed_candidates and not peak_candidates:
         assessment = _mint_assessment(
@@ -805,7 +809,20 @@ def adapt_current_discovery_sample_subject(
             key=lambda item: item.content.peak_observation_content_id,
         )
     )
-    for _scan, raw_seed in scan_seeds:
+    verified_seeds = (
+        read_parent_ms1_observations(
+            bound_raw,
+            tuple(seed for _scan, seed in scan_seeds),
+            tolerance_ppm=settings.precursor_mz_tolerance_ppm,
+        )
+        if candidate_universe
+        else tuple(seed for _scan, seed in scan_seeds)
+    )
+    for raw_seed in resolve_discovery_scan_events(
+        verified_seeds,
+        settings=settings,
+        preserve_configured_losses=method_subject.composition is not None,
+    ):
         seed = replace(raw_seed, acquisition_source_id=source.acquisition_source_id)
         evidence = mint_cid_nl_evidence_ref(
             processing_owners=processing_owners,
@@ -820,6 +837,8 @@ def adapt_current_discovery_sample_subject(
             product_intensity=seed.product_intensity,
             precursor_mz_basis=seed.precursor_mz_basis,
             scan_precursor_mz=seed.scan_precursor_mz,
+            precursor_metadata=seed.precursor_metadata,
+            ms1_precursor_observation=seed.ms1_precursor_observation,
             precursor_inference_tolerance_da=(
                 settings.ms2_precursor_tol_da
                 if seed.precursor_mz_basis == "product_plus_neutral_loss"
@@ -888,9 +907,11 @@ def adapt_current_discovery_sample_subject(
         source_candidate_ids=tuple(item.candidate_id for item in bounded),
         strict_scan_count=len(
             {
-                scan.scan_number
-                for scan, seed in scan_seeds
-                if seed.precursor_mz_basis == "scan_precursor"
+                ref.observation.scan_number
+                for ref in evidence_refs
+                if ref.observation.assess_precursor_loss(
+                    settings.nl_tolerance_ppm
+                ).supports_nl
             }
         ),
         lineage_artifacts=lineage,
@@ -1289,7 +1310,7 @@ def _composite_backfill_evidence(
         for seed in discovery_seeds_from_scan(
             scan, raw_file=Path(sample.metadata.raw_stem), settings=settings
         ):
-            if seed.precursor_mz_basis != "scan_precursor" or not _within_ppm(
+            if not seed.supports_direct_nl or not _within_ppm(
                 seed.precursor_mz,
                 method_subject.precursor_mz,
                 method_subject.precursor_tolerance_ppm,
@@ -1306,6 +1327,9 @@ def _composite_backfill_evidence(
                 observed_loss_error_ppm=seed.observed_loss_error_ppm,
                 scan_rt_min=seed.rt,
                 product_intensity=seed.product_intensity,
+                precursor_mz_basis=seed.precursor_mz_basis,
+                scan_precursor_mz=seed.scan_precursor_mz,
+                precursor_metadata=seed.precursor_metadata,
             )
             evidence_refs.append(evidence)
             resolved_support, resolved_sets = resolve_cid_nl_method_relations(
@@ -1692,13 +1716,13 @@ def _untargeted_search_scope(
         raise CidNlAcquisitionError(str(exc)) from exc
 
 
-def _supports_direct_precursor_assessment(
+def _has_recorded_precursor_reference(
     candidates: tuple[DiscoveryCandidate, ...],
 ) -> bool:
-    """Return whether the universe contains exact scan-precursor evidence."""
-
+    """Schedule RAW assessment; source labels alone do not grant NL support."""
     return any(
-        candidate.precursor_mz_basis == "scan_precursor" for candidate in candidates
+        candidate.precursor_mz_basis in {"scan_precursor", "scan_monoisotopic"}
+        for candidate in candidates
     )
 
 
@@ -1881,8 +1905,8 @@ __all__ = [
     "UNTARGETED_CID_NL_CAPTURE_TRACE_SOURCE",
     "UntargetedCidNlSampleTraceBatch",
     "UntargetedCidNlBackfillTraceBatch",
-    'CidNlAcquisitionError',
-    'CidNlAcquisitionResult',
+    "CidNlAcquisitionError",
+    "CidNlAcquisitionResult",
     "acquire_untargeted_cid_nl_sample_trace_batch",
     "acquire_untargeted_cid_nl_backfill_trace_batch",
 ]

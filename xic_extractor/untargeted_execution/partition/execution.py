@@ -53,8 +53,8 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.raw_reader import _ensure_assemblies_loaded
 from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
+    _has_recorded_precursor_reference,
     _PartitionWorkObserver,
-    _supports_direct_precursor_assessment,
 )
 from xic_extractor.untargeted_execution.partition.models import (
     _RUNTIME_COMPATIBILITY_TOKEN,
@@ -349,7 +349,7 @@ def _prepare_runtime_work(
         try:
             bounded = _request_subject_candidates(job)
             direct_assessment_by_key[job.work_unit_key] = (
-                _supports_direct_precursor_assessment(bounded)
+                _has_recorded_precursor_reference(bounded)
                 if prepare_grouping is None
                 else False
             )
@@ -1161,7 +1161,6 @@ def _required_text(value: object, *, field: str) -> str:
         field=field,
         error_factory=UntargetedPartitionError,
     )
-
 
 
 __all__ = (

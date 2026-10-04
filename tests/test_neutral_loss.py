@@ -73,9 +73,9 @@ def test_two_sample_windows_keep_attribution_and_bounded_reader_calls() -> None:
     first_window, first_anchor, first_nl, first_evidence, first_calls = observed[
         "sample-a"
     ]
-    second_window, second_anchor, second_nl, second_evidence, second_calls = (
-        observed["sample-b"]
-    )
+    second_window, second_anchor, second_nl, second_evidence, second_calls = observed[
+        "sample-b"
+    ]
     assert (first_window.sample_key, second_window.sample_key) == (
         "sample-a",
         "sample-b",
@@ -111,10 +111,14 @@ def test_two_sample_windows_keep_attribution_and_bounded_reader_calls() -> None:
         first_evidence.trace.product_point_count,
         second_evidence.trace.product_point_count,
     ) == (1, 1)
-    assert first_calls == second_calls == [
-        (8.0, 9.0),
-        (geometry.rt_min, geometry.rt_max),
-    ]
+    assert (
+        first_calls
+        == second_calls
+        == [
+            (8.0, 9.0),
+            (geometry.rt_min, geometry.rt_max),
+        ]
+    )
 
 
 def test_check_nl_returns_ok_when_best_ppm_is_at_or_below_warn() -> None:
@@ -1050,3 +1054,62 @@ class _FakeCandidate:
         self.selection_apex_rt = selection_apex_rt
         self.ms2_evidence_peak_start = ms2_evidence_peak_start
         self.ms2_evidence_peak_end = ms2_evidence_peak_end
+
+
+@pytest.mark.parametrize("charge", (None, 1, 2))
+@pytest.mark.parametrize("width,supported", [(1.6, False), (2.4, True)])
+def test_targeted_monoisotopic_evidence_uses_recorded_precursor_and_counts_scan_once(
+    charge,
+    width,
+    supported,
+):
+    from dataclasses import replace
+
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata, Ms2Window
+
+    metadata = Ms2PrecursorMetadata(
+        monoisotopic_mz=300.1615,
+        charge=charge,
+        isolation_width_da=width,
+        isolation_offset_da=0.0,
+        master_scan_number=19522,
+    )
+    event = _scan_event(
+        precursor_mz=301.16497802734,
+        rt=8.1,
+        masses=[184.11323547363, 185.11584472656],
+        intensities=[278825.7, 367660.06],
+    )
+    event = replace(event, scan=replace(event.scan, precursor_metadata=metadata))
+    window = Ms2Window("sample", 8.0, 8.3, (event,))
+    args = dict(
+        precursor_mz=300.1605,
+        neutral_loss_da=116.0474,
+        nl_ppm_max=20.0,
+        ms2_precursor_tol_da=0.8,
+        nl_min_intensity_ratio=0.05,
+    )
+    anchor = find_nl_anchor_rt(window, **args)
+    result = check_nl(window, nl_ppm_warn=10.0, **args)
+    evidence = neutral_loss_module.collect_candidate_ms2_evidence(
+        window,
+        geometry=candidate_ms2_geometry(
+            _candidate(peak_start=8.0, peak_end=8.3, apex_rt=8.1)
+        ),
+        nl_ppm_warn=10.0,
+        **args,
+    )
+    if charge == 2:
+        assert anchor is None
+        assert result.status == "NO_MS2"
+        assert evidence.best_product_evidence is None
+        return
+    assert anchor == (8.1 if supported else None)
+    assert result.status == ("OK" if supported else "NL_FAIL")
+    assert evidence.trigger_scan_count == 1
+    assert evidence.strict_nl_scan_count == int(supported)
+    product = evidence.best_product_evidence
+    assert product.precursor_mz == 300.1615
+    assert product.scan_precursor_mz == event.scan.precursor_mz
+    assert product.precursor_mz_basis == "scan_monoisotopic"
+    assert product.precursor_metadata == metadata

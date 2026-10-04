@@ -899,7 +899,7 @@ def test_pure_cid_nl_targets_csv_integration(
     assert captured["known_istd_reference"] is fake_ref
 
 
-def test_reduced_discovery_persistence_keeps_alignment_families(
+def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignment(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1082,14 +1082,13 @@ def test_reduced_discovery_persistence_keeps_alignment_families(
     assert (cli_output / "alignment_review.tsv").read_bytes() == (
         alignment.review_tsv.read_bytes()
     )
-    # The m/z 700 family exists only through product + neutral-loss inference;
-    # the m/z 701 family is a direct scan-precursor match.
-    assert [row["Mz"] for row in matrix] == ["700.0000", "701.0000"]
+    # Product-derived m/z 700 retains its physical facts below, but supplies no
+    # independent NL support. Only selected-precursor m/z 701 reaches Matrix.
+    assert [row["Mz"] for row in matrix] == ["701.0000"]
     by_candidate = {row["source_candidate_id"]: row for row in cells}
     assert set(by_candidate) == {
-        f"{stem}#13@mz{mz}_p{product}"
+        f"{stem}#13@mz701_p584.9526"
         for stem in ("sample-a", "sample-b")
-        for mz, product in (("700", "583.9526"), ("701", "584.9526"))
     }
     assert {row["status"] for row in cells} == {"detected"}
     # Fixture apex = 100 baseline + (sample index + 1) * 500.
@@ -1098,18 +1097,11 @@ def test_reduced_discovery_persistence_keeps_alignment_families(
         for row in cells
     }
     assert heights == {
-        ("sample-a", "700"): 600.0,
         ("sample-a", "701"): 600.0,
-        ("sample-b", "700"): 1100.0,
         ("sample-b", "701"): 1100.0,
     }
-    for mz in ("700", "701"):
-        areas = {
-            row["sample_stem"]: float(row["area"])
-            for row in cells
-            if row["family_center_mz"] == mz
-        }
-        assert areas["sample-b"] / areas["sample-a"] == pytest.approx(2.0, rel=0.01)
+    areas = {row["sample_stem"]: float(row["area"]) for row in cells}
+    assert areas["sample-b"] / areas["sample-a"] == pytest.approx(2.0, rel=0.01)
 
     assert {
         stem: batch.candidate_receipts[stem].candidate_count
@@ -1125,6 +1117,7 @@ def test_reduced_discovery_persistence_keeps_alignment_families(
         for output in discovery.per_sample
         if output.physical_facts_json is not None
     } == {"sample-a": 2, "sample-b": 2}
+    retained_inferred_areas = {}
     for acquisition, output in zip(
         spec.acquisition_inputs,
         discovery.per_sample,
@@ -1141,6 +1134,21 @@ def test_reduced_discovery_persistence_keeps_alignment_families(
             )
             == 2
         )
+        with output.candidates_csv.open(encoding="utf-8-sig", newline="") as handle:
+            inferred = [
+                row for row in csv.DictReader(handle)
+                if float(row["precursor_mz"]) == 700.0
+            ]
+        assert len(inferred) == 1
+        assert inferred[0]["precursor_mz_basis"] == "product_plus_neutral_loss"
+        assert inferred[0]["neutral_loss_mass_error_ppm"] == ""
+        retained_inferred_areas[output.candidates_csv.parent.name] = float(
+            inferred[0]["ms1_area"]
+        )
+    assert retained_inferred_areas["sample-a"] > 0.0
+    assert retained_inferred_areas["sample-b"] / retained_inferred_areas[
+        "sample-a"
+    ] == pytest.approx(2.0, rel=0.01)
 
 
 def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(

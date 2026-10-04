@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -313,9 +314,13 @@ def test_group_exposes_mixed_precursor_and_error_basis() -> None:
     group = groups[0]
     assert group.precursor_mz_basis == "mixed"
     assert group.neutral_loss_error_basis == "mixed"
-    assert group.scan_precursor_mz == inferred.scan_precursor_mz
-    assert group.scan_precursor_delta_da == pytest.approx(1.004343)
+    assert group.scan_precursor_mz == direct.scan_precursor_mz
+    assert group.scan_precursor_delta_da == 0.0
     assert group.max_scan_precursor_abs_delta_da == pytest.approx(1.004343)
+    receipts = json.loads(group.tag_evidence_json)["DNA_dR"]["scan_receipts"]
+    assert receipts["19561"]["precursor_mz_basis"] == "scan_precursor"
+    assert receipts["19488"]["precursor_mz_basis"] == "product_plus_neutral_loss"
+    assert receipts["19488"]["neutral_loss_error_ppm"] is None
 
 
 def _settings(**overrides: float) -> DiscoverySettings:
@@ -353,7 +358,11 @@ def _seed(
         neutral_loss_tag=neutral_loss_tag,
         configured_neutral_loss_da=configured_neutral_loss_da,
         observed_neutral_loss_da=observed_neutral_loss_da,
-        observed_loss_error_ppm=observed_loss_error_ppm,
+        observed_loss_error_ppm=(
+            None
+            if precursor_mz_basis == "product_plus_neutral_loss"
+            else observed_loss_error_ppm
+        ),
         scan_precursor_mz=scan_precursor_mz,
         precursor_mz_basis=precursor_mz_basis,  # type: ignore[arg-type]
     )

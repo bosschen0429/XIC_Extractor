@@ -193,7 +193,7 @@ def test_discovery_state_and_physical_truth_projection_table(
 ) -> None:
     state = assign_discovery_candidate_state(
         ms1_peak_found=ms1_peak_found,
-        precursor_mz_basis=precursor_mz_basis,  # type: ignore[arg-type]
+        has_nl_support=precursor_mz_basis == "scan_precursor",
     )
     candidate = replace(
         _candidate(
@@ -239,6 +239,7 @@ def test_discovery_state_and_physical_truth_projection_table(
             "ms1_feature_nl_rescued",
             "rejected_noise_or_outside_rt",
         }
+
 
 def test_discovery_candidate_state_vocabulary_remains_exact() -> None:
     assert DISCOVERY_CANDIDATE_STATE_VALUES == (

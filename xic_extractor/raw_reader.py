@@ -27,7 +27,8 @@ from xic_extractor.injection_timeline import (
     ScheduledInjection,
     build_injection_timeline,
 )
-from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
+from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata, Ms2Scan, Ms2ScanEvent
+from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     IdentityContractError,
@@ -72,6 +73,7 @@ class _ThermoApi:
     trace_settings_factory: Callable[..., Any]
     mass_range_trace_type: Any
     ms2_order: Any
+    ms1_order: Any = None
 
 
 @dataclass(frozen=True)
@@ -238,6 +240,39 @@ class RawFileHandle:
             return None
         return float(masses[inside][np.argmax(intensities[inside])])
 
+    def read_ms1_mass_windows(
+        self, requests: Sequence[tuple[int, float, float]]
+    ) -> tuple[Ms1PrecursorObservation | None, ...]:
+        """Read all positive centroids, once per exact MS1 scan in this batch."""
+        by_scan: dict[int, list[tuple[int, float, float]]] = defaultdict(list)
+        for index, (scan_number, low, high) in enumerate(requests):
+            by_scan[scan_number].append((index, low, high))
+        results: list[Ms1PrecursorObservation | None] = [None] * len(requests)
+        raw = self._raw_file
+        for scan_number, windows in by_scan.items():
+            if self._thermo.ms1_order is None or getattr(
+                raw.GetFilterForScanNumber(scan_number), "MSOrder", None
+            ) != self._thermo.ms1_order:
+                continue
+            spectrum = raw.GetCentroidStream(scan_number, False)
+            masses = np.asarray(getattr(spectrum, "Masses", None) or [], dtype=float)
+            intensities = np.asarray(
+                getattr(spectrum, "Intensities", None) or [], dtype=float
+            )
+            valid = (
+                np.isfinite(masses)
+                & np.isfinite(intensities)
+                & (masses > 0)
+                & (intensities > 0)
+            )
+            rt = float(raw.RetentionTimeFromScanNumber(scan_number))
+            for index, low, high in windows:
+                inside = valid & (masses >= low) & (masses <= high)
+                results[index] = Ms1PrecursorObservation(
+                    scan_number, rt, tuple(float(mz) for mz in masses[inside])
+                )
+        return tuple(results)
+
     def iter_ms2_scans(self, rt_min: float, rt_max: float) -> Iterator[Ms2ScanEvent]:
         yield from self._iter_ms2_scans(rt_min, rt_max, scan_numbers=None)
 
@@ -280,6 +315,9 @@ class RawFileHandle:
                         masses=masses,
                         intensities=intensities,
                         base_peak=base_peak,
+                        precursor_metadata=_read_precursor_metadata(
+                            self._raw_file, filter_obj, scan_number
+                        ),
                     ),
                     parse_error=None,
                     scan_number=scan_number,
@@ -927,6 +965,7 @@ def _load_thermo_api(import_module_func: Callable[[str], Any]) -> _ThermoApi:
         trace_settings_factory=business.ChromatogramTraceSettings,
         mass_range_trace_type=business.TraceType.MassRange,
         ms2_order=filter_enums.MSOrderType.Ms2,
+        ms1_order=filter_enums.MSOrderType.Ms,
     )
 
 
@@ -963,11 +1002,53 @@ def _extract_precursor_mz(filter_obj: Any) -> float:
     return precursor
 
 
-def _positive_float_or_none(value: Any) -> float | None:
+def _read_precursor_metadata(
+    raw: Any, filter_obj: Any, scan_number: int
+) -> Ms2PrecursorMetadata:
+    trailer_reader = getattr(raw, "GetTrailerExtraInformation", None)
+    trailer = trailer_reader(scan_number) if callable(trailer_reader) else None
+    values = {
+        str(label).strip().rstrip(":").casefold(): value
+        for label, value in zip(
+            getattr(trailer, "Labels", ()), getattr(trailer, "Values", ())
+        )
+    }
+    get_reaction = getattr(filter_obj, "GetReaction", None)
+    reaction = None
+    if callable(get_reaction):
+        try:
+            reaction = get_reaction(0)
+        except (AttributeError, IndexError, TypeError, ValueError):
+            pass
+    if reaction is None:
+        reactions = getattr(getattr(filter_obj, "Filter", None), "Reactions", ())
+        reaction = reactions[0] if reactions else None
+    width = _positive_float_or_none(getattr(reaction, "IsolationWidth", None))
+    if width is None:
+        width = _positive_float_or_none(values.get("ms2 isolation width"))
+    offset = _finite_float_or_none(getattr(reaction, "IsolationWidthOffset", None))
+    return Ms2PrecursorMetadata(
+        monoisotopic_mz=_positive_float_or_none(values.get("monoisotopic m/z")),
+        charge=_positive_integer_or_none(values.get("charge state")),
+        isolation_width_da=width,
+        isolation_offset_da=offset,
+        master_scan_number=_positive_integer_or_none(values.get("master scan number")),
+    )
+
+
+def _positive_integer_or_none(value: Any) -> int | None:
+    parsed = _positive_float_or_none(value)
+    return int(parsed) if parsed is not None and parsed.is_integer() else None
+
+
+def _finite_float_or_none(value: Any) -> float | None:
     try:
         parsed = float(value)
     except (TypeError, ValueError):
         return None
-    if not math.isfinite(parsed) or parsed <= 0.0:
-        return None
-    return parsed
+    return parsed if math.isfinite(parsed) else None
+
+
+def _positive_float_or_none(value: Any) -> float | None:
+    parsed = _finite_float_or_none(value)
+    return parsed if parsed is not None and parsed > 0.0 else None

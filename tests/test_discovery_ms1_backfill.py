@@ -1,3 +1,4 @@
+import csv
 import json
 from collections.abc import Sequence
 from dataclasses import replace
@@ -58,6 +59,74 @@ def test_backfill_runs_real_peak_detection_with_extraction_config() -> None:
     assert candidate.ms1_height == pytest.approx(1000.0)
     assert candidate.ms1_area is not None
     assert candidate.ms1_seed_delta_min == pytest.approx(0.02)
+
+
+@pytest.mark.parametrize(
+    ("masses", "parent_rt", "status", "state"),
+    [
+        ((500.001,), 8.99, "compatible", "ms1_feature_nl_supported"),
+        ((), 8.99, "parent_ms1_ion_missing", "ms1_feature_nl_rescued"),
+        (
+            (500.001, 500.002),
+            8.99,
+            "parent_ms1_ion_ambiguous",
+            "ms1_feature_nl_rescued",
+        ),
+        ((500.001,), 8.6, "compatible", "ms1_feature_nl_rescued"),
+    ],
+)
+def test_discovery_verifies_inferred_seeds_after_ms1_without_moving_peak(
+    monkeypatch: pytest.MonkeyPatch, masses, parent_rt, status, state
+) -> None:
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+    from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+
+    group = _group(
+        tuple(
+            replace(
+                _seed(scan_number=number, rt=rt),
+                precursor_mz_basis="product_plus_neutral_loss",
+                observed_loss_error_ppm=None,
+                scan_precursor_mz=500.5,
+                precursor_metadata=Ms2PrecursorMetadata(
+                    master_scan_number=9,
+                    charge=1,
+                    isolation_width_da=1.6,
+                    isolation_offset_da=0.0,
+                ),
+            )
+            for number, rt in ((10, 9.0), (11, 9.01))
+        )
+    )
+    rt = np.linspace(8.6, 9.4, 161)
+    raw = _FakeRaw(rt=rt, intensity=_gaussian(rt, center=9.02, sigma=0.04, height=1000))
+    settings = _settings(ms1_search_padding_min=0.3)
+    baseline = backfill_ms1_candidates(
+        raw, (group,), settings=settings, peak_config=_peak_config()
+    )[0]
+    batches = []
+
+    def read_windows(self, requests):
+        batches.append(requests)
+        return (Ms1PrecursorObservation(9, parent_rt, masses),)
+
+    monkeypatch.setattr(_FakeRaw, "read_ms1_mass_windows", read_windows, raising=False)
+    candidate = backfill_ms1_candidates(
+        raw, (group,), settings=settings, peak_config=_peak_config()
+    )[0]
+    assert len(batches) == 1 and len(batches[0]) == 1
+    assert candidate.discovery_candidate_state == state
+    assert candidate.precursor_mz_basis == "product_plus_neutral_loss"
+    assert candidate.ms1_area == baseline.ms1_area
+    assert candidate.ms1_apex_rt == baseline.ms1_apex_rt
+    assert candidate.ms1_peak_rt_start == baseline.ms1_peak_rt_start
+    assert candidate.ms1_peak_rt_end == baseline.ms1_peak_rt_end
+    receipts = json.loads(candidate.tag_evidence_json)["DNA_dR"]["scan_receipts"]
+    assert set(receipts) == {"10", "11"}
+    for receipt in receipts.values():
+        assert receipt["precursor_verification"]["status"] == status
+        assert receipt["neutral_loss_error_ppm"] is None
+        assert receipt["precursor_mz"] == 500.0
 
 
 def test_backfill_extracts_group_precursor_xic_with_padded_rt_window_and_ppm(
@@ -354,6 +423,59 @@ def test_backfill_merges_candidates_inside_same_ms1_peak_boundary(
     )
 
 
+def test_merged_peak_does_not_inherit_support_outside_its_retained_interval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+    from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+
+    first = replace(
+        _seed(scan_number=10, rt=7.8, product_intensity=9000.0),
+        precursor_mz_basis="scan_monoisotopic",
+        scan_precursor_mz=501.0,
+        precursor_metadata=Ms2PrecursorMetadata(
+            monoisotopic_mz=500.0, isolation_width_da=1.6, isolation_offset_da=0.0
+        ),
+    )
+    second = replace(
+        _seed(scan_number=20, rt=8.04, product_intensity=3000.0),
+        precursor_mz_basis="product_plus_neutral_loss",
+        observed_loss_error_ppm=None,
+        scan_precursor_mz=500.5,
+        precursor_metadata=Ms2PrecursorMetadata(
+            master_scan_number=19, isolation_width_da=1.6, isolation_offset_da=0.0
+        ),
+    )
+    raw = _FakeRaw(
+        rt=np.array([7.7, 7.92, 8.1]), intensity=np.array([20.0, 900.0, 25.0])
+    )
+    peaks = iter(
+        (
+            _ok_peak(rt=7.92, intensity=900.0, area=1234.5, start=7.7, end=8.0),
+            _ok_peak(rt=7.92, intensity=900.0, area=1300.0, start=7.7, end=8.1),
+        )
+    )
+    monkeypatch.setattr(
+        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        lambda *args, **kwargs: next(peaks),
+    )
+    monkeypatch.setattr(
+        _FakeRaw,
+        "read_ms1_mass_windows",
+        lambda self, requests: (Ms1PrecursorObservation(19, 8.02, (500.001,)),),
+        raising=False,
+    )
+    candidate, = backfill_ms1_candidates(
+        raw, (_group((first,)), _group((second,))),
+        settings=_settings(), peak_config=_peak_config(),
+    )
+    assert candidate.best_ms2_scan_id == 10
+    assert candidate.ms1_area == 1234.5
+    assert candidate.ms1_peak_rt_end == 8.0
+    assert candidate.seed_scan_ids == (10, 20)
+    assert candidate.discovery_candidate_state == "ms1_feature_nl_rescued"
+
+
 def test_cross_tag_candidates_merge_only_when_ms1_peak_overlaps() -> None:
     settings = _multi_tag_settings()
     candidates = [
@@ -369,6 +491,85 @@ def test_cross_tag_candidates_merge_only_when_ms1_peak_overlaps() -> None:
     assert merged[0].matched_tag_count == 3
     assert merged[0].neutral_loss_tag == "dR"
     assert merged[0].tag_evidence_json
+
+
+@pytest.mark.parametrize("dominant_tag", ["dR", "R"])
+@pytest.mark.parametrize("equal_intensity", [False, True])
+def test_verified_multitag_peak_persists_each_tags_best_scan(
+    tmp_path: Path, dominant_tag: str, equal_intensity: bool
+) -> None:
+    from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+
+    settings = _multi_tag_settings()
+    seeds = []
+    expected_by_tag = {}
+    for tag_index, (tag, loss) in enumerate((("dR", 116.047344), ("R", 132.0423))):
+        best_intensity = 9000.0 if tag == dominant_tag else 5000.0
+        for is_best in (False, True):
+            scan = 10 + tag_index * 10 + int(is_best)
+            loss_error_da = 0.0001 if is_best else 0.0003
+            seed = replace(
+                _seed(
+                    scan_number=scan,
+                    rt=9.01 if is_best else 9.0,
+                    product_mz=500.0 - loss - loss_error_da,
+                    product_intensity=(
+                        best_intensity if is_best or equal_intensity else 1000.0
+                    ),
+                    observed_loss_error_ppm=loss_error_da / loss * 1e6,
+                ),
+                neutral_loss_tag=tag,
+                configured_neutral_loss_da=loss,
+                observed_neutral_loss_da=loss + loss_error_da,
+                scan_precursor_mz=500.0,
+                precursor_metadata=Ms2PrecursorMetadata(
+                    master_scan_number=scan - 1,
+                    charge=1,
+                    isolation_width_da=1.6,
+                    isolation_offset_da=0.0,
+                ),
+            )
+            seeds.append(seed)
+            if is_best:
+                expected_by_tag[tag] = seed
+
+    rt = np.linspace(8.6, 9.4, 161)
+    candidates = backfill_ms1_candidates(
+        _FakeRaw(rt=rt, intensity=_gaussian(rt, center=9.02, sigma=0.04, height=1000)),
+        group_discovery_seeds(seeds, settings=settings),
+        settings=settings,
+        peak_config=_peak_config(),
+    )
+    assert len(candidates) == 1
+    candidate = candidates[0]
+    assert candidate.matched_tag_names == ("dR", "R")
+    assert candidate.seed_scan_ids == (10, 11, 20, 21)
+    assert candidate.best_ms2_scan_id == expected_by_tag["dR"].scan_number
+
+    path = write_discovery_candidates_csv(tmp_path / "candidates.csv", candidates)
+    with path.open(encoding="utf-8-sig", newline="") as stream:
+        row, = csv.DictReader(stream)
+    evidence = json.loads(row["tag_evidence_json"])
+    for tag, best in expected_by_tag.items():
+        summary = evidence[tag]
+        assert summary["max_intensity"] == best.product_intensity
+        assert summary["product_mz"] == best.product_mz
+        assert summary["neutral_loss_error_ppm"] == best.observed_loss_error_ppm
+        assert summary["neutral_loss_error_da"] == pytest.approx(0.0001)
+        assert summary["scan_precursor_mz"] == best.scan_precursor_mz
+        assert (
+            summary["precursor_metadata"]["master_scan_number"] == best.scan_number - 1
+        )
+        assert summary["scan_count"] == 2
+        assert set(summary["scan_receipts"]) == {
+            str(seed.scan_number) for seed in seeds if seed.neutral_loss_tag == tag
+        }
+        for seed in seeds:
+            if seed.neutral_loss_tag == tag:
+                receipt = summary["scan_receipts"][str(seed.scan_number)]
+                assert receipt["product_mz"] == seed.product_mz
+                assert receipt["neutral_loss_error_ppm"] == seed.observed_loss_error_ppm
 
 
 def test_merge_with_lineage_preserves_candidate_policy_and_source_ordinals() -> None:

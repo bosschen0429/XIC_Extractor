@@ -330,7 +330,7 @@ def test_discovery_writer_to_alignment_reader_roundtrips_row_identity(
         seed_scan_ids=(6095,),
         neutral_loss_tag="DNA_dR",
         configured_neutral_loss_da=116.0474,
-        neutral_loss_mass_error_ppm=0.0,
+        neutral_loss_mass_error_ppm=None,
         neutral_loss_error_basis="configured_loss_inferred_precursor",
         precursor_mz_basis="product_plus_neutral_loss",
         scan_precursor_mz=1000.377783,
@@ -369,6 +369,8 @@ def test_discovery_writer_to_alignment_reader_roundtrips_row_identity(
     assert parsed.ms1_feature_row_id == "Sample_1|DNA_dR|1000.377783|23.41"
     assert parsed.configured_neutral_loss_da == candidate.configured_neutral_loss_da
     assert parsed.precursor_mz == candidate.precursor_mz
+    assert written_row["neutral_loss_mass_error_ppm"] == ""
+    assert parsed.neutral_loss_mass_error_ppm is None
 
 
 def test_read_discovery_candidates_rejects_mz_just_outside_display_tolerance(
@@ -425,10 +427,15 @@ def test_readers_reject_missing_required_columns(tmp_path: Path) -> None:
     batch_path = tmp_path / "discovery_batch_index.csv"
     _write_csv(batch_path, ("sample_stem", "raw_file"), [])
     candidates_path = tmp_path / "discovery_candidates.csv"
-    _write_csv(candidates_path, tuple(
-        column for column in DISCOVERY_CANDIDATE_COLUMNS
-        if column != "tag_evidence_json"
-    ), [])
+    _write_csv(
+        candidates_path,
+        tuple(
+            column
+            for column in DISCOVERY_CANDIDATE_COLUMNS
+            if column != "tag_evidence_json"
+        ),
+        [],
+    )
 
     with pytest.raises(ValueError, match="missing required columns.*candidate_csv"):
         read_discovery_batch_index(batch_path)

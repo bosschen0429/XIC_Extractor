@@ -139,7 +139,7 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryCandidate, ...]]):
                 for cid in ids
                 if cid not in feature_ids
                 and self.locations[cid].precursor_mz_basis
-                in {"scan_precursor", "mixed"}
+                in {"scan_precursor", "scan_monoisotopic", "mixed"}
             )
             self._review_mass_index[stem] = (
                 [mz for mz, _ in support_rows],

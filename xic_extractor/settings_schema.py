@@ -36,7 +36,7 @@ CANONICAL_SETTINGS_DEFAULTS: dict[str, str] = {
     "ms1_morphology_smoothing_window_points": str(
         DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points
     ),
-    "ms2_precursor_tol_da": "1.1",
+    "ms2_precursor_tol_da": "0.8",
     "nl_min_intensity_ratio": "0.01",
     "count_no_ms2_as_detected": "false",
     "injection_order_source": "",
@@ -73,7 +73,7 @@ CANONICAL_SETTINGS_DESCRIPTIONS: dict[str, str] = {
     ),
     "ms2_precursor_tol_da": (
         "MS2 precursor m/z 半徑（Da，|scan precursor − 推算 precursor| 上限；"
-        "儀器隔離寬度 1.6 Da（±0.8）加實測邊緣透過量 → 1.1 Da，見 #466）"
+        "方法隔離全寬 1.6 Da 對應名義半寬 0.8 Da）"
     ),
     "nl_min_intensity_ratio": (
         "NL product 強度至少為該 scan base peak 的比例（1% 排除 noise）"

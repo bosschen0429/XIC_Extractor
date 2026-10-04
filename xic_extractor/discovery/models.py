@@ -7,6 +7,14 @@ from xic_extractor.discovery.evidence_config import (
     DEFAULT_EVIDENCE_PROFILE,
     DiscoveryEvidenceProfile,
 )
+from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+from xic_extractor.precursor_evidence import (
+    Ms1PrecursorObservation,
+    PrecursorLossAssessment,
+    assess_precursor_loss,
+    supports_direct_nl,
+)
+from xic_extractor.precursor_evidence import PrecursorMzBasis as PrecursorMzBasis
 from xic_extractor.settings_schema import normalize_resolver_mode
 
 if TYPE_CHECKING:
@@ -15,10 +23,12 @@ if TYPE_CHECKING:
     )
 
 ReviewPriority = Literal["HIGH", "MEDIUM", "LOW"]
-PrecursorMzBasis = Literal["scan_precursor", "product_plus_neutral_loss"]
-GroupPrecursorMzBasis = Literal["scan_precursor", "product_plus_neutral_loss", "mixed"]
+GroupPrecursorMzBasis = Literal[
+    "scan_precursor", "scan_monoisotopic", "product_plus_neutral_loss", "mixed"
+]
 NeutralLossErrorBasis = Literal[
     "measured_scan_precursor_product",
+    "recorded_monoisotopic_precursor_product",
     "configured_loss_inferred_precursor",
     "mixed",
 ]
@@ -148,7 +158,7 @@ class DiscoverySettings:
     precursor_mz_tolerance_ppm: float = 20.0
     product_mz_tolerance_ppm: float = 20.0
     product_search_ppm: float = 50.0
-    ms2_precursor_tol_da: float = 1.1
+    ms2_precursor_tol_da: float = 0.8
     nl_min_intensity_ratio: float = 0.01
     seed_rt_gap_min: float = 0.20
     ms1_search_padding_min: float = 0.35
@@ -196,12 +206,37 @@ class DiscoverySeed:
     neutral_loss_tag: str
     configured_neutral_loss_da: float
     observed_neutral_loss_da: float
-    observed_loss_error_ppm: float
+    observed_loss_error_ppm: float | None
     matched_tag_names: tuple[str, ...] = ()
     tag_evidence_json: str = "{}"
     scan_precursor_mz: float | None = None
     precursor_mz_basis: PrecursorMzBasis = "scan_precursor"
+    precursor_metadata: Ms2PrecursorMetadata | None = None
     acquisition_source_id: str = ""
+    ms1_precursor_observation: Ms1PrecursorObservation | None = None
+
+    def assess_precursor_loss(self, tolerance_ppm: float) -> PrecursorLossAssessment:
+        return assess_precursor_loss(
+            basis=self.precursor_mz_basis,
+            precursor_mz=self.precursor_mz,
+            product_mz=self.product_mz,
+            neutral_loss_da=self.configured_neutral_loss_da,
+            observed_loss_da=self.observed_neutral_loss_da,
+            observed_loss_error_ppm=self.observed_loss_error_ppm,
+            tolerance_ppm=tolerance_ppm,
+            selected_mz=self.scan_precursor_mz,
+            metadata=self.precursor_metadata,
+            ms1_observation=self.ms1_precursor_observation,
+        )
+
+    @property
+    def supports_direct_nl(self) -> bool:
+        return supports_direct_nl(
+            self.precursor_mz_basis,
+            self.precursor_mz,
+            self.scan_precursor_mz,
+            self.precursor_metadata,
+        )
 
 
 @dataclass(frozen=True)
@@ -214,7 +249,7 @@ class DiscoverySeedGroup:
     precursor_mz: float
     product_mz: float
     observed_neutral_loss_da: float
-    neutral_loss_mass_error_ppm: float
+    neutral_loss_mass_error_ppm: float | None
     rt_seed_min: float
     rt_seed_max: float
     matched_tag_names: tuple[str, ...] = ()
@@ -343,7 +378,7 @@ class DiscoveryCandidate:
     seed_scan_ids: tuple[int, ...]
     neutral_loss_tag: str
     configured_neutral_loss_da: float
-    neutral_loss_mass_error_ppm: float
+    neutral_loss_mass_error_ppm: float | None
     rt_seed_min: float
     rt_seed_max: float
     ms1_search_rt_min: float
@@ -396,7 +431,7 @@ class DiscoveryCandidate:
         seed_scan_ids: tuple[int, ...],
         neutral_loss_tag: str,
         configured_neutral_loss_da: float,
-        neutral_loss_mass_error_ppm: float,
+        neutral_loss_mass_error_ppm: float | None,
         rt_seed_min: float,
         rt_seed_max: float,
         ms1_search_rt_min: float,
@@ -425,7 +460,10 @@ class DiscoveryCandidate:
     ) -> "DiscoveryCandidate":
         discovery_candidate_state = assign_discovery_candidate_state(
             ms1_peak_found=ms1_peak_found,
-            precursor_mz_basis=precursor_mz_basis,
+            has_nl_support=(
+                best_seed.supports_direct_nl
+                and precursor_mz_basis in {"scan_precursor", "scan_monoisotopic"}
+            ),
         )
         return cls(
             review_priority=review_priority,
@@ -564,11 +602,11 @@ def build_discovery_physical_selection_subject_id(
 def assign_discovery_candidate_state(
     *,
     ms1_peak_found: bool,
-    precursor_mz_basis: GroupPrecursorMzBasis,
+    has_nl_support: bool,
 ) -> DiscoveryCandidateState:
     if not ms1_peak_found:
         return "review_only_orphan_nl"
-    if precursor_mz_basis in {"product_plus_neutral_loss", "mixed"}:
+    if not has_nl_support:
         return "ms1_feature_nl_rescued"
     return "ms1_feature_nl_supported"
 

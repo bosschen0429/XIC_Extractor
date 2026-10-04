@@ -61,6 +61,139 @@ from xic_extractor.review_records import (
 )
 
 
+@pytest.mark.parametrize(
+    "width,offset,supported",
+    [
+        (1.6, 0.0, False),
+        (2.4, 0.0, True),
+        (None, None, False),
+        (2.4, None, False),
+        (1.6, -0.5, True),
+    ],
+)
+def test_recorded_monoisotopic_reference_requires_isolation_support(
+    tmp_path: Path, width, offset, supported
+) -> None:
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+
+    fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("s1",))
+    mono = 300.1615
+    product = 184.11323547363
+    loss = 116.0474
+    evidence = mint_cid_nl_evidence_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("s1"),
+        scan_number=19561,
+        precursor_mz=mono,
+        product_mz=product,
+        configured_neutral_loss_da=loss,
+        observed_neutral_loss_da=mono - product,
+        observed_loss_error_ppm=abs(mono - product - loss) / loss * 1e6,
+        scan_rt_min=8.0,
+        product_intensity=278825.7,
+        precursor_mz_basis="scan_monoisotopic",
+        scan_precursor_mz=301.16497802734,
+        precursor_metadata=Ms2PrecursorMetadata(
+            monoisotopic_mz=mono,
+            charge=1,
+            isolation_width_da=width,
+            isolation_offset_da=offset,
+        ),
+    )
+    individual, sets = assessment_module.resolve_cid_nl_method_relations(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("s1"),
+        evidence_refs=(evidence,),
+        candidate_peaks=(cid_nl_peak(fixture, "s1", mz=mono),),
+        policy=cid_nl_support_policy(),
+    )
+    assert bool(individual) is supported
+    assert not sets
+    payload = json.loads(canonical_cid_nl_evidence_bytes(evidence.observation))
+    assert payload["precursor_isolation_membership"] == (
+        "unknown"
+        if width is None or offset is None
+        else "inside_nominal"
+        if supported
+        else "outside_nominal"
+    )
+    assert evidence.observation.observed_loss_error_ppm == pytest.approx(
+        7.44977, abs=1e-5
+    )
+
+
+@pytest.mark.parametrize(
+    "centroids,selected,width,offset,parent_rt,status,supported",
+    [
+        ((500.001,), 500.5, 1.6, 0.0, 7.99, "compatible", True),
+        ((), 500.5, 1.6, 0.0, 7.99, "parent_ms1_ion_missing", False),
+        ((500.001, 500.002), 500.5, 1.6, 0.0, 7.99, "parent_ms1_ion_ambiguous", False),
+        ((500.05,), 500.5, 1.6, 0.0, 7.99, "neutral_loss_mismatch", False),
+        ((500.001,), 499.2005, 1.6, 0.0, 7.99, "outside_nominal_isolation", False),
+        ((500.001,), 500.5, None, None, 7.99, "isolation_unavailable", False),
+        ((500.001,), 500.5, 1.6, 0.0, 7.8, "compatible", False),
+    ],
+)
+def test_parent_ms1_measurement_qualifies_inference_without_rewriting_origin(
+    tmp_path, centroids, selected, width, offset, parent_rt, status, supported
+):
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+    from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+
+    fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("s1",))
+    evidence = mint_cid_nl_evidence_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("s1"),
+        scan_number=42,
+        precursor_mz=500.0,
+        product_mz=500.0 - 116.0474,
+        configured_neutral_loss_da=116.0474,
+        observed_neutral_loss_da=116.0474,
+        observed_loss_error_ppm=None,
+        scan_rt_min=8.0,
+        product_intensity=400.0,
+        precursor_mz_basis="product_plus_neutral_loss",
+        scan_precursor_mz=selected,
+        precursor_inference_tolerance_da=0.8,
+        precursor_metadata=Ms2PrecursorMetadata(
+            charge=1,
+            isolation_width_da=width,
+            isolation_offset_da=offset,
+            master_scan_number=41,
+        ),
+        ms1_precursor_observation=Ms1PrecursorObservation(41, parent_rt, centroids),
+    )
+    policy = cid_nl_support_policy()
+    verdict = evidence.observation.assess_precursor_loss(
+        policy.neutral_loss_tolerance_ppm
+    )
+    assert verdict.status == status
+    individual, sets = assessment_module.resolve_cid_nl_method_relations(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("s1"),
+        evidence_refs=(evidence,),
+        candidate_peaks=(cid_nl_peak(fixture, "s1"),),
+        policy=policy,
+    )
+    assert bool(individual) is supported
+    assert not sets
+    payload = json.loads(canonical_cid_nl_evidence_bytes(evidence.observation))
+    assert payload["precursor_mz_basis"] == "product_plus_neutral_loss"
+    assert payload["precursor_mz"] == 500.0
+    assert payload["observed_loss_error_ppm"] is None
+    assert payload["ms1_precursor_observation"]["centroid_mzs"] == list(centroids)
+    if supported:
+        assert individual[0].content.precursor_mz == 500.001
+        assert individual[0].content.observed_loss_error_ppm == pytest.approx(
+            0.001 / 116.0474 * 1e6
+        )
+    with pytest.raises(CidNlEvidenceContractError, match="recorded parent"):
+        replace(
+            evidence.observation,
+            ms1_precursor_observation=Ms1PrecursorObservation(40, 7.99, (500.001,)),
+        )
+
+
 def test_inferred_evidence_persists_scan_provenance_and_exact_projection(
     tmp_path: Path,
 ) -> None:
@@ -75,7 +208,7 @@ def test_inferred_evidence_persists_scan_provenance_and_exact_projection(
         product_mz=observation.product_mz,
         configured_neutral_loss_da=observation.configured_neutral_loss_da,
         observed_neutral_loss_da=observation.observed_neutral_loss_da,
-        observed_loss_error_ppm=observation.observed_loss_error_ppm,
+        observed_loss_error_ppm=None,
         scan_rt_min=observation.scan_rt_min,
         product_intensity=observation.product_intensity,
         precursor_mz_basis="product_plus_neutral_loss",
@@ -85,6 +218,17 @@ def test_inferred_evidence_persists_scan_provenance_and_exact_projection(
     payload = json.loads(canonical_cid_nl_evidence_bytes(inferred.observation))
     assert payload["schema_version"] == "cid_nl_evidence_observation"
     assert payload["precursor_mz_basis"] == "product_plus_neutral_loss"
+    assert payload["observed_loss_error_ppm"] is None
+    assert payload["supports_direct_nl"] is False
+    assert assessment_module.resolve_cid_nl_method_relations(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("s1"),
+        evidence_refs=(inferred,),
+        candidate_peaks=(cid_nl_peak(fixture, "s1"),),
+        policy=cid_nl_support_policy(),
+    ) == ((), ())
+    with pytest.raises(CidNlEvidenceContractError, match="no independent"):
+        replace(inferred.observation, observed_loss_error_ppm=0.0)
     assert payload["scan_precursor_mz"] == observation.precursor_mz + 0.25
     assert payload["precursor_inference_tolerance_da"] == 0.25
     assert direct.observation.precursor_mz_basis == "scan_precursor"
@@ -112,7 +256,7 @@ def test_inferred_evidence_persists_scan_provenance_and_exact_projection(
         neutral_loss_tag="DNA_dR",
         configured_neutral_loss_da=observation.configured_neutral_loss_da,
         observed_neutral_loss_da=observation.observed_neutral_loss_da,
-        observed_loss_error_ppm=observation.observed_loss_error_ppm,
+        observed_loss_error_ppm=None,
         precursor_mz_basis="product_plus_neutral_loss",
         scan_precursor_mz=inferred.observation.scan_precursor_mz,
         acquisition_source_id=observation.acquisition_source_id,
@@ -1674,3 +1818,61 @@ def _support_assessment(
         evidence_refs=evidence_refs,
         individual_support_refs=support_refs,
     )
+
+
+def test_monoisotopic_canonical_evidence_binds_vendor_metadata(tmp_path):
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+
+    fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("s1",))
+    direct = cid_nl_evidence(fixture, "s1", scan_number=42, scan_rt_min=8.0)
+    observed = direct.observation
+    metadata = Ms2PrecursorMetadata(
+        monoisotopic_mz=observed.precursor_mz,
+        charge=1,
+        isolation_width_da=1.6,
+        isolation_offset_da=0.2,
+        master_scan_number=40,
+    )
+    mono = mint_cid_nl_evidence_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("s1"),
+        **{
+            field.name: getattr(observed, field.name)
+            for field in fields(observed)
+            if field.name
+            not in {
+                "canonical_sample_identity_id",
+                "acquisition_source_id",
+                "acquisition_mode",
+                "precursor_mz_basis",
+                "scan_precursor_mz",
+                "precursor_metadata",
+            }
+        },
+        precursor_mz_basis="scan_monoisotopic",
+        scan_precursor_mz=observed.precursor_mz + 1.0035,
+        precursor_metadata=metadata,
+    )
+    payload = json.loads(canonical_cid_nl_evidence_bytes(mono.observation))
+    assert payload["precursor_metadata"]["master_scan_number"] == 40
+    assert payload["precursor_mz_basis"] == "scan_monoisotopic"
+    assert payload["scan_precursor_mz"] != payload["precursor_mz"]
+    with pytest.raises(CidNlEvidenceContractError, match="recorded precursor"):
+        replace(mono.observation, precursor_metadata=None)
+    with pytest.raises(CidNlEvidenceContractError, match="singly charged"):
+        replace(mono.observation, precursor_metadata=replace(metadata, charge=2))
+    with pytest.raises(CidNlEvidenceContractError, match="mismatches"):
+        replace(
+            mono,
+            observation=replace(
+                mono.observation,
+                precursor_metadata=replace(metadata, master_scan_number=39),
+            ),
+        )
+    # A product-derived claim still obeys physical isolation bounds.
+    with pytest.raises(CidNlEvidenceContractError, match="inference tolerance"):
+        replace(
+            mono.observation,
+            precursor_mz_basis="product_plus_neutral_loss",
+            precursor_inference_tolerance_da=1.2,
+        )

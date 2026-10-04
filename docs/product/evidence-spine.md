@@ -24,8 +24,16 @@ workflow owns those decisions.
   - The Targeted adapter must also match the exact request-pinned target
     snapshot and scan number. Its measured scan precursor must remain within
     the ppm tolerance of that exact target.
-  - Direct Discovery must carry a finite measured `scan_precursor_mz` equal to
-    the canonical evidence precursor.
+  - Discovery preserves selected m/z separately from vendor monoisotopic
+    assignment and product-plus-loss derivation. Canonical evidence retains
+    nominal isolation membership independently from source; inferred loss error
+    is unavailable, not zero. Recorded mass compatibility alone grants no
+    precursor–product relation.
+    A separate `Ms1PrecursorObservation` may retain the exact parent scan, RT
+    and positive centroids in an inferred precursor's search window. The pure
+    `precursor_evidence` owner assesses this measurement without rewriting the
+    candidate's origin; relation owners consume its mass/isolation answer and
+    qualify the physical peak interval.
   - Neither projection artifact is a selection or delivery decision.
 - The existing `peak_detection` owner exposes a bounded `PeakObservationRef`.
   - The physical content of a `PeakObservationRef` is canonical sample
@@ -46,6 +54,18 @@ workflow owns those decisions.
   artifact to exactly one physical MS1 peak within the exact supplied candidate
   universe. DIA is outside this contract because there is no mature lab DIA
   analysis method.
+  Strict relations require an independent precursor reference with compatible
+  nominal isolation. An outside/unknown monoisotopic assignment or unverified
+  product-based derivation remains evidence without individual or candidate-set
+  NL support. An inferred seed can gain support from one independently measured
+  parent-MS1 centroid: measured precursor minus product must satisfy the existing
+  NL tolerance, the measured precursor must be inside nominal isolation, and
+  both parent MS1 and MS2 must lie inside the peak. Missing or ambiguous parent
+  ions do not qualify. Relations report the measured mass and actual residual;
+  the original inferred evidence retains its null loss error.
+  The selected scan precursor retains acquisition support when geometry is
+  unavailable. Final detection and numeric authority remain with the existing
+  method assessment and cell-decision owners.
 - `CidNlChromatographicSupportRef` then preserves one or more exact strict DDA
   scan relations while collapsing them to one chromatographic support event
   for that physical peak. Scan reorder is identity-neutral; duplicate scans or
@@ -297,8 +317,15 @@ evidence ref for each exact `(acquisition_source_id, scan_number)` key.
 Composite methods add the configured loss to that evidence key, so one physical
 scan can support two distinct required losses without being counted as two scans.
 Duplicate evidence for the same scan/loss is rejected. Multiple matched product
-centroids for one loss must be resolved by the evidence provider before
-assessment minting. When multiple distinct strict scans support one physical
+centroids for one loss are resolved by the evidence provider after all parent-MS1
+windows have been read and before assessment minting. Receipt reconstruction
+retains every alternative. The method event prefers independently compatible
+precursor/loss evidence, then the independent loss error, product intensity,
+configured tag order, and stable mass/source tie-breaks. An inferred equality
+never supplies a zero-error advantage. If no alternative supports the loss,
+one unresolved event remains; all physical candidates still participate in
+individual/set relations. Composite methods retain one event per configured
+loss. When multiple distinct strict scans support one physical
 peak for a single-loss method, the Alignment adapter projects their arithmetic
 mean measured product m/z and observed neutral loss as one order-neutral
 chromatographic identity event. The exact per-scan evidence remains preserved

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Protocol
 
@@ -18,6 +19,7 @@ from xic_extractor.discovery.models import (
 from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
 from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
+from xic_extractor.precursor_evidence import RECORDED_PRECURSOR_BASES
 
 _WRITER_ROUNDING_ABS_TOL = 5e-6
 _WRITER_ROUNDING_REL_TOL = 5e-6
@@ -33,6 +35,43 @@ class StrictSeedReceiptRaw(Protocol):
         rt_min: float,
         rt_max: float,
     ) -> Iterator[Ms2ScanEvent]: ...
+
+
+def read_parent_ms1_observations(
+    raw: object,
+    seeds: tuple[DiscoverySeed, ...],
+    *,
+    tolerance_ppm: float,
+) -> tuple[DiscoverySeed, ...]:
+    """Attach fresh parent-MS1 facts without changing a seed's search provenance."""
+    read_windows = getattr(raw, "read_ms1_mass_windows", None)
+    if not callable(read_windows):
+        return seeds
+    windows: dict[int, tuple[int, float, float]] = {}
+    for index, seed in enumerate(seeds):
+        metadata = seed.precursor_metadata
+        if (
+            seed.precursor_mz_basis != "product_plus_neutral_loss"
+            or metadata is None
+            or metadata.master_scan_number is None
+        ):
+            continue
+        radius = seed.precursor_mz * tolerance_ppm * 1e-6
+        windows[index] = (
+            metadata.master_scan_number,
+            seed.precursor_mz - radius,
+            seed.precursor_mz + radius,
+        )
+    if not windows:
+        return seeds
+    requests = tuple(dict.fromkeys(windows.values()))
+    observations = dict(zip(requests, read_windows(requests), strict=True))
+    return tuple(
+        replace(seed, ms1_precursor_observation=observations[windows[index]])
+        if index in windows
+        else seed
+        for index, seed in enumerate(seeds)
+    )
 
 
 def read_complete_discovery_scan_seeds(
@@ -64,8 +103,8 @@ def read_complete_discovery_scan_seeds(
                     seed.configured_neutral_loss_da
                     if preserve_configured_losses
                     else 0.0,
-                    seed.precursor_mz if include_inferred else 0.0,
-                    seed.product_mz if include_inferred else 0.0,
+                    seed.precursor_mz,
+                    seed.product_mz,
                 )
                 existing = by_scan.get(key)
                 if existing is not None and existing[1] != seed:
@@ -75,6 +114,46 @@ def read_complete_discovery_scan_seeds(
                     )
                 by_scan[key] = (scan, seed)
     return tuple(by_scan[scan_number] for scan_number in sorted(by_scan))
+
+
+def resolve_discovery_scan_events(
+    seeds: tuple[DiscoverySeed, ...],
+    *,
+    settings: DiscoverySettings,
+    preserve_configured_losses: bool = False,
+) -> tuple[DiscoverySeed, ...]:
+    """Resolve one evidence event per scan/loss after all parent facts are read.
+
+    Receipt replay retains alternatives. The provider prefers independent NL
+    compatibility, then measured loss accuracy and intensity. An unresolved
+    event remains available to the method owner without gaining strict support.
+    The caller supplies one owner-bound acquisition batch.
+    """
+    tag_precedence = {
+        tag: index for index, tag in enumerate(settings.selected_tag_names)
+    }
+
+    def rank(seed: DiscoverySeed) -> tuple[bool, float, float, int, float, float, str]:
+        assessment = seed.assess_precursor_loss(settings.nl_tolerance_ppm)
+        error = assessment.observed_loss_error_ppm
+        return (
+            not assessment.supports_nl,
+            abs(error) if error is not None else float("inf"),
+            -seed.product_intensity,
+            tag_precedence.get(seed.neutral_loss_tag, len(tag_precedence)),
+            seed.precursor_mz,
+            seed.product_mz,
+            seed.precursor_mz_basis,
+        )
+
+    by_event: dict[tuple[int, float], DiscoverySeed] = {}
+    for seed in sorted(seeds, key=rank):
+        key = (
+            seed.scan_number,
+            seed.configured_neutral_loss_da if preserve_configured_losses else 0.0,
+        )
+        by_event.setdefault(key, seed)
+    return tuple(by_event[key] for key in sorted(by_event))
 
 
 def _read_exact_scans(
@@ -147,6 +226,7 @@ def _same_scan_numerics(left: Ms2Scan, right: Ms2Scan) -> bool:
         and left.rt == right.rt
         and left.precursor_mz == right.precursor_mz
         and left.base_peak == right.base_peak
+        and left.precursor_metadata == right.precursor_metadata
         and np.array_equal(left.masses, right.masses)
         and np.array_equal(left.intensities, right.intensities)
     )
@@ -178,7 +258,7 @@ def _read_exact_seed(
         for seed in scan_seeds
         if seed.scan_number in candidate.seed_scan_ids
         and (
-            seed.precursor_mz_basis == "scan_precursor"
+            seed.precursor_mz_basis in RECORDED_PRECURSOR_BASES
             or candidate.precursor_mz_basis == "mixed"
             or include_inferred
         )
@@ -272,7 +352,7 @@ def _read_exact_seed(
         return tuple(
             seed
             for seed in matches
-            if include_inferred or seed.precursor_mz_basis == "scan_precursor"
+            if include_inferred or seed.precursor_mz_basis in RECORDED_PRECURSOR_BASES
         )
     if include_inferred:
         selected_tag = min(
@@ -285,9 +365,10 @@ def _read_exact_seed(
         return tuple(seed for seed in matches if seed.neutral_loss_tag == selected_tag)
     # MS1 merging can retain inferred members beyond the final representative's
     # product window. They only account for declared scans here; the direct
-    # product check still applies to every seed returned as strict evidence.
+    # product check still applies to each recorded reference. Reconstruction
+    # preserves source facts; the method owner decides isolation/support.
     matches = tuple(
-        seed for seed in matches if seed.precursor_mz_basis == "scan_precursor"
+        seed for seed in matches if seed.precursor_mz_basis in RECORDED_PRECURSOR_BASES
     )
     if not matches:
         return ()
@@ -388,4 +469,6 @@ __all__ = [
     "StrictSeedReceiptError",
     "StrictSeedReceiptRaw",
     "read_complete_discovery_scan_seeds",
+    "resolve_discovery_scan_events",
+    "read_parent_ms1_observations",
 ]

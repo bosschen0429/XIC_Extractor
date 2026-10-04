@@ -3,7 +3,7 @@ data_dir,C:/your/data/folder,資料來源資料夾（換批次只改這裡）
 dll_dir,<thermo-rawfile-reader-dll-dir>,Thermo RawFileReader DLL 路徑（本機設定用；不要提交真實路徑）
 signal_processing_method,gaussian,Canonical signal smoothing method（固定 gaussian）
 signal_processing_window_points,15,Canonical Gaussian smoothing 視窗點數（必須為奇數；預設 15）
-ms2_precursor_tol_da,1.1,MS2 precursor m/z 半徑（Da，|scan precursor − 推算 precursor| 上限；儀器隔離寬度 1.6 Da（±0.8）加實測邊緣透過量 → 1.1 Da，見 #466）
+ms2_precursor_tol_da,0.8,MS2 precursor m/z 半徑（Da，|scan precursor − 推算 precursor| 上限；方法隔離全寬 1.6 Da 對應名義半寬 0.8 Da）
 nl_min_intensity_ratio,0.01,NL product 強度至少為該 scan base peak 的比例（1% 排除 noise）
 count_no_ms2_as_detected,FALSE,是否將無 MS2 觸發的樣品算為偵測到（DDA 隨機性假陰性補救用）
 keep_intermediate_csv,false,是否保留中間 CSV 檔（除錯用，預設關閉）
