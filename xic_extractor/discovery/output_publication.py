@@ -19,7 +19,6 @@ from xic_extractor.discovery.csv_writer import (
 from xic_extractor.discovery.models import (
     DISCOVERY_BRIEF_COLUMNS,
     DISCOVERY_CANDIDATE_COLUMNS,
-    MS1_FEATURE_BACKED_STATES,
     DiscoveryCandidate,
     DiscoveryPhysicalWorkItem,
     DiscoveryRunOutputs,
@@ -55,20 +54,14 @@ _BATCH_INDEX_COLUMNS = (
 )
 
 
-def _is_feature_backed_candidate(candidate: DiscoveryCandidate) -> bool:
-    return (
-        candidate.ms1_peak_found
-        and candidate.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
-    )
-
-
 def persisted_discovery_candidates(
     candidates: tuple[DiscoveryCandidate, ...],
 ) -> tuple[DiscoveryCandidate, ...]:
+    """Keep measured peaks for review independently of NL search eligibility."""
     return tuple(
         candidate
         for candidate in candidates
-        if _is_feature_backed_candidate(candidate)
+        if candidate.ms1_peak_found
         or candidate.precursor_mz_basis
         in {"scan_precursor", "scan_monoisotopic", "mixed"}
     )
@@ -78,15 +71,15 @@ def _persisted_physical_records(
     records: tuple[DiscoveryPhysicalFactRecord, ...],
     bindings: tuple[DiscoveryCandidatePhysicalBinding, ...],
 ) -> tuple[DiscoveryPhysicalFactRecord, ...]:
-    """Project feature evidence and compact its persistence-local work indices."""
-    feature_bindings = tuple(
+    """Retain measured peak evidence and compact persistence-local work indices."""
+    peak_bindings = tuple(
         binding
         for binding in bindings
-        if _is_feature_backed_candidate(binding.candidate)
+        if binding.candidate.ms1_peak_found
     )
     used_work = {
         ordinal
-        for binding in feature_bindings
+        for binding in peak_bindings
         for ordinal in binding.member_work_ordinals
     }
     retained = tuple(
@@ -95,7 +88,7 @@ def _persisted_physical_records(
     work_indices = {
         record.work_item.work_ordinal: index for index, record in enumerate(retained)
     }
-    linked = bind_discovery_physical_record_evidence(retained, feature_bindings)
+    linked = bind_discovery_physical_record_evidence(retained, peak_bindings)
     return tuple(
         replace(
             record,

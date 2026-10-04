@@ -1501,6 +1501,89 @@ def test_inferred_precursor_with_a_doubly_charged_isotope_is_held_for_review(
     )
 
 
+def test_held_inferred_peak_remains_in_review_and_physical_sidecar(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.physical_fact_persistence import (
+        IndexedDiscoveryPhysicalFacts,
+    )
+
+    raw_path = tmp_path / "held-peak.raw"
+    raw_path.write_bytes(b"inferred peak with a doubly charged isotope")
+    settings = _settings()
+    spec = compile_discovery_processing_run_spec(
+        (raw_path,),
+        discovery_settings=settings,
+        signal_processing_profile=SignalProcessingProfile(),
+    )
+    rt = np.arange(9.3, 10.7, 0.01)
+    intensity = 100.0 + 10_000 * np.exp(-0.5 * ((rt - 10.0) / 0.05) ** 2)
+    raw = _OwnerBoundFakeRawHandle(
+        spec.acquisition_inputs[0].acquisition_source,
+        [
+            _scan_event(
+                scan_number=100,
+                rt=10.0,
+                precursor_mz=500.5,
+                masses=[500.0 - 116.0474],
+            )
+        ],
+        rt=rt,
+        intensity=intensity,
+    )
+    ion_mz = 500.0005
+    monkeypatch.setattr(
+        "xic_extractor.discovery.pipeline._ms1_centroid_source",
+        lambda _raw: lambda _rt, low, high: next(
+            (mz for mz in (ion_mz, ion_mz + 1.0033548 / 2) if low <= mz <= high),
+            None,
+        ),
+    )
+    outputs = run_discovery(
+        raw_path,
+        output_dir=tmp_path / "out",
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+        raw_opener=lambda *_args: raw,
+        run_spec=spec,
+    )
+
+    (candidate,) = read_discovery_candidates_csv(outputs.candidates_csv)
+    assert candidate.precursor_mz_basis == "product_plus_neutral_loss"
+    assert candidate.discovery_candidate_state == "review_only_ambiguous_coisolation"
+    assert "doubly charged" in candidate.reason
+    assert candidate.ms1_peak_found
+    assert candidate.ms1_apex_rt == pytest.approx(10.0)
+    assert candidate.ms1_apex_mz == pytest.approx(ion_mz)
+    assert candidate.ms1_area > 0
+    (review,) = _read_csv(outputs.review_csv)
+    assert review["candidate_id"] == candidate.candidate_id
+    assert float(review["ms1_area"]) == candidate.ms1_area
+    assert "review-only ambiguous inferred precursor" in review["review_note"]
+
+    assert outputs.physical_facts_json is not None
+    saved = IndexedDiscoveryPhysicalFacts(
+        outputs.physical_facts_json,
+        expected_run_spec=spec,
+        expected_acquisition_input=spec.acquisition_inputs[0],
+        candidate_ids=frozenset({candidate.candidate_id}),
+    )
+    try:
+        record = saved.load_candidates([candidate.candidate_id])[candidate.candidate_id]
+        assert record.evaluation.facts is not None
+        facts = record.evaluation.facts
+        assert facts.area_counts_seconds == candidate.ms1_area
+        assert facts.apex_rt_min == candidate.ms1_apex_rt
+        assert any(
+            link.candidate_id == candidate.candidate_id
+            for link in record.candidate_links
+        )
+    finally:
+        saved.close()
+
+
 @pytest.mark.parametrize(
     ("basis", "offsets"),
     [

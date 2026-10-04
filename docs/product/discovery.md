@@ -33,8 +33,10 @@ the error relative to the configured loss mass; it is not the acceptance gate.
 - Discovery candidate state is an execution boundary as well as a review
   label. Only `ms1_feature_nl_supported` and `ms1_feature_nl_rescued` are
   MS1-feature-backed inputs to Alignment RAW owner build. Candidate and review
-  CSVs retain all feature-backed rows and only non-feature rows with a
-  `scan_precursor`, `scan_monoisotopic`, or `mixed` precursor basis. These review-only rows do not
+  CSVs retain every candidate with a measured MS1 peak, including candidates
+  held for ambiguous precursor evidence. Rows without an MS1 peak are retained
+  only with a `scan_precursor`, `scan_monoisotopic`, or `mixed` precursor basis.
+  These review-only rows do not
   independently authorize another RAW XIC search, cross-sample grouping,
   Matrix identity, or Backfill. Pure CID-NL production planning preserves the complete canonical
   subject membership and query centers, but excludes subjects with no
@@ -44,8 +46,9 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   universe, including samples without a local candidate, for Backfill.
 - Persistence filtering does not change classification or product-plus-neutral-loss
   precursor inference. `discovery_physical_facts.json` retains physical records
-  only for feature-backed candidates, including their merge-member evidence;
-  non-feature rows have no persisted physical facts. Receipts, batch-index
+  for candidates with a measured MS1 peak, including held candidates and their
+  merge-member evidence; rows without a peak have no persisted physical facts.
+  Retaining a physical answer does not grant NL qualification. Receipts, batch-index
   counts and hashes describe the persisted candidate rows.
 - Seed evidence can include MS2 neutral loss, precursor inference, MS1 trace
   support, and future evidence providers.
@@ -178,7 +181,9 @@ Producing a library alone does not enable qualification.
   (0.50168 m/z, within the 5 ppm reading spread) above it, in most of the
   scans where the ion is read, becomes `review_only_ambiguous_coisolation` with
   a reason naming the doubly charged isotope, unless a singly charged seed on
-  the same peak carries it. Selected precursors are not tested.
+  the same peak carries it. The held peak, area and reason remain in the
+  candidate/review outputs and physical sidecar without authorizing Alignment
+  search or a Matrix value. Selected precursors are not tested.
 - Direct and inferred rows from one MS2 scan may coexist. `candidate_id` must
   retain the sample/scan anchor plus precursor/product row identity so those
   rows cannot collide, and `tag_evidence_json` must retain precursor-basis,
