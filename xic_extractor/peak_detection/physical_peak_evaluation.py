@@ -14,12 +14,6 @@ from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
 )
-from xic_extractor.peak_detection.background_shape import (
-    has_deficient_monotone_run,
-    has_unresolved_valley_floors,
-    is_background_like_peak,
-    is_unresolved_shoulder_peak,
-)
 from xic_extractor.peak_detection.baseline import (
     asls_baseline_on_rt,
 )
@@ -665,7 +659,6 @@ def qualified_physical_segments(
 ) -> tuple[PhysicalSegment, ...]:
     """Return segments with shared original-XIC support before candidate ranking.
 
-    Discovery's additional background-shape policy remains part of its answer.
     This does not rebuild preparation, universe identity, or question hashes.
     """
     return tuple(
@@ -701,22 +694,8 @@ def _physical_segment_support_failure(
         left > 0.0 and right > 0.0 for left, right in zip(original, original[1:])
     ):
         return "insufficient_original_xic_continuity"
-    # Sparse tail hits do not turn an ordinary continuous core into censoring.
-    selected_signal = np.asarray(
-        prepared.positive_signal[selected.start_index : selected.end_index]
-    )
-    core = np.flatnonzero(selected_signal >= 0.2 * selected.height)
-    core_raw = acquired[core[0] : core[-1] + 1]
-    if (
-        _positive_runs(core_raw) >= 3
-        and not _has_continuous_core_support(
-            original[core[0] : core[-1] + 1], prepared.profile.window_points
-        )
-        and not _hit_enrichment(
-            np.asarray(prepared.raw), selected.start_index, selected.end_index
-        )
-    ):
-        return "insufficient_local_hit_enrichment"
+    # Hit density can identify additional censored clusters; it does not
+    # establish the absence of an already observed morphology peak.
     left, right, apex = (
         selected.start_index, selected.end_index, selected.apex_index
     )
@@ -767,56 +746,13 @@ def answer_physical_peak_question(
             if support_failure:
                 state, reason = "unavailable", support_failure
                 selected = None
-            elif "local_hit_density_enrichment" in selected.evidence_sources:
-                # Censored clusters already passed the shared hit-density test;
-                # adjacency and intensity shape cannot qualify them again.
-                background_qualified = (
-                    question.selection_policy_version
-                    == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
-                )
             elif (
                 question.selection_policy_version
                 == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
             ):
-                left, right, apex = (
-                    selected.start_index, selected.end_index, selected.apex_index
-                )
-                signal = np.asarray(prepared.positive_signal, dtype=float)
-                raw = np.asarray(prepared.raw[left:right], dtype=float)
-                rt = np.asarray(prepared.rt[left:right], dtype=float)
-                noise_mad = short_scale_noise_mad(rt, raw)
+                # Shared acquired support and local contrast qualify the peak.
+                # Overlap remains review evidence on the measured interval.
                 background_qualified = True
-                left_valley = float(np.min(signal[left : apex + 1]))
-                right_valley = float(np.min(signal[apex : right]))
-                apex_height = float(signal[apex])
-                if (
-                    is_unresolved_shoulder_peak(
-                        segment_class=selected.segment_class,
-                        apex_height=apex_height,
-                        left_valley=left_valley,
-                        right_valley=right_valley,
-                    )
-                    or has_unresolved_valley_floors(
-                        apex_height=apex_height,
-                        left_valley=left_valley,
-                        right_valley=right_valley,
-                    )
-                    or has_deficient_monotone_run(
-                        raw,
-                        apex_index=apex - left,
-                    )
-                    or is_background_like_peak(
-                        rt,
-                        raw,
-                        np.asarray(prepared.baseline[left:right], dtype=float),
-                        apex_index=apex - left,
-                        raw_noise_mad=noise_mad,
-                    )
-                ):
-                    state, reason = (
-                        "unavailable", "background_like_peak_shape"
-                    )
-                    selected = None
     answer_basis = {
         "schema_version": "physical_peak_answer",
         "state": state,

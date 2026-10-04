@@ -61,12 +61,12 @@ Ordinary physical peaks require original sampling support before exposing
 numeric facts: Gaussian spread cannot create independent acquired evidence.
 The selected interval needs an adjacent pair of original XIC values above the
 owner baseline; constant background is not peak support.
-A core with isolated dropouts retains ordinary support when it has an acquired
-run above baseline spanning the configured Gaussian window and acquired scans
-outnumber missing scans in every core window. A short continuous patch alone
-cannot establish ordinary support for an otherwise censored core. Isolated
-dropouts neither require density enrichment nor authorize replacement of
-morphology-owned boundaries or area.
+Ordinary support does not additionally require an above-baseline run spanning
+the configured Gaussian window or hit-density enrichment. Those conditions
+must not erase a morphology peak with adjacent acquired support and sufficient
+local contrast. The stronger continuous-core check instead decides whether a
+censored cluster may replace morphology-owned boundaries and area; isolated
+dropouts in an ordinary continuous core do not authorize that replacement.
 
 For left-censored signals, unsmoothed binary hit density must be enriched against
 both local flanks. The shared physical owner uses a fourfold enrichment and a
@@ -160,100 +160,53 @@ These checks address missing acquired support and insufficient local contrast,
 not every form of noise or
 chemical identity. Historical policies keep their recorded interpretation.
 
-## Why Smoothed-Everywhere
+## What The Canonical Signal Establishes
 
-### The noise regime is different from pharma quantitation
+One profile gives boundary, intensity, area, and shape consumers a reproducible
+numerical definition. Sharing that definition prevents those consumers from
+silently using different preprocessing. It is an engineering contract, not
+proof that smoothing is chemically more accurate than raw integration or that
+detection and quantitation must always use the same signal.
 
-Mature LC-MS software (Skyline, Analyst, MassHunter) typically uses a hybrid
-approach: smooth for peak detection, integrate the raw signal within those
-boundaries. This design was developed for triple-quadrupole MRM data where
-signal-to-noise ratios routinely exceed 100:1. In that regime the difference
-between raw and smoothed integration is negligible, so the instability cost of
-raw integration is near zero.
+The fixed Gaussian has nonnegative symmetric weights and a single public point
+count. It averages local scan-to-scan fluctuations without the negative kernel
+lobes of some polynomial filters. Symmetry does not guarantee an unchanged
+observed apex for an asymmetric, overlapping, truncated, or irregularly sampled
+peak. A fixed point count also corresponds to different durations when scan
+spacing changes.
 
-Full-scan HRMS metabolomics operates in a fundamentally lower S/N regime. Raw
-traces carry substantial high-frequency noise, and boundary placement on raw
-data is poorly reproducible. The hybrid approach's assumption — that raw
-integration adds precision — breaks down when the raw signal itself is noisy.
+### Smoothing And Area Are Different Questions
 
-### Regulatory context does not apply
+For a linear smoother `S`, preserving the unweighted sum requires
+`1^T S = 1^T`. Preserving an area computed with trapezoid weights `w` instead
+requires `w^T S = w^T`. A unit-sum scan-index Gaussian does not in general
+satisfy the second condition on an irregular RT grid. Truncating the convolved
+trace at acquired edges can also lose signal that spreads outside that trace;
+a selected interval can lose signal to its observed neighbors.
 
-The pharma preference for raw-trace integration is driven by regulatory
-compliance (FDA/EMA bioanalytical method validation guidelines), which treats
-smoothing as a data transformation requiring justification. This constraint
-presupposes that raw data is clean enough to be directly usable — a premise
-that holds for MRM but not for full-scan HRMS. Metabolomics pipelines are not
-subject to these validation guidelines and should not inherit their design
-trade-offs without re-examining the premises.
+The physical area additionally depends on background estimation, positive
+clipping, and selected boundaries. Raw area can include baseline or overlapping
+chemical signal; subtracting an estimated baseline does not guarantee their
+removal. Neither a smaller canonical area nor a larger raw area establishes
+which is closer to the target contribution. Comparable processing across
+samples alone does not prove that the resulting bias cancels in area ratios.
 
-### Systematic underestimation is acceptable for relative quantitation
+### Evidence Required To Change The Method
 
-Gaussian smoothing can systematically reduce absolute area and intensity. This
-quantitative difference is accepted for the canonical direction because stable
-same-feature interpretation is the higher-level requirement; the pipeline does
-not manufacture parity with legacy raw integration. Comparable processing makes
-relative quantitation the intended use. Comparable processing does not prove
-that bias cancels for every peak, sample, scan rate, or sample matrix. Non-default production claims and
-external absolute-value comparisons therefore require method-appropriate
-evidence.
+Compare trace membership, peak boundaries, background handling, and area
+calculation separately, using the same observed input when attributing a
+numerical difference. Known synthetic components can test those mechanisms;
+real independent concentration, spike, or dilution controls are needed for a
+chemical quantitation claim. Uniformly scaling a saved trace preserves its SNR
+and is only a numerical scaling check. A single high-concentration standard
+injection establishes neither a response curve nor low-concentration matrix
+accuracy.
 
-### Stability enables automated rule-based interpretation
-
-The pipeline processes hundreds to thousands of features per sample without
-manual review. Every downstream rule — confidence scoring, noise-shape
-severity, boundary promotion, shape similarity, pattern discovery — depends on
-trace values being stable and reproducible. Raw traces are too sensitive to
-high-frequency noise, causing over-interpretation: false boundary splits,
-unstable severity scores, and irreproducible shape comparisons. The stability
-gained from smoothing makes the entire rule chain tractable.
-
-### One trace for all decisions eliminates internal contradictions
-
-Using the same smoothed trace for boundary detection and area integration
-avoids the pathological case where smoothed boundaries land on raw-signal
-local maxima rather than true valley points. In the hybrid approach, a
-boundary that is optimal for the smoothed curve may be suboptimal for the raw
-curve, producing areas that are neither the best smoothed estimate nor the best
-raw estimate.
-
-## Why Gaussian Smoothing Specifically
-
-The pipeline uses a Gaussian kernel (symmetric, sigma = window / 6.0) rather
-than other smoothing methods. The original choice was inherited from Xcalibur
-(Thermo vendor software), but the choice is independently justified for this
-pipeline's design goals.
-
-### Alternatives considered
-
-| Method | Theoretical advantage | Why it conflicts with smoothed-everywhere |
-| --- | --- | --- |
-| Savitzky-Golay | Preserves peak height/width better via local polynomial fit | Introduces oscillation (ringing) near sharp features; adds a polynomial-order parameter; not the formal Targeted smoothing profile; used by the `savgol` candidate resolver |
-| Wavelet denoising | Scale-adaptive; preserves sharp features while removing noise | Behavior varies with peak shape, reducing cross-sample predictability — directly opposes the stability goal |
-| Whittaker smoother | Continuous smoothness/fidelity trade-off; mathematically elegant | Additional parameters; higher computational cost; tunable fidelity is a liability when the design goal is uniform smoothing |
-| Median filter | Extremely robust to spikes and outliers | Distorts continuous peak shapes; not suitable for chromatographic signals |
-| LOESS / LOWESS | Local regression; adapts to varying point density | Computationally expensive; at fixed scan rates offers no advantage over Gaussian |
-
-### Why Gaussian wins in this design space
-
-Most advanced smoothing methods optimize for preserving original signal detail.
-The smoothed-everywhere principle explicitly does not want to preserve
-high-frequency detail, because in the full-scan HRMS noise regime that detail
-is predominantly noise. Gaussian's uniform peak-height suppression and uniform
-broadening — typically cited as its weaknesses — are advantages here. Uniform
-suppression and broadening make smoothing behavior fully predictable across
-samples and features.
-
-Key properties that align with the design goals:
-
-- **Symmetric kernel**: no apex shift, so all RT-dependent rules (identity,
-  alignment, boundary) are unaffected by the smoothing step.
-- **Smooth frequency response**: no ringing or oscillation artifacts that could
-  trigger false boundary splits or shape-similarity mismatches.
-- **Single effective parameter** (window size; sigma derived): minimal
-  configuration surface, reproducible behavior.
-- **Vendor familiarity**: Xcalibur users see comparable smoothed traces,
-  reducing cognitive disconnect when visually comparing pipeline output against
-  vendor software.
+An RT-aware mass-preserving smoother is a possible method change, not a
+correction that can silently reuse the current profile identity. It must also
+satisfy the retained-evaluation replay contract. Until a replacement has both
+appropriate method evidence and reproducible persisted answers, the current
+Gaussian/AsLS definition remains the operational owner.
 
 ## Migration Boundary
 

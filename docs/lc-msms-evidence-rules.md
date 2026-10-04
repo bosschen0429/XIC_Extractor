@@ -105,18 +105,18 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   Missing support gives `insufficient_original_xic_support`; no adjacent pair
   gives `insufficient_original_xic_continuity`. Gaussian spread and constant
   background cannot supply independent acquired support.
-  A core with isolated dropouts retains ordinary support when it has an acquired
-  run above baseline spanning one configured Gaussian window and acquired scans
-  outnumber missing scans in every core window. A short continuous patch alone
-  does not establish ordinary support for an otherwise censored core.
-  Censored detection clusters use local hit-density enrichment instead: the
+  Local hit density identifies additional censored detection clusters: the
   observed hit rate must exceed both local flanks fourfold and pass a one-sided
-  exact test corrected for trace length. A cluster containing an ordinary
-  continuous peak retains its morphology segmentation. A qualified censored
+  exact test corrected for trace length. A cluster containing an acquired run
+  above baseline spanning one configured Gaussian window, with acquired scans
+  outnumbering missing scans in every core window, retains its morphology
+  segmentation. This continuous-core check governs censored-cluster replacement;
+  it does not govern admission of an existing morphology peak. Lack of hit-density
+  enrichment does not reject a morphology peak with original adjacent support
+  and local contrast. A qualified censored
   cluster bypasses adjacency and intensity-shape checks, uses its observed
   trapezoid area, and carries `local_hit_density_enrichment` and
-  `near_detection_limit`. Censored values are not imputed. Sparse cores without
-  continuous support or enrichment give `insufficient_local_hit_enrichment`.
+  `near_detection_limit`. Censored values are not imputed.
   A selected peak also needs local relief at least twice a local fluctuation
   scale. For each interior original point, subtract its value from the linear
   interpolation between its immediate neighbors and divide by the Euclidean
@@ -135,7 +135,12 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   relative to fluctuations. The fixed factor 2 is a minimum contrast policy,
   not a detection significance or universally calibrated S/N claim.
   These checks are necessary lower bounds, not sufficient proof of chemical
-  identity or quantification readiness. Qualification neither
+  identity or quantification readiness. Discovery uses the same original-support
+  and local-contrast qualification as Targeted. Alternating acquired amplitudes,
+  elevated valley floors, or poor agreement with a monotone peak shape do not
+  independently establish peak absence. Existing overlap and provisional-quality
+  evidence remains available for review; an available overlapping interval does
+  not establish a pure constituent area. Qualification neither
   changes integration nor removes weak segments to resolve ambiguity. Fresh
   policies use segment-universe-v3; questions cannot cross boundary-policy
   families. Legacy

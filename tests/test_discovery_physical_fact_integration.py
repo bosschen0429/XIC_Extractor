@@ -1034,17 +1034,6 @@ def test_physical_fact_owner_rejects_cross_acquisition_reassembly(
             "insufficient_original_xic_continuity",
             15,
         ),
-        (
-            np.linspace(6.8, 8.8, 101),
-            np.where(
-                (np.arange(101) % 2 == 1) | (np.arange(101) == 50),
-                1000.0 * np.exp(-0.5 * ((np.arange(101) - 50) / 8.0) ** 2),
-                0.0,
-            ),
-            "unavailable",
-            "insufficient_local_hit_enrichment",
-            15,
-        ),
     ],
 )
 def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
@@ -1109,17 +1098,38 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
     }
 
 
-def test_discovery_recovers_near_baseline_peak_after_exterior_context_crop(
-    tmp_path: Path,
+@pytest.mark.parametrize("trace_case", [
+    "exterior_context_crop", "separate_noise_hits", "alternating_amplitude",
+    "overlapping_components",
+])
+def test_discovery_publishes_supported_peak(
+    tmp_path: Path, trace_case: str,
 ) -> None:
-    from tests.test_physical_peak_evaluation_persistence import _context_sensitive_trace
+    from tests.test_physical_peak_evaluation_persistence import (
+        _context_sensitive_trace,
+        _overlapping_triplet_trace,
+        _short_peak_with_separate_noise_hits,
+    )
 
-    rt, intensity = _context_sensitive_trace()
-    rt = 7.8 + rt[:-1] - rt[23]
-    intensity = intensity[:-1]
+    query_rt = 8.3
+    if trace_case == "exterior_context_crop":
+        rt, intensity = _context_sensitive_trace()
+        rt = query_rt + rt[:-1] - rt[23]
+        intensity = intensity[:-1]
+    elif trace_case == "separate_noise_hits":
+        rt, intensity = _short_peak_with_separate_noise_hits()
+        rt = query_rt + rt - rt[int(np.argmax(intensity))]
+    elif trace_case == "alternating_amplitude":
+        rt = np.linspace(0.0, 10.0, 101)
+        intensity = 1000.0 * np.exp(-0.5 * ((rt - 5.0) / 0.5) ** 2)
+        intensity[::2] *= 0.1
+        rt += query_rt - 5.0
+    else:
+        rt, intensity = _overlapping_triplet_trace()
+        rt += query_rt - 5.0
     profile = SignalProcessingProfile(window_points=15)
     raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"owner-bound-exterior-context")
+    raw_path.write_bytes(b"owner-bound-supported-peak")
     source = build_acquisition_source_identity(
         raw_path,
         acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
@@ -1129,7 +1139,7 @@ def test_discovery_recovers_near_baseline_peak_after_exterior_context_crop(
     raw.rt, raw.intensity = rt, intensity
     result = _backfill_ms1_candidates_with_acquisition(
         raw,
-        (_group((_seed(scan_number=10, rt=7.80),)),),
+        (_group((_seed(scan_number=10, rt=query_rt),)),),
         acquisition_source=source,
         run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_backfill_settings(),
@@ -1141,10 +1151,33 @@ def test_discovery_recovers_near_baseline_peak_after_exterior_context_crop(
     assert evaluation.state == "available"
     assert evaluation.facts is not None
     assert candidate.ms1_peak_found is True
-    assert candidate.ms1_apex_rt == pytest.approx(7.8)
+    assert candidate.ms1_apex_rt == evaluation.facts.apex_rt_min
+    assert candidate.ms1_apex_rt == pytest.approx(
+        query_rt, abs=0.15 if trace_case == "overlapping_components" else 1e-8,
+    )
     assert candidate.ms1_area == evaluation.facts.area_counts_seconds
-    assert rt[0] < evaluation.facts.left_rt_min < 7.8
-    assert 7.8 < evaluation.facts.right_rt_min < rt[-1]
+    assert rt[0] < evaluation.facts.left_rt_min < query_rt
+    assert query_rt < evaluation.facts.right_rt_min < rt[-1]
+    if trace_case == "overlapping_components":
+        assert candidate.ms1_trace_quality == "physical_shoulder_overlap"
+        assert candidate.is_provisional
+        assert candidate.review_priority == "MEDIUM"
+        assert "physical_shoulder_overlap" in candidate.reason
+
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
+
+    path = write_discovery_candidates_csv(
+        tmp_path / "candidates.csv", result.candidates,
+    )
+    (published,) = read_discovery_candidates_csv(path)
+    assert published.ms1_peak_found
+    assert published.ms1_area == pytest.approx(candidate.ms1_area)
+    assert published.ms1_apex_rt == pytest.approx(candidate.ms1_apex_rt)
+    assert published.ms1_trace_quality == candidate.ms1_trace_quality
+    assert published.is_provisional == candidate.is_provisional
+    assert published.reason == candidate.reason
+    assert published.review_priority == candidate.review_priority
 
 
 @pytest.mark.parametrize("same_question", [True, False])
