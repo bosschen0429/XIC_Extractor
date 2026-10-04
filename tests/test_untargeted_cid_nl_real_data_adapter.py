@@ -39,13 +39,21 @@ from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
 )
 
 
-@pytest.mark.parametrize("fresh_available", [True, False])
-@pytest.mark.parametrize("shifted_mass", [True, False])
+@pytest.mark.parametrize(
+    ("fresh_available", "precursor_case"),
+    [
+        (True, "direct"),
+        (False, "direct"),
+        (True, "shifted"),
+        (False, "shifted"),
+        (False, "inferred"),
+    ],
+)
 def test_changed_physical_query_evaluates_once_and_preserves_support(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     fresh_available: bool,
-    shifted_mass: bool,
+    precursor_case: str,
 ) -> None:
     import json
     from types import SimpleNamespace
@@ -60,6 +68,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     )
     from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
     from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
     from xic_extractor.peak_detection import capture as capture_owner
     from xic_extractor.peak_detection.observations import (
         physical_peak_observation_integration,
@@ -85,6 +94,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True
     )
+    shifted_mass = precursor_case == "shifted"
     center = 13.263299286133334
     source_raw = _FakeRaw((8.0,))
     source_raw.rt = np.linspace(12.517828061866668, 13.92044642215, 521)
@@ -101,6 +111,22 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         )
         for index, rt in enumerate((center - 0.25, center + 0.05))
     )
+    if precursor_case == "inferred":
+        source_raw.scans = tuple(
+            replace(
+                scan,
+                precursor_mz=500.5,
+                precursor_metadata=Ms2PrecursorMetadata(
+                    charge=1,
+                    isolation_width_da=1.6,
+                    isolation_offset_da=0.0,
+                    master_scan_number=scan.scan_number - 1,
+                ),
+            )
+            for scan in source_raw.scans
+        )
+        for scan in source_raw.scans:
+            source_raw.rt[scan.scan_number - 1] = scan.rt
     source_raw.intensity = 250.0 + 1000.0 * np.exp(
         -0.5 * ((source_raw.rt - center) / 0.15) ** 2
     )
@@ -116,6 +142,30 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     peak_config = _peak_config(tmp_path)
     profile = SignalProcessingProfile(window_points=15)
     raw, vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+    if precursor_case == "inferred":
+        from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+
+        monkeypatch.setattr(
+            type(raw),
+            "iter_ms2_scan_subset",
+            lambda self, lo, hi, ids: (
+                event
+                for event in source_raw.iter_ms2_scans(lo, hi)
+                if event.scan_number in ids
+            ),
+        )
+
+        def read_parent_windows(self, requests):
+            return tuple(
+                Ms1PrecursorObservation(
+                    scan_number=number,
+                    rt_min=float(source_raw.rt[number - 1]),
+                    centroid_mzs=(500.001,),
+                )
+                for number, _low, _high in requests
+            )
+
+        monkeypatch.setattr(type(raw), "read_ms1_mass_windows", read_parent_windows)
     if shifted_mass:
         # The ion is inside both source windows but outside the method-center
         # window. Respect the vendor mass ranges instead of mocking capture.
@@ -230,7 +280,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     # universe holds that peak once.
     assert len(assessment.candidate_peaks) == (1 if fresh_available else 0)
     assert result.acquisition is not None
-    assert len(result.acquisition.traces) == (2 if shifted_mass else 1)
+    assert len(result.acquisition.traces) == (1 if precursor_case == "direct" else 2)
     states = []
     changed_questions = 0
     captures = {capture.candidate_id: capture for capture in result.captures}
@@ -370,6 +420,36 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     assert [item.physical_evaluation for item in reused.captures] == [
         item.physical_evaluation for item in result.captures
     ]
+    if precursor_case == "inferred":
+        from xic_extractor.untargeted_execution.partition.workers import (
+            _backfill_support_context,
+        )
+
+        assert assessment.content.reason_codes == (
+            "qualifying_cid_nl_without_usable_ms1_peak",
+        )
+        support = _backfill_support_context(result)
+        # The group search finds a peak in its own window. It still needs the
+        # measured parent evidence from the empty initial capture to qualify it.
+        source_raw.intensity = 1000.0 * np.exp(
+            -0.5 * ((source_raw.rt - center) / 0.035) ** 2
+        )
+        recovery = backfill_untargeted_cid_nl_sample_subject(
+            processing_owners=owners,
+            sample=fixture.sample("S1"),
+            method_subject=fixture.method_subject,
+            group_center_rt=center,
+            group_center_mz=500.0,
+            support_policy=support.support_policy,
+            peak_config=peak_config,
+            raw=raw,
+            initial_assessment=support.initial_assessment,
+            settings=settings,
+            signal_processing_profile=profile,
+        )
+        assert recovery.assessment.content.method_result == "SUPPORT"
+        assert len(recovery.assessment.candidate_peaks) == 1
+        assert len(recovery.assessment.evidence_refs) == 2
     with pytest.raises(ValueError, match="trace_content_id"):
         capture_owner.capture_reacquired_physical_peak(
             scope=capture.scope,

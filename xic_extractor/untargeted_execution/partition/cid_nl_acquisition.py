@@ -809,14 +809,10 @@ def adapt_current_discovery_sample_subject(
             key=lambda item: item.content.peak_observation_content_id,
         )
     )
-    verified_seeds = (
-        read_parent_ms1_observations(
-            bound_raw,
-            tuple(seed for _scan, seed in scan_seeds),
-            tolerance_ppm=settings.precursor_mz_tolerance_ppm,
-        )
-        if candidate_universe
-        else tuple(seed for _scan, seed in scan_seeds)
+    verified_seeds = read_parent_ms1_observations(
+        bound_raw,
+        tuple(seed for _scan, seed in scan_seeds),
+        tolerance_ppm=settings.precursor_mz_tolerance_ppm,
     )
     for raw_seed in resolve_discovery_scan_events(
         verified_seeds,
