@@ -72,6 +72,18 @@ decisions.
   negative evidence unless the relevant target/inclusion list proves that the
   candidate should have been queried.
 
+## Centroid dropout diagnosis
+
+A zero in an extracted trace does not by itself establish ion absence. Check
+the acquired centroid stream before attributing zeros to a narrow mass window
+or changing the peak algorithm. Compare mass error, centroid noise, nearby
+detectable centroids, background, and injection time in adjacent scans.
+
+The weakest nearby centroid is a local detection-floor proxy, not a vendor
+threshold. High absolute intensity can still be close to that floor in a
+high-background region. Evaluate window, filtering, and detection-floor
+explanations separately for the current batch and scan mode.
+
 ## Provenance Minimum
 
 Any RAW-backed evidence artifact intended for durable review should record:

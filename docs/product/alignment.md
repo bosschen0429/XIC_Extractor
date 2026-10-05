@@ -111,6 +111,10 @@ discovery settings are rejected before acquisition or output creation.
 
 ### ISTD input and RT drift correction
 
+Compare a proposed correction against the current ISTD-corrected result, not
+only uncorrected RT. Estimate drift from the current batch and acquisition
+order; a previous batch's curve or direction is not a calibration rule.
+
 The Alignment CLI resolves ISTD input before RAW acquisition. An explicit
 targets CSV or reference workbook takes precedence; otherwise it uses the same
 `config/targets.example.csv` template as the GUI's fresh default and prints the

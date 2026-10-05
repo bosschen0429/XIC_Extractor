@@ -109,6 +109,18 @@ surfaces; this command does not add an Inspector UI panel.
 
 ## Verification
 
+### Four-method nanoLC fixture
+
+The MO/T3/T4/T5 comparison uses three `ISTDs_12p5ppb` injections (01–03) per
+method: 12 RAW files, excluding SPEC and Blank. Confirm those labels against
+the supplied manifest. Compare repeatability within each method; report
+cross-method profile and elution-order comparisons separately. T3 is the
+selected follow-up method, but that choice alone does not remove the other
+three methods from this fixture's acceptance scope. This fixture is not a
+default requirement for other Discovery methods.
+
+### Checks
+
 - Schema validation tests for metadata fields and role values.
 - Identity tests for deterministic owner minting, alias parity, rename
   invalidation, projection-field neutrality, and missing/ambiguous/stale
