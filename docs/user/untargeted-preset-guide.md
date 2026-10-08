@@ -115,7 +115,7 @@ These values apply unless overridden in the `[discovery]` section.
 | `precursor_mz_tolerance_ppm` | 20.0 | Precursor m/z tolerance (PPM) |
 | `product_mz_tolerance_ppm` | 20.0 | Product ion m/z tolerance (PPM) |
 | `product_search_ppm` | 50.0 | Product ion search window (PPM) |
-| `ms2_precursor_tol_da` | 1.6 | MS2 precursor tolerance (Da) |
+| `ms2_precursor_tol_da` | 0.8 | Maximum precursor inference radius (Da), capped by the recorded isolation half-width; explicit saved values are preserved |
 | `nl_min_intensity_ratio` | 0.01 | Minimum NL intensity ratio (1%) |
 | `seed_rt_gap_min` | 0.20 | Minimum RT gap between seeds (min) |
 | `ms1_search_padding_min` | 0.35 | MS1 search window padding (min) |

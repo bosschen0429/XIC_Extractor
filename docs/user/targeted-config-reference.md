@@ -32,7 +32,7 @@ reference and ISTD evidence select a component without recomputing its area.
 
 | Field | Type | Default | Valid range | Description |
 | --- | --- | --- | --- | --- |
-| `ms2_precursor_tol_da` | float | 1.6 | > 0 | MS2 precursor m/z matching window (Da). Typically quadrupole isolation width + 0.4 |
+| `ms2_precursor_tol_da` | float | 0.8 | > 0 | Maximum precursor inference radius (Da), capped by the recorded isolation half-width. Explicit saved values are preserved. |
 | `nl_min_intensity_ratio` | float | 0.01 | 0 – 1 | NL product must reach this fraction of the scan's base peak |
 | `nl_rt_anchor_search_margin_min` | float | 2.0 | > 0 | Search radius around `rt_center` for NL anchor MS2 (minutes) |
 | `nl_rt_anchor_half_window_min` | float | 1.0 | > 0 | XIC half-width when NL anchor is found (minutes) |

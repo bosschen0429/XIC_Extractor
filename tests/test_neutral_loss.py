@@ -1102,6 +1102,11 @@ def test_targeted_monoisotopic_evidence_uses_recorded_precursor_and_counts_scan_
     if charge == 2:
         assert anchor is None
         assert result.status == "NO_MS2"
+        assert result.valid_ms2_scan_count == 1
+        assert result.matched_scan_count == 0
+        assert evidence.nl_status == "NO_MS2"
+        assert evidence.trigger_scan_count == 0
+        assert evidence.strict_nl_scan_count == 0
         assert evidence.best_product_evidence is None
         return
     assert anchor == (8.1 if supported else None)

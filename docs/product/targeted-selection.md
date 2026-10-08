@@ -166,6 +166,13 @@ those facts itself.
 
 ### Detection and review policy
 
+- Targeted NL matching excludes scans whose recorded vendor charge is not 1;
+  unavailable charge remains eligible. `NO_MS2` means no method-eligible
+  precursor scan, not necessarily no acquired MS2 scan. If only rejected-charge
+  scans are present, `valid_ms2_scan_count` still records them but
+  `matched_scan_count` is zero. The existing Targeted product projection owns
+  counted detection; `count_no_ms2_as_detected` applies only to legacy outputs
+  without that projection and cannot override it.
 - Region, boundary, and selected-envelope logic are candidate and
   model-selection surfaces.
 - Before region, boundary, or selected-envelope logic changes any selected
