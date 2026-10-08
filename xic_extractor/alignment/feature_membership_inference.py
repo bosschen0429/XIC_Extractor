@@ -157,39 +157,37 @@ class BatchRtWarp:
 
     def has_support(self, sample_stem: str) -> bool:
         """Distinguish an unsupported identity transform from measured zero."""
-        return any(
-            sample == sample_stem and knots for sample, knots in self.knots_by_sample
-        )
+        return bool(self._knots(sample_stem))
 
     def offset_min(self, sample_stem: str, rt_min: float) -> float:
-        knots = dict(self.knots_by_sample).get(sample_stem, ())
-        if not knots:
-            return 0.0
-        if rt_min <= knots[0][0]:
-            return knots[0][1]
-        if rt_min >= knots[-1][0]:
-            return knots[-1][1]
-        right = bisect_right(knots, rt_min, key=lambda knot: knot[0])
-        left_rt, left_offset = knots[right - 1]
-        right_rt, right_offset = knots[right]
-        fraction = (rt_min - left_rt) / (right_rt - left_rt)
-        return left_offset + fraction * (right_offset - left_offset)
+        return _interpolated_offset(self._knots(sample_stem), rt_min)
 
     def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
-        knots = dict(self.knots_by_sample).get(owner.sample_stem, ())
+        # Knots are keyed by common RT; re-key them by observed RT to invert.
         observed = owner.owner_apex_rt
-        if not knots:
-            return observed
-        measured = tuple((rt + offset, rt) for rt, offset in knots)
-        if observed <= measured[0][0]:
-            return observed - knots[0][1]
-        if observed >= measured[-1][0]:
-            return observed - knots[-1][1]
-        right = bisect_right(measured, observed, key=lambda knot: knot[0])
-        left_observed, left_common = measured[right - 1]
-        right_observed, right_common = measured[right]
-        fraction = (observed - left_observed) / (right_observed - left_observed)
-        return left_common + fraction * (right_common - left_common)
+        knots = self._knots(owner.sample_stem)
+        return observed - _interpolated_offset(
+            tuple((rt + offset, offset) for rt, offset in knots), observed
+        )
+
+    def _knots(self, sample_stem: str) -> tuple[tuple[float, float], ...]:
+        return dict(self.knots_by_sample).get(sample_stem, ())
+
+
+def _interpolated_offset(
+    knots: tuple[tuple[float, float], ...], rt_min: float
+) -> float:
+    if not knots:
+        return 0.0
+    if rt_min <= knots[0][0]:
+        return knots[0][1]
+    if rt_min >= knots[-1][0]:
+        return knots[-1][1]
+    right = bisect_right(knots, rt_min, key=lambda knot: knot[0])
+    left_rt, left_offset = knots[right - 1]
+    right_rt, right_offset = knots[right]
+    fraction = (rt_min - left_rt) / (right_rt - left_rt)
+    return left_offset + fraction * (right_offset - left_offset)
 
 
 @dataclass(frozen=True, slots=True)
@@ -218,9 +216,9 @@ def predict_backfill_rt(
         (
             owner
             for owner in members
-            if owner.sample_stem != sample_stem
+            if cohort is not None
+            and owner.sample_stem != sample_stem
             and owner.sample_stem in injection_order
-            and cohort is not None
             and sample_cohorts.get(owner.sample_stem) == cohort
         ),
         key=lambda owner: (
@@ -301,15 +299,10 @@ class BatchRtWarpAccumulator:
         for group in groups:
             cohorts: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
             for owner in group:
-                if owner.sample_stem not in self._orders:
-                    continue
-                if self._cohorts is None:
-                    cohort = ""
-                else:
-                    if owner.sample_stem not in self._cohorts:
-                        continue
-                    cohort = self._cohorts[owner.sample_stem]
-                cohorts[cohort].append(owner)
+                stem = owner.sample_stem
+                cohort = "" if self._cohorts is None else self._cohorts.get(stem)
+                if stem in self._orders and cohort is not None:
+                    cohorts[cohort].append(owner)
             for members in cohorts.values():
                 if len(members) < _WARP_ANCHOR_MIN_MEMBERS:
                     continue

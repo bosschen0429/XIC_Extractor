@@ -151,12 +151,14 @@ def prepare_grouping_experiment(
         )
     )
     compact_inputs: list[GroupingInputs] = []
+    sample_stems = tuple(sample.metadata.raw_stem for sample in plan.context.samples)
+    injection_order = {
+        sample.metadata.raw_stem: sample.metadata.injection_order
+        for sample in plan.context.samples
+        if sample.metadata.injection_order is not None
+    }
     calibration = BatchRtWarpAccumulator(
-        injection_order={
-            sample.metadata.raw_stem: sample.metadata.injection_order
-            for sample in plan.context.samples
-            if sample.metadata.injection_order is not None
-        },
+        injection_order=injection_order,
         sample_cohorts={
             sample.metadata.raw_stem: sample.metadata.batch_id
             for sample in plan.context.samples
@@ -168,7 +170,6 @@ def prepare_grouping_experiment(
     groups: list[CrossSamplePeakGroupHypothesis] = []
     spool_directory.mkdir(parents=True, exist_ok=True)
     temporary = TemporaryDirectory(prefix=".grouping-bootstrap-", dir=spool_directory)
-    assert Path(temporary.name).resolve().is_relative_to(spool_directory.resolve())
     store = StreamedResultStore(Path(temporary.name), adapter.get_shared_objects())
     positions = []
     try:
@@ -222,14 +223,8 @@ def prepare_grouping_experiment(
             compact_inputs.append(
                 grouping_inputs_from_prepared(
                     (prepared,),
-                    sample_stems=tuple(
-                        sample.metadata.raw_stem for sample in plan.context.samples
-                    ),
-                    injection_order={
-                        sample.metadata.raw_stem: sample.metadata.injection_order
-                        for sample in plan.context.samples
-                        if sample.metadata.injection_order is not None
-                    },
+                    sample_stems=sample_stems,
+                    injection_order=injection_order,
                     alignment_config=alignment_config,
                     backfill_half_window_min=plan.context.peak_config.nl_rt_anchor_half_window_min,
                 )
@@ -244,12 +239,8 @@ def prepare_grouping_experiment(
         adapter.close_process_worker_pools()
         temporary.cleanup()
     inputs = GroupingInputs(
-        sample_stems=tuple(sample.metadata.raw_stem for sample in plan.context.samples),
-        injection_order={
-            sample.metadata.raw_stem: sample.metadata.injection_order
-            for sample in plan.context.samples
-            if sample.metadata.injection_order is not None
-        },
+        sample_stems=sample_stems,
+        injection_order=injection_order,
         alignment_config=alignment_config,
         backfill_half_window_min=plan.context.peak_config.nl_rt_anchor_half_window_min,
         worksets=tuple(
@@ -265,6 +256,6 @@ def prepare_grouping_experiment(
         inputs=inputs,
         groups=tuple(groups),
         selected_partition_count=len(selected),
-        total_partition_count=len(adapter.bootstrap_partitions),
+        total_partition_count=partition_count,
         initial_job_count=job_count,
     )

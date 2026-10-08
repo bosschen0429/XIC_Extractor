@@ -373,11 +373,6 @@ class UntargetedPartitionPipelineAdapter:
             if raw_worker_backend == "process"
             else raw_workers // self._acquisition_workers
         )
-        self._sample_phases = tuple(
-            (sample, phase)
-            for sample in context.samples
-            for phase in ("initial", "backfill")
-        )
         partitions: list[WorkPartition[tuple[CidNlMethodSubject, ...]]] = []
         for phase in ("initial", "backfill"):
             for index, subjects in enumerate(subject_partitions):
@@ -400,7 +395,7 @@ class UntargetedPartitionPipelineAdapter:
         self._partitions = tuple(partitions)
         self._bootstrap_count = len(subject_partitions)
         self._bootstrap_ready = threading.Event()
-        self._bootstrap_positions: dict[str, int] = {}
+        self._bootstrap_positions: dict[int, int] = {}
         self._bootstrap_store: StreamedResultStore | None = None
         self._rt_calibration = BatchRtWarpAccumulator(
             injection_order={
@@ -464,7 +459,8 @@ class UntargetedPartitionPipelineAdapter:
                 resource_key=resource_key,
                 worker_key=(
                     f"inline-acquisition:{partition.partition_key}:"
-                    f"{sample.identity.sample_identity_id}:{phase}"
+                    f"{sample.identity.sample_identity_id}:"
+                    f"{'initial' if self._is_bootstrap(partition) else 'backfill'}"
                 ),
                 source_reference=resolve_request_acquisition_source(
                     processing_owners=self._owners, sample=sample
@@ -473,14 +469,8 @@ class UntargetedPartitionPipelineAdapter:
                 owner_conditional=True,
             )
             for partition in self._partitions
-            for (sample, phase), resource_key in zip(
-                (
-                    (sample, phase)
-                    for sample, phase in self._sample_phases
-                    if partition.partition_key.endswith("-" + phase)
-                ),
-                partition.resource_keys,
-                strict=True,
+            for sample, resource_key in zip(
+                context.samples, partition.resource_keys, strict=True
             )
         )
         self._owner_completeness_attestation = (
@@ -499,6 +489,11 @@ class UntargetedPartitionPipelineAdapter:
     ) -> Sequence[WorkPartition[tuple[CidNlMethodSubject, ...]]]:
         """Complete scientific worksets, each acquired once before calibration."""
         return self._partitions[: self._bootstrap_count]
+
+    def _is_bootstrap(
+        self, partition: WorkPartition[tuple[CidNlMethodSubject, ...]]
+    ) -> bool:
+        return partition.index < self._bootstrap_count
 
     @property
     def processing_owners(self) -> ProcessingOwners:
@@ -574,7 +569,7 @@ class UntargetedPartitionPipelineAdapter:
             UntargetedPartitionResult,
         ]
     ]:
-        initial_only = partition.partition_key.endswith("-initial")
+        initial_only = self._is_bootstrap(partition)
         initial_results = None
         grouping_callback: Callable[
             [tuple[UntargetedInitialSampleResult, ...]], UntargetedPreparedGrouping
@@ -596,12 +591,11 @@ class UntargetedPartitionPipelineAdapter:
                 if should_cancel is not None and should_cancel():
                     raise InterruptedError("CID-NL calibration cancelled")
             assert self._bootstrap_store is not None and self._rt_warp is not None
-            bootstrap_key = (
-                partition.partition_key.removesuffix("-backfill") + "-initial"
-            )
             bootstrap = cast(
                 _BootstrapPartition,
-                self._bootstrap_store.read(self._bootstrap_positions[bootstrap_key]),
+                self._bootstrap_store.read(
+                    self._bootstrap_positions[partition.index - self._bootstrap_count]
+                ),
             )
             batch = bootstrap.batch
             initial_results = bootstrap.initial_results
@@ -683,7 +677,7 @@ class UntargetedPartitionPipelineAdapter:
         should_cancel: Callable[[], bool] | Callable[[], None] | None = None,
     ) -> PartitionCompositionOutput[PersistedUntargetedPartition]:
         batch, leaf = acquisition_output.result
-        if partition.partition_key.endswith("-initial"):
+        if self._is_bootstrap(partition):
             assert leaf.prepared_grouping is not None
             prepared = leaf.prepared_grouping
             sealed = store.append(
@@ -699,7 +693,7 @@ class UntargetedPartitionPipelineAdapter:
             )
             self._rt_calibration.add_groups(prepared.rt_anchor_groups)
             self._bootstrap_store = store
-            self._bootstrap_positions[partition.partition_key] = sealed.index
+            self._bootstrap_positions[partition.index] = sealed.index
             if len(self._bootstrap_positions) == self._bootstrap_count:
                 self._rt_warp = self._rt_calibration.freeze()
                 self._bootstrap_ready.set()
@@ -744,7 +738,7 @@ class UntargetedPartitionPipelineAdapter:
                 ),
                 semantic_contract=(
                     _BOOTSTRAP_CONTRACT
-                    if partition.partition_key.endswith("-initial")
+                    if self._is_bootstrap(partition)
                     else _PARTITION_CONTRACT
                 ),
                 payload_bytes=(
