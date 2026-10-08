@@ -42,8 +42,8 @@ that group.
 The frozen group center remains the group's identity/evidence coordinate.
 The request center is sample-specific: take up to twelve same-cohort
 injection neighbors, convert their measured RTs to common coordinates when
-supported, fit a robust local linear trend over same-cohort injection rank so steep
-drift is followed rather than lagged, then apply the target sample's frozen batch warp. Both XIC bounds
+supported, fit a robust local linear trend over injection order so steep drift
+is followed rather than lagged, then apply the target sample's frozen batch warp. Both XIC bounds
 and preferred-peak selection use this query RT. Insufficient calibration and
 missing-context fallbacks have explicit bases; neither means measured zero
 shift. See the [RT mechanism table](alignment.md#rt-mechanisms-and-their-consumers).

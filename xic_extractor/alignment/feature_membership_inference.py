@@ -215,18 +215,6 @@ def predict_backfill_rt(
             group_center_rt, "group_center_missing_injection_order"
         )
     cohort = sample_cohorts.get(sample_stem)
-    # Rank within the cohort, so interleaved injections of other cohorts do not
-    # widen the gaps the trend is fitted over.
-    cohort_orders = sorted(
-        value
-        for stem, value in injection_order.items()
-        if cohort is not None and sample_cohorts.get(stem) == cohort
-    )
-
-    def rank(stem: str) -> int:
-        return bisect_left(cohort_orders, injection_order[stem])
-
-    position = rank(sample_stem)
     nearest = sorted(
         (
             owner
@@ -237,8 +225,8 @@ def predict_backfill_rt(
             and sample_cohorts.get(owner.sample_stem) == cohort
         ),
         key=lambda owner: (
-            abs(rank(owner.sample_stem) - position),
-            rank(owner.sample_stem),
+            abs(injection_order[owner.sample_stem] - order),
+            injection_order[owner.sample_stem],
             owner.owner_id,
         ),
     )[:_BACKFILL_TREND_NEIGHBORS]
@@ -246,14 +234,14 @@ def predict_backfill_rt(
         return BackfillRtPrediction(
             group_center_rt, "group_center_no_same_cohort_neighbors"
         )
-    orders = [rank(owner.sample_stem) for owner in nearest]
+    orders = [injection_order[owner.sample_stem] for owner in nearest]
     if (
         rt_warp is not None
         and rt_warp.has_support(sample_stem)
         and all(rt_warp.has_support(owner.sample_stem) for owner in nearest)
     ):
         trend = _local_rt_trend(
-            orders, [rt_warp.corrected_rt_min(owner) for owner in nearest], position
+            orders, [rt_warp.corrected_rt_min(owner) for owner in nearest], order
         )
         return BackfillRtPrediction(
             max(0.0, trend + rt_warp.offset_min(sample_stem, trend)),
@@ -262,9 +250,7 @@ def predict_backfill_rt(
     return BackfillRtPrediction(
         max(
             0.0,
-            _local_rt_trend(
-                orders, [owner.owner_apex_rt for owner in nearest], position
-            ),
+            _local_rt_trend(orders, [owner.owner_apex_rt for owner in nearest], order),
         ),
         "local_feature_trend_insufficient_calibration",
     )
