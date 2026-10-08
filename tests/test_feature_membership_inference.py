@@ -169,7 +169,7 @@ def test_backfill_rt_follows_steep_local_drift_beyond_the_neighbors() -> None:
         _owner(sample, "f", apex_rt=10.0 + 0.1 * order)
         for order, sample in enumerate(samples, 1)
     )
-    orders = {sample: order for order, sample in enumerate(samples, 1)} | {"target": 12}
+    orders = {sample: order for order, sample in enumerate(samples, 1)} | {"target": 11}
     cohorts = dict.fromkeys(orders, "batch")
     flat = BatchRtWarp(
         tuple((sample, ((7.0, 0.0), (20.0, 0.0))) for sample in samples)
@@ -192,10 +192,20 @@ def test_backfill_rt_follows_steep_local_drift_beyond_the_neighbors() -> None:
         sample_cohorts=cohorts,
         rt_warp=None,
     )
-    assert calibrated.query_rt == pytest.approx(11.4)
+    assert calibrated.query_rt == pytest.approx(11.3)
     assert calibrated.basis == "calibrated_local_feature_trend"
-    assert uncalibrated.query_rt == pytest.approx(11.2)
+    assert uncalibrated.query_rt == pytest.approx(11.1)
     assert uncalibrated.basis == "local_feature_trend_insufficient_calibration"
+    interleaved = predict_backfill_rt(
+        sample_stem="target",
+        members=members,
+        group_center_rt=10.5,
+        injection_order={sample: order**2 for sample, order in orders.items()}
+        | {"other": 2},
+        sample_cohorts=cohorts | {"other": "different"},
+        rt_warp=None,
+    )
+    assert interleaved.query_rt == pytest.approx(11.1)
 
 
 def test_rt_warp_round_trip_uses_the_same_coordinate_system() -> None:
