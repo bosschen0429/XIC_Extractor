@@ -22,6 +22,7 @@ from xic_extractor.discovery import candidate_merge
 from xic_extractor.discovery.grouping import (
     build_discovery_seed_group,
     merge_seed_evidence,
+    select_representative_seed,
 )
 from xic_extractor.discovery.models import (
     DiscoveryCandidate,
@@ -252,9 +253,7 @@ def _backfill_ms1_candidates_with_acquisition(
 
     initial_physical_facts: dict[int, DiscoveryPhysicalFactRecord] = {}
     physical_trace_qualities: dict[int, str] = {}
-    apex_ion_mz_by_index: dict[int, float] = {}
-    apex_read_indexes: set[int] = set()
-    doubly_charged_indexes: set[int] = set()
+    apex_readings: dict[int, tuple[float | None, bool]] = {}
     if signal_processing_profile is not None:
         for physical_index, (plan, acquired) in enumerate(
             zip(physical_plans, acquired_traces, strict=True)
@@ -435,22 +434,18 @@ def _backfill_ms1_candidates_with_acquisition(
                     fact = physical_evaluations[-1]
                     physical_fact_by_index[index] = fact
                     physical_trace_qualities[index] = candidate.ms1_trace_quality
-                if index not in apex_read_indexes:
+                if index not in apex_readings:
                     # Read the retained peak after reacquisition and seed
                     # partitioning; shared physical questions reuse the reading.
-                    ion_mz, doubly_charged = _apex_ion_reading(
+                    apex_readings[index] = _apex_ion_reading(
                         candidate_plan,
                         candidate_trace,
                         fact.evaluation,
                         ms1_centroid_mz=ms1_centroid_mz,
                     )
-                    if ion_mz is not None:
-                        apex_ion_mz_by_index[index] = ion_mz
-                    if doubly_charged:
-                        doubly_charged_indexes.add(index)
-                    apex_read_indexes.add(index)
-            if index in apex_ion_mz_by_index:
-                candidate = replace(candidate, ms1_apex_mz=apex_ion_mz_by_index[index])
+                ion_mz, _doubly_charged = apex_readings[index]
+                if ion_mz is not None:
+                    candidate = replace(candidate, ms1_apex_mz=ion_mz)
             candidates.append(candidate)
             candidate_plans.append(candidate_plan)
             candidate_physical_indices.append(index)
@@ -463,13 +458,12 @@ def _backfill_ms1_candidates_with_acquisition(
     merge_result = _verify_precursor_evidence(
         raw, merge_result, candidate_plans, settings=settings
     )
-    if doubly_charged_indexes:
+    doubly_charged_by_source = tuple(
+        apex_readings.get(index, (None, False))[1] for index in physical_indices
+    )
+    if any(doubly_charged_by_source):
         merge_result = _hold_doubly_charged_candidates(
-            merge_result,
-            tuple(
-                physical_indices[source] in doubly_charged_indexes
-                for source in range(len(candidates))
-            ),
+            merge_result, doubly_charged_by_source
         )
     physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...] = ()
     if signal_processing_profile is not None:
@@ -537,7 +531,7 @@ def _physical_request_question(
         source.acquisition_source_id,
         build_discovery_physical_selection_subject_id(
             sample_stem=plan.group.sample_stem,
-            best_ms2_scan_id=_best_seed(plan.group.seeds).scan_number,
+            best_ms2_scan_id=select_representative_seed(plan.group.seeds).scan_number,
             precursor_mz=plan.group.precursor_mz,
             product_mz=plan.group.product_mz,
         ),
@@ -904,7 +898,7 @@ def _candidate_from_trace(
         Callable[[DiscoveryPhysicalFactRecord], None] | None
     ) = None,
 ) -> DiscoveryCandidate:
-    best_seed = _best_seed(group.seeds)
+    best_seed = select_representative_seed(group.seeds)
     rt_min = max(0.0, group.rt_seed_min - settings.ms1_search_padding_min)
     rt_max = group.rt_seed_max + settings.ms1_search_padding_min
     physical_evaluation: PhysicalPeakEvaluation | None = None
@@ -1309,17 +1303,3 @@ def _physical_terminal_candidate_reason(
     if not evaluation.reason.strip():
         raise ValueError("physical terminal evaluation requires a nonempty reason")
     return f"physical MS1 evaluation {evaluation.state}: {evaluation.reason}"
-
-
-def _best_seed(seeds: Iterable[DiscoverySeed]) -> DiscoverySeed:
-    return min(
-        seeds,
-        key=lambda seed: (
-            -seed.product_intensity,
-            abs(seed.observed_loss_error_ppm)
-            if seed.observed_loss_error_ppm is not None
-            else float("inf"),
-            seed.rt,
-            seed.scan_number,
-        ),
-    )
