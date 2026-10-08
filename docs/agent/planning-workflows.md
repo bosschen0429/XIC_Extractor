@@ -19,10 +19,6 @@ bounded scope, observable validation, and any material rollback or Issue linkage
 This compact contract applies through Issue readiness and PR closeout; reuse an
 existing intake Issue when one exists.
 
-When a change can affect a known scientific risk, name its recheck trigger and
-evidence in that work item; a separate validation issue alone does not tell
-the implementer when to recheck.
-
 Use an expanded Issue body or Current Packet when owner replacement, cross-owner
 handoff, persisted/schema migration, or a public behavior change has material
 correctness, authority, or compatibility risk; when science/readiness or

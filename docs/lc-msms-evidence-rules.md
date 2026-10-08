@@ -190,15 +190,12 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
 
 ## RT And Identity
 
-- Cross-sample RT or m/z dispersion alone does not establish separate isomers.
-  Check whether distinct peaks coexist within a sample, using the surrounding
-  XIC and method-specific MS2/NL evidence. Lack of coexistence does not prove
-  chemical identity either.
-- A shoulder or weak peak must not be dismissed from MS1 shape alone when
-  method-specific MS2/NL evidence supports a distinct signal. This review rule
-  does not authorize quantitation where the physical owner cannot establish
-  reliable bounds. Inspect matrix-level impact before expanding a diagnosis
-  to marginal peaks.
+- Cross-sample RT or m/z dispersion alone does not establish separate isomers;
+  inspect within-sample peaks and method-specific MS2/NL evidence. Lack of
+  distinct peaks within a sample does not prove chemical identity either.
+- MS1 shape alone must not dismiss a shoulder or weak peak supported by
+  method-specific MS2/NL evidence. Such support does not authorize quantitation
+  without reliable bounds from the physical owner.
 - Treat RT as contextual evidence, not a single hard identity veto.
 - Large, reproducible, or unmodeled RT shifts may trigger ambiguity or
   confidence demotion, especially when inconsistent with biological ISTD

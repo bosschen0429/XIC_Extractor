@@ -28,44 +28,6 @@ cites a historical validation note, treat it as diagnostic/rerun memory unless
 a current structured authority artifact still promotes the same claim. The
 dated productization control-plane path is compatibility lookup only.
 
-## Tissue method 5: acquisition context
-
-Use this context when interpreting sparse tissue ddMS2 evidence. It describes
-the `20260105 Breast Cancer_ddMS2-CID_Tissue` acquisition, not a universal
-Discovery preset. Settings below were checked against the supplied method
-document's method 5 section; they are distinct from RAW observations.
-
-| Setting | Method value |
-| --- | --- |
-| MS1 | m/z 240–1000; resolution 60,000; profile; EASY-IC |
-| Precursor threshold | 25,000 |
-| Charge selection | z=1 plus undetermined charge |
-| Inclusion list | Endogenous/ISTD list, ±20 ppm; most-intense fallback when no targets are found |
-| Dynamic exclusion | After one event, 10 s, ±20 ppm |
-| Exclusion list | ±20 ppm; the method document marks the lists as needing update |
-| ddMS2 | Orbitrap CID 40; resolution 15,000; centroid; AGC Standard |
-| Nominal cycle / peak width | 2.5 s / 60 s |
-
-The retained single-run observation recorded 3,753 MS1 and 45,826 MS2 scans
-over 60 minutes. Its effective MS1 interval was about 0.96 s; the reported
-nominal cycle discrepancy remains unexplained. Sampled MS2 trailers recorded
-22 ms injection time, isolation width 1.60 Da total, and charge labels 0 in
-5,184 of 6,530 sampled events. These are historical observations, not rerun
-acceptance results or batch-wide guarantees.
-
-Dynamic exclusion and competition are plausible explanations for sparse MS2
-per compound despite many MS2 scans overall. Their individual contributions
-were not quantified. Charge label 0 means undetermined, not proven z=2; infer
-charge only with independent ion evidence. Check the actual instrument method
-and trailer fields when those assumptions affect a new diagnosis. Do not
-infer instrument settings from Discovery output or copy these values into
-software defaults.
-
-Related method interpretation belongs to [Discovery](product/discovery.md)
-and [vendor RAW evidence](product/vendor-raw-evidence-model.md). Reopen the RAW
-probe only if changed acquisition settings or the unresolved cycle behavior
-affect the current conclusion.
-
 ## Use Rules
 
 - Read this ledger before investigating a previously seen target, family,
