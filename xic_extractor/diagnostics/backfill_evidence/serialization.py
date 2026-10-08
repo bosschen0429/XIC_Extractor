@@ -80,6 +80,8 @@ def backfill_evidence_record_from_projection(
         family_center_mz=_parse_required_float(row, "family_center_mz"),
         family_center_rt=_parse_required_float(row, "family_center_rt"),
         reason=row["reason"],
+        backfill_query_rt_min=_parse_optional_float(row, "backfill_query_rt_min"),
+        backfill_query_rt_max=_parse_optional_float(row, "backfill_query_rt_max"),
     )
 
 
@@ -154,6 +156,8 @@ def backfill_evidence_record_to_projection(
         "family_center_mz": _float_text(record.family_center_mz),
         "family_center_rt": _float_text(record.family_center_rt),
         "reason": record.reason,
+        "backfill_query_rt_min": _float_text(record.backfill_query_rt_min),
+        "backfill_query_rt_max": _float_text(record.backfill_query_rt_max),
     }
 
 

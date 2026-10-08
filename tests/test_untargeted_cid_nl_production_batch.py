@@ -1454,7 +1454,8 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 for candidate in sample_candidates
             ),
         )
-        runtime_results.append(result)
+        if not kwargs.get("initial_only"):
+            runtime_results.append(result)
         if family_context:
             for sample_result in result.sample_results:
                 adapter = sample_result.adapter_result
@@ -1522,9 +1523,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                         assert capture.physical_evaluation.facts == expected.facts
         return result
 
-    monkeypatch.setattr(
-        bounded_owner, 'execute_partition', checked_runtime
-    )
+    monkeypatch.setattr(bounded_owner, "execute_partition", checked_runtime)
     preparation_fingerprints = []
     runtime_fingerprints = []
     preparation_fingerprint = identity_owner.fingerprint_file_content
@@ -1583,12 +1582,12 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     assert all(
         capture.selected_hypothesis is None
         or retained_hypotheses_by_id[capture.selected_hypothesis.hypothesis_id]
-        is capture.selected_hypothesis
+        == capture.selected_hypothesis
         for capture in retained_captures
     )
     assert all(
         retained_hypotheses_by_id[support.hypothesis.hypothesis_id]
-        is support.hypothesis
+        == support.hypothesis
         for cells in retained_cell_batches
         for cell in cells
         for support in cell.group_context.supports
@@ -1767,10 +1766,12 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         retained is consumed
         for retained, consumed in zip(retained_contexts, consumed_contexts, strict=True)
     )
-    assert all(
-        retained is consumed
-        for retained, consumed in zip(retained_captures, consumed_captures, strict=True)
-    )
+    # Bootstrap captures cross a disk handoff; preserve content, not addresses.
+    for retained, consumed in zip(retained_captures, consumed_captures, strict=True):
+        assert retained.candidate_id == consumed.candidate_id
+        assert retained.selected_hypothesis == consumed.selected_hypothesis
+        assert list(retained.trace.rt) == list(consumed.trace.rt)
+        assert list(retained.trace.intensity) == list(consumed.trace.intensity)
     for context, child in zip(
         retained_contexts, completed.application_result.children, strict=True
     ):

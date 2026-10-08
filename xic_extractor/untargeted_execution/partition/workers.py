@@ -21,6 +21,7 @@ from xic_extractor.alignment.conservative_backfill import (
 from xic_extractor.alignment.cross_sample_peak_groups import (
     construct_cross_sample_peak_group_hypotheses,
 )
+from xic_extractor.alignment.feature_membership_inference import predict_backfill_rt
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
     owner_from_cid_nl_assessment_support,
@@ -345,6 +346,14 @@ def _prepare_group_authorized_backfills(
         for state in states
     }
     population = tuple(job.sample for job in templates.values())
+    injection_order = {
+        sample.metadata.raw_stem: sample.metadata.injection_order
+        for sample in population
+        if sample.metadata.injection_order is not None
+    }
+    sample_cohorts = {
+        sample.metadata.raw_stem: sample.metadata.batch_id for sample in population
+    }
     for workset in prepared.worksets:
         direct = {
             candidate.peak_hypothesis_id: candidate.direct_support_assessment
@@ -402,6 +411,14 @@ def _prepare_group_authorized_backfills(
                         candidate_assessment=assessment,
                     )
                 else:
+                    prediction = predict_backfill_rt(
+                        sample_stem=state.job.sample.metadata.raw_stem,
+                        members=group.owners,
+                        group_center_rt=group.group_center_rt,
+                        injection_order=injection_order,
+                        sample_cohorts=sample_cohorts,
+                        rt_warp=prepared.rt_warp,
+                    )
                     state.backfill_targets = tuple(
                         sorted(
                             (
@@ -411,6 +428,8 @@ def _prepare_group_authorized_backfills(
                                     method_subject=subject,
                                     physical_mz=group.family_center_mz,
                                     center_rt=group.group_center_rt,
+                                    query_rt=prediction.query_rt,
+                                    query_rt_basis=prediction.basis,
                                 ),
                             ),
                             key=lambda target: (
@@ -617,6 +636,8 @@ def _execute_backfill(
                 sample=job.sample,
                 method_subject=job.method_subject,
                 group_center_rt=target.center_rt,
+                query_rt=target.sample_query_rt,
+                query_rt_basis=target.query_rt_basis,
                 group_center_mz=target.physical_mz,
                 group_hypothesis_id=target.group_hypothesis_id,
                 initial_assessment=ctx.initial_assessment,
@@ -706,6 +727,8 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
                     sample=state.job.sample,
                     method_subject=state.job.method_subject,
                     group_center_rt=target.center_rt,
+                    query_rt=target.sample_query_rt,
+                    query_rt_basis=target.query_rt_basis,
                     group_center_mz=target.physical_mz,
                     group_hypothesis_id=target.group_hypothesis_id,
                     initial_assessment=ctx.initial_assessment,

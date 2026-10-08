@@ -160,6 +160,8 @@ class UntargetedCidNlBackfillAttemptResult:
     lineage_artifacts: tuple[EvidenceArtifactRef, ...]
     validation_status: str = VALIDATION_STATUS
     group_hypothesis_id: str | None = None
+    query_rt: float | None = None
+    query_rt_basis: str = "group_center"
     capture_evidence: tuple[RetainedCaptureEvidence, ...] = dataclass_field(
         default=(), compare=False
     )
@@ -230,6 +232,12 @@ class UntargetedCidNlBackfillTarget:
     method_subject: CidNlMethodSubject
     physical_mz: float
     center_rt: float
+    query_rt: float | None = None
+    query_rt_basis: str = "group_center"
+
+    @property
+    def sample_query_rt(self) -> float:
+        return self.center_rt if self.query_rt is None else self.query_rt
 
     def __post_init__(self) -> None:
         if (
@@ -244,6 +252,12 @@ class UntargetedCidNlBackfillTarget:
             or not isinstance(self.center_rt, (int, float))
             or not math.isfinite(float(self.center_rt))
             or self.center_rt < 0.0
+            or isinstance(self.sample_query_rt, bool)
+            or not isinstance(self.sample_query_rt, (int, float))
+            or not math.isfinite(float(self.sample_query_rt))
+            or self.sample_query_rt < 0.0
+            or not isinstance(self.query_rt_basis, str)
+            or not self.query_rt_basis.strip()
         ):
             raise CidNlAcquisitionError(
                 "backfill target requires a group, physical mass, and RT"
@@ -612,8 +626,8 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
     requests = tuple(
         XICRequest(
             mz=target.physical_mz,
-            rt_min=max(0.0, float(target.center_rt) - half_window),
-            rt_max=float(target.center_rt) + half_window,
+            rt_min=max(0.0, float(target.sample_query_rt) - half_window),
+            rt_max=float(target.sample_query_rt) + half_window,
             ppm_tol=target.method_subject.precursor_tolerance_ppm,
         )
         for target in targets
@@ -905,6 +919,8 @@ def backfill_untargeted_cid_nl_sample_subject(
     method_subject: CidNlMethodSubject,
     group_center_rt: float,
     group_center_mz: float,
+    query_rt: float | None = None,
+    query_rt_basis: str = "group_center",
     group_hypothesis_id: str | None = None,
     support_policy: DdaCidNlPeakSupportPolicy,
     peak_config: ExtractionConfig,
@@ -960,8 +976,18 @@ def backfill_untargeted_cid_nl_sample_subject(
         or not math.isfinite(float(group_center_rt))
         or float(group_center_rt) < 0.0
     ):
+        raise CidNlAcquisitionError("group_center_rt must be finite and non-negative")
+    query_rt = group_center_rt if query_rt is None else query_rt
+    if (
+        isinstance(query_rt, bool)
+        or not isinstance(query_rt, (int, float))
+        or not math.isfinite(float(query_rt))
+        or query_rt < 0.0
+        or not isinstance(query_rt_basis, str)
+        or not query_rt_basis.strip()
+    ):
         raise CidNlAcquisitionError(
-            "group_center_rt must be finite and non-negative"
+            "query RT requires a finite non-negative value and basis"
         )
     physical_mz = group_center_mz
     if (
@@ -983,16 +1009,14 @@ def backfill_untargeted_cid_nl_sample_subject(
     if signal_processing_profile is None and PHYSICAL_CAPTURE_INPUT_KEY in json.loads(
         processing_owners.request.normalized_scientific_inputs_json
     ):
-        raise CidNlAcquisitionError(
-            "physical backfill lost its request-bound profile"
-        )
+        raise CidNlAcquisitionError("physical backfill lost its request-bound profile")
     source = resolve_request_acquisition_source(
         processing_owners=processing_owners,
         sample=sample,
     )
     half_window = peak_config.nl_rt_anchor_half_window_min
-    query_rt_min = max(0.0, float(group_center_rt) - half_window)
-    query_rt_max = float(group_center_rt) + half_window
+    query_rt_min = max(0.0, float(query_rt) - half_window)
+    query_rt_max = float(query_rt) + half_window
     request = XICRequest(
         mz=physical_mz,
         rt_min=query_rt_min,
@@ -1054,7 +1078,7 @@ def backfill_untargeted_cid_nl_sample_subject(
             sample=sample,
             method_subject=method_subject,
             trace=trace,
-            group_center_rt=float(group_center_rt),
+            group_center_rt=float(query_rt),
             physical_mz=float(physical_mz),
             profile=signal_processing_profile,
             resolver_mode=peak_config.resolver_mode,
@@ -1066,7 +1090,7 @@ def backfill_untargeted_cid_nl_sample_subject(
             acquired.trace.rt,
             acquired.trace.intensity,
             peak_config=peak_config,
-            preferred_rt=float(group_center_rt),
+            preferred_rt=float(query_rt),
             peak_finder=find_peak_and_area,
         )
         if detection.status == "detected" and detection.result is not None:
@@ -1236,6 +1260,8 @@ def backfill_untargeted_cid_nl_sample_subject(
         acquisition=acquisition,
         lineage_artifacts=lineage,
         group_hypothesis_id=group_hypothesis_id,
+        query_rt=float(query_rt),
+        query_rt_basis=query_rt_basis,
         capture_evidence=tuple(
             RetainedCaptureEvidence(
                 canonical_sample_identity_id=sample.identity.sample_identity_id,
@@ -1881,8 +1907,8 @@ __all__ = [
     "UNTARGETED_CID_NL_CAPTURE_TRACE_SOURCE",
     "UntargetedCidNlSampleTraceBatch",
     "UntargetedCidNlBackfillTraceBatch",
-    'CidNlAcquisitionError',
-    'CidNlAcquisitionResult',
+    "CidNlAcquisitionError",
+    "CidNlAcquisitionResult",
     "acquire_untargeted_cid_nl_sample_trace_batch",
     "acquire_untargeted_cid_nl_backfill_trace_batch",
 ]

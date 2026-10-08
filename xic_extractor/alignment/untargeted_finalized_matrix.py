@@ -455,6 +455,15 @@ def _aligned_cell(
         evidence,
         direct_candidate_ids=direct_candidate_ids,
     )
+    backfill_receipts = tuple(
+        assessment.content.evaluation_receipt
+        for assessment in evidence.method_assessments
+        if assessment.content.detector_invocation_id == "untargeted-cid-nl-backfill"
+    )
+    query_bounds = {
+        (receipt.query_rt_min, receipt.query_rt_max) for receipt in backfill_receipts
+    }
+    query = next(iter(query_bounds)) if len(query_bounds) == 1 else None
     return AlignedCell(
         sample_stem=owner_decision.subject.canonical_sample.metadata.raw_stem,
         cluster_id=row.feature_family_id,
@@ -477,10 +486,18 @@ def _aligned_cell(
         backfill_seed_mz=(repaired.cell.backfill_seed_mz if repaired else None),
         backfill_seed_rt=(repaired.cell.backfill_seed_rt if repaired else None),
         backfill_request_rt_min=(
-            repaired.cell.backfill_request_rt_min if repaired else None
+            repaired.cell.backfill_request_rt_min
+            if repaired
+            else query[0]
+            if query
+            else None
         ),
         backfill_request_rt_max=(
-            repaired.cell.backfill_request_rt_max if repaired else None
+            repaired.cell.backfill_request_rt_max
+            if repaired
+            else query[1]
+            if query
+            else None
         ),
         backfill_request_ppm=(repaired.cell.backfill_request_ppm if repaired else None),
         group_hypothesis_id=row.group_hypothesis_id,

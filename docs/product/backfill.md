@@ -37,6 +37,21 @@ that group.
   group and the local RT/mass request bound the workset.
 - A Backfill candidate does not add a direct SUPPORT vote.
 
+### Query RT versus group RT
+
+The frozen group center remains the group's identity/evidence coordinate.
+The request center is sample-specific: predict from up to six same-cohort
+injection neighbors, convert their measured RTs to common coordinates when
+supported, then apply the target sample's frozen batch warp. Both XIC bounds
+and preferred-peak selection use this query RT. Insufficient calibration and
+missing-context fallbacks have explicit bases; neither means measured zero
+shift. See the [RT mechanism table](alignment.md#rt-mechanisms-and-their-consumers).
+
+Completed-empty evidence binds both the original group center and actual query
+RT. It validates the acquired query, not containment of the group center in a
+shifted window. Supported Backfill admission uses the same frozen coordinates
+and owner-to-band trend rule as final grouping; it does not refit the warp.
+
 ### Cell outcome
 
 1. An eligible missing Untargeted cell can yield
@@ -77,7 +92,11 @@ that group.
 ## Surfaces
 
 - `alignment_backfill_cell_evidence.tsv` is a compact validation output for
-  accepted Backfill cells.
+  accepted Backfill cells. Schema `alignment_backfill_cell_query_evidence` adds
+  `backfill_query_rt_min` and `backfill_query_rt_max` from the executed assessment;
+  `family_center_rt` remains a distinct group-level display value. Unavailable
+  query bounds are empty, never copied from that display value. Readers require
+  the query-bound columns; old compact TSV exports must be regenerated.
 - Validation-minimal output selection emits that TSV. The ordinary production
   level writes the Matrix.
 - The TSV can be empty when the run has no eligible accepted Backfill cell. A

@@ -339,6 +339,8 @@ def admit_cid_nl_group_backfills(
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
     ],
     alignment_config: AlignmentConfig,
+    injection_order: Mapping[str, int] | None = None,
+    rt_warp: RtCoordinates | None = None,
 ) -> tuple[
     CrossSampleGroupingResult,
     tuple[CrossSamplePeakGroupHypothesis, ...],
@@ -401,6 +403,8 @@ def admit_cid_nl_group_backfills(
             group.owners,
             config=alignment_config,
             drift_lookup=result.drift_lookup,
+            injection_order=injection_order,
+            rt_warp=rt_warp,
         ):
             continue
         claims[physical_key].add(group_id)

@@ -26,10 +26,11 @@ samples. A query is a lookup in the saved Discovery population, not a fresh
 extraction at that mass.
 
 Prepare retains the complete sample population and selects **whole original
-partitions** intersecting the requested intervals. These additional masses
-preserve the baseline partition's RT-warp context. It runs the formal initial
-assessment and grouping owners, then stops before Backfill. Its summary reports
-selected versus total partition counts. Initial preparation requires the matching
+partitions** intersecting the requested intervals for comparison. Calibration
+uses bootstrap evidence from **all** partitions, not only the selected masses.
+It runs the formal initial assessment and grouping owners, then stops before
+Backfill. Its summary reports selected versus total partition counts; initial
+job count includes the full calibration scope. Initial preparation requires the matching
 RAW files and current Discovery owner-closure artifacts. `--sample-metadata`
 and `--known-istd-reference` accept existing metadata and reference artifacts.
 
@@ -378,12 +379,40 @@ unresolved and rejected groups remain AuditTrail facts.
   rows and physical records per closed working set. Scheduling packs worksets
   by 100 Da ownership and a 1,024-candidate budget; an indivisible scientific
   workset may exceed that budget or cross a mass boundary. Mass partitions are
-  scheduling units, not scientific exclusion boundaries. Final children retain
-  canonical subject order independently of execution order.
+  scheduling units, not scientific exclusion or RT-calibration boundaries.
+  All bootstrap partitions finish before one batch RT warp is frozen. Initial
+  assessments and grouping inputs are spooled to disk; only compact anchor RT
+  pairs accumulate globally. The final phase restores one bounded partition,
+  regroups with that frozen warp, and executes Backfill without reacquiring its
+  initial traces. Final children retain canonical subject order independently
+  of execution order. Cancellation and failed bootstrap prevent final publication.
 - Retained CID-NL capture preserves each candidate's extraction m/z and ppm
   when combining overlapping RT contexts. Preparation sharing may extend the
   RT interval; it does not replace the candidate center with a method-subject
   center. Only identical resulting requests share an acquired trace.
+
+### RT mechanisms and their consumers
+
+| Mechanism | Evidence and scope | Current consumer | Does not do |
+| --- | --- | --- | --- |
+| Known-ISTD identity / drift lookup | Exact reference bindings and supported reference range | Known identity constraints and bootstrap comparison | Replace measured peak RT or authorize Backfill values |
+| `BatchRtWarp` | Agreed bootstrap groups across the complete request; residual neighbors stay within `SampleMetadata.batch_id` | Final ordinary grouping and Backfill coordinate conversion | Treat an unsupported sample as measured zero drift |
+| Local feature trend | Up to six nearest injection-order members of that feature | Dense-band assignment; sample-local Backfill prediction uses same-cohort members | Pool unrelated features into one feature trend |
+| Sample-local Backfill query | Local trend in common coordinates, mapped into the target injection's observed RT | XIC bounds and preferred peak location | Change `group_center_rt` or group identity |
+| `sample_rt_calibration.BatchRtCalibration` | Near-ubiquitous features under an explicit diagnostic policy | Opt-in grouping experiments | Act as the default production warp |
+
+A warp anchor needs at least 20 same-cohort members; a sample needs at least 12
+anchor observations. Empty `batch_id` values share the request's unspecified
+cohort; distinct declared batches never contribute residual neighbors to one
+another. Biological sample roles do not define calibration cohorts. Non-monotone
+sample mappings remain unsupported. Common-to-observed and observed-to-common
+conversions use the same piecewise mapping.
+
+Without calibrated target and neighbor support, Backfill uses the same-cohort
+local measured trend and records `local_feature_trend_insufficient_calibration`.
+Missing injection order or same-cohort neighbors instead retains the group center
+with an explicit fallback basis. These are search fallbacks, not evidence of
+zero perturbation or permission to write a value.
 
 ### Method subjects
 

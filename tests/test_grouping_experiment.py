@@ -31,6 +31,7 @@ def test_prepare_snapshot_and_cli_replay_preserve_formal_grouping(
     prepared = prepare_grouping_experiment(
         plan,
         mz_ranges=((499, 501),),
+        spool_directory=tmp_path,
         workers=1,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
     )
@@ -76,6 +77,7 @@ def test_rt_coordinate_override_changes_membership_without_rewriting_measurement
     inputs = prepare_grouping_experiment(
         plan,
         mz_ranges=((499, 501),),
+        spool_directory=tmp_path,
         workers=1,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
     ).inputs

@@ -410,6 +410,8 @@ def _backfill_cell_evidence_rows(
                 format_value(_family_center_mz(cluster)),
                 format_value(_family_center_rt(cluster)),
                 cell.reason,
+                format_value(cell.backfill_request_rt_min),
+                format_value(cell.backfill_request_rt_max),
             )
 
     return rows()

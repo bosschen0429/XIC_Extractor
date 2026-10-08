@@ -225,6 +225,15 @@ concerns explain ambiguity and review priority, not the detected call itself.
   surface unless a separate contract grants stronger decision meaning.
 - `DDA`: Data-Dependent Acquisition, where MS2 scan triggering depends on MS1
   observations and instrument acquisition policy.
+- `Batch RT warp`: a frozen per-injection mapping fitted from agreed bootstrap
+  anchors across the full processing request, with residual neighbors restricted
+  to the declared acquisition batch. Execution partition size does not define
+  its scientific scope. Unsupported calibration is not measured zero drift.
+- `Local feature RT trend`: the RT of one feature estimated from its nearby
+  injections, distinct from the shared RT-dependent sample warp.
+- `Backfill query RT`: the target sample's observed-coordinate request center.
+  It controls extraction bounds and preferred peak location; it does not replace
+  the frozen group's `group_center_rt`.
 - `ISTD`: internal standard, a spiked reference used for RT calibration,
   paired-area context, and method QC.
 - `NL`: neutral loss, the mass difference between a precursor ion and a product

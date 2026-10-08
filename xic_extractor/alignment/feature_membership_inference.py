@@ -1502,9 +1502,9 @@ def _window_band_candidate(
         if item.primary_identity_event is not None
     )
     if len(band) >= 10:
-        expected = _nearest_injection_median(
-            owner, band, orders, corrected_rt=corrected_rt
-        )
+        expected = (
+            trends or _NearestInjectionMedians.prepare(band, orders, corrected_rt)
+        ).median(owner)
         tolerance_sec = min(
             config.max_rt_sec,
             max(_WINDOW_TREND_TOLERANCE_SEC, config.preferred_rt_sec),
