@@ -142,6 +142,7 @@ def test_backfill_rt_uses_local_feature_trend_and_target_sample_coordinates() ->
     )
     members = (_owner("a", "f", apex_rt=10.1), _owner("b", "f", apex_rt=9.9))
     prediction = predict_backfill_rt(
+        backfill_half_window_min=1.0,
         sample_stem="target",
         members=members,
         group_center_rt=10.0,
@@ -152,6 +153,7 @@ def test_backfill_rt_uses_local_feature_trend_and_target_sample_coordinates() ->
     assert prediction.query_rt == pytest.approx(10.3)
     assert prediction.basis == "calibrated_local_feature_trend"
     unsupported = predict_backfill_rt(
+        backfill_half_window_min=1.0,
         sample_stem="other",
         members=members,
         group_center_rt=10.0,
@@ -163,13 +165,18 @@ def test_backfill_rt_uses_local_feature_trend_and_target_sample_coordinates() ->
     assert unsupported.basis == "group_center_no_same_cohort_neighbors"
 
 
-def test_backfill_rt_follows_steep_local_drift_beyond_the_neighbors() -> None:
+@pytest.mark.parametrize("target_order", [12, 40])
+def test_backfill_rt_follows_steep_local_drift_beyond_the_neighbors(
+    target_order: int,
+) -> None:
     samples = [f"s{order}" for order in range(1, 11)]
     members = tuple(
         _owner(sample, "f", apex_rt=10.0 + 0.1 * order)
         for order, sample in enumerate(samples, 1)
     )
-    orders = {sample: order for order, sample in enumerate(samples, 1)} | {"target": 12}
+    orders = {sample: order for order, sample in enumerate(samples, 1)} | {
+        "target": target_order
+    }
     cohorts = dict.fromkeys(orders, "batch")
     flat = BatchRtWarp(
         tuple((sample, ((7.0, 0.0), (20.0, 0.0))) for sample in samples)
@@ -177,6 +184,7 @@ def test_backfill_rt_follows_steep_local_drift_beyond_the_neighbors() -> None:
         12,
     )
     calibrated = predict_backfill_rt(
+        backfill_half_window_min=1.0,
         sample_stem="target",
         members=members,
         group_center_rt=10.5,
@@ -185,6 +193,7 @@ def test_backfill_rt_follows_steep_local_drift_beyond_the_neighbors() -> None:
         rt_warp=flat,
     )
     uncalibrated = predict_backfill_rt(
+        backfill_half_window_min=1.0,
         sample_stem="target",
         members=members,
         group_center_rt=10.5,
@@ -192,10 +201,59 @@ def test_backfill_rt_follows_steep_local_drift_beyond_the_neighbors() -> None:
         sample_cohorts=cohorts,
         rt_warp=None,
     )
-    assert calibrated.query_rt == pytest.approx(11.4)
+    assert calibrated.query_rt == pytest.approx(10.2 + 0.1 * target_order)
     assert calibrated.basis == "calibrated_local_feature_trend"
-    assert uncalibrated.query_rt == pytest.approx(11.2)
+    assert uncalibrated.query_rt == pytest.approx(10.0 + 0.1 * target_order)
     assert uncalibrated.basis == "local_feature_trend_insufficient_calibration"
+
+
+@pytest.mark.parametrize("calibrated", [False, True])
+def test_backfill_noisy_extrapolation_stays_at_supported_boundary(
+    calibrated: bool,
+) -> None:
+    orders = {f"s{i}": i for i in range(10, 22)} | {"early": 0, "late": 31}
+    members = tuple(
+        _owner(
+            f"s{i}",
+            "f",
+            apex_rt=10.0 + 0.1 * (i - 10) + (-0.6 if i % 2 == 0 else 0.6),
+        )
+        for i in range(10, 22)
+    )
+    offsets = dict.fromkeys(orders, 0.0) | {"early": 0.3, "late": -0.2}
+    warp = (
+        BatchRtWarp(tuple((s, ((7.0, v), (20.0, v))) for s, v in offsets.items()), 12)
+        if calibrated
+        else None
+    )
+    for sample, bounds in [("early", (9.4, 10.55)), ("late", (10.55, 11.7))]:
+        prediction = predict_backfill_rt(
+            backfill_half_window_min=1.0,
+            sample_stem=sample,
+            members=members,
+            group_center_rt=10.55,
+            injection_order=orders,
+            sample_cohorts=dict.fromkeys(orders, "batch"),
+            rt_warp=warp,
+        )
+        offset = offsets[sample] if calibrated else 0.0
+        assert bounds[0] + offset <= prediction.query_rt <= bounds[1] + offset
+        assert prediction.basis == (
+            "calibrated_local_feature_trend_at_support_boundary"
+            if calibrated
+            else "local_feature_trend_at_support_boundary_insufficient_calibration"
+        )
+        wide_search = predict_backfill_rt(
+            sample_stem=sample,
+            members=members,
+            group_center_rt=10.55,
+            injection_order=orders,
+            sample_cohorts=dict.fromkeys(orders, "batch"),
+            rt_warp=warp,
+            backfill_half_window_min=10.0,
+        )
+        assert "support_boundary" not in wide_search.basis
+        assert not bounds[0] + offset <= wide_search.query_rt <= bounds[1] + offset
 
 
 def test_rt_warp_round_trip_uses_the_same_coordinate_system() -> None:

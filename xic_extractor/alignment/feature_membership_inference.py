@@ -207,6 +207,7 @@ def predict_backfill_rt(
     injection_order: Mapping[str, int],
     sample_cohorts: Mapping[str, str],
     rt_warp: BatchRtWarp | None,
+    backfill_half_window_min: float,
 ) -> BackfillRtPrediction:
     """Predict a sample-local query without changing the group's identity RT."""
     order = injection_order.get(sample_stem)
@@ -235,40 +236,52 @@ def predict_backfill_rt(
             group_center_rt, "group_center_no_same_cohort_neighbors"
         )
     orders = [injection_order[owner.sample_stem] for owner in nearest]
-    if (
+    calibrated = (
         rt_warp is not None
         and rt_warp.has_support(sample_stem)
         and all(rt_warp.has_support(owner.sample_stem) for owner in nearest)
-    ):
-        trend = _local_rt_trend(
-            orders, [rt_warp.corrected_rt_min(owner) for owner in nearest], order
-        )
+    )
+    coordinates = [
+        rt_warp.corrected_rt_min(owner)
+        if calibrated and rt_warp is not None
+        else owner.owner_apex_rt
+        for owner in nearest
+    ]
+    trend = _local_rt_trend(
+        orders, coordinates, order, backfill_half_window_min=backfill_half_window_min
+    )
+    if calibrated and rt_warp is not None:
         return BackfillRtPrediction(
-            max(0.0, trend + rt_warp.offset_min(sample_stem, trend)),
-            "calibrated_local_feature_trend",
+            max(0.0, trend.query_rt + rt_warp.offset_min(sample_stem, trend.query_rt)),
+            f"calibrated_{trend.basis}",
         )
     return BackfillRtPrediction(
-        max(
-            0.0,
-            _local_rt_trend(orders, [owner.owner_apex_rt for owner in nearest], order),
-        ),
-        "local_feature_trend_insufficient_calibration",
+        max(0.0, trend.query_rt),
+        f"{trend.basis}_insufficient_calibration",
     )
 
 
 def _local_rt_trend(
-    orders: Sequence[int], rts: Sequence[float], query_order: int
-) -> float:
+    orders: Sequence[int],
+    rts: Sequence[float],
+    query_order: int,
+    *,
+    backfill_half_window_min: float,
+) -> BackfillRtPrediction:
     """Robust kernel-weighted linear trend, so steep drift is not lagged.
 
     Fewer than three neighbors, or neighbors at one order, leave no slope to fit;
-    their median is used.
+    their median is used. Outside the support, residual scatter amplified by
+    fit leverage must fit inside the actual search half-window. Otherwise use
+    the fitted value at the nearest supported injection, not an unbounded
+    slope or a different group. This risk proxy is not a calibrated confidence
+    interval and does not establish peak identity.
     """
     offsets = np.asarray(orders, dtype=float) - query_order
     values = np.asarray(rts, dtype=float)
     spread = float(np.std(offsets))
     if len(values) < 3 or spread < 1e-10:
-        return float(np.median(values))
+        return BackfillRtPrediction(float(np.median(values)), "local_feature_trend")
     design = np.column_stack([np.ones(len(offsets)), offsets / spread])
     kernel = (
         1.0 / (1.0 + np.abs(offsets) / max(float(np.max(np.abs(offsets))), 1e-10))
@@ -276,6 +289,7 @@ def _local_rt_trend(
     weights = kernel
     beta = np.zeros(2)
     for _ in range(80):
+        fit_weights = weights
         root = np.sqrt(weights)
         next_beta = np.linalg.lstsq(design * root[:, None], values * root, rcond=None)[
             0
@@ -292,7 +306,18 @@ def _local_rt_trend(
         beta = next_beta
         if converged:
             break
-    return float(beta[0])
+    basis = "local_feature_trend"
+    query_rt = float(beta[0])
+    if min(orders) > query_order or max(orders) < query_order:
+        # The query row is [1, 0] in this centered design. Reuse the final fit;
+        # no cross-validation or extra trend fits belong in this hot path.
+        covariance = np.linalg.pinv(design.T @ (fit_weights[:, None] * design))
+        risk = scale * float(np.sqrt(1.0 + max(0.0, covariance[0, 0])))
+        if risk > backfill_half_window_min:
+            boundary = min(max(query_order, min(orders)), max(orders))
+            query_rt += float(beta[1]) * (boundary - query_order) / spread
+            basis = "local_feature_trend_at_support_boundary"
+    return BackfillRtPrediction(query_rt, basis)
 
 
 class RtCoordinates(Protocol):

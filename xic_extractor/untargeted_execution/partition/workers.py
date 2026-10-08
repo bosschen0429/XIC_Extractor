@@ -418,6 +418,9 @@ def _prepare_group_authorized_backfills(
                         injection_order=injection_order,
                         sample_cohorts=sample_cohorts,
                         rt_warp=prepared.rt_warp,
+                        backfill_half_window_min=(
+                            state.job.peak_config.nl_rt_anchor_half_window_min
+                        ),
                     )
                     state.backfill_targets = tuple(
                         sorted(

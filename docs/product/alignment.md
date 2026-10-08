@@ -410,6 +410,12 @@ conversions use the same piecewise mapping.
 
 Without calibrated target and neighbor support, Backfill uses the same-cohort
 local measured trend and records `local_feature_trend_insufficient_calibration`.
+For extrapolation, the fit's residual scale amplified by prediction leverage
+is compared with the configured Backfill half-window. If that risk proxy exceeds
+the window, the query uses the fitted RT at the nearest supported injection and
+its basis includes `at_support_boundary`; target-sample coordinate conversion
+still applies. Interpolation and lower-risk extrapolation retain the local line.
+This guard is not a calibrated confidence interval or an identity decision.
 Missing injection order or same-cohort neighbors instead retains the group center
 with an explicit fallback basis. These are search fallbacks, not evidence of
 zero perturbation or permission to write a value.
