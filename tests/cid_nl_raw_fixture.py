@@ -145,6 +145,7 @@ class _FakeThermoRaw:
         self.disposed = False
         self.chromatogram_request_counts: list[int] = []
         self.scans = {scan.scan_number: scan for scan in source.scans}
+        self.trailer_labels: list[str] = []
 
     def Dispose(self) -> None:
         self.disposed = True
@@ -187,6 +188,9 @@ class _FakeThermoRaw:
             Masses=scan.masses,
             Intensities=scan.intensities,
         )
+
+    def GetTrailerExtraHeaderInformation(self):
+        return [SimpleNamespace(Label=label) for label in self.trailer_labels]
 
 
 class _FakeRaw:

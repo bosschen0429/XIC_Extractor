@@ -113,12 +113,18 @@ def _to_python_datetime(dt: Any) -> datetime | None:
 
 
 class RawFileHandle:
-    __slots__ = ("_raw_file", "_thermo", "_raw_chromatogram_call_count")
+    __slots__ = (
+        "_raw_file",
+        "_thermo",
+        "_raw_chromatogram_call_count",
+        "_precursor_trailer_indices",
+    )
 
     def __init__(self, raw_file: Any, thermo: _ThermoApi) -> None:
         self._raw_file = raw_file
         self._thermo = thermo
         self._raw_chromatogram_call_count = 0
+        self._precursor_trailer_indices: dict[str, int] | None = None
 
     def __enter__(self) -> "RawFileHandle":
         return self
@@ -299,6 +305,20 @@ class RawFileHandle:
                 filter_obj = self._raw_file.GetFilterForScanNumber(scan_number)
                 if getattr(filter_obj, "MSOrder", None) != self._thermo.ms2_order:
                     continue
+                if self._precursor_trailer_indices is None:
+                    self._precursor_trailer_indices = {
+                        key: index
+                        for index, item in enumerate(
+                            self._raw_file.GetTrailerExtraHeaderInformation()
+                        )
+                        if (key := str(item.Label).strip().rstrip(":").casefold())
+                        in {
+                            "monoisotopic m/z",
+                            "charge state",
+                            "master scan number",
+                            "ms2 isolation width",
+                        }
+                    }
                 precursor_mz = _extract_precursor_mz(filter_obj)
                 scan_rt = float(self._raw_file.RetentionTimeFromScanNumber(scan_number))
                 scan_data = self._raw_file.GetSimplifiedScan(scan_number)
@@ -316,7 +336,10 @@ class RawFileHandle:
                         intensities=intensities,
                         base_peak=base_peak,
                         precursor_metadata=_read_precursor_metadata(
-                            self._raw_file, filter_obj, scan_number
+                            self._raw_file,
+                            filter_obj,
+                            scan_number,
+                            self._precursor_trailer_indices,
                         ),
                     ),
                     parse_error=None,
@@ -1003,15 +1026,19 @@ def _extract_precursor_mz(filter_obj: Any) -> float:
 
 
 def _read_precursor_metadata(
-    raw: Any, filter_obj: Any, scan_number: int
+    raw: Any,
+    filter_obj: Any,
+    scan_number: int,
+    trailer_indices: dict[str, int],
 ) -> Ms2PrecursorMetadata:
     trailer_reader = getattr(raw, "GetTrailerExtraInformation", None)
     trailer = trailer_reader(scan_number) if callable(trailer_reader) else None
+    # Preserve formatted vendor values: the typed trailer API changes precision.
+    trailer_values = getattr(trailer, "Values", ())
     values = {
-        str(label).strip().rstrip(":").casefold(): value
-        for label, value in zip(
-            getattr(trailer, "Labels", ()), getattr(trailer, "Values", ())
-        )
+        key: trailer_values[index]
+        for key, index in trailer_indices.items()
+        if index < len(trailer_values)
     }
     get_reaction = getattr(filter_obj, "GetReaction", None)
     reaction = None

@@ -873,8 +873,9 @@ def test_raw_monoisotopic_precursor_recovers_direct_nl_without_widening_isolatio
         scans={number: _FakeScan([product, 185.115845], [278825.7, 367660.1])},
     )
     raw.ScanNumberFromRetentionTime = lambda rt: number
+    raw.trailer_labels = ["Monoisotopic M/Z:", "Charge State:", "Master Scan Number:"]
     raw.GetTrailerExtraInformation = lambda scan_number: SimpleNamespace(
-        Labels=["Monoisotopic M/Z:", "Charge State:", "Master Scan Number:"],
+        Labels=raw.trailer_labels,
         Values=[str(mono), "1", str(parent)],
     )
     handle = RawFileHandle(raw, _fake_thermo(raw))
@@ -1060,6 +1061,8 @@ class _FakeRaw:
         self.filters = filters or {}
         self.scans = scans or {}
         self.scan_errors = scan_errors or {}
+        self.trailer_labels: list[str] = []
+        self.trailer_header_calls = 0
 
     def Dispose(self) -> None:
         self.disposed = True
@@ -1087,6 +1090,13 @@ class _FakeRaw:
         if scan_number in self.scan_errors:
             raise self.scan_errors[scan_number]
         return self.scans[scan_number]
+
+    def GetTrailerExtraHeaderInformation(self):
+        self.trailer_header_calls += 1
+        return [SimpleNamespace(Label=label) for label in self.trailer_labels]
+
+    def GetTrailerExtraInformation(self, scan_number: int):
+        return SimpleNamespace(Labels=self.trailer_labels, Values=[])
 
 
 class _FakeFilter:
@@ -1122,8 +1132,9 @@ def test_unavailable_vendor_precursor_fields_do_not_replace_selected_mass(value)
         filters={1: _FakeFilter(is_ms2=True, precursor_mz=300.2)},
         scans={1: _FakeScan([184.1], [100.0])},
     )
+    raw.trailer_labels = ["Monoisotopic M/Z:", "Charge State:", "Master Scan Number:"]
     raw.GetTrailerExtraInformation = lambda _: SimpleNamespace(
-        Labels=["Monoisotopic M/Z:", "Charge State:", "Master Scan Number:"],
+        Labels=raw.trailer_labels,
         Values=[value, value, value],
     )
     event = next(RawFileHandle(raw, _fake_thermo(raw)).iter_ms2_scans(8.0, 8.0))
@@ -1132,3 +1143,46 @@ def test_unavailable_vendor_precursor_fields_do_not_replace_selected_mass(value)
     assert event.scan.precursor_metadata.monoisotopic_mz is None
     assert event.scan.precursor_metadata.charge is None
     assert event.scan.precursor_metadata.master_scan_number is None
+
+
+def test_ms2_trailer_headers_are_file_local_and_reused_across_windows() -> None:
+    from xic_extractor.raw_reader import RawFileHandle
+
+    labels = [
+        "Monoisotopic M/Z:", "Charge State:", "Master Scan Number:",
+        "MS2 Isolation Width:", "Unused:",
+    ]
+    for file_index, file_labels in enumerate((labels, list(reversed(labels)))):
+        mono = 300.1615 + file_index
+        raw = _FakeRaw(
+            filters={n: _FakeFilter(is_ms2=True, precursor_mz=mono) for n in (1, 2)},
+            scans={n: _FakeScan([184.1], [100.0]) for n in (1, 2)},
+        )
+        raw.trailer_labels = file_labels
+        values = {
+            "Monoisotopic M/Z:": str(mono), "Charge State:": "1",
+            "Master Scan Number:": "10", "MS2 Isolation Width:": "1.60",
+            "Unused:": "not a number",
+        }
+        raw.GetTrailerExtraInformation = lambda _: SimpleNamespace(
+            Values=[values[label] for label in raw.trailer_labels]
+        )
+        handle = RawFileHandle(raw, _fake_thermo(raw))
+        events = list(handle.iter_ms2_scans(8.0, 8.1))
+        events.extend(handle.iter_ms2_scan_subset(8.0, 8.1, frozenset({2})))
+        assert raw.trailer_header_calls == 1
+        assert [event.scan_number for event in events] == [1, 2, 2]
+        for event in events:
+            assert event.parse_error is None
+            metadata = event.scan.precursor_metadata
+            assert metadata.monoisotopic_mz == mono
+            assert metadata.charge == 1
+            assert metadata.master_scan_number == 10
+            assert metadata.isolation_width_da == 1.6
+
+        raw.GetTrailerExtraInformation = lambda _: SimpleNamespace(Values=[])
+        event = next(handle.iter_ms2_scans(8.0, 8.0))
+        assert event.parse_error is None
+        assert event.scan.precursor_metadata.monoisotopic_mz is None
+        assert event.scan.precursor_metadata.charge is None
+        assert event.scan.precursor_metadata.master_scan_number is None

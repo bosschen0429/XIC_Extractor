@@ -2069,6 +2069,9 @@ def test_ms2_cache_preserves_precursor_metadata_and_reacquires_old_schema(tmp_pa
         handle, vendor = _open_bound_raw(
             fixture, "S1", _FakeRaw((8.0,)), tmp_path=tmp_path
         )
+        vendor.trailer_labels = [
+            "Monoisotopic M/Z:", "Charge State:", "Master Scan Number:"
+        ]
         vendor.GetTrailerExtraInformation = lambda _: SimpleNamespace(
             Labels=["Monoisotopic M/Z:", "Charge State:", "Master Scan Number:"],
             Values=["499.0", "1", "12"],

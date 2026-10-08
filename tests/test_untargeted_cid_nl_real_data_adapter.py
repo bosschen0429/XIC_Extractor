@@ -1050,6 +1050,7 @@ def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
         return result
 
     monkeypatch.setattr(vendor, "GetFilterForScanNumber", scan_filter)
+    vendor.trailer_labels = ["Charge State:", "Master Scan Number:"]
     monkeypatch.setattr(
         vendor,
         "GetTrailerExtraInformation",

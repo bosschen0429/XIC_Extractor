@@ -1484,3 +1484,35 @@ Current receipt:
 It supersedes the earlier handwritten-wrapper comparison. Rerun for changed
 neighbor semantics, grouping population or a broader performance scope; this
 snapshot alone does not establish scientific or production readiness.
+
+### 2026-10-08 MS2 Precursor Metadata Uses File-Local Trailer Indices
+
+PR #710 review found repeated trailer-label normalization in
+`RawFileHandle._iter_ms2_scans`. Each handle now resolves the four precursor
+field indices once from its vendor header and reads their formatted values per
+scan. Keep the formatted API: the typed trailer API changes numeric precision.
+
+One full `BenignfatBC0979_DNA.raw` (SHA-256
+`129756357f58928eca63b034aae28d5f52905be761d2bb7ecb3ede470c762d50`)
+was replayed through the production `collect_strict_nl_seeds` entry. Both sides
+used DNA_dR 116.047344, explicit 0.8 Da radius, the same Python/DLLs, one worker,
+one untimed same-handle warmup, and no application MS2 cache. The timed scope
+includes native acquisition but excludes RAW open, hashes, grouping, MS1 and
+publication; OS cache was not evicted.
+
+The initial three-pair base/head diagnosis measured median 3.3495 s on
+`bc50e7ed` versus 6.6543 s on `a24cd8d0`; seed counts 2,794 versus 2,870 reflect
+the intentional #708 evidence changes, not an exact-safe comparison. A separate
+three-pair interleaved comparison of `a24cd8d0` against the index-cache change
+measured 5.7600 -> 4.5237 s (21.46% lower). Ranges were 5.7401-5.9858 s and
+4.5182-5.3383 s; every pair improved. All 2,870 seeds serialized identically,
+and all 45,826 per-scan metadata/error records were byte-identical. The reader
+source SHA-256 for the measured change is
+`1c0ed414cc854cb714e1040e1c9d66e5f42763ae4cdacf3d4b276056a99e56ac`.
+
+Evidence: `diagnostic_only`; optimization oracle: `exact_safe`; disposition:
+`optimized`. This is a warm single-RAW seed-stage result, not whole-pipeline or
+scientific readiness. The retained probe, per-run identities and receipts are
+under `output/claude_review_20261008/`, with the comparison in
+`performance_receipt.json`. Rerun for changed trailer decoding or a broader
+input/timing scope, not merely another reader of this review.
