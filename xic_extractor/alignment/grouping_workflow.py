@@ -25,6 +25,7 @@ from xic_extractor.alignment.feature_membership_inference import (
     FeatureInferenceOperationCounts,
     FeatureMembershipGroup,
     RtCoordinates,
+    rt_trend_supports_union,
     supports_existing_feature,
 )
 from xic_extractor.alignment.grouping_bootstrap import (
@@ -325,6 +326,8 @@ def group_cid_nl_owners(
             groups,
             config=config,
             backfill_half_window_min=backfill_half_window_min,
+            injection_order=injection_order,
+            rt_warp=rt_warp,
         ),
         config=config,
     )
@@ -559,13 +562,15 @@ def merge_sample_disjoint_groups(
     *,
     config: AlignmentConfig,
     backfill_half_window_min: float,
+    injection_order: Mapping[str, int],
+    rt_warp: RtCoordinates | None,
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
-    """Merge established rows of one feature that no sample tells apart.
+    """Merge nearby sample-disjoint rows only when their union supports one band.
 
-    Two peaks are only evidenced by one sample holding both. Rows of the same
-    m/z with no shared sample, whose centers lie within one Backfill half
-    window, would Backfill each other's peak, so they are one feature. Closer
-    rows merge first; a merge never joins two rows that share a sample.
+    Overlapping Backfill windows and disjoint samples nominate components;
+    they do not establish identity. Check each whole component in the same RT
+    coordinates as membership inference. A failed component retains all its
+    original rows rather than searching for alternative partial merges.
     """
     candidates = sorted(
         (
@@ -615,11 +620,27 @@ def merge_sample_disjoint_groups(
     for group in groups:
         members[find(group.group_hypothesis_id)].append(group)
     merged = []
+    corrected_rt = {
+        owner.owner_id: (
+            rt_warp.corrected_rt_min(owner) if rt_warp else owner.owner_apex_rt
+        )
+        for group in groups
+        for owner in group.owners
+    }
     for parts in members.values():
         if len(parts) == 1:
             merged.append(parts[0])
             continue
         parts.sort(key=lambda group: group.public_family_id)
+        if not rt_trend_supports_union(
+            parts[0].owners,
+            tuple(owner for group in parts[1:] for owner in group.owners),
+            orders=injection_order,
+            corrected_rt=corrected_rt,
+            max_rt_sec=config.max_rt_sec,
+        ):
+            merged.extend(parts)
+            continue
         owners = tuple(
             sorted(
                 (owner for group in parts for owner in group.owners),

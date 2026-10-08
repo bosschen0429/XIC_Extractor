@@ -1276,7 +1276,7 @@ def _window_inference(
                 if sample_sets[left_root] & sample_sets[right_root]:
                     continue
                 left_members, right_members = members[left_root], members[right_root]
-                if not _trend_supports_union(
+                if not rt_trend_supports_union(
                     left_members,
                     right_members,
                     orders=orders,
@@ -1387,7 +1387,7 @@ def _window_inference(
     return tuple(groups), tuple(decisions)
 
 
-def _trend_supports_union(
+def rt_trend_supports_union(
     left: Sequence[SampleLocalMS1Owner],
     right: Sequence[SampleLocalMS1Owner],
     *,
@@ -1395,6 +1395,7 @@ def _trend_supports_union(
     corrected_rt: Mapping[str, float],
     max_rt_sec: float,
 ) -> bool:
+    """Check the whole union against the shared local RT-band tolerance."""
     combined = tuple((*left, *right))
     if len(combined) < 10:
         return True
@@ -1469,12 +1470,15 @@ def _bridge_separated_window_bands(
                 ):
                     continue
                 rt_delta_sec = abs(rt_centers[left] - rt_centers[right]) * 60.0
-                if rt_delta_sec > config.preferred_rt_sec or not _trend_supports_union(
-                    bands[left],
-                    bands[right],
-                    orders=orders,
-                    corrected_rt=corrected_rt,
-                    max_rt_sec=config.max_rt_sec,
+                if (
+                    rt_delta_sec > config.preferred_rt_sec
+                    or not rt_trend_supports_union(
+                        bands[left],
+                        bands[right],
+                        orders=orders,
+                        corrected_rt=corrected_rt,
+                        max_rt_sec=config.max_rt_sec,
+                    )
                 ):
                     continue
                 precursor_fraction = (

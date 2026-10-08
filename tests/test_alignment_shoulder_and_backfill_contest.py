@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import replace
 from types import SimpleNamespace
 
+import pytest
+
 from tests.test_alignment_owner_clustering import _owner
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
@@ -238,12 +240,16 @@ def _two_bands(early: tuple[str, ...], late: tuple[str, ...], *, gap: float):
 
 
 def test_sample_disjoint_rows_within_one_backfill_window_merge() -> None:
-    """No sample shows both peaks, and each row would Backfill the other's."""
+    """Sparse bands retain the existing trend gate's permissive behavior."""
 
     groups = _two_bands(("S1", "S2", "S3"), ("S4", "S5", "S6"), gap=1.8)
 
     (merged,) = merge_sample_disjoint_groups(
-        groups, config=_CONFIG, backfill_half_window_min=2.0
+        groups,
+        config=_CONFIG,
+        backfill_half_window_min=2.0,
+        injection_order={f"S{i}": i for i in range(12)},
+        rt_warp=None,
     )
 
     assert merged.disposition == "established"
@@ -264,7 +270,45 @@ def test_rows_with_a_shared_sample_or_beyond_the_window_stay_apart() -> None:
     for groups in (shared, distant):
         assert (
             merge_sample_disjoint_groups(
-                groups, config=_CONFIG, backfill_half_window_min=2.0
+                groups,
+                config=_CONFIG,
+                backfill_half_window_min=2.0,
+                injection_order={f"S{i}": i for i in range(12)},
+                rt_warp=None,
             )
             == groups
         )
+
+
+@pytest.mark.parametrize("calibrated", [False, True])
+def test_sample_disjoint_merge_uses_the_whole_union_rt_trend(
+    calibrated: bool,
+) -> None:
+    # Alternating injections at 9.0 and 10.8 min contradict one local band,
+    # despite disjoint samples and overlapping Backfill windows.
+    groups = _two_bands(
+        tuple(f"S{i}" for i in range(0, 12, 2)),
+        tuple(f"S{i}" for i in range(1, 12, 2)),
+        gap=1.8,
+    )
+
+    class CorrectedCoordinates:
+        def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
+            return 9.0
+
+    result = merge_sample_disjoint_groups(
+        groups,
+        config=_CONFIG,
+        backfill_half_window_min=2.0,
+        injection_order={f"S{i}": i for i in range(12)},
+        rt_warp=CorrectedCoordinates() if calibrated else None,
+    )
+    if calibrated:
+        assert len(result) == 1
+        assert set(result[0].owner_ids) == {
+            owner_id for group in groups for owner_id in group.owner_ids
+        }
+    else:
+        assert {g.group_hypothesis_id for g in result} == {
+            g.group_hypothesis_id for g in groups
+        }
