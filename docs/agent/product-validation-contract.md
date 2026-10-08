@@ -150,6 +150,24 @@ passing alone never establishes production readiness.
 - Documentation and diagnostic phases require consistency and reviewer
   readability; no numerical gate language applies.
 
+## Cross-Owner Expected Differences
+
+When a change crosses acquisition, qualification, persistence, or publication,
+the existing expected-diff evidence distinguishes the affected observations,
+qualification states, and consumer-visible outputs. For example, retaining a
+measured peak for review does not imply NL support or Matrix eligibility.
+
+Trace the smallest affected case through the real owner interfaces and report
+both the intended change and the required non-changes. Use an existing regression
+or artifact comparison when it already supplies that oracle. Add coverage only
+for a reachable, stable gap under [Testing](testing.md), not every combination of
+states or owners. Interacting changes need evidence from their combined head.
+
+An explained difference is not automatically an accepted difference. Bind each
+material loss to the current acceptance/trade-off; keep it unresolved when no
+such decision or evidence exists. CI establishes regression coverage, not that
+scientific or product trade-off.
+
 ## Domain Evidence Guardrails
 
 - Prefer evidence chains over single-metric authority. RT, CWT, WIS, iRT, local

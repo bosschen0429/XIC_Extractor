@@ -33,8 +33,10 @@ uses the affected source, existing tests, and the relevant branch below.
   decisions/progress, and evidence receipts; do not copy the packet's scope or
   acceptance into another contract.
 - **Structural observation:** use Codebase Memory (CBM) first for callers,
-  dependencies, impact, and reachability; check index coverage once, then use
-  targeted source reads only for exact text, reported gaps, or negative claims.
+  dependencies, impact, and reachability. Check its checkout/freshness and scope
+  coverage once; a stale or different-worktree index is only a locator. Use
+  targeted current-source reads for those gaps, exact text, and negative claims
+  instead of repeating stale graph queries.
 - **Change locality:** ownership, serialization, derived-fact, and internal-defense changes use the
   XIC technical criteria in [Change Locality](docs/architecture-contract.md#change-locality).
   [`testing.md`](docs/agent/testing.md) owns test worth.
