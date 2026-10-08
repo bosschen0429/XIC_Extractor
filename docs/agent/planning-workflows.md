@@ -44,8 +44,20 @@ review pass merely to certify the packet.
 ## Wayfinder-To-Delivery Compilation
 
 A decision map records unresolved product choices; it does not authorize a
-production diff. When a decision becomes implementable, compile it into one
-delivery graph on the same parent Issue:
+production diff. For an experimental behavior change, the existing Issue records
+the loss that matters, acceptable trade-offs, comparison baseline, and stop rule.
+Use the formal version to establish net product benefit; use the accepted
+cumulative baseline for the next optimization. Recovering an experiment's own
+regression is not a gain over the formal version.
+
+Close each decision-bearing comparison with observed gains, new losses, material
+cost, and an adopt/reject decision or the smallest missing proof. Rank those
+effects by the accepted qualitative/quantitative trade-off. A small numerical
+difference is not, by itself, a reason to open another research branch. Keep this
+decision in the existing Issue; evidence artifacts carry the measurements.
+
+When a decision becomes implementable, compile it into one delivery graph on the
+same parent Issue:
 
 - every child owns one usable outcome and names its parent;
 - native dependencies are the schedule gate;

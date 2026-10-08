@@ -5,7 +5,10 @@ Delete any section that does not apply — empty headings are noise, not ceremon
 
 ## Summary
 
-<!-- State the outcome, before/after behavior, and bounded scope. -->
+<!-- Lead with the user-visible before/after and what deliberately stays unchanged.
+Use the smallest useful view: a behavior table, diff sketch, or short flow. Plain
+text is enough for a simple change. Put source-PR/SHA inventories and construction
+history after the outcome, only when needed to review the combined behavior. -->
 
 ## Motivation
 
@@ -13,7 +16,10 @@ Delete any section that does not apply — empty headings are noise, not ceremon
 
 ## Testing
 
-<!-- Record commands/checks actually run, results, and the proposed head they cover.
+<!-- Start with the decisive evidence: the previous wrong result and the observed
+result after the change, with their producing refs. Then record commands/checks
+actually run, results, and the proposed head they cover. Passing test counts alone
+do not explain the behavior or establish an acceptable scientific trade-off.
 Link existing evidence rather than reconstructing its receipt. When an artifact
 or required PR gate depends on source identity, include exact producing/validated
 refs and their compatibility with the current head. Hosted checks on the final
@@ -23,8 +29,9 @@ Name material limits of the evidence. -->
 
 ## Risks/Rollback
 
-<!-- State material risks and the applicable rollback or stop condition.
-Describe breaking changes explicitly when present. -->
+<!-- Name affected consumers and material risks. State whether rollback restores
+code alone or also needs data migration/reprocessing, and give the applicable
+rollback or stop condition. Describe breaking changes explicitly when present. -->
 
 Issue linkage: <!-- Closing keyword + #N, Refs #N, or No issue with the clear request. -->
 
