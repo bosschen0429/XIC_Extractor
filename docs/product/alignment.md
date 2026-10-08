@@ -397,7 +397,7 @@ unresolved and rejected groups remain AuditTrail facts.
 | --- | --- | --- | --- |
 | Known-ISTD identity / drift lookup | Exact reference bindings and supported reference range | Known identity constraints and bootstrap comparison | Replace measured peak RT or authorize Backfill values |
 | `BatchRtWarp` | Agreed bootstrap groups across the complete request; residual neighbors stay within `SampleMetadata.batch_id` | Final ordinary grouping and Backfill coordinate conversion | Treat an unsupported sample as measured zero drift |
-| Local feature trend | Up to six nearest injection-order members of that feature | Dense-band assignment; sample-local Backfill prediction uses same-cohort members | Pool unrelated features into one feature trend |
+| Local feature trend | Up to six nearest injection-order members of that feature (median); Backfill prediction uses up to twelve same-cohort members and a robust local linear fit over injection order | Dense-band assignment; sample-local Backfill prediction | Pool unrelated features into one feature trend |
 | Sample-local Backfill query | Local trend in common coordinates, mapped into the target injection's observed RT | XIC bounds and preferred peak location | Change `group_center_rt` or group identity |
 | `sample_rt_calibration.BatchRtCalibration` | Near-ubiquitous features under an explicit diagnostic policy | Opt-in grouping experiments | Act as the default production warp |
 

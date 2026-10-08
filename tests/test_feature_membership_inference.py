@@ -163,6 +163,41 @@ def test_backfill_rt_uses_local_feature_trend_and_target_sample_coordinates() ->
     assert unsupported.basis == "group_center_no_same_cohort_neighbors"
 
 
+def test_backfill_rt_follows_steep_local_drift_beyond_the_neighbors() -> None:
+    samples = [f"s{order}" for order in range(1, 11)]
+    members = tuple(
+        _owner(sample, "f", apex_rt=10.0 + 0.1 * order)
+        for order, sample in enumerate(samples, 1)
+    )
+    orders = {sample: order for order, sample in enumerate(samples, 1)} | {"target": 12}
+    cohorts = dict.fromkeys(orders, "batch")
+    flat = BatchRtWarp(
+        tuple((sample, ((7.0, 0.0), (20.0, 0.0))) for sample in samples)
+        + (("target", ((7.0, 0.2), (20.0, 0.2))),),
+        12,
+    )
+    calibrated = predict_backfill_rt(
+        sample_stem="target",
+        members=members,
+        group_center_rt=10.5,
+        injection_order=orders,
+        sample_cohorts=cohorts,
+        rt_warp=flat,
+    )
+    uncalibrated = predict_backfill_rt(
+        sample_stem="target",
+        members=members,
+        group_center_rt=10.5,
+        injection_order=orders,
+        sample_cohorts=cohorts,
+        rt_warp=None,
+    )
+    assert calibrated.query_rt == pytest.approx(11.4)
+    assert calibrated.basis == "calibrated_local_feature_trend"
+    assert uncalibrated.query_rt == pytest.approx(11.2)
+    assert uncalibrated.basis == "local_feature_trend_insufficient_calibration"
+
+
 def test_rt_warp_round_trip_uses_the_same_coordinate_system() -> None:
     warp = BatchRtWarp((("a", ((7.0, 0.1), (20.0, 0.5))),), 12)
     common_rt = 12.0

@@ -66,6 +66,9 @@ _INFEASIBLE_COST = 1_000_000.0
 _AMBIGUITY_EPSILON = 1e-9
 _WINDOW_AMBIGUITY_MARGIN = 0.05
 _FEATURE_TREND_NEIGHBORS = 6
+_BACKFILL_TREND_NEIGHBORS = 12
+_TREND_SCALE_FLOOR_MIN = 0.5 / 60.0
+_TREND_TOLERANCE_MIN = 1e-8 / 60.0
 _WARP_ANCHOR_MIN_MEMBERS = 20
 _WARP_GRID_RT_MIN = (7.0, 11.0, 15.0, 20.0, 27.0, 38.0)
 _WINDOW_TREND_TOLERANCE_SEC = 90.0
@@ -226,25 +229,70 @@ def predict_backfill_rt(
             injection_order[owner.sample_stem],
             owner.owner_id,
         ),
-    )[:_FEATURE_TREND_NEIGHBORS]
+    )[:_BACKFILL_TREND_NEIGHBORS]
     if not nearest:
         return BackfillRtPrediction(
             group_center_rt, "group_center_no_same_cohort_neighbors"
         )
+    orders = [injection_order[owner.sample_stem] for owner in nearest]
     if (
         rt_warp is not None
         and rt_warp.has_support(sample_stem)
         and all(rt_warp.has_support(owner.sample_stem) for owner in nearest)
     ):
-        trend = statistics.median(rt_warp.corrected_rt_min(owner) for owner in nearest)
+        trend = _local_rt_trend(
+            orders, [rt_warp.corrected_rt_min(owner) for owner in nearest], order
+        )
         return BackfillRtPrediction(
             max(0.0, trend + rt_warp.offset_min(sample_stem, trend)),
             "calibrated_local_feature_trend",
         )
     return BackfillRtPrediction(
-        statistics.median(owner.owner_apex_rt for owner in nearest),
+        max(
+            0.0,
+            _local_rt_trend(orders, [owner.owner_apex_rt for owner in nearest], order),
+        ),
         "local_feature_trend_insufficient_calibration",
     )
+
+
+def _local_rt_trend(
+    orders: Sequence[int], rts: Sequence[float], query_order: int
+) -> float:
+    """Robust kernel-weighted linear trend, so steep drift is not lagged.
+
+    Fewer than three neighbors, or neighbors at one order, leave no slope to fit;
+    their median is used.
+    """
+    offsets = np.asarray(orders, dtype=float) - query_order
+    values = np.asarray(rts, dtype=float)
+    spread = float(np.std(offsets))
+    if len(values) < 3 or spread < 1e-10:
+        return float(np.median(values))
+    design = np.column_stack([np.ones(len(offsets)), offsets / spread])
+    kernel = (
+        1.0 / (1.0 + np.abs(offsets) / max(float(np.max(np.abs(offsets))), 1e-10))
+    ) ** 2
+    weights = kernel
+    beta = np.zeros(2)
+    for _ in range(80):
+        root = np.sqrt(weights)
+        next_beta = np.linalg.lstsq(design * root[:, None], values * root, rcond=None)[
+            0
+        ]
+        residual = values - design @ next_beta
+        scale = max(
+            _TREND_SCALE_FLOOR_MIN,
+            1.4826 * float(np.median(np.abs(residual - np.median(residual)))),
+        )
+        weights = kernel * np.minimum(
+            1.0, 1.345 * scale / np.maximum(np.abs(residual), 1e-12)
+        )
+        converged = float(np.max(np.abs(next_beta - beta))) < _TREND_TOLERANCE_MIN
+        beta = next_beta
+        if converged:
+            break
+    return float(beta[0])
 
 
 class RtCoordinates(Protocol):
