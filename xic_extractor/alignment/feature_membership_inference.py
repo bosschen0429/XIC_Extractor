@@ -4,7 +4,7 @@ import math
 import statistics
 from bisect import bisect_left, bisect_right, insort
 from collections import Counter, defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol, cast
 
@@ -600,9 +600,8 @@ def infer_feature_memberships(
     ordinary = tuple(
         owner for owner in unique_owners if owner.owner_id not in constrained_owner_ids
     )
-    trajectory_seeds, seed_decisions = _trajectory_seeds(
-        ordinary, peak_trajectories, config
-    )
+    trajectory_seeds = _trajectory_seeds(ordinary, peak_trajectories, config)
+    trajectories = peak_trajectories or PeakTrajectories()
 
     # Composition can bridge scalar neutral-loss tags and retains its separate
     # membership contract.
@@ -610,34 +609,36 @@ def infer_feature_memberships(
         owner.cid_nl_composite_assessment is not None for owner in ordinary
     )
     if use_directional:
-        seeded_owner_ids = {
-            owner_id for group in trajectory_seeds for owner_id in group.owner_ids
+        seed_by_owner = {
+            owner_id: index
+            for index, seed in enumerate(trajectory_seeds)
+            if seed.disposition == "assigned"
+            for owner_id in seed.owner_ids
         }
-        unseeded = tuple(
-            owner for owner in ordinary if owner.owner_id not in seeded_owner_ids
-        )
         forward = _directional_inference(
-            unseeded,
+            ordinary,
             direction="forward",
             config=config,
             injection_order=injection_order,
             drift_lookup=drift_lookup,
             counts=counts,
+            seed_by_owner=seed_by_owner,
+            trajectories=trajectories,
         )
         reverse = _directional_inference(
-            unseeded,
+            ordinary,
             direction="reverse",
             config=config,
             injection_order=injection_order,
             drift_lookup=drift_lookup,
             counts=counts,
+            seed_by_owner=seed_by_owner,
+            trajectories=trajectories,
         )
-        inferred_groups = (
-            *trajectory_seeds,
-            *_consensus_groups(unseeded, forward, reverse, counts),
+        inferred_groups = _consensus_groups(
+            ordinary, forward, reverse, counts, seeded_owner_ids=seed_by_owner.keys()
         )
-        decisions = (*seed_decisions, *forward.decisions, *reverse.decisions)
-        counts["births"] += len(trajectory_seeds)
+        decisions = (*forward.decisions, *reverse.decisions)
         algorithm = _ALGORITHM
         objective = _OBJECTIVE
         termination = _TERMINATION
@@ -649,7 +650,7 @@ def infer_feature_memberships(
             rt_warp=rt_warp,
             counts=counts,
             trajectory_seeds=trajectory_seeds,
-            trajectories=peak_trajectories or PeakTrajectories(),
+            trajectories=trajectories,
         )
         algorithm = "whole_window_peak_trajectories"
         objective = "ordered_pattern_and_local_rt_mass_evidence_in_one_membership_graph"
@@ -691,12 +692,11 @@ def _trajectory_seeds(
     owners: Sequence[SampleLocalMS1Owner],
     correspondence: PeakTrajectories | None,
     config: AlignmentConfig,
-) -> tuple[tuple[FeatureMembershipGroup, ...], tuple[SparseFeatureDecision, ...]]:
+) -> tuple[FeatureMembershipGroup, ...]:
     if correspondence is None:
-        return (), ()
+        return ()
     by_id = {owner.owner_id: owner for owner in owners}
     groups = []
-    decisions: list[SparseFeatureDecision] = []
     for context in correspondence.tracks:
         members = [
             by_id[owner_id] for owner_id in context.owner_ids if owner_id in by_id
@@ -730,21 +730,7 @@ def _trajectory_seeds(
                 reason=reason,
             )
         )
-        decisions.extend(
-            SparseFeatureDecision(
-                direction="window",
-                sample_stem=member.sample_stem,
-                owner_id=member.owner_id,
-                feature_key=f"elution:{owner_ids[0]}",
-                state="assigned" if assigned else "evaluated_undecided",
-                reason=reason,
-                witness_owner_ids=tuple(
-                    owner_id for owner_id in owner_ids if owner_id != member.owner_id
-                ),
-            )
-            for member in members
-        )
-    return tuple(groups), tuple(decisions)
+    return tuple(groups)
 
 
 def _unique_owners(
@@ -865,7 +851,16 @@ def _directional_inference(
     injection_order: Mapping[str, int] | None,
     drift_lookup: DriftLookupProtocol | None,
     counts: Counter[str],
+    seed_by_owner: Mapping[str, int],
+    trajectories: PeakTrajectories,
 ) -> _DirectionalResult:
+    """Grow features in one injection direction from ordered-pattern seeds.
+
+    An assigned pattern seed is one union: its first member processed in this
+    direction competes like any owner, and later members join that member's
+    feature. Unbound owners can extend the feature; owners bound to distinct
+    trajectories cannot share one.
+    """
     counts["directional_passes"] += 1
     by_sample: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
     for owner in owners:
@@ -877,22 +872,57 @@ def _directional_inference(
     )
     tracks: dict[str, _FeatureTrack] = {}
     index = _FeatureIndex()
+    feature_members: dict[str, list[str]] = defaultdict(list)
+    seed_feature: dict[int, str] = {}
     owner_feature: dict[str, str] = {}
     decisions: list[SparseFeatureDecision] = []
     uncertain: set[str] = set()
+
+    def place(owner_id: str, feature_key: str) -> None:
+        owner_feature[owner_id] = feature_key
+        feature_members[feature_key].append(owner_id)
+        seed = seed_by_owner.get(owner_id)
+        if seed is not None:
+            seed_feature.setdefault(seed, feature_key)
 
     for sample_stem in sample_stems:
         counts["samples_processed"] += 1
         sample_owners = tuple(
             sorted(by_sample[sample_stem], key=lambda item: item.owner_id)
         )
+        # Seed members go first, so the sample's other owners see that occupancy.
+        seeded_rows = tuple(
+            owner
+            for owner in sample_owners
+            if seed_by_owner.get(owner.owner_id) in seed_feature
+        )
+        for owner in seeded_rows:
+            feature_key = seed_feature[seed_by_owner[owner.owner_id]]
+            track = tracks[feature_key]
+            decisions.append(
+                SparseFeatureDecision(
+                    direction=direction,
+                    sample_stem=sample_stem,
+                    owner_id=owner.owner_id,
+                    feature_key=feature_key,
+                    state="assigned",
+                    reason="ordered_ms1_pattern_links_existing_owners",
+                    witness_owner_ids=tuple(
+                        witness.owner_id for witness in track.witness_owners
+                    ),
+                )
+            )
+            index.extend(track, owner, counts)
+            place(owner.owner_id, feature_key)
         supported_rows: list[SampleLocalMS1Owner] = []
         candidates_by_owner: dict[str, tuple[_Candidate, ...]] = {}
         for owner in sample_owners:
+            if owner.owner_id in owner_feature:
+                continue
             weak_reason = _owner_uncertainty_reason(owner, config)
             if weak_reason:
                 feature_key = f"{direction}:{owner.owner_id}"
-                owner_feature[owner.owner_id] = feature_key
+                place(owner.owner_id, feature_key)
                 uncertain.add(owner.owner_id)
                 counts["births"] += 1
                 decisions.append(
@@ -913,6 +943,9 @@ def _directional_inference(
                 key
                 for key in feature_keys
                 if _feature_rt_may_support(owner, tracks[key], config, drift_lookup)
+                and trajectories.permits_membership(
+                    (owner.owner_id, *feature_members[key])
+                )
             }
             counts["rt_candidate_features_pruned"] += len(feature_keys) - len(
                 feasible_keys
@@ -934,7 +967,11 @@ def _directional_inference(
         assignments, ambiguous = _solve_sample_assignment(
             supported_rows, candidates_by_owner, counts
         )
-        uncertain.update(ambiguous)
+        # A pattern seed carries its own cross-sample support, as in the
+        # window graph; competition only decides which feature it joins.
+        uncertain.update(
+            owner_id for owner_id in ambiguous if owner_id not in seed_by_owner
+        )
         for owner in supported_rows:
             row_candidates = candidates_by_owner[owner.owner_id]
             assigned_key = assignments.get(owner.owner_id)
@@ -982,13 +1019,13 @@ def _directional_inference(
             if assigned_key is not None and owner.owner_id not in ambiguous:
                 track = tracks[assigned_key]
                 index.extend(track, owner, counts)
-                owner_feature[owner.owner_id] = assigned_key
+                place(owner.owner_id, assigned_key)
                 continue
 
             feature = _FeatureTrack.from_owner(owner, direction=direction)
             tracks[feature.key] = feature
             index.add(feature)
-            owner_feature[owner.owner_id] = feature.key
+            place(owner.owner_id, feature.key)
             counts["births"] += 1
             if owner.owner_id in ambiguous:
                 reason = "alternative_assignment_has_equal_objective"
@@ -996,7 +1033,8 @@ def _directional_inference(
             elif supported_keys:
                 reason = "joint_competition_selected_unassigned"
                 state = "competition_unassigned"
-                uncertain.add(owner.owner_id)
+                if owner.owner_id not in seed_by_owner:
+                    uncertain.add(owner.owner_id)
             else:
                 reason = "no_supported_existing_feature"
                 state = "birth"
@@ -2028,6 +2066,8 @@ def _consensus_groups(
     forward: _DirectionalResult,
     reverse: _DirectionalResult,
     counts: Counter[str],
+    *,
+    seeded_owner_ids: Collection[str],
 ) -> tuple[FeatureMembershipGroup, ...]:
     forward_by_owner = _partition_by_owner(forward.groups)
     reverse_by_owner = _partition_by_owner(reverse.groups)
@@ -2042,7 +2082,10 @@ def _consensus_groups(
         owner_ids = tuple(sorted(member_ids))
         disagreement = forward.groups[forward_index] != reverse.groups[reverse_index]
         uncertain = any(owner_id in uncertain_owners for owner_id in owner_ids)
-        if disagreement:
+        # Both passes keep a seed whole, so this intersection holds the seed and
+        # only the extensions both directions agree on.
+        seeded = any(owner_id in seeded_owner_ids for owner_id in owner_ids)
+        if disagreement and not seeded:
             counts["consensus_disagreements"] += len(owner_ids)
             groups.append(
                 FeatureMembershipGroup(
@@ -2063,6 +2106,15 @@ def _consensus_groups(
                         if uncertain
                         else "no_supported_cross_sample_membership"
                     ),
+                )
+            )
+        elif seeded:
+            groups.append(
+                FeatureMembershipGroup(
+                    owner_ids=owner_ids,
+                    disposition="assigned",
+                    basis="peak_trajectory",
+                    reason="ordered_ms1_pattern_links_existing_owners",
                 )
             )
         else:

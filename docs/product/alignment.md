@@ -573,7 +573,9 @@ changing the query RT.
 - Untarget ordinary grouping has two finite stages. The retained directional
   inference supplies only agreed groups with at least 20 members, together
   with exact known-identity groups, as RT warp anchors. Their ordinary
-  membership is discarded. Across the batch, each injection's anchor offsets
+  membership is discarded. Pattern correspondences seed both directional
+  passes; an extension the passes disagree on stays undecided without
+  demoting the seed. Across the batch, each injection's anchor offsets
   from the median of six nearby injections are summarized at RT knots. This
   warp covers elution times outside the ISTD span; ISTD groups are local anchors
   rather than a flat extrapolation rule.

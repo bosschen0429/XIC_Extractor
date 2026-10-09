@@ -125,8 +125,11 @@ def _synthetic_owner(
     )
 
 
+@pytest.mark.parametrize("bootstrap", [False, True])
 @pytest.mark.parametrize("reverse", [False, True])
-def test_pattern_and_unobserved_context_samples_extend_one_trajectory(reverse) -> None:
+def test_pattern_and_unobserved_context_samples_extend_one_trajectory(
+    reverse, bootstrap
+) -> None:
     owners = [
         _synthetic_owner("a", "a:early", 10.0),
         _synthetic_owner("a", "a:late", 10.7),
@@ -159,6 +162,7 @@ def test_pattern_and_unobserved_context_samples_extend_one_trajectory(reverse) -
         config=AlignmentConfig(),
         injection_order=orders,
         drift_lookup=None,
+        bootstrap=bootstrap,
         peak_trajectories=trajectories,
     )
     assert {frozenset(group.owner_ids) for group in result.groups} == {
@@ -168,6 +172,83 @@ def test_pattern_and_unobserved_context_samples_extend_one_trajectory(reverse) -
     assert all(group.disposition == "assigned" for group in result.groups)
     # Pattern seeds join the whole-window graph; the band is the decision.
     assert {group.basis for group in result.groups} == {"window_level_rt_band"}
+
+
+def test_single_sample_pattern_does_not_split_a_bootstrap_band() -> None:
+    owners = [
+        _synthetic_owner(sample, f"{sample}:p", 10.0 + 0.02 * index)
+        for index, sample in enumerate("abcdef")
+    ]
+    orders = {sample: index for index, sample in enumerate("abcdef")} | {"x": 9}
+    contexts = [
+        SampleElutionContext(
+            sample_stem=sample,
+            mz=500.0,
+            rt_start=9.0,
+            rt_end=12.0,
+            landmarks=(
+                ElutionLandmark(10.0 + shift, 100.0, 0.25),
+                ElutionLandmark(10.7 + shift, 100.0, 0.25),
+            ),
+        )
+        for sample, shift in (("a", 0.0), ("x", 0.01))
+    ]
+    trajectories = resolve_peak_trajectories(
+        owners, contexts, config=AlignmentConfig(), injection_order=orders
+    )
+    assert any(track.owner_ids == ("a:p",) for track in trajectories.tracks)
+
+    for bootstrap in (False, True):
+        result = infer_feature_memberships(
+            owners,
+            config=AlignmentConfig(),
+            injection_order=orders,
+            drift_lookup=None,
+            bootstrap=bootstrap,
+            peak_trajectories=trajectories,
+        )
+        assert [
+            (set(group.owner_ids), group.disposition) for group in result.groups
+        ] == [({owner.owner_id for owner in owners}, "assigned")], bootstrap
+
+
+def test_directional_extension_disagreement_keeps_the_pattern_seed() -> None:
+    # The forward pass reaches b through a; the reverse pass reaches the seed
+    # through c, which is beyond the preferred RT distance from b.
+    owners = [
+        _synthetic_owner("a", "a:p", 10.0),
+        _synthetic_owner("b", "b:p", 10.05),
+        _synthetic_owner("c", "c:p", 11.2),
+    ]
+    orders = {"a": 0, "b": 1, "c": 2}
+    contexts = [
+        SampleElutionContext(
+            sample_stem=sample,
+            mz=500.0,
+            rt_start=9.0,
+            rt_end=13.0,
+            landmarks=(
+                ElutionLandmark(10.0 + shift, 30.0, 0.25),
+                ElutionLandmark(10.7 + shift, 100.0, 0.25),
+            ),
+        )
+        for sample, shift in (("a", 0.0), ("c", 1.2))
+    ]
+    trajectories = resolve_peak_trajectories(
+        owners, contexts, config=AlignmentConfig(), injection_order=orders
+    )
+    result = infer_feature_memberships(
+        owners,
+        config=AlignmentConfig(),
+        injection_order=orders,
+        drift_lookup=None,
+        bootstrap=True,
+        peak_trajectories=trajectories,
+    )
+    assert {(group.owner_ids, group.disposition) for group in result.groups} == {
+        (("a:p", "c:p"), "assigned"),
+        (("b:p",), "undecided"),
+    }
 
 
 def test_alternating_direct_peaks_follow_ms1_pattern_not_nearest_absolute_rt() -> None:
