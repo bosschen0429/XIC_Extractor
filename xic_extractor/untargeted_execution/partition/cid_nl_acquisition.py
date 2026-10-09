@@ -41,6 +41,7 @@ from xic_extractor.discovery.cid_nl_evidence_projection import (
 from xic_extractor.discovery.models import (
     MS1_FEATURE_BACKED_STATES,
     DiscoveryCandidate,
+    DiscoverySeed,
     DiscoverySettings,
 )
 from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
@@ -1481,6 +1482,7 @@ def _composite_backfill_evidence(
     individual_refs: list[DdaCidNlPeakSupportRef] = []
     set_refs: list[DdaCidNlCandidateSetRelationRef] = []
     scan_numbers: set[int] = set()
+    subject_seeds: list[DiscoverySeed] = []
     for event in raw.iter_ms2_scans(query_rt_min, query_rt_max):
         if event.parse_error is not None or event.scan is None:
             raise CidNlAcquisitionError(
@@ -1492,40 +1494,48 @@ def _composite_backfill_evidence(
                 "duplicate acquisition scan during composite backfill"
             )
         scan_numbers.add(scan.scan_number)
-        for seed in discovery_seeds_from_scan(
-            scan, raw_file=Path(sample.metadata.raw_stem), settings=settings
-        ):
-            if not seed.supports_direct_nl or not _within_ppm(
+        subject_seeds.extend(
+            seed
+            for seed in discovery_seeds_from_scan(
+                scan, raw_file=Path(sample.metadata.raw_stem), settings=settings
+            )
+            if seed.supports_direct_nl
+            and _within_ppm(
                 seed.precursor_mz,
                 method_subject.precursor_mz,
                 method_subject.precursor_tolerance_ppm,
-            ):
-                continue
-            evidence = mint_cid_nl_evidence_ref(
-                processing_owners=processing_owners,
-                sample=sample,
-                scan_number=seed.scan_number,
-                precursor_mz=seed.precursor_mz,
-                product_mz=seed.product_mz,
-                configured_neutral_loss_da=seed.configured_neutral_loss_da,
-                observed_neutral_loss_da=seed.observed_neutral_loss_da,
-                observed_loss_error_ppm=seed.observed_loss_error_ppm,
-                scan_rt_min=seed.rt,
-                product_intensity=seed.product_intensity,
-                precursor_mz_basis=seed.precursor_mz_basis,
-                scan_precursor_mz=seed.scan_precursor_mz,
-                precursor_metadata=seed.precursor_metadata,
             )
-            evidence_refs.append(evidence)
-            resolved_support, resolved_sets = resolve_cid_nl_method_relations(
-                processing_owners=processing_owners,
-                sample=sample,
-                evidence_refs=(evidence,),
-                candidate_peaks=observations,
-                policy=support_policy,
-            )
-            individual_refs.extend(resolved_support)
-            set_refs.extend(resolved_sets)
+        )
+    for seed in resolve_discovery_scan_events(
+        tuple(subject_seeds),
+        settings=settings,
+        preserve_configured_losses=method_subject.composition is not None,
+    ):
+        evidence = mint_cid_nl_evidence_ref(
+            processing_owners=processing_owners,
+            sample=sample,
+            scan_number=seed.scan_number,
+            precursor_mz=seed.precursor_mz,
+            product_mz=seed.product_mz,
+            configured_neutral_loss_da=seed.configured_neutral_loss_da,
+            observed_neutral_loss_da=seed.observed_neutral_loss_da,
+            observed_loss_error_ppm=seed.observed_loss_error_ppm,
+            scan_rt_min=seed.rt,
+            product_intensity=seed.product_intensity,
+            precursor_mz_basis=seed.precursor_mz_basis,
+            scan_precursor_mz=seed.scan_precursor_mz,
+            precursor_metadata=seed.precursor_metadata,
+        )
+        evidence_refs.append(evidence)
+        resolved_support, resolved_sets = resolve_cid_nl_method_relations(
+            processing_owners=processing_owners,
+            sample=sample,
+            evidence_refs=(evidence,),
+            candidate_peaks=observations,
+            policy=support_policy,
+        )
+        individual_refs.extend(resolved_support)
+        set_refs.extend(resolved_sets)
     return (
         tuple(evidence_refs),
         tuple(individual_refs),

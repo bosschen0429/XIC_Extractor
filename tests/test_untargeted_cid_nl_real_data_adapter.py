@@ -2497,3 +2497,124 @@ def test_physical_backfill_context_is_not_search_permission(
     else:
         assert first.state == "unavailable" and first.facts is None
         assert not batched.assessment.candidate_peaks
+
+
+@pytest.mark.parametrize("monoisotopic_recorded", [True, False])
+def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    monoisotopic_recorded: bool,
+) -> None:
+    import json
+    from types import SimpleNamespace
+
+    from xic_extractor.peak_detection.cid_nl_method_subject import (
+        REQUEST_INPUT_KEY,
+        CidNlComposition,
+        mint_untargeted_cid_nl_method_subject,
+    )
+    from xic_extractor.processing_identity import (
+        build_processing_request_identity,
+        compose_processing_owner_references,
+        issue_processing_attempt,
+    )
+
+    settings = _multi_tag_settings()
+    subject = mint_untargeted_cid_nl_method_subject(
+        precursor_mz=500.0,
+        precursor_tolerance_ppm=20.0,
+        composition=CidNlComposition(
+            tags=tuple(
+                (profile.tag, profile.neutral_loss_da)
+                for profile in settings.neutral_loss_profiles
+            ),
+            combine_mode=settings.tag_combine_mode,
+        ),
+    )
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True
+    )
+    old_request = fixture.owners.request
+    request = build_processing_request_identity(
+        acquisition_sources=old_request.acquisition_sources,
+        acquisition_bindings=old_request.acquisition_bindings,
+        scientific_input_schema_version=old_request.scientific_input_schema_version,
+        processing_algorithm_version=old_request.processing_algorithm_version,
+        processing_contract_version=old_request.processing_contract_version,
+        scientific_inputs=json.loads(old_request.normalized_scientific_inputs_json)
+        | {REQUEST_INPUT_KEY: subject.request_payload()},
+    )
+    owners = compose_processing_owner_references(
+        request=request,
+        attempt=issue_processing_attempt(request),
+        sample_snapshot=fixture.owners.sample_snapshot,
+        sample_resolutions=fixture.samples,
+    )
+    # Selected and recorded monoisotopic ions sit 15 ppm either side of the
+    # subject; each passes the per-loss NL relation for both configured losses.
+    source_raw = _FakeRaw((8.0,))
+    scan = source_raw.scans[0]
+    source_raw.scans = (
+        replace(
+            scan,
+            precursor_mz=499.9925,
+            masses=np.asarray((500.0 - 116.0474, 500.0 - 132.0423)),
+            intensities=np.asarray((800.0, 700.0)),
+            base_peak=800.0,
+        ),
+    )
+    raw, vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+    original_filter = vendor.GetFilterForScanNumber
+
+    def scan_filter(number):
+        result = original_filter(number)
+        if number == scan.scan_number:
+            reaction = result.Filter.Reactions[0]
+            reaction.IsolationWidth = 1.6
+            reaction.IsolationWidthOffset = 0.0
+        return result
+
+    monkeypatch.setattr(vendor, "GetFilterForScanNumber", scan_filter)
+    labels = ("Charge State:", "Master Scan Number:")
+    values: tuple[object, ...] = ("1", str(scan.scan_number - 1))
+    if monoisotopic_recorded:
+        labels = ("Monoisotopic M/Z:", *labels)
+        values = ("500.0075", *values)
+    vendor.trailer_labels = list(labels)
+    monkeypatch.setattr(
+        vendor,
+        "GetTrailerExtraInformation",
+        lambda _number: SimpleNamespace(Labels=labels, Values=values),
+        raising=False,
+    )
+    try:
+        result = backfill_untargeted_cid_nl_sample_subject(
+            processing_owners=owners,
+            sample=fixture.sample("S1"),
+            method_subject=subject,
+            group_center_rt=8.0,
+            group_center_mz=500.0,
+            support_policy=DdaCidNlPeakSupportPolicy(
+                precursor_tolerance_da=0.01, neutral_loss_tolerance_ppm=20.0
+            ),
+            peak_config=_peak_config(tmp_path),
+            raw=raw,
+            settings=settings,
+        )
+    finally:
+        raw.__exit__(None, None, None)
+
+    assessment = result.assessment
+    assert assessment.content.method_result == "SUPPORT"
+    assert len(assessment.candidate_peaks) == 1
+    assert sorted(
+        (
+            ref.observation.scan_number,
+            ref.observation.configured_neutral_loss_da,
+            ref.observation.product_mz,
+        )
+        for ref in assessment.evidence_refs
+    ) == [
+        (scan.scan_number, 116.0474, pytest.approx(500.0 - 116.0474)),
+        (scan.scan_number, 132.0423, pytest.approx(500.0 - 132.0423)),
+    ]
