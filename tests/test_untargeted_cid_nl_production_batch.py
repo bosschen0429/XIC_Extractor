@@ -1488,9 +1488,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 if expected_trace_count:
                     assert adapter.acquisition is not None
                     assert len(adapter.acquisition.traces) == expected_trace_count
-                    assert opened_raws[tmp_path / f"{stem}.synthetic"][
-                        -1
-                    ].chromatogram_request_counts == [expected_trace_count]
+                    # The last RAW handle can belong to Backfill, whose batch
+                    # also prefetches bounded context. Check this initial phase.
+                    assert adapter.acquisition.adapter_chromatogram_call_count == 1
                 else:
                     assert adapter.acquisition is None
                 assert (

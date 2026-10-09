@@ -131,6 +131,74 @@ def test_truncated_physical_peak_has_no_numeric_facts() -> None:
     assert result.integration is None
 
 
+@pytest.mark.parametrize("target_present", [True, False])
+def test_search_window_does_not_admit_context_only_peak(target_present: bool) -> None:
+    rt = np.linspace(0.0, 6.0, 301)
+    raw = 5000.0 * np.exp(-0.5 * ((rt - 4.7) / 0.16) ** 2)
+    if target_present:
+        raw += 1000.0 * np.exp(-0.5 * ((rt - 2.3) / 0.22) ** 2)
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="bounded-search",
+        query_rt_min=1.3,
+        selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+        search_rt_window=(1.0, 3.0),
+    )
+    if target_present:
+        assert result.state == "available"
+        assert result.facts is not None
+        assert result.facts.apex_rt_min == pytest.approx(2.3, abs=0.04)
+    else:
+        assert result.state == "unavailable"
+        assert result.facts is None and result.integration is None
+
+
+def test_search_window_keeps_complete_peak_and_round_trips() -> None:
+    rt = np.linspace(0.0, 6.0, 301)
+    raw = 1000.0 * np.exp(-0.5 * ((rt - 3.0) / 0.4) ** 2)
+    prepared = prepare_physical_signal(rt, raw)
+    result = evaluate_physical_peak(
+        prepared,
+        selection_subject_id="complete-bounded-peak",
+        query_rt_min=3.0,
+        selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+        search_rt_window=(2.8, 3.2),
+    )
+    assert result.state == "available" and result.facts is not None
+    assert result.facts.left_rt_min < 2.8 < 3.2 < result.facts.right_rt_min
+    assert result.question.search_rt_window == (2.8, 3.2)
+    assert result.question.context_rt_start_min == 0.0
+    assert result.question.context_rt_end_min == 6.0
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=prepared.prepared.profile, evaluation=result
+    )
+    assert deserialize_physical_peak_evaluation(payload)[-1] == result
+    tampered = json.loads(payload)
+    tampered["evaluation"]["question"]["search_rt_window"] = [
+        (0.0).hex(), (6.0).hex(),
+    ]
+    with pytest.raises(ValueError, match="physical_question_id"):
+        deserialize_physical_peak_evaluation(json.dumps(tampered))
+
+
+def test_search_window_does_not_resolve_two_eligible_peaks_by_strength() -> None:
+    rt = np.linspace(0.0, 6.0, 301)
+    raw = sum(
+        height * np.exp(-0.5 * ((rt - center) / 0.1) ** 2)
+        for center, height in [(2.0, 1000.0), (3.0, 2000.0), (5.0, 9000.0)]
+    )
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="ambiguous-bounded-search",
+        query_rt_min=1.0,
+        selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+        search_rt_window=(1.0, 3.5),
+    )
+    assert len(result.question.admissible_segment_ids) == 2
+    assert result.state == "unavailable" and result.facts is None
+    assert result.integration is None
+
+
 @pytest.mark.parametrize(
     "policy",
     [

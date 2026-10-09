@@ -134,6 +134,8 @@ class PhysicalPeakQuestion:
     admissible_segment_ids: tuple[str, ...]
     selection_policy_version: str
     physical_question_id: str
+    # Candidate apex eligibility, independent of the measured signal context.
+    search_rt_window: tuple[float, float] | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -322,6 +322,18 @@ reasons, Review Queue/archive routing, and result finalization close afterward.
   planning. It has no separate domain identity or persistence contract.
 - RT correction is an optional prior; direct local evidence wins and a prior
   alone cannot reassign a member.
+- Physical Backfill keeps candidate search bounds separate from MS1 signal
+  context. The existing query half-window bounds eligible peak apices and the
+  method-evidence search. The acquisition phase also prefetches one additional
+  half-window per flank, in the same sample-local batch. Only an
+  `incomplete_peak_context` answer permits evaluation of that wider trace;
+  complete search-eligible observations retain their original boundaries and
+  integral. This
+  bounded fallback does not expand candidate eligibility, reopen RAW, or grant
+  membership. Multiple eligible peaks still follow the physical owner's
+  ambiguity rule. The persisted `bounded_physical_peak_question` binds the
+  search interval independently of its measured context; legacy questions
+  retain their original interpretation.
 - Validation must not assume that every ISTD or unknown feature follows one
   batch-wide monotonic RT drift. Sensitivity work therefore permits direction
   changes and adjacent-injection jumps, uses method-appropriate ISTDs plus

@@ -518,10 +518,11 @@ def capture_physical_backfill_observation(
     sample: ResolvedCanonicalSampleIdentity,
     method_subject: CidNlMethodSubject,
     trace: Trace,
-    group_center_rt: float,
+    query_rt_min: float,
     physical_mz: float,
     profile: SignalProcessingProfile,
     resolver_mode: str,
+    search_rt_window: tuple[float, float] | None = None,
     evaluation_sink: Callable[[PhysicalPeakEvaluation], None] | None = None,
 ) -> PeakObservationRef | None:
     """Capture a backfill question using its request-bound method and profile."""
@@ -532,17 +533,18 @@ def capture_physical_backfill_observation(
         not request_binds_physical_capture_profile(processing_owners.request, profile)
         or trace.mz != physical_mz
         or trace.ppm_tol != method_subject.precursor_tolerance_ppm
-        or not trace.rt_min <= group_center_rt <= trace.rt_max
+        or not trace.rt_min <= query_rt_min <= trace.rt_max
     ):
         raise SampleLocalCaptureError("physical backfill question is not request-bound")
     prepared = prepare_physical_signal(trace.rt, trace.intensity, profile=profile)
     evaluation = evaluate_physical_peak(
         prepared,
         selection_subject_id=method_subject.method_subject_id,
-        query_rt_min=group_center_rt,
+        query_rt_min=query_rt_min,
         request_context_rt_start_min=trace.rt_min,
         request_context_rt_end_min=trace.rt_max,
         selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+        search_rt_window=search_rt_window,
     )
     if evaluation_sink is not None:
         evaluation_sink(evaluation)
