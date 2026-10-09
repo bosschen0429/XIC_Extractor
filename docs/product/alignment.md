@@ -158,8 +158,16 @@ An intentional uncorrected CLI run requires `--allow-uncorrected`, which cannot
 be combined with either ISTD input. The Python API retains its explicit optional
 input contract.
 
-With ISTD input, the existing target extractor obtains label-bound measurements
-and the formal drift owner prepares its batch map before initial edge/group
+With a targets CSV, reference acquisition uses the declared ISTDs' m/z and
+target-specific native MS2 neutral-loss evidence. XIC acquisition includes one
+minute of morphology context outside each declared apex interval; that context
+does not expand the identity search interval. Only a unique physically qualified,
+NL-supported peak supplies a coordinate. Missing support or multiple qualified
+peaks supplies none; neither intensity nor proximity to an expected RT resolves
+the ambiguity. Imported reference workbooks retain their declared measurement
+contract and are not retrospectively MS2-qualified by the reader.
+
+The formal drift owner prepares its batch map before initial edge/group
 decisions. The finalized explanation saves the same prepared sample knots,
 domains, measurements and source provenance. Downstream review reuses these
 results; it does not refit the model. Insufficient anchors and positions outside
