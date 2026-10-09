@@ -2082,8 +2082,6 @@ def _consensus_groups(
         owner_ids = tuple(sorted(member_ids))
         disagreement = forward.groups[forward_index] != reverse.groups[reverse_index]
         uncertain = any(owner_id in uncertain_owners for owner_id in owner_ids)
-        # Both passes keep a seed whole, so this intersection holds the seed and
-        # only the extensions both directions agree on.
         seeded = any(owner_id in seeded_owner_ids for owner_id in owner_ids)
         if disagreement and not seeded:
             counts["consensus_disagreements"] += len(owner_ids)
@@ -2108,7 +2106,9 @@ def _consensus_groups(
                     ),
                 )
             )
-        elif seeded:
+        elif disagreement:
+            # Both passes keep a seed whole, so a disputed intersection holds
+            # the seed and only the extensions both passes share.
             groups.append(
                 FeatureMembershipGroup(
                     owner_ids=owner_ids,

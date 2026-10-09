@@ -125,11 +125,8 @@ def _synthetic_owner(
     )
 
 
-@pytest.mark.parametrize("bootstrap", [False, True])
 @pytest.mark.parametrize("reverse", [False, True])
-def test_pattern_and_unobserved_context_samples_extend_one_trajectory(
-    reverse, bootstrap
-) -> None:
+def test_pattern_and_unobserved_context_samples_extend_one_trajectory(reverse) -> None:
     owners = [
         _synthetic_owner("a", "a:early", 10.0),
         _synthetic_owner("a", "a:late", 10.7),
@@ -162,7 +159,6 @@ def test_pattern_and_unobserved_context_samples_extend_one_trajectory(
         config=AlignmentConfig(),
         injection_order=orders,
         drift_lookup=None,
-        bootstrap=bootstrap,
         peak_trajectories=trajectories,
     )
     assert {frozenset(group.owner_ids) for group in result.groups} == {
@@ -172,6 +168,45 @@ def test_pattern_and_unobserved_context_samples_extend_one_trajectory(
     assert all(group.disposition == "assigned" for group in result.groups)
     # Pattern seeds join the whole-window graph; the band is the decision.
     assert {group.basis for group in result.groups} == {"window_level_rt_band"}
+
+
+def test_bootstrap_pattern_seed_extends_to_an_unobserved_context_sample() -> None:
+    owners = [
+        _synthetic_owner("a", "a:early", 10.0),
+        _synthetic_owner("a", "a:late", 10.7),
+        _synthetic_owner("b", "b:early", 10.1),
+        _synthetic_owner("b", "b:late", 10.8),
+        _synthetic_owner("c", "c:early", 10.2),
+    ]
+    contexts = [
+        SampleElutionContext(
+            sample_stem=sample,
+            mz=500.0,
+            rt_start=9.0,
+            rt_end=12.0,
+            landmarks=(
+                ElutionLandmark(10.0 + shift, 30.0, 0.25),
+                ElutionLandmark(10.7 + shift, 100.0, 0.25),
+            ),
+        )
+        for sample, shift in (("a", 0.0), ("b", 0.1))
+    ]
+    orders = {"a": 1, "b": 2, "c": 3}
+    trajectories = resolve_peak_trajectories(
+        owners, contexts, config=AlignmentConfig(), injection_order=orders
+    )
+    result = infer_feature_memberships(
+        owners,
+        config=AlignmentConfig(),
+        injection_order=orders,
+        drift_lookup=None,
+        bootstrap=True,
+        peak_trajectories=trajectories,
+    )
+    assert {(group.owner_ids, group.disposition) for group in result.groups} == {
+        (("a:early", "b:early", "c:early"), "assigned"),
+        (("a:late", "b:late"), "assigned"),
+    }
 
 
 def test_single_sample_pattern_does_not_split_a_bootstrap_band() -> None:
