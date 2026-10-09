@@ -190,6 +190,233 @@ def _plan(
     return plan, reference
 
 
+def _phase_partitions(adapter, store, *, reverse_initial=False):
+    for index, phase in enumerate(adapter.execution_phases()):
+        if phase.prepare_before is not None:
+            phase.prepare_before(store, lambda: None)
+        partitions = phase.partitions
+        if index == 0 and reverse_initial:
+            partitions = tuple(reversed(partitions))
+        yield from partitions
+
+
+def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity(
+    tmp_path, monkeypatch
+):
+    import numpy as np
+
+    from xic_extractor.execution.result_store import StreamedResultStore
+    from xic_extractor.untargeted_execution.execution import (
+        UntargetedPartitionPipelineAdapter,
+    )
+
+    settings = replace(_settings(), precursor_mz_tolerance_ppm=1.0)
+    peak_config = _peak_config(tmp_path)
+    paths = tuple(tmp_path / f"S{i:02}.synthetic" for i in range(24))
+    raws, candidates = {}, {}
+    for index, path in enumerate(paths):
+        path.write_bytes(path.stem.encode())
+        shift = 0.1 if index == 12 else 0.0
+        raw = _FakeRaw(tuple(7.985 + feature * 0.0025 + shift for feature in range(12)))
+        raw.intensity = 1000 * np.exp(-0.5 * ((raw.rt - 8.0 - shift) / 0.035) ** 2)
+        raw.scans = tuple(
+            replace(
+                scan,
+                precursor_mz=500.0 + feature,
+                masses=np.asarray((500.0 + feature - 116.0474, 450.0 + feature)),
+            )
+            for feature, scan in enumerate(raw.scans)
+        )
+        raws[path] = raw
+        candidates[path.stem] = _current_candidates(
+            raw,
+            raw_file=path,
+            settings=settings,
+            peak_config=peak_config,
+        )
+        assert len(candidates[path.stem]) == 12
+    plan = prepare_eager_untargeted_plan(
+        raw_paths=paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=path.stem,
+                raw_stem=path.stem,
+                injection_order=i,
+                sample_role="study_sample",
+            )
+            for i, path in enumerate(paths, 1)
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates,
+        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        dll_dir=tmp_path,
+        sample_identity_namespace="study:partition-invariant-warp",
+    )
+    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+
+    def run(capacity, *, reverse_initial=False):
+        adapter = UntargetedPartitionPipelineAdapter(
+            plan,
+            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            max_partition_jobs=capacity,
+            raw_workers=1,
+        )
+        store = StreamedResultStore(
+            tmp_path / f"spool-{capacity}-{reverse_initial}",
+            adapter.get_shared_objects(),
+        )
+        warps, memberships = [], []
+        try:
+            for partition in _phase_partitions(
+                adapter, store, reverse_initial=reverse_initial
+            ):
+                acquired = adapter.execute_acquisition(partition)
+                assert acquired.succeeded
+                prepared = acquired.result[1].prepared_grouping
+                assert prepared is not None
+                if prepared.rt_warp is not None:
+                    warps.append(prepared.rt_warp)
+                    memberships.extend(
+                        tuple(group.owner_ids)
+                        for workset in prepared.worksets
+                        for group in workset.grouping_scope.groups
+                    )
+                adapter.execute_composition(partition, acquired, store)
+            assert warps and all(warp == warps[0] for warp in warps)
+            return warps[0], tuple(sorted(memberships))
+        finally:
+            adapter.close_process_worker_pools()
+            store.cleanup()
+
+    one_feature_at_a_time = run(24)
+    all_features_together = run(24 * 12)
+    assert one_feature_at_a_time == all_features_together
+    assert run(24, reverse_initial=True) == one_feature_at_a_time
+    warp, groups = one_feature_at_a_time
+    assert warp.anchor_group_count == 12
+    assert warp.has_support("S12")
+    assert warp.offset_min("S12", 8.0) == pytest.approx(0.1, abs=0.005)
+    assert len(groups) == 12 and all(len(group) == 24 for group in groups)
+
+
+def test_related_ion_search_hints_are_sample_bound_and_partition_invariant(
+    tmp_path, monkeypatch
+):
+    import numpy as np
+
+    from xic_extractor.execution.result_store import StreamedResultStore
+    from xic_extractor.untargeted_execution.execution import (
+        UntargetedPartitionPipelineAdapter,
+    )
+
+    settings = replace(_settings(), precursor_mz_tolerance_ppm=1.0)
+    peak_config = _peak_config(tmp_path)
+    paths = tuple(tmp_path / f"S{i:02}.synthetic" for i in range(22))
+    raws, candidates = {}, {}
+    for index, path in enumerate(paths):
+        path.write_bytes(path.stem.encode())
+        shift = {20: 0.1, 21: -0.1}.get(index, 0.0)
+        raw = _FakeRaw(tuple(7.985 + feature * 0.0025 + shift for feature in range(2)))
+        raw.intensity = 1000 * np.exp(-0.5 * ((raw.rt - 8.0 - shift) / 0.035) ** 2)
+        raw.scans = tuple(
+            replace(
+                scan,
+                precursor_mz=500.0 + feature * 1.00335483507,
+                masses=np.asarray(
+                    (500.0 + feature * 1.00335483507 - 116.0474, 450.0 + feature)
+                ),
+            )
+            for feature, scan in enumerate(raw.scans)
+        )
+        raws[path] = raw
+        candidates[path.stem] = _current_candidates(
+            raw,
+            raw_file=path,
+            settings=settings,
+            peak_config=peak_config,
+        )
+        assert len(candidates[path.stem]) == 2
+        if index >= 20:
+            candidates[path.stem] = tuple(
+                c for c in candidates[path.stem] if c.precursor_mz < 500.5
+            )
+        if index == 21:
+            # The partner and target MS1 signal remain, but the target has no
+            # independent MS2 support. A correct RT hint cannot supply it.
+            raw.scans = tuple(s for s in raw.scans if s.precursor_mz < 500.5)
+    plan = prepare_eager_untargeted_plan(
+        raw_paths=paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=path.stem,
+                raw_stem=path.stem,
+                injection_order=i,
+                sample_role="study_sample",
+            )
+            for i, path in enumerate(paths, 1)
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates,
+        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        dll_dir=tmp_path,
+        sample_identity_namespace="study:partition-invariant-warp",
+    )
+    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+
+    def run(capacity):
+        adapter = UntargetedPartitionPipelineAdapter(
+            plan,
+            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            max_partition_jobs=capacity,
+            raw_workers=1,
+        )
+        store = StreamedResultStore(
+            tmp_path / f"spool-{capacity}", adapter.get_shared_objects()
+        )
+        hints, queries = {}, {}
+        try:
+            for partition in _phase_partitions(adapter, store):
+                acquired = adapter.execute_acquisition(partition)
+                assert acquired.succeeded
+                prepared = acquired.result[1].prepared_grouping
+                assert prepared is not None
+                hints.update(prepared.related_ion_rt_hints)
+                for result in acquired.result[1].sample_results:
+                    for attempt in result.backfill_attempts:
+                        stem = result.job.sample.metadata.raw_stem
+                        if stem == "S21":
+                            assert attempt.assessment.content.method_result != "SUPPORT"
+                        receipt = attempt.assessment.content.evaluation_receipt
+                        queries[result.job.sample.metadata.raw_stem] = (
+                            attempt.query_rt, attempt.query_rt_basis,
+                            receipt.query_rt_min, receipt.query_rt_max,
+                        )
+                adapter.execute_composition(partition, acquired, store)
+            assert len(hints) == 2
+            for (_, sample), hint in hints.items():
+                expected = {"S20": 8.1, "S21": 7.9}[sample]
+                assert hint.query_rt == pytest.approx(expected, abs=0.005)
+                assert hint.basis.startswith("related_ion_coelution:")
+            assert set(queries) == {"S20", "S21"}
+            for sample, (rt, basis, lower, upper) in queries.items():
+                expected = {"S20": 8.1, "S21": 7.9}[sample]
+                assert rt == pytest.approx(expected, abs=0.005)
+                assert basis.startswith("related_ion_coelution:")
+                half_window = peak_config.nl_rt_anchor_half_window_min
+                assert lower == pytest.approx(rt - half_window)
+                assert upper == pytest.approx(rt + half_window)
+            return hints, queries
+        finally:
+            adapter.close_process_worker_pools()
+            store.cleanup()
+
+    separate = run(22)
+    together = run(44)
+    assert separate == together
+
+
 def test_bounded_partition_keeps_alignment_workset_atomic(
     tmp_path,
     monkeypatch,
@@ -352,7 +579,7 @@ def test_indexed_mass_partition_keeps_closed_worksets_and_budgets_neighbors(
         max_partition_jobs=len(plan.context.samples) * len(subjects),
     )
     payloads = tuple(
-        adapter_partition.payload for adapter_partition in adapter.partitions
+        adapter_partition.payload for adapter_partition in adapter.bootstrap_partitions
     )
 
     assert any(set(payload) == set(closed) for payload in payloads)
@@ -546,9 +773,7 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
         ),
         runtime_subjects=subjects,
     )
-    prepare_worksets = (
-        bounded_owner.prepare_untargeted_alignment_worksets
-    )
+    prepare_worksets = bounded_owner.prepare_untargeted_alignment_worksets
     prepared = prepare_worksets(packing_plan)
     assert (
         materialize_untargeted_partition(
@@ -605,9 +830,7 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
         )
     captured_batches = []
     prepare_calls = []
-    original_materialize_partition = (
-        bounded_owner.materialize_untargeted_partition
-    )
+    original_materialize_partition = bounded_owner.materialize_untargeted_partition
 
     def capture_prepare(_plan, *, known_istd_reference=None):
         prepare_calls.append(_plan.runtime_subjects)
@@ -658,7 +881,7 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
     )
     monkeypatch.setattr(
         bounded_owner,
-        'execute_partition',
+        "execute_partition",
         close_without_raw,
     )
     monkeypatch.setattr(_FakeThermoRaw, "__init__", forbid_raw_open)
@@ -668,15 +891,16 @@ def test_bounded_partition_real_entry_mints_interleaved_worksets_canonically(
         max_partition_jobs=len(plan.context.samples) * 2,
     )
 
-    assert len(adapter.partitions) == 2
+    assert len(adapter.bootstrap_partitions) == 2
     results = tuple(
-        adapter.execute_acquisition(partition) for partition in adapter.partitions
+        adapter.execute_acquisition(partition)
+        for partition in adapter.bootstrap_partitions
     )
 
     assert all(result.succeeded for result in results)
     assert prepare_calls == [subjects]
     assert tuple(batch.subjects for batch in captured_batches) == tuple(
-        partition.payload for partition in adapter.partitions
+        partition.payload for partition in adapter.bootstrap_partitions
     )
     assert {
         subject.method_subject_id
@@ -976,20 +1200,21 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     ) // partition_subject_capacity
     if scenario == "istd" and subjects_per_partition == 1:
         assert partition_count < len(plan.subject_batch.subjects)
+    phase_count = 2 * partition_count
     assert partition_stages == [
         event
-        for index in range(partition_count)
+        for index in range(phase_count)
         for event in (
             ("partition_start", index),
             ("partition_compose", index),
             ("partition_released", index + 1),
         )
-    ] + [("global_closure", partition_count), ("batch_completed", partition_count)]
+    ] + [("global_closure", phase_count), ("batch_completed", phase_count)]
     seal_writes = [row for row in writes if row.get("stage") == "partition_seal"]
-    assert len(seal_writes) <= 2 * partition_count
+    assert len(seal_writes) <= 2 * phase_count
     heartbeat = json.loads(live_path.read_text(encoding="utf-8"))["heartbeat"]
     assert heartbeat["stage"] == "batch_completed"
-    assert heartbeat["completed"] == heartbeat["total"] == partition_count
+    assert heartbeat["completed"] == heartbeat["total"] == phase_count
     eager_manifest = eager_runtime.finalization.coordinator.state.runtime.manifest
     assert len(eager_manifest.work_unit_keys) == len(batch.jobs)
     snapshot = marker.read()
@@ -1035,7 +1260,9 @@ def _assert_explanation_parity(tmp_path, plan, config, eager, bounded):
     assert records[0] == records[1]
 
 
-@pytest.mark.parametrize("failure_seam", ["later_partition", "later_spool"])
+@pytest.mark.parametrize(
+    "failure_seam", ["later_partition", "later_spool", "search_spool"]
+)
 def test_bounded_runtime_failure_never_publishes_completed_batch(
     tmp_path: Path, monkeypatch, failure_seam: str
 ):
@@ -1045,19 +1272,27 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
     marker = OwnerPathRuntimeMarker(tmp_path / "failed.json", "failed")
     original_error = OSError("second partition storage unavailable")
     calls = []
+    search_positions = []
     if failure_seam == "later_partition":
         seam_owner = bounded_owner
-        seam_name = 'execute_partition'
+        seam_name = "execute_partition"
     else:
         seam_owner = bounded_owner.StreamedResultStore
-        seam_name = "append_children"
+        seam_name = "append" if failure_seam == "search_spool" else "append_children"
     original = getattr(seam_owner, seam_name)
 
     def fail_second(*args, **kwargs):
+        if failure_seam == "search_spool" and not args[1].startswith(
+            "cid-nl-search-grouping-"
+        ):
+            return original(*args, **kwargs)
         calls.append(1)
         if len(calls) == 2:
             raise original_error
-        return original(*args, **kwargs)
+        result = original(*args, **kwargs)
+        if failure_seam == "search_spool":
+            search_positions.append(result.index)
+        return result
 
     monkeypatch.setattr(seam_owner, seam_name, fail_second)
 
@@ -1082,6 +1317,26 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
         ".partition_spool-*/failed-results.pickle"
     )
     assert any(str(retained) in note for note in error.value.__notes__)
+    if failure_seam == "search_spool":
+        from xic_extractor.execution.result_store import open_preserved_results
+
+        replay = open_preserved_results(retained)
+        (position,) = search_positions
+        search = replay.read(position)
+        initial = replay.read_tuple(search.initial_partition.index, "initial_results")
+        full = replay.read(search.initial_partition.index).initial_results
+        assert tuple(item.effective_assessments for item in initial) == tuple(
+            item.effective_assessments for item in full
+        )
+        assert {item.job.sample.metadata.raw_stem for item in initial} == {
+            sample.metadata.raw_stem for sample in plan.context.samples
+        }
+        assert {
+            item.job.method_subject.method_subject_id for item in initial
+        } == {
+            subject.method_subject_id
+            for subject in search.grouping.batch.subject_batch.subjects
+        }
     snapshot = marker.read()
     assert snapshot.terminal_outcome is AttemptTerminalOutcome.FAILED
     assert snapshot.processing_attempt_id == (
@@ -1235,7 +1490,7 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
 
     original_leaf = owner.execute_partition
     original_append = owner.StreamedResultStore.append_children
-    first_two = {"partition-00000", "partition-00001"}
+    first_two = {"partition-00000-initial", "partition-00001-initial"}
     barrier = Barrier(2)
     second_completed = Event()
     lock = Lock()
@@ -1259,11 +1514,11 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
             if partition_key in first_two:
                 barrier.wait(timeout=10)
             result = original_leaf(*args, **kwargs)
-            if partition_key == "partition-00000":
+            if partition_key == "partition-00000-initial":
                 assert second_completed.wait(timeout=10)
             with lock:
                 completion_order.append(partition_key)
-                if partition_key == "partition-00001":
+                if partition_key == "partition-00001-initial":
                     second_completed.set()
             return result
         finally:
@@ -1284,7 +1539,7 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
             with lock:
                 composition_active = 0
 
-    monkeypatch.setattr(owner, 'execute_partition', leaf)
+    monkeypatch.setattr(owner, "execute_partition", leaf)
     monkeypatch.setattr(owner.StreamedResultStore, "append_children", append)
     overlapped = owner.execute_untargeted_plan(
         plan,
@@ -1299,11 +1554,11 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
         pipeline_overlap=True,
     )
 
-    assert completion_order.index("partition-00001") < completion_order.index(
-        "partition-00000"
+    assert completion_order.index("partition-00001-initial") < completion_order.index(
+        "partition-00000-initial"
     )
     assert append_order == [
-        f"partition-{index:05d}" for index in range(len(observed_budgets))
+        f"partition-{index:05d}-backfill" for index in range(len(observed_budgets) // 2)
     ]
     assert set(observed_budgets.values()) == {2}
     assert peak_budget == 4
@@ -1336,17 +1591,17 @@ def test_overlapped_partition_acquisition_failure_propagates(
     def leaf(*args, **kwargs):
         partition_key = kwargs["partition_key"]
         observed_budgets[partition_key] = kwargs["raw_workers"]
-        if partition_key in {"partition-00000", "partition-00001"}:
+        if partition_key in {"partition-00000-initial", "partition-00001-initial"}:
             barrier.wait(timeout=10)
         result = original_leaf(*args, **kwargs)
-        if partition_key == "partition-00001":
+        if partition_key == "partition-00001-initial":
             failure_released.set()
             raise injected_error
-        if partition_key == "partition-00000":
+        if partition_key == "partition-00000-initial":
             assert failure_released.wait(timeout=10)
         return result
 
-    monkeypatch.setattr(owner, 'execute_partition', leaf)
+    monkeypatch.setattr(owner, "execute_partition", leaf)
     marker = OwnerPathRuntimeMarker(
         tmp_path / "overlapped-failure.json", "overlapped-failure"
     )
@@ -1364,10 +1619,178 @@ def test_overlapped_partition_acquisition_failure_propagates(
             pipeline_overlap=True,
         )
     assert error.value.__cause__ is injected_error
-    assert {"partition-00000", "partition-00001"} <= observed_budgets.keys()
+    assert {
+        "partition-00000-initial",
+        "partition-00001-initial",
+    } <= observed_budgets.keys()
     assert all(budget == 2 for budget in observed_budgets.values())
     assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
     assert list((tmp_path / "overlapped-failure").glob(".cid_nl_partitions-*")) == []
+
+
+def test_last_bootstrap_failure_prevents_backfill_admission(
+    tmp_path, monkeypatch
+):
+    import xic_extractor.untargeted_execution.execution as owner
+
+    plan, _ = _plan(tmp_path, monkeypatch)
+    waiting_final = Event()
+    acquire = owner.UntargetedPartitionPipelineAdapter.execute_acquisition
+    compose = owner.UntargetedPartitionPipelineAdapter.execute_composition
+
+    def observed_acquire(adapter, partition, **kwargs):
+        if partition.partition_key.endswith("-backfill"):
+            waiting_final.set()
+        return acquire(adapter, partition, **kwargs)
+
+    def failing_compose(adapter, partition, *args, **kwargs):
+        if partition is adapter.bootstrap_partitions[-1]:
+            assert not waiting_final.is_set()
+            raise OSError("last bootstrap cannot be sealed")
+        return compose(adapter, partition, *args, **kwargs)
+
+    monkeypatch.setattr(
+        owner.UntargetedPartitionPipelineAdapter,
+        "execute_acquisition",
+        observed_acquire,
+    )
+    monkeypatch.setattr(
+        owner.UntargetedPartitionPipelineAdapter, "execute_composition", failing_compose
+    )
+    marker = OwnerPathRuntimeMarker(tmp_path / "last-bootstrap.json", "last-bootstrap")
+    with pytest.raises(RuntimeError, match="last bootstrap cannot be sealed"):
+        owner.execute_untargeted_plan(
+            plan,
+            output_dir=tmp_path / "last-bootstrap",
+            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=marker,
+            max_partition_jobs=len(plan.context.samples),
+            raw_workers=4,
+            pipeline_overlap=True,
+        )
+    assert not waiting_final.is_set()
+    assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
+
+
+@pytest.mark.parametrize("failure_at", ["grouping", "hints", "cancel"])
+def test_batch_preparation_abort_never_publishes_backfill_inputs(
+    tmp_path, monkeypatch, failure_at
+):
+    import xic_extractor.untargeted_execution.execution as owner
+
+    plan, _ = _plan(tmp_path, monkeypatch)
+    cancelled = Event()
+    adapters = []
+    finalized = []
+    entered_backfill = []
+    writes_after_cancel = []
+    append = owner.StreamedResultStore.append
+    acquire = owner.UntargetedPartitionPipelineAdapter.execute_acquisition
+    finalize = owner.UntargetedBatchGroupingPreparation.finalize_grouping
+    freeze = owner.UntargetedBatchGroupingPreparation.freeze_search
+
+    def observed_append(store, key, payload, **kwargs):
+        if cancelled.is_set():
+            writes_after_cancel.append(key)
+        return append(store, key, payload, **kwargs)
+
+    monkeypatch.setattr(owner.StreamedResultStore, "append", observed_append)
+
+    def observed_acquire(adapter, partition, **kwargs):
+        if not adapters:
+            adapters.append(adapter)
+        if partition.partition_key.endswith("-backfill"):
+            entered_backfill.append(partition)
+        return acquire(adapter, partition, **kwargs)
+
+    def finalize_or_abort(preparation, *args, **kwargs):
+        result = finalize(preparation, *args, **kwargs)
+        finalized.append(1)
+        if len(finalized) == 2:
+            if failure_at == "grouping":
+                raise ValueError("grouping preparation failed")
+            if failure_at == "cancel":
+                cancelled.set()
+        return result
+
+    def freeze_or_abort(preparation):
+        if failure_at == "hints":
+            raise ValueError("hint preparation failed")
+        return freeze(preparation)
+
+    monkeypatch.setattr(
+        owner.UntargetedPartitionPipelineAdapter,
+        "execute_acquisition", observed_acquire,
+    )
+    monkeypatch.setattr(
+        owner.UntargetedBatchGroupingPreparation, "finalize_grouping", finalize_or_abort
+    )
+    monkeypatch.setattr(
+        owner.UntargetedBatchGroupingPreparation, "freeze_search", freeze_or_abort
+    )
+    marker = OwnerPathRuntimeMarker(tmp_path / "preparation.json", failure_at)
+    with pytest.raises(RuntimeError, match="cancelled|preparation failed"):
+        owner.execute_untargeted_plan(
+            plan,
+            output_dir=tmp_path / "preparation",
+            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=marker,
+            max_partition_jobs=len(plan.context.samples),
+            raw_workers=4,
+            pipeline_overlap=True,
+            should_cancel=cancelled.is_set,
+        )
+    assert not entered_backfill
+    assert not writes_after_cancel
+    assert len(finalized) >= 2
+    # Even a caller bypassing the scheduler cannot consume partial preparation.
+    with pytest.raises(RuntimeError, match="requires complete batch search"):
+        acquire(adapters[0], adapters[0].partitions[-1])
+    assert marker.read().terminal_outcome is (
+        AttemptTerminalOutcome.CANCELLED if failure_at == "cancel"
+        else AttemptTerminalOutcome.FAILED
+    )
+
+
+def test_batch_preparation_does_not_restore_initial_acquisition_records(
+    tmp_path, monkeypatch
+):
+    import xic_extractor.untargeted_execution.execution as owner
+
+    plan, _ = _plan(tmp_path, monkeypatch)
+    adapter = owner.UntargetedPartitionPipelineAdapter(
+        plan, alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        max_partition_jobs=len(plan.context.samples), raw_workers=1,
+    )
+    store = owner.StreamedResultStore(tmp_path / "spool", adapter.get_shared_objects())
+    try:
+        for partition in adapter.bootstrap_partitions:
+            acquired = adapter.execute_acquisition(partition)
+            assert acquired.succeeded
+            adapter.execute_composition(partition, acquired, store)
+
+        def forbid_initial_restore(*args):
+            pytest.fail("grouping preparation restored unused acquisition records")
+
+        with monkeypatch.context() as phase_patch:
+            phase_patch.setattr(
+                owner.UntargetedInitialSampleResult, "__setstate__",
+                forbid_initial_restore,
+            )
+            adapter.prepare_batch_search(store, lambda: None)
+        acquired = adapter.execute_acquisition(adapter.partitions[-1])
+        assert acquired.succeeded
+        assert {
+            result.job.sample.metadata.raw_stem
+            for result in acquired.result[1].sample_results
+        } == {
+            sample.metadata.raw_stem for sample in plan.context.samples
+        }
+    finally:
+        adapter.close_process_worker_pools()
+        store.cleanup()
 
 
 @pytest.mark.parametrize("raw_workers", [1, 2, 4])
@@ -1515,9 +1938,10 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
     )
     assert job_counts == [initial_sample_count * 2, initial_sample_count]
     assert live_jobs == 0
-    assert append_order == ["partition-00000", "partition-00001"]
+    assert append_order == ["partition-00000-backfill", "partition-00001-backfill"]
     assert len(handle_threads) == len(acquisitions) == 8
-    assert barrier_checks == [3, 7]
+    # Every initial acquisition finishes before either Backfill phase.
+    assert barrier_checks == [6, 7]
     assert overlap_count <= peak_handles <= raw_workers
     assert len(intervals) == overlap_count
     if raw_workers > 1:
@@ -1608,13 +2032,13 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
     def fail_spool(*_args):
         raise OSError("injected spool failure")
 
-    monkeypatch.setattr(owner, 'execute_partition', leaf)
+    monkeypatch.setattr(owner, "execute_partition", leaf)
     monkeypatch.setattr(owner, "execute_runtime_attempt", execute)
     monkeypatch.setattr(_FakeThermoRaw, "__init__", initialize)
     monkeypatch.setattr(_FakeThermoRaw, "Dispose", dispose)
     monkeypatch.setattr(_FakeThermoRaw, "GetChromatogramData", chromatogram)
     if failure_mode == "spool_failure":
-        monkeypatch.setattr(owner.StreamedResultStore, "append_children", fail_spool)
+        monkeypatch.setattr(owner.StreamedResultStore, "append", fail_spool)
     marker = OwnerPathRuntimeMarker(tmp_path / "failure.json", "parallel-failure")
     with pytest.raises(RuntimeError, match="failed before batch publication") as error:
         owner.execute_untargeted_plan(
@@ -1630,7 +2054,7 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
         )
     if failure_mode in {"vendor_failure", "cleanup_failure"}:
         assert "injected " + failure_mode.replace("_", " ") in str(error.value)
-    assert entered == {"partition-00000"}
+    assert entered == {"partition-00000-initial"}
     assert set(opened) == closed
     assert len(opened) == (4 if failure_mode == "spool_failure" else 2)
     assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
@@ -1647,7 +2071,7 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
     assert all(
         receipt.open_outcome is RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED
         for receipt in resources
-        if "partition-00001:" in receipt.resource_key
+        if "partition-00001-initial:" in receipt.resource_key
     )
     assert list((tmp_path / "failed").glob(".cid_nl_partitions-*")) == []
 
@@ -1951,8 +2375,13 @@ def test_formal_partition_reuses_prepared_group_ids_for_recovery_and_composition
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         max_partition_jobs=100,
     )
-    assert len(adapter.partitions) == 1
-    partition = adapter.partitions[0]
+    assert len(adapter.bootstrap_partitions) == 1
+    store = StreamedResultStore(tmp_path / "formal-spool", adapter.get_shared_objects())
+    bootstrap = adapter.bootstrap_partitions[0]
+    initial = adapter.execute_acquisition(bootstrap)
+    adapter.execute_composition(bootstrap, initial, store)
+    adapter.prepare_batch_search(store, lambda: None)
+    partition = adapter.partitions[-1]
     acquisition = adapter.execute_acquisition(partition)
     assert acquisition.succeeded
     batch, leaf = acquisition.result
@@ -2008,7 +2437,6 @@ def test_formal_partition_reuses_prepared_group_ids_for_recovery_and_composition
         is None
     )
     calls_before_composition = len(calls)
-    store = StreamedResultStore(tmp_path / "formal-spool", adapter.get_shared_objects())
     composed = adapter.execute_composition(
         partition,
         acquisition,
@@ -2044,13 +2472,13 @@ def test_completed_partition_retains_only_light_parent_capture_metadata(
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         max_partition_jobs=100,
     )
-    partition = adapter.partitions[0]
-    acquisition = adapter.execute_acquisition(partition)
-    assert acquisition.succeeded
     store = StreamedResultStore(
         tmp_path / "retention-spool", adapter.get_shared_objects()
     )
-    composed = adapter.execute_composition(partition, acquisition, store)
+    for partition in _phase_partitions(adapter, store):
+        acquisition = adapter.execute_acquisition(partition)
+        assert acquisition.succeeded
+        composed = adapter.execute_composition(partition, acquisition, store)
     persisted = composed.result
 
     stored = store.read(composed.sealed.index)
@@ -2221,7 +2649,12 @@ def test_retained_spool_keeps_its_partitions_and_publishes_a_readable_index(
     assert recovered == child_ids
 
     # The point of the index: one record, addressed by position, off disk.
-    first = restored.read_selected(0, "children", (0,))[0]
+    first_child_partition = next(
+        position
+        for position, lengths in enumerate(restored._field_lengths)
+        if lengths["children"]
+    )
+    first = restored.read_selected(first_child_partition, "children", (0,))[0]
     assert (
         tuple(
             observation.cell_observation_id

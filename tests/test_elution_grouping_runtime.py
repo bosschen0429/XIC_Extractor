@@ -14,6 +14,7 @@ from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.feature_membership_inference import BackfillRtPrediction
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
@@ -121,8 +122,51 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
         max_partition_jobs=100,
     )
-    assert len(adapter.partitions) == 1
-    partition = adapter.partitions[0]
+    store = StreamedResultStore(
+        tmp_path / "elution-spool", adapter.get_shared_objects()
+    )
+    initial_phase, backfill_phase = adapter.execution_phases()
+    assert len(initial_phase.partitions) == len(backfill_phase.partitions) == 1
+    initial_partition = initial_phase.partitions[0]
+    initial = adapter.execute_acquisition(initial_partition)
+    assert initial.succeeded
+    initial_grouping = initial.result[1].prepared_grouping
+    assert initial_grouping is not None
+    assert len(initial_grouping.rt_anchor_groups) == 2
+    # A related ion may point at the other observed peak. The target's own
+    # unambiguous pattern must retain precedence in the admitted search target.
+    competing_hints = {
+        (group.group_hypothesis_id, sample): BackfillRtPrediction(
+            apex, "related_ion_coelution:competing-peak"
+        )
+        for workset in initial_grouping.worksets
+        for group in workset.grouping_scope.groups
+        for sample, apex in expected_initial.items()
+    }
+    states = [
+        workers._RuntimeJobState(
+            job=result.job,
+            resource_key=None,
+            initial_requires_raw=False,
+            observer=workers._PartitionWorkObserver(result.job.processing_owners),
+            adapter_result=result.adapter_result,
+        )
+        for result in initial.result[1].sample_results
+    ]
+    workers._prepare_group_authorized_backfills(
+        states,
+        prepared=replace(initial_grouping, related_ion_rt_hints=competing_hints),
+    )
+    for state in states:
+        (target,) = state.backfill_targets
+        assert target.query_rt_basis == "elution_pattern"
+        assert target.query_rt == pytest.approx(
+            expected_query[state.job.sample.metadata.raw_stem], abs=0.005
+        )
+    initial_composed = adapter.execute_composition(initial_partition, initial, store)
+    assert backfill_phase.prepare_before is not None
+    backfill_phase.prepare_before(store, lambda: None)
+    partition = backfill_phase.partitions[0]
     acquisition = adapter.execute_acquisition(partition)
     assert acquisition.succeeded
     _, leaf = acquisition.result
@@ -156,9 +200,6 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
         (peak,) = attempt.assessment.candidate_peaks
         observed_queries[sample] = peak.content.integration.rt_apex_min
     assert observed_queries == pytest.approx(expected_query, abs=0.005)
-    store = StreamedResultStore(
-        tmp_path / "elution-spool", adapter.get_shared_objects()
-    )
     composed = adapter.execute_composition(
         partition, acquisition, store, retain_memory=True
     )
@@ -172,7 +213,7 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
         for group in child.scientific_core.grouping_result.final_population
     } == group_ids
     store.seal()
-    completed = adapter.finalize_application(store, (composed,))
+    completed = adapter.finalize_application(store, (initial_composed, composed))
     writer = project_completed_untarget_batch_writer_inputs(completed)
     assert len(writer.matrix.cells) == 8
     direct_samples = {

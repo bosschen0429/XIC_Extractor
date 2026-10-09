@@ -68,6 +68,9 @@ _INFEASIBLE_COST = 1_000_000.0
 _AMBIGUITY_EPSILON = 1e-9
 _WINDOW_AMBIGUITY_MARGIN = 0.05
 _FEATURE_TREND_NEIGHBORS = 6
+_BACKFILL_TREND_NEIGHBORS = 12
+_TREND_SCALE_FLOOR_MIN = 0.5 / 60.0
+_TREND_TOLERANCE_MIN = 1e-8 / 60.0
 _WARP_ANCHOR_MIN_MEMBERS = 20
 _WARP_GRID_RT_MIN = (7.0, 11.0, 15.0, 20.0, 27.0, 38.0)
 _WINDOW_TREND_TOLERANCE_SEC = 90.0
@@ -157,24 +160,166 @@ class BatchRtWarp:
     knots_by_sample: tuple[tuple[str, tuple[tuple[float, float], ...]], ...]
     anchor_group_count: int
 
+    def has_support(self, sample_stem: str) -> bool:
+        """Distinguish an unsupported identity transform from measured zero."""
+        return bool(self._knots(sample_stem))
+
     def offset_min(self, sample_stem: str, rt_min: float) -> float:
-        knots = dict(self.knots_by_sample).get(sample_stem, ())
-        if not knots:
-            return 0.0
-        if rt_min <= knots[0][0]:
-            return knots[0][1]
-        if rt_min >= knots[-1][0]:
-            return knots[-1][1]
-        right = bisect_right(knots, rt_min, key=lambda knot: knot[0])
-        left_rt, left_offset = knots[right - 1]
-        right_rt, right_offset = knots[right]
-        fraction = (rt_min - left_rt) / (right_rt - left_rt)
-        return left_offset + fraction * (right_offset - left_offset)
+        return _interpolated_offset(self._knots(sample_stem), rt_min)
 
     def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
-        return owner.owner_apex_rt - self.offset_min(
-            owner.sample_stem, owner.owner_apex_rt
+        # Knots are keyed by common RT; re-key them by observed RT to invert.
+        observed = owner.owner_apex_rt
+        knots = self._knots(owner.sample_stem)
+        return observed - _interpolated_offset(
+            tuple((rt + offset, offset) for rt, offset in knots), observed
         )
+
+    def _knots(self, sample_stem: str) -> tuple[tuple[float, float], ...]:
+        return dict(self.knots_by_sample).get(sample_stem, ())
+
+
+def _interpolated_offset(
+    knots: tuple[tuple[float, float], ...], rt_min: float
+) -> float:
+    if not knots:
+        return 0.0
+    if rt_min <= knots[0][0]:
+        return knots[0][1]
+    if rt_min >= knots[-1][0]:
+        return knots[-1][1]
+    right = bisect_right(knots, rt_min, key=lambda knot: knot[0])
+    left_rt, left_offset = knots[right - 1]
+    right_rt, right_offset = knots[right]
+    fraction = (rt_min - left_rt) / (right_rt - left_rt)
+    return left_offset + fraction * (right_offset - left_offset)
+
+
+@dataclass(frozen=True, slots=True)
+class BackfillRtPrediction:
+    query_rt: float
+    basis: str
+
+
+def predict_backfill_rt(
+    *,
+    sample_stem: str,
+    members: Sequence[SampleLocalMS1Owner],
+    group_center_rt: float,
+    injection_order: Mapping[str, int],
+    sample_cohorts: Mapping[str, str],
+    rt_warp: BatchRtWarp | None,
+    backfill_half_window_min: float,
+) -> BackfillRtPrediction:
+    """Predict a sample-local query without changing the group's identity RT."""
+    order = injection_order.get(sample_stem)
+    if order is None:
+        return BackfillRtPrediction(
+            group_center_rt, "group_center_missing_injection_order"
+        )
+    cohort = sample_cohorts.get(sample_stem)
+    nearest = sorted(
+        (
+            owner
+            for owner in members
+            if cohort is not None
+            and owner.sample_stem != sample_stem
+            and owner.sample_stem in injection_order
+            and sample_cohorts.get(owner.sample_stem) == cohort
+        ),
+        key=lambda owner: (
+            abs(injection_order[owner.sample_stem] - order),
+            injection_order[owner.sample_stem],
+            owner.owner_id,
+        ),
+    )[:_BACKFILL_TREND_NEIGHBORS]
+    if not nearest:
+        return BackfillRtPrediction(
+            group_center_rt, "group_center_no_same_cohort_neighbors"
+        )
+    orders = [injection_order[owner.sample_stem] for owner in nearest]
+    calibrated = (
+        rt_warp is not None
+        and rt_warp.has_support(sample_stem)
+        and all(rt_warp.has_support(owner.sample_stem) for owner in nearest)
+    )
+    coordinates = [
+        rt_warp.corrected_rt_min(owner)
+        if calibrated and rt_warp is not None
+        else owner.owner_apex_rt
+        for owner in nearest
+    ]
+    trend = _local_rt_trend(
+        orders, coordinates, order, backfill_half_window_min=backfill_half_window_min
+    )
+    if calibrated and rt_warp is not None:
+        return BackfillRtPrediction(
+            max(0.0, trend.query_rt + rt_warp.offset_min(sample_stem, trend.query_rt)),
+            f"calibrated_{trend.basis}",
+        )
+    return BackfillRtPrediction(
+        max(0.0, trend.query_rt),
+        f"{trend.basis}_insufficient_calibration",
+    )
+
+
+def _local_rt_trend(
+    orders: Sequence[int],
+    rts: Sequence[float],
+    query_order: int,
+    *,
+    backfill_half_window_min: float,
+) -> BackfillRtPrediction:
+    """Robust kernel-weighted linear trend, so steep drift is not lagged.
+
+    Fewer than three neighbors, or neighbors at one order, leave no slope to fit;
+    their median is used. Outside the support, residual scatter amplified by
+    fit leverage must fit inside the actual search half-window. Otherwise use
+    the fitted value at the nearest supported injection, not an unbounded
+    slope or a different group. This risk proxy is not a calibrated confidence
+    interval and does not establish peak identity.
+    """
+    offsets = np.asarray(orders, dtype=float) - query_order
+    values = np.asarray(rts, dtype=float)
+    spread = float(np.std(offsets))
+    if len(values) < 3 or spread < 1e-10:
+        return BackfillRtPrediction(float(np.median(values)), "local_feature_trend")
+    design = np.column_stack([np.ones(len(offsets)), offsets / spread])
+    kernel = (
+        1.0 / (1.0 + np.abs(offsets) / max(float(np.max(np.abs(offsets))), 1e-10))
+    ) ** 2
+    weights = kernel
+    beta = np.zeros(2)
+    for _ in range(80):
+        fit_weights = weights
+        root = np.sqrt(weights)
+        next_beta = np.linalg.lstsq(design * root[:, None], values * root, rcond=None)[
+            0
+        ]
+        residual = values - design @ next_beta
+        scale = max(
+            _TREND_SCALE_FLOOR_MIN,
+            1.4826 * float(np.median(np.abs(residual - np.median(residual)))),
+        )
+        weights = kernel * np.minimum(
+            1.0, 1.345 * scale / np.maximum(np.abs(residual), 1e-12)
+        )
+        converged = float(np.max(np.abs(next_beta - beta))) < _TREND_TOLERANCE_MIN
+        beta = next_beta
+        if converged:
+            break
+    basis = "local_feature_trend"
+    query_rt = float(beta[0])
+    if min(orders) > query_order or max(orders) < query_order:
+        # The query row is [1, 0] in this centered design. Reuse the final fit;
+        # no cross-validation or extra trend fits belong in this hot path.
+        covariance = np.linalg.pinv(design.T @ (fit_weights[:, None] * design))
+        risk = scale * float(np.sqrt(1.0 + max(0.0, covariance[0, 0])))
+        if risk > backfill_half_window_min:
+            boundary = min(max(query_order, min(orders)), max(orders))
+            query_rt += float(beta[1]) * (boundary - query_order) / spread
+            basis = "local_feature_trend_at_support_boundary"
+    return BackfillRtPrediction(query_rt, basis)
 
 
 class RtCoordinates(Protocol):
@@ -195,44 +340,84 @@ def estimate_batch_rt_warp(
     Their membership is used to estimate an offset, never retained as final
     ordinary membership authority.
     """
-    observations: dict[str, list[tuple[float, float]]] = defaultdict(list)
-    accepted = 0
-    for group in groups:
-        members = (
+    calibration = BatchRtWarpAccumulator(injection_order=injection_order)
+    calibration.add_groups(
+        tuple(
             tuple(owners_by_id[owner_id] for owner_id in group.owner_ids)
             if isinstance(group, FeatureMembershipGroup)
             else tuple(group)
+            for group in groups
         )
-        if len(members) < _WARP_ANCHOR_MIN_MEMBERS:
-            continue
-        ordered = tuple(
-            sorted(
-                (owner for owner in members if owner.sample_stem in injection_order),
-                key=lambda owner: (injection_order[owner.sample_stem], owner.owner_id),
-            )
-        )
-        if len(ordered) < _WARP_ANCHOR_MIN_MEMBERS:
-            continue
-        accepted += 1
-        trends = _NearestInjectionMedians.prepare(ordered, injection_order)
-        for owner in ordered:
-            trend = trends.median(owner, exclude_owner_id=owner.owner_id)
-            if trend is not None:
-                observations[owner.sample_stem].append(
-                    (trend, owner.owner_apex_rt - trend)
+    )
+    return calibration.freeze()
+
+
+class BatchRtWarpAccumulator:
+    """Accumulate compact anchor observations, independent of execution partitions.
+
+    Only RT pairs are retained: measured curves and owner graphs may be released
+    after each bootstrap partition. Freeze once all compatible evidence is added.
+    """
+
+    def __init__(
+        self,
+        *,
+        injection_order: Mapping[str, int],
+        sample_cohorts: Mapping[str, str] | None = None,
+    ) -> None:
+        self._orders = dict(injection_order)
+        self._cohorts = dict(sample_cohorts) if sample_cohorts is not None else None
+        self._observations: dict[str, list[tuple[float, float]]] = defaultdict(list)
+        self._accepted = 0
+
+    def add_groups(self, groups: Sequence[Sequence[SampleLocalMS1Owner]]) -> None:
+        for group in groups:
+            cohorts: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
+            for owner in group:
+                stem = owner.sample_stem
+                cohort = "" if self._cohorts is None else self._cohorts.get(stem)
+                if stem in self._orders and cohort is not None:
+                    cohorts[cohort].append(owner)
+            for members in cohorts.values():
+                if len(members) < _WARP_ANCHOR_MIN_MEMBERS:
+                    continue
+                ordered = tuple(
+                    sorted(
+                        members,
+                        key=lambda owner: (
+                            self._orders[owner.sample_stem],
+                            owner.owner_id,
+                        ),
+                    )
                 )
-    sample_knots = []
-    for sample, sample_points in sorted(observations.items()):
-        if len(sample_points) < 12:
-            continue
-        knots = []
-        for rt in _WARP_GRID_RT_MIN:
-            nearest = sorted(sample_points, key=lambda point: abs(point[0] - rt))[:25]
-            if len(nearest) >= 5:
-                knots.append((rt, statistics.median(point[1] for point in nearest)))
-        if len(knots) >= 2:
-            sample_knots.append((sample, tuple(knots)))
-    return BatchRtWarp(tuple(sample_knots), accepted)
+                self._accepted += 1
+                trends = _NearestInjectionMedians.prepare(ordered, self._orders)
+                for owner in ordered:
+                    trend = trends.median(owner, exclude_owner_id=owner.owner_id)
+                    if trend is not None:
+                        self._observations[owner.sample_stem].append(
+                            (trend, owner.owner_apex_rt - trend)
+                        )
+
+    def freeze(self) -> BatchRtWarp:
+        sample_knots = []
+        for sample, points in sorted(self._observations.items()):
+            if len(points) < 12:
+                continue
+            knots = []
+            for rt in _WARP_GRID_RT_MIN:
+                # Resolve equal-distance ties by data, never arrival order.
+                nearest = sorted(points, key=lambda point: (abs(point[0] - rt), point))[
+                    :25
+                ]
+                if len(nearest) >= 5:
+                    knots.append((rt, statistics.median(point[1] for point in nearest)))
+            if len(knots) >= 2 and all(
+                left[0] + left[1] < right[0] + right[1]
+                for left, right in zip(knots, knots[1:])
+            ):
+                sample_knots.append((sample, tuple(knots)))
+        return BatchRtWarp(tuple(sample_knots), self._accepted)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1194,7 +1379,7 @@ def _window_inference(
                 if sample_sets[left_root] & sample_sets[right_root]:
                     continue
                 left_members, right_members = members[left_root], members[right_root]
-                if not _trend_supports_union(
+                if not rt_trend_supports_union(
                     left_members,
                     right_members,
                     orders=orders,
@@ -1305,7 +1490,7 @@ def _window_inference(
     return tuple(groups), tuple(decisions)
 
 
-def _trend_supports_union(
+def rt_trend_supports_union(
     left: Sequence[SampleLocalMS1Owner],
     right: Sequence[SampleLocalMS1Owner],
     *,
@@ -1313,6 +1498,7 @@ def _trend_supports_union(
     corrected_rt: Mapping[str, float],
     max_rt_sec: float,
 ) -> bool:
+    """Check the whole union against the shared local RT-band tolerance."""
     combined = tuple((*left, *right))
     if len(combined) < 10:
         return True
@@ -1387,12 +1573,15 @@ def _bridge_separated_window_bands(
                 ):
                     continue
                 rt_delta_sec = abs(rt_centers[left] - rt_centers[right]) * 60.0
-                if rt_delta_sec > config.preferred_rt_sec or not _trend_supports_union(
-                    bands[left],
-                    bands[right],
-                    orders=orders,
-                    corrected_rt=corrected_rt,
-                    max_rt_sec=config.max_rt_sec,
+                if (
+                    rt_delta_sec > config.preferred_rt_sec
+                    or not rt_trend_supports_union(
+                        bands[left],
+                        bands[right],
+                        orders=orders,
+                        corrected_rt=corrected_rt,
+                        max_rt_sec=config.max_rt_sec,
+                    )
                 ):
                     continue
                 precursor_fraction = (
@@ -1432,6 +1621,85 @@ def _bridge_separated_window_bands(
         members[left].extend(members.pop(right))
 
 
+def _window_band_candidate(
+    owner: SampleLocalMS1Owner,
+    key: str,
+    band: tuple[SampleLocalMS1Owner, ...],
+    *,
+    orders: Mapping[str, int],
+    corrected_rt: Mapping[str, float],
+    config: AlignmentConfig,
+    trends: _NearestInjectionMedians | None = None,
+) -> _Candidate | None:
+    """One shared local-trend rule for singleton assignment and Backfill admission."""
+    if owner.sample_stem in {item.sample_stem for item in band}:
+        return None
+    if not any(
+        within_ppm(
+            max(owner.precursor_mz, item.precursor_mz),
+            min(owner.precursor_mz, item.precursor_mz),
+            config.max_ppm,
+        )
+        for item in band
+    ):
+        return None
+    event = owner.primary_identity_event
+    products = tuple(
+        item.primary_identity_event.product_mz
+        for item in band
+        if item.primary_identity_event is not None
+    )
+    if len(band) >= 10:
+        expected = (
+            trends or _NearestInjectionMedians.prepare(band, orders, corrected_rt)
+        ).median(owner)
+        tolerance_sec = min(
+            config.max_rt_sec,
+            max(_WINDOW_TREND_TOLERANCE_SEC, config.preferred_rt_sec),
+        )
+    else:
+        expected = statistics.median(corrected_rt[item.owner_id] for item in band)
+        nearest_gap = min(
+            abs(orders[owner.sample_stem] - orders[item.sample_stem]) for item in band
+        )
+        tolerance_sec = min(
+            config.max_rt_sec,
+            120.0,
+            max(config.preferred_rt_sec, 45.0 + 4.0 * nearest_gap),
+        )
+    if expected is None:
+        return None
+    rt_delta_sec = abs(corrected_rt[owner.owner_id] - expected) * 60.0
+    if rt_delta_sec > tolerance_sec:
+        return None
+    precursor_median = statistics.median(item.precursor_mz for item in band)
+    precursor_fraction = (
+        absolute_ppm_error(owner.precursor_mz, precursor_median) / config.max_ppm
+    )
+    product_fraction = (
+        absolute_ppm_error(event.product_mz, statistics.median(products))
+        / config.product_mz_tolerance_ppm
+        if event is not None and products
+        else 0.0
+    )
+    cost = min(
+        0.999999,
+        0.70 * rt_delta_sec / tolerance_sec
+        + 0.15 * min(precursor_fraction, 2.0)
+        + 0.15 * min(product_fraction, 2.0),
+    )
+    return _Candidate(
+        feature_key=key,
+        cost=cost,
+        state="supported",
+        reason="window_band_median_and_feature_trend",
+        witness_owner_ids=tuple(item.owner_id for item in band),
+        rt_basis="drift_corrected",
+        rt_raw_delta_sec=None,
+        rt_drift_corrected_delta_sec=rt_delta_sec,
+    )
+
+
 def _assign_window_singletons(
     members: dict[str, list[SampleLocalMS1Owner]],
     *,
@@ -1458,76 +1726,17 @@ def _assign_window_singletons(
         owner = group[0]
         row_candidates = []
         for key, band in bands.items():
-            if owner.sample_stem in {item.sample_stem for item in band}:
-                continue
-            if not any(
-                within_ppm(
-                    max(owner.precursor_mz, item.precursor_mz),
-                    min(owner.precursor_mz, item.precursor_mz),
-                    config.max_ppm,
-                )
-                for item in band
-            ):
-                continue
-            event = owner.primary_identity_event
-            products = tuple(
-                item.primary_identity_event.product_mz
-                for item in band
-                if item.primary_identity_event is not None
+            candidate = _window_band_candidate(
+                owner,
+                key,
+                band,
+                orders=orders,
+                corrected_rt=corrected_rt,
+                config=config,
+                trends=band_trends.get(key),
             )
-            if len(band) >= 10:
-                expected = band_trends[key].median(owner)
-                tolerance_sec = min(
-                    config.max_rt_sec,
-                    max(_WINDOW_TREND_TOLERANCE_SEC, config.preferred_rt_sec),
-                )
-            else:
-                expected = statistics.median(
-                    corrected_rt[item.owner_id] for item in band
-                )
-                nearest_gap = min(
-                    abs(orders[owner.sample_stem] - orders[item.sample_stem])
-                    for item in band
-                )
-                tolerance_sec = min(
-                    config.max_rt_sec,
-                    120.0,
-                    max(config.preferred_rt_sec, 45.0 + 4.0 * nearest_gap),
-                )
-            if expected is None:
-                continue
-            rt_delta_sec = abs(corrected_rt[owner.owner_id] - expected) * 60.0
-            if rt_delta_sec > tolerance_sec:
-                continue
-            precursor_median = statistics.median(item.precursor_mz for item in band)
-            precursor_fraction = (
-                absolute_ppm_error(owner.precursor_mz, precursor_median)
-                / config.max_ppm
-            )
-            product_fraction = (
-                absolute_ppm_error(event.product_mz, statistics.median(products))
-                / config.product_mz_tolerance_ppm
-                if event is not None and products
-                else 0.0
-            )
-            cost = min(
-                0.999999,
-                0.70 * rt_delta_sec / tolerance_sec
-                + 0.15 * min(precursor_fraction, 2.0)
-                + 0.15 * min(product_fraction, 2.0),
-            )
-            row_candidates.append(
-                _Candidate(
-                    feature_key=key,
-                    cost=cost,
-                    state="supported",
-                    reason="window_band_median_and_feature_trend",
-                    witness_owner_ids=tuple(item.owner_id for item in band),
-                    rt_basis="drift_corrected",
-                    rt_raw_delta_sec=None,
-                    rt_drift_corrected_delta_sec=rt_delta_sec,
-                )
-            )
+            if candidate is not None:
+                row_candidates.append(candidate)
         row_candidates.sort(
             key=lambda candidate: (cast(float, candidate.cost), candidate.feature_key)
         )
@@ -1586,8 +1795,30 @@ def supports_existing_feature(
     *,
     config: AlignmentConfig,
     drift_lookup: DriftLookupProtocol | None,
+    injection_order: Mapping[str, int] | None = None,
+    rt_warp: RtCoordinates | None = None,
 ) -> bool:
     """Apply the same feature evidence rule without fitting or assigning again."""
+    if injection_order and all(
+        item.sample_stem in injection_order for item in (owner, *members)
+    ):
+        corrected_rt = {
+            item.owner_id: rt_warp.corrected_rt_min(item)
+            if rt_warp is not None
+            else item.owner_apex_rt
+            for item in (owner, *members)
+        }
+        return (
+            _window_band_candidate(
+                owner,
+                "frozen-feature",
+                members,
+                orders=injection_order,
+                corrected_rt=corrected_rt,
+                config=config,
+            )
+            is not None
+        )
     ordered = sorted(members, key=lambda item: (item.sample_stem, item.owner_id))
     track = _FeatureTrack.from_owner(ordered[0], direction="forward")
     for member in ordered[1:]:

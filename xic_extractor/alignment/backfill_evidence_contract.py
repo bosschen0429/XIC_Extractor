@@ -18,7 +18,7 @@ from xic_extractor.alignment.production_decisions import (
 )
 
 ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION = (
-    "alignment_backfill_cell_evidence"
+    "alignment_backfill_cell_query_evidence"
 )
 ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS = (
     "schema_version",
@@ -51,6 +51,8 @@ ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS = (
     "family_center_mz",
     "family_center_rt",
     "reason",
+    "backfill_query_rt_min",
+    "backfill_query_rt_max",
 )
 
 SKIPPED_EVIDENCE_LEDGER_SCHEMA_VERSION = "skipped_evidence_ledger"
@@ -154,6 +156,8 @@ class BackfillEvidenceRecord:
     family_center_mz: float
     family_center_rt: float
     reason: str
+    backfill_query_rt_min: float | None = None
+    backfill_query_rt_max: float | None = None
 
     def __post_init__(self) -> None:
         if self.schema_version != ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION:
@@ -172,8 +176,7 @@ class BackfillEvidenceRecord:
             raise ValueError(f"unsupported status {self.status!r}")
         if self.production_cell_status not in _PRODUCTION_STATUSES:
             raise ValueError(
-                "unsupported production_cell_status "
-                f"{self.production_cell_status!r}"
+                f"unsupported production_cell_status {self.production_cell_status!r}"
             )
         if self.backfill_tier not in _BACKFILL_TIERS:
             raise ValueError(f"unsupported backfill_tier {self.backfill_tier!r}")
@@ -206,6 +209,8 @@ class BackfillEvidenceRecord:
                 "peak_start_rt",
                 "peak_end_rt",
                 "rt_delta_sec",
+                "backfill_query_rt_min",
+                "backfill_query_rt_max",
                 "scan_support_score",
                 "family_center_mz",
                 "family_center_rt",
@@ -233,6 +238,13 @@ class BackfillEvidenceRecord:
             raise ValueError("family_center_mz must be positive")
         if self.family_center_rt < 0:
             raise ValueError("family_center_rt must be non-negative")
+        if (self.backfill_query_rt_min is None) != (self.backfill_query_rt_max is None):
+            raise ValueError("Backfill query bounds must both be present or absent")
+        if self.backfill_query_rt_min is not None and (
+            self.backfill_query_rt_max is None
+            or not 0 <= self.backfill_query_rt_min < self.backfill_query_rt_max
+        ):
+            raise ValueError("Backfill query bounds must be non-negative and ordered")
         if (
             self.peak_start_rt is not None
             and self.apex_rt is not None

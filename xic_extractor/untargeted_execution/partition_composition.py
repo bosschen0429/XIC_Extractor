@@ -26,8 +26,10 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.feature_membership_inference import (
+    BackfillRtPrediction,
+    BatchRtWarp,
+    BatchRtWarpAccumulator,
     FeatureInferenceOperationCounts,
-    estimate_batch_rt_warp,
 )
 from xic_extractor.alignment.grouping_workflow import (
     build_initial_cid_nl_cross_sample_groups,
@@ -36,6 +38,7 @@ from xic_extractor.alignment.grouping_workflow import (
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
 )
+from xic_extractor.alignment.related_ion_rt_hints import RelatedIonRtHintAccumulator
 from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetApplicationResult,
     UntargetedCandidateExclusion,
@@ -95,6 +98,85 @@ class UntargetedPartitionInputs:
     jobs: tuple[UntargetedPartitionJob, ...]
     sample_job_templates: tuple[UntargetedPartitionJob, ...] = ()
     prepared_grouping: UntargetedPreparedGrouping | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedUntargetedBatchSearch:
+    """Complete batch search context; binding never changes group identity."""
+
+    rt_warp: BatchRtWarp
+    hints_by_group: Mapping[str, Mapping[tuple[str, str], BackfillRtPrediction]]
+
+    def bind(self, grouping: UntargetedPreparedGrouping) -> UntargetedPreparedGrouping:
+        group_ids = {
+            group.group_hypothesis_id
+            for workset in grouping.worksets
+            for group in workset.grouping_scope.groups
+        }
+        return replace(
+            grouping,
+            related_ion_rt_hints={
+                key: hint for group_id in group_ids
+                for key, hint in self.hints_by_group.get(group_id, {}).items()
+            },
+        )
+
+
+class UntargetedBatchGroupingPreparation:
+    """Shared in-memory preparation for direct and spooled batch execution.
+
+    Callers supply initial groupings, freeze calibration, finalize each grouping,
+    then freeze search context. Only compact anchor/relationship projections are
+    retained; RAW access, partition admission and spooling remain with runtime.
+    """
+
+    def __init__(
+        self, context: UntargetedPartitionContext, alignment_config: AlignmentConfig,
+    ) -> None:
+        samples = context.processing_owners.sample_resolutions
+        cohorts = {
+            sample.metadata.raw_stem: sample.metadata.batch_id for sample in samples
+        }
+        self._calibration = BatchRtWarpAccumulator(
+            injection_order={
+                sample.metadata.raw_stem: sample.metadata.injection_order
+                for sample in samples if sample.metadata.injection_order is not None
+            },
+            sample_cohorts=cohorts,
+        )
+        self._hints = RelatedIonRtHintAccumulator(
+            sample_cohorts=cohorts, mass_tolerance_ppm=alignment_config.preferred_ppm,
+        )
+        self._rt_warp: BatchRtWarp | None = None
+
+    def add_initial(self, prepared: UntargetedPreparedGrouping) -> None:
+        self._calibration.add_groups(prepared.rt_anchor_groups)
+
+    def freeze_calibration(self) -> None:
+        self._rt_warp = self._calibration.freeze()
+
+    def finalize_grouping(
+        self, batch: UntargetedPartitionInputs, prepared: UntargetedPreparedGrouping,
+        *, progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+    ) -> UntargetedPreparedGrouping:
+        assert self._rt_warp is not None
+        finalized = finalize_untargeted_partition_grouping(
+            batch, prepared, rt_warp=self._rt_warp, progress_callback=progress_callback,
+        )
+        self._hints.add_groups(
+            group for workset in finalized.worksets
+            for group in workset.grouping_scope.groups
+        )
+        return finalized
+
+    def freeze_search(self) -> PreparedUntargetedBatchSearch:
+        assert self._rt_warp is not None
+        # Index once for partition-local binding rather than rescanning every
+        # missing cell in the batch for each partition.
+        hints_by_group: dict[str, dict[tuple[str, str], BackfillRtPrediction]] = {}
+        for key, hint in self._hints.freeze().items():
+            hints_by_group.setdefault(key[0], {})[key] = hint
+        return PreparedUntargetedBatchSearch(self._rt_warp, hints_by_group)
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,6 +321,7 @@ def prepare_untargeted_partition_grouping(
     sample_results: tuple[UntargetedInitialSampleResult, ...],
     *,
     alignment_config: AlignmentConfig,
+    bootstrap_only: bool = False,
     known_istd_reference: KnownIstdReference | None = None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
 ) -> UntargetedPreparedGrouping:
@@ -546,32 +629,40 @@ def prepare_untargeted_partition_grouping(
                 retained_candidates=retained_candidates,
             )
         )
-    bootstrap_groups = tuple(
-        group
-        for workset in prepared_worksets
-        for group in workset.grouping_scope.groups
-        if group.inference_basis is not None
-        and group.inference_basis.basis
-        in {
-            "bidirectional_membership_agreement",
-            "known_identity_constraint",
-            "elution_pattern_correspondence",
-        }
+    prepared = UntargetedPreparedGrouping(
+        request=parent_request,
+        worksets=tuple(prepared_worksets),
+        alignment_config=alignment_config,
+        known_istd_reference=requested_reference,
     )
-    bootstrap_owners = {
-        owner.owner_id: owner
-        for workset in prepared_worksets
-        for group in workset.grouping_scope.groups
-        for owner in group.owners
+    if bootstrap_only:
+        return prepared
+    preparation = UntargetedBatchGroupingPreparation(batch.context, alignment_config)
+    preparation.add_initial(prepared)
+    preparation.freeze_calibration()
+    finalized = preparation.finalize_grouping(
+        batch, prepared, progress_callback=progress_callback,
+    )
+    return preparation.freeze_search().bind(finalized)
+
+
+def finalize_untargeted_partition_grouping(
+    batch: UntargetedPartitionInputs,
+    prepared: UntargetedPreparedGrouping,
+    *,
+    rt_warp: BatchRtWarp,
+    progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+) -> UntargetedPreparedGrouping:
+    """Regroup one bounded workset collection using the frozen batch calibration."""
+    injection_order = {
+        sample.metadata.raw_stem: sample.metadata.injection_order
+        for sample in batch.context.processing_owners.sample_resolutions
+        if sample.metadata.injection_order is not None
     }
-    rt_warp = estimate_batch_rt_warp(
-        tuple(group.owners for group in bootstrap_groups),
-        owners_by_id=bootstrap_owners,
-        injection_order=injection_order,
-    )
+    alignment_config = prepared.alignment_config
     final_worksets = []
-    for workset in prepared_worksets:
-        operation_counts = []
+    for workset in prepared.worksets:
+        operation_counts: list[FeatureInferenceOperationCounts] = []
         grouping_scope, grouping_result = regroup_cid_nl_cross_sample_groups(
             processing_owners=batch.context.processing_owners,
             grouping_scope=workset.grouping_scope,
@@ -612,10 +703,10 @@ def prepare_untargeted_partition_grouping(
                 }
             )
     return UntargetedPreparedGrouping(
-        request=parent_request,
+        request=prepared.request,
         worksets=tuple(final_worksets),
         alignment_config=alignment_config,
-        known_istd_reference=requested_reference,
+        known_istd_reference=prepared.known_istd_reference,
         rt_warp=rt_warp,
     )
 
@@ -764,6 +855,7 @@ def _build_production_composition_inputs(
                 sample_assessments=assessments,
                 initial_assessments=initial_assessments,
                 group_backfills=group_backfills,
+                rt_warp=prepared.rt_warp,
             ),
             samples=batch.context.samples,
             alignment_config=alignment_config,

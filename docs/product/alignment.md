@@ -56,10 +56,11 @@ samples. A query is a lookup in the saved Discovery population, not a fresh
 extraction at that mass.
 
 Prepare retains the complete sample population and selects **whole original
-partitions** intersecting the requested intervals. These additional masses
-preserve the baseline partition's RT-warp context. It runs the formal initial
-assessment and grouping owners, then stops before Backfill. Its summary reports
-selected versus total partition counts. Initial preparation requires the matching
+partitions** intersecting the requested intervals for comparison. Calibration
+uses bootstrap evidence from **all** partitions, not only the selected masses.
+It runs the formal initial assessment and grouping owners, then stops before
+Backfill. Its summary reports selected versus total partition counts; initial
+job count includes the full calibration scope. Initial preparation requires the matching
 RAW files and current Discovery owner-closure artifacts. `--sample-metadata`
 and `--known-istd-reference` accept existing metadata and reference artifacts.
 
@@ -141,6 +142,10 @@ discovery settings are rejected before acquisition or output creation.
 
 ### ISTD input and RT drift correction
 
+Compare a proposed correction against the current ISTD-corrected result, not
+only uncorrected RT. Estimate drift from the current batch and acquisition
+order; a previous batch's curve or direction is not a calibration rule.
+
 The Alignment CLI resolves ISTD input before RAW acquisition. An explicit
 targets CSV or reference workbook takes precedence; otherwise it uses the same
 `config/targets.example.csv` template as the GUI's fresh default and prints the
@@ -220,7 +225,35 @@ subject in the runtime result. RT bounds describe the acquisition query rather
 than identify the destination group. The direct production API therefore takes
 its alignment configuration and known-ISTD reference at execution time;
 composition cannot replace that grouping context.
-Backfill extracts at the frozen group's physical m/z and RT. The acquisition
+Backfill keeps the frozen group's physical m/z and identity. For missing cells,
+an unambiguous target elution-pattern location takes precedence over a
+related-ion hint; without that correspondence, a reliable related-ion hint takes
+precedence over the batch-adjusted local RT trend. These coordinates supply no
+membership, annotation, or quantitative evidence. The pure related-ion hint owner learns from frozen
+initial groups across partitions within each sample cohort: singly charged
+M+1-compatible mass spacing within the preferred mass tolerance, at least 20
+paired observations, at least 95% coelution within three seconds, and robust
+relative area-ratio scatter no greater than 0.25. This is a search heuristic,
+not chemical identification. An observed partner in the same sample supplies
+its apex plus the learned median RT offset; conflicting proposals separated
+by more than three seconds abstain. Absent a hint, the ordinary feature RT
+predictor remains in use. Hints are frozen before Backfill and cannot learn
+from recovered cells. A hint may change selection and integration, but the
+target ion must independently pass physical, method, and membership checks.
+The bounded runtime finalizes grouping once and spools each partition before
+learning hints from compact RT/area projections; it does not retain all traces
+in memory or repeat RAW acquisition to learn relationships. Initial acquisition
+and Backfill are separate scheduler phases under one attempt and one store.
+After all initial partitions have been composed and released, batch preparation
+freezes calibration, finalizes each grouping, and freezes search hints. Only a
+complete preparation publishes Backfill inputs; failure or cancellation prevents
+Backfill admission. No acquisition worker waits for another partition to finish
+scientific preparation. Direct and bounded production execution use the same
+in-memory preparation owner; only the bounded adapter owns their spool reads
+and writes. The opt-in `grouping_experiment` diagnostic prepares comparison
+inputs separately and stops before production Backfill planning.
+Operational partition capacity does not change the cohort evidence scope, and
+semantic worksets remain indivisible. The acquisition
 boundary canonicalizes repeated or unordered complete XIC queries, including
 mass. Different groups may reuse the same physical trace while retaining
 separate group-bound Backfill attempts and decisions.
@@ -347,6 +380,18 @@ reasons, Review Queue/archive routing, and result finalization close afterward.
   planning. It has no separate domain identity or persistence contract.
 - RT correction is an optional prior; direct local evidence wins and a prior
   alone cannot reassign a member.
+- Physical Backfill keeps candidate search bounds separate from MS1 signal
+  context. The existing query half-window bounds eligible peak apices and the
+  method-evidence search. The acquisition phase also prefetches one additional
+  half-window per flank, in the same sample-local batch. Only an
+  `incomplete_peak_context` answer permits evaluation of that wider trace;
+  complete search-eligible observations retain their original boundaries and
+  integral. This
+  bounded fallback does not expand candidate eligibility, reopen RAW, or grant
+  membership. Multiple eligible peaks still follow the physical owner's
+  ambiguity rule. The persisted `bounded_physical_peak_question` binds the
+  search interval independently of its measured context; legacy questions
+  retain their original interpretation.
 - Validation must not assume that every ISTD or unknown feature follows one
   batch-wide monotonic RT drift. Sensitivity work therefore permits direction
   changes and adjacent-injection jumps, uses method-appropriate ISTDs plus
@@ -404,12 +449,52 @@ unresolved and rejected groups remain AuditTrail facts.
   rows and physical records per closed working set. Scheduling packs worksets
   by 100 Da ownership and a 1,024-candidate budget; an indivisible scientific
   workset may exceed that budget or cross a mass boundary. Mass partitions are
-  scheduling units, not scientific exclusion boundaries. Final children retain
-  canonical subject order independently of execution order.
+  scheduling units, not scientific exclusion or RT-calibration boundaries.
+  All bootstrap partitions finish before one batch RT warp is frozen. Initial
+  assessments and grouping inputs are spooled to disk; only compact anchor RT
+  pairs accumulate globally. The final phase restores one bounded partition,
+  regroups with that frozen warp, and executes Backfill without reacquiring its
+  initial traces. Final children retain canonical subject order independently
+  of execution order. Cancellation and failed bootstrap prevent final publication.
 - Retained CID-NL capture preserves each candidate's extraction m/z and ppm
   when combining overlapping RT contexts. Preparation sharing may extend the
   RT interval; it does not replace the candidate center with a method-subject
   center. Only identical resulting requests share an acquired trace.
+
+### RT mechanisms and their consumers
+
+| Mechanism | Evidence and scope | Current consumer | Does not do |
+| --- | --- | --- | --- |
+| Known-ISTD identity / drift lookup | Exact reference bindings and supported reference range | Known identity constraints and bootstrap comparison | Replace measured peak RT or authorize Backfill values |
+| `BatchRtWarp` | Agreed bootstrap groups across the complete request; residual neighbors stay within `SampleMetadata.batch_id` | Final ordinary grouping and Backfill coordinate conversion | Establish calibration support for an unsupported sample or authorize a value |
+| Local feature trend | Up to six nearest injection-order members of that feature (median); Backfill prediction uses up to twelve same-cohort members and a robust local linear fit over injection order | Dense-band assignment; sample-local Backfill prediction | Pool unrelated features into one feature trend |
+| Sample-local Backfill query | Local trend in common coordinates, mapped into the target injection's observed RT | XIC bounds and preferred peak location | Change `group_center_rt` or group identity |
+| `sample_rt_calibration.BatchRtCalibration` | Near-ubiquitous features under an explicit diagnostic policy | Opt-in grouping experiments | Act as the default production warp |
+
+A warp anchor needs at least 20 same-cohort members; a sample needs at least 12
+anchor observations. Empty `batch_id` values share the request's unspecified
+cohort; distinct declared batches never contribute residual neighbors to one
+another. Biological sample roles do not define calibration cohorts. Non-monotone
+sample mappings remain unsupported. Common-to-observed and observed-to-common
+conversions use the same piecewise mapping.
+
+Ordinary grouping retains observed RT for unsupported samples and uses corrected
+RT for supported samples in band assignment, sample-disjoint merge checks, and
+existing-feature support. These comparisons can therefore mix uncorrected and
+corrected coordinates; an identity transform is not measured zero-drift evidence.
+Backfill prediction separately checks target and neighbor calibration support.
+
+Without calibrated target and neighbor support, Backfill uses the same-cohort
+local measured trend and records `local_feature_trend_insufficient_calibration`.
+For extrapolation, the fit's residual scale amplified by prediction leverage
+is compared with the configured Backfill half-window. If that risk proxy exceeds
+the window, the query uses the fitted RT at the nearest supported injection and
+its basis includes `at_support_boundary`; target-sample coordinate conversion
+still applies. Interpolation and lower-risk extrapolation retain the local line.
+This guard is not a calibrated confidence interval or an identity decision.
+Missing injection order or same-cohort neighbors instead retains the group center
+with an explicit fallback basis. These are search fallbacks, not evidence of
+zero perturbation or permission to write a value.
 
 ### Method subjects
 

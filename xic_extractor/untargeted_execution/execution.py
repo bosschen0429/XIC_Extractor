@@ -7,8 +7,9 @@ import json
 import shutil
 import threading
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import nullcontext
 from copy import copy
-from dataclasses import fields, replace
+from dataclasses import dataclass, fields, replace
 from functools import partial
 from pathlib import Path
 from typing import cast
@@ -44,12 +45,13 @@ from xic_extractor.execution.attempt import (
 from xic_extractor.execution.partitions import (
     PartitionAcquisitionOutput,
     PartitionCompositionOutput,
+    PartitionPipelinePhase,
     PartitionPipelineScheduler,
     ProcessingOwners,
     WorkPartition,
 )
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
-from xic_extractor.execution.result_store import StreamedResultStore
+from xic_extractor.execution.result_store import SealedPartition, StreamedResultStore
 from xic_extractor.execution.workers import WorkerAdmissionPool, WorkerTransportMetrics
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -75,12 +77,16 @@ from xic_extractor.untargeted_execution.input_planning import (
 )
 from xic_extractor.untargeted_execution.partition.execution import execute_partition
 from xic_extractor.untargeted_execution.partition.models import (
+    UntargetedInitialSampleResult,
     UntargetedPartitionJob,
     UntargetedPartitionResult,
+    UntargetedPreparedGrouping,
     build_sample_jobs,
 )
 from xic_extractor.untargeted_execution.partition_composition import (
     PersistedUntargetedPartition,
+    PreparedUntargetedBatchSearch,
+    UntargetedBatchGroupingPreparation,
     UntargetedPartitionInputs,
     compose_and_persist_untargeted_partition,
     prepare_untargeted_partition_grouping,
@@ -94,6 +100,50 @@ _PARTITION_CONTRACT = _mint_artifact_semantic_contract_ref(
     media_type="application/json",
     serialization_format="canonical-json-utf8-lf",
 )
+
+_BOOTSTRAP_CONTRACT = _mint_artifact_semantic_contract_ref(
+    owner_namespace="xic_extractor.untargeted_cid_nl_bounded_runtime",
+    semantic_role="rt_calibration_bootstrap_input",
+    schema_version="cid_nl_rt_calibration_bootstrap",
+    validation_status="diagnostic_only",
+    media_type="application/json",
+    serialization_format="canonical-json-utf8-lf",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _GroupingInputs:
+    batch: UntargetedPartitionInputs
+    prepared: UntargetedPreparedGrouping
+
+
+@dataclass(frozen=True, slots=True)
+class _InitialAcquisitionPartition:
+    """One sealed snapshot with independently readable grouping and acquisition."""
+
+    grouping: _GroupingInputs
+    initial_results: tuple[UntargetedInitialSampleResult, ...]
+    children: tuple[()] = ()
+    excluded_candidates: tuple[()] = ()
+    method_assessments: tuple[()] = ()
+    initial_groups: tuple[()] = ()
+    initial_edges: tuple[()] = ()
+    capture_evidence: tuple[()] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class _SearchGroupingPartition:
+    """Final grouping bound to the original acquisition records, without a copy."""
+
+    grouping: _GroupingInputs
+    initial_partition: SealedPartition
+    children: tuple[()] = ()
+    excluded_candidates: tuple[()] = ()
+    method_assessments: tuple[()] = ()
+    initial_groups: tuple[()] = ()
+    initial_edges: tuple[()] = ()
+    capture_evidence: tuple[()] = ()
+
 
 _GLOBAL_CLOSURE_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.untargeted_cid_nl_bounded_runtime",
@@ -342,31 +392,34 @@ class UntargetedPartitionPipelineAdapter:
             if raw_worker_backend == "process"
             else raw_workers // self._acquisition_workers
         )
-        self._sample_phases = tuple(
-            (sample, phase)
-            for sample in context.samples
-            for phase in ("initial", "backfill")
-        )
-        partitions = []
-        for index, subjects in enumerate(subject_partitions):
-            partition_key = f"partition-{index:05d}"
-            partitions.append(
-                WorkPartition(
-                    index=index,
-                    partition_key=partition_key,
-                    payload=subjects,
-                    work_unit_keys=tuple(
-                        f"{partition_key}:{sample.identity.sample_identity_id}:{phase}"
-                        for sample, phase in self._sample_phases
-                    ),
-                    resource_keys=tuple(
-                        "acquisition-session:"
-                        f"{partition_key}:{sample.identity.sample_identity_id}:{phase}"
-                        for sample, phase in self._sample_phases
-                    ),
+        partitions: list[WorkPartition[tuple[CidNlMethodSubject, ...]]] = []
+        for phase in ("initial", "backfill"):
+            for index, subjects in enumerate(subject_partitions):
+                partition_key = f"partition-{index:05d}-{phase}"
+                partitions.append(
+                    WorkPartition(
+                        index=len(partitions),
+                        partition_key=partition_key,
+                        payload=subjects,
+                        work_unit_keys=tuple(
+                            f"{partition_key}:{sample.identity.sample_identity_id}:{phase}"
+                            for sample in context.samples
+                        ),
+                        resource_keys=tuple(
+                            f"acquisition-session:{partition_key}:{sample.identity.sample_identity_id}:{phase}"
+                            for sample in context.samples
+                        ),
+                    )
                 )
-            )
         self._partitions = tuple(partitions)
+        self._bootstrap_count = len(subject_partitions)
+        self._initial_partitions: dict[int, SealedPartition] = {}
+        self._batch_preparation: UntargetedBatchGroupingPreparation | None = (
+            UntargetedBatchGroupingPreparation(context, alignment_config)
+        )
+        self._prepared_positions: dict[int, int] = {}
+        self._prepared_store: StreamedResultStore | None = None
+        self._batch_search: PreparedUntargetedBatchSearch | None = None
         self._partition_subject_batches = {
             partition.partition_key: self._prepared_worksets.subject_batch(
                 partition.payload
@@ -417,7 +470,8 @@ class UntargetedPartitionPipelineAdapter:
                 resource_key=resource_key,
                 worker_key=(
                     f"inline-acquisition:{partition.partition_key}:"
-                    f"{sample.identity.sample_identity_id}:{phase}"
+                    f"{sample.identity.sample_identity_id}:"
+                    f"{'initial' if self._is_bootstrap(partition) else 'backfill'}"
                 ),
                 source_reference=resolve_request_acquisition_source(
                     processing_owners=self._owners, sample=sample
@@ -426,8 +480,8 @@ class UntargetedPartitionPipelineAdapter:
                 owner_conditional=True,
             )
             for partition in self._partitions
-            for (sample, phase), resource_key in zip(
-                self._sample_phases, partition.resource_keys, strict=True
+            for sample, resource_key in zip(
+                context.samples, partition.resource_keys, strict=True
             )
         )
         self._owner_completeness_attestation = (
@@ -439,6 +493,33 @@ class UntargetedPartitionPipelineAdapter:
         self,
     ) -> Sequence[WorkPartition[tuple[CidNlMethodSubject, ...]]]:
         return self._partitions
+
+    @property
+    def bootstrap_partitions(
+        self,
+    ) -> Sequence[WorkPartition[tuple[CidNlMethodSubject, ...]]]:
+        """Complete scientific worksets, each acquired once before calibration."""
+        return self._partitions[: self._bootstrap_count]
+
+    def execution_phases(
+        self,
+        *,
+        progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+    ) -> tuple[PartitionPipelinePhase[tuple[CidNlMethodSubject, ...]], ...]:
+        """Operational chunks never close the batch's scientific evidence scope."""
+        return (
+            PartitionPipelinePhase("initial-acquisition", self.bootstrap_partitions),
+            PartitionPipelinePhase(
+                "batch-search-preparation",
+                self._partitions[self._bootstrap_count :],
+                partial(self.prepare_batch_search, progress_callback=progress_callback),
+            ),
+        )
+
+    def _is_bootstrap(
+        self, partition: WorkPartition[tuple[CidNlMethodSubject, ...]]
+    ) -> bool:
+        return partition.index < self._bootstrap_count
 
     @property
     def processing_owners(self) -> ProcessingOwners:
@@ -502,6 +583,57 @@ class UntargetedPartitionPipelineAdapter:
             sparse=True,
         )
 
+    def prepare_batch_search(
+        self,
+        store: StreamedResultStore,
+        check_cancellation: Callable[[], None],
+        *,
+        progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+    ) -> None:
+        """Prepare the whole batch between acquisition phases, one spool at a time.
+
+        Publish Backfill inputs only after calibration, all grouping, and hint
+        freezing succeed. A partial preparation cannot admit downstream work.
+        """
+        if len(self._initial_partitions) != self._bootstrap_count:
+            raise RuntimeError("initial acquisition phase is incomplete")
+        preparation = self._batch_preparation
+        assert preparation is not None
+        check_cancellation()
+        preparation.freeze_calibration()
+        prepared_positions = {}
+        for index, initial_partition in sorted(self._initial_partitions.items()):
+            check_cancellation()
+            grouping = cast(
+                _GroupingInputs,
+                store.read_header_field(initial_partition.index, "grouping"),
+            )
+            prepared = preparation.finalize_grouping(
+                grouping.batch, grouping.prepared,
+                progress_callback=progress_callback,
+            )
+            check_cancellation()
+            # Heavy captures stay spooled one partition at a time. Backfill
+            # consumes this frozen grouping rather than fitting it a second time.
+            sealed = store.append(
+                f"cid-nl-search-grouping-{index}",
+                _SearchGroupingPartition(
+                    _GroupingInputs(
+                        replace(grouping.batch, prepared_grouping=None), prepared
+                    ),
+                    initial_partition,
+                ),
+            )
+            prepared_positions[index] = sealed.index
+            del grouping, prepared
+        check_cancellation()
+        batch_search = preparation.freeze_search()
+        check_cancellation()
+        self._prepared_positions = prepared_positions
+        self._prepared_store = store
+        self._batch_search = batch_search
+        self._batch_preparation = None
+
     def execute_acquisition(
         self,
         partition: WorkPartition[tuple[CidNlMethodSubject, ...]],
@@ -514,22 +646,53 @@ class UntargetedPartitionPipelineAdapter:
             UntargetedPartitionResult,
         ]
     ]:
-        batch = self.materialize_partition(partition)
-        if self._raw_worker_backend == "process":
-            if self._process_pools_closed:
-                raise RuntimeError("process worker pools are already closed")
-            pool = self._process_pools[0]
-            if pool.stopped:
-                raise RuntimeError("process worker pool failure stopped admission")
-            leaf = execute_partition(
-                batch.jobs,
-                prepare_grouping=partial(
-                    prepare_untargeted_partition_grouping,
-                    batch,
-                    alignment_config=self._alignment_config,
-                    known_istd_reference=self._known_istd_reference,
-                    progress_callback=progress_callback,
+        initial_only = self._is_bootstrap(partition)
+        initial_results = None
+        grouping_callback: Callable[
+            [tuple[UntargetedInitialSampleResult, ...]], UntargetedPreparedGrouping
+        ]
+        if initial_only:
+            batch = self.materialize_partition(partition)
+            grouping_callback = partial(
+                prepare_untargeted_partition_grouping,
+                batch,
+                alignment_config=self._alignment_config,
+                known_istd_reference=self._known_istd_reference,
+                progress_callback=progress_callback,
+                bootstrap_only=True,
+            )
+        else:
+            if self._batch_search is None or self._prepared_store is None:
+                raise RuntimeError(
+                    "Backfill requires complete batch search preparation"
+                )
+            search_grouping = cast(
+                _SearchGroupingPartition,
+                self._prepared_store.read(
+                    self._prepared_positions[partition.index - self._bootstrap_count]
                 ),
+            )
+            batch = search_grouping.grouping.batch
+            initial_results = cast(
+                tuple[UntargetedInitialSampleResult, ...],
+                self._prepared_store.read_tuple(
+                    search_grouping.initial_partition.index, "initial_results"
+                ),
+            )
+            prepared = self._batch_search.bind(search_grouping.grouping.prepared)
+
+            def frozen_grouping(
+                _: tuple[UntargetedInitialSampleResult, ...],
+            ) -> UntargetedPreparedGrouping:
+                return prepared
+
+            grouping_callback = frozen_grouping
+
+        def run(pool: WorkerAdmissionPool) -> UntargetedPartitionResult:
+            return execute_partition(
+                batch.jobs,
+                pool=pool,
+                prepare_grouping=grouping_callback,
                 backfill_templates=batch.sample_job_templates,
                 partition_key=partition.partition_key,
                 alignment_config=self._alignment_config,
@@ -537,32 +700,27 @@ class UntargetedPartitionPipelineAdapter:
                 should_cancel=should_cancel,
                 raw_workers=self._partition_raw_workers,
                 raw_worker_backend=self._raw_worker_backend,
-                pool=pool,
+                initial_only=initial_only,
+                initial_results=initial_results,
+            )
+
+        if self._raw_worker_backend == "process":
+            if self._process_pools_closed:
+                raise RuntimeError("process worker pools are already closed")
+            pool = self._process_pools[0]
+            if pool.stopped:
+                raise RuntimeError("process worker pool failure stopped admission")
+            pool_context: nullcontext[WorkerAdmissionPool] | WorkerAdmissionPool = (
+                nullcontext(pool)
             )
         else:
-            with WorkerAdmissionPool(
+            pool_context = WorkerAdmissionPool(
                 max_workers=self._partition_raw_workers,
                 backend=self._raw_worker_backend,
                 thread_name_prefix="cid-nl-sample",
-            ) as pool:
-                leaf = execute_partition(
-                    batch.jobs,
-                    prepare_grouping=partial(
-                        prepare_untargeted_partition_grouping,
-                        batch,
-                        alignment_config=self._alignment_config,
-                        known_istd_reference=self._known_istd_reference,
-                        progress_callback=progress_callback,
-                    ),
-                    backfill_templates=batch.sample_job_templates,
-                    partition_key=partition.partition_key,
-                    alignment_config=self._alignment_config,
-                    progress_callback=progress_callback,
-                    should_cancel=should_cancel,
-                    raw_workers=self._partition_raw_workers,
-                    raw_worker_backend=self._raw_worker_backend,
-                    pool=pool,
-                )
+            )
+        with pool_context as pool:
+            leaf = run(pool=pool)
         failure_detail = None
         if not leaf.succeeded:
             failed = next(
@@ -594,6 +752,24 @@ class UntargetedPartitionPipelineAdapter:
         should_cancel: Callable[[], bool] | Callable[[], None] | None = None,
     ) -> PartitionCompositionOutput[PersistedUntargetedPartition]:
         batch, leaf = acquisition_output.result
+        if self._is_bootstrap(partition):
+            assert leaf.prepared_grouping is not None
+            prepared = leaf.prepared_grouping
+            sealed = store.append(
+                partition.partition_key,
+                _InitialAcquisitionPartition(
+                    grouping=_GroupingInputs(batch, prepared),
+                    initial_results=tuple(
+                        UntargetedInitialSampleResult(result.job, result.adapter_result)
+                        for result in leaf.sample_results
+                    ),
+                ),
+            )
+            assert self._batch_preparation is not None
+            self._batch_preparation.add_initial(prepared)
+            self._initial_partitions[partition.index] = sealed
+            persisted = PersistedUntargetedPartition(sealed, 0, ())
+            return PartitionCompositionOutput(result=persisted, sealed=sealed)
 
         def cancel_check() -> None:
             if should_cancel is not None and should_cancel():
@@ -631,7 +807,11 @@ class UntargetedPartitionPipelineAdapter:
                 producer_processing_attempt_id=(
                     self._owners.attempt.processing_attempt_id
                 ),
-                semantic_contract=_PARTITION_CONTRACT,
+                semantic_contract=(
+                    _BOOTSTRAP_CONTRACT
+                    if self._is_bootstrap(partition)
+                    else _PARTITION_CONTRACT
+                ),
                 payload_bytes=(
                     json.dumps(
                         {
@@ -852,6 +1032,7 @@ def execute_untargeted_plan(
     try:
         result = PartitionPipelineScheduler.execute(
             adapter,
+            phases=adapter.execution_phases(progress_callback=progress_callback),
             output_dir=output_dir,
             telemetry_provider=telemetry_provider,
             recovery_marker=recovery_marker,

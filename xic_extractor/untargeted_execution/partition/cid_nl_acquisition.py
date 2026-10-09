@@ -645,6 +645,8 @@ def _elution_context_requests(
     return tuple(merged)
 
 
+
+
 def _backfill_xic_request(
     *,
     mz: float,
@@ -1115,6 +1117,18 @@ def backfill_untargeted_cid_nl_sample_subject(
         or float(group_center_rt) < 0.0
     ):
         raise CidNlAcquisitionError("group_center_rt must be finite and non-negative")
+    query_rt = group_center_rt if query_rt is None else query_rt
+    if (
+        isinstance(query_rt, bool)
+        or not isinstance(query_rt, (int, float))
+        or not math.isfinite(float(query_rt))
+        or query_rt < 0.0
+        or not isinstance(query_rt_basis, str)
+        or not query_rt_basis.strip()
+    ):
+        raise CidNlAcquisitionError(
+            "query RT requires a finite non-negative value and basis"
+        )
     physical_mz = group_center_mz
     if (
         isinstance(physical_mz, bool)
@@ -1139,18 +1153,6 @@ def backfill_untargeted_cid_nl_sample_subject(
         sample=sample,
     )
     half_window = peak_config.nl_rt_anchor_half_window_min
-    query_rt = group_center_rt if query_rt is None else query_rt
-    if (
-        isinstance(query_rt, bool)
-        or not isinstance(query_rt, (int, float))
-        or not math.isfinite(float(query_rt))
-        or query_rt < 0.0
-        or not isinstance(query_rt_basis, str)
-        or not query_rt_basis.strip()
-    ):
-        raise CidNlAcquisitionError(
-            "query RT must be finite and non-negative with a basis"
-        )
     query_rt_min = max(0.0, float(query_rt) - half_window)
     query_rt_max = float(query_rt) + half_window
     request = _backfill_xic_request(
@@ -1249,7 +1251,7 @@ def backfill_untargeted_cid_nl_sample_subject(
                 sample=sample,
                 method_subject=method_subject,
                 trace=trace,
-                group_center_rt=float(query_rt),
+                query_rt_min=float(query_rt),
                 search_rt_window=(
                     (query_rt_min, query_rt_max)
                     if capture_request is context_request

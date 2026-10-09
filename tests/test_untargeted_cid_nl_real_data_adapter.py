@@ -1766,6 +1766,8 @@ def test_recovery_batch_canonicalizes_shared_group_queries_without_merging_cente
     assert distinct_mass.coordinate.request.rt_min == second.coordinate.request.rt_min
 
 
+
+
 def test_adapter_receipt_covers_candidate_search_beyond_seed_window(
     tmp_path: Path,
 ) -> None:

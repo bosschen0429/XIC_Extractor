@@ -26,6 +26,7 @@ from xic_extractor.alignment.feature_membership_inference import (
     FeatureInferenceOperationCounts,
     FeatureMembershipGroup,
     RtCoordinates,
+    rt_trend_supports_union,
     supports_existing_feature,
 )
 from xic_extractor.alignment.grouping_bootstrap import (
@@ -332,6 +333,8 @@ def group_cid_nl_owners(
             groups,
             config=config,
             backfill_half_window_min=backfill_half_window_min,
+            injection_order=injection_order,
+            rt_warp=rt_warp,
             elution_correspondence=elution_correspondence,
         ),
         config=config,
@@ -347,6 +350,8 @@ def admit_cid_nl_group_backfills(
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
     ],
     alignment_config: AlignmentConfig,
+    injection_order: Mapping[str, int] | None = None,
+    rt_warp: RtCoordinates | None = None,
 ) -> tuple[
     CrossSampleGroupingResult,
     tuple[CrossSamplePeakGroupHypothesis, ...],
@@ -409,6 +414,8 @@ def admit_cid_nl_group_backfills(
             group.owners,
             config=alignment_config,
             drift_lookup=result.drift_lookup,
+            injection_order=injection_order,
+            rt_warp=rt_warp,
         ):
             continue
         claims[physical_key].add(group_id)
@@ -563,14 +570,17 @@ def merge_sample_disjoint_groups(
     *,
     config: AlignmentConfig,
     backfill_half_window_min: float,
+    injection_order: Mapping[str, int],
+    rt_warp: RtCoordinates | None,
     elution_correspondence: ElutionCorrespondence | None = None,
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
-    """Merge established rows of one feature that no sample tells apart.
+    """Merge nearby sample-disjoint rows only when their union supports one band.
 
-    Rows with no shared sample and nearby centers can be duplicate questions.
-    An ordered MS1 pattern can nevertheless distinguish their peaks even when
-    no sample has direct method support for both. Such rows must remain apart.
-    Closer rows merge first; a merge never joins rows sharing a sample.
+    Overlapping Backfill windows and disjoint samples nominate components;
+    they do not establish identity. Ordered MS1 patterns keep distinct peaks
+    apart even when no sample supports both. Check each whole component in the
+    same RT coordinates as membership inference. A failed component retains
+    all its original rows rather than searching for alternative partial merges.
     """
     candidates = sorted(
         (
@@ -636,11 +646,27 @@ def merge_sample_disjoint_groups(
     for group in groups:
         members[find(group.group_hypothesis_id)].append(group)
     merged = []
+    corrected_rt = {
+        owner.owner_id: (
+            rt_warp.corrected_rt_min(owner) if rt_warp else owner.owner_apex_rt
+        )
+        for group in groups
+        for owner in group.owners
+    }
     for parts in members.values():
         if len(parts) == 1:
             merged.append(parts[0])
             continue
         parts.sort(key=lambda group: group.public_family_id)
+        if not rt_trend_supports_union(
+            parts[0].owners,
+            tuple(owner for group in parts[1:] for owner in group.owners),
+            orders=injection_order,
+            corrected_rt=corrected_rt,
+            max_rt_sec=config.max_rt_sec,
+        ):
+            merged.extend(parts)
+            continue
         owners = tuple(
             sorted(
                 (owner for group in parts for owner in group.owners),

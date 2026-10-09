@@ -30,7 +30,11 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
-from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
+from xic_extractor.alignment.feature_membership_inference import (
+    BackfillRtPrediction,
+    BatchRtWarp,
+)
+from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.scientific_settings import (
     SCIENTIFIC_SETTING_FIELDS,
@@ -362,6 +366,7 @@ def canonical_sample_result_bytes(
         acquisition_sha256=reference.acquisition_sha256,
         backfill_assessment_artifact_ids=reference.backfill_assessment_artifact_ids,
         backfill_query_bounds=reference.backfill_query_bounds,
+        backfill_query_predictions=reference.backfill_query_predictions,
         backfill_group_hypothesis_ids=reference.backfill_group_hypothesis_ids,
     )
 
@@ -398,6 +403,7 @@ class UntargetedSampleResultRef:
     acquisition_sha256: str | None
     backfill_assessment_artifact_ids: tuple[str, ...]
     backfill_query_bounds: tuple[tuple[float, float], ...]
+    backfill_query_predictions: tuple[tuple[float | None, str], ...]
     backfill_group_hypothesis_ids: tuple[str | None, ...]
     artifact: EvidenceArtifactRef
 
@@ -436,6 +442,25 @@ class UntargetedPreparedGrouping:
     alignment_config: AlignmentConfig
     known_istd_reference: KnownIstdReference | None
     rt_warp: BatchRtWarp | None = None
+    related_ion_rt_hints: Mapping[tuple[str, str], BackfillRtPrediction] = field(
+        default_factory=dict
+    )
+
+    @property
+    def rt_anchor_groups(self) -> tuple[tuple[SampleLocalMS1Owner, ...], ...]:
+        """Only agreed bootstrap groups can contribute calibration observations."""
+        return tuple(
+            group.owners
+            for workset in self.worksets
+            for group in workset.grouping_scope.groups
+            if group.inference_basis is not None
+            and group.inference_basis.basis
+            in {
+                "bidirectional_membership_agreement",
+                "known_identity_constraint",
+                "elution_pattern_correspondence",
+            }
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -582,13 +607,12 @@ def _project_completed_backfill(
         or not receipt.acquisition_supported
         or backfill.backfill_input is not None
     ):
-        raise UntargetedPartitionError(
-            "backfill is not a completed empty epoch"
-        )
+        raise UntargetedPartitionError("backfill is not a completed empty epoch")
+    query_rt = center if backfill.query_rt is None else backfill.query_rt
     expected_request = XICRequest(
         mz=group_context.group.family_center_mz,
-        rt_min=max(0.0, center - job.peak_config.nl_rt_anchor_half_window_min),
-        rt_max=center + job.peak_config.nl_rt_anchor_half_window_min,
+        rt_min=max(0.0, query_rt - job.peak_config.nl_rt_anchor_half_window_min),
+        rt_max=query_rt + job.peak_config.nl_rt_anchor_half_window_min,
         ppm_tol=job.method_subject.precursor_tolerance_ppm,
     )
     exact = exact_traces(
@@ -614,6 +638,8 @@ def _project_completed_backfill(
             group_identity=group,
             group_center_mz=group_context.group.family_center_mz,
             group_center_rt=center,
+            query_rt=query_rt,
+            query_rt_basis=backfill.query_rt_basis,
             source_result_artifact=result.result_ref.artifact,
             initial_assessment_artifact=initial.artifact,
             backfill_assessment=assessment,
@@ -628,6 +654,8 @@ def _project_completed_backfill(
         group_identity=group,
         group_center_mz=group_context.group.family_center_mz,
         group_center_rt=center,
+        query_rt=query_rt,
+        query_rt_basis=backfill.query_rt_basis,
         source_result_artifact=result.result_ref.artifact,
         initial_assessment_artifact=initial.artifact,
         backfill_assessment=assessment,
@@ -758,6 +786,9 @@ def _mint_sample_result_ref(
         "backfill_assessment_artifact_ids": tuple(
             ref.artifact.evidence_artifact_id for ref in backfill_assessments
         ),
+        "backfill_query_predictions": tuple(
+            (attempt.query_rt, attempt.query_rt_basis) for attempt in backfill_attempts
+        ),
         "backfill_query_bounds": tuple(
             (
                 ref.content.evaluation_receipt.query_rt_min,
@@ -815,6 +846,9 @@ def _mint_sample_result_ref(
         acquisition_sha256=acquisition_sha256,
         backfill_assessment_artifact_ids=tuple(
             ref.artifact.evidence_artifact_id for ref in backfill_assessments
+        ),
+        backfill_query_predictions=tuple(
+            (attempt.query_rt, attempt.query_rt_basis) for attempt in backfill_attempts
         ),
         backfill_query_bounds=tuple(
             (

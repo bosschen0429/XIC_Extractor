@@ -70,6 +70,8 @@ def _backfill_row(**overrides: str) -> dict[str, str]:
         "family_center_mz": "242.1",
         "family_center_rt": "1.25",
         "reason": "owner-centered MS1 backfill",
+        "backfill_query_rt_min": "",
+        "backfill_query_rt_max": "",
     }
     row.update(overrides)
     return row
