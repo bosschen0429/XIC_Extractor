@@ -168,12 +168,18 @@ class PeakTrajectory:
 
 @dataclass(frozen=True, slots=True)
 class PeakTrajectories:
-    """Physical correspondence only; unbound or ambiguous owners are omitted."""
+    """Physical correspondence only; unbound or ambiguous owners are omitted.
+
+    Separate tracks are not evidence of separate peaks: their observations may
+    never have been compared. Two tracks are distinct only when one sample
+    observed both, necessarily at different landmarks.
+    """
 
     tracks: tuple[PeakTrajectory, ...] = ()
     pattern_comparisons: int = 0
     source_contexts: tuple[SampleElutionContext, ...] = ()
     _track_by_owner: Mapping[str, int] = field(init=False, repr=False, compare=False)
+    _distinct: frozenset[tuple[int, int]] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -185,23 +191,38 @@ class PeakTrajectories:
                 for owner_id in track.owner_ids
             },
         )
+        by_sample: dict[str, list[int]] = defaultdict(list)
+        for index, track in enumerate(self.tracks):
+            for sample, _ in track.sample_apices:
+                by_sample[sample].append(index)
+        object.__setattr__(
+            self,
+            "_distinct",
+            frozenset(
+                (first, second)
+                for indices in by_sample.values()
+                for position, first in enumerate(indices)
+                for second in indices[position + 1 :]
+            ),
+        )
 
     def trajectory_for(self, owners: Sequence[SampleLocalMS1Owner]) -> PeakTrajectory:
         """Bind a finalized group to its direct and compatible context points.
 
-        Unmatched owners can extend a pattern-supported trajectory. Conversely,
-        a known-identity group spanning conflicting physical patterns supplies
-        only its own observations; a physical pattern cannot override identity.
+        Unmatched owners can extend a pattern-supported trajectory, and tracks
+        never observed together contribute their disjoint positions. Conversely,
+        a known-identity group spanning distinct physical peaks supplies only
+        its own observations; a physical pattern cannot override identity.
         """
         requested = {owner.owner_id for owner in owners}
-        indices = {
-            self._track_by_owner[item]
-            for item in requested
-            if item in self._track_by_owner
-        }
+        indices = self._indices(requested)
         points = (
-            dict(self.tracks[next(iter(indices))].sample_apices)
-            if len(indices) == 1
+            {
+                sample: rt
+                for index in sorted(indices)
+                for sample, rt in self.tracks[index].sample_apices
+            }
+            if self._compatible(indices)
             else {}
         )
         points.update((owner.sample_stem, owner.owner_apex_rt) for owner in owners)
@@ -211,16 +232,22 @@ class PeakTrajectories:
         return dict(self._track_by_owner)
 
     def permits_membership(self, owner_ids: Iterable[str]) -> bool:
-        """Unobserved context may extend a track, but distinct tracks cannot merge."""
-        return (
-            len(
-                {
-                    self._track_by_owner[item]
-                    for item in owner_ids
-                    if item in self._track_by_owner
-                }
-            )
-            <= 1
+        """Unobserved correspondence may extend a track; distinct peaks cannot merge."""
+        return self._compatible(self._indices(owner_ids))
+
+    def _indices(self, owner_ids: Iterable[str]) -> set[int]:
+        return {
+            self._track_by_owner[item]
+            for item in owner_ids
+            if item in self._track_by_owner
+        }
+
+    def _compatible(self, indices: set[int]) -> bool:
+        ordered = sorted(indices)
+        return not any(
+            (first, second) in self._distinct
+            for position, first in enumerate(ordered)
+            for second in ordered[position + 1 :]
         )
 
 

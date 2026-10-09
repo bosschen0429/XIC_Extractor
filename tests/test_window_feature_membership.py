@@ -208,6 +208,48 @@ def test_alternating_direct_peaks_follow_ms1_pattern_not_nearest_absolute_rt() -
     assert all(group.disposition == "assigned" for group in result.groups)
 
 
+@pytest.mark.parametrize(
+    "injection_orders",
+    (tuple(range(1, 15)), (*range(1, 8), *range(21, 28))),
+    ids=("contiguous", "context_gap"),
+)
+def test_never_compared_pattern_observations_do_not_split_one_band(
+    injection_orders: tuple[int, ...],
+) -> None:
+    # Each block shares the same doublet context, but the 13 injections
+    # between the blocks hold no related context. Not having compared two
+    # blocks is not evidence that they observed different peaks.
+    owners = []
+    contexts = []
+    orders = {}
+    for order in injection_orders:
+        sample = f"s{order:02d}"
+        orders[sample] = order
+        owners.append(_synthetic_owner(sample, f"{sample}:peak", 10.0))
+        contexts.append(
+            SampleElutionContext(
+                sample,
+                500.0,
+                9.0,
+                12.0,
+                (ElutionLandmark(10.0, 100.0, 0.25), ElutionLandmark(10.6, 60.0, 0.25)),
+            )
+        )
+    trajectories = resolve_peak_trajectories(
+        owners, contexts, config=AlignmentConfig(), injection_order=orders
+    )
+    result = infer_feature_memberships(
+        owners,
+        config=AlignmentConfig(),
+        injection_order=orders,
+        drift_lookup=None,
+        peak_trajectories=trajectories,
+    )
+    assert [(group.owner_ids, group.disposition) for group in result.groups] == [
+        (tuple(sorted(owner.owner_id for owner in owners)), "assigned")
+    ]
+
+
 @pytest.mark.parametrize("case", sorted(_DATA["cases"]))
 def test_full85_clean_band_is_one_assigned_group(case: str) -> None:
     owners, orders = _owners(case)

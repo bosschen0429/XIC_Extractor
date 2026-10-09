@@ -178,6 +178,26 @@ def test_single_peak_continuation_cannot_overrule_an_ordered_pair() -> None:
     }
 
 
+def test_tracks_never_observed_together_share_their_positions() -> None:
+    # Two seven-injection blocks see the same doublet but are never compared.
+    # A group that joins their owners keeps the MS1-only positions of both.
+    orders = {f"s{order:02d}": order for order in (*range(1, 8), *range(21, 28))}
+    contexts = [_context(sample, ((10.0, 100.0), (10.6, 60.0))) for sample in orders]
+    owners = [
+        _owner(sample, "peak", 10.0)
+        for sample in orders
+        if sample not in {"s04", "s24"}
+    ]
+    model = resolve_peak_trajectories(
+        owners, contexts, config=AlignmentConfig(), injection_order=orders
+    )
+    assert len(model.tracks) == 2
+    assert model.permits_membership(owner.owner_id for owner in owners)
+    assert dict(model.trajectory_for(owners).sample_apices) == dict.fromkeys(
+        orders, 10.0
+    )
+
+
 def test_repeated_indistinguishable_pattern_does_not_invent_an_ordinal() -> None:
     contexts = [
         _context("a", ((10.0, 100.0), (10.6, 100.0), (11.2, 100.0))),
