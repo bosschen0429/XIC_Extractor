@@ -274,6 +274,15 @@ def _read_exact_seed(
                     product_mz,
                     settings.product_mz_tolerance_ppm,
                 )
+                or (
+                    # A shared-apex merge can retain another product's receipt
+                    # under the same scan. The canonical row still owns its
+                    # representative; reconstruct it from native scan seeds.
+                    representative
+                    and tag_name == candidate.neutral_loss_tag
+                    and _receipt_close(seed.precursor_mz, candidate.precursor_mz)
+                    and _receipt_close(seed.product_mz, candidate.product_mz)
+                )
             )
             for tag_name, product_mz in tag_product_receipts.items()
         )
@@ -335,20 +344,32 @@ def _read_exact_seed(
             f"{candidate.candidate_id}: strict scan {scan.scan_number} does not "
             "reconstruct one canonical Discovery seed"
         )
+    if representative:
+        canonical_matches = tuple(
+            seed
+            for seed in matches
+            if seed.neutral_loss_tag == candidate.neutral_loss_tag
+            and _receipt_close(seed.precursor_mz, candidate.precursor_mz)
+            and _receipt_close(seed.product_mz, candidate.product_mz)
+        )
+        # Nearby native products may share the writer-rounding window without
+        # sharing canonical identity. Prefer the persisted full-precision pair;
+        # if rounding removed that identity, require an unambiguous receipt.
+        exact_matches = tuple(
+            seed
+            for seed in canonical_matches
+            if seed.precursor_mz == candidate.precursor_mz
+            and seed.product_mz == candidate.product_mz
+        )
+        if len(exact_matches or canonical_matches) != 1:
+            raise StrictSeedReceiptError(
+                f"{candidate.candidate_id}: exact canonical Discovery seed "
+                "is not unique"
+            )
     tag_precedence = {
         tag_name: index for index, tag_name in enumerate(settings.selected_tag_names)
     }
     if preserve_configured_losses:
-        # Reconstruct the representative's persisted facts as well.
-        if representative and not any(
-            _receipt_close(seed.precursor_mz, candidate.precursor_mz)
-            and _receipt_close(seed.product_mz, candidate.product_mz)
-            for seed in matches
-        ):
-            raise StrictSeedReceiptError(
-                f"{candidate.candidate_id}: "
-                "exact canonical Discovery seed is not unique"
-            )
         return tuple(
             seed
             for seed in matches

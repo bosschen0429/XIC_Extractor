@@ -2650,3 +2650,81 @@ def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
         (scan.scan_number, 116.0474, pytest.approx(500.0 - 116.0474)),
         (scan.scan_number, 132.0423, pytest.approx(500.0 - 132.0423)),
     ]
+
+@pytest.mark.parametrize("preserve_configured_losses", [False, True])
+def test_same_scan_absorbed_product_keeps_exact_canonical_seed(
+    tmp_path: Path, preserve_configured_losses: bool
+) -> None:
+    import json
+
+    from xic_extractor.discovery.strict_seed_receipts import (
+        read_complete_discovery_scan_seeds,
+    )
+
+    source_raw = _FakeRaw((8.0,), scan_precursor_mz=255.15606689453125)
+    canonical_product = 139.09368896484375
+    absorbed_product = 139.09832763671875
+    source_raw.scans = (
+        replace(
+            source_raw.scans[0],
+            masses=np.asarray((canonical_product, absorbed_product)),
+            intensities=np.asarray((800.0, 200.0)),
+        ),
+    )
+    settings = _settings()
+    (candidate,) = _current_candidates(
+        source_raw,
+        raw_file=tmp_path / "S1.RAW",
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+    )
+    assert candidate.product_mz == canonical_product
+    evidence = json.loads(candidate.tag_evidence_json)["DNA_dR"]
+    assert evidence["scan_receipts"][str(candidate.best_ms2_scan_id)][
+        "product_mz"
+    ] == absorbed_product
+
+    seeds = read_complete_discovery_scan_seeds(
+        source_raw,
+        candidates=(candidate,),
+        settings=settings,
+        include_inferred=True,
+        preserve_configured_losses=preserve_configured_losses,
+    )
+    expected_products = (
+        {canonical_product, absorbed_product}
+        if preserve_configured_losses
+        else {canonical_product}
+    )
+    assert {seed.product_mz for _, seed in seeds} == expected_products
+    assert all(seed.precursor_mz == seed.product_mz + 116.0474 for _, seed in seeds)
+
+
+@pytest.mark.parametrize("preserve_configured_losses", [False, True])
+def test_duplicate_exact_canonical_seed_is_rejected(
+    tmp_path: Path, monkeypatch, preserve_configured_losses: bool
+) -> None:
+    from xic_extractor.discovery import strict_seed_receipts
+
+    source_raw = _FakeRaw((8.0,))
+    settings = _settings()
+    (candidate,) = _current_candidates(
+        source_raw,
+        raw_file=tmp_path / "S1.RAW",
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+    )
+    enumerate_seeds = strict_seed_receipts.discovery_seeds_from_scan
+
+    def duplicated(scan, **kwargs):
+        seeds = enumerate_seeds(scan, **kwargs)
+        return seeds + seeds
+
+    monkeypatch.setattr(strict_seed_receipts, "discovery_seeds_from_scan", duplicated)
+    with pytest.raises(strict_seed_receipts.StrictSeedReceiptError, match="not unique"):
+        strict_seed_receipts.read_complete_discovery_scan_seeds(
+            source_raw,
+            candidates=(candidate,),
+            settings=settings,
+            preserve_configured_losses=preserve_configured_losses,
+        )
