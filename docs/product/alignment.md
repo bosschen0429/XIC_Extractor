@@ -216,8 +216,10 @@ After all initial partitions have been composed and released, batch preparation
 freezes calibration, finalizes each grouping, and freezes search hints. Only a
 complete preparation publishes Backfill inputs; failure or cancellation prevents
 Backfill admission. No acquisition worker waits for another partition to finish
-scientific preparation. Direct and bounded execution use the same in-memory
-preparation owner; only the bounded adapter owns spool reads and writes.
+scientific preparation. Direct and bounded production execution use the same
+in-memory preparation owner; only the bounded adapter owns their spool reads
+and writes. The opt-in `grouping_experiment` diagnostic prepares comparison
+inputs separately and stops before production Backfill planning.
 Operational partition capacity does not change the cohort evidence scope, and
 semantic worksets remain indivisible. The acquisition
 boundary canonicalizes repeated or unordered complete XIC queries, including
@@ -432,7 +434,7 @@ unresolved and rejected groups remain AuditTrail facts.
 | Mechanism | Evidence and scope | Current consumer | Does not do |
 | --- | --- | --- | --- |
 | Known-ISTD identity / drift lookup | Exact reference bindings and supported reference range | Known identity constraints and bootstrap comparison | Replace measured peak RT or authorize Backfill values |
-| `BatchRtWarp` | Agreed bootstrap groups across the complete request; residual neighbors stay within `SampleMetadata.batch_id` | Final ordinary grouping and Backfill coordinate conversion | Treat an unsupported sample as measured zero drift |
+| `BatchRtWarp` | Agreed bootstrap groups across the complete request; residual neighbors stay within `SampleMetadata.batch_id` | Final ordinary grouping and Backfill coordinate conversion | Establish calibration support for an unsupported sample or authorize a value |
 | Local feature trend | Up to six nearest injection-order members of that feature (median); Backfill prediction uses up to twelve same-cohort members and a robust local linear fit over injection order | Dense-band assignment; sample-local Backfill prediction | Pool unrelated features into one feature trend |
 | Sample-local Backfill query | Local trend in common coordinates, mapped into the target injection's observed RT | XIC bounds and preferred peak location | Change `group_center_rt` or group identity |
 | `sample_rt_calibration.BatchRtCalibration` | Near-ubiquitous features under an explicit diagnostic policy | Opt-in grouping experiments | Act as the default production warp |
@@ -443,6 +445,12 @@ cohort; distinct declared batches never contribute residual neighbors to one
 another. Biological sample roles do not define calibration cohorts. Non-monotone
 sample mappings remain unsupported. Common-to-observed and observed-to-common
 conversions use the same piecewise mapping.
+
+Ordinary grouping retains observed RT for unsupported samples and uses corrected
+RT for supported samples in band assignment, sample-disjoint merge checks, and
+existing-feature support. These comparisons can therefore mix uncorrected and
+corrected coordinates; an identity transform is not measured zero-drift evidence.
+Backfill prediction separately checks target and neighbor calibration support.
 
 Without calibrated target and neighbor support, Backfill uses the same-cohort
 local measured trend and records `local_feature_trend_insufficient_calibration`.

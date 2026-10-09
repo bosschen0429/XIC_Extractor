@@ -618,7 +618,10 @@ class UntargetedPartitionPipelineAdapter:
             sealed = store.append(
                 f"cid-nl-search-grouping-{index}",
                 _SearchGroupingPartition(
-                    _GroupingInputs(grouping.batch, prepared), initial_partition
+                    _GroupingInputs(
+                        replace(grouping.batch, prepared_grouping=None), prepared
+                    ),
+                    initial_partition,
                 ),
             )
             prepared_positions[index] = sealed.index
