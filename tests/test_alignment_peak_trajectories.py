@@ -178,6 +178,48 @@ def test_single_peak_continuation_cannot_overrule_an_ordered_pair() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("isolated_rt", "label", "pattern_rts"),
+    [
+        (11.8, "late", (10.7, 10.75)),
+        (12.4, "late", (10.7, 10.75)),
+        (9.0, "early", (10.0, 10.05)),
+    ],
+)
+def test_single_peak_continuation_is_not_an_observed_position(
+    isolated_rt: float, label: str, pattern_rts: tuple[float, float]
+) -> None:
+    # x has one peak with no second landmark to witness which ordered peak it
+    # is. Its nearest-RT link may continue membership, but it is not an
+    # observation of this trajectory and cannot become the Backfill query.
+    contexts = [
+        _context("a", ((10.0, 60.0), (10.7, 100.0))),
+        _context("b", ((10.05, 60.0), (10.75, 100.0))),
+        _context("x", ((isolated_rt, 100.0),)),
+    ]
+    owners = [
+        _owner("a", "early", 10.0),
+        _owner("a", "late", 10.7),
+        _owner("b", "early", 10.05),
+        _owner("b", "late", 10.75),
+    ]
+    orders = {"a": 1, "b": 2, "x": 3}
+    model = resolve_peak_trajectories(
+        owners, contexts, config=AlignmentConfig(), injection_order=orders
+    )
+    members = [owner for owner in owners if owner.owner_id.endswith(label)]
+    location = model.trajectory_for(members).locate(
+        "x",
+        injection_order=orders,
+        sample_cohorts=dict.fromkeys(orders, "batch"),
+        rt_warp=None,
+        backfill_half_window_min=0.5,
+    )
+    assert location.observed_rt is None
+    # Two pattern observations leave no slope to fit; their median is used.
+    assert location.query_rt == pytest.approx(sum(pattern_rts) / 2.0)
+
+
 def test_tracks_never_observed_together_share_their_positions() -> None:
     # Two seven-injection blocks see the same doublet but are never compared.
     # A group that joins their owners keeps the MS1-only positions of both.

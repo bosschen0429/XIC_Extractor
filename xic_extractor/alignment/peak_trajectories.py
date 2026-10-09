@@ -81,7 +81,7 @@ class PeakTrajectory:
     ) -> PeakLocation:
         """Use an observed point or fit the unobserved part of this trajectory.
 
-        Both method-supported owners and matched MS1-only peaks contribute
+        Method-supported owners and pattern-matched MS1-only peaks contribute
         positions. The query stays in the target sample's RT coordinates;
         neither fitting nor related-ion agreement supplies method eligibility.
         """
@@ -346,13 +346,20 @@ def resolve_peak_trajectories(
             bound[roots[node]].append(owner_id)
     tracks = []
     for root, owner_ids in bound.items():
-        locations = tuple(
-            sorted((nodes[i].sample, nodes[i].landmark.apex_rt) for i in members[root])
-        )
         # Separate windows can have no order edge between them. A duplicated
         # sample is still not a usable location or membership assertion.
-        if len({sample for sample, _ in locations}) != len(locations):
+        if len({nodes[i].sample for i in members[root]}) != len(members[root]):
             continue
+        # A single-peak link continues membership only. Without a second
+        # landmark it does not observe which ordered peak it is, so it is
+        # neither a located position nor an input to fitting other samples.
+        locations = tuple(
+            sorted(
+                (nodes[i].sample, nodes[i].landmark.apex_rt)
+                for i in members[root]
+                if i in supported_nodes
+            )
+        )
         tracks.append(PeakTrajectory(tuple(sorted(owner_ids)), locations))
     return PeakTrajectories(
         tuple(sorted(tracks, key=lambda track: track.owner_ids)),
