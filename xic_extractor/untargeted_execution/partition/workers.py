@@ -411,7 +411,10 @@ def _prepare_group_authorized_backfills(
                         candidate_assessment=assessment,
                     )
                 else:
-                    prediction = predict_backfill_rt(
+                    hint = prepared.related_ion_rt_hints.get(
+                        (group.group_hypothesis_id, state.job.sample.metadata.raw_stem)
+                    )
+                    prediction = hint or predict_backfill_rt(
                         sample_stem=state.job.sample.metadata.raw_stem,
                         members=group.owners,
                         group_center_rt=group.group_center_rt,

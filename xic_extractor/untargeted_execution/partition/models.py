@@ -30,7 +30,10 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
-from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
+from xic_extractor.alignment.feature_membership_inference import (
+    BackfillRtPrediction,
+    BatchRtWarp,
+)
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.scientific_settings import (
@@ -439,6 +442,9 @@ class UntargetedPreparedGrouping:
     alignment_config: AlignmentConfig
     known_istd_reference: KnownIstdReference | None
     rt_warp: BatchRtWarp | None = None
+    related_ion_rt_hints: Mapping[tuple[str, str], BackfillRtPrediction] = field(
+        default_factory=dict
+    )
 
     @property
     def rt_anchor_groups(self) -> tuple[tuple[SampleLocalMS1Owner, ...], ...]:

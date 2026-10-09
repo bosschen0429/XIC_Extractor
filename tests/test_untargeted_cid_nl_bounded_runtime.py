@@ -286,6 +286,123 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
     assert len(groups) == 12 and all(len(group) == 24 for group in groups)
 
 
+def test_related_ion_search_hints_are_sample_bound_and_partition_invariant(
+    tmp_path, monkeypatch
+):
+    import numpy as np
+
+    from xic_extractor.execution.result_store import StreamedResultStore
+    from xic_extractor.untargeted_execution.execution import (
+        UntargetedPartitionPipelineAdapter,
+    )
+
+    settings = replace(_settings(), precursor_mz_tolerance_ppm=1.0)
+    peak_config = _peak_config(tmp_path)
+    paths = tuple(tmp_path / f"S{i:02}.synthetic" for i in range(22))
+    raws, candidates = {}, {}
+    for index, path in enumerate(paths):
+        path.write_bytes(path.stem.encode())
+        shift = {20: 0.1, 21: -0.1}.get(index, 0.0)
+        raw = _FakeRaw(tuple(7.985 + feature * 0.0025 + shift for feature in range(2)))
+        raw.intensity = 1000 * np.exp(-0.5 * ((raw.rt - 8.0 - shift) / 0.035) ** 2)
+        raw.scans = tuple(
+            replace(
+                scan,
+                precursor_mz=500.0 + feature * 1.00335483507,
+                masses=np.asarray(
+                    (500.0 + feature * 1.00335483507 - 116.0474, 450.0 + feature)
+                ),
+            )
+            for feature, scan in enumerate(raw.scans)
+        )
+        raws[path] = raw
+        candidates[path.stem] = _current_candidates(
+            raw,
+            raw_file=path,
+            settings=settings,
+            peak_config=peak_config,
+        )
+        assert len(candidates[path.stem]) == 2
+        if index >= 20:
+            candidates[path.stem] = tuple(
+                c for c in candidates[path.stem] if c.precursor_mz < 500.5
+            )
+        if index == 21:
+            # The partner and target MS1 signal remain, but the target has no
+            # independent MS2 support. A correct RT hint cannot supply it.
+            raw.scans = tuple(s for s in raw.scans if s.precursor_mz < 500.5)
+    plan = prepare_eager_untargeted_plan(
+        raw_paths=paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=path.stem,
+                raw_stem=path.stem,
+                injection_order=i,
+                sample_role="study_sample",
+            )
+            for i, path in enumerate(paths, 1)
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates,
+        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        dll_dir=tmp_path,
+        sample_identity_namespace="study:partition-invariant-warp",
+    )
+    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+
+    def run(capacity):
+        adapter = UntargetedPartitionPipelineAdapter(
+            plan,
+            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            max_partition_jobs=capacity,
+            raw_workers=1,
+        )
+        store = StreamedResultStore(
+            tmp_path / f"spool-{capacity}", adapter.get_shared_objects()
+        )
+        hints, queries = {}, {}
+        try:
+            for partition in adapter.partitions:
+                acquired = adapter.execute_acquisition(partition)
+                assert acquired.succeeded
+                prepared = acquired.result[1].prepared_grouping
+                assert prepared is not None
+                hints.update(prepared.related_ion_rt_hints)
+                for result in acquired.result[1].sample_results:
+                    for attempt in result.backfill_attempts:
+                        stem = result.job.sample.metadata.raw_stem
+                        if stem == "S21":
+                            assert attempt.assessment.content.method_result != "SUPPORT"
+                        receipt = attempt.assessment.content.evaluation_receipt
+                        queries[result.job.sample.metadata.raw_stem] = (
+                            attempt.query_rt, attempt.query_rt_basis,
+                            receipt.query_rt_min, receipt.query_rt_max,
+                        )
+                adapter.execute_composition(partition, acquired, store)
+            assert len(hints) == 2
+            for (_, sample), hint in hints.items():
+                expected = {"S20": 8.1, "S21": 7.9}[sample]
+                assert hint.query_rt == pytest.approx(expected, abs=0.005)
+                assert hint.basis.startswith("related_ion_coelution:")
+            assert set(queries) == {"S20", "S21"}
+            for sample, (rt, basis, lower, upper) in queries.items():
+                expected = {"S20": 8.1, "S21": 7.9}[sample]
+                assert rt == pytest.approx(expected, abs=0.005)
+                assert basis.startswith("related_ion_coelution:")
+                half_window = peak_config.nl_rt_anchor_half_window_min
+                assert lower == pytest.approx(rt - half_window)
+                assert upper == pytest.approx(rt + half_window)
+            return hints, queries
+        finally:
+            adapter.close_process_worker_pools()
+            store.cleanup()
+
+    separate = run(22)
+    together = run(44)
+    assert separate == together
+
+
 def test_bounded_partition_keeps_alignment_workset_atomic(
     tmp_path,
     monkeypatch,

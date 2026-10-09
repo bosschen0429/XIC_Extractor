@@ -37,6 +37,7 @@ from xic_extractor.alignment.grouping_workflow import (
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
 )
+from xic_extractor.alignment.related_ion_rt_hints import RelatedIonRtHintAccumulator
 from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetApplicationResult,
     UntargetedCandidateExclusion,
@@ -553,9 +554,21 @@ def prepare_untargeted_partition_grouping(
     )
     calibration.add_groups(prepared.rt_anchor_groups)
     rt_warp = calibration.freeze()
-    return finalize_untargeted_partition_grouping(
+    finalized = finalize_untargeted_partition_grouping(
         batch, prepared, rt_warp=rt_warp, progress_callback=progress_callback
     )
+    hints = RelatedIonRtHintAccumulator(
+        sample_cohorts={
+            sample.metadata.raw_stem: sample.metadata.batch_id
+            for sample in batch.context.processing_owners.sample_resolutions
+        },
+        mass_tolerance_ppm=alignment_config.preferred_ppm,
+    )
+    hints.add_groups(
+        group for workset in finalized.worksets
+        for group in workset.grouping_scope.groups
+    )
+    return replace(finalized, related_ion_rt_hints=hints.freeze())
 
 
 def finalize_untargeted_partition_grouping(

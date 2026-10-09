@@ -195,7 +195,22 @@ subject in the runtime result. RT bounds describe the acquisition query rather
 than identify the destination group. The direct production API therefore takes
 its alignment configuration and known-ISTD reference at execution time;
 composition cannot replace that grouping context.
-Backfill extracts at the frozen group's physical m/z and RT. The acquisition
+Backfill keeps the frozen group's physical m/z and identity. For missing cells,
+a related ion can supply the preferred search RT, not membership, annotation,
+or quantitative evidence. The pure related-ion hint owner learns from frozen
+initial groups across partitions within each sample cohort: singly charged
+M+1-compatible mass spacing within the preferred mass tolerance, at least 20
+paired observations, at least 95% coelution within three seconds, and robust
+relative area-ratio scatter no greater than 0.25. This is a search heuristic,
+not chemical identification. An observed partner in the same sample supplies
+its apex plus the learned median RT offset; conflicting proposals separated
+by more than three seconds abstain. Absent a hint, the ordinary feature RT
+predictor remains in use. Hints are frozen before Backfill and cannot learn
+from recovered cells. A hint may change selection and integration, but the
+target ion must independently pass physical, method, and membership checks.
+The bounded runtime finalizes grouping once and spools each partition before
+learning hints from compact RT/area projections; it does not retain all traces
+in memory or repeat RAW acquisition to learn relationships. The acquisition
 boundary canonicalizes repeated or unordered complete XIC queries, including
 mass. Different groups may reuse the same physical trace while retaining
 separate group-bound Backfill attempts and decisions.

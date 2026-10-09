@@ -17,9 +17,11 @@ from typing import cast
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.feature_membership_inference import (
+    BackfillRtPrediction,
     BatchRtWarp,
     BatchRtWarpAccumulator,
 )
+from xic_extractor.alignment.related_ion_rt_hints import RelatedIonRtHintAccumulator
 from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetBatchApplicationResult,
     UntargetBatchApplicationResultRequest,
@@ -397,18 +399,20 @@ class UntargetedPartitionPipelineAdapter:
         self._bootstrap_ready = threading.Event()
         self._bootstrap_positions: dict[int, int] = {}
         self._bootstrap_store: StreamedResultStore | None = None
+        self._sample_cohorts = {
+            sample.metadata.raw_stem: sample.metadata.batch_id
+            for sample in context.samples
+        }
         self._rt_calibration = BatchRtWarpAccumulator(
             injection_order={
                 sample.metadata.raw_stem: sample.metadata.injection_order
                 for sample in context.samples
                 if sample.metadata.injection_order is not None
             },
-            sample_cohorts={
-                sample.metadata.raw_stem: sample.metadata.batch_id
-                for sample in context.samples
-            },
+            sample_cohorts=self._sample_cohorts,
         )
         self._rt_warp: BatchRtWarp | None = None
+        self._related_ion_rt_hints: dict[tuple[str, str], BackfillRtPrediction] = {}
         self._partition_subject_batches = {
             partition.partition_key: self._prepared_worksets.subject_batch(
                 partition.payload
@@ -557,6 +561,37 @@ class UntargetedPartitionPipelineAdapter:
             sparse=True,
         )
 
+    def _freeze_grouping_search_hints(
+        self,
+        store: StreamedResultStore,
+        *,
+        should_cancel: Callable[[], bool] | Callable[[], None] | None,
+    ) -> None:
+        """Finalize once, retaining only compact cross-partition hint evidence."""
+        assert self._rt_warp is not None
+        hints = RelatedIonRtHintAccumulator(
+            sample_cohorts=self._sample_cohorts,
+            mass_tolerance_ppm=self._alignment_config.preferred_ppm,
+        )
+        for index, position in sorted(self._bootstrap_positions.items()):
+            if should_cancel is not None and should_cancel():
+                raise InterruptedError("CID-NL search hint preparation cancelled")
+            bootstrap = cast(_BootstrapPartition, store.read(position))
+            prepared = finalize_untargeted_partition_grouping(
+                bootstrap.batch, bootstrap.prepared, rt_warp=self._rt_warp,
+            )
+            hints.add_groups(
+                group for workset in prepared.worksets
+                for group in workset.grouping_scope.groups
+            )
+            # Heavy captures stay spooled one partition at a time. Backfill
+            # consumes this frozen grouping rather than fitting it a second time.
+            sealed = store.append(
+                f"cid-nl-search-grouping-{index}", replace(bootstrap, prepared=prepared)
+            )
+            self._bootstrap_positions[index] = sealed.index
+        self._related_ion_rt_hints = hints.freeze()
+
     def execute_acquisition(
         self,
         partition: WorkPartition[tuple[CidNlMethodSubject, ...]],
@@ -599,11 +634,17 @@ class UntargetedPartitionPipelineAdapter:
             )
             batch = bootstrap.batch
             initial_results = bootstrap.initial_results
-            prepared = finalize_untargeted_partition_grouping(
-                batch,
+            group_ids = {
+                group.group_hypothesis_id
+                for workset in bootstrap.prepared.worksets
+                for group in workset.grouping_scope.groups
+            }
+            prepared = replace(
                 bootstrap.prepared,
-                rt_warp=self._rt_warp,
-                progress_callback=progress_callback,
+                related_ion_rt_hints={
+                    key: hint for key, hint in self._related_ion_rt_hints.items()
+                    if key[0] in group_ids
+                },
             )
 
             def frozen_grouping(
@@ -696,6 +737,7 @@ class UntargetedPartitionPipelineAdapter:
             self._bootstrap_positions[partition.index] = sealed.index
             if len(self._bootstrap_positions) == self._bootstrap_count:
                 self._rt_warp = self._rt_calibration.freeze()
+                self._freeze_grouping_search_hints(store, should_cancel=should_cancel)
                 self._bootstrap_ready.set()
             persisted = PersistedUntargetedPartition(sealed, 0, ())
             return PartitionCompositionOutput(result=persisted, sealed=sealed)
