@@ -124,7 +124,6 @@ def _seeds_from_scan_profile(
         )
         direct_candidates: list[DiscoverySeed] = []
         for index in np.flatnonzero(direct_mask & finite_signal_mask):
-            direct_indices.add(int(index))
             product_mz = float(masses[int(index)])
             observed_loss_da = precursor_mz - product_mz
             observed_loss_error_ppm = (
@@ -138,8 +137,14 @@ def _seeds_from_scan_profile(
                 observed_loss_da=observed_loss_da,
             )
             if not matches:
+                # The selected precursor's direct window owns its products. An
+                # additional recorded reference only claims a product it
+                # supports, so its NL miss stays available for inference.
+                if basis == "scan_precursor":
+                    direct_indices.add(int(index))
                 continue
 
+            direct_indices.add(int(index))
             direct_candidates.append(
                 _build_seed(
                     raw_file=raw_file,

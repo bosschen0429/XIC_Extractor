@@ -557,3 +557,31 @@ def test_recorded_mono_and_selected_ions_keep_distinct_direct_evidence(charge):
         ]
         == 1
     )
+
+
+def test_reference_product_failing_neutral_loss_still_infers_precursor_seed():
+    from dataclasses import replace
+
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+
+    # The product lies within the coarse direct-product window of the recorded
+    # monoisotopic reference (loss residual 0.015 Da) but fails the 20 ppm
+    # neutral-loss gate, so it must remain an inferred-precursor candidate.
+    product_mz = 383.9376
+    event = _scan_event(precursor_mz=500.5, masses=[product_mz], intensities=[100.0])
+    metadata = Ms2PrecursorMetadata(
+        monoisotopic_mz=500.0,
+        isolation_width_da=1.6,
+        isolation_offset_da=0.0,
+    )
+    event = replace(event, scan=replace(event.scan, precursor_metadata=metadata))
+
+    seeds = collect_strict_nl_seeds(
+        _FakeRaw([event]),
+        raw_file=RAW_FILE,
+        settings=_settings(nl_tolerance_ppm=20.0, ms2_precursor_tol_da=0.8),
+    )
+
+    assert [(seed.precursor_mz, seed.precursor_mz_basis) for seed in seeds] == [
+        (pytest.approx(product_mz + NEUTRAL_LOSS_DA), "product_plus_neutral_loss")
+    ]
