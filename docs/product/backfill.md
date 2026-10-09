@@ -52,11 +52,14 @@ Forecast acceptance is narrower than the acquired context: same-cohort direct
 reference samples are held out one at a time using that same trajectory
 estimator. With at least two residuals, the apex tolerance is the larger of
 12 seconds and their 90th percentile, capped by the acquisition half-window.
-A tolerance above that bound, or insufficient residuals, makes localization
+A residual p90 above that bound, or insufficient residuals, makes localization
 unreliable and leaves the cell empty rather than accepting any nearby peak.
 An observed trajectory position uses a 12-second bound (or the smaller
 acquisition half-window). The context fallback never expands this apex bound.
-Residuals are prepared once per row/cohort, not once per missing sample.
+A configured acquisition window narrower than 12 seconds remains valid when
+the measured residual p90 fits inside it; the 12-second floor cannot itself
+make localization unreliable. Residuals are prepared once per row/cohort, not
+once per missing sample.
 The retained physical evaluation distinguishes `sample_localization_unreliable`
 from `no_peak_in_sample_local_window`; its nearest candidate RT remains
 inspectable even when no numeric observation is accepted.

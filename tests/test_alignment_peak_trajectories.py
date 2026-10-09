@@ -25,7 +25,10 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 )
 
 
-def test_backfill_location_prepares_held_out_residuals_once_per_group(monkeypatch):
+@pytest.mark.parametrize("half_window_min", [0.15, 1.0])
+def test_backfill_location_prepares_held_out_residuals_once_per_group(
+    monkeypatch, half_window_min,
+):
     references = tuple((f"s{i}", 10.0 + i * 0.1) for i in range(6))
     targets = tuple(f"t{i}" for i in range(20))
     orders = {sample: i for i, (sample, _) in enumerate(references)}
@@ -46,11 +49,14 @@ def test_backfill_location_prepares_held_out_residuals_once_per_group(monkeypatc
         injection_order=orders,
         sample_cohorts=cohorts,
         rt_warp=None,
-        backfill_half_window_min=1.0,
+        backfill_half_window_min=half_window_min,
     )
     assert len(calls) == len(references) + len(targets)
     assert result["t0"].location.query_rt == pytest.approx(10.6)
-    assert all(location.apex_tolerance_sec == 12.0 for location in result.values())
+    assert all(
+        location.apex_tolerance_sec == min(12.0, half_window_min * 60.0)
+        for location in result.values()
+    )
 
 
 def test_backfill_localization_does_not_turn_row_scatter_into_unbounded_permission():

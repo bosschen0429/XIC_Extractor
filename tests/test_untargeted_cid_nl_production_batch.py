@@ -2155,7 +2155,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             assert recovery_evaluations[-1].facts is None
             assert recovery_evaluations[-1].integration is None
             assert recovery_evaluations[-1].question.selection_policy_version == (
-                "group_rt_resolved_peak_in_context"
+                "sample_local_background_qualified_peak_in_context"
             )
 
         source_raws[paths[0]].intensity = original_intensity * 0.0

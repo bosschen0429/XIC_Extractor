@@ -140,9 +140,12 @@ class PeakTrajectory:
         for cohort, values in residuals.items():
             if len(values) < 2:
                 continue
-            tolerance = max(12.0, float(np.quantile(values, 0.9)))
-            if tolerance <= backfill_half_window_min * 60.0:
-                tolerance_by_cohort[cohort] = tolerance
+            residual_p90 = float(np.quantile(values, 0.9))
+            half_window_sec = backfill_half_window_min * 60.0
+            if residual_p90 <= half_window_sec:
+                tolerance_by_cohort[cohort] = min(
+                    max(12.0, residual_p90), half_window_sec,
+                )
         return {
             sample: BackfillPeakLocation(
                 location,
