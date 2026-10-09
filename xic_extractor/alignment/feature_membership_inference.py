@@ -2081,8 +2081,30 @@ def _consensus_groups(
     for (forward_index, reverse_index), member_ids in sorted(intersections.items()):
         owner_ids = tuple(sorted(member_ids))
         disagreement = forward.groups[forward_index] != reverse.groups[reverse_index]
-        uncertain = any(owner_id in uncertain_owners for owner_id in owner_ids)
         seeded = any(owner_id in seeded_owner_ids for owner_id in owner_ids)
+        if seeded:
+            # An unresolved extension does not revoke an assigned pattern union.
+            # Keep its competition undecided without demoting the seed it joined.
+            unresolved_extensions = {
+                owner_id
+                for owner_id in owner_ids
+                if owner_id in uncertain_owners and owner_id not in seeded_owner_ids
+            }
+            for owner_id in sorted(unresolved_extensions):
+                groups.append(
+                    FeatureMembershipGroup(
+                        owner_ids=(owner_id,),
+                        disposition="undecided",
+                        basis="insufficient_cross_sample_evidence",
+                        reason="directional_assignment_contains_unresolved_competition",
+                    )
+                )
+            owner_ids = tuple(
+                owner_id
+                for owner_id in owner_ids
+                if owner_id not in unresolved_extensions
+            )
+        uncertain = any(owner_id in uncertain_owners for owner_id in owner_ids)
         if disagreement and not seeded:
             counts["consensus_disagreements"] += len(owner_ids)
             groups.append(

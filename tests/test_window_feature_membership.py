@@ -286,6 +286,61 @@ def test_directional_extension_disagreement_keeps_the_pattern_seed() -> None:
     }
 
 
+@pytest.mark.parametrize("seed_samples", (("c", "d"), ("b", "d")))
+def test_directional_competition_does_not_demote_an_assigned_pattern_seed(
+    seed_samples: tuple[str, str],
+) -> None:
+    owners = [
+        _synthetic_owner("a", "a:left", 10.0),
+        _synthetic_owner("a", "a:right", 11.0),
+        *(_synthetic_owner(sample, f"{sample}:p", 10.5) for sample in "bcd"),
+    ]
+    contexts = [
+        SampleElutionContext(
+            sample_stem=sample,
+            mz=500.0,
+            rt_start=9.0,
+            rt_end=12.0,
+            landmarks=(
+                ElutionLandmark(10.5, 30.0, 0.25),
+                ElutionLandmark(11.2, 100.0, 0.25),
+            ),
+        )
+        for sample in seed_samples
+    ]
+    orders = {sample: index for index, sample in enumerate("abcd")}
+    config = AlignmentConfig(preferred_rt_sec=60.0)
+    trajectories = resolve_peak_trajectories(
+        owners, contexts, config=config, injection_order=orders
+    )
+    seed_ids = tuple(f"{sample}:p" for sample in seed_samples)
+    assert any(track.owner_ids == seed_ids for track in trajectories.tracks)
+    result = infer_feature_memberships(
+        owners,
+        config=config,
+        injection_order=orders,
+        drift_lookup=None,
+        bootstrap=True,
+        peak_trajectories=trajectories,
+    )
+    # b competes equally with a's two peaks before the pattern seed is complete.
+    assert any(
+        decision.owner_id == "b:p"
+        and decision.reason == "alternative_assignment_has_equal_objective"
+        for decision in result.sparse_decisions
+    )
+    assigned_ids = seed_ids if seed_samples == ("c", "d") else ("b:p", "c:p", "d:p")
+    assert {(group.owner_ids, group.disposition) for group in result.groups} == {
+        (("a:left",), "undecided"),
+        (("a:right",), "undecided"),
+        (assigned_ids, "assigned"),
+        *({(("b:p",), "undecided")} if seed_samples == ("c", "d") else set()),
+    }
+    if seed_samples == ("c", "d"):
+        (bridge,) = (group for group in result.groups if group.owner_ids == ("b:p",))
+        assert bridge.reason == "directional_assignment_contains_unresolved_competition"
+
+
 def test_alternating_direct_peaks_follow_ms1_pattern_not_nearest_absolute_rt() -> None:
     owners = []
     contexts = []
