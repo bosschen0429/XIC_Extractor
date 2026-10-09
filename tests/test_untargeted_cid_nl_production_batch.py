@@ -1486,10 +1486,14 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 expected_trace_count = 1 if expected_capture_candidate_ids else 0
                 if expected_trace_count:
                     assert adapter.acquisition is not None
-                    assert len(adapter.acquisition.traces) == expected_trace_count
+                    # One shared integration trace plus non-authoritative
+                    # elution context, still acquired in one sample batch.
+                    assert len(adapter.elution_contexts) == 1
+                    expected_acquisition_count = expected_trace_count + 1
+                    assert len(adapter.acquisition.traces) == expected_acquisition_count
                     assert opened_raws[tmp_path / f"{stem}.synthetic"][
                         -1
-                    ].chromatogram_request_counts == [expected_trace_count]
+                    ].chromatogram_request_counts == [expected_acquisition_count]
                 else:
                     assert adapter.acquisition is None
                 assert (

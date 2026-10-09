@@ -369,6 +369,9 @@ def _prepare_group_authorized_backfills(
                 ),
             )
             assert group.group_center_rt is not None
+            locations = workset.grouping_scope.elution_correspondence.locations_for(
+                group.owner_ids
+            )
             for sample_id in sorted(target_ids):
                 key = (sample_id, subject.method_subject_id)
                 if key not in by_key:
@@ -393,7 +396,12 @@ def _prepare_group_authorized_backfills(
                 if state.error is not None or state.adapter_result is None:
                     continue
                 assessment = state.adapter_result.assessment_input.assessment
-                revisit = _group_revisit(assessment)
+                query_rt = locations.get(state.job.sample.metadata.raw_stem)
+                revisit = _group_revisit(
+                    assessment,
+                    query_rt=query_rt,
+                    apex_tolerance_sec=prepared.alignment_config.owner_apex_close_sec,
+                )
                 if revisit is None:
                     continue
                 if revisit == "reuse":
@@ -411,6 +419,12 @@ def _prepare_group_authorized_backfills(
                                     method_subject=subject,
                                     physical_mz=group.family_center_mz,
                                     center_rt=group.group_center_rt,
+                                    query_rt=query_rt,
+                                    query_rt_basis=(
+                                        "elution_pattern"
+                                        if query_rt is not None
+                                        else "group_center"
+                                    ),
                                 ),
                             ),
                             key=lambda target: (
@@ -423,10 +437,13 @@ def _prepare_group_authorized_backfills(
 
 def _group_revisit(
     assessment: CidNlMethodAssessmentRef,
+    *,
+    query_rt: float | None = None,
+    apex_tolerance_sec: float = 0.0,
 ) -> Literal["reuse", "search"] | None:
     """How a sample outside one group revisits that group's window.
 
-    A HOLD with candidate peaks is reused; otherwise the window is searched.
+    A HOLD is reused unless an available pattern locates a different peak.
     A SUPPORT belongs to another peak of the sample and does not answer the
     group's window.
     """
@@ -438,7 +455,15 @@ def _group_revisit(
         or is_cid_nl_missing_ms1_rejection(assessment)
     ):
         return None
-    return "reuse" if assessment.candidate_peaks else "search"
+    if not assessment.candidate_peaks:
+        return "search"
+    if query_rt is not None and not any(
+        abs(peak.content.integration.rt_apex_min - query_rt) * 60.0
+        <= apex_tolerance_sec
+        for peak in assessment.candidate_peaks
+    ):
+        return "search"
+    return "reuse"
 
 
 def _prepare_owner_authorized_backfills(
@@ -617,6 +642,8 @@ def _execute_backfill(
                 sample=job.sample,
                 method_subject=job.method_subject,
                 group_center_rt=target.center_rt,
+                query_rt=target.sample_query_rt,
+                query_rt_basis=target.query_rt_basis,
                 group_center_mz=target.physical_mz,
                 group_hypothesis_id=target.group_hypothesis_id,
                 initial_assessment=ctx.initial_assessment,
@@ -706,6 +733,8 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
                     sample=state.job.sample,
                     method_subject=state.job.method_subject,
                     group_center_rt=target.center_rt,
+                    query_rt=target.sample_query_rt,
+                    query_rt_basis=target.query_rt_basis,
                     group_center_mz=target.physical_mz,
                     group_hypothesis_id=target.group_hypothesis_id,
                     initial_assessment=ctx.initial_assessment,

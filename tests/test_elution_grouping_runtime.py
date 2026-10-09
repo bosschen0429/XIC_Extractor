@@ -1,0 +1,191 @@
+"""A crowded MS1 doublet crosses acquisition, grouping and missing-cell lookup."""
+
+from dataclasses import replace
+
+import numpy as np
+import pytest
+
+from tests.cid_nl_raw_fixture import _FakeRaw, _open_bound_raw, _peak_config, _settings
+from tests.test_untargeted_cid_nl_real_data_runtime import (
+    _discovery_receipts,
+    _install_runtime_raws,
+)
+from tests.untargeted_cid_nl_no_raw_fixture import (
+    build_untargeted_cid_nl_no_raw_fixture,
+)
+from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.untargeted_finalized_matrix import (
+    project_completed_untarget_batch_writer_inputs,
+)
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
+from xic_extractor.discovery.grouping import group_discovery_seeds
+from xic_extractor.discovery.ms1_backfill import (
+    _backfill_ms1_candidates_with_acquisition,
+)
+from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+from xic_extractor.execution.result_store import StreamedResultStore
+from xic_extractor.sample_metadata import SampleMetadata
+from xic_extractor.untargeted_execution.execution import (
+    UntargetedPartitionPipelineAdapter,
+)
+from xic_extractor.untargeted_execution.input_planning import (
+    prepare_eager_untargeted_plan,
+)
+
+
+def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineage(
+    tmp_path, monkeypatch
+):
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path,
+        sample_roles={f"S{i}": "study_sample" for i in range(4)},
+        thermo_raw_sources=True,
+    )
+    settings = replace(
+        _settings(),
+        neutral_loss_profile=None,
+        rt_min=7.0,
+        rt_max=10.0,
+        precursor_mz_tolerance_ppm=20.0,
+    )
+    profile = SignalProcessingProfile()
+    config = _peak_config(tmp_path)
+    raws, candidates, records = {}, {}, {}
+    expected_initial = {}
+    expected_query = {}
+    for index, (shift, selected) in enumerate(
+        ((0.0, 0), (0.05, 1), (0.6, 0), (0.65, 1))
+    ):
+        sample = f"S{index}"
+        path = fixture.source_paths[sample]
+        apices = (7.8 + shift, 8.4 + shift)
+        expected_initial[sample] = apices[selected]
+        expected_query[sample] = apices[1 - selected]
+        source = _FakeRaw((apices[selected],))
+        source.rt = np.linspace(7.0, 10.0, 601)
+        source.intensity = sum(
+            height * np.exp(-0.5 * ((source.rt - apex) / 0.035) ** 2)
+            for height, apex in zip((600.0, 1000.0), apices, strict=True)
+        )
+        source.scans = tuple(
+            replace(scan, scan_number=int(np.argmin(abs(source.rt - scan.rt))) + 1)
+            for scan in source.scans
+        )
+        raw, _ = _open_bound_raw(fixture, sample, source, tmp_path=tmp_path)
+        with raw:
+            seeds = collect_strict_nl_seeds(raw, raw_file=path, settings=settings)
+            discovery = _backfill_ms1_candidates_with_acquisition(
+                raw,
+                group_discovery_seeds(seeds, settings=settings),
+                acquisition_source=raw.acquisition_source,
+                run_spec_id="processing-run:" + "0" * 64,
+                settings=settings,
+                peak_config=config,
+                signal_processing_profile=profile,
+            )
+        assert len(discovery.candidates) == 1
+        candidates[sample] = discovery.candidates
+        records.update(
+            {record.candidate_id: record for record in discovery.physical_evaluations}
+        )
+        raws[path] = source
+    paths = tuple(fixture.source_paths.values())
+    plan = prepare_eager_untargeted_plan(
+        raw_paths=paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=path.stem,
+                raw_stem=path.stem,
+                injection_order=index + 1,
+                sample_role="study_sample",
+            )
+            for index, path in enumerate(paths)
+        ),
+        settings=settings,
+        peak_config=config,
+        candidates_by_sample=candidates,
+        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        dll_dir=tmp_path,
+        sample_identity_namespace="study:elution-pattern",
+        signal_processing_profile=profile,
+        physical_records_by_candidate=records,
+    )
+    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    import xic_extractor.untargeted_execution.partition.workers as workers
+
+    monkeypatch.setattr(workers, "_ensure_assemblies_loaded", lambda *_: None)
+    adapter = UntargetedPartitionPipelineAdapter(
+        plan,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        max_partition_jobs=100,
+    )
+    assert len(adapter.partitions) == 1
+    partition = adapter.partitions[0]
+    acquisition = adapter.execute_acquisition(partition)
+    assert acquisition.succeeded
+    _, leaf = acquisition.result
+    prepared = leaf.prepared_grouping
+    assert prepared is not None
+    groups = tuple(
+        group
+        for workset in prepared.worksets
+        for group in workset.grouping_scope.groups
+    )
+    assert {
+        frozenset(owner.sample_stem for owner in group.owners) for group in groups
+    } == {frozenset(("S0", "S2")), frozenset(("S1", "S3"))}
+    assert {
+        owner.sample_stem: owner.owner_apex_rt
+        for group in groups
+        for owner in group.owners
+    } == pytest.approx(expected_initial, abs=0.005)
+    group_ids = {group.group_hypothesis_id for group in groups}
+    observed_queries = {}
+    for result in leaf.sample_results:
+        sample = result.job.sample.metadata.raw_stem
+        assert result.adapter_result.elution_contexts
+        assert len(result.backfill_attempts) == 1
+        attempt = result.backfill_attempts[0]
+        assert attempt.group_hypothesis_id in group_ids
+        assert attempt.query_rt_basis == "elution_pattern"
+        assert attempt.query_rt == pytest.approx(expected_query[sample], abs=0.005)
+        assert attempt.assessment.content.method_result == "HOLD"
+        assert not attempt.assessment.individual_support_refs
+        (peak,) = attempt.assessment.candidate_peaks
+        observed_queries[sample] = peak.content.integration.rt_apex_min
+    assert observed_queries == pytest.approx(expected_query, abs=0.005)
+    store = StreamedResultStore(
+        tmp_path / "elution-spool", adapter.get_shared_objects()
+    )
+    composed = adapter.execute_composition(
+        partition, acquisition, store, retain_memory=True
+    )
+    persisted = store.read(composed.sealed.index)
+    assert {
+        group.group_hypothesis_id for group in persisted.initial_groups
+    } == group_ids
+    assert {
+        group.group_hypothesis_id
+        for child in persisted.children
+        for group in child.scientific_core.grouping_result.final_population
+    } == group_ids
+    store.seal()
+    completed = adapter.finalize_application(store, (composed,))
+    writer = project_completed_untarget_batch_writer_inputs(completed)
+    assert len(writer.matrix.cells) == 8
+    direct_samples = {
+        group.group_hypothesis_id: {owner.sample_stem for owner in group.owners}
+        for group in groups
+    }
+    for cell in writer.matrix.cells:
+        direct = cell.sample_stem in direct_samples[cell.group_hypothesis_id]
+        expected_apex = (
+            expected_initial[cell.sample_stem]
+            if direct
+            else expected_query[cell.sample_stem]
+        )
+        assert cell.status == ("detected" if direct else "backfilled")
+        assert cell.apex_rt == pytest.approx(expected_apex, abs=0.005)
+        assert cell.area is not None and cell.area > 0

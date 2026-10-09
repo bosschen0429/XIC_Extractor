@@ -26,6 +26,7 @@ from xic_extractor.acquisition_contract import (
     mint_trace_acquisition_capability,
 )
 from xic_extractor.alignment.cid_nl_inputs import (
+    CID_NL_ALIGNMENT_CONFIG,
     UntargetedCidNlAssessmentInput,
     UntargetedCidNlBackfillInput,
 )
@@ -83,6 +84,10 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportPolicy,
     DdaCidNlPeakSupportRef,
 )
+from xic_extractor.peak_detection.elution_context import (
+    SampleElutionContext,
+    project_elution_context,
+)
 from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
 from xic_extractor.peak_detection.observations import (
@@ -92,6 +97,9 @@ from xic_extractor.peak_detection.observations import (
     same_selected_peak,
 )
 from xic_extractor.peak_detection.peak_integration import find_peak_and_area
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    prepare_physical_signal,
+)
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.peak_detection.search_scope import (
     PHYSICAL_CAPTURE_INPUT_KEY,
@@ -152,6 +160,7 @@ class CidNlAcquisitionResult:
     capture_evidence: tuple[RetainedCaptureEvidence, ...] = dataclass_field(
         default=(), compare=False
     )
+    elution_contexts: tuple[SampleElutionContext, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +171,8 @@ class UntargetedCidNlBackfillAttemptResult:
     lineage_artifacts: tuple[EvidenceArtifactRef, ...]
     validation_status: str = VALIDATION_STATUS
     group_hypothesis_id: str | None = None
+    query_rt: float | None = None
+    query_rt_basis: str = "group_center"
     capture_evidence: tuple[RetainedCaptureEvidence, ...] = dataclass_field(
         default=(), compare=False
     )
@@ -176,15 +187,15 @@ class UntargetedCidNlSampleTraceBatch:
     candidate_ids: tuple[str, ...]
     acquisition: TraceAcquisitionBatch
     candidate_trace_indices: tuple[int, ...] | None = None
+    context_trace_indices: tuple[int, ...] = ()
+    elution_contexts: tuple[SampleElutionContext, ...] = ()
 
     def __post_init__(self) -> None:
         if (
             not self.sample_identity_id.strip()
             or not self.acquisition_source_id.strip()
         ):
-            raise CidNlAcquisitionError(
-                "sample trace batch requires owner identities"
-            )
+            raise CidNlAcquisitionError("sample trace batch requires owner identities")
         if type(self.candidate_ids) is not tuple or not self.candidate_ids:
             raise CidNlAcquisitionError(
                 "sample trace batch requires exact candidate identities"
@@ -199,12 +210,15 @@ class UntargetedCidNlSampleTraceBatch:
         if indices is None:
             indices = tuple(range(len(self.candidate_ids)))
             object.__setattr__(self, "candidate_trace_indices", indices)
+        all_indices = (*indices, *self.context_trace_indices)
         if (
             type(indices) is not tuple
             or len(indices) != len(self.candidate_ids)
             or any(type(index) is not int for index in indices)
-            or set(indices) != set(range(len(self.acquisition.traces)))
-            or tuple(dict.fromkeys(indices))
+            or type(self.context_trace_indices) is not tuple
+            or any(type(index) is not int for index in self.context_trace_indices)
+            or set(all_indices) != set(range(len(self.acquisition.traces)))
+            or tuple(dict.fromkeys(all_indices))
             != tuple(range(len(self.acquisition.traces)))
             or self.acquisition.capability.acquisition_source.acquisition_source_id
             != self.acquisition_source_id
@@ -232,6 +246,12 @@ class UntargetedCidNlBackfillTarget:
     method_subject: CidNlMethodSubject
     physical_mz: float
     center_rt: float
+    query_rt: float | None = None
+    query_rt_basis: str = "group_center"
+
+    @property
+    def sample_query_rt(self) -> float:
+        return self.center_rt if self.query_rt is None else self.query_rt
 
     def __post_init__(self) -> None:
         if (
@@ -246,6 +266,12 @@ class UntargetedCidNlBackfillTarget:
             or not isinstance(self.center_rt, (int, float))
             or not math.isfinite(float(self.center_rt))
             or self.center_rt < 0.0
+            or isinstance(self.sample_query_rt, bool)
+            or not isinstance(self.sample_query_rt, (int, float))
+            or not math.isfinite(float(self.sample_query_rt))
+            or self.sample_query_rt < 0.0
+            or not isinstance(self.query_rt_basis, str)
+            or not self.query_rt_basis.strip()
         ):
             raise CidNlAcquisitionError(
                 "backfill target requires a group, physical mass, and RT"
@@ -262,6 +288,8 @@ class UntargetedCidNlBackfillTraceBatch:
     requests: tuple[XICRequest, ...]
     trace_indices: tuple[int, ...]
     acquisition: TraceAcquisitionBatch
+    context_requests: tuple[XICRequest, ...] = ()
+    context_trace_indices: tuple[int, ...] = ()
 
     @property
     def group_hypothesis_ids(self) -> tuple[str, ...]:
@@ -296,6 +324,8 @@ class UntargetedCidNlBackfillTraceBatch:
             )
             or type(self.requests) is not tuple
             or type(self.trace_indices) is not tuple
+            or type(self.context_requests) is not tuple
+            or type(self.context_trace_indices) is not tuple
             or not (len(self.targets) == len(self.requests) == len(self.trace_indices))
         ):
             raise CidNlAcquisitionError(
@@ -303,7 +333,8 @@ class UntargetedCidNlBackfillTraceBatch:
             )
         if (
             not isinstance(self.acquisition, TraceAcquisitionBatch)
-            or set(self.trace_indices) != set(range(len(self.acquisition.traces)))
+            or set((*self.trace_indices, *self.context_trace_indices))
+            != set(range(len(self.acquisition.traces)))
             or any(
                 self.acquisition.traces[index].coordinate.request != request
                 for request, index in zip(
@@ -314,6 +345,17 @@ class UntargetedCidNlBackfillTraceBatch:
             raise CidNlAcquisitionError(
                 "backfill trace batch acquisition does not close its requests"
             )
+        if (
+            len(self.context_requests) != len(self.context_trace_indices)
+            or len(self.context_requests) not in (0, len(self.targets))
+            or any(
+                self.acquisition.traces[index].coordinate.request != request
+                for request, index in zip(
+                    self.context_requests, self.context_trace_indices, strict=True
+                )
+            )
+        ):
+            raise CidNlAcquisitionError("backfill context requests are not bound")
 
     def acquired_trace(
         self,
@@ -327,11 +369,13 @@ class UntargetedCidNlBackfillTraceBatch:
             raise CidNlAcquisitionError(
                 "backfill trace batch has no matching group"
             ) from exc
-        if self.requests[index] != request:
-            raise CidNlAcquisitionError(
-                "backfill trace batch request crossed its owner decision"
-            )
-        return self.acquisition.traces[self.trace_indices[index]]
+        if self.requests[index] == request:
+            return self.acquisition.traces[self.trace_indices[index]]
+        if self.context_requests and self.context_requests[index] == request:
+            return self.acquisition.traces[self.context_trace_indices[index]]
+        raise CidNlAcquisitionError(
+            "backfill trace batch request crossed its owner decision"
+        )
 
 
 class _PartitionWorkObserver:
@@ -480,9 +524,7 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
     """Acquire all eligible candidate XICs for one sample in one adapter call."""
 
     if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise CidNlAcquisitionError(
-            "processing_owners has the wrong owner type"
-        )
+        raise CidNlAcquisitionError("processing_owners has the wrong owner type")
     if not isinstance(sample, ResolvedCanonicalSampleIdentity):
         raise CidNlAcquisitionError("sample has the wrong owner type")
     if not isinstance(settings, DiscoverySettings):
@@ -536,15 +578,89 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
         settings=settings,
         profile=signal_processing_profile,
     )
-    acquisition = _freeze_acquisition(
-        acquire_untargeted_trace_batch(capability, requests, bound_raw)
+    context_requests = (
+        _elution_context_requests(
+            requests, padding_min=CID_NL_ALIGNMENT_CONFIG.preferred_rt_sec / 60.0
+        )
+        if signal_processing_profile is not None
+        else ()
     )
+    # Original requests and indices remain exact. Wider context is acquired
+    # in this batch but is never supplied to the integration owner.
+    context_indices = tuple(range(len(requests), len(requests) + len(context_requests)))
+    acquisition = _freeze_acquisition(
+        acquire_untargeted_trace_batch(
+            capability, (*requests, *context_requests), bound_raw
+        )
+    )
+    contexts = []
+    if signal_processing_profile is not None:
+        for index in context_indices:
+            acquired = acquisition.traces[index]
+            context = project_elution_context(
+                prepare_physical_signal(
+                    acquired.trace.rt,
+                    acquired.trace.intensity,
+                    profile=signal_processing_profile,
+                ),
+                sample_stem=sample.metadata.raw_stem,
+                mz=acquired.coordinate.request.mz,
+            )
+            if context is not None:
+                contexts.append(context)
     return UntargetedCidNlSampleTraceBatch(
         sample_identity_id=sample.identity.sample_identity_id,
         acquisition_source_id=source.acquisition_source_id,
         candidate_ids=tuple(candidate.candidate_id for candidate in capture_candidates),
         acquisition=acquisition,
         candidate_trace_indices=indices,
+        context_trace_indices=context_indices,
+        elution_contexts=tuple(contexts),
+    )
+
+
+def _elution_context_requests(
+    requests: tuple[XICRequest, ...], *, padding_min: float
+) -> tuple[XICRequest, ...]:
+    """Share neighboring context reads without widening integration requests."""
+    merged: list[XICRequest] = []
+    for request in sorted(
+        requests, key=lambda item: (item.mz, item.ppm_tol, item.rt_min, item.rt_max)
+    ):
+        expanded = replace(
+            request,
+            rt_min=max(0.0, request.rt_min - padding_min),
+            rt_max=request.rt_max + padding_min,
+        )
+        if (
+            merged
+            and (merged[-1].mz, merged[-1].ppm_tol) == (expanded.mz, expanded.ppm_tol)
+            and expanded.rt_min <= merged[-1].rt_max
+        ):
+            merged[-1] = replace(
+                merged[-1], rt_max=max(merged[-1].rt_max, expanded.rt_max)
+            )
+        else:
+            merged.append(expanded)
+    return tuple(merged)
+
+
+def _backfill_xic_request(
+    *,
+    mz: float,
+    query_rt: float,
+    half_window: float,
+    ppm_tol: float,
+    physical_context: bool,
+) -> XICRequest:
+    # One additional search half-window per flank supplies signal context.
+    # This is a bounded acquisition budget, never an expanded search permission.
+    context_half_window = half_window * (2.0 if physical_context else 1.0)
+    return XICRequest(
+        mz=mz,
+        rt_min=max(0.0, float(query_rt) - context_half_window),
+        rt_max=float(query_rt) + context_half_window,
+        ppm_tol=ppm_tol,
     )
 
 
@@ -556,18 +672,14 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
     peak_config: ExtractionConfig,
     raw: CidNlRawSource,
 ) -> UntargetedCidNlBackfillTraceBatch:
-    """Acquire one sample's owner-authorized backfill requests in one phase."""
+    """Acquire search traces and bounded fallback context in one sample phase."""
 
     if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise CidNlAcquisitionError(
-            "processing_owners has the wrong owner type"
-        )
+        raise CidNlAcquisitionError("processing_owners has the wrong owner type")
     if not isinstance(sample, ResolvedCanonicalSampleIdentity):
         raise CidNlAcquisitionError("sample has the wrong owner type")
     if not isinstance(peak_config, ExtractionConfig):
-        raise CidNlAcquisitionError(
-            "peak_config has the wrong owner type"
-        )
+        raise CidNlAcquisitionError("peak_config has the wrong owner type")
     if (
         type(backfill_requests) is not tuple
         or not backfill_requests
@@ -578,9 +690,7 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
         or len({item.group_hypothesis_id for item in backfill_requests})
         != len(backfill_requests)
     ):
-        raise CidNlAcquisitionError(
-            "backfill requests must be a non-empty typed tuple"
-        )
+        raise CidNlAcquisitionError("backfill requests must be a non-empty typed tuple")
     for target in backfill_requests:
         try:
             validate_cid_nl_method_subject_binding(
@@ -611,18 +721,39 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
             "raw handle is not owner-bound to the resolved acquisition source"
         ) from exc
     half_window = peak_config.nl_rt_anchor_half_window_min
+    physical_context = PHYSICAL_CAPTURE_INPUT_KEY in json.loads(
+        processing_owners.request.normalized_scientific_inputs_json
+    )
     requests = tuple(
-        XICRequest(
+        _backfill_xic_request(
             mz=target.physical_mz,
-            rt_min=max(0.0, float(target.center_rt) - half_window),
-            rt_max=float(target.center_rt) + half_window,
+            query_rt=target.sample_query_rt,
+            half_window=half_window,
             ppm_tol=target.method_subject.precursor_tolerance_ppm,
+            physical_context=False,
         )
         for target in targets
     )
     unique: dict[XICRequest, int] = {}
     trace_indices = tuple(
         unique.setdefault(request, len(unique)) for request in requests
+    )
+    context_requests = (
+        tuple(
+            _backfill_xic_request(
+                mz=target.physical_mz,
+                query_rt=target.sample_query_rt,
+                half_window=half_window,
+                ppm_tol=target.method_subject.precursor_tolerance_ppm,
+                physical_context=True,
+            )
+            for target in targets
+        )
+        if physical_context
+        else ()
+    )
+    context_trace_indices = tuple(
+        unique.setdefault(request, len(unique)) for request in context_requests
     )
     capability = mint_trace_acquisition_capability(
         source,
@@ -639,6 +770,8 @@ def acquire_untargeted_cid_nl_backfill_trace_batch(
         requests=requests,
         trace_indices=trace_indices,
         acquisition=acquisition,
+        context_requests=context_requests,
+        context_trace_indices=context_trace_indices,
     )
 
 
@@ -740,6 +873,11 @@ def adapt_current_discovery_sample_subject(
             ),
             acquisition=None,
             captures=(),
+            elution_contexts=(
+                _preacquired_traces.elution_contexts
+                if _preacquired_traces is not None
+                else ()
+            ),
             source_candidate_ids=tuple(item.candidate_id for item in bounded),
             strict_scan_count=0,
             lineage_artifacts=lineage,
@@ -900,6 +1038,11 @@ def adapt_current_discovery_sample_subject(
         ),
         acquisition=acquisition,
         captures=captures,
+        elution_contexts=(
+            _preacquired_traces.elution_contexts
+            if _preacquired_traces is not None
+            else ()
+        ),
         source_candidate_ids=tuple(item.candidate_id for item in bounded),
         strict_scan_count=len(
             {
@@ -922,6 +1065,8 @@ def backfill_untargeted_cid_nl_sample_subject(
     method_subject: CidNlMethodSubject,
     group_center_rt: float,
     group_center_mz: float,
+    query_rt: float | None = None,
+    query_rt_basis: str = "group_center",
     group_hypothesis_id: str | None = None,
     support_policy: DdaCidNlPeakSupportPolicy,
     peak_config: ExtractionConfig,
@@ -939,23 +1084,15 @@ def backfill_untargeted_cid_nl_sample_subject(
     """
 
     if not isinstance(processing_owners, ProcessingOwnerReferences):
-        raise CidNlAcquisitionError(
-            "processing_owners has the wrong owner type"
-        )
+        raise CidNlAcquisitionError("processing_owners has the wrong owner type")
     if not isinstance(sample, ResolvedCanonicalSampleIdentity):
         raise CidNlAcquisitionError("sample has the wrong owner type")
     if not isinstance(method_subject, CidNlMethodSubject):
-        raise CidNlAcquisitionError(
-            "method_subject has the wrong owner type"
-        )
+        raise CidNlAcquisitionError("method_subject has the wrong owner type")
     if not isinstance(peak_config, ExtractionConfig):
-        raise CidNlAcquisitionError(
-            "peak_config has the wrong owner type"
-        )
+        raise CidNlAcquisitionError("peak_config has the wrong owner type")
     if not isinstance(support_policy, DdaCidNlPeakSupportPolicy):
-        raise CidNlAcquisitionError(
-            "support_policy has the wrong owner type"
-        )
+        raise CidNlAcquisitionError("support_policy has the wrong owner type")
     if initial_assessment is not None:
         validate_cid_nl_method_assessment_binding(
             initial_assessment,
@@ -977,9 +1114,7 @@ def backfill_untargeted_cid_nl_sample_subject(
         or not math.isfinite(float(group_center_rt))
         or float(group_center_rt) < 0.0
     ):
-        raise CidNlAcquisitionError(
-            "group_center_rt must be finite and non-negative"
-        )
+        raise CidNlAcquisitionError("group_center_rt must be finite and non-negative")
     physical_mz = group_center_mz
     if (
         isinstance(physical_mz, bool)
@@ -987,9 +1122,7 @@ def backfill_untargeted_cid_nl_sample_subject(
         or not math.isfinite(float(physical_mz))
         or physical_mz <= 0.0
     ):
-        raise CidNlAcquisitionError(
-            "group_center_mz must be finite and positive"
-        )
+        raise CidNlAcquisitionError("group_center_mz must be finite and positive")
     try:
         validate_cid_nl_method_subject_binding(
             method_subject,
@@ -1000,22 +1133,45 @@ def backfill_untargeted_cid_nl_sample_subject(
     if signal_processing_profile is None and PHYSICAL_CAPTURE_INPUT_KEY in json.loads(
         processing_owners.request.normalized_scientific_inputs_json
     ):
-        raise CidNlAcquisitionError(
-            "physical backfill lost its request-bound profile"
-        )
+        raise CidNlAcquisitionError("physical backfill lost its request-bound profile")
     source = resolve_request_acquisition_source(
         processing_owners=processing_owners,
         sample=sample,
     )
     half_window = peak_config.nl_rt_anchor_half_window_min
-    query_rt_min = max(0.0, float(group_center_rt) - half_window)
-    query_rt_max = float(group_center_rt) + half_window
-    request = XICRequest(
+    query_rt = group_center_rt if query_rt is None else query_rt
+    if (
+        isinstance(query_rt, bool)
+        or not isinstance(query_rt, (int, float))
+        or not math.isfinite(float(query_rt))
+        or query_rt < 0.0
+        or not isinstance(query_rt_basis, str)
+        or not query_rt_basis.strip()
+    ):
+        raise CidNlAcquisitionError(
+            "query RT must be finite and non-negative with a basis"
+        )
+    query_rt_min = max(0.0, float(query_rt) - half_window)
+    query_rt_max = float(query_rt) + half_window
+    request = _backfill_xic_request(
         mz=physical_mz,
-        rt_min=query_rt_min,
-        rt_max=query_rt_max,
+        query_rt=float(query_rt),
+        half_window=half_window,
         ppm_tol=method_subject.precursor_tolerance_ppm,
+        physical_context=False,
     )
+    context_request = (
+        _backfill_xic_request(
+            mz=physical_mz,
+            query_rt=float(query_rt),
+            half_window=half_window,
+            ppm_tol=method_subject.precursor_tolerance_ppm,
+            physical_context=True,
+        )
+        if signal_processing_profile is not None
+        else None
+    )
+    context_acquired = None
     if _preacquired_traces is None:
         if raw is None:
             raise CidNlAcquisitionError(
@@ -1034,9 +1190,15 @@ def backfill_untargeted_cid_nl_sample_subject(
             coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
         )
         acquisition = _freeze_acquisition(
-            acquire_untargeted_trace_batch(capability, (request,), bound_raw)
+            acquire_untargeted_trace_batch(
+                capability,
+                (request, context_request) if context_request else (request,),
+                bound_raw,
+            )
         )
         acquired = acquisition.traces[0]
+        if context_request is not None:
+            context_acquired = acquisition.traces[1]
     else:
         if group_hypothesis_id is None:
             raise CidNlAcquisitionError(
@@ -1054,36 +1216,59 @@ def backfill_untargeted_cid_nl_sample_subject(
             group_hypothesis_id=group_hypothesis_id,
             request=request,
         )
+        if context_request is not None:
+            context_acquired = _preacquired_traces.acquired_trace(
+                group_hypothesis_id=group_hypothesis_id,
+                request=context_request,
+            )
     if _observer is not None:
         _observer.record_acquisition(acquisition, backfill=True)
     observations: tuple[PeakObservationRef, ...] = ()
     physical_evaluations: list[PhysicalPeakEvaluation] = []
     if signal_processing_profile is not None:
-        trace = trace_from_xic_request(
-            sample_name=sample.metadata.sample_name,
-            request=request,
-            xic_trace=acquired.trace,
-            source=f"{_ADAPTER_NAMESPACE}.backfill:{TraceCoordinateKind.NATIVE_SCAN.value}",
-            acquisition_source_id=source.acquisition_source_id,
-        )
-        observation = capture_owner.capture_physical_backfill_observation(
-            processing_owners=processing_owners,
-            sample=sample,
-            method_subject=method_subject,
-            trace=trace,
-            group_center_rt=float(group_center_rt),
-            physical_mz=float(physical_mz),
-            profile=signal_processing_profile,
-            resolver_mode=peak_config.resolver_mode,
-            evaluation_sink=physical_evaluations.append,
-        )
+        assert context_request is not None and context_acquired is not None
+        # Complete observations keep their original signal and integral. Only
+        # clipped context permits one bounded reconsideration of the same search.
+        for capture_request, capture_acquired in (
+            (request, acquired),
+            (context_request, context_acquired),
+        ):
+            trace = trace_from_xic_request(
+                sample_name=sample.metadata.sample_name,
+                request=capture_request,
+                xic_trace=capture_acquired.trace,
+                source=(
+                    f"{_ADAPTER_NAMESPACE}.backfill:"
+                    f"{TraceCoordinateKind.NATIVE_SCAN.value}"
+                ),
+                acquisition_source_id=source.acquisition_source_id,
+            )
+            physical_evaluations.clear()
+            observation = capture_owner.capture_physical_backfill_observation(
+                processing_owners=processing_owners,
+                sample=sample,
+                method_subject=method_subject,
+                trace=trace,
+                group_center_rt=float(query_rt),
+                search_rt_window=(
+                    (query_rt_min, query_rt_max)
+                    if capture_request is context_request
+                    else None
+                ),
+                physical_mz=float(physical_mz),
+                profile=signal_processing_profile,
+                resolver_mode=peak_config.resolver_mode,
+                evaluation_sink=physical_evaluations.append,
+            )
+            if physical_evaluations[0].reason != "incomplete_peak_context":
+                break
         observations = (observation,) if observation is not None else ()
     else:
         detection = detect_ms1_trace_peak(
             acquired.trace.rt,
             acquired.trace.intensity,
             peak_config=peak_config,
-            preferred_rt=float(group_center_rt),
+            preferred_rt=float(query_rt),
             peak_finder=find_peak_and_area,
         )
         if detection.status == "detected" and detection.result is not None:
@@ -1253,6 +1438,8 @@ def backfill_untargeted_cid_nl_sample_subject(
         acquisition=acquisition,
         lineage_artifacts=lineage,
         group_hypothesis_id=group_hypothesis_id,
+        query_rt=float(query_rt),
+        query_rt_basis=query_rt_basis,
         capture_evidence=tuple(
             RetainedCaptureEvidence(
                 canonical_sample_identity_id=sample.identity.sample_identity_id,

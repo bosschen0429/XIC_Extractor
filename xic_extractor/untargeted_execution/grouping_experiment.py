@@ -86,6 +86,7 @@ def grouping_inputs_from_prepared(
                     owners=tuple(owners[key] for key in sorted(owners)),
                     known_identity_bindings=bindings,
                     rt_warp=partition.rt_warp,
+                    elution_contexts=workset.grouping_scope.elution_correspondence.source_contexts,
                 )
             )
     return GroupingInputs(

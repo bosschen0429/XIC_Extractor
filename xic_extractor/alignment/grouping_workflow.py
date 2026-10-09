@@ -21,6 +21,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
+from xic_extractor.alignment.elution_correspondence import ElutionCorrespondence
 from xic_extractor.alignment.feature_membership_inference import (
     FeatureInferenceOperationCounts,
     FeatureMembershipGroup,
@@ -48,6 +49,7 @@ from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
+from xic_extractor.peak_detection.elution_context import SampleElutionContext
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     HYPOTHESIS_METHOD_DDA_CID_NL,
@@ -180,6 +182,7 @@ def build_initial_cid_nl_cross_sample_groups(
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
     ],
     alignment_config: AlignmentConfig,
+    elution_contexts: Sequence[SampleElutionContext] = (),
     drift_lookup: DriftLookupProtocol | None = None,
     known_istd_reference: KnownIstdReference | None = None,
     operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
@@ -209,6 +212,7 @@ def build_initial_cid_nl_cross_sample_groups(
             },
             drift_lookup=drift_lookup,
             retain_observation_only_candidates=True,
+            elution_contexts=elution_contexts,
             known_istd_reference=known_istd_reference,
             operation_counts_sink=operation_counts_sink,
             retained_hypotheses_by_assessment=retained_hypotheses_by_assessment,
@@ -271,6 +275,7 @@ def regroup_cid_nl_cross_sample_groups(
         rt_warp=rt_warp,
         backfill_half_window_min=backfill_half_window_min,
         operation_counts_sink=operation_counts_sink,
+        elution_correspondence=grouping_scope.elution_correspondence,
     )
     identities = tuple(
         validate_cross_sample_peak_group_identity(group, require_canonical=True)
@@ -308,6 +313,7 @@ def group_cid_nl_owners(
     drift_lookup: DriftLookupProtocol | None = None,
     known_identity_bindings: Sequence[tuple[str, str]] = (),
     operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
+    elution_correspondence: ElutionCorrespondence | None = None,
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
     """Run the shared membership, disjoint-merge and shoulder decisions."""
     groups = construct_cross_sample_peak_group_hypotheses(
@@ -319,12 +325,14 @@ def group_cid_nl_owners(
         known_identity_bindings=known_identity_bindings,
         rt_warp=rt_warp,
         operation_counts_sink=operation_counts_sink,
+        elution_correspondence=elution_correspondence,
     )
     return reject_shoulder_groups(
         merge_sample_disjoint_groups(
             groups,
             config=config,
             backfill_half_window_min=backfill_half_window_min,
+            elution_correspondence=elution_correspondence,
         ),
         config=config,
     )
@@ -555,13 +563,14 @@ def merge_sample_disjoint_groups(
     *,
     config: AlignmentConfig,
     backfill_half_window_min: float,
+    elution_correspondence: ElutionCorrespondence | None = None,
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
     """Merge established rows of one feature that no sample tells apart.
 
-    Two peaks are only evidenced by one sample holding both. Rows of the same
-    m/z with no shared sample, whose centers lie within one Backfill half
-    window, would Backfill each other's peak, so they are one feature. Closer
-    rows merge first; a merge never joins two rows that share a sample.
+    Rows with no shared sample and nearby centers can be duplicate questions.
+    An ordered MS1 pattern can nevertheless distinguish their peaks even when
+    no sample has direct method support for both. Such rows must remain apart.
+    Closer rows merge first; a merge never joins rows sharing a sample.
     """
     candidates = sorted(
         (
@@ -594,6 +603,19 @@ def merge_sample_disjoint_groups(
         group.group_hypothesis_id: {owner.sample_stem for owner in group.owners}
         for group in groups
     }
+    owner_tracks = (
+        elution_correspondence.owner_track_indices()
+        if elution_correspondence is not None
+        else {}
+    )
+    tracks = {
+        group.group_hypothesis_id: {
+            owner_tracks[owner_id]
+            for owner_id in group.owner_ids
+            if owner_id in owner_tracks
+        }
+        for group in groups
+    }
 
     def find(group_id: str) -> str:
         while root[group_id] != group_id:
@@ -604,9 +626,12 @@ def merge_sample_disjoint_groups(
         first_root, second_root = find(first_id), find(second_id)
         if first_root == second_root or samples[first_root] & samples[second_root]:
             continue
+        if len(tracks[first_root] | tracks[second_root]) > 1:
+            continue
         keep, absorbed = sorted((first_root, second_root))
         root[absorbed] = keep
         samples[keep] |= samples.pop(absorbed)
+        tracks[keep] |= tracks.pop(absorbed)
     members: dict[str, list[CrossSamplePeakGroupHypothesis]] = defaultdict(list)
     for group in groups:
         members[find(group.group_hypothesis_id)].append(group)

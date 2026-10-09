@@ -10,15 +10,75 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
     construct_cross_sample_peak_group_hypotheses,
 )
+from xic_extractor.alignment.elution_correspondence import (
+    resolve_elution_correspondence,
+)
 from xic_extractor.alignment.grouping_workflow import (
     contested_backfill_peaks,
+    group_cid_nl_owners,
     merge_sample_disjoint_groups,
     reject_shoulder_groups,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+from xic_extractor.peak_detection.elution_context import (
+    ElutionLandmark,
+    SampleElutionContext,
+)
 
 _CONFIG = AlignmentConfig()
 _MZ = 261.1273
+
+
+def test_ms1_patterns_prevent_remerging_sample_disjoint_direct_rows() -> None:
+    owners = []
+    contexts = []
+    for sample, shift, selected in (
+        ("A", 0.0, 0),
+        ("B", 0.05, 1),
+        ("C", 0.6, 0),
+        ("D", 0.65, 1),
+    ):
+        apex = 9.0 + shift + selected * 0.6
+        owners.append(
+            _peak(
+                sample,
+                str(selected),
+                apex=apex,
+                start=apex - 0.1,
+                end=apex + 0.1,
+                area=1000.0,
+            )
+        )
+        contexts.append(
+            SampleElutionContext(
+                sample,
+                _MZ,
+                8.0,
+                11.0,
+                (
+                    ElutionLandmark(9.0 + shift, 100.0, 0.2),
+                    ElutionLandmark(9.6 + shift, 100.0, 0.2),
+                ),
+            )
+        )
+    orders = {sample: index for index, sample in enumerate(("A", "B", "C", "D"))}
+    correspondence = resolve_elution_correspondence(
+        owners, contexts, config=_CONFIG, injection_order=orders
+    )
+    result = group_cid_nl_owners(
+        owners,
+        config=_CONFIG,
+        sample_universe=frozenset(orders),
+        injection_order=orders,
+        rt_warp=None,
+        backfill_half_window_min=1.0,
+        elution_correspondence=correspondence,
+    )
+    assert {frozenset(group.owner_ids) for group in result} == {
+        frozenset((owners[0].owner_id, owners[2].owner_id)),
+        frozenset((owners[1].owner_id, owners[3].owner_id)),
+    }
+    assert all(group.disposition == "established" for group in result)
 
 
 def _peak(

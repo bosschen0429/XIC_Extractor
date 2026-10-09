@@ -1534,6 +1534,160 @@ def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
     assert vendor_raw.chromatogram_request_counts == [2]
 
 
+def test_elution_context_shares_acquisition_without_widening_capture(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
+
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True
+    )
+    source = _FakeRaw((7.8,))
+    source.intensity += 700.0 * np.exp(-0.5 * ((source.rt - 8.4) / 0.035) ** 2)
+    candidate = _current_candidates(
+        source,
+        raw_file=fixture.source_paths["S1"],
+        settings=_settings(),
+        peak_config=_peak_config(tmp_path),
+    )[0]
+    duplicate = replace(candidate, candidate_id=candidate.candidate_id + ":duplicate")
+    raw, vendor = _open_bound_raw(fixture, "S1", source, tmp_path=tmp_path)
+    batch = acquire_untargeted_cid_nl_sample_trace_batch(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        candidates=tuple(
+            sorted((candidate, duplicate), key=lambda item: item.candidate_id)
+        ),
+        settings=_settings(),
+        raw=raw,
+        signal_processing_profile=SignalProcessingProfile(),
+    )
+    assert batch is not None
+    assert vendor.chromatogram_request_counts == [2]
+    assert len(batch.context_trace_indices) == len(batch.elution_contexts) == 1
+    assert [
+        peak.apex_rt for peak in batch.elution_contexts[0].landmarks
+    ] == pytest.approx([7.8, 8.4], abs=0.005)
+    original = batch.acquired_trace(candidate.candidate_id)
+    assert original.coordinate.request.rt_min == candidate.ms1_search_rt_min
+    assert original.coordinate.request.rt_max == candidate.ms1_search_rt_max
+    mask = (source.rt >= candidate.ms1_search_rt_min) & (
+        source.rt <= candidate.ms1_search_rt_max
+    )
+    np.testing.assert_array_equal(original.trace.rt, source.rt[mask])
+    np.testing.assert_array_equal(original.trace.intensity, source.intensity[mask])
+    assert original is batch.acquired_trace(duplicate.candidate_id)
+    assert max(original.trace.rt) < 8.4
+
+
+@pytest.mark.parametrize("sample, query_rt", [("S1", 7.8), ("S2", 8.4)])
+def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
+    tmp_path: Path,
+    sample: str,
+    query_rt: float,
+) -> None:
+    import json
+
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
+    from xic_extractor.peak_detection.search_scope import (
+        PHYSICAL_CAPTURE_INPUT_KEY,
+        physical_capture_input_payload,
+    )
+    from xic_extractor.processing_identity import (
+        build_processing_request_identity,
+        compose_processing_owner_references,
+        issue_processing_attempt,
+    )
+
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={sample: "study_sample"}, thermo_raw_sources=True
+    )
+    profile = SignalProcessingProfile()
+    original = fixture.owners.request
+    request = build_processing_request_identity(
+        acquisition_sources=original.acquisition_sources,
+        acquisition_bindings=original.acquisition_bindings,
+        scientific_input_schema_version=original.scientific_input_schema_version,
+        processing_algorithm_version=original.processing_algorithm_version,
+        processing_contract_version=original.processing_contract_version,
+        scientific_inputs=json.loads(original.normalized_scientific_inputs_json)
+        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile, {})},
+    )
+    owners = compose_processing_owner_references(
+        request=request,
+        attempt=issue_processing_attempt(request),
+        sample_snapshot=fixture.owners.sample_snapshot,
+        sample_resolutions=fixture.samples,
+    )
+    source = _FakeRaw((7.8, 8.4))
+    source.intensity = 450.0 * np.exp(
+        -0.5 * ((source.rt - 7.8) / 0.035) ** 2
+    ) + 1200.0 * np.exp(-0.5 * ((source.rt - 8.4) / 0.035) ** 2)
+    raw, _ = _open_bound_raw(fixture, sample, source, tmp_path=tmp_path)
+    target = UntargetedCidNlBackfillTarget(
+        "same-group",
+        fixture.method_subject,
+        500.0,
+        8.1,
+        query_rt=query_rt,
+        query_rt_basis="elution_pattern",
+    )
+    config = _peak_config(tmp_path)
+    batch = acquire_untargeted_cid_nl_backfill_trace_batch(
+        processing_owners=owners,
+        sample=fixture.sample(sample),
+        backfill_requests=(target,),
+        peak_config=config,
+        raw=raw,
+    )
+    assert batch.targets[0].center_rt == 8.1
+    assert batch.targets[0].sample_query_rt == query_rt
+    assert batch.requests[0].rt_min == pytest.approx(
+        query_rt - config.nl_rt_anchor_half_window_min
+    )
+    result = backfill_untargeted_cid_nl_sample_subject(
+        processing_owners=owners,
+        sample=fixture.sample(sample),
+        method_subject=fixture.method_subject,
+        group_center_mz=500.0,
+        group_center_rt=8.1,
+        group_hypothesis_id="same-group",
+        query_rt=query_rt,
+        query_rt_basis="elution_pattern",
+        support_policy=DdaCidNlPeakSupportPolicy(
+            precursor_tolerance_da=0.5, neutral_loss_tolerance_ppm=20.0
+        ),
+        peak_config=config,
+        raw=raw,
+        signal_processing_profile=profile,
+        _preacquired_traces=batch,
+    )
+    assert result.group_hypothesis_id == "same-group"
+    assert result.query_rt == query_rt
+    assert result.query_rt_basis == "elution_pattern"
+    assessment = result.assessment
+    assert assessment.content.method_result == "HOLD"
+    assert not assessment.individual_support_refs
+    assert len(assessment.candidate_peaks) == 1
+    assert assessment.candidate_peaks[
+        0
+    ].content.integration.rt_apex_min == pytest.approx(query_rt, abs=0.005)
+    from xic_extractor.untargeted_execution.partition.workers import _group_revisit
+
+    assert (
+        _group_revisit(assessment, query_rt=query_rt, apex_tolerance_sec=2.0) == "reuse"
+    )
+    other_peak = 8.4 if query_rt == 7.8 else 7.8
+    assert (
+        _group_revisit(assessment, query_rt=other_peak, apex_tolerance_sec=2.0)
+        == "search"
+    )
+
+
 def test_recovery_batch_canonicalizes_shared_group_queries_without_merging_centers(
     tmp_path: Path,
 ) -> None:
@@ -2213,3 +2367,133 @@ def test_strict_replay_retains_two_recorded_precursors_from_one_scan(tmp_path):
         seed.supports_direct_nl == (seed.precursor_mz_basis == "scan_precursor")
         for _, seed in seeds
     )
+
+
+@pytest.mark.parametrize("target_present", [True, False])
+@pytest.mark.parametrize("target_center", [8.25, 8.45])
+def test_physical_backfill_context_is_not_search_permission(
+    tmp_path: Path,
+    target_present: bool,
+    target_center: float,
+) -> None:
+    import json
+
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
+    from xic_extractor.peak_detection.search_scope import (
+        PHYSICAL_CAPTURE_INPUT_KEY,
+        physical_capture_input_payload,
+    )
+    from xic_extractor.processing_identity import (
+        build_processing_request_identity,
+        compose_processing_owner_references,
+        issue_processing_attempt,
+    )
+
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path,
+        sample_roles={"S1": "study_sample"},
+        thermo_raw_sources=True,
+    )
+    profile = SignalProcessingProfile(window_points=15)
+    old = fixture.owners.request
+    request = build_processing_request_identity(
+        acquisition_sources=old.acquisition_sources,
+        acquisition_bindings=old.acquisition_bindings,
+        scientific_input_schema_version=old.scientific_input_schema_version,
+        processing_algorithm_version=old.processing_algorithm_version,
+        processing_contract_version=old.processing_contract_version,
+        scientific_inputs=json.loads(old.normalized_scientific_inputs_json)
+        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile, {})},
+    )
+    owners = compose_processing_owner_references(
+        request=request,
+        attempt=issue_processing_attempt(request),
+        sample_snapshot=fixture.owners.sample_snapshot,
+        sample_resolutions=fixture.samples,
+    )
+    fixture = replace(fixture, owners=owners)
+    source_raw = _FakeRaw(())
+    source_raw.rt = np.linspace(6.0, 10.0, 801)
+    source_raw.intensity = 5000.0 * np.exp(-0.5 * ((source_raw.rt - 8.85) / 0.04) ** 2)
+    if target_present:
+        source_raw.intensity += 1000.0 * np.exp(
+            -0.5 * ((source_raw.rt - target_center) / 0.06) ** 2
+        )
+    raw, vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+    config = replace(_peak_config(tmp_path), nl_rt_anchor_half_window_min=0.5)
+    target = UntargetedCidNlBackfillTarget(
+        "bounded-group", fixture.method_subject, 500.0, 8.0
+    )
+    batch = acquire_untargeted_cid_nl_backfill_trace_batch(
+        processing_owners=owners,
+        sample=fixture.sample("S1"),
+        backfill_requests=(target, replace(target, group_hypothesis_id="same-query")),
+        peak_config=config,
+        raw=raw,
+    )
+    assert vendor.chromatogram_request_counts == [2]
+    assert batch.requests[0].rt_min == 7.5 and batch.requests[0].rt_max == 8.5
+    assert batch.context_requests[0].rt_min == 7.0
+    assert batch.context_requests[0].rt_max == 9.0
+    kwargs = dict(
+        processing_owners=owners,
+        sample=fixture.sample("S1"),
+        method_subject=fixture.method_subject,
+        group_center_rt=8.0,
+        group_center_mz=500.0,
+        group_hypothesis_id="bounded-group",
+        support_policy=DdaCidNlPeakSupportPolicy(
+            precursor_tolerance_da=0.01,
+            neutral_loss_tolerance_ppm=20.0,
+        ),
+        peak_config=config,
+        signal_processing_profile=profile,
+    )
+    batched = backfill_untargeted_cid_nl_sample_subject(
+        **kwargs,
+        raw=None,
+        _preacquired_traces=batch,
+    )
+    assert vendor.chromatogram_request_counts == [2]
+    direct = backfill_untargeted_cid_nl_sample_subject(**kwargs, raw=raw)
+    assert vendor.chromatogram_request_counts == [2, 2]
+    first = batched.capture_evidence[0].physical_evaluation
+    assert first == direct.capture_evidence[0].physical_evaluation
+    expected_window = (7.5, 8.5) if target_present and target_center == 8.45 else None
+    assert first.question.search_rt_window == expected_window
+    receipt = batched.assessment.content.evaluation_receipt
+    assert (receipt.query_rt_min, receipt.query_rt_max) == (7.5, 8.5)
+    if target_present:
+        assert first.state == "available" and first.facts is not None
+        assert first.facts.apex_rt_min == pytest.approx(target_center, abs=0.02)
+        if target_center == 8.45:
+            assert first.facts.right_rt_min > 8.5
+            assert batched.capture_evidence[0].trace.rt_min == 7.0
+        else:
+            from xic_extractor.peak_detection.physical_peak_evaluation import (
+                evaluate_physical_peak,
+                prepare_physical_signal,
+            )
+            from xic_extractor.peak_detection.physical_peak_models import (
+                PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+            )
+
+            trace = batched.capture_evidence[0].trace
+            assert trace.rt_min == 7.5 and trace.rt_max == 8.5
+            original = evaluate_physical_peak(
+                prepare_physical_signal(trace.rt, trace.intensity, profile=profile),
+                selection_subject_id=fixture.method_subject.method_subject_id,
+                query_rt_min=8.0,
+                selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+            )
+            assert original.facts is not None
+            assert first.facts.area_counts_seconds == original.facts.area_counts_seconds
+            assert first.facts.left_rt_min == original.facts.left_rt_min
+            assert first.facts.right_rt_min == original.facts.right_rt_min
+        # A measured MS1 peak alone still cannot assert method SUPPORT.
+        assert batched.assessment.content.method_result != "SUPPORT"
+    else:
+        assert first.state == "unavailable" and first.facts is None
+        assert not batched.assessment.candidate_peaks

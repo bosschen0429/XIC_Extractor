@@ -522,6 +522,7 @@ def capture_physical_backfill_observation(
     physical_mz: float,
     profile: SignalProcessingProfile,
     resolver_mode: str,
+    search_rt_window: tuple[float, float] | None = None,
     evaluation_sink: Callable[[PhysicalPeakEvaluation], None] | None = None,
 ) -> PeakObservationRef | None:
     """Capture a backfill question using its request-bound method and profile."""
@@ -543,6 +544,7 @@ def capture_physical_backfill_observation(
         request_context_rt_start_min=trace.rt_min,
         request_context_rt_end_min=trace.rt_max,
         selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+        search_rt_window=search_rt_window,
     )
     if evaluation_sink is not None:
         evaluation_sink(evaluation)

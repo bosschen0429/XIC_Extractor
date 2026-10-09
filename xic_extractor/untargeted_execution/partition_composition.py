@@ -244,6 +244,17 @@ def prepare_untargeted_partition_grouping(
 ) -> UntargetedPreparedGrouping:
     """Freeze compatible-workset membership once, before any backfill search."""
     requested_reference = known_istd_reference
+    # A sample acquisition is shared by all of its method-subject results.
+    # Flatten each retained context batch once, outside the workset loop.
+    context_batches = {
+        id(
+            result.adapter_result.elution_contexts
+        ): result.adapter_result.elution_contexts
+        for result in sample_results
+    }
+    elution_contexts = tuple(
+        context for contexts in context_batches.values() for context in contexts
+    )
     results_by_subject: dict[str, list[UntargetedInitialSampleResult]] = {}
     for result in sample_results:
         results_by_subject.setdefault(
@@ -519,6 +530,7 @@ def prepare_untargeted_partition_grouping(
             captures=captures,
             sample_assessments=assessments,
             alignment_config=alignment_config,
+            elution_contexts=elution_contexts,
             known_istd_reference=known_istd_reference,
             retained_hypotheses_by_assessment=(retained_hypotheses_by_assessment),
             operation_counts_sink=operation_counts,
@@ -540,7 +552,11 @@ def prepare_untargeted_partition_grouping(
         for group in workset.grouping_scope.groups
         if group.inference_basis is not None
         and group.inference_basis.basis
-        in {"bidirectional_membership_agreement", "known_identity_constraint"}
+        in {
+            "bidirectional_membership_agreement",
+            "known_identity_constraint",
+            "elution_pattern_correspondence",
+        }
     )
     bootstrap_owners = {
         owner.owner_id: owner

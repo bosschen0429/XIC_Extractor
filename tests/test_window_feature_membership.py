@@ -12,12 +12,19 @@ from xic_extractor.alignment.cid_nl_inputs import (
     CID_NL_ALIGNMENT_CONFIG,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.elution_correspondence import (
+    resolve_elution_correspondence,
+)
 from xic_extractor.alignment.feature_membership_inference import (
     BatchRtWarp,
     estimate_batch_rt_warp,
     infer_feature_memberships,
 )
 from xic_extractor.alignment.ownership_models import IdentityEvent, SampleLocalMS1Owner
+from xic_extractor.peak_detection.elution_context import (
+    ElutionLandmark,
+    SampleElutionContext,
+)
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _DATA = json.loads((_FIXTURES / "window_feature_regression_cases.json").read_text())
@@ -116,6 +123,46 @@ def _synthetic_owner(
         identity_conflict=False,
         assignment_reason="same_apex_window",
     )
+
+
+def test_alternating_direct_peaks_follow_ms1_pattern_not_nearest_absolute_rt() -> None:
+    owners = []
+    contexts = []
+    orders = {}
+    for index, (shift, selected) in enumerate(
+        ((0.0, 0), (0.04, 1), (0.08, 0), (0.6, 1), (0.64, 0), (0.68, 1))
+    ):
+        sample = f"sample{index}"
+        peaks = (10.0 + shift, 10.6 + shift)
+        owners.append(
+            _synthetic_owner(sample, f"{sample}:peak{selected}", peaks[selected])
+        )
+        contexts.append(
+            SampleElutionContext(
+                sample,
+                500.0,
+                9.0,
+                13.0,
+                tuple(ElutionLandmark(rt, 100.0, 0.2) for rt in peaks),
+            )
+        )
+        orders[sample] = index + 1
+    correspondence = resolve_elution_correspondence(
+        owners, contexts, config=AlignmentConfig(), injection_order=orders
+    )
+    assert len(correspondence.tracks) == 2
+    result = infer_feature_memberships(
+        owners,
+        config=AlignmentConfig(),
+        injection_order=orders,
+        drift_lookup=None,
+        elution_correspondence=correspondence,
+    )
+    assert {group.owner_ids for group in result.groups} == {
+        ("sample0:peak0", "sample2:peak0", "sample4:peak0"),
+        ("sample1:peak1", "sample3:peak1", "sample5:peak1"),
+    }
+    assert all(group.disposition == "assigned" for group in result.groups)
 
 
 @pytest.mark.parametrize("case", sorted(_DATA["cases"]))

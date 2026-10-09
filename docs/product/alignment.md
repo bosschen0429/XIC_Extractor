@@ -8,6 +8,36 @@ operation. The immutable workflow result exists only after cell decision and
 projection completion. Alignment does not use a mutable Matrix as its internal
 transport contract or let writers recompute science.
 
+## Elution context
+
+Initial CID-NL grouping retains neighboring MS1 maxima separately from selected
+method-backed observations. The sample acquisition batch includes shared wider
+context requests; original capture requests, physical evaluations and integrals
+remain unchanged. Context maxima include shoulders useful for correspondence,
+but exclude apices without acquired support for the smoothing kernel.
+
+The pure `alignment/elution_correspondence.py` owner matches ordered local peak
+patterns, allowing missing and extra maxima and width-bounded RT displacement.
+Relative heights break ties between equally complete patterns, rather than
+overruling peak order. Ambiguous patterns supply no correspondence. Single-peak
+continuations cannot independently establish a pattern. The result is reused by
+initial grouping, regrouping and missing-cell location; sample-disjoint rows
+distinguished by a pattern cannot be merged merely because their RTs are close.
+
+A matched MS1-only location is a sample-specific Backfill query hint, not CID-NL
+support, chemical identity, a selected integral or writer authority. The group
+center and lineage remain fixed. An existing HOLD is reusable only when it
+contains the located peak; otherwise acquisition asks the physical owner at
+that location. The existing assessment, admission and cell decision rules still
+decide support and values. Without usable context, existing RT-based behavior
+remains the fallback.
+
+Physical Backfill acquires its search trace and one wider context trace in the
+same sample batch. A complete narrow capture keeps its original integral. Only
+`incomplete_peak_context` permits the wider capture, with candidate apices still
+restricted to the original search window. The persisted physical question binds
+that distinction; extra signal context does not grant a wider search.
+
 ## Grouping experiments
 
 `python -m tools.diagnostics.grouping_experiment` provides a developer feedback
@@ -34,8 +64,8 @@ RAW files and current Discovery owner-closure artifacts. `--sample-metadata`
 and `--known-istd-reference` accept existing metadata and reference artifacts.
 
 The compressed `grouping-inputs.json.gz` retains scalar observations, exact
-member identities, baseline warp and configuration. It omits chromatogram
-arrays. Prepare checks snapshot replay against the formal initial grouping.
+member identities, baseline warp, compact elution contexts and configuration.
+It omits chromatogram arrays. Prepare checks snapshot replay against the formal initial grouping.
 Replay needs only that snapshot, with no RAW, DLL, acquisition or Backfill.
 `--set FIELD=JSON` changes an `AlignmentConfig` value; only fields consumed by
 grouping affect replay. Owner detection and integration changes require prepare.

@@ -22,6 +22,7 @@ from xic_extractor.alignment.edge_scoring import (
     _seed_support_level,
     evaluate_owner_edge,
 )
+from xic_extractor.alignment.elution_correspondence import ElutionCorrespondence
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.mass_accuracy import (
     absolute_ppm_error,
@@ -37,6 +38,7 @@ FeatureMembershipDisposition = Literal[
     "unresolved_conflict",
 ]
 FeatureMembershipBasis = Literal[
+    "elution_pattern_correspondence",
     "window_level_rt_band",
     "bidirectional_membership_agreement",
     "directional_membership_disagreement",
@@ -514,6 +516,7 @@ def infer_feature_memberships(
     known_identity_bindings: Sequence[tuple[str, str]] = (),
     bootstrap: bool = False,
     rt_warp: RtCoordinates | None = None,
+    elution_correspondence: ElutionCorrespondence | None = None,
 ) -> FeatureMembershipInferenceResult:
     """Infer ordinary whole-window bands, preserving exact known identities.
 
@@ -539,6 +542,15 @@ def infer_feature_memberships(
     )
     ordinary = tuple(
         owner for owner in unique_owners if owner.owner_id not in constrained_owner_ids
+    )
+    context_groups, context_decisions = _context_memberships(
+        ordinary, elution_correspondence, config
+    )
+    context_owner_ids = {
+        owner_id for group in context_groups for owner_id in group.owner_ids
+    }
+    ordinary = tuple(
+        owner for owner in ordinary if owner.owner_id not in context_owner_ids
     )
 
     # Composition can bridge scalar neutral-loss tags and retains its separate
@@ -579,7 +591,14 @@ def infer_feature_memberships(
         algorithm = "whole_window_feature_rt_trend"
         objective = "local_rt_mass_edges_then_reciprocal_whole_band_bridge"
         termination = "completed_one_finite_window_pass"
-    groups = tuple(sorted((*known_groups, *inferred_groups), key=_group_sort_key))
+    groups = tuple(
+        sorted((*known_groups, *context_groups, *inferred_groups), key=_group_sort_key)
+    )
+    decisions = (*context_decisions, *decisions)
+    if context_groups:
+        algorithm = f"elution_pattern_then_{algorithm}"
+        objective = f"supported_local_elution_correspondence;{objective}"
+        counts["births"] += len(context_groups)
     operation_counts = FeatureInferenceOperationCounts(
         **{
             field_name: counts[field_name]
@@ -600,6 +619,76 @@ def infer_feature_memberships(
             else "bounded_window_edges;absence_means_not_evaluated"
         ),
     )
+
+
+def _owner_chemistry(owner: SampleLocalMS1Owner) -> tuple[str, str]:
+    assessment = owner.cid_nl_composite_assessment
+    if assessment is not None and _compatible_composite_owners(owner, owner):
+        return "composition", assessment.content.method_subject.method_subject_id
+    return (
+        owner.neutral_loss_tag,
+        "cid" if owner.primary_identity_event is not None else "ms1",
+    )
+
+
+def _context_memberships(
+    owners: Sequence[SampleLocalMS1Owner],
+    correspondence: ElutionCorrespondence | None,
+    config: AlignmentConfig,
+) -> tuple[tuple[FeatureMembershipGroup, ...], tuple[SparseFeatureDecision, ...]]:
+    if correspondence is None:
+        return (), ()
+    by_id = {owner.owner_id: owner for owner in owners}
+    groups = []
+    decisions: list[SparseFeatureDecision] = []
+    for context in correspondence.tracks:
+        members = [
+            by_id[owner_id] for owner_id in context.owner_ids if owner_id in by_id
+        ]
+        if not members:
+            continue
+        if (
+            len({_owner_chemistry(member) for member in members}) != 1
+            or len({member.sample_stem for member in members}) != len(members)
+            or not within_ppm(
+                max(member.precursor_mz for member in members),
+                min(member.precursor_mz for member in members),
+                config.max_ppm,
+            )
+        ):
+            continue
+        owner_ids = tuple(member.owner_id for member in members)
+        assigned = len(members) >= 2 and not any(
+            _owner_uncertainty_reason(member, config) for member in members
+        )
+        reason = (
+            "ordered_ms1_pattern_links_existing_owners"
+            if assigned
+            else "pattern_location_does_not_supply_cross_sample_method_support"
+        )
+        groups.append(
+            FeatureMembershipGroup(
+                owner_ids=owner_ids,
+                disposition="assigned" if assigned else "undecided",
+                basis="elution_pattern_correspondence",
+                reason=reason,
+            )
+        )
+        decisions.extend(
+            SparseFeatureDecision(
+                direction="window",
+                sample_stem=member.sample_stem,
+                owner_id=member.owner_id,
+                feature_key=f"elution:{owner_ids[0]}",
+                state="assigned" if assigned else "evaluated_undecided",
+                reason=reason,
+                witness_owner_ids=tuple(
+                    owner_id for owner_id in owner_ids if owner_id != member.owner_id
+                ),
+            )
+            for member in members
+        )
+    return tuple(groups), tuple(decisions)
 
 
 def _unique_owners(
@@ -918,18 +1007,7 @@ def _window_inference(
     eligible = tuple(owner for owner in owners if owner.owner_id not in weak)
     by_chemistry: dict[tuple[str, str], list[SampleLocalMS1Owner]] = defaultdict(list)
     for owner in eligible:
-        assessment = owner.cid_nl_composite_assessment
-        if assessment is not None and _compatible_composite_owners(owner, owner):
-            chemistry = (
-                "composition",
-                assessment.content.method_subject.method_subject_id,
-            )
-        else:
-            chemistry = (
-                owner.neutral_loss_tag,
-                "cid" if owner.primary_identity_event is not None else "ms1",
-            )
-        by_chemistry[chemistry].append(owner)
+        by_chemistry[_owner_chemistry(owner)].append(owner)
 
     final_components: list[tuple[str, ...]] = [(owner_id,) for owner_id in sorted(weak)]
     for chemistry in sorted(by_chemistry):
