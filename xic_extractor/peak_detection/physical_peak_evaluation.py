@@ -397,21 +397,20 @@ def _positive_runs(raw: np.ndarray) -> int:
 def _has_continuous_core_support(
     observed_residual: np.ndarray, window_points: int
 ) -> bool:
-    """Keep morphology when acquired support spans a smoothing footprint.
+    """Distinguish compact acquired cores from repeated censoring gaps.
 
-    Isolated dropouts can split a well-observed core into many binary runs.
-    A full acquired run above baseline supports ordinary morphology only when
-    acquired scans also outnumber missing scans in every core footprint. One
-    short continuous patch cannot make an otherwise censored core ordinary.
+    A compact continuous peak need not contain a whole smoothing footprint.
+    Repeatedly interrupted cores require sustained acquired support instead:
+    one short continuous patch cannot make an otherwise censored core ordinary.
     """
     hit = observed_residual > 0.0
-    if np.count_nonzero(hit) < window_points:
-        return False
     edges = np.diff(np.r_[False, hit, False].astype(int))
     starts = np.flatnonzero(edges == 1)
     stops = np.flatnonzero(edges == -1)
     if len(starts) < 3:
-        return True
+        # This protects an already resolved morphology peak; it does not mint
+        # one from isolated hits or impose the smoothing width as a scan minimum.
+        return bool(np.any(stops - starts >= 2))
     if not np.any(stops - starts >= window_points):
         return False
     acquired_per_window = np.convolve(

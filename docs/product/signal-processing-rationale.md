@@ -67,6 +67,10 @@ must not erase a morphology peak with adjacent acquired support and sufficient
 local contrast. The stronger continuous-core check instead decides whether a
 censored cluster may replace morphology-owned boundaries and area; isolated
 dropouts in an ordinary continuous core do not authorize that replacement.
+A compact core with adjacent acquired support can protect its morphology peak
+even when it is shorter than the smoothing footprint. Repeatedly interrupted
+cores still require sustained acquired support; a brief continuous patch inside
+an otherwise censored cluster does not make the whole cluster ordinary.
 
 For left-censored signals, unsmoothed binary hit density must be enriched against
 both local flanks. The shared physical owner uses a fourfold enrichment and a

@@ -420,6 +420,62 @@ def test_strong_continuous_peak_with_sparse_tail_keeps_original_segment(
 @pytest.mark.parametrize(
     "policy", [PHYSICAL_PEAK_POINT_POLICY, DISCOVERY_PHYSICAL_PEAK_POINT_POLICY]
 )
+@pytest.mark.parametrize("scan_spacing", [0.01, 0.02, 0.04])
+def test_compact_continuous_doublet_keeps_component_areas(
+    policy: str, scan_spacing: float,
+) -> None:
+    rt = np.arange(0.0, 6.0 + scan_spacing / 2.0, scan_spacing)
+    sigma = 0.06
+    components = ((1000.0, 2.2), (600.0, 3.1))
+    raw = sum(
+        height * np.exp(-0.5 * ((rt - center) / sigma) ** 2)
+        for height, center in components
+    )
+    raw[raw < 15.0] = 0.0
+    # A weak isolated hit connects the density windows, but supplies neither
+    # a third chromatographic peak nor permission to merge the true doublet.
+    raw[int(np.argmin(abs(rt - 2.65)))] = 20.0
+    prepared = prepare_physical_signal(rt, raw)
+    # Both contexts include complete acquired flanks for the same components.
+    local = (rt >= 1.0) & (rt <= 4.5)
+    focused_prepared = prepare_physical_signal(rt[local], raw[local])
+    selected = []
+    for height, center in components:
+        result = evaluate_physical_peak(
+            prepared, selection_subject_id="compact-doublet",
+            query_rt_min=center, selection_policy_version=policy,
+        )
+        assert result.state == "available"
+        assert result.facts is not None and result.integration is not None
+        facts = result.facts
+        assert facts.apex_rt_min == pytest.approx(center, abs=scan_spacing)
+        # Independent untruncated Gaussian area. Thresholding discards small
+        # tails; neither signal smoothing nor the gap hit may add the other peak.
+        expected_area = height * sigma * np.sqrt(2.0 * np.pi) * 60.0
+        assert facts.area_counts_seconds == pytest.approx(expected_area, rel=0.03)
+        assert "near_detection_limit" not in result.integration.boundary_sources
+        focused = evaluate_physical_peak(
+            focused_prepared,
+            selection_subject_id="compact-doublet", query_rt_min=center,
+            selection_policy_version=policy,
+        )
+        assert focused.state == "available" and focused.facts is not None
+        assert focused.facts.apex_rt_min == facts.apex_rt_min
+        assert focused.facts.area_counts_seconds == pytest.approx(
+            expected_area, rel=0.03,
+        )
+        payload = serialize_physical_peak_evaluation(
+            rt, raw, profile=prepared.prepared.profile, evaluation=result,
+        )
+        assert deserialize_physical_peak_evaluation(payload)[-1] == result
+        selected.append(facts)
+    assert selected[0].physical_segment_id != selected[1].physical_segment_id
+    assert selected[0].right_rt_min <= selected[1].left_rt_min
+
+
+@pytest.mark.parametrize(
+    "policy", [PHYSICAL_PEAK_POINT_POLICY, DISCOVERY_PHYSICAL_PEAK_POINT_POLICY]
+)
 @pytest.mark.parametrize("background", [0.0, 20.0])
 def test_continuous_peak_with_isolated_dropouts_keeps_morphology_area(
     policy: str, background: float,
