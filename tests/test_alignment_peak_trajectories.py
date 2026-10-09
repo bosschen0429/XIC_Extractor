@@ -208,6 +208,48 @@ def test_isolated_peaks_and_other_mass_have_no_pattern_authority() -> None:
     )
 
 
+@pytest.mark.parametrize("owner_offset_ppm", [-20.0, 20.0, 20.01])
+def test_mass_neighborhoods_keep_boundary_owners_and_ms1_only_positions(
+    owner_offset_ppm: float,
+) -> None:
+    owners = []
+    contexts = []
+    expected = {}
+    for mz in (400.0, 500.0, 600.0):
+        for sample, shift in (("a", 0.0), ("b", 0.1), ("c", 0.2)):
+            contexts.append(
+                replace(
+                    _context(sample, ((10.0 + shift, 20.0), (10.6 + shift, 100.0))),
+                    mz=mz,
+                )
+            )
+            if sample != "c":
+                owners.extend(
+                    replace(
+                        _owner(sample, f"{mz}:{label}", rt + shift),
+                        precursor_mz=mz * (1.0 + owner_offset_ppm * 1e-6),
+                    )
+                    for label, rt in (("early", 10.0), ("late", 10.6))
+                )
+        for label, rt in (("early", 10.0), ("late", 10.6)):
+            expected[(f"a:{mz}:{label}", f"b:{mz}:{label}")] = (
+                ("a", rt),
+                ("b", rt + 0.1),
+                ("c", rt + 0.2),
+            )
+    result = resolve_peak_trajectories(
+        owners[::-1],
+        contexts[::-1],
+        config=AlignmentConfig(preferred_ppm=20.0),
+        injection_order={"a": 1, "b": 2, "c": 3},
+    )
+    # Ppm uses each context's reference mass. The inclusive boundary binds;
+    # just outside it, no owner can grant pattern authority to the MS1 points.
+    assert {track.owner_ids: track.sample_apices for track in result.tracks} == (
+        expected if abs(owner_offset_ppm) <= 20.0 else {}
+    )
+
+
 def test_landmarks_exclude_clipped_edge_and_keep_interior_maxima() -> None:
     rt = np.linspace(0.0, 3.0, 601)
     raw = sum(

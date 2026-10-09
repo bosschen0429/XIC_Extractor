@@ -13,6 +13,7 @@ related-ion evidence never substitutes a different trajectory or search center.
 from __future__ import annotations
 
 import math
+from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -22,7 +23,12 @@ import numpy as np
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
-from xic_extractor.mass_accuracy import absolute_ppm_error, within_ppm
+from xic_extractor.mass_accuracy import (
+    PPM_BOUNDARY_EPSILON,
+    absolute_ppm_error,
+    mz_tolerance_da,
+    within_ppm,
+)
 from xic_extractor.peak_detection.elution_context import (
     ElutionLandmark,
     SampleElutionContext,
@@ -245,6 +251,91 @@ class _Match:
     residual: float
 
 
+class _MassIndex:
+    """A broad candidate window; the existing directional ppm test decides links."""
+
+    def __init__(self, masses: Sequence[float], ppm: float) -> None:
+        self._entries = sorted((mz, index) for index, mz in enumerate(masses))
+        self._masses = [mz for mz, _ in self._entries]
+        self._ppm = ppm + PPM_BOUNDARY_EPSILON
+        self._candidates: dict[float, tuple[int, ...]] = {}
+
+    def candidates(self, mz: float) -> tuple[int, ...]:
+        if not self._masses or not math.isfinite(mz) or mz <= 0.0:
+            return ()
+        cached = self._candidates.get(mz)
+        if cached is not None:
+            return cached
+        # Either operand can be the reference in within_ppm. Using the larger
+        # mass bounds both orientations without changing the acceptance rule.
+        radius = mz_tolerance_da(max(mz, self._masses[-1]), self._ppm)
+        first = bisect_left(self._masses, math.nextafter(mz - radius, -math.inf))
+        last = bisect_right(self._masses, math.nextafter(mz + radius, math.inf))
+        # Preserve original traversal and tie order, not m/z index order.
+        selected = tuple(sorted(index for _, index in self._entries[first:last]))
+        self._candidates[mz] = selected
+        return selected
+
+
+@dataclass(frozen=True, slots=True)
+class _OrderRegion:
+    nodes: tuple[int, ...]
+    positions: Mapping[int, int]
+    patterns: tuple[_Pattern, ...]
+
+
+def _comparison_regions(
+    patterns: tuple[_Pattern, ...],
+    matches: Sequence[tuple[_Pattern, _Pattern, _Match, int]],
+) -> dict[int, _OrderRegion]:
+    """Partition the order graph by all possible correspondence links.
+
+    A contraction cannot affect a disconnected region. Include all proposed
+    links, even ones later rejected, so each region remains closed throughout
+    the ordered merge pass.
+    """
+    parents = {node: node for pattern in patterns for node in pattern.nodes}
+
+    def root(node: int) -> int:
+        while parents[node] != node:
+            parents[node] = parents[parents[node]]
+            node = parents[node]
+        return node
+
+    def join(left: int, right: int) -> None:
+        first, second = root(left), root(right)
+        if first != second:
+            parents[second] = first
+
+    for pattern in patterns:
+        for node in pattern.nodes[1:]:
+            join(pattern.nodes[0], node)
+    for left, right, _, _ in matches:
+        join(left.nodes[0], right.nodes[0])
+    nodes_by_region: dict[int, list[int]] = defaultdict(list)
+    patterns_by_region: dict[int, list[_Pattern]] = defaultdict(list)
+    for node in parents:
+        nodes_by_region[root(node)].append(node)
+    for pattern in patterns:
+        patterns_by_region[root(pattern.nodes[0])].append(pattern)
+    regions = {}
+    for key, nodes in nodes_by_region.items():
+        positions = {node: index for index, node in enumerate(nodes)}
+        regions[key] = _OrderRegion(
+            tuple(nodes),
+            positions,
+            tuple(
+                _Pattern(
+                    pattern.sample,
+                    pattern.mz,
+                    tuple(positions[n] for n in pattern.nodes),
+                )
+                for pattern in patterns_by_region[key]
+            ),
+        )
+    return {node: regions[root(node)] for node in parents}
+
+
 def resolve_peak_trajectories(
     owners: Sequence[SampleLocalMS1Owner],
     contexts: Sequence[SampleElutionContext],
@@ -293,18 +384,32 @@ def resolve_peak_trajectories(
         )
     )
     roots = list(range(len(nodes)))
+    # A pre-existing cycle or repeated node cannot be repaired by contraction.
+    # Check the initial graph once, including regions without candidate links.
+    if not _preserves_order(roots, patterns):
+        return PeakTrajectories((), comparisons, retained_contexts)
+    regions = _comparison_regions(patterns, matches)
     supported_nodes: set[int] = set()
     for left, right, match, _ in matches:
-        proposed = roots.copy()
+        region = regions[left.nodes[0]]
+        proposed = [roots[index] for index in region.nodes]
+        changed = False
         for i, j in match.pairs:
-            keep, absorbed = sorted((proposed[left.nodes[i]], proposed[right.nodes[j]]))
+            keep, absorbed = sorted(
+                (
+                    proposed[region.positions[left.nodes[i]]],
+                    proposed[region.positions[right.nodes[j]]],
+                )
+            )
             if keep != absorbed:
+                changed = True
                 proposed = [keep if root == absorbed else root for root in proposed]
-        if proposed == roots:
+        if not changed:
             continue
-        if not _preserves_order(proposed, patterns):
+        if not _preserves_order(proposed, region.patterns):
             continue
-        roots = proposed
+        for index, root in zip(region.nodes, proposed, strict=True):
+            roots[index] = root
         if len(match.pairs) >= 2:
             supported_nodes.update(left.nodes[i] for i, _ in match.pairs)
             supported_nodes.update(right.nodes[j] for _, j in match.pairs)
@@ -348,8 +453,12 @@ def _local_patterns(
     for context in contexts:
         if context.landmarks:
             by_sample[context.sample_stem].append(context)
+    context_indexes = {
+        sample: _MassIndex([context.mz for context in rows], config.preferred_ppm)
+        for sample, rows in by_sample.items()
+    }
     nodes: list[_Node] = []
-    nodes_by_sample: dict[str, list[int]] = defaultdict(list)
+    nodes_by_mass: dict[tuple[str, float], list[int]] = defaultdict(list)
     patterns: dict[tuple[int, ...], _Pattern] = {}
     owner_nodes = {}
     retained: dict[tuple[str, float, str], SampleElutionContext] = {}
@@ -359,11 +468,19 @@ def _local_patterns(
     ) -> tuple[int, ...]:
         peaks = context.landmarks
         indices = []
+        nearby_masses = {
+            by_sample[context.sample_stem][index].mz
+            for index in context_indexes[context.sample_stem].candidates(context.mz)
+        }
         for peak in peaks[start:end]:
             same = next(
                 (
                     index
-                    for index in nodes_by_sample[context.sample_stem]
+                    for index in sorted(
+                        index
+                        for mz in nearby_masses
+                        for index in nodes_by_mass[(context.sample_stem, mz)]
+                    )
                     if within_ppm(nodes[index].mz, context.mz, config.preferred_ppm)
                     and abs(nodes[index].landmark.apex_rt - peak.apex_rt)
                     <= config.owner_apex_close_sec / 60.0
@@ -373,7 +490,7 @@ def _local_patterns(
             if same is None:
                 same = len(nodes)
                 nodes.append(_Node(context.sample_stem, context.mz, peak))
-                nodes_by_sample[context.sample_stem].append(same)
+                nodes_by_mass[(context.sample_stem, context.mz)].append(same)
             indices.append(same)
         key = tuple(indices)
         patterns[key] = _Pattern(context.sample_stem, context.mz, key)
@@ -382,9 +499,16 @@ def _local_patterns(
     for owner in sorted(
         owners, key=lambda item: (item.sample_stem, item.owner_apex_rt, item.owner_id)
     ):
+        context_index = context_indexes.get(owner.sample_stem)
+        if context_index is None:
+            continue
+        candidate_contexts = (
+            by_sample[owner.sample_stem][index]
+            for index in context_index.candidates(owner.precursor_mz)
+        )
         available = [
             context
-            for context in by_sample[owner.sample_stem]
+            for context in candidate_contexts
             if within_ppm(owner.precursor_mz, context.mz, config.preferred_ppm)
             and context.rt_start <= owner.owner_apex_rt <= context.rt_end
         ]
@@ -420,6 +544,11 @@ def _local_patterns(
     # Context from an MS1-only sample must remain usable as a location, even
     # though that sample contributed no direct owner to this grouping scope.
     seeds = tuple(patterns.values())
+    seed_index = _MassIndex([seed.mz for seed in seeds], config.preferred_ppm)
+    seed_centers = [
+        sum(nodes[i].landmark.apex_rt for i in seed.nodes) / len(seed.nodes)
+        for seed in seeds
+    ]
     for context in sorted(
         contexts,
         key=lambda item: (
@@ -433,9 +562,9 @@ def _local_patterns(
         if not context.landmarks or context_key in retained:
             continue
         compatible = [
-            seed
-            for seed in seeds
-            if within_ppm(seed.mz, context.mz, config.preferred_ppm)
+            index
+            for index in seed_index.candidates(context.mz)
+            if within_ppm(seeds[index].mz, context.mz, config.preferred_ppm)
         ]
         if not compatible:
             continue
@@ -450,14 +579,8 @@ def _local_patterns(
                 continue
             center = (peaks[start].apex_rt + peaks[end - 1].apex_rt) / 2.0
             if any(
-                abs(
-                    center
-                    - sum(nodes[i].landmark.apex_rt for i in seed.nodes)
-                    / len(seed.nodes)
-                )
-                * 60.0
-                <= config.max_rt_sec
-                for seed in compatible
+                abs(center - seed_centers[index]) * 60.0 <= config.max_rt_sec
+                for index in compatible
             ):
                 add_pattern(context, start, end)
                 retained[context_key] = context
@@ -477,19 +600,21 @@ def _neighbor_pairs(
     injection_order: Mapping[str, int],
 ) -> tuple[tuple[_Pattern, _Pattern], ...]:
     chosen: set[tuple[int, int]] = set()
+    mass_index = _MassIndex([pattern.mz for pattern in patterns], config.preferred_ppm)
+    centers = [
+        sum(nodes[i].landmark.apex_rt for i in pattern.nodes) / len(pattern.nodes)
+        for pattern in patterns
+    ]
     for index, pattern in enumerate(patterns):
-        center = sum(nodes[i].landmark.apex_rt for i in pattern.nodes) / len(
-            pattern.nodes
-        )
+        center = centers[index]
         candidates = []
-        for other_index, other in enumerate(patterns):
+        for other_index in mass_index.candidates(pattern.mz):
+            other = patterns[other_index]
             if pattern.sample == other.sample or not within_ppm(
                 pattern.mz, other.mz, config.preferred_ppm
             ):
                 continue
-            other_center = sum(nodes[i].landmark.apex_rt for i in other.nodes) / len(
-                other.nodes
-            )
+            other_center = centers[other_index]
             if abs(center - other_center) * 60.0 > config.max_rt_sec:
                 continue
             candidates.append(
@@ -600,7 +725,7 @@ def _match_patterns(
     return _Match(pairs, -score[1], -score[2])
 
 
-def _preserves_order(roots: list[int], patterns: tuple[_Pattern, ...]) -> bool:
+def _preserves_order(roots: Sequence[int], patterns: tuple[_Pattern, ...]) -> bool:
     successors: dict[int, set[int]] = defaultdict(set)
     indegree: dict[int, int] = defaultdict(int)
     for pattern in patterns:

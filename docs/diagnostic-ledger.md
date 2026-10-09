@@ -1516,3 +1516,39 @@ scientific readiness. The retained probe, per-run identities and receipts are
 under `output/claude_review_20261008/`, with the comparison in
 `performance_receipt.json`. Rerun for changed trailer decoding or a broader
 input/timing scope, not merely another reader of this review.
+
+### 2026-10-09 Peak Trajectory Resolution Uses Local Mass And Order Regions
+
+Baseline `7abb0bf6c9a76083851be88fcafdccab92133af8`; measured candidate
+`peak_trajectories.py` SHA-256
+`d01fe5b36c96c1ec54c940f11e1a8fc5d3b88ebd6b5b71850c6bae8241bf5d4f`.
+Mass indexes prune candidates without changing directional ppm acceptance,
+traversal ties or the six-neighbor-sample rule. Order contractions inspect only
+the connected region containing their possible correspondence links, rather
+than copying and rechecking unrelated mass families. Initial graph validity is
+checked once; contraction cannot repair a pre-existing cycle or repeated node.
+
+The paired in-memory probe fixes eight samples, two landmarks per mass family,
+and one MS1-only sample. One warmup per variant precedes four interleaved BC/CB
+measurements at each scale, using identical inputs, configuration and Python.
+Median `resolve_peak_trajectories` time for 32/64/128 mass families changes from
+0.1200/0.4708/1.9928 s to 0.0336/0.0749/0.1692 s. At 128 families (1,792 owners,
+1,024 contexts), ranges are 1.9262-2.0156 s versus 0.1544-0.1762 s; ppm calls
+fall from 1,752,960 to 13,568 and order-pattern visits from 917,504 to 8,192.
+This is a local scaling result, excluding imports, input creation, RAW,
+ordinary grouping, Backfill and publication. Dense mass neighborhoods remain
+density-dependent; the two small retained review cases add less than 0.2 ms
+each in median setup/resolve time, rather than demonstrating a universal speedup.
+
+Complete tracks, owner IDs, sample positions, comparison counts and retained
+contexts are exactly equal in every paired run, 530 bounded parity cases and
+the retained R02/R05 input (14 owners/contexts). The 1,948-owner contextless
+input also retains its unchanged empty-trajectory result. Boundary regression
+coverage protects inclusive ppm binding and MS1-only positions across mass
+families. Evidence: `diagnostic_only`; oracle: `exact_safe`; disposition:
+`optimized` for the stated multi-mass scaling workload, not scientific readiness.
+
+Receipts and reproducible probes are under `output/trajectory-performance/`:
+`paired-timing.json`, `density-and-retained-timing.json`, `order-cost.json`,
+`qa-parity.json` and `qa-retained.json`. Rerun for changed ppm/order semantics,
+population density or a broader timing claim, not merely another code reader.
