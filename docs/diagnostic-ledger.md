@@ -1519,9 +1519,9 @@ input/timing scope, not merely another reader of this review.
 
 ### 2026-10-09 Peak Trajectory Resolution Uses Local Mass And Order Regions
 
-Baseline `7abb0bf6c9a76083851be88fcafdccab92133af8`; measured candidate
+Baseline `9cb12d26dbd8df4c59f02d690a1a6095c363414f`; measured candidate
 `peak_trajectories.py` SHA-256
-`d01fe5b36c96c1ec54c940f11e1a8fc5d3b88ebd6b5b71850c6bae8241bf5d4f`.
+`7a44a92d8115f54c85ba73b152a61aaf584275b7568f215cf15e3ad6abd2a4b8`.
 Mass indexes prune candidates without changing directional ppm acceptance,
 traversal ties or the six-neighbor-sample rule. Order contractions inspect only
 the connected region containing their possible correspondence links, rather
@@ -1532,16 +1532,18 @@ The paired in-memory probe fixes eight samples, two landmarks per mass family,
 and one MS1-only sample. One warmup per variant precedes four interleaved BC/CB
 measurements at each scale, using identical inputs, configuration and Python.
 Median `resolve_peak_trajectories` time for 32/64/128 mass families changes from
-0.1200/0.4708/1.9928 s to 0.0336/0.0749/0.1692 s. At 128 families (1,792 owners,
-1,024 contexts), ranges are 1.9262-2.0156 s versus 0.1544-0.1762 s; ppm calls
+0.1233/0.4937/1.8528 s to 0.0333/0.0844/0.1717 s. At 128 families (1,792 owners,
+1,024 contexts), ranges are 1.7835-1.9012 s versus 0.1647-0.1836 s; ppm calls
 fall from 1,752,960 to 13,568 and order-pattern visits from 917,504 to 8,192.
 This is a local scaling result, excluding imports, input creation, RAW,
 ordinary grouping, Backfill and publication. Dense mass neighborhoods remain
-density-dependent; the two small retained review cases add less than 0.2 ms
-each in median setup/resolve time, rather than demonstrating a universal speedup.
+density-dependent: a 95-sample single-mass probe has medians 0.0258/0.0254 s,
+and the two small retained review cases remain around 1-2 ms. Neither establishes
+a meaningful speedup; this is not a universal or globally linear-time claim.
 
-Complete tracks, owner IDs, sample positions, comparison counts and retained
-contexts are exactly equal in every paired run, 530 bounded parity cases and
+Complete tracks, owner IDs, sample positions, comparison counts, retained
+contexts and derived distinctness/position indexes are exactly equal in every
+paired run, 530 bounded parity cases and
 the retained R02/R05 input (14 owners/contexts). The 1,948-owner contextless
 input also retains its unchanged empty-trajectory result. Boundary regression
 coverage protects inclusive ppm binding and MS1-only positions across mass
