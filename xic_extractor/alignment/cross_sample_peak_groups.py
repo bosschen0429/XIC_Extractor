@@ -45,7 +45,6 @@ from xic_extractor.alignment.edge_scoring import (
     OwnerEdgeEvidence,
     RTEvidenceBasis,
 )
-from xic_extractor.alignment.elution_correspondence import ElutionCorrespondence
 from xic_extractor.alignment.feature_membership_inference import (
     FeatureInferenceOperationCounts,
     FeatureMembershipGroup,
@@ -57,6 +56,7 @@ from xic_extractor.alignment.ownership_models import (
     AmbiguousOwnerRecord,
     SampleLocalMS1Owner,
 )
+from xic_extractor.alignment.peak_trajectories import PeakTrajectories
 
 if TYPE_CHECKING:
     pass
@@ -282,7 +282,7 @@ def construct_cross_sample_peak_group_hypotheses(
     operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
     bootstrap: bool = False,
     rt_warp: RtCoordinates | None = None,
-    elution_correspondence: ElutionCorrespondence | None = None,
+    peak_trajectories: PeakTrajectories | None = None,
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
     """Infer feature membership and mint its canonical CrossSample identity.
 
@@ -317,7 +317,7 @@ def construct_cross_sample_peak_group_hypotheses(
         known_identity_bindings=known_identity_bindings,
         bootstrap=bootstrap,
         rt_warp=rt_warp,
-        elution_correspondence=elution_correspondence,
+        peak_trajectories=peak_trajectories,
     )
     if operation_counts_sink is not None:
         operation_counts_sink.append(inference.operation_counts)

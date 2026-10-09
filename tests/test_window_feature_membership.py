@@ -12,15 +12,15 @@ from xic_extractor.alignment.cid_nl_inputs import (
     CID_NL_ALIGNMENT_CONFIG,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.elution_correspondence import (
-    resolve_elution_correspondence,
-)
 from xic_extractor.alignment.feature_membership_inference import (
     BatchRtWarp,
     estimate_batch_rt_warp,
     infer_feature_memberships,
 )
 from xic_extractor.alignment.ownership_models import IdentityEvent, SampleLocalMS1Owner
+from xic_extractor.alignment.peak_trajectories import (
+    resolve_peak_trajectories,
+)
 from xic_extractor.peak_detection.elution_context import (
     ElutionLandmark,
     SampleElutionContext,
@@ -125,6 +125,49 @@ def _synthetic_owner(
     )
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+def test_pattern_and_unobserved_context_samples_extend_one_trajectory(reverse) -> None:
+    owners = [
+        _synthetic_owner("a", "a:early", 10.0),
+        _synthetic_owner("a", "a:late", 10.7),
+        _synthetic_owner("b", "b:early", 10.1),
+        _synthetic_owner("b", "b:late", 10.8),
+        _synthetic_owner("c", "c:early", 10.2),
+    ]
+    contexts = [
+        SampleElutionContext(
+            sample_stem=sample,
+            mz=500.0,
+            rt_start=9.0,
+            rt_end=12.0,
+            landmarks=(
+                ElutionLandmark(10.0 + shift, 30.0, 0.25),
+                ElutionLandmark(10.7 + shift, 100.0, 0.25),
+            ),
+        )
+        for sample, shift in (("a", 0.0), ("b", 0.1))
+    ]
+    if reverse:
+        owners.reverse()
+        contexts.reverse()
+    orders = {"a": 1, "b": 2, "c": 3}
+    trajectories = resolve_peak_trajectories(
+        owners, contexts, config=AlignmentConfig(), injection_order=orders
+    )
+    result = infer_feature_memberships(
+        owners,
+        config=AlignmentConfig(),
+        injection_order=orders,
+        drift_lookup=None,
+        peak_trajectories=trajectories,
+    )
+    assert {frozenset(group.owner_ids) for group in result.groups} == {
+        frozenset(("a:early", "b:early", "c:early")),
+        frozenset(("a:late", "b:late")),
+    }
+    assert all(group.disposition == "assigned" for group in result.groups)
+
+
 def test_alternating_direct_peaks_follow_ms1_pattern_not_nearest_absolute_rt() -> None:
     owners = []
     contexts = []
@@ -147,7 +190,7 @@ def test_alternating_direct_peaks_follow_ms1_pattern_not_nearest_absolute_rt() -
             )
         )
         orders[sample] = index + 1
-    correspondence = resolve_elution_correspondence(
+    correspondence = resolve_peak_trajectories(
         owners, contexts, config=AlignmentConfig(), injection_order=orders
     )
     assert len(correspondence.tracks) == 2
@@ -156,7 +199,7 @@ def test_alternating_direct_peaks_follow_ms1_pattern_not_nearest_absolute_rt() -
         config=AlignmentConfig(),
         injection_order=orders,
         drift_lookup=None,
-        elution_correspondence=correspondence,
+        peak_trajectories=correspondence,
     )
     assert {group.owner_ids for group in result.groups} == {
         ("sample0:peak0", "sample2:peak0", "sample4:peak0"),

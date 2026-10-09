@@ -300,7 +300,7 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
     assert len(groups) == 12 and all(len(group) == 24 for group in groups)
 
 
-def test_related_ion_search_hints_are_sample_bound_and_partition_invariant(
+def test_related_ion_evidence_is_auxiliary_and_partition_invariant(
     tmp_path, monkeypatch
 ):
     import numpy as np
@@ -382,7 +382,7 @@ def test_related_ion_search_hints_are_sample_bound_and_partition_invariant(
                 assert acquired.succeeded
                 prepared = acquired.result[1].prepared_grouping
                 assert prepared is not None
-                hints.update(prepared.related_ion_rt_hints)
+                hints.update(prepared.related_ion_evidence)
                 for result in acquired.result[1].sample_results:
                     for attempt in result.backfill_attempts:
                         stem = result.job.sample.metadata.raw_stem
@@ -390,20 +390,27 @@ def test_related_ion_search_hints_are_sample_bound_and_partition_invariant(
                             assert attempt.assessment.content.method_result != "SUPPORT"
                         receipt = attempt.assessment.content.evaluation_receipt
                         queries[result.job.sample.metadata.raw_stem] = (
-                            attempt.query_rt, attempt.query_rt_basis,
-                            receipt.query_rt_min, receipt.query_rt_max,
+                            attempt.query_rt,
+                            attempt.query_rt_basis,
+                            receipt.query_rt_min,
+                            receipt.query_rt_max,
+                            attempt.assessment.candidate_peaks[
+                                0
+                            ].content.integration.rt_apex_min,
                         )
                 adapter.execute_composition(partition, acquired, store)
             assert len(hints) == 2
             for (_, sample), hint in hints.items():
                 expected = {"S20": 8.1, "S21": 7.9}[sample]
-                assert hint.query_rt == pytest.approx(expected, abs=0.005)
-                assert hint.basis.startswith("related_ion_coelution:")
+                assert hint.rt_min == pytest.approx(expected, abs=0.005)
+                assert hint.partner_group_ids
             assert set(queries) == {"S20", "S21"}
-            for sample, (rt, basis, lower, upper) in queries.items():
+            for sample, (rt, basis, lower, upper, apex) in queries.items():
                 expected = {"S20": 8.1, "S21": 7.9}[sample]
-                assert rt == pytest.approx(expected, abs=0.005)
-                assert basis.startswith("related_ion_coelution:")
+                assert apex == pytest.approx(expected, abs=0.005)
+                assert rt == pytest.approx(8.0, abs=0.005)
+                assert basis.startswith("trajectory_")
+                assert ";related_ion_discordant:" in basis
                 half_window = peak_config.nl_rt_anchor_half_window_min
                 assert lower == pytest.approx(rt - half_window)
                 assert upper == pytest.approx(rt + half_window)
@@ -710,9 +717,7 @@ def test_prepared_workset_index_stores_one_id_set_per_workset(
         ),
         runtime_subjects=subjects,
     )
-    prepared = bounded_owner.prepare_untargeted_alignment_worksets(
-        packing_plan
-    )
+    prepared = bounded_owner.prepare_untargeted_alignment_worksets(packing_plan)
 
     index = prepared.workset_ids_by_subject
     assert any(len(workset) > 1 for workset in prepared.worksets)
@@ -1331,9 +1336,7 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
         assert {item.job.sample.metadata.raw_stem for item in initial} == {
             sample.metadata.raw_stem for sample in plan.context.samples
         }
-        assert {
-            item.job.method_subject.method_subject_id for item in initial
-        } == {
+        assert {item.job.method_subject.method_subject_id for item in initial} == {
             subject.method_subject_id
             for subject in search.grouping.batch.subject_batch.subjects
         }
@@ -1628,9 +1631,7 @@ def test_overlapped_partition_acquisition_failure_propagates(
     assert list((tmp_path / "overlapped-failure").glob(".cid_nl_partitions-*")) == []
 
 
-def test_last_bootstrap_failure_prevents_backfill_admission(
-    tmp_path, monkeypatch
-):
+def test_last_bootstrap_failure_prevents_backfill_admission(tmp_path, monkeypatch):
     import xic_extractor.untargeted_execution.execution as owner
 
     plan, _ = _plan(tmp_path, monkeypatch)
@@ -1721,7 +1722,8 @@ def test_batch_preparation_abort_never_publishes_backfill_inputs(
 
     monkeypatch.setattr(
         owner.UntargetedPartitionPipelineAdapter,
-        "execute_acquisition", observed_acquire,
+        "execute_acquisition",
+        observed_acquire,
     )
     monkeypatch.setattr(
         owner.UntargetedBatchGroupingPreparation, "finalize_grouping", finalize_or_abort
@@ -1749,7 +1751,8 @@ def test_batch_preparation_abort_never_publishes_backfill_inputs(
     with pytest.raises(RuntimeError, match="requires complete batch search"):
         acquire(adapters[0], adapters[0].partitions[-1])
     assert marker.read().terminal_outcome is (
-        AttemptTerminalOutcome.CANCELLED if failure_at == "cancel"
+        AttemptTerminalOutcome.CANCELLED
+        if failure_at == "cancel"
         else AttemptTerminalOutcome.FAILED
     )
 
@@ -1761,8 +1764,10 @@ def test_batch_preparation_does_not_restore_initial_acquisition_records(
 
     plan, _ = _plan(tmp_path, monkeypatch)
     adapter = owner.UntargetedPartitionPipelineAdapter(
-        plan, alignment_config=AlignmentConfig(anchor_min_seed_events=1),
-        max_partition_jobs=len(plan.context.samples), raw_workers=1,
+        plan,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        max_partition_jobs=len(plan.context.samples),
+        raw_workers=1,
     )
     store = owner.StreamedResultStore(tmp_path / "spool", adapter.get_shared_objects())
     try:
@@ -1776,7 +1781,8 @@ def test_batch_preparation_does_not_restore_initial_acquisition_records(
 
         with monkeypatch.context() as phase_patch:
             phase_patch.setattr(
-                owner.UntargetedInitialSampleResult, "__setstate__",
+                owner.UntargetedInitialSampleResult,
+                "__setstate__",
                 forbid_initial_restore,
             )
             adapter.prepare_batch_search(store, lambda: None)
@@ -1785,9 +1791,7 @@ def test_batch_preparation_does_not_restore_initial_acquisition_records(
         assert {
             result.job.sample.metadata.raw_stem
             for result in acquired.result[1].sample_results
-        } == {
-            sample.metadata.raw_stem for sample in plan.context.samples
-        }
+        } == {sample.metadata.raw_stem for sample in plan.context.samples}
     finally:
         adapter.close_process_worker_pools()
         store.cleanup()
@@ -2120,9 +2124,7 @@ def test_sample_worker_transport_references_global_request_owners(
             on_completed=lambda _done, _total, _job, result: transported.append(result),
         )
     assert all(pid != os.getpid() for pid, _job in transported)
-    expected = {
-        job.sample.identity.sample_identity_id: job for job in batch.jobs
-    }
+    expected = {job.sample.identity.sample_identity_id: job for job in batch.jobs}
     assert len(expected) == 2
     assert len(transported) == len(batch.jobs)
     for _pid, job in transported:

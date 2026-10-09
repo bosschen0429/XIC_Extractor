@@ -21,10 +21,6 @@ from xic_extractor.alignment.conservative_backfill import (
 from xic_extractor.alignment.cross_sample_peak_groups import (
     construct_cross_sample_peak_group_hypotheses,
 )
-from xic_extractor.alignment.feature_membership_inference import (
-    BackfillRtPrediction,
-    predict_backfill_rt,
-)
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
     owner_from_cid_nl_assessment_support,
@@ -381,8 +377,8 @@ def _prepare_group_authorized_backfills(
                 ),
             )
             assert group.group_center_rt is not None
-            locations = workset.grouping_scope.elution_correspondence.locations_for(
-                group.owner_ids
+            trajectory = workset.grouping_scope.peak_trajectories.trajectory_for(
+                group.owners
             )
             for sample_id in sorted(target_ids):
                 key = (sample_id, subject.method_subject_id)
@@ -408,10 +404,22 @@ def _prepare_group_authorized_backfills(
                 if state.error is not None or state.adapter_result is None:
                     continue
                 assessment = state.adapter_result.assessment_input.assessment
-                query_rt = locations.get(state.job.sample.metadata.raw_stem)
+                sample_stem = state.job.sample.metadata.raw_stem
+                location = trajectory.locate(
+                    sample_stem,
+                    injection_order=injection_order,
+                    sample_cohorts=sample_cohorts,
+                    rt_warp=prepared.rt_warp,
+                    backfill_half_window_min=(
+                        state.job.peak_config.nl_rt_anchor_half_window_min
+                    ),
+                    related_ion=prepared.related_ion_evidence.get(
+                        (group.group_hypothesis_id, sample_stem)
+                    ),
+                )
                 revisit = _group_revisit(
                     assessment,
-                    query_rt=query_rt,
+                    observed_rt=location.observed_rt,
                     apex_tolerance_sec=prepared.alignment_config.owner_apex_close_sec,
                 )
                 if revisit is None:
@@ -422,26 +430,6 @@ def _prepare_group_authorized_backfills(
                         candidate_assessment=assessment,
                     )
                 else:
-                    if query_rt is not None:
-                        prediction = BackfillRtPrediction(query_rt, "elution_pattern")
-                    else:
-                        hint = prepared.related_ion_rt_hints.get(
-                            (
-                                group.group_hypothesis_id,
-                                state.job.sample.metadata.raw_stem,
-                            )
-                        )
-                        prediction = hint or predict_backfill_rt(
-                            sample_stem=state.job.sample.metadata.raw_stem,
-                            members=group.owners,
-                            group_center_rt=group.group_center_rt,
-                            injection_order=injection_order,
-                            sample_cohorts=sample_cohorts,
-                            rt_warp=prepared.rt_warp,
-                            backfill_half_window_min=(
-                                state.job.peak_config.nl_rt_anchor_half_window_min
-                            ),
-                        )
                     state.backfill_targets = tuple(
                         sorted(
                             (
@@ -451,8 +439,8 @@ def _prepare_group_authorized_backfills(
                                     method_subject=subject,
                                     physical_mz=group.family_center_mz,
                                     center_rt=group.group_center_rt,
-                                    query_rt=prediction.query_rt,
-                                    query_rt_basis=prediction.basis,
+                                    query_rt=location.query_rt,
+                                    query_rt_basis=location.basis,
                                 ),
                             ),
                             key=lambda target: (
@@ -466,7 +454,7 @@ def _prepare_group_authorized_backfills(
 def _group_revisit(
     assessment: CidNlMethodAssessmentRef,
     *,
-    query_rt: float | None = None,
+    observed_rt: float | None = None,
     apex_tolerance_sec: float = 0.0,
 ) -> Literal["reuse", "search"] | None:
     """How a sample outside one group revisits that group's window.
@@ -485,8 +473,8 @@ def _group_revisit(
         return None
     if not assessment.candidate_peaks:
         return "search"
-    if query_rt is not None and not any(
-        abs(peak.content.integration.rt_apex_min - query_rt) * 60.0
+    if observed_rt is not None and not any(
+        abs(peak.content.integration.rt_apex_min - observed_rt) * 60.0
         <= apex_tolerance_sec
         for peak in assessment.candidate_peaks
     ):

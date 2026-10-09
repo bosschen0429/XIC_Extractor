@@ -1096,9 +1096,7 @@ def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
         for ref in assessment.evidence_refs
     }
     assert products_by_loss == (
-        {116.0474: 383.9526, 132.0423: 367.9577}
-        if composite
-        else {116.0474: 383.9526}
+        {116.0474: 383.9526, 132.0423: 367.9577} if composite else {116.0474: 383.9526}
     )
     for ref in assessment.evidence_refs:
         evidence = ref.observation
@@ -1145,7 +1143,8 @@ def test_scan_event_prefers_independent_direct_loss_over_stronger_inference(
     )
     assert len(seeds) == 2
     assert {seed.precursor_mz_basis for seed in seeds} == {
-        "scan_precursor", "product_plus_neutral_loss"
+        "scan_precursor",
+        "product_plus_neutral_loss",
     }
     forward = resolve_discovery_scan_events(seeds, settings=settings)
     reverse = resolve_discovery_scan_events(seeds[::-1], settings=settings)
@@ -1634,7 +1633,7 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
         500.0,
         8.1,
         query_rt=query_rt,
-        query_rt_basis="elution_pattern",
+        query_rt_basis="trajectory_observed",
     )
     config = _peak_config(tmp_path)
     batch = acquire_untargeted_cid_nl_backfill_trace_batch(
@@ -1657,7 +1656,7 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
         group_center_rt=8.1,
         group_hypothesis_id="same-group",
         query_rt=query_rt,
-        query_rt_basis="elution_pattern",
+        query_rt_basis="trajectory_observed",
         support_policy=DdaCidNlPeakSupportPolicy(
             precursor_tolerance_da=0.5, neutral_loss_tolerance_ppm=20.0
         ),
@@ -1668,7 +1667,7 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
     )
     assert result.group_hypothesis_id == "same-group"
     assert result.query_rt == query_rt
-    assert result.query_rt_basis == "elution_pattern"
+    assert result.query_rt_basis == "trajectory_observed"
     assessment = result.assessment
     assert assessment.content.method_result == "HOLD"
     assert not assessment.individual_support_refs
@@ -1679,11 +1678,12 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
     from xic_extractor.untargeted_execution.partition.workers import _group_revisit
 
     assert (
-        _group_revisit(assessment, query_rt=query_rt, apex_tolerance_sec=2.0) == "reuse"
+        _group_revisit(assessment, observed_rt=query_rt, apex_tolerance_sec=2.0)
+        == "reuse"
     )
     other_peak = 8.4 if query_rt == 7.8 else 7.8
     assert (
-        _group_revisit(assessment, query_rt=other_peak, apex_tolerance_sec=2.0)
+        _group_revisit(assessment, observed_rt=other_peak, apex_tolerance_sec=2.0)
         == "search"
     )
 
@@ -1764,8 +1764,6 @@ def test_recovery_batch_canonicalizes_shared_group_queries_without_merging_cente
     assert second.coordinate.request.mz == 500.0
     assert distinct_mass.coordinate.request.mz == 500.012
     assert distinct_mass.coordinate.request.rt_min == second.coordinate.request.rt_min
-
-
 
 
 def test_adapter_receipt_covers_candidate_search_beyond_seed_window(

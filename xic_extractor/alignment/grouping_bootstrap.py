@@ -18,10 +18,6 @@ from xic_extractor.alignment.drift_evidence import (
 from xic_extractor.alignment.edge_scoring import (
     DriftLookupProtocol,
 )
-from xic_extractor.alignment.elution_correspondence import (
-    ElutionCorrespondence,
-    resolve_elution_correspondence,
-)
 from xic_extractor.alignment.feature_membership_inference import (
     FeatureInferenceOperationCounts,
 )
@@ -32,6 +28,10 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     owner_from_cid_nl_assessment_support,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+from xic_extractor.alignment.peak_trajectories import (
+    PeakTrajectories,
+    resolve_peak_trajectories,
+)
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
@@ -61,7 +61,7 @@ class InitialGroupingScope:
     mz_interval: tuple[float, float]
     rt_interval: tuple[float, float]
     groups: tuple[CrossSamplePeakGroupHypothesis, ...]
-    elution_correspondence: ElutionCorrespondence = ElutionCorrespondence()
+    peak_trajectories: PeakTrajectories = PeakTrajectories()
 
     def __post_init__(self) -> None:
         mz_interval = _validated_interval(self.mz_interval, field="mz_interval")
@@ -244,7 +244,7 @@ def bootstrap_cid_nl_initial_population(
             sample_universe=sample_universe,
             injection_order=injection_order,
         )
-    correspondence = resolve_elution_correspondence(
+    correspondence = resolve_peak_trajectories(
         owners,
         elution_contexts,
         config=alignment_config,
@@ -258,7 +258,7 @@ def bootstrap_cid_nl_initial_population(
         drift_lookup=drift_lookup,
         operation_counts_sink=operation_counts_sink,
         bootstrap=True,
-        elution_correspondence=correspondence,
+        peak_trajectories=correspondence,
     )
     if not provisional_groups and not searched_no_observation:
         raise GroupingBootstrapError(
@@ -302,7 +302,7 @@ def bootstrap_cid_nl_initial_population(
         cid_nl_method_subject_resolver_interval(subject) for subject in method_subjects
     )
     grouping_scope = InitialGroupingScope(
-        elution_correspondence=correspondence,
+        peak_trajectories=correspondence,
         mz_interval=(
             min(interval[0] for interval in method_subject_intervals),
             max(interval[1] for interval in method_subject_intervals),

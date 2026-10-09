@@ -9,15 +9,15 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
-from xic_extractor.alignment.elution_correspondence import (
-    resolve_elution_correspondence,
-)
 from xic_extractor.alignment.feature_membership_inference import (
     BatchRtWarp,
     RtCoordinates,
 )
 from xic_extractor.alignment.grouping_workflow import group_cid_nl_owners
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+from xic_extractor.alignment.peak_trajectories import (
+    resolve_peak_trajectories,
+)
 from xic_extractor.alignment.sample_rt_calibration import (
     BatchRtCalibration,
     RtCalibrationPolicy,
@@ -63,7 +63,7 @@ def replay_grouping(
             rt_warp=rt_coordinates if rt_coordinates is not None else workset.rt_warp,
             backfill_half_window_min=inputs.backfill_half_window_min,
             known_identity_bindings=workset.known_identity_bindings,
-            elution_correspondence=resolve_elution_correspondence(
+            peak_trajectories=resolve_peak_trajectories(
                 workset.owners,
                 workset.elution_contexts,
                 config=config or inputs.alignment_config,

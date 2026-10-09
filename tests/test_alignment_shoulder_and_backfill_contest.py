@@ -12,9 +12,6 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
     construct_cross_sample_peak_group_hypotheses,
 )
-from xic_extractor.alignment.elution_correspondence import (
-    resolve_elution_correspondence,
-)
 from xic_extractor.alignment.grouping_workflow import (
     contested_backfill_peaks,
     group_cid_nl_owners,
@@ -22,6 +19,9 @@ from xic_extractor.alignment.grouping_workflow import (
     reject_shoulder_groups,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+from xic_extractor.alignment.peak_trajectories import (
+    resolve_peak_trajectories,
+)
 from xic_extractor.peak_detection.elution_context import (
     ElutionLandmark,
     SampleElutionContext,
@@ -64,7 +64,7 @@ def test_ms1_patterns_prevent_remerging_sample_disjoint_direct_rows() -> None:
             )
         )
     orders = {sample: index for index, sample in enumerate(("A", "B", "C", "D"))}
-    correspondence = resolve_elution_correspondence(
+    correspondence = resolve_peak_trajectories(
         owners, contexts, config=_CONFIG, injection_order=orders
     )
     result = group_cid_nl_owners(
@@ -74,7 +74,7 @@ def test_ms1_patterns_prevent_remerging_sample_disjoint_direct_rows() -> None:
         injection_order=orders,
         rt_warp=None,
         backfill_half_window_min=1.0,
-        elution_correspondence=correspondence,
+        peak_trajectories=correspondence,
     )
     assert {frozenset(group.owner_ids) for group in result} == {
         frozenset((owners[0].owner_id, owners[2].owner_id)),

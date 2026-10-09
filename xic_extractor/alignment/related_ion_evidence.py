@@ -1,4 +1,4 @@
-"""Same-sample related-ion search hints, never identity or quantitative evidence."""
+"""Auxiliary coelution evidence, never a separate peak-localization method."""
 
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ import numpy as np
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
-from xic_extractor.alignment.feature_membership_inference import BackfillRtPrediction
 
 # Singly charged M+1-compatible spacing only proposes a relationship. Repeated
 # coelution and stable relative response are also required; none identifies it.
@@ -24,6 +23,20 @@ _MAX_RELATIVE_RATIO_SCATTER = 0.25
 
 
 @dataclass(frozen=True, slots=True)
+class RelatedIonEvidence:
+    rt_min: float
+    partner_group_ids: tuple[str, ...]
+
+    def describe_at(self, query_rt: float) -> str:
+        agreement = (
+            "consistent"
+            if abs(query_rt - self.rt_min) <= _COELUTION_MIN
+            else "discordant"
+        )
+        return f"related_ion_{agreement}:" + ";".join(self.partner_group_ids)
+
+
+@dataclass(frozen=True, slots=True)
 class _ObservedIonGroup:
     group_id: str
     mz: float
@@ -31,11 +44,11 @@ class _ObservedIonGroup:
     observations: Mapping[str, tuple[float, float]]
 
 
-class RelatedIonRtHintAccumulator:
-    """Learn once from frozen groups across partitions; return missing-cell hints.
+class RelatedIonEvidenceAccumulator:
+    """Learn once from frozen groups; return auxiliary missing-cell evidence.
 
-    Query positions come only from an actually observed partner in the same
-    sample. The absent target contributes neither RT nor intensity at query time.
+    Positions come only from an actually observed partner in the same sample.
+    The absent target contributes neither RT nor intensity at query time.
     No RAW access, membership mutation, annotation, or partner-area projection.
     """
 
@@ -62,7 +75,7 @@ class RelatedIonRtHintAccumulator:
                 {o.sample_stem: (o.owner_apex_rt, o.owner_area) for o in group.owners},
             )
 
-    def freeze(self) -> dict[tuple[str, str], BackfillRtPrediction]:
+    def freeze(self) -> dict[tuple[str, str], RelatedIonEvidence]:
         groups = sorted(self._groups.values(), key=lambda g: (g.mz, g.group_id))
         masses = [g.mz for g in groups]
         proposals: dict[tuple[str, str], list[tuple[float, str]]] = defaultdict(list)
@@ -80,10 +93,9 @@ class RelatedIonRtHintAccumulator:
             positions = [rt for rt, _ in values]
             if max(positions) - min(positions) > _COELUTION_MIN:
                 continue
-            hints[key] = BackfillRtPrediction(
-                query_rt=max(0.0, float(np.median(positions))),
-                basis="related_ion_coelution:"
-                + ";".join(sorted(partner for _, partner in values)),
+            hints[key] = RelatedIonEvidence(
+                rt_min=max(0.0, float(np.median(positions))),
+                partner_group_ids=tuple(sorted(partner for _, partner in values)),
             )
         return hints
 

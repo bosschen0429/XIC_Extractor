@@ -8,7 +8,7 @@ from tests.test_feature_membership_inference import _owner
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
-from xic_extractor.alignment.related_ion_rt_hints import RelatedIonRtHintAccumulator
+from xic_extractor.alignment.related_ion_evidence import RelatedIonEvidenceAccumulator
 
 
 def _group(name, mz, samples, *, offset=0.0):
@@ -37,21 +37,25 @@ def _evidence():
 
 
 def _fit(groups, cohorts):
-    model = RelatedIonRtHintAccumulator(sample_cohorts=cohorts, mass_tolerance_ppm=5.0)
+    model = RelatedIonEvidenceAccumulator(
+        sample_cohorts=cohorts, mass_tolerance_ppm=5.0
+    )
     for group in groups:
         model.add_groups((group,))
     return model.freeze()
 
 
-def test_related_ion_supplies_only_missing_sample_search_coordinate():
+def test_related_ion_supplies_auxiliary_missing_sample_evidence():
     target, partner, cohorts = _evidence()
     before = target, partner
     hints = _fit((target, partner), cohorts)
     assert hints == _fit((partner, target), cohorts)
     assert len(hints) == 1
     hint = hints["target", "missing"]
-    assert hint.query_rt == pytest.approx(13.01)
-    assert hint.basis == "related_ion_coelution:partner"
+    assert hint.rt_min == pytest.approx(13.01)
+    assert hint.partner_group_ids == ("partner",)
+    assert hint.describe_at(13.0) == "related_ion_consistent:partner"
+    assert hint.describe_at(10.0) == "related_ion_discordant:partner"
     assert (target, partner) == before
     assert target.group_center_rt == 10.0
     assert target.group_center_mz == 349.2157

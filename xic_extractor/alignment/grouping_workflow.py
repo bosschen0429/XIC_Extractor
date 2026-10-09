@@ -21,7 +21,6 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
-from xic_extractor.alignment.elution_correspondence import ElutionCorrespondence
 from xic_extractor.alignment.feature_membership_inference import (
     FeatureInferenceOperationCounts,
     FeatureMembershipGroup,
@@ -45,6 +44,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     owner_from_ms1_observation_hypothesis,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+from xic_extractor.alignment.peak_trajectories import PeakTrajectories
 from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -276,7 +276,7 @@ def regroup_cid_nl_cross_sample_groups(
         rt_warp=rt_warp,
         backfill_half_window_min=backfill_half_window_min,
         operation_counts_sink=operation_counts_sink,
-        elution_correspondence=grouping_scope.elution_correspondence,
+        peak_trajectories=grouping_scope.peak_trajectories,
     )
     identities = tuple(
         validate_cross_sample_peak_group_identity(group, require_canonical=True)
@@ -314,7 +314,7 @@ def group_cid_nl_owners(
     drift_lookup: DriftLookupProtocol | None = None,
     known_identity_bindings: Sequence[tuple[str, str]] = (),
     operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
-    elution_correspondence: ElutionCorrespondence | None = None,
+    peak_trajectories: PeakTrajectories | None = None,
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
     """Run the shared membership, disjoint-merge and shoulder decisions."""
     groups = construct_cross_sample_peak_group_hypotheses(
@@ -326,7 +326,7 @@ def group_cid_nl_owners(
         known_identity_bindings=known_identity_bindings,
         rt_warp=rt_warp,
         operation_counts_sink=operation_counts_sink,
-        elution_correspondence=elution_correspondence,
+        peak_trajectories=peak_trajectories,
     )
     return reject_shoulder_groups(
         merge_sample_disjoint_groups(
@@ -335,7 +335,7 @@ def group_cid_nl_owners(
             backfill_half_window_min=backfill_half_window_min,
             injection_order=injection_order,
             rt_warp=rt_warp,
-            elution_correspondence=elution_correspondence,
+            peak_trajectories=peak_trajectories,
         ),
         config=config,
     )
@@ -572,7 +572,7 @@ def merge_sample_disjoint_groups(
     backfill_half_window_min: float,
     injection_order: Mapping[str, int],
     rt_warp: RtCoordinates | None,
-    elution_correspondence: ElutionCorrespondence | None = None,
+    peak_trajectories: PeakTrajectories | None = None,
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
     """Merge nearby sample-disjoint rows only when their union supports one band.
 
@@ -613,19 +613,7 @@ def merge_sample_disjoint_groups(
         group.group_hypothesis_id: {owner.sample_stem for owner in group.owners}
         for group in groups
     }
-    owner_tracks = (
-        elution_correspondence.owner_track_indices()
-        if elution_correspondence is not None
-        else {}
-    )
-    tracks = {
-        group.group_hypothesis_id: {
-            owner_tracks[owner_id]
-            for owner_id in group.owner_ids
-            if owner_id in owner_tracks
-        }
-        for group in groups
-    }
+    member_ids = {group.group_hypothesis_id: set(group.owner_ids) for group in groups}
 
     def find(group_id: str) -> str:
         while root[group_id] != group_id:
@@ -636,12 +624,15 @@ def merge_sample_disjoint_groups(
         first_root, second_root = find(first_id), find(second_id)
         if first_root == second_root or samples[first_root] & samples[second_root]:
             continue
-        if len(tracks[first_root] | tracks[second_root]) > 1:
+        combined_ids = member_ids[first_root] | member_ids[second_root]
+        if peak_trajectories is not None and not peak_trajectories.permits_membership(
+            combined_ids
+        ):
             continue
         keep, absorbed = sorted((first_root, second_root))
         root[absorbed] = keep
         samples[keep] |= samples.pop(absorbed)
-        tracks[keep] |= tracks.pop(absorbed)
+        member_ids[keep] |= member_ids.pop(absorbed)
     members: dict[str, list[CrossSamplePeakGroupHypothesis]] = defaultdict(list)
     for group in groups:
         members[find(group.group_hypothesis_id)].append(group)
@@ -696,7 +687,7 @@ def merge_sample_disjoint_groups(
                 inference_basis=FeatureMembershipGroup(
                     owner_ids=tuple(owner.owner_id for owner in owners),
                     disposition="assigned",
-                    basis="window_level_rt_band",
+                    basis="peak_trajectory",
                     reason="sample_disjoint_within_backfill_window",
                 ),
                 inference_decisions=tuple(

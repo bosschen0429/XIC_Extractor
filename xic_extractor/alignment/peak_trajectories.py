@@ -1,17 +1,24 @@
-"""Resolve local elution patterns without granting MS1 landmarks method support.
+"""One physical peak trajectory supplies correspondence and search coordinates.
 
 Order and a shared, width-bounded RT displacement establish correspondence.
 Missing landmarks are allowed. Relative height only breaks ties between equally
 complete patterns; it cannot replace a two-peak pattern with one tall peak.
 Single-peak links are local continuations, not independent pattern evidence.
+
+The resulting sample positions are observations of the same trajectory used to
+locate missing samples. MS1 landmarks never grant method support, and auxiliary
+related-ion evidence never substitutes a different trajectory or search center.
 """
 
 from __future__ import annotations
 
 import math
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Protocol
+
+import numpy as np
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
@@ -21,37 +28,200 @@ from xic_extractor.peak_detection.elution_context import (
     SampleElutionContext,
 )
 
+if TYPE_CHECKING:
+    from xic_extractor.alignment.related_ion_evidence import RelatedIonEvidence
+
 _NEIGHBOR_SAMPLES = 6
+_TRAJECTORY_NEIGHBORS = 12
 _TIE_EPSILON = 1e-9
+_TREND_SCALE_FLOOR_MIN = 0.5 / 60.0
+_TREND_TOLERANCE_MIN = 1e-8 / 60.0
+
+
+class RtCalibration(Protocol):
+    """The shared batch coordinate transform, including MS1-only observations."""
+
+    def has_support(self, sample_stem: str) -> bool: ...
+
+    def common_rt_min(self, sample_stem: str, observed_rt: float) -> float: ...
+
+    def offset_min(self, sample_stem: str, rt_min: float) -> float: ...
 
 
 @dataclass(frozen=True, slots=True)
-class ElutionTrack:
+class PeakLocation:
+    query_rt: float
+    basis: str
+    observed: bool = False
+
+    @property
+    def observed_rt(self) -> float | None:
+        """A forecast alone does not establish a different observed peak."""
+        return self.query_rt if self.observed else None
+
+
+@dataclass(frozen=True, slots=True)
+class PeakTrajectory:
     owner_ids: tuple[str, ...]
     sample_apices: tuple[tuple[str, float], ...]
+    _positions: Mapping[str, float] = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "_positions", dict(self.sample_apices))
+
+    def locate(
+        self,
+        sample_stem: str,
+        *,
+        injection_order: Mapping[str, int],
+        sample_cohorts: Mapping[str, str],
+        rt_warp: RtCalibration | None,
+        backfill_half_window_min: float,
+        related_ion: RelatedIonEvidence | None = None,
+    ) -> PeakLocation:
+        """Use an observed point or fit the unobserved part of this trajectory.
+
+        Both method-supported owners and matched MS1-only peaks contribute
+        positions. The query stays in the target sample's RT coordinates;
+        neither fitting nor related-ion agreement supplies method eligibility.
+        """
+        if sample_stem in self._positions:
+            location = PeakLocation(
+                self._positions[sample_stem], "trajectory_observed", True
+            )
+        else:
+            location = self._estimate(
+                sample_stem,
+                injection_order=injection_order,
+                sample_cohorts=sample_cohorts,
+                rt_warp=rt_warp,
+                backfill_half_window_min=backfill_half_window_min,
+            )
+        if related_ion is None:
+            return location
+        return PeakLocation(
+            location.query_rt,
+            f"{location.basis};{related_ion.describe_at(location.query_rt)}",
+            location.observed,
+        )
+
+    def _estimate(
+        self,
+        sample_stem: str,
+        *,
+        injection_order: Mapping[str, int],
+        sample_cohorts: Mapping[str, str],
+        rt_warp: RtCalibration | None,
+        backfill_half_window_min: float,
+    ) -> PeakLocation:
+        order = injection_order.get(sample_stem)
+        cohort = sample_cohorts.get(sample_stem)
+        nearest = sorted(
+            (
+                (sample, rt)
+                for sample, rt in self.sample_apices
+                if order is not None
+                and cohort is not None
+                and sample in injection_order
+                and sample_cohorts.get(sample) == cohort
+            ),
+            key=lambda point: (
+                abs(injection_order[point[0]] - (order or 0)),
+                injection_order[point[0]],
+                point[0],
+            ),
+        )[:_TRAJECTORY_NEIGHBORS]
+        if order is None or not nearest:
+            # Without same-cohort temporal support, the trajectory has only a
+            # reference position. Do not extrapolate from another batch's order.
+            return PeakLocation(
+                float(np.median([rt for _, rt in self.sample_apices])),
+                "trajectory_reference",
+            )
+        calibrated = (
+            rt_warp is not None
+            and rt_warp.has_support(sample_stem)
+            and all(rt_warp.has_support(sample) for sample, _ in nearest)
+        )
+        coordinates = [
+            rt_warp.common_rt_min(sample, rt)
+            if calibrated and rt_warp is not None
+            else rt
+            for sample, rt in nearest
+        ]
+        fitted = _fit_rt_trajectory(
+            [injection_order[sample] for sample, _ in nearest],
+            coordinates,
+            order,
+            backfill_half_window_min=backfill_half_window_min,
+        )
+        if calibrated and rt_warp is not None:
+            return PeakLocation(
+                max(
+                    0.0,
+                    fitted.query_rt + rt_warp.offset_min(sample_stem, fitted.query_rt),
+                ),
+                f"calibrated_{fitted.basis}",
+            )
+        return PeakLocation(max(0.0, fitted.query_rt), fitted.basis)
 
 
 @dataclass(frozen=True, slots=True)
-class ElutionCorrespondence:
+class PeakTrajectories:
     """Physical correspondence only; unbound or ambiguous owners are omitted."""
 
-    tracks: tuple[ElutionTrack, ...] = ()
+    tracks: tuple[PeakTrajectory, ...] = ()
     pattern_comparisons: int = 0
     source_contexts: tuple[SampleElutionContext, ...] = ()
+    _track_by_owner: Mapping[str, int] = field(init=False, repr=False, compare=False)
 
-    def locations_for(self, owner_ids: Sequence[str]) -> dict[str, float]:
-        requested = set(owner_ids)
-        tracks = [track for track in self.tracks if requested & set(track.owner_ids)]
-        if len(tracks) != 1 or not requested.issubset(tracks[0].owner_ids):
-            return {}
-        return dict(tracks[0].sample_apices)
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "_track_by_owner",
+            {
+                owner_id: index
+                for index, track in enumerate(self.tracks)
+                for owner_id in track.owner_ids
+            },
+        )
+
+    def trajectory_for(self, owners: Sequence[SampleLocalMS1Owner]) -> PeakTrajectory:
+        """Bind a finalized group to its direct and compatible context points.
+
+        Unmatched owners can extend a pattern-supported trajectory. Conversely,
+        a known-identity group spanning conflicting physical patterns supplies
+        only its own observations; a physical pattern cannot override identity.
+        """
+        requested = {owner.owner_id for owner in owners}
+        indices = {
+            self._track_by_owner[item]
+            for item in requested
+            if item in self._track_by_owner
+        }
+        points = (
+            dict(self.tracks[next(iter(indices))].sample_apices)
+            if len(indices) == 1
+            else {}
+        )
+        points.update((owner.sample_stem, owner.owner_apex_rt) for owner in owners)
+        return PeakTrajectory(tuple(sorted(requested)), tuple(sorted(points.items())))
 
     def owner_track_indices(self) -> dict[str, int]:
-        return {
-            owner_id: index
-            for index, track in enumerate(self.tracks)
-            for owner_id in track.owner_ids
-        }
+        return dict(self._track_by_owner)
+
+    def permits_membership(self, owner_ids: Iterable[str]) -> bool:
+        """Unobserved context may extend a track, but distinct tracks cannot merge."""
+        return (
+            len(
+                {
+                    self._track_by_owner[item]
+                    for item in owner_ids
+                    if item in self._track_by_owner
+                }
+            )
+            <= 1
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,13 +245,13 @@ class _Match:
     residual: float
 
 
-def resolve_elution_correspondence(
+def resolve_peak_trajectories(
     owners: Sequence[SampleLocalMS1Owner],
     contexts: Sequence[SampleElutionContext],
     *,
     config: AlignmentConfig,
     injection_order: Mapping[str, int],
-) -> ElutionCorrespondence:
+) -> PeakTrajectories:
     """Bind existing owners and MS1-only locations to consistent local patterns.
 
     Acquisition and signal preparation are caller-owned. This finite in-memory
@@ -89,12 +259,12 @@ def resolve_elution_correspondence(
     creates an owner, selected peak, area, or method assessment.
     """
     if not contexts or not owners:
-        return ElutionCorrespondence()
+        return PeakTrajectories()
     nodes, patterns, owner_nodes, retained_contexts = _local_patterns(
         owners, contexts, config
     )
     if not patterns:
-        return ElutionCorrespondence(source_contexts=retained_contexts)
+        return PeakTrajectories(source_contexts=retained_contexts)
     matches = []
     comparisons = 0
     for left, right in _neighbor_pairs(patterns, nodes, config, injection_order):
@@ -156,8 +326,8 @@ def resolve_elution_correspondence(
         # sample is still not a usable location or membership assertion.
         if len({sample for sample, _ in locations}) != len(locations):
             continue
-        tracks.append(ElutionTrack(tuple(sorted(owner_ids)), locations))
-    return ElutionCorrespondence(
+        tracks.append(PeakTrajectory(tuple(sorted(owner_ids)), locations))
+    return PeakTrajectories(
         tuple(sorted(tracks, key=lambda track: track.owner_ids)),
         comparisons,
         retained_contexts,
@@ -452,3 +622,62 @@ def _preserves_order(roots: list[int], patterns: tuple[_Pattern, ...]) -> bool:
             if not indegree[following]:
                 available.append(following)
     return visited == len(indegree)
+
+
+def _fit_rt_trajectory(
+    orders: Sequence[int],
+    rts: Sequence[float],
+    query_order: int,
+    *,
+    backfill_half_window_min: float,
+) -> PeakLocation:
+    """Robust kernel-weighted linear trend, so steep drift is not lagged.
+
+    Fewer than three neighbors, or neighbors at one order, leave no slope to fit;
+    their median is used. Outside the support, residual scatter amplified by
+    fit leverage must fit inside the actual search half-window. Otherwise use
+    the fitted value at the nearest supported injection, not an unbounded
+    slope or a different group. This risk proxy is not a calibrated confidence
+    interval and does not establish peak identity.
+    """
+    offsets = np.asarray(orders, dtype=float) - query_order
+    values = np.asarray(rts, dtype=float)
+    spread = float(np.std(offsets))
+    if len(values) < 3 or spread < 1e-10:
+        return PeakLocation(float(np.median(values)), "trajectory_fit")
+    design = np.column_stack([np.ones(len(offsets)), offsets / spread])
+    kernel = (
+        1.0 / (1.0 + np.abs(offsets) / max(float(np.max(np.abs(offsets))), 1e-10))
+    ) ** 2
+    weights = kernel
+    beta = np.zeros(2)
+    for _ in range(80):
+        fit_weights = weights
+        root = np.sqrt(weights)
+        next_beta = np.linalg.lstsq(design * root[:, None], values * root, rcond=None)[
+            0
+        ]
+        residual = values - design @ next_beta
+        scale = max(
+            _TREND_SCALE_FLOOR_MIN,
+            1.4826 * float(np.median(np.abs(residual - np.median(residual)))),
+        )
+        weights = kernel * np.minimum(
+            1.0, 1.345 * scale / np.maximum(np.abs(residual), 1e-12)
+        )
+        converged = float(np.max(np.abs(next_beta - beta))) < _TREND_TOLERANCE_MIN
+        beta = next_beta
+        if converged:
+            break
+    basis = "trajectory_fit"
+    query_rt = float(beta[0])
+    if min(orders) > query_order or max(orders) < query_order:
+        # The query row is [1, 0] in this centered design. Reuse the final fit;
+        # no cross-validation or extra trend fits belong in this hot path.
+        covariance = np.linalg.pinv(design.T @ (fit_weights[:, None] * design))
+        risk = scale * float(np.sqrt(1.0 + max(0.0, covariance[0, 0])))
+        if risk > backfill_half_window_min:
+            boundary = min(max(query_order, min(orders)), max(orders))
+            query_rt += float(beta[1]) * (boundary - query_order) / spread
+            basis = "trajectory_fit_at_support_boundary"
+    return PeakLocation(query_rt, basis)

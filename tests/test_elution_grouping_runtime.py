@@ -14,7 +14,7 @@ from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.feature_membership_inference import BackfillRtPrediction
+from xic_extractor.alignment.related_ion_evidence import RelatedIonEvidence
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
@@ -36,8 +36,9 @@ from xic_extractor.untargeted_execution.input_planning import (
 )
 
 
+@pytest.mark.parametrize("missing_pattern_location", [False, True])
 def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineage(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, missing_pattern_location
 ):
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
@@ -56,9 +57,12 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
     raws, candidates, records = {}, {}, {}
     expected_initial = {}
     expected_query = {}
-    for index, (shift, selected) in enumerate(
-        ((0.0, 0), (0.05, 1), (0.6, 0), (0.65, 1))
-    ):
+    shifts = (
+        ((0.0, 0), (0.3, 1), (0.6, 0), (0.9, 1))
+        if missing_pattern_location
+        else ((0.0, 0), (0.05, 1), (0.6, 0), (0.65, 1))
+    )
+    for index, (shift, selected) in enumerate(shifts):
         sample = f"S{index}"
         path = fixture.source_paths[sample]
         apices = (7.8 + shift, 8.4 + shift)
@@ -133,11 +137,44 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
     initial_grouping = initial.result[1].prepared_grouping
     assert initial_grouping is not None
     assert len(initial_grouping.rt_anchor_groups) == 2
-    # A related ion may point at the other observed peak. The target's own
-    # unambiguous pattern must retain precedence in the admitted search target.
+    if missing_pattern_location:
+        # The final sample has no local pattern position for the missing peak.
+        # Other samples still supply its MS1 trajectory, including S1 where
+        # that peak has no method-supported owner. Do not discard those points
+        # and restart a prediction from only the sparse supported owners.
+        initial_grouping = replace(
+            initial_grouping,
+            worksets=tuple(
+                replace(
+                    workset,
+                    grouping_scope=replace(
+                        workset.grouping_scope,
+                        peak_trajectories=replace(
+                            workset.grouping_scope.peak_trajectories,
+                            tracks=tuple(
+                                replace(
+                                    track,
+                                    sample_apices=tuple(
+                                        (sample, apex)
+                                        for sample, apex in track.sample_apices
+                                        if sample != "S3"
+                                    ),
+                                )
+                                for track in (
+                                    workset.grouping_scope.peak_trajectories.tracks
+                                )
+                            ),
+                        ),
+                    ),
+                )
+                for workset in initial_grouping.worksets
+            ),
+        )
+    # A related ion may point at the other observed peak. It supplies a
+    # consistency observation, not an alternative search center.
     competing_hints = {
-        (group.group_hypothesis_id, sample): BackfillRtPrediction(
-            apex, "related_ion_coelution:competing-peak"
+        (group.group_hypothesis_id, sample): RelatedIonEvidence(
+            apex, ("competing-peak",)
         )
         for workset in initial_grouping.worksets
         for group in workset.grouping_scope.groups
@@ -155,11 +192,15 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
     ]
     workers._prepare_group_authorized_backfills(
         states,
-        prepared=replace(initial_grouping, related_ion_rt_hints=competing_hints),
+        prepared=replace(initial_grouping, related_ion_evidence=competing_hints),
     )
     for state in states:
         (target,) = state.backfill_targets
-        assert target.query_rt_basis == "elution_pattern"
+        if not missing_pattern_location:
+            assert (
+                target.query_rt_basis
+                == "trajectory_observed;related_ion_discordant:competing-peak"
+            )
         assert target.query_rt == pytest.approx(
             expected_query[state.job.sample.metadata.raw_stem], abs=0.005
         )
@@ -193,7 +234,7 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
         assert len(result.backfill_attempts) == 1
         attempt = result.backfill_attempts[0]
         assert attempt.group_hypothesis_id in group_ids
-        assert attempt.query_rt_basis == "elution_pattern"
+        assert attempt.query_rt_basis == "trajectory_observed"
         assert attempt.query_rt == pytest.approx(expected_query[sample], abs=0.005)
         assert attempt.assessment.content.method_result == "HOLD"
         assert not attempt.assessment.individual_support_refs

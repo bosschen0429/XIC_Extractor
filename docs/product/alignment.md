@@ -8,7 +8,7 @@ operation. The immutable workflow result exists only after cell decision and
 projection completion. Alignment does not use a mutable Matrix as its internal
 transport contract or let writers recompute science.
 
-## Elution context
+## Cross-sample peak trajectories
 
 Initial CID-NL grouping retains neighboring MS1 maxima separately from selected
 method-backed observations. The sample acquisition batch includes shared wider
@@ -16,21 +16,25 @@ context requests; original capture requests, physical evaluations and integrals
 remain unchanged. Context maxima include shoulders useful for correspondence,
 but exclude apices without acquired support for the smoothing kernel.
 
-The pure `alignment/elution_correspondence.py` owner matches ordered local peak
+The pure `alignment/peak_trajectories.py` owner matches ordered local peak
 patterns, allowing missing and extra maxima and width-bounded RT displacement.
 Relative heights break ties between equally complete patterns, rather than
 overruling peak order. Ambiguous patterns supply no correspondence. Single-peak
-continuations cannot independently establish a pattern. The result is reused by
-initial grouping, regrouping and missing-cell location; sample-disjoint rows
-distinguished by a pattern cannot be merged merely because their RTs are close.
+continuations cannot independently establish a pattern. Pattern correspondences
+seed the ordinary RT/mass membership graph; they do not partition owners into a
+separate finished answer. Samples without a usable local pattern can extend the
+same trajectory through RT/mass evidence. The ordinary membership graph and
+sample-disjoint merge consume the trajectory owner's compatibility decision,
+so distinct observed tracks
+cannot merge merely because their RTs are close.
 
-A matched MS1-only location is a sample-specific Backfill query hint, not CID-NL
-support, chemical identity, a selected integral or writer authority. The group
+A matched MS1-only peak is a trajectory observation, not CID-NL support,
+chemical identity, a selected integral or writer authority. The group
 center and lineage remain fixed. An existing HOLD is reusable only when it
 contains the located peak; otherwise acquisition asks the physical owner at
 that location. The existing assessment, admission and cell decision rules still
-decide support and values. Without usable context, existing RT-based behavior
-remains the fallback.
+decide support and values. A trajectory with no matched context still contains
+its supported owners; the same localization owner uses those observations.
 
 Physical Backfill acquires its search trace and one wider context trace in the
 same sample batch. A complete narrow capture keeps its original integral. Only
@@ -194,7 +198,8 @@ constrained group rules, and returns one immutable
 drift_lookup)`. Confirmed known-ISTD identity constraints remain indivisible.
 Targeted groups the selected sample-local hypotheses, and the retained
 Untargeted CID-NL route carries its initial groups directly into the same
-result. Neither route fits an RT trajectory model. The Untargeted CID-NL route
+result. Fitting physical search coordinates does not create a separate
+identity-trajectory decision. The Untargeted CID-NL route
 uses `CID_NL_ALIGNMENT_CONFIG` with `anchor_min_seed_events=1`: an MS1-only
 physical observation contributes one observation event, and the generic
 default `2` leaves one singleton group per physical hypothesis.
@@ -225,27 +230,38 @@ subject in the runtime result. RT bounds describe the acquisition query rather
 than identify the destination group. The direct production API therefore takes
 its alignment configuration and known-ISTD reference at execution time;
 composition cannot replace that grouping context.
-Backfill keeps the frozen group's physical m/z and identity. For missing cells,
-an unambiguous target elution-pattern location takes precedence over a
-related-ion hint; without that correspondence, a reliable related-ion hint takes
-precedence over the batch-adjusted local RT trend. These coordinates supply no
-membership, annotation, or quantitative evidence. The pure related-ion hint owner learns from frozen
-initial groups across partitions within each sample cohort: singly charged
+Backfill keeps the frozen group's physical m/z and identity. The pure
+`alignment.peak_trajectories` owner binds that group's supported owners and
+compatible MS1-only pattern positions into one trajectory. An observed sample
+position and a missing-position estimate are observations and predictions of
+that same trajectory, not competing localization methods. Missing positions use
+the nearest same-cohort observations, including MS1-only positions, with the
+shared batch coordinate transform and robust local RT fit. Insufficient temporal
+support supplies only the trajectory's reference position; extrapolation remains
+bounded by the existing fit-risk/search-window rule. The runtime consumes one
+location result instead of choosing between pattern, related-ion, and trend
+answers. A forecast alone cannot establish a different observed peak or grant
+method support.
+
+Related-ion evidence is auxiliary: agreement or disagreement is recorded with
+the query's provenance, but it neither moves the trajectory's search center nor
+grants membership, annotation, or quantitative evidence. The pure
+`alignment.related_ion_evidence` owner learns from frozen initial groups across
+partitions within each sample cohort: singly charged
 M+1-compatible mass spacing within the preferred mass tolerance, at least 20
 paired observations, at least 95% coelution within three seconds, and robust
 relative area-ratio scatter no greater than 0.25. This is a search heuristic,
 not chemical identification. An observed partner in the same sample supplies
-its apex plus the learned median RT offset; conflicting proposals separated
-by more than three seconds abstain. Absent a hint, the ordinary feature RT
-predictor remains in use. Hints are frozen before Backfill and cannot learn
-from recovered cells. A hint may change selection and integration, but the
-target ion must independently pass physical, method, and membership checks.
+its apex plus the learned median RT offset for this consistency comparison;
+conflicting partner observations separated by more than three seconds abstain.
+This evidence is frozen before Backfill and cannot learn from recovered cells.
+The target ion must independently pass physical, method, and membership checks.
 The bounded runtime finalizes grouping once and spools each partition before
-learning hints from compact RT/area projections; it does not retain all traces
+learning related-ion evidence from compact RT/area projections; it does not retain all traces
 in memory or repeat RAW acquisition to learn relationships. Initial acquisition
 and Backfill are separate scheduler phases under one attempt and one store.
 After all initial partitions have been composed and released, batch preparation
-freezes calibration, finalizes each grouping, and freezes search hints. Only a
+freezes calibration, finalizes each grouping, and freezes auxiliary evidence. Only a
 complete preparation publishes Backfill inputs; failure or cancellation prevents
 Backfill admission. No acquisition worker waits for another partition to finish
 scientific preparation. Direct and bounded production execution use the same
@@ -467,8 +483,7 @@ unresolved and rejected groups remain AuditTrail facts.
 | --- | --- | --- | --- |
 | Known-ISTD identity / drift lookup | Exact reference bindings and supported reference range | Known identity constraints and bootstrap comparison | Replace measured peak RT or authorize Backfill values |
 | `BatchRtWarp` | Agreed bootstrap groups across the complete request; residual neighbors stay within `SampleMetadata.batch_id` | Final ordinary grouping and Backfill coordinate conversion | Establish calibration support for an unsupported sample or authorize a value |
-| Local feature trend | Up to six nearest injection-order members of that feature (median); Backfill prediction uses up to twelve same-cohort members and a robust local linear fit over injection order | Dense-band assignment; sample-local Backfill prediction | Pool unrelated features into one feature trend |
-| Sample-local Backfill query | Local trend in common coordinates, mapped into the target injection's observed RT | XIC bounds and preferred peak location | Change `group_center_rt` or group identity |
+| Peak trajectory | Ordered peak correspondences and direct/MS1-only positions; missing positions use up to twelve same-cohort observations in a robust local RT fit | Ordinary membership constraints and one sample-local Backfill location, mapped into observed RT | Pool unrelated tracks, change `group_center_rt`, or grant method support |
 | `sample_rt_calibration.BatchRtCalibration` | Near-ubiquitous features under an explicit diagnostic policy | Opt-in grouping experiments | Act as the default production warp |
 
 A warp anchor needs at least 20 same-cohort members; a sample needs at least 12
@@ -482,19 +497,26 @@ Ordinary grouping retains observed RT for unsupported samples and uses corrected
 RT for supported samples in band assignment, sample-disjoint merge checks, and
 existing-feature support. These comparisons can therefore mix uncorrected and
 corrected coordinates; an identity transform is not measured zero-drift evidence.
-Backfill prediction separately checks target and neighbor calibration support.
+Dense-band membership checks use up to six nearest-injection member positions;
+they do not produce a competing Backfill location. Missing-position fitting
+checks calibration support for its target and contributing observations.
 
-Without calibrated target and neighbor support, Backfill uses the same-cohort
-local measured trend and records `local_feature_trend_insufficient_calibration`.
+Missing-position estimates use the trajectory's same-cohort observations. With
+calibrated target and neighbor support the basis is `calibrated_trajectory_fit`;
+otherwise it is `trajectory_fit` in measured coordinates. Observed positions
+retain their measured value and use `trajectory_observed`.
 For extrapolation, the fit's residual scale amplified by prediction leverage
 is compared with the configured Backfill half-window. If that risk proxy exceeds
 the window, the query uses the fitted RT at the nearest supported injection and
 its basis includes `at_support_boundary`; target-sample coordinate conversion
 still applies. Interpolation and lower-risk extrapolation retain the local line.
 This guard is not a calibrated confidence interval or an identity decision.
-Missing injection order or same-cohort neighbors instead retains the group center
-with an explicit fallback basis. These are search fallbacks, not evidence of
-zero perturbation or permission to write a value.
+Missing injection order or same-cohort observations leaves only the median
+reference position of the trajectory (`trajectory_reference`). None of these
+search-coordinate descriptions establishes zero perturbation or permission to
+write a value. An optional `related_ion_consistent` or
+`related_ion_discordant` provenance suffix records auxiliary agreement without
+changing the query RT.
 
 ### Method subjects
 

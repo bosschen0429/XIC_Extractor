@@ -151,7 +151,7 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
         (attempt,) = sample_result.backfill_attempts
         expected = 8.0 + shifts[stem]
         assert attempt.query_rt == pytest.approx(expected)
-        assert attempt.query_rt_basis == "calibrated_local_feature_trend"
+        assert attempt.query_rt_basis == "calibrated_trajectory_fit"
         receipt = attempt.assessment.content.evaluation_receipt
         assert (receipt.query_rt_min, receipt.query_rt_max) == pytest.approx(
             (expected - 0.15, expected + 0.15)
@@ -524,9 +524,7 @@ def test_runtime_recovers_every_authorized_rt_group(
             precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
             neutral_loss_da=116.0474,
         )
-        context = build_partition_context(
-            **kwargs, method_subject=subject
-        )
+        context = build_partition_context(**kwargs, method_subject=subject)
         jobs = tuple(
             UntargetedPartitionJob(
                 processing_owners=context.processing_owners,
