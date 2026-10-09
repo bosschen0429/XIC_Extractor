@@ -252,6 +252,51 @@ def test_never_compared_pattern_observations_do_not_split_one_band(
     ]
 
 
+@pytest.mark.parametrize("bootstrap", (False, True), ids=("window", "bootstrap"))
+@pytest.mark.parametrize("isolated_rt", (11.8, 12.4))
+def test_single_peak_owner_keeps_ordinary_rt_gate(
+    isolated_rt: float, bootstrap: bool
+) -> None:
+    # x has one landmark, so its nearest-RT link to the late peak is not an
+    # ordered-pattern witness. Its owner, over a minute from the late band,
+    # must not be seeded into that band or exempted from the RT gate.
+    owners = [
+        _synthetic_owner("a", "a:early", 10.0),
+        _synthetic_owner("a", "a:late", 10.7),
+        _synthetic_owner("b", "b:early", 10.05),
+        _synthetic_owner("b", "b:late", 10.75),
+        _synthetic_owner("x", "x:only", isolated_rt),
+    ]
+    contexts = [
+        SampleElutionContext(
+            sample,
+            500.0,
+            8.0,
+            15.0,
+            tuple(ElutionLandmark(rt, height, 0.25) for rt, height in peaks),
+        )
+        for sample, peaks in (
+            ("a", ((10.0, 60.0), (10.7, 100.0))),
+            ("b", ((10.05, 60.0), (10.75, 100.0))),
+            ("x", ((isolated_rt, 100.0),)),
+        )
+    ]
+    orders = {"a": 1, "b": 2, "x": 3}
+    result = infer_feature_memberships(
+        owners,
+        config=AlignmentConfig(),
+        injection_order=orders,
+        drift_lookup=None,
+        bootstrap=bootstrap,
+        peak_trajectories=resolve_peak_trajectories(
+            owners, contexts, config=AlignmentConfig(), injection_order=orders
+        ),
+    )
+    (x_group,) = (group for group in result.groups if "x:only" in group.owner_ids)
+    assert x_group.owner_ids == ("x:only",)
+    assert x_group.reason != "ordered_ms1_pattern_links_existing_owners"
+
+
 @pytest.mark.parametrize("case", sorted(_DATA["cases"]))
 def test_full85_clean_band_is_one_assigned_group(case: str) -> None:
     owners, orders = _owners(case)

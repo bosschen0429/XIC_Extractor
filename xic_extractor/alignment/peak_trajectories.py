@@ -3,7 +3,7 @@
 Order and a shared, width-bounded RT displacement establish correspondence.
 Missing landmarks are allowed. Relative height only breaks ties between equally
 complete patterns; it cannot replace a two-peak pattern with one tall peak.
-Single-peak links are local continuations, not independent pattern evidence.
+Single-peak links are not pattern evidence: they bind no owner and no position.
 
 The resulting sample positions are observations of the same trajectory used to
 locate missing samples. MS1 landmarks never grant method support, and auxiliary
@@ -342,7 +342,10 @@ def resolve_peak_trajectories(
         if root in supported_roots:
             members[root].append(index)
     for owner_id, node in owner_nodes.items():
-        if roots[node] in supported_roots:
+        # A single-peak link has no second landmark to witness which ordered
+        # peak it observed. Its owner stays outside the track, so ordinary RT
+        # and mass evidence decide its membership.
+        if node in supported_nodes:
             bound[roots[node]].append(owner_id)
     tracks = []
     for root, owner_ids in bound.items():
@@ -350,9 +353,8 @@ def resolve_peak_trajectories(
         # sample is still not a usable location or membership assertion.
         if len({nodes[i].sample for i in members[root]}) != len(members[root]):
             continue
-        # A single-peak link continues membership only. Without a second
-        # landmark it does not observe which ordered peak it is, so it is
-        # neither a located position nor an input to fitting other samples.
+        # For the same reason a single-peak link is neither a located
+        # position nor an input to fitting other samples.
         locations = tuple(
             sorted(
                 (nodes[i].sample, nodes[i].landmark.apex_rt)

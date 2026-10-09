@@ -170,12 +170,12 @@ def test_single_peak_continuation_cannot_overrule_an_ordered_pair() -> None:
         config=AlignmentConfig(),
         injection_order={"a": 1, "b": 2, "c": 3, "d": 30},
     )
-    assert dict(result.trajectory_for([owners[2]]).sample_apices).get("a") == 10.6
-    assert dict(result.trajectory_for([owners[2]]).sample_apices).get("d") == 11.25
-    assert {track.owner_ids for track in result.tracks} == {
-        ("a:early", "b:early", "d:early"),
-        ("c:late",),
-    }
+    # c's lone peak is nearest to d's early peak, but it cannot join or
+    # locate the ordered early track. Nor is its owner bound to any track.
+    (early,) = result.tracks
+    assert early.owner_ids == ("a:early", "b:early", "d:early")
+    assert dict(early.sample_apices) == {"a": 10.0, "b": 10.05, "d": 10.65}
+    assert result.trajectory_for([owners[2]]).sample_apices == (("c", 10.7),)
 
 
 @pytest.mark.parametrize(
