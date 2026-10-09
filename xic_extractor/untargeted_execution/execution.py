@@ -16,12 +16,6 @@ from typing import cast
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
-from xic_extractor.alignment.feature_membership_inference import (
-    BackfillRtPrediction,
-    BatchRtWarp,
-    BatchRtWarpAccumulator,
-)
-from xic_extractor.alignment.related_ion_rt_hints import RelatedIonRtHintAccumulator
 from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetBatchApplicationResult,
     UntargetBatchApplicationResultRequest,
@@ -51,6 +45,7 @@ from xic_extractor.execution.attempt import (
 from xic_extractor.execution.partitions import (
     PartitionAcquisitionOutput,
     PartitionCompositionOutput,
+    PartitionPipelinePhase,
     PartitionPipelineScheduler,
     ProcessingOwners,
     WorkPartition,
@@ -90,9 +85,10 @@ from xic_extractor.untargeted_execution.partition.models import (
 )
 from xic_extractor.untargeted_execution.partition_composition import (
     PersistedUntargetedPartition,
+    PreparedUntargetedBatchSearch,
+    UntargetedBatchGroupingPreparation,
     UntargetedPartitionInputs,
     compose_and_persist_untargeted_partition,
-    finalize_untargeted_partition_grouping,
     prepare_untargeted_partition_grouping,
 )
 
@@ -396,23 +392,13 @@ class UntargetedPartitionPipelineAdapter:
                 )
         self._partitions = tuple(partitions)
         self._bootstrap_count = len(subject_partitions)
-        self._bootstrap_ready = threading.Event()
         self._bootstrap_positions: dict[int, int] = {}
-        self._bootstrap_store: StreamedResultStore | None = None
-        self._sample_cohorts = {
-            sample.metadata.raw_stem: sample.metadata.batch_id
-            for sample in context.samples
-        }
-        self._rt_calibration = BatchRtWarpAccumulator(
-            injection_order={
-                sample.metadata.raw_stem: sample.metadata.injection_order
-                for sample in context.samples
-                if sample.metadata.injection_order is not None
-            },
-            sample_cohorts=self._sample_cohorts,
+        self._batch_preparation: UntargetedBatchGroupingPreparation | None = (
+            UntargetedBatchGroupingPreparation(context, alignment_config)
         )
-        self._rt_warp: BatchRtWarp | None = None
-        self._related_ion_rt_hints: dict[tuple[str, str], BackfillRtPrediction] = {}
+        self._prepared_positions: dict[int, int] = {}
+        self._prepared_store: StreamedResultStore | None = None
+        self._batch_search: PreparedUntargetedBatchSearch | None = None
         self._partition_subject_batches = {
             partition.partition_key: self._prepared_worksets.subject_batch(
                 partition.payload
@@ -494,6 +480,21 @@ class UntargetedPartitionPipelineAdapter:
         """Complete scientific worksets, each acquired once before calibration."""
         return self._partitions[: self._bootstrap_count]
 
+    def execution_phases(
+        self,
+        *,
+        progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+    ) -> tuple[PartitionPipelinePhase[tuple[CidNlMethodSubject, ...]], ...]:
+        """Operational chunks never close the batch's scientific evidence scope."""
+        return (
+            PartitionPipelinePhase("initial-acquisition", self.bootstrap_partitions),
+            PartitionPipelinePhase(
+                "batch-search-preparation",
+                self._partitions[self._bootstrap_count :],
+                partial(self.prepare_batch_search, progress_callback=progress_callback),
+            ),
+        )
+
     def _is_bootstrap(
         self, partition: WorkPartition[tuple[CidNlMethodSubject, ...]]
     ) -> bool:
@@ -561,36 +562,46 @@ class UntargetedPartitionPipelineAdapter:
             sparse=True,
         )
 
-    def _freeze_grouping_search_hints(
+    def prepare_batch_search(
         self,
         store: StreamedResultStore,
+        check_cancellation: Callable[[], None],
         *,
-        should_cancel: Callable[[], bool] | Callable[[], None] | None,
+        progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     ) -> None:
-        """Finalize once, retaining only compact cross-partition hint evidence."""
-        assert self._rt_warp is not None
-        hints = RelatedIonRtHintAccumulator(
-            sample_cohorts=self._sample_cohorts,
-            mass_tolerance_ppm=self._alignment_config.preferred_ppm,
-        )
+        """Prepare the whole batch between acquisition phases, one spool at a time.
+
+        Publish Backfill inputs only after calibration, all grouping, and hint
+        freezing succeed. A partial preparation cannot admit downstream work.
+        """
+        if len(self._bootstrap_positions) != self._bootstrap_count:
+            raise RuntimeError("initial acquisition phase is incomplete")
+        preparation = self._batch_preparation
+        assert preparation is not None
+        check_cancellation()
+        preparation.freeze_calibration()
+        prepared_positions = {}
         for index, position in sorted(self._bootstrap_positions.items()):
-            if should_cancel is not None and should_cancel():
-                raise InterruptedError("CID-NL search hint preparation cancelled")
+            check_cancellation()
             bootstrap = cast(_BootstrapPartition, store.read(position))
-            prepared = finalize_untargeted_partition_grouping(
-                bootstrap.batch, bootstrap.prepared, rt_warp=self._rt_warp,
-            )
-            hints.add_groups(
-                group for workset in prepared.worksets
-                for group in workset.grouping_scope.groups
+            prepared = preparation.finalize_grouping(
+                bootstrap.batch, bootstrap.prepared,
+                progress_callback=progress_callback,
             )
             # Heavy captures stay spooled one partition at a time. Backfill
             # consumes this frozen grouping rather than fitting it a second time.
             sealed = store.append(
                 f"cid-nl-search-grouping-{index}", replace(bootstrap, prepared=prepared)
             )
-            self._bootstrap_positions[index] = sealed.index
-        self._related_ion_rt_hints = hints.freeze()
+            prepared_positions[index] = sealed.index
+            del bootstrap, prepared
+        check_cancellation()
+        batch_search = preparation.freeze_search()
+        check_cancellation()
+        self._prepared_positions = prepared_positions
+        self._prepared_store = store
+        self._batch_search = batch_search
+        self._batch_preparation = None
 
     def execute_acquisition(
         self,
@@ -620,32 +631,19 @@ class UntargetedPartitionPipelineAdapter:
                 bootstrap_only=True,
             )
         else:
-            # Composition drains bootstrap payloads independently of acquisition
-            # lanes. Cancellation breaks the barrier when any producer fails.
-            while not self._bootstrap_ready.wait(0.05):
-                if should_cancel is not None and should_cancel():
-                    raise InterruptedError("CID-NL calibration cancelled")
-            assert self._bootstrap_store is not None and self._rt_warp is not None
+            if self._batch_search is None or self._prepared_store is None:
+                raise RuntimeError(
+                    "Backfill requires complete batch search preparation"
+                )
             bootstrap = cast(
                 _BootstrapPartition,
-                self._bootstrap_store.read(
-                    self._bootstrap_positions[partition.index - self._bootstrap_count]
+                self._prepared_store.read(
+                    self._prepared_positions[partition.index - self._bootstrap_count]
                 ),
             )
             batch = bootstrap.batch
             initial_results = bootstrap.initial_results
-            group_ids = {
-                group.group_hypothesis_id
-                for workset in bootstrap.prepared.worksets
-                for group in workset.grouping_scope.groups
-            }
-            prepared = replace(
-                bootstrap.prepared,
-                related_ion_rt_hints={
-                    key: hint for key, hint in self._related_ion_rt_hints.items()
-                    if key[0] in group_ids
-                },
-            )
+            prepared = self._batch_search.bind(bootstrap.prepared)
 
             def frozen_grouping(
                 _: tuple[UntargetedInitialSampleResult, ...],
@@ -732,13 +730,9 @@ class UntargetedPartitionPipelineAdapter:
                     prepared=prepared,
                 ),
             )
-            self._rt_calibration.add_groups(prepared.rt_anchor_groups)
-            self._bootstrap_store = store
+            assert self._batch_preparation is not None
+            self._batch_preparation.add_initial(prepared)
             self._bootstrap_positions[partition.index] = sealed.index
-            if len(self._bootstrap_positions) == self._bootstrap_count:
-                self._rt_warp = self._rt_calibration.freeze()
-                self._freeze_grouping_search_hints(store, should_cancel=should_cancel)
-                self._bootstrap_ready.set()
             persisted = PersistedUntargetedPartition(sealed, 0, ())
             return PartitionCompositionOutput(result=persisted, sealed=sealed)
 
@@ -1003,6 +997,7 @@ def execute_untargeted_plan(
     try:
         result = PartitionPipelineScheduler.execute(
             adapter,
+            phases=adapter.execution_phases(progress_callback=progress_callback),
             output_dir=output_dir,
             telemetry_provider=telemetry_provider,
             recovery_marker=recovery_marker,

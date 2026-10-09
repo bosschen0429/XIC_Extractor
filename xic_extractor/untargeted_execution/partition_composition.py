@@ -26,6 +26,7 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.feature_membership_inference import (
+    BackfillRtPrediction,
     BatchRtWarp,
     BatchRtWarpAccumulator,
     FeatureInferenceOperationCounts,
@@ -97,6 +98,80 @@ class UntargetedPartitionInputs:
     jobs: tuple[UntargetedPartitionJob, ...]
     sample_job_templates: tuple[UntargetedPartitionJob, ...] = ()
     prepared_grouping: UntargetedPreparedGrouping | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedUntargetedBatchSearch:
+    """Complete batch search context; binding never changes group identity."""
+
+    rt_warp: BatchRtWarp
+    related_ion_rt_hints: Mapping[tuple[str, str], BackfillRtPrediction]
+
+    def bind(self, grouping: UntargetedPreparedGrouping) -> UntargetedPreparedGrouping:
+        group_ids = {
+            group.group_hypothesis_id
+            for workset in grouping.worksets
+            for group in workset.grouping_scope.groups
+        }
+        return replace(
+            grouping,
+            related_ion_rt_hints={
+                key: hint for key, hint in self.related_ion_rt_hints.items()
+                if key[0] in group_ids
+            },
+        )
+
+
+class UntargetedBatchGroupingPreparation:
+    """Shared in-memory preparation for direct and spooled batch execution.
+
+    Callers supply initial groupings, freeze calibration, finalize each grouping,
+    then freeze search context. Only compact anchor/relationship projections are
+    retained; RAW access, partition admission and spooling remain with runtime.
+    """
+
+    def __init__(
+        self, context: UntargetedPartitionContext, alignment_config: AlignmentConfig,
+    ) -> None:
+        samples = context.processing_owners.sample_resolutions
+        cohorts = {
+            sample.metadata.raw_stem: sample.metadata.batch_id for sample in samples
+        }
+        self._calibration = BatchRtWarpAccumulator(
+            injection_order={
+                sample.metadata.raw_stem: sample.metadata.injection_order
+                for sample in samples if sample.metadata.injection_order is not None
+            },
+            sample_cohorts=cohorts,
+        )
+        self._hints = RelatedIonRtHintAccumulator(
+            sample_cohorts=cohorts, mass_tolerance_ppm=alignment_config.preferred_ppm,
+        )
+        self._rt_warp: BatchRtWarp | None = None
+
+    def add_initial(self, prepared: UntargetedPreparedGrouping) -> None:
+        self._calibration.add_groups(prepared.rt_anchor_groups)
+
+    def freeze_calibration(self) -> None:
+        self._rt_warp = self._calibration.freeze()
+
+    def finalize_grouping(
+        self, batch: UntargetedPartitionInputs, prepared: UntargetedPreparedGrouping,
+        *, progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+    ) -> UntargetedPreparedGrouping:
+        assert self._rt_warp is not None
+        finalized = finalize_untargeted_partition_grouping(
+            batch, prepared, rt_warp=self._rt_warp, progress_callback=progress_callback,
+        )
+        self._hints.add_groups(
+            group for workset in finalized.worksets
+            for group in workset.grouping_scope.groups
+        )
+        return finalized
+
+    def freeze_search(self) -> PreparedUntargetedBatchSearch:
+        assert self._rt_warp is not None
+        return PreparedUntargetedBatchSearch(self._rt_warp, self._hints.freeze())
 
 
 @dataclass(frozen=True, slots=True)
@@ -545,30 +620,13 @@ def prepare_untargeted_partition_grouping(
     )
     if bootstrap_only:
         return prepared
-    calibration = BatchRtWarpAccumulator(
-        injection_order=injection_order,
-        sample_cohorts={
-            sample.metadata.raw_stem: sample.metadata.batch_id
-            for sample in batch.context.processing_owners.sample_resolutions
-        },
+    preparation = UntargetedBatchGroupingPreparation(batch.context, alignment_config)
+    preparation.add_initial(prepared)
+    preparation.freeze_calibration()
+    finalized = preparation.finalize_grouping(
+        batch, prepared, progress_callback=progress_callback,
     )
-    calibration.add_groups(prepared.rt_anchor_groups)
-    rt_warp = calibration.freeze()
-    finalized = finalize_untargeted_partition_grouping(
-        batch, prepared, rt_warp=rt_warp, progress_callback=progress_callback
-    )
-    hints = RelatedIonRtHintAccumulator(
-        sample_cohorts={
-            sample.metadata.raw_stem: sample.metadata.batch_id
-            for sample in batch.context.processing_owners.sample_resolutions
-        },
-        mass_tolerance_ppm=alignment_config.preferred_ppm,
-    )
-    hints.add_groups(
-        group for workset in finalized.worksets
-        for group in workset.grouping_scope.groups
-    )
-    return replace(finalized, related_ion_rt_hints=hints.freeze())
+    return preparation.freeze_search().bind(finalized)
 
 
 def finalize_untargeted_partition_grouping(

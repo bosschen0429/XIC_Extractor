@@ -190,6 +190,16 @@ def _plan(
     return plan, reference
 
 
+def _phase_partitions(adapter, store, *, reverse_initial=False):
+    for index, phase in enumerate(adapter.execution_phases()):
+        if phase.prepare_before is not None:
+            phase.prepare_before(store, lambda: None)
+        partitions = phase.partitions
+        if index == 0 and reverse_initial:
+            partitions = tuple(reversed(partitions))
+        yield from partitions
+
+
 def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity(
     tmp_path, monkeypatch
 ):
@@ -245,7 +255,7 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
     )
     _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
 
-    def run(capacity):
+    def run(capacity, *, reverse_initial=False):
         adapter = UntargetedPartitionPipelineAdapter(
             plan,
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
@@ -253,11 +263,14 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
             raw_workers=1,
         )
         store = StreamedResultStore(
-            tmp_path / f"spool-{capacity}", adapter.get_shared_objects()
+            tmp_path / f"spool-{capacity}-{reverse_initial}",
+            adapter.get_shared_objects(),
         )
         warps, memberships = [], []
         try:
-            for partition in adapter.partitions:
+            for partition in _phase_partitions(
+                adapter, store, reverse_initial=reverse_initial
+            ):
                 acquired = adapter.execute_acquisition(partition)
                 assert acquired.succeeded
                 prepared = acquired.result[1].prepared_grouping
@@ -279,6 +292,7 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
     one_feature_at_a_time = run(24)
     all_features_together = run(24 * 12)
     assert one_feature_at_a_time == all_features_together
+    assert run(24, reverse_initial=True) == one_feature_at_a_time
     warp, groups = one_feature_at_a_time
     assert warp.anchor_group_count == 12
     assert warp.has_support("S12")
@@ -363,7 +377,7 @@ def test_related_ion_search_hints_are_sample_bound_and_partition_invariant(
         )
         hints, queries = {}, {}
         try:
-            for partition in adapter.partitions:
+            for partition in _phase_partitions(adapter, store):
                 acquired = adapter.execute_acquisition(partition)
                 assert acquired.succeeded
                 prepared = acquired.result[1].prepared_grouping
@@ -1584,7 +1598,7 @@ def test_overlapped_partition_acquisition_failure_propagates(
     assert list((tmp_path / "overlapped-failure").glob(".cid_nl_partitions-*")) == []
 
 
-def test_last_bootstrap_failure_releases_waiting_final_acquisition(
+def test_last_bootstrap_failure_prevents_backfill_admission(
     tmp_path, monkeypatch
 ):
     import xic_extractor.untargeted_execution.execution as owner
@@ -1601,7 +1615,7 @@ def test_last_bootstrap_failure_releases_waiting_final_acquisition(
 
     def failing_compose(adapter, partition, *args, **kwargs):
         if partition is adapter.bootstrap_partitions[-1]:
-            assert waiting_final.wait(timeout=5), "final lane never reached the barrier"
+            assert not waiting_final.is_set()
             raise OSError("last bootstrap cannot be sealed")
         return compose(adapter, partition, *args, **kwargs)
 
@@ -1625,8 +1639,79 @@ def test_last_bootstrap_failure_releases_waiting_final_acquisition(
             raw_workers=4,
             pipeline_overlap=True,
         )
-    assert waiting_final.is_set()
+    assert not waiting_final.is_set()
     assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
+
+
+@pytest.mark.parametrize("failure_at", ["grouping", "hints", "cancel"])
+def test_batch_preparation_abort_never_publishes_backfill_inputs(
+    tmp_path, monkeypatch, failure_at
+):
+    import xic_extractor.untargeted_execution.execution as owner
+
+    plan, _ = _plan(tmp_path, monkeypatch)
+    cancelled = Event()
+    adapters = []
+    finalized = []
+    entered_backfill = []
+    acquire = owner.UntargetedPartitionPipelineAdapter.execute_acquisition
+    finalize = owner.UntargetedBatchGroupingPreparation.finalize_grouping
+    freeze = owner.UntargetedBatchGroupingPreparation.freeze_search
+
+    def observed_acquire(adapter, partition, **kwargs):
+        if not adapters:
+            adapters.append(adapter)
+        if partition.partition_key.endswith("-backfill"):
+            entered_backfill.append(partition)
+        return acquire(adapter, partition, **kwargs)
+
+    def finalize_or_abort(preparation, *args, **kwargs):
+        result = finalize(preparation, *args, **kwargs)
+        finalized.append(1)
+        if len(finalized) == 2:
+            if failure_at == "grouping":
+                raise ValueError("grouping preparation failed")
+            if failure_at == "cancel":
+                cancelled.set()
+        return result
+
+    def freeze_or_abort(preparation):
+        if failure_at == "hints":
+            raise ValueError("hint preparation failed")
+        return freeze(preparation)
+
+    monkeypatch.setattr(
+        owner.UntargetedPartitionPipelineAdapter,
+        "execute_acquisition", observed_acquire,
+    )
+    monkeypatch.setattr(
+        owner.UntargetedBatchGroupingPreparation, "finalize_grouping", finalize_or_abort
+    )
+    monkeypatch.setattr(
+        owner.UntargetedBatchGroupingPreparation, "freeze_search", freeze_or_abort
+    )
+    marker = OwnerPathRuntimeMarker(tmp_path / "preparation.json", failure_at)
+    with pytest.raises(RuntimeError, match="cancelled|preparation failed"):
+        owner.execute_untargeted_plan(
+            plan,
+            output_dir=tmp_path / "preparation",
+            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=marker,
+            max_partition_jobs=len(plan.context.samples),
+            raw_workers=4,
+            pipeline_overlap=True,
+            should_cancel=cancelled.is_set,
+        )
+    assert not entered_backfill
+    assert len(finalized) >= 2
+    # Even a caller bypassing the scheduler cannot consume partial preparation.
+    with pytest.raises(RuntimeError, match="requires complete batch search"):
+        acquire(adapters[0], adapters[0].partitions[-1])
+    assert marker.read().terminal_outcome is (
+        AttemptTerminalOutcome.CANCELLED if failure_at == "cancel"
+        else AttemptTerminalOutcome.FAILED
+    )
 
 
 @pytest.mark.parametrize("raw_workers", [1, 2, 4])
@@ -2216,6 +2301,7 @@ def test_formal_partition_reuses_prepared_group_ids_for_recovery_and_composition
     bootstrap = adapter.bootstrap_partitions[0]
     initial = adapter.execute_acquisition(bootstrap)
     adapter.execute_composition(bootstrap, initial, store)
+    adapter.prepare_batch_search(store, lambda: None)
     partition = adapter.partitions[-1]
     acquisition = adapter.execute_acquisition(partition)
     assert acquisition.succeeded
@@ -2310,7 +2396,7 @@ def test_completed_partition_retains_only_light_parent_capture_metadata(
     store = StreamedResultStore(
         tmp_path / "retention-spool", adapter.get_shared_objects()
     )
-    for partition in adapter.partitions:
+    for partition in _phase_partitions(adapter, store):
         acquisition = adapter.execute_acquisition(partition)
         assert acquisition.succeeded
         composed = adapter.execute_composition(partition, acquisition, store)

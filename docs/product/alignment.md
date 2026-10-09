@@ -210,7 +210,16 @@ from recovered cells. A hint may change selection and integration, but the
 target ion must independently pass physical, method, and membership checks.
 The bounded runtime finalizes grouping once and spools each partition before
 learning hints from compact RT/area projections; it does not retain all traces
-in memory or repeat RAW acquisition to learn relationships. The acquisition
+in memory or repeat RAW acquisition to learn relationships. Initial acquisition
+and Backfill are separate scheduler phases under one attempt and one store.
+After all initial partitions have been composed and released, batch preparation
+freezes calibration, finalizes each grouping, and freezes search hints. Only a
+complete preparation publishes Backfill inputs; failure or cancellation prevents
+Backfill admission. No acquisition worker waits for another partition to finish
+scientific preparation. Direct and bounded execution use the same in-memory
+preparation owner; only the bounded adapter owns spool reads and writes.
+Operational partition capacity does not change the cohort evidence scope, and
+semantic worksets remain indivisible. The acquisition
 boundary canonicalizes repeated or unordered complete XIC queries, including
 mass. Different groups may reuse the same physical trace while retaining
 separate group-bound Backfill attempts and decisions.
