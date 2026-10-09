@@ -1762,8 +1762,10 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     assert len(retained_contexts) == len(completed.application_result.children)
     assert len(retained_contexts) == len(consumed_contexts)
+    # Frozen grouping crosses the spool before Backfill. Its complete scientific
+    # content must survive; Python object identity is not a persisted contract.
     assert all(
-        retained is consumed
+        retained == consumed
         for retained, consumed in zip(retained_contexts, consumed_contexts, strict=True)
     )
     # Bootstrap captures cross a disk handoff; preserve content, not addresses.
