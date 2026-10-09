@@ -98,6 +98,24 @@ def test_empty_sealed_store_has_empty_sequence(tmp_path):
     assert tuple(store.sequence("children")) == ()
 
 
+def test_tuple_field_read_skips_header_and_other_fields_after_preservation(tmp_path):
+    store = StreamedResultStore(tmp_path, ())
+    expected = tuple((f"S{index}", index * 2) for index in range(2050))
+    store.append(
+        "initial", Payload((_ObservedChild(),), method_assessments=expected,
+                           label=_ObservedChild())
+    )
+    store.append("other", Payload((), method_assessments=(("other", -1),)))
+    _restored_children.clear()
+    for reader in (store, open_preserved_results(store.preserve_failed_results())):
+        assert reader.read_tuple(0, "method_assessments") == expected
+        assert reader.read_tuple(1, "method_assessments") == (("other", -1),)
+        assert reader.read_tuple(0, "excluded_candidates") == ()
+        assert not _restored_children
+        with pytest.raises(ValueError, match="tuple field"):
+            reader.read_tuple(0, "label")
+
+
 def test_streaming_children_matches_append_bytes_and_reader(tmp_path):
     payload = Payload(
         (1, 2, 3), method_assessments=(4,), excluded_candidates=(5,), label="same"

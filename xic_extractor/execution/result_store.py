@@ -350,15 +350,36 @@ class StreamedResultStore:
         with self._path(self._partitions[index].index).open("rb") as stream:
             payload_type, values = _OwnerUnpickler(stream, self._shared_objects).load()
             for name, records in self._field_records[index].items():
-                values[name] = tuple(
-                    item
-                    for offset, length in records
-                    for item in self._read_record(stream, offset, length)
-                )
+                values[name] = self._read_tuple_records(stream, records)
         payload = object.__new__(payload_type)
         for name, value in values.items():
             object.__setattr__(payload, name, value)
         return payload
+
+    def read_tuple(self, index: int, field_name: str) -> tuple[Any, ...]:
+        """Restore a complete tuple field without loading the payload header.
+
+        Intermediate stages can reference acquired records in an earlier spool
+        instead of copying them into each derived payload. Both bulk and
+        individually addressable tuple fields use their sealed record offsets.
+        """
+        if type(index) is not int or not 0 <= index < len(self._partitions):
+            raise IndexError("partition index out of range")
+        if field_name not in self._field_records[index]:
+            raise ValueError("read_tuple requires a stored tuple field")
+        with self._path(index).open("rb") as stream:
+            return self._read_tuple_records(
+                stream, self._field_records[index][field_name]
+            )
+
+    def _read_tuple_records(
+        self, stream: BinaryIO, records: tuple[tuple[int, int], ...]
+    ) -> tuple[Any, ...]:
+        return tuple(
+            item
+            for offset, length in records
+            for item in self._read_record(stream, offset, length)
+        )
 
     def _read_record(self, stream: BinaryIO, offset: int, length: int) -> tuple:
         stream.seek(offset)

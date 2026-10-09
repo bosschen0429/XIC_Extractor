@@ -124,6 +124,21 @@ class _BootstrapPartition:
     capture_evidence: tuple[()] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class _SearchGroupingPartition:
+    """Frozen grouping with acquired sample records retained in their own spool."""
+
+    batch: UntargetedPartitionInputs
+    prepared: UntargetedPreparedGrouping
+    initial_partition_index: int
+    children: tuple[()] = ()
+    excluded_candidates: tuple[()] = ()
+    method_assessments: tuple[()] = ()
+    initial_groups: tuple[()] = ()
+    initial_edges: tuple[()] = ()
+    capture_evidence: tuple[()] = ()
+
+
 _GLOBAL_CLOSURE_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.untargeted_cid_nl_bounded_runtime",
     semantic_role="closed_application_result",
@@ -592,7 +607,8 @@ class UntargetedPartitionPipelineAdapter:
             # Heavy captures stay spooled one partition at a time. Backfill
             # consumes this frozen grouping rather than fitting it a second time.
             sealed = store.append(
-                f"cid-nl-search-grouping-{index}", replace(bootstrap, prepared=prepared)
+                f"cid-nl-search-grouping-{index}",
+                _SearchGroupingPartition(bootstrap.batch, prepared, position),
             )
             prepared_positions[index] = sealed.index
             del bootstrap, prepared
@@ -636,15 +652,20 @@ class UntargetedPartitionPipelineAdapter:
                 raise RuntimeError(
                     "Backfill requires complete batch search preparation"
                 )
-            bootstrap = cast(
-                _BootstrapPartition,
+            search_grouping = cast(
+                _SearchGroupingPartition,
                 self._prepared_store.read(
                     self._prepared_positions[partition.index - self._bootstrap_count]
                 ),
             )
-            batch = bootstrap.batch
-            initial_results = bootstrap.initial_results
-            prepared = self._batch_search.bind(bootstrap.prepared)
+            batch = search_grouping.batch
+            initial_results = cast(
+                tuple[UntargetedInitialSampleResult, ...],
+                self._prepared_store.read_tuple(
+                    search_grouping.initial_partition_index, "initial_results"
+                ),
+            )
+            prepared = self._batch_search.bind(search_grouping.prepared)
 
             def frozen_grouping(
                 _: tuple[UntargetedInitialSampleResult, ...],

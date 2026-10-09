@@ -1260,7 +1260,9 @@ def _assert_explanation_parity(tmp_path, plan, config, eager, bounded):
     assert records[0] == records[1]
 
 
-@pytest.mark.parametrize("failure_seam", ["later_partition", "later_spool"])
+@pytest.mark.parametrize(
+    "failure_seam", ["later_partition", "later_spool", "search_spool"]
+)
 def test_bounded_runtime_failure_never_publishes_completed_batch(
     tmp_path: Path, monkeypatch, failure_seam: str
 ):
@@ -1270,19 +1272,27 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
     marker = OwnerPathRuntimeMarker(tmp_path / "failed.json", "failed")
     original_error = OSError("second partition storage unavailable")
     calls = []
+    search_positions = []
     if failure_seam == "later_partition":
         seam_owner = bounded_owner
         seam_name = "execute_partition"
     else:
         seam_owner = bounded_owner.StreamedResultStore
-        seam_name = "append_children"
+        seam_name = "append" if failure_seam == "search_spool" else "append_children"
     original = getattr(seam_owner, seam_name)
 
     def fail_second(*args, **kwargs):
+        if failure_seam == "search_spool" and not args[1].startswith(
+            "cid-nl-search-grouping-"
+        ):
+            return original(*args, **kwargs)
         calls.append(1)
         if len(calls) == 2:
             raise original_error
-        return original(*args, **kwargs)
+        result = original(*args, **kwargs)
+        if failure_seam == "search_spool":
+            search_positions.append(result.index)
+        return result
 
     monkeypatch.setattr(seam_owner, seam_name, fail_second)
 
@@ -1307,6 +1317,25 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
         ".partition_spool-*/failed-results.pickle"
     )
     assert any(str(retained) in note for note in error.value.__notes__)
+    if failure_seam == "search_spool":
+        from xic_extractor.execution.result_store import open_preserved_results
+
+        replay = open_preserved_results(retained)
+        (position,) = search_positions
+        search = replay.read(position)
+        initial = replay.read_tuple(search.initial_partition_index, "initial_results")
+        full = replay.read(search.initial_partition_index).initial_results
+        assert tuple(item.effective_assessments for item in initial) == tuple(
+            item.effective_assessments for item in full
+        )
+        assert {item.job.sample.metadata.raw_stem for item in initial} == {
+            sample.metadata.raw_stem for sample in plan.context.samples
+        }
+        assert {
+            item.job.method_subject.method_subject_id for item in initial
+        } == {
+            subject.method_subject_id for subject in search.batch.subject_batch.subjects
+        }
     snapshot = marker.read()
     assert snapshot.terminal_outcome is AttemptTerminalOutcome.FAILED
     assert snapshot.processing_attempt_id == (
