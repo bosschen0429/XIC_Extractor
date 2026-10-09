@@ -687,7 +687,7 @@ def merge_sample_disjoint_groups(
                 inference_basis=FeatureMembershipGroup(
                     owner_ids=tuple(owner.owner_id for owner in owners),
                     disposition="assigned",
-                    basis="peak_trajectory",
+                    basis="window_level_rt_band",
                     reason="sample_disjoint_within_backfill_window",
                 ),
                 inference_decisions=tuple(

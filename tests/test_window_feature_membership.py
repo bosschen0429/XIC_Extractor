@@ -166,6 +166,8 @@ def test_pattern_and_unobserved_context_samples_extend_one_trajectory(reverse) -
         frozenset(("a:late", "b:late")),
     }
     assert all(group.disposition == "assigned" for group in result.groups)
+    # Pattern seeds join the whole-window graph; the band is the decision.
+    assert {group.basis for group in result.groups} == {"window_level_rt_band"}
 
 
 def test_alternating_direct_peaks_follow_ms1_pattern_not_nearest_absolute_rt() -> None:

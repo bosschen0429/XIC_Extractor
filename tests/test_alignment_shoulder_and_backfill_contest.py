@@ -313,6 +313,8 @@ def test_sample_disjoint_rows_within_one_backfill_window_merge() -> None:
     )
 
     assert merged.disposition == "established"
+    assert merged.inference_basis is not None
+    assert merged.inference_basis.basis == "window_level_rt_band"
     assert sorted(merged.owner_ids) == sorted(
         owner_id for group in groups for owner_id in group.owner_ids
     )

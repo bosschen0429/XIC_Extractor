@@ -38,6 +38,7 @@ FeatureMembershipDisposition = Literal[
     "unresolved_conflict",
 ]
 FeatureMembershipBasis = Literal[
+    "window_level_rt_band",
     "peak_trajectory",
     "bidirectional_membership_agreement",
     "directional_membership_disagreement",
@@ -1332,7 +1333,7 @@ def _window_inference(
             FeatureMembershipGroup(
                 owner_ids=owner_ids,
                 disposition="assigned" if assigned else "undecided",
-                basis="peak_trajectory"
+                basis="window_level_rt_band"
                 if assigned
                 else "insufficient_cross_sample_evidence",
                 reason=(
