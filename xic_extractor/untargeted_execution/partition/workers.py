@@ -86,6 +86,29 @@ class _RuntimeJobState:
         RuntimeResourceCleanupOutcome.SUCCEEDED
     )
 
+    def reuse_initial_hold(self, assessment: CidNlMethodAssessmentRef) -> None:
+        """Answer one group with the initial HOLD candidates.
+
+        Every sample result keeps its initial assessment, so a reused group
+        needs no carrier of its own. The scalar backfill input names the reuse
+        only while no group searches; once one does, each searched group is
+        answered by its own attempt.
+        """
+        if not self.backfill_targets:
+            self.backfill_input = UntargetedCidNlBackfillInput(
+                sample=self.job.sample,
+                candidate_assessment=assessment,
+            )
+
+    def schedule_search(self, target: UntargetedCidNlBackfillTarget) -> None:
+        self.backfill_input = None
+        self.backfill_targets = tuple(
+            sorted(
+                (*self.backfill_targets, target),
+                key=lambda item: (item.center_rt, item.group_hypothesis_id),
+            )
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class _BackfillSupportContext:
@@ -413,9 +436,6 @@ def _prepare_group_authorized_backfills(
                     backfill_half_window_min=(
                         state.job.peak_config.nl_rt_anchor_half_window_min
                     ),
-                    related_ion=prepared.related_ion_evidence.get(
-                        (group.group_hypothesis_id, sample_stem)
-                    ),
                 )
                 revisit = _group_revisit(
                     assessment,
@@ -425,28 +445,16 @@ def _prepare_group_authorized_backfills(
                 if revisit is None:
                     continue
                 if revisit == "reuse":
-                    state.backfill_input = UntargetedCidNlBackfillInput(
-                        sample=state.job.sample,
-                        candidate_assessment=assessment,
-                    )
+                    state.reuse_initial_hold(assessment)
                 else:
-                    state.backfill_targets = tuple(
-                        sorted(
-                            (
-                                *state.backfill_targets,
-                                UntargetedCidNlBackfillTarget(
-                                    group_hypothesis_id=group.group_hypothesis_id,
-                                    method_subject=subject,
-                                    physical_mz=group.family_center_mz,
-                                    center_rt=group.group_center_rt,
-                                    query_rt=location.query_rt,
-                                    query_rt_basis=location.basis,
-                                ),
-                            ),
-                            key=lambda target: (
-                                target.center_rt,
-                                target.group_hypothesis_id,
-                            ),
+                    state.schedule_search(
+                        UntargetedCidNlBackfillTarget(
+                            group_hypothesis_id=group.group_hypothesis_id,
+                            method_subject=subject,
+                            physical_mz=group.family_center_mz,
+                            center_rt=group.group_center_rt,
+                            query_rt=location.query_rt,
+                            query_rt_basis=location.basis,
                         )
                     )
 
@@ -593,26 +601,14 @@ def _prepare_subject_authorized_backfills(
             if revisit is None:
                 continue
             if revisit == "reuse":
-                state.backfill_input = UntargetedCidNlBackfillInput(
-                    sample=state.job.sample,
-                    candidate_assessment=assessment,
-                )
+                state.reuse_initial_hold(assessment)
             else:
-                state.backfill_targets = tuple(
-                    sorted(
-                        (
-                            *state.backfill_targets,
-                            UntargetedCidNlBackfillTarget(
-                                group_hypothesis_id=group.group_hypothesis_id,
-                                method_subject=state.job.method_subject,
-                                physical_mz=group.family_center_mz,
-                                center_rt=center,
-                            ),
-                        ),
-                        key=lambda target: (
-                            target.center_rt,
-                            target.group_hypothesis_id,
-                        ),
+                state.schedule_search(
+                    UntargetedCidNlBackfillTarget(
+                        group_hypothesis_id=group.group_hypothesis_id,
+                        method_subject=state.job.method_subject,
+                        physical_mz=group.family_center_mz,
+                        center_rt=center,
                     )
                 )
     return tuple(added_states)
@@ -873,7 +869,6 @@ def assess_initial_sample_jobs(
 class _SampleBackfillWorkerRequest:
     jobs: tuple[UntargetedPartitionJob, ...]
     backfill_targets_by_key: dict[str, tuple[UntargetedCidNlBackfillTarget, ...]]
-    backfill_inputs_by_key: dict[str, UntargetedCidNlBackfillInput | None]
     backfill_support_by_key: dict[str, _BackfillSupportContext]
     backfill_resource_key: str | None
 
@@ -906,7 +901,6 @@ def _execute_sample_backfill_worker(
             initial_requires_raw=False,
             observer=_PartitionWorkObserver(job.processing_owners),
             backfill_support=request.backfill_support_by_key.get(job.work_unit_key),
-            backfill_input=request.backfill_inputs_by_key.get(job.work_unit_key),
             backfill_targets=request.backfill_targets_by_key.get(job.work_unit_key, ()),
         )
         for job in request.jobs

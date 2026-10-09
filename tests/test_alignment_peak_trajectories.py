@@ -14,7 +14,6 @@ from xic_extractor.alignment.peak_trajectories import (
     PeakTrajectories,
     resolve_peak_trajectories,
 )
-from xic_extractor.alignment.related_ion_evidence import RelatedIonEvidence
 from xic_extractor.peak_detection.elution_context import (
     ElutionLandmark,
     SampleElutionContext,
@@ -55,8 +54,7 @@ def _context(
     )
 
 
-@pytest.mark.parametrize("related_rt", [None, 10.6, 11.2])
-def test_missing_position_uses_ms1_trajectory_points_not_another_rt_answer(related_rt):
+def test_missing_position_uses_ms1_trajectory_points_not_another_rt_answer():
     owners = [_owner("s0", "early", 10.0), _owner("s2", "early", 10.4)]
     contexts = [
         _context(f"s{i}", ((10.0 + 0.2 * i, 30.0), (10.6 + 0.2 * i, 100.0)))
@@ -73,19 +71,11 @@ def test_missing_position_uses_ms1_trajectory_points_not_another_rt_answer(relat
         sample_cohorts=dict.fromkeys(orders, "batch"),
         rt_warp=None,
         backfill_half_window_min=0.5,
-        related_ion=(
-            RelatedIonEvidence(related_rt, ("partner",))
-            if related_rt is not None
-            else None
-        ),
     )
     # Two supported owners alone have median 10.2. The MS1-only point in s1
     # completes the straight trajectory 10 + 0.2 * injection order.
     assert location.query_rt == pytest.approx(10.6)
     assert location.observed_rt is None
-    if related_rt is not None:
-        agreement = "consistent" if related_rt == 10.6 else "discordant"
-        assert location.basis == f"trajectory_fit;related_ion_{agreement}:partner"
 
 
 @pytest.mark.parametrize("reverse", [False, True])
@@ -170,12 +160,74 @@ def test_single_peak_continuation_cannot_overrule_an_ordered_pair() -> None:
         config=AlignmentConfig(),
         injection_order={"a": 1, "b": 2, "c": 3, "d": 30},
     )
-    assert dict(result.trajectory_for([owners[2]]).sample_apices).get("a") == 10.6
-    assert dict(result.trajectory_for([owners[2]]).sample_apices).get("d") == 11.25
-    assert {track.owner_ids for track in result.tracks} == {
-        ("a:early", "b:early", "d:early"),
-        ("c:late",),
-    }
+    # c's lone peak is nearest to d's early peak, but it cannot join or
+    # locate the ordered early track. Nor is its owner bound to any track.
+    (early,) = result.tracks
+    assert early.owner_ids == ("a:early", "b:early", "d:early")
+    assert dict(early.sample_apices) == {"a": 10.0, "b": 10.05, "d": 10.65}
+    assert result.trajectory_for([owners[2]]).sample_apices == (("c", 10.7),)
+
+
+@pytest.mark.parametrize(
+    ("isolated_rt", "label", "pattern_rts"),
+    [
+        (11.8, "late", (10.7, 10.75)),
+        (12.4, "late", (10.7, 10.75)),
+        (9.0, "early", (10.0, 10.05)),
+    ],
+)
+def test_single_peak_continuation_is_not_an_observed_position(
+    isolated_rt: float, label: str, pattern_rts: tuple[float, float]
+) -> None:
+    # x has one peak with no second landmark to witness which ordered peak it
+    # is. Its nearest-RT link may continue membership, but it is not an
+    # observation of this trajectory and cannot become the Backfill query.
+    contexts = [
+        _context("a", ((10.0, 60.0), (10.7, 100.0))),
+        _context("b", ((10.05, 60.0), (10.75, 100.0))),
+        _context("x", ((isolated_rt, 100.0),)),
+    ]
+    owners = [
+        _owner("a", "early", 10.0),
+        _owner("a", "late", 10.7),
+        _owner("b", "early", 10.05),
+        _owner("b", "late", 10.75),
+    ]
+    orders = {"a": 1, "b": 2, "x": 3}
+    model = resolve_peak_trajectories(
+        owners, contexts, config=AlignmentConfig(), injection_order=orders
+    )
+    members = [owner for owner in owners if owner.owner_id.endswith(label)]
+    location = model.trajectory_for(members).locate(
+        "x",
+        injection_order=orders,
+        sample_cohorts=dict.fromkeys(orders, "batch"),
+        rt_warp=None,
+        backfill_half_window_min=0.5,
+    )
+    assert location.observed_rt is None
+    # Two pattern observations leave no slope to fit; their median is used.
+    assert location.query_rt == pytest.approx(sum(pattern_rts) / 2.0)
+
+
+def test_tracks_never_observed_together_share_their_positions() -> None:
+    # Two seven-injection blocks see the same doublet but are never compared.
+    # A group that joins their owners keeps the MS1-only positions of both.
+    orders = {f"s{order:02d}": order for order in (*range(1, 8), *range(21, 28))}
+    contexts = [_context(sample, ((10.0, 100.0), (10.6, 60.0))) for sample in orders]
+    owners = [
+        _owner(sample, "peak", 10.0)
+        for sample in orders
+        if sample not in {"s04", "s24"}
+    ]
+    model = resolve_peak_trajectories(
+        owners, contexts, config=AlignmentConfig(), injection_order=orders
+    )
+    assert len(model.tracks) == 2
+    assert model.permits_membership(owner.owner_id for owner in owners)
+    assert dict(model.trajectory_for(owners).sample_apices) == dict.fromkeys(
+        orders, 10.0
+    )
 
 
 def test_repeated_indistinguishable_pattern_does_not_invent_an_ordinal() -> None:

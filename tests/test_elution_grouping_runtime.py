@@ -14,7 +14,6 @@ from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.related_ion_evidence import RelatedIonEvidence
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
@@ -170,16 +169,6 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
                 for workset in initial_grouping.worksets
             ),
         )
-    # A related ion may point at the other observed peak. It supplies a
-    # consistency observation, not an alternative search center.
-    competing_hints = {
-        (group.group_hypothesis_id, sample): RelatedIonEvidence(
-            apex, ("competing-peak",)
-        )
-        for workset in initial_grouping.worksets
-        for group in workset.grouping_scope.groups
-        for sample, apex in expected_initial.items()
-    }
     states = [
         workers._RuntimeJobState(
             job=result.job,
@@ -192,15 +181,12 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
     ]
     workers._prepare_group_authorized_backfills(
         states,
-        prepared=replace(initial_grouping, related_ion_evidence=competing_hints),
+        prepared=initial_grouping,
     )
     for state in states:
         (target,) = state.backfill_targets
         if not missing_pattern_location:
-            assert (
-                target.query_rt_basis
-                == "trajectory_observed;related_ion_discordant:competing-peak"
-            )
+            assert target.query_rt_basis == "trajectory_observed"
         assert target.query_rt == pytest.approx(
             expected_query[state.job.sample.metadata.raw_stem], abs=0.005
         )
@@ -270,4 +256,158 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
         )
         assert cell.status == ("detected" if direct else "backfilled")
         assert cell.apex_rt == pytest.approx(expected_apex, abs=0.005)
+        assert cell.area is not None and cell.area > 0
+
+
+def test_hold_reuse_beside_several_searches_completes_each_group_cell(
+    tmp_path, monkeypatch
+):
+    # Three same-m/z peaks; S0-S5 support two samples per peak. S6 shows all
+    # three in MS1 but its only MS2 event infers the precursor at the first
+    # peak, so that group reuses S6's initial HOLD while the other two search.
+    group_apices = (7.80, 8.25, 8.70)
+    samples = tuple(f"S{i}" for i in range(7))
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path,
+        sample_roles={sample: "study_sample" for sample in samples},
+        thermo_raw_sources=True,
+    )
+    settings = replace(
+        _settings(),
+        neutral_loss_profile=None,
+        rt_min=7.0,
+        rt_max=10.0,
+        precursor_mz_tolerance_ppm=20.0,
+    )
+    profile = SignalProcessingProfile()
+    config = _peak_config(tmp_path)
+    raws, candidates, records = {}, {}, {}
+    for index, sample in enumerate(samples):
+        path = fixture.source_paths[sample]
+        ms2_apex = group_apices[0 if sample == "S6" else index // 2]
+        source = _FakeRaw((ms2_apex,))
+        if sample == "S6":
+            source.scans = tuple(
+                replace(scan, precursor_mz=scan.precursor_mz + 0.5)
+                for scan in source.scans
+            )
+        source.rt = np.linspace(7.0, 10.0, 601)
+        source.intensity = sum(
+            1000.0 * np.exp(-0.5 * ((source.rt - apex) / 0.035) ** 2)
+            for apex in group_apices
+        )
+        source.scans = tuple(
+            replace(scan, scan_number=int(np.argmin(abs(source.rt - scan.rt))) + 1)
+            for scan in source.scans
+        )
+        raw, _ = _open_bound_raw(fixture, sample, source, tmp_path=tmp_path)
+        with raw:
+            seeds = collect_strict_nl_seeds(raw, raw_file=path, settings=settings)
+            discovery = _backfill_ms1_candidates_with_acquisition(
+                raw,
+                group_discovery_seeds(seeds, settings=settings),
+                acquisition_source=raw.acquisition_source,
+                run_spec_id="processing-run:" + "0" * 64,
+                settings=settings,
+                peak_config=config,
+                signal_processing_profile=profile,
+            )
+        assert len(discovery.candidates) == 1
+        candidates[sample] = discovery.candidates
+        records.update(
+            {record.candidate_id: record for record in discovery.physical_evaluations}
+        )
+        raws[path] = source
+    assert candidates["S6"][0].precursor_mz_basis == "product_plus_neutral_loss"
+    paths = tuple(fixture.source_paths.values())
+    plan = prepare_eager_untargeted_plan(
+        raw_paths=paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=path.stem,
+                raw_stem=path.stem,
+                injection_order=index + 1,
+                sample_role="study_sample",
+            )
+            for index, path in enumerate(paths)
+        ),
+        settings=settings,
+        peak_config=config,
+        candidates_by_sample=candidates,
+        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        dll_dir=tmp_path,
+        sample_identity_namespace="study:hold-reuse-beside-searches",
+        signal_processing_profile=profile,
+        physical_records_by_candidate=records,
+    )
+    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    import xic_extractor.untargeted_execution.partition.workers as workers
+
+    monkeypatch.setattr(workers, "_ensure_assemblies_loaded", lambda *_: None)
+    adapter = UntargetedPartitionPipelineAdapter(
+        plan,
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        max_partition_jobs=100,
+    )
+    store = StreamedResultStore(tmp_path / "reuse-spool", adapter.get_shared_objects())
+    initial_phase, backfill_phase = adapter.execution_phases()
+    initial_partition = initial_phase.partitions[0]
+    initial = adapter.execute_acquisition(initial_partition)
+    assert initial.succeeded
+    (s6_initial,) = (
+        result
+        for result in initial.result[1].sample_results
+        if result.job.sample.metadata.raw_stem == "S6"
+    )
+    s6_assessment = s6_initial.adapter_result.assessment_input.assessment
+    assert s6_assessment.content.method_result == "HOLD"
+    assert [
+        peak.content.integration.rt_apex_min for peak in s6_assessment.candidate_peaks
+    ] == pytest.approx([7.80], abs=0.005)
+    initial_composed = adapter.execute_composition(initial_partition, initial, store)
+    assert backfill_phase.prepare_before is not None
+    backfill_phase.prepare_before(store, lambda: None)
+    partition = backfill_phase.partitions[0]
+    acquisition = adapter.execute_acquisition(partition)
+    assert acquisition.succeeded
+    _, leaf = acquisition.result
+    prepared = leaf.prepared_grouping
+    assert prepared is not None
+    groups = tuple(
+        group
+        for workset in prepared.worksets
+        for group in workset.grouping_scope.groups
+    )
+    group_apex = {
+        group.group_hypothesis_id: min(
+            group_apices, key=lambda apex: abs(apex - group.group_center_rt)
+        )
+        for group in groups
+    }
+    assert sorted(group_apex.values()) == list(group_apices)
+    (s6,) = (
+        result
+        for result in leaf.sample_results
+        if result.job.sample.metadata.raw_stem == "S6"
+    )
+    assert sorted(
+        group_apex[attempt.group_hypothesis_id] for attempt in s6.backfill_attempts
+    ) == [8.25, 8.70]
+    composed = adapter.execute_composition(
+        partition, acquisition, store, retain_memory=True
+    )
+    store.seal()
+    completed = adapter.finalize_application(store, (initial_composed, composed))
+    writer = project_completed_untarget_batch_writer_inputs(completed)
+    assert len(writer.matrix.cells) == 21
+    for cell in writer.matrix.cells:
+        apex = group_apex[cell.group_hypothesis_id]
+        if (cell.sample_stem, apex) == ("S6", 7.80):
+            # The reused initial HOLD still reaches its group; an inferred
+            # precursor stays an unresolved owner there.
+            assert cell.status == "ambiguous_ms1_owner"
+            continue
+        direct = cell.sample_stem in samples[2 * group_apices.index(apex) :][:2]
+        assert cell.status == ("detected" if direct else "backfilled")
+        assert cell.apex_rt == pytest.approx(apex, abs=0.005)
         assert cell.area is not None and cell.area > 0

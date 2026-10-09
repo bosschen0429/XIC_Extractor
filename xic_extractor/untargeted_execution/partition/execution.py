@@ -699,11 +699,6 @@ def _prepare_runtime_work(
                     for s in pending
                     if s.backfill_targets
                 },
-                backfill_inputs_by_key={
-                    s.job.work_unit_key: s.backfill_input
-                    for s in pending
-                    if s.backfill_input is not None
-                },
                 backfill_support_by_key={
                     s.job.work_unit_key: _backfill_support_context(s.adapter_result)
                     for s in pending

@@ -34,7 +34,6 @@ from xic_extractor.alignment.feature_membership_inference import (
     BatchRtWarp,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
-from xic_extractor.alignment.related_ion_evidence import RelatedIonEvidence
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.scientific_settings import (
     SCIENTIFIC_SETTING_FIELDS,
@@ -438,9 +437,6 @@ class UntargetedPreparedGrouping:
     alignment_config: AlignmentConfig
     known_istd_reference: KnownIstdReference | None
     rt_warp: BatchRtWarp | None = None
-    related_ion_evidence: Mapping[tuple[str, str], RelatedIonEvidence] = field(
-        default_factory=dict
-    )
 
     @property
     def rt_anchor_groups(self) -> tuple[tuple[SampleLocalMS1Owner, ...], ...]:
