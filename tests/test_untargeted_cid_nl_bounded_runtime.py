@@ -1654,9 +1654,18 @@ def test_batch_preparation_abort_never_publishes_backfill_inputs(
     adapters = []
     finalized = []
     entered_backfill = []
+    writes_after_cancel = []
+    append = owner.StreamedResultStore.append
     acquire = owner.UntargetedPartitionPipelineAdapter.execute_acquisition
     finalize = owner.UntargetedBatchGroupingPreparation.finalize_grouping
     freeze = owner.UntargetedBatchGroupingPreparation.freeze_search
+
+    def observed_append(store, key, payload, **kwargs):
+        if cancelled.is_set():
+            writes_after_cancel.append(key)
+        return append(store, key, payload, **kwargs)
+
+    monkeypatch.setattr(owner.StreamedResultStore, "append", observed_append)
 
     def observed_acquire(adapter, partition, **kwargs):
         if not adapters:
@@ -1704,6 +1713,7 @@ def test_batch_preparation_abort_never_publishes_backfill_inputs(
             should_cancel=cancelled.is_set,
         )
     assert not entered_backfill
+    assert not writes_after_cancel
     assert len(finalized) >= 2
     # Even a caller bypassing the scheduler cannot consume partial preparation.
     with pytest.raises(RuntimeError, match="requires complete batch search"):

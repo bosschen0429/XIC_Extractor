@@ -588,6 +588,7 @@ class UntargetedPartitionPipelineAdapter:
                 bootstrap.batch, bootstrap.prepared,
                 progress_callback=progress_callback,
             )
+            check_cancellation()
             # Heavy captures stay spooled one partition at a time. Backfill
             # consumes this frozen grouping rather than fitting it a second time.
             sealed = store.append(

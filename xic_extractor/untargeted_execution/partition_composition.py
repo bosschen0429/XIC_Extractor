@@ -105,7 +105,7 @@ class PreparedUntargetedBatchSearch:
     """Complete batch search context; binding never changes group identity."""
 
     rt_warp: BatchRtWarp
-    related_ion_rt_hints: Mapping[tuple[str, str], BackfillRtPrediction]
+    hints_by_group: Mapping[str, Mapping[tuple[str, str], BackfillRtPrediction]]
 
     def bind(self, grouping: UntargetedPreparedGrouping) -> UntargetedPreparedGrouping:
         group_ids = {
@@ -116,8 +116,8 @@ class PreparedUntargetedBatchSearch:
         return replace(
             grouping,
             related_ion_rt_hints={
-                key: hint for key, hint in self.related_ion_rt_hints.items()
-                if key[0] in group_ids
+                key: hint for group_id in group_ids
+                for key, hint in self.hints_by_group.get(group_id, {}).items()
             },
         )
 
@@ -171,7 +171,12 @@ class UntargetedBatchGroupingPreparation:
 
     def freeze_search(self) -> PreparedUntargetedBatchSearch:
         assert self._rt_warp is not None
-        return PreparedUntargetedBatchSearch(self._rt_warp, self._hints.freeze())
+        # Index once for partition-local binding rather than rescanning every
+        # missing cell in the batch for each partition.
+        hints_by_group: dict[str, dict[tuple[str, str], BackfillRtPrediction]] = {}
+        for key, hint in self._hints.freeze().items():
+            hints_by_group.setdefault(key[0], {})[key] = hint
+        return PreparedUntargetedBatchSearch(self._rt_warp, hints_by_group)
 
 
 @dataclass(frozen=True, slots=True)
