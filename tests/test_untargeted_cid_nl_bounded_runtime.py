@@ -300,7 +300,7 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
     assert len(groups) == 12 and all(len(group) == 24 for group in groups)
 
 
-def test_related_ion_evidence_is_auxiliary_and_partition_invariant(
+def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
     tmp_path, monkeypatch
 ):
     import numpy as np
@@ -342,8 +342,8 @@ def test_related_ion_evidence_is_auxiliary_and_partition_invariant(
                 c for c in candidates[path.stem] if c.precursor_mz < 500.5
             )
         if index == 21:
-            # The partner and target MS1 signal remain, but the target has no
-            # independent MS2 support. A correct RT hint cannot supply it.
+            # The target MS1 signal remains without independent MS2 support.
+            # A correct Backfill query cannot supply it.
             raw.scans = tuple(s for s in raw.scans if s.precursor_mz < 500.5)
     plan = prepare_eager_untargeted_plan(
         raw_paths=paths,
@@ -375,14 +375,11 @@ def test_related_ion_evidence_is_auxiliary_and_partition_invariant(
         store = StreamedResultStore(
             tmp_path / f"spool-{capacity}", adapter.get_shared_objects()
         )
-        hints, queries = {}, {}
+        queries = {}
         try:
             for partition in _phase_partitions(adapter, store):
                 acquired = adapter.execute_acquisition(partition)
                 assert acquired.succeeded
-                prepared = acquired.result[1].prepared_grouping
-                assert prepared is not None
-                hints.update(prepared.related_ion_evidence)
                 for result in acquired.result[1].sample_results:
                     for attempt in result.backfill_attempts:
                         stem = result.job.sample.metadata.raw_stem
@@ -399,22 +396,16 @@ def test_related_ion_evidence_is_auxiliary_and_partition_invariant(
                             ].content.integration.rt_apex_min,
                         )
                 adapter.execute_composition(partition, acquired, store)
-            assert len(hints) == 2
-            for (_, sample), hint in hints.items():
-                expected = {"S20": 8.1, "S21": 7.9}[sample]
-                assert hint.rt_min == pytest.approx(expected, abs=0.005)
-                assert hint.partner_group_ids
             assert set(queries) == {"S20", "S21"}
             for sample, (rt, basis, lower, upper, apex) in queries.items():
                 expected = {"S20": 8.1, "S21": 7.9}[sample]
                 assert apex == pytest.approx(expected, abs=0.005)
                 assert rt == pytest.approx(8.0, abs=0.005)
                 assert basis.startswith("trajectory_")
-                assert ";related_ion_discordant:" in basis
                 half_window = peak_config.nl_rt_anchor_half_window_min
                 assert lower == pytest.approx(rt - half_window)
                 assert upper == pytest.approx(rt + half_window)
-            return hints, queries
+            return queries
         finally:
             adapter.close_process_worker_pools()
             store.cleanup()
@@ -1265,9 +1256,7 @@ def _assert_explanation_parity(tmp_path, plan, config, eager, bounded):
     assert records[0] == records[1]
 
 
-@pytest.mark.parametrize(
-    "failure_seam", ["later_partition", "later_spool", "search_spool"]
-)
+@pytest.mark.parametrize("failure_seam", ["later_partition", "later_spool"])
 def test_bounded_runtime_failure_never_publishes_completed_batch(
     tmp_path: Path, monkeypatch, failure_seam: str
 ):
@@ -1277,27 +1266,19 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
     marker = OwnerPathRuntimeMarker(tmp_path / "failed.json", "failed")
     original_error = OSError("second partition storage unavailable")
     calls = []
-    search_positions = []
     if failure_seam == "later_partition":
         seam_owner = bounded_owner
         seam_name = "execute_partition"
     else:
         seam_owner = bounded_owner.StreamedResultStore
-        seam_name = "append" if failure_seam == "search_spool" else "append_children"
+        seam_name = "append_children"
     original = getattr(seam_owner, seam_name)
 
     def fail_second(*args, **kwargs):
-        if failure_seam == "search_spool" and not args[1].startswith(
-            "cid-nl-search-grouping-"
-        ):
-            return original(*args, **kwargs)
         calls.append(1)
         if len(calls) == 2:
             raise original_error
-        result = original(*args, **kwargs)
-        if failure_seam == "search_spool":
-            search_positions.append(result.index)
-        return result
+        return original(*args, **kwargs)
 
     monkeypatch.setattr(seam_owner, seam_name, fail_second)
 
@@ -1322,24 +1303,6 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
         ".partition_spool-*/failed-results.pickle"
     )
     assert any(str(retained) in note for note in error.value.__notes__)
-    if failure_seam == "search_spool":
-        from xic_extractor.execution.result_store import open_preserved_results
-
-        replay = open_preserved_results(retained)
-        (position,) = search_positions
-        search = replay.read(position)
-        initial = replay.read_tuple(search.initial_partition.index, "initial_results")
-        full = replay.read(search.initial_partition.index).initial_results
-        assert tuple(item.effective_assessments for item in initial) == tuple(
-            item.effective_assessments for item in full
-        )
-        assert {item.job.sample.metadata.raw_stem for item in initial} == {
-            sample.metadata.raw_stem for sample in plan.context.samples
-        }
-        assert {item.job.method_subject.method_subject_id for item in initial} == {
-            subject.method_subject_id
-            for subject in search.grouping.batch.subject_batch.subjects
-        }
     snapshot = marker.read()
     assert snapshot.terminal_outcome is AttemptTerminalOutcome.FAILED
     assert snapshot.processing_attempt_id == (
@@ -1674,51 +1637,41 @@ def test_last_bootstrap_failure_prevents_backfill_admission(tmp_path, monkeypatc
     assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
 
 
-@pytest.mark.parametrize("failure_at", ["grouping", "hints", "cancel"])
-def test_batch_preparation_abort_never_publishes_backfill_inputs(
-    tmp_path, monkeypatch, failure_at
+def test_backfill_grouping_failure_stops_its_attempt_without_a_batch_barrier(
+    tmp_path, monkeypatch
 ):
     import xic_extractor.untargeted_execution.execution as owner
 
     plan, _ = _plan(tmp_path, monkeypatch)
-    cancelled = Event()
-    adapters = []
+    lock = Lock()
     finalized = []
-    entered_backfill = []
-    writes_after_cancel = []
-    append = owner.StreamedResultStore.append
+    admitted = []
     acquire = owner.UntargetedPartitionPipelineAdapter.execute_acquisition
     finalize = owner.UntargetedBatchGroupingPreparation.finalize_grouping
-    freeze = owner.UntargetedBatchGroupingPreparation.freeze_search
 
-    def observed_append(store, key, payload, **kwargs):
-        if cancelled.is_set():
-            writes_after_cancel.append(key)
-        return append(store, key, payload, **kwargs)
-
-    monkeypatch.setattr(owner.StreamedResultStore, "append", observed_append)
+    def subject_ids(subjects):
+        return frozenset(subject.method_subject_id for subject in subjects)
 
     def observed_acquire(adapter, partition, **kwargs):
-        if not adapters:
-            adapters.append(adapter)
         if partition.partition_key.endswith("-backfill"):
-            entered_backfill.append(partition)
+            with lock:
+                admitted.append(subject_ids(partition.payload))
         return acquire(adapter, partition, **kwargs)
 
-    def finalize_or_abort(preparation, *args, **kwargs):
-        result = finalize(preparation, *args, **kwargs)
-        finalized.append(1)
-        if len(finalized) == 2:
-            if failure_at == "grouping":
-                raise ValueError("grouping preparation failed")
-            if failure_at == "cancel":
-                cancelled.set()
+    def finalize_or_abort(preparation, batch, prepared, **kwargs):
+        subjects = subject_ids(batch.subject_batch.subjects)
+        with lock:
+            admitted_first = subjects in admitted
+        result = finalize(preparation, batch, prepared, **kwargs)
+        with lock:
+            finalized.append((subjects, admitted_first))
+            count = len(finalized)
+        if count == 2:
+            raise ValueError("grouping finalization failed")
         return result
 
-    def freeze_or_abort(preparation):
-        if failure_at == "hints":
-            raise ValueError("hint preparation failed")
-        return freeze(preparation)
+    def forbid_completed(*args, **kwargs):
+        pytest.fail("A failed Backfill grouping must not publish a batch")
 
     monkeypatch.setattr(
         owner.UntargetedPartitionPipelineAdapter,
@@ -1728,38 +1681,29 @@ def test_batch_preparation_abort_never_publishes_backfill_inputs(
     monkeypatch.setattr(
         owner.UntargetedBatchGroupingPreparation, "finalize_grouping", finalize_or_abort
     )
-    monkeypatch.setattr(
-        owner.UntargetedBatchGroupingPreparation, "freeze_search", freeze_or_abort
-    )
-    marker = OwnerPathRuntimeMarker(tmp_path / "preparation.json", failure_at)
-    with pytest.raises(RuntimeError, match="cancelled|preparation failed"):
+    monkeypatch.setattr(owner, "CompletedUntargetBatchWorkflowResult", forbid_completed)
+    marker = OwnerPathRuntimeMarker(tmp_path / "grouping.json", "grouping")
+    with pytest.raises(RuntimeError, match="failed before batch publication") as error:
         owner.execute_untargeted_plan(
             plan,
-            output_dir=tmp_path / "preparation",
+            output_dir=tmp_path / "grouping",
             alignment_config=AlignmentConfig(anchor_min_seed_events=1),
             telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
             recovery_marker=marker,
             max_partition_jobs=len(plan.context.samples),
             raw_workers=4,
             pipeline_overlap=True,
-            should_cancel=cancelled.is_set,
         )
-    assert not entered_backfill
-    assert not writes_after_cancel
+    # Each Backfill partition finalizes only its own grouping after admission;
+    # no partition waits for every other grouping in the batch.
     assert len(finalized) >= 2
-    # Even a caller bypassing the scheduler cannot consume partial preparation.
-    with pytest.raises(RuntimeError, match="requires complete batch search"):
-        acquire(adapters[0], adapters[0].partitions[-1])
-    assert marker.read().terminal_outcome is (
-        AttemptTerminalOutcome.CANCELLED
-        if failure_at == "cancel"
-        else AttemptTerminalOutcome.FAILED
-    )
+    assert all(admitted_first for _, admitted_first in finalized)
+    assert len({subjects for subjects, _ in finalized}) == len(finalized)
+    assert "grouping finalization failed" in str(error.value)
+    assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
 
 
-def test_batch_preparation_does_not_restore_initial_acquisition_records(
-    tmp_path, monkeypatch
-):
+def test_backfill_requires_frozen_batch_calibration(tmp_path, monkeypatch):
     import xic_extractor.untargeted_execution.execution as owner
 
     plan, _ = _plan(tmp_path, monkeypatch)
@@ -1769,32 +1713,11 @@ def test_batch_preparation_does_not_restore_initial_acquisition_records(
         max_partition_jobs=len(plan.context.samples),
         raw_workers=1,
     )
-    store = owner.StreamedResultStore(tmp_path / "spool", adapter.get_shared_objects())
     try:
-        for partition in adapter.bootstrap_partitions:
-            acquired = adapter.execute_acquisition(partition)
-            assert acquired.succeeded
-            adapter.execute_composition(partition, acquired, store)
-
-        def forbid_initial_restore(*args):
-            pytest.fail("grouping preparation restored unused acquisition records")
-
-        with monkeypatch.context() as phase_patch:
-            phase_patch.setattr(
-                owner.UntargetedInitialSampleResult,
-                "__setstate__",
-                forbid_initial_restore,
-            )
-            adapter.prepare_batch_search(store, lambda: None)
-        acquired = adapter.execute_acquisition(adapter.partitions[-1])
-        assert acquired.succeeded
-        assert {
-            result.job.sample.metadata.raw_stem
-            for result in acquired.result[1].sample_results
-        } == {sample.metadata.raw_stem for sample in plan.context.samples}
+        with pytest.raises(RuntimeError, match="requires frozen batch calibration"):
+            adapter.execute_acquisition(adapter.partitions[-1])
     finally:
         adapter.close_process_worker_pools()
-        store.cleanup()
 
 
 @pytest.mark.parametrize("raw_workers", [1, 2, 4])

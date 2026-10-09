@@ -413,9 +413,6 @@ def _prepare_group_authorized_backfills(
                     backfill_half_window_min=(
                         state.job.peak_config.nl_rt_anchor_half_window_min
                     ),
-                    related_ion=prepared.related_ion_evidence.get(
-                        (group.group_hypothesis_id, sample_stem)
-                    ),
                 )
                 revisit = _group_revisit(
                     assessment,

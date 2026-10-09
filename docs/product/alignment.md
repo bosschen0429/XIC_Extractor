@@ -239,32 +239,18 @@ the nearest same-cohort observations, including MS1-only positions, with the
 shared batch coordinate transform and robust local RT fit. Insufficient temporal
 support supplies only the trajectory's reference position; extrapolation remains
 bounded by the existing fit-risk/search-window rule. The runtime consumes one
-location result instead of choosing between pattern, related-ion, and trend
-answers. A forecast alone cannot establish a different observed peak or grant
-method support.
+location result instead of choosing between pattern and trend answers. A
+forecast alone cannot establish a different observed peak or grant method
+support.
 
-Related-ion evidence is auxiliary: agreement or disagreement is recorded with
-the query's provenance, but it neither moves the trajectory's search center nor
-grants membership, annotation, or quantitative evidence. The pure
-`alignment.related_ion_evidence` owner learns from frozen initial groups across
-partitions within each sample cohort: singly charged
-M+1-compatible mass spacing within the preferred mass tolerance, at least 20
-paired observations, at least 95% coelution within three seconds, and robust
-relative area-ratio scatter no greater than 0.25. This is a search heuristic,
-not chemical identification. An observed partner in the same sample supplies
-its apex plus the learned median RT offset for this consistency comparison;
-conflicting partner observations separated by more than three seconds abstain.
-This evidence is frozen before Backfill and cannot learn from recovered cells.
-The target ion must independently pass physical, method, and membership checks.
-The bounded runtime finalizes grouping once and spools each partition before
-learning related-ion evidence from compact RT/area projections; it does not retain all traces
-in memory or repeat RAW acquisition to learn relationships. Initial acquisition
-and Backfill are separate scheduler phases under one attempt and one store.
-After all initial partitions have been composed and released, batch preparation
-freezes calibration, finalizes each grouping, and freezes auxiliary evidence. Only a
-complete preparation publishes Backfill inputs; failure or cancellation prevents
-Backfill admission. No acquisition worker waits for another partition to finish
-scientific preparation. Direct and bounded production execution use the same
+Initial acquisition and Backfill are separate scheduler phases under one
+attempt and one store. After all initial partitions have been composed and
+released, batch preparation freezes the RT calibration; failure or cancellation
+before then prevents Backfill admission. Each Backfill partition reads its own
+spooled grouping inputs and initial acquisition records, finalizes that grouping
+once with the frozen calibration, and runs Backfill without reacquiring its
+initial traces. It neither waits for nor reads another partition's grouping.
+Direct and bounded production execution use the same
 in-memory preparation owner; only the bounded adapter owns their spool reads
 and writes. The opt-in `grouping_experiment` diagnostic prepares comparison
 inputs separately and stops before production Backfill planning.
@@ -514,9 +500,7 @@ This guard is not a calibrated confidence interval or an identity decision.
 Missing injection order or same-cohort observations leaves only the median
 reference position of the trajectory (`trajectory_reference`). None of these
 search-coordinate descriptions establishes zero perturbation or permission to
-write a value. An optional `related_ion_consistent` or
-`related_ion_discordant` provenance suffix records auxiliary agreement without
-changing the query RT.
+write a value.
 
 ### Method subjects
 

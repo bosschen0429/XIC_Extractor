@@ -6,8 +6,7 @@ complete patterns; it cannot replace a two-peak pattern with one tall peak.
 Single-peak links are not pattern evidence: they bind no owner and no position.
 
 The resulting sample positions are observations of the same trajectory used to
-locate missing samples. MS1 landmarks never grant method support, and auxiliary
-related-ion evidence never substitutes a different trajectory or search center.
+locate missing samples. MS1 landmarks never grant method support.
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ import math
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 import numpy as np
 
@@ -27,9 +26,6 @@ from xic_extractor.peak_detection.elution_context import (
     ElutionLandmark,
     SampleElutionContext,
 )
-
-if TYPE_CHECKING:
-    from xic_extractor.alignment.related_ion_evidence import RelatedIonEvidence
 
 _NEIGHBOR_SAMPLES = 6
 _TRAJECTORY_NEIGHBORS = 12
@@ -77,32 +73,23 @@ class PeakTrajectory:
         sample_cohorts: Mapping[str, str],
         rt_warp: RtCalibration | None,
         backfill_half_window_min: float,
-        related_ion: RelatedIonEvidence | None = None,
     ) -> PeakLocation:
         """Use an observed point or fit the unobserved part of this trajectory.
 
         Method-supported owners and pattern-matched MS1-only peaks contribute
         positions. The query stays in the target sample's RT coordinates;
-        neither fitting nor related-ion agreement supplies method eligibility.
+        fitting never supplies method eligibility.
         """
         if sample_stem in self._positions:
-            location = PeakLocation(
+            return PeakLocation(
                 self._positions[sample_stem], "trajectory_observed", True
             )
-        else:
-            location = self._estimate(
-                sample_stem,
-                injection_order=injection_order,
-                sample_cohorts=sample_cohorts,
-                rt_warp=rt_warp,
-                backfill_half_window_min=backfill_half_window_min,
-            )
-        if related_ion is None:
-            return location
-        return PeakLocation(
-            location.query_rt,
-            f"{location.basis};{related_ion.describe_at(location.query_rt)}",
-            location.observed,
+        return self._estimate(
+            sample_stem,
+            injection_order=injection_order,
+            sample_cohorts=sample_cohorts,
+            rt_warp=rt_warp,
+            backfill_half_window_min=backfill_half_window_min,
         )
 
     def _estimate(

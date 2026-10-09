@@ -14,7 +14,6 @@ from xic_extractor.alignment.peak_trajectories import (
     PeakTrajectories,
     resolve_peak_trajectories,
 )
-from xic_extractor.alignment.related_ion_evidence import RelatedIonEvidence
 from xic_extractor.peak_detection.elution_context import (
     ElutionLandmark,
     SampleElutionContext,
@@ -55,8 +54,7 @@ def _context(
     )
 
 
-@pytest.mark.parametrize("related_rt", [None, 10.6, 11.2])
-def test_missing_position_uses_ms1_trajectory_points_not_another_rt_answer(related_rt):
+def test_missing_position_uses_ms1_trajectory_points_not_another_rt_answer():
     owners = [_owner("s0", "early", 10.0), _owner("s2", "early", 10.4)]
     contexts = [
         _context(f"s{i}", ((10.0 + 0.2 * i, 30.0), (10.6 + 0.2 * i, 100.0)))
@@ -73,19 +71,11 @@ def test_missing_position_uses_ms1_trajectory_points_not_another_rt_answer(relat
         sample_cohorts=dict.fromkeys(orders, "batch"),
         rt_warp=None,
         backfill_half_window_min=0.5,
-        related_ion=(
-            RelatedIonEvidence(related_rt, ("partner",))
-            if related_rt is not None
-            else None
-        ),
     )
     # Two supported owners alone have median 10.2. The MS1-only point in s1
     # completes the straight trajectory 10 + 0.2 * injection order.
     assert location.query_rt == pytest.approx(10.6)
     assert location.observed_rt is None
-    if related_rt is not None:
-        agreement = "consistent" if related_rt == 10.6 else "discordant"
-        assert location.basis == f"trajectory_fit;related_ion_{agreement}:partner"
 
 
 @pytest.mark.parametrize("reverse", [False, True])

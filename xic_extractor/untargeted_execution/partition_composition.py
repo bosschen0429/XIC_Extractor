@@ -37,10 +37,6 @@ from xic_extractor.alignment.grouping_workflow import (
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
 )
-from xic_extractor.alignment.related_ion_evidence import (
-    RelatedIonEvidence,
-    RelatedIonEvidenceAccumulator,
-)
 from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetApplicationResult,
     UntargetedCandidateExclusion,
@@ -102,59 +98,27 @@ class UntargetedPartitionInputs:
     prepared_grouping: UntargetedPreparedGrouping | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class PreparedUntargetedBatchSearch:
-    """Complete batch search context; binding never changes group identity."""
-
-    rt_warp: BatchRtWarp
-    related_ions_by_group: Mapping[str, Mapping[tuple[str, str], RelatedIonEvidence]]
-
-    def bind(self, grouping: UntargetedPreparedGrouping) -> UntargetedPreparedGrouping:
-        group_ids = {
-            group.group_hypothesis_id
-            for workset in grouping.worksets
-            for group in workset.grouping_scope.groups
-        }
-        return replace(
-            grouping,
-            related_ion_evidence={
-                key: evidence
-                for group_id in group_ids
-                for key, evidence in self.related_ions_by_group.get(
-                    group_id, {}
-                ).items()
-            },
-        )
-
-
 class UntargetedBatchGroupingPreparation:
     """Shared in-memory preparation for direct and spooled batch execution.
 
-    Callers supply initial groupings, freeze calibration, finalize each grouping,
-    then freeze search context. Only compact anchor/relationship projections are
-    retained; RAW access, partition admission and spooling remain with runtime.
+    Callers supply initial groupings, freeze calibration, then finalize each
+    grouping against that frozen calibration. Only compact anchor projections
+    are retained; RAW access, partition admission and spooling remain with
+    runtime.
     """
 
-    def __init__(
-        self,
-        context: UntargetedPartitionContext,
-        alignment_config: AlignmentConfig,
-    ) -> None:
+    def __init__(self, context: UntargetedPartitionContext) -> None:
         samples = context.processing_owners.sample_resolutions
-        cohorts = {
-            sample.metadata.raw_stem: sample.metadata.batch_id for sample in samples
-        }
         self._calibration = BatchRtWarpAccumulator(
             injection_order={
                 sample.metadata.raw_stem: sample.metadata.injection_order
                 for sample in samples
                 if sample.metadata.injection_order is not None
             },
-            sample_cohorts=cohorts,
-        )
-        self._related_ions = RelatedIonEvidenceAccumulator(
-            sample_cohorts=cohorts,
-            mass_tolerance_ppm=alignment_config.preferred_ppm,
+            sample_cohorts={
+                sample.metadata.raw_stem: sample.metadata.batch_id
+                for sample in samples
+            },
         )
         self._rt_warp: BatchRtWarp | None = None
 
@@ -172,27 +136,12 @@ class UntargetedBatchGroupingPreparation:
         progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     ) -> UntargetedPreparedGrouping:
         assert self._rt_warp is not None
-        finalized = finalize_untargeted_partition_grouping(
+        return finalize_untargeted_partition_grouping(
             batch,
             prepared,
             rt_warp=self._rt_warp,
             progress_callback=progress_callback,
         )
-        self._related_ions.add_groups(
-            group
-            for workset in finalized.worksets
-            for group in workset.grouping_scope.groups
-        )
-        return finalized
-
-    def freeze_search(self) -> PreparedUntargetedBatchSearch:
-        assert self._rt_warp is not None
-        # Index once for partition-local binding rather than rescanning every
-        # missing cell in the batch for each partition.
-        by_group: dict[str, dict[tuple[str, str], RelatedIonEvidence]] = {}
-        for key, evidence in self._related_ions.freeze().items():
-            by_group.setdefault(key[0], {})[key] = evidence
-        return PreparedUntargetedBatchSearch(self._rt_warp, by_group)
 
 
 @dataclass(frozen=True, slots=True)
@@ -653,15 +602,14 @@ def prepare_untargeted_partition_grouping(
     )
     if bootstrap_only:
         return prepared
-    preparation = UntargetedBatchGroupingPreparation(batch.context, alignment_config)
+    preparation = UntargetedBatchGroupingPreparation(batch.context)
     preparation.add_initial(prepared)
     preparation.freeze_calibration()
-    finalized = preparation.finalize_grouping(
+    return preparation.finalize_grouping(
         batch,
         prepared,
         progress_callback=progress_callback,
     )
-    return preparation.freeze_search().bind(finalized)
 
 
 def finalize_untargeted_partition_grouping(

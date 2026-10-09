@@ -85,7 +85,6 @@ from xic_extractor.untargeted_execution.partition.models import (
 )
 from xic_extractor.untargeted_execution.partition_composition import (
     PersistedUntargetedPartition,
-    PreparedUntargetedBatchSearch,
     UntargetedBatchGroupingPreparation,
     UntargetedPartitionInputs,
     compose_and_persist_untargeted_partition,
@@ -123,20 +122,6 @@ class _InitialAcquisitionPartition:
 
     grouping: _GroupingInputs
     initial_results: tuple[UntargetedInitialSampleResult, ...]
-    children: tuple[()] = ()
-    excluded_candidates: tuple[()] = ()
-    method_assessments: tuple[()] = ()
-    initial_groups: tuple[()] = ()
-    initial_edges: tuple[()] = ()
-    capture_evidence: tuple[()] = ()
-
-
-@dataclass(frozen=True, slots=True)
-class _SearchGroupingPartition:
-    """Final grouping bound to the original acquisition records, without a copy."""
-
-    grouping: _GroupingInputs
-    initial_partition: SealedPartition
     children: tuple[()] = ()
     excluded_candidates: tuple[()] = ()
     method_assessments: tuple[()] = ()
@@ -414,12 +399,8 @@ class UntargetedPartitionPipelineAdapter:
         self._partitions = tuple(partitions)
         self._bootstrap_count = len(subject_partitions)
         self._initial_partitions: dict[int, SealedPartition] = {}
-        self._batch_preparation: UntargetedBatchGroupingPreparation | None = (
-            UntargetedBatchGroupingPreparation(context, alignment_config)
-        )
-        self._prepared_positions: dict[int, int] = {}
-        self._prepared_store: StreamedResultStore | None = None
-        self._batch_search: PreparedUntargetedBatchSearch | None = None
+        self._batch_preparation = UntargetedBatchGroupingPreparation(context)
+        self._initial_store: StreamedResultStore | None = None
         self._partition_subject_batches = {
             partition.partition_key: self._prepared_worksets.subject_batch(
                 partition.payload
@@ -503,8 +484,6 @@ class UntargetedPartitionPipelineAdapter:
 
     def execution_phases(
         self,
-        *,
-        progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     ) -> tuple[PartitionPipelinePhase[tuple[CidNlMethodSubject, ...]], ...]:
         """Operational chunks never close the batch's scientific evidence scope."""
         return (
@@ -512,7 +491,7 @@ class UntargetedPartitionPipelineAdapter:
             PartitionPipelinePhase(
                 "batch-search-preparation",
                 self._partitions[self._bootstrap_count :],
-                partial(self.prepare_batch_search, progress_callback=progress_callback),
+                self.prepare_batch_search,
             ),
         )
 
@@ -587,52 +566,17 @@ class UntargetedPartitionPipelineAdapter:
         self,
         store: StreamedResultStore,
         check_cancellation: Callable[[], None],
-        *,
-        progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     ) -> None:
-        """Prepare the whole batch between acquisition phases, one spool at a time.
+        """Freeze batch RT calibration once every initial partition is sealed.
 
-        Publish Backfill inputs only after calibration, all grouping, and hint
-        freezing succeed. A partial preparation cannot admit downstream work.
+        Each Backfill partition then regroups only its own spooled initial
+        grouping against this frozen calibration.
         """
         if len(self._initial_partitions) != self._bootstrap_count:
             raise RuntimeError("initial acquisition phase is incomplete")
-        preparation = self._batch_preparation
-        assert preparation is not None
         check_cancellation()
-        preparation.freeze_calibration()
-        prepared_positions = {}
-        for index, initial_partition in sorted(self._initial_partitions.items()):
-            check_cancellation()
-            grouping = cast(
-                _GroupingInputs,
-                store.read_header_field(initial_partition.index, "grouping"),
-            )
-            prepared = preparation.finalize_grouping(
-                grouping.batch, grouping.prepared,
-                progress_callback=progress_callback,
-            )
-            check_cancellation()
-            # Heavy captures stay spooled one partition at a time. Backfill
-            # consumes this frozen grouping rather than fitting it a second time.
-            sealed = store.append(
-                f"cid-nl-search-grouping-{index}",
-                _SearchGroupingPartition(
-                    _GroupingInputs(
-                        replace(grouping.batch, prepared_grouping=None), prepared
-                    ),
-                    initial_partition,
-                ),
-            )
-            prepared_positions[index] = sealed.index
-            del grouping, prepared
-        check_cancellation()
-        batch_search = preparation.freeze_search()
-        check_cancellation()
-        self._prepared_positions = prepared_positions
-        self._prepared_store = store
-        self._batch_search = batch_search
-        self._batch_preparation = None
+        self._batch_preparation.freeze_calibration()
+        self._initial_store = store
 
     def execute_acquisition(
         self,
@@ -662,31 +606,35 @@ class UntargetedPartitionPipelineAdapter:
                 bootstrap_only=True,
             )
         else:
-            if self._batch_search is None or self._prepared_store is None:
-                raise RuntimeError(
-                    "Backfill requires complete batch search preparation"
-                )
-            search_grouping = cast(
-                _SearchGroupingPartition,
-                self._prepared_store.read(
-                    self._prepared_positions[partition.index - self._bootstrap_count]
-                ),
+            store = self._initial_store
+            if store is None:
+                raise RuntimeError("Backfill requires frozen batch calibration")
+            initial_partition = self._initial_partitions[
+                partition.index - self._bootstrap_count
+            ]
+            # Grouping inputs and acquisition records are read independently
+            # from this partition's own initial snapshot.
+            initial_grouping = cast(
+                _GroupingInputs,
+                store.read_header_field(initial_partition.index, "grouping"),
             )
-            batch = search_grouping.grouping.batch
+            batch = replace(initial_grouping.batch, prepared_grouping=None)
             initial_results = cast(
                 tuple[UntargetedInitialSampleResult, ...],
-                self._prepared_store.read_tuple(
-                    search_grouping.initial_partition.index, "initial_results"
-                ),
+                store.read_tuple(initial_partition.index, "initial_results"),
             )
-            prepared = self._batch_search.bind(search_grouping.grouping.prepared)
+            preparation = self._batch_preparation
 
-            def frozen_grouping(
+            def final_grouping(
                 _: tuple[UntargetedInitialSampleResult, ...],
             ) -> UntargetedPreparedGrouping:
-                return prepared
+                return preparation.finalize_grouping(
+                    batch,
+                    initial_grouping.prepared,
+                    progress_callback=progress_callback,
+                )
 
-            grouping_callback = frozen_grouping
+            grouping_callback = final_grouping
 
         def run(pool: WorkerAdmissionPool) -> UntargetedPartitionResult:
             return execute_partition(
@@ -765,7 +713,6 @@ class UntargetedPartitionPipelineAdapter:
                     ),
                 ),
             )
-            assert self._batch_preparation is not None
             self._batch_preparation.add_initial(prepared)
             self._initial_partitions[partition.index] = sealed
             persisted = PersistedUntargetedPartition(sealed, 0, ())
@@ -1032,7 +979,7 @@ def execute_untargeted_plan(
     try:
         result = PartitionPipelineScheduler.execute(
             adapter,
-            phases=adapter.execution_phases(progress_callback=progress_callback),
+            phases=adapter.execution_phases(),
             output_dir=output_dir,
             telemetry_provider=telemetry_provider,
             recovery_marker=recovery_marker,

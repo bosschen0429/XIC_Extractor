@@ -14,7 +14,6 @@ from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.related_ion_evidence import RelatedIonEvidence
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
@@ -170,16 +169,6 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
                 for workset in initial_grouping.worksets
             ),
         )
-    # A related ion may point at the other observed peak. It supplies a
-    # consistency observation, not an alternative search center.
-    competing_hints = {
-        (group.group_hypothesis_id, sample): RelatedIonEvidence(
-            apex, ("competing-peak",)
-        )
-        for workset in initial_grouping.worksets
-        for group in workset.grouping_scope.groups
-        for sample, apex in expected_initial.items()
-    }
     states = [
         workers._RuntimeJobState(
             job=result.job,
@@ -192,15 +181,12 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
     ]
     workers._prepare_group_authorized_backfills(
         states,
-        prepared=replace(initial_grouping, related_ion_evidence=competing_hints),
+        prepared=initial_grouping,
     )
     for state in states:
         (target,) = state.backfill_targets
         if not missing_pattern_location:
-            assert (
-                target.query_rt_basis
-                == "trajectory_observed;related_ion_discordant:competing-peak"
-            )
+            assert target.query_rt_basis == "trajectory_observed"
         assert target.query_rt == pytest.approx(
             expected_query[state.job.sample.metadata.raw_stem], abs=0.005
         )
