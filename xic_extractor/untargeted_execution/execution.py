@@ -51,7 +51,7 @@ from xic_extractor.execution.partitions import (
     WorkPartition,
 )
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
-from xic_extractor.execution.result_store import StreamedResultStore
+from xic_extractor.execution.result_store import SealedPartition, StreamedResultStore
 from xic_extractor.execution.workers import WorkerAdmissionPool, WorkerTransportMetrics
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -112,10 +112,17 @@ _BOOTSTRAP_CONTRACT = _mint_artifact_semantic_contract_ref(
 
 
 @dataclass(frozen=True, slots=True)
-class _BootstrapPartition:
+class _GroupingInputs:
     batch: UntargetedPartitionInputs
-    initial_results: tuple[UntargetedInitialSampleResult, ...]
     prepared: UntargetedPreparedGrouping
+
+
+@dataclass(frozen=True, slots=True)
+class _InitialAcquisitionPartition:
+    """One sealed snapshot with independently readable grouping and acquisition."""
+
+    grouping: _GroupingInputs
+    initial_results: tuple[UntargetedInitialSampleResult, ...]
     children: tuple[()] = ()
     excluded_candidates: tuple[()] = ()
     method_assessments: tuple[()] = ()
@@ -126,11 +133,10 @@ class _BootstrapPartition:
 
 @dataclass(frozen=True, slots=True)
 class _SearchGroupingPartition:
-    """Frozen grouping with acquired sample records retained in their own spool."""
+    """Final grouping bound to the original acquisition records, without a copy."""
 
-    batch: UntargetedPartitionInputs
-    prepared: UntargetedPreparedGrouping
-    initial_partition_index: int
+    grouping: _GroupingInputs
+    initial_partition: SealedPartition
     children: tuple[()] = ()
     excluded_candidates: tuple[()] = ()
     method_assessments: tuple[()] = ()
@@ -407,7 +413,7 @@ class UntargetedPartitionPipelineAdapter:
                 )
         self._partitions = tuple(partitions)
         self._bootstrap_count = len(subject_partitions)
-        self._bootstrap_positions: dict[int, int] = {}
+        self._initial_partitions: dict[int, SealedPartition] = {}
         self._batch_preparation: UntargetedBatchGroupingPreparation | None = (
             UntargetedBatchGroupingPreparation(context, alignment_config)
         )
@@ -589,18 +595,21 @@ class UntargetedPartitionPipelineAdapter:
         Publish Backfill inputs only after calibration, all grouping, and hint
         freezing succeed. A partial preparation cannot admit downstream work.
         """
-        if len(self._bootstrap_positions) != self._bootstrap_count:
+        if len(self._initial_partitions) != self._bootstrap_count:
             raise RuntimeError("initial acquisition phase is incomplete")
         preparation = self._batch_preparation
         assert preparation is not None
         check_cancellation()
         preparation.freeze_calibration()
         prepared_positions = {}
-        for index, position in sorted(self._bootstrap_positions.items()):
+        for index, initial_partition in sorted(self._initial_partitions.items()):
             check_cancellation()
-            bootstrap = cast(_BootstrapPartition, store.read(position))
+            grouping = cast(
+                _GroupingInputs,
+                store.read_header_field(initial_partition.index, "grouping"),
+            )
             prepared = preparation.finalize_grouping(
-                bootstrap.batch, bootstrap.prepared,
+                grouping.batch, grouping.prepared,
                 progress_callback=progress_callback,
             )
             check_cancellation()
@@ -608,10 +617,12 @@ class UntargetedPartitionPipelineAdapter:
             # consumes this frozen grouping rather than fitting it a second time.
             sealed = store.append(
                 f"cid-nl-search-grouping-{index}",
-                _SearchGroupingPartition(bootstrap.batch, prepared, position),
+                _SearchGroupingPartition(
+                    _GroupingInputs(grouping.batch, prepared), initial_partition
+                ),
             )
             prepared_positions[index] = sealed.index
-            del bootstrap, prepared
+            del grouping, prepared
         check_cancellation()
         batch_search = preparation.freeze_search()
         check_cancellation()
@@ -658,14 +669,14 @@ class UntargetedPartitionPipelineAdapter:
                     self._prepared_positions[partition.index - self._bootstrap_count]
                 ),
             )
-            batch = search_grouping.batch
+            batch = search_grouping.grouping.batch
             initial_results = cast(
                 tuple[UntargetedInitialSampleResult, ...],
                 self._prepared_store.read_tuple(
-                    search_grouping.initial_partition_index, "initial_results"
+                    search_grouping.initial_partition.index, "initial_results"
                 ),
             )
-            prepared = self._batch_search.bind(search_grouping.prepared)
+            prepared = self._batch_search.bind(search_grouping.grouping.prepared)
 
             def frozen_grouping(
                 _: tuple[UntargetedInitialSampleResult, ...],
@@ -743,18 +754,17 @@ class UntargetedPartitionPipelineAdapter:
             prepared = leaf.prepared_grouping
             sealed = store.append(
                 partition.partition_key,
-                _BootstrapPartition(
-                    batch=batch,
+                _InitialAcquisitionPartition(
+                    grouping=_GroupingInputs(batch, prepared),
                     initial_results=tuple(
                         UntargetedInitialSampleResult(result.job, result.adapter_result)
                         for result in leaf.sample_results
                     ),
-                    prepared=prepared,
                 ),
             )
             assert self._batch_preparation is not None
             self._batch_preparation.add_initial(prepared)
-            self._bootstrap_positions[partition.index] = sealed.index
+            self._initial_partitions[partition.index] = sealed
             persisted = PersistedUntargetedPartition(sealed, 0, ())
             return PartitionCompositionOutput(result=persisted, sealed=sealed)
 

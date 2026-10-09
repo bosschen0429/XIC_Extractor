@@ -95,8 +95,8 @@ def write_partition_payload(
     try:
         with stream:
             writer = _HashingWriter(stream)
-            # The small header has no child graphs. Independent records let
-            # consumers restore only the facts they actually consume.
+            # Non-tuple fields share a header; tuple fields have independent
+            # records so consumers need not restore the entire payload graph.
             header = (
                 type(payload),
                 {
@@ -355,6 +355,20 @@ class StreamedResultStore:
         for name, value in values.items():
             object.__setattr__(payload, name, value)
         return payload
+
+    def read_header_field(self, index: int, field_name: str) -> Any:
+        """Restore a complete non-tuple field without loading tuple records.
+
+        Stage inputs and acquired records can share one atomic spool write
+        without forcing their consumers to rehydrate both graphs.
+        """
+        if type(index) is not int or not 0 <= index < len(self._partitions):
+            raise IndexError("partition index out of range")
+        with self._path(index).open("rb") as stream:
+            _, values = _OwnerUnpickler(stream, self._shared_objects).load()
+        if field_name not in values:
+            raise ValueError("read_header_field requires a stored non-tuple field")
+        return values[field_name]
 
     def read_tuple(self, index: int, field_name: str) -> tuple[Any, ...]:
         """Restore a complete tuple field without loading the payload header.

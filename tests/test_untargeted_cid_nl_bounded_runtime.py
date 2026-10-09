@@ -1323,8 +1323,8 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
         replay = open_preserved_results(retained)
         (position,) = search_positions
         search = replay.read(position)
-        initial = replay.read_tuple(search.initial_partition_index, "initial_results")
-        full = replay.read(search.initial_partition_index).initial_results
+        initial = replay.read_tuple(search.initial_partition.index, "initial_results")
+        full = replay.read(search.initial_partition.index).initial_results
         assert tuple(item.effective_assessments for item in initial) == tuple(
             item.effective_assessments for item in full
         )
@@ -1334,7 +1334,8 @@ def test_bounded_runtime_failure_never_publishes_completed_batch(
         assert {
             item.job.method_subject.method_subject_id for item in initial
         } == {
-            subject.method_subject_id for subject in search.batch.subject_batch.subjects
+            subject.method_subject_id
+            for subject in search.grouping.batch.subject_batch.subjects
         }
     snapshot = marker.read()
     assert snapshot.terminal_outcome is AttemptTerminalOutcome.FAILED
@@ -1751,6 +1752,45 @@ def test_batch_preparation_abort_never_publishes_backfill_inputs(
         AttemptTerminalOutcome.CANCELLED if failure_at == "cancel"
         else AttemptTerminalOutcome.FAILED
     )
+
+
+def test_batch_preparation_does_not_restore_initial_acquisition_records(
+    tmp_path, monkeypatch
+):
+    import xic_extractor.untargeted_execution.execution as owner
+
+    plan, _ = _plan(tmp_path, monkeypatch)
+    adapter = owner.UntargetedPartitionPipelineAdapter(
+        plan, alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        max_partition_jobs=len(plan.context.samples), raw_workers=1,
+    )
+    store = owner.StreamedResultStore(tmp_path / "spool", adapter.get_shared_objects())
+    try:
+        for partition in adapter.bootstrap_partitions:
+            acquired = adapter.execute_acquisition(partition)
+            assert acquired.succeeded
+            adapter.execute_composition(partition, acquired, store)
+
+        def forbid_initial_restore(*args):
+            pytest.fail("grouping preparation restored unused acquisition records")
+
+        with monkeypatch.context() as phase_patch:
+            phase_patch.setattr(
+                owner.UntargetedInitialSampleResult, "__setstate__",
+                forbid_initial_restore,
+            )
+            adapter.prepare_batch_search(store, lambda: None)
+        acquired = adapter.execute_acquisition(adapter.partitions[-1])
+        assert acquired.succeeded
+        assert {
+            result.job.sample.metadata.raw_stem
+            for result in acquired.result[1].sample_results
+        } == {
+            sample.metadata.raw_stem for sample in plan.context.samples
+        }
+    finally:
+        adapter.close_process_worker_pools()
+        store.cleanup()
 
 
 @pytest.mark.parametrize("raw_workers", [1, 2, 4])

@@ -116,6 +116,19 @@ def test_tuple_field_read_skips_header_and_other_fields_after_preservation(tmp_p
             reader.read_tuple(0, "label")
 
 
+def test_header_field_read_skips_acquired_records_after_preservation(tmp_path):
+    store = StreamedResultStore(tmp_path, ())
+    store.append("first", Payload((_ObservedChild(),), label="grouping-S1"))
+    store.append("second", Payload((_ObservedChild(),), label="grouping-S2"))
+    _restored_children.clear()
+    for reader in (store, open_preserved_results(store.preserve_failed_results())):
+        assert reader.read_header_field(0, "label") == "grouping-S1"
+        assert reader.read_header_field(1, "label") == "grouping-S2"
+        assert not _restored_children
+        with pytest.raises(ValueError, match="non-tuple field"):
+            reader.read_header_field(0, "children")
+
+
 def test_streaming_children_matches_append_bytes_and_reader(tmp_path):
     payload = Payload(
         (1, 2, 3), method_assessments=(4,), excluded_candidates=(5,), label="same"
