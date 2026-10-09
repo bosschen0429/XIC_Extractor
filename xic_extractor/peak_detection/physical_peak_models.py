@@ -18,6 +18,7 @@ PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context"
 # The group RT resolves several peaks in the context, and a tail that settles
 # near the baseline closes the peak before the acquired edge.
 PHYSICAL_PEAK_GROUP_WINDOW_POLICY = "group_rt_resolved_peak_in_context"
+PHYSICAL_PEAK_BACKFILL_POLICY = "sample_local_background_qualified_peak_in_context"
 DISCOVERY_PHYSICAL_PEAK_POINT_POLICY = "background_qualified_peak_contains_query"
 _PHYSICAL_PEAK_SELECTION_POLICIES = frozenset(
     {
@@ -25,6 +26,7 @@ _PHYSICAL_PEAK_SELECTION_POLICIES = frozenset(
         PHYSICAL_PEAK_NO_SELECTION_POLICY,
         PHYSICAL_PEAK_WINDOW_POLICY,
         PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+        PHYSICAL_PEAK_BACKFILL_POLICY,
         DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     }
 )

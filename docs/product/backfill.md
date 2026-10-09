@@ -55,6 +55,17 @@ and owner-to-band trend rule as final grouping; it does not refit the warp.
 
 ### Cell outcome
 
+The physical Backfill question uses
+`sample_local_background_qualified_peak_in_context`. It retains the ordinary
+acquired-support and continuity requirements, and requires local prominence
+above three robust noise standard deviations (1.4826 times the unscaled
+short-scale MAD). Independently qualified censored hit clusters keep their
+existing support rule. This is a conservative background screen, not a measured
+blank false-positive rate or chemical-absence assertion. Initial and Detected
+capture policies and the integral of an accepted physical segment are unchanged.
+An isolated pair of non-adjacent raw hits remains insufficient original XIC
+continuity; smoothing it into a peak does not supply missing acquired support.
+
 1. An eligible missing Untargeted cell can yield
    `ms1_only_backfill_observation` when the cell has exactly one
    group-bounded MS1 peak and no same-sample CID-NL evidence.

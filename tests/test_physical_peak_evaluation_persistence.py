@@ -32,12 +32,83 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+    PHYSICAL_PEAK_BACKFILL_POLICY,
     PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
     PHYSICAL_PEAK_NO_SELECTION_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
     PHYSICAL_PEAK_WINDOW_POLICY,
 )
 from xic_extractor.peak_detection.scoring_metrics import noise_shape_severity
+
+
+@pytest.mark.parametrize(
+    "height,expected", [(5.0, "unavailable"), (200.0, "available")]
+)
+def test_backfill_requires_background_contrast_without_changing_detected_capture(
+    height: float, expected: str,
+) -> None:
+    rt = np.linspace(0.0, 2.0, 401)
+    raw = 100.0 + np.random.default_rng(19).normal(0.0, 10.0, len(rt))
+    raw += height * np.exp(-0.5 * ((rt - 1.0) / 0.08) ** 2)
+    prepared = prepare_physical_signal(rt, raw)
+    question = dict(
+        selection_subject_id="backfill-background-contrast",
+        query_rt_min=1.0,
+        search_rt_window=(0.85, 1.15),
+    )
+    detected = evaluate_physical_peak(
+        prepared,
+        **question,
+        selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+    )
+    assert detected.state == "available"
+    backfill = evaluate_physical_peak(
+        prepared, **question, selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
+    )
+    assert backfill.state == expected
+    if expected == "unavailable":
+        assert backfill.reason == "insufficient_backfill_peak_contrast"
+        assert backfill.facts is None
+    else:
+        assert backfill.facts.area_counts_seconds == detected.facts.area_counts_seconds
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=SignalProcessingProfile(), evaluation=backfill,
+    )
+    assert deserialize_physical_peak_evaluation(payload)[-1] == backfill
+
+
+def test_backfill_window_does_not_take_a_neighbor_outside_the_expected_rt() -> None:
+    rt = np.linspace(0.0, 2.0, 401)
+    raw = 1000.0 * np.exp(-0.5 * ((rt - 0.4) / 0.08) ** 2)
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="missing-peak-with-neighbor",
+        query_rt_min=1.0,
+        search_rt_window=(0.8, 1.2),
+        selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
+    )
+    assert result.state == "unavailable"
+    assert result.reason == "no_peak_in_sample_local_window"
+    assert result.facts is None
+    assert result.segment_universe.segments
+    assert result.segment_universe.segments[0].apex_rt_min == pytest.approx(0.4)
+
+
+def test_backfill_retains_insufficient_support_reason_for_two_isolated_scans() -> None:
+    rt = np.linspace(0.0, 3.0, 61)
+    raw = np.zeros_like(rt)
+    raw[[29, 31]] = (1000.0, 1100.0)
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="two-censored-observations",
+        query_rt_min=1.5,
+        search_rt_window=(1.2, 1.8),
+        selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
+    )
+    assert result.state == "unavailable"
+    assert result.reason == "insufficient_original_xic_continuity"
+    assert result.facts is None
+    assert result.segment_universe.segments
 
 
 def test_unavailable_prepared_signal_keeps_live_asls_intermediate(monkeypatch) -> None:

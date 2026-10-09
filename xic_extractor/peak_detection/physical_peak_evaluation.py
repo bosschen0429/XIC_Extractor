@@ -50,6 +50,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     _PHYSICAL_PEAK_OPERATION_ORDER,
     _PHYSICAL_PEAK_SELECTION_POLICIES,
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+    PHYSICAL_PEAK_BACKFILL_POLICY,
     PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
     PHYSICAL_PEAK_NO_SELECTION_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
@@ -70,6 +71,11 @@ from xic_extractor.peak_detection.physical_peak_models import (
 from xic_extractor.peak_detection.scoring_metrics import (
     short_scale_noise_mad,
 )
+
+# Backfill without a direct identity observation needs separation from measured
+# local background, not merely a smoothed maximum. MAD is unscaled; three robust
+# noise standard deviations are a screening rule, not a measured blank FPR.
+_BACKFILL_LOCAL_CONTRAST_MIN_MAD = 3.0 * 1.4826
 
 
 def _physical_text(value: object, *, field: str) -> str:
@@ -571,6 +577,7 @@ def _validated_search_window(
     if selection_policy_version not in {
         PHYSICAL_PEAK_WINDOW_POLICY,
         PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+        PHYSICAL_PEAK_BACKFILL_POLICY,
     }:
         raise ValueError("search window requires a window selection policy")
     if not isinstance(window, tuple) or len(window) != 2:
@@ -600,6 +607,7 @@ def _admissible_physical_segments(
     if selection_policy_version in {
         PHYSICAL_PEAK_WINDOW_POLICY,
         PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+        PHYSICAL_PEAK_BACKFILL_POLICY,
     }:
         if not universe.context_rt_start_min <= query_rt <= universe.context_rt_end_min:
             return ()
@@ -611,7 +619,10 @@ def _admissible_physical_segments(
             or search_rt_window[0] <= segment.apex_rt_min <= search_rt_window[1]
         )
         # The prior resolves ambiguity only among eligible candidates.
-        if selection_policy_version == PHYSICAL_PEAK_GROUP_WINDOW_POLICY:
+        if selection_policy_version in {
+            PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+            PHYSICAL_PEAK_BACKFILL_POLICY,
+        }:
             containing = tuple(
                 segment.physical_segment_id
                 for segment in candidates
@@ -711,7 +722,10 @@ def qualified_physical_segments(
 
 
 def _physical_segment_support_failure(
-    prepared: PreparedSignal, selected: PhysicalSegment
+    prepared: PreparedSignal,
+    selected: PhysicalSegment,
+    *,
+    for_backfill: bool = False,
 ) -> str:
     if physical_segment_has_incomplete_context(prepared.projection, selected):
         return "incomplete_peak_context"
@@ -749,8 +763,17 @@ def _physical_segment_support_failure(
     )
     rt = np.asarray(prepared.rt[left:right], dtype=float)
     noise_mad = short_scale_noise_mad(rt, acquired)
-    if prominence < _PHYSICAL_LOCAL_CONTRAST_MIN_MAD * noise_mad:
-        return "insufficient_local_peak_contrast"
+    minimum_contrast = (
+        _BACKFILL_LOCAL_CONTRAST_MIN_MAD
+        if for_backfill
+        else _PHYSICAL_LOCAL_CONTRAST_MIN_MAD
+    )
+    if prominence < minimum_contrast * noise_mad:
+        return (
+            "insufficient_backfill_peak_contrast"
+            if for_backfill
+            else "insufficient_local_peak_contrast"
+        )
     return ""
 
 
@@ -771,7 +794,12 @@ def answer_physical_peak_question(
     background_qualified = False
     if state == "available":
         if not question.admissible_segment_ids:
-            state, reason = "unavailable", "no_selection"
+            state = "unavailable"
+            reason = (
+                "no_peak_in_sample_local_window"
+                if question.selection_policy_version == PHYSICAL_PEAK_BACKFILL_POLICY
+                else "no_selection"
+            )
         elif len(question.admissible_segment_ids) > 1:
             state, reason = "unavailable", "ambiguous_segment_candidates"
         else:
@@ -784,7 +812,13 @@ def answer_physical_peak_question(
             prepared = prepared_result.prepared
             if prepared is None:
                 raise ValueError("available physical answer lacks worker-local signal")
-            support_failure = _physical_segment_support_failure(prepared, selected)
+            support_failure = _physical_segment_support_failure(
+                prepared,
+                selected,
+                for_backfill=(
+                    question.selection_policy_version == PHYSICAL_PEAK_BACKFILL_POLICY
+                ),
+            )
             if support_failure:
                 state, reason = "unavailable", support_failure
                 selected = None
