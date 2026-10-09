@@ -97,6 +97,19 @@ explicit options. [Lightweight Alignment review](xic-inspector.md#lightweight-al
 owns the retention choices, legacy-report conversion and bounded curve export.
 These diagnostic choices do not change grouping, Backfill or Matrix values.
 
+### Sample metadata
+
+Sample metadata is an explicit Alignment input; it is not inherited from a
+previous Discovery invocation. `--sample-metadata` loads the existing metadata
+format and passes its batch IDs, injection order, sample roles and exclusions
+to the workflow. The CLI reports the source and sample/batch counts before
+execution. The request owner retains responsibility for sample coverage.
+
+Without this input, the existing RAW-header/default derivation treats the RAW
+directory as one cohort. A flattened directory containing several acquisition
+batches therefore needs explicit metadata; it does not acquire separate batch
+identities merely because its files were measured on different dates.
+
 ### Job planning and acquisition
 
 The bounded production entry creates initial jobs only for sample/subject pairs

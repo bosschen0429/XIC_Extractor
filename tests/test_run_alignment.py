@@ -1886,3 +1886,115 @@ def test_run_alignment_cli_targets_csv_must_exist(
     )
     assert code == 2
     assert "targets CSV file does not exist" in capsys.readouterr().err
+
+@pytest.mark.parametrize("explicit_metadata", [True, False])
+def test_run_alignment_cli_routes_sample_metadata_without_losing_cohorts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    explicit_metadata: bool,
+) -> None:
+    from xic_extractor.sample_metadata import SampleMetadata
+
+    batch_index = tmp_path / "discovery_batch_index.csv"
+    batch_index.write_text(
+        "sample_stem,raw_file,candidate_csv\n"
+        "S1,S1.raw,S1.csv\nS2,S2.raw,S2.csv\n",
+        encoding="utf-8",
+    )
+    for stem in ("S1", "S2"):
+        (tmp_path / f"{stem}.csv").write_text("x\n", encoding="utf-8")
+    raw_dir = tmp_path / "raws"
+    raw_dir.mkdir()
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    metadata = tmp_path / "sample_metadata.tsv"
+    metadata.write_text(
+        "schema_version\tsample_name\traw_stem\tinjection_order\tsample_role\t"
+        "batch_id\tprep_batch_id\tmatrix_type\tgroup\texcluded\texclusion_reason\n"
+        "sample_metadata\tQC one\tS1\t12\tpooled_qc\tbatch_A\t"
+        "prep_A\ttissue\tA\tfalse\t\n"
+        "sample_metadata\tStudy two\tS2\t3\tstudy_sample\tbatch_B\t"
+        "prep_B\tplasma\tB\tfalse\t\n",
+        encoding="utf-8",
+    )
+    captured: dict[str, Any] = {}
+
+    def fake_application(**kwargs: Any) -> _AlignmentRunOutputs:
+        captured.update(kwargs)
+        return AlignmentRunOutputs(
+            review_tsv=None,
+            matrix_tsv=None,
+            cells_tsv=None,
+            backfill_seed_audit_tsv=None,
+            status_matrix_tsv=None,
+        )
+
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_application)
+    argv = [
+        "--preset", "dna_dr", "--discovery-batch-index", str(batch_index),
+        "--raw-dir", str(raw_dir), "--dll-dir", str(dll_dir),
+        "--output-dir", str(tmp_path / "alignment"),
+    ]
+    if explicit_metadata:
+        argv.extend(["--sample-metadata", str(metadata)])
+
+    assert run_alignment.main(argv) == 0
+    stdout = capsys.readouterr().out
+    if explicit_metadata:
+        assert captured["sample_metadata"] == (
+            SampleMetadata(
+                sample_name="QC one", raw_stem="S1", injection_order=12,
+                sample_role="pooled_qc", batch_id="batch_A", prep_batch_id="prep_A",
+                matrix_type="tissue", group="A",
+            ),
+            SampleMetadata(
+                sample_name="Study two", raw_stem="S2", injection_order=3,
+                sample_role="study_sample", batch_id="batch_B", prep_batch_id="prep_B",
+                matrix_type="plasma", group="B",
+            ),
+        )
+        assert str(metadata.resolve()) in stdout
+        assert "2 samples; 2 batches" in stdout
+    else:
+        assert captured.get("sample_metadata") is None
+        assert "RAW-derived metadata" in stdout
+
+
+@pytest.mark.parametrize("invalid_kind", ["role", "duplicate", "missing"])
+def test_run_alignment_cli_rejects_invalid_sample_metadata_before_application(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    invalid_kind: str,
+) -> None:
+    batch_index = tmp_path / "discovery_batch_index.csv"
+    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    raw_dir = tmp_path / "raws"
+    raw_dir.mkdir()
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+    metadata = tmp_path / "sample_metadata.tsv"
+    if invalid_kind != "missing":
+        row = (
+            "sample_metadata\tS1\tS1\t1\t"
+            f"{'invalid' if invalid_kind == 'role' else 'study_sample'}"
+            "\tbatch_A\t\t\t\tfalse\t\n"
+        )
+        metadata.write_text(
+            "schema_version\tsample_name\traw_stem\tinjection_order\tsample_role\t"
+            "batch_id\tprep_batch_id\tmatrix_type\tgroup\texcluded\texclusion_reason\n"
+            + row + (row if invalid_kind == "duplicate" else ""),
+            encoding="utf-8",
+        )
+
+    def fail_application(**_kwargs: Any) -> None:
+        pytest.fail("invalid metadata reached RAW application")
+
+    monkeypatch.setattr(run_alignment, "run_untargeted_application", fail_application)
+    assert run_alignment.main([
+        "--preset", "dna_dr", "--discovery-batch-index", str(batch_index),
+        "--raw-dir", str(raw_dir), "--dll-dir", str(dll_dir),
+        "--sample-metadata", str(metadata),
+    ]) == 2
+    assert capsys.readouterr().err
