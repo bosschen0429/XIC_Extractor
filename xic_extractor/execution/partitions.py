@@ -282,7 +282,16 @@ class PartitionPipelineScheduler:
                 exc: Exception,
             ) -> None:
                 nonlocal failed_stage, failed_exc
+                cancelled = (
+                    isinstance(exc, InterruptedError)
+                    and cancellation_ingress.is_cancelled
+                )
                 with thread_lock:
+                    timeline_by_index[partition.index]["status"] = (
+                        "cancelled" if cancelled else "failed"
+                    )
+                    if cancelled:
+                        return
                     if not failed_work_unit_keys:
                         failed_work_unit_keys.update(partition.work_unit_keys)
                         failed_stage = stage
@@ -343,6 +352,22 @@ class PartitionPipelineScheduler:
                     }
                 progress_callback(payload)
 
+            def check_acquisition_cancellation(
+                output: PartitionAcquisitionOutput[Any],
+                partition: WorkPartition[TPartitionPayload],
+            ) -> None:
+                if (
+                    output.failure_detail is not None
+                    and output.failure_detail.category
+                    is WorkUnitFailureCategory.CANCELLATION
+                ):
+                    cancellation_ingress.request_cancellation(
+                        RuntimeCancellationRequest(attempt=owners.attempt)
+                    )
+                    exc = InterruptedError("Partition acquisition cancelled")
+                    record_partition_failure(partition, "partition-acquisition", exc)
+                    raise exc
+
             def check_cancellation() -> None:
                 if cancellation_ingress.is_cancelled or (
                     should_cancel is not None and should_cancel()
@@ -393,7 +418,7 @@ class PartitionPipelineScheduler:
                                 partition.resource_keys
                             )
                             if not acq_out.succeeded:
-                                timeline_records[index]["status"] = "failed"
+                                check_acquisition_cancellation(acq_out, partition)
                                 failure_msg = (
                                     f": {acq_out.failure_detail}"
                                     if acq_out.failure_detail is not None
@@ -422,7 +447,6 @@ class PartitionPipelineScheduler:
                                 timeline_records[index]["compose_end"] = (
                                     time.perf_counter()
                                 )
-                                timeline_records[index]["status"] = "failed"
                                 record_partition_failure(
                                     partition, "partition-composition", exc
                                 )
@@ -523,9 +547,10 @@ class PartitionPipelineScheduler:
                                             for receipt in acq_out.acquisitions
                                         )
                                     if not acq_out.succeeded:
-                                        with thread_lock:
-                                            timeline_records[index]["status"] = "failed"
                                         admission_credits.release()
+                                        check_acquisition_cancellation(
+                                            acq_out, partition
+                                        )
                                         failure_msg = (
                                             f": {acq_out.failure_detail}"
                                             if acq_out.failure_detail is not None
@@ -560,7 +585,6 @@ class PartitionPipelineScheduler:
                                     timeline_records[index]["acquire_end"] = (
                                         time.perf_counter()
                                     )
-                                    timeline_records[index]["status"] = "failed"
                                 record_partition_failure(
                                     partition, "partition-acquisition", exc
                                 )
@@ -666,9 +690,6 @@ class PartitionPipelineScheduler:
                                         timeline_by_index[partition.index][
                                             "compose_end"
                                         ] = time.perf_counter()
-                                        timeline_by_index[partition.index]["status"] = (
-                                            "failed"
-                                        )
                                     record_partition_failure(
                                         partition, "partition-composition", exc
                                     )

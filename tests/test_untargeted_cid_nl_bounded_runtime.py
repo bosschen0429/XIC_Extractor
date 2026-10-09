@@ -1637,12 +1637,16 @@ def test_last_bootstrap_failure_prevents_backfill_admission(tmp_path, monkeypatc
     assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
 
 
+@pytest.mark.parametrize("cancel_during_grouping", [False, True])
+@pytest.mark.parametrize("pipeline_overlap", [False, True])
 def test_backfill_grouping_failure_stops_its_attempt_without_a_batch_barrier(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, cancel_during_grouping, pipeline_overlap
 ):
     import xic_extractor.untargeted_execution.execution as owner
 
     plan, _ = _plan(tmp_path, monkeypatch)
+    cancellation = Event()
+    timeline_events = []
     lock = Lock()
     finalized = []
     admitted = []
@@ -1667,6 +1671,9 @@ def test_backfill_grouping_failure_stops_its_attempt_without_a_batch_barrier(
             finalized.append((subjects, admitted_first))
             count = len(finalized)
         if count == 2:
+            if cancel_during_grouping:
+                cancellation.set()
+                raise InterruptedError("grouping finalization cancelled")
             raise ValueError("grouping finalization failed")
         return result
 
@@ -1692,15 +1699,33 @@ def test_backfill_grouping_failure_stops_its_attempt_without_a_batch_barrier(
             recovery_marker=marker,
             max_partition_jobs=len(plan.context.samples),
             raw_workers=4,
-            pipeline_overlap=True,
+            pipeline_overlap=pipeline_overlap,
+            should_cancel=cancellation.is_set,
+            progress_callback=lambda event: (
+                timeline_events.append(event)
+                if event.get("event") == "partition_timeline"
+                else None
+            ),
         )
     # Each Backfill partition finalizes only its own grouping after admission;
     # no partition waits for every other grouping in the batch.
     assert len(finalized) >= 2
     assert all(admitted_first for _, admitted_first in finalized)
     assert len({subjects for subjects, _ in finalized}) == len(finalized)
-    assert "grouping finalization failed" in str(error.value)
-    assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
+    assert len(timeline_events) == 1
+    backfill_statuses = {
+        record["status"]
+        for record in timeline_events[0]["timeline"]
+        if record["partition_key"].endswith("-backfill")
+    }
+    if cancel_during_grouping:
+        assert "cancelled" in backfill_statuses
+        assert "failed" not in backfill_statuses
+        assert marker.read().terminal_outcome is AttemptTerminalOutcome.CANCELLED
+    else:
+        assert "failed" in backfill_statuses
+        assert "grouping finalization failed" in str(error.value)
+        assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
 
 
 def test_backfill_requires_frozen_batch_calibration(tmp_path, monkeypatch):
@@ -1984,7 +2009,12 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
     assert entered == {"partition-00000-initial"}
     assert set(opened) == closed
     assert len(opened) == (4 if failure_mode == "spool_failure" else 2)
-    assert marker.read().terminal_outcome is AttemptTerminalOutcome.FAILED
+    expected_outcome = (
+        AttemptTerminalOutcome.CANCELLED
+        if failure_mode == "cancel"
+        else AttemptTerminalOutcome.FAILED
+    )
+    assert marker.read().terminal_outcome is expected_outcome
     assert len(batches) == 1
     resources = batches[0].resource_settlements
     assert sum(
