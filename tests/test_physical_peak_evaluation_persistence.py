@@ -36,6 +36,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
     PHYSICAL_PEAK_NO_SELECTION_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
+    PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
     PHYSICAL_PEAK_WINDOW_POLICY,
 )
 from xic_extractor.peak_detection.scoring_metrics import noise_shape_severity
@@ -109,6 +110,27 @@ def test_backfill_retains_insufficient_support_reason_for_two_isolated_scans() -
     assert result.reason == "insufficient_original_xic_continuity"
     assert result.facts is None
     assert result.segment_universe.segments
+
+
+def test_unreliable_location_preserves_nearest_peak_without_minting_a_value() -> None:
+    rt = np.linspace(0.0, 2.0, 401)
+    raw = 1000.0 * np.exp(-0.5 * ((rt - 0.4) / 0.08) ** 2)
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="unreliable-localization",
+        query_rt_min=1.0,
+        selection_policy_version=PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
+    )
+    assert result.state == "unavailable"
+    assert result.reason == "sample_localization_unreliable"
+    assert result.nearest_candidate_rt_min == pytest.approx(0.4)
+    assert result.facts is None
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=SignalProcessingProfile(), evaluation=result,
+    )
+    restored = deserialize_physical_peak_evaluation(payload)[-1]
+    assert restored == result
+    assert restored.nearest_candidate_rt_min == result.nearest_candidate_rt_min
 
 
 def test_unavailable_prepared_signal_keeps_live_asls_intermediate(monkeypatch) -> None:

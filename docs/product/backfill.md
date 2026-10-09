@@ -48,6 +48,19 @@ and preferred-peak selection use this query RT. Insufficient calibration and
 missing-context fallbacks have explicit bases; neither means measured zero
 shift. See the [RT mechanism table](alignment.md#rt-mechanisms-and-their-consumers).
 
+Forecast acceptance is narrower than the acquired context: same-cohort direct
+reference samples are held out one at a time using that same trajectory
+estimator. With at least two residuals, the apex tolerance is the larger of
+12 seconds and their 90th percentile, capped by the acquisition half-window.
+A tolerance above that bound, or insufficient residuals, makes localization
+unreliable and leaves the cell empty rather than accepting any nearby peak.
+An observed trajectory position uses a 12-second bound (or the smaller
+acquisition half-window). The context fallback never expands this apex bound.
+Residuals are prepared once per row/cohort, not once per missing sample.
+The retained physical evaluation distinguishes `sample_localization_unreliable`
+from `no_peak_in_sample_local_window`; its nearest candidate RT remains
+inspectable even when no numeric observation is accepted.
+
 Completed-empty evidence binds both the original group center and actual query
 RT. It validates the acquired query, not containment of the group center in a
 shifted window. Supported Backfill admission uses the same frozen coordinates

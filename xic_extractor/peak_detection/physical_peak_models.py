@@ -19,6 +19,7 @@ PHYSICAL_PEAK_WINDOW_POLICY = "unique_baseline_peak_in_context"
 # near the baseline closes the peak before the acquired edge.
 PHYSICAL_PEAK_GROUP_WINDOW_POLICY = "group_rt_resolved_peak_in_context"
 PHYSICAL_PEAK_BACKFILL_POLICY = "sample_local_background_qualified_peak_in_context"
+PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY = "backfill_localization_unreliable"
 DISCOVERY_PHYSICAL_PEAK_POINT_POLICY = "background_qualified_peak_contains_query"
 _PHYSICAL_PEAK_SELECTION_POLICIES = frozenset(
     {
@@ -27,6 +28,7 @@ _PHYSICAL_PEAK_SELECTION_POLICIES = frozenset(
         PHYSICAL_PEAK_WINDOW_POLICY,
         PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
         PHYSICAL_PEAK_BACKFILL_POLICY,
+        PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
         DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
     }
 )
@@ -184,6 +186,19 @@ class PhysicalPeakEvaluation:
     operations: tuple[PhysicalPeakOperation, ...]
     # Diagnostic evidence only: never part of scientific equality or identity.
     retained_prepared_signal: PreparedSignal | None = field(default=None, compare=False)
+
+    @property
+    def nearest_candidate_rt_min(self) -> float | None:
+        """Nearest enumerated apex, not a qualified identity or a selected value."""
+        candidate = min(
+            self.segment_universe.segments,
+            key=lambda segment: (
+                abs(segment.apex_rt_min - self.question.query_rt_min),
+                segment.apex_rt_min,
+            ),
+            default=None,
+        )
+        return None if candidate is None else candidate.apex_rt_min
 
     @property
     def requires_overlap_review(self) -> bool:

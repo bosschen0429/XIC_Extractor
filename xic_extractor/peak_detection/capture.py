@@ -51,6 +51,7 @@ from xic_extractor.peak_detection.physical_peak_identity import (
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_PEAK_BACKFILL_POLICY,
+    PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
     PhysicalPeakEvaluation,
     PreparedSignalResult,
 )
@@ -523,6 +524,7 @@ def capture_physical_backfill_observation(
     profile: SignalProcessingProfile,
     resolver_mode: str,
     search_rt_window: tuple[float, float] | None = None,
+    location_reliable: bool = True,
     evaluation_sink: Callable[[PhysicalPeakEvaluation], None] | None = None,
 ) -> PeakObservationRef | None:
     """Capture a backfill question using its request-bound method and profile."""
@@ -543,8 +545,12 @@ def capture_physical_backfill_observation(
         query_rt_min=query_rt_min,
         request_context_rt_start_min=trace.rt_min,
         request_context_rt_end_min=trace.rt_max,
-        selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
-        search_rt_window=search_rt_window,
+        selection_policy_version=(
+            PHYSICAL_PEAK_BACKFILL_POLICY
+            if location_reliable
+            else PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY
+        ),
+        search_rt_window=search_rt_window if location_reliable else None,
     )
     if evaluation_sink is not None:
         evaluation_sink(evaluation)

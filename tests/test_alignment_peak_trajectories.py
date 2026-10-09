@@ -12,6 +12,7 @@ from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import (
     PeakTrajectories,
+    PeakTrajectory,
     resolve_peak_trajectories,
 )
 from xic_extractor.peak_detection.elution_context import (
@@ -22,6 +23,64 @@ from xic_extractor.peak_detection.elution_context import (
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
+
+
+def test_backfill_location_prepares_held_out_residuals_once_per_group(monkeypatch):
+    references = tuple((f"s{i}", 10.0 + i * 0.1) for i in range(6))
+    targets = tuple(f"t{i}" for i in range(20))
+    orders = {sample: i for i, (sample, _) in enumerate(references)}
+    orders.update({sample: i + 6 for i, sample in enumerate(targets)})
+    cohorts = {sample: "batch" for sample in orders}
+    trajectory = PeakTrajectory((), references)
+    calls = []
+    original = PeakTrajectory.locate
+
+    def counted(self, sample, **kwargs):
+        calls.append(sample)
+        return original(self, sample, **kwargs)
+
+    monkeypatch.setattr(PeakTrajectory, "locate", counted)
+    result = trajectory.backfill_locations(
+        targets,
+        reference_samples=frozenset(sample for sample, _ in references),
+        injection_order=orders,
+        sample_cohorts=cohorts,
+        rt_warp=None,
+        backfill_half_window_min=1.0,
+    )
+    assert len(calls) == len(references) + len(targets)
+    assert result["t0"].location.query_rt == pytest.approx(10.6)
+    assert all(location.apex_tolerance_sec == 12.0 for location in result.values())
+
+
+def test_backfill_localization_does_not_turn_row_scatter_into_unbounded_permission():
+    references = (("s0", 10.0), ("s1", 13.0), ("s2", 10.0), ("s3", 13.0))
+    orders = {"s0": 0, "s1": 2, "s2": 4, "s3": 6, "missing": 3}
+    result = PeakTrajectory((), references).backfill_locations(
+        ("missing",),
+        reference_samples=frozenset(sample for sample, _ in references),
+        injection_order=orders,
+        sample_cohorts={sample: "batch" for sample in orders},
+        rt_warp=None,
+        backfill_half_window_min=1.0,
+    )
+    assert not result["missing"].reliable
+    assert result["missing"].apex_tolerance_sec is None
+
+
+def test_observed_peak_keeps_its_location_without_borrowing_another_batch():
+    trajectory = PeakTrajectory((), (("a", 10.0), ("b", 10.1), ("observed", 15.0)))
+    result = trajectory.backfill_locations(
+        ("missing", "observed"),
+        reference_samples=frozenset(("a", "b")),
+        injection_order={"a": 1, "b": 2, "observed": 3, "missing": 4},
+        sample_cohorts={"a": "A", "b": "A", "observed": "B", "missing": "B"},
+        rt_warp=None,
+        backfill_half_window_min=1.0,
+    )
+    assert not result["missing"].reliable
+    assert result["observed"].location.observed_rt == 15.0
+    assert result["observed"].apex_tolerance_sec == 12.0
 
 
 def _owner(sample: str, label: str, rt: float) -> SampleLocalMS1Owner:

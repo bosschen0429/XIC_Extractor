@@ -54,6 +54,7 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
     PHYSICAL_PEAK_NO_SELECTION_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
+    PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
     PHYSICAL_PEAK_WINDOW_POLICY,
     PHYSICAL_SEGMENT_UNIVERSE_SCHEMA,
     PhysicalPeakAnswer,
@@ -602,7 +603,10 @@ def _admissible_physical_segments(
         raise ValueError("unsupported physical peak selection policy")
     if universe.schema_version != PHYSICAL_SEGMENT_UNIVERSE_SCHEMA:
         raise ValueError("physical question crosses boundary policy")
-    if selection_policy_version == PHYSICAL_PEAK_NO_SELECTION_POLICY:
+    if selection_policy_version in {
+        PHYSICAL_PEAK_NO_SELECTION_POLICY,
+        PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
+    }:
         return ()
     if selection_policy_version in {
         PHYSICAL_PEAK_WINDOW_POLICY,
@@ -792,7 +796,12 @@ def answer_physical_peak_question(
     reason = universe.reason
     selected: PhysicalSegment | None = None
     background_qualified = False
-    if state == "available":
+    if (
+        question.selection_policy_version == PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY
+        and state != "failed"
+    ):
+        state, reason = "unavailable", "sample_localization_unreliable"
+    elif state == "available":
         if not question.admissible_segment_ids:
             state = "unavailable"
             reason = (

@@ -390,6 +390,8 @@ def _prepare_group_authorized_backfills(
         for group, target_ids in plan_conservative_backfill_targets(
             groups, sample_population=population
         ):
+            if not target_ids:
+                continue
             subject = select_cid_nl_group_backfill_subject(
                 group,
                 tuple(
@@ -402,6 +404,20 @@ def _prepare_group_authorized_backfills(
             assert group.group_center_rt is not None
             trajectory = workset.grouping_scope.peak_trajectories.trajectory_for(
                 group.owners
+            )
+            locations = trajectory.backfill_locations(
+                tuple(templates[sample_id].sample.metadata.raw_stem
+                      for sample_id in sorted(target_ids)),
+                reference_samples=frozenset(
+                    owner.sample_stem for owner in group.owners
+                    if not owner.is_provisional
+                ),
+                injection_order=injection_order,
+                sample_cohorts=sample_cohorts,
+                rt_warp=prepared.rt_warp,
+                backfill_half_window_min=(
+                    templates[min(target_ids)].peak_config.nl_rt_anchor_half_window_min
+                ),
             )
             for sample_id in sorted(target_ids):
                 key = (sample_id, subject.method_subject_id)
@@ -428,15 +444,8 @@ def _prepare_group_authorized_backfills(
                     continue
                 assessment = state.adapter_result.assessment_input.assessment
                 sample_stem = state.job.sample.metadata.raw_stem
-                location = trajectory.locate(
-                    sample_stem,
-                    injection_order=injection_order,
-                    sample_cohorts=sample_cohorts,
-                    rt_warp=prepared.rt_warp,
-                    backfill_half_window_min=(
-                        state.job.peak_config.nl_rt_anchor_half_window_min
-                    ),
-                )
+                localized = locations[sample_stem]
+                location = localized.location
                 revisit = _group_revisit(
                     assessment,
                     observed_rt=location.observed_rt,
@@ -455,6 +464,8 @@ def _prepare_group_authorized_backfills(
                             center_rt=group.group_center_rt,
                             query_rt=location.query_rt,
                             query_rt_basis=location.basis,
+                            query_rt_tolerance_sec=localized.apex_tolerance_sec,
+                            query_rt_reliable=localized.reliable,
                         )
                     )
 
@@ -656,6 +667,8 @@ def _execute_backfill(
                 group_center_rt=target.center_rt,
                 query_rt=target.sample_query_rt,
                 query_rt_basis=target.query_rt_basis,
+                query_rt_tolerance_sec=target.query_rt_tolerance_sec,
+                query_rt_reliable=target.query_rt_reliable,
                 group_center_mz=target.physical_mz,
                 group_hypothesis_id=target.group_hypothesis_id,
                 initial_assessment=ctx.initial_assessment,
@@ -747,6 +760,8 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
                     group_center_rt=target.center_rt,
                     query_rt=target.sample_query_rt,
                     query_rt_basis=target.query_rt_basis,
+                    query_rt_tolerance_sec=target.query_rt_tolerance_sec,
+                    query_rt_reliable=target.query_rt_reliable,
                     group_center_mz=target.physical_mz,
                     group_hypothesis_id=target.group_hypothesis_id,
                     initial_assessment=ctx.initial_assessment,

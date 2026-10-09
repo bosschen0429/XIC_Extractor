@@ -249,6 +249,8 @@ class UntargetedCidNlBackfillTarget:
     center_rt: float
     query_rt: float | None = None
     query_rt_basis: str = "group_center"
+    query_rt_tolerance_sec: float | None = None
+    query_rt_reliable: bool = True
 
     @property
     def sample_query_rt(self) -> float:
@@ -273,6 +275,16 @@ class UntargetedCidNlBackfillTarget:
             or self.sample_query_rt < 0.0
             or not isinstance(self.query_rt_basis, str)
             or not self.query_rt_basis.strip()
+            or type(self.query_rt_reliable) is not bool
+            or (
+                self.query_rt_tolerance_sec is not None
+                and (
+                    isinstance(self.query_rt_tolerance_sec, bool)
+                    or not isinstance(self.query_rt_tolerance_sec, (int, float))
+                    or not math.isfinite(self.query_rt_tolerance_sec)
+                    or self.query_rt_tolerance_sec <= 0.0
+                )
+            )
         ):
             raise CidNlAcquisitionError(
                 "backfill target requires a group, physical mass, and RT"
@@ -1070,6 +1082,8 @@ def backfill_untargeted_cid_nl_sample_subject(
     group_center_mz: float,
     query_rt: float | None = None,
     query_rt_basis: str = "group_center",
+    query_rt_tolerance_sec: float | None = None,
+    query_rt_reliable: bool = True,
     group_hypothesis_id: str | None = None,
     support_policy: DdaCidNlPeakSupportPolicy,
     peak_config: ExtractionConfig,
@@ -1156,6 +1170,14 @@ def backfill_untargeted_cid_nl_sample_subject(
     half_window = peak_config.nl_rt_anchor_half_window_min
     query_rt_min = max(0.0, float(query_rt) - half_window)
     query_rt_max = float(query_rt) + half_window
+    selection_window = (
+        (
+            max(query_rt_min, float(query_rt) - query_rt_tolerance_sec / 60.0),
+            min(query_rt_max, float(query_rt) + query_rt_tolerance_sec / 60.0),
+        )
+        if query_rt_tolerance_sec is not None
+        else None
+    )
     request = _backfill_xic_request(
         mz=physical_mz,
         query_rt=float(query_rt),
@@ -1253,7 +1275,8 @@ def backfill_untargeted_cid_nl_sample_subject(
                 method_subject=method_subject,
                 trace=trace,
                 query_rt_min=float(query_rt),
-                search_rt_window=(
+                location_reliable=query_rt_reliable,
+                search_rt_window=selection_window or (
                     (query_rt_min, query_rt_max)
                     if capture_request is context_request
                     else None
@@ -1274,7 +1297,16 @@ def backfill_untargeted_cid_nl_sample_subject(
             preferred_rt=float(query_rt),
             peak_finder=find_peak_and_area,
         )
-        if detection.status == "detected" and detection.result is not None:
+        if (
+            detection.status == "detected"
+            and detection.result is not None
+            and detection.peak is not None
+            and query_rt_reliable
+            and (
+                selection_window is None
+                or selection_window[0] <= detection.peak.rt <= selection_window[1]
+            )
+        ):
             hypotheses = build_peak_hypotheses(
                 analysis_mode="untargeted",
                 common_evidence_source_id=method_subject.method_subject_id,

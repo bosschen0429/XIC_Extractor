@@ -2369,12 +2369,16 @@ def test_strict_replay_retains_two_recorded_precursors_from_one_scan(tmp_path):
     )
 
 
+@pytest.mark.parametrize(
+    "query_gate", [(None, True), (12.0, True), (30.0, True), (None, False)]
+)
 @pytest.mark.parametrize("target_present", [True, False])
 @pytest.mark.parametrize("target_center", [8.25, 8.45])
 def test_physical_backfill_context_is_not_search_permission(
     tmp_path: Path,
     target_present: bool,
     target_center: float,
+    query_gate: tuple[float | None, bool],
 ) -> None:
     import json
 
@@ -2461,6 +2465,34 @@ def test_physical_backfill_context_is_not_search_permission(
     assert vendor.chromatogram_request_counts == [2, 2]
     first = batched.capture_evidence[0].physical_evaluation
     assert first == direct.capture_evidence[0].physical_evaluation
+    tolerance, reliable = query_gate
+    gated_kwargs = kwargs | {
+        "query_rt_tolerance_sec": tolerance, "query_rt_reliable": reliable,
+    }
+    gated = backfill_untargeted_cid_nl_sample_subject(
+        **gated_kwargs, raw=None, _preacquired_traces=batch,
+    )
+    gated_direct = backfill_untargeted_cid_nl_sample_subject(**gated_kwargs, raw=raw)
+    gate_result = gated.capture_evidence[0].physical_evaluation
+    assert gate_result == gated_direct.capture_evidence[0].physical_evaluation
+    if not reliable or tolerance == 12.0:
+        assert gate_result.state == "unavailable"
+        assert gate_result.facts is None
+        assert not gated.assessment.candidate_peaks
+        if target_present:
+            assert gate_result.nearest_candidate_rt_min == pytest.approx(
+                target_center, abs=0.02
+            )
+        assert gate_result.reason == (
+            "sample_localization_unreliable" if not reliable
+            else "no_peak_in_sample_local_window" if target_present
+            else "peak_not_found"
+        )
+    elif target_present:
+        assert gate_result.state == "available"
+        assert gate_result.facts is not None and first.facts is not None
+        assert gate_result.facts.area_counts_seconds == first.facts.area_counts_seconds
+        assert gate_result.facts.apex_rt_min == first.facts.apex_rt_min
     expected_window = (7.5, 8.5) if target_present and target_center == 8.45 else None
     assert first.question.search_rt_window == expected_window
     receipt = batched.assessment.content.evaluation_receipt

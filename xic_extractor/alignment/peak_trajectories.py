@@ -63,6 +63,18 @@ class PeakLocation:
 
 
 @dataclass(frozen=True, slots=True)
+class BackfillPeakLocation:
+    """One trajectory location and its bounded empirical RT compatibility."""
+
+    location: PeakLocation
+    apex_tolerance_sec: float | None
+
+    @property
+    def reliable(self) -> bool:
+        return self.apex_tolerance_sec is not None
+
+
+@dataclass(frozen=True, slots=True)
 class PeakTrajectory:
     owner_ids: tuple[str, ...]
     sample_apices: tuple[tuple[str, float], ...]
@@ -70,6 +82,76 @@ class PeakTrajectory:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "_positions", dict(self.sample_apices))
+
+    def backfill_locations(
+        self,
+        sample_stems: Sequence[str],
+        *,
+        reference_samples: frozenset[str],
+        injection_order: Mapping[str, int],
+        sample_cohorts: Mapping[str, str],
+        rt_warp: RtCalibration | None,
+        backfill_half_window_min: float,
+    ) -> Mapping[str, BackfillPeakLocation]:
+        """Prepare row residuals once, not once per missing sample.
+
+        Only direct reference samples contribute held-out residuals. The same
+        trajectory estimator supplies both the prediction and its empirical
+        check; observed MS1 correspondence is not replaced by that forecast.
+        Scatter larger than the acquisition half-window means localization is
+        unreliable, not permission to enlarge the accepted RT interval.
+        """
+        locations = {
+            sample: self.locate(
+                sample,
+                injection_order=injection_order,
+                sample_cohorts=sample_cohorts,
+                rt_warp=rt_warp,
+                backfill_half_window_min=backfill_half_window_min,
+            )
+            for sample in sample_stems
+        }
+        needed_cohorts = {
+            sample_cohorts[sample]
+            for sample, location in locations.items()
+            if not location.observed and sample in sample_cohorts
+        }
+        residuals: dict[str, list[float]] = defaultdict(list)
+        for sample, observed_rt in self.sample_apices:
+            cohort = sample_cohorts.get(sample)
+            if sample not in reference_samples or cohort not in needed_cohorts:
+                continue
+            peers = tuple(
+                point for point in self.sample_apices
+                if point[0] != sample and sample_cohorts.get(point[0]) == cohort
+            )
+            if not peers:
+                continue
+            held_out = PeakTrajectory((), peers).locate(
+                sample,
+                injection_order=injection_order,
+                sample_cohorts=sample_cohorts,
+                rt_warp=rt_warp,
+                backfill_half_window_min=backfill_half_window_min,
+            )
+            assert cohort is not None
+            residuals[cohort].append(abs(held_out.query_rt - observed_rt) * 60.0)
+        tolerance_by_cohort = {}
+        for cohort, values in residuals.items():
+            if len(values) < 2:
+                continue
+            tolerance = max(12.0, float(np.quantile(values, 0.9)))
+            if tolerance <= backfill_half_window_min * 60.0:
+                tolerance_by_cohort[cohort] = tolerance
+        return {
+            sample: BackfillPeakLocation(
+                location,
+                min(12.0, backfill_half_window_min * 60.0)
+                if location.observed
+                else tolerance_by_cohort.get(sample_cohorts.get(sample, "")),
+            )
+            for sample, location in locations.items()
+        }
 
     def locate(
         self,
