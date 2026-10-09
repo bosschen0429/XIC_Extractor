@@ -551,8 +551,13 @@ def _prepare_runtime_work(
         def stop(error: Exception) -> None:
             worker_pool.stop(error)
 
+        cancellation_observed = False
+
         def observe_cancellation() -> bool:
-            return worker_pool.observe_cancellation(should_cancel)
+            nonlocal cancellation_observed
+            requested = should_cancel is not None and should_cancel()
+            cancellation_observed = cancellation_observed or requested
+            return worker_pool.observe_cancellation(lambda: requested)
 
         def apply_stop() -> None:
             nonlocal stop_applied
@@ -855,6 +860,7 @@ def _prepare_runtime_work(
                     partition_key is None and not _request_uses_subject_batch(state.job)
                 ),
                 result_context=result_context,
+                cancellation_observed=cancellation_observed,
             )
             settlements.extend(batch.settlements)
             resource_settlements.extend(batch.resource_settlements)
@@ -978,6 +984,7 @@ def _batch_phase_acquisition_receipts(
 def _finalize_job_state(
     state: _RuntimeJobState,
     *,
+    cancellation_observed: bool,
     include_acquisition_receipt: bool = True,
     result_context: _SampleResultContext | None = None,
 ) -> tuple[
@@ -1049,18 +1056,26 @@ def _finalize_job_state(
         state.error = UntargetedPartitionError(
             "adapter returned no terminal scientific result"
         )
+    if success:
+        outcome = WorkUnitTerminalOutcome.SUCCEEDED
+        failure_detail = None
+    else:
+        failure_detail = _failure_detail(
+            job, state.error, cancellation_observed=cancellation_observed
+        )
+        outcome = (
+            WorkUnitTerminalOutcome.CANCELLED
+            if failure_detail.category is WorkUnitFailureCategory.CANCELLATION
+            else WorkUnitTerminalOutcome.FAILED
+        )
     settlement = mint_work_unit_settlement(
         attempt=job.processing_owners.attempt,
         work_unit_key=job.work_unit_key,
-        outcome=(
-            WorkUnitTerminalOutcome.SUCCEEDED
-            if success
-            else WorkUnitTerminalOutcome.FAILED
-        ),
+        outcome=outcome,
         owner_result_ref=(
             result_ref.artifact if success and result_ref is not None else None
         ),
-        failure_detail=None if success else _failure_detail(job, state.error),
+        failure_detail=failure_detail,
     )
     resource_receipts = (
         (
@@ -1151,11 +1166,17 @@ def _runtime_sample_groups(
 def _failure_detail(
     job: UntargetedPartitionJob,
     error: Exception | None,
+    *,
+    cancellation_observed: bool,
 ) -> WorkUnitFailureDetail:
     observed = error or UntargetedPartitionError("unknown worker failure")
     message = " ".join(str(observed).split()) or type(observed).__name__
     return WorkUnitFailureDetail(
-        category=WorkUnitFailureCategory.EXECUTION_ERROR,
+        category=(
+            WorkUnitFailureCategory.CANCELLATION
+            if cancellation_observed and isinstance(observed, InterruptedError)
+            else WorkUnitFailureCategory.EXECUTION_ERROR
+        ),
         stage="untargeted-cid-nl-real-data-adapter",
         source_reference=f"untargeted-cid-nl-real-data:{job.work_unit_key}",
         message=f"{type(observed).__name__}: {message}",

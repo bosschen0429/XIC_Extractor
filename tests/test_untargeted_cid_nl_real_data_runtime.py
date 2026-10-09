@@ -42,7 +42,13 @@ from xic_extractor.discovery.batch_contract import (
 from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
 from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.execution._finalization import RuntimeResourceOpenOutcome
-from xic_extractor.execution.attempt import start_runtime_attempt
+from xic_extractor.execution._lifecycle import AttemptTerminalOutcome
+from xic_extractor.execution.attempt import (
+    RuntimeCancellationIngress,
+    RuntimeCancellationRequest,
+    execute_runtime_attempt,
+    start_runtime_attempt,
+)
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -933,9 +939,28 @@ def test_runtime_does_not_evaluate_ineligible_inferred_precursor(
     assert result.sample_results[0].backfill_attempt is None
 
 
+@pytest.mark.parametrize(
+    "backfill_stop,cancel_accepted",
+    [
+        (None, False),
+        (InterruptedError, True),
+        (InterruptedError, False),
+        (RuntimeError, False),
+        (RuntimeError, True),
+    ],
+    ids=[
+        "success",
+        "accepted-cancellation",
+        "unexpected-interruption",
+        "execution-failure",
+        "failure-after-cancellation",
+    ],
+)
 def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
     tmp_path: Path,
     monkeypatch,
+    backfill_stop,
+    cancel_accepted,
 ) -> None:
     from xic_extractor.alignment.cell_observation_records import CellObservationRef
 
@@ -1057,6 +1082,39 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         ),
     )
 
+    if backfill_stop is not None:
+        ingress = RuntimeCancellationIngress(attempt=context.processing_owners.attempt)
+
+        def finalize_with_cancellation(*args, **kwargs):
+            return execute_runtime_attempt(
+                *args, **kwargs, cancellation_ingress=ingress
+            )
+
+        prepare_work = runtime_module._prepare_runtime_work
+
+        def prepare_cancellable_work(*args, **kwargs):
+            return prepare_work(
+                *args, **kwargs, should_cancel=lambda: ingress.is_cancelled
+            )
+
+        monkeypatch.setattr(
+            runtime_module, "_prepare_runtime_work", prepare_cancellable_work
+        )
+
+        def stop_backfill(_state):
+            if cancel_accepted:
+                ingress.request_cancellation(
+                    RuntimeCancellationRequest(
+                        attempt=context.processing_owners.attempt
+                    )
+                )
+            raise backfill_stop("backfill interrupted")
+
+        monkeypatch.setattr(
+            runtime_module, "execute_runtime_attempt", finalize_with_cancellation
+        )
+        monkeypatch.setattr(runtime_module, "_execute_backfill", stop_backfill)
+
     result = execute_attempt(
         runtime,
         jobs,
@@ -1066,6 +1124,17 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
             "untargeted-cid-nl-real-data-runtime-recovery:test",
         ),
     )
+
+    if backfill_stop is not None:
+        expected = (
+            AttemptTerminalOutcome.CANCELLED
+            if backfill_stop is InterruptedError and cancel_accepted
+            else AttemptTerminalOutcome.FAILED
+        )
+        assert result.finalization.supervisor.terminal_outcome is expected
+        assert not result.sample_results
+        assert all(raw.disposed for raws in opened.values() for raw in raws)
+        return
 
     assert result.succeeded is True
     monkeypatch.setattr(CellObservationRef, "__post_init__", validate_cell)
