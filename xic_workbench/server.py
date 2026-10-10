@@ -299,6 +299,8 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
                 "targeted/save",
                 "targeted/method",
                 "targeted/method/reset",
+                "targeted/method/save",
+                "targeted/method/load",
                 "targets/import",
                 "untargeted/save",
                 "method",

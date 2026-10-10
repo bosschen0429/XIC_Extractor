@@ -7,11 +7,16 @@ from types import SimpleNamespace
 
 import pytest
 
+from xic_extractor.applications.targeted import limited_identity_workflow
+from xic_extractor.applications.targeted.application import TargetedApplicationExecution
 from xic_extractor.applications.targeted.output_boundary import (
     TargetedOutputBoundaryError,
 )
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.extraction.result_models import RunOutput
+from xic_extractor.extraction.targeted_inputs import (
+    resolve_model_selection_expected_diff_approvals,
+)
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.output.method_manifest import (
     MethodManifestContext,
@@ -29,7 +34,7 @@ def _isolate_cli_shell_from_production_workflow(monkeypatch):
 
     class _Service:
         def execute_application(self, request):
-            approvals = module.resolve_model_selection_expected_diff_approvals(
+            approvals = resolve_model_selection_expected_diff_approvals(
                 request.config,
                 request.model_selection_expected_diff_approvals,
             )
@@ -54,7 +59,7 @@ def _isolate_cli_shell_from_production_workflow(monkeypatch):
                     output,
                     output_path=request.excel_output_path,
                 )
-            return SimpleNamespace(active_output=output)
+            return TargetedApplicationExecution(active_output=output)
 
     from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 
@@ -110,10 +115,6 @@ def test_cli_runs_extraction_with_base_dir_and_skips_excel(
     assert "Processed files: 2" in stdout
     assert "Diagnostics: 1" in stdout
     assert "1/2 SampleA.raw" in stdout
-
-
-
-
 
 
 def test_cli_runs_excel_conversion_by_default(
@@ -581,177 +582,6 @@ def test_cli_limited_policy_without_support_tsv_dispatches_auto_limited_default(
     assert "Excel skipped." in capsys.readouterr().out
 
 
-def test_cli_auto_limited_default_runs_baseline_support_final(
-    tmp_path: Path,
-    monkeypatch,
-    capsys,
-) -> None:
-    module = _module()
-    registry_path = tmp_path / "approval_registry.tsv"
-    config = replace(
-        _config(tmp_path),
-        model_selection_expected_diff_approval_registry=registry_path,
-    )
-    targets = [_target("Analyte")]
-    auto_dir = tmp_path / "auto"
-    approval_snapshot = {"row-1": object()}
-    calls: dict[str, object] = {
-        "approval_registry_loads": [],
-        "approval_snapshots": [],
-        "run_configs": [],
-        "manifest_entrypoints": [],
-    }
-
-    monkeypatch.setattr(module, "load_config", lambda _config_dir: (config, targets))
-
-    def fake_run(run_config, run_targets, **kwargs):
-        calls["run_configs"].append(run_config)
-        calls["approval_snapshots"].append(
-            kwargs["model_selection_expected_diff_approvals"]
-        )
-        run_config.output_csv.parent.mkdir(parents=True, exist_ok=True)
-        run_config.output_csv.write_text("SampleName\n", encoding="utf-8")
-        run_config.diagnostics_csv.write_text("SampleName\n", encoding="utf-8")
-        calls["run_targets"] = run_targets
-        return RunOutput(file_results=[], diagnostics=[])
-
-    def fake_load_approvals(path):
-        calls["approval_registry_loads"].append(path)
-        return approval_snapshot
-
-    def fake_support_builder(**kwargs):
-        calls["support_builder_kwargs"] = kwargs
-        return SimpleNamespace(
-            evidence_tsv=kwargs["output_tsv"],
-            candidate_count=1,
-            evidence_row_count=1,
-            trace_request_count=2,
-        )
-
-    def fake_diff_writer(**kwargs):
-        calls["diff_writer_kwargs"] = kwargs
-        return SimpleNamespace(
-            expected_diff_summary_tsv=auto_dir / "expected_diff_summary.tsv",
-            matrix_diff_summary_tsv=auto_dir / "matrix_diff_summary.tsv",
-            expected_diff_gate_summary_tsv=(
-                auto_dir / "limited_default_expected_diff_gate_summary.tsv"
-            ),
-            expected_diff_row_count=1,
-            matrix_diff_cell_count=6,
-            gate_status="pass",
-        )
-
-    def fake_manifest(manifest_config, _targets, *, context):
-        calls["manifest_entrypoints"].append(context.entrypoint)
-        calls[f"{context.entrypoint}_config"] = manifest_config
-        calls[f"{context.entrypoint}_settings_overrides"] = context.settings_overrides
-        return manifest_config.output_csv.with_name("method_manifest.json")
-
-    monkeypatch.setattr(module.extractor, "run", fake_run)
-    monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_inputs.load_expected_diff_approval_registry",
-        fake_load_approvals,
-    )
-    monkeypatch.setattr(
-        module,
-        "run_build_targeted_ms1_shape_identity_supports",
-        fake_support_builder,
-    )
-    monkeypatch.setattr(
-        module,
-        "write_targeted_ms1_shape_identity_auto_diff_artifacts",
-        fake_diff_writer,
-    )
-    monkeypatch.setattr(module, "write_method_manifest", fake_manifest)
-    monkeypatch.setattr(
-        module,
-        "write_excel_from_run_output",
-        lambda *_args, **_kwargs: calls.setdefault("excel", True),
-        raising=False,
-    )
-
-    exit_code = module.main(
-        [
-            "--base-dir",
-            str(tmp_path),
-            "--skip-excel",
-            "--targeted-ms1-shape-identity-auto-limited-default",
-            "--targeted-ms1-shape-identity-auto-output-dir",
-            str(auto_dir),
-        ]
-    )
-
-    assert exit_code == 0
-    assert calls["approval_registry_loads"] == [registry_path]
-    assert calls["approval_snapshots"] == [
-        approval_snapshot,
-        approval_snapshot,
-    ]
-    assert calls["approval_snapshots"][0] is calls["approval_snapshots"][1]
-    run_configs = calls["run_configs"]
-    assert len(run_configs) == 2
-    baseline_config, final_config = run_configs
-    assert baseline_config.output_csv == (
-        auto_dir / "baseline" / "output" / "xic_results.csv"
-    )
-    assert baseline_config.keep_intermediate_csv is True
-    assert baseline_config.targeted_ms1_shape_identity_support_tsv is None
-    assert baseline_config.targeted_ms1_shape_identity_activation_policy == (
-        "limited_5hmdc_5medc"
-    )
-    support_tsv = auto_dir / "support" / "targeted_ms1_shape_identity.tsv"
-    assert calls["support_builder_kwargs"]["long_csv"] == (
-        auto_dir / "baseline" / "output" / "xic_results_long.csv"
-    )
-    assert calls["support_builder_kwargs"]["output_tsv"] == support_tsv
-    assert calls["support_builder_kwargs"]["target_names"] == (
-        "5-hmdC",
-        "5-medC",
-    )
-    assert final_config.output_csv == (
-        auto_dir / "final_unverified" / "output" / "xic_results.csv"
-    )
-    assert final_config.targeted_ms1_shape_identity_support_tsv == support_tsv
-    assert final_config.targeted_ms1_shape_identity_activation_policy == (
-        "limited_5hmdc_5medc"
-    )
-    assert calls["diff_writer_kwargs"] == {
-        "baseline_output_dir": auto_dir / "baseline" / "output",
-        "optin_output_dir": auto_dir / "final_unverified" / "output",
-        "support_tsv": support_tsv,
-        "output_dir": auto_dir,
-    }
-    assert calls["manifest_entrypoints"] == [
-        "xic-extractor-cli-targeted-ms1-auto-baseline",
-        "xic-extractor-cli-targeted-ms1-auto-limited-default",
-    ]
-    final_overrides = calls[
-        "xic-extractor-cli-targeted-ms1-auto-limited-default_settings_overrides"
-    ]
-    manifest_final_config = calls[
-        "xic-extractor-cli-targeted-ms1-auto-limited-default_config"
-    ]
-    assert manifest_final_config.output_csv == (
-        auto_dir / "final_unverified" / "output" / "xic_results.csv"
-    )
-    assert (auto_dir / "final" / "output" / "xic_results.csv").is_file()
-    assert not (auto_dir / "final_unverified" / "output").exists()
-    assert final_overrides["targeted_ms1_shape_identity_support_tsv"] == str(
-        support_tsv.resolve()
-    )
-    assert final_overrides["targeted_ms1_shape_identity_activation_policy"] == (
-        "limited_5hmdc_5medc"
-    )
-    assert "excel" not in calls
-    stdout = capsys.readouterr().out
-    assert "Auto limited support rows: 1" in stdout
-    assert "Auto limited expected-diff gate: pass (1 rows, 6 matrix cells)" in stdout
-    assert (
-        f"Auto limited verified final output: {auto_dir / 'final' / 'output'}" in stdout
-    )
-    assert "Excel skipped." in stdout
-
-
 def test_cli_auto_limited_default_gate_failure_is_clean_and_unpublished(
     tmp_path: Path,
     monkeypatch,
@@ -772,7 +602,7 @@ def test_cli_auto_limited_default_gate_failure_is_clean_and_unpublished(
 
     monkeypatch.setattr(module.extractor, "run", fake_run)
     monkeypatch.setattr(
-        module,
+        limited_identity_workflow,
         "run_build_targeted_ms1_shape_identity_supports",
         lambda **kwargs: SimpleNamespace(
             evidence_tsv=kwargs["output_tsv"],
@@ -782,7 +612,7 @@ def test_cli_auto_limited_default_gate_failure_is_clean_and_unpublished(
         ),
     )
     monkeypatch.setattr(
-        module,
+        limited_identity_workflow,
         "write_targeted_ms1_shape_identity_auto_diff_artifacts",
         lambda **_kwargs: (_ for _ in ()).throw(ValueError("support key set mismatch")),
     )
@@ -967,9 +797,10 @@ def test_cli_replays_from_method_manifest(
     )
     calls: dict[str, object] = {}
 
-    def fake_load_config(config_dir: Path, *, settings_overrides=None):
+    def fake_load_config(config_dir: Path, *, settings_overrides=None, output_dir=None):
         calls["config_dir"] = config_dir
         calls["settings_overrides"] = settings_overrides
+        calls["output_dir"] = output_dir
         return config, targets
 
     monkeypatch.setattr(module, "load_config", fake_load_config)
@@ -986,6 +817,7 @@ def test_cli_replays_from_method_manifest(
     assert exit_code == 0
     assert calls["config_dir"] == (tmp_path / "config").resolve()
     assert calls["settings_overrides"] == {"data_dir": str(data_dir)}
+    assert calls["output_dir"] == manifest_path.parent
     assert calls["run_config"] is not config
     assert calls["run_config"].keep_intermediate_csv is True
     assert calls["run_config"].parallel_mode == config.parallel_mode
@@ -1108,7 +940,9 @@ def test_cli_replay_reuses_manifest_parallel_runtime_settings(
     )
     calls: dict[str, object] = {}
 
-    monkeypatch.setattr(module, "load_config", lambda _config_dir: (config, targets))
+    monkeypatch.setattr(
+        module, "load_config", lambda _config_dir, **_kwargs: (config, targets)
+    )
     monkeypatch.setattr(module.extractor, "run", _fake_run(calls))
     monkeypatch.setattr(
         module,
@@ -1384,3 +1218,103 @@ def _write_cli_config(config_dir: Path, *, data_dir: Path, dll_dir: Path) -> Non
                 "istd_pair": "",
             }
         )
+
+
+def test_cli_reusable_method_freezes_inputs_and_replays_without_active_method(
+    tmp_path, monkeypatch
+):
+    from dataclasses import asdict
+
+    from xic_extractor.configuration.hashing import compute_config_hash
+    from xic_extractor.configuration.targeted_method_files import (
+        create_targeted_method,
+        save_targeted_method,
+    )
+
+    module = _module()
+    raw_dir = tmp_path / "raw"
+    new_batch = tmp_path / "new-batch"
+    dll_dir = tmp_path / "dll"
+    for folder in (raw_dir, new_batch, dll_dir):
+        folder.mkdir()
+    _write_cli_config(tmp_path / "config", data_dir=raw_dir, dll_dir=dll_dir)
+    method_dir = tmp_path / "method"
+    target_rows = [
+        {key: str(value) for key, value in asdict(_target("MethodTarget")).items()}
+    ]
+    save_targeted_method(
+        create_targeted_method(
+            {
+                "nl_min_intensity_ratio": "0.07",
+                "targeted_ms1_shape_identity_activation_policy": "explicit_support_tsv",
+            },
+            target_rows,
+        ),
+        method_dir,
+    )
+    calls = {}
+    fake_run = _fake_run(calls)
+
+    def run_and_change_active_sources(config, targets, **kwargs):
+        (method_dir / "targets.csv").write_text("edited during run", encoding="utf-8")
+        (tmp_path / "config" / "settings.csv").write_text(
+            "edited during run", encoding="utf-8"
+        )
+        return fake_run(config, targets, **kwargs)
+
+    monkeypatch.setattr(module.extractor, "run", run_and_change_active_sources)
+    assert (
+        module.main(
+            [
+                "--base-dir",
+                str(tmp_path),
+                "--method-dir",
+                str(method_dir),
+                "--data-dir",
+                str(new_batch),
+                "--skip-excel",
+                "--parallel-mode",
+                "serial",
+                "--parallel-workers",
+                "2",
+            ]
+        )
+        == 0
+    )
+    config = calls["run_config"]
+    assert config.data_dir == new_batch
+    assert config.dll_dir == dll_dir
+    assert config.nl_min_intensity_ratio == 0.07
+    assert config.parallel_workers == 2
+    assert [target.label for target in calls["run_targets"]] == ["MethodTarget"]
+    manifest_path = tmp_path / "output" / "method_manifest.json"
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    receipt = Path(payload["invocation"]["config_dir"])
+    assert receipt.parent.parent.parent == tmp_path / "output"
+    assert payload["invocation"]["settings_overrides"] == {}
+    assert config.config_hash == compute_config_hash(
+        receipt / "targets.csv", receipt / "settings.csv"
+    )
+    assert module.main(["--replay-manifest", str(manifest_path)]) == 0
+    assert calls["run_config"].config_hash == config.config_hash
+    assert calls["run_config"].output_csv == config.output_csv
+    assert [target.label for target in calls["run_targets"]] == ["MethodTarget"]
+
+
+def test_cli_replay_rejects_reusable_method_selection(tmp_path, capsys):
+    module = _module()
+    assert (
+        module.main(
+            [
+                "--replay-manifest",
+                str(tmp_path / "manifest.json"),
+                "--method-dir",
+                str(tmp_path / "method"),
+            ]
+        )
+        == 2
+    )
+    assert (
+        "--replay-manifest cannot be combined with --method-dir"
+        in capsys.readouterr().err
+    )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import re
 import shutil
 import uuid
 from pathlib import Path
@@ -82,9 +83,22 @@ class AnalysisWorkspace:
             "settings_source": source,
             "untargeted": discovery,
             "methods": list_methods(),
+            "targeted_methods": self.targeted_methods(),
             "preferences": self.preferences(),
             "analysis": self.state(),
         }
+
+    def targeted_methods(self) -> list[dict[str, str]]:
+        root = self.config_dir / "methods"
+        if not root.exists():
+            return []
+        return [
+            {"name": path.name, "path": str(path.absolute())}
+            for path in sorted(root.iterdir())
+            if path.is_dir()
+            and (path / "settings.csv").is_file()
+            and (path / "targets.csv").is_file()
+        ]
 
     def preferences(self) -> dict[str, str]:
         from xic_workbench.config_io import read_preferences
@@ -123,6 +137,55 @@ class AnalysisWorkspace:
             raise ValueError("這個檔案不屬於目前工作區的輸出。") from exc
 
     def action(self, action: str, values: dict[str, Any]) -> dict[str, Any]:
+        if action == "targeted/method/save":
+            from xic_extractor.configuration.targeted_method_files import (
+                create_targeted_method,
+                save_targeted_method,
+            )
+
+            name = str(values["name"]).strip()
+            if (
+                not name
+                or name in {".", ".."}
+                or re.search(r'[<>:"/\\|?*\x00-\x1f]', name)
+                or name.endswith((".", " "))
+                or name.split(".")[0].upper()
+                in {
+                    "CON",
+                    "PRN",
+                    "AUX",
+                    "NUL",
+                    *(f"COM{i}" for i in range(1, 10)),
+                    *(f"LPT{i}" for i in range(1, 10)),
+                }
+            ):
+                raise ValueError("請輸入有效的方法名稱，不可使用路徑或系統保留名稱。")
+            path = self.config_dir / "methods" / name
+            if path.exists():
+                raise ValueError(
+                    "方法名稱已存在；請使用新名稱另存版本，原方法不會被覆寫。"
+                )
+            method = create_targeted_method(values["settings"], values["targets"])
+            save_targeted_method(method, path)
+            return {
+                "name": name,
+                "methods": self.targeted_methods(),
+                "message": f"已儲存方法：{name}",
+            }
+        if action == "targeted/method/load":
+            from xic_extractor.configuration.targeted_method_files import (
+                apply_targeted_method,
+                load_targeted_method,
+            )
+            from xic_workbench.targeted import method_summary
+
+            method = load_targeted_method(Path(values["path"]))
+            settings = apply_targeted_method(values["settings"], method)
+            return {
+                "settings": settings,
+                "targets": [dict(row) for row in method.target_rows],
+                "summary": method_summary(settings),
+            }
         if action == "preferences":
             from xic_workbench.config_io import write_preferences
 

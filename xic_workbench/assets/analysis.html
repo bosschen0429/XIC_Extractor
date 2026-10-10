@@ -95,6 +95,15 @@
             </div>
             <span id="target-method-state" class="chip ok">標準參數</span>
           </div>
+          <div class="step-body">
+            <label class="field">已儲存的方法<select id="target-method-select" data-analysis-idle><option value="">目前工作區設定</option></select></label>
+            <div class="actions">
+              <button id="target-method-load" type="button" data-analysis-idle>載入方法與目標</button>
+              <button id="target-method-save" type="button" data-analysis-idle>另存為方法</button>
+              <button id="target-method-import" type="button" data-analysis-idle>從方法資料夾載入</button>
+            </div>
+            <p class="subtle">方法包含完整參數、targets 與 ISTD；換批次只需更換 RAW。載入會取代目前方法與目標，保留本次批次及本機設定；外部資源綁定不支援跨方法沿用。</p>
+          </div>
           <div id="targeted-settings" class="step-body"></div>
           <details class="method-section" open><summary>外部資源（另行確認）<span id="target-resource-state" class="chip"></span></summary><div id="targeted-resources" class="advanced-panel"></div></details>
         </section>
@@ -603,7 +612,7 @@
     </div>
     <div class="dialog-body">
       <label class="field"
-        >完整路徑<input id="path-dialog-value" class="path" required
+        ><span id="path-dialog-label">完整路徑</span><input id="path-dialog-value" class="path" required
       /></label>
     </div>
     <div class="dialog-foot">

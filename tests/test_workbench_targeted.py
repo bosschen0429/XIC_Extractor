@@ -238,6 +238,7 @@ def test_targeted_run_uses_canonical_service_and_returns_published_two_sample_su
     config = SimpleNamespace(
         output_csv=output_dir / "xic_results.csv",
         count_no_ms2_as_detected=True,
+        targeted_ms1_shape_identity_activation_policy="explicit_support_tsv",
     )
     targets = [
         _target("Analyte", istd_pair="ISTD"),
@@ -273,9 +274,7 @@ def test_targeted_run_uses_canonical_service_and_returns_published_two_sample_su
                 published_paths=(excel_path, report_path),
             )
 
-    monkeypatch.setattr(
-        module.config_loader, "load_config", lambda actual, **kwargs: (config, targets)
-    )
+    _substitute_prepared_inputs(monkeypatch, module, config_dir, config, targets)
     monkeypatch.setattr(
         module,
         "build_canonical_targeted_application_service",
@@ -327,6 +326,7 @@ def test_targeted_run_raises_cancellation_before_publication(
     config = SimpleNamespace(
         output_csv=tmp_path / "output" / "xic_results.csv",
         count_no_ms2_as_detected=False,
+        targeted_ms1_shape_identity_activation_policy="explicit_support_tsv",
     )
 
     class Service:
@@ -336,9 +336,7 @@ def test_targeted_run_raises_cancellation_before_publication(
                 published_paths=(),
             )
 
-    monkeypatch.setattr(
-        module.config_loader, "load_config", lambda _actual, **kwargs: (config, [])
-    )
+    _substitute_prepared_inputs(monkeypatch, module, config_dir, config, [])
     monkeypatch.setattr(
         module,
         "build_canonical_targeted_application_service",
@@ -354,6 +352,94 @@ def test_targeted_run_raises_cancellation_before_publication(
         run.execute()
 
     assert run.available_outputs == ()
+
+
+@pytest.mark.parametrize("completion", ["published", "cancelled", "late_cancel"])
+def test_default_limited_method_dispatches_workflow_and_reports_verified_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, completion: str
+) -> None:
+    """Workbench translates the default method; science is tested at its owner."""
+    import xic_workbench.targeted as module
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    for name in ("settings", "targets"):
+        (config_dir / f"{name}.csv").write_text("frozen input", encoding="utf-8")
+    config = SimpleNamespace(
+        output_csv=tmp_path / "output" / "xic_results.csv",
+        count_no_ms2_as_detected=False,
+        targeted_ms1_shape_identity_activation_policy="limited_5hmdc_5medc",
+        targeted_ms1_shape_identity_support_tsv=None,
+    )
+    targets = [_target("Analyte")]
+    cancelled = False
+    captured = {}
+    application = object()
+    progress_events = []
+
+    def execute_workflow(request, *, application, output_root):
+        nonlocal cancelled
+        captured["request"] = request
+        captured["application"] = application
+        captured["root"] = output_root
+        assert request.config is config
+        assert request.targets == tuple(targets)
+        assert request.should_stop is not None and not request.should_stop()
+        request.progress_callback(0, 0, "Auto limited baseline")
+        if completion == "cancelled":
+            cancelled = True
+            raise InterruptedError(
+                "limited workflow cancellation before verified publish"
+            )
+        final_dir = output_root / "final" / "output"
+        final_dir.mkdir(parents=True)
+        excel_path = final_dir / "verified.xlsx"
+        csv_path = final_dir / "xic_results.csv"
+        excel_path.write_text("verified workbook", encoding="utf-8")
+        csv_path.write_text("verified matrix", encoding="utf-8")
+        final_config = SimpleNamespace(
+            output_csv=csv_path, count_no_ms2_as_detected=False
+        )
+        captured["final_config"] = final_config
+        captured["paths"] = (excel_path, csv_path)
+        cancelled = completion == "late_cancel"
+        return SimpleNamespace(
+            final_config=final_config,
+            final_execution=SimpleNamespace(
+                active_output=SimpleNamespace(file_results=[], diagnostics=[]),
+                published_paths=captured["paths"],
+            ),
+        )
+
+    _substitute_prepared_inputs(monkeypatch, module, config_dir, config, targets)
+    monkeypatch.setattr(
+        module, "build_canonical_targeted_application_service", lambda _: application
+    )
+    monkeypatch.setattr(module, "execute_limited_identity_workflow", execute_workflow)
+    run = module.TargetedRun(
+        config_dir,
+        progress=lambda *event: progress_events.append(event),
+        should_cancel=lambda: cancelled,
+    )
+    if completion == "cancelled":
+        with pytest.raises(InterruptedError, match="before verified publish"):
+            run.execute()
+        assert (
+            run.cancellation_reason
+            == "limited workflow cancellation before verified publish"
+        )
+        assert not (captured["root"] / "final" / "output").exists()
+        assert run.available_outputs == ()
+        return
+    summary = run.execute()
+    assert captured["application"] is application
+    assert run.output_dir == captured["final_config"].output_csv.parent
+    assert summary["excel_path"] == str(captured["paths"][0])
+    assert summary["published_paths"] == [str(path) for path in captured["paths"]]
+    assert run.available_outputs == tuple(
+        ("已發布 Targeted 結果", path) for path in captured["paths"]
+    )
+    assert progress_events == [(0, 0, "Auto limited baseline")]
 
 
 def test_targeted_run_keeps_success_when_cancellation_arrives_after_publication(
@@ -372,6 +458,7 @@ def test_targeted_run_keeps_success_when_cancellation_arrives_after_publication(
     config = SimpleNamespace(
         output_csv=output_dir / "xic_results.csv",
         count_no_ms2_as_detected=False,
+        targeted_ms1_shape_identity_activation_policy="explicit_support_tsv",
     )
     target = _target("Analyte")
     output = SimpleNamespace(
@@ -387,11 +474,7 @@ def test_targeted_run_keeps_success_when_cancellation_arrives_after_publication(
         def execute_application(self, _request):
             return SimpleNamespace(active_output=output, published_paths=(published,))
 
-    monkeypatch.setattr(
-        module.config_loader,
-        "load_config",
-        lambda _actual, **kwargs: (config, [target]),
-    )
+    _substitute_prepared_inputs(monkeypatch, module, config_dir, config, [target])
     monkeypatch.setattr(
         module,
         "build_canonical_targeted_application_service",
@@ -421,15 +504,14 @@ def test_targeted_run_preserves_the_canonical_cancellation_reason(
     config = SimpleNamespace(
         output_csv=tmp_path / "output" / "xic_results.csv",
         count_no_ms2_as_detected=False,
+        targeted_ms1_shape_identity_activation_policy="explicit_support_tsv",
     )
 
     class Service:
         def execute_application(self, _request):
             raise InterruptedError("fingerprinting stopped at Sample_B.raw")
 
-    monkeypatch.setattr(
-        module.config_loader, "load_config", lambda _actual, **kwargs: (config, [])
-    )
+    _substitute_prepared_inputs(monkeypatch, module, config_dir, config, [])
     monkeypatch.setattr(
         module,
         "build_canonical_targeted_application_service",
@@ -445,6 +527,26 @@ def test_targeted_run_preserves_the_canonical_cancellation_reason(
         run.execute()
 
     assert run.cancellation_reason == "fingerprinting stopped at Sample_B.raw"
+
+
+def _substitute_prepared_inputs(monkeypatch, module, config_dir, config, targets):
+    """Substitute the admission interface, not parsing internals.
+
+    These adapter tests start with admitted inputs. The neighboring snapshot
+    tests use real CSV preparation and verify frozen calculation/manifest bytes.
+    RAW membership still crosses the real discovery/check interface here.
+    """
+    from xic_extractor.configuration.loader import PreparedTargetedConfig
+
+    config.data_dir = config_dir.parent / "raw"
+    config.data_dir.mkdir(exist_ok=True)
+    monkeypatch.setattr(
+        module.config_loader,
+        "prepare_targeted_config",
+        lambda *_args, **_kwargs: PreparedTargetedConfig(
+            config, tuple(targets), config_dir
+        ),
+    )
 
 
 def _target(label: str, *, is_istd: bool = False, istd_pair: str = "") -> Target:

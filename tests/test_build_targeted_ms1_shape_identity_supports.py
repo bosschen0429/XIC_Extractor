@@ -4,6 +4,7 @@ import csv
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from tools.diagnostics import build_targeted_ms1_shape_identity_supports as tool
 from xic_extractor.configuration.models import Target
@@ -13,9 +14,11 @@ from xic_extractor.diagnostics import (
 from xic_extractor.xic_models import XICTrace
 
 
+@pytest.mark.parametrize("admitted_targets", [False, True])
 def test_run_build_targeted_ms1_shape_identity_supports_writes_generic_rows(
     tmp_path: Path,
     monkeypatch,
+    admitted_targets: bool,
 ) -> None:
     long_csv = tmp_path / "xic_results_long.csv"
     output_tsv = tmp_path / "targeted_ms1_shape_identity.tsv"
@@ -31,10 +34,14 @@ def test_run_build_targeted_ms1_shape_identity_supports_writes_generic_rows(
         ],
     )
 
+    def load_config(*_args, **_kwargs):
+        assert not admitted_targets, "Admitted targets must not reread active config"
+        return object(), targets
+
     monkeypatch.setattr(
         support_producer,
         "load_config",
-        lambda *_args, **_kwargs: (object(), targets),
+        load_config,
     )
     rt = np.linspace(8.7, 9.6, 181)
 
@@ -57,6 +64,7 @@ def test_run_build_targeted_ms1_shape_identity_supports_writes_generic_rows(
         dll_dir=tmp_path,
         config_dir=tmp_path,
         output_tsv=output_tsv,
+        targets=targets if admitted_targets else None,
         trace_loader=trace_loader,
     )
 

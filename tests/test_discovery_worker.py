@@ -418,5 +418,6 @@ def test_execute_forwards_sample_metadata_and_targets_csv(
         )
     )
 
-    assert captured["targets_csv"] == targets_csv
+    assert captured["targets_csv"] != targets_csv
+    assert captured["targets_csv"].read_bytes() == targets_csv.read_bytes()
     assert captured["sample_metadata"] == sample_metadata

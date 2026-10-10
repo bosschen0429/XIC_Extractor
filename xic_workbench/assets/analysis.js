@@ -453,6 +453,20 @@
     setMethodState(result.summary);
     dirty("targeted");
   }
+  function renderTargetedMethods(methods, selected = "") {
+    const select = $("target-method-select");
+    select.replaceChildren(new Option("目前工作區設定", ""));
+    for (const method of methods) select.add(new Option(method.name, method.path));
+    select.value = selected;
+  }
+  async function loadTargetedMethod(path) {
+    if (!path) throw new Error("請先選擇方法。");
+    const result = await api("/api/targeted/method/load", { path, settings: settingsValues() });
+    state.targets = result.targets;
+    applyTargetedDraft(result);
+    targetCount();
+    done("已載入完整方法與目標；批次及本機設定保持不變。儲存或開始分析後套用。");
+  }
   async function saveTargeted(quiet = false) {
     const settings = settingsValues();
     const receipt = await api("/api/targeted/save", { settings, targets: state.targets });
@@ -1254,8 +1268,9 @@
     }
     $("inspector-export-dialog").showModal();
   }
-  function requestPath(title, value = "") {
+  function requestPath(title, value = "", label = "完整路徑") {
     $("path-dialog-title").textContent = title;
+    $("path-dialog-label").textContent = label;
     $("path-dialog-value").value = value;
     $("path-dialog").returnValue = "cancel";
     $("path-dialog").showModal();
@@ -1399,6 +1414,21 @@
       act(() => startJob("untargeted", untargetedValues()));
     });
     $("target-save").onclick = () => act(() => saveTargeted());
+    $("target-method-load").onclick = () => act(() => loadTargetedMethod($("target-method-select").value));
+    $("target-method-import").onclick = () => act(async () => {
+      const path = await requestPath("載入方法資料夾（settings.csv 與 targets.csv）");
+      if (!path) return;
+      await loadTargetedMethod(path);
+      $("target-method-select").value = "";
+    });
+    $("target-method-save").onclick = () => act(async () => {
+      const name = await requestPath("另存為可重複使用的方法", "", "方法名稱");
+      if (!name) return;
+      const result = await api("/api/targeted/method/save", { name, settings: settingsValues(), targets: state.targets });
+      state.config.targeted_methods = result.methods;
+      renderTargetedMethods(result.methods, result.methods.find((method) => method.name === result.name)?.path);
+      done(result.message);
+    });
     $("untargeted-save").onclick = () => act(() => saveUntargeted());
     $("target-new").onclick = () => {
       $("t-data_dir").value = "";
@@ -1712,6 +1742,7 @@
     $("dll-dir").value = state.config.settings.dll_dir || "";
     applyThemeButton();
     renderSettings(state.config.settings);
+    renderTargetedMethods(state.config.targeted_methods || []);
     for (const [key, label, kind] of pathFields)
       pathField(
         $("untargeted-paths"),

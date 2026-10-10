@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -24,10 +25,27 @@ SAMPLE_APPLICABILITIES = frozenset({"all", "rna_containing"})
 
 
 def _read_targets(path: Path) -> list[Target]:
+    return _parse_target_rows(path, _read_target_rows(path))
+
+
+def parse_target_rows(
+    rows: Sequence[Mapping[str, str]], path: Path = Path("targets.csv")
+) -> tuple[Target, ...]:
+    """Validate an in-memory table with the same target and ISTD rules as CSV intake."""
+    return tuple(
+        _parse_target_rows(
+            path, [(number, dict(row)) for number, row in enumerate(rows, 2)]
+        )
+    )
+
+
+def _parse_target_rows(
+    path: Path, rows: list[tuple[int, dict[str, str]]]
+) -> list[Target]:
     targets: list[Target] = []
     seen: set[str] = set()
 
-    for row_number, row in _read_target_rows(path):
+    for row_number, row in rows:
         target = _parse_target_row(path, row_number, row)
         if target.label in seen:
             raise _config_error(

@@ -30,6 +30,11 @@ lineage seal.
 - Provenance writers render run context only. They must not recompute domain
   evidence or change selected peaks, areas, confidence, counted detections,
   workbook values, or matrix values.
+- A saved Targeted method is reusable intent, not a run receipt. Workbench and
+  CLI method runs bind their manifest to admitted copies of settings and targets
+  under the run's `.run_inputs` directory, including a frozen injection-order
+  source when supplied. Editing the active workspace or saved method does not
+  alter those queued inputs. These receipts do not snapshot RAW bytes.
 - A command diary is not a durable replay contract. If a run matters, the
   stable command shape and artifact contract must move into a repo owner.
 

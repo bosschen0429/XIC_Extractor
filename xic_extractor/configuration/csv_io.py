@@ -1,4 +1,5 @@
 import csv
+import io
 from pathlib import Path
 
 from xic_extractor.configuration.models import ConfigError
@@ -39,7 +40,12 @@ def _config_input_path(config_dir: Path, name: str) -> Path:
 def _read_settings(path: Path) -> dict[str, str]:
     if not path.exists():
         raise ConfigError(f"{path}: file is missing")
-    with path.open(newline="", encoding="utf-8-sig") as handle:
+    return _parse_settings_csv_bytes(path.read_bytes(), path)
+
+
+def _parse_settings_csv_bytes(payload: bytes, path: Path) -> dict[str, str]:
+    """Decode captured settings bytes using the same intake rules as files."""
+    with io.StringIO(payload.decode("utf-8-sig"), newline="") as handle:
         rows = csv.DictReader(handle)
         _require_columns(path, rows.fieldnames, _REQUIRED_SETTING_FIELDS)
         settings: dict[str, str] = {}

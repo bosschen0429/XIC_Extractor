@@ -10,13 +10,17 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 from xic_extractor import extractor
+from xic_extractor.analysis_set import discover_raw_files
 from xic_extractor.applications.targeted.application import (
     build_canonical_targeted_application_service,
     build_targeted_application_request,
 )
+from xic_extractor.applications.targeted.limited_identity_workflow import (
+    execute_limited_identity_workflow,
+    requires_limited_identity_workflow,
+)
 from xic_extractor.configuration import loader as config_loader
-from xic_extractor.configuration.csv_io import _config_input_path
-from xic_extractor.configuration.models import ExtractionConfig, Target
+from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.configuration.settings import method_settings_differences
 from xic_extractor.extraction.result_models import ExtractionResult, RunOutput
 from xic_extractor.output.method_manifest import MethodManifestContext
@@ -52,19 +56,12 @@ class TargetedRun:
         should_cancel: Callable[[], bool],
     ) -> None:
         config_dir = Path(config_dir)
-        # These are immutable execution receipts, not another active configuration.
-        # The manifest and computation must consume the same bytes after dispatch.
-        self._config_dir = (
-            config_dir.parent / "output" / ".run_inputs" / uuid.uuid4().hex / "config"
-        )
-        self._config_dir.mkdir(parents=True)
-        for name in ("settings", "targets"):
-            (self._config_dir / f"{name}.csv").write_bytes(
-                _config_input_path(config_dir, name).read_bytes()
-            )
-        self._config, self._targets = config_loader.load_config(
-            self._config_dir, output_dir=config_dir.parent / "output"
-        )
+        self._base_dir = config_dir.parent.resolve()
+        prepared = config_loader.prepare_targeted_config(config_dir)
+        self._config_dir = prepared.input_config_dir
+        self._config, self._targets = prepared.config, list(prepared.targets)
+        # Admission fixes the discovered file set, not analysis roles or RAW bytes.
+        self._raw_paths = discover_raw_files(self._config.data_dir)
         self._progress = progress
         self._should_cancel = should_cancel
         self.stage = "讀取 Targeted 設定"
@@ -73,27 +70,53 @@ class TargetedRun:
         self.cancellation_reason = "使用者要求停止，本次 Targeted 執行已停止。"
 
     def execute(self) -> dict[str, Any]:
+        if (
+            not self._config.data_dir.is_dir()
+            or discover_raw_files(self._config.data_dir) != self._raw_paths
+        ):
+            raise ConfigError("排隊後 RAW 檔案集合已變更；請確認本批次資料並重新提交。")
         config, targets = self._config, self._targets
         self.output_dir = config.output_csv.parent
         excel_path = _excel_output_path(config)
         self.stage = "Targeted 分析與結果發布"
         try:
-            execution = build_canonical_targeted_application_service(
+            application = build_canonical_targeted_application_service(
                 extractor.acquire
-            ).execute_application(
-                build_targeted_application_request(
-                    config,
-                    targets,
-                    progress_callback=self._progress,
-                    should_stop=self._should_cancel,
-                    method_manifest_context=MethodManifestContext(
-                        entrypoint="xic-extractor-html",
-                        config_dir=self._config_dir,
-                        output_mode="excel",
-                    ),
-                    excel_output_path=excel_path,
-                )
             )
+            request = build_targeted_application_request(
+                config,
+                targets,
+                progress_callback=self._progress,
+                should_stop=self._should_cancel,
+                method_manifest_context=MethodManifestContext(
+                    entrypoint="xic-extractor-html",
+                    base_dir=self._base_dir,
+                    config_dir=self._config_dir,
+                    output_mode="excel",
+                ),
+                excel_output_path=excel_path,
+            )
+            if requires_limited_identity_workflow(config):
+                self.stage = "Targeted 基準、身分支持與驗證後交付"
+                output_root = config.output_csv.parent / (
+                    f"targeted_{datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:8]}"
+                )
+                workflow = execute_limited_identity_workflow(
+                    request, application=application, output_root=output_root
+                )
+                config = workflow.final_config
+                self.output_dir = config.output_csv.parent
+                execution = workflow.final_execution
+                excel_path = next(
+                    (
+                        Path(path)
+                        for path in execution.published_paths
+                        if Path(path).suffix.lower() == ".xlsx"
+                    ),
+                    self.output_dir / excel_path.name,
+                )
+            else:
+                execution = application.execute_application(request)
         except InterruptedError as exc:
             if str(exc):
                 self.cancellation_reason = str(exc)
@@ -219,7 +242,6 @@ _SETTING_FIELDS: tuple[tuple[str, str, str, dict[str, Any]], ...] = (
         "number",
         {
             "min": 0.01,
-            "step": 0.1,
             "help": "掃描 precursor 與推算 precursor 的最大差距。",
         },
     ),
@@ -242,9 +264,7 @@ _SETTING_FIELDS: tuple[tuple[str, str, str, dict[str, Any]], ...] = (
         "injection_order_source",
         "注射順序來源",
         "file",
-        {
-            "help": "CSV／XLSX 注射順序；留空時使用 RAW 修改時間。"
-        },
+        {"help": "CSV／XLSX 注射順序；留空時使用 RAW 修改時間。"},
     ),
     (
         "rolling_window_size",
