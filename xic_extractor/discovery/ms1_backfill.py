@@ -191,7 +191,9 @@ def backfill_ms1_candidates(
     merged = candidate_merge.merge_candidates_by_ms1_peak_with_lineage(
         candidates, settings=settings
     )
-    return _verify_precursor_evidence(raw, merged, plans, settings=settings).candidates
+    return _verify_precursor_evidence(
+        raw, merged, plans, candidates, settings=settings
+    ).candidates
 
 
 def _backfill_ms1_candidates_with_acquisition(
@@ -456,7 +458,7 @@ def _backfill_ms1_candidates_with_acquisition(
         ms1_centroid_mz=ms1_centroid_mz,
     )
     merge_result = _verify_precursor_evidence(
-        raw, merge_result, candidate_plans, settings=settings
+        raw, merge_result, candidate_plans, candidates, settings=settings
     )
     doubly_charged_by_source = tuple(
         apex_readings.get(index, (None, False))[1] for index in physical_indices
@@ -574,6 +576,7 @@ def _verify_precursor_evidence(
     raw: object,
     merged: candidate_merge.DiscoveryCandidateMergeResult,
     plans: Sequence[_DiscoveryMs1RequestPlan],
+    original_candidates: Sequence[DiscoveryCandidate],
     *,
     settings: DiscoverySettings,
 ) -> candidate_merge.DiscoveryCandidateMergeResult:
@@ -597,31 +600,44 @@ def _verify_precursor_evidence(
     )
     by_seed = dict(zip(retained_seeds, measured, strict=True))
     verified: list[DiscoveryCandidate] = []
-    for candidate, original_seeds in zip(merged.candidates, seed_groups, strict=True):
+    bindings: list[candidate_merge.DiscoveryCandidateMergeBinding] = []
+    for candidate, original_seeds, binding in zip(
+        merged.candidates, seed_groups, merged.bindings, strict=True
+    ):
+        bindings.append(binding)
         if not candidate.ms1_peak_found:
             verified.append(candidate)
             continue
         seeds = [by_seed[seed] for seed in original_seeds]
-        has_support = False
+        support_events = []
         for seed in seeds:
             assessment = seed.assess_precursor_loss(settings.nl_tolerance_ppm)
-            parent = seed.ms1_precursor_observation
-            support_rt = seed.rt if parent is None else parent.rt_min
-            if (
-                assessment.supports_nl
-                and assessment.reference_mz is not None
-                and within_ppm(
-                    assessment.reference_mz,
-                    candidate.physical_mz,
-                    settings.precursor_mz_tolerance_ppm,
+            if assessment.supports_nl and assessment.reference_mz is not None:
+                parent = seed.ms1_precursor_observation
+                support_events.append(
+                    (
+                        assessment.reference_mz,
+                        seed.rt if parent is None else parent.rt_min,
+                        seed.rt,
+                    )
                 )
-                and candidate.ms1_peak_rt_start is not None
-                and candidate.ms1_peak_rt_end is not None
-                and candidate.ms1_peak_rt_start <= support_rt
-                and seed.rt <= candidate.ms1_peak_rt_end
+        has_support = _candidate_has_precursor_support(
+            candidate, support_events, settings=settings
+        )
+        if not has_support:
+            for (
+                rebuilt,
+                replacement_binding,
+            ) in candidate_merge.same_apex_representative_alternatives(
+                original_candidates, binding, settings=settings
             ):
-                has_support = True
-                break
+                if _candidate_has_precursor_support(
+                    rebuilt, support_events, settings=settings
+                ):
+                    candidate = rebuilt
+                    bindings[-1] = replacement_binding
+                    has_support = True
+                    break
         verified.append(
             replace(
                 candidate,
@@ -631,7 +647,25 @@ def _verify_precursor_evidence(
                 ),
             )
         )
-    return replace(merged, candidates=tuple(verified))
+    return replace(merged, candidates=tuple(verified), bindings=tuple(bindings))
+
+
+def _candidate_has_precursor_support(
+    candidate: DiscoveryCandidate,
+    support_events: Sequence[tuple[float, float, float]],
+    *,
+    settings: DiscoverySettings,
+) -> bool:
+    return any(
+        within_ppm(
+            reference_mz, candidate.physical_mz, settings.precursor_mz_tolerance_ppm
+        )
+        and candidate.ms1_peak_rt_start is not None
+        and candidate.ms1_peak_rt_end is not None
+        and candidate.ms1_peak_rt_start <= support_rt
+        and scan_rt <= candidate.ms1_peak_rt_end
+        for reference_mz, support_rt, scan_rt in support_events
+    )
 
 
 def _discovery_ms1_request_plan(

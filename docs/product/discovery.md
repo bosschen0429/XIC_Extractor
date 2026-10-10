@@ -226,7 +226,14 @@ Producing a library alone does not enable qualification.
   `precursor_verification` result; original inferred m/z, source and null loss
   error stay unchanged. Alignment reacquires these facts from RAW before minting
   canonical evidence and relations; a saved CSV verification result supplies no
-  authority. Parent scans are read once per acquisition batch, with all requested
+  authority. A merged peak keeps its representative when that complete physical
+  answer retains qualified member evidence. Otherwise Discovery tries original
+  same-apex members in the existing representative order and rechecks support
+  on the rebuilt merged candidate. Candidate identity, physical work binding,
+  boundaries and integral move together; interval overlap or a measured-ion match
+  at a different apex does not authorize this fallback. The formal method
+  assessment still owns unique support and eligibility. Parent scans are read
+  once per acquisition batch, with all requested
   mass windows evaluated against the same scan. MS1 quantitation remains subject to the existing method
   assessment and cell-decision policy. CrossSample and cell-decision owners decide
   identity, Backfill, and Matrix publication. Candidate eligibility alone

@@ -310,8 +310,9 @@ def test_discovery_retained_physical_peak_cardinality(
 
 
 @pytest.mark.parametrize("combine_mode", ("union", "intersection"))
+@pytest.mark.parametrize("fallback", (False, True))
 def test_merged_physical_candidate_persists_representative_search_window(
-    tmp_path: Path, combine_mode: str
+    tmp_path: Path, combine_mode: str, fallback: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from xic_extractor.acquisition_contract import serialize_acquired_trace
     from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
@@ -330,6 +331,7 @@ def test_merged_physical_candidate_persists_representative_search_window(
     raw_path.write_bytes(b"representative-window")
     settings = DiscoverySettings(
         selected_tag_names=("dR", "R"),
+        nl_tolerance_ppm=100.0 if fallback else 20.0,
         tag_combine_mode=combine_mode,
         neutral_loss_profiles=_multi_tag_settings().neutral_loss_profiles[:2],
     )
@@ -340,7 +342,16 @@ def test_merged_physical_candidate_persists_representative_search_window(
     source = spec.acquisition_inputs[0].acquisition_source
     groups = tuple(
         replace(
-            _group((_seed(scan_number=scan, rt=rt, product_mz=500.0 - loss),)),
+            _group(
+                (
+                    _seed(
+                        scan_number=scan,
+                        rt=rt,
+                        product_mz=500.0 - loss,
+                        product_intensity=20000.0 if scan == 20 else 10000.0,
+                    ),
+                )
+            ),
             neutral_loss_tag=tag,
             configured_neutral_loss_da=loss,
             matched_tag_names=(tag,),
@@ -350,6 +361,53 @@ def test_merged_physical_candidate_persists_representative_search_window(
             (20, 7.82, "R", 132.0423),
         )
     )
+    if fallback:
+        from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+        from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+
+        groups = tuple(
+            replace(
+                group,
+                precursor_mz=500.0 + offset,
+                product_mz=group.product_mz + offset,
+                precursor_mz_basis="product_plus_neutral_loss",
+                seeds=tuple(
+                    replace(
+                        seed,
+                        precursor_mz=500.0 + offset,
+                        product_mz=seed.product_mz + offset,
+                        neutral_loss_tag=group.neutral_loss_tag,
+                        configured_neutral_loss_da=group.configured_neutral_loss_da,
+                        observed_neutral_loss_da=group.configured_neutral_loss_da,
+                        precursor_mz_basis="product_plus_neutral_loss",
+                        observed_loss_error_ppm=None,
+                        scan_precursor_mz=500.5,
+                        precursor_metadata=Ms2PrecursorMetadata(
+                            master_scan_number=9,
+                            charge=1,
+                            isolation_width_da=1.6,
+                            isolation_offset_da=0.0,
+                        ),
+                    )
+                    for seed in group.seeds
+                ),
+            )
+            for group, offset in zip(groups, (0.0, 0.006), strict=True)
+        )
+        parent_batches = []
+
+        def read_windows(self, requests):
+            parent_batches.append(requests)
+            return tuple(
+                Ms1PrecursorObservation(
+                    scan, 7.75, (500.015,) if lower <= 500.015 <= upper else ()
+                )
+                for scan, lower, upper in requests
+            )
+
+        monkeypatch.setattr(
+            _OwnerBoundBatchRaw, "read_ms1_mass_windows", read_windows, raising=False
+        )
     raw = _OwnerBoundBatchRaw(source)
     result = _backfill_ms1_candidates_with_acquisition(
         raw,
@@ -364,8 +422,15 @@ def test_merged_physical_candidate_persists_representative_search_window(
     (binding,) = result.physical_bindings
     assert binding.candidate is candidate
     assert binding.member_source_ordinals == (0, 1)
+    assert binding.representative_source_ordinal == (1 if fallback else 0)
+    assert binding.representative_work_ordinal == (1 if fallback else 0)
+    assert candidate.best_ms2_scan_id == (20 if fallback else 10)
+    if fallback:
+        assert len(parent_batches) == 1 and len(parent_batches[0]) == 2
+        assert candidate.discovery_candidate_state == "ms1_feature_nl_supported"
     assert candidate.matched_tag_names == ("dR", "R")
     assert candidate.seed_scan_ids == (10, 20)
+    assert candidate.ms2_product_max_intensity == 20000.0
     assert (
         len(
             {
@@ -1197,12 +1262,18 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
     }
 
 
-@pytest.mark.parametrize("trace_case", [
-    "exterior_context_crop", "separate_noise_hits", "alternating_amplitude",
-    "overlapping_components",
-])
+@pytest.mark.parametrize(
+    "trace_case",
+    [
+        "exterior_context_crop",
+        "separate_noise_hits",
+        "alternating_amplitude",
+        "overlapping_components",
+    ],
+)
 def test_discovery_publishes_supported_peak(
-    tmp_path: Path, trace_case: str,
+    tmp_path: Path,
+    trace_case: str,
 ) -> None:
     from tests.test_physical_peak_evaluation_persistence import (
         _context_sensitive_trace,
@@ -1252,7 +1323,8 @@ def test_discovery_publishes_supported_peak(
     assert candidate.ms1_peak_found is True
     assert candidate.ms1_apex_rt == evaluation.facts.apex_rt_min
     assert candidate.ms1_apex_rt == pytest.approx(
-        query_rt, abs=0.15 if trace_case == "overlapping_components" else 1e-8,
+        query_rt,
+        abs=0.15 if trace_case == "overlapping_components" else 1e-8,
     )
     assert candidate.ms1_area == evaluation.facts.area_counts_seconds
     assert rt[0] < evaluation.facts.left_rt_min < query_rt
@@ -1267,7 +1339,8 @@ def test_discovery_publishes_supported_peak(
     from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
 
     path = write_discovery_candidates_csv(
-        tmp_path / "candidates.csv", result.candidates,
+        tmp_path / "candidates.csv",
+        result.candidates,
     )
     (published,) = read_discovery_candidates_csv(path)
     assert published.ms1_peak_found
@@ -1536,9 +1609,11 @@ def test_held_inferred_peak_remains_in_review_and_physical_sidecar(
     ion_mz = 500.0005
     monkeypatch.setattr(
         "xic_extractor.discovery.pipeline._ms1_centroid_source",
-        lambda _raw: lambda _rt, low, high: next(
-            (mz for mz in (ion_mz, ion_mz + 1.0033548 / 2) if low <= mz <= high),
-            None,
+        lambda _raw: (
+            lambda _rt, low, high: next(
+                (mz for mz in (ion_mz, ion_mz + 1.0033548 / 2) if low <= mz <= high),
+                None,
+            )
         ),
     )
     outputs = run_discovery(
@@ -1633,7 +1708,9 @@ def test_a_selected_precursor_carries_a_peak_with_two_ions(
 @pytest.mark.parametrize("has_isotope", [False, True])
 @pytest.mark.parametrize("shared_request_count", [1, 2])
 def test_inferred_precursor_rechecks_isotope_after_point_reacquisition(
-    tmp_path: Path, has_isotope: bool, shared_request_count: int,
+    tmp_path: Path,
+    has_isotope: bool,
+    shared_request_count: int,
 ) -> None:
     raw_path = tmp_path / "TumorBC2312_DNA.raw"
     raw_path.write_bytes(b"owner-bound-discovery")
@@ -1643,9 +1720,7 @@ def test_inferred_precursor_rechecks_isotope_after_point_reacquisition(
         observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
     )
     full_rt = np.arange(11.05, 13.25, 0.10, dtype=float)
-    full_intensity = 100.0 + 10_000.0 * np.exp(
-        -0.5 * ((full_rt - 12.15) / 0.03) ** 2
-    )
+    full_intensity = 100.0 + 10_000.0 * np.exp(-0.5 * ((full_rt - 12.15) / 0.03) ** 2)
     raw = _CadenceBoundRaw(source, full_rt, full_intensity)
     profile = SignalProcessingProfile(window_points=15)
     # Inferred-only basis exercises apex/isotope reading. Two high-intensity

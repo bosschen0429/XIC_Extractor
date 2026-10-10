@@ -423,7 +423,7 @@ def test_backfill_merges_candidates_inside_same_ms1_peak_boundary(
     )
 
 
-def test_merged_peak_does_not_inherit_support_outside_its_retained_interval(
+def test_merged_peak_retains_complete_supported_member_not_original_interval(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
@@ -465,15 +465,17 @@ def test_merged_peak_does_not_inherit_support_outside_its_retained_interval(
         lambda self, requests: (Ms1PrecursorObservation(19, 8.02, (500.001,)),),
         raising=False,
     )
-    candidate, = backfill_ms1_candidates(
-        raw, (_group((first,)), _group((second,))),
-        settings=_settings(), peak_config=_peak_config(),
+    (candidate,) = backfill_ms1_candidates(
+        raw,
+        (_group((first,)), _group((second,))),
+        settings=_settings(),
+        peak_config=_peak_config(),
     )
-    assert candidate.best_ms2_scan_id == 10
-    assert candidate.ms1_area == 1234.5
-    assert candidate.ms1_peak_rt_end == 8.0
+    assert candidate.best_ms2_scan_id == 20
+    assert candidate.ms1_area == 1300.0
+    assert candidate.ms1_peak_rt_end == 8.1
     assert candidate.seed_scan_ids == (10, 20)
-    assert candidate.discovery_candidate_state == "ms1_feature_nl_rescued"
+    assert candidate.discovery_candidate_state == "ms1_feature_nl_supported"
 
 
 def test_cross_tag_candidates_merge_only_when_ms1_peak_overlaps() -> None:
@@ -1628,3 +1630,128 @@ class _FakeRaw:
     ) -> tuple[np.ndarray, np.ndarray]:
         self.requests.append((mz, rt_min, rt_max, ppm_tol))
         return self.rt, self.intensity
+
+
+@pytest.mark.parametrize(
+    "parent_rt,masses,expected_scan,expected_state",
+    (
+        (8.0, (500.0,), 30, "ms1_feature_nl_supported"),
+        (7.75, (500.0,), 10, "ms1_feature_nl_supported"),
+        (8.0, (), 10, "ms1_feature_nl_rescued"),
+        (8.0, (500.9,), 10, "ms1_feature_nl_rescued"),
+        (7.5, (500.0,), 10, "ms1_feature_nl_rescued"),
+    ),
+)
+def test_backfill_retains_supported_same_apex_member_without_extra_parent_reads(
+    monkeypatch: pytest.MonkeyPatch, parent_rt, masses, expected_scan, expected_state
+) -> None:
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+    from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+
+    groups = tuple(
+        _group(
+            (
+                replace(
+                    _seed(scan_number=scan, rt=rt, product_intensity=height),
+                    precursor_mz_basis="product_plus_neutral_loss",
+                    observed_loss_error_ppm=None,
+                    scan_precursor_mz=500.5,
+                    precursor_metadata=Ms2PrecursorMetadata(
+                        master_scan_number=9,
+                        charge=1,
+                        isolation_width_da=(
+                            1.6 if scan != 10 or parent_rt == 7.75 else 0.1
+                        ),
+                        isolation_offset_da=0.0,
+                    ),
+                ),
+            )
+        )
+        for scan, rt, height in ((10, 7.8, 100000), (20, 8.1, 10000), (30, 8.12, 20000))
+    )
+    peaks = iter(
+        (
+            _ok_peak(rt=7.85, intensity=1000, area=111, start=7.7, end=7.9),
+            _ok_peak(rt=7.85, intensity=2000, area=222, start=7.7, end=8.2),
+            _ok_peak(rt=7.85, intensity=3000, area=333, start=7.6, end=8.3),
+        )
+    )
+    monkeypatch.setattr(
+        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        lambda *a, **kw: next(peaks),
+    )
+    batches = []
+
+    def read_windows(self, requests):
+        batches.append(requests)
+        return (Ms1PrecursorObservation(9, parent_rt, masses),)
+
+    monkeypatch.setattr(_FakeRaw, "read_ms1_mass_windows", read_windows, raising=False)
+    raw = _FakeRaw(
+        rt=np.array([7.7, 7.85, 8.3]), intensity=np.array([10.0, 1000.0, 20.0])
+    )
+    (candidate,) = backfill_ms1_candidates(
+        raw, groups, settings=_settings(), peak_config=_peak_config()
+    )
+    assert len(batches) == 1 and len(batches[0]) == 1
+    assert len(raw.requests) == 3
+    assert candidate.best_ms2_scan_id == expected_scan
+    assert candidate.discovery_candidate_state == expected_state
+    assert candidate.ms1_area == (333 if expected_scan == 30 else 111)
+    assert candidate.ms1_height == (3000 if expected_scan == 30 else 1000)
+    assert candidate.ms1_peak_rt_start == (7.6 if expected_scan == 30 else 7.7)
+    assert candidate.ms1_peak_rt_end == (8.3 if expected_scan == 30 else 7.9)
+    assert candidate.seed_scan_ids == (10, 20, 30)
+    assert candidate.seed_event_count == 3
+    assert candidate.ms2_product_max_intensity == 100000
+    assert candidate.rt_seed_min == 7.8 and candidate.rt_seed_max == 8.12
+    receipts = json.loads(candidate.tag_evidence_json)["DNA_dR"]["scan_receipts"]
+    assert set(receipts) == {"10", "20", "30"}
+
+
+def test_backfill_does_not_replace_unsupported_peak_with_different_apex_member(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Overlap/feature-row merging is broader than same physical-apex fallback.
+    anchor = replace(
+        _candidate("dR"),
+        best_ms2_scan_id=10,
+        best_seed_rt=5.11,
+        seed_scan_ids=(10,),
+        ms2_product_max_intensity=100000.0,
+    )
+    other = replace(
+        _tail_of(anchor, offset_ppm=10.0, apex=5.08),
+        best_ms2_scan_id=20,
+        seed_scan_ids=(20,),
+        ms2_product_max_intensity=20000.0,
+    )
+    originals = iter((anchor, other))
+    monkeypatch.setattr(
+        "xic_extractor.discovery.ms1_backfill._candidate_from_trace",
+        lambda *a, **kw: next(originals),
+    )
+    groups = tuple(
+        _group(
+            (
+                _seed(
+                    scan_number=scan,
+                    rt=5.11,
+                    precursor_mz=mass,
+                    product_mz=mass - NEUTRAL_LOSS_DA,
+                ),
+            )
+        )
+        for scan, mass in ((10, 400.0), (20, 400.004))
+    )
+    raw = _FakeRaw(
+        rt=np.array([5.0, 5.05, 5.12]), intensity=np.array([10.0, 1000.0, 20.0])
+    )
+    (candidate,) = backfill_ms1_candidates(
+        raw, groups, settings=_settings(), peak_config=_peak_config()
+    )
+    assert candidate.best_ms2_scan_id == 10
+    assert candidate.ms1_apex_rt == anchor.ms1_apex_rt
+    assert candidate.ms1_area == anchor.ms1_area
+    assert candidate.discovery_candidate_state == "ms1_feature_nl_rescued"
+    assert candidate.seed_scan_ids == (10, 20)
