@@ -848,11 +848,22 @@ dialog > form {
   background: transparent;
   color: var(--subtle);
 }
-.dialog-close:hover {
+.dialog-close:hover,
+.dialog-close:focus-visible {
   border-color: transparent;
+  background: var(--surface-2);
+  box-shadow: none;
+  color: var(--ink);
 }
 .wide-dialog {
   width: min(1180px, calc(100vw - 32px));
+}
+#confirm-dialog,
+#path-dialog {
+  width: min(500px, calc(100vw - 32px));
+}
+#about-dialog {
+  width: min(560px, calc(100vw - 32px));
 }
 
 /* Tables */
@@ -937,8 +948,7 @@ th.num {
 .source-text p {
   overflow: hidden;
   color: var(--subtle);
-  font-family: var(--mono);
-  font-size: 12px;
+  font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -957,6 +967,57 @@ th.num {
 #source-settings .path-line:first-of-type {
   margin-top: 12px;
 }
+.source-text p.mono {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.review-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 48px 24px 40px;
+  text-align: center;
+}
+.review-empty h2 {
+  font-size: 18px;
+}
+.review-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 220px));
+  gap: 14px;
+  margin: 6px 0 4px;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+.review-steps li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  text-align: left;
+  counter-increment: step;
+}
+.review-steps li::before {
+  content: counter(step);
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+}
+.review-steps span {
+  color: var(--subtle);
+  font-size: 12px;
+}
 .inline-status {
   display: flex;
   align-items: center;
@@ -966,6 +1027,11 @@ th.num {
   color: var(--subtle);
   font-size: 13px;
   overflow-wrap: anywhere;
+}
+.inline-status:empty {
+  display: block;
+  min-height: 0;
+  margin: 8px 0;
 }
 .inline-status.working {
   color: var(--accent);
@@ -1454,7 +1520,8 @@ kbd {
   .page {
     padding-top: 14px;
   }
-  .review-grid {
+  .review-grid,
+  .review-steps {
     grid-template-columns: 1fr;
   }
   .list-panel {

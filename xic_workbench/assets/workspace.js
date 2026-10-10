@@ -42,7 +42,10 @@ window.XicUi = (() => {
     $("confirm-accept").className = danger ? "danger-button" : "primary";
     dialog.returnValue = "cancel";
     dialog.showModal();
-    $("confirm-accept").focus();
+    (danger
+      ? dialog.querySelector('button[value="cancel"]')
+      : $("confirm-accept")
+    ).focus();
     return new Promise((resolve) =>
       dialog.addEventListener(
         "close",
@@ -189,8 +192,10 @@ window.XicUi = (() => {
     state.page = page;
     clearSelection();
     $("review").hidden = false;
+    $("review-empty").hidden = true;
     $("batch-title").textContent = "批次結果已開啟";
     $("batch-description").textContent = page.source;
+    $("batch-description").className = "mono";
     $("batch-description").title = page.source;
     $("batch-count").hidden = false;
     $("batch-count").textContent =
@@ -511,7 +516,10 @@ window.XicUi = (() => {
       if (!data.entries.length) {
         const empty = document.createElement("p");
         empty.className = "empty";
-        empty.textContent = "這個位置沒有可選的資料夾或檔案。";
+        empty.textContent =
+          state.browser.kind === "folder"
+            ? "這裡沒有子資料夾。若這就是要用的位置，按「使用此資料夾」。"
+            : "這裡沒有符合類型的檔案或子資料夾。";
         list.append(empty);
       }
       list.scrollTop = 0;
@@ -597,6 +605,7 @@ window.XicUi = (() => {
         : "選擇檔案或資料夾";
     $("browse-use").textContent = "使用此資料夾";
     $("browser-dialog").showModal();
+    $("browse-path").focus();
     browse($(state.browser.target).value);
   });
   document.addEventListener("xic:open-review", (event) => {
@@ -628,6 +637,6 @@ window.XicUi = (() => {
     $("raw-dir").value = session.defaults.raw_dir || "";
     $("dll-dir").value = session.defaults.dll_dir || "";
     if ($("source").value) await openBatch();
-    else status("請選擇已完成的批次結果，然後按「開啟批次」。");
+    else status("");
   }, "正在連接本機工作區…");
 })();

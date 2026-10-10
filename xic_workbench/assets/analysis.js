@@ -286,7 +286,9 @@
   }
   function pathItem(label, id, missing) {
     const value = $(id)?.value.trim() || "";
-    const usable = value && !value.startsWith("<");
+    // Example templates ship placeholder paths that are not real inputs.
+    const usable =
+      value && !value.startsWith("<") && !/[\\/]your[\\/]/i.test(value);
     return checkItem(
       usable ? "ok" : "todo",
       label,
@@ -1645,6 +1647,8 @@
     state.config = await api("/api/config");
     state.targets = state.config.targets;
     ui.setTheme(state.config.preferences.theme || "light");
+    if (!$("dll-dir").value && state.config.preferences.dll_dir)
+      $("dll-dir").value = state.config.preferences.dll_dir;
     applyThemeButton();
     renderSettings(state.config.settings);
     for (const [key, label, kind] of pathFields)

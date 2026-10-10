@@ -4,6 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>XIC Extractor</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23155e75'/%3E%3Cpath d='M5 23c4 0 5-1 6.6-6S14.8 8 16 8s2.8 4 4.4 9 2.6 6 6.6 6' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
     <script>
       try {
         const theme = localStorage.getItem("xic-theme");
@@ -300,9 +304,36 @@
           </div>
         </details>
       </section>
-      <div id="status" class="inline-status" role="status" aria-live="polite">
-        請開啟一個批次。
-      </div>
+      <div
+        id="status"
+        class="inline-status"
+        role="status"
+        aria-live="polite"
+      ></div>
+      <section id="review-empty" class="card review-empty">
+        <span class="empty-glyph" aria-hidden="true"
+          ><svg class="icon"><use href="#i-review" /></svg
+        ></span>
+        <h2>還沒有開啟的批次</h2>
+        <ol class="review-steps">
+          <li>
+            <strong>選擇結果</strong
+            ><span>Untargeted 輸出資料夾，或其中的 cid_nl_explanation.sqlite。</span>
+          </li>
+          <li>
+            <strong>開啟批次</strong
+            ><span>搜尋全批項目，依 m/z、RT 或分組 ID 定位。</span>
+          </li>
+          <li>
+            <strong>需要時取得 XIC</strong
+            ><span>指定 RAW 與 DLL 資料夾，只讀取勾選的樣本。</span>
+          </li>
+        </ol>
+        <button type="button" data-view="untargeted" class="ghost">
+          還沒有結果？前往 Untargeted 分析<svg class="icon">
+            <use href="#i-chevron-right" /></svg>
+        </button>
+      </section>
       <section id="review" class="review-grid" hidden>
         <aside class="list-panel">
           <form id="query-form">
