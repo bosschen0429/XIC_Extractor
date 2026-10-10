@@ -615,13 +615,20 @@ def _admissible_physical_segments(
     }:
         if not universe.context_rt_start_min <= query_rt <= universe.context_rt_end_min:
             return ()
-        # Extra measurement context completes boundaries, not candidate eligibility.
         candidates = tuple(
             segment
             for segment in universe.segments
             if search_rt_window is None
             or search_rt_window[0] <= segment.apex_rt_min <= search_rt_window[1]
         )
+        if not candidates and selection_policy_version == PHYSICAL_PEAK_BACKFILL_POLICY:
+            # A complete peak can contain the forecast while its apex misses the
+            # window. Recover only containing segments, never nearby context peaks.
+            # The answer still enforces uniqueness, complete support and contrast.
+            candidates = tuple(
+                segment for segment in universe.segments
+                if segment.left_rt_min <= query_rt <= segment.right_rt_min
+            )
         # The prior resolves ambiguity only among eligible candidates.
         if selection_policy_version in {
             PHYSICAL_PEAK_GROUP_WINDOW_POLICY,

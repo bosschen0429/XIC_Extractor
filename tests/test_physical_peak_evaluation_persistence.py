@@ -78,6 +78,51 @@ def test_backfill_requires_background_contrast_without_changing_detected_capture
     assert deserialize_physical_peak_evaluation(payload)[-1] == backfill
 
 
+@pytest.mark.parametrize("query_rt", [0.8, 1.2])
+def test_backfill_recovers_the_complete_peak_containing_the_query(
+    query_rt: float,
+) -> None:
+    rt = np.linspace(0.0, 3.0, 601)
+    raw = (
+        1000.0 * np.exp(-0.5 * ((rt - 1.0) / 0.12) ** 2)
+        + 9000.0 * np.exp(-0.5 * ((rt - 2.1) / 0.06) ** 2)
+    )
+    prepared = prepare_physical_signal(rt, raw)
+    window = (query_rt - 0.05, query_rt + 0.05)
+    question = dict(
+        selection_subject_id="query-inside-complete-peak",
+        query_rt_min=query_rt,
+        search_rt_window=window,
+    )
+    ordinary = evaluate_physical_peak(
+        prepared, **question,
+        selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+    )
+    assert ordinary.state == "unavailable" and ordinary.facts is None
+    backfill = evaluate_physical_peak(
+        prepared, **question, selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
+    )
+    assert backfill.state == "available" and backfill.facts is not None
+    assert backfill.question.search_rt_window == window
+    assert backfill.facts.apex_rt_min == pytest.approx(1.0)
+    assert not window[0] <= backfill.facts.apex_rt_min <= window[1]
+    assert backfill.facts.left_rt_min < query_rt < backfill.facts.right_rt_min
+    centered = evaluate_physical_peak(
+        prepared, selection_subject_id="query-inside-complete-peak",
+        query_rt_min=1.0, search_rt_window=(0.95, 1.05),
+        selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
+    )
+    assert centered.facts is not None
+    assert backfill.facts.physical_segment_id == centered.facts.physical_segment_id
+    assert backfill.facts.area_counts_seconds == centered.facts.area_counts_seconds
+    assert backfill.facts.left_rt_min == centered.facts.left_rt_min
+    assert backfill.facts.right_rt_min == centered.facts.right_rt_min
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=SignalProcessingProfile(), evaluation=backfill,
+    )
+    assert deserialize_physical_peak_evaluation(payload)[-1] == backfill
+
+
 def test_backfill_window_does_not_take_a_neighbor_outside_the_expected_rt() -> None:
     rt = np.linspace(0.0, 2.0, 401)
     raw = 1000.0 * np.exp(-0.5 * ((rt - 0.4) / 0.08) ** 2)
@@ -93,6 +138,67 @@ def test_backfill_window_does_not_take_a_neighbor_outside_the_expected_rt() -> N
     assert result.facts is None
     assert result.segment_universe.segments
     assert result.segment_universe.segments[0].apex_rt_min == pytest.approx(0.4)
+
+
+def test_backfill_window_overlap_without_query_containment_is_not_enough() -> None:
+    rt = np.linspace(0.0, 3.0, 601)
+    raw = 1000.0 * np.exp(-0.5 * ((rt - 1.0) / 0.12) ** 2)
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="neighbor-tail-overlaps-window",
+        query_rt_min=1.5, search_rt_window=(1.3, 1.7),
+        selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
+    )
+    segment, = result.segment_universe.segments
+    assert 1.3 < segment.right_rt_min < 1.5
+    assert result.reason == "no_peak_in_sample_local_window"
+    assert result.state == "unavailable" and result.facts is None
+
+
+def test_backfill_does_not_choose_between_two_query_containing_segments() -> None:
+    rt = np.linspace(0.0, 3.0, 601)
+    raw = sum(
+        1000.0 * np.exp(-0.5 * ((rt - center) / 0.12) ** 2)
+        for center in (1.0, 1.5)
+    )
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="forecast-on-shared-valley",
+        query_rt_min=1.25, search_rt_window=(1.2, 1.3),
+        selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
+    )
+    assert len(result.question.admissible_segment_ids) == 2
+    assert result.reason == "ambiguous_segment_candidates"
+    assert result.state == "unavailable" and result.facts is None
+
+
+def test_backfill_query_containment_does_not_bypass_background_qualification() -> None:
+    rt = np.linspace(0.0, 2.0, 401)
+    raw = 100.0 + np.random.default_rng(19).normal(0.0, 10.0, len(rt))
+    raw += 5.0 * np.exp(-0.5 * ((rt - 1.0) / 0.08) ** 2)
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="weak-query-containing-segment",
+        query_rt_min=0.95, search_rt_window=(0.93, 0.97),
+        selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
+    )
+    assert len(result.question.admissible_segment_ids) == 1
+    assert result.reason == "insufficient_backfill_peak_contrast"
+    assert result.state == "unavailable" and result.facts is None
+
+
+def test_backfill_query_containment_does_not_accept_a_clipped_peak() -> None:
+    rt = np.linspace(0.0, 2.0, 401)
+    raw = 1000.0 * np.exp(-0.5 * ((rt - 0.1) / 0.12) ** 2)
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="clipped-query-containing-segment",
+        query_rt_min=0.3, search_rt_window=(0.28, 0.32),
+        selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
+    )
+    assert len(result.question.admissible_segment_ids) == 1
+    assert result.reason == "incomplete_peak_context"
+    assert result.state == "unavailable" and result.facts is None
 
 
 def test_backfill_retains_insufficient_support_reason_for_two_isolated_scans() -> None:

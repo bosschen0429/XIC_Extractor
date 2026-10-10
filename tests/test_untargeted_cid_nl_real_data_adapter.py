@@ -1581,11 +1581,22 @@ def test_elution_context_shares_acquisition_without_widening_capture(
     assert max(original.trace.rt) < 8.4
 
 
-@pytest.mark.parametrize("sample, query_rt", [("S1", 7.8), ("S2", 8.4)])
+@pytest.mark.parametrize(
+    "sample,query_rt,expected_apex,width,tolerance",
+    [
+        ("S1", 7.8, 7.8, 0.035, None),
+        ("S2", 8.4, 8.4, 0.035, None),
+        ("S1", 7.55, 7.8, 0.1, 12.0),
+    ],
+    ids=["first-sample", "second-sample", "query-containing-peak"],
+)
 def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
     tmp_path: Path,
     sample: str,
     query_rt: float,
+    expected_apex: float,
+    width: float,
+    tolerance: float | None,
 ) -> None:
     import json
 
@@ -1623,17 +1634,24 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
         sample_resolutions=fixture.samples,
     )
     source = _FakeRaw((7.8, 8.4))
+    if tolerance is not None:
+        source.rt = np.linspace(6.5, 9.5, 1201)
     source.intensity = 450.0 * np.exp(
-        -0.5 * ((source.rt - 7.8) / 0.035) ** 2
+        -0.5 * ((source.rt - 7.8) / width) ** 2
     ) + 1200.0 * np.exp(-0.5 * ((source.rt - 8.4) / 0.035) ** 2)
     raw, _ = _open_bound_raw(fixture, sample, source, tmp_path=tmp_path)
+    query_basis = (
+        "trajectory_observed"
+        if query_rt == expected_apex else "calibrated_trajectory_fit"
+    )
     target = UntargetedCidNlBackfillTarget(
         "same-group",
         fixture.method_subject,
         500.0,
         8.1,
         query_rt=query_rt,
-        query_rt_basis="trajectory_observed",
+        query_rt_basis=query_basis,
+        query_rt_tolerance_sec=tolerance,
     )
     config = _peak_config(tmp_path)
     batch = acquire_untargeted_cid_nl_backfill_trace_batch(
@@ -1656,7 +1674,8 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
         group_center_rt=8.1,
         group_hypothesis_id="same-group",
         query_rt=query_rt,
-        query_rt_basis="trajectory_observed",
+        query_rt_basis=query_basis,
+        query_rt_tolerance_sec=tolerance,
         support_policy=DdaCidNlPeakSupportPolicy(
             precursor_tolerance_da=0.5, neutral_loss_tolerance_ppm=20.0
         ),
@@ -1667,21 +1686,27 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
     )
     assert result.group_hypothesis_id == "same-group"
     assert result.query_rt == query_rt
-    assert result.query_rt_basis == "trajectory_observed"
+    assert result.query_rt_basis == query_basis
     assessment = result.assessment
     assert assessment.content.method_result == "HOLD"
     assert not assessment.individual_support_refs
     assert len(assessment.candidate_peaks) == 1
     assert assessment.candidate_peaks[
         0
-    ].content.integration.rt_apex_min == pytest.approx(query_rt, abs=0.005)
+    ].content.integration.rt_apex_min == pytest.approx(expected_apex, abs=0.005)
+    if tolerance is not None:
+        evaluation = result.capture_evidence[0].physical_evaluation
+        assert evaluation.facts is not None
+        assert evaluation.question.search_rt_window == pytest.approx((7.35, 7.75))
+        assert evaluation.facts.apex_rt_min > 7.75
+        assert evaluation.facts.left_rt_min < query_rt < evaluation.facts.right_rt_min
     from xic_extractor.untargeted_execution.partition.workers import _group_revisit
 
     assert (
-        _group_revisit(assessment, observed_rt=query_rt, apex_tolerance_sec=2.0)
+        _group_revisit(assessment, observed_rt=expected_apex, apex_tolerance_sec=2.0)
         == "reuse"
     )
-    other_peak = 8.4 if query_rt == 7.8 else 7.8
+    other_peak = 8.4 if expected_apex == 7.8 else 7.8
     assert (
         _group_revisit(assessment, observed_rt=other_peak, apex_tolerance_sec=2.0)
         == "search"

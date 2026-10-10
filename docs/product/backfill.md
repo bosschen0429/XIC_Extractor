@@ -56,6 +56,13 @@ A residual p90 above that bound, or insufficient residuals, makes localization
 unreliable and leaves the cell empty rather than accepting any nearby peak.
 An observed trajectory position uses a 12-second bound (or the smaller
 acquisition half-window). The context fallback never expands this apex bound.
+A reliable query with no apex inside that bound can still nominate a physical
+segment whose own boundaries contain the query center. Mere overlap with the
+search window is insufficient. Multiple containing segments remain ambiguous;
+one containing segment must pass the existing complete-context, acquired-support,
+continuity, and background-contrast checks. This candidate recovery neither
+changes the RT tolerance nor bypasses downstream ownership and duplicate-peak
+decisions. Queries with an in-window apex keep their existing selection behavior.
 A configured acquisition window narrower than 12 seconds remains valid when
 the measured residual p90 fits inside it; the 12-second floor cannot itself
 make localization unreliable. Residuals are prepared once per row/cohort, not
