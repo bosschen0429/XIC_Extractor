@@ -162,8 +162,8 @@ class DiscoverySettings:
     nl_min_intensity_ratio: float = 0.01
     seed_rt_gap_min: float = 0.20
     ms1_search_padding_min: float = 0.35
-    rt_min: float = 0.0
-    rt_max: float = 999.0
+    rt_min: float | None = None
+    rt_max: float | None = None
     resolver_mode: str = "local_minimum"
     evidence_profile: DiscoveryEvidenceProfile = DEFAULT_EVIDENCE_PROFILE
     enable_blank_qualification: bool = False

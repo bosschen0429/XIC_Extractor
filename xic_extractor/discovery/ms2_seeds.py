@@ -23,8 +23,10 @@ from xic_extractor.precursor_evidence import (
 
 
 class MS2ScanSource(Protocol):
-    def iter_ms2_scans(self, rt_min: float, rt_max: float) -> Iterator[Ms2ScanEvent]:
-        """Yield MS2 scan events within the requested retention-time window."""
+    def iter_ms2_scans(
+        self, rt_min: float | None, rt_max: float | None
+    ) -> Iterator[Ms2ScanEvent]:
+        """Yield MS2 events; unspecified ends use this source's acquisition span."""
 
 
 def collect_strict_nl_seeds(

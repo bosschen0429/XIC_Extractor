@@ -1642,7 +1642,8 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
     raw, _ = _open_bound_raw(fixture, sample, source, tmp_path=tmp_path)
     query_basis = (
         "trajectory_observed"
-        if query_rt == expected_apex else "calibrated_trajectory_fit"
+        if query_rt == expected_apex
+        else "calibrated_trajectory_fit"
     )
     target = UntargetedCidNlBackfillTarget(
         "same-group",
@@ -1922,6 +1923,60 @@ def test_adapter_closes_empty_subject_universe_as_not_evaluated_without_xic(
     assert result.assessment_input.discovery_projections == ()
     assert result.acquisition is None
     assert vendor_raw.chromatogram_request_counts == []
+
+
+def test_auto_range_empty_subject_has_no_fabricated_query_and_needs_no_raw(
+    tmp_path: Path,
+) -> None:
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True
+    )
+    result = adapt_current_discovery_sample_subject(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        method_subject=fixture.method_subject,
+        candidates=(),
+        settings=replace(_settings(), rt_min=None, rt_max=None),
+        peak_config=_peak_config(tmp_path),
+        raw=None,
+    )
+    assessment = result.assessment_input.assessment
+    receipt = assessment.content.evaluation_receipt
+    assert assessment.content.technical_state == "not_evaluated"
+    assert (receipt.query_rt_min, receipt.query_rt_max) == (None, None)
+    assert receipt.search_completed is False and receipt.scanned_event_count == 0
+    assert result.acquisition is None and not result.captures
+
+
+def test_auto_range_evaluated_receipt_uses_current_raw_bounds(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True
+    )
+    source_raw = _FakeRaw((8.0,))
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    candidates = _current_candidates(
+        source_raw,
+        raw_file=fixture.source_paths["S1"],
+        settings=settings,
+        peak_config=peak_config,
+    )
+    raw, vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+    vendor.RunHeaderEx = SimpleNamespace(StartTime=7.4, EndTime=75.0)
+    result = adapt_current_discovery_sample_subject(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        method_subject=fixture.method_subject,
+        candidates=candidates,
+        settings=replace(settings, rt_min=None, rt_max=None),
+        peak_config=peak_config,
+        raw=raw,
+    )
+    receipt = result.assessment_input.assessment.content.evaluation_receipt
+    assert receipt.search_completed is True
+    assert (receipt.query_rt_min, receipt.query_rt_max) == (7.4, 75.0)
 
 
 def test_adapter_uses_orphan_support_without_giving_it_feature_standing(
@@ -2492,10 +2547,13 @@ def test_physical_backfill_context_is_not_search_permission(
     assert first == direct.capture_evidence[0].physical_evaluation
     tolerance, reliable = query_gate
     gated_kwargs = kwargs | {
-        "query_rt_tolerance_sec": tolerance, "query_rt_reliable": reliable,
+        "query_rt_tolerance_sec": tolerance,
+        "query_rt_reliable": reliable,
     }
     gated = backfill_untargeted_cid_nl_sample_subject(
-        **gated_kwargs, raw=None, _preacquired_traces=batch,
+        **gated_kwargs,
+        raw=None,
+        _preacquired_traces=batch,
     )
     gated_direct = backfill_untargeted_cid_nl_sample_subject(**gated_kwargs, raw=raw)
     gate_result = gated.capture_evidence[0].physical_evaluation
@@ -2509,8 +2567,10 @@ def test_physical_backfill_context_is_not_search_permission(
                 target_center, abs=0.02
             )
         assert gate_result.reason == (
-            "sample_localization_unreliable" if not reliable
-            else "no_peak_in_sample_local_window" if target_present
+            "sample_localization_unreliable"
+            if not reliable
+            else "no_peak_in_sample_local_window"
+            if target_present
             else "peak_not_found"
         )
     elif target_present:
@@ -2676,6 +2736,7 @@ def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
         (scan.scan_number, 132.0423, pytest.approx(500.0 - 132.0423)),
     ]
 
+
 @pytest.mark.parametrize("preserve_configured_losses", [False, True])
 def test_same_scan_absorbed_product_keeps_exact_canonical_seed(
     tmp_path: Path, preserve_configured_losses: bool
@@ -2705,9 +2766,10 @@ def test_same_scan_absorbed_product_keeps_exact_canonical_seed(
     )
     assert candidate.product_mz == canonical_product
     evidence = json.loads(candidate.tag_evidence_json)["DNA_dR"]
-    assert evidence["scan_receipts"][str(candidate.best_ms2_scan_id)][
-        "product_mz"
-    ] == absorbed_product
+    assert (
+        evidence["scan_receipts"][str(candidate.best_ms2_scan_id)]["product_mz"]
+        == absorbed_product
+    )
 
     seeds = read_complete_discovery_scan_seeds(
         source_raw,

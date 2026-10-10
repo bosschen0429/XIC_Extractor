@@ -98,10 +98,10 @@ class CidNlMethodAssessmentContractError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class CidNlEvaluationReceipt:
-    """Evidence that one acquisition/search attempt did or did not complete."""
+    """Search receipt; an unattempted declared-scan query may have no RT bounds."""
 
-    query_rt_min: float
-    query_rt_max: float
+    query_rt_min: float | None
+    query_rt_max: float | None
     support_policy: DdaCidNlPeakSupportPolicy
     acquisition_supported: bool
     search_completed: bool
@@ -112,12 +112,26 @@ class CidNlEvaluationReceipt:
     physical_query_mz: float | None = None
 
     def __post_init__(self) -> None:
-        query_min = _finite_float(self.query_rt_min, field="query_rt_min")
-        query_max = _finite_float(self.query_rt_max, field="query_rt_max")
-        if query_min < 0.0 or query_min >= query_max:
-            raise CidNlMethodAssessmentContractError(
-                "evaluation query must have a non-negative increasing RT window"
-            )
+        if self.query_rt_min is None or self.query_rt_max is None:
+            if not (
+                self.query_rt_min is None
+                and self.query_rt_max is None
+                and self.evidence_scope == "declared_scans"
+                and self.search_completed is False
+                and self.scanned_event_count == 0
+            ):
+                raise CidNlMethodAssessmentContractError(
+                    "absent evaluation query requires an unattempted "
+                    "declared scan search"
+                )
+            query_min = query_max = None
+        else:
+            query_min = _finite_float(self.query_rt_min, field="query_rt_min")
+            query_max = _finite_float(self.query_rt_max, field="query_rt_max")
+            if query_min < 0.0 or query_min >= query_max:
+                raise CidNlMethodAssessmentContractError(
+                    "evaluation query must have a non-negative increasing RT window"
+                )
         if not isinstance(self.support_policy, DdaCidNlPeakSupportPolicy):
             raise CidNlMethodAssessmentContractError(
                 "support_policy must be owner-normalized DDA CID-NL policy"
@@ -217,6 +231,13 @@ class CidNlMethodAssessmentContent:
         if not isinstance(self.evaluation_receipt, CidNlEvaluationReceipt):
             raise CidNlMethodAssessmentContractError(
                 "evaluation_receipt must be owner-normalized"
+            )
+        if (
+            self.evaluation_receipt.query_rt_min is None
+            and self.technical_state != "not_evaluated"
+        ):
+            raise CidNlMethodAssessmentContractError(
+                "absent evaluation query requires a not_evaluated assessment"
             )
         if (
             self.evaluation_receipt.evidence_scope == "declared_scans"
@@ -980,7 +1001,9 @@ def _validate_query_rt(
     subject: str,
 ) -> None:
     if not (
-        evaluation_receipt.query_rt_min
+        evaluation_receipt.query_rt_min is not None
+        and evaluation_receipt.query_rt_max is not None
+        and evaluation_receipt.query_rt_min
         <= observed_rt_min
         <= evaluation_receipt.query_rt_max
     ):

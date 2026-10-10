@@ -62,6 +62,36 @@ from xic_extractor.review_records import (
 
 
 @pytest.mark.parametrize(
+    "changes",
+    [
+        {"query_rt_min": 7.5},
+        {"query_rt_max": 8.5},
+        {"search_completed": True},
+        {"scanned_event_count": 1},
+        {"evidence_scope": "subject_window"},
+    ],
+)
+def test_absent_rt_receipt_is_only_valid_for_unattempted_declared_search(
+    changes,
+) -> None:
+    values = dict(
+        query_rt_min=None,
+        query_rt_max=None,
+        support_policy=cid_nl_support_policy(),
+        acquisition_supported=True,
+        search_completed=False,
+        scanned_event_count=0,
+        reason_code="no_search_eligible_discovery_input",
+        evidence_scope="declared_scans",
+    )
+    assert CidNlEvaluationReceipt(**values).query_rt_min is None
+    with pytest.raises(
+        CidNlMethodAssessmentContractError, match="absent evaluation query"
+    ):
+        CidNlEvaluationReceipt(**(values | changes))
+
+
+@pytest.mark.parametrize(
     "width,offset,supported",
     [
         (1.6, 0.0, False),

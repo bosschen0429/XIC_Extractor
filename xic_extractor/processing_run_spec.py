@@ -630,8 +630,12 @@ def _method_content(
                 "nl_min_intensity_ratio": _float_text(settings.nl_min_intensity_ratio),
                 "seed_rt_gap_min": _float_text(settings.seed_rt_gap_min),
                 "ms1_search_padding_min": _float_text(settings.ms1_search_padding_min),
-                "rt_min": _float_text(settings.rt_min),
-                "rt_max": _float_text(settings.rt_max),
+                "rt_min": None
+                if settings.rt_min is None
+                else _float_text(settings.rt_min),
+                "rt_max": None
+                if settings.rt_max is None
+                else _float_text(settings.rt_max),
                 "resolver_mode": settings.resolver_mode,
                 "evidence_profile": {
                     "name": settings.evidence_profile.name,
@@ -917,8 +921,12 @@ def _method_from_content(content: Mapping[str, object]) -> DiscoveryMethodSpec:
             settings_value["ms1_search_padding_min"],
             field="ms1_search_padding_min",
         ),
-        rt_min=_float_from_text(settings_value["rt_min"], field="rt_min"),
-        rt_max=_float_from_text(settings_value["rt_max"], field="rt_max"),
+        rt_min=None
+        if settings_value["rt_min"] is None
+        else _float_from_text(settings_value["rt_min"], field="rt_min"),
+        rt_max=None
+        if settings_value["rt_max"] is None
+        else _float_from_text(settings_value["rt_max"], field="rt_max"),
         resolver_mode=_text(settings_value["resolver_mode"], field="resolver_mode"),
         evidence_profile=evidence_profile,
         enable_blank_qualification=_boolean(
@@ -1017,11 +1025,17 @@ def _validate_discovery_settings(settings: DiscoverySettings) -> None:
             raise ValueError("blank_library_path must be non-empty text or None")
     for field in ("rt_min", "rt_max"):
         value = getattr(settings, field)
+        if value is None:
+            continue
         if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise TypeError(f"{field} must be numeric")
+            raise TypeError(f"{field} must be numeric or None")
         if not math.isfinite(float(value)) or float(value) < 0.0:
             raise ValueError(f"{field} must be finite and non-negative")
-    if settings.rt_min > settings.rt_max:
+    if (
+        settings.rt_min is not None
+        and settings.rt_max is not None
+        and settings.rt_min > settings.rt_max
+    ):
         raise ValueError("rt_min must not exceed rt_max")
     _required_text(settings.resolver_mode, field="resolver_mode")
     if settings.resolver_mode not in RESOLVER_MODES:

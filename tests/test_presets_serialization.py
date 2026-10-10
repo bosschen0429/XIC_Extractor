@@ -75,8 +75,29 @@ def test_neutral_loss_export_materializes_full_effective_tuning_and_overrides(
     )
     assert apply_to_discovery(reloaded) == expected
     parsed = tomllib.loads(destination.read_text(encoding="utf-8"))
-    assert set(parsed["discovery"]) == set(DISCOVERY_TUNING_OVERRIDE_KEYS)
+    assert set(parsed["discovery"]) == set(DISCOVERY_TUNING_OVERRIDE_KEYS) - {"rt_min"}
     assert parsed["alignment"]["owner_build_xic_backend"] == "raw"
+
+
+def test_auto_range_export_omits_bounds_and_can_clear_explicit_crop(
+    tmp_path: Path,
+) -> None:
+    original = load_preset("dna_dr")
+    cropped = save_preset(
+        original,
+        tmp_path / "crop.toml",
+        discovery_overrides={"rt_min": 1.0, "rt_max": 75.0},
+    )
+    restored = save_preset(
+        cropped,
+        tmp_path / "auto.toml",
+        discovery_overrides={"rt_min": None, "rt_max": None},
+    )
+    parsed = tomllib.loads((tmp_path / "auto.toml").read_text(encoding="utf-8"))
+    assert "rt_min" not in parsed["discovery"]
+    assert "rt_max" not in parsed["discovery"]
+    settings = apply_to_discovery(restored)
+    assert settings.rt_min is None and settings.rt_max is None
 
 
 def test_custom_multi_tag_union_and_owner_backend_roundtrip(tmp_path: Path) -> None:

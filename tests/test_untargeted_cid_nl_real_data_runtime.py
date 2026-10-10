@@ -532,6 +532,8 @@ def test_lazy_acquisition_cache_replay_skips_opener_and_opens_once_on_miss(
         cold_handle, source=source, cache_dir=cache_dir
     )
     with cold_cached:
+        cold_vendor.RunHeaderEx = SimpleNamespace(StartTime=7.4, EndTime=75.0)
+        cold_bounds = cold_cached.acquisition_rt_bounds()
         cold_batch = acquire_untargeted_trace_batch(
             capability, (first_request,), cold_cached
         )
@@ -546,6 +548,7 @@ def test_lazy_acquisition_cache_replay_skips_opener_and_opens_once_on_miss(
         forbidden_opener, source=source, cache_dir=cache_dir
     )
     with lazy_warm:
+        assert lazy_warm.acquisition_rt_bounds() == cold_bounds == (7.4, 75.0)
         warm_batch = acquire_untargeted_trace_batch(
             capability, (first_request,), lazy_warm
         )
@@ -1380,9 +1383,7 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
         assert any(
             len(partition_models._request_subject_candidates(job)) > 1 for job in jobs
         )
-    with pytest.raises(
-        UntargetedPartitionError, match="not an exact member"
-    ):
+    with pytest.raises(UntargetedPartitionError, match="not an exact member"):
         replace(
             requests_and_jobs[0][1][0],
             method_subject=mint_untargeted_cid_nl_method_subject(
@@ -2139,7 +2140,9 @@ def test_ms2_cache_preserves_precursor_metadata_and_reacquires_old_schema(tmp_pa
             fixture, "S1", _FakeRaw((8.0,)), tmp_path=tmp_path
         )
         vendor.trailer_labels = [
-            "Monoisotopic M/Z:", "Charge State:", "Master Scan Number:"
+            "Monoisotopic M/Z:",
+            "Charge State:",
+            "Master Scan Number:",
         ]
         vendor.GetTrailerExtraInformation = lambda _: SimpleNamespace(
             Labels=["Monoisotopic M/Z:", "Charge State:", "Master Scan Number:"],

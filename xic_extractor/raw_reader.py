@@ -119,6 +119,7 @@ class RawFileHandle:
         "_thermo",
         "_raw_chromatogram_call_count",
         "_precursor_trailer_indices",
+        "_acquisition_rt_bounds",
     )
 
     def __init__(self, raw_file: Any, thermo: _ThermoApi) -> None:
@@ -126,6 +127,7 @@ class RawFileHandle:
         self._thermo = thermo
         self._raw_chromatogram_call_count = 0
         self._precursor_trailer_indices: dict[str, int] | None = None
+        self._acquisition_rt_bounds: tuple[float, float] | None = None
 
     def __enter__(self) -> "RawFileHandle":
         return self
@@ -260,9 +262,11 @@ class RawFileHandle:
         results: list[Ms1PrecursorObservation | None] = [None] * len(requests)
         raw = self._raw_file
         for scan_number, windows in by_scan.items():
-            if self._thermo.ms1_order is None or getattr(
-                raw.GetFilterForScanNumber(scan_number), "MSOrder", None
-            ) != self._thermo.ms1_order:
+            if (
+                self._thermo.ms1_order is None
+                or getattr(raw.GetFilterForScanNumber(scan_number), "MSOrder", None)
+                != self._thermo.ms1_order
+            ):
                 continue
             spectrum = raw.GetCentroidStream(scan_number, False)
             masses = np.asarray(getattr(spectrum, "Masses", None) or [], dtype=float)
@@ -283,18 +287,59 @@ class RawFileHandle:
                 )
         return tuple(results)
 
-    def iter_ms2_scans(self, rt_min: float, rt_max: float) -> Iterator[Ms2ScanEvent]:
+    def acquisition_rt_bounds(self) -> tuple[float, float]:
+        """Return this opened RAW's native acquisition span, without chronology I/O."""
+        if self._acquisition_rt_bounds is not None:
+            return self._acquisition_rt_bounds
+        header = self._raw_file.RunHeaderEx
+        start, end = float(header.StartTime), float(header.EndTime)
+        if (
+            not math.isfinite(start)
+            or not math.isfinite(end)
+            or start < 0
+            or end < start
+        ):
+            raise ValueError("RAW acquisition RT bounds must be finite and ordered")
+        self._acquisition_rt_bounds = (start, end)
+        return self._acquisition_rt_bounds
+
+    def iter_ms2_scans(
+        self, rt_min: float | None = None, rt_max: float | None = None
+    ) -> Iterator[Ms2ScanEvent]:
         yield from self._iter_ms2_scans(rt_min, rt_max, scan_numbers=None)
 
     def iter_ms2_scan_subset(
-        self, rt_min: float, rt_max: float, scan_numbers: frozenset[int]
+        self, rt_min: float | None, rt_max: float | None, scan_numbers: frozenset[int]
     ) -> Iterator[Ms2ScanEvent]:
         """Read declared scans within the same native RT-to-scan window."""
         yield from self._iter_ms2_scans(rt_min, rt_max, scan_numbers=scan_numbers)
 
     def _iter_ms2_scans(
-        self, rt_min: float, rt_max: float, *, scan_numbers: frozenset[int] | None
+        self,
+        rt_min: float | None,
+        rt_max: float | None,
+        *,
+        scan_numbers: frozenset[int] | None,
     ) -> Iterator[Ms2ScanEvent]:
+        one_sided_crop = (rt_min is None) != (rt_max is None)
+        for name, value in (("rt_min", rt_min), ("rt_max", rt_max)):
+            if value is not None and (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+                or value < 0
+            ):
+                raise ValueError(f"{name} must be finite and non-negative or None")
+        if rt_min is not None and rt_max is not None and rt_min > rt_max:
+            raise ValueError("rt_min must not exceed rt_max")
+        if rt_min is None or rt_max is None:
+            acquisition_start, acquisition_end = self.acquisition_rt_bounds()
+            rt_min = (
+                acquisition_start if rt_min is None else max(rt_min, acquisition_start)
+            )
+            rt_max = acquisition_end if rt_max is None else min(rt_max, acquisition_end)
+        if rt_min > rt_max:
+            return
         start_scan = self._raw_file.ScanNumberFromRetentionTime(rt_min)
         end_scan = self._raw_file.ScanNumberFromRetentionTime(rt_max)
         selected = (
@@ -306,6 +351,9 @@ class RawFileHandle:
         )
         for scan_number in selected:
             try:
+                scan_rt = float(self._raw_file.RetentionTimeFromScanNumber(scan_number))
+                if one_sided_crop and not rt_min <= scan_rt <= rt_max:
+                    continue
                 filter_obj = self._raw_file.GetFilterForScanNumber(scan_number)
                 if getattr(filter_obj, "MSOrder", None) != self._thermo.ms2_order:
                     continue
@@ -324,7 +372,6 @@ class RawFileHandle:
                         }
                     }
                 precursor_mz = _extract_precursor_mz(filter_obj)
-                scan_rt = float(self._raw_file.RetentionTimeFromScanNumber(scan_number))
                 scan_data = self._raw_file.GetSimplifiedScan(scan_number)
                 masses = np.asarray(getattr(scan_data, "Masses", []), dtype=float)
                 intensities = np.asarray(

@@ -30,7 +30,18 @@ historical filename as the stable topic locator.
   until the operator opens them. The separate DLL section expands when its
   value needs attention.
 - A persisted setting that differs from the canonical method is labelled
-  `自訂方法 · N 項調整`. **回到預設** restores the canonical method settings.
+  `自訂參數 · N 項調整`. Only the 11 scalar parameters owned by
+  `xic_extractor.configuration.targeted_settings` contribute to the count; batch, environment,
+  workers, output, targets, and resources do not. **回到預設** restores those
+  scalar parameters. Gaussian is fixed information, not a method choice.
+- `settings.csv` is the sole active Targeted settings file. Optional method
+  JSON import/export carries only scalar parameters, not targets, resources,
+  or complete replay state. Reset/import preserves the other settings and
+  separately visible resources. Full replay remains manifest/input-bound;
+  platform defaults do not require separate custom files per concern.
+- `count_no_ms2_as_detected` affects legacy fallback rows without formal
+  projection fields, not formal Detection %. New saves use only the canonical
+  smoothing-window key; legacy aliases load, but conflicting values fail.
 - The target table supports CSV, TSV, and Excel import plus in-workspace edit.
   Unknown source columns and numeric text survive edits where the target owner
   permits them.
@@ -62,7 +73,11 @@ directory-level Discovery followed by Alignment.
 - A run uses the displayed method snapshot. A later external file edit cannot
   change the in-flight request.
 - Invalid or unsupported imports preserve the selected method. The workbench
-  rejects methods outside its 0–60 minute RT range rather than clipping them.
+  defaults to each RAW file's full acquisition range read from instrument
+  metadata, matching the CLI. Optional RT cropping preserves explicit finite,
+  non-negative bounds; an omitted end remains automatic. Acquisition limits
+  are resolved per RAW, not from the first file in a batch. Targeted compound
+  search windows remain independent.
 - The advanced method section stays closed until needed. Explicit tuning values
   are overrides on the selected method.
 - **讀取 RAW 樣本** reads names, roles, and injection order through the shared

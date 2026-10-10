@@ -203,8 +203,8 @@ def apply_to_discovery(
             "ms1_search_padding_min",
             baseline.ms1_search_padding_min,
         ),
-        rt_min=_float_setting(tuning, "rt_min", baseline.rt_min),
-        rt_max=_float_setting(tuning, "rt_max", baseline.rt_max),
+        rt_min=_optional_float_setting(tuning, "rt_min", baseline.rt_min),
+        rt_max=_optional_float_setting(tuning, "rt_max", baseline.rt_max),
         resolver_mode=_str_setting(tuning, "resolver_mode", baseline.resolver_mode),
     )
 
@@ -227,9 +227,7 @@ def resolve_pt_pattern_discovery(preset_name: str) -> PtPatternDiscoveryStrategy
     return PtPatternDiscoveryStrategy(
         label=preset_name,
         settings=apply_to_delta_mass_discovery(preset),
-        cid_nl_composite=any(
-            tag.strategy == "neutral_loss" for tag in preset.tags
-        ),
+        cid_nl_composite=any(tag.strategy == "neutral_loss" for tag in preset.tags),
     )
 
 
@@ -327,6 +325,13 @@ def _float_setting(
     return float(cast(int | float, value))
 
 
+def _optional_float_setting(
+    tuning: Mapping[str, object], field: str, default: float | None
+) -> float | None:
+    value = tuning.get(field, default)
+    return None if value is None else float(cast(int | float, value))
+
+
 def _positive_float_setting(
     overrides: Mapping[str, object],
     field: str,
@@ -384,20 +389,25 @@ def _validate_discovery_tuning(
             raise PresetError(f"{field} must be finite and positive")
 
     for field in sorted(_RT_FIELDS):
-        if field in tuning and not _is_rt_bound(tuning[field]):
-            raise PresetError(f"{field} must be finite and >= 0")
+        if (
+            field in tuning
+            and tuning[field] is not None
+            and not _is_rt_bound(tuning[field])
+        ):
+            raise PresetError(f"{field} must be finite and >= 0 or None")
 
     if "resolver_mode" in tuning:
         resolver_mode = tuning["resolver_mode"]
-        if not isinstance(resolver_mode, str) or normalize_resolver_mode(
-            resolver_mode
-        ) not in RESOLVER_MODES:
+        if (
+            not isinstance(resolver_mode, str)
+            or normalize_resolver_mode(resolver_mode) not in RESOLVER_MODES
+        ):
             modes = ", ".join(RESOLVER_MODES)
             raise PresetError(f"resolver_mode must be one of: {modes}")
 
-    rt_min = _float_setting(tuning, "rt_min", baseline.rt_min)
-    rt_max = _float_setting(tuning, "rt_max", baseline.rt_max)
-    if rt_min > rt_max:
+    rt_min = _optional_float_setting(tuning, "rt_min", baseline.rt_min)
+    rt_max = _optional_float_setting(tuning, "rt_max", baseline.rt_max)
+    if rt_min is not None and rt_max is not None and rt_min > rt_max:
         raise PresetError("rt_min must be <= rt_max")
 
 
