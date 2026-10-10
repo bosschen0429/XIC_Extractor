@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from xic_extractor.configuration.csv_io import read_target_draft_rows
+from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.target_workbook import (
     DEFAULT_RT_WINDOW,
     _assign_istd_pairs,
@@ -39,6 +40,10 @@ def import_targets(path: Path, *, sheet: str = "both") -> list[dict[str, str]]:
         if normalized_sheet in {"rna", "both"} and "RNA" in workbook.sheetnames:
             targets.extend(
                 parse_rna_sheet(workbook["RNA"], rt_window=DEFAULT_RT_WINDOW)
+            )
+        if not targets:
+            raise ConfigError(
+                f"{source}: no target rows found in the DNA or RNA worksheet"
             )
         _assign_istd_pairs(targets)
         return [

@@ -90,7 +90,7 @@ def test_method_summary_normalizes_canonical_numeric_boolean_and_legacy_values(
     settings = dict(CANONICAL_SETTINGS_DEFAULTS)
     settings.pop("signal_processing_window_points")
     settings["ms1_morphology_smoothing_window_points"] = "015"
-    settings["ms2_precursor_tol_da"] = "1.10"
+    settings["ms2_precursor_tol_da"] = "0.80"
     settings["nl_min_intensity_ratio"] = ".01"
     settings["count_no_ms2_as_detected"] = "FALSE"
     settings["data_dir"] = "C:\\another-batch"
@@ -190,6 +190,21 @@ def test_target_import_entrypoint_uses_the_existing_dna_workbook_contract(
     assert rows[1]["label"] == "d3-5-hmdC"
     assert rows[1]["is_istd"] == "true"
     assert rows[1]["istd_pair"] == ""
+
+
+def test_excel_target_import_without_target_rows_is_rejected(tmp_path: Path) -> None:
+    import openpyxl
+
+    from xic_workbench.target_import import import_targets
+
+    source = tmp_path / "no_targets.xlsx"
+    workbook = openpyxl.Workbook()
+    workbook.active.title = "Summary"
+    workbook.save(source)
+    workbook.close()
+
+    with pytest.raises(ConfigError, match="no target rows"):
+        import_targets(source)
 
 
 def test_targeted_form_exposes_only_existing_controls_and_preserves_hidden_values() -> (
