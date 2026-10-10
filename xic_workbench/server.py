@@ -114,6 +114,7 @@ def _browse(values: dict) -> dict:
 def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTPServer:
     """Serve only packaged frontend files and reports produced by this session."""
     session = secrets.token_urlsafe(32)
+    cookie_name = f"xic_session_{secrets.token_hex(8)}"
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
@@ -151,7 +152,7 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
                 raise PermissionError("工作區不接受其他網站的要求。")
             if api:
                 cookie = SimpleCookie(self.headers.get("Cookie", ""))
-                token = cookie.get("xic_session")
+                token = cookie.get(cookie_name)
                 if (
                     token is None
                     or not secrets.compare_digest(token.value, session)
@@ -199,11 +200,13 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
                     200,
                     {"defaults": workspace.defaults},
                     Set_Cookie=(
-                        f"xic_session={session}; Path=/; HttpOnly; SameSite=Strict"
+                        f"{cookie_name}={session}; Path=/; HttpOnly; SameSite=Strict"
                     ),
                 )
             elif match := re.fullmatch(r"/api/jobs/([a-f0-9]{32})", url.path):
                 self._send(200, workspace.job(match[1]))
+            elif url.path == "/api/review":
+                self._send(200, workspace.state())
             elif url.path == "/api/config":
                 self._send(200, workspace.analysis.bootstrap())
             elif url.path == "/api/analysis":

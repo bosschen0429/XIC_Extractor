@@ -262,6 +262,10 @@ window.XicUi = (() => {
   }
   async function selectItem(item) {
     const detail = await api("/api/detail", { item_id: item.id });
+    restoreDetail(detail);
+  }
+  function restoreDetail(detail) {
+    const item = detail.item;
     state.item = detail.item;
     state.recorded = detail.view_id;
     state.curves = null;
@@ -636,7 +640,18 @@ window.XicUi = (() => {
     $("source").value = session.defaults.source || "";
     $("raw-dir").value = session.defaults.raw_dir || "";
     $("dll-dir").value = session.defaults.dll_dir || "";
-    if ($("source").value) await openBatch();
+    const review = await api("/api/review");
+    if (review.page) {
+      $("source").value = review.page.source;
+      renderPage(review.page);
+      if (review.job) state.samples = new Set(review.job.sample_ids);
+      if (review.detail) restoreDetail(review.detail);
+      if (review.job) {
+        state.job = review.job;
+        $("job-progress").hidden = false;
+        await pollJob();
+      }
+    } else if ($("source").value) await openBatch();
     else status("");
   }, "正在連接本機工作區…");
 })();

@@ -1509,6 +1509,7 @@
         act(async () => {
           for (const key of ["raw_dir", "raw_file", "discovery_batch_index"])
             $(`u-${key}`).value = "";
+          sampleRawDir = "";
           $("u-output_dir").value = "";
           $("sequence-source").value = "";
           state.samples = [];
@@ -1522,8 +1523,16 @@
           }
           dirty("untargeted");
         });
+    let sampleRawDir = $("u-raw_dir").value;
     $("u-raw_dir").addEventListener("change", () => {
+      const nextRawDir = $("u-raw_dir").value;
+      if (nextRawDir === sampleRawDir) return;
+      sampleRawDir = nextRawDir;
+      $("sequence-source").value = "";
+      state.config.untargeted.sequence_source = "";
+      state.config.untargeted.custom_roles = {};
       state.samples = [];
+      $("samples-summary").textContent = "";
       renderSamples();
       const name = $("u-raw_dir")
         .value.replace(/\\/g, "/")

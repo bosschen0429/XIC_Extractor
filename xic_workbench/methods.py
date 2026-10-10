@@ -16,6 +16,7 @@ from xic_extractor.presets import (
     load_preset,
     save_preset,
 )
+from xic_extractor.presets.loader import DISCOVERY_TUNING_OVERRIDE_KEYS
 from xic_extractor.presets.models import SUPPORTED_COMBINE_MODES
 from xic_extractor.presets.serialization import serialize_preset
 from xic_extractor.processing_run_spec import CidNlDiscoveryMethodSpec
@@ -241,7 +242,7 @@ def _draft(values: dict[str, Any]) -> tuple[Preset, dict[str, object]]:
     overrides = values.get("overrides", {})
     if not isinstance(overrides, Mapping):
         raise TypeError("method overrides must be an object")
-    unknown_overrides = sorted(set(overrides) - _OVERRIDE_KEYS)
+    unknown_overrides = sorted(set(overrides) - DISCOVERY_TUNING_OVERRIDE_KEYS)
     if unknown_overrides:
         raise ValueError(f"unsupported override: {unknown_overrides[0]}")
     alignment_overrides = values.get("alignment_overrides", {})

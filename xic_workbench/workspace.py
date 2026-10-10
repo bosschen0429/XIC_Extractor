@@ -60,7 +60,19 @@ class ReviewWorkspace:
         self._report: Path | None = None
         self._page: PreparedReport | None = None
         self._job: dict[str, Any] | None = None
+        self._detail: dict[str, Any] | None = None
         self._reports: dict[str, Path] = {}
+
+    def state(self) -> dict[str, Any]:
+        """Restore the current review selection and job after a page reload."""
+        with self._lock:
+            return copy.deepcopy(
+                {
+                    "page": self._page_response() if self._page is not None else None,
+                    "detail": self._detail,
+                    "job": self._job,
+                }
+            )
 
     def _require_idle(self) -> None:
         if self._job and self._job["status"] in {"running", "cancelling"}:
@@ -101,6 +113,7 @@ class ReviewWorkspace:
             )
             # Failed opens never displace the previously usable batch.
             self._report, self._page = path, page
+            self._detail, self._job = None, None
             return self._page_response()
 
     def query(self, values: dict[str, Any]) -> dict[str, Any]:
@@ -135,6 +148,7 @@ class ReviewWorkspace:
                 self._report, request, expected_source=self._page.source
             )
             self._page = page
+            self._detail, self._job = None, None
             return self._page_response()
 
     def _page_response(self) -> dict[str, Any]:
@@ -206,7 +220,9 @@ class ReviewWorkspace:
             path = self._folder / f"{view_id}.html"
             write_report_atomically(prepared.to_html(), path)
             self._reports[view_id] = path
-            return {"view_id": view_id, "item": self._item_summary(item)}
+            self._detail = {"view_id": view_id, "item": self._item_summary(item)}
+            self._job = None
+            return copy.deepcopy(self._detail)
 
     def start_curves(self, values: dict[str, Any]) -> dict[str, Any]:
         allowed = {"item_id", "sample_ids", "raw_dir", "dll_dir", "ppm", "padding_min"}
@@ -229,6 +245,8 @@ class ReviewWorkspace:
             if unsupported:
                 raise ValueError("所選樣本缺少已記錄的擷取座標，無法自動取得此組曲線。")
             assert self._report is not None and self._page is not None
+            if self._detail is None or self._detail["item"]["id"] != item["id"]:
+                self.detail(item["id"])
             source, expected_source = self._report, self._page.source
             job_id = uuid.uuid4().hex
             self._cancel = threading.Event()

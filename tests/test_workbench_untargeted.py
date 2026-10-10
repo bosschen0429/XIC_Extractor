@@ -449,3 +449,47 @@ def test_full_mode_dispatches_discovery_then_alignment_and_honors_cancel(
             progress=lambda *_args: None,
             should_cancel=lambda: True,
         ).execute()
+
+
+def test_saved_custom_method_snapshot_preserves_full_effective_values(tmp_path):
+    from xic_extractor.presets import apply_to_discovery
+
+    draft = method_details("dna_dr")["draft"]
+    path = tmp_path / "custom.toml"
+    save_method(draft, path)
+    # A full owner-written TOML includes fields without editor controls.
+    loaded = method_details(path)["draft"]
+    loaded["overrides"]["ms2_precursor_tol_da"] = 0.37
+    values = _request_values(tmp_path, "full")
+    values["preset_snapshot"] = loaded
+    request = parse_request(values)
+    assert apply_to_discovery(request.preset_snapshot).ms2_precursor_tol_da == 0.37
+    save_method(loaded, path)
+    assert load_preset(path).discovery_overrides["ms2_precursor_tol_da"] == 0.37
+
+
+def test_raw_sample_refresh_preserves_filename_and_method_roles(tmp_path, monkeypatch):
+    raw_dir = tmp_path / "raws"
+    raw_dir.mkdir()
+    names = ("Blank_01", "Sample001", "Sample002")
+    for name in names:
+        (raw_dir / f"{name}.raw").touch()
+
+    def header(path, dll_dir):
+        return SimpleNamespace(
+            raw_stem=path.stem,
+            sample_name="A01",
+            sample_type="Unknown",
+            row_number=names.index(path.stem) + 1,
+            creation_date=None,
+            comment="",
+            instrument_method="wash.meth" if path.stem == "Sample001" else "study.meth",
+        )
+
+    monkeypatch.setattr("xic_extractor.raw_reader.read_raw_sample_header", header)
+    rows = load_samples(raw_dir, dll_dir=tmp_path)["samples"]
+    assert {r["raw_stem"]: r["sample_role"] for r in rows} == {
+        "Blank_01": "blank",
+        "Sample001": "solvent",
+        "Sample002": "study_sample",
+    }

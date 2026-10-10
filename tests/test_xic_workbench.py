@@ -186,7 +186,12 @@ def test_http_cancel_and_failure_leave_prior_report_readable(tmp_path, monkeypat
         assert entered.wait(timeout=5)
         assert request("/api/curves", parameters)[0] == 409
         assert request("/api/query", {})[0] == 409
-        request(f"/api/jobs/{job['id']}/cancel", {})
+        code, restored, _ = request("/api/review")
+        assert code == 200
+        assert restored["job"]["id"] == job["id"]
+        assert restored["page"]["source"] == str(db.resolve())
+        assert restored["detail"] == detail
+        request(f"/api/jobs/{restored['job']['id']}/cancel", {})
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
             _, result, _ = request(f"/api/jobs/{job['id']}")
@@ -211,3 +216,44 @@ def test_http_cancel_and_failure_leave_prior_report_readable(tmp_path, monkeypat
         assert result["status"] == "failed"
         assert "selected RAW is missing" in result["message"]
         assert request(report_url)[1] == original
+
+        monkeypatch.setattr(
+            acquisition, "export_explanation_curves", lambda *a, **k: {}
+        )
+
+        def render_fixture(source, selection, path, **kwargs):
+            path.write_text("<html>diagnostic fixture</html>", encoding="utf-8")
+
+        monkeypatch.setattr("xic_workbench.workspace.generate_report", render_fixture)
+        _, job, _ = request("/api/curves", parameters)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            _, restored, _ = request("/api/review")
+            if restored["job"]["status"] == "succeeded":
+                break
+            time.sleep(0.01)
+        assert restored["job"]["status"] == "succeeded"
+        assert restored["detail"] == detail
+        url = f"/reports/{restored['job']['view_id']}.html"
+        assert request(url)[1] == b"<html>diagnostic fixture</html>"
+        request("/api/query", {})
+        _, restored, _ = request("/api/review")
+        assert restored["job"] is None
+        assert restored["detail"] is None
+
+
+def test_two_servers_keep_independent_sessions_with_shared_browser_cookies(tmp_path):
+    from http.cookies import SimpleCookie
+
+    with (
+        _client(ReviewWorkspace(config_dir=tmp_path / "a")) as a,
+        _client(ReviewWorkspace(config_dir=tmp_path / "b")) as b,
+    ):
+        jar = SimpleCookie()
+        for request in (a, b, a):
+            _, _, headers = request("/api/session")
+            jar.load(headers["Set-Cookie"])
+            cookie = "; ".join(f"{key}={value.value}" for key, value in jar.items())
+            assert a("/api/analysis", headers={"Cookie": cookie})[0] == 200
+            if request is b or len(jar) > 1:
+                assert b("/api/analysis", headers={"Cookie": cookie})[0] == 200
