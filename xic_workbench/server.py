@@ -43,10 +43,17 @@ _BROWSE_SUFFIXES = {
     "preset": (".toml",),
     "file": (".csv", ".tsv", ".xlsx", ".json", ".toml", ".txt"),
 }
+# The workspace sizes the embedded report to its content and publishes the
+# visible part of the frame as --host-top/--host-height for dialogs.
 _EMBED_STYLE = """<style>
-body{max-width:none;padding:0;background:transparent}
+html,body{background:transparent}
+body{max-width:none;padding:0}
 body>header,.list-panel{display:none}.workbench{display:block}
-.detail-panel{border:0;box-shadow:none;border-radius:0}
+.detail-panel{border:0;box-shadow:none;border-radius:0;background:transparent}
+dialog[open]{position:fixed;inset:auto 0;margin:0 auto;
+top:calc(var(--host-top,0px) + var(--host-height,100vh)*.05);
+max-height:calc(var(--host-height,100vh)*.9)}
+.zoom-container{height:calc(var(--host-height,100vh)*.7)}
 </style>"""
 
 

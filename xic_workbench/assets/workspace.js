@@ -1,6 +1,83 @@
 "use strict";
+// Shared UI primitives for the workspace shell. analysis.js loads after this.
+window.XicUi = (() => {
+  const $ = (id) => document.getElementById(id);
+  function icon(name, cls = "") {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", `icon${cls ? ` ${cls}` : ""}`);
+    svg.setAttribute("aria-hidden", "true");
+    const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+    use.setAttribute("href", `#i-${name}`);
+    svg.append(use);
+    return svg;
+  }
+  function toast(message, kind = "info", timeout) {
+    const node = document.createElement("div");
+    node.className = `toast ${kind}`;
+    node.setAttribute("role", kind === "error" ? "alert" : "status");
+    const text = document.createElement("p");
+    text.textContent = message;
+    const close = document.createElement("button");
+    close.type = "button";
+    close.setAttribute("aria-label", "關閉訊息");
+    close.append(icon("x"));
+    close.addEventListener("click", () => node.remove());
+    node.append(
+      icon(kind === "error" ? "alert" : kind === "ok" ? "check-circle" : "info"),
+      text,
+      close,
+    );
+    const host = $("toasts");
+    host.append(node);
+    while (host.children.length > 4) host.firstElementChild.remove();
+    const delay = timeout ?? (kind === "error" ? 0 : 5000);
+    if (delay) setTimeout(() => node.remove(), delay);
+    return node;
+  }
+  function confirm({ title, message, accept = "確定", danger = false }) {
+    const dialog = $("confirm-dialog");
+    $("confirm-title").textContent = title;
+    $("confirm-message").textContent = message;
+    $("confirm-accept").textContent = accept;
+    $("confirm-accept").className = danger ? "danger-button" : "primary";
+    dialog.returnValue = "cancel";
+    dialog.showModal();
+    $("confirm-accept").focus();
+    return new Promise((resolve) =>
+      dialog.addEventListener(
+        "close",
+        () => resolve(dialog.returnValue === "ok"),
+        { once: true },
+      ),
+    );
+  }
+  function setTheme(theme) {
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem("xic-theme", theme);
+    } catch (_) {}
+    for (const frame of document.querySelectorAll("iframe")) {
+      try {
+        if (frame.contentDocument?.documentElement)
+          frame.contentDocument.documentElement.dataset.theme = theme;
+      } catch (_) {}
+    }
+  }
+  function formatDuration(seconds) {
+    const total = Math.max(0, Math.floor(seconds || 0));
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    if (h) return `${h} 小時 ${m} 分`;
+    if (m) return `${m} 分 ${String(s).padStart(2, "0")} 秒`;
+    return `${s} 秒`;
+  }
+  return { icon, toast, confirm, setTheme, formatDuration };
+})();
+
 (() => {
   const $ = (id) => document.getElementById(id);
+  const { icon } = window.XicUi;
   const state = {
     page: null,
     item: null,
@@ -18,9 +95,13 @@
   const fmt = (value, digits) =>
     Number.isFinite(value) ? value.toFixed(digits) : "—";
   const count = (value) => Number(value).toLocaleString();
+  const badgeTone = {
+    需留意: "warn",
+    診斷曲線: "accent",
+  };
   function status(message, kind = "") {
     $("status").textContent = message;
-    $("status").className = `status ${kind}`;
+    $("status").className = `inline-status ${kind}`;
   }
   async function api(path, values) {
     const response = await fetch(path, {
@@ -55,6 +136,18 @@
       );
     $("load-curves").disabled =
       busy || state.analysisBusy || !state.item || state.samples.size === 0;
+    const supported = document.querySelectorAll(
+      '#sample-list input[data-available="true"]',
+    ).length;
+    $("acquisition-hint").textContent = !state.item
+      ? ""
+      : !supported
+        ? "這個項目沒有任何樣本保留觀測座標，無法自動取得 XIC。"
+        : state.analysisBusy
+          ? "分析執行中；完成後才能讀取 RAW。"
+          : state.samples.size === 0
+            ? "勾選至少一個樣本後即可載入。"
+            : "";
     $("sample-count").textContent = `已選 ${state.samples.size} 個樣本`;
     $("previous").disabled = busy || !state.page || state.page.offset === 0;
     $("next").disabled =
@@ -98,10 +191,23 @@
     $("review").hidden = false;
     $("batch-title").textContent = "批次結果已開啟";
     $("batch-description").textContent = page.source;
+    $("batch-description").title = page.source;
+    $("batch-count").hidden = false;
     $("batch-count").textContent =
       `${count(page.samples.length)} 個樣本 · ${count(page.run_total)} 個檢閱項目`;
-    $("list-summary").textContent =
-      `符合 ${count(page.matched_count)} ／全批 ${count(page.run_total)} 個項目`;
+    const filtered = page.matched_count !== page.run_total;
+    $("list-summary").replaceChildren(
+      Object.assign(document.createElement("span"), {
+        textContent: filtered
+          ? `符合 ${count(page.matched_count)} ／ 全批 ${count(page.run_total)}`
+          : `全批 ${count(page.run_total)} 個項目`,
+      }),
+      Object.assign(document.createElement("span"), {
+        textContent: page.selected_count
+          ? `第 ${count(page.offset + 1)}–${count(page.offset + page.selected_count)} 筆`
+          : "",
+      }),
+    );
     const list = $("item-list");
     list.replaceChildren();
     for (const item of page.items) {
@@ -110,19 +216,24 @@
       button.className = "item";
       button.dataset.itemId = item.id;
       button.setAttribute("aria-current", "false");
+      const top = document.createElement("span");
+      top.className = "item-top";
       const title = document.createElement("strong");
       title.textContent = `m/z ${fmt(item.precursor_mz, 4)}`;
-      const metadata = document.createElement("span");
-      metadata.className = "item-meta";
       const rt = document.createElement("span");
+      rt.className = "item-rt";
       rt.textContent = `RT ${fmt(item.rt_apex_min, 2)} min`;
-      const type = document.createElement("span");
-      type.textContent = item.title;
-      metadata.append(rt, type);
-      const samples = document.createElement("span");
-      samples.className = "item-samples";
-      samples.textContent = `${item.review_summary.observed_sample_count || 0} 個樣本有觀測 · ${item.badge_label || "已記錄"}`;
-      button.append(title, metadata, samples);
+      top.append(title, rt);
+      const bottom = document.createElement("span");
+      bottom.className = "item-bottom";
+      const summary = document.createElement("span");
+      summary.textContent = `${item.title} · ${item.review_summary.observed_sample_count || 0} 個樣本`;
+      const badge = document.createElement("span");
+      const label = item.badge_label || "已記錄";
+      badge.className = `chip ${badgeTone[label] || ""}`;
+      badge.textContent = label;
+      bottom.append(summary, badge);
+      button.append(top, bottom);
       button.addEventListener("click", () =>
         action(() => selectItem(item), "正在準備檢閱內容…"),
       );
@@ -131,14 +242,17 @@
     if (!page.items.length) {
       const empty = document.createElement("p");
       empty.className = "empty";
-      empty.textContent = "沒有符合條件的項目";
+      empty.textContent = "沒有符合條件的項目。調整範圍或清除條件後再搜尋。";
       list.append(empty);
     }
-    $("page-label").textContent = page.selected_count
-      ? `${count(page.offset + 1)}–${count(page.offset + page.selected_count)}`
+    list.scrollTop = 0;
+    $("page-label").textContent = page.matched_count
+      ? `${count(Math.floor(page.offset / page.limit) + 1)} / ${count(Math.max(1, Math.ceil(page.matched_count / page.limit)))} 頁`
       : "0 筆";
     status(
-      `已載入 ${count(page.selected_count)} 個項目；搜尋範圍涵蓋全批已儲存結果。`,
+      filtered
+        ? `找到 ${count(page.matched_count)} 個符合條件的項目（搜尋範圍是全批已儲存結果）。`
+        : `已載入全批 ${count(page.run_total)} 個項目。`,
     );
   }
   async function selectItem(item) {
@@ -180,6 +294,7 @@
       const supported = available.has(sample.id);
       const label = document.createElement("label");
       label.className = `sample-option${supported ? "" : " unavailable"}`;
+      if (!supported) label.title = "此樣本缺少觀測座標，無法自動擷取";
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox";
       checkbox.value = sample.id;
@@ -195,14 +310,14 @@
       text.textContent = sample.label;
       if (!supported) {
         const note = document.createElement("small");
-        note.textContent = "缺少觀測座標";
+        note.textContent = "無觀測座標";
         text.append(note);
       }
       label.append(checkbox, text);
       list.append(label);
     }
     showTab("recorded");
-    status("可查看當次分析紀錄，或載入所選樣本的 XIC。");
+    status("可查看當次分析紀錄，或為勾選的樣本載入 XIC。");
   }
   function showTab(tab) {
     const view = tab === "curves" ? state.curves : state.recorded;
@@ -210,6 +325,7 @@
     state.tab = tab;
     $("tab-recorded").setAttribute("aria-selected", String(tab === "recorded"));
     $("tab-curves").setAttribute("aria-selected", String(tab === "curves"));
+    $("view-note").className = `view-note${tab === "curves" ? " curves" : ""}`;
     $("view-note").textContent =
       tab === "curves"
         ? `新取得的診斷曲線 · ${state.curveLabels.join("、")}。依報告樣本檔名取檔，已核對 RAW 內容屬於此批次；來源未保留獨立的樣本與 RAW 綁定。這些曲線不改寫當次定量值。`
@@ -299,6 +415,69 @@
       setTimeout(pollJob, 2000);
     }
   }
+
+  // The embedded Inspector grows with its content so the page keeps one
+  // scroll; its dialogs are placed inside the part of the frame on screen.
+  const frame = $("inspector");
+  let frameObserver = null;
+  function frameDocument() {
+    try {
+      return frame.contentDocument;
+    } catch (_) {
+      return null;
+    }
+  }
+  function placeFrameDialogs() {
+    const doc = frameDocument();
+    if (!doc?.documentElement || frame.offsetParent === null) return;
+    const topbar = document.querySelector(".topbar")?.offsetHeight || 0;
+    const rect = frame.getBoundingClientRect();
+    doc.documentElement.style.setProperty(
+      "--host-top",
+      `${Math.max(0, topbar - rect.top)}px`,
+    );
+    doc.documentElement.style.setProperty(
+      "--host-height",
+      `${window.innerHeight - topbar}px`,
+    );
+  }
+  function fitFrame() {
+    const doc = frameDocument();
+    if (!doc?.body) return;
+    const height = Math.ceil(doc.body.getBoundingClientRect().height);
+    frame.style.height = `${Math.max(height + 8, 480)}px`;
+    placeFrameDialogs();
+  }
+  frame.addEventListener("load", () => {
+    frameObserver?.disconnect();
+    frameObserver = null;
+    const doc = frameDocument();
+    if (!doc?.body || frame.getAttribute("src") === "about:blank") {
+      frame.style.height = "";
+      return;
+    }
+    doc.documentElement.dataset.theme =
+      document.documentElement.dataset.theme || "light";
+    const Observer = frame.contentWindow.ResizeObserver || ResizeObserver;
+    frameObserver = new Observer(fitFrame);
+    frameObserver.observe(doc.body);
+    fitFrame();
+  });
+  let placing = false;
+  const schedulePlacement = () => {
+    if (placing) return;
+    placing = true;
+    requestAnimationFrame(() => {
+      placing = false;
+      placeFrameDialogs();
+    });
+  };
+  window.addEventListener("scroll", schedulePlacement, { passive: true });
+  window.addEventListener("resize", () => {
+    schedulePlacement();
+    fitFrame();
+  });
+
   async function browse(path) {
     try {
       const data = await api("/api/browse", { path, kind: state.browser.kind });
@@ -306,20 +485,36 @@
       $("browse-path").value = data.path;
       $("browse-parent").disabled = data.parent === null;
       $("browse-use").disabled = !data.path;
+      const files = data.entries.filter((entry) => !entry.directory).length;
       $("browse-note").textContent = data.truncated
         ? "此處僅顯示前 1,000 個位置；可直接輸入完整路徑。"
-        : "選擇資料夾，或點選 SQLite 結果檔案。";
+        : !data.path
+          ? "選擇一個磁碟開始。"
+          : files
+            ? "點選檔案即可使用；或進入資料夾後按「使用此資料夾」。"
+            : "進入資料夾，或按「使用此資料夾」選擇目前位置。";
       const list = $("browse-entries");
       list.replaceChildren();
       for (const entry of data.entries) {
         const button = document.createElement("button");
         button.type = "button";
-        button.textContent = `${entry.directory ? "▸" : "□"} ${entry.name}`;
+        button.className = entry.directory ? "is-dir" : "is-file";
+        button.append(
+          icon(!data.path ? "drive" : entry.directory ? "folder" : "file"),
+          document.createTextNode(entry.name),
+        );
         button.addEventListener("click", () =>
           entry.directory ? browse(entry.path) : useLocation(entry.path),
         );
         list.append(button);
       }
+      if (!data.entries.length) {
+        const empty = document.createElement("p");
+        empty.className = "empty";
+        empty.textContent = "這個位置沒有可選的資料夾或檔案。";
+        list.append(empty);
+      }
+      list.scrollTop = 0;
     } catch (error) {
       $("browse-note").textContent = error.message;
     }
@@ -369,6 +564,26 @@
   });
   $("tab-recorded").addEventListener("click", () => showTab("recorded"));
   $("tab-curves").addEventListener("click", () => showTab("curves"));
+  $("item-list").addEventListener("keydown", (event) => {
+    if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
+    const items = [...document.querySelectorAll(".item")];
+    if (!items.length) return;
+    event.preventDefault();
+    const current = items.findIndex(
+      (item) => item.getAttribute("aria-current") === "true",
+    );
+    const next =
+      items[
+        Math.max(
+          0,
+          Math.min(items.length - 1, current + (event.key === "ArrowDown" ? 1 : -1)),
+        )
+      ];
+    if (next === items[current]) return;
+    next.focus();
+    next.scrollIntoView({ block: "nearest" });
+    next.click();
+  });
   document.addEventListener("click", (event) => {
     const button = event.target.closest("[data-browse]");
     if (!button) return;
@@ -376,6 +591,11 @@
       target: button.dataset.browse,
       kind: button.dataset.kind,
     };
+    $("browse-title").textContent =
+      ["folder"].includes(button.dataset.kind) || !button.dataset.kind
+        ? "選擇資料夾"
+        : "選擇檔案或資料夾";
+    $("browse-use").textContent = "使用此資料夾";
     $("browser-dialog").showModal();
     browse($(state.browser.target).value);
   });
@@ -398,6 +618,7 @@
   $("browse-parent").addEventListener("click", () =>
     browse(state.browser.data.parent),
   );
+  $("browse-roots").addEventListener("click", () => browse(""));
   $("browse-use").addEventListener("click", () =>
     useLocation(state.browser.data.path),
   );
@@ -407,6 +628,6 @@
     $("raw-dir").value = session.defaults.raw_dir || "";
     $("dll-dir").value = session.defaults.dll_dir || "";
     if ($("source").value) await openBatch();
-    else status("請開啟一個批次。");
+    else status("請選擇已完成的批次結果，然後按「開啟批次」。");
   }, "正在連接本機工作區…");
 })();
