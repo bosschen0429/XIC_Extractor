@@ -35,6 +35,7 @@ def extract_batch_known_istd_reference(
         prepare_physical_signal,
         qualified_physical_segments,
     )
+    from xic_extractor.precursor_evidence import recorded_precursor_references
     from xic_extractor.raw_reader import open_raw
     from xic_extractor.xic_models import XICRequest
 
@@ -91,6 +92,14 @@ def extract_batch_known_istd_reference(
                         for event in ms2_windows[window_key]
                         if event.scan is not None
                         and segment.left_rt_min <= event.scan.rt <= segment.right_rt_min
+                        # check_nl also admits coisolated precursors. A calibration
+                        # coordinate needs its chosen native reference on this target.
+                        and any(
+                            abs(mz - target.mz) <= target.mz * target.ppm_tol / 1e6
+                            for mz, _ in recorded_precursor_references(
+                                event.scan, target.nl_ppm_max,
+                            )
+                        )
                     )
                     nl = check_nl(
                         Ms2Window(

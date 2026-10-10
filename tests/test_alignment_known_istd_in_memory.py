@@ -118,15 +118,19 @@ def test_read_targets_from_csv() -> None:
 
 
 @pytest.mark.parametrize(
-    ("matched_rts", "neutral_loss", "outside_isolation", "expected_rt"),
+    ("matched_rts", "neutral_loss", "precursor_context", "expected_rt"),
     [
-        ((8.1,), 116.0474, False, 8.1),
-        ((9.0,), 116.0474, False, 9.0),
-        ((8.1, 9.0), 116.0474, False, None),
-        ((), 116.0474, False, None),
-        ((8.1,), 132.0423, False, 8.1),
-        ((8.1,), 116.0474, True, None),
-        ((8.1,), None, False, None),
+        ((8.1,), 116.0474, "target", 8.1),
+        ((9.0,), 116.0474, "target", 9.0),
+        ((8.1, 9.0), 116.0474, "target", None),
+        ((), 116.0474, "target", None),
+        ((8.1,), 132.0423, "target", 8.1),
+        ((8.1,), 116.0474, "outside_isolation", None),
+        ((8.1,), None, "target", None),
+        ((9.0,), 116.0474, "coisolated_other", None),
+        ((9.0,), 116.0474, "coisolated_target_mono", 9.0),
+        ((9.0,), 116.0474, "outside_target_ppm", None),
+        ((9.0,), 116.0474, "inside_target_ppm", 9.0),
     ],
 )
 def test_batch_istd_coordinates_require_unique_native_identity(
@@ -134,7 +138,7 @@ def test_batch_istd_coordinates_require_unique_native_identity(
     monkeypatch: pytest.MonkeyPatch,
     matched_rts: tuple[float, ...],
     neutral_loss: float | None,
-    outside_isolation: bool,
+    precursor_context: str,
     expected_rt: float | None,
 ) -> None:
     target = replace(
@@ -150,19 +154,36 @@ def test_batch_istd_coordinates_require_unique_native_identity(
     targets = (target, replace(target, label="ISTD2"), _make_target("Analyte", False))
     events = []
     for number, apex in enumerate((8.1, 9.0), start=1):
-        selected_mz = target.mz + 1.0 if outside_isolation else target.mz
+        outside_isolation = precursor_context == "outside_isolation"
+        coisolated = precursor_context.startswith("coisolated_")
+        selected_mz = target.mz + {
+            "outside_isolation": 1.0,
+            "coisolated_other": 0.5,
+            "coisolated_target_mono": 0.5,
+            "outside_target_ppm": 0.004,
+            "inside_target_ppm": 0.002,
+        }.get(precursor_context, 0.0)
         metadata = (
             Ms2PrecursorMetadata(
-                monoisotopic_mz=target.mz,
+                monoisotopic_mz=(
+                    None if precursor_context == "coisolated_other" else target.mz
+                ),
                 charge=1,
-                isolation_width_da=0.4,
+                isolation_width_da=0.4 if outside_isolation else 1.6,
                 isolation_offset_da=0.0,
             )
-            if outside_isolation
+            if outside_isolation or coisolated
             else None
         )
+        product_precursor = (
+            selected_mz
+            if precursor_context in {
+                "coisolated_other", "outside_target_ppm", "inside_target_ppm",
+            }
+            else target.mz
+        )
         product_mz = (
-            target.mz
+            product_precursor
             - (neutral_loss or 116.0474)
             + (0.0 if apex in matched_rts else 2.0)
         )
