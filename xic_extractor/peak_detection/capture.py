@@ -50,7 +50,8 @@ from xic_extractor.peak_detection.physical_peak_identity import (
     mint_physical_trace_content_id,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
-    PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+    PHYSICAL_PEAK_BACKFILL_POLICY,
+    PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
     PhysicalPeakEvaluation,
     PreparedSignalResult,
 )
@@ -518,10 +519,12 @@ def capture_physical_backfill_observation(
     sample: ResolvedCanonicalSampleIdentity,
     method_subject: CidNlMethodSubject,
     trace: Trace,
-    group_center_rt: float,
+    query_rt_min: float,
     physical_mz: float,
     profile: SignalProcessingProfile,
     resolver_mode: str,
+    search_rt_window: tuple[float, float] | None = None,
+    location_reliable: bool = True,
     evaluation_sink: Callable[[PhysicalPeakEvaluation], None] | None = None,
 ) -> PeakObservationRef | None:
     """Capture a backfill question using its request-bound method and profile."""
@@ -532,17 +535,22 @@ def capture_physical_backfill_observation(
         not request_binds_physical_capture_profile(processing_owners.request, profile)
         or trace.mz != physical_mz
         or trace.ppm_tol != method_subject.precursor_tolerance_ppm
-        or not trace.rt_min <= group_center_rt <= trace.rt_max
+        or not trace.rt_min <= query_rt_min <= trace.rt_max
     ):
         raise SampleLocalCaptureError("physical backfill question is not request-bound")
     prepared = prepare_physical_signal(trace.rt, trace.intensity, profile=profile)
     evaluation = evaluate_physical_peak(
         prepared,
         selection_subject_id=method_subject.method_subject_id,
-        query_rt_min=group_center_rt,
+        query_rt_min=query_rt_min,
         request_context_rt_start_min=trace.rt_min,
         request_context_rt_end_min=trace.rt_max,
-        selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+        selection_policy_version=(
+            PHYSICAL_PEAK_BACKFILL_POLICY
+            if location_reliable
+            else PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY
+        ),
+        search_rt_window=search_rt_window if location_reliable else None,
     )
     if evaluation_sink is not None:
         evaluation_sink(evaluation)

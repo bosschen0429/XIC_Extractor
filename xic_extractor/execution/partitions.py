@@ -75,6 +75,21 @@ class WorkPartition(Generic[TPayload]):
 
 
 @dataclass(frozen=True, slots=True)
+class PartitionPipelinePhase(Generic[TPartitionPayload]):
+    """An ordered partition batch with a barrier before admission.
+
+    Phases divide the adapter's declared partitions into consecutive slices;
+    partition indices and work/resource identities remain global to the attempt.
+    """
+
+    name: str
+    partitions: Sequence[WorkPartition[TPartitionPayload]]
+    prepare_before: Callable[[StreamedResultStore, Callable[[], None]], None] | None = (
+        None
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class PartitionAcquisitionOutput(Generic[TAcquisitionResult]):
     result: TAcquisitionResult
     resources: Sequence[RuntimeResourceSettlementReceipt] = ()
@@ -193,6 +208,7 @@ class PartitionPipelineScheduler:
         progress_callback: Callable[[Mapping[str, object]], None] | None = None,
         should_cancel: Callable[[], bool] | None = None,
         pipeline_overlap: bool = True,
+        phases: Sequence[PartitionPipelinePhase[TPartitionPayload]] | None = None,
         acquisition_workers: int = 1,
         retain_partition_memory: bool = False,
         execute_runtime_attempt: Callable[..., RuntimeFinalizationReceipt] = (
@@ -206,7 +222,12 @@ class PartitionPipelineScheduler:
         """Execute finite partitions under one runtime attempt."""
         if type(acquisition_workers) is not int or acquisition_workers not in (1, 2):
             raise ValueError("acquisition_workers must be 1 or 2")
-        partitions = adapter.partitions
+        pipeline_phases = (
+            tuple(phases)
+            if phases is not None
+            else (PartitionPipelinePhase("partition-pipeline", adapter.partitions),)
+        )
+        partitions = tuple(p for phase in pipeline_phases for p in phase.partitions)
         owners = adapter.processing_owners
         work_unit_keys = adapter.work_unit_keys
         resource_reservations = adapter.resource_reservations
@@ -261,7 +282,16 @@ class PartitionPipelineScheduler:
                 exc: Exception,
             ) -> None:
                 nonlocal failed_stage, failed_exc
+                cancelled = (
+                    isinstance(exc, InterruptedError)
+                    and cancellation_ingress.is_cancelled
+                )
                 with thread_lock:
+                    timeline_by_index[partition.index]["status"] = (
+                        "cancelled" if cancelled else "failed"
+                    )
+                    if cancelled:
+                        return
                     if not failed_work_unit_keys:
                         failed_work_unit_keys.update(partition.work_unit_keys)
                         failed_stage = stage
@@ -279,6 +309,10 @@ class PartitionPipelineScheduler:
                 }
                 for p in partitions
             ]
+
+            timeline_by_index = {
+                p.index: r for p, r in zip(partitions, timeline_records)
+            }
 
             def emit_timeline() -> None:
                 nonlocal timeline_emitted
@@ -318,6 +352,22 @@ class PartitionPipelineScheduler:
                     }
                 progress_callback(payload)
 
+            def check_acquisition_cancellation(
+                output: PartitionAcquisitionOutput[Any],
+                partition: WorkPartition[TPartitionPayload],
+            ) -> None:
+                if (
+                    output.failure_detail is not None
+                    and output.failure_detail.category
+                    is WorkUnitFailureCategory.CANCELLATION
+                ):
+                    cancellation_ingress.request_cancellation(
+                        RuntimeCancellationRequest(attempt=owners.attempt)
+                    )
+                    exc = InterruptedError("Partition acquisition cancelled")
+                    record_partition_failure(partition, "partition-acquisition", exc)
+                    raise exc
+
             def check_cancellation() -> None:
                 if cancellation_ingress.is_cancelled or (
                     should_cancel is not None and should_cancel()
@@ -329,345 +379,367 @@ class PartitionPipelineScheduler:
                     )
                     raise InterruptedError("Partition pipeline execution cancelled")
 
-            use_overlap = pipeline_overlap and len(partitions) > 1
-
             try:
                 check_cancellation()
-                if not use_overlap:
-                    for index, partition in enumerate(partitions):
+                phase_offset = 0
+                for phase in pipeline_phases:
+                    check_cancellation()
+                    if phase.prepare_before is not None:
+                        failed_stage = phase.name
+                        phase.prepare_before(store, check_cancellation)
                         check_cancellation()
-                        progress("partition_start", index)
-                        inflight_resource_keys.update(partition.resource_keys)
-                        acq_start = time.perf_counter()
-                        acq_out = adapter.execute_acquisition(
-                            partition,
-                            should_cancel=should_cancel,
-                            progress_callback=progress_callback,
-                        )
-                        acq_end = time.perf_counter()
-                        timeline_records[index]["acquire_start"] = acq_start
-                        timeline_records[index]["acquire_end"] = acq_end
-                        resources.update(
-                            (receipt.resource_key, receipt)
-                            for receipt in acq_out.resources
-                        )
-                        acquisitions.extend(
-                            compact_runtime_acquisition_receipt(receipt)
-                            for receipt in acq_out.acquisitions
-                        )
-                        inflight_resource_keys.difference_update(
-                            partition.resource_keys
-                        )
-                        if not acq_out.succeeded:
-                            timeline_records[index]["status"] = "failed"
-                            failure_msg = (
-                                f": {acq_out.failure_detail}"
-                                if acq_out.failure_detail is not None
-                                else ""
-                            )
-                            exc = RuntimeError(
-                                f"Partition acquisition failed{failure_msg}"
-                            )
-                            record_partition_failure(
-                                partition, "partition-acquisition", exc
-                            )
-                            raise exc
-                        check_cancellation()
-                        progress("partition_compose", index)
-                        comp_start = time.perf_counter()
-                        try:
-                            comp_out = adapter.execute_composition(
+                    failed_stage = "partition-pipeline-completion"
+                    use_overlap = pipeline_overlap and len(phase.partitions) > 1
+                    if not use_overlap:
+                        for index, partition in enumerate(
+                            phase.partitions, start=phase_offset
+                        ):
+                            check_cancellation()
+                            progress("partition_start", index)
+                            inflight_resource_keys.update(partition.resource_keys)
+                            acq_start = time.perf_counter()
+                            acq_out = adapter.execute_acquisition(
                                 partition,
-                                acq_out,
-                                store,
-                                retain_memory=retain_partition_memory
-                                and len(partitions) == 1,
-                                should_cancel=check_cancellation,
+                                should_cancel=should_cancel,
+                                progress_callback=progress_callback,
                             )
-                        except Exception as exc:
-                            timeline_records[index]["compose_end"] = time.perf_counter()
-                            timeline_records[index]["status"] = "failed"
-                            record_partition_failure(
-                                partition, "partition-composition", exc
+                            acq_end = time.perf_counter()
+                            timeline_records[index]["acquire_start"] = acq_start
+                            timeline_records[index]["acquire_end"] = acq_end
+                            resources.update(
+                                (receipt.resource_key, receipt)
+                                for receipt in acq_out.resources
                             )
-                            raise
-                        comp_end = time.perf_counter()
-                        timeline_records[index]["compose_start"] = comp_start
-                        timeline_records[index]["compose_end"] = comp_end
-                        timeline_records[index]["status"] = "completed"
-                        composition_outputs.append(comp_out)
-                        check_cancellation()
-                        part_artifacts, part_settlements = (
-                            adapter.create_partition_artifacts(partition, comp_out)
-                        )
-                        artifacts.extend(part_artifacts)
-                        settlements.extend(part_settlements)
-                        del acq_out, comp_out
-                        progress("partition_released", index + 1)
-                else:
-                    # Composition keeps one partition resident while each
-                    # acquisition lane can prepare its next partition.
-                    admission_credits = threading.Semaphore(acquisition_workers + 1)
-                    handoff_queue: queue.Queue[
-                        tuple[
-                            WorkPartition[TPartitionPayload],
-                            PartitionAcquisitionOutput[TAcquisitionResult],
-                        ]
-                        | object
-                    ] = queue.Queue(maxsize=1)
-                    stop_event = threading.Event()
-                    producer_exc: Exception | None = None
-                    consumer_exc: Exception | None = None
-                    pending_partitions: queue.Queue[
-                        tuple[int, WorkPartition[TPartitionPayload]]
-                    ] = queue.Queue()
-                    for entry in enumerate(partitions):
-                        pending_partitions.put(entry)
-
-                    def is_stopped() -> bool:
-                        return (
-                            stop_event.is_set()
-                            or cancellation_ingress.is_cancelled
-                            or (should_cancel() if should_cancel is not None else False)
-                        )
-
-                    def producer_worker() -> None:
-                        nonlocal producer_exc
-                        try:
-                            while True:
-                                if is_stopped():
-                                    break
-                                acquired = False
-                                while not is_stopped():
-                                    if admission_credits.acquire(timeout=0.05):
-                                        acquired = True
-                                        break
-                                if not acquired or is_stopped():
-                                    if acquired:
-                                        admission_credits.release()
-                                    break
-                                try:
-                                    index, partition = pending_partitions.get_nowait()
-                                except queue.Empty:
-                                    admission_credits.release()
-                                    break
-
-                                progress("partition_start", index)
-                                with thread_lock:
-                                    inflight_resource_keys.update(
-                                        partition.resource_keys
-                                    )
-                                acq_start = time.perf_counter()
-                                acq_out = adapter.execute_acquisition(
-                                    partition,
-                                    should_cancel=is_stopped,
-                                    progress_callback=progress_callback,
+                            acquisitions.extend(
+                                compact_runtime_acquisition_receipt(receipt)
+                                for receipt in acq_out.acquisitions
+                            )
+                            inflight_resource_keys.difference_update(
+                                partition.resource_keys
+                            )
+                            if not acq_out.succeeded:
+                                check_acquisition_cancellation(acq_out, partition)
+                                failure_msg = (
+                                    f": {acq_out.failure_detail}"
+                                    if acq_out.failure_detail is not None
+                                    else ""
                                 )
-                                acq_end = time.perf_counter()
-                                with thread_lock:
-                                    inflight_resource_keys.difference_update(
-                                        partition.resource_keys
-                                    )
-                                    timeline_records[index]["acquire_start"] = acq_start
-                                    timeline_records[index]["acquire_end"] = acq_end
-                                    resources.update(
-                                        (receipt.resource_key, receipt)
-                                        for receipt in acq_out.resources
-                                    )
-                                    acquisitions.extend(
-                                        compact_runtime_acquisition_receipt(receipt)
-                                        for receipt in acq_out.acquisitions
-                                    )
-                                if not acq_out.succeeded:
-                                    with thread_lock:
-                                        timeline_records[index]["status"] = "failed"
-                                    admission_credits.release()
-                                    failure_msg = (
-                                        f": {acq_out.failure_detail}"
-                                        if acq_out.failure_detail is not None
-                                        else ""
-                                    )
-                                    exc = RuntimeError(
-                                        f"Partition acquisition failed{failure_msg}"
-                                    )
-                                    record_partition_failure(
-                                        partition, "partition-acquisition", exc
-                                    )
-                                    raise exc
-
-                                put_done = False
-                                while not is_stopped():
-                                    try:
-                                        handoff_queue.put(
-                                            (partition, acq_out), timeout=0.05
-                                        )
-                                        put_done = True
-                                        break
-                                    except queue.Full:
-                                        continue
-                                if not put_done:
-                                    admission_credits.release()
-                                    break
-                                del acq_out
-                        except Exception as exc:
-                            with thread_lock:
-                                if producer_exc is None:
-                                    producer_exc = exc
-                                timeline_records[index]["acquire_end"] = (
+                                exc = RuntimeError(
+                                    f"Partition acquisition failed{failure_msg}"
+                                )
+                                record_partition_failure(
+                                    partition, "partition-acquisition", exc
+                                )
+                                raise exc
+                            check_cancellation()
+                            progress("partition_compose", index)
+                            comp_start = time.perf_counter()
+                            try:
+                                comp_out = adapter.execute_composition(
+                                    partition,
+                                    acq_out,
+                                    store,
+                                    retain_memory=retain_partition_memory
+                                    and len(partitions) == 1,
+                                    should_cancel=check_cancellation,
+                                )
+                            except Exception as exc:
+                                timeline_records[index]["compose_end"] = (
                                     time.perf_counter()
                                 )
-                                timeline_records[index]["status"] = "failed"
-                            record_partition_failure(
-                                partition, "partition-acquisition", exc
-                            )
-                            stop_event.set()
-                            cancellation_ingress.request_cancellation(
-                                RuntimeCancellationRequest(attempt=owners.attempt)
-                            )
-                        finally:
-                            while not is_stopped():
-                                try:
-                                    handoff_queue.put(_DONE_SENTINEL, timeout=0.05)
-                                    break
-                                except queue.Full:
-                                    continue
-
-                    def consumer_worker() -> None:
-                        nonlocal consumer_exc
-                        next_index = 0
-                        finished_producers = 0
-                        waiting: dict[
-                            int,
-                            tuple[
-                                WorkPartition[TPartitionPayload],
-                                PartitionAcquisitionOutput[TAcquisitionResult],
-                            ],
-                        ] = {}
-                        item: object
-                        try:
-                            while True:
-                                if is_stopped():
-                                    break
-                                if next_index in waiting:
-                                    item = waiting.pop(next_index)
-                                else:
-                                    try:
-                                        item = handoff_queue.get(timeout=0.05)
-                                    except queue.Empty:
-                                        continue
-                                if item is _DONE_SENTINEL:
-                                    finished_producers += 1
-                                    if finished_producers == acquisition_workers:
-                                        break
-                                    continue
-                                if not isinstance(item, tuple):
-                                    continue
-                                if item[0].index != next_index:
-                                    waiting[item[0].index] = item
-                                    continue
-                                partition: WorkPartition[TPartitionPayload] = item[0]
-                                acq_out: PartitionAcquisitionOutput[
-                                    TAcquisitionResult
-                                ] = item[1]
-                                item = None
-                                credit_released = False
-                                try:
-                                    if is_stopped():
-                                        break
-                                    progress("partition_compose", partition.index)
-                                    comp_start = time.perf_counter()
-                                    comp_out = adapter.execute_composition(
-                                        partition,
-                                        acq_out,
-                                        store,
-                                        retain_memory=retain_partition_memory
-                                        and len(partitions) == 1,
-                                        should_cancel=is_stopped,
-                                    )
-                                    comp_end = time.perf_counter()
-                                    with thread_lock:
-                                        composition_outputs.append(comp_out)
-                                        timeline_records[partition.index][
-                                            "compose_start"
-                                        ] = comp_start
-                                        timeline_records[partition.index][
-                                            "compose_end"
-                                        ] = comp_end
-                                        timeline_records[partition.index]["status"] = (
-                                            "completed"
-                                        )
-                                    part_artifacts, part_settlements = (
-                                        adapter.create_partition_artifacts(
-                                            partition, comp_out
-                                        )
-                                    )
-                                    with thread_lock:
-                                        artifacts.extend(part_artifacts)
-                                        settlements.extend(part_settlements)
-                                    del acq_out, comp_out
-                                    progress("partition_released", partition.index + 1)
-                                    next_index += 1
-                                finally:
-                                    if not credit_released:
-                                        admission_credits.release()
-                                        credit_released = True
-                        except Exception as exc:
-                            consumer_exc = exc
-                            if "partition" in locals():
-                                with thread_lock:
-                                    timeline_records[partition.index]["compose_end"] = (
-                                        time.perf_counter()
-                                    )
-                                    timeline_records[partition.index]["status"] = (
-                                        "failed"
-                                    )
                                 record_partition_failure(
                                     partition, "partition-composition", exc
                                 )
-                            stop_event.set()
+                                raise
+                            comp_end = time.perf_counter()
+                            timeline_records[index]["compose_start"] = comp_start
+                            timeline_records[index]["compose_end"] = comp_end
+                            timeline_records[index]["status"] = "completed"
+                            composition_outputs.append(comp_out)
+                            check_cancellation()
+                            part_artifacts, part_settlements = (
+                                adapter.create_partition_artifacts(partition, comp_out)
+                            )
+                            artifacts.extend(part_artifacts)
+                            settlements.extend(part_settlements)
+                            del acq_out, comp_out
+                            progress("partition_released", index + 1)
+                    else:
+                        # Composition keeps one partition resident while each
+                        # acquisition lane can prepare its next partition.
+                        admission_credits = threading.Semaphore(acquisition_workers + 1)
+                        handoff_queue: queue.Queue[
+                            tuple[
+                                WorkPartition[TPartitionPayload],
+                                PartitionAcquisitionOutput[TAcquisitionResult],
+                            ]
+                            | object
+                        ] = queue.Queue(maxsize=1)
+                        stop_event = threading.Event()
+                        producer_exc: Exception | None = None
+                        consumer_exc: Exception | None = None
+                        pending_partitions: queue.Queue[
+                            tuple[int, WorkPartition[TPartitionPayload]]
+                        ] = queue.Queue()
+                        for entry in enumerate(phase.partitions, start=phase_offset):
+                            pending_partitions.put(entry)
+
+                        def is_stopped() -> bool:
+                            return (
+                                stop_event.is_set()
+                                or cancellation_ingress.is_cancelled
+                                or (
+                                    should_cancel()
+                                    if should_cancel is not None
+                                    else False
+                                )
+                            )
+
+                        def producer_worker() -> None:
+                            nonlocal producer_exc
+                            try:
+                                while True:
+                                    if is_stopped():
+                                        break
+                                    acquired = False
+                                    while not is_stopped():
+                                        if admission_credits.acquire(timeout=0.05):
+                                            acquired = True
+                                            break
+                                    if not acquired or is_stopped():
+                                        if acquired:
+                                            admission_credits.release()
+                                        break
+                                    try:
+                                        index, partition = (
+                                            pending_partitions.get_nowait()
+                                        )
+                                    except queue.Empty:
+                                        admission_credits.release()
+                                        break
+
+                                    progress("partition_start", index)
+                                    with thread_lock:
+                                        inflight_resource_keys.update(
+                                            partition.resource_keys
+                                        )
+                                    acq_start = time.perf_counter()
+                                    acq_out = adapter.execute_acquisition(
+                                        partition,
+                                        should_cancel=is_stopped,
+                                        progress_callback=progress_callback,
+                                    )
+                                    acq_end = time.perf_counter()
+                                    with thread_lock:
+                                        inflight_resource_keys.difference_update(
+                                            partition.resource_keys
+                                        )
+                                        timeline_records[index]["acquire_start"] = (
+                                            acq_start
+                                        )
+                                        timeline_records[index]["acquire_end"] = acq_end
+                                        resources.update(
+                                            (receipt.resource_key, receipt)
+                                            for receipt in acq_out.resources
+                                        )
+                                        acquisitions.extend(
+                                            compact_runtime_acquisition_receipt(receipt)
+                                            for receipt in acq_out.acquisitions
+                                        )
+                                    if not acq_out.succeeded:
+                                        admission_credits.release()
+                                        check_acquisition_cancellation(
+                                            acq_out, partition
+                                        )
+                                        failure_msg = (
+                                            f": {acq_out.failure_detail}"
+                                            if acq_out.failure_detail is not None
+                                            else ""
+                                        )
+                                        exc = RuntimeError(
+                                            f"Partition acquisition failed{failure_msg}"
+                                        )
+                                        record_partition_failure(
+                                            partition, "partition-acquisition", exc
+                                        )
+                                        raise exc
+
+                                    put_done = False
+                                    while not is_stopped():
+                                        try:
+                                            handoff_queue.put(
+                                                (partition, acq_out), timeout=0.05
+                                            )
+                                            put_done = True
+                                            break
+                                        except queue.Full:
+                                            continue
+                                    if not put_done:
+                                        admission_credits.release()
+                                        break
+                                    del acq_out
+                            except Exception as exc:
+                                with thread_lock:
+                                    if producer_exc is None:
+                                        producer_exc = exc
+                                    timeline_records[index]["acquire_end"] = (
+                                        time.perf_counter()
+                                    )
+                                record_partition_failure(
+                                    partition, "partition-acquisition", exc
+                                )
+                                stop_event.set()
+                                cancellation_ingress.request_cancellation(
+                                    RuntimeCancellationRequest(attempt=owners.attempt)
+                                )
+                            finally:
+                                while not is_stopped():
+                                    try:
+                                        handoff_queue.put(_DONE_SENTINEL, timeout=0.05)
+                                        break
+                                    except queue.Full:
+                                        continue
+
+                        def consumer_worker() -> None:
+                            nonlocal consumer_exc
+                            next_index = phase.partitions[0].index
+                            finished_producers = 0
+                            waiting: dict[
+                                int,
+                                tuple[
+                                    WorkPartition[TPartitionPayload],
+                                    PartitionAcquisitionOutput[TAcquisitionResult],
+                                ],
+                            ] = {}
+                            item: object
+                            try:
+                                while True:
+                                    if is_stopped():
+                                        break
+                                    if next_index in waiting:
+                                        item = waiting.pop(next_index)
+                                    else:
+                                        try:
+                                            item = handoff_queue.get(timeout=0.05)
+                                        except queue.Empty:
+                                            continue
+                                    if item is _DONE_SENTINEL:
+                                        finished_producers += 1
+                                        if finished_producers == acquisition_workers:
+                                            break
+                                        continue
+                                    if not isinstance(item, tuple):
+                                        continue
+                                    if item[0].index != next_index:
+                                        waiting[item[0].index] = item
+                                        continue
+                                    partition: WorkPartition[TPartitionPayload] = item[
+                                        0
+                                    ]
+                                    acq_out: PartitionAcquisitionOutput[
+                                        TAcquisitionResult
+                                    ] = item[1]
+                                    item = None
+                                    credit_released = False
+                                    try:
+                                        if is_stopped():
+                                            break
+                                        progress("partition_compose", partition.index)
+                                        comp_start = time.perf_counter()
+                                        comp_out = adapter.execute_composition(
+                                            partition,
+                                            acq_out,
+                                            store,
+                                            retain_memory=retain_partition_memory
+                                            and len(partitions) == 1,
+                                            should_cancel=is_stopped,
+                                        )
+                                        comp_end = time.perf_counter()
+                                        with thread_lock:
+                                            composition_outputs.append(comp_out)
+                                            timeline_by_index[partition.index][
+                                                "compose_start"
+                                            ] = comp_start
+                                            timeline_by_index[partition.index][
+                                                "compose_end"
+                                            ] = comp_end
+                                            timeline_by_index[partition.index][
+                                                "status"
+                                            ] = "completed"
+                                        part_artifacts, part_settlements = (
+                                            adapter.create_partition_artifacts(
+                                                partition, comp_out
+                                            )
+                                        )
+                                        with thread_lock:
+                                            artifacts.extend(part_artifacts)
+                                            settlements.extend(part_settlements)
+                                        del acq_out, comp_out
+                                        progress(
+                                            "partition_released", partition.index + 1
+                                        )
+                                        next_index += 1
+                                    finally:
+                                        if not credit_released:
+                                            admission_credits.release()
+                                            credit_released = True
+                            except Exception as exc:
+                                consumer_exc = exc
+                                if "partition" in locals():
+                                    with thread_lock:
+                                        timeline_by_index[partition.index][
+                                            "compose_end"
+                                        ] = time.perf_counter()
+                                    record_partition_failure(
+                                        partition, "partition-composition", exc
+                                    )
+                                stop_event.set()
+                                cancellation_ingress.request_cancellation(
+                                    RuntimeCancellationRequest(
+                                        attempt=owners.attempt,
+                                    )
+                                )
+                                admission_credits.release()
+                                admission_credits.release()
+
+                        producer_threads = [
+                            threading.Thread(
+                                target=producer_worker,
+                                name=f"pipeline-producer-{index}",
+                            )
+                            for index in range(acquisition_workers)
+                        ]
+                        consumer_thread = threading.Thread(
+                            target=consumer_worker,
+                            name="pipeline-consumer",
+                        )
+                        for producer_thread in producer_threads:
+                            producer_thread.start()
+                        consumer_thread.start()
+                        for producer_thread in producer_threads:
+                            producer_thread.join()
+                        consumer_thread.join()
+
+                        if consumer_exc is not None and not isinstance(
+                            consumer_exc, InterruptedError
+                        ):
+                            raise consumer_exc
+                        if producer_exc is not None:
+                            raise producer_exc
+                        if consumer_exc is not None:
+                            raise consumer_exc
+                        if cancellation_ingress.is_cancelled or (
+                            should_cancel is not None and should_cancel()
+                        ):
                             cancellation_ingress.request_cancellation(
                                 RuntimeCancellationRequest(
                                     attempt=owners.attempt,
                                 )
                             )
-                            admission_credits.release()
-                            admission_credits.release()
-
-                    producer_threads = [
-                        threading.Thread(
-                            target=producer_worker,
-                            name=f"pipeline-producer-{index}",
-                        )
-                        for index in range(acquisition_workers)
-                    ]
-                    consumer_thread = threading.Thread(
-                        target=consumer_worker,
-                        name="pipeline-consumer",
-                    )
-                    for producer_thread in producer_threads:
-                        producer_thread.start()
-                    consumer_thread.start()
-                    for producer_thread in producer_threads:
-                        producer_thread.join()
-                    consumer_thread.join()
-
-                    if consumer_exc is not None and not isinstance(
-                        consumer_exc, InterruptedError
-                    ):
-                        raise consumer_exc
-                    if producer_exc is not None:
-                        raise producer_exc
-                    if consumer_exc is not None:
-                        raise consumer_exc
-                    if cancellation_ingress.is_cancelled or (
-                        should_cancel is not None and should_cancel()
-                    ):
-                        cancellation_ingress.request_cancellation(
-                            RuntimeCancellationRequest(
-                                attempt=owners.attempt,
+                            raise InterruptedError(
+                                "Partition pipeline execution cancelled"
                             )
-                        )
-                        raise InterruptedError("Partition pipeline execution cancelled")
+                    phase_offset += len(phase.partitions)
 
                 check_cancellation()
                 store.seal()
@@ -733,7 +805,6 @@ class PartitionPipelineScheduler:
                     and unsettled_keys
                 ):
                     failed_work_unit_keys.add(unsettled_keys[0])
-                    failed_stage = "partition-pipeline-completion"
                     failed_exc = exc
 
                 for key in work_unit_keys:

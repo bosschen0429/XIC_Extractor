@@ -30,7 +30,10 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
     validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
-from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
+from xic_extractor.alignment.feature_membership_inference import (
+    BatchRtWarp,
+)
+from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.scientific_settings import (
     SCIENTIFIC_SETTING_FIELDS,
@@ -193,9 +196,7 @@ class UntargetedPartitionJob:
         )
         for field_name, kind in expected:
             if not isinstance(getattr(self, field_name), kind):
-                raise UntargetedPartitionError(
-                    f"{field_name} has the wrong owner type"
-                )
+                raise UntargetedPartitionError(f"{field_name} has the wrong owner type")
         if not isinstance(self.candidates, tuple) or any(
             not isinstance(item, DiscoveryCandidate) for item in self.candidates
         ):
@@ -324,9 +325,7 @@ def build_sample_jobs(
     jobs = [first]
     for subject, work_unit_key in subject_work_units[1:]:
         if not isinstance(subject, CidNlMethodSubject):
-            raise UntargetedPartitionError(
-                "method_subject has the wrong owner type"
-            )
+            raise UntargetedPartitionError("method_subject has the wrong owner type")
         _required_text(work_unit_key, field="work_unit_key")
         if subjects_by_id is not None:
             if subjects_by_id.get(subject.method_subject_id) != subject:
@@ -362,6 +361,7 @@ def canonical_sample_result_bytes(
         acquisition_sha256=reference.acquisition_sha256,
         backfill_assessment_artifact_ids=reference.backfill_assessment_artifact_ids,
         backfill_query_bounds=reference.backfill_query_bounds,
+        backfill_query_predictions=reference.backfill_query_predictions,
         backfill_group_hypothesis_ids=reference.backfill_group_hypothesis_ids,
     )
 
@@ -398,6 +398,7 @@ class UntargetedSampleResultRef:
     acquisition_sha256: str | None
     backfill_assessment_artifact_ids: tuple[str, ...]
     backfill_query_bounds: tuple[tuple[float, float], ...]
+    backfill_query_predictions: tuple[tuple[float | None, str], ...]
     backfill_group_hypothesis_ids: tuple[str | None, ...]
     artifact: EvidenceArtifactRef
 
@@ -436,6 +437,22 @@ class UntargetedPreparedGrouping:
     alignment_config: AlignmentConfig
     known_istd_reference: KnownIstdReference | None
     rt_warp: BatchRtWarp | None = None
+
+    @property
+    def rt_anchor_groups(self) -> tuple[tuple[SampleLocalMS1Owner, ...], ...]:
+        """Only agreed bootstrap groups can contribute calibration observations."""
+        return tuple(
+            group.owners
+            for workset in self.worksets
+            for group in workset.grouping_scope.groups
+            if group.inference_basis is not None
+            and group.inference_basis.basis
+            in {
+                "bidirectional_membership_agreement",
+                "known_identity_constraint",
+                "peak_trajectory",
+            }
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -492,9 +509,7 @@ class UntargetedSampleResult:
                 == center + half_window
             )
         if len(matches) > 1:
-            raise UntargetedPartitionError(
-                "group has duplicate backfill attempts"
-            )
+            raise UntargetedPartitionError("group has duplicate backfill attempts")
         return matches[0] if matches else None
 
 
@@ -560,9 +575,7 @@ def _project_completed_backfill(
         center, group_hypothesis_id=group_context.group.group_hypothesis_id
     )
     if backfill is None:
-        raise UntargetedPartitionError(
-            "initial assessment is not a backfill"
-        )
+        raise UntargetedPartitionError("initial assessment is not a backfill")
     assessment = backfill.assessment
     initial = result.adapter_result.assessment_input.assessment
     for reference in (initial, assessment):
@@ -582,13 +595,12 @@ def _project_completed_backfill(
         or not receipt.acquisition_supported
         or backfill.backfill_input is not None
     ):
-        raise UntargetedPartitionError(
-            "backfill is not a completed empty epoch"
-        )
+        raise UntargetedPartitionError("backfill is not a completed empty epoch")
+    query_rt = center if backfill.query_rt is None else backfill.query_rt
     expected_request = XICRequest(
         mz=group_context.group.family_center_mz,
-        rt_min=max(0.0, center - job.peak_config.nl_rt_anchor_half_window_min),
-        rt_max=center + job.peak_config.nl_rt_anchor_half_window_min,
+        rt_min=max(0.0, query_rt - job.peak_config.nl_rt_anchor_half_window_min),
+        rt_max=query_rt + job.peak_config.nl_rt_anchor_half_window_min,
         ppm_tol=job.method_subject.precursor_tolerance_ppm,
     )
     exact = exact_traces(
@@ -598,9 +610,7 @@ def _project_completed_backfill(
         receipt.query_rt_min != expected_request.rt_min
         or receipt.query_rt_max != expected_request.rt_max
     ):
-        raise UntargetedPartitionError(
-            "backfill crossed its exact request coordinates"
-        )
+        raise UntargetedPartitionError("backfill crossed its exact request coordinates")
     (acquired,) = exact
     digest = result.result_ref.acquisition_sha256
     assert digest is not None
@@ -614,6 +624,8 @@ def _project_completed_backfill(
             group_identity=group,
             group_center_mz=group_context.group.family_center_mz,
             group_center_rt=center,
+            query_rt=query_rt,
+            query_rt_basis=backfill.query_rt_basis,
             source_result_artifact=result.result_ref.artifact,
             initial_assessment_artifact=initial.artifact,
             backfill_assessment=assessment,
@@ -628,6 +640,8 @@ def _project_completed_backfill(
         group_identity=group,
         group_center_mz=group_context.group.family_center_mz,
         group_center_rt=center,
+        query_rt=query_rt,
+        query_rt_basis=backfill.query_rt_basis,
         source_result_artifact=result.result_ref.artifact,
         initial_assessment_artifact=initial.artifact,
         backfill_assessment=assessment,
@@ -684,9 +698,7 @@ def _mint_sample_result_ref(
 ) -> UntargetedSampleResultRef:
     if backfill_attempt is not None:
         if backfill_attempts:
-            raise UntargetedPartitionError(
-                "duplicate backfill input carriers"
-            )
+            raise UntargetedPartitionError("duplicate backfill input carriers")
         backfill_attempts = (backfill_attempt,)
     if len(backfill_attempts) == 1:
         backfill_attempt = backfill_attempts[0]
@@ -758,6 +770,9 @@ def _mint_sample_result_ref(
         "backfill_assessment_artifact_ids": tuple(
             ref.artifact.evidence_artifact_id for ref in backfill_assessments
         ),
+        "backfill_query_predictions": tuple(
+            (attempt.query_rt, attempt.query_rt_basis) for attempt in backfill_attempts
+        ),
         "backfill_query_bounds": tuple(
             (
                 ref.content.evaluation_receipt.query_rt_min,
@@ -815,6 +830,9 @@ def _mint_sample_result_ref(
         acquisition_sha256=acquisition_sha256,
         backfill_assessment_artifact_ids=tuple(
             ref.artifact.evidence_artifact_id for ref in backfill_assessments
+        ),
+        backfill_query_predictions=tuple(
+            (attempt.query_rt, attempt.query_rt_basis) for attempt in backfill_attempts
         ),
         backfill_query_bounds=tuple(
             (
@@ -905,9 +923,7 @@ def _validate_request_bound_inputs(
     physical_payload = request_inputs.get(PHYSICAL_CAPTURE_INPUT_KEY)
     if job.signal_processing_profile is None:
         if physical_payload is not None or job.physical_records:
-            raise UntargetedPartitionError(
-                "physical replay lost its profile"
-            )
+            raise UntargetedPartitionError("physical replay lost its profile")
     else:
         records = {record.candidate_id: record for record in job.physical_records}
         if (
@@ -915,9 +931,7 @@ def _validate_request_bound_inputs(
             or len(records) != len(job.physical_records)
             or set(records) != {candidate.candidate_id for candidate in job.candidates}
         ):
-            raise UntargetedPartitionError(
-                "physical replay candidate coverage changed"
-            )
+            raise UntargetedPartitionError("physical replay candidate coverage changed")
         expected_physical = physical_capture_input_payload(
             job.signal_processing_profile,
             {
@@ -970,8 +984,7 @@ def _validate_request_bound_inputs(
             "Discovery settings do not match the processing request"
         )
     expected_peak_settings = {
-        field: getattr(job.peak_config, field)
-        for field in SCIENTIFIC_SETTING_FIELDS
+        field: getattr(job.peak_config, field) for field in SCIENTIFIC_SETTING_FIELDS
     }
     if request_inputs.get(PEAK_SETTINGS_INPUT_KEY) != expected_peak_settings:
         raise UntargetedPartitionError(
@@ -1243,8 +1256,6 @@ def _request_uses_subject_batch(job: UntargetedPartitionJob) -> bool:
     return isinstance(job._request_subjects, UntargetedCidNlMethodSubjectBatch)
 
 
-
-
 class _SampleResultContext:
     """Reuse completed adapter snapshots within one synchronous owner phase."""
 
@@ -1295,9 +1306,7 @@ class _SampleResultContext:
         group_context: CidNlCellGroupContext,
     ) -> BackfillCompletionProjection:
         if type(result) is not UntargetedSampleResult:
-            raise UntargetedPartitionError(
-                "backfill requires a runtime result"
-            )
+            raise UntargetedPartitionError("backfill requires a runtime result")
         if self._jobs.get(id(result.job)) is not result.job:
             raise UntargetedPartitionError(
                 "backfill result does not reuse an exact runtime batch job"

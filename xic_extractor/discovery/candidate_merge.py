@@ -1,6 +1,6 @@
 import json
 import math
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Literal, cast
 
@@ -194,6 +194,45 @@ def merge_candidates_by_ms1_peak_with_lineage(
     )
 
 
+def same_apex_representative_alternatives(
+    candidates: Sequence[DiscoveryCandidate],
+    binding: DiscoveryCandidateMergeBinding,
+    *,
+    settings: DiscoverySettings,
+) -> Iterable[tuple[DiscoveryCandidate, DiscoveryCandidateMergeBinding]]:
+    """Rebuild merged facts around ranked original same-apex physical members.
+
+    Qualification remains with the caller. Broader overlap/ion-anchor merges
+    must not replace the retained physical peak through this fallback.
+    """
+    retained = candidates[binding.representative_source_ordinal]
+    alternatives = sorted(
+        (
+            ordinal
+            for ordinal in binding.member_source_ordinals
+            if ordinal != binding.representative_source_ordinal
+            and _same_ms1_apex_within_extraction_tolerance(
+                retained, candidates[ordinal], settings=settings
+            )
+        ),
+        key=lambda ordinal: _representative_rank(
+            candidates[ordinal], settings=settings
+        ),
+    )
+    for ordinal in alternatives:
+        representative = candidates[ordinal]
+        rebuilt = representative
+        for member in binding.member_source_ordinals:
+            if member != ordinal:
+                rebuilt = _merge_candidate_pair(
+                    rebuilt,
+                    candidates[member],
+                    settings=settings,
+                    representative=representative,
+                )
+        yield rebuilt, replace(binding, representative_source_ordinal=ordinal)
+
+
 def _matching_ms1_peak_candidate(
     candidate: DiscoveryCandidate,
     merged: list[DiscoveryCandidate],
@@ -357,7 +396,10 @@ def _merge_candidate_pair(
         ),
         discovery_candidate_state=assign_discovery_candidate_state(
             ms1_peak_found=True,
-            precursor_mz_basis=precursor_mz_basis,
+            has_nl_support=any(
+                item.discovery_candidate_state == "ms1_feature_nl_supported"
+                for item in (first, second)
+            ),
         ),
         ms1_feature_row_id=build_ms1_feature_row_id(
             sample_stem=representative.sample_stem,
@@ -508,13 +550,23 @@ def _representative_candidate(
 ) -> DiscoveryCandidate:
     return min(
         (first, second),
-        key=lambda candidate: (
-            _tag_rank(candidate.neutral_loss_tag, settings=settings),
-            -candidate.ms2_product_max_intensity,
-            abs(candidate.neutral_loss_mass_error_ppm),
-            candidate.best_seed_rt,
-            candidate.best_ms2_scan_id,
-        ),
+        key=lambda candidate: _representative_rank(candidate, settings=settings),
+    )
+
+
+def _representative_rank(
+    candidate: DiscoveryCandidate,
+    *,
+    settings: DiscoverySettings,
+) -> tuple[int, float, float, float, int]:
+    return (
+        _tag_rank(candidate.neutral_loss_tag, settings=settings),
+        -candidate.ms2_product_max_intensity,
+        abs(candidate.neutral_loss_mass_error_ppm)
+        if candidate.neutral_loss_mass_error_ppm is not None
+        else float("inf"),
+        candidate.best_seed_rt,
+        candidate.best_ms2_scan_id,
     )
 
 
@@ -699,6 +751,8 @@ def _merge_tag_evidence_entry(
     }
     if scan_receipts:
         merged["scan_receipts"] = scan_receipts
+    if first.get("precursor_mz_basis") != second.get("precursor_mz_basis"):
+        merged["precursor_mz_basis"] = "mixed"
 
     scan_ids = sorted(
         set(_int_values(first.get("scan_ids")))
@@ -772,6 +826,9 @@ def _merge_max_intensity_fields(
         "neutral_loss_error_ppm",
         "neutral_loss_error_da",
         "neutral_loss_window_da",
+        "scan_precursor_mz",
+        "precursor_metadata",
+        "scan_precursor_delta_da",
     ):
         if key in winner:
             merged[key] = winner[key]

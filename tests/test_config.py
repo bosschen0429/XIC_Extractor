@@ -251,6 +251,7 @@ def test_migrate_settings_dict_backfills_current_defaults_only() -> None:
     assert "peak_rel_height" not in CANONICAL_SETTINGS_DEFAULTS
     assert migrated["parallel_mode"] == "process"
     assert migrated["parallel_workers"] == str(default_parallel_workers())
+    assert migrated["ms2_precursor_tol_da"] == "0.8"
     assert not any("smooth" in warning for warning in warnings)
 
 

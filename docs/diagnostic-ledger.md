@@ -1484,3 +1484,73 @@ Current receipt:
 It supersedes the earlier handwritten-wrapper comparison. Rerun for changed
 neighbor semantics, grouping population or a broader performance scope; this
 snapshot alone does not establish scientific or production readiness.
+
+### 2026-10-08 MS2 Precursor Metadata Uses File-Local Trailer Indices
+
+PR #710 review found repeated trailer-label normalization in
+`RawFileHandle._iter_ms2_scans`. Each handle now resolves the four precursor
+field indices once from its vendor header and reads their formatted values per
+scan. Keep the formatted API: the typed trailer API changes numeric precision.
+
+One full `BenignfatBC0979_DNA.raw` (SHA-256
+`129756357f58928eca63b034aae28d5f52905be761d2bb7ecb3ede470c762d50`)
+was replayed through the production `collect_strict_nl_seeds` entry. Both sides
+used DNA_dR 116.047344, explicit 0.8 Da radius, the same Python/DLLs, one worker,
+one untimed same-handle warmup, and no application MS2 cache. The timed scope
+includes native acquisition but excludes RAW open, hashes, grouping, MS1 and
+publication; OS cache was not evicted.
+
+The initial three-pair base/head diagnosis measured median 3.3495 s on
+`bc50e7ed` versus 6.6543 s on `a24cd8d0`; seed counts 2,794 versus 2,870 reflect
+the intentional #708 evidence changes, not an exact-safe comparison. A separate
+three-pair interleaved comparison of `a24cd8d0` against the index-cache change
+measured 5.7600 -> 4.5237 s (21.46% lower). Ranges were 5.7401-5.9858 s and
+4.5182-5.3383 s; every pair improved. All 2,870 seeds serialized identically,
+and all 45,826 per-scan metadata/error records were byte-identical. The reader
+source SHA-256 for the measured change is
+`1c0ed414cc854cb714e1040e1c9d66e5f42763ae4cdacf3d4b276056a99e56ac`.
+
+Evidence: `diagnostic_only`; optimization oracle: `exact_safe`; disposition:
+`optimized`. This is a warm single-RAW seed-stage result, not whole-pipeline or
+scientific readiness. The retained probe, per-run identities and receipts are
+under `output/claude_review_20261008/`, with the comparison in
+`performance_receipt.json`. Rerun for changed trailer decoding or a broader
+input/timing scope, not merely another reader of this review.
+
+### 2026-10-09 Peak Trajectory Resolution Uses Local Mass And Order Regions
+
+Baseline `9cb12d26dbd8df4c59f02d690a1a6095c363414f`; measured candidate
+`peak_trajectories.py` SHA-256
+`7a44a92d8115f54c85ba73b152a61aaf584275b7568f215cf15e3ad6abd2a4b8`.
+Mass indexes prune candidates without changing directional ppm acceptance,
+traversal ties or the six-neighbor-sample rule. Order contractions inspect only
+the connected region containing their possible correspondence links, rather
+than copying and rechecking unrelated mass families. Initial graph validity is
+checked once; contraction cannot repair a pre-existing cycle or repeated node.
+
+The paired in-memory probe fixes eight samples, two landmarks per mass family,
+and one MS1-only sample. One warmup per variant precedes four interleaved BC/CB
+measurements at each scale, using identical inputs, configuration and Python.
+Median `resolve_peak_trajectories` time for 32/64/128 mass families changes from
+0.1233/0.4937/1.8528 s to 0.0333/0.0844/0.1717 s. At 128 families (1,792 owners,
+1,024 contexts), ranges are 1.7835-1.9012 s versus 0.1647-0.1836 s; ppm calls
+fall from 1,752,960 to 13,568 and order-pattern visits from 917,504 to 8,192.
+This is a local scaling result, excluding imports, input creation, RAW,
+ordinary grouping, Backfill and publication. Dense mass neighborhoods remain
+density-dependent: a 95-sample single-mass probe has medians 0.0258/0.0254 s,
+and the two small retained review cases remain around 1-2 ms. Neither establishes
+a meaningful speedup; this is not a universal or globally linear-time claim.
+
+Complete tracks, owner IDs, sample positions, comparison counts, retained
+contexts and derived distinctness/position indexes are exactly equal in every
+paired run, 530 bounded parity cases and
+the retained R02/R05 input (14 owners/contexts). The 1,948-owner contextless
+input also retains its unchanged empty-trajectory result. Boundary regression
+coverage protects inclusive ppm binding and MS1-only positions across mass
+families. Evidence: `diagnostic_only`; oracle: `exact_safe`; disposition:
+`optimized` for the stated multi-mass scaling workload, not scientific readiness.
+
+Receipts and reproducible probes are under `output/trajectory-performance/`:
+`paired-timing.json`, `density-and-retained-timing.json`, `order-cost.json`,
+`qa-parity.json` and `qa-retained.json`. Rerun for changed ppm/order semantics,
+population density or a broader timing claim, not merely another code reader.

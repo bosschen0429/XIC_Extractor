@@ -264,17 +264,22 @@ def owner_from_cid_nl_assessment_support(
 ) -> SampleLocalMS1Owner:
     """Project measured values without granting selection or write authority."""
 
-    observation, support, evidence_refs = _assessment_hypothesis_components(
+    observation, support, support_relations = _assessment_hypothesis_components(
         sample=sample,
         assessment=assessment,
         hypothesis=hypothesis,
     )
-    measured = tuple(evidence.observation for evidence in evidence_refs)
+    # Accepted relations resolve independent precursor references; inferred
+    # evidence can still carry its constructed precursor/loss fields.
+    measured = tuple(relation.content for relation in support_relations)
+    aggregate_precursor_mz = math.fsum(
+        relation.precursor_mz for relation in measured
+    ) / len(measured)
     aggregate_product_mz = math.fsum(
-        observation.product_mz for observation in measured
+        relation.observed_product_mz for relation in measured
     ) / len(measured)
     aggregate_observed_loss = math.fsum(
-        observation.observed_neutral_loss_da for observation in measured
+        relation.precursor_mz - relation.observed_product_mz for relation in measured
     ) / len(measured)
     integration = observation.content.integration
     neutral_loss_tag = (
@@ -290,7 +295,7 @@ def owner_from_cid_nl_assessment_support(
         sample_stem=sample.metadata.raw_stem,
         raw_file=observation.generation_provenance.acquisition_source_id,
         neutral_loss_tag=neutral_loss_tag,
-        precursor_mz=observation.content.mz,
+        precursor_mz=aggregate_precursor_mz,
         product_mz=aggregate_product_mz,
         observed_neutral_loss_da=aggregate_observed_loss,
         seed_rt=integration.rt_apex_min,
@@ -472,7 +477,7 @@ def _assessment_hypothesis_components(
 ) -> tuple[
     PeakObservationRef,
     CidNlChromatographicSupportRef,
-    tuple[CidNlEvidenceRef, ...],
+    tuple[DdaCidNlPeakSupportRef, ...],
 ]:
     if not isinstance(sample, ResolvedCanonicalSampleIdentity):
         raise HypothesisOwnerAdapterError(
@@ -552,7 +557,7 @@ def _assessment_hypothesis_components(
         raise HypothesisOwnerAdapterError(
             "hypothesis support scan count does not close its measured evidence"
         )
-    return observation, support, tuple(support_evidence)
+    return observation, support, selected_relations
 
 
 __all__ = [

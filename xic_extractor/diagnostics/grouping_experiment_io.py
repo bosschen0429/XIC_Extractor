@@ -32,6 +32,10 @@ from xic_extractor.alignment.sample_rt_calibration import (
 )
 from xic_extractor.discovery.csv_reader import read_discovery_batch_index
 from xic_extractor.discovery.input_source import DiscoveryInputSource
+from xic_extractor.peak_detection.elution_context import (
+    ElutionLandmark,
+    SampleElutionContext,
+)
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.tabular_io import write_delimited_rows
 
@@ -105,6 +109,9 @@ def write_grouping_inputs(
                 "key": workset.key,
                 "owners": [_owner_payload(owner) for owner in workset.owners],
                 "known_identity_bindings": workset.known_identity_bindings,
+                "elution_contexts": [
+                    asdict(context) for context in workset.elution_contexts
+                ],
                 "rt_warp": asdict(workset.rt_warp)
                 if workset.rt_warp is not None
                 else None,
@@ -147,6 +154,18 @@ def read_grouping_inputs(path: Path) -> tuple[GroupingInputs, dict[str, Any]]:
                     tuple(binding) for binding in value["known_identity_bindings"]
                 ),
                 rt_warp=warp,
+                elution_contexts=tuple(
+                    SampleElutionContext(
+                        **{
+                            **context,
+                            "landmarks": tuple(
+                                ElutionLandmark(**landmark)
+                                for landmark in context["landmarks"]
+                            ),
+                        }
+                    )
+                    for context in value.get("elution_contexts", ())
+                ),
             )
         )
     inputs = GroupingInputs(

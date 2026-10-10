@@ -86,6 +86,29 @@ class _RuntimeJobState:
         RuntimeResourceCleanupOutcome.SUCCEEDED
     )
 
+    def reuse_initial_hold(self, assessment: CidNlMethodAssessmentRef) -> None:
+        """Answer one group with the initial HOLD candidates.
+
+        Every sample result keeps its initial assessment, so a reused group
+        needs no carrier of its own. The scalar backfill input names the reuse
+        only while no group searches; once one does, each searched group is
+        answered by its own attempt.
+        """
+        if not self.backfill_targets:
+            self.backfill_input = UntargetedCidNlBackfillInput(
+                sample=self.job.sample,
+                candidate_assessment=assessment,
+            )
+
+    def schedule_search(self, target: UntargetedCidNlBackfillTarget) -> None:
+        self.backfill_input = None
+        self.backfill_targets = tuple(
+            sorted(
+                (*self.backfill_targets, target),
+                key=lambda item: (item.center_rt, item.group_hypothesis_id),
+            )
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class _BackfillSupportContext:
@@ -345,6 +368,14 @@ def _prepare_group_authorized_backfills(
         for state in states
     }
     population = tuple(job.sample for job in templates.values())
+    injection_order = {
+        sample.metadata.raw_stem: sample.metadata.injection_order
+        for sample in population
+        if sample.metadata.injection_order is not None
+    }
+    sample_cohorts = {
+        sample.metadata.raw_stem: sample.metadata.batch_id for sample in population
+    }
     for workset in prepared.worksets:
         direct = {
             candidate.peak_hypothesis_id: candidate.direct_support_assessment
@@ -359,6 +390,8 @@ def _prepare_group_authorized_backfills(
         for group, target_ids in plan_conservative_backfill_targets(
             groups, sample_population=population
         ):
+            if not target_ids:
+                continue
             subject = select_cid_nl_group_backfill_subject(
                 group,
                 tuple(
@@ -369,6 +402,23 @@ def _prepare_group_authorized_backfills(
                 ),
             )
             assert group.group_center_rt is not None
+            trajectory = workset.grouping_scope.peak_trajectories.trajectory_for(
+                group.owners
+            )
+            locations = trajectory.backfill_locations(
+                tuple(templates[sample_id].sample.metadata.raw_stem
+                      for sample_id in sorted(target_ids)),
+                reference_samples=frozenset(
+                    owner.sample_stem for owner in group.owners
+                    if not owner.is_provisional
+                ),
+                injection_order=injection_order,
+                sample_cohorts=sample_cohorts,
+                rt_warp=prepared.rt_warp,
+                backfill_half_window_min=(
+                    templates[min(target_ids)].peak_config.nl_rt_anchor_half_window_min
+                ),
+            )
             for sample_id in sorted(target_ids):
                 key = (sample_id, subject.method_subject_id)
                 if key not in by_key:
@@ -393,40 +443,42 @@ def _prepare_group_authorized_backfills(
                 if state.error is not None or state.adapter_result is None:
                     continue
                 assessment = state.adapter_result.assessment_input.assessment
-                revisit = _group_revisit(assessment)
+                sample_stem = state.job.sample.metadata.raw_stem
+                localized = locations[sample_stem]
+                location = localized.location
+                revisit = _group_revisit(
+                    assessment,
+                    observed_rt=location.observed_rt,
+                    apex_tolerance_sec=prepared.alignment_config.owner_apex_close_sec,
+                )
                 if revisit is None:
                     continue
                 if revisit == "reuse":
-                    state.backfill_input = UntargetedCidNlBackfillInput(
-                        sample=state.job.sample,
-                        candidate_assessment=assessment,
-                    )
+                    state.reuse_initial_hold(assessment)
                 else:
-                    state.backfill_targets = tuple(
-                        sorted(
-                            (
-                                *state.backfill_targets,
-                                UntargetedCidNlBackfillTarget(
-                                    group_hypothesis_id=group.group_hypothesis_id,
-                                    method_subject=subject,
-                                    physical_mz=group.family_center_mz,
-                                    center_rt=group.group_center_rt,
-                                ),
-                            ),
-                            key=lambda target: (
-                                target.center_rt,
-                                target.group_hypothesis_id,
-                            ),
+                    state.schedule_search(
+                        UntargetedCidNlBackfillTarget(
+                            group_hypothesis_id=group.group_hypothesis_id,
+                            method_subject=subject,
+                            physical_mz=group.family_center_mz,
+                            center_rt=group.group_center_rt,
+                            query_rt=location.query_rt,
+                            query_rt_basis=location.basis,
+                            query_rt_tolerance_sec=localized.apex_tolerance_sec,
+                            query_rt_reliable=localized.reliable,
                         )
                     )
 
 
 def _group_revisit(
     assessment: CidNlMethodAssessmentRef,
+    *,
+    observed_rt: float | None = None,
+    apex_tolerance_sec: float = 0.0,
 ) -> Literal["reuse", "search"] | None:
     """How a sample outside one group revisits that group's window.
 
-    A HOLD with candidate peaks is reused; otherwise the window is searched.
+    A HOLD is reused unless an available pattern locates a different peak.
     A SUPPORT belongs to another peak of the sample and does not answer the
     group's window.
     """
@@ -438,7 +490,15 @@ def _group_revisit(
         or is_cid_nl_missing_ms1_rejection(assessment)
     ):
         return None
-    return "reuse" if assessment.candidate_peaks else "search"
+    if not assessment.candidate_peaks:
+        return "search"
+    if observed_rt is not None and not any(
+        abs(peak.content.integration.rt_apex_min - observed_rt) * 60.0
+        <= apex_tolerance_sec
+        for peak in assessment.candidate_peaks
+    ):
+        return "search"
+    return "reuse"
 
 
 def _prepare_owner_authorized_backfills(
@@ -552,26 +612,14 @@ def _prepare_subject_authorized_backfills(
             if revisit is None:
                 continue
             if revisit == "reuse":
-                state.backfill_input = UntargetedCidNlBackfillInput(
-                    sample=state.job.sample,
-                    candidate_assessment=assessment,
-                )
+                state.reuse_initial_hold(assessment)
             else:
-                state.backfill_targets = tuple(
-                    sorted(
-                        (
-                            *state.backfill_targets,
-                            UntargetedCidNlBackfillTarget(
-                                group_hypothesis_id=group.group_hypothesis_id,
-                                method_subject=state.job.method_subject,
-                                physical_mz=group.family_center_mz,
-                                center_rt=center,
-                            ),
-                        ),
-                        key=lambda target: (
-                            target.center_rt,
-                            target.group_hypothesis_id,
-                        ),
+                state.schedule_search(
+                    UntargetedCidNlBackfillTarget(
+                        group_hypothesis_id=group.group_hypothesis_id,
+                        method_subject=state.job.method_subject,
+                        physical_mz=group.family_center_mz,
+                        center_rt=center,
                     )
                 )
     return tuple(added_states)
@@ -617,6 +665,10 @@ def _execute_backfill(
                 sample=job.sample,
                 method_subject=job.method_subject,
                 group_center_rt=target.center_rt,
+                query_rt=target.sample_query_rt,
+                query_rt_basis=target.query_rt_basis,
+                query_rt_tolerance_sec=target.query_rt_tolerance_sec,
+                query_rt_reliable=target.query_rt_reliable,
                 group_center_mz=target.physical_mz,
                 group_hypothesis_id=target.group_hypothesis_id,
                 initial_assessment=ctx.initial_assessment,
@@ -706,6 +758,10 @@ def _execute_backfill_batch(phase: _BatchSamplePhaseState) -> None:
                     sample=state.job.sample,
                     method_subject=state.job.method_subject,
                     group_center_rt=target.center_rt,
+                    query_rt=target.sample_query_rt,
+                    query_rt_basis=target.query_rt_basis,
+                    query_rt_tolerance_sec=target.query_rt_tolerance_sec,
+                    query_rt_reliable=target.query_rt_reliable,
                     group_center_mz=target.physical_mz,
                     group_hypothesis_id=target.group_hypothesis_id,
                     initial_assessment=ctx.initial_assessment,
@@ -828,7 +884,6 @@ def assess_initial_sample_jobs(
 class _SampleBackfillWorkerRequest:
     jobs: tuple[UntargetedPartitionJob, ...]
     backfill_targets_by_key: dict[str, tuple[UntargetedCidNlBackfillTarget, ...]]
-    backfill_inputs_by_key: dict[str, UntargetedCidNlBackfillInput | None]
     backfill_support_by_key: dict[str, _BackfillSupportContext]
     backfill_resource_key: str | None
 
@@ -861,7 +916,6 @@ def _execute_sample_backfill_worker(
             initial_requires_raw=False,
             observer=_PartitionWorkObserver(job.processing_owners),
             backfill_support=request.backfill_support_by_key.get(job.work_unit_key),
-            backfill_input=request.backfill_inputs_by_key.get(job.work_unit_key),
             backfill_targets=request.backfill_targets_by_key.get(job.work_unit_key, ()),
         )
         for job in request.jobs

@@ -15,11 +15,7 @@ from xic_extractor.discovery.physical_fact_persistence import (
     write_discovery_physical_fact_sidecar,
 )
 from xic_extractor.peak_detection.background_shape import (
-    has_deficient_monotone_run,
-    has_unresolved_valley_floors,
-    is_background_like_peak,
     is_provisional_peak_shape,
-    is_unresolved_shoulder_peak,
 )
 from xic_extractor.peak_detection.models import PeakCandidatesResult
 from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
@@ -36,12 +32,211 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+    PHYSICAL_PEAK_BACKFILL_POLICY,
     PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
     PHYSICAL_PEAK_NO_SELECTION_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
+    PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
     PHYSICAL_PEAK_WINDOW_POLICY,
 )
 from xic_extractor.peak_detection.scoring_metrics import noise_shape_severity
+
+
+@pytest.mark.parametrize(
+    "height,expected", [(5.0, "unavailable"), (200.0, "available")]
+)
+def test_backfill_requires_background_contrast_without_changing_detected_capture(
+    height: float, expected: str,
+) -> None:
+    rt = np.linspace(0.0, 2.0, 401)
+    raw = 100.0 + np.random.default_rng(19).normal(0.0, 10.0, len(rt))
+    raw += height * np.exp(-0.5 * ((rt - 1.0) / 0.08) ** 2)
+    prepared = prepare_physical_signal(rt, raw)
+    question = dict(
+        selection_subject_id="backfill-background-contrast",
+        query_rt_min=1.0,
+        search_rt_window=(0.85, 1.15),
+    )
+    detected = evaluate_physical_peak(
+        prepared,
+        **question,
+        selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+    )
+    assert detected.state == "available"
+    backfill = evaluate_physical_peak(
+        prepared, **question, selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
+    )
+    assert backfill.state == expected
+    if expected == "unavailable":
+        assert backfill.reason == "insufficient_backfill_peak_contrast"
+        assert backfill.facts is None
+    else:
+        assert backfill.facts.area_counts_seconds == detected.facts.area_counts_seconds
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=SignalProcessingProfile(), evaluation=backfill,
+    )
+    assert deserialize_physical_peak_evaluation(payload)[-1] == backfill
+
+
+@pytest.mark.parametrize("query_rt", [0.8, 1.2])
+def test_backfill_recovers_the_complete_peak_containing_the_query(
+    query_rt: float,
+) -> None:
+    rt = np.linspace(0.0, 3.0, 601)
+    raw = (
+        1000.0 * np.exp(-0.5 * ((rt - 1.0) / 0.12) ** 2)
+        + 9000.0 * np.exp(-0.5 * ((rt - 2.1) / 0.06) ** 2)
+    )
+    prepared = prepare_physical_signal(rt, raw)
+    window = (query_rt - 0.05, query_rt + 0.05)
+    question = dict(
+        selection_subject_id="query-inside-complete-peak",
+        query_rt_min=query_rt,
+        search_rt_window=window,
+    )
+    ordinary = evaluate_physical_peak(
+        prepared, **question,
+        selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+    )
+    assert ordinary.state == "unavailable" and ordinary.facts is None
+    backfill = evaluate_physical_peak(
+        prepared, **question, selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
+    )
+    assert backfill.state == "available" and backfill.facts is not None
+    assert backfill.question.search_rt_window == window
+    assert backfill.facts.apex_rt_min == pytest.approx(1.0)
+    assert not window[0] <= backfill.facts.apex_rt_min <= window[1]
+    assert backfill.facts.left_rt_min < query_rt < backfill.facts.right_rt_min
+    centered = evaluate_physical_peak(
+        prepared, selection_subject_id="query-inside-complete-peak",
+        query_rt_min=1.0, search_rt_window=(0.95, 1.05),
+        selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
+    )
+    assert centered.facts is not None
+    assert backfill.facts.physical_segment_id == centered.facts.physical_segment_id
+    assert backfill.facts.area_counts_seconds == centered.facts.area_counts_seconds
+    assert backfill.facts.left_rt_min == centered.facts.left_rt_min
+    assert backfill.facts.right_rt_min == centered.facts.right_rt_min
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=SignalProcessingProfile(), evaluation=backfill,
+    )
+    assert deserialize_physical_peak_evaluation(payload)[-1] == backfill
+
+
+def test_backfill_window_does_not_take_a_neighbor_outside_the_expected_rt() -> None:
+    rt = np.linspace(0.0, 2.0, 401)
+    raw = 1000.0 * np.exp(-0.5 * ((rt - 0.4) / 0.08) ** 2)
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="missing-peak-with-neighbor",
+        query_rt_min=1.0,
+        search_rt_window=(0.8, 1.2),
+        selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
+    )
+    assert result.state == "unavailable"
+    assert result.reason == "no_peak_in_sample_local_window"
+    assert result.facts is None
+    assert result.segment_universe.segments
+    assert result.segment_universe.segments[0].apex_rt_min == pytest.approx(0.4)
+
+
+def test_backfill_window_overlap_without_query_containment_is_not_enough() -> None:
+    rt = np.linspace(0.0, 3.0, 601)
+    raw = 1000.0 * np.exp(-0.5 * ((rt - 1.0) / 0.12) ** 2)
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="neighbor-tail-overlaps-window",
+        query_rt_min=1.5, search_rt_window=(1.3, 1.7),
+        selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
+    )
+    segment, = result.segment_universe.segments
+    assert 1.3 < segment.right_rt_min < 1.5
+    assert result.reason == "no_peak_in_sample_local_window"
+    assert result.state == "unavailable" and result.facts is None
+
+
+def test_backfill_does_not_choose_between_two_query_containing_segments() -> None:
+    rt = np.linspace(0.0, 3.0, 601)
+    raw = sum(
+        1000.0 * np.exp(-0.5 * ((rt - center) / 0.12) ** 2)
+        for center in (1.0, 1.5)
+    )
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="forecast-on-shared-valley",
+        query_rt_min=1.25, search_rt_window=(1.2, 1.3),
+        selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
+    )
+    assert len(result.question.admissible_segment_ids) == 2
+    assert result.reason == "ambiguous_segment_candidates"
+    assert result.state == "unavailable" and result.facts is None
+
+
+def test_backfill_query_containment_does_not_bypass_background_qualification() -> None:
+    rt = np.linspace(0.0, 2.0, 401)
+    raw = 100.0 + np.random.default_rng(19).normal(0.0, 10.0, len(rt))
+    raw += 5.0 * np.exp(-0.5 * ((rt - 1.0) / 0.08) ** 2)
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="weak-query-containing-segment",
+        query_rt_min=0.95, search_rt_window=(0.93, 0.97),
+        selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
+    )
+    assert len(result.question.admissible_segment_ids) == 1
+    assert result.reason == "insufficient_backfill_peak_contrast"
+    assert result.state == "unavailable" and result.facts is None
+
+
+def test_backfill_query_containment_does_not_accept_a_clipped_peak() -> None:
+    rt = np.linspace(0.0, 2.0, 401)
+    raw = 1000.0 * np.exp(-0.5 * ((rt - 0.1) / 0.12) ** 2)
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="clipped-query-containing-segment",
+        query_rt_min=0.3, search_rt_window=(0.28, 0.32),
+        selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
+    )
+    assert len(result.question.admissible_segment_ids) == 1
+    assert result.reason == "incomplete_peak_context"
+    assert result.state == "unavailable" and result.facts is None
+
+
+def test_backfill_retains_insufficient_support_reason_for_two_isolated_scans() -> None:
+    rt = np.linspace(0.0, 3.0, 61)
+    raw = np.zeros_like(rt)
+    raw[[29, 31]] = (1000.0, 1100.0)
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="two-censored-observations",
+        query_rt_min=1.5,
+        search_rt_window=(1.2, 1.8),
+        selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
+    )
+    assert result.state == "unavailable"
+    assert result.reason == "insufficient_original_xic_continuity"
+    assert result.facts is None
+    assert result.segment_universe.segments
+
+
+def test_unreliable_location_preserves_nearest_peak_without_minting_a_value() -> None:
+    rt = np.linspace(0.0, 2.0, 401)
+    raw = 1000.0 * np.exp(-0.5 * ((rt - 0.4) / 0.08) ** 2)
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="unreliable-localization",
+        query_rt_min=1.0,
+        selection_policy_version=PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
+    )
+    assert result.state == "unavailable"
+    assert result.reason == "sample_localization_unreliable"
+    assert result.nearest_candidate_rt_min == pytest.approx(0.4)
+    assert result.facts is None
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=SignalProcessingProfile(), evaluation=result,
+    )
+    restored = deserialize_physical_peak_evaluation(payload)[-1]
+    assert restored == result
+    assert restored.nearest_candidate_rt_min == result.nearest_candidate_rt_min
 
 
 def test_unavailable_prepared_signal_keeps_live_asls_intermediate(monkeypatch) -> None:
@@ -76,6 +271,52 @@ def _context_sensitive_trace() -> tuple[np.ndarray, np.ndarray]:
         ]
     )
     return np.arange(len(raw), dtype=float) * 0.025, raw
+
+
+def _short_peak_with_separate_noise_hits() -> tuple[np.ndarray, np.ndarray]:
+    rt = np.arange(387, dtype=float) * 0.04
+    raw = np.zeros_like(rt)
+    # A ten-scan observed peak rises and falls. Earlier, smaller hits and
+    # scattered background observations do not establish its absence.
+    raw[187:206] = 10000.0 * np.asarray([
+        .103516, .173885, .172859, .126381, .229408, 0.0, .072839,
+        0.0, 0.0, .065716, .194376, .324126, .648833, 1.0,
+        .789331, .598496, .262206, .122555, .023368,
+    ])
+    raw[[
+        219, 220, 241, 244, 256, 260, 268, 270, 272, 274, 281, 283,
+        284, 290, 296, 299, 301, 303, 309, 310, 323, 326, 354, 371,
+    ]] = 120.0
+    return rt, raw
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize(
+    "policy", [PHYSICAL_PEAK_POINT_POLICY, DISCOVERY_PHYSICAL_PEAK_POINT_POLICY]
+)
+def test_supported_short_peak_survives_noise_hits_and_persistence(
+    reverse: bool, policy: str,
+) -> None:
+    rt, raw = _short_peak_with_separate_noise_hits()
+    if reverse:
+        raw = raw[::-1].copy()
+    apex_index = int(np.argmax(raw))
+    prepared = prepare_physical_signal(rt, raw)
+    result = evaluate_physical_peak(
+        prepared, selection_subject_id="supported-short-peak",
+        query_rt_min=rt[apex_index], selection_policy_version=policy,
+    )
+    assert result.state == "available"
+    assert result.facts is not None and result.integration is not None
+    assert result.facts.apex_rt_min == pytest.approx(rt[apex_index])
+    candidates = physical_candidates_result(prepared, result.segment_universe)
+    assert any(c.peak.rt == result.facts.apex_rt_min for c in candidates.candidates)
+    assert "near_detection_limit" not in result.integration.boundary_sources
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=SignalProcessingProfile(), evaluation=result,
+    )
+    *_, restored = deserialize_physical_peak_evaluation(payload)
+    assert restored == result
 
 
 def test_exterior_context_change_keeps_observed_near_baseline_peak_available() -> None:
@@ -128,6 +369,75 @@ def test_truncated_physical_peak_has_no_numeric_facts() -> None:
     assert result.state == "unavailable"
     assert result.reason == "incomplete_peak_context"
     assert result.facts is None
+    assert result.integration is None
+
+
+@pytest.mark.parametrize("target_present", [True, False])
+def test_search_window_does_not_admit_context_only_peak(target_present: bool) -> None:
+    rt = np.linspace(0.0, 6.0, 301)
+    raw = 5000.0 * np.exp(-0.5 * ((rt - 4.7) / 0.16) ** 2)
+    if target_present:
+        raw += 1000.0 * np.exp(-0.5 * ((rt - 2.3) / 0.22) ** 2)
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="bounded-search",
+        query_rt_min=1.3,
+        selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+        search_rt_window=(1.0, 3.0),
+    )
+    if target_present:
+        assert result.state == "available"
+        assert result.facts is not None
+        assert result.facts.apex_rt_min == pytest.approx(2.3, abs=0.04)
+    else:
+        assert result.state == "unavailable"
+        assert result.facts is None and result.integration is None
+
+
+def test_search_window_keeps_complete_peak_and_round_trips() -> None:
+    rt = np.linspace(0.0, 6.0, 301)
+    raw = 1000.0 * np.exp(-0.5 * ((rt - 3.0) / 0.4) ** 2)
+    prepared = prepare_physical_signal(rt, raw)
+    result = evaluate_physical_peak(
+        prepared,
+        selection_subject_id="complete-bounded-peak",
+        query_rt_min=3.0,
+        selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+        search_rt_window=(2.8, 3.2),
+    )
+    assert result.state == "available" and result.facts is not None
+    assert result.facts.left_rt_min < 2.8 < 3.2 < result.facts.right_rt_min
+    assert result.question.search_rt_window == (2.8, 3.2)
+    assert result.question.context_rt_start_min == 0.0
+    assert result.question.context_rt_end_min == 6.0
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=prepared.prepared.profile, evaluation=result
+    )
+    assert deserialize_physical_peak_evaluation(payload)[-1] == result
+    tampered = json.loads(payload)
+    tampered["evaluation"]["question"]["search_rt_window"] = [
+        (0.0).hex(),
+        (6.0).hex(),
+    ]
+    with pytest.raises(ValueError, match="physical_question_id"):
+        deserialize_physical_peak_evaluation(json.dumps(tampered))
+
+
+def test_search_window_does_not_resolve_two_eligible_peaks_by_strength() -> None:
+    rt = np.linspace(0.0, 6.0, 301)
+    raw = sum(
+        height * np.exp(-0.5 * ((rt - center) / 0.1) ** 2)
+        for center, height in [(2.0, 1000.0), (3.0, 2000.0), (5.0, 9000.0)]
+    )
+    result = evaluate_physical_peak(
+        prepare_physical_signal(rt, raw),
+        selection_subject_id="ambiguous-bounded-search",
+        query_rt_min=1.0,
+        selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+        search_rt_window=(1.0, 3.5),
+    )
+    assert len(result.question.admissible_segment_ids) == 2
+    assert result.state == "unavailable" and result.facts is None
     assert result.integration is None
 
 
@@ -217,23 +527,26 @@ def test_original_continuity_accepts_a_pair_despite_another_isolated_point(
         (PHYSICAL_PEAK_WINDOW_POLICY, 0.5),
     ],
 )
-def test_fragmented_original_peak_is_not_backfilled_by_smoothed_envelope(
+def test_observed_peak_with_acquisition_gaps_keeps_physical_facts(
     policy: str, query_rt: float,
 ) -> None:
     rt = np.linspace(0.0, 10.0, 101)
     raw = 1000.0 * np.exp(-0.5 * ((rt - 5.0) / 0.8) ** 2)
     raw[::2] = 0.0
-    raw[50] = 1000.0  # An adjacent pair does not repair repeated interruptions.
+    # Known Gaussian signal with acquisition gaps still supplies observed
+    # adjacent support at its apex; missing detections do not prove absence.
+    raw[50] = 1000.0
     profile = SignalProcessingProfile()
     prepared = prepare_physical_signal(rt, raw, profile=profile)
     fresh = evaluate_physical_peak(
         prepared, selection_subject_id="fragmented-envelope", query_rt_min=query_rt,
         selection_policy_version=policy,
     )
-    assert fresh.state == "unavailable"
-    assert fresh.reason == "insufficient_local_hit_enrichment"
-    assert fresh.facts is None and fresh.integration is None
-    assert fresh.answer.physical_segment_id is None
+    assert fresh.state == "available" and fresh.reason == ""
+    assert fresh.facts is not None and fresh.integration is not None
+    assert fresh.facts.apex_rt_min == pytest.approx(5.0)
+    assert fresh.facts.area_source == "trapezoid_counts_seconds_on_canonical_signal"
+    assert fresh.answer.physical_segment_id == fresh.facts.physical_segment_id
     fresh_payload = serialize_physical_peak_evaluation(
         rt, raw, profile=profile, evaluation=fresh,
     )
@@ -370,6 +683,62 @@ def test_strong_continuous_peak_with_sparse_tail_keeps_original_segment(
         np.trapezoid(raw[interval], rt[interval]) * 60.0
     )
     assert "near_detection_limit" not in result.integration.boundary_sources
+
+
+@pytest.mark.parametrize(
+    "policy", [PHYSICAL_PEAK_POINT_POLICY, DISCOVERY_PHYSICAL_PEAK_POINT_POLICY]
+)
+@pytest.mark.parametrize("scan_spacing", [0.01, 0.02, 0.04])
+def test_compact_continuous_doublet_keeps_component_areas(
+    policy: str, scan_spacing: float,
+) -> None:
+    rt = np.arange(0.0, 6.0 + scan_spacing / 2.0, scan_spacing)
+    sigma = 0.06
+    components = ((1000.0, 2.2), (600.0, 3.1))
+    raw = sum(
+        height * np.exp(-0.5 * ((rt - center) / sigma) ** 2)
+        for height, center in components
+    )
+    raw[raw < 15.0] = 0.0
+    # A weak isolated hit connects the density windows, but supplies neither
+    # a third chromatographic peak nor permission to merge the true doublet.
+    raw[int(np.argmin(abs(rt - 2.65)))] = 20.0
+    prepared = prepare_physical_signal(rt, raw)
+    # Both contexts include complete acquired flanks for the same components.
+    local = (rt >= 1.0) & (rt <= 4.5)
+    focused_prepared = prepare_physical_signal(rt[local], raw[local])
+    selected = []
+    for height, center in components:
+        result = evaluate_physical_peak(
+            prepared, selection_subject_id="compact-doublet",
+            query_rt_min=center, selection_policy_version=policy,
+        )
+        assert result.state == "available"
+        assert result.facts is not None and result.integration is not None
+        facts = result.facts
+        assert facts.apex_rt_min == pytest.approx(center, abs=scan_spacing)
+        # Independent untruncated Gaussian area. Thresholding discards small
+        # tails; neither signal smoothing nor the gap hit may add the other peak.
+        expected_area = height * sigma * np.sqrt(2.0 * np.pi) * 60.0
+        assert facts.area_counts_seconds == pytest.approx(expected_area, rel=0.03)
+        assert "near_detection_limit" not in result.integration.boundary_sources
+        focused = evaluate_physical_peak(
+            focused_prepared,
+            selection_subject_id="compact-doublet", query_rt_min=center,
+            selection_policy_version=policy,
+        )
+        assert focused.state == "available" and focused.facts is not None
+        assert focused.facts.apex_rt_min == facts.apex_rt_min
+        assert focused.facts.area_counts_seconds == pytest.approx(
+            expected_area, rel=0.03,
+        )
+        payload = serialize_physical_peak_evaluation(
+            rt, raw, profile=prepared.prepared.profile, evaluation=result,
+        )
+        assert deserialize_physical_peak_evaluation(payload)[-1] == result
+        selected.append(facts)
+    assert selected[0].physical_segment_id != selected[1].physical_segment_id
+    assert selected[0].right_rt_min <= selected[1].left_rt_min
 
 
 @pytest.mark.parametrize(
@@ -568,9 +937,6 @@ def test_whole_trend_has_matching_target_and_discovery_facts(
     )
 
 
-
-
-
 @pytest.mark.parametrize("pattern", ["alternating", "random", "random_amplitude"])
 @pytest.mark.parametrize(
     "policy",
@@ -600,8 +966,11 @@ def test_sparse_stationary_background_is_not_a_peak(
 
 
 @pytest.mark.parametrize("background_fragments", [False, True])
+@pytest.mark.parametrize(
+    "policy", [PHYSICAL_PEAK_POINT_POLICY, DISCOVERY_PHYSICAL_PEAK_POINT_POLICY]
+)
 def test_original_jaggedness_does_not_replace_peak_evidence(
-    background_fragments: bool,
+    background_fragments: bool, policy: str,
 ) -> None:
     rt = np.linspace(0.0, 10.0, 101)
     raw = 1000.0 * np.exp(-0.5 * ((rt - 5.0) / 0.5) ** 2)
@@ -613,6 +982,7 @@ def test_original_jaggedness_does_not_replace_peak_evidence(
     prepared = prepare_physical_signal(rt, raw)
     result = evaluate_physical_peak(
         prepared, selection_subject_id="supported-original-peak", query_rt_min=5.0,
+        selection_policy_version=policy,
     )
     assert result.state == "available"
     if not background_fragments:
@@ -624,6 +994,51 @@ def test_original_jaggedness_does_not_replace_peak_evidence(
         original = raw[selected.start_index:selected.end_index]
         assert noise_shape_severity(original)[0] == 2
     assert result.integration is not None
+
+
+def _overlapping_triplet_trace(
+    point_count: int = 1001, width: float = 0.65,
+) -> tuple[np.ndarray, np.ndarray]:
+    rt = np.linspace(0.0, 10.0, point_count)
+    raw = 100.0 + sum(
+        height * np.exp(-0.5 * ((rt - center) / width) ** 2)
+        for height, center in ((1000.0, 3.0), (1500.0, 5.0), (2000.0, 7.0))
+    )
+    return rt, raw
+
+
+@pytest.mark.parametrize("point_count", [1001, 2001])
+@pytest.mark.parametrize("width", [0.65, 0.75])
+def test_overlapping_component_keeps_measurement_and_review(
+    point_count: int, width: float,
+) -> None:
+    # Three analytically present components have elevated intervening valleys.
+    # Their measured intervals remain available without claiming deconvolution.
+    rt, raw = _overlapping_triplet_trace(point_count, width)
+    profile = SignalProcessingProfile()
+    prepared = prepare_physical_signal(rt, raw, profile=profile)
+    targeted, discovery = (
+        evaluate_physical_peak(
+            prepared, selection_subject_id="overlapping-middle-component",
+            query_rt_min=5.0, selection_policy_version=policy,
+        )
+        for policy in (
+            PHYSICAL_PEAK_POINT_POLICY, DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+        )
+    )
+    assert targeted.state == discovery.state == "available"
+    assert discovery.facts is not None
+    assert discovery.facts.apex_rt_min == pytest.approx(5.0, abs=0.15)
+    assert 3.0 < discovery.facts.left_rt_min < 5.0
+    assert 5.0 < discovery.facts.right_rt_min < 7.0
+    assert discovery.integration == targeted.integration
+    assert discovery.requires_overlap_review
+    payload = serialize_physical_peak_evaluation(
+        rt, raw, profile=profile, evaluation=discovery,
+    )
+    *_, restored = deserialize_physical_peak_evaluation(payload)
+    assert restored == discovery
+    assert restored.requires_overlap_review
 
 
 @pytest.mark.parametrize("scale,background", [(1.0, 0.0), (1000.0, 100000.0)])
@@ -750,52 +1165,6 @@ def test_current_discovery_qualification_persists_exactly(
         ) == payload
 
 
-def test_background_qualification_rejects_insufficient_edge_contrast() -> None:
-    rt = np.linspace(0.0, 3.0, 31)
-    # A shallow plateau whose apex is less than 1.2x above edge baseline in both views
-    raw = 100.0 + np.array([
-        0.0, 0.0, 5.0, 8.0, 10.0, 8.0, 5.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-    ])
-    baseline = np.full_like(raw, 50.0)
-    assert is_background_like_peak(
-        rt, raw, baseline, apex_index=4, raw_noise_mad=1.0,
-    )
-    # A resolved peak with peak-to-edge >= 1.2 in both views remains available
-    prominent_raw = 100.0 + 100.0 * np.exp(-0.5 * ((rt - 0.4) / 0.15) ** 2)
-    assert not is_background_like_peak(
-        rt, prominent_raw, baseline, apex_index=4, raw_noise_mad=1.0,
-    )
-
-
-def test_background_qualification_rejects_unresolved_shoulder_candidate() -> None:
-    assert not is_unresolved_shoulder_peak(
-        segment_class="separate_peak",
-        apex_height=100.0,
-        left_valley=40.0,
-        right_valley=30.0,
-    )
-    assert is_unresolved_shoulder_peak(
-        segment_class="shoulder_candidate",
-        apex_height=100.0,
-        left_valley=30.0,
-        right_valley=40.0,
-    )
-    assert not is_unresolved_shoulder_peak(
-        segment_class="shoulder_candidate",
-        apex_height=100.0,
-        left_valley=10.0,
-        right_valley=50.0,
-    )
-    assert not is_unresolved_shoulder_peak(
-        segment_class="shoulder_candidate",
-        apex_height=100.0,
-        left_valley=30.0,
-        right_valley=20.0,
-    )
-
-
 def test_is_provisional_peak_shape() -> None:
     # Silent baseline (noise_mad == 0.0): genuine sparse peaks like C010 / C060
     rt_sparse = np.array([8.0, 8.1, 8.2])
@@ -818,49 +1187,6 @@ def test_is_provisional_peak_shape() -> None:
     assert is_provisional_peak_shape(
         rt_noisy, raw_noisy, apex_index=3, raw_noise_mad=10.0
     )
-
-
-def test_has_deficient_monotone_run() -> None:
-    # Sparse peak (< 6 points): exempted to preserve authentic sparse peaks
-    short_raw = np.array([0.0, 500.0, 0.0])
-    assert not has_deficient_monotone_run(short_raw, apex_index=1)
-
-    # Authentic chromatographic peak: >= 2 consecutive monotonic steps on flank
-    good_peak = np.array([10.0, 50.0, 200.0, 800.0, 300.0, 50.0, 10.0])
-    # Up flank: 10 -> 50 -> 200 -> 800 (run of 3)
-    assert not has_deficient_monotone_run(good_peak, apex_index=3)
-
-    # High-frequency alternating chatter (jitter): max consecutive run <= 1
-    # 7 points alternating back and forth around apex (index 4, 110.0):
-    # Up: 100 -> 95 -> 105 -> 98 -> 110 (max up run = 1)
-    # Down: 110 -> 102 -> 108 (max down run = 1)
-    jitter = np.array([100.0, 95.0, 105.0, 98.0, 110.0, 102.0, 108.0])
-    assert has_deficient_monotone_run(jitter, apex_index=4)
-
-
-def test_has_unresolved_valley_floors() -> None:
-    # Clean resolved peak with valley return to 0: passes
-    assert not has_unresolved_valley_floors(
-        apex_height=1000.0, left_valley=0.0, right_valley=0.0
-    )
-
-    # Asymmetric peak with one elevated flank (shoulder) but one clean baseline
-    # return: passes
-    assert not has_unresolved_valley_floors(
-        apex_height=1000.0, left_valley=500.0, right_valley=50.0
-    )
-
-    # Both flanks elevated above 20% (unresolved saddle / floating feature): rejected
-    assert has_unresolved_valley_floors(
-        apex_height=1000.0, left_valley=250.0, right_valley=210.0
-    )
-
-    # Edge cases: zero or negative apex height rejected
-    assert has_unresolved_valley_floors(
-        apex_height=0.0, left_valley=0.0, right_valley=0.0
-    )
-
-
 
 
 @pytest.mark.parametrize(

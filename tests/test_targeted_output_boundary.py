@@ -239,16 +239,18 @@ def test_publication_renders_the_finalized_numeric_hypothesis(tmp_path: Path) ->
 
 
 @pytest.mark.parametrize(
-    ("nl_status", "not_counted_reason"),
+    ("nl_status", "not_counted_reason", "count_no_ms2_as_detected"),
     [
-        ("NL_FAIL", "analyte_nl_fail_requires_policy"),
-        ("NO_MS2", "analyte_missing_ms2_requires_policy"),
+        ("NL_FAIL", "analyte_nl_fail_requires_policy", False),
+        ("NO_MS2", "analyte_missing_ms2_requires_policy", False),
+        ("NO_MS2", "analyte_missing_ms2_requires_policy", True),
     ],
 )
 def test_service_publishes_finalized_numeric_values_without_counting_detection(
     tmp_path: Path,
     nl_status: str,
     not_counted_reason: str,
+    count_no_ms2_as_detected: bool,
 ) -> None:
     config, target, output = production_case(
         tmp_path,
@@ -258,7 +260,7 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
     config = replace(
         config,
         keep_intermediate_csv=True,
-        count_no_ms2_as_detected=False,
+        count_no_ms2_as_detected=count_no_ms2_as_detected,
     )
     assert not target.is_istd and target.istd_pair == ""
     for file_result in output.file_results:

@@ -42,7 +42,13 @@ from xic_extractor.discovery.batch_contract import (
 from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
 from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.execution._finalization import RuntimeResourceOpenOutcome
-from xic_extractor.execution.attempt import start_runtime_attempt
+from xic_extractor.execution._lifecycle import AttemptTerminalOutcome
+from xic_extractor.execution.attempt import (
+    RuntimeCancellationIngress,
+    RuntimeCancellationRequest,
+    execute_runtime_attempt,
+    start_runtime_attempt,
+)
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.peak_detection import capture as capture_owner
 from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -933,9 +939,28 @@ def test_runtime_does_not_evaluate_ineligible_inferred_precursor(
     assert result.sample_results[0].backfill_attempt is None
 
 
+@pytest.mark.parametrize(
+    "backfill_stop,cancel_accepted",
+    [
+        (None, False),
+        (InterruptedError, True),
+        (InterruptedError, False),
+        (RuntimeError, False),
+        (RuntimeError, True),
+    ],
+    ids=[
+        "success",
+        "accepted-cancellation",
+        "unexpected-interruption",
+        "execution-failure",
+        "failure-after-cancellation",
+    ],
+)
 def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
     tmp_path: Path,
     monkeypatch,
+    backfill_stop,
+    cancel_accepted,
 ) -> None:
     from xic_extractor.alignment.cell_observation_records import CellObservationRef
 
@@ -1057,6 +1082,39 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
         ),
     )
 
+    if backfill_stop is not None:
+        ingress = RuntimeCancellationIngress(attempt=context.processing_owners.attempt)
+
+        def finalize_with_cancellation(*args, **kwargs):
+            return execute_runtime_attempt(
+                *args, **kwargs, cancellation_ingress=ingress
+            )
+
+        prepare_work = runtime_module._prepare_runtime_work
+
+        def prepare_cancellable_work(*args, **kwargs):
+            return prepare_work(
+                *args, **kwargs, should_cancel=lambda: ingress.is_cancelled
+            )
+
+        monkeypatch.setattr(
+            runtime_module, "_prepare_runtime_work", prepare_cancellable_work
+        )
+
+        def stop_backfill(_state):
+            if cancel_accepted:
+                ingress.request_cancellation(
+                    RuntimeCancellationRequest(
+                        attempt=context.processing_owners.attempt
+                    )
+                )
+            raise backfill_stop("backfill interrupted")
+
+        monkeypatch.setattr(
+            runtime_module, "execute_runtime_attempt", finalize_with_cancellation
+        )
+        monkeypatch.setattr(runtime_module, "_execute_backfill", stop_backfill)
+
     result = execute_attempt(
         runtime,
         jobs,
@@ -1066,6 +1124,17 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
             "untargeted-cid-nl-real-data-runtime-recovery:test",
         ),
     )
+
+    if backfill_stop is not None:
+        expected = (
+            AttemptTerminalOutcome.CANCELLED
+            if backfill_stop is InterruptedError and cancel_accepted
+            else AttemptTerminalOutcome.FAILED
+        )
+        assert result.finalization.supervisor.terminal_outcome is expected
+        assert not result.sample_results
+        assert all(raw.disposed for raws in opened.values() for raw in raws)
+        return
 
     assert result.succeeded is True
     monkeypatch.setattr(CellObservationRef, "__post_init__", validate_cell)
@@ -1845,9 +1914,7 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
             RuntimeResourceOpenOutcome.CONDITION_NOT_ACTIVATED
         )
         assert empty_resource.reservation.owner_conditional is True
-    assert (
-        runtime_call_cost(result.finalization)["raw_open_count"] == 2
-    )
+    assert runtime_call_cost(result.finalization)["raw_open_count"] == 2
     _assert_partition_matches_runtime(jobs, result, monkeypatch)
 
 
@@ -2052,3 +2119,55 @@ def _assert_partition_matches_runtime(jobs, full_result, monkeypatch):
         item.open_outcome is RuntimeResourceOpenOutcome.OPEN_FAILED
         for item in failed.worker_batch.resource_settlements
     )
+
+
+def test_ms2_cache_preserves_precursor_metadata_and_reacquires_old_schema(tmp_path):
+    from types import SimpleNamespace
+
+    from xic_extractor.untargeted_execution import acquisition_cache as owner
+
+    fixture = build_targeted_processing_identity_raw_fixture(
+        tmp_path, sample_stems=("S1",), peak_config=_peak_config(tmp_path)
+    )
+    source = _source_for(fixture, "S1")
+    cache_dir = tmp_path / "metadata-cache"
+    reads = []
+
+    def opener():
+        reads.append(True)
+        handle, vendor = _open_bound_raw(
+            fixture, "S1", _FakeRaw((8.0,)), tmp_path=tmp_path
+        )
+        vendor.trailer_labels = [
+            "Monoisotopic M/Z:", "Charge State:", "Master Scan Number:"
+        ]
+        vendor.GetTrailerExtraInformation = lambda _: SimpleNamespace(
+            Labels=["Monoisotopic M/Z:", "Charge State:", "Master Scan Number:"],
+            Values=["499.0", "1", "12"],
+        )
+        return handle
+
+    def acquire():
+        with CachedUntargetedRaw(opener, source=source, cache_dir=cache_dir) as cached:
+            return tuple(cached.iter_ms2_scans(7.8, 8.2))
+
+    cold = acquire()
+    warm = acquire()
+    assert len(reads) == 1
+    assert cold[0].scan.precursor_metadata == warm[0].scan.precursor_metadata
+    assert warm[0].scan.precursor_metadata.monoisotopic_mz == 499.0
+    assert warm[0].scan.precursor_metadata.master_scan_number == 12
+    cache = owner._FactCache(cache_dir, source.acquisition_source_id)
+    key = owner._key_bytes("ms2_window", owner._float_text(7.8), owner._float_text(8.2))
+    payload = json.loads(cache.read("ms2", key))
+    payload["schema_version"] = "untargeted_raw_fact_cache"
+    for event in payload["events"]:
+        event["scan"].pop("precursor_metadata")
+    cache._path("ms2", key).write_bytes(
+        owner._canonical_json(cache._envelope(key, owner._canonical_json(payload)))
+    )
+    repaired = acquire()
+    assert len(reads) == 2
+    assert repaired[0].scan.precursor_metadata == cold[0].scan.precursor_metadata
+    acquire()
+    assert len(reads) == 2

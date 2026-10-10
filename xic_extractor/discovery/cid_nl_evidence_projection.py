@@ -162,6 +162,17 @@ def mint_untargeted_cid_nl_projection_ref(
         )
 
     observation = canonical_evidence.observation
+    if discovery_seed.precursor_metadata != observation.precursor_metadata:
+        raise UntargetedCidNlProjectionError(
+            "Discovery precursor metadata mismatches canonical evidence"
+        )
+    if (
+        discovery_seed.ms1_precursor_observation
+        != observation.ms1_precursor_observation
+    ):
+        raise UntargetedCidNlProjectionError(
+            "Discovery parent MS1 observation mismatches canonical evidence"
+        )
     if discovery_seed.acquisition_source_id != observation.acquisition_source_id:
         raise UntargetedCidNlProjectionError(
             "Discovery acquisition source mismatches canonical CID-NL evidence"
@@ -205,12 +216,22 @@ def mint_untargeted_cid_nl_projection_ref(
         observation.observed_neutral_loss_da,
         field="observed_neutral_loss_da",
     )
-    _require_close(
-        discovery_seed.observed_loss_error_ppm,
-        observation.observed_loss_error_ppm,
-        field="observed_loss_error_ppm",
-        abs_tol=1e-9,
-    )
+    if (
+        discovery_seed.observed_loss_error_ppm is None
+        or observation.observed_loss_error_ppm is None
+    ):
+        if (
+            discovery_seed.observed_loss_error_ppm
+            != observation.observed_loss_error_ppm
+        ):
+            raise UntargetedCidNlProjectionError("observed_loss_error_ppm mismatches")
+    else:
+        _require_close(
+            discovery_seed.observed_loss_error_ppm,
+            observation.observed_loss_error_ppm,
+            field="observed_loss_error_ppm",
+            abs_tol=1e-9,
+        )
 
     projection = UntargetedCidNlProjectionRef(
         canonical_sample_identity_id=sample.identity.sample_identity_id,

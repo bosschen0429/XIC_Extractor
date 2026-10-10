@@ -37,7 +37,57 @@ that group.
   group and the local RT/mass request bound the workset.
 - A Backfill candidate does not add a direct SUPPORT vote.
 
+### Query RT versus group RT
+
+The frozen group center remains the group's identity/evidence coordinate.
+The request center is sample-specific: take up to twelve same-cohort
+injection neighbors, convert their measured RTs to common coordinates when
+supported, fit a robust local linear trend over injection order so steep drift
+is followed rather than lagged, then apply the target sample's frozen batch warp. Both XIC bounds
+and preferred-peak selection use this query RT. Insufficient calibration and
+missing-context fallbacks have explicit bases; neither means measured zero
+shift. See the [RT mechanism table](alignment.md#rt-mechanisms-and-their-consumers).
+
+Forecast acceptance is narrower than the acquired context: same-cohort direct
+reference samples are held out one at a time using that same trajectory
+estimator. With at least two residuals, the apex tolerance is the larger of
+12 seconds and their 90th percentile, capped by the acquisition half-window.
+A residual p90 above that bound, or insufficient residuals, makes localization
+unreliable and leaves the cell empty rather than accepting any nearby peak.
+An observed trajectory position uses a 12-second bound (or the smaller
+acquisition half-window). The context fallback never expands this apex bound.
+A reliable query with no apex inside that bound can still nominate a physical
+segment whose own boundaries contain the query center. Mere overlap with the
+search window is insufficient. Multiple containing segments remain ambiguous;
+one containing segment must pass the existing complete-context, acquired-support,
+continuity, and background-contrast checks. This candidate recovery neither
+changes the RT tolerance nor bypasses downstream ownership and duplicate-peak
+decisions. Queries with an in-window apex keep their existing selection behavior.
+A configured acquisition window narrower than 12 seconds remains valid when
+the measured residual p90 fits inside it; the 12-second floor cannot itself
+make localization unreliable. Residuals are prepared once per row/cohort, not
+once per missing sample.
+The retained physical evaluation distinguishes `sample_localization_unreliable`
+from `no_peak_in_sample_local_window`; its nearest candidate RT remains
+inspectable even when no numeric observation is accepted.
+
+Completed-empty evidence binds both the original group center and actual query
+RT. It validates the acquired query, not containment of the group center in a
+shifted window. Supported Backfill admission uses the same frozen coordinates
+and owner-to-band trend rule as final grouping; it does not refit the warp.
+
 ### Cell outcome
+
+The physical Backfill question uses
+`sample_local_background_qualified_peak_in_context`. It retains the ordinary
+acquired-support and continuity requirements, and requires local prominence
+above three robust noise standard deviations (1.4826 times the unscaled
+short-scale MAD). Independently qualified censored hit clusters keep their
+existing support rule. This is a conservative background screen, not a measured
+blank false-positive rate or chemical-absence assertion. Initial and Detected
+capture policies and the integral of an accepted physical segment are unchanged.
+An isolated pair of non-adjacent raw hits remains insufficient original XIC
+continuity; smoothing it into a peak does not supply missing acquired support.
 
 1. An eligible missing Untargeted cell can yield
    `ms1_only_backfill_observation` when the cell has exactly one
@@ -77,7 +127,11 @@ that group.
 ## Surfaces
 
 - `alignment_backfill_cell_evidence.tsv` is a compact validation output for
-  accepted Backfill cells.
+  accepted Backfill cells. Schema `alignment_backfill_cell_query_evidence` adds
+  `backfill_query_rt_min` and `backfill_query_rt_max` from the executed assessment;
+  `family_center_rt` remains a distinct group-level display value. Unavailable
+  query bounds are empty, never copied from that display value. Readers require
+  the query-bound columns; old compact TSV exports must be regenerated.
 - Validation-minimal output selection emits that TSV. The ordinary production
   level writes the Matrix.
 - The TSV can be empty when the run has no eligible accepted Backfill cell. A

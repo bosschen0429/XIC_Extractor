@@ -18,7 +18,6 @@ from xic_extractor.evidence_artifacts import (
     _mint_evidence_artifact_ref,
     verify_evidence_artifact_payload,
 )
-from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.peak_detection.cid_nl_evidence import (
     ACQUISITION_MODE,
     CidNlEvidenceContractError,
@@ -355,13 +354,9 @@ def _validate_inputs(
         except PeakObservationContractError as exc:
             raise DdaCidNlCandidateSetRelationContractError(str(exc)) from exc
     observation = canonical_evidence.observation
-    if not neutral_loss_match(
-        observation.precursor_mz,
-        observation.product_mz,
-        observation.configured_neutral_loss_da,
-        policy.neutral_loss_tolerance_ppm,
-        observed_loss_da=observation.observed_neutral_loss_da,
-    )[2]:
+    if not observation.assess_precursor_loss(
+        policy.neutral_loss_tolerance_ppm
+    ).supports_nl:
         raise DdaCidNlCandidateSetRelationContractError(
             "CID-NL evidence does not satisfy the strict neutral-loss tolerance"
         )
@@ -375,18 +370,22 @@ def _set_level_members(
     policy: DdaCidNlPeakSupportPolicy,
 ) -> tuple[PeakObservationRef, ...]:
     observation = canonical_evidence.observation
+    precursor = observation.assess_precursor_loss(policy.neutral_loss_tolerance_ppm)
+    if not precursor.supports_nl or precursor.reference_mz is None:
+        raise DdaCidNlCandidateSetRelationContractError(
+            "CID-NL evidence lacks independent precursor isolation support"
+        )
     mz_compatible = tuple(
         peak
         for peak in candidate_peaks
-        if abs(observation.precursor_mz - peak.content.mz)
+        if abs(precursor.reference_mz - peak.content.mz)
         <= policy.precursor_tolerance_da
     )
     containing = tuple(
         peak
         for peak in mz_compatible
-        if peak.content.integration.rt_left_min
-        <= observation.scan_rt_min
-        <= peak.content.integration.rt_right_min
+        if peak.content.integration.rt_left_min <= observation.support_rt_min
+        and observation.scan_rt_min <= peak.content.integration.rt_right_min
     )
     if not containing:
         raise DdaCidNlCandidateSetRelationContractError(

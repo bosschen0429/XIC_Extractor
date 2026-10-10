@@ -213,7 +213,7 @@ def test_isolation_offset_product_infers_monoisotopic_precursor_seed() -> None:
     assert seed.precursor_mz == pytest.approx(product_mz + NEUTRAL_LOSS_DA)
     assert seed.product_mz == pytest.approx(product_mz)
     assert seed.observed_neutral_loss_da == pytest.approx(NEUTRAL_LOSS_DA)
-    assert seed.observed_loss_error_ppm == 0.0
+    assert seed.observed_loss_error_ppm is None
     evidence = json.loads(seed.tag_evidence_json)
     assert evidence["DNA_dR"]["precursor_mz_basis"] == "product_plus_neutral_loss"
     assert evidence["DNA_dR"]["scan_precursor_mz"] == pytest.approx(
@@ -240,7 +240,7 @@ def test_same_ms2_scan_can_emit_direct_and_inferred_precursor_seeds() -> None:
     seeds = collect_strict_nl_seeds(
         raw,
         raw_file=RAW_FILE,
-        settings=_settings(),
+        settings=_settings(ms2_precursor_tol_da=1.1),
     )
 
     seeds_by_product = {round(seed.product_mz, 6): seed for seed in seeds}
@@ -282,18 +282,19 @@ def test_inferred_precursor_seed_respects_ms2_precursor_window() -> None:
 @pytest.mark.parametrize(
     ("scan_offset_da", "expected_seed_count"),
     [
-        # d4-N6-2HE-dA triggered 1.006 Da low (D/H) still transmits at the edge.
-        (-1.006, 1),
-        (0.816, 1),
-        (1.15, 0),
-        (-1.15, 0),
+        (-0.799, 1),
+        (0.799, 1),
+        (-0.801, 0),
+        (0.801, 0),
+        (-1.006, 0),
+        (1.006, 0),
     ],
 )
-def test_default_inferred_precursor_radius_covers_isolation_edge_only(
+def test_default_inferred_precursor_radius_uses_nominal_isolation_half_width(
     scan_offset_da: float,
     expected_seed_count: int,
 ) -> None:
-    # 1.6 Da isolation width (+/-0.8) plus observed edge transmission (#466).
+    # The method's full isolation width is 1.6 Da, so its nominal radius is 0.8.
     product_mz = 184.11322021484375
     inferred_precursor_mz = product_mz + NEUTRAL_LOSS_DA
     raw = _FakeRaw(
@@ -334,8 +335,7 @@ def test_observed_loss_error_equal_to_tolerance_is_accepted() -> None:
     assert seeds[0].observed_loss_error_ppm == pytest.approx(10.0)
 
 
-def test_multiple_matching_products_choose_smallest_loss_error_then_higher_intensity(
-) -> None:
+def test_matching_products_rank_by_loss_error_then_intensity() -> None:
     precursor_mz = 258.1085
     best_by_error = _product_for_loss_ppm(precursor_mz=precursor_mz, ppm=3.0)
     tied_higher_intensity = _product_for_loss_ppm(precursor_mz=precursor_mz, ppm=-3.0)
@@ -475,3 +475,113 @@ class _FakeRaw:
     def iter_ms2_scans(self, rt_min: float, rt_max: float) -> Iterator[Ms2ScanEvent]:
         self.requested_window = (rt_min, rt_max)
         yield from self._events
+
+
+@pytest.mark.parametrize(
+    ("width", "offset", "radius", "expected"),
+    (
+        (0.4, 0.3, 0.8, [300.4]),
+        (1.6, 0.0, 0.2, [299.85]),
+        (None, None, 0.8, [299.5, 299.85, 300.4, 300.75]),
+        (1.6, 0.0, 0.8, [299.5, 299.85, 300.4, 300.75]),
+    ),
+)
+def test_inference_uses_scan_isolation_geometry_and_configured_cap(
+    width, offset, radius, expected
+):
+    from dataclasses import replace
+
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+
+    event = _scan_event(
+        precursor_mz=300.0,
+        masses=[mz - NEUTRAL_LOSS_DA for mz in [299.5, 299.85, 300.4, 300.75]],
+        intensities=[100.0] * 4,
+    )
+    event = replace(
+        event,
+        scan=replace(
+            event.scan,
+            precursor_metadata=Ms2PrecursorMetadata(
+                isolation_width_da=width, isolation_offset_da=offset
+            ),
+        ),
+    )
+    seeds = collect_strict_nl_seeds(
+        _FakeRaw([event]),
+        raw_file=RAW_FILE,
+        settings=_settings(ms2_precursor_tol_da=radius),
+    )
+    assert [seed.precursor_mz for seed in seeds] == pytest.approx(expected)
+    assert all(seed.precursor_mz_basis == "product_plus_neutral_loss" for seed in seeds)
+
+
+@pytest.mark.parametrize("charge", (None, 1, 2))
+def test_recorded_mono_and_selected_ions_keep_distinct_direct_evidence(charge):
+    from dataclasses import replace
+
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+
+    event = _scan_event(
+        precursor_mz=301.165, masses=[184.1141, 185.1176], intensities=[100.0, 100.0]
+    )
+    metadata = Ms2PrecursorMetadata(
+        monoisotopic_mz=300.1615,
+        charge=charge,
+        isolation_width_da=1.6,
+        isolation_offset_da=0.0,
+        master_scan_number=1,
+    )
+    event = replace(event, scan=replace(event.scan, precursor_metadata=metadata))
+    seeds = collect_strict_nl_seeds(
+        _FakeRaw([event]),
+        raw_file=RAW_FILE,
+        settings=_settings(ms2_precursor_tol_da=0.8),
+    )
+    if charge == 2:
+        assert seeds == ()
+        return
+    assert [(seed.precursor_mz, seed.precursor_mz_basis) for seed in seeds] == [
+        (300.1615, "scan_monoisotopic"),
+        (301.165, "scan_precursor"),
+    ]
+    groups = group_discovery_seeds(seeds, settings=_settings())
+    assert len(groups) == 2
+    assert groups[0].precursor_mz_basis == "scan_monoisotopic"
+    assert (
+        groups[0].neutral_loss_error_basis == "recorded_monoisotopic_precursor_product"
+    )
+    assert (
+        json.loads(groups[0].tag_evidence_json)["DNA_dR"]["precursor_metadata"][
+            "master_scan_number"
+        ]
+        == 1
+    )
+
+
+def test_reference_product_failing_neutral_loss_still_infers_precursor_seed():
+    from dataclasses import replace
+
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+
+    # The product lies within the coarse direct-product window of the recorded
+    # monoisotopic reference (loss residual 0.015 Da) but fails the 20 ppm
+    # neutral-loss gate, so it must remain an inferred-precursor candidate.
+    product_mz = 383.9376
+    event = _scan_event(precursor_mz=500.5, masses=[product_mz], intensities=[100.0])
+    metadata = Ms2PrecursorMetadata(
+        monoisotopic_mz=500.0,
+        isolation_width_da=1.6,
+        isolation_offset_da=0.0,
+    )
+    event = replace(event, scan=replace(event.scan, precursor_metadata=metadata))
+
+    seeds = collect_strict_nl_seeds(
+        _FakeRaw([event]),
+        raw_file=RAW_FILE,
+        settings=_settings(nl_tolerance_ppm=20.0, ms2_precursor_tol_da=0.8),
+    )
+
+    assert [(seed.precursor_mz, seed.precursor_mz_basis) for seed in seeds] == [
+        (pytest.approx(product_mz + NEUTRAL_LOSS_DA), "product_plus_neutral_loss")
+    ]

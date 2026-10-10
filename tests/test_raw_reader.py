@@ -12,6 +12,38 @@ def test_importing_raw_reader_does_not_import_clr() -> None:
     assert "clr" not in module.__dict__
 
 
+def test_parent_ms1_mass_windows_keep_ambiguity_and_share_one_spectrum_read():
+    from xic_extractor.raw_reader import RawFileHandle
+
+    calls = []
+
+    def centroid_stream(scan_number, _centroid):
+        calls.append(scan_number)
+        return SimpleNamespace(
+            Masses=[500.0, 500.003, 600.0, 500.002, float("nan")],
+            Intensities=[10.0, 1000.0, 50.0, 0.0, 100.0],
+        )
+
+    vendor = SimpleNamespace(
+        GetFilterForScanNumber=lambda scan: SimpleNamespace(
+            MSOrder="Ms1" if scan == 1 else "Ms2"
+        ),
+        GetCentroidStream=centroid_stream,
+        RetentionTimeFromScanNumber=lambda scan: 7.9,
+    )
+    raw = RawFileHandle(vendor, SimpleNamespace(ms1_order="Ms1", ms2_order="Ms2"))
+    observations = raw.read_ms1_mass_windows(
+        ((1, 499.999, 500.004), (1, 599.0, 601.0), (1, 699.0, 701.0), (2, 499.0, 501.0))
+    )
+    assert calls == [1]
+    assert observations[0].centroid_mzs == (500.0, 500.003)
+    assert observations[1].centroid_mzs == (600.0,)
+    assert observations[2].centroid_mzs == ()
+    assert observations[3] is None
+    assert observations[0].scan_number == 1
+    assert observations[0].rt_min == 7.9
+
+
 def test_preflight_reports_missing_pythonnet(tmp_path: Path) -> None:
     from xic_extractor.raw_reader import preflight_raw_reader
 
@@ -815,6 +847,66 @@ def test_iter_ms2_scans_reads_precursor_from_scan_filter_get_reaction() -> None:
     assert events[0].scan.precursor_mz == pytest.approx(537.0779)
 
 
+@pytest.mark.parametrize(
+    ("number", "selected", "mono", "parent", "product"),
+    [
+        (19261, 301.1651916503906, 300.1616, 19218, 184.11317443847656),
+        (19561, 301.16497802734375, 300.1615, 19522, 184.1132354736328),
+    ],
+)
+def test_raw_monoisotopic_precursor_recovers_direct_nl_without_widening_isolation(
+    number: int,
+    selected: float,
+    mono: float,
+    parent: int,
+    product: float,
+) -> None:
+    from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
+    from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
+    from xic_extractor.raw_reader import RawFileHandle
+
+    scan_filter = _FakeScanFilterWithReaction(precursor_mz=selected)
+    scan_filter.reaction.IsolationWidth = 1.6
+    scan_filter.reaction.IsolationWidthOffset = 0.0
+    raw = _FakeRaw(
+        filters={number: scan_filter},
+        scans={number: _FakeScan([product, 185.115845], [278825.7, 367660.1])},
+    )
+    raw.ScanNumberFromRetentionTime = lambda rt: number
+    raw.trailer_labels = ["Monoisotopic M/Z:", "Charge State:", "Master Scan Number:"]
+    raw.GetTrailerExtraInformation = lambda scan_number: SimpleNamespace(
+        Labels=raw.trailer_labels,
+        Values=[str(mono), "1", str(parent)],
+    )
+    handle = RawFileHandle(raw, _fake_thermo(raw))
+    (event,) = handle.iter_ms2_scans(22.0, 25.0)
+
+    assert event.parse_error is None
+    assert event.scan is not None
+    assert event.scan.precursor_mz == selected
+    metadata = event.scan.precursor_metadata
+    assert metadata is not None
+    assert metadata.monoisotopic_mz == mono
+    assert metadata.charge == 1
+    assert metadata.master_scan_number == parent
+    assert metadata.isolation_width_da == 1.6
+    assert metadata.isolation_offset_da == 0.0
+    seeds = discovery_seeds_from_scan(
+        event.scan,
+        raw_file=Path("TumorBC2312_DNA.raw"),
+        settings=DiscoverySettings(
+            neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474),
+            ms2_precursor_tol_da=0.8,
+        ),
+    )
+    recovered = [s for s in seeds if abs(s.precursor_mz - 300.1605) < 0.0061]
+    assert len(recovered) == 1
+    assert recovered[0].precursor_mz == mono
+    assert recovered[0].product_mz == product
+    assert recovered[0].precursor_mz_basis == "scan_monoisotopic"
+    assert recovered[0].scan_precursor_mz == selected
+
+
 def test_iter_ms2_scans_yields_parse_error_events() -> None:
     from xic_extractor.raw_reader import RawFileHandle
 
@@ -969,6 +1061,8 @@ class _FakeRaw:
         self.filters = filters or {}
         self.scans = scans or {}
         self.scan_errors = scan_errors or {}
+        self.trailer_labels: list[str] = []
+        self.trailer_header_calls = 0
 
     def Dispose(self) -> None:
         self.disposed = True
@@ -997,6 +1091,13 @@ class _FakeRaw:
             raise self.scan_errors[scan_number]
         return self.scans[scan_number]
 
+    def GetTrailerExtraHeaderInformation(self):
+        self.trailer_header_calls += 1
+        return [SimpleNamespace(Label=label) for label in self.trailer_labels]
+
+    def GetTrailerExtraInformation(self, scan_number: int):
+        return SimpleNamespace(Labels=self.trailer_labels, Values=[])
+
 
 class _FakeFilter:
     def __init__(self, *, is_ms2: bool, precursor_mz: float) -> None:
@@ -1021,3 +1122,67 @@ class _FakeScan:
     def __init__(self, masses, intensities) -> None:
         self.Masses = masses
         self.Intensities = intensities
+
+
+@pytest.mark.parametrize("value", ("0", "NaN", ""))
+def test_unavailable_vendor_precursor_fields_do_not_replace_selected_mass(value):
+    from xic_extractor.raw_reader import RawFileHandle
+
+    raw = _FakeRaw(
+        filters={1: _FakeFilter(is_ms2=True, precursor_mz=300.2)},
+        scans={1: _FakeScan([184.1], [100.0])},
+    )
+    raw.trailer_labels = ["Monoisotopic M/Z:", "Charge State:", "Master Scan Number:"]
+    raw.GetTrailerExtraInformation = lambda _: SimpleNamespace(
+        Labels=raw.trailer_labels,
+        Values=[value, value, value],
+    )
+    event = next(RawFileHandle(raw, _fake_thermo(raw)).iter_ms2_scans(8.0, 8.0))
+    assert event.parse_error is None
+    assert event.scan.precursor_mz == 300.2
+    assert event.scan.precursor_metadata.monoisotopic_mz is None
+    assert event.scan.precursor_metadata.charge is None
+    assert event.scan.precursor_metadata.master_scan_number is None
+
+
+def test_ms2_trailer_headers_are_file_local_and_reused_across_windows() -> None:
+    from xic_extractor.raw_reader import RawFileHandle
+
+    labels = [
+        "Monoisotopic M/Z:", "Charge State:", "Master Scan Number:",
+        "MS2 Isolation Width:", "Unused:",
+    ]
+    for file_index, file_labels in enumerate((labels, list(reversed(labels)))):
+        mono = 300.1615 + file_index
+        raw = _FakeRaw(
+            filters={n: _FakeFilter(is_ms2=True, precursor_mz=mono) for n in (1, 2)},
+            scans={n: _FakeScan([184.1], [100.0]) for n in (1, 2)},
+        )
+        raw.trailer_labels = file_labels
+        values = {
+            "Monoisotopic M/Z:": str(mono), "Charge State:": "1",
+            "Master Scan Number:": "10", "MS2 Isolation Width:": "1.60",
+            "Unused:": "not a number",
+        }
+        raw.GetTrailerExtraInformation = lambda _: SimpleNamespace(
+            Values=[values[label] for label in raw.trailer_labels]
+        )
+        handle = RawFileHandle(raw, _fake_thermo(raw))
+        events = list(handle.iter_ms2_scans(8.0, 8.1))
+        events.extend(handle.iter_ms2_scan_subset(8.0, 8.1, frozenset({2})))
+        assert raw.trailer_header_calls == 1
+        assert [event.scan_number for event in events] == [1, 2, 2]
+        for event in events:
+            assert event.parse_error is None
+            metadata = event.scan.precursor_metadata
+            assert metadata.monoisotopic_mz == mono
+            assert metadata.charge == 1
+            assert metadata.master_scan_number == 10
+            assert metadata.isolation_width_da == 1.6
+
+        raw.GetTrailerExtraInformation = lambda _: SimpleNamespace(Values=[])
+        event = next(handle.iter_ms2_scans(8.0, 8.0))
+        assert event.parse_error is None
+        assert event.scan.precursor_metadata.monoisotopic_mz is None
+        assert event.scan.precursor_metadata.charge is None
+        assert event.scan.precursor_metadata.master_scan_number is None

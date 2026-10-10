@@ -25,6 +25,7 @@ from xic_extractor.alignment.feature_membership_inference import (
     FeatureInferenceOperationCounts,
     FeatureMembershipGroup,
     RtCoordinates,
+    rt_trend_supports_union,
     supports_existing_feature,
 )
 from xic_extractor.alignment.grouping_bootstrap import (
@@ -43,11 +44,13 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     owner_from_ms1_observation_hypothesis,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+from xic_extractor.alignment.peak_trajectories import PeakTrajectories
 from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
+from xic_extractor.peak_detection.elution_context import SampleElutionContext
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     HYPOTHESIS_METHOD_DDA_CID_NL,
@@ -180,6 +183,7 @@ def build_initial_cid_nl_cross_sample_groups(
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
     ],
     alignment_config: AlignmentConfig,
+    elution_contexts: Sequence[SampleElutionContext] = (),
     drift_lookup: DriftLookupProtocol | None = None,
     known_istd_reference: KnownIstdReference | None = None,
     operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
@@ -209,6 +213,7 @@ def build_initial_cid_nl_cross_sample_groups(
             },
             drift_lookup=drift_lookup,
             retain_observation_only_candidates=True,
+            elution_contexts=elution_contexts,
             known_istd_reference=known_istd_reference,
             operation_counts_sink=operation_counts_sink,
             retained_hypotheses_by_assessment=retained_hypotheses_by_assessment,
@@ -271,6 +276,7 @@ def regroup_cid_nl_cross_sample_groups(
         rt_warp=rt_warp,
         backfill_half_window_min=backfill_half_window_min,
         operation_counts_sink=operation_counts_sink,
+        peak_trajectories=grouping_scope.peak_trajectories,
     )
     identities = tuple(
         validate_cross_sample_peak_group_identity(group, require_canonical=True)
@@ -308,6 +314,7 @@ def group_cid_nl_owners(
     drift_lookup: DriftLookupProtocol | None = None,
     known_identity_bindings: Sequence[tuple[str, str]] = (),
     operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
+    peak_trajectories: PeakTrajectories | None = None,
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
     """Run the shared membership, disjoint-merge and shoulder decisions."""
     groups = construct_cross_sample_peak_group_hypotheses(
@@ -319,12 +326,16 @@ def group_cid_nl_owners(
         known_identity_bindings=known_identity_bindings,
         rt_warp=rt_warp,
         operation_counts_sink=operation_counts_sink,
+        peak_trajectories=peak_trajectories,
     )
     return reject_shoulder_groups(
         merge_sample_disjoint_groups(
             groups,
             config=config,
             backfill_half_window_min=backfill_half_window_min,
+            injection_order=injection_order,
+            rt_warp=rt_warp,
+            peak_trajectories=peak_trajectories,
         ),
         config=config,
     )
@@ -339,6 +350,8 @@ def admit_cid_nl_group_backfills(
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
     ],
     alignment_config: AlignmentConfig,
+    injection_order: Mapping[str, int] | None = None,
+    rt_warp: RtCoordinates | None = None,
 ) -> tuple[
     CrossSampleGroupingResult,
     tuple[CrossSamplePeakGroupHypothesis, ...],
@@ -401,6 +414,8 @@ def admit_cid_nl_group_backfills(
             group.owners,
             config=alignment_config,
             drift_lookup=result.drift_lookup,
+            injection_order=injection_order,
+            rt_warp=rt_warp,
         ):
             continue
         claims[physical_key].add(group_id)
@@ -555,13 +570,17 @@ def merge_sample_disjoint_groups(
     *,
     config: AlignmentConfig,
     backfill_half_window_min: float,
+    injection_order: Mapping[str, int],
+    rt_warp: RtCoordinates | None,
+    peak_trajectories: PeakTrajectories | None = None,
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
-    """Merge established rows of one feature that no sample tells apart.
+    """Merge nearby sample-disjoint rows only when their union supports one band.
 
-    Two peaks are only evidenced by one sample holding both. Rows of the same
-    m/z with no shared sample, whose centers lie within one Backfill half
-    window, would Backfill each other's peak, so they are one feature. Closer
-    rows merge first; a merge never joins two rows that share a sample.
+    Overlapping Backfill windows and disjoint samples nominate components;
+    they do not establish identity. Ordered MS1 patterns keep distinct peaks
+    apart even when no sample supports both. Check each whole component in the
+    same RT coordinates as membership inference. A failed component retains
+    all its original rows rather than searching for alternative partial merges.
     """
     candidates = sorted(
         (
@@ -594,6 +613,7 @@ def merge_sample_disjoint_groups(
         group.group_hypothesis_id: {owner.sample_stem for owner in group.owners}
         for group in groups
     }
+    member_ids = {group.group_hypothesis_id: set(group.owner_ids) for group in groups}
 
     def find(group_id: str) -> str:
         while root[group_id] != group_id:
@@ -604,18 +624,40 @@ def merge_sample_disjoint_groups(
         first_root, second_root = find(first_id), find(second_id)
         if first_root == second_root or samples[first_root] & samples[second_root]:
             continue
+        combined_ids = member_ids[first_root] | member_ids[second_root]
+        if peak_trajectories is not None and not peak_trajectories.permits_membership(
+            combined_ids
+        ):
+            continue
         keep, absorbed = sorted((first_root, second_root))
         root[absorbed] = keep
         samples[keep] |= samples.pop(absorbed)
+        member_ids[keep] |= member_ids.pop(absorbed)
     members: dict[str, list[CrossSamplePeakGroupHypothesis]] = defaultdict(list)
     for group in groups:
         members[find(group.group_hypothesis_id)].append(group)
     merged = []
+    corrected_rt = {
+        owner.owner_id: (
+            rt_warp.corrected_rt_min(owner) if rt_warp else owner.owner_apex_rt
+        )
+        for group in groups
+        for owner in group.owners
+    }
     for parts in members.values():
         if len(parts) == 1:
             merged.append(parts[0])
             continue
         parts.sort(key=lambda group: group.public_family_id)
+        if not rt_trend_supports_union(
+            parts[0].owners,
+            tuple(owner for group in parts[1:] for owner in group.owners),
+            orders=injection_order,
+            corrected_rt=corrected_rt,
+            max_rt_sec=config.max_rt_sec,
+        ):
+            merged.extend(parts)
+            continue
         owners = tuple(
             sorted(
                 (owner for group in parts for owner in group.owners),

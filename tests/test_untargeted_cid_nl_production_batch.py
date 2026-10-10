@@ -1454,7 +1454,8 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 for candidate in sample_candidates
             ),
         )
-        runtime_results.append(result)
+        if not kwargs.get("initial_only"):
+            runtime_results.append(result)
         if family_context:
             for sample_result in result.sample_results:
                 adapter = sample_result.adapter_result
@@ -1486,10 +1487,12 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 expected_trace_count = 1 if expected_capture_candidate_ids else 0
                 if expected_trace_count:
                     assert adapter.acquisition is not None
-                    assert len(adapter.acquisition.traces) == expected_trace_count
-                    assert opened_raws[tmp_path / f"{stem}.synthetic"][
-                        -1
-                    ].chromatogram_request_counts == [expected_trace_count]
+                    # One shared integration trace plus non-authoritative
+                    # elution context, still acquired in one initial sample batch.
+                    assert len(adapter.elution_contexts) == 1
+                    expected_acquisition_count = expected_trace_count + 1
+                    assert len(adapter.acquisition.traces) == expected_acquisition_count
+                    assert adapter.acquisition.adapter_chromatogram_call_count == 1
                 else:
                     assert adapter.acquisition is None
                 assert (
@@ -1522,9 +1525,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                         assert capture.physical_evaluation.facts == expected.facts
         return result
 
-    monkeypatch.setattr(
-        bounded_owner, 'execute_partition', checked_runtime
-    )
+    monkeypatch.setattr(bounded_owner, "execute_partition", checked_runtime)
     preparation_fingerprints = []
     runtime_fingerprints = []
     preparation_fingerprint = identity_owner.fingerprint_file_content
@@ -1583,12 +1584,12 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     assert all(
         capture.selected_hypothesis is None
         or retained_hypotheses_by_id[capture.selected_hypothesis.hypothesis_id]
-        is capture.selected_hypothesis
+        == capture.selected_hypothesis
         for capture in retained_captures
     )
     assert all(
         retained_hypotheses_by_id[support.hypothesis.hypothesis_id]
-        is support.hypothesis
+        == support.hypothesis
         for cells in retained_cell_batches
         for cell in cells
         for support in cell.group_context.supports
@@ -1763,14 +1764,18 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     assert len(retained_contexts) == len(completed.application_result.children)
     assert len(retained_contexts) == len(consumed_contexts)
+    # Frozen grouping crosses the spool before Backfill. Its complete scientific
+    # content must survive; Python object identity is not a persisted contract.
     assert all(
-        retained is consumed
+        retained == consumed
         for retained, consumed in zip(retained_contexts, consumed_contexts, strict=True)
     )
-    assert all(
-        retained is consumed
-        for retained, consumed in zip(retained_captures, consumed_captures, strict=True)
-    )
+    # Bootstrap captures cross a disk handoff; preserve content, not addresses.
+    for retained, consumed in zip(retained_captures, consumed_captures, strict=True):
+        assert retained.candidate_id == consumed.candidate_id
+        assert retained.selected_hypothesis == consumed.selected_hypothesis
+        assert list(retained.trace.rt) == list(consumed.trace.rt)
+        assert list(retained.trace.intensity) == list(consumed.trace.intensity)
     for context, child in zip(
         retained_contexts, completed.application_result.children, strict=True
     ):
@@ -2150,7 +2155,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             assert recovery_evaluations[-1].facts is None
             assert recovery_evaluations[-1].integration is None
             assert recovery_evaluations[-1].question.selection_policy_version == (
-                "group_rt_resolved_peak_in_context"
+                "sample_local_background_qualified_peak_in_context"
             )
 
         source_raws[paths[0]].intensity = original_intensity * 0.0

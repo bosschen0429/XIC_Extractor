@@ -88,6 +88,13 @@ those facts itself.
 
 ### Target identity and search scope
 
+- ISTD selection retains the complete configured RT window. A DDA NL anchor
+  remains a selection reference; a displaced or absent anchor does not exclude
+  an otherwise qualified ISTD MS1 component inside that window.
+- Among non-strict ISTD candidates in the same eligibility class, local chemical
+  support precedes the number of review reasons. Rolling-RT disagreement remains
+  reported review evidence; exclusion, ambiguity, and hard-quality classes keep
+  their precedence.
 - For no-NL inputs, the configured RT-window center participates in component
   identity while the complete acquisition context remains available to the
   shared physical owner. The supplied group reference is encoded in that
@@ -159,6 +166,13 @@ those facts itself.
 
 ### Detection and review policy
 
+- Targeted NL matching excludes scans whose recorded vendor charge is not 1;
+  unavailable charge remains eligible. `NO_MS2` means no method-eligible
+  precursor scan, not necessarily no acquired MS2 scan. If only rejected-charge
+  scans are present, `valid_ms2_scan_count` still records them but
+  `matched_scan_count` is zero. The existing Targeted product projection owns
+  counted detection; `count_no_ms2_as_detected` applies only to legacy outputs
+  without that projection and cannot override it.
 - Region, boundary, and selected-envelope logic are candidate and
   model-selection surfaces.
 - Before region, boundary, or selected-envelope logic changes any selected

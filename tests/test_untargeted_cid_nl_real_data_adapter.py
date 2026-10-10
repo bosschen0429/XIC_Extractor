@@ -9,6 +9,7 @@ import pytest
 from tests.cid_nl_raw_fixture import (
     _current_candidates,
     _FakeRaw,
+    _multi_tag_settings,
     _open_bound_raw,
     _peak_config,
     _settings,
@@ -38,13 +39,21 @@ from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
 )
 
 
-@pytest.mark.parametrize("fresh_available", [True, False])
-@pytest.mark.parametrize("shifted_mass", [True, False])
+@pytest.mark.parametrize(
+    ("fresh_available", "precursor_case"),
+    [
+        (True, "direct"),
+        (False, "direct"),
+        (True, "shifted"),
+        (False, "shifted"),
+        (False, "inferred"),
+    ],
+)
 def test_changed_physical_query_evaluates_once_and_preserves_support(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     fresh_available: bool,
-    shifted_mass: bool,
+    precursor_case: str,
 ) -> None:
     import json
     from types import SimpleNamespace
@@ -59,6 +68,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     )
     from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
     from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
     from xic_extractor.peak_detection import capture as capture_owner
     from xic_extractor.peak_detection.observations import (
         physical_peak_observation_integration,
@@ -84,6 +94,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True
     )
+    shifted_mass = precursor_case == "shifted"
     center = 13.263299286133334
     source_raw = _FakeRaw((8.0,))
     source_raw.rt = np.linspace(12.517828061866668, 13.92044642215, 521)
@@ -100,6 +111,22 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         )
         for index, rt in enumerate((center - 0.25, center + 0.05))
     )
+    if precursor_case == "inferred":
+        source_raw.scans = tuple(
+            replace(
+                scan,
+                precursor_mz=500.5,
+                precursor_metadata=Ms2PrecursorMetadata(
+                    charge=1,
+                    isolation_width_da=1.6,
+                    isolation_offset_da=0.0,
+                    master_scan_number=scan.scan_number - 1,
+                ),
+            )
+            for scan in source_raw.scans
+        )
+        for scan in source_raw.scans:
+            source_raw.rt[scan.scan_number - 1] = scan.rt
     source_raw.intensity = 250.0 + 1000.0 * np.exp(
         -0.5 * ((source_raw.rt - center) / 0.15) ** 2
     )
@@ -115,6 +142,30 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     peak_config = _peak_config(tmp_path)
     profile = SignalProcessingProfile(window_points=15)
     raw, vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+    if precursor_case == "inferred":
+        from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+
+        monkeypatch.setattr(
+            type(raw),
+            "iter_ms2_scan_subset",
+            lambda self, lo, hi, ids: (
+                event
+                for event in source_raw.iter_ms2_scans(lo, hi)
+                if event.scan_number in ids
+            ),
+        )
+
+        def read_parent_windows(self, requests):
+            return tuple(
+                Ms1PrecursorObservation(
+                    scan_number=number,
+                    rt_min=float(source_raw.rt[number - 1]),
+                    centroid_mzs=(500.001,),
+                )
+                for number, _low, _high in requests
+            )
+
+        monkeypatch.setattr(type(raw), "read_ms1_mass_windows", read_parent_windows)
     if shifted_mass:
         # The ion is inside both source windows but outside the method-center
         # window. Respect the vendor mass ranges instead of mocking capture.
@@ -229,7 +280,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     # universe holds that peak once.
     assert len(assessment.candidate_peaks) == (1 if fresh_available else 0)
     assert result.acquisition is not None
-    assert len(result.acquisition.traces) == (2 if shifted_mass else 1)
+    assert len(result.acquisition.traces) == (1 if precursor_case == "direct" else 2)
     states = []
     changed_questions = 0
     captures = {capture.candidate_id: capture for capture in result.captures}
@@ -369,6 +420,36 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     assert [item.physical_evaluation for item in reused.captures] == [
         item.physical_evaluation for item in result.captures
     ]
+    if precursor_case == "inferred":
+        from xic_extractor.untargeted_execution.partition.workers import (
+            _backfill_support_context,
+        )
+
+        assert assessment.content.reason_codes == (
+            "qualifying_cid_nl_without_usable_ms1_peak",
+        )
+        support = _backfill_support_context(result)
+        # The group search finds a peak in its own window. It still needs the
+        # measured parent evidence from the empty initial capture to qualify it.
+        source_raw.intensity = 1000.0 * np.exp(
+            -0.5 * ((source_raw.rt - center) / 0.035) ** 2
+        )
+        recovery = backfill_untargeted_cid_nl_sample_subject(
+            processing_owners=owners,
+            sample=fixture.sample("S1"),
+            method_subject=fixture.method_subject,
+            group_center_rt=center,
+            group_center_mz=500.0,
+            support_policy=support.support_policy,
+            peak_config=peak_config,
+            raw=raw,
+            initial_assessment=support.initial_assessment,
+            settings=settings,
+            signal_processing_profile=profile,
+        )
+        assert recovery.assessment.content.method_result == "SUPPORT"
+        assert len(recovery.assessment.candidate_peaks) == 1
+        assert len(recovery.assessment.evidence_refs) == 2
     with pytest.raises(ValueError, match="trace_content_id"):
         capture_owner.capture_reacquired_physical_peak(
             scope=capture.scope,
@@ -533,7 +614,8 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
         physical_records=(record,),
     )
     assessment = result.assessment_input.assessment
-    assert assessment.content.method_result == "SUPPORT"
+    assert assessment.content.method_result == "HOLD"
+    assert not assessment.individual_support_refs
     assert {e.observation.scan_number for e in assessment.evidence_refs} == {
         scan.scan_number for scan in source_raw.scans
     }
@@ -623,9 +705,7 @@ def test_adapter_retains_completed_relation_before_later_evidence_failure(
         settings=settings,
         peak_config=peak_config,
     )
-    raw, _vendor_raw = _open_bound_raw(
-        fixture, "S1", source_raw, tmp_path=tmp_path
-    )
+    raw, _vendor_raw = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
     observer = cid_nl_acquisition._PartitionWorkObserver(fixture.owners)
     resolve_relations = cid_nl_acquisition.resolve_cid_nl_method_relations
     successful_relations = []
@@ -652,7 +732,7 @@ def test_adapter_retains_completed_relation_before_later_evidence_failure(
             _observer=observer,
         )
 
-    ((support,), set_relations), = successful_relations
+    (((support,), set_relations),) = successful_relations
     assert set_relations == ()
     retained = observer.artifact_closure()
     retained_ids = {artifact.evidence_artifact_id for artifact in retained}
@@ -794,7 +874,7 @@ def test_adapter_preserves_strict_support_after_ms1_merge_of_inferred_scan(
 
 
 @pytest.mark.parametrize("ms1_present", [True, False])
-def test_inferred_precursor_support_requires_a_physical_ms1_peak(
+def test_inferred_precursor_retains_physical_peak_without_strict_nl_support(
     tmp_path: Path,
     ms1_present: bool,
 ) -> None:
@@ -832,7 +912,8 @@ def test_inferred_precursor_support_requires_a_physical_ms1_peak(
     assessment = result.assessment_input.assessment
     assert result.strict_scan_count == 0
     if ms1_present:
-        assert assessment.content.method_result == "SUPPORT"
+        assert assessment.content.method_result == "HOLD"
+        assert not assessment.individual_support_refs
         assert len(assessment.candidate_peaks) == 1
         assert {ref.observation.scan_number for ref in assessment.evidence_refs} == {
             scan.scan_number for scan in source_raw.scans
@@ -854,6 +935,315 @@ def test_inferred_precursor_support_requires_a_physical_ms1_peak(
         assert not assessment.candidate_peaks
         assert not assessment.individual_support_refs
         assert result.acquisition is None
+
+
+@pytest.mark.parametrize("reverse_products", [False, True])
+@pytest.mark.parametrize("parent_supported", [False, True])
+@pytest.mark.parametrize("composite", [False, True])
+def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    reverse_products: bool,
+    parent_supported: bool,
+    composite: bool,
+) -> None:
+    import json
+    from types import SimpleNamespace
+
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+    from xic_extractor.peak_detection.cid_nl_method_subject import (
+        REQUEST_INPUT_KEY,
+        CidNlComposition,
+        mint_untargeted_cid_nl_method_subject,
+    )
+    from xic_extractor.processing_identity import (
+        build_processing_request_identity,
+        compose_processing_owner_references,
+        issue_processing_attempt,
+    )
+
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True
+    )
+    source_raw = _FakeRaw((8.0,))
+    scan = source_raw.scans[0]
+    # The weaker product's parent window contains one ion. The stronger
+    # product's shifted window contains both ions and cannot supply support.
+    products = (383.9526, 383.9536)
+    intensities = (11900.0, 12000.0) if parent_supported else (12000.0, 11900.0)
+    if composite:
+        products += (367.9577, 367.9587)
+        intensities += intensities
+    if reverse_products:
+        products = products[::-1]
+        intensities = intensities[::-1]
+    source_raw.scans = (
+        replace(
+            scan,
+            precursor_mz=500.5,
+            precursor_metadata=Ms2PrecursorMetadata(
+                charge=1,
+                isolation_width_da=1.6,
+                isolation_offset_da=0.0,
+                master_scan_number=scan.scan_number - 1,
+            ),
+            masses=np.asarray(products),
+            intensities=np.asarray(intensities),
+            base_peak=12000.0,
+        ),
+    )
+    settings = (
+        replace(_multi_tag_settings(), tag_combine_mode="intersection")
+        if composite
+        else _settings()
+    )
+    if composite:
+        subject = mint_untargeted_cid_nl_method_subject(
+            precursor_mz=500.0,
+            precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
+            composition=CidNlComposition(
+                tags=tuple(
+                    (profile.tag, profile.neutral_loss_da)
+                    for profile in settings.neutral_loss_profiles
+                ),
+                combine_mode=settings.tag_combine_mode,
+            ),
+        )
+        old_request = fixture.owners.request
+        request = build_processing_request_identity(
+            acquisition_sources=old_request.acquisition_sources,
+            acquisition_bindings=old_request.acquisition_bindings,
+            scientific_input_schema_version=old_request.scientific_input_schema_version,
+            processing_algorithm_version=old_request.processing_algorithm_version,
+            processing_contract_version=old_request.processing_contract_version,
+            scientific_inputs=json.loads(old_request.normalized_scientific_inputs_json)
+            | {REQUEST_INPUT_KEY: subject.request_payload()},
+        )
+        fixture = replace(
+            fixture,
+            method_subject=subject,
+            owners=compose_processing_owner_references(
+                request=request,
+                attempt=issue_processing_attempt(request),
+                sample_snapshot=fixture.owners.sample_snapshot,
+                sample_resolutions=fixture.samples,
+            ),
+        )
+    peak_config = _peak_config(tmp_path)
+    candidates = _current_candidates(
+        source_raw,
+        raw_file=fixture.source_paths["S1"],
+        settings=settings,
+        peak_config=peak_config,
+    )
+    raw, vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+    # Supply only the vendor boundary; RAW metadata parsing and the batched
+    # parent mass-window owner remain active.
+    original_filter = vendor.GetFilterForScanNumber
+
+    def scan_filter(number):
+        result = original_filter(number)
+        if number == scan.scan_number:
+            reaction = result.Filter.Reactions[0]
+            reaction.IsolationWidth = 1.6
+            reaction.IsolationWidthOffset = 0.0
+        return result
+
+    monkeypatch.setattr(vendor, "GetFilterForScanNumber", scan_filter)
+    vendor.trailer_labels = ["Charge State:", "Master Scan Number:"]
+    monkeypatch.setattr(
+        vendor,
+        "GetTrailerExtraInformation",
+        lambda number: SimpleNamespace(
+            Labels=("Charge State:", "Master Scan Number:"),
+            Values=(1, number - 1),
+        ),
+        raising=False,
+    )
+    monkeypatch.setattr(raw._thermo, "ms1_order", "Ms1", raising=False)
+    parent_reads = []
+
+    def parent_centroids(number, _profile):
+        parent_reads.append(number)
+        return SimpleNamespace(
+            Masses=[500.0, 500.0105] if parent_supported else [],
+            Intensities=[1000.0, 500.0] if parent_supported else [],
+        )
+
+    monkeypatch.setattr(vendor, "GetCentroidStream", parent_centroids, raising=False)
+    try:
+        result = adapt_current_discovery_sample_subject(
+            processing_owners=fixture.owners,
+            sample=fixture.sample("S1"),
+            method_subject=fixture.method_subject,
+            candidates=candidates[::-1] if reverse_products else candidates,
+            settings=settings,
+            peak_config=peak_config,
+            raw=raw,
+        )
+    finally:
+        raw.__exit__(None, None, None)
+    assessment = result.assessment_input.assessment
+    assert assessment.content.method_result == (
+        "SUPPORT" if parent_supported else "HOLD"
+    )
+    assert result.strict_scan_count == int(parent_supported)
+    assert len(assessment.candidate_peaks) == 1
+    event_count = 2 if composite else 1
+    assert len(assessment.evidence_refs) == event_count
+    products_by_loss = {
+        ref.observation.configured_neutral_loss_da: ref.observation.product_mz
+        for ref in assessment.evidence_refs
+    }
+    assert products_by_loss == (
+        {116.0474: 383.9526, 132.0423: 367.9577} if composite else {116.0474: 383.9526}
+    )
+    for ref in assessment.evidence_refs:
+        evidence = ref.observation
+        assert evidence.scan_number == scan.scan_number
+        assert evidence.precursor_mz_basis == "product_plus_neutral_loss"
+        assert evidence.scan_precursor_mz == 500.5
+        assert evidence.precursor_mz == pytest.approx(500.0)
+        assert evidence.observed_loss_error_ppm is None
+    assert len(assessment.individual_support_refs) == (
+        event_count if parent_supported else 0
+    )
+    assert parent_reads == [scan.scan_number - 1]
+    if parent_supported:
+        for ref in assessment.individual_support_refs:
+            relation = ref.content
+            assert relation.precursor_mz == 500.0
+            assert relation.observed_loss_error_ppm == pytest.approx(0.0, abs=1e-8)
+
+
+@pytest.mark.parametrize("reverse_products", [False, True])
+def test_scan_event_prefers_independent_direct_loss_over_stronger_inference(
+    tmp_path: Path, reverse_products: bool
+) -> None:
+    from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
+    from xic_extractor.discovery.strict_seed_receipts import (
+        resolve_discovery_scan_events,
+    )
+
+    source_raw = _FakeRaw((8.0,))
+    products = (383.9526, 383.9826)
+    intensities = (11900.0, 12000.0)
+    if reverse_products:
+        products = products[::-1]
+        intensities = intensities[::-1]
+    scan = replace(
+        source_raw.scans[0],
+        masses=np.asarray(products),
+        intensities=np.asarray(intensities),
+        base_peak=12000.0,
+    )
+    settings = _settings()
+    seeds = discovery_seeds_from_scan(
+        scan, raw_file=tmp_path / "S1.RAW", settings=settings
+    )
+    assert len(seeds) == 2
+    assert {seed.precursor_mz_basis for seed in seeds} == {
+        "scan_precursor",
+        "product_plus_neutral_loss",
+    }
+    forward = resolve_discovery_scan_events(seeds, settings=settings)
+    reverse = resolve_discovery_scan_events(seeds[::-1], settings=settings)
+    assert forward == reverse
+    (event,) = forward
+    assert event.precursor_mz_basis == "scan_precursor"
+    assert event.product_mz == 383.9526
+    assert event.product_intensity == 11900.0
+    assert event.assess_precursor_loss(settings.nl_tolerance_ppm).supports_nl
+
+
+@pytest.mark.parametrize("cached", [False, True])
+def test_inferred_precursor_can_gain_support_from_measured_parent_ms1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cached: bool
+) -> None:
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True
+    )
+    source_raw = _FakeRaw((7.98, 8.0, 8.02))
+    source_raw.scans = tuple(
+        replace(
+            scan,
+            precursor_mz=500.5,
+            precursor_metadata=Ms2PrecursorMetadata(
+                charge=1,
+                isolation_width_da=1.6,
+                isolation_offset_da=0.0,
+                master_scan_number=scan.scan_number - 1,
+            ),
+        )
+        for scan in source_raw.scans
+    )
+    settings = _settings()
+    peak_config = _peak_config(tmp_path)
+    candidates = _current_candidates(
+        source_raw,
+        raw_file=fixture.source_paths["S1"],
+        settings=settings,
+        peak_config=peak_config,
+    )
+    raw, _vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+    monkeypatch.setattr(
+        type(raw),
+        "iter_ms2_scan_subset",
+        lambda self, lo, hi, ids: (
+            event
+            for event in source_raw.iter_ms2_scans(lo, hi)
+            if event.scan_number in ids
+        ),
+    )
+
+    def read_parent_windows(self, requests):
+        from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+
+        return tuple(
+            Ms1PrecursorObservation(
+                scan_number=number,
+                rt_min=float(source_raw.rt[number - 1]),
+                centroid_mzs=(500.001,),
+            )
+            for number, _low, _high in requests
+        )
+
+    monkeypatch.setattr(
+        type(raw), "read_ms1_mass_windows", read_parent_windows, raising=False
+    )
+    if cached:
+        from xic_extractor.untargeted_execution.acquisition_cache import (
+            CachedUntargetedRaw,
+        )
+
+        raw = CachedUntargetedRaw(
+            raw, source=raw.acquisition_source, cache_dir=tmp_path / "raw-facts"
+        )
+    result = adapt_current_discovery_sample_subject(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        method_subject=fixture.method_subject,
+        candidates=candidates,
+        settings=settings,
+        peak_config=peak_config,
+        raw=raw,
+    )
+    assessment = result.assessment_input.assessment
+    assert assessment.content.method_result == "SUPPORT"
+    assert result.strict_scan_count == 3
+    assert len(assessment.candidate_peaks) == 1
+    assert len(assessment.individual_support_refs) == 3
+    for evidence in assessment.evidence_refs:
+        assert evidence.observation.precursor_mz_basis == "product_plus_neutral_loss"
+        assert evidence.observation.precursor_mz == 500.0
+        assert evidence.observation.observed_loss_error_ppm is None
+    for relation in assessment.individual_support_refs:
+        assert relation.content.precursor_mz == 500.001
+        assert relation.content.observed_loss_error_ppm == pytest.approx(
+            0.001 / 116.0474 * 1e6
+        )
 
 
 @pytest.mark.parametrize("moved_field", ["precursor_mz", "product_mz"])
@@ -1141,6 +1531,186 @@ def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
         (candidate.candidate_id,) for candidate in candidates
     ]
     assert vendor_raw.chromatogram_request_counts == [2]
+
+
+def test_elution_context_shares_acquisition_without_widening_capture(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
+
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True
+    )
+    source = _FakeRaw((7.8,))
+    source.intensity += 700.0 * np.exp(-0.5 * ((source.rt - 8.4) / 0.035) ** 2)
+    candidate = _current_candidates(
+        source,
+        raw_file=fixture.source_paths["S1"],
+        settings=_settings(),
+        peak_config=_peak_config(tmp_path),
+    )[0]
+    duplicate = replace(candidate, candidate_id=candidate.candidate_id + ":duplicate")
+    raw, vendor = _open_bound_raw(fixture, "S1", source, tmp_path=tmp_path)
+    batch = acquire_untargeted_cid_nl_sample_trace_batch(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("S1"),
+        candidates=tuple(
+            sorted((candidate, duplicate), key=lambda item: item.candidate_id)
+        ),
+        settings=_settings(),
+        raw=raw,
+        signal_processing_profile=SignalProcessingProfile(),
+    )
+    assert batch is not None
+    assert vendor.chromatogram_request_counts == [2]
+    assert len(batch.context_trace_indices) == len(batch.elution_contexts) == 1
+    assert [
+        peak.apex_rt for peak in batch.elution_contexts[0].landmarks
+    ] == pytest.approx([7.8, 8.4], abs=0.005)
+    original = batch.acquired_trace(candidate.candidate_id)
+    assert original.coordinate.request.rt_min == candidate.ms1_search_rt_min
+    assert original.coordinate.request.rt_max == candidate.ms1_search_rt_max
+    mask = (source.rt >= candidate.ms1_search_rt_min) & (
+        source.rt <= candidate.ms1_search_rt_max
+    )
+    np.testing.assert_array_equal(original.trace.rt, source.rt[mask])
+    np.testing.assert_array_equal(original.trace.intensity, source.intensity[mask])
+    assert original is batch.acquired_trace(duplicate.candidate_id)
+    assert max(original.trace.rt) < 8.4
+
+
+@pytest.mark.parametrize(
+    "sample,query_rt,expected_apex,width,tolerance",
+    [
+        ("S1", 7.8, 7.8, 0.035, None),
+        ("S2", 8.4, 8.4, 0.035, None),
+        ("S1", 7.55, 7.8, 0.1, 12.0),
+    ],
+    ids=["first-sample", "second-sample", "query-containing-peak"],
+)
+def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
+    tmp_path: Path,
+    sample: str,
+    query_rt: float,
+    expected_apex: float,
+    width: float,
+    tolerance: float | None,
+) -> None:
+    import json
+
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
+    from xic_extractor.peak_detection.search_scope import (
+        PHYSICAL_CAPTURE_INPUT_KEY,
+        physical_capture_input_payload,
+    )
+    from xic_extractor.processing_identity import (
+        build_processing_request_identity,
+        compose_processing_owner_references,
+        issue_processing_attempt,
+    )
+
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={sample: "study_sample"}, thermo_raw_sources=True
+    )
+    profile = SignalProcessingProfile()
+    original = fixture.owners.request
+    request = build_processing_request_identity(
+        acquisition_sources=original.acquisition_sources,
+        acquisition_bindings=original.acquisition_bindings,
+        scientific_input_schema_version=original.scientific_input_schema_version,
+        processing_algorithm_version=original.processing_algorithm_version,
+        processing_contract_version=original.processing_contract_version,
+        scientific_inputs=json.loads(original.normalized_scientific_inputs_json)
+        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile, {})},
+    )
+    owners = compose_processing_owner_references(
+        request=request,
+        attempt=issue_processing_attempt(request),
+        sample_snapshot=fixture.owners.sample_snapshot,
+        sample_resolutions=fixture.samples,
+    )
+    source = _FakeRaw((7.8, 8.4))
+    if tolerance is not None:
+        source.rt = np.linspace(6.5, 9.5, 1201)
+    source.intensity = 450.0 * np.exp(
+        -0.5 * ((source.rt - 7.8) / width) ** 2
+    ) + 1200.0 * np.exp(-0.5 * ((source.rt - 8.4) / 0.035) ** 2)
+    raw, _ = _open_bound_raw(fixture, sample, source, tmp_path=tmp_path)
+    query_basis = (
+        "trajectory_observed"
+        if query_rt == expected_apex else "calibrated_trajectory_fit"
+    )
+    target = UntargetedCidNlBackfillTarget(
+        "same-group",
+        fixture.method_subject,
+        500.0,
+        8.1,
+        query_rt=query_rt,
+        query_rt_basis=query_basis,
+        query_rt_tolerance_sec=tolerance,
+    )
+    config = _peak_config(tmp_path)
+    batch = acquire_untargeted_cid_nl_backfill_trace_batch(
+        processing_owners=owners,
+        sample=fixture.sample(sample),
+        backfill_requests=(target,),
+        peak_config=config,
+        raw=raw,
+    )
+    assert batch.targets[0].center_rt == 8.1
+    assert batch.targets[0].sample_query_rt == query_rt
+    assert batch.requests[0].rt_min == pytest.approx(
+        query_rt - config.nl_rt_anchor_half_window_min
+    )
+    result = backfill_untargeted_cid_nl_sample_subject(
+        processing_owners=owners,
+        sample=fixture.sample(sample),
+        method_subject=fixture.method_subject,
+        group_center_mz=500.0,
+        group_center_rt=8.1,
+        group_hypothesis_id="same-group",
+        query_rt=query_rt,
+        query_rt_basis=query_basis,
+        query_rt_tolerance_sec=tolerance,
+        support_policy=DdaCidNlPeakSupportPolicy(
+            precursor_tolerance_da=0.5, neutral_loss_tolerance_ppm=20.0
+        ),
+        peak_config=config,
+        raw=raw,
+        signal_processing_profile=profile,
+        _preacquired_traces=batch,
+    )
+    assert result.group_hypothesis_id == "same-group"
+    assert result.query_rt == query_rt
+    assert result.query_rt_basis == query_basis
+    assessment = result.assessment
+    assert assessment.content.method_result == "HOLD"
+    assert not assessment.individual_support_refs
+    assert len(assessment.candidate_peaks) == 1
+    assert assessment.candidate_peaks[
+        0
+    ].content.integration.rt_apex_min == pytest.approx(expected_apex, abs=0.005)
+    if tolerance is not None:
+        evaluation = result.capture_evidence[0].physical_evaluation
+        assert evaluation.facts is not None
+        assert evaluation.question.search_rt_window == pytest.approx((7.35, 7.75))
+        assert evaluation.facts.apex_rt_min > 7.75
+        assert evaluation.facts.left_rt_min < query_rt < evaluation.facts.right_rt_min
+    from xic_extractor.untargeted_execution.partition.workers import _group_revisit
+
+    assert (
+        _group_revisit(assessment, observed_rt=expected_apex, apex_tolerance_sec=2.0)
+        == "reuse"
+    )
+    other_peak = 8.4 if expected_apex == 7.8 else 7.8
+    assert (
+        _group_revisit(assessment, observed_rt=other_peak, apex_tolerance_sec=2.0)
+        == "search"
+    )
 
 
 def test_recovery_batch_canonicalizes_shared_group_queries_without_merging_centers(
@@ -1777,3 +2347,409 @@ def _without_ms1_peak(candidate: DiscoveryCandidate) -> DiscoveryCandidate:
         discovery_candidate_state="review_only_orphan_nl",
         ms1_feature_row_id="",
     )
+
+
+def test_strict_replay_retains_two_recorded_precursors_from_one_scan(tmp_path):
+    from xic_extractor.discovery.strict_seed_receipts import (
+        read_complete_discovery_scan_seeds,
+    )
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+
+    source_raw = _FakeRaw((7.98, 8.02))
+    source_raw.scans = tuple(
+        replace(
+            scan,
+            precursor_metadata=Ms2PrecursorMetadata(
+                monoisotopic_mz=scan.precursor_mz - 1.0035,
+                charge=1,
+                isolation_width_da=1.6,
+            ),
+            masses=np.concatenate((scan.masses, scan.masses - 1.0035)),
+            intensities=np.concatenate((scan.intensities, scan.intensities)),
+        )
+        for scan in source_raw.scans
+    )
+    settings = _settings()
+    candidates = _current_candidates(
+        source_raw,
+        raw_file=tmp_path / "S1.RAW",
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+    )
+    assert len(candidates) == 2
+    seeds = read_complete_discovery_scan_seeds(
+        source_raw, candidates=candidates, settings=settings
+    )
+    assert len(seeds) == 4
+    assert {seed.precursor_mz_basis for _, seed in seeds} == {
+        "scan_precursor",
+        "scan_monoisotopic",
+    }
+    assert all(
+        seed.precursor_metadata == scan.precursor_metadata for scan, seed in seeds
+    )
+    assert all(
+        seed.supports_direct_nl == (seed.precursor_mz_basis == "scan_precursor")
+        for _, seed in seeds
+    )
+
+
+@pytest.mark.parametrize(
+    "query_gate", [(None, True), (12.0, True), (30.0, True), (None, False)]
+)
+@pytest.mark.parametrize("target_present", [True, False])
+@pytest.mark.parametrize("target_center", [8.25, 8.45])
+def test_physical_backfill_context_is_not_search_permission(
+    tmp_path: Path,
+    target_present: bool,
+    target_center: float,
+    query_gate: tuple[float | None, bool],
+) -> None:
+    import json
+
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
+    from xic_extractor.peak_detection.search_scope import (
+        PHYSICAL_CAPTURE_INPUT_KEY,
+        physical_capture_input_payload,
+    )
+    from xic_extractor.processing_identity import (
+        build_processing_request_identity,
+        compose_processing_owner_references,
+        issue_processing_attempt,
+    )
+
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path,
+        sample_roles={"S1": "study_sample"},
+        thermo_raw_sources=True,
+    )
+    profile = SignalProcessingProfile(window_points=15)
+    old = fixture.owners.request
+    request = build_processing_request_identity(
+        acquisition_sources=old.acquisition_sources,
+        acquisition_bindings=old.acquisition_bindings,
+        scientific_input_schema_version=old.scientific_input_schema_version,
+        processing_algorithm_version=old.processing_algorithm_version,
+        processing_contract_version=old.processing_contract_version,
+        scientific_inputs=json.loads(old.normalized_scientific_inputs_json)
+        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile, {})},
+    )
+    owners = compose_processing_owner_references(
+        request=request,
+        attempt=issue_processing_attempt(request),
+        sample_snapshot=fixture.owners.sample_snapshot,
+        sample_resolutions=fixture.samples,
+    )
+    fixture = replace(fixture, owners=owners)
+    source_raw = _FakeRaw(())
+    source_raw.rt = np.linspace(6.0, 10.0, 801)
+    source_raw.intensity = 5000.0 * np.exp(-0.5 * ((source_raw.rt - 8.85) / 0.04) ** 2)
+    if target_present:
+        source_raw.intensity += 1000.0 * np.exp(
+            -0.5 * ((source_raw.rt - target_center) / 0.06) ** 2
+        )
+    raw, vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+    config = replace(_peak_config(tmp_path), nl_rt_anchor_half_window_min=0.5)
+    target = UntargetedCidNlBackfillTarget(
+        "bounded-group", fixture.method_subject, 500.0, 8.0
+    )
+    batch = acquire_untargeted_cid_nl_backfill_trace_batch(
+        processing_owners=owners,
+        sample=fixture.sample("S1"),
+        backfill_requests=(target, replace(target, group_hypothesis_id="same-query")),
+        peak_config=config,
+        raw=raw,
+    )
+    assert vendor.chromatogram_request_counts == [2]
+    assert batch.requests[0].rt_min == 7.5 and batch.requests[0].rt_max == 8.5
+    assert batch.context_requests[0].rt_min == 7.0
+    assert batch.context_requests[0].rt_max == 9.0
+    kwargs = dict(
+        processing_owners=owners,
+        sample=fixture.sample("S1"),
+        method_subject=fixture.method_subject,
+        group_center_rt=8.0,
+        group_center_mz=500.0,
+        group_hypothesis_id="bounded-group",
+        support_policy=DdaCidNlPeakSupportPolicy(
+            precursor_tolerance_da=0.01,
+            neutral_loss_tolerance_ppm=20.0,
+        ),
+        peak_config=config,
+        signal_processing_profile=profile,
+    )
+    batched = backfill_untargeted_cid_nl_sample_subject(
+        **kwargs,
+        raw=None,
+        _preacquired_traces=batch,
+    )
+    assert vendor.chromatogram_request_counts == [2]
+    direct = backfill_untargeted_cid_nl_sample_subject(**kwargs, raw=raw)
+    assert vendor.chromatogram_request_counts == [2, 2]
+    first = batched.capture_evidence[0].physical_evaluation
+    assert first == direct.capture_evidence[0].physical_evaluation
+    tolerance, reliable = query_gate
+    gated_kwargs = kwargs | {
+        "query_rt_tolerance_sec": tolerance, "query_rt_reliable": reliable,
+    }
+    gated = backfill_untargeted_cid_nl_sample_subject(
+        **gated_kwargs, raw=None, _preacquired_traces=batch,
+    )
+    gated_direct = backfill_untargeted_cid_nl_sample_subject(**gated_kwargs, raw=raw)
+    gate_result = gated.capture_evidence[0].physical_evaluation
+    assert gate_result == gated_direct.capture_evidence[0].physical_evaluation
+    if not reliable or tolerance == 12.0:
+        assert gate_result.state == "unavailable"
+        assert gate_result.facts is None
+        assert not gated.assessment.candidate_peaks
+        if target_present:
+            assert gate_result.nearest_candidate_rt_min == pytest.approx(
+                target_center, abs=0.02
+            )
+        assert gate_result.reason == (
+            "sample_localization_unreliable" if not reliable
+            else "no_peak_in_sample_local_window" if target_present
+            else "peak_not_found"
+        )
+    elif target_present:
+        assert gate_result.state == "available"
+        assert gate_result.facts is not None and first.facts is not None
+        assert gate_result.facts.area_counts_seconds == first.facts.area_counts_seconds
+        assert gate_result.facts.apex_rt_min == first.facts.apex_rt_min
+    expected_window = (7.5, 8.5) if target_present and target_center == 8.45 else None
+    assert first.question.search_rt_window == expected_window
+    receipt = batched.assessment.content.evaluation_receipt
+    assert (receipt.query_rt_min, receipt.query_rt_max) == (7.5, 8.5)
+    if target_present:
+        assert first.state == "available" and first.facts is not None
+        assert first.facts.apex_rt_min == pytest.approx(target_center, abs=0.02)
+        if target_center == 8.45:
+            assert first.facts.right_rt_min > 8.5
+            assert batched.capture_evidence[0].trace.rt_min == 7.0
+        else:
+            from xic_extractor.peak_detection.physical_peak_evaluation import (
+                evaluate_physical_peak,
+                prepare_physical_signal,
+            )
+            from xic_extractor.peak_detection.physical_peak_models import (
+                PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+            )
+
+            trace = batched.capture_evidence[0].trace
+            assert trace.rt_min == 7.5 and trace.rt_max == 8.5
+            original = evaluate_physical_peak(
+                prepare_physical_signal(trace.rt, trace.intensity, profile=profile),
+                selection_subject_id=fixture.method_subject.method_subject_id,
+                query_rt_min=8.0,
+                selection_policy_version=PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+            )
+            assert original.facts is not None
+            assert first.facts.area_counts_seconds == original.facts.area_counts_seconds
+            assert first.facts.left_rt_min == original.facts.left_rt_min
+            assert first.facts.right_rt_min == original.facts.right_rt_min
+        # A measured MS1 peak alone still cannot assert method SUPPORT.
+        assert batched.assessment.content.method_result != "SUPPORT"
+    else:
+        assert first.state == "unavailable" and first.facts is None
+        assert not batched.assessment.candidate_peaks
+
+
+@pytest.mark.parametrize("monoisotopic_recorded", [True, False])
+def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    monoisotopic_recorded: bool,
+) -> None:
+    import json
+    from types import SimpleNamespace
+
+    from xic_extractor.peak_detection.cid_nl_method_subject import (
+        REQUEST_INPUT_KEY,
+        CidNlComposition,
+        mint_untargeted_cid_nl_method_subject,
+    )
+    from xic_extractor.processing_identity import (
+        build_processing_request_identity,
+        compose_processing_owner_references,
+        issue_processing_attempt,
+    )
+
+    settings = _multi_tag_settings()
+    subject = mint_untargeted_cid_nl_method_subject(
+        precursor_mz=500.0,
+        precursor_tolerance_ppm=20.0,
+        composition=CidNlComposition(
+            tags=tuple(
+                (profile.tag, profile.neutral_loss_da)
+                for profile in settings.neutral_loss_profiles
+            ),
+            combine_mode=settings.tag_combine_mode,
+        ),
+    )
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True
+    )
+    old_request = fixture.owners.request
+    request = build_processing_request_identity(
+        acquisition_sources=old_request.acquisition_sources,
+        acquisition_bindings=old_request.acquisition_bindings,
+        scientific_input_schema_version=old_request.scientific_input_schema_version,
+        processing_algorithm_version=old_request.processing_algorithm_version,
+        processing_contract_version=old_request.processing_contract_version,
+        scientific_inputs=json.loads(old_request.normalized_scientific_inputs_json)
+        | {REQUEST_INPUT_KEY: subject.request_payload()},
+    )
+    owners = compose_processing_owner_references(
+        request=request,
+        attempt=issue_processing_attempt(request),
+        sample_snapshot=fixture.owners.sample_snapshot,
+        sample_resolutions=fixture.samples,
+    )
+    # Selected and recorded monoisotopic ions sit 15 ppm either side of the
+    # subject; each passes the per-loss NL relation for both configured losses.
+    source_raw = _FakeRaw((8.0,))
+    scan = source_raw.scans[0]
+    source_raw.scans = (
+        replace(
+            scan,
+            precursor_mz=499.9925,
+            masses=np.asarray((500.0 - 116.0474, 500.0 - 132.0423)),
+            intensities=np.asarray((800.0, 700.0)),
+            base_peak=800.0,
+        ),
+    )
+    raw, vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+    original_filter = vendor.GetFilterForScanNumber
+
+    def scan_filter(number):
+        result = original_filter(number)
+        if number == scan.scan_number:
+            reaction = result.Filter.Reactions[0]
+            reaction.IsolationWidth = 1.6
+            reaction.IsolationWidthOffset = 0.0
+        return result
+
+    monkeypatch.setattr(vendor, "GetFilterForScanNumber", scan_filter)
+    labels = ("Charge State:", "Master Scan Number:")
+    values: tuple[object, ...] = ("1", str(scan.scan_number - 1))
+    if monoisotopic_recorded:
+        labels = ("Monoisotopic M/Z:", *labels)
+        values = ("500.0075", *values)
+    vendor.trailer_labels = list(labels)
+    monkeypatch.setattr(
+        vendor,
+        "GetTrailerExtraInformation",
+        lambda _number: SimpleNamespace(Labels=labels, Values=values),
+        raising=False,
+    )
+    try:
+        result = backfill_untargeted_cid_nl_sample_subject(
+            processing_owners=owners,
+            sample=fixture.sample("S1"),
+            method_subject=subject,
+            group_center_rt=8.0,
+            group_center_mz=500.0,
+            support_policy=DdaCidNlPeakSupportPolicy(
+                precursor_tolerance_da=0.01, neutral_loss_tolerance_ppm=20.0
+            ),
+            peak_config=_peak_config(tmp_path),
+            raw=raw,
+            settings=settings,
+        )
+    finally:
+        raw.__exit__(None, None, None)
+
+    assessment = result.assessment
+    assert assessment.content.method_result == "SUPPORT"
+    assert len(assessment.candidate_peaks) == 1
+    assert sorted(
+        (
+            ref.observation.scan_number,
+            ref.observation.configured_neutral_loss_da,
+            ref.observation.product_mz,
+        )
+        for ref in assessment.evidence_refs
+    ) == [
+        (scan.scan_number, 116.0474, pytest.approx(500.0 - 116.0474)),
+        (scan.scan_number, 132.0423, pytest.approx(500.0 - 132.0423)),
+    ]
+
+@pytest.mark.parametrize("preserve_configured_losses", [False, True])
+def test_same_scan_absorbed_product_keeps_exact_canonical_seed(
+    tmp_path: Path, preserve_configured_losses: bool
+) -> None:
+    import json
+
+    from xic_extractor.discovery.strict_seed_receipts import (
+        read_complete_discovery_scan_seeds,
+    )
+
+    source_raw = _FakeRaw((8.0,), scan_precursor_mz=255.15606689453125)
+    canonical_product = 139.09368896484375
+    absorbed_product = 139.09832763671875
+    source_raw.scans = (
+        replace(
+            source_raw.scans[0],
+            masses=np.asarray((canonical_product, absorbed_product)),
+            intensities=np.asarray((800.0, 200.0)),
+        ),
+    )
+    settings = _settings()
+    (candidate,) = _current_candidates(
+        source_raw,
+        raw_file=tmp_path / "S1.RAW",
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+    )
+    assert candidate.product_mz == canonical_product
+    evidence = json.loads(candidate.tag_evidence_json)["DNA_dR"]
+    assert evidence["scan_receipts"][str(candidate.best_ms2_scan_id)][
+        "product_mz"
+    ] == absorbed_product
+
+    seeds = read_complete_discovery_scan_seeds(
+        source_raw,
+        candidates=(candidate,),
+        settings=settings,
+        include_inferred=True,
+        preserve_configured_losses=preserve_configured_losses,
+    )
+    expected_products = (
+        {canonical_product, absorbed_product}
+        if preserve_configured_losses
+        else {canonical_product}
+    )
+    assert {seed.product_mz for _, seed in seeds} == expected_products
+    assert all(seed.precursor_mz == seed.product_mz + 116.0474 for _, seed in seeds)
+
+
+@pytest.mark.parametrize("preserve_configured_losses", [False, True])
+def test_duplicate_exact_canonical_seed_is_rejected(
+    tmp_path: Path, monkeypatch, preserve_configured_losses: bool
+) -> None:
+    from xic_extractor.discovery import strict_seed_receipts
+
+    source_raw = _FakeRaw((8.0,))
+    settings = _settings()
+    (candidate,) = _current_candidates(
+        source_raw,
+        raw_file=tmp_path / "S1.RAW",
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+    )
+    enumerate_seeds = strict_seed_receipts.discovery_seeds_from_scan
+
+    def duplicated(scan, **kwargs):
+        seeds = enumerate_seeds(scan, **kwargs)
+        return seeds + seeds
+
+    monkeypatch.setattr(strict_seed_receipts, "discovery_seeds_from_scan", duplicated)
+    with pytest.raises(strict_seed_receipts.StrictSeedReceiptError, match="not unique"):
+        strict_seed_receipts.read_complete_discovery_scan_seeds(
+            source_raw,
+            candidates=(candidate,),
+            settings=settings,
+            preserve_configured_losses=preserve_configured_losses,
+        )

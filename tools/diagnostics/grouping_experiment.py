@@ -141,6 +141,7 @@ def _prepare(args: argparse.Namespace) -> dict:
         prepared = prepare_grouping_experiment(
             resources.plan,
             mz_ranges=args.mz_range,
+            spool_directory=args.output_dir,
             alignment_config=recipe.alignment_config,
             known_istd_reference=read_known_istd_reference(args.known_istd_reference)
             if args.known_istd_reference

@@ -24,8 +24,18 @@ def extract_batch_known_istd_reference(
     source_identifier: str = "<in-memory>",
     source_sha256: str = "",
 ) -> KnownIstdReference:
-    """Extract ISTD peaks across raw files and construct in-memory reference."""
-    from xic_extractor.peak_detection.peak_integration import find_peak_and_area
+    """Extract unique physically supported, native NL-qualified ISTD coordinates."""
+    from xic_extractor.configuration.signal_processing_profile import (
+        resolve_signal_processing_profile,
+    )
+    from xic_extractor.evidence.neutral_loss import check_nl
+    from xic_extractor.ms2_scan_models import Ms2ScanEvent, Ms2Window
+    from xic_extractor.peak_detection.physical_peak_evaluation import (
+        enumerate_physical_segment_universe,
+        prepare_physical_signal,
+        qualified_physical_segments,
+    )
+    from xic_extractor.precursor_evidence import recorded_precursor_references
     from xic_extractor.raw_reader import open_raw
     from xic_extractor.xic_models import XICRequest
 
@@ -36,27 +46,79 @@ def extract_batch_known_istd_reference(
     requests = tuple(
         XICRequest(
             mz=target.mz,
-            rt_min=target.rt_min,
-            rt_max=target.rt_max,
+            rt_min=max(0.0, target.rt_min - 1.0),
+            rt_max=target.rt_max + 1.0,
             ppm_tol=target.ppm_tol,
         )
         for target in istd_targets
+    )
+    profile = resolve_signal_processing_profile(
+        signal_processing_method=peak_config.signal_processing_method,
+        signal_processing_window_points=peak_config.signal_processing_window_points,
     )
 
     coordinates: dict[tuple[str, str], float] = {}
     for sample_stem, raw_path in sorted(raw_paths_by_sample.items()):
         with open_raw(raw_path, dll_dir=dll_dir) as raw:
             traces = raw.extract_xic_many(requests)
+            ms2_windows: dict[tuple[float, float], tuple[Ms2ScanEvent, ...]] = {}
             for target, trace in zip(istd_targets, traces, strict=True):
-                peak_result = find_peak_and_area(
-                    trace.rt,
-                    trace.intensity,
-                    peak_config,
-                    evidence_role="ISTD",
+                if (
+                    target.neutral_loss_da is None
+                    or target.nl_ppm_warn is None
+                    or target.nl_ppm_max is None
+                ):
+                    continue
+                prepared = prepare_physical_signal(
+                    trace.rt, trace.intensity, profile=profile
                 )
-                if peak_result.peak is not None and peak_result.peak.rt > 0:
-                    peak_rt = float(peak_result.peak.rt)
-                    coordinates[(target.label, sample_stem)] = peak_rt
+                if prepared.prepared is None:
+                    continue
+                universe = enumerate_physical_segment_universe(prepared)
+                segments = qualified_physical_segments(
+                    prepared.prepared, universe.segments
+                )
+                window_key = (target.rt_min, target.rt_max)
+                qualified_rts = []
+                for segment in segments:
+                    # Context supports morphology, but never expands the declared
+                    # identity search or supplies a nearest/strongest tie-break.
+                    if not target.rt_min <= segment.apex_rt_min <= target.rt_max:
+                        continue
+                    if window_key not in ms2_windows:
+                        ms2_windows[window_key] = tuple(raw.iter_ms2_scans(*window_key))
+                    events = tuple(
+                        event
+                        for event in ms2_windows[window_key]
+                        if event.scan is not None
+                        and segment.left_rt_min <= event.scan.rt <= segment.right_rt_min
+                        # check_nl also admits coisolated precursors. A calibration
+                        # coordinate needs its chosen native reference on this target.
+                        and any(
+                            abs(mz - target.mz) <= target.mz * target.ppm_tol / 1e6
+                            for mz, _ in recorded_precursor_references(
+                                event.scan, target.nl_ppm_max,
+                            )
+                        )
+                    )
+                    nl = check_nl(
+                        Ms2Window(
+                            sample_stem,
+                            segment.left_rt_min,
+                            segment.right_rt_min,
+                            events,
+                        ),
+                        precursor_mz=target.mz,
+                        neutral_loss_da=target.neutral_loss_da,
+                        nl_ppm_warn=target.nl_ppm_warn,
+                        nl_ppm_max=target.nl_ppm_max,
+                        ms2_precursor_tol_da=peak_config.ms2_precursor_tol_da,
+                        nl_min_intensity_ratio=peak_config.nl_min_intensity_ratio,
+                    )
+                    if nl.status in {"OK", "WARN"}:
+                        qualified_rts.append(float(segment.apex_rt_min))
+                if len(qualified_rts) == 1 and qualified_rts[0] > 0:
+                    coordinates[(target.label, sample_stem)] = qualified_rts[0]
 
     return mint_known_istd_reference_from_measurements(
         istd_targets,

@@ -50,6 +50,7 @@ from xic_extractor.presets import (
 )
 from xic_extractor.presets.models import Preset
 from xic_extractor.raw_reader import RawReaderError
+from xic_extractor.sample_metadata import SampleMetadataError, load_sample_metadata
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 from xic_extractor.untargeted_execution.input_planning import (
     is_supported_alignment_discovery,
@@ -73,6 +74,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     raw_dir = args.raw_dir.resolve()
     dll_dir = args.dll_dir.resolve()
     output_dir = args.output_dir.resolve()
+    sample_metadata = None
+    if args.sample_metadata is not None:
+        metadata_path = args.sample_metadata.resolve()
+        try:
+            sample_metadata = load_sample_metadata(metadata_path)
+        except (SampleMetadataError, OSError) as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        batches = sorted({row.batch_id for row in sample_metadata})
+        print(
+            f"Sample metadata: {metadata_path} "
+            f"({len(sample_metadata)} samples; {len(batches)} batches: "
+            f"{', '.join(batch or '<unspecified>' for batch in batches)})"
+        )
+    else:
+        print(
+            "Sample metadata: RAW-derived metadata "
+            f"(single-directory batch fallback: {raw_dir.name})"
+        )
     signal_processing_profile = resolve_signal_processing_profile(
         signal_processing_method=args.signal_processing_method,
         signal_processing_window_points=args.signal_processing_window_points,
@@ -193,6 +213,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         run_kwargs = {
             "discovery_batch_index": discovery_batch_index,
+            "sample_metadata": sample_metadata,
             "raw_dir": raw_dir,
             "dll_dir": dll_dir,
             "output_dir": output_dir,
@@ -354,6 +375,16 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         type=Path,
         required=True,
         help="Authoritative directory containing Thermo RAW files for backfill.",
+    )
+    parser.add_argument(
+        "--sample-metadata",
+        type=Path,
+        help=(
+            "Sample metadata or sequence file preserving batch IDs, roles and "
+            "injection orders. Required to preserve multiple batches in a "
+            "flattened RAW directory; otherwise metadata is derived from RAW "
+            "with the directory name as a single batch."
+        ),
     )
     parser.add_argument(
         "--dll-dir",

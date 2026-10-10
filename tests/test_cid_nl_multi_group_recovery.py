@@ -54,6 +54,142 @@ from xic_extractor.untargeted_execution.partition.request import (
 )
 
 
+@pytest.mark.parametrize("empty", [False, True])
+def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
+    tmp_path, monkeypatch, empty
+):
+    import csv
+
+    from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
+    from xic_extractor.diagnostics.backfill_evidence.tsv import (
+        iter_backfill_evidence_tsv,
+    )
+    from xic_extractor.output.alignment.tsv_writer import (
+        write_alignment_backfill_cell_evidence_tsv,
+    )
+    from xic_extractor.untargeted_execution.partition_composition import (
+        finalize_untargeted_partition_grouping,
+        prepare_untargeted_partition_grouping,
+    )
+
+    shifts = {"S1": 0.0, "S2": 0.0, "Late": 0.4, "Early": -0.4}
+    settings = _settings()
+    peak_config = replace(_peak_config(tmp_path), nl_rt_anchor_half_window_min=0.15)
+    paths = tuple(tmp_path / f"{stem}.synthetic" for stem in shifts)
+    raws, candidates = {}, {}
+    for path in paths:
+        path.write_bytes(path.stem.encode())
+        raw = _FakeRaw((8.0 + shifts[path.stem],))
+        candidates[path.stem] = (
+            _current_candidates(
+                raw, raw_file=path, settings=settings, peak_config=peak_config
+            )
+            if path.stem.startswith("S")
+            else ()
+        )
+        if not path.stem.startswith("S"):
+            raw.scans = ()
+            if empty:
+                raw.intensity[:] = 0.0
+        raws[path] = raw
+    batch = build_dense_partition(
+        raw_paths=paths,
+        sample_metadata=tuple(
+            SampleMetadata(
+                sample_name=path.stem,
+                raw_stem=path.stem,
+                injection_order=i,
+                sample_role="study_sample",
+            )
+            for i, path in enumerate(paths, 1)
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates,
+        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        dll_dir=tmp_path,
+        sample_identity_namespace="study:sample-query-rt",
+    )
+    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    config = AlignmentConfig(anchor_min_seed_events=1)
+    warp = BatchRtWarp(
+        tuple(
+            (stem, ((7.0, offset), (20.0, offset))) for stem, offset in shifts.items()
+        ),
+        12,
+    )
+
+    def prepare(initial):
+        bootstrap = prepare_untargeted_partition_grouping(
+            batch,
+            initial,
+            alignment_config=config,
+            bootstrap_only=True,
+        )
+        return finalize_untargeted_partition_grouping(batch, bootstrap, rt_warp=warp)
+
+    runtime = start_runtime_attempt(
+        attempt=batch.context.processing_owners.attempt,
+        work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
+        owner_completeness_attestation="sample-query-rt",
+    )
+    result = execute_attempt(
+        runtime,
+        batch.jobs,
+        alignment_config=config,
+        prepare_grouping=prepare,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(
+            tmp_path / "query-runtime.json", "query-rt"
+        ),
+    )
+    assert result.succeeded
+    for sample_result in result.sample_results:
+        stem = sample_result.job.sample.metadata.raw_stem
+        if stem.startswith("S"):
+            continue
+        (attempt,) = sample_result.backfill_attempts
+        expected = 8.0 + shifts[stem]
+        assert attempt.query_rt == pytest.approx(expected)
+        assert attempt.query_rt_basis == "calibrated_trajectory_fit"
+        receipt = attempt.assessment.content.evaluation_receipt
+        assert (receipt.query_rt_min, receipt.query_rt_max) == pytest.approx(
+            (expected - 0.15, expected + 0.15)
+        )
+        assert not receipt.query_rt_min <= 8.0 <= receipt.query_rt_max
+        assert len(attempt.assessment.candidate_peaks) == (0 if empty else 1)
+        if not empty:
+            assert attempt.assessment.candidate_peaks[
+                0
+            ].content.integration.rt_apex_min == pytest.approx(expected)
+    completed = complete_dense_partition(batch, result, alignment_config=config)
+    writer = project_completed_untarget_batch_writer_inputs(
+        completed.application_result
+    )
+    for cell in writer.matrix.cells:
+        if cell.sample_stem in {"Early", "Late"}:
+            assert cell.backfill_request_rt_min == pytest.approx(
+                8.0 + shifts[cell.sample_stem] - 0.15
+            )
+            assert cell.backfill_request_rt_max == pytest.approx(
+                8.0 + shifts[cell.sample_stem] + 0.15
+            )
+    path = write_alignment_backfill_cell_evidence_tsv(
+        tmp_path / "queries.tsv",
+        writer.matrix,
+        production_decisions=writer.production_decisions,
+    )
+    with path.open(encoding="utf-8") as stream:
+        rows = list(csv.DictReader(stream, delimiter="\t"))
+    if not empty:
+        for row in rows:
+            if row["sample_stem"] in {"Early", "Late"}:
+                assert float(row["backfill_query_rt_min"]) == pytest.approx(
+                    8.0 + shifts[row["sample_stem"]] - 0.15
+                )
+        assert len(tuple(iter_backfill_evidence_tsv(path))) == len(rows)
+
+
 @pytest.mark.parametrize(
     "outcome", ["support", "empty", "below-quorum", "blank", "failed"]
 )
@@ -388,9 +524,7 @@ def test_runtime_recovers_every_authorized_rt_group(
             precursor_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
             neutral_loss_da=116.0474,
         )
-        context = build_partition_context(
-            **kwargs, method_subject=subject
-        )
+        context = build_partition_context(**kwargs, method_subject=subject)
         jobs = tuple(
             UntargetedPartitionJob(
                 processing_owners=context.processing_owners,
@@ -1407,6 +1541,8 @@ def _assert_alignment_uses_configured_recovery_groups(
     def retain_runtime(*args, **options):
         result = execute(*args, **options)
         assert result.succeeded
+        if options.get("initial_only"):
+            return result
         missing = next(
             item
             for item in result.sample_results
@@ -1422,9 +1558,7 @@ def _assert_alignment_uses_configured_recovery_groups(
         runtime_results.append(result)
         return result
 
-    monkeypatch.setattr(
-        bounded_runtime, 'execute_partition', retain_runtime
-    )
+    monkeypatch.setattr(bounded_runtime, "execute_partition", retain_runtime)
     completed = complete_untargeted_alignment(
         discovery_batch=DiscoveryBatchInput(
             sample_order=tuple(candidates),

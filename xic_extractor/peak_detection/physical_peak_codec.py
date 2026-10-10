@@ -183,6 +183,7 @@ def rehydrate_physical_peak_evaluation(
         request_context_rt_start_min=request_context_rt_start_min,
         request_context_rt_end_min=request_context_rt_end_min,
         selection_policy_version=expected.question.selection_policy_version,
+        search_rt_window=expected.question.search_rt_window,
     )
     if actual != expected:
         raise ValueError(
@@ -546,7 +547,25 @@ def _physical_evaluation_from_payload(
         ),
     )
     question_value = _physical_mapping(value["question"], label="question")
-    _require_physical_keys(question_value, _QUESTION_KEYS, label="question")
+    bounded_search = (
+        question_value.get("schema_version") == "bounded_physical_peak_question"
+    )
+    _require_physical_keys(
+        question_value,
+        (*_QUESTION_KEYS[:-1], "search_rt_window", _QUESTION_KEYS[-1])
+        if bounded_search
+        else _QUESTION_KEYS,
+        label="question",
+    )
+    search_window = None
+    if bounded_search:
+        values = question_value["search_rt_window"]
+        if not isinstance(values, list) or len(values) != 2:
+            raise ValueError("search window must contain two RT bounds")
+        search_window = (
+            _physical_float_from_text(values[0], field="search_rt_window"),
+            _physical_float_from_text(values[1], field="search_rt_window"),
+        )
     question = PhysicalPeakQuestion(
         schema_version=_physical_text(
             question_value["schema_version"], field="question.schema_version"
@@ -587,6 +606,7 @@ def _physical_evaluation_from_payload(
         physical_question_id=_physical_text(
             question_value["physical_question_id"], field="physical_question_id"
         ),
+        search_rt_window=search_window,
     )
     answer_value = _physical_mapping(value["answer"], label="answer")
     _require_physical_keys(answer_value, _ANSWER_KEYS, label="answer")

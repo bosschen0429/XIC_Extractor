@@ -15,11 +15,15 @@ from xic_extractor.alignment.feature_membership_inference import (
 )
 from xic_extractor.alignment.grouping_workflow import group_cid_nl_owners
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+from xic_extractor.alignment.peak_trajectories import (
+    resolve_peak_trajectories,
+)
 from xic_extractor.alignment.sample_rt_calibration import (
     BatchRtCalibration,
     RtCalibrationPolicy,
     build_batch_rt_calibration,
 )
+from xic_extractor.peak_detection.elution_context import SampleElutionContext
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +32,7 @@ class GroupingWorkset:
     owners: tuple[SampleLocalMS1Owner, ...]
     known_identity_bindings: tuple[tuple[str, str], ...]
     rt_warp: BatchRtWarp | None
+    elution_contexts: tuple[SampleElutionContext, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +63,12 @@ def replay_grouping(
             rt_warp=rt_coordinates if rt_coordinates is not None else workset.rt_warp,
             backfill_half_window_min=inputs.backfill_half_window_min,
             known_identity_bindings=workset.known_identity_bindings,
+            peak_trajectories=resolve_peak_trajectories(
+                workset.owners,
+                workset.elution_contexts,
+                config=config or inputs.alignment_config,
+                injection_order=inputs.injection_order,
+            ),
         )
     )
 

@@ -68,6 +68,197 @@ class _OwnerBoundBatchRaw(_BatchRaw):
         self.intensity = np.asarray([0.0, 0.0, 0.0, 10.0, 100.0, 10.0, 0.0, 0.0, 0.0])
 
 
+@pytest.mark.parametrize("parent_support", [True, False])
+def test_recorded_mono_nl_match_keeps_distinct_inferred_physical_search(
+    tmp_path: Path, parent_support: bool
+) -> None:
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+    from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+    from xic_extractor.xic_models import XICTrace
+
+    raw_path = tmp_path / "coisolated.raw"
+    raw_path.write_bytes(b"distinct monoisotopic and inferred mass windows")
+    settings = _settings(ms2_precursor_tol_da=0.8, nl_tolerance_ppm=20.0)
+    spec = compile_discovery_processing_run_spec(
+        (raw_path,),
+        discovery_settings=settings,
+        signal_processing_profile=SignalProcessingProfile(),
+    )
+    event = _scan_event(
+        scan_number=100, rt=9.02, precursor_mz=500.5, masses=[383.9646]
+    )
+    event = replace(
+        event,
+        scan=replace(
+            event.scan,
+            precursor_metadata=Ms2PrecursorMetadata(
+                monoisotopic_mz=500.0,
+                charge=1,
+                isolation_width_da=1.6,
+                isolation_offset_da=0.0,
+                master_scan_number=99,
+            ),
+        ),
+    )
+    actual_mz = 500.016
+    rt = np.arange(8.5, 9.5, 0.002)
+    intensity = 100.0 + 10_000 * np.exp(-0.5 * ((rt - 9.02) / 0.004) ** 2)
+
+    class MassResolvedRaw(_OwnerBoundFakeRawHandle):
+        def extract_xic_many(self, requests):
+            return tuple(
+                XICTrace.from_arrays(
+                    rt,
+                    intensity
+                    if abs(request.mz - actual_mz)
+                    <= request.mz * request.ppm_tol / 1e6
+                    else np.zeros_like(rt),
+                )
+                for request in requests
+            )
+
+        def read_ms1_mass_windows(self, requests):
+            return tuple(
+                Ms1PrecursorObservation(
+                    scan,
+                    9.018,
+                    (actual_mz,)
+                    if parent_support and lower <= actual_mz <= upper
+                    else (),
+                )
+                for scan, lower, upper in requests
+            )
+
+    raw = MassResolvedRaw(
+        spec.acquisition_inputs[0].acquisition_source,
+        [event],
+        rt=rt,
+        intensity=intensity,
+    )
+    outputs = run_discovery(
+        raw_path,
+        output_dir=tmp_path / "out",
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+        raw_opener=lambda *_args: raw,
+        run_spec=spec,
+    )
+    candidates = read_discovery_candidates_csv(outputs.candidates_csv)
+    supported = [
+        candidate
+        for candidate in candidates
+        if candidate.discovery_candidate_state == "ms1_feature_nl_supported"
+    ]
+    # The recorded mono passes the NL gate but its MS1 window misses the ion.
+    # Product+NL must still search its distinct window, without becoming its
+    # own independent NL witness when the parent MS1 observation is absent.
+    assert len(supported) == int(parent_support)
+    if parent_support:
+        assert supported[0].ms1_apex_rt == pytest.approx(9.02)
+        assert supported[0].ms1_area > 0
+        assert supported[0].precursor_mz_basis == "product_plus_neutral_loss"
+
+
+@pytest.mark.parametrize("strongest_first", [True, False])
+@pytest.mark.parametrize("second_seed_rt", [10.02, 10.15])
+def test_pipeline_retains_each_seeded_physical_peak_from_one_rt_group(
+    tmp_path: Path,
+    strongest_first: bool,
+    second_seed_rt: float,
+) -> None:
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.physical_fact_persistence import (
+        IndexedDiscoveryPhysicalFacts,
+    )
+
+    raw_path = tmp_path / "two-peaks.raw"
+    raw_path.write_bytes(b"two analytical peaks in one RT seed group")
+    settings = _settings()
+    spec = compile_discovery_processing_run_spec(
+        (raw_path,),
+        discovery_settings=settings,
+        signal_processing_profile=SignalProcessingProfile(),
+    )
+    rt = np.arange(9.3, 10.9, 0.002)
+    intensity = (
+        100.0
+        + 10_000 * np.exp(-0.5 * ((rt - 10.00) / 0.012) ** 2)
+        + 15_000 * np.exp(-0.5 * ((rt - 10.15) / 0.012) ** 2)
+    )
+    raw = _OwnerBoundFakeRawHandle(
+        spec.acquisition_inputs[0].acquisition_source,
+        [
+            _scan_event(
+                scan_number=100,
+                rt=10.00,
+                precursor_mz=500.0,
+                product_intensity=20_000 if strongest_first else 10_000,
+            ),
+            _scan_event(
+                scan_number=200,
+                rt=second_seed_rt,
+                precursor_mz=500.0,
+                product_intensity=10_000 if strongest_first else 20_000,
+            ),
+        ],
+        rt=rt,
+        intensity=intensity,
+    )
+    outputs = run_discovery(
+        raw_path,
+        output_dir=tmp_path / "out",
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+        raw_opener=lambda *_args: raw,
+        run_spec=spec,
+    )
+    candidates = sorted(
+        read_discovery_candidates_csv(outputs.candidates_csv),
+        key=lambda candidate: candidate.ms1_apex_rt,
+    )
+    expected_apices = [10.00] if second_seed_rt == 10.02 else [10.00, 10.15]
+    assert [candidate.ms1_apex_rt for candidate in candidates] == pytest.approx(
+        expected_apices,
+    )
+    assert len(_read_csv(outputs.review_csv)) == len(expected_apices)
+    assert [candidate.ms1_area for candidate in candidates] == pytest.approx(
+        [
+            height * 0.012 * np.sqrt(2 * np.pi) * 60
+            for height in [10_000, 15_000][: len(expected_apices)]
+        ],
+        rel=0.03,
+    )
+    assert all(
+        candidate.discovery_candidate_state == "ms1_feature_nl_supported"
+        for candidate in candidates
+    )
+    assert sorted(
+        scan for candidate in candidates for scan in candidate.seed_scan_ids
+    ) == [100, 200]
+    # More physical questions must not repeat RAW acquisition or lose their
+    # independent candidate -> physical-answer binding after persistence.
+    assert raw.raw_chromatogram_call_count == 1
+    assert outputs.physical_facts_json is not None
+    saved = IndexedDiscoveryPhysicalFacts(
+        outputs.physical_facts_json,
+        expected_run_spec=spec,
+        expected_acquisition_input=spec.acquisition_inputs[0],
+        candidate_ids=frozenset(candidate.candidate_id for candidate in candidates),
+    )
+    try:
+        records = saved.load_candidates(
+            [candidate.candidate_id for candidate in candidates]
+        )
+        for candidate in candidates:
+            record = records[candidate.candidate_id]
+            assert record.evaluation.facts is not None
+            assert record.evaluation.facts.apex_rt_min == candidate.ms1_apex_rt
+            assert record.evaluation.facts.area_counts_seconds == candidate.ms1_area
+    finally:
+        saved.close()
+
+
 @pytest.mark.parametrize(
     ("fixture_name", "expected_apices", "representative_scan"),
     (
@@ -211,8 +402,9 @@ def test_discovery_retained_physical_peak_cardinality(
 
 
 @pytest.mark.parametrize("combine_mode", ("union", "intersection"))
+@pytest.mark.parametrize("fallback", (False, True))
 def test_merged_physical_candidate_persists_representative_search_window(
-    tmp_path: Path, combine_mode: str
+    tmp_path: Path, combine_mode: str, fallback: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from xic_extractor.acquisition_contract import serialize_acquired_trace
     from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
@@ -231,6 +423,7 @@ def test_merged_physical_candidate_persists_representative_search_window(
     raw_path.write_bytes(b"representative-window")
     settings = DiscoverySettings(
         selected_tag_names=("dR", "R"),
+        nl_tolerance_ppm=100.0 if fallback else 20.0,
         tag_combine_mode=combine_mode,
         neutral_loss_profiles=_multi_tag_settings().neutral_loss_profiles[:2],
     )
@@ -241,7 +434,16 @@ def test_merged_physical_candidate_persists_representative_search_window(
     source = spec.acquisition_inputs[0].acquisition_source
     groups = tuple(
         replace(
-            _group((_seed(scan_number=scan, rt=rt, product_mz=500.0 - loss),)),
+            _group(
+                (
+                    _seed(
+                        scan_number=scan,
+                        rt=rt,
+                        product_mz=500.0 - loss,
+                        product_intensity=20000.0 if scan == 20 else 10000.0,
+                    ),
+                )
+            ),
             neutral_loss_tag=tag,
             configured_neutral_loss_da=loss,
             matched_tag_names=(tag,),
@@ -251,6 +453,53 @@ def test_merged_physical_candidate_persists_representative_search_window(
             (20, 7.82, "R", 132.0423),
         )
     )
+    if fallback:
+        from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+        from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+
+        groups = tuple(
+            replace(
+                group,
+                precursor_mz=500.0 + offset,
+                product_mz=group.product_mz + offset,
+                precursor_mz_basis="product_plus_neutral_loss",
+                seeds=tuple(
+                    replace(
+                        seed,
+                        precursor_mz=500.0 + offset,
+                        product_mz=seed.product_mz + offset,
+                        neutral_loss_tag=group.neutral_loss_tag,
+                        configured_neutral_loss_da=group.configured_neutral_loss_da,
+                        observed_neutral_loss_da=group.configured_neutral_loss_da,
+                        precursor_mz_basis="product_plus_neutral_loss",
+                        observed_loss_error_ppm=None,
+                        scan_precursor_mz=500.5,
+                        precursor_metadata=Ms2PrecursorMetadata(
+                            master_scan_number=9,
+                            charge=1,
+                            isolation_width_da=1.6,
+                            isolation_offset_da=0.0,
+                        ),
+                    )
+                    for seed in group.seeds
+                ),
+            )
+            for group, offset in zip(groups, (0.0, 0.006), strict=True)
+        )
+        parent_batches = []
+
+        def read_windows(self, requests):
+            parent_batches.append(requests)
+            return tuple(
+                Ms1PrecursorObservation(
+                    scan, 7.75, (500.015,) if lower <= 500.015 <= upper else ()
+                )
+                for scan, lower, upper in requests
+            )
+
+        monkeypatch.setattr(
+            _OwnerBoundBatchRaw, "read_ms1_mass_windows", read_windows, raising=False
+        )
     raw = _OwnerBoundBatchRaw(source)
     result = _backfill_ms1_candidates_with_acquisition(
         raw,
@@ -265,8 +514,15 @@ def test_merged_physical_candidate_persists_representative_search_window(
     (binding,) = result.physical_bindings
     assert binding.candidate is candidate
     assert binding.member_source_ordinals == (0, 1)
+    assert binding.representative_source_ordinal == (1 if fallback else 0)
+    assert binding.representative_work_ordinal == (1 if fallback else 0)
+    assert candidate.best_ms2_scan_id == (20 if fallback else 10)
+    if fallback:
+        assert len(parent_batches) == 1 and len(parent_batches[0]) == 2
+        assert candidate.discovery_candidate_state == "ms1_feature_nl_supported"
     assert candidate.matched_tag_names == ("dR", "R")
     assert candidate.seed_scan_ids == (10, 20)
+    assert candidate.ms2_product_max_intensity == 20000.0
     assert (
         len(
             {
@@ -1034,17 +1290,6 @@ def test_physical_fact_owner_rejects_cross_acquisition_reassembly(
             "insufficient_original_xic_continuity",
             15,
         ),
-        (
-            np.linspace(6.8, 8.8, 101),
-            np.where(
-                (np.arange(101) % 2 == 1) | (np.arange(101) == 50),
-                1000.0 * np.exp(-0.5 * ((np.arange(101) - 50) / 8.0) ** 2),
-                0.0,
-            ),
-            "unavailable",
-            "insufficient_local_hit_enrichment",
-            15,
-        ),
     ],
 )
 def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
@@ -1109,17 +1354,44 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
     }
 
 
-def test_discovery_recovers_near_baseline_peak_after_exterior_context_crop(
+@pytest.mark.parametrize(
+    "trace_case",
+    [
+        "exterior_context_crop",
+        "separate_noise_hits",
+        "alternating_amplitude",
+        "overlapping_components",
+    ],
+)
+def test_discovery_publishes_supported_peak(
     tmp_path: Path,
+    trace_case: str,
 ) -> None:
-    from tests.test_physical_peak_evaluation_persistence import _context_sensitive_trace
+    from tests.test_physical_peak_evaluation_persistence import (
+        _context_sensitive_trace,
+        _overlapping_triplet_trace,
+        _short_peak_with_separate_noise_hits,
+    )
 
-    rt, intensity = _context_sensitive_trace()
-    rt = 7.8 + rt[:-1] - rt[23]
-    intensity = intensity[:-1]
+    query_rt = 8.3
+    if trace_case == "exterior_context_crop":
+        rt, intensity = _context_sensitive_trace()
+        rt = query_rt + rt[:-1] - rt[23]
+        intensity = intensity[:-1]
+    elif trace_case == "separate_noise_hits":
+        rt, intensity = _short_peak_with_separate_noise_hits()
+        rt = query_rt + rt - rt[int(np.argmax(intensity))]
+    elif trace_case == "alternating_amplitude":
+        rt = np.linspace(0.0, 10.0, 101)
+        intensity = 1000.0 * np.exp(-0.5 * ((rt - 5.0) / 0.5) ** 2)
+        intensity[::2] *= 0.1
+        rt += query_rt - 5.0
+    else:
+        rt, intensity = _overlapping_triplet_trace()
+        rt += query_rt - 5.0
     profile = SignalProcessingProfile(window_points=15)
     raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"owner-bound-exterior-context")
+    raw_path.write_bytes(b"owner-bound-supported-peak")
     source = build_acquisition_source_identity(
         raw_path,
         acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
@@ -1129,7 +1401,7 @@ def test_discovery_recovers_near_baseline_peak_after_exterior_context_crop(
     raw.rt, raw.intensity = rt, intensity
     result = _backfill_ms1_candidates_with_acquisition(
         raw,
-        (_group((_seed(scan_number=10, rt=7.80),)),),
+        (_group((_seed(scan_number=10, rt=query_rt),)),),
         acquisition_source=source,
         run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_backfill_settings(),
@@ -1141,10 +1413,35 @@ def test_discovery_recovers_near_baseline_peak_after_exterior_context_crop(
     assert evaluation.state == "available"
     assert evaluation.facts is not None
     assert candidate.ms1_peak_found is True
-    assert candidate.ms1_apex_rt == pytest.approx(7.8)
+    assert candidate.ms1_apex_rt == evaluation.facts.apex_rt_min
+    assert candidate.ms1_apex_rt == pytest.approx(
+        query_rt,
+        abs=0.15 if trace_case == "overlapping_components" else 1e-8,
+    )
     assert candidate.ms1_area == evaluation.facts.area_counts_seconds
-    assert rt[0] < evaluation.facts.left_rt_min < 7.8
-    assert 7.8 < evaluation.facts.right_rt_min < rt[-1]
+    assert rt[0] < evaluation.facts.left_rt_min < query_rt
+    assert query_rt < evaluation.facts.right_rt_min < rt[-1]
+    if trace_case == "overlapping_components":
+        assert candidate.ms1_trace_quality == "physical_shoulder_overlap"
+        assert candidate.is_provisional
+        assert candidate.review_priority == "MEDIUM"
+        assert "physical_shoulder_overlap" in candidate.reason
+
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
+
+    path = write_discovery_candidates_csv(
+        tmp_path / "candidates.csv",
+        result.candidates,
+    )
+    (published,) = read_discovery_candidates_csv(path)
+    assert published.ms1_peak_found
+    assert published.ms1_area == pytest.approx(candidate.ms1_area)
+    assert published.ms1_apex_rt == pytest.approx(candidate.ms1_apex_rt)
+    assert published.ms1_trace_quality == candidate.ms1_trace_quality
+    assert published.is_provisional == candidate.is_provisional
+    assert published.reason == candidate.reason
+    assert published.review_priority == candidate.review_priority
 
 
 @pytest.mark.parametrize("same_question", [True, False])
@@ -1369,6 +1666,91 @@ def test_inferred_precursor_with_a_doubly_charged_isotope_is_held_for_review(
     )
 
 
+def test_held_inferred_peak_remains_in_review_and_physical_sidecar(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.discovery.physical_fact_persistence import (
+        IndexedDiscoveryPhysicalFacts,
+    )
+
+    raw_path = tmp_path / "held-peak.raw"
+    raw_path.write_bytes(b"inferred peak with a doubly charged isotope")
+    settings = _settings()
+    spec = compile_discovery_processing_run_spec(
+        (raw_path,),
+        discovery_settings=settings,
+        signal_processing_profile=SignalProcessingProfile(),
+    )
+    rt = np.arange(9.3, 10.7, 0.01)
+    intensity = 100.0 + 10_000 * np.exp(-0.5 * ((rt - 10.0) / 0.05) ** 2)
+    raw = _OwnerBoundFakeRawHandle(
+        spec.acquisition_inputs[0].acquisition_source,
+        [
+            _scan_event(
+                scan_number=100,
+                rt=10.0,
+                precursor_mz=500.5,
+                masses=[500.0 - 116.0474],
+            )
+        ],
+        rt=rt,
+        intensity=intensity,
+    )
+    ion_mz = 500.0005
+    monkeypatch.setattr(
+        "xic_extractor.discovery.pipeline._ms1_centroid_source",
+        lambda _raw: (
+            lambda _rt, low, high: next(
+                (mz for mz in (ion_mz, ion_mz + 1.0033548 / 2) if low <= mz <= high),
+                None,
+            )
+        ),
+    )
+    outputs = run_discovery(
+        raw_path,
+        output_dir=tmp_path / "out",
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+        raw_opener=lambda *_args: raw,
+        run_spec=spec,
+    )
+
+    (candidate,) = read_discovery_candidates_csv(outputs.candidates_csv)
+    assert candidate.precursor_mz_basis == "product_plus_neutral_loss"
+    assert candidate.discovery_candidate_state == "review_only_ambiguous_coisolation"
+    assert "doubly charged" in candidate.reason
+    assert candidate.ms1_peak_found
+    assert candidate.ms1_apex_rt == pytest.approx(10.0)
+    assert candidate.ms1_apex_mz == pytest.approx(ion_mz)
+    assert candidate.ms1_area > 0
+    (review,) = _read_csv(outputs.review_csv)
+    assert review["candidate_id"] == candidate.candidate_id
+    assert float(review["ms1_area"]) == candidate.ms1_area
+    assert "review-only ambiguous inferred precursor" in review["review_note"]
+
+    assert outputs.physical_facts_json is not None
+    saved = IndexedDiscoveryPhysicalFacts(
+        outputs.physical_facts_json,
+        expected_run_spec=spec,
+        expected_acquisition_input=spec.acquisition_inputs[0],
+        candidate_ids=frozenset({candidate.candidate_id}),
+    )
+    try:
+        record = saved.load_candidates([candidate.candidate_id])[candidate.candidate_id]
+        assert record.evaluation.facts is not None
+        facts = record.evaluation.facts
+        assert facts.area_counts_seconds == candidate.ms1_area
+        assert facts.apex_rt_min == candidate.ms1_apex_rt
+        assert any(
+            link.candidate_id == candidate.candidate_id
+            for link in record.candidate_links
+        )
+    finally:
+        saved.close()
+
+
 @pytest.mark.parametrize(
     ("basis", "offsets"),
     [
@@ -1413,3 +1795,74 @@ def test_a_selected_precursor_carries_a_peak_with_two_ions(
         "ms1_feature_nl_supported",
         "ms1_feature_nl_rescued",
     }
+
+
+@pytest.mark.parametrize("has_isotope", [False, True])
+@pytest.mark.parametrize("shared_request_count", [1, 2])
+def test_inferred_precursor_rechecks_isotope_after_point_reacquisition(
+    tmp_path: Path,
+    has_isotope: bool,
+    shared_request_count: int,
+) -> None:
+    raw_path = tmp_path / "TumorBC2312_DNA.raw"
+    raw_path.write_bytes(b"owner-bound-discovery")
+    source = build_acquisition_source_identity(
+        raw_path,
+        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+    )
+    full_rt = np.arange(11.05, 13.25, 0.10, dtype=float)
+    full_intensity = 100.0 + 10_000.0 * np.exp(-0.5 * ((full_rt - 12.15) / 0.03) ** 2)
+    raw = _CadenceBoundRaw(source, full_rt, full_intensity)
+    profile = SignalProcessingProfile(window_points=15)
+    # Inferred-only basis exercises apex/isotope reading. Two high-intensity
+    # inferred seeds provide the existing authority for point reacquisition.
+    group = _group(
+        tuple(
+            replace(
+                _seed(scan_number=scan, rt=rt, product_intensity=1_000_000.0),
+                precursor_mz_basis="product_plus_neutral_loss",
+            )
+            for scan, rt in ((10, 12.063), (11, 12.181))
+        )
+    )
+    assert group.precursor_mz_basis == "product_plus_neutral_loss"
+    ion_mz = group.precursor_mz * (1 + 1e-6)
+    isotope_mz = ion_mz + 1.0033548 / 2
+
+    readings = []
+
+    def read_ion(rt: float, low: float, high: float) -> float | None:
+        readings.append((rt, low, high))
+        ions = (ion_mz, isotope_mz) if has_isotope else (ion_mz,)
+        return next((mz for mz in ions if low <= mz <= high), None)
+
+    result = _backfill_ms1_candidates_with_acquisition(
+        raw,
+        (group,) * shared_request_count,
+        acquisition_source=source,
+        run_spec_id=_TEST_RUN_SPEC_ID,
+        settings=_backfill_settings(),
+        peak_config=_backfill_peak_config(),
+        signal_processing_profile=profile,
+        ms1_centroid_mz=read_ion,
+    )
+    first, reacquired = result.measurements.acquisition_batches
+    assert result.measurements.reacquisition_request_count == 1
+    assert first.traces[0].coordinate.trace_point_count < profile.window_points
+    assert reacquired.traces[0].coordinate.trace_point_count >= profile.window_points
+    (record,) = result.physical_evaluations
+    assert record.evaluation.state == "available"
+    (candidate,) = result.candidates
+    assert candidate.ms1_peak_found is True
+    expected_state = (
+        "review_only_ambiguous_coisolation" if has_isotope else "ms1_feature_nl_rescued"
+    )
+    assert candidate.discovery_candidate_state == expected_state
+    assert ("doubly charged" in candidate.reason) is has_isotope
+    assert candidate.ms1_apex_mz == pytest.approx(ion_mz)
+    (binding,) = result.physical_bindings
+    assert binding.candidate.discovery_candidate_state == expected_state
+    # Three final apex scans, each read for ion and isotope, once per physical
+    # request even when two seed groups reuse the resulting fact.
+    assert len(readings) == 6

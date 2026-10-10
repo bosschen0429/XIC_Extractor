@@ -9,6 +9,8 @@ import pytest
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.drift_evidence import KnownIstdOwnerLookup
 from xic_extractor.alignment.feature_membership_inference import (
+    BatchRtWarp,
+    BatchRtWarpAccumulator,
     FeatureMembershipInferenceResult,
     _Candidate,
     _solve_sample_assignment,
@@ -85,6 +87,56 @@ def _owner(
 
 def _memberships(result: FeatureMembershipInferenceResult) -> set[frozenset[str]]:
     return {frozenset(group.owner_ids) for group in result.groups}
+
+
+def test_rt_calibration_accumulates_support_across_partition_boundaries() -> None:
+    samples = tuple(f"s{i:02}" for i in range(24))
+    orders = {sample: i for i, sample in enumerate(samples)}
+    groups = tuple(
+        tuple(
+            _owner(
+                sample, f"f{feature}", apex_rt=8.0 + feature + (0.2 if i == 12 else 0)
+            )
+            for i, sample in enumerate(samples)
+        )
+        for feature in range(12)
+    )
+    whole = BatchRtWarpAccumulator(injection_order=orders)
+    whole.add_groups(groups)
+    partitioned = BatchRtWarpAccumulator(injection_order=orders)
+    for group in reversed(groups):
+        partitioned.add_groups((group,))
+    assert partitioned.freeze() == whole.freeze()
+    assert whole.freeze().offset_min("s12", 15.0) == pytest.approx(0.2)
+    assert whole.freeze().has_support("s12")
+    assert not whole.freeze().has_support("missing")
+
+
+def test_rt_calibration_does_not_pool_incompatible_cohort_support() -> None:
+    samples = tuple(f"s{i:02}" for i in range(24))
+    calibration = BatchRtWarpAccumulator(
+        injection_order={sample: i for i, sample in enumerate(samples)},
+        sample_cohorts={sample: str(i // 12) for i, sample in enumerate(samples)},
+    )
+    calibration.add_groups(
+        tuple(
+            tuple(
+                _owner(sample, f"f{feature}", apex_rt=8.0 + feature)
+                for sample in samples
+            )
+            for feature in range(12)
+        )
+    )
+    assert calibration.freeze().knots_by_sample == ()
+
+
+def test_rt_warp_round_trip_uses_the_same_coordinate_system() -> None:
+    warp = BatchRtWarp((("a", ((7.0, 0.1), (20.0, 0.5))),), 12)
+    common_rt = 12.0
+    observed = common_rt + warp.offset_min("a", common_rt)
+    assert warp.corrected_rt_min(_owner("a", "f", apex_rt=observed)) == pytest.approx(
+        common_rt
+    )
 
 
 def test_ms1_only_owner_requires_physical_signal_quality() -> None:

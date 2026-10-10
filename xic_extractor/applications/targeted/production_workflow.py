@@ -666,6 +666,9 @@ def _execute_target(
                     observed_loss_error_ppm=product.observed_loss_error_ppm,
                     scan_rt_min=product.scan_rt,
                     product_intensity=product.product_intensity,
+                    precursor_mz_basis=product.precursor_mz_basis,
+                    scan_precursor_mz=product.scan_precursor_mz,
+                    precursor_metadata=product.precursor_metadata,
                 )
                 evidence_refs = (evidence,)
                 if (

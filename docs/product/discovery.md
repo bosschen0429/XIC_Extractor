@@ -33,8 +33,10 @@ the error relative to the configured loss mass; it is not the acceptance gate.
 - Discovery candidate state is an execution boundary as well as a review
   label. Only `ms1_feature_nl_supported` and `ms1_feature_nl_rescued` are
   MS1-feature-backed inputs to Alignment RAW owner build. Candidate and review
-  CSVs retain all feature-backed rows and only non-feature rows with a
-  `scan_precursor` or `mixed` precursor basis. These review-only rows do not
+  CSVs retain every candidate with a measured MS1 peak, including candidates
+  held for ambiguous precursor evidence. Rows without an MS1 peak are retained
+  only with a `scan_precursor`, `scan_monoisotopic`, or `mixed` precursor basis.
+  These review-only rows do not
   independently authorize another RAW XIC search, cross-sample grouping,
   Matrix identity, or Backfill. Pure CID-NL production planning preserves the complete canonical
   subject membership and query centers, but excludes subjects with no
@@ -44,8 +46,9 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   universe, including samples without a local candidate, for Backfill.
 - Persistence filtering does not change classification or product-plus-neutral-loss
   precursor inference. `discovery_physical_facts.json` retains physical records
-  only for feature-backed candidates, including their merge-member evidence;
-  non-feature rows have no persisted physical facts. Receipts, batch-index
+  for candidates with a measured MS1 peak, including held candidates and their
+  merge-member evidence; rows without a peak have no persisted physical facts.
+  Retaining a physical answer does not grant NL qualification. Receipts, batch-index
   counts and hashes describe the persisted candidate rows.
 - Seed evidence can include MS2 neutral loss, precursor inference, MS1 trace
   support, and future evidence providers.
@@ -110,17 +113,44 @@ Producing a library alone does not enable qualification.
   the matched blank's maximum intensity. Below 3×, it becomes
   `review_only_orphan_nl`, loses its feature-row binding, and is excluded from
   MS1-feature-backed owner build. Its candidate and review rows persist only
-  with a `scan_precursor` or `mixed` basis. Qualification classifies downstream
+  with a `scan_precursor`, `scan_monoisotopic`, or `mixed` basis. Qualification classifies downstream
   eligibility; it does not undo the physical trace-shape result or change the
   selected peak's boundaries, apex, or integrated area.
 
 ### Precursor inference
 
-- CID-NL precursor inference supports both direct scan-precursor seeds and the
-  bounded `product_mz + neutral_loss` basis when the inferred precursor remains
-  within `DiscoverySettings.ms2_precursor_tol_da` of the measured filter/
-  isolation precursor. The installed CLI exposes the same setting as
-  `--ms2-precursor-tol-da`.
+- CID-NL Discovery runs in this order: acquire MS2 search seeds, group nearby
+  seeds, capture and qualify their MS1 peaks, merge candidates sharing a peak,
+  verify precursor evidence against the retained peak, then persist candidates.
+  Search provenance does not
+  decide the final support label. A feature with an independently compatible
+  precursor and product inside its peak interval is `ms1_feature_nl_supported`;
+  a feature lacking that relation remains `ms1_feature_nl_rescued`. These labels
+  authorize downstream assessment, not detection or Matrix publication.
+- CID-NL mass references use either the selected scan precursor (`scan_precursor`)
+  or a distinguishable vendor-recorded monoisotopic precursor
+  (`scan_monoisotopic`). The latter is recorded evidence independent of the
+  product-plus-loss calculation. Selected m/z remains unchanged; charge, master
+  MS1 scan number, isolation width and offset remain attached to the evidence.
+  A missing/zero vendor value is unavailable, not a measured zero. This method
+  assumes singly charged ions and rejects known incompatible charge.
+  Source and support are separate: `precursor_evidence` assesses nominal
+  isolation membership. A monoisotopic reference needs known in-window geometry
+  before it can support strict NL; outside/unknown references remain recorded
+  mass-compatible candidates. The selected precursor retains the existing method
+  when geometry is unavailable. Neither case proves unique chemical parentage.
+- Product-plus-loss inference stays inside the recorded isolation window:
+  center = selected m/z + isolation offset, radius = the smaller of half the
+  recorded width and `DiscoverySettings.ms2_precursor_tol_da`. When width is
+  unavailable, the configured radius supplies the bound. The installed CLI
+  exposes the same setting as `--ms2-precursor-tol-da`; the default is 0.8 Da,
+  the nominal half-width of the 1.6 Da method. Saved explicit settings remain
+  effective as the configured cap. Inference does not establish precursor
+  identity or replace the direct NL mass tolerance.
+- MS2 cache and canonical CID-NL evidence retain the typed precursor metadata.
+  Old MS2 cache payloads lacking this contract are reacquired from RAW. Replay
+  retains recorded references and applies the same isolation assessment for
+  strict support and Backfill; isotope-related ions remain distinct candidates.
 - Physical trace context and precursor-identity confidence are separate. A
   `product_mz + neutral_loss` group starts with the bounded configured RT
   context; when that trace is too short for the active signal-processing
@@ -129,10 +159,12 @@ Producing a library alone does not enable qualification.
   high-intensity threshold. Reacquisition keeps the original MS2 query RT and
   m/z tolerance. It supplies enough points to answer the physical peak question;
   it does not upgrade inferred precursor identity or grant Matrix authority.
-- When the first acquisition of a pure `product_mz + neutral_loss` group
-  resolves a peak, Discovery reads the ion at the apex scan and one MS1 scan on
-  each side, inside the request, and reports the intensity-weighted reading as
-  `ms1_apex_mz`. MS1 is the method's accurate-mass scan, while ddMS2 runs at a
+- When the final physical evaluation of a pure `product_mz + neutral_loss`
+  group resolves a peak, including after point reacquisition, Discovery reads
+  the ion at the apex scan and one MS1 scan on each side, inside the final
+  request, and reports the intensity-weighted reading as `ms1_apex_mz`. Groups
+  sharing the same retained physical peak question reuse its final ion/isotope
+  reading. MS1 is the method's accurate-mass scan, while ddMS2 runs at a
   quarter of its resolution, so product + loss only points at the ion. The
   reading supplies Alignment's physical XIC and grouping mass. The candidate's
   original precursor and product remain the keys for exact MS2 scan replay;
@@ -140,7 +172,7 @@ Producing a library alone does not enable qualification.
   Capture authorizes the current physical query separately from the mass used
   by its retained evaluation. Alignment evaluates a changed mass afresh even
   when the two XICs contain identical signal arrays. Readings spread wider than 5 ppm
-  come from two ions and report none. A selected (`scan_precursor` or `mixed`)
+  come from two ions and report none. A selected (`scan_precursor`, `scan_monoisotopic`, or `mixed`)
   precursor reports none: in full85, about half of the selected precursors a
   reading would have moved landed on a neighbouring ion present at the selected
   m/z when the scan was triggered.
@@ -149,12 +181,19 @@ Producing a library alone does not enable qualification.
   (0.50168 m/z, within the 5 ppm reading spread) above it, in most of the
   scans where the ion is read, becomes `review_only_ambiguous_coisolation` with
   a reason naming the doubly charged isotope, unless a singly charged seed on
-  the same peak carries it. Selected precursors are not tested.
+  the same peak carries it. The held peak, area and reason remain in the
+  candidate/review outputs and physical sidecar without authorizing Alignment
+  search or a Matrix value. Selected precursors are not tested.
 - Direct and inferred rows from one MS2 scan may coexist. `candidate_id` must
   retain the sample/scan anchor plus precursor/product row identity so those
   rows cannot collide, and `tag_evidence_json` must retain precursor-basis,
   measured scan-precursor, and delta provenance. This is a public identity and
   replay contract even when the CSV column set is unchanged.
+  `tag_evidence_json.scan_receipts` retains each scan's precursor/product, source,
+  selected m/z, RT, independent loss error, and isolation/support assessment.
+  A strongest representative or `mixed` summary does not replace these receipts.
+  Product-plus-loss errors are null in JSON and blank in CSV; derived equality
+  supplies no independent error measurement and gets no zero-error ranking bonus.
 - Candidate CSV preserves the full floating-point representation of
   `configured_neutral_loss_da`. Downstream replay compares this configured
   method value with the bound preset; display rounding must not change it.
@@ -165,12 +204,38 @@ Producing a library alone does not enable qualification.
   deleting either. Candidates that remain physically ambiguous still follow
   the `review_only_ambiguous_coisolation` gate. Downstream cell-decision owners
   enforce one final Matrix value per feature/sample cell.
+  One RT seed group can contain multiple physical peaks. Its seeds are
+  partitioned by the physical owner's point-selection result, retaining a
+  candidate for each seeded peak while sharing the acquired MS1 trace.
+  Outside or ambiguous scans stay with the original representative; they do
+  not supply support to another peak. Each retained candidate keeps its own
+  physical question and persisted answer binding.
 - Untargeted CID-NL carries eligible inferred evidence into the shared method
   assessment alongside direct evidence. Canonical evidence retains the precursor
   basis, actual scan precursor, and configured inference bound; an inferred
   precursor and its derived loss are not reported as directly measured facts.
-  Inferred evidence requires a qualifying relation to a usable physical MS1
-  peak to support the method. CrossSample and cell-decision owners still decide
+  An inferred precursor alone cannot grant a strict NL relation or detection
+  count. After physical qualification, Discovery reads the exact recorded parent
+  MS1 scan in the existing precursor ppm window. One positive centroid supplies
+  an independent reference; missing scans, missing ions, or multiple centroids
+  leave the inference unresolved. The measured mass must satisfy the nominal
+  isolation window and the existing per-ion NL tolerance, and both parent MS1
+  and MS2 times must lie inside the physical peak. This is method support, not
+  proof of a unique chemical precursor–product pairing.
+  `tag_evidence_json.scan_receipts` adds the parent observation and a separate
+  `precursor_verification` result; original inferred m/z, source and null loss
+  error stay unchanged. Alignment reacquires these facts from RAW before minting
+  canonical evidence and relations; a saved CSV verification result supplies no
+  authority. A merged peak keeps its representative when that complete physical
+  answer retains qualified member evidence. Otherwise Discovery tries original
+  same-apex members in the existing representative order and rechecks support
+  on the rebuilt merged candidate. Candidate identity, physical work binding,
+  boundaries and integral move together; interval overlap or a measured-ion match
+  at a different apex does not authorize this fallback. The formal method
+  assessment still owns unique support and eligibility. Parent scans are read
+  once per acquisition batch, with all requested
+  mass windows evaluated against the same scan. MS1 quantitation remains subject to the existing method
+  assessment and cell-decision policy. CrossSample and cell-decision owners decide
   identity, Backfill, and Matrix publication. Candidate eligibility alone
   grants none of these authorities.
 

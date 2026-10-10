@@ -52,6 +52,7 @@ from xic_extractor.execution.attempt import (
 from xic_extractor.execution.partitions import (
     PartitionAcquisitionOutput,
     PartitionCompositionOutput,
+    PartitionPipelinePhase,
     PartitionPipelineScheduler,
     ProcessingOwners,
     WorkPartition,
@@ -1853,3 +1854,131 @@ def test_reserved_partition_written_elsewhere_reads_back_identically(
         tuple({"child": index} for index in range(4)),
     )
     assert local_sealed.sha256 == sealed.sha256
+
+
+@pytest.mark.parametrize("pipeline_overlap", [False, True])
+def test_scheduler_phase_barrier_preserves_global_order(
+    tmp_path: Path, pipeline_overlap: bool
+) -> None:
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-1",)
+    )
+    events: list[object] = []
+    adapter = MockAdapter(
+        fixture.owners,
+        num_partitions=4,
+        on_acquisition=lambda i: events.append(("acquire", i)),
+    )
+    original_artifacts = adapter.create_partition_artifacts
+    original_finalize = adapter.finalize_application
+
+    def artifacts(partition, output):
+        result = original_artifacts(partition, output)
+        events.append(("artifacts", partition.index))
+        return result
+
+    def finalize(store, outputs):
+        events.append("finalize")
+        return original_finalize(store, outputs)
+
+    adapter.create_partition_artifacts = artifacts
+    adapter.finalize_application = finalize
+
+    def prepare(store, check_cancel):
+        check_cancel()
+        assert store.read(0).children == ("child-0",)
+        assert store.read(1).children == ("child-1",)
+        assert ("artifacts", 0) in events and ("artifacts", 1) in events
+        assert ("acquire", 2) not in events
+        events.append("prepare")
+
+    progress_events: list[dict[str, Any]] = []
+    result = PartitionPipelineScheduler.execute(
+        adapter,
+        phases=(
+            PartitionPipelinePhase("initial", adapter.partitions[:2]),
+            PartitionPipelinePhase("backfill", adapter.partitions[2:], prepare),
+        ),
+        output_dir=tmp_path / "output",
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "marker.json", "phases"),
+        progress_callback=progress_events.append,
+        pipeline_overlap=pipeline_overlap,
+        acquisition_workers=2,
+    )
+    assert result["children"] == tuple(f"child-{i}" for i in range(4))
+    assert events.count("finalize") == 1
+    assert events.index("prepare") < events.index(("acquire", 2))
+    assert [
+        event["completed"]
+        for event in progress_events
+        if event.get("stage") == "partition_released"
+    ] == [1, 2, 3, 4]
+    timelines = [e for e in progress_events if e.get("event") == "partition_timeline"]
+    assert len(timelines) == 1
+    assert [r["index"] for r in timelines[0]["timeline"]] == [0, 1, 2, 3]
+
+
+@pytest.mark.parametrize("pipeline_overlap", [False, True])
+@pytest.mark.parametrize("cancel", [False, True])
+def test_scheduler_phase_preparation_abort_prevents_admission(
+    tmp_path: Path, pipeline_overlap: bool, cancel: bool
+) -> None:
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("sample-1",)
+    )
+    acquired: list[int] = []
+    adapter = MockAdapter(
+        fixture.owners, num_partitions=4, on_acquisition=acquired.append
+    )
+    cancelled = threading.Event()
+    batches: list[RuntimeWorkerBatchReceipt] = []
+
+    def prepare(store, check_cancel):
+        assert store.read(1).children == ("child-1",)
+        if cancel:
+            cancelled.set()
+        else:
+            raise ValueError("invalid handoff")
+
+    def execute_and_capture(*args, **kwargs):
+        provider = kwargs["worker_batch_provider"]
+
+        def capture(aggregate):
+            batch = provider(aggregate)
+            batches.append(batch)
+            return batch
+
+        kwargs["worker_batch_provider"] = capture
+        return execute_runtime_attempt(*args, **kwargs)
+
+    output_dir = tmp_path / "output"
+    marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "phase-abort")
+    with pytest.raises(RuntimeError, match="before batch publication"):
+        PartitionPipelineScheduler.execute(
+            adapter,
+            phases=(
+                PartitionPipelinePhase("initial", adapter.partitions[:2]),
+                PartitionPipelinePhase("freeze-hints", adapter.partitions[2:], prepare),
+            ),
+            output_dir=output_dir,
+            telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+            recovery_marker=marker,
+            should_cancel=cancelled.is_set,
+            pipeline_overlap=pipeline_overlap,
+            execute_runtime_attempt=execute_and_capture,
+        )
+    assert sorted(acquired) == [0, 1]
+    assert len(batches) == 1
+    if not cancel:
+        failures = [
+            s
+            for s in batches[0].settlements
+            if s.outcome is WorkUnitTerminalOutcome.FAILED
+        ]
+        assert len(failures) == 1
+        assert failures[0].failure_detail.stage == "freeze-hints"
+    else:
+        assert marker.read().terminal_outcome is AttemptTerminalOutcome.CANCELLED
+    preserved = list(output_dir.glob(".partition_spool-*/failed-results.pickle"))
+    assert len(preserved) == 1

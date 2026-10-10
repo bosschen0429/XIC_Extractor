@@ -8,6 +8,40 @@ operation. The immutable workflow result exists only after cell decision and
 projection completion. Alignment does not use a mutable Matrix as its internal
 transport contract or let writers recompute science.
 
+## Cross-sample peak trajectories
+
+Initial CID-NL grouping retains neighboring MS1 maxima separately from selected
+method-backed observations. The sample acquisition batch includes shared wider
+context requests; original capture requests, physical evaluations and integrals
+remain unchanged. Context maxima include shoulders useful for correspondence,
+but exclude apices without acquired support for the smoothing kernel.
+
+The pure `alignment/peak_trajectories.py` owner matches ordered local peak
+patterns, allowing missing and extra maxima and width-bounded RT displacement.
+Relative heights break ties between equally complete patterns, rather than
+overruling peak order. Ambiguous patterns supply no correspondence. Single-peak
+continuations cannot independently establish a pattern. Pattern correspondences
+seed the ordinary RT/mass membership graph; they do not partition owners into a
+separate finished answer. Samples without a usable local pattern can extend the
+same trajectory through RT/mass evidence. The ordinary membership graph and
+sample-disjoint merge consume the trajectory owner's compatibility decision,
+so distinct observed tracks
+cannot merge merely because their RTs are close.
+
+A matched MS1-only peak is a trajectory observation, not CID-NL support,
+chemical identity, a selected integral or writer authority. The group
+center and lineage remain fixed. An existing HOLD is reusable only when it
+contains the located peak; otherwise acquisition asks the physical owner at
+that location. The existing assessment, admission and cell decision rules still
+decide support and values. A trajectory with no matched context still contains
+its supported owners; the same localization owner uses those observations.
+
+Physical Backfill acquires its search trace and one wider context trace in the
+same sample batch. A complete narrow capture keeps its original integral. Only
+`incomplete_peak_context` permits the wider capture, with candidate apices still
+restricted to the original search window. The persisted physical question binds
+that distinction; extra signal context does not grant a wider search.
+
 ## Grouping experiments
 
 `python -m tools.diagnostics.grouping_experiment` provides a developer feedback
@@ -26,16 +60,17 @@ samples. A query is a lookup in the saved Discovery population, not a fresh
 extraction at that mass.
 
 Prepare retains the complete sample population and selects **whole original
-partitions** intersecting the requested intervals. These additional masses
-preserve the baseline partition's RT-warp context. It runs the formal initial
-assessment and grouping owners, then stops before Backfill. Its summary reports
-selected versus total partition counts. Initial preparation requires the matching
+partitions** intersecting the requested intervals for comparison. Calibration
+uses bootstrap evidence from **all** partitions, not only the selected masses.
+It runs the formal initial assessment and grouping owners, then stops before
+Backfill. Its summary reports selected versus total partition counts; initial
+job count includes the full calibration scope. Initial preparation requires the matching
 RAW files and current Discovery owner-closure artifacts. `--sample-metadata`
 and `--known-istd-reference` accept existing metadata and reference artifacts.
 
 The compressed `grouping-inputs.json.gz` retains scalar observations, exact
-member identities, baseline warp and configuration. It omits chromatogram
-arrays. Prepare checks snapshot replay against the formal initial grouping.
+member identities, baseline warp, compact elution contexts and configuration.
+It omits chromatogram arrays. Prepare checks snapshot replay against the formal initial grouping.
 Replay needs only that snapshot, with no RAW, DLL, acquisition or Backfill.
 `--set FIELD=JSON` changes an `AlignmentConfig` value; only fields consumed by
 grouping affect replay. Owner detection and integration changes require prepare.
@@ -61,6 +96,19 @@ full per-cell artifact expansion. Full audit and selected-curve retention are
 explicit options. [Lightweight Alignment review](xic-inspector.md#lightweight-alignment-review)
 owns the retention choices, legacy-report conversion and bounded curve export.
 These diagnostic choices do not change grouping, Backfill or Matrix values.
+
+### Sample metadata
+
+Sample metadata is an explicit Alignment input; it is not inherited from a
+previous Discovery invocation. `--sample-metadata` loads the existing metadata
+format and passes its batch IDs, injection order, sample roles and exclusions
+to the workflow. The CLI reports the source and sample/batch counts before
+execution. The request owner retains responsibility for sample coverage.
+
+Without this input, the existing RAW-header/default derivation treats the RAW
+directory as one cohort. A flattened directory containing several acquisition
+batches therefore needs explicit metadata; it does not acquire separate batch
+identities merely because its files were measured on different dates.
 
 ### Job planning and acquisition
 
@@ -123,8 +171,16 @@ An intentional uncorrected CLI run requires `--allow-uncorrected`, which cannot
 be combined with either ISTD input. The Python API retains its explicit optional
 input contract.
 
-With ISTD input, the existing target extractor obtains label-bound measurements
-and the formal drift owner prepares its batch map before initial edge/group
+With a targets CSV, reference acquisition uses the declared ISTDs' m/z and
+target-specific native MS2 neutral-loss evidence. XIC acquisition includes one
+minute of morphology context outside each declared apex interval; that context
+does not expand the identity search interval. Only a unique physically qualified,
+NL-supported peak supplies a coordinate. Missing support or multiple qualified
+peaks supplies none; neither intensity nor proximity to an expected RT resolves
+the ambiguity. Imported reference workbooks retain their declared measurement
+contract and are not retrospectively MS2-qualified by the reader.
+
+The formal drift owner prepares its batch map before initial edge/group
 decisions. The finalized explanation saves the same prepared sample knots,
 domains, measurements and source provenance. Downstream review reuses these
 results; it does not refit the model. Insufficient anchors and positions outside
@@ -163,7 +219,8 @@ constrained group rules, and returns one immutable
 drift_lookup)`. Confirmed known-ISTD identity constraints remain indivisible.
 Targeted groups the selected sample-local hypotheses, and the retained
 Untargeted CID-NL route carries its initial groups directly into the same
-result. Neither route fits an RT trajectory model. The Untargeted CID-NL route
+result. Fitting physical search coordinates does not create a separate
+identity-trajectory decision. The Untargeted CID-NL route
 uses `CID_NL_ALIGNMENT_CONFIG` with `anchor_min_seed_events=1`: an MS1-only
 physical observation contributes one observation event, and the generic
 default `2` leaves one singleton group per physical hypothesis.
@@ -194,7 +251,32 @@ subject in the runtime result. RT bounds describe the acquisition query rather
 than identify the destination group. The direct production API therefore takes
 its alignment configuration and known-ISTD reference at execution time;
 composition cannot replace that grouping context.
-Backfill extracts at the frozen group's physical m/z and RT. The acquisition
+Backfill keeps the frozen group's physical m/z and identity. The pure
+`alignment.peak_trajectories` owner binds that group's supported owners and
+compatible MS1-only pattern positions into one trajectory. An observed sample
+position and a missing-position estimate are observations and predictions of
+that same trajectory, not competing localization methods. Missing positions use
+the nearest same-cohort observations, including MS1-only positions, with the
+shared batch coordinate transform and robust local RT fit. Insufficient temporal
+support supplies only the trajectory's reference position; extrapolation remains
+bounded by the existing fit-risk/search-window rule. The runtime consumes one
+location result instead of choosing between pattern and trend answers. A
+forecast alone cannot establish a different observed peak or grant method
+support.
+
+Initial acquisition and Backfill are separate scheduler phases under one
+attempt and one store. After all initial partitions have been composed and
+released, batch preparation freezes the RT calibration; failure or cancellation
+before then prevents Backfill admission. Each Backfill partition reads its own
+spooled grouping inputs and initial acquisition records, finalizes that grouping
+once with the frozen calibration, and runs Backfill without reacquiring its
+initial traces. It neither waits for nor reads another partition's grouping.
+Direct and bounded production execution use the same
+in-memory preparation owner; only the bounded adapter owns their spool reads
+and writes. The opt-in `grouping_experiment` diagnostic prepares comparison
+inputs separately and stops before production Backfill planning.
+Operational partition capacity does not change the cohort evidence scope, and
+semantic worksets remain indivisible. The acquisition
 boundary canonicalizes repeated or unordered complete XIC queries, including
 mass. Different groups may reuse the same physical trace while retaining
 separate group-bound Backfill attempts and decisions.
@@ -321,6 +403,18 @@ reasons, Review Queue/archive routing, and result finalization close afterward.
   planning. It has no separate domain identity or persistence contract.
 - RT correction is an optional prior; direct local evidence wins and a prior
   alone cannot reassign a member.
+- Physical Backfill keeps candidate search bounds separate from MS1 signal
+  context. The existing query half-window bounds eligible peak apices and the
+  method-evidence search. The acquisition phase also prefetches one additional
+  half-window per flank, in the same sample-local batch. Only an
+  `incomplete_peak_context` answer permits evaluation of that wider trace;
+  complete search-eligible observations retain their original boundaries and
+  integral. This
+  bounded fallback does not expand candidate eligibility, reopen RAW, or grant
+  membership. Multiple eligible peaks still follow the physical owner's
+  ambiguity rule. The persisted `bounded_physical_peak_question` binds the
+  search interval independently of its measured context; legacy questions
+  retain their original interpretation.
 - Validation must not assume that every ISTD or unknown feature follows one
   batch-wide monotonic RT drift. Sensitivity work therefore permits direction
   changes and adjacent-injection jumps, uses method-appropriate ISTDs plus
@@ -378,12 +472,56 @@ unresolved and rejected groups remain AuditTrail facts.
   rows and physical records per closed working set. Scheduling packs worksets
   by 100 Da ownership and a 1,024-candidate budget; an indivisible scientific
   workset may exceed that budget or cross a mass boundary. Mass partitions are
-  scheduling units, not scientific exclusion boundaries. Final children retain
-  canonical subject order independently of execution order.
+  scheduling units, not scientific exclusion or RT-calibration boundaries.
+  All bootstrap partitions finish before one batch RT warp is frozen. Initial
+  assessments and grouping inputs are spooled to disk; only compact anchor RT
+  pairs accumulate globally. The final phase restores one bounded partition,
+  regroups with that frozen warp, and executes Backfill without reacquiring its
+  initial traces. Final children retain canonical subject order independently
+  of execution order. Cancellation and failed bootstrap prevent final publication.
 - Retained CID-NL capture preserves each candidate's extraction m/z and ppm
   when combining overlapping RT contexts. Preparation sharing may extend the
   RT interval; it does not replace the candidate center with a method-subject
   center. Only identical resulting requests share an acquired trace.
+
+### RT mechanisms and their consumers
+
+| Mechanism | Evidence and scope | Current consumer | Does not do |
+| --- | --- | --- | --- |
+| Known-ISTD identity / drift lookup | Exact reference bindings and supported reference range | Known identity constraints and bootstrap comparison | Replace measured peak RT or authorize Backfill values |
+| `BatchRtWarp` | Agreed bootstrap groups across the complete request; residual neighbors stay within `SampleMetadata.batch_id` | Final ordinary grouping and Backfill coordinate conversion | Establish calibration support for an unsupported sample or authorize a value |
+| Peak trajectory | Ordered peak correspondences and direct/MS1-only positions; missing positions use up to twelve same-cohort observations in a robust local RT fit | Ordinary membership constraints and one sample-local Backfill location, mapped into observed RT | Pool unrelated tracks, change `group_center_rt`, or grant method support |
+| `sample_rt_calibration.BatchRtCalibration` | Near-ubiquitous features under an explicit diagnostic policy | Opt-in grouping experiments | Act as the default production warp |
+
+A warp anchor needs at least 20 same-cohort members; a sample needs at least 12
+anchor observations. Empty `batch_id` values share the request's unspecified
+cohort; distinct declared batches never contribute residual neighbors to one
+another. Biological sample roles do not define calibration cohorts. Non-monotone
+sample mappings remain unsupported. Common-to-observed and observed-to-common
+conversions use the same piecewise mapping.
+
+Ordinary grouping retains observed RT for unsupported samples and uses corrected
+RT for supported samples in band assignment, sample-disjoint merge checks, and
+existing-feature support. These comparisons can therefore mix uncorrected and
+corrected coordinates; an identity transform is not measured zero-drift evidence.
+Dense-band membership checks use up to six nearest-injection member positions;
+they do not produce a competing Backfill location. Missing-position fitting
+checks calibration support for its target and contributing observations.
+
+Missing-position estimates use the trajectory's same-cohort observations. With
+calibrated target and neighbor support the basis is `calibrated_trajectory_fit`;
+otherwise it is `trajectory_fit` in measured coordinates. Observed positions
+retain their measured value and use `trajectory_observed`.
+For extrapolation, the fit's residual scale amplified by prediction leverage
+is compared with the configured Backfill half-window. If that risk proxy exceeds
+the window, the query uses the fitted RT at the nearest supported injection and
+its basis includes `at_support_boundary`; target-sample coordinate conversion
+still applies. Interpolation and lower-risk extrapolation retain the local line.
+This guard is not a calibrated confidence interval or an identity decision.
+Missing injection order or same-cohort observations leaves only the median
+reference position of the trajectory (`trajectory_reference`). None of these
+search-coordinate descriptions establishes zero perturbation or permission to
+write a value.
 
 ### Method subjects
 
@@ -440,7 +578,9 @@ unresolved and rejected groups remain AuditTrail facts.
 - Untarget ordinary grouping has two finite stages. The retained directional
   inference supplies only agreed groups with at least 20 members, together
   with exact known-identity groups, as RT warp anchors. Their ordinary
-  membership is discarded. Across the batch, each injection's anchor offsets
+  membership is discarded. Pattern correspondences seed both directional
+  passes; an extension the passes disagree on stays undecided without
+  demoting the seed. Across the batch, each injection's anchor offsets
   from the median of six nearby injections are summarized at RT knots. This
   warp covers elution times outside the ISTD span; ISTD groups are local anchors
   rather than a flat extrapolation rule.

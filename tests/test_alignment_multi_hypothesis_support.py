@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from tests.cid_nl_peak_support_no_raw_fixture import (
     cid_nl_evidence,
     cid_nl_peak,
@@ -20,10 +22,16 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     owner_from_cid_nl_assessment_support,
     validate_cid_nl_assessment_hypothesis_closure,
 )
+from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+from xic_extractor.peak_detection.cid_nl_evidence import (
+    CidNlEvidenceRef,
+    mint_cid_nl_evidence_ref,
+)
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,
     mint_cid_nl_method_assessment_ref,
 )
+from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 
 
 def test_one_assessment_preserves_two_individually_supported_peaks(
@@ -231,3 +239,119 @@ def _assessment_with_observation_only_peak(
         evidence_refs=(evidence,),
         individual_support_refs=(support,),
     )
+
+
+def test_supported_identity_uses_independent_relation_masses_per_sample(
+    tmp_path: Path,
+) -> None:
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("mixed", "direct")
+    )
+    projected = {}
+    for stem, physical_mz, height in (
+        ("mixed", 500.0, 700.0),
+        ("direct", 500.003, 900.0),
+    ):
+        sample = fixture.sample(stem)
+        peak = cid_nl_peak(fixture, stem, mz=physical_mz, height=height)
+        direct_precursor = 500.002 if stem == "mixed" else 500.003
+        direct_product = 383.9536 if stem == "mixed" else 383.9546
+        direct = mint_cid_nl_evidence_ref(
+            processing_owners=fixture.owners,
+            sample=sample,
+            scan_number=301,
+            precursor_mz=direct_precursor,
+            product_mz=direct_product,
+            configured_neutral_loss_da=116.0474,
+            observed_neutral_loss_da=116.0484,
+            observed_loss_error_ppm=0.001 / 116.0474 * 1e6,
+            scan_rt_min=8.0,
+            product_intensity=400.0,
+        )
+        supported: tuple[CidNlEvidenceRef, ...] = (direct,)
+        if stem == "mixed":
+            inferred = mint_cid_nl_evidence_ref(
+                processing_owners=fixture.owners,
+                sample=sample,
+                scan_number=302,
+                precursor_mz=500.0,
+                product_mz=383.9526,
+                configured_neutral_loss_da=116.0474,
+                observed_neutral_loss_da=116.0474,
+                observed_loss_error_ppm=None,
+                scan_rt_min=8.02,
+                product_intensity=500.0,
+                precursor_mz_basis="product_plus_neutral_loss",
+                scan_precursor_mz=500.0,
+                precursor_inference_tolerance_da=0.8,
+                precursor_metadata=Ms2PrecursorMetadata(
+                    charge=1, isolation_width_da=1.6, isolation_offset_da=0.0,
+                    master_scan_number=300,
+                ),
+                ms1_precursor_observation=Ms1PrecursorObservation(
+                    scan_number=300, rt_min=8.0, centroid_mzs=(500.006,)
+                ),
+            )
+            supported += (inferred,)
+        unsupported = mint_cid_nl_evidence_ref(
+            processing_owners=fixture.owners,
+            sample=sample,
+            scan_number=303,
+            precursor_mz=500.007,
+            product_mz=383.9596,
+            configured_neutral_loss_da=116.0474,
+            observed_neutral_loss_da=116.0474,
+            observed_loss_error_ppm=0.0,
+            scan_rt_min=8.3,
+            product_intensity=600.0,
+        )
+        relations = tuple(
+            cid_nl_unique_support(fixture, stem, peak=peak, evidence=evidence)
+            for evidence in supported
+        )
+        assessment = mint_cid_nl_method_assessment_ref(
+            processing_owners=fixture.owners,
+            sample=sample,
+            target=fixture.target,
+            detector_invocation_id=f"gaussian15:{stem}",
+            evaluation_receipt=CidNlEvaluationReceipt(
+                query_rt_min=7.5,
+                query_rt_max=8.5,
+                support_policy=cid_nl_support_policy(),
+                acquisition_supported=True,
+                search_completed=True,
+                scanned_event_count=len(supported) + 1,
+                reason_code=None,
+            ),
+            candidate_peaks=(peak,),
+            evidence_refs=(*supported, unsupported),
+            individual_support_refs=relations,
+        )
+        (hypothesis,) = compose_cid_nl_peak_hypotheses_from_assessment(
+            processing_owners=fixture.owners, sample=sample, assessment=assessment
+        )
+        owner = owner_from_cid_nl_assessment_support(
+            sample=sample, assessment=assessment, hypothesis=hypothesis
+        )
+        projected[stem] = owner
+        assert owner.sample_stem == stem
+        assert owner.owner_id == hypothesis.hypothesis_id
+        assert owner.precursor_mz == physical_mz
+        assert owner.selected_integration == peak.content.integration
+        assert owner.owner_apex_rt == 8.0
+        assert owner.owner_area == height * 6.6
+    mixed = projected["mixed"].primary_identity_event
+    direct_event = projected["direct"].primary_identity_event
+    assert mixed is not None and direct_event is not None
+    # Analytical means of accepted independent references: (500.002, 500.006),
+    # products (383.9536, 383.9526); the constructed 500.0 is not measured.
+    assert mixed.precursor_mz == pytest.approx(500.004, abs=1e-9, rel=0)
+    assert mixed.product_mz == pytest.approx(383.9531, abs=1e-9, rel=0)
+    assert mixed.observed_neutral_loss_da == pytest.approx(116.0509, abs=1e-9, rel=0)
+    assert mixed.seed_event_count == 2
+    assert direct_event.precursor_mz == pytest.approx(500.003, abs=1e-9, rel=0)
+    assert direct_event.product_mz == pytest.approx(383.9546, abs=1e-9, rel=0)
+    assert direct_event.observed_neutral_loss_da == pytest.approx(
+        116.0484, abs=1e-9, rel=0
+    )
+    assert direct_event.seed_event_count == 1

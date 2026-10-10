@@ -192,6 +192,7 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
         "alignment-core": (
             "tests/test_feature_membership_inference.py",
             "tests/test_window_feature_membership.py",
+            "tests/test_elution_grouping_runtime.py",
             "tests/alignment/**/*.py",
             "tests/test_alignment_*.py",
             "tests/test_analyze_xic_request_locality.py",
@@ -314,9 +315,7 @@ def discover_snapshot_tests(
             references = tuple(
                 reference
                 for decorator in node.decorator_list
-                if (
-                    reference := _direct_snapshot_marker_reference(decorator)
-                )
+                if (reference := _direct_snapshot_marker_reference(decorator))
                 is not None
             )
             if references:
@@ -518,9 +517,7 @@ def _run_shard(
         print("Invalid pytest marker selection", file=sys.stderr)
         return 2
     print(f"Running shard {shard}: {len(target_args)} test files", flush=True)
-    return subprocess.call(
-        [*_pytest_command(), *owned_pytest_args, *target_args]
-    )
+    return subprocess.call([*_pytest_command(), *owned_pytest_args, *target_args])
 
 
 def _run_snapshots(pytest_args: Sequence[str], root: Path) -> int:

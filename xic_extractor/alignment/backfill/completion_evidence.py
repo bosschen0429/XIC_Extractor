@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
@@ -39,6 +40,8 @@ class BackfillCompletionProjection:
     group_identity: CrossSampleGroupIdentity
     group_center_mz: float
     group_center_rt: float
+    query_rt: float
+    query_rt_basis: str
     source_result_artifact: EvidenceArtifactRef
     initial_assessment_artifact: EvidenceArtifactRef
     backfill_assessment: CidNlMethodAssessmentRef
@@ -79,7 +82,9 @@ class BackfillCompletionProjection:
             or request.ppm_tol != subject.precursor_tolerance_ppm
             or request.rt_min != receipt.query_rt_min
             or request.rt_max != receipt.query_rt_max
-            or not request.rt_min <= self.group_center_rt <= request.rt_max
+            or not math.isfinite(self.query_rt)
+            or not request.rt_min <= self.query_rt <= request.rt_max
+            or not self.query_rt_basis.strip()
             or self.trace_coordinate.acquisition_source_id
             != assessment.content.acquisition_source_id
         ):
@@ -139,6 +144,8 @@ def canonical_backfill_completion_bytes(
         group_identity=projection.group_identity,
         group_center_mz=projection.group_center_mz,
         group_center_rt=projection.group_center_rt,
+        query_rt=projection.query_rt,
+        query_rt_basis=projection.query_rt_basis,
         source_result_artifact=projection.source_result_artifact,
         initial_assessment_artifact=projection.initial_assessment_artifact,
         backfill_assessment=projection.backfill_assessment,
@@ -154,6 +161,8 @@ def _completed_backfill_projection_bytes(
     group_identity: CrossSampleGroupIdentity,
     group_center_mz: float,
     group_center_rt: float,
+    query_rt: float,
+    query_rt_basis: str,
     source_result_artifact: EvidenceArtifactRef,
     initial_assessment_artifact: EvidenceArtifactRef,
     backfill_assessment: CidNlMethodAssessmentRef,
@@ -172,6 +181,8 @@ def _completed_backfill_projection_bytes(
             "group_basis": group_identity.basis_bytes.hex(),
             "group_center_mz": group_center_mz,
             "group_center_rt": group_center_rt,
+            "query_rt": query_rt,
+            "query_rt_basis": query_rt_basis,
             "source_result_artifact_id": source_result_artifact.evidence_artifact_id,
             "initial_assessment_artifact_id": (
                 initial_assessment_artifact.evidence_artifact_id

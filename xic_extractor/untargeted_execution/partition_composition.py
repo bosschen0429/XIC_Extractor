@@ -26,8 +26,9 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.feature_membership_inference import (
+    BatchRtWarp,
+    BatchRtWarpAccumulator,
     FeatureInferenceOperationCounts,
-    estimate_batch_rt_warp,
 )
 from xic_extractor.alignment.grouping_workflow import (
     build_initial_cid_nl_cross_sample_groups,
@@ -95,6 +96,52 @@ class UntargetedPartitionInputs:
     jobs: tuple[UntargetedPartitionJob, ...]
     sample_job_templates: tuple[UntargetedPartitionJob, ...] = ()
     prepared_grouping: UntargetedPreparedGrouping | None = None
+
+
+class UntargetedBatchGroupingPreparation:
+    """Shared in-memory preparation for direct and spooled batch execution.
+
+    Callers supply initial groupings, freeze calibration, then finalize each
+    grouping against that frozen calibration. Only compact anchor projections
+    are retained; RAW access, partition admission and spooling remain with
+    runtime.
+    """
+
+    def __init__(self, context: UntargetedPartitionContext) -> None:
+        samples = context.processing_owners.sample_resolutions
+        self._calibration = BatchRtWarpAccumulator(
+            injection_order={
+                sample.metadata.raw_stem: sample.metadata.injection_order
+                for sample in samples
+                if sample.metadata.injection_order is not None
+            },
+            sample_cohorts={
+                sample.metadata.raw_stem: sample.metadata.batch_id
+                for sample in samples
+            },
+        )
+        self._rt_warp: BatchRtWarp | None = None
+
+    def add_initial(self, prepared: UntargetedPreparedGrouping) -> None:
+        self._calibration.add_groups(prepared.rt_anchor_groups)
+
+    def freeze_calibration(self) -> None:
+        self._rt_warp = self._calibration.freeze()
+
+    def finalize_grouping(
+        self,
+        batch: UntargetedPartitionInputs,
+        prepared: UntargetedPreparedGrouping,
+        *,
+        progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+    ) -> UntargetedPreparedGrouping:
+        assert self._rt_warp is not None
+        return finalize_untargeted_partition_grouping(
+            batch,
+            prepared,
+            rt_warp=self._rt_warp,
+            progress_callback=progress_callback,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,11 +286,23 @@ def prepare_untargeted_partition_grouping(
     sample_results: tuple[UntargetedInitialSampleResult, ...],
     *,
     alignment_config: AlignmentConfig,
+    bootstrap_only: bool = False,
     known_istd_reference: KnownIstdReference | None = None,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
 ) -> UntargetedPreparedGrouping:
     """Freeze compatible-workset membership once, before any backfill search."""
     requested_reference = known_istd_reference
+    # A sample acquisition is shared by all of its method-subject results.
+    # Flatten each retained context batch once, outside the workset loop.
+    context_batches = {
+        id(
+            result.adapter_result.elution_contexts
+        ): result.adapter_result.elution_contexts
+        for result in sample_results
+    }
+    elution_contexts = tuple(
+        context for contexts in context_batches.values() for context in contexts
+    )
     results_by_subject: dict[str, list[UntargetedInitialSampleResult]] = {}
     for result in sample_results:
         results_by_subject.setdefault(
@@ -519,6 +578,7 @@ def prepare_untargeted_partition_grouping(
             captures=captures,
             sample_assessments=assessments,
             alignment_config=alignment_config,
+            elution_contexts=elution_contexts,
             known_istd_reference=known_istd_reference,
             retained_hypotheses_by_assessment=(retained_hypotheses_by_assessment),
             operation_counts_sink=operation_counts,
@@ -534,28 +594,41 @@ def prepare_untargeted_partition_grouping(
                 retained_candidates=retained_candidates,
             )
         )
-    bootstrap_groups = tuple(
-        group
-        for workset in prepared_worksets
-        for group in workset.grouping_scope.groups
-        if group.inference_basis is not None
-        and group.inference_basis.basis
-        in {"bidirectional_membership_agreement", "known_identity_constraint"}
+    prepared = UntargetedPreparedGrouping(
+        request=parent_request,
+        worksets=tuple(prepared_worksets),
+        alignment_config=alignment_config,
+        known_istd_reference=requested_reference,
     )
-    bootstrap_owners = {
-        owner.owner_id: owner
-        for workset in prepared_worksets
-        for group in workset.grouping_scope.groups
-        for owner in group.owners
+    if bootstrap_only:
+        return prepared
+    preparation = UntargetedBatchGroupingPreparation(batch.context)
+    preparation.add_initial(prepared)
+    preparation.freeze_calibration()
+    return preparation.finalize_grouping(
+        batch,
+        prepared,
+        progress_callback=progress_callback,
+    )
+
+
+def finalize_untargeted_partition_grouping(
+    batch: UntargetedPartitionInputs,
+    prepared: UntargetedPreparedGrouping,
+    *,
+    rt_warp: BatchRtWarp,
+    progress_callback: Callable[[Mapping[str, object]], None] | None = None,
+) -> UntargetedPreparedGrouping:
+    """Regroup one bounded workset collection using the frozen batch calibration."""
+    injection_order = {
+        sample.metadata.raw_stem: sample.metadata.injection_order
+        for sample in batch.context.processing_owners.sample_resolutions
+        if sample.metadata.injection_order is not None
     }
-    rt_warp = estimate_batch_rt_warp(
-        tuple(group.owners for group in bootstrap_groups),
-        owners_by_id=bootstrap_owners,
-        injection_order=injection_order,
-    )
+    alignment_config = prepared.alignment_config
     final_worksets = []
-    for workset in prepared_worksets:
-        operation_counts = []
+    for workset in prepared.worksets:
+        operation_counts: list[FeatureInferenceOperationCounts] = []
         grouping_scope, grouping_result = regroup_cid_nl_cross_sample_groups(
             processing_owners=batch.context.processing_owners,
             grouping_scope=workset.grouping_scope,
@@ -596,10 +669,10 @@ def prepare_untargeted_partition_grouping(
                 }
             )
     return UntargetedPreparedGrouping(
-        request=parent_request,
+        request=prepared.request,
         worksets=tuple(final_worksets),
         alignment_config=alignment_config,
-        known_istd_reference=requested_reference,
+        known_istd_reference=prepared.known_istd_reference,
         rt_warp=rt_warp,
     )
 
@@ -748,6 +821,7 @@ def _build_production_composition_inputs(
                 sample_assessments=assessments,
                 initial_assessments=initial_assessments,
                 group_backfills=group_backfills,
+                rt_warp=prepared.rt_warp,
             ),
             samples=batch.context.samples,
             alignment_config=alignment_config,

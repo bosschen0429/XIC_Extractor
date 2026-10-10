@@ -317,7 +317,7 @@ def _physical_segment_universe_basis(
 
 
 def _physical_question_basis(question: PhysicalPeakQuestion) -> dict[str, object]:
-    return {
+    basis: dict[str, object] = {
         "schema_version": question.schema_version,
         "trace_content_id": question.trace_content_id,
         "prepared_signal_id": question.prepared_signal_id,
@@ -330,6 +330,11 @@ def _physical_question_basis(question: PhysicalPeakQuestion) -> dict[str, object
         "admissible_segment_ids": list(question.admissible_segment_ids),
         "selection_policy_version": question.selection_policy_version,
     }
+    if question.search_rt_window is not None:
+        basis["search_rt_window"] = [
+            _physical_float_text(value) for value in question.search_rt_window
+        ]
+    return basis
 
 
 def _physical_float_text(value: float) -> str:

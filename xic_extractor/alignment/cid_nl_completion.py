@@ -38,6 +38,7 @@ from xic_extractor.alignment.conservative_backfill import (
     map_conservative_backfill_candidates,
     mint_conservative_backfill_candidate_universe,
 )
+from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
 from xic_extractor.alignment.grouping_bootstrap import (
     InitialGroupingScope,
     RetainedGroupingCandidate,
@@ -87,6 +88,8 @@ class CidNlWorksetEvidence:
         tuple[str, str, str],
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
     ]
+
+    rt_warp: BatchRtWarp | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,6 +246,8 @@ def _complete_cell_observations(
             groups=grouping_scope.groups,
             backfills=group_backfills,
             alignment_config=alignment_config,
+            injection_order=injection_order,
+            rt_warp=evidence.rt_warp,
         )
     )
     backfilled_positions = frozenset(

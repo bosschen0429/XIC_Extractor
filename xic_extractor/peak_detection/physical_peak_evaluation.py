@@ -14,12 +14,6 @@ from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
 )
-from xic_extractor.peak_detection.background_shape import (
-    has_deficient_monotone_run,
-    has_unresolved_valley_floors,
-    is_background_like_peak,
-    is_unresolved_shoulder_peak,
-)
 from xic_extractor.peak_detection.baseline import (
     asls_baseline_on_rt,
 )
@@ -56,9 +50,11 @@ from xic_extractor.peak_detection.physical_peak_models import (
     _PHYSICAL_PEAK_OPERATION_ORDER,
     _PHYSICAL_PEAK_SELECTION_POLICIES,
     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+    PHYSICAL_PEAK_BACKFILL_POLICY,
     PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
     PHYSICAL_PEAK_NO_SELECTION_POLICY,
     PHYSICAL_PEAK_POINT_POLICY,
+    PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
     PHYSICAL_PEAK_WINDOW_POLICY,
     PHYSICAL_SEGMENT_UNIVERSE_SCHEMA,
     PhysicalPeakAnswer,
@@ -76,6 +72,11 @@ from xic_extractor.peak_detection.physical_peak_models import (
 from xic_extractor.peak_detection.scoring_metrics import (
     short_scale_noise_mad,
 )
+
+# Backfill without a direct identity observation needs separation from measured
+# local background, not merely a smoothed maximum. MAD is unscaled; three robust
+# noise standard deviations are a screening rule, not a measured blank FPR.
+_BACKFILL_LOCAL_CONTRAST_MIN_MAD = 3.0 * 1.4826
 
 
 def _physical_text(value: object, *, field: str) -> str:
@@ -403,21 +404,20 @@ def _positive_runs(raw: np.ndarray) -> int:
 def _has_continuous_core_support(
     observed_residual: np.ndarray, window_points: int
 ) -> bool:
-    """Keep morphology when acquired support spans a smoothing footprint.
+    """Distinguish compact acquired cores from repeated censoring gaps.
 
-    Isolated dropouts can split a well-observed core into many binary runs.
-    A full acquired run above baseline supports ordinary morphology only when
-    acquired scans also outnumber missing scans in every core footprint. One
-    short continuous patch cannot make an otherwise censored core ordinary.
+    A compact continuous peak need not contain a whole smoothing footprint.
+    Repeatedly interrupted cores require sustained acquired support instead:
+    one short continuous patch cannot make an otherwise censored core ordinary.
     """
     hit = observed_residual > 0.0
-    if np.count_nonzero(hit) < window_points:
-        return False
     edges = np.diff(np.r_[False, hit, False].astype(int))
     starts = np.flatnonzero(edges == 1)
     stops = np.flatnonzero(edges == -1)
     if len(starts) < 3:
-        return True
+        # This protects an already resolved morphology peak; it does not mint
+        # one from isolated hits or impose the smoothing width as a scan minimum.
+        return bool(np.any(stops - starts >= 2))
     if not np.any(stops - starts >= window_points):
         return False
     acquired_per_window = np.convolve(
@@ -518,6 +518,7 @@ def mint_physical_peak_question(
     selection_subject_id: str,
     query_rt_min: float,
     selection_policy_version: str = PHYSICAL_PEAK_POINT_POLICY,
+    search_rt_window: tuple[float, float] | None = None,
 ) -> PhysicalPeakQuestion:
     if not isinstance(prepared, PreparedSignalProjection):
         raise TypeError("prepared must be a PreparedSignalProjection")
@@ -531,29 +532,21 @@ def mint_physical_peak_question(
         selection_subject_id, field="selection_subject_id"
     )
     query_rt = _finite_physical_float(query_rt_min, field="query_rt_min")
+    search_rt_window = _validated_search_window(
+        search_rt_window, query_rt, selection_policy_version
+    )
     context_start = universe.context_rt_start_min
     context_end = universe.context_rt_end_min
     admissible = _admissible_physical_segments(
-        universe, query_rt, selection_policy_version
+        universe, query_rt, selection_policy_version, search_rt_window
     )
-    values = {
-        "schema_version": "physical_peak_question",
-        "trace_content_id": prepared.trace_content_id,
-        "prepared_signal_id": prepared.prepared_signal_id,
-        "segment_universe_id": universe.segment_universe_id,
-        "segment_ids": list(universe.segment_ids),
-        "selection_subject_id": subject_id,
-        "query_rt_min": _physical_float_text(query_rt),
-        "context_rt_start_min": _physical_float_text(context_start),
-        "context_rt_end_min": _physical_float_text(context_end),
-        "admissible_segment_ids": list(admissible),
-        "selection_policy_version": selection_policy_version,
-    }
-    question_id = _typed_physical_id(
-        "physical-question:", _canonical_physical_json_bytes(values)
+    schema_version = (
+        "bounded_physical_peak_question"
+        if search_rt_window is not None
+        else "physical_peak_question"
     )
-    return PhysicalPeakQuestion(
-        schema_version="physical_peak_question",
+    question = PhysicalPeakQuestion(
+        schema_version=schema_version,
         trace_content_id=prepared.trace_content_id,
         prepared_signal_id=prepared.prepared_signal_id,
         segment_universe_id=universe.segment_universe_id,
@@ -564,39 +557,91 @@ def mint_physical_peak_question(
         context_rt_end_min=context_end,
         admissible_segment_ids=admissible,
         selection_policy_version=selection_policy_version,
-        physical_question_id=question_id,
+        physical_question_id="",
+        search_rt_window=search_rt_window,
     )
+    return replace(
+        question,
+        physical_question_id=_typed_physical_id(
+            "physical-question:", canonical_physical_peak_question_bytes(question)
+        ),
+    )
+
+
+def _validated_search_window(
+    window: tuple[float, float] | None,
+    query_rt: float,
+    selection_policy_version: str,
+) -> tuple[float, float] | None:
+    if window is None:
+        return None
+    if selection_policy_version not in {
+        PHYSICAL_PEAK_WINDOW_POLICY,
+        PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+        PHYSICAL_PEAK_BACKFILL_POLICY,
+    }:
+        raise ValueError("search window requires a window selection policy")
+    if not isinstance(window, tuple) or len(window) != 2:
+        raise ValueError("search window must contain two RT bounds")
+    start, end = (
+        _finite_physical_float(value, field="search_rt_window") for value in window
+    )
+    if not 0.0 <= start <= query_rt <= end:
+        raise ValueError(
+            "search window must contain the query RT in non-negative bounds"
+        )
+    return start, end
 
 
 def _admissible_physical_segments(
     universe: PhysicalSegmentUniverse,
     query_rt: float,
     selection_policy_version: str,
+    search_rt_window: tuple[float, float] | None = None,
 ) -> tuple[str, ...]:
     if selection_policy_version not in _PHYSICAL_PEAK_SELECTION_POLICIES:
         raise ValueError("unsupported physical peak selection policy")
     if universe.schema_version != PHYSICAL_SEGMENT_UNIVERSE_SCHEMA:
         raise ValueError("physical question crosses boundary policy")
-    if selection_policy_version == PHYSICAL_PEAK_NO_SELECTION_POLICY:
+    if selection_policy_version in {
+        PHYSICAL_PEAK_NO_SELECTION_POLICY,
+        PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY,
+    }:
         return ()
     if selection_policy_version in {
         PHYSICAL_PEAK_WINDOW_POLICY,
         PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+        PHYSICAL_PEAK_BACKFILL_POLICY,
     }:
         if not universe.context_rt_start_min <= query_rt <= universe.context_rt_end_min:
             return ()
-        # A group center is a prior for this already acquired bounded context.
-        # Every local candidate participates; ambiguity never selects a winner
-        # unless exactly one candidate contains the group RT.
-        if selection_policy_version == PHYSICAL_PEAK_GROUP_WINDOW_POLICY:
+        candidates = tuple(
+            segment
+            for segment in universe.segments
+            if search_rt_window is None
+            or search_rt_window[0] <= segment.apex_rt_min <= search_rt_window[1]
+        )
+        if not candidates and selection_policy_version == PHYSICAL_PEAK_BACKFILL_POLICY:
+            # A complete peak can contain the forecast while its apex misses the
+            # window. Recover only containing segments, never nearby context peaks.
+            # The answer still enforces uniqueness, complete support and contrast.
+            candidates = tuple(
+                segment for segment in universe.segments
+                if segment.left_rt_min <= query_rt <= segment.right_rt_min
+            )
+        # The prior resolves ambiguity only among eligible candidates.
+        if selection_policy_version in {
+            PHYSICAL_PEAK_GROUP_WINDOW_POLICY,
+            PHYSICAL_PEAK_BACKFILL_POLICY,
+        }:
             containing = tuple(
                 segment.physical_segment_id
-                for segment in universe.segments
+                for segment in candidates
                 if segment.left_rt_min <= query_rt <= segment.right_rt_min
             )
             if len(containing) == 1:
                 return containing
-        return universe.segment_ids
+        return tuple(segment.physical_segment_id for segment in candidates)
     return tuple(
         segment.physical_segment_id
         for segment in universe.segments
@@ -609,8 +654,18 @@ def validate_physical_peak_question_identity(
     *,
     universe: PhysicalSegmentUniverse | None = None,
 ) -> None:
-    if question.schema_version != "physical_peak_question":
+    expected_schema = (
+        "bounded_physical_peak_question"
+        if question.search_rt_window is not None
+        else "physical_peak_question"
+    )
+    if question.schema_version != expected_schema:
         raise ValueError("unsupported physical peak question schema")
+    _validated_search_window(
+        question.search_rt_window,
+        question.query_rt_min,
+        question.selection_policy_version,
+    )
     if question.selection_policy_version not in _PHYSICAL_PEAK_SELECTION_POLICIES:
         raise ValueError("unsupported physical peak selection policy")
     _finite_physical_float(question.query_rt_min, field="query_rt_min")
@@ -640,7 +695,10 @@ def validate_physical_peak_question_identity(
         ):
             raise ValueError("physical question crosses segment universe")
         expected_admissible = _admissible_physical_segments(
-            universe, question.query_rt_min, question.selection_policy_version
+            universe,
+            question.query_rt_min,
+            question.selection_policy_version,
+            question.search_rt_window,
         )
         if question.admissible_segment_ids != expected_admissible:
             raise ValueError("physical question omits owner-admissible segments")
@@ -665,7 +723,6 @@ def qualified_physical_segments(
 ) -> tuple[PhysicalSegment, ...]:
     """Return segments with shared original-XIC support before candidate ranking.
 
-    Discovery's additional background-shape policy remains part of its answer.
     This does not rebuild preparation, universe identity, or question hashes.
     """
     return tuple(
@@ -676,7 +733,10 @@ def qualified_physical_segments(
 
 
 def _physical_segment_support_failure(
-    prepared: PreparedSignal, selected: PhysicalSegment
+    prepared: PreparedSignal,
+    selected: PhysicalSegment,
+    *,
+    for_backfill: bool = False,
 ) -> str:
     if physical_segment_has_incomplete_context(prepared.projection, selected):
         return "incomplete_peak_context"
@@ -701,22 +761,8 @@ def _physical_segment_support_failure(
         left > 0.0 and right > 0.0 for left, right in zip(original, original[1:])
     ):
         return "insufficient_original_xic_continuity"
-    # Sparse tail hits do not turn an ordinary continuous core into censoring.
-    selected_signal = np.asarray(
-        prepared.positive_signal[selected.start_index : selected.end_index]
-    )
-    core = np.flatnonzero(selected_signal >= 0.2 * selected.height)
-    core_raw = acquired[core[0] : core[-1] + 1]
-    if (
-        _positive_runs(core_raw) >= 3
-        and not _has_continuous_core_support(
-            original[core[0] : core[-1] + 1], prepared.profile.window_points
-        )
-        and not _hit_enrichment(
-            np.asarray(prepared.raw), selected.start_index, selected.end_index
-        )
-    ):
-        return "insufficient_local_hit_enrichment"
+    # Hit density can identify additional censored clusters; it does not
+    # establish the absence of an already observed morphology peak.
     left, right, apex = (
         selected.start_index, selected.end_index, selected.apex_index
     )
@@ -728,8 +774,17 @@ def _physical_segment_support_failure(
     )
     rt = np.asarray(prepared.rt[left:right], dtype=float)
     noise_mad = short_scale_noise_mad(rt, acquired)
-    if prominence < _PHYSICAL_LOCAL_CONTRAST_MIN_MAD * noise_mad:
-        return "insufficient_local_peak_contrast"
+    minimum_contrast = (
+        _BACKFILL_LOCAL_CONTRAST_MIN_MAD
+        if for_backfill
+        else _PHYSICAL_LOCAL_CONTRAST_MIN_MAD
+    )
+    if prominence < minimum_contrast * noise_mad:
+        return (
+            "insufficient_backfill_peak_contrast"
+            if for_backfill
+            else "insufficient_local_peak_contrast"
+        )
     return ""
 
 
@@ -748,9 +803,19 @@ def answer_physical_peak_question(
     reason = universe.reason
     selected: PhysicalSegment | None = None
     background_qualified = False
-    if state == "available":
+    if (
+        question.selection_policy_version == PHYSICAL_PEAK_UNLOCATED_BACKFILL_POLICY
+        and state != "failed"
+    ):
+        state, reason = "unavailable", "sample_localization_unreliable"
+    elif state == "available":
         if not question.admissible_segment_ids:
-            state, reason = "unavailable", "no_selection"
+            state = "unavailable"
+            reason = (
+                "no_peak_in_sample_local_window"
+                if question.selection_policy_version == PHYSICAL_PEAK_BACKFILL_POLICY
+                else "no_selection"
+            )
         elif len(question.admissible_segment_ids) > 1:
             state, reason = "unavailable", "ambiguous_segment_candidates"
         else:
@@ -763,60 +828,23 @@ def answer_physical_peak_question(
             prepared = prepared_result.prepared
             if prepared is None:
                 raise ValueError("available physical answer lacks worker-local signal")
-            support_failure = _physical_segment_support_failure(prepared, selected)
+            support_failure = _physical_segment_support_failure(
+                prepared,
+                selected,
+                for_backfill=(
+                    question.selection_policy_version == PHYSICAL_PEAK_BACKFILL_POLICY
+                ),
+            )
             if support_failure:
                 state, reason = "unavailable", support_failure
                 selected = None
-            elif "local_hit_density_enrichment" in selected.evidence_sources:
-                # Censored clusters already passed the shared hit-density test;
-                # adjacency and intensity shape cannot qualify them again.
-                background_qualified = (
-                    question.selection_policy_version
-                    == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
-                )
             elif (
                 question.selection_policy_version
                 == DISCOVERY_PHYSICAL_PEAK_POINT_POLICY
             ):
-                left, right, apex = (
-                    selected.start_index, selected.end_index, selected.apex_index
-                )
-                signal = np.asarray(prepared.positive_signal, dtype=float)
-                raw = np.asarray(prepared.raw[left:right], dtype=float)
-                rt = np.asarray(prepared.rt[left:right], dtype=float)
-                noise_mad = short_scale_noise_mad(rt, raw)
+                # Shared acquired support and local contrast qualify the peak.
+                # Overlap remains review evidence on the measured interval.
                 background_qualified = True
-                left_valley = float(np.min(signal[left : apex + 1]))
-                right_valley = float(np.min(signal[apex : right]))
-                apex_height = float(signal[apex])
-                if (
-                    is_unresolved_shoulder_peak(
-                        segment_class=selected.segment_class,
-                        apex_height=apex_height,
-                        left_valley=left_valley,
-                        right_valley=right_valley,
-                    )
-                    or has_unresolved_valley_floors(
-                        apex_height=apex_height,
-                        left_valley=left_valley,
-                        right_valley=right_valley,
-                    )
-                    or has_deficient_monotone_run(
-                        raw,
-                        apex_index=apex - left,
-                    )
-                    or is_background_like_peak(
-                        rt,
-                        raw,
-                        np.asarray(prepared.baseline[left:right], dtype=float),
-                        apex_index=apex - left,
-                        raw_noise_mad=noise_mad,
-                    )
-                ):
-                    state, reason = (
-                        "unavailable", "background_like_peak_shape"
-                    )
-                    selected = None
     answer_basis = {
         "schema_version": "physical_peak_answer",
         "state": state,
@@ -924,6 +952,7 @@ def evaluate_physical_peak(
     request_context_rt_start_min: float | None = None,
     request_context_rt_end_min: float | None = None,
     selection_policy_version: str = PHYSICAL_PEAK_POINT_POLICY,
+    search_rt_window: tuple[float, float] | None = None,
 ) -> PhysicalPeakEvaluation:
     """Answer one workflow-neutral physical question from owner-derived context."""
 
@@ -941,6 +970,7 @@ def evaluate_physical_peak(
         selection_subject_id=selection_subject_id,
         query_rt_min=query_rt_min,
         selection_policy_version=selection_policy_version,
+        search_rt_window=search_rt_window,
     )
     return answer_physical_peak_question(prepared_result, universe, question)
 

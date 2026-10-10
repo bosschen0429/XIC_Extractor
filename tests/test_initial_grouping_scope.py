@@ -42,10 +42,12 @@ def test_initial_grouping_scope_is_a_minimal_immutable_canonical_value() -> None
         "mz_interval",
         "rt_interval",
         "groups",
+        "peak_trajectories",
     }
     assert scope.mz_interval == (499.0, 501.0)
     assert scope.rt_interval[0].hex() == "0x0.0p+0"
     assert scope.groups == (first, second)
+    assert scope.peak_trajectories.tracks == ()
     with pytest.raises(FrozenInstanceError):
         scope.groups = ()  # type: ignore[misc]
 
