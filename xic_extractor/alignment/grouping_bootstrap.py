@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import final
+from typing import cast, final
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample_peak_groups import (
@@ -301,6 +301,8 @@ def bootstrap_cid_nl_initial_population(
     method_subject_intervals = tuple(
         cid_nl_method_subject_resolver_interval(subject) for subject in method_subjects
     )
+    # With no hypotheses, searched_no_observation requires completed receipts;
+    # their owner guarantees numeric query bounds.
     grouping_scope = InitialGroupingScope(
         peak_trajectories=correspondence,
         mz_interval=(
@@ -311,13 +313,13 @@ def bootstrap_cid_nl_initial_population(
             min(hypothesis.integration.rt_left_min for hypothesis in hypotheses)
             if hypotheses
             else min(
-                assessment.content.evaluation_receipt.query_rt_min
+                cast(float, assessment.content.evaluation_receipt.query_rt_min)
                 for _, assessment in sample_assessments
             ),
             max(hypothesis.integration.rt_right_min for hypothesis in hypotheses)
             if hypotheses
             else max(
-                assessment.content.evaluation_receipt.query_rt_max
+                cast(float, assessment.content.evaluation_receipt.query_rt_max)
                 for _, assessment in sample_assessments
             ),
         ),

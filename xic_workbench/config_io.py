@@ -202,7 +202,7 @@ def migrate_legacy_dll_settings(*, config_dir: Path | None = None) -> tuple[str,
     preferred = str(preferences.get("dll_dir") or "").strip()
     discovered = str(discovery.get("dll_dir") or "").strip()
     missing = not dll or dll.startswith("<") or "/your/" in dll.replace("\\", "/")
-    receipts = []
+    receipts: list[str] = []
     if preferred or (missing and discovered):
         origin = "workbench.json" if preferred else "discovery_gui.json"
         _migrated, alias_warnings = migrate_settings_dict(canonical)
