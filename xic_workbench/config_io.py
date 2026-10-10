@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import io
 import json
 import os
 import shutil
@@ -11,11 +12,7 @@ import tempfile
 from pathlib import Path
 
 from xic_extractor.configuration.csv_io import TARGET_WRITE_FIELDS, _read_settings
-from xic_extractor.configuration.settings import migrate_settings_dict
-from xic_extractor.configuration.targeted_settings import (
-    ResolvedTargetedSettings,
-    resolve_targeted_settings,
-)
+from xic_extractor.configuration.settings import resolve_settings
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DESCRIPTIONS
 
 _PACKAGE_PARENT = Path(__file__).resolve().parent.parent
@@ -73,75 +70,63 @@ def _read_path(name: str, config_dir: Path | None = None) -> Path:
 
 
 def read_settings(*, config_dir: Path | None = None) -> dict[str, str]:
-    return read_resolved_settings(config_dir=config_dir).values
+    """Read CSV inputs only; normalization and admission belong to their consumers."""
+    return _read_settings(_read_path("settings", config_dir))
 
 
-def read_resolved_settings(
-    *, config_dir: Path | None = None
-) -> ResolvedTargetedSettings:
-    receipts = migrate_legacy_dll_settings(config_dir=config_dir)
-    source = _read_path("settings", config_dir)
-    resolved = resolve_targeted_settings(_read_settings(source), source=str(source))
-    if receipts:
-        from dataclasses import replace
-
-        resolved = replace(
-            resolved,
-            receipts=(*resolved.receipts, *receipts),
-            warnings=(*resolved.warnings, *receipts),
-        )
-    return resolved
-
-
-def write_settings(settings: dict[str, str], *, config_dir: Path | None = None) -> None:
-    migrate_legacy_dll_settings(config_dir=config_dir)
-    _write_settings(settings, config_dir=config_dir)
-
-
-def _write_settings(
+def write_settings(
     settings: dict[str, str], *, config_dir: Path | None = None
-) -> None:
-    destination_dir = _runtime_dir(config_dir)
-    destination_dir.mkdir(parents=True, exist_ok=True)
-    path = destination_dir / "settings.csv"
-    source_path = path if path.exists() else _read_path("settings", config_dir)
-    existing: dict[str, dict[str, str]] = {}
-    if source_path.exists():
-        # The shared reader rejects conflicting duplicate rows before saving.
-        persisted, _warnings = migrate_settings_dict(_read_settings(source_path))
-        with source_path.open(newline="", encoding="utf-8-sig") as handle:
-            existing = {row["key"]: row for row in csv.DictReader(handle)}
-    else:
-        persisted = {}
-    resolved = resolve_targeted_settings(persisted, settings, source=str(source_path))
-    # Create the complete replacement before touching the existing active file.
-    temporary_path: Path | None = None
+) -> dict[str, str]:
+    path = _runtime_dir(config_dir) / "settings.csv"
+    source = path if path.exists() else _read_path("settings", config_dir)
+    persisted = _read_settings(source) if source.exists() else {}
+    descriptions = {}
+    if source.exists():
+        with source.open(newline="", encoding="utf-8-sig") as handle:
+            descriptions = {
+                row["key"]: row.get("description", "") for row in csv.DictReader(handle)
+            }
+    values, _parsed, _warnings = resolve_settings(
+        persisted, settings, settings_path=source
+    )
+    buffer = io.StringIO(newline="")
+    writer = csv.DictWriter(buffer, fieldnames=_SETTINGS_FIELDS)
+    writer.writeheader()
+    for key, value in values.items():
+        writer.writerow(
+            dict(
+                key=key,
+                value=value,
+                description=(
+                    descriptions.get(key)
+                    or CANONICAL_SETTINGS_DESCRIPTIONS.get(key, "")
+                ),
+            )
+        )
+    _atomic_write(path, "\ufeff" + buffer.getvalue())
+    return values
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    """Replace a local configuration file with a recoverable backup."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = None
     try:
         with tempfile.NamedTemporaryFile(
             mode="w",
+            encoding="utf-8",
             newline="",
-            encoding="utf-8-sig",
-            dir=destination_dir,
-            prefix=".settings-",
+            dir=path.parent,
+            prefix=f".{path.stem}-",
             suffix=".tmp",
             delete=False,
         ) as handle:
             temporary_path = Path(handle.name)
-            writer = csv.DictWriter(handle, fieldnames=_SETTINGS_FIELDS)
-            writer.writeheader()
-            for key, value in resolved.values.items():
-                writer.writerow(
-                    {
-                        "key": key,
-                        "value": value,
-                        "description": existing.get(key, {}).get("description", "")
-                        or CANONICAL_SETTINGS_DESCRIPTIONS.get(key, ""),
-                    }
-                )
+            handle.write(text)
             handle.flush()
             os.fsync(handle.fileno())
         if path.exists():
-            shutil.copy2(path, path.with_suffix(".csv.bak"))
+            shutil.copy2(path, path.with_suffix(path.suffix + ".bak"))
         os.replace(temporary_path, path)
     finally:
         if temporary_path is not None:
@@ -157,29 +142,7 @@ def _read_json_object(path: Path) -> dict:
 
 
 def _write_json_object(path: Path, payload: dict) -> None:
-    """Replace local JSON configuration atomically with a recoverable backup."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.stem}-",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            temporary_path = Path(handle.name)
-            json.dump(payload, handle, ensure_ascii=False, indent=2)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        if path.exists():
-            shutil.copy2(path, path.with_suffix(path.suffix + ".bak"))
-        os.replace(temporary_path, path)
-    finally:
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
+    _atomic_write(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
 
 
 def migrate_legacy_dll_settings(*, config_dir: Path | None = None) -> tuple[str, ...]:
@@ -205,13 +168,7 @@ def migrate_legacy_dll_settings(*, config_dir: Path | None = None) -> tuple[str,
     receipts: list[str] = []
     if preferred or (missing and discovered):
         origin = "workbench.json" if preferred else "discovery_gui.json"
-        _migrated, alias_warnings = migrate_settings_dict(canonical)
-        receipts.extend(
-            warning
-            for warning in alias_warnings
-            if warning.startswith("settings_migration")
-        )
-        _write_settings({"dll_dir": preferred or discovered}, config_dir=directory)
+        write_settings({"dll_dir": preferred or discovered}, config_dir=directory)
         receipts.append(f"dll_migration={origin} -> settings.csv")
     for path, payload in ((preference_path, preferences), (discovery_path, discovery)):
         if "dll_dir" in payload:
@@ -222,7 +179,6 @@ def migrate_legacy_dll_settings(*, config_dir: Path | None = None) -> tuple[str,
 
 
 def read_preferences(*, config_dir: Path | None = None) -> dict:
-    migrate_legacy_dll_settings(config_dir=config_dir)
     return _read_json_object(_runtime_dir(config_dir) / "workbench.json")
 
 

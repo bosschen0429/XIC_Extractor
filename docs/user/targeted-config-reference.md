@@ -8,15 +8,13 @@ contain local machine paths.
 ## Settings (`settings.csv`)
 
 `settings.csv` is the only active Targeted settings file; `targets.csv` is a
-separate target list. Optional method JSON is an import/export snapshot of the
-11 scalar method parameters owned by `xic_extractor.configuration.targeted_settings`, not
-another active settings file. It excludes targets, paths, workers, output
-options, and external-resource selections. Reset/import preserves those
-separate concerns. Full replay uses the existing run manifest and bound inputs;
-a method snapshot alone is insufficient.
+separate target list. Reset restores the 11 method parameters declared in
+`xic_extractor.settings_schema.METHOD_KEYS`, preserving batch, environment,
+output and resource settings. Full replay uses the existing run manifest and
+its bound inputs.
 
 The shared DLL location is persisted only in `settings.csv`, for both Targeted
-and Untargeted. Legacy DLL preferences are migrated with backups; UI preferences
+and Untargeted. Legacy DLL preferences are migrated with backups when the workspace opens; UI preferences
 and Discovery batch files no longer override this value. An explicit launch
 override remains session-local until saved.
 

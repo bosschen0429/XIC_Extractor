@@ -27,60 +27,62 @@ def json_value(value: Any) -> Any:
 
 class AnalysisWorkspace:
     def __init__(self, config_dir: Path, defaults: dict[str, str]) -> None:
+        from xic_workbench.config_io import migrate_legacy_dll_settings
+
+        self._startup_warnings = migrate_legacy_dll_settings(config_dir=config_dir)
         self.config_dir = config_dir
         self.defaults = defaults
         self.jobs = AnalysisJobs(config_dir)
         self._files: dict[str, Path] = {}
 
     def bootstrap(self) -> dict[str, Any]:
-        from xic_extractor.configuration.targeted_settings import (
-            resolve_targeted_settings,
-            targeted_method_summary,
-            targeted_setting_fields,
-        )
+        from xic_extractor.configuration.settings import resolve_settings
         from xic_workbench.config_io import (
-            read_resolved_settings,
+            read_settings,
             read_targets,
             targets_example_path,
         )
         from xic_workbench.discovery_config_io import read_discovery_config
         from xic_workbench.methods import list_methods
+        from xic_workbench.targeted import method_summary, setting_fields
 
-        resolved = read_resolved_settings(config_dir=self.config_dir)
+        raw = read_settings(config_dir=self.config_dir)
+        overrides = {}
+        if self.defaults.get("dll_dir"):
+            overrides["dll_dir"] = self.defaults["dll_dir"]
+        if self.defaults.get("raw_dir") and (
+            not raw.get("data_dir") or raw["data_dir"] == "C:/your/data/folder"
+        ):
+            overrides["data_dir"] = self.defaults["raw_dir"]
+        settings, _parsed, warnings = resolve_settings(raw, overrides)
+        if overrides:
+            warnings.append("啟動選項覆寫：" + ", ".join(overrides))
         discovery = read_discovery_config(config_dir=self.config_dir)
-        preferences = self.preferences()
-        dll = self.defaults.get("dll_dir")
-        if dll:
-            resolved = resolve_targeted_settings(
-                resolved,
-                {"dll_dir": dll},
-                override_source="launch",
-            )
-            discovery["dll_dir"] = dll
-        if self.defaults.get("raw_dir"):
-            if (
-                not resolved.values.get("data_dir")
-                or resolved.values["data_dir"] == "C:/your/data/folder"
-            ):
-                resolved = resolve_targeted_settings(
-                    resolved,
-                    {"data_dir": self.defaults["raw_dir"]},
-                    override_source="launch",
-                )
-            if not discovery.get("raw_dir"):
-                discovery["raw_dir"] = self.defaults["raw_dir"]
-        settings = dict(resolved.values)
+        discovery["dll_dir"] = settings.get("dll_dir", "")
+        if self.defaults.get("raw_dir") and not discovery.get("raw_dir"):
+            discovery["raw_dir"] = self.defaults["raw_dir"]
+        source = (
+            "settings.csv"
+            if (self.config_dir / "settings.csv").exists()
+            else "settings.example.csv"
+        )
+        if source == "settings.example.csv":
+            warnings.append("尚未儲存 settings.csv，目前使用範本設定。")
         return {
             "config_dir": str(self.config_dir),
             "targets_example": str(targets_example_path()),
             "review_source": self.defaults.get("source", ""),
             "settings": settings,
             "targets": read_targets(config_dir=self.config_dir),
-            "targeted_form": {"settings": targeted_setting_fields()},
-            "targeted_method": targeted_method_summary(resolved),
+            "targeted_form": {"settings": setting_fields()},
+            "targeted_method": {
+                **method_summary(settings),
+                "warnings": [*self._startup_warnings, *warnings],
+            },
+            "settings_source": source,
             "untargeted": discovery,
             "methods": list_methods(),
-            "preferences": preferences,
+            "preferences": self.preferences(),
             "analysis": self.state(),
         }
 
@@ -126,70 +128,37 @@ class AnalysisWorkspace:
 
             return write_preferences(values, config_dir=self.config_dir)
         if action == "targeted/save":
-            from xic_extractor.configuration.targeted_settings import (
-                targeted_method_summary,
-            )
-            from xic_workbench.config_io import (
-                read_resolved_settings,
-                write_settings,
-                write_targets,
-            )
+            from xic_workbench.config_io import write_settings, write_targets
+            from xic_workbench.targeted import method_summary
 
-            write_settings(values["settings"], config_dir=self.config_dir)
+            settings = write_settings(values["settings"], config_dir=self.config_dir)
             write_targets(values["targets"], config_dir=self.config_dir)
             return {
                 "message": "設定與目標已儲存。",
-                "summary": targeted_method_summary(
-                    read_resolved_settings(config_dir=self.config_dir)
-                ),
+                "summary": method_summary(settings),
             }
-        if action == "targeted/method":
-            from xic_extractor.configuration.targeted_settings import (
-                targeted_method_summary,
+        if action in {"targeted/method", "targeted/method/reset"}:
+            from xic_extractor.configuration.settings import (
+                reset_method_settings,
+                resolve_settings,
             )
+            from xic_workbench.config_io import read_settings
+            from xic_workbench.targeted import method_summary
 
-            if "settings" in values:
-                return targeted_method_summary(values["settings"])
-            from xic_workbench.config_io import read_resolved_settings
-
-            return targeted_method_summary(
-                read_resolved_settings(config_dir=self.config_dir)
+            raw = (
+                values["settings"]
+                if "settings" in values
+                else read_settings(config_dir=self.config_dir)
             )
-        if action == "targeted/method/reset":
-            from xic_extractor.configuration.targeted_settings import (
-                reset_targeted_method,
-                targeted_method_summary,
+            if action == "targeted/method/reset":
+                raw = reset_method_settings(raw)
+            settings, _parsed, warnings = resolve_settings(raw)
+            summary = {**method_summary(settings), "warnings": warnings}
+            return (
+                {"settings": settings, "summary": summary}
+                if action.endswith("/reset")
+                else summary
             )
-
-            settings = reset_targeted_method(values["settings"])
-            return {"settings": settings, "summary": targeted_method_summary(settings)}
-        if action == "targeted/method/import":
-            from xic_extractor.configuration.targeted_settings import (
-                apply_targeted_method_snapshot,
-                load_targeted_method_snapshot,
-                targeted_method_summary,
-            )
-
-            snapshot = load_targeted_method_snapshot(Path(values["path"]))
-            settings = apply_targeted_method_snapshot(values["settings"], snapshot)
-            return {"settings": settings, "summary": targeted_method_summary(settings)}
-        if action == "targeted/method/export":
-            from xic_extractor.configuration.targeted_settings import (
-                save_targeted_method_snapshot,
-                targeted_method_summary,
-            )
-
-            path = Path(values["path"])
-            save_targeted_method_snapshot(
-                values["settings"],
-                path,
-                name=values.get("name", ""),
-                description=values.get("description", ""),
-            )
-            return {
-                "artifact": self._artifact(path),
-                "summary": targeted_method_summary(values["settings"]),
-            }
         if action == "targets/import":
             from xic_workbench.target_import import import_targets
 
@@ -199,8 +168,13 @@ class AnalysisWorkspace:
                 )
             }
         if action == "untargeted/save":
+            from xic_workbench.config_io import write_settings
             from xic_workbench.discovery_config_io import write_discovery_config
 
+            if "dll_dir" in values:
+                write_settings(
+                    {"dll_dir": values["dll_dir"]}, config_dir=self.config_dir
+                )
             write_discovery_config(values, config_dir=self.config_dir)
             return {"message": "批次與方法設定已儲存。"}
         if action == "method":

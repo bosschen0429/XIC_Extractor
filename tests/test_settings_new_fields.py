@@ -315,3 +315,15 @@ def _write_calibration(path: Path, targets_path: Path) -> None:
             )
         ],
     )
+
+
+def test_disabled_optional_resources_are_not_reported_as_missing_settings():
+    from xic_extractor.configuration.settings import resolve_settings
+    from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
+
+    values = {
+        key: value
+        for key, value in CANONICAL_SETTINGS_DEFAULTS.items()
+        if key != "ms1_morphology_smoothing_window_points"
+    }
+    assert resolve_settings(values)[2] == []

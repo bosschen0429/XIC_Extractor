@@ -178,51 +178,15 @@
     $("target-resource-state").textContent = (summary?.resource_keys || []).length
       ? `${summary.resource_keys.length} 項本機資源` : "未指定外部資源";
     const notes = $("target-method-note");
-    const explanationOpen = notes.querySelector("details")?.open || false;
     notes.replaceChildren();
     for (const difference of summary?.differences || []) {
       const spec = state.config.targeted_form.settings.find((item) => item.key === difference.key);
       notes.append(el("p", `${spec?.label || difference.key}：${difference.default || "（空白）"} → ${difference.value || "（空白）"}`, "method-difference"));
     }
-    const source = state.config.targeted_method;
-    const sourcePath = source?.source || "settings.csv";
-    const sourceLine = el("p", `設定來源：${pathTail(sourcePath)}`, "settings-source");
-    sourceLine.title = sourcePath;
-    notes.append(sourceLine);
-    const warnings = [...new Set([...(source?.warnings || []), ...(summary?.warnings || [])])];
-    const explanation = el("details", undefined, "settings-explanation");
-    explanation.id = "target-settings-explanation";
-    explanation.open = explanationOpen;
-    const explanationTitle = el("summary", "設定來源與相容說明");
-    if (warnings.length) explanationTitle.append(el("span", `${warnings.length} 項提醒`, "chip warn"));
-    explanation.append(explanationTitle);
-    const explanationBody = el("div", undefined, "settings-explanation-body");
-    for (const warning of warnings) explanationBody.append(el("p", warning, "settings-warning"));
-    const compatibility = summary?.compatibility?.count_no_ms2_as_detected;
-    if (compatibility) explanationBody.append(el("p", `NO_MS2 相容設定儲存值：${compatibility.configured}。${compatibility.projection_effect}。`, "settings-notice"));
-    const receipts = [...new Set(source?.receipts || summary?.receipts || [])];
-    const receiptList = el("ul", undefined, "settings-receipts");
-    for (const receipt of receipts) {
-      const item = el("li");
-      item.append(el("code", receipt));
-      receiptList.append(item);
+    notes.append(el("p", `設定檔：${state.config.settings_source || "settings.csv"}`, "settings-source"));
+    for (const warning of summary?.warnings || []) {
+      notes.append(el("p", warning, "settings-warning"));
     }
-    explanationBody.append(el("h4", "載入來源紀錄"), receiptList);
-    const provenance = source?.provenance || summary?.provenance || {};
-    const table = el("table", undefined, "settings-provenance");
-    const head = el("tr");
-    head.append(el("th", "設定"), el("th", "載入來源"));
-    table.append(head);
-    const provenanceNames = { default: "標準值", csv: "settings.csv", legacy_alias: "舊欄位轉換", launch: "啟動選項", preference: "本機偏好", override: "明確覆寫", preserved: "保留欄位" };
-    for (const [key, origin] of Object.entries(provenance)) {
-      const spec = state.config.targeted_form.settings.find((item) => item.key === key);
-      const row = el("tr");
-      row.append(el("td", spec?.label || key), el("td", provenanceNames[origin] || origin));
-      table.append(row);
-    }
-    explanationBody.append(table);
-    explanation.append(explanationBody);
-    notes.append(explanation);
     checklist("targeted");
   }
   function selectView(view, persist = true) {
@@ -460,17 +424,17 @@
     advanced.append(methodPanel);
     const note = el("div", undefined, "method-note");
     note.id = "target-method-note";
-    method.append(el("p", "訊號處理固定使用 Gaussian；它不是可切換的方法選項。", "settings-notice"), advanced, note);
-    resources.append(el("p", "外部資源會影響本次分析；路徑不隨方法參數 JSON 分享，需在本機另外確認。", "settings-notice"));
+    method.append(el("p", "訊號處理固定使用 Gaussian；正式 Targeted 結果不將 NO_MS2 算為偵測到。", "settings-notice"), advanced, note);
+    resources.append(el("p", "外部資源會影響本次分析；請確認本機路徑與適用性。", "settings-notice"));
     const panels = { batch: data, method: methodPanel, resource: resources, environment: execution, runtime: execution, output: execution };
     const groups = new Map();
     for (const spec of state.config.targeted_form.settings) {
       const panel = panels[spec.scope];
       if (!panel || spec.kind === "readonly" || spec.key === "signal_processing_method" || spec.key === "count_no_ms2_as_detected") continue;
-      const groupKey = spec.scope === "method" ? `${spec.scope}:${spec.group}` : spec.scope;
+      const groupKey = spec.scope;
       if (!groups.has(groupKey)) {
         const section = el("section", undefined, "settings-group");
-        const scopeHeading = { batch: "批次輸入", resource: "本機資源", environment: "本機環境", runtime: "執行方式", output: "輸出選項" };
+        const scopeHeading = { method: "進階方法參數", batch: "批次輸入", resource: "本機資源", environment: "本機環境", runtime: "執行方式", output: "輸出選項" };
         section.append(el("h3", scopeHeading[spec.scope] || spec.group));
         const grid = el("div", undefined, "settings-grid");
         section.append(grid);
@@ -493,6 +457,7 @@
     const settings = settingsValues();
     const receipt = await api("/api/targeted/save", { settings, targets: state.targets });
     state.config.settings = settings;
+    state.config.settings_source = "settings.csv";
     state.config.targeted_method = receipt.summary;
     setMethodState(receipt.summary);
     dirty("targeted", false);
@@ -1453,19 +1418,6 @@
     $("target-reset").onclick = () => act(async () => {
       applyTargetedDraft(await api("/api/targeted/method/reset", { settings: settingsValues() }));
       done("已還原方法參數；批次、目標、外部資源與執行設定保持不變。");
-    });
-    $("target-method-import").onclick = () => act(async () => {
-      applyTargetedDraft(await api("/api/targeted/method/import", {
-        settings: settingsValues(), path: $("target-method-path").value,
-      }));
-      done("已載入方法參數草稿；儲存或開始分析後生效。");
-    });
-    $("target-method-export").onclick = () => act(async () => {
-      const path = await requestPath("匯出方法參數 JSON", $("target-method-path").value || `${state.config.config_dir}/targeted-method.json`);
-      if (!path) return;
-      const result = await api("/api/targeted/method/export", { settings: settingsValues(), path });
-      $("target-method-path").value = result.artifact.path;
-      done("方法參數已匯出；這不是第二份啟用設定。");
     });
     $("target-edit").onclick = () => {
       renderTargets();

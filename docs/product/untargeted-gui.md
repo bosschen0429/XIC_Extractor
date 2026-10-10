@@ -31,14 +31,16 @@ historical filename as the stable topic locator.
   value needs attention.
 - A persisted setting that differs from the canonical method is labelled
   `自訂參數 · N 項調整`. Only the 11 scalar parameters owned by
-  `xic_extractor.configuration.targeted_settings` contribute to the count; batch, environment,
+  `xic_extractor.settings_schema.METHOD_KEYS` contribute to the count; batch, environment,
   workers, output, targets, and resources do not. **回到預設** restores those
   scalar parameters. Gaussian is fixed information, not a method choice.
-- `settings.csv` is the sole active Targeted settings file. Optional method
-  JSON import/export carries only scalar parameters, not targets, resources,
-  or complete replay state. Reset/import preserves the other settings and
-  separately visible resources. Full replay remains manifest/input-bound;
-  platform defaults do not require separate custom files per concern.
+- `settings.csv` is the sole active Targeted settings file. Reset preserves
+  batch, resource and execution settings. GUI and CLI use the existing settings
+  parser; the Workbench only presents its method values and differences.
+  Full replay remains manifest/input-bound.
+- Legacy DLL preferences are converted with backups when the workspace opens.
+  Ordinary configuration reads do not migrate or write files. The workspace
+  supplies the shared DLL value to both workflows.
 - `count_no_ms2_as_detected` affects legacy fallback rows without formal
   projection fields, not formal Detection %. New saves use only the canonical
   smoothing-window key; legacy aliases load, but conflicting values fail.

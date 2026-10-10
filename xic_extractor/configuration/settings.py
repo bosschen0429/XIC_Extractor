@@ -1,5 +1,6 @@
 import logging
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig
@@ -18,6 +19,7 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,
+    METHOD_KEYS,
 )
 from xic_extractor.targeted_ms1_shape_identity_policy import (
     TARGETED_MS1_SHAPE_IDENTITY_ACTIVATION_POLICIES,
@@ -149,6 +151,48 @@ def validate_settings_values(
     parsed = _parse_settings_values(settings, settings_path)
     _validate_settings_ranges(settings, settings_path, parsed)
     return parsed
+
+
+def resolve_settings(
+    raw: dict[str, str],
+    overrides: dict[str, str] | None = None,
+    *,
+    settings_path: Path = Path("settings.csv"),
+) -> tuple[dict[str, str], _ParsedSettings, list[str]]:
+    """Normalize input spellings, apply overrides, then parse effective values once."""
+    values, warnings = migrate_settings_dict(raw)
+    if overrides:
+        if overrides.get(_LEGACY_SIGNAL_WINDOW_KEY, "").strip():
+            values.pop(_CANONICAL_SIGNAL_WINDOW_KEY, None)
+        values, override_warnings = migrate_settings_dict({**values, **overrides})
+        warnings.extend(override_warnings)
+    warnings.extend(
+        f"Unknown or retired setting {key!r} is preserved, not consumed by Targeted."
+        for key in values
+        if key not in CANONICAL_SETTINGS_DEFAULTS
+    )
+    return values, validate_settings_values(values, settings_path), warnings
+
+
+def reset_method_settings(settings: dict[str, str]) -> dict[str, str]:
+    """Reset method parameters, preserving batch, resource and execution values."""
+    values, _warnings = migrate_settings_dict(settings)
+    values.update({key: CANONICAL_SETTINGS_DEFAULTS[key] for key in METHOD_KEYS})
+    return values
+
+
+def method_settings_differences(settings: dict[str, str]) -> list[dict[str, str]]:
+    """Compare normalized method values without revalidating or reading inputs."""
+    differences = []
+    for key in METHOD_KEYS:
+        value, default = settings[key], CANONICAL_SETTINGS_DEFAULTS[key]
+        try:
+            equal = Decimal(value) == Decimal(default)
+        except InvalidOperation:
+            equal = value.strip().lower() == default.strip().lower()
+        if not equal:
+            differences.append({"key": key, "default": default, "value": value})
+    return differences
 
 
 def _parse_settings_values(

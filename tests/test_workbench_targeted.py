@@ -61,10 +61,10 @@ def test_settings_round_trip_preserves_hidden_canonical_values(tmp_path: Path) -
     assert restored["signal_processing_window_points"] == "15"
 
 
-def test_read_settings_migrates_legacy_keys_at_the_workbench_boundary(
+def test_bootstrap_migrates_legacy_keys_at_the_workbench_boundary(
     tmp_path: Path,
 ) -> None:
-    from xic_workbench.config_io import read_settings
+    from xic_workbench.analysis_workspace import AnalysisWorkspace
 
     (tmp_path / "settings.csv").write_text(
         "key,value,description\ndata_dir,C:/RAW,\ndll_dir,C:/Thermo,\n"
@@ -72,7 +72,11 @@ def test_read_settings_migrates_legacy_keys_at_the_workbench_boundary(
         encoding="utf-8",
     )
 
-    restored = read_settings(config_dir=tmp_path)
+    workspace = AnalysisWorkspace(tmp_path, {})
+    try:
+        restored = workspace.bootstrap()["settings"]
+    finally:
+        workspace.jobs.close()
 
     assert restored["signal_processing_window_points"] == "21"
     assert "ms1_morphology_smoothing_window_points" not in restored
@@ -82,10 +86,9 @@ def test_read_settings_migrates_legacy_keys_at_the_workbench_boundary(
 def test_method_summary_normalizes_canonical_numeric_boolean_and_legacy_values() -> (
     None
 ):
-    from xic_extractor.configuration.targeted_settings import (
-        targeted_method_summary as method_summary,
-    )
+    from xic_extractor.configuration.settings import resolve_settings
     from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
+    from xic_workbench.targeted import method_summary
 
     settings = dict(CANONICAL_SETTINGS_DEFAULTS)
     settings.pop("signal_processing_window_points")
@@ -96,19 +99,15 @@ def test_method_summary_normalizes_canonical_numeric_boolean_and_legacy_values()
     settings["data_dir"] = "C:\\another-batch"
     settings["dll_dir"] = "C:\\another-install"
 
-    summary = method_summary(settings)
+    summary = method_summary(resolve_settings(settings)[0])
     assert summary["label"] == "標準參數"
     assert summary["custom_keys"] == []
-    assert summary["compatibility"]["count_no_ms2_as_detected"][
-        "projection_effect"
-    ].startswith("NO_MS2")
 
 
 def test_method_summary_labels_visible_and_hidden_nondefaults_as_custom() -> None:
-    from xic_extractor.configuration.targeted_settings import (
-        targeted_method_summary as method_summary,
-    )
+    from xic_extractor.configuration.settings import resolve_settings
     from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
+    from xic_workbench.targeted import method_summary
 
     settings = {
         **CANONICAL_SETTINGS_DEFAULTS,
@@ -116,7 +115,7 @@ def test_method_summary_labels_visible_and_hidden_nondefaults_as_custom() -> Non
         "targeted_ms1_shape_identity_support_tsv": "C:\\reviewed-support.tsv",
     }
 
-    summary = method_summary(settings)
+    summary = method_summary(resolve_settings(settings)[0])
     assert summary["label"] == "自訂參數 · 1 項調整"
     assert summary["custom_keys"] == ["ms2_precursor_tol_da"]
     assert summary["resource_keys"] == ["targeted_ms1_shape_identity_support_tsv"]
@@ -209,9 +208,9 @@ def test_excel_target_import_without_target_rows_is_rejected(tmp_path: Path) -> 
 
 
 def test_targeted_fields_are_owned_scoped_and_do_not_hide_resources() -> None:
-    from xic_extractor.configuration.targeted_settings import targeted_setting_fields
+    from xic_workbench.targeted import setting_fields
 
-    fields = {field["key"]: field for field in targeted_setting_fields()}
+    fields = {field["key"]: field for field in setting_fields()}
     assert fields["data_dir"]["scope"] == "batch"
     assert fields["parallel_mode"]["scope"] == "runtime"
     assert fields["parallel_mode"]["options"] == ["serial", "process"]

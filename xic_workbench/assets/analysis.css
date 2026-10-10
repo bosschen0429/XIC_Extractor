@@ -664,11 +664,3 @@
   margin: 10px 0 4px;
 }
 .method-difference { font-weight: 600; }
-.settings-explanation { margin-top: 8px; }
-.settings-explanation > summary { font-size: 12px; }
-.settings-explanation > summary .chip { margin-left: 8px; }
-.settings-explanation-body { padding: 8px 0; color: var(--ink); }
-.settings-explanation-body h4 { margin: 12px 0 6px; font-size: 12px; }
-.settings-receipts { padding-left: 20px; font-size: 11px; overflow-wrap: anywhere; }
-.settings-provenance { font-size: 12px; width: 100%; }
-.settings-provenance td, .settings-provenance th { padding: 5px 8px; text-align: left; }

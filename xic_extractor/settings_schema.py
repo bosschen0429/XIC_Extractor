@@ -126,3 +126,25 @@ CANONICAL_SETTINGS_DESCRIPTIONS: dict[str, str] = {
     "parallel_mode": "執行後端（serial 或 process；預設 process）",
     "parallel_workers": "Process mode worker 數量（>= 1；預設 CPU 核心數 - 1）",
 }
+
+
+METHOD_KEYS = (
+    "signal_processing_method",
+    "signal_processing_window_points",
+    "ms2_precursor_tol_da",
+    "nl_min_intensity_ratio",
+    "count_no_ms2_as_detected",
+    "nl_rt_anchor_search_margin_min",
+    "nl_rt_anchor_half_window_min",
+    "nl_fallback_half_window_min",
+    "rolling_window_size",
+    "dirty_matrix_mode",
+    "targeted_ms1_shape_identity_activation_policy",
+)
+
+RESOURCE_KEYS = (
+    "rt_prior_library_path",
+    "target_pair_rt_calibration_path",
+    "model_selection_expected_diff_approval_registry",
+    "targeted_ms1_shape_identity_support_tsv",
+)

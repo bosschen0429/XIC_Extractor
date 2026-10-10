@@ -112,71 +112,8 @@ def test_cli_runs_extraction_with_base_dir_and_skips_excel(
     assert "1/2 SampleA.raw" in stdout
 
 
-def test_cli_method_parameters_apply_without_rewriting_batch_settings(
-    tmp_path, monkeypatch
-):
-    from xic_extractor.configuration.targeted_settings import (
-        save_targeted_method_snapshot,
-    )
-
-    module = _module()
-    raw, dll = tmp_path / "raw", tmp_path / "dll"
-    raw.mkdir()
-    dll.mkdir()
-    config_dir = tmp_path / "config"
-    _write_cli_config(config_dir, data_dir=raw, dll_dir=dll)
-    original = (config_dir / "settings.csv").read_bytes()
-    snapshot = tmp_path / "method.json"
-    save_targeted_method_snapshot(
-        {
-            "signal_processing_window_points": "17",
-            "ms2_precursor_tol_da": "0.37",
-            "targeted_ms1_shape_identity_activation_policy": "explicit_support_tsv",
-        },
-        snapshot,
-    )
-    calls = {}
-    monkeypatch.setattr(module.extractor, "run", _fake_run(calls))
-
-    assert (
-        module.main(
-            [
-                "--base-dir",
-                str(tmp_path),
-                "--method-parameters",
-                str(snapshot),
-                "--skip-excel",
-                "--parallel-workers",
-                "2",
-            ]
-        )
-        == 0
-    )
-    config = calls["run_config"]
-    assert config.ms2_precursor_tol_da == 0.37
-    assert config.signal_processing_window_points == 17
-    assert config.data_dir == raw
-    assert config.dll_dir == dll
-    assert config.parallel_workers == 2
-    assert (config_dir / "settings.csv").read_bytes() == original
 
 
-def test_cli_method_parameters_reject_replay_override(tmp_path, capsys):
-    assert (
-        _module().main(
-            [
-                "--replay-manifest",
-                str(tmp_path / "missing.json"),
-                "--method-parameters",
-                str(tmp_path / "method.json"),
-            ]
-        )
-        == 2
-    )
-    assert (
-        "--replay-manifest cannot be combined with --method-parameters"
-        in capsys.readouterr().err
-    )
 
 
 def test_cli_runs_excel_conversion_by_default(

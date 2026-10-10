@@ -17,8 +17,17 @@ from xic_extractor.applications.targeted.application import (
 from xic_extractor.configuration import loader as config_loader
 from xic_extractor.configuration.csv_io import _config_input_path
 from xic_extractor.configuration.models import ExtractionConfig, Target
+from xic_extractor.configuration.settings import method_settings_differences
 from xic_extractor.extraction.result_models import ExtractionResult, RunOutput
 from xic_extractor.output.method_manifest import MethodManifestContext
+from xic_extractor.settings_schema import (
+    CANONICAL_SETTINGS_DEFAULTS,
+    METHOD_KEYS,
+    RESOURCE_KEYS,
+)
+from xic_extractor.targeted_ms1_shape_identity_policy import (
+    TARGETED_MS1_SHAPE_IDENTITY_ACTIVATION_POLICIES,
+)
 
 
 class _TargetSummary(TypedDict):
@@ -191,3 +200,169 @@ def _is_detected(
     if result.nl.status in {"OK", "WARN"}:
         return True
     return config.count_no_ms2_as_detected and result.nl.status == "NO_MS2"
+
+
+# Labels and controls are presentation only; METHOD_KEYS owns method membership.
+_SETTING_FIELDS: tuple[tuple[str, str, str, dict[str, Any]], ...] = (
+    ("data_dir", "資料目錄", "folder", {}),
+    ("dll_dir", "DLL 目錄", "folder", {}),
+    ("signal_processing_method", "平滑方法", "readonly", {"options": ["gaussian"]}),
+    (
+        "signal_processing_window_points",
+        "Gaussian 平滑視窗（點）",
+        "number",
+        {"min": 3, "step": 2, "help": "奇數 3–999。"},
+    ),
+    (
+        "ms2_precursor_tol_da",
+        "MS2 precursor 容差（Da）",
+        "number",
+        {
+            "min": 0.01,
+            "step": 0.1,
+            "help": "掃描 precursor 與推算 precursor 的最大差距。",
+        },
+    ),
+    (
+        "nl_min_intensity_ratio",
+        "NL product 最低強度比",
+        "number",
+        {"min": 0.01, "step": 0.01, "help": "相對於該 scan 的 base peak。"},
+    ),
+    (
+        "count_no_ms2_as_detected",
+        "將 NO_MS2 視為偵測到",
+        "readonly",
+        {
+            "help": "相容設定；正式 Targeted 結果不將 NO_MS2 算為偵測到。",
+            "compatibility_only": True,
+        },
+    ),
+    (
+        "injection_order_source",
+        "注射順序來源",
+        "file",
+        {
+            "help": "CSV／XLSX 注射順序；留空時使用 RAW 修改時間。"
+        },
+    ),
+    (
+        "rolling_window_size",
+        "ISTD RT prior 滾動視窗（± 注射數）",
+        "number",
+        {"min": 1, "step": 1},
+    ),
+    (
+        "dirty_matrix_mode",
+        "複雜基質模式",
+        "checkbox",
+        {"help": "放寬 S/N、收緊峰形；用於尿液等複雜基質。"},
+    ),
+    (
+        "rt_prior_library_path",
+        "RT prior 參考資料庫",
+        "file",
+        {"help": "一般使用請留空。"},
+    ),
+    (
+        "target_pair_rt_calibration_path",
+        "Target pair RT 校正",
+        "file",
+        {"help": "RT prior 使用的 TSV；留空停用。"},
+    ),
+    (
+        "model_selection_expected_diff_approval_registry",
+        "預期差異核准紀錄",
+        "file",
+        {"help": "已核准的 expected-diff registry TSV；沒有對應核准紀錄時留空。"},
+    ),
+    (
+        "targeted_ms1_shape_identity_support_tsv",
+        "MS1 峰形身分支持資料",
+        "file",
+        {"help": "已審核的 support TSV；留空時由目前啟用政策處理，不隨方法參數匯出。"},
+    ),
+    (
+        "targeted_ms1_shape_identity_activation_policy",
+        "MS1 shape identity 啟用政策",
+        "select",
+        {"options": list(TARGETED_MS1_SHAPE_IDENTITY_ACTIVATION_POLICIES)},
+    ),
+    ("emit_score_breakdown", "輸出 Score Breakdown 工作表", "checkbox", {}),
+    ("emit_review_report", "輸出 Review Report HTML", "checkbox", {}),
+    ("keep_intermediate_csv", "保留中間 CSV 檔", "checkbox", {"help": "除錯用。"}),
+    (
+        "nl_rt_anchor_search_margin_min",
+        "NL 錨點搜尋半徑（min）",
+        "number",
+        {"min": 0.0, "help": "在目標 RT 中心 ± 此值內尋找 NL 確認的 MS2。"},
+    ),
+    (
+        "nl_rt_anchor_half_window_min",
+        "錨定後 XIC 半寬（min）",
+        "number",
+        {"min": 0.0, "help": "找到錨點時，XIC 視窗為錨點 RT ± 此值。"},
+    ),
+    (
+        "nl_fallback_half_window_min",
+        "未錨定時 XIC 半寬（min）",
+        "number",
+        {"min": 0.0, "help": "找不到錨點時，XIC 視窗為 RT 中心 ± 此值。"},
+    ),
+    (
+        "parallel_mode",
+        "執行方式",
+        "select",
+        {
+            "options": ["serial", "process"],
+            "help": "process 平行處理；serial 逐一處理，供除錯使用。",
+        },
+    ),
+    (
+        "parallel_workers",
+        "平行 worker 數",
+        "number",
+        {"min": 1, "step": 1, "help": "process 模式使用的行程數。"},
+    ),
+)
+
+
+def setting_fields() -> list[dict[str, Any]]:
+    fields = []
+    for key, label, kind, options in _SETTING_FIELDS:
+        scope = (
+            "method"
+            if key in METHOD_KEYS
+            else "resource"
+            if key in RESOURCE_KEYS
+            else "batch"
+            if key in {"data_dir", "injection_order_source"}
+            else "environment"
+            if key == "dll_dir"
+            else "runtime"
+            if key.startswith("parallel_")
+            else "output"
+        )
+        fields.append(
+            dict(
+                key=key,
+                label=label,
+                kind=kind,
+                scope=scope,
+                default=CANONICAL_SETTINGS_DEFAULTS[key],
+                **options,
+            )
+        )
+    return fields
+
+
+def method_summary(settings: dict[str, str]) -> dict[str, Any]:
+    differences = method_settings_differences(settings)
+    return {
+        "label": f"自訂參數 · {len(differences)} 項調整" if differences else "標準參數",
+        "custom_keys": [row["key"] for row in differences],
+        "differences": differences,
+        "resource_keys": [
+            key for key in RESOURCE_KEYS if settings.get(key, "").strip()
+        ],
+    }

@@ -11,9 +11,7 @@ from xic_workbench.config_io import (
     ROOT,
     _read_json_object,
     _write_json_object,
-    read_settings,
     targets_example_path,
-    write_settings,
 )
 
 CONFIG_DIR = ROOT / "config"
@@ -59,10 +57,8 @@ def _with_runtime_defaults(config: dict[str, Any]) -> dict[str, Any]:
 
 def read_discovery_config(*, config_dir: Path | None = None) -> dict[str, Any]:
     directory = _runtime_dir(config_dir)
-    settings = read_settings(config_dir=directory)
     payload = _read_json_object(directory / CONFIG_NAME)
     config = _with_runtime_defaults(_merge_known_keys(payload))
-    config["dll_dir"] = settings.get("dll_dir", "")
     return config
 
 
@@ -70,12 +66,6 @@ def write_discovery_config(
     config: Mapping[str, Any], *, config_dir: Path | None = None
 ) -> None:
     destination = _runtime_dir(config_dir)
-    # Reading the canonical setting first also retires any legacy DLL sources.
-    read_settings(config_dir=destination)
-    if "dll_dir" in config:
-        write_settings(
-            {"dll_dir": str(config["dll_dir"] or "")}, config_dir=destination
-        )
     path = destination / CONFIG_NAME
     existing = _read_json_object(path)
     payload = {**existing, **_merge_known_keys({**existing, **config})}

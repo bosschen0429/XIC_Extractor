@@ -54,16 +54,14 @@ prefixes.
 `settings.csv` is the active Targeted configuration; `targets.csv` remains the
 separate target table. Platform defaults are owned by the application, not by
 one custom config file per concern. **自訂參數 · N 項調整** compares only the
-11 scalar parameters owned by `xic_extractor.configuration.targeted_settings`. RAW/DLL paths,
+11 scalar parameters owned by `xic_extractor.settings_schema.METHOD_KEYS`. RAW/DLL paths,
 workers, output options, targets, and external resources do not increase this
 count. Gaussian smoothing is fixed information, not a selectable method.
 
-**回到預設** restores those parameters. Optional method JSON import/export is a
-parameter snapshot, not a target list, external-resource bundle, or complete
-run replay. Reset and import preserve batch/environment/output settings and
-resource selections. Resources remain separately visible; changing a resource
-is not hidden inside the custom-method count. Use the existing run manifest and
-its bound inputs for full replay provenance.
+**回到預設** restores those parameters while preserving batch, environment,
+output settings and resource selections. Resources remain separately visible;
+changing a resource is not hidden inside the custom-method count. Use the
+existing run manifest and its bound inputs for full replay provenance.
 
 `count_no_ms2_as_detected` is a compatibility fallback for legacy rows without
 formal projection fields, not a global switch for formal Detection %. See the
@@ -121,17 +119,6 @@ Installed entry point:
 ```powershell
 uv run xic-extractor-cli --base-dir .
 ```
-
-Use an exported parameter snapshot for one CLI run:
-
-```powershell
-uv run xic-extractor-cli --base-dir . --method-parameters method-parameters.json
-```
-
-`--method-parameters` validates and applies the 11-value JSON snapshot before
-explicit CLI overrides. It does not rewrite the active `settings.csv`.
-Snapshots carry `version: 1`, `name`, `description`, and scalar `settings`;
-they are not full replay manifests. Replay rejects parameter overrides.
 
 Useful overrides:
 

@@ -7,12 +7,14 @@ from xic_extractor.configuration.hashing import (
     compute_target_config_hash,
 )
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
-from xic_extractor.configuration.settings import build_extraction_config
+from xic_extractor.configuration.settings import (
+    build_extraction_config,
+    resolve_settings,
+)
 from xic_extractor.configuration.target_identity import (
     TargetListSnapshot,
     mint_target_list_snapshot,
 )
-from xic_extractor.configuration.targeted_settings import resolve_targeted_settings
 from xic_extractor.configuration.targets import _read_targets
 from xic_extractor.target_pair_rt_calibration import load_target_pair_rt_calibration
 
@@ -45,12 +47,12 @@ def load_config(
 
     raw_settings = _read_settings(settings_path)
     try:
-        resolved = resolve_targeted_settings(
-            raw_settings, settings_overrides, source=str(settings_path)
+        settings, parsed, warnings = resolve_settings(
+            raw_settings, settings_overrides, settings_path=settings_path
         )
     except ConfigError as exc:
         raise ConfigError(f"{settings_path}: {exc}") from exc
-    for warning in resolved.warnings:
+    for warning in warnings:
         LOGGER.warning(warning)
 
     output_dir = (
@@ -64,7 +66,7 @@ def load_config(
         settings_overrides=settings_overrides,
     )
     config = build_extraction_config(
-        resolved.parsed, resolved.values, settings_path, output_dir, config_hash
+        parsed, settings, settings_path, output_dir, config_hash
     )
     targets = _read_targets(targets_path)
     target_config_hash = compute_target_config_hash(targets_path)

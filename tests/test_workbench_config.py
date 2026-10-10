@@ -32,7 +32,6 @@ def test_read_discovery_config_blank_output_falls_back_to_default(
 
     assert config["output_dir"] == str(tmp_path / "output")
     assert config["raw_dir"] == "R"
-    assert config["dll_dir"] == "D"
 
 
 def test_read_discovery_config_preserves_custom_output(monkeypatch, tmp_path) -> None:
@@ -98,10 +97,15 @@ def test_legacy_preference_dll_migrates_once_preserving_effective_value_and_json
     preference_path.write_text(json.dumps(preference), encoding="utf-8")
     discovery_path.write_text(json.dumps(discovery), encoding="utf-8")
 
-    resolved = config_io.read_resolved_settings(config_dir=tmp_path)
-    assert resolved.values["dll_dir"] == "formerly-effective"
+    workspace = AnalysisWorkspace(tmp_path, {})
+    try:
+        config = workspace.bootstrap()
+    finally:
+        workspace.jobs.close()
+    assert config["settings"]["dll_dir"] == "formerly-effective"
     assert any(
-        "dll_migration=workbench.json" in receipt for receipt in resolved.receipts
+        "dll_migration=workbench.json" in warning
+        for warning in config["targeted_method"]["warnings"]
     )
     assert json.loads(preference_path.read_text()) == {
         key: value for key, value in preference.items() if key != "dll_dir"
@@ -117,10 +121,7 @@ def test_legacy_preference_dll_migrates_once_preserving_effective_value_and_json
 
     config_io.write_settings({"dll_dir": "canonical-new"}, config_dir=tmp_path)
     assert config_io.read_settings(config_dir=tmp_path)["dll_dir"] == "canonical-new"
-    assert (
-        discovery_config_io.read_discovery_config(config_dir=tmp_path)["dll_dir"]
-        == "canonical-new"
-    )
+    assert config_io.read_settings(config_dir=tmp_path)["dll_dir"] == "canonical-new"
     assert "dll_dir" not in config_io.read_preferences(config_dir=tmp_path)
 
 
@@ -143,13 +144,17 @@ def test_legacy_discovery_dll_is_only_fallback_for_missing_canonical(
         json.dumps({"dll_dir": "discovery-dll", "custom_roles": {"B": "sample"}}),
         encoding="utf-8",
     )
-    discovery = discovery_config_io.read_discovery_config(config_dir=tmp_path)
+    workspace = AnalysisWorkspace(tmp_path, {})
+    try:
+        discovery = workspace.bootstrap()["untargeted"]
+    finally:
+        workspace.jobs.close()
     assert discovery["dll_dir"] == expected
     assert discovery["custom_roles"] == {"B": "sample"}
     assert "dll_dir" not in json.loads(path.read_text())
 
 
-def test_discovery_save_routes_dll_to_canonical_and_preserves_unrelated_controls(
+def test_untargeted_save_routes_dll_to_canonical_and_preserves_unrelated_controls(
     tmp_path,
 ):
     path = tmp_path / "discovery_gui.json"
@@ -163,9 +168,13 @@ def test_discovery_save_routes_dll_to_canonical_and_preserves_unrelated_controls
         ),
         encoding="utf-8",
     )
-    discovery_config_io.write_discovery_config(
-        {"dll_dir": "shared-dll", "raw_dir": "new-batch"}, config_dir=tmp_path
-    )
+    workspace = AnalysisWorkspace(tmp_path, {})
+    try:
+        workspace.action(
+            "untargeted/save", {"dll_dir": "shared-dll", "raw_dir": "new-batch"}
+        )
+    finally:
+        workspace.jobs.close()
     assert config_io.read_settings(config_dir=tmp_path)["dll_dir"] == "shared-dll"
     payload = json.loads(path.read_text())
     assert "dll_dir" not in payload
@@ -198,10 +207,63 @@ def test_launch_dll_override_is_transient_and_both_workflows_share_it(tmp_path):
         bootstrap = workspace.bootstrap()
         assert bootstrap["settings"]["dll_dir"] == "launch-dll"
         assert bootstrap["untargeted"]["dll_dir"] == "launch-dll"
-        assert bootstrap["targeted_method"]["provenance"]["dll_dir"] == "launch"
+        assert any("dll_dir" in w for w in bootstrap["targeted_method"]["warnings"])
         assert (tmp_path / "settings.csv").read_bytes() == before
         assert (
             config_io.read_settings(config_dir=tmp_path)["dll_dir"] == "persisted-dll"
         )
+    finally:
+        workspace.jobs.close()
+
+
+
+def test_configuration_reads_are_read_only_and_discovery_does_not_parse_targeted(
+    tmp_path,
+):
+    # Legacy keys and invalid Targeted scalars are data here, not a migration trigger.
+    paths = {
+        "settings.csv": "key,value\nms2_precursor_tol_da,not-a-number\n",
+        "workbench.json": json.dumps({"dll_dir": "old-preference", "theme": "dark"}),
+        "discovery_gui.json": json.dumps(
+            {"dll_dir": "old-discovery", "raw_dir": "batch"}
+        ),
+    }
+    for name, text in paths.items():
+        (tmp_path / name).write_text(text, encoding="utf-8")
+    before = {name: (tmp_path / name).read_bytes() for name in paths}
+    assert (
+        config_io.read_settings(config_dir=tmp_path)["ms2_precursor_tol_da"]
+        == "not-a-number"
+    )
+    assert config_io.read_preferences(config_dir=tmp_path)["theme"] == "dark"
+    assert (
+        discovery_config_io.read_discovery_config(config_dir=tmp_path)["raw_dir"]
+        == "batch"
+    )
+    assert {name: (tmp_path / name).read_bytes() for name in paths} == before
+    assert sorted(p.name for p in tmp_path.iterdir()) == sorted(paths)
+
+
+def test_bootstrap_resolves_effective_settings_once(tmp_path, monkeypatch):
+    from xic_extractor.configuration import settings as settings_owner
+
+    config_io.write_settings({"dll_dir": "saved-dll"}, config_dir=tmp_path)
+    workspace = AnalysisWorkspace(
+        tmp_path, {"dll_dir": "launch-dll", "raw_dir": "batch"}
+    )
+    calls = []
+    validate = settings_owner.validate_settings_values
+
+    def count_validation(values, *args):
+        calls.append(dict(values))
+        return validate(values, *args)
+
+    monkeypatch.setattr(settings_owner, "validate_settings_values", count_validation)
+    try:
+        config = workspace.bootstrap()
+        assert len(calls) == 1
+        assert calls[0]["dll_dir"] == "launch-dll"
+        assert calls[0]["data_dir"] == "batch"
+        assert config["untargeted"]["dll_dir"] == config["settings"]["dll_dir"]
     finally:
         workspace.jobs.close()
