@@ -1705,8 +1705,10 @@
     checklist("untargeted");
     document.body.classList.remove("booting");
     await act(reloadIstd);
+    let tick = 0;
     setInterval(async () => {
-      if (state.closed) return;
+      tick += 1;
+      if (state.closed || (state.offlineCount >= 3 && tick % 6)) return;
       try {
         state.analysis = await api("/api/analysis");
         state.offlineCount = 0;
