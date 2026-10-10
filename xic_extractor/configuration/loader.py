@@ -7,14 +7,12 @@ from xic_extractor.configuration.hashing import (
     compute_target_config_hash,
 )
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
-from xic_extractor.configuration.settings import (
-    _validate_settings,
-    migrate_settings_dict,
-)
+from xic_extractor.configuration.settings import build_extraction_config
 from xic_extractor.configuration.target_identity import (
     TargetListSnapshot,
     mint_target_list_snapshot,
 )
+from xic_extractor.configuration.targeted_settings import resolve_targeted_settings
 from xic_extractor.configuration.targets import _read_targets
 from xic_extractor.target_pair_rt_calibration import load_target_pair_rt_calibration
 
@@ -36,22 +34,28 @@ def load_target_list_snapshot(
 
 
 def load_config(
-    config_dir: Path, *, settings_overrides: dict[str, str] | None = None
+    config_dir: Path,
+    *,
+    settings_overrides: dict[str, str] | None = None,
+    output_dir: Path | None = None,
 ) -> tuple[ExtractionConfig, list[Target]]:
+    """Load active settings; output_dir only controls run artifact placement."""
     settings_path = _config_input_path(config_dir, "settings")
     targets_path = _config_input_path(config_dir, "targets")
 
     raw_settings = _read_settings(settings_path)
-    if settings_overrides:
-        raw_settings = {**raw_settings, **settings_overrides}
     try:
-        migrated, warnings = migrate_settings_dict(raw_settings)
+        resolved = resolve_targeted_settings(
+            raw_settings, settings_overrides, source=str(settings_path)
+        )
     except ConfigError as exc:
         raise ConfigError(f"{settings_path}: {exc}") from exc
-    for warning in warnings:
+    for warning in resolved.warnings:
         LOGGER.warning(warning)
 
-    output_dir = config_dir.parent / "output"
+    output_dir = (
+        Path(output_dir) if output_dir is not None else config_dir.parent / "output"
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     config_hash = _compute_config_hash(
@@ -59,7 +63,9 @@ def load_config(
         settings_path,
         settings_overrides=settings_overrides,
     )
-    config = _validate_settings(migrated, settings_path, output_dir, config_hash)
+    config = build_extraction_config(
+        resolved.parsed, resolved.values, settings_path, output_dir, config_hash
+    )
     targets = _read_targets(targets_path)
     target_config_hash = compute_target_config_hash(targets_path)
     config = ExtractionConfig(

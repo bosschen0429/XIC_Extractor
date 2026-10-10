@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import copy
-import json
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from xic_workbench.config_io import ROOT, targets_example_path
+from xic_workbench.config_io import (
+    ROOT,
+    _read_json_object,
+    _write_json_object,
+    read_settings,
+    targets_example_path,
+    write_settings,
+)
 
 CONFIG_DIR = ROOT / "config"
 CONFIG_NAME = "discovery_gui.json"
@@ -52,22 +58,26 @@ def _with_runtime_defaults(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def read_discovery_config(*, config_dir: Path | None = None) -> dict[str, Any]:
-    path = _runtime_dir(config_dir) / CONFIG_NAME
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return _with_runtime_defaults(_fresh_defaults())
-    if not isinstance(payload, dict):
-        return _with_runtime_defaults(_fresh_defaults())
-    return _with_runtime_defaults(_merge_known_keys(payload))
+    directory = _runtime_dir(config_dir)
+    settings = read_settings(config_dir=directory)
+    payload = _read_json_object(directory / CONFIG_NAME)
+    config = _with_runtime_defaults(_merge_known_keys(payload))
+    config["dll_dir"] = settings.get("dll_dir", "")
+    return config
 
 
 def write_discovery_config(
     config: Mapping[str, Any], *, config_dir: Path | None = None
 ) -> None:
     destination = _runtime_dir(config_dir)
-    destination.mkdir(parents=True, exist_ok=True)
-    (destination / CONFIG_NAME).write_text(
-        json.dumps(_merge_known_keys(config), indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
+    # Reading the canonical setting first also retires any legacy DLL sources.
+    read_settings(config_dir=destination)
+    if "dll_dir" in config:
+        write_settings(
+            {"dll_dir": str(config["dll_dir"] or "")}, config_dir=destination
+        )
+    path = destination / CONFIG_NAME
+    existing = _read_json_object(path)
+    payload = {**existing, **_merge_known_keys({**existing, **config})}
+    payload.pop("dll_dir", None)
+    _write_json_object(path, payload)

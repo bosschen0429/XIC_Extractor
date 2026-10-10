@@ -1,11 +1,11 @@
-"""Targeted execution and form metadata for the local HTML workbench."""
+"""Targeted execution for the local HTML workbench."""
 
 from __future__ import annotations
 
 import statistics
+import uuid
 from collections.abc import Callable
 from datetime import datetime
-from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -15,209 +15,10 @@ from xic_extractor.applications.targeted.application import (
     build_targeted_application_request,
 )
 from xic_extractor.configuration import loader as config_loader
+from xic_extractor.configuration.csv_io import _config_input_path
 from xic_extractor.configuration.models import ExtractionConfig, Target
-from xic_extractor.configuration.settings import migrate_settings_dict
 from xic_extractor.extraction.result_models import ExtractionResult, RunOutput
 from xic_extractor.output.method_manifest import MethodManifestContext
-from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
-
-_VISIBLE_SETTINGS: tuple[dict[str, Any], ...] = (
-    {
-        "key": "data_dir",
-        "label": "資料目錄",
-        "kind": "folder",
-        "group": "資料與環境",
-    },
-    {
-        "key": "dll_dir",
-        "label": "DLL 目錄",
-        "kind": "folder",
-        "group": "資料與環境",
-    },
-    {
-        "key": "signal_processing_window_points",
-        "label": "Gaussian 平滑視窗（點）",
-        "kind": "number",
-        "group": "峰形平滑",
-        "min": 3,
-        "step": 2,
-        "help": "奇數 3–999。",
-    },
-    {
-        "key": "ms2_precursor_tol_da",
-        "label": "MS2 precursor 容差（Da）",
-        "kind": "number",
-        "group": "MS2 與 neutral loss 確認",
-        "min": 0.01,
-        "step": 0.1,
-        "help": "掃描 precursor 與推算 precursor 的最大差距。",
-    },
-    {
-        "key": "nl_min_intensity_ratio",
-        "label": "NL product 最低強度比",
-        "kind": "number",
-        "group": "MS2 與 neutral loss 確認",
-        "min": 0.01,
-        "step": 0.01,
-        "help": "相對於該 scan 的 base peak。",
-    },
-    {
-        "key": "nl_rt_anchor_search_margin_min",
-        "label": "NL 錨點搜尋半徑（min）",
-        "kind": "number",
-        "group": "MS2 與 neutral loss 確認",
-        "min": 0.0,
-        "help": "在目標 RT 中心 ± 此值內尋找 NL 確認的 MS2。",
-    },
-    {
-        "key": "nl_rt_anchor_half_window_min",
-        "label": "錨定後 XIC 半寬（min）",
-        "kind": "number",
-        "group": "MS2 與 neutral loss 確認",
-        "min": 0.0,
-        "help": "找到錨點時，XIC 視窗為錨點 RT ± 此值。",
-    },
-    {
-        "key": "nl_fallback_half_window_min",
-        "label": "未錨定時 XIC 半寬（min）",
-        "kind": "number",
-        "group": "MS2 與 neutral loss 確認",
-        "min": 0.0,
-        "help": "找不到錨點時，XIC 視窗為 RT 中心 ± 此值。",
-    },
-    {
-        "key": "count_no_ms2_as_detected",
-        "label": "將 NO_MS2 視為偵測到",
-        "kind": "checkbox",
-        "group": "MS2 與 neutral loss 確認",
-        "help": "補救 DDA 未觸發 MS2 造成的假陰性。",
-    },
-    {
-        "key": "rolling_window_size",
-        "label": "ISTD RT prior 滾動視窗（± 注射數）",
-        "kind": "number",
-        "group": "RT 與注射順序",
-        "min": 1,
-        "step": 1,
-    },
-    {
-        "key": "injection_order_source",
-        "label": "注射順序來源",
-        "kind": "file",
-        "group": "RT 與注射順序",
-        "help": (
-            "含 Sample_Name 與 Injection_Order 欄的 CSV／XLSX；"
-            "留空時使用 RAW 修改時間。"
-        ),
-    },
-    {
-        "key": "target_pair_rt_calibration_path",
-        "label": "Target pair RT 校正",
-        "kind": "file",
-        "group": "RT 與注射順序",
-        "help": "RT prior 使用的 TSV；留空停用。",
-    },
-    {
-        "key": "rt_prior_library_path",
-        "label": "RT prior library（開發／除錯）",
-        "kind": "file",
-        "group": "RT 與注射順序",
-        "help": "一般使用請留空。",
-    },
-    {
-        "key": "dirty_matrix_mode",
-        "label": "複雜基質模式",
-        "kind": "checkbox",
-        "group": "基質與輸出",
-        "help": "放寬 S/N、收緊峰形；用於尿液等複雜基質。",
-    },
-    {
-        "key": "emit_review_report",
-        "label": "輸出 Review Report HTML",
-        "kind": "checkbox",
-        "group": "基質與輸出",
-    },
-    {
-        "key": "emit_score_breakdown",
-        "label": "輸出 Score Breakdown 工作表",
-        "kind": "checkbox",
-        "group": "基質與輸出",
-    },
-    {
-        "key": "keep_intermediate_csv",
-        "label": "保留中間 CSV 檔",
-        "kind": "checkbox",
-        "group": "基質與輸出",
-        "help": "除錯用。",
-    },
-    {
-        "key": "parallel_mode",
-        "label": "執行方式",
-        "kind": "select",
-        "group": "執行效能",
-        "options": ["serial", "process"],
-        "help": "process 平行處理；serial 逐一處理，供除錯使用。",
-    },
-    {
-        "key": "parallel_workers",
-        "label": "平行 worker 數",
-        "kind": "number",
-        "group": "執行效能",
-        "min": 1,
-        "step": 1,
-        "help": "process 模式使用的行程數。",
-    },
-)
-
-_PASSTHROUGH_SETTINGS = (
-    "signal_processing_method",
-    "model_selection_expected_diff_approval_registry",
-    "targeted_ms1_shape_identity_support_tsv",
-    "targeted_ms1_shape_identity_activation_policy",
-)
-
-
-def targeted_form() -> dict[str, Any]:
-    """Describe editable Targeted settings and their canonical defaults."""
-
-    keys = tuple(field["key"] for field in _VISIBLE_SETTINGS) + _PASSTHROUGH_SETTINGS
-    return {
-        "settings": [
-            {
-                key: list(value) if isinstance(value, list) else value
-                for key, value in field.items()
-            }
-            for field in _VISIBLE_SETTINGS
-        ],
-        "defaults": {key: str(CANONICAL_SETTINGS_DEFAULTS[key]) for key in keys},
-        "passthrough_settings": list(_PASSTHROUGH_SETTINGS),
-    }
-
-
-def method_summary(settings: dict[str, str]) -> dict[str, Any]:
-    """Describe whether persisted method settings differ from canonical defaults."""
-
-    migrated, _warnings = migrate_settings_dict(settings)
-    excluded = {"data_dir", "dll_dir", "ms1_morphology_smoothing_window_points"}
-    custom_keys = [
-        key
-        for key, default in CANONICAL_SETTINGS_DEFAULTS.items()
-        if key not in excluded
-        and not _setting_values_equal(migrated.get(key, ""), default)
-    ]
-    label = f"自訂方法 · {len(custom_keys)} 項調整" if custom_keys else "標準方法"
-    return {"label": label, "custom_keys": custom_keys}
-
-
-def _setting_values_equal(actual: str, expected: str) -> bool:
-    actual_text = str(actual).strip()
-    expected_text = str(expected).strip()
-    if expected_text.lower() in {"true", "false"}:
-        return actual_text.lower() == expected_text.lower()
-    try:
-        return Decimal(actual_text) == Decimal(expected_text)
-    except InvalidOperation:
-        return actual_text == expected_text
 
 
 class _TargetSummary(TypedDict):
@@ -241,16 +42,29 @@ class TargetedRun:
         progress: Callable[[int, int, str], None],
         should_cancel: Callable[[], bool],
     ) -> None:
-        self._config_dir = Path(config_dir)
+        config_dir = Path(config_dir)
+        # These are immutable execution receipts, not another active configuration.
+        # The manifest and computation must consume the same bytes after dispatch.
+        self._config_dir = (
+            config_dir.parent / "output" / ".run_inputs" / uuid.uuid4().hex / "config"
+        )
+        self._config_dir.mkdir(parents=True)
+        for name in ("settings", "targets"):
+            (self._config_dir / f"{name}.csv").write_bytes(
+                _config_input_path(config_dir, name).read_bytes()
+            )
+        self._config, self._targets = config_loader.load_config(
+            self._config_dir, output_dir=config_dir.parent / "output"
+        )
         self._progress = progress
         self._should_cancel = should_cancel
         self.stage = "讀取 Targeted 設定"
-        self.output_dir = self._config_dir.parent / "output"
+        self.output_dir = self._config.output_csv.parent
         self.available_outputs: tuple[tuple[str, Path], ...] = ()
         self.cancellation_reason = "使用者要求停止，本次 Targeted 執行已停止。"
 
     def execute(self) -> dict[str, Any]:
-        config, targets = config_loader.load_config(self._config_dir)
+        config, targets = self._config, self._targets
         self.output_dir = config.output_csv.parent
         excel_path = _excel_output_path(config)
         self.stage = "Targeted 分析與結果發布"

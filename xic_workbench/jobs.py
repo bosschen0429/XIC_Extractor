@@ -57,6 +57,18 @@ class AnalysisJobs:
                 raise WorkspaceBusy("工作仍在執行；請等待完成或先停止。")
             self._cancel = threading.Event()
             self._runner = None
+            values = copy.deepcopy(values)
+            if kind == "targeted":
+                from xic_workbench.config_io import write_settings, write_targets
+                from xic_workbench.targeted import TargetedRun
+
+                write_settings(values["settings"], config_dir=self.config_dir)
+                write_targets(values["targets"], config_dir=self.config_dir)
+                self._runner = TargetedRun(
+                    self.config_dir,
+                    progress=self._progress,
+                    should_cancel=self._cancel.is_set,
+                )
             self._current = {
                 "job_id": uuid.uuid4().hex,
                 "kind": kind,
@@ -69,7 +81,7 @@ class AnalysisJobs:
                 "available_outputs": [],
                 "cancellable": kind in {"targeted", "untargeted", "inspector"},
             }
-            self._executor.submit(self._execute, kind, copy.deepcopy(values))
+            self._executor.submit(self._execute, kind, values)
             return self.state()
 
     def cancel(self, job_id: str) -> dict[str, Any]:
@@ -116,16 +128,6 @@ class AnalysisJobs:
 
     def _run(self, kind: str, values: dict[str, Any]) -> dict[str, Any]:
         if kind == "targeted":
-            from xic_workbench.config_io import write_settings, write_targets
-            from xic_workbench.targeted import TargetedRun
-
-            write_settings(values["settings"], config_dir=self.config_dir)
-            write_targets(values["targets"], config_dir=self.config_dir)
-            self._runner = TargetedRun(
-                self.config_dir,
-                progress=self._progress,
-                should_cancel=self._cancel.is_set,
-            )
             return self._runner.execute()
         if kind == "untargeted":
             from xic_extractor.configuration.execution_profile import (

@@ -18,6 +18,7 @@ def normalize_resolver_mode(value: str) -> str:
     """Accept the saved-settings alias; new effective settings use savgol."""
     return "savgol" if value == "legacy_savgol" else value
 
+
 ARBITRATED_RESOLVER_RETIRED_MESSAGE = (
     "arbitrated resolver mode is retired; legacy diagnostics use local_minimum. "
     "Targeted uses the canonical signal-processing profile."
@@ -68,8 +69,7 @@ CANONICAL_SETTINGS_DESCRIPTIONS: dict[str, str] = {
         "Canonical Gaussian smoothing window points (odd integer 3-999; default 15)"
     ),
     "ms1_morphology_smoothing_window_points": (
-        "Legacy Gaussian15 alias for signal_processing_window_points; "
-        "do not use in new settings"
+        "Legacy alias for signal_processing_window_points; do not use in new settings"
     ),
     "ms2_precursor_tol_da": (
         "MS2 precursor m/z 半徑（Da，|scan precursor − 推算 precursor| 上限；"
@@ -79,7 +79,8 @@ CANONICAL_SETTINGS_DESCRIPTIONS: dict[str, str] = {
         "NL product 強度至少為該 scan base peak 的比例（1% 排除 noise）"
     ),
     "count_no_ms2_as_detected": (
-        "是否將無 MS2 觸發的樣品算為偵測到（DDA 隨機性假陰性補救用）"
+        "相容性 evidence 設定；正式 Targeted product projection "
+        "不將 NO_MS2 算為偵測到，並非全域偵測開關"
     ),
     "injection_order_source": (
         "Sample 注射順序來源檔（CSV/XLSX 有 Sample_Name 與 Injection_Order 欄；"
@@ -88,11 +89,11 @@ CANONICAL_SETTINGS_DESCRIPTIONS: dict[str, str] = {
     "rolling_window_size": "ISTD RT prior 的滾動視窗半徑（±N 個注射）",
     "dirty_matrix_mode": "髒基質模式（放寬 S/N、收緊峰形；尿液等複雜基質用）",
     "rt_prior_library_path": (
-        "developer/debug RT prior library CSV path; leave empty for normal use"
+        "Optional RT prior library CSV resource; preserved separately from method "
+        "parameters. Leave empty to disable."
     ),
     "target_pair_rt_calibration_path": (
-        "target pair RT calibration TSV path for RT priors; "
-        "leave empty to disable"
+        "target pair RT calibration TSV path for RT priors; leave empty to disable"
     ),
     "model_selection_expected_diff_approval_registry": (
         "Durable expected-diff approval registry TSV for selected-hypothesis "

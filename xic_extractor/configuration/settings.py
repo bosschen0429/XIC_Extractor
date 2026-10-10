@@ -18,7 +18,6 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,
-    normalize_resolver_mode,
 )
 from xic_extractor.targeted_ms1_shape_identity_policy import (
     TARGETED_MS1_SHAPE_IDENTITY_ACTIVATION_POLICIES,
@@ -71,9 +70,6 @@ class _ParsedSettings:
 def migrate_settings_dict(raw: dict[str, str]) -> tuple[dict[str, str], list[str]]:
     migrated = dict(raw)
     warnings: list[str] = []
-    if "resolver_mode" in migrated:
-        migrated["resolver_mode"] = normalize_resolver_mode(migrated["resolver_mode"])
-
     canonical_window = migrated.get(_CANONICAL_SIGNAL_WINDOW_KEY, "").strip()
     legacy_window = migrated.get(_LEGACY_SIGNAL_WINDOW_KEY, "").strip()
     if legacy_window:
@@ -124,22 +120,35 @@ def migrate_settings_dict(raw: dict[str, str]) -> tuple[dict[str, str], list[str
 
     for key in _MIGRATION_DEFAULT_KEYS:
         default = CANONICAL_SETTINGS_DEFAULTS[key]
-        if key not in migrated or migrated[key] == "":
+        if key not in migrated or (migrated[key] == "" and default != ""):
             migrated[key] = default
             warnings.append(f"Filled missing {key} with default {default}.")
 
     return migrated, warnings
 
 
-def _validate_settings(
+def build_extraction_config(
+    parsed: _ParsedSettings,
     settings: dict[str, str],
     settings_path: Path,
     output_dir: Path,
     config_hash: str,
 ) -> ExtractionConfig:
+    # Filesystem admission belongs to starting a run, not editing a method.
+    for key in ("data_dir", "dll_dir"):
+        _parse_existing_dir(
+            settings_path, key, _setting_value(settings, settings_path, key)
+        )
+    return _build_config(parsed, output_dir, config_hash)
+
+
+def validate_settings_values(
+    settings: dict[str, str], settings_path: Path = Path("settings.csv")
+) -> _ParsedSettings:
+    """Validate scalar settings without admitting local inputs or reading files."""
     parsed = _parse_settings_values(settings, settings_path)
     _validate_settings_ranges(settings, settings_path, parsed)
-    return _build_config(parsed, output_dir, config_hash)
+    return parsed
 
 
 def _parse_settings_values(
@@ -147,14 +156,8 @@ def _parse_settings_values(
 ) -> _ParsedSettings:
     signal_profile = _parse_signal_processing_profile(settings, settings_path)
     return _ParsedSettings(
-        data_dir=_parse_existing_dir(
-            settings_path,
-            "data_dir",
-            _setting_value(settings, settings_path, "data_dir"),
-        ),
-        dll_dir=_parse_existing_dir(
-            settings_path, "dll_dir", _setting_value(settings, settings_path, "dll_dir")
-        ),
+        data_dir=Path(settings.get("data_dir", "")).expanduser(),
+        dll_dir=Path(settings.get("dll_dir", "")).expanduser(),
         signal_processing_method=signal_profile.method,
         signal_processing_window_points=signal_profile.window_points,
         ms2_precursor_tol_da=_parse_float(

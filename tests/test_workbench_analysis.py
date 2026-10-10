@@ -550,3 +550,129 @@ def test_inspector_job_rejects_source_not_bound_to_published_untargeted_result(
         assert not stale_output.exists()
     finally:
         jobs.close()
+
+
+def test_http_targeted_method_snapshot_is_optional_method_only_and_draft_atomic(
+    tmp_path,
+):
+    from xic_extractor.configuration.targeted_settings import METHOD_KEYS
+
+    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
+    snapshot_path = tmp_path / "portable-method.json"
+    with _client(workspace) as request:
+        _, config, _ = request("/api/config")
+        settings = config["settings"] | {
+            "data_dir": "C:/batch",
+            "dll_dir": "C:/Thermo",
+            "injection_order_source": "C:/sequence.csv",
+            "parallel_workers": "7",
+            "emit_review_report": "true",
+            "targeted_ms1_shape_identity_support_tsv": "C:/support.tsv",
+            "ms2_precursor_tol_da": "0.7",
+            "retired_note": "preserve",
+        }
+        assert (
+            request(
+                "/api/targeted/save",
+                {"settings": settings, "targets": config["targets"]},
+            )[0]
+            == 200
+        )
+        persisted = (tmp_path / "config" / "settings.csv").read_bytes()
+        assert (
+            request(
+                "/api/targeted/method/export",
+                {
+                    "settings": settings,
+                    "path": str(tmp_path / "config" / "settings.csv"),
+                },
+            )[0]
+            == 400
+        )
+        assert (tmp_path / "config" / "settings.csv").read_bytes() == persisted
+        status, exported, _ = request(
+            "/api/targeted/method/export",
+            {"settings": settings, "path": str(snapshot_path)},
+        )
+        assert status == 200
+        snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        assert set(snapshot["settings"]) == set(METHOD_KEYS)
+        assert snapshot["settings"]["ms2_precursor_tol_da"] == "0.7"
+        assert exported["summary"]["custom_keys"] == ["ms2_precursor_tol_da"]
+        assert request(exported["artifact"]["url"])[0] == 200
+        status, reset, _ = request("/api/targeted/method/reset", {"settings": settings})
+        assert status == 200
+        assert reset["summary"]["custom_keys"] == []
+        for key in settings.keys() - set(METHOD_KEYS):
+            assert reset["settings"][key] == settings[key]
+        status, imported, _ = request(
+            "/api/targeted/method/import",
+            {"settings": reset["settings"], "path": str(snapshot_path)},
+        )
+        assert status == 200
+        assert imported["settings"]["ms2_precursor_tol_da"] == "0.7"
+        assert imported["settings"]["data_dir"] == "C:/batch"
+        assert imported["settings"]["retired_note"] == "preserve"
+        snapshot["settings"]["parallel_workers"] = "2"
+        snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
+        assert (
+            request(
+                "/api/targeted/method/import",
+                {"settings": settings, "path": str(snapshot_path)},
+            )[0]
+            == 400
+        )
+        assert (tmp_path / "config" / "settings.csv").read_bytes() == persisted
+        assert not (tmp_path / "config" / "targeted-method.json").exists()
+
+
+def test_http_targeted_bootstrap_explains_active_source_and_migration(tmp_path):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "settings.csv").write_text(
+        "key,value,description\nms1_morphology_smoothing_window_points,21,legacy\n",
+        encoding="utf-8",
+    )
+    workspace = ReviewWorkspace(config_dir=config_dir)
+    with _client(workspace) as request:
+        status, config, _ = request("/api/config")
+        assert status == 200
+        assert config["settings"]["signal_processing_window_points"] == "21"
+        summary = config["targeted_method"]
+        assert summary["warnings"]
+        assert (
+            summary["provenance"]["signal_processing_window_points"] == "legacy_alias"
+        )
+        assert str(config_dir / "settings.csv") in summary["source"]
+        assert summary["compatibility"]["count_no_ms2_as_detected"][
+            "projection_effect"
+        ].startswith("NO_MS2")
+
+
+def test_targeted_bootstrap_preserves_alias_receipt_while_explaining_launch_values(
+    tmp_path,
+):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "settings.csv").write_text(
+        "key,value,description\nms1_morphology_smoothing_window_points,21,legacy\n",
+        encoding="utf-8",
+    )
+    (config_dir / "workbench.json").write_text(
+        json.dumps({"dll_dir": "C:/preferred-dll"}), encoding="utf-8"
+    )
+    workspace = AnalysisWorkspace(config_dir, {"raw_dir": "C:/launch-batch"})
+    try:
+        config = workspace.bootstrap()
+        assert config["settings"]["data_dir"] == "C:/launch-batch"
+        assert config["settings"]["dll_dir"] == "C:/preferred-dll"
+        provenance = config["targeted_method"]["provenance"]
+        assert provenance["data_dir"] == "launch"
+        assert provenance["dll_dir"] == "csv"
+        assert provenance["signal_processing_window_points"] == "csv"
+        receipts = config["targeted_method"]["receipts"]
+        assert any("dll_migration=workbench.json" in receipt for receipt in receipts)
+        assert any("deprecated_alias_migrated" in receipt for receipt in receipts)
+        assert config["targeted_method"]["warnings"]
+    finally:
+        workspace.jobs.close()

@@ -28,7 +28,7 @@
       <button id="target-new" type="button" class="ghost" data-analysis-idle>
         <svg class="icon"><use href="#i-plus" /></svg>開始新批次</button
       ><button id="target-reset" type="button" class="ghost" data-analysis-idle>
-        <svg class="icon"><use href="#i-refresh" /></svg>回到標準方法
+        <svg class="icon"><use href="#i-refresh" /></svg>還原方法參數
       </button>
     </div>
   </header>
@@ -39,8 +39,8 @@
           <div class="step-head">
             <span class="step-no">1</span>
             <div>
-              <h2>RAW 資料</h2>
-              <p class="subtle">放有這批 .raw 檔的資料夾。</p>
+              <h2>批次與注射順序</h2>
+              <p class="subtle">選擇這批 .raw 檔資料夾；更換批次後重新確認注射順序。</p>
             </div>
           </div>
           <div id="targeted-data" class="step-body"></div>
@@ -49,7 +49,7 @@
           <div class="step-head">
             <span class="step-no">2</span>
             <div>
-              <h2>目標清單</h2>
+              <h2>目標與 ISTD</h2>
               <p class="subtle" id="target-count"></p>
             </div>
             <button
@@ -90,12 +90,21 @@
             <div>
               <h2>分析方法</h2>
               <p class="subtle">
-                預設使用平台標準方法；只有需要調整時才展開進階設定。
+                預設使用平台標準參數；外部資源另行確認，需調整時才展開參數。
               </p>
             </div>
-            <span id="target-method-state" class="chip ok">標準方法</span>
+            <span id="target-method-state" class="chip ok">標準參數</span>
           </div>
           <div id="targeted-settings" class="step-body"></div>
+          <details class="method-section" open><summary>外部資源（另行確認）<span id="target-resource-state" class="chip"></span></summary><div id="targeted-resources" class="advanced-panel"></div></details>
+          <details class="method-section"><summary>分享／載入方法參數 JSON（選用）</summary>
+            <p class="settings-notice">只包含 scalar 方法參數；不包含 RAW、注射順序、目標、DLL、worker、報告或外部資源。settings.csv 是唯一啟用設定。</p>
+            <div class="import-line"><label for="target-method-path">方法參數 JSON</label><input id="target-method-path" class="path" data-analysis-idle><button type="button" data-browse="target-method-path" data-kind="file" data-analysis-idle>瀏覽</button><button type="button" id="target-method-import" data-analysis-idle>載入草稿</button><button type="button" id="target-method-export" data-analysis-idle>匯出參數</button></div>
+          </details>
+        </section>
+        <section class="card step">
+          <div class="step-head"><span class="step-no">4</span><div><h2>執行與輸出</h2><p class="subtle">本機環境、worker 與報告設定不屬於方法參數。</p></div></div>
+          <div id="targeted-execution" class="step-body"></div>
         </section>
       </form>
       <section id="target-result" class="card result-card" hidden></section>

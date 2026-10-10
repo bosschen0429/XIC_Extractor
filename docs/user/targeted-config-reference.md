@@ -1,11 +1,27 @@
 # Targeted Config Reference
 
-Complete field reference for the two config files used by Targeted Extraction.
+Field reference for Targeted settings and the separate target list.
 Runtime copies (`config/settings.csv`, `config/targets.csv`) are created from
 the example files after Save or Run. Do not commit runtime copies — they
 contain local machine paths.
 
 ## Settings (`settings.csv`)
+
+`settings.csv` is the only active Targeted settings file; `targets.csv` is a
+separate target list. Optional method JSON is an import/export snapshot of the
+11 scalar method parameters owned by `xic_extractor.configuration.targeted_settings`, not
+another active settings file. It excludes targets, paths, workers, output
+options, and external-resource selections. Reset/import preserves those
+separate concerns. Full replay uses the existing run manifest and bound inputs;
+a method snapshot alone is insufficient.
+
+The shared DLL location is persisted only in `settings.csv`, for both Targeted
+and Untargeted. Legacy DLL preferences are migrated with backups; UI preferences
+and Discovery batch files no longer override this value. An explicit launch
+override remains session-local until saved.
+
+The custom-method label compares only those 11 parameters with platform-owned
+defaults. Resource selections are separately visible, not part of this count.
 
 ### Paths
 
@@ -24,9 +40,13 @@ reference and ISTD evidence select a component without recomputing its area.
 
 | Field | Type | Default | Valid range | Description |
 | --- | --- | --- | --- | --- |
-| `signal_processing_method` | enum | `gaussian` | `gaussian` | Shared physical signal smoothing method |
+| `signal_processing_method` | enum | `gaussian` | `gaussian` | Fixed shared physical signal smoothing; informational, not a GUI choice |
 | `signal_processing_window_points` | int | 15 | odd, 3–999 | Gaussian smoothing window (points) |
-| `ms1_morphology_smoothing_window_points` | int | 15 | odd, >= 3 | MS1 morphology Gaussian smoothing window (points) |
+
+New saves write only `signal_processing_window_points`. Legacy
+`ms1_morphology_smoothing_window_points` is accepted on load and normalizes to
+the canonical key; conflicting canonical and legacy values fail rather than
+choosing one silently.
 
 ### Neutral Loss Confirmation
 
@@ -66,9 +86,10 @@ reference and ISTD evidence select a component without recomputing its area.
 | `parallel_mode` | enum | `process` | Execution backend: `serial` or `process` |
 | `parallel_workers` | int | CPU count - 1 | Worker count for process mode |
 
-### Developer-Only
+### External Resources
 
-These are rarely needed and not exposed in the GUI by default.
+These optional resources have a separate visible section. Method reset/import
+preserves their selected values; they are not counted as scalar method changes.
 
 | Field | Type | Description |
 | --- | --- | --- |

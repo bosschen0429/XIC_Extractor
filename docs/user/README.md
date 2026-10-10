@@ -33,7 +33,7 @@ with the [architecture reading guide](../architecture-contract.md#reading-the-co
 
 | Reference | Scope |
 | --- | --- |
-| [`targeted-config-reference.md`](targeted-config-reference.md) | Field-level reference for `settings.csv` and `targets.csv` |
+| [`targeted-config-reference.md`](targeted-config-reference.md) | Active `settings.csv`, separate `targets.csv`, and optional scalar-only method snapshots |
 | [`targeted-output-reference.md`](targeted-output-reference.md) | Column reference for every sheet in the Targeted Excel workbook |
 | [`untargeted-output-reference.md`](untargeted-output-reference.md) | Column reference for discovery CSVs and alignment TSVs |
 | [`untargeted-preset-guide.md`](untargeted-preset-guide.md) | Preset TOML structure, available presets, discovery/alignment defaults |

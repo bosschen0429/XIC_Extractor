@@ -17,6 +17,7 @@ from xic_extractor.applications.targeted.output_boundary import (
 )
 from xic_extractor.configuration.loader import load_config
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig
+from xic_extractor.configuration.targeted_settings import load_targeted_method_snapshot
 from xic_extractor.diagnostics.targeted_ms1_shape_identity_auto_diff import (
     write_targeted_ms1_shape_identity_auto_diff_artifacts,
 )
@@ -59,6 +60,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             base_dir = (args.base_dir or Path.cwd()).resolve()
             config_dir = base_dir / "config"
             settings_overrides = {}
+            if args.method_parameters is not None:
+                settings_overrides.update(
+                    load_targeted_method_snapshot(args.method_parameters)["settings"]
+                )
             output_mode = "csv_only" if args.skip_excel else "excel"
             if args.data_dir is not None:
                 data_dir = args.data_dir.resolve()
@@ -188,6 +193,15 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help="Project/base directory containing config/ and output/.",
     )
     parser.add_argument(
+        "--method-parameters",
+        type=Path,
+        default=None,
+        help=(
+            "Apply a Targeted method-parameter JSON snapshot for this run. "
+            "Batch, resources and execution settings remain in settings.csv."
+        ),
+    )
+    parser.add_argument(
         "--replay-manifest",
         type=Path,
         default=None,
@@ -276,6 +290,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
 def _reject_replay_overrides(args: argparse.Namespace) -> None:
     conflicts = []
+    if args.method_parameters is not None:
+        conflicts.append("--method-parameters")
     if args.base_dir is not None:
         conflicts.append("--base-dir")
     if args.data_dir is not None:

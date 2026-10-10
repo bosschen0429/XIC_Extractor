@@ -204,12 +204,15 @@ def test_write_settings_creates_runtime_copy_from_values_and_example_description
 
     write_settings({"data_dir": "C:\\real"})
 
-    rows = list(
-        csv.DictReader((tmp_path / "settings.csv").open(encoding="utf-8-sig"))
-    )
-    assert rows == [
-        {"key": "data_dir", "value": "C:\\real", "description": "資料目錄"}
-    ]
+    rows = list(csv.DictReader((tmp_path / "settings.csv").open(encoding="utf-8-sig")))
+    saved = {row["key"]: row for row in rows}
+    assert saved["data_dir"] == {
+        "key": "data_dir",
+        "value": "C:\\real",
+        "description": "資料目錄",
+    }
+    assert saved["signal_processing_method"]["value"] == "gaussian"
+    assert saved["signal_processing_window_points"]["value"] == "15"
 
 
 def test_write_targets_creates_runtime_copy_only_on_save(tmp_path, monkeypatch):

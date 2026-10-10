@@ -94,7 +94,7 @@
     <nav class="jump" aria-label="頁內導覽"><a href="#workflow">操作步驟</a><a href="#inputs">輸入與設定</a><a href="#outputs">輸出檔案</a><a href="#review">判讀與檢視</a><a href="#cli">CLI</a><a href="#troubleshooting">常見問題</a></nav>
     <main>
       <section id="workflow" aria-labelledby="workflow-heading">
-        <p class="eyebrow">01 · 跑一個批次</p><h2 id="workflow-heading">先設定，再執行</h2><p class="intro">下列流程適用 GUI。封裝版直接開啟 <code>XIC_Extractor.exe</code>；開發 checkout 可執行 <code>uv run python -m gui.main</code>。</p>
+        <p class="eyebrow">01 · 跑一個批次</p><h2 id="workflow-heading">先設定，再執行</h2><p class="intro">下列流程適用 GUI。封裝版直接開啟 <code>XIC_Extractor.exe</code>；開發 checkout 可執行 <code>uv run xic-workbench</code>。</p>
         <figure class="snapshot"><img src="../../assets/screenshots/targeted-workspace.png" alt="Targeted Extraction 工作區畫面"><figcaption>Targeted Extraction 工作區：設定批次、編輯目標、執行與檢視結果。</figcaption></figure>
         <ol class="steps">
           <li><h3>選擇 Targeted Extraction</h3><p>進入已知目標的工作區。</p></li>
@@ -103,6 +103,7 @@
           <li><h3>按「開始執行」</h3><p>按工作區下方的執行按鈕；完成後，到 <code>output/</code> 找本次 workbook。</p></li>
         </ol>
         <div class="note"><p><strong>接著跑新批次？</strong>「開始新批次」會清除 RAW 資料夾與畫面上的結果，保留目標、DLL 與分析參數。環境與進階設定可從可展開摘要再開啟。</p><p>已完成執行後若改設定，畫面會把現有結果標為「先前結果」；請用新執行的 workbook 判讀新設定。</p></div>
+        <div class="note"><p><strong>分析方法與設定</strong>：<code>settings.csv</code> 是唯一啟用的 Targeted 設定檔；<code>targets.csv</code> 是獨立目標表。「自訂參數」只計算 11 個 scalar 參數，不計 RAW/DLL、workers、輸出或外部資源。Gaussian 為固定處理資訊，不是選項。</p><p>選用的 method JSON 僅保存參數快照，不包含 targets、resources 或完整 replay。匯入或「回到預設」保留批次、環境、輸出與另列顯示的資源選擇；完整追溯仍使用既有 run manifest 與綁定輸入。詳見 <a href="targeted-config-reference.md">設定參考</a>。</p></div>
       </section>
       <section id="inputs" aria-labelledby="inputs-heading">
         <p class="eyebrow">02 · 輸入與設定</p><h2 id="inputs-heading">每個欄位在做什麼</h2><p class="intro">封裝版從 <code>config/settings.example.csv</code>、<code>config/targets.example.csv</code> 起步；按 Save 或 Run 後建立 <code>config/settings.csv</code>、<code>config/targets.csv</code> 工作副本。</p>
