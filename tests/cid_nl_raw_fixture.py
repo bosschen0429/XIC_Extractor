@@ -142,6 +142,9 @@ def _working_imports(name: str):
 class _FakeThermoRaw:
     def __init__(self, source: _FakeRaw) -> None:
         self.source = source
+        self.RunHeaderEx = SimpleNamespace(
+            StartTime=float(source.rt[0]), EndTime=float(source.rt[-1])
+        )
         self.disposed = False
         self.chromatogram_request_counts: list[int] = []
         self.scans = {scan.scan_number: scan for scan in source.scans}

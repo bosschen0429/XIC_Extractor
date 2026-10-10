@@ -67,8 +67,8 @@ def test_new_settings_are_in_canonical_defaults_and_descriptions() -> None:
         assert CANONICAL_SETTINGS_DESCRIPTIONS[key]
     assert "fallback" in CANONICAL_SETTINGS_DESCRIPTIONS["injection_order_source"]
     assert "RAW mtime" in CANONICAL_SETTINGS_DESCRIPTIONS["injection_order_source"]
-    assert "developer/debug" in CANONICAL_SETTINGS_DESCRIPTIONS["rt_prior_library_path"]
-    assert "leave empty" in CANONICAL_SETTINGS_DESCRIPTIONS["rt_prior_library_path"]
+    assert "Optional" in CANONICAL_SETTINGS_DESCRIPTIONS["rt_prior_library_path"]
+    assert "Leave empty" in CANONICAL_SETTINGS_DESCRIPTIONS["rt_prior_library_path"]
     assert "RT priors" in CANONICAL_SETTINGS_DESCRIPTIONS[
         "target_pair_rt_calibration_path"
     ]
@@ -81,7 +81,7 @@ def test_new_settings_are_in_canonical_defaults_and_descriptions() -> None:
     assert "limited_5hmdc_5medc" in CANONICAL_SETTINGS_DESCRIPTIONS[
         "targeted_ms1_shape_identity_activation_policy"
     ]
-    assert "Gaussian15" in CANONICAL_SETTINGS_DESCRIPTIONS[
+    assert "Legacy alias" in CANONICAL_SETTINGS_DESCRIPTIONS[
         "ms1_morphology_smoothing_window_points"
     ]
 

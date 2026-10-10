@@ -91,9 +91,7 @@ def run_smoke(report_path: Path) -> int:
             "/api/method/save",
             {"draft": method["draft"], "path": str(destination), "apply": False},
         )
-        expected = bind_cid_nl_recipe(
-            load_preset("dna_dr"), "full", recipe_overrides={"rt_max": 60.0}
-        )
+        expected = bind_cid_nl_recipe(load_preset("dna_dr"), "full")
         actual = bind_cid_nl_recipe(load_preset(destination), "full")
         if expected.discovery_settings != actual.discovery_settings:
             raise RuntimeError("Saved HTML method changed its bound settings")
