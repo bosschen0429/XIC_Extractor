@@ -781,14 +781,15 @@ def _match_patterns(
     )
     alternatives: dict[tuple[tuple[int, int], ...], tuple[int, float, float]] = {}
     for shift in sorted(shifts):
-        scores = [[empty for _ in range(len(right) + 1)] for _ in range(len(left) + 1)]
+        scores = [
+            [[empty] for _ in range(len(right) + 1)] for _ in range(len(left) + 1)
+        ]
         for i in range(len(left)):
             for j in range(len(right)):
-                options = [scores[i][j + 1], scores[i + 1][j]]
+                options = [*scores[i][j + 1], *scores[i + 1][j]]
                 residual = abs(deltas[i][j] - shift) / tolerances[i][j]
                 if residual <= 1.0:
-                    previous, pairs = scores[i][j]
-                    options.append(
+                    options.extend(
                         (
                             (
                                 previous[0] + 1,
@@ -797,11 +798,15 @@ def _match_patterns(
                             ),
                             (*pairs, (i, j)),
                         )
+                        for previous, pairs in scores[i][j]
                     )
-                scores[i + 1][j + 1] = max(options)
-        score, pairs = scores[-1][-1]
-        if pairs and score > alternatives.get(pairs, (-1, 0.0, 0.0)):
-            alternatives[pairs] = score
+                # Two distinct paths suffice for the downstream uniqueness
+                # check. Retaining only the tuple-order winner hides a tied
+                # correspondence; retaining all paths would be exponential.
+                scores[i + 1][j + 1] = sorted(set(options), reverse=True)[:2]
+        for score, pairs in scores[-1][-1]:
+            if pairs and score > alternatives.get(pairs, (-1, 0.0, 0.0)):
+                alternatives[pairs] = score
     if not alternatives:
         return None
     ranked = sorted(

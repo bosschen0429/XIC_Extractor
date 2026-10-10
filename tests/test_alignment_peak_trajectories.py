@@ -119,6 +119,46 @@ def _context(
     )
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("tied", [True, False])
+def test_equal_pattern_paths_do_not_authorize_observed_backfill_location(reverse, tied):
+    owners = [_owner(sample, "late", 10.75) for sample in ("a", "b")]
+    contexts = [
+        _context("a", ((10.0, 50.0), (10.75, 100.0))),
+        _context("b", ((10.0, 50.0), (10.75, 100.0))),
+        _context("c", ((10.0, 50.0), (10.5, 100.0), (11.0, 100.0 if tied else 50.0))),
+    ]
+    contexts = [
+        replace(
+            context,
+            landmarks=tuple(
+                replace(peak, width=0.1 if peak.apex_rt == 10.0 else 0.375)
+                for peak in context.landmarks
+            ),
+        )
+        for context in contexts
+    ]
+    if reverse:
+        owners.reverse()
+        contexts.reverse()
+    orders = {"a": 1, "b": 2, "c": 3}
+    model = resolve_peak_trajectories(
+        owners, contexts, config=AlignmentConfig(), injection_order=orders
+    )
+    location = model.trajectory_for(owners).backfill_locations(
+        ("c",),
+        reference_samples=frozenset(("a", "b")),
+        injection_order=orders,
+        sample_cohorts=dict.fromkeys(orders, "batch"),
+        rt_warp=None,
+        backfill_half_window_min=1.0,
+    )["c"].location
+    # Both ordered two-peak paths have equal height error and a best normalized
+    # RT residual of 2/3. Neither may become an observed Backfill coordinate;
+    # choosing 11.0 would exclude the equally supported 10.5 from its 12s gate.
+    assert location.observed_rt == (None if tied else 10.5)
+
+
 def test_missing_position_uses_ms1_trajectory_points_not_another_rt_answer():
     owners = [_owner("s0", "early", 10.0), _owner("s2", "early", 10.4)]
     contexts = [
