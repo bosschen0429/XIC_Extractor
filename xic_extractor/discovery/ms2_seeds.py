@@ -144,7 +144,11 @@ def _seeds_from_scan_profile(
                     direct_indices.add(int(index))
                 continue
 
-            direct_indices.add(int(index))
+            # A recorded mono NL match does not prove which MS1 window has a
+            # physical peak. Preserve a distinct inferred search until the
+            # physical owner can qualify it with independent precursor evidence.
+            if basis == "scan_precursor" or precursor_mz == inferred_precursors[index]:
+                direct_indices.add(int(index))
             direct_candidates.append(
                 _build_seed(
                     raw_file=raw_file,

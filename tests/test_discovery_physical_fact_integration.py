@@ -68,6 +68,98 @@ class _OwnerBoundBatchRaw(_BatchRaw):
         self.intensity = np.asarray([0.0, 0.0, 0.0, 10.0, 100.0, 10.0, 0.0, 0.0, 0.0])
 
 
+@pytest.mark.parametrize("parent_support", [True, False])
+def test_recorded_mono_nl_match_keeps_distinct_inferred_physical_search(
+    tmp_path: Path, parent_support: bool
+) -> None:
+    from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+    from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+    from xic_extractor.xic_models import XICTrace
+
+    raw_path = tmp_path / "coisolated.raw"
+    raw_path.write_bytes(b"distinct monoisotopic and inferred mass windows")
+    settings = _settings(ms2_precursor_tol_da=0.8, nl_tolerance_ppm=20.0)
+    spec = compile_discovery_processing_run_spec(
+        (raw_path,),
+        discovery_settings=settings,
+        signal_processing_profile=SignalProcessingProfile(),
+    )
+    event = _scan_event(
+        scan_number=100, rt=9.02, precursor_mz=500.5, masses=[383.9646]
+    )
+    event = replace(
+        event,
+        scan=replace(
+            event.scan,
+            precursor_metadata=Ms2PrecursorMetadata(
+                monoisotopic_mz=500.0,
+                charge=1,
+                isolation_width_da=1.6,
+                isolation_offset_da=0.0,
+                master_scan_number=99,
+            ),
+        ),
+    )
+    actual_mz = 500.016
+    rt = np.arange(8.5, 9.5, 0.002)
+    intensity = 100.0 + 10_000 * np.exp(-0.5 * ((rt - 9.02) / 0.004) ** 2)
+
+    class MassResolvedRaw(_OwnerBoundFakeRawHandle):
+        def extract_xic_many(self, requests):
+            return tuple(
+                XICTrace.from_arrays(
+                    rt,
+                    intensity
+                    if abs(request.mz - actual_mz)
+                    <= request.mz * request.ppm_tol / 1e6
+                    else np.zeros_like(rt),
+                )
+                for request in requests
+            )
+
+        def read_ms1_mass_windows(self, requests):
+            return tuple(
+                Ms1PrecursorObservation(
+                    scan,
+                    9.018,
+                    (actual_mz,)
+                    if parent_support and lower <= actual_mz <= upper
+                    else (),
+                )
+                for scan, lower, upper in requests
+            )
+
+    raw = MassResolvedRaw(
+        spec.acquisition_inputs[0].acquisition_source,
+        [event],
+        rt=rt,
+        intensity=intensity,
+    )
+    outputs = run_discovery(
+        raw_path,
+        output_dir=tmp_path / "out",
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+        raw_opener=lambda *_args: raw,
+        run_spec=spec,
+    )
+    candidates = read_discovery_candidates_csv(outputs.candidates_csv)
+    supported = [
+        candidate
+        for candidate in candidates
+        if candidate.discovery_candidate_state == "ms1_feature_nl_supported"
+    ]
+    # The recorded mono passes the NL gate but its MS1 window misses the ion.
+    # Product+NL must still search its distinct window, without becoming its
+    # own independent NL witness when the parent MS1 observation is absent.
+    assert len(supported) == int(parent_support)
+    if parent_support:
+        assert supported[0].ms1_apex_rt == pytest.approx(9.02)
+        assert supported[0].ms1_area > 0
+        assert supported[0].precursor_mz_basis == "product_plus_neutral_loss"
+
+
 @pytest.mark.parametrize("strongest_first", [True, False])
 @pytest.mark.parametrize("second_seed_rt", [10.02, 10.15])
 def test_pipeline_retains_each_seeded_physical_peak_from_one_rt_group(
