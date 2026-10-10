@@ -122,6 +122,7 @@
   }
   function selectView(view, persist = true) {
     state.view = view;
+    document.body.dataset.view = view;
     for (const name of ["targeted", "untargeted", "review"])
       $(`workspace-${name}`).hidden = name !== view;
     document
@@ -171,15 +172,17 @@
     if (kind === "checkbox")
       input.checked = value === true || String(value).toLowerCase() === "true";
     else input.value = value ?? "";
-    label.append(title, input);
     if (["folder", "file"].includes(kind)) {
       const browse = el("button", "瀏覽");
       browse.type = "button";
       browse.dataset.browse = input.id;
       browse.dataset.kind = kind;
       browse.dataset.analysisIdle = "";
-      label.append(browse);
-    }
+      const row = el("span", undefined, "input-action");
+      row.append(input, browse);
+      label.append(title, row);
+    } else if (kind === "checkbox") label.append(input, title);
+    else label.append(title, input);
     return label;
   }
   function pathField(container, key, label, kind, value, prefix = "u-") {

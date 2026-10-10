@@ -93,15 +93,16 @@
           </button>
         </div>
       </div>
-      <label class="field"
-        >執行模式<select id="u-mode" data-analysis-idle>
+      <div class="path-line">
+        <label for="u-mode">執行模式</label
+        ><select id="u-mode" data-analysis-idle>
           <option value="full">完整分析 · Discovery → Alignment</option>
           <option value="discovery_only">只做 Discovery · 單一 RAW</option>
           <option value="align_only">
             只做 Alignment · 使用既有 Discovery
           </option>
-        </select></label
-      >
+        </select>
+      </div>
       <div id="untargeted-paths"></div>
       <details class="method-section">
         <summary>內標清單</summary>
