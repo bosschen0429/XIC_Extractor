@@ -41,7 +41,7 @@ be corrected.
 | Review | Human or automated review stays auditable and cannot silently become writer authority | [Review Roundtrip](review-roundtrip.md) |
 | Run replay | Inputs, configuration, versions, and artifacts remain traceable through explicit provenance | [Run Provenance](run-provenance.md) |
 | Sample metadata and QC | Sample roles and QC projections are typed inputs, not implicit activation authority | [Sample Metadata and QC](sample-metadata-qc.md) |
-| Presets | Reproducible CLI/GUI bundles route behavior but do not create independent product authority | [Presets](presets.md) |
+| Presets | Reproducible CLI/HTML bundles route behavior but do not create independent product authority | [Presets](presets.md) |
 
 ## Boundaries
 
@@ -59,13 +59,12 @@ allowlist does not register a writer or authorize any cell.
 - The compatibility index preserves stable lookup keys only. It must not grow a
   new maintenance log or duplicate rule prose from canonical owners.
 
-## CLI And GUI Delivery Order
+## CLI And HTML Delivery
 
-CLI and GUI target the same application capabilities and scientific contracts.
-Develop and validate capabilities through the CLI first so agents can exercise
-them directly, then bring the GUI up to the same capability. A temporary GUI
-gap describes delivery progress, not a permanently narrower product scope.
-Both surfaces use the same application and scientific owners.
+CLI and HTML routes target the same application capabilities and scientific
+contracts. The local HTML workbench is the primary human surface for analysis
+and result review. Script CLIs remain reproducible automation and diagnostic
+surfaces. Both routes use the same application and scientific owners.
 
 ## Work Intake And Closeout
 
@@ -112,7 +111,7 @@ can alter any of these:
 - counted detections;
 - matrix identity;
 - output schema;
-- CLI/config/GUI behavior;
+- CLI/config/HTML behavior;
 - review/replay behavior;
 - writer authority.
 

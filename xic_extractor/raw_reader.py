@@ -93,6 +93,7 @@ class RawSampleHeader:
     creation_date: datetime | None
     vial: str
     comment: str
+    instrument_method: str = ""
 
 
 def _to_python_datetime(dt: Any) -> datetime | None:
@@ -167,6 +168,9 @@ class RawFileHandle:
             creation_date=creation_date,
             vial=vial,
             comment=comment,
+            instrument_method=str(
+                getattr(info, "InstrumentMethodFile", "") or ""
+            ).strip(),
         )
 
     @property
@@ -622,21 +626,25 @@ def _analysis_header(path: Path, dll_dir: Path) -> tuple[InjectionHeader, Sample
     with open_raw(path, dll_dir=dll_dir) as handle:
         header = _injection_header(handle, path)
         sample = handle.sample_header
-    # Header SampleName is free text; the RAW filename and method name
-    # carry the lab's role vocabulary (Blank, SDOLEK, STD, wash).
-    role = infer_sample_role(
+    role = _raw_sample_role(path, sample)
+    _ANALYSIS_HEADER_CACHE[key] = (header, role)
+    return header, role
+
+
+def _raw_sample_role(path: Path, sample: RawSampleHeader) -> SampleRole:
+    # Header SampleName is free text; use the filename and method vocabulary
+    # consistently for analysis membership and auto-derived metadata.
+    return infer_sample_role(
         sample.sample_type,
         sample_name=path.stem,
         comment=" ".join(
             (
                 sample.sample_name,
-                PureWindowsPath(header.instrument_method).stem,
+                PureWindowsPath(sample.instrument_method).stem,
                 sample.comment,
             )
         ),
     )
-    _ANALYSIS_HEADER_CACHE[key] = (header, role)
-    return header, role
 
 
 def read_sld_injections(path: Path, dll_dir: Path) -> tuple[ScheduledInjection, ...]:
@@ -731,11 +739,7 @@ def derive_sample_metadata_from_raw_files(
                 sample_name = raw_stem
             seen_sample_names.add(sample_name)
 
-            role = infer_sample_role(
-                header.sample_type,
-                sample_name=sample_name,
-                comment=header.comment,
-            )
+            role = _raw_sample_role(path, header)
             metadata_rows.append(
                 SampleMetadata(
                     sample_name=sample_name,

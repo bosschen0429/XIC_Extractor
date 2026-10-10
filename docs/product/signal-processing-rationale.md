@@ -225,7 +225,7 @@ and shared physical owner. Current normal Untargeted Discovery, Alignment
 owner-build, and Backfill routes are now cut over without waiting for
 Targeted parity. The former Standard Peak product route and
 source-Matrix republisher are retired; retained shape/overlay helpers are
-offline diagnostics only. The automatic GUI gallery route is parked. Targeted
+offline diagnostics only. The automatic gallery route is parked. Targeted
 and any deliberately retained diagnostic computation remain separately
 bounded and cannot supply a second answer for profile-covered Untargeted work.
 

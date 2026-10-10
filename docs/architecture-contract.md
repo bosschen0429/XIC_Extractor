@@ -29,14 +29,15 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 
 | 要追的行為 | 從哪裡讀 | 下一個負責的 module／交接 |
 | --- | --- | --- |
-| GUI 建立視窗與工作 | [`gui/main.py`](../gui/main.py)、[`gui/main_window.py`](../gui/main_window.py) | `views/`、`sections/` 處理互動；`workers/` 將設定轉成工作要求 |
-| Targeted 分析與交付 | [`scripts/run_extraction.py`](../scripts/run_extraction.py)、[`gui/workers/pipeline_worker.py`](../gui/workers/pipeline_worker.py) | [`TargetedApplicationService.execute_application`](../xic_extractor/applications/targeted/application.py) 組合 acquisition、科學處理與交付；同一 module 組裝正式 application |
+| HTML 工作區啟動與工作 | [`xic_workbench/cli.py`](../xic_workbench/cli.py)、[`xic_workbench/server.py`](../xic_workbench/server.py) | `analysis_workspace.py` 管設定與檔案操作；`jobs.py` 將 HTML request 交給既有 application／export owner；`workspace.py` 管完成證據檢閱 |
+| Targeted 分析與交付 | [`xic_workbench/targeted.py`](../xic_workbench/targeted.py)、[`scripts/run_extraction.py`](../scripts/run_extraction.py) | [`TargetedApplicationService.execute_application`](../xic_extractor/applications/targeted/application.py) 組合 acquisition、科學處理與交付；HTML adapter 與 CLI 都消費正式 application |
 | 既有 Python Targeted 入口 | [`extractor.run`](../xic_extractor/extractor.py) | 進入同一 application；`extractor.acquire` 是它使用的 acquisition 入口；結果模型在 `extraction/result_models.py` |
 | Discovery 候選產生 | [`scripts/run_discovery.py`](../scripts/run_discovery.py) | [`discovery/pipeline.py`](../xic_extractor/discovery/pipeline.py) 的 `run_discovery`／`run_discovery_batch`，交出候選檔與 batch index |
-| Untargeted GUI 全流程 | [`gui/workers/discovery_worker.py`](../gui/workers/discovery_worker.py) | 呼叫 Discovery，再將 batch index 交給 Alignment |
-| Untargeted Alignment 與 Matrix | [`scripts/run_alignment.py`](../scripts/run_alignment.py)、[`gui/workers/discovery_worker.py`](../gui/workers/discovery_worker.py) | [`run_untargeted_application`](../xic_extractor/applications/untargeted/application.py) 準備輸入並呼叫 retained execution；[`publication`](../xic_extractor/applications/untargeted/publication.py) 消費完成結果、發布 [`AlignmentRunOutputs`](../xic_extractor/output/alignment/pipeline_outputs.py) 並關閉暫存 |
+| Untargeted HTML 全流程 | [`xic_workbench/untargeted.py`](../xic_workbench/untargeted.py) | `full` 呼叫 Discovery 再交接 Alignment；`discovery_only` 與 `align_only` 保留各自輸入契約 |
+| Untargeted Alignment 與 Matrix | [`scripts/run_alignment.py`](../scripts/run_alignment.py)、[`xic_workbench/untargeted.py`](../xic_workbench/untargeted.py) | [`run_untargeted_application`](../xic_extractor/applications/untargeted/application.py) 準備輸入並呼叫 retained execution；[`publication`](../xic_extractor/applications/untargeted/publication.py) 消費完成結果、發布 [`AlignmentRunOutputs`](../xic_extractor/output/alignment/pipeline_outputs.py) 並關閉暫存 |
 | 完成 Matrix 後的 feature 篩選 | [`scripts/run_feature_quality.py`](../scripts/run_feature_quality.py) | [`feature_quality.py`](../xic_extractor/feature_quality.py) 計算 availability；[`feature_quality_io.py`](../xic_extractor/feature_quality_io.py) 讀寫分析集合，保留既有值 |
 | 完成證據的只讀報告 | [`xic_inspector/cli.py`](../xic_inspector/cli.py) | [`api.generate_report`](../xic_inspector/api.py) 串起來源解讀、選擇及 HTML rendering |
+| HTML 批次檢閱與按需 XIC | [`xic_workbench/workspace.py`](../xic_workbench/workspace.py) | `acquisition.py` 共用診斷擷取；Inspector 提供完成的檢閱資料與 rendering；新曲線不改科學結果 |
 
 ### Finding The Right Owner
 
@@ -70,7 +71,7 @@ Package 名稱不是可強制的分層證明：`alignment/` 包含科學與外�
 ## Design Principles
 
 - Make data flow and ownership obvious.
-- Keep domain behavior independent from IO, GUI, workbook rendering, process
+- Keep domain behavior independent from IO, UI, workbook rendering, process
   backends, and CLI wrappers.
 - Let entry points orchestrate focused owners; do not turn them into permanent
   implementation homes.
@@ -80,7 +81,7 @@ Package 名稱不是可強制的分層證明：`alignment/` 包含科學與外�
   compatible current consumers. Name the present benefit and added maintenance
   cost, without building layers for unnamed future consumers.
 - Add configuration for a present actor's meaningful value choice and observable
-  effect. Account for validation, replay, GUI/CLI, and documentation costs;
+  effect. Account for validation, replay, HTML/CLI, and documentation costs;
   a hypothetical future value does not justify a new setting.
 - Preserve public contracts unless an approved change names the consumer,
   observable delta, and rollback.
@@ -142,7 +143,7 @@ To maintain clean code and prevent cognitive overload, runaway monoliths, and de
 ## System Shape
 
 ```text
-GUI / CLI
+HTML workbench / CLI
     │
 configuration ──► extraction / discovery
                          │
@@ -196,7 +197,7 @@ contract 沒有 ignore，並包含間接依賴。
 
 - Domain algorithms may depend on arrays, typed configuration/context, and
   small domain models.
-- Domain algorithms must not import GUI, workbook builders, CLI scripts,
+- Domain algorithms must not import UI packages, workbook builders, CLI scripts,
   process backends, report renderers, or RAW/CSV adapters.
 - Adapters, IO, rendering, and entry points depend inward on domain owners.
 - `xic_inspector` depends inward on read-only completed-evidence interfaces.
@@ -209,7 +210,7 @@ contract 沒有 ignore，並包含間接依賴。
   completed typed batch, delegates Matrix publishing to `output/alignment/`,
   and closes its private stores on every exit;
   [Alignment outputs](product/alignment.md#surfaces) owns streaming/materialization policy.
-  CLI and GUI receive only
+  CLI and HTML workbench receive only
   published output paths and durable evidence locators. Alignment owns neither
   this application lifecycle nor a duplicate runtime or writer transaction.
 - Retained CID-NL execution partitions complete subjects across the sample cohort
@@ -261,14 +262,14 @@ Use this map to choose the reason a package changes. File placement is owned by
 | `applications/untargeted/` | Untargeted input preparation, Discovery-to-provisional-Matrix composition, execution-to-publication orchestration, cancellation, completed-store and explanation lifetime; delegates Matrix publishing to `output/alignment/` | scientific grouping, cell decisions, a second runtime owner or writer algorithm |
 | `discovery/` | general candidate discovery, seed generation, workflow-neutral discovery facts, receipt-bound CSV reading and bounded candidate loading | matrix decisions or target-list policy |
 | `execution/` | generic attempt execution/finalization, partition scheduling, worker execution, cancellation, cleanup, reusable worker admission pools, one-shot process jobs, streamed result storage, recovery, and runtime timing/process-memory measurement | method-specific science, subject splitting, or writer authority |
-| `extraction/` | Targeted acquisition adapters, result models and product projection (product state, role/applicability policy, counted detection and reason overlays), jobs, windowing, drift, backend coordination, output dispatch, and Targeted input binding | application composition, GUI, or Alignment decisions |
+| `extraction/` | Targeted acquisition adapters, result models and product projection (product state, role/applicability policy, counted detection and reason overlays), jobs, windowing, drift, backend coordination, output dispatch, and Targeted input binding | application composition, UI, or Alignment decisions |
 | `untargeted_execution/` | retained Untargeted input planning, acquisition cache, partition execution/composition, completion, result stores and provisional run manifests | Targeted extraction policy, application composition, Matrix writing or a second runtime owner |
 | `peak_detection/` | physical observations, hypotheses, resolvers, boundaries, integration, evidence composition | cross-sample grouping, workflow policy, or writers |
 | `alignment/` | cross-sample grouping, refinement/repair composition, Alignment adapters and renderers | a second runtime owner, mutable transport authority, or Targeted-only science |
 | `output/` | workbook/TSV/HTML schema rendering and the pure Targeted product result model they render; `output/alignment/` owns Matrix artifact selection, streaming/materialization coordination, atomic writes and fingerprint receipts | evidence recomputation, application store lifetime or RAW access |
 | `diagnostics/` | reusable diagnostic models, summaries, classification, and alignment explanation persistence (`alignment_explanation`) | CLI parsing, production mutation, or domain recomputation |
 | `xic_inspector/` | installed read-only review API/CLI, source adapters, canonical selection, and self-contained offline HTML rendering | RAW acquisition, scientific recomputation, identity/Matrix decisions, or write authority |
-| `gui/` and `scripts/` | interaction and thin orchestration | reusable domain behavior |
+| `xic_workbench/` and `scripts/` | HTML interaction, local transport, and thin orchestration | reusable domain behavior or scientific authority |
 | root facades | current public compatibility and thin orchestration | new implementation detail |
 
 Cross-cutting owners remain focused:

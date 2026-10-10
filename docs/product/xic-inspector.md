@@ -6,10 +6,54 @@ self-contained HTML workbench that can be copied and opened offline. The
 Inspector does not acquire RAW data, rerun scientific processing, change
 scientific decisions, or write Matrix values.
 
+## Local HTML workspace
+
+`xic-extractor`, `xic-workbench <result-folder>`, or
+`python -m xic_workbench <result-folder>` starts the unified local HTML
+workspace and opens its browser URL. The source argument
+is optional; the page can choose a folder or completed CID-NL SQLite report.
+`--raw-dir` and `--dll-dir` initialize the local source locations; the process
+environment's `XIC_RAW_ROOT` and `THERMO_RAWFILE_READER_DLL_DIR` supply defaults.
+`--no-open` prints the URL without opening a browser. `--port` selects its
+loopback port, and `--config-dir` selects writable application state. Stop the
+process with Ctrl+C when finished. Reports should be downloaded before stopping.
+
+The same navigation launches Targeted and Untargeted work. Analysis jobs and
+their output actions remain available beside review; they delegate to the
+existing application and writer owners described in
+[the workbench contract](untargeted-gui.md).
+
+The workspace shows full-run, matched and current-page counts. Exact group ID,
+m/z and RT filters use the Inspector's full-population query, in pages of 25.
+The population includes both grouped records and ungrouped candidates. Select
+an item to inspect its saved evidence, then select a few observed samples and
+load their XIC. A sample without retained apex coordinates is shown as
+unavailable, not as zero signal. The recorded view and newly acquired curves
+have separate tabs; the selected tab's download is a standalone Inspector HTML.
+
+Acquisition is sequential and bounded to the saved observations of the selected
+samples. The page displays progress and supports cooperative cancellation
+between RAW operations. A failed or cancelled job leaves prior reports usable.
+One acquisition runs at a time. The workspace never changes the source evidence
+or Matrix, and new curves do not choose peaks, integrate or replace saved values.
+
+The report's sample stem locates each RAW. Its content must match exactly one
+acquisition source retained by that report. These older reports do not retain
+an independent canonical-sample-to-RAW binding: the page and curve provenance
+state this limitation. Missing files and mismatched content fail explicitly.
+
+`xic_workbench.workspace` owns the local session and jobs;
+`xic_workbench.acquisition` owns diagnostic reacquisition, shared with the
+explanation CLI. `xic_inspector.api.prepare_report` supplies selected evidence
+to both the workspace and offline report generation. The renderer loads ordinary
+HTML/JavaScript package assets and embeds them into the exported file.
+The transport binds only to `127.0.0.1` and serves packaged assets and this
+session's reports. It is one local analysis and review session.
+
 ## Public entry points
 
 The package installs the `xic-inspector` command and provides the equivalent
-module entry point. Neither requires the Extractor GUI:
+module entry point. Neither requires the local analysis server:
 
 ```console
 xic-inspector D:\data\run-output
@@ -22,7 +66,7 @@ python -m xic_inspector diagnostic_curves.json --output review.html --no-open
   its `cid_nl_explanation.sqlite`, or to the one in its `alignment` subfolder.
   `--report` is an equivalent named form.
 - Without `--output`, the report is written as `xic_inspector.html` beside the
-  resolved source, the same default as the GUI export.
+  resolved source, the same default as the workbench export.
 - A successful report opens in the default browser; `--no-open` only writes it.
 - A folder without the evidence file exits with the source-unavailable code 3.
 
@@ -34,16 +78,13 @@ Each run uses one selection strategy:
 | `attention` | Select items carrying owner-provided review conditions. |
 | `query` | Filter one actual evidence-witness chain by sample, candidate, group, precursor m/z, or RT apex, with offset/limit pagination. |
 
-End users open the Inspector without commands. When an Untargeted GUI run
-publishes an evidence locator, the GUI writes the default `sample` report as
-`xic_inspector.html` beside the evidence file, so the HTML can also be opened
-from the output folder.
+When an Untargeted HTML run publishes an evidence locator, its result view can
+open the source in the review workspace or export `xic_inspector.html` beside
+the evidence file with an explicit Inspector selection.
 
-- **開啟 Inspector** sits with the other result openers and opens the report
-  of the current result, even after its source files are removed.
-- **自訂匯出…** opens the settings dialog. The dialog uses the same
-  `SelectionRequest` defaults and limits, shows source sample stems beside
-  their canonical IDs, and its **Export and Open** opens the HTML.
+- **在工作區檢閱** loads the completed evidence into the shared review view.
+- **自訂 Inspector 匯出** uses the same `SelectionRequest` limits, shows source
+  sample stems beside their canonical IDs, and produces a standalone HTML file.
 - A new run clears the open target.
 - Report progress, cancellation, and errors do not change science completion
   or Matrix publication.

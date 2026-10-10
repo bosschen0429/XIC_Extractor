@@ -77,7 +77,7 @@ def test_alignment_modules_do_not_import_pipeline_or_io_boundaries():
         ),
     }
     banned_roots = (
-        "gui",
+        "xic_workbench",
         "scripts",
         "xic_extractor.discovery.pipeline",
         "xic_extractor.discovery.csv_writer",

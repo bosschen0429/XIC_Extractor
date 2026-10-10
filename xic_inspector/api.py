@@ -9,8 +9,9 @@ from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
+from xic_extractor.diagnostics.alignment_explanation import REPORT_FILENAME
 from xic_inspector.rendering.html_builder import (
     build_report_html,
     write_report_atomically,
@@ -36,6 +37,16 @@ def read_evidence_summary(path):
     from xic_inspector.sources.cid_nl import read_summary
 
     return read_summary(path)
+
+
+def resolve_source(path: Path) -> Path:
+    """Resolve a saved evidence file or its batch/alignment output directory."""
+    if not path.is_dir():
+        return path
+    for candidate in (path / REPORT_FILENAME, path / "alignment" / REPORT_FILENAME):
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(f"No {REPORT_FILENAME} in {path} or its alignment folder")
 
 
 StrategyKind = Literal["sample", "attention", "query"]
@@ -204,20 +215,49 @@ class ReportResult:
     sample_ids: tuple[str, ...]
 
 
-def generate_report(
+@dataclass(frozen=True, slots=True)
+class PreparedReport:
+    """Selected owner facts shared by interactive and offline presentation."""
+
+    source: EvidenceLocator | CurveBundleLocator
+    source_name: str
+    evidence_capability: CapabilityKind
+    run_total: int
+    eligible_count: int
+    matched_count: int
+    selected_count: int
+    missing_rt_count: int
+    sample_ids: tuple[str, ...]
+    payload: dict[str, Any]
+
+    def to_html(self) -> str:
+        return build_report_html(
+            title="Inspector",
+            evidence_capability=self.evidence_capability,
+            strategy=self.payload["selection"]["strategy"],
+            request_id=self.payload["summary"].get("processing_request_id", ""),
+            run_total=self.run_total,
+            eligible_count=self.eligible_count,
+            selected_count=self.selected_count,
+            source_db_name=self.source_name,
+            payload_data=self.payload,
+        )
+
+
+def prepare_report(
     report: Path,
     selection: SelectionRequest,
-    output: Path,
     *,
     expected_source: EvidenceLocator | CurveBundleLocator | None = None,
     on_progress: Callable[[ReportProgress], None] | None = None,
     is_cancelled: Callable[[], bool] | None = None,
-) -> ReportResult:
-    """Generate an offline, self-contained HTML review workbench report."""
+    _output_path: Path | None = None,
+) -> PreparedReport:
+    """Validate and select evidence without writing or acquiring any data."""
     selection.validate()
 
     report_path = Path(report).resolve()
-    output_path = Path(output).resolve()
+    output_path = Path(_output_path).resolve() if _output_path is not None else None
 
     if report_path == output_path:
         raise InspectorError(
@@ -464,17 +504,41 @@ def generate_report(
         "items": rendered_items,
     }
 
-    html_str = build_report_html(
-        title="Inspector",
+    return PreparedReport(
+        source=source_locator,
+        source_name=report_path.name,
         evidence_capability=capability,
-        strategy=selection.strategy,
-        request_id=req_id,
         run_total=run_total,
         eligible_count=eligible_count,
+        matched_count=matched_count,
         selected_count=selected_count,
-        source_db_name=report_path.name,
-        payload_data=payload_dict,
+        missing_rt_count=missing_rt_count,
+        sample_ids=normalized_sample_ids,
+        payload=payload_dict,
     )
+
+
+def generate_report(
+    report: Path,
+    selection: SelectionRequest,
+    output: Path,
+    *,
+    expected_source: EvidenceLocator | CurveBundleLocator | None = None,
+    on_progress: Callable[[ReportProgress], None] | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
+) -> ReportResult:
+    """Write the same selected review as a self-contained offline report."""
+    output_path = Path(output).resolve()
+    prepared = prepare_report(
+        report, selection, expected_source=expected_source,
+        on_progress=on_progress, is_cancelled=is_cancelled,
+        _output_path=output_path,
+    )
+    html_str = prepared.to_html()
+
+    def _check_cancel() -> None:
+        if is_cancelled and is_cancelled():
+            raise InspectorCancelled()
 
     if on_progress:
         on_progress(ReportProgress(stage="render", completed=1, total=1))
@@ -496,12 +560,12 @@ def generate_report(
 
     return ReportResult(
         output_path=output_path,
-        source=source_locator,
-        evidence_capability=capability,
-        run_total=run_total,
-        eligible_count=eligible_count,
-        matched_count=matched_count,
-        selected_count=selected_count,
-        missing_rt_count=missing_rt_count,
-        sample_ids=normalized_sample_ids,
+        source=prepared.source,
+        evidence_capability=prepared.evidence_capability,
+        run_total=prepared.run_total,
+        eligible_count=prepared.eligible_count,
+        matched_count=prepared.matched_count,
+        selected_count=prepared.selected_count,
+        missing_rt_count=prepared.missing_rt_count,
+        sample_ids=prepared.sample_ids,
     )

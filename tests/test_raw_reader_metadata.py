@@ -39,6 +39,7 @@ def test_raw_file_handle_sample_header() -> None:
         SampleType="Unknown",
         Vial="A:01",
         Comment="Test comment",
+        InstrumentMethodFile=r"C:\methods\wash.meth",
     )
     fake_raw = SimpleNamespace(
         SampleInformation=fake_info,
@@ -69,6 +70,7 @@ def test_raw_file_handle_sample_header() -> None:
     assert header.creation_date == datetime(2026, 3, 15, 10, 30, 0)
     assert header.vial == "A:01"
     assert header.comment == "Test comment"
+    assert header.instrument_method == r"C:\methods\wash.meth"
 
 
 def test_real_raw_sample_header_if_available() -> None:

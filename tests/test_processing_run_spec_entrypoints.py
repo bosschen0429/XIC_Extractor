@@ -8,10 +8,6 @@ from typing import cast
 
 import pytest
 
-from gui.workers.discovery_worker import DiscoveryRequest, DiscoveryWorker
-from gui.workers.discovery_worker import (
-    _compile_processing_run_spec as compile_gui_processing_run_spec,
-)
 from scripts.run_discovery import (
     _compile_processing_run_spec as compile_cli_processing_run_spec,
 )
@@ -28,9 +24,15 @@ from xic_extractor.processing_run_spec import (
     canonical_processing_run_spec_bytes,
     serialize_processing_run_spec,
 )
+from xic_workbench.untargeted import DiscoveryRequest, UntargetedRun, parse_request
+from xic_workbench.untargeted import (
+    _compile_processing_run_spec as compile_workbench_processing_run_spec,
+)
 
 
-def test_equal_gui_cli_inputs_compile_equal_immutable_identity(tmp_path: Path) -> None:
+def test_equal_workbench_cli_inputs_compile_equal_immutable_identity(
+    tmp_path: Path,
+) -> None:
     from xic_extractor.discovery.processing_run_spec_adapter import (
         compile_discovery_processing_run_spec_from_config,
     )
@@ -38,34 +40,38 @@ def test_equal_gui_cli_inputs_compile_equal_immutable_identity(tmp_path: Path) -
     raw_paths = _raws(tmp_path)
     settings = _settings()
 
-    assert compile_gui_processing_run_spec is (
+    assert compile_workbench_processing_run_spec is (
         compile_discovery_processing_run_spec_from_config
     )
     assert compile_cli_processing_run_spec is (
         compile_discovery_processing_run_spec_from_config
     )
     peak_config = _peak_config()
-    gui_spec = compile_gui_processing_run_spec(raw_paths, settings, peak_config)
+    workbench_spec = compile_workbench_processing_run_spec(
+        raw_paths, settings, peak_config
+    )
     cli_spec = compile_cli_processing_run_spec(raw_paths, settings, peak_config)
 
-    assert gui_spec == cli_spec
-    assert gui_spec.run_spec_id == cli_spec.run_spec_id
-    assert gui_spec.profile_id == cli_spec.profile_id
-    assert canonical_processing_run_spec_bytes(gui_spec) == (
+    assert workbench_spec == cli_spec
+    assert workbench_spec.run_spec_id == cli_spec.run_spec_id
+    assert workbench_spec.profile_id == cli_spec.profile_id
+    assert canonical_processing_run_spec_bytes(workbench_spec) == (
         canonical_processing_run_spec_bytes(cli_spec)
     )
-    assert serialize_processing_run_spec(gui_spec) == serialize_processing_run_spec(
-        cli_spec
+    assert serialize_processing_run_spec(
+        workbench_spec
+    ) == serialize_processing_run_spec(cli_spec)
+    assert str(tmp_path).encode("utf-8") not in serialize_processing_run_spec(
+        workbench_spec
     )
-    assert str(tmp_path).encode("utf-8") not in serialize_processing_run_spec(gui_spec)
-    assert pickle.loads(pickle.dumps(gui_spec)) == gui_spec
+    assert pickle.loads(pickle.dumps(workbench_spec)) == workbench_spec
 
 
-def test_actual_gui_modes_and_cli_main_reach_equal_final_run_spec(
+def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from gui.workers import discovery_worker as worker_module
+    import xic_workbench.untargeted as workbench_module
     from scripts import run_discovery as cli_module
 
     raw_dir = tmp_path / "raw"
@@ -84,38 +90,32 @@ def test_actual_gui_modes_and_cli_main_reach_equal_final_run_spec(
     captured: dict[str, object] = {}
 
     def worker_batch(*_args, **kwargs):
-        mode = kwargs["output_dir"].name
-        captured[f"gui_{mode}"] = kwargs["run_spec"]
+        captured["workbench"] = kwargs["run_spec"]
         return SimpleNamespace(batch_index_csv=index_path, per_sample=())
 
-    monkeypatch.setattr(worker_module, "run_discovery_batch", worker_batch)
-    finished: list[dict[str, object]] = []
-    errors: list[str] = []
-    for mode, output_name in (("full", "full"), ("discovery_only", "discovery_only")):
-        request = DiscoveryRequest(
-            mode=cast(object, mode),  # type: ignore[arg-type]
-            preset="dna_dr",
-            tuning_overrides={},
-            raw_dir=raw_dir,
-            raw_file=None,
-            dll_dir=dll_dir,
-            output_dir=tmp_path / output_name,
-            discovery_batch_index=None,
-        )
-        worker = DiscoveryWorker(request)
-        worker.finished.connect(finished.append)
-        worker.error.connect(errors.append)
-        if mode == "full":
-            outputs = _alignment_outputs()
-            monkeypatch.setattr(
-                worker,
-                "_run_alignment",
-                lambda *_args, **_kwargs: outputs,
-            )
-        worker.run()
-
-    assert errors == []
-    assert len(finished) == 2
+    monkeypatch.setattr(workbench_module, "run_discovery_batch", worker_batch)
+    monkeypatch.setattr(
+        workbench_module,
+        "read_analysis_set",
+        lambda *_args: SimpleNamespace(
+            raw_paths=(raw_dir / "A.raw", raw_dir / "B.raw")
+        ),
+    )
+    request = DiscoveryRequest(
+        mode="full",
+        preset="dna_dr",
+        tuning_overrides={},
+        raw_dir=raw_dir,
+        raw_file=None,
+        dll_dir=dll_dir,
+        output_dir=tmp_path / "full",
+        discovery_batch_index=None,
+    )
+    run = UntargetedRun(
+        request, progress=lambda *_args: None, should_cancel=lambda: False
+    )
+    monkeypatch.setattr(run, "_run_alignment", lambda **_kwargs: _alignment_outputs())
+    run.execute()
 
     def cli_batch(*_args, **kwargs):
         captured["cli"] = kwargs["run_spec"]
@@ -136,18 +136,11 @@ def test_actual_gui_modes_and_cli_main_reach_equal_final_run_spec(
         == 0
     )
 
-    specs = tuple(
-        cast(object, captured[key])
-        for key in (
-            "gui_full",
-            "gui_discovery_only",
-            "cli",
-        )
-    )
+    specs = tuple(cast(object, captured[key]) for key in ("workbench", "cli"))
     serialized = tuple(
         serialize_processing_run_spec(cast(ProcessingRunSpec, spec)) for spec in specs
     )
-    assert serialized[0] == serialized[1] == serialized[2]
+    assert serialized[0] == serialized[1]
     assert {
         cast(ProcessingRunSpec, spec).discovery_method.settings.ms1_search_padding_min
         for spec in specs
@@ -168,11 +161,11 @@ def test_actual_gui_modes_and_cli_main_reach_equal_final_run_spec(
     )
 
 
-def test_actual_gui_entry_rejects_invalid_preset_before_fingerprint_or_raw(
+def test_actual_workbench_entry_rejects_invalid_preset_before_fingerprint_or_raw(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from gui.workers import discovery_worker as worker_module
+    import xic_workbench.untargeted as workbench_module
 
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"sample")
@@ -182,30 +175,28 @@ def test_actual_gui_entry_rejects_invalid_preset_before_fingerprint_or_raw(
         lambda *_args, **_kwargs: pytest.fail("fingerprinted invalid preset"),
     )
     monkeypatch.setattr(
-        worker_module,
+        workbench_module,
         "run_discovery",
         lambda *_args, **_kwargs: pytest.fail("opened RAW for invalid preset"),
     )
-    request = DiscoveryRequest(
-        mode="discovery_only",
-        preset="pt_pattern",
-        tuning_overrides={},
-        raw_dir=None,
-        raw_file=raw_path,
-        dll_dir=tmp_path / "dll",
-        output_dir=tmp_path / "out",
-        discovery_batch_index=None,
-    )
 
     with pytest.raises(PresetError):
-        DiscoveryWorker(request)._run_discovery_only(request)
+        parse_request(
+            {
+                "mode": "discovery_only",
+                "preset": "pt_pattern",
+                "raw_file": str(raw_path),
+                "dll_dir": str(tmp_path / "dll"),
+                "output_dir": str(tmp_path / "out"),
+            }
+        )
 
 
-def test_actual_gui_entry_rejects_invalid_profile_before_fingerprint_or_raw(
+def test_actual_workbench_entry_rejects_invalid_profile_before_fingerprint_or_raw(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from gui.workers import discovery_worker as worker_module
+    import xic_workbench.untargeted as workbench_module
 
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"sample")
@@ -215,7 +206,7 @@ def test_actual_gui_entry_rejects_invalid_profile_before_fingerprint_or_raw(
         lambda *_args, **_kwargs: pytest.fail("fingerprinted invalid profile"),
     )
     monkeypatch.setattr(
-        worker_module,
+        workbench_module,
         "run_discovery",
         lambda *_args, **_kwargs: pytest.fail("opened RAW for invalid profile"),
     )
@@ -229,18 +220,23 @@ def test_actual_gui_entry_rejects_invalid_profile_before_fingerprint_or_raw(
         output_dir=tmp_path / "out",
         discovery_batch_index=None,
     )
-    worker = DiscoveryWorker(request)
+    run = UntargetedRun(
+        request, progress=lambda *_args: None, should_cancel=lambda: False
+    )
     monkeypatch.setattr(
-        worker,
+        run,
         "_discovery_peak_config",
-        lambda *_args: SimpleNamespace(
-            signal_processing_method="savgol",
-            signal_processing_window_points=15,
+        lambda *_args: cast(
+            ExtractionConfig,
+            SimpleNamespace(
+                signal_processing_method="savgol",
+                signal_processing_window_points=15,
+            ),
         ),
     )
 
     with pytest.raises(ValueError, match="method"):
-        worker._run_discovery_only(request)
+        run.execute()
 
 
 def test_actual_cli_entry_rejects_invalid_method_before_fingerprint_or_raw(
@@ -279,7 +275,7 @@ def test_actual_cli_entry_rejects_invalid_method_before_fingerprint_or_raw(
 
 @pytest.mark.parametrize(
     "builder",
-    [compile_gui_processing_run_spec, compile_cli_processing_run_spec],
+    [compile_workbench_processing_run_spec, compile_cli_processing_run_spec],
 )
 def test_highest_entry_rejects_invalid_profile_before_fingerprinting(
     tmp_path: Path,

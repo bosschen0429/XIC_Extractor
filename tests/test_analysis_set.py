@@ -138,7 +138,10 @@ def test_unchanged_raw_header_is_read_once(tmp_path: Path, monkeypatch) -> None:
         return nullcontext(
             SimpleNamespace(
                 sample_header=SimpleNamespace(
-                    sample_type="Unknown", sample_name="free text", comment=""
+                    sample_type="Unknown",
+                    sample_name="free text",
+                    comment="",
+                    instrument_method="",
                 )
             )
         )

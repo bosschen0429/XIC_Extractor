@@ -7,7 +7,6 @@ name = "xic-extractor"
 version = "1.0.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "PyQt6>=6.6",
     "ijson>=3.4,<4",
     "matplotlib>=3.10.9",
     "numpy>=1.26",
@@ -32,7 +31,7 @@ parquet = [
 ]
 
 [project.scripts]
-xic-extractor = "gui.main:main"
+xic-extractor = "xic_workbench.cli:main"
 xic-extractor-cli = "scripts.run_extraction:main"
 xic-discovery-cli = "scripts.run_discovery:main"
 xic-untargeted-cid-nl-real-data-cli = "scripts.run_untargeted_cid_nl_real_data:main"
@@ -41,15 +40,21 @@ xic-pt-pattern-discovery-cli = "scripts.run_pt_pattern_discovery:main"
 xic-align-cli = "scripts.run_alignment:main"
 xic-feature-quality = "scripts.run_feature_quality:main"
 xic-inspector = "xic_inspector.cli:main"
+xic-workbench = "xic_workbench.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["gui*", "scripts*", "tools*", "xic_extractor*", "xic_inspector*"]
+include = ["scripts*", "tools*", "xic_extractor*", "xic_inspector*", "xic_workbench*"]
 exclude = ["tests*"]
 
 [tool.setuptools.package-data]
+"xic_inspector.rendering" = ["assets/*.html", "assets/*.js"]
+"xic_workbench" = ["assets/*.html", "assets/*.js", "assets/*.css"]
 "xic_extractor.alignment" = ["data/quantitative_projection_authority.json"]
 "xic_extractor.presets.data" = ["*.toml"]
 "xic_extractor.discovery" = ["data/*"]
+
+[tool.setuptools.data-files]
+config = ["config/settings.example.csv", "config/targets.example.csv"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

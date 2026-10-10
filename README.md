@@ -22,32 +22,43 @@ samples.
 | **Targeted Extraction** | RAW files and a targets CSV with m/z, RT windows, and optional neutral-loss/ISTD settings | `xic_results_YYYYMMDD_HHMM.xlsx` | [Targeted guide](docs/user/targeted-extraction.md) |
 | **Untargeted Discovery** | RAW files and a method preset | Discovery candidates, then `alignment_matrix.tsv` for supported CID-NL Alignment | [Untargeted guide](docs/user/untargeted-discovery.md) |
 
-<table>
-  <tr>
-    <td><img src="assets/screenshots/targeted-workspace.png" alt="Targeted Extraction workspace"></td>
-    <td><img src="assets/screenshots/untargeted-workspace.png" alt="Untargeted Discovery workspace"></td>
-  </tr>
-  <tr>
-    <td align="center"><strong>Targeted Extraction</strong></td>
-    <td align="center"><strong>Untargeted Discovery</strong></td>
-  </tr>
-</table>
-
-### Run the packaged app
+### Run the HTML workbench
 
 You need Windows 10 or 11, .NET 6 or later, and the Thermo RawFileReader DLLs
 (from Xcalibur or [Thermo Fisher](https://github.com/thermofishersci/RawFileReader)).
-The packaged app includes its Python runtime.
 
-1. Download the Windows ZIP from [Releases](https://github.com/Chao-hu-Lab/XIC_Extractor/releases), unzip it, and run `XIC_Extractor.exe`.
-2. Set the RAW data and Thermo DLL directories, then follow the workflow guide above to supply targets or a preset.
-3. After Targeted finishes, open **Overview**, then **Review Queue** in the workbook. After Untargeted Alignment finishes, start with the Matrix; use **Export XIC Inspector** to inspect the retained CID-NL evidence as offline HTML.
+From an installed package, run `xic-extractor`, `xic-workbench`, or
+`python -m xic_workbench`. The process starts a loopback server and opens the
+same local HTML workspace for analysis and result review. Use `--no-open` when
+you only want the printed URL, `--port` to choose a port, and `--config-dir` to
+choose the writable settings directory.
+
+For Targeted, select the RAW folder, load or edit the targets, and run. The
+standard method is the default; optional advanced settings stay collapsed.
+Persisted changes are labelled **自訂方法**, and **回到預設** restores the
+standard method values. Untargeted provides full, Discovery-only, and
+Alignment-only modes, plus method import/edit/export, sample metadata and role
+correction. Both workflows show progress, cancellation, outputs, and result
+actions in this workspace.
 
 Retained CID-NL saves completed evidence alongside its Matrix. Additional
 review TSVs, galleries, and workbooks require explicit output options.
 For settings, column meanings, and troubleshooting, continue to the
 [user guide index](docs/user/README.md). HTML guides in that index can be opened
 locally in a browser; the Markdown guides can be read directly on GitHub.
+
+### Review a completed batch
+
+From an installed Python package, run `xic-workbench <batch-output-folder>`
+(or `python -m xic_workbench <batch-output-folder>`). The local browser workspace
+opens saved CID-NL results, searches the full review population, and acquires
+XIC only for the selected group and observed samples. Choose the RAW and
+RawFileReader DLL folders in the workspace, then download the current view as
+an independent HTML report. See the [workspace guide](docs/product/xic-inspector.md#local-html-workspace).
+The analysis and review views share the same local process and navigation.
+The frozen Windows build is part of the packaging contract, but its final
+release artifact still requires the release gate; source behavior alone does
+not prove that artifact.
 
 ## Follow The Evidence
 

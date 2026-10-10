@@ -9,8 +9,8 @@ import numpy as np
 import pytest
 
 from tests.test_cid_nl_explanation import _owner_run
-from tools.diagnostics.explanation_curves import export_explanation_curves
 from xic_extractor.diagnostics.alignment_explanation import (
+    ExplanationError,
     ExplanationReportWriter,
     read_cid_nl_curves,
     read_cid_nl_explanation,
@@ -23,6 +23,10 @@ from xic_extractor.diagnostics.explanation_conversion import compact_explanation
 from xic_inspector.api import SelectionRequest, generate_report
 from xic_inspector.sources.cid_nl import CidNlSource
 from xic_inspector.sources.curve_bundle import read_curve_bundle
+from xic_workbench.acquisition import (
+    CurveAcquisitionCancelled,
+    export_explanation_curves,
+)
 
 
 @pytest.mark.parametrize("old_revision", (None, 1))
@@ -408,7 +412,7 @@ def test_curve_export_opens_only_requested_sample_and_does_not_reintegrate(
         alignment_config=config,
     )
     source_before = review.read_bytes()
-    (tmp_path / "S1.raw").write_bytes(b"test raw")
+    (tmp_path / "S1.raw").write_bytes(b"S1")
     opened = []
 
     class Raw:
@@ -419,11 +423,12 @@ def test_curve_export_opens_only_requested_sample_and_does_not_reintegrate(
             return rt, 1000 * np.exp(-(((rt - 8) / 0.08) ** 2))
 
     @contextmanager
-    def raw(path, dll):
+    def raw(path, dll, *, expected_acquisition_source):
         opened.append(path.name)
+        assert expected_acquisition_source.content_sha256
         yield Raw()
 
-    monkeypatch.setattr("tools.diagnostics.explanation_curves.open_raw", raw)
+    monkeypatch.setattr("xic_workbench.acquisition.open_raw", raw)
     output = tmp_path / "selected.json"
     export_explanation_curves(
         review,
@@ -438,3 +443,218 @@ def test_curve_export_opens_only_requested_sample_and_does_not_reintegrate(
     assert len(bundle.transitions[0].traces) == 1
     assert bundle.transitions[0].traces[0].integration is None
     assert bundle.transitions[0].quantifications == ()
+
+
+def _two_sample_curve_review(tmp_path, monkeypatch):
+    completed, writer, candidates, matrix, config = _owner_run(
+        tmp_path, monkeypatch, "positive"
+    )
+    review = write_cid_nl_explanation(
+        tmp_path / "two-sample-review.sqlite",
+        completed=completed,
+        writer_inputs=writer,
+        candidates_by_sample=candidates,
+        matrix_path=matrix,
+        alignment_config=config,
+    )
+    summary = read_cid_nl_explanation(review)
+    sample_ids = {
+        sample["sample_stem"]: sample["canonical_sample_identity_id"]
+        for sample in summary["samples"]
+    }
+    detail = read_cid_nl_explanation(
+        review, candidate_id=candidates["S1"][0].candidate_id
+    )
+    group_id = detail["records"]["final_groups"][0]["group_hypothesis_id"]
+    for stem in sample_ids:
+        (tmp_path / f"{stem}.raw").write_bytes(stem.encode())
+    return review, group_id, sample_ids, candidates
+
+
+def _install_distinct_curve_raws(monkeypatch, opened, cancelled=None):
+    class Raw:
+        def __init__(self, stem):
+            self.stem = stem
+
+        def extract_xic(self, mz, lower, upper, ppm):
+            rt = np.linspace(lower, upper, 51)
+            amplitude = 1000 if self.stem == "S1" else 2000
+            result = rt, amplitude * np.exp(-(((rt - 8) / 0.08) ** 2))
+            if cancelled is not None:
+                cancelled["value"] = True
+            return result
+
+    @contextmanager
+    def raw(path, dll, *, expected_acquisition_source):
+        opened.append((path.name, expected_acquisition_source.acquisition_source_id))
+        yield Raw(path.stem)
+
+    monkeypatch.setattr("xic_workbench.acquisition.open_raw", raw)
+
+
+def test_curve_export_acquires_two_distinct_sample_curves_with_progress(
+    tmp_path, monkeypatch
+):
+    review, group_id, sample_ids, _ = _two_sample_curve_review(tmp_path, monkeypatch)
+    opened, progress = [], []
+    _install_distinct_curve_raws(monkeypatch, opened)
+    output = tmp_path / "two-sample-curves.json"
+
+    result = export_explanation_curves(
+        review,
+        output,
+        raw_dir=tmp_path,
+        dll_dir=tmp_path,
+        group_id=group_id,
+        sample_ids=tuple(sample_ids.values()),
+        on_progress=lambda completed, total, sid: progress.append(
+            (completed, total, sid)
+        ),
+    )
+
+    assert result["sample_count"] == 2
+    assert result["source_binding_basis"] == (
+        "report_sample_stem+report_acquisition_source_content"
+    )
+    assert set(result["acquisition_sources"]) == set(sample_ids.values())
+    assert all(
+        source_id.startswith("xic.acquisition-source:")
+        for source_id in result["acquisition_sources"].values()
+    )
+    assert {name for name, _ in opened} == {"S1.raw", "S2.raw"}
+    assert all(identity.startswith("xic.acquisition-source:") for _, identity in opened)
+    assert progress == [
+        (index, 2, sid)
+        for index, sid in enumerate(sorted(sample_ids.values()), start=1)
+    ]
+    bundle = read_curve_bundle(output)
+    traces = {trace.sample_label: trace for trace in bundle.transitions[0].traces}
+    assert max(traces["S1"].raw.intensity) < max(traces["S2"].raw.intensity)
+    assert all(trace.integration is None for trace in traces.values())
+    assert bundle.transitions[0].quantifications == ()
+    html = tmp_path / "two-sample-curves.html"
+    rendered = generate_report(output, SelectionRequest(), html)
+    assert rendered.evidence_capability == "retained_curves"
+    embedded = html.read_text(encoding="utf-8").split(
+        '<script id="inspector-data" type="application/json">', 1
+    )[1]
+    inspector_curves = json.loads(embedded.split("</script>", 1)[0])["items"][0][
+        "curves"
+    ]
+    assert {curve["sample_id"] for curve in inspector_curves} == set(
+        sample_ids.values()
+    )
+    assert all(
+        curve["stage_label"] == "diagnostic_reacquisition"
+        and curve["provenance"]["raw_identity"].startswith(
+            "xic.acquisition-source:"
+        )
+        for curve in inspector_curves
+    )
+
+
+def test_curve_export_sample_scope_opens_only_selected_raw(tmp_path, monkeypatch):
+    review, group_id, sample_ids, _ = _two_sample_curve_review(tmp_path, monkeypatch)
+    opened = []
+    _install_distinct_curve_raws(monkeypatch, opened)
+
+    result = export_explanation_curves(
+        review,
+        tmp_path / "selected-sample.json",
+        raw_dir=tmp_path,
+        dll_dir=tmp_path,
+        group_id=group_id,
+        sample_ids=(sample_ids["S2"],),
+    )
+
+    assert result["sample_count"] == 1
+    assert [name for name, _ in opened] == ["S2.raw"]
+
+
+def test_curve_export_cancelled_before_or_during_acquisition_leaves_no_output(
+    tmp_path, monkeypatch
+):
+    review, group_id, sample_ids, _ = _two_sample_curve_review(tmp_path, monkeypatch)
+    before = tmp_path / "cancelled-before.json"
+    monkeypatch.setattr(
+        "xic_workbench.acquisition.open_raw",
+        lambda *_args, **_kwargs: pytest.fail("cancelled job must not open RAW"),
+    )
+    with pytest.raises(CurveAcquisitionCancelled):
+        export_explanation_curves(
+            review,
+            before,
+            raw_dir=tmp_path,
+            dll_dir=tmp_path,
+            group_id=group_id,
+            sample_ids=tuple(sample_ids.values()),
+            is_cancelled=lambda: True,
+        )
+    assert not before.exists()
+
+    cancelled, opened = {"value": False}, []
+    _install_distinct_curve_raws(monkeypatch, opened, cancelled)
+    during = tmp_path / "cancelled-during.json"
+    with pytest.raises(CurveAcquisitionCancelled):
+        export_explanation_curves(
+            review,
+            during,
+            raw_dir=tmp_path,
+            dll_dir=tmp_path,
+            group_id=group_id,
+            sample_ids=tuple(sample_ids.values()),
+            is_cancelled=lambda: cancelled["value"],
+        )
+    assert len(opened) == 1
+    assert not during.exists()
+
+
+def test_curve_export_rejects_identity_mismatch_before_raw_open(tmp_path, monkeypatch):
+    review, _, sample_ids, candidates = _two_sample_curve_review(tmp_path, monkeypatch)
+    (tmp_path / "S1.raw").write_bytes(b"not the report-bound source")
+    monkeypatch.setattr(
+        "xic_workbench.acquisition.open_raw",
+        lambda *_args, **_kwargs: pytest.fail("mismatched RAW must not be opened"),
+    )
+    output = tmp_path / "identity-mismatch.json"
+
+    with pytest.raises(ExplanationError, match="does not match exactly one"):
+        export_explanation_curves(
+            review,
+            output,
+            raw_dir=tmp_path,
+            dll_dir=tmp_path,
+            candidate_id=candidates["S1"][0].candidate_id,
+            sample_ids=(sample_ids["S1"],),
+        )
+    assert not output.exists()
+
+
+def test_curve_export_rejects_unknown_and_unobserved_explicit_samples_before_raw(
+    tmp_path, monkeypatch
+):
+    review, _, sample_ids, candidates = _two_sample_curve_review(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "xic_workbench.acquisition.open_raw",
+        lambda *_args, **_kwargs: pytest.fail("invalid sample scope must not open RAW"),
+    )
+    candidate_id = candidates["S1"][0].candidate_id
+
+    with pytest.raises(ExplanationError, match="not present in the report"):
+        export_explanation_curves(
+            review,
+            tmp_path / "unknown.json",
+            raw_dir=tmp_path,
+            dll_dir=tmp_path,
+            candidate_id=candidate_id,
+            sample_ids=("xic.sample:unknown",),
+        )
+    with pytest.raises(ExplanationError, match="no retained apex coordinates"):
+        export_explanation_curves(
+            review,
+            tmp_path / "unobserved.json",
+            raw_dir=tmp_path,
+            dll_dir=tmp_path,
+            candidate_id=candidate_id,
+            sample_ids=(sample_ids["S2"],),
+        )

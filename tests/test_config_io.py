@@ -2,7 +2,12 @@ import csv
 
 import pytest
 
-from gui.config_io import read_settings, read_targets, write_settings, write_targets
+from xic_workbench.config_io import (
+    read_settings,
+    read_targets,
+    write_settings,
+    write_targets,
+)
 
 
 @pytest.fixture()
@@ -23,14 +28,14 @@ def tmp_config(tmp_path):
 
 
 def test_read_settings(tmp_config, monkeypatch):
-    monkeypatch.setattr("gui.config_io.CONFIG_DIR", tmp_config)
+    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_config)
     assert read_settings()["signal_processing_window_points"] == "15"
 
 
 def test_saved_worker_budget_reaches_shared_execution_profile(tmp_config, monkeypatch):
     from xic_extractor.configuration.execution_profile import resolve_execution_profile
 
-    monkeypatch.setattr("gui.config_io.CONFIG_DIR", tmp_config)
+    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_config)
     settings = read_settings()
     settings["parallel_workers"] = "3"
     write_settings(settings)
@@ -40,7 +45,7 @@ def test_saved_worker_budget_reaches_shared_execution_profile(tmp_config, monkey
 
 
 def test_write_settings_round_trips(tmp_config, monkeypatch):
-    monkeypatch.setattr("gui.config_io.CONFIG_DIR", tmp_config)
+    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_config)
     write_settings(
         {
             "data_dir": "C:\\new",
@@ -53,7 +58,7 @@ def test_write_settings_round_trips(tmp_config, monkeypatch):
 
 
 def test_write_settings_preserves_description(tmp_config, monkeypatch):
-    monkeypatch.setattr("gui.config_io.CONFIG_DIR", tmp_config)
+    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_config)
     write_settings(
         {
             "data_dir": "C:\\x",
@@ -71,7 +76,7 @@ def test_write_settings_preserves_description(tmp_config, monkeypatch):
 def test_write_settings_backfills_descriptions_for_current_settings(
     tmp_config, monkeypatch
 ):
-    monkeypatch.setattr("gui.config_io.CONFIG_DIR", tmp_config)
+    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_config)
     write_settings(
         {
             "data_dir": "C:\\x",
@@ -95,12 +100,12 @@ def test_write_settings_backfills_descriptions_for_current_settings(
 
 
 def test_read_targets(tmp_config, monkeypatch):
-    monkeypatch.setattr("gui.config_io.CONFIG_DIR", tmp_config)
+    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_config)
     assert read_targets()[0]["label"] == "5-hmdC"
 
 
 def test_write_targets_round_trips(tmp_config, monkeypatch):
-    monkeypatch.setattr("gui.config_io.CONFIG_DIR", tmp_config)
+    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_config)
     write_targets(
         [
             {
@@ -121,7 +126,7 @@ def test_write_targets_round_trips(tmp_config, monkeypatch):
 
 
 def test_write_targets_round_trips_with_istd_fields(tmp_config, monkeypatch):
-    monkeypatch.setattr("gui.config_io.CONFIG_DIR", tmp_config)
+    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_config)
     write_targets(
         [
             {
@@ -150,7 +155,7 @@ def test_read_targets_backward_compat_missing_istd_cols(tmp_path, monkeypatch):
         "5-hmdC,258.1085,8,10,20,116.0474,20,50\n",
         encoding="utf-8-sig",
     )
-    monkeypatch.setattr("gui.config_io.CONFIG_DIR", tmp_path)
+    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_path)
     targets = read_targets()
     assert targets[0]["label"] == "5-hmdC"
     assert targets[0].get("is_istd", "false") == "false"
@@ -164,8 +169,8 @@ def test_read_settings_uses_example_when_missing_without_creating_runtime_copy(
         "key,value,description\ndata_dir,/placeholder,資料目錄\n",
         encoding="utf-8-sig",
     )
-    monkeypatch.setattr("gui.config_io.CONFIG_DIR", tmp_path)
-    monkeypatch.setattr("gui.config_io._BUNDLE_CONFIG", tmp_path)
+    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_path)
+    monkeypatch.setattr("xic_workbench.config_io._BUNDLE_CONFIG", tmp_path)
     result = read_settings()
     assert result["data_dir"] == "/placeholder"
     assert not (tmp_path / "settings.csv").exists()
@@ -180,8 +185,8 @@ def test_read_targets_uses_example_when_missing_without_creating_runtime_copy(
         "ExA,258.1085,8.0,10.0,20,116.0474,20,50\n",
         encoding="utf-8-sig",
     )
-    monkeypatch.setattr("gui.config_io.CONFIG_DIR", tmp_path)
-    monkeypatch.setattr("gui.config_io._BUNDLE_CONFIG", tmp_path)
+    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_path)
+    monkeypatch.setattr("xic_workbench.config_io._BUNDLE_CONFIG", tmp_path)
     result = read_targets()
     assert result[0]["label"] == "ExA"
     assert not (tmp_path / "targets.csv").exists()
@@ -194,8 +199,8 @@ def test_write_settings_creates_runtime_copy_from_values_and_example_description
         "key,value,description\ndata_dir,/placeholder,資料目錄\n",
         encoding="utf-8-sig",
     )
-    monkeypatch.setattr("gui.config_io.CONFIG_DIR", tmp_path)
-    monkeypatch.setattr("gui.config_io._BUNDLE_CONFIG", tmp_path)
+    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_path)
+    monkeypatch.setattr("xic_workbench.config_io._BUNDLE_CONFIG", tmp_path)
 
     write_settings({"data_dir": "C:\\real"})
 
@@ -208,7 +213,7 @@ def test_write_settings_creates_runtime_copy_from_values_and_example_description
 
 
 def test_write_targets_creates_runtime_copy_only_on_save(tmp_path, monkeypatch):
-    monkeypatch.setattr("gui.config_io.CONFIG_DIR", tmp_path)
+    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_path)
 
     write_targets(
         [

@@ -23,7 +23,7 @@ from xic_extractor.tabular_io import write_tsv
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFINITION_ROOT = "xic_extractor"
-PRODUCTION_ROOTS = ("xic_extractor", "gui", "scripts", "xic_inspector")
+PRODUCTION_ROOTS = ("xic_extractor", "xic_workbench", "scripts", "xic_inspector")
 REPORT_COLUMNS = ("kind", "qualified_name", "path", "line")
 
 

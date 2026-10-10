@@ -10,7 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from xic_inspector.api import InspectorError, SelectionRequest, generate_report
+from xic_inspector.api import (
+    InspectorError,
+    SelectionRequest,
+    generate_report,
+    prepare_report,
+)
 from xic_inspector.sources import curve_bundle as bundle_source
 from xic_inspector.sources.curve_bundle import (
     ChromatogramCurve,
@@ -86,6 +91,21 @@ def _fixture_bundle() -> CurveBundle:
             ),
         )
     )
+
+
+def test_reacquired_group_has_readable_title_and_retains_source_identity(tmp_path):
+    group_id = "xic.cross-sample-group:" + "0" * 64
+    transition = replace(
+        _fixture_bundle().transitions[0],
+        key=group_id,
+        quality_flags={"new_diagnostic_extraction": True},
+    )
+    source = tmp_path / "review.json"
+    write_curve_bundle(CurveBundle((transition,)), source)
+    item = prepare_report(source, SelectionRequest()).payload["items"][0]
+    assert item["title"].startswith("診斷 XIC · m/z ")
+    assert group_id not in item["title"]
+    assert group_id in item["id"]
 
 
 def test_bundle_round_trip_and_offline_report(tmp_path: Path) -> None:
@@ -247,9 +267,7 @@ def test_differential_accepts_numeric_display_facts(tmp_path: Path) -> None:
     }
     source = tmp_path / "curves.json"
     output = tmp_path / "review.html"
-    write_curve_bundle(
-        CurveBundle((replace(transition, quality_flags=flags),)), source
-    )
+    write_curve_bundle(CurveBundle((replace(transition, quality_flags=flags),)), source)
 
     result = generate_report(source, SelectionRequest(), output)
     assert result.selected_count == 1

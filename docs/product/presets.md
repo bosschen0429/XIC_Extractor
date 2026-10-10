@@ -14,7 +14,7 @@ surfaces. Presets are not product authority by themselves.
 - Direct resolver-based diagnostic callers retain their explicit `local_minimum` or
   `savgol` configuration (including saved `legacy_savgol` input). Those settings
   do not choose the formal Targeted physical algorithm.
-- GUI local profiles can expose explicit preset buttons. GUI local profiles
+- Application profiles can expose explicit preset choices. Local profiles
   must not silently overwrite user intent.
 - A preset run must be reproducible from documented CLI/config surfaces and
   metadata. A branch-local command diary is not a reproducibility source.
@@ -28,7 +28,7 @@ surfaces. Presets are not product authority by themselves.
 - `source` is derived on load. `source` is never a TOML field or a scientific
   identity.
 - The TOML format carries method intent. The format does not carry RAW/output
-  paths, worker counts, or GUI state.
+  paths, worker counts, or application state.
 - `dna_dr_product_ready` is a historical compatibility name for the
   `raw_superwindow` Owner Build profile. A successful run does not assert
   product readiness and does not invoke Standard Peak or a publication checker.
@@ -47,7 +47,7 @@ surfaces. Presets are not product authority by themselves.
 | `scripts/run_discovery.py --preset ...` | Discovery CLI using the same recipe binder; only explicit tuning flags override the method |
 | `scripts/run_alignment.py --preset ...` | CLI path that activates alignment presets |
 | `scripts/run_tissue_validation.py --dataset {8,85}` | Shared tissue validation launch defaults; delegates Discovery and Alignment to their current CLIs |
-| Signal profile settings in config/GUI | Shared physical signal configuration |
+| Signal profile settings in config/HTML workbench | Shared physical signal configuration |
 | Runner metadata and sidecars | Provenance for preset-backed runs |
 
 ## CID-NL Workflow Composition
@@ -104,7 +104,7 @@ presets, including multi-tag `union` (OR) and `intersection` (AND).
 Other routes and retained artifacts:
 
 - Normal Alignment rejects methods outside this CID-NL route.
-- Standard Peak is not reachable from normal CLI/GUI/preset execution.
+- Standard Peak is not reachable from normal CLI/HTML/preset execution.
 - The source-Matrix republisher and its authority/productization chain are
   deleted.
 - Retained Standard Peak helpers are explicit offline falsifiers/renderers
@@ -170,7 +170,7 @@ Rules:
   - keep RAW/render worker caps conservative;
   - keep payload validation cheap for scalar leaves.
 - Performance archives and timing packets do not change preset defaults,
-  matrix authority, Backfill scope, or GUI behavior. Performance archives and
+  matrix authority, Backfill scope, or application behavior. Performance archives and
   timing packets are evidence for safe runtime implementation choices under
   the same preset contract.
 

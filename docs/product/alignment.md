@@ -165,7 +165,7 @@ order; a previous batch's curve or direction is not a calibration rule.
 
 The Alignment CLI resolves ISTD input before RAW acquisition. An explicit
 targets CSV or reference workbook takes precedence; otherwise it uses the same
-`config/targets.example.csv` template as the GUI's fresh default and prints the
+`config/targets.example.csv` template as the HTML workbench's fresh default and prints the
 resolved source and ISTD count. Missing or invalid input fails before RAW work.
 An intentional uncorrected CLI run requires `--allow-uncorrected`, which cannot
 be combined with either ISTD input. The Python API retains its explicit optional

@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import textwrap
+import tomllib
 import zipfile
 from collections.abc import Sequence
 from pathlib import Path, PurePosixPath
@@ -28,8 +29,11 @@ AUTHORITY_RESOURCE_SHA256 = (
     "26753eb69300ec14a4eb044d21e44cb1351c2360cac7fae9884c3aec9bb6cd54"
 )
 INSTALLED_WHEEL_PROBE = """
+import contextlib
+import io
 import json
 import sys
+from importlib.metadata import distributions
 from importlib.resources import files
 from pathlib import Path
 
@@ -51,11 +55,55 @@ resource = files("xic_extractor.alignment").joinpath(
     "data", "quantitative_projection_authority.json"
 )
 resource_output.write_bytes(resource.read_bytes())
+
+from xic_inspector.rendering.template import HTML_TEMPLATE
+from xic_workbench import config_io
+from xic_workbench import cli as workbench_cli
+from xic_workbench.cli import main as workbench_main
+if not Path(workbench_cli.__file__).resolve().is_relative_to(target):
+    raise RuntimeError("workbench was not loaded from the installed target")
+if "__WORKBENCH_JS__" in HTML_TEMPLATE or "inspector-data" not in HTML_TEMPLATE:
+    raise RuntimeError("installed Inspector did not embed its frontend")
+for asset in (
+    "index.html", "workspace.js", "workspace.css",
+    "analysis.html", "analysis.js", "analysis.css",
+):
+    if not files("xic_workbench").joinpath("assets", asset).read_bytes():
+        raise RuntimeError(f"installed workspace asset is empty: {asset}")
+for template in ("settings.example.csv", "targets.example.csv"):
+    if not (target / "config" / template).read_bytes():
+        raise RuntimeError(f"installed config template is empty: {template}")
+if config_io.CONFIG_DIR.resolve().is_relative_to(target):
+    raise RuntimeError("installed workbench would write settings into site-packages")
+if not config_io.targets_example_path().resolve().is_relative_to(target / "config"):
+    raise RuntimeError("installed workbench did not find its config template")
+installed_distribution = next(
+    distribution for distribution in distributions(path=[str(target)])
+    if distribution.metadata["Name"] == "xic-extractor"
+)
+primary_entrypoint = next(
+    entrypoint for entrypoint in installed_distribution.entry_points
+    if entrypoint.group == "console_scripts" and entrypoint.name == "xic-extractor"
+)
+if primary_entrypoint.value != "xic_workbench.cli:main":
+    raise RuntimeError(f"unexpected xic-extractor entry: {primary_entrypoint.value}")
+if primary_entrypoint.load() is not workbench_main:
+    raise RuntimeError("xic-extractor did not load the workbench entry")
+with contextlib.redirect_stdout(io.StringIO()):
+    try:
+        workbench_main(["--help"])
+    except SystemExit as exc:
+        if exc.code != 0:
+            raise
+if any(name == "PyQt6" or name.startswith("PyQt6.") for name in sys.modules):
+    raise RuntimeError("HTML workspace imported Qt")
 metadata_output.write_text(
     json.dumps(
         {
             "authority_id": authority.authority_id,
             "module_file": str(module_file),
+            "config_dir": str(config_io.CONFIG_DIR),
+            "xic_extractor_entry": primary_entrypoint.value,
         }
     ),
     encoding="utf-8",
@@ -203,11 +251,11 @@ metadata_output.write_text(
 PACKAGING_SOURCE_DIRECTORIES = (
     "assets",
     "config",
-    "gui",
     "scripts",
     "tools",
     "xic_extractor",
     "xic_inspector",
+    "xic_workbench",
 )
 
 
@@ -285,6 +333,58 @@ def _assert_resource_bytes_match_source(resource_bytes: bytes) -> None:
     assert hashlib.sha256(resource_bytes).hexdigest() == AUTHORITY_RESOURCE_SHA256
 
 
+def test_primary_package_routes_to_html_workbench_without_qt() -> None:
+    project = tomllib.loads(
+        (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    )
+
+    assert project["project"]["scripts"]["xic-extractor"] == (
+        "xic_workbench.cli:main"
+    )
+    assert not any(
+        dependency.casefold().startswith(("pyqt6", "pyside6"))
+        for dependency in project["project"]["dependencies"]
+    )
+    assert "gui*" not in project["tool"]["setuptools"]["packages"]["find"][
+        "include"
+    ]
+    assert project["tool"]["setuptools"]["data-files"]["config"] == [
+        "config/settings.example.csv",
+        "config/targets.example.csv",
+    ]
+
+
+def test_installed_config_defaults_to_user_local_state(monkeypatch, tmp_path) -> None:
+    import xic_workbench.config_io as config_io
+
+    package_parent = tmp_path / "site-packages"
+    local_app_data = tmp_path / "LocalAppData"
+    monkeypatch.setattr(config_io, "_PACKAGE_PARENT", package_parent)
+    monkeypatch.delattr(config_io.sys, "frozen", raising=False)
+    monkeypatch.setattr(config_io.sys, "platform", "win32")
+    monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
+
+    assert config_io._default_root() == local_app_data / "XICExtractor"
+
+
+def test_development_and_frozen_config_roots_stay_with_the_application(
+    monkeypatch, tmp_path
+) -> None:
+    import xic_workbench.config_io as config_io
+
+    development_root = tmp_path / "source"
+    (development_root / "config").mkdir(parents=True)
+    (development_root / "pyproject.toml").write_text("", encoding="utf-8")
+    monkeypatch.setattr(config_io, "_PACKAGE_PARENT", development_root)
+    monkeypatch.delattr(config_io.sys, "frozen", raising=False)
+    assert config_io._default_root() == development_root
+
+    executable = tmp_path / "delivered" / "XIC_Extractor.exe"
+    monkeypatch.setattr(config_io.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(config_io.sys, "executable", str(executable))
+    assert config_io._default_root() == executable.parent
+
+
 def test_pyinstaller_spec_includes_dynamic_raw_reader_imports() -> None:
     spec_text = Path("xic_extractor.spec").read_text(encoding="utf-8")
     hiddenimports_match = re.search(
@@ -298,11 +398,51 @@ def test_pyinstaller_spec_includes_dynamic_raw_reader_imports() -> None:
     assert {"pythonnet", "clr"} <= hiddenimports
 
 
+def test_pyinstaller_spec_starts_html_workbench_and_excludes_qt() -> None:
+    spec_text = Path("xic_extractor.spec").read_text(encoding="utf-8")
+
+    assert 'Analysis(\n    ["xic_workbench/__main__.py"]' in spec_text
+    assert 'excludes=["PyQt6", "PySide6"]' in spec_text
+    assert '"PyQt6.' not in spec_text
+    assert '"PySide6.' not in spec_text
+
+
 def test_pyinstaller_spec_includes_inspector_api() -> None:
     spec_text = Path("xic_extractor.spec").read_text(encoding="utf-8")
     assert '"xic_inspector.api"' in spec_text
     assert '"xic_inspector.sources.cid_nl"' in spec_text
     assert '"xic_inspector.rendering.html_builder"' in spec_text
+
+
+def test_pyinstaller_collects_inspector_frontend() -> None:
+    collected = {
+        (Path(source).name, Path(destination).as_posix())
+        for source, destination in collect_data_files(
+            "xic_inspector.rendering", includes=["assets/*.html", "assets/*.js"]
+        )
+    }
+    assert collected == {
+        ("inspector.html", "xic_inspector/rendering/assets"),
+        ("inspector.js", "xic_inspector/rendering/assets"),
+    }
+
+
+def test_pyinstaller_collects_workbench_frontend() -> None:
+    collected = {
+        (Path(source).name, Path(destination).as_posix())
+        for source, destination in collect_data_files(
+            "xic_workbench",
+            includes=["assets/*.html", "assets/*.js", "assets/*.css"],
+        )
+    }
+    assert collected == {
+        ("analysis.css", "xic_workbench/assets"),
+        ("analysis.html", "xic_workbench/assets"),
+        ("analysis.js", "xic_workbench/assets"),
+        ("index.html", "xic_workbench/assets"),
+        ("workspace.css", "xic_workbench/assets"),
+        ("workspace.js", "xic_workbench/assets"),
+    }
 
 
 def test_pyinstaller_spec_includes_builtin_preset_tomls() -> None:
@@ -461,6 +601,7 @@ def test_built_wheel_contains_one_byte_identical_quantitative_authority(
     source_payload = json.loads(source_bytes)
     metadata = json.loads(probe_metadata.read_text(encoding="utf-8"))
     assert metadata["authority_id"] == source_payload["authority_id"]
+    assert metadata["xic_extractor_entry"] == "xic_workbench.cli:main"
     assert (
         Path(metadata["module_file"]).resolve().is_relative_to(install_target.resolve())
     )
@@ -620,7 +761,7 @@ def test_final_pyinstaller_output_contains_one_byte_identical_quantitative_autho
     )
     report = json.loads(smoke_report.read_text(encoding="utf-8"))
     assert report["status"] == "passed"
-    assert report["frozen"] and report["qt_started"] and report["preset_roundtrip"]
+    assert report["frozen"] and report["server_started"] and report["preset_roundtrip"]
     assert Path(report["executable"]).resolve() == executable.resolve()
     assert (
         report["resources"]["authority_id"]
@@ -679,6 +820,7 @@ function Invoke-RestMethod {
         capture_output=True,
         text=True,
         encoding="utf-8",
+        errors="replace",
         timeout=20,
     )
     assert (completed.returncode == 0) is accepted, completed.stderr
@@ -701,7 +843,7 @@ def test_delivered_archive_gate_rejects_failed_or_timed_out_smoke(
             {
                 "status": "failed" if outcome == "failed" else "passed",
                 "frozen": True,
-                "qt_started": True,
+                "server_started": True,
                 "preset_roundtrip": True,
             }
         ),
@@ -746,6 +888,7 @@ function Stop-Process {
         capture_output=True,
         text=True,
         encoding="utf-8",
+        errors="replace",
         timeout=20,
     )
     assert (completed.returncode == 0) is accepted, completed.stderr

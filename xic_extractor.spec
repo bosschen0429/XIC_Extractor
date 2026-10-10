@@ -26,9 +26,14 @@ discovery_datas = collect_data_files(
     "xic_extractor.discovery",
     includes=["data/*"],
 )
+inspector_datas = collect_data_files("xic_inspector.rendering", includes=["assets/*"])
+workbench_datas = collect_data_files(
+    "xic_workbench",
+    includes=["assets/*.html", "assets/*.js", "assets/*.css"],
+)
 
 a = Analysis(
-    ["gui/main.py"],
+    ["xic_workbench/__main__.py"],
     pathex=[],
     binaries=[],
     datas=[
@@ -39,12 +44,10 @@ a = Analysis(
     ]
     + preset_datas
     + authority_datas
-    + discovery_datas,
+    + discovery_datas
+    + inspector_datas
+    + workbench_datas,
     hiddenimports=[
-        "PyQt6.QtCore",
-        "PyQt6.QtWidgets",
-        "PyQt6.QtGui",
-        "PyQt6.sip",
         "pythonnet",
         "clr",
         "openpyxl",
@@ -59,7 +62,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=["PyQt6", "PySide6"],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,

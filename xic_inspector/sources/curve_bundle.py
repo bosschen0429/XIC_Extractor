@@ -696,7 +696,11 @@ class CurveBundleSource:
                     "id": item.serialized_ref,
                     "kind": item.kind,
                     "stratum": item.stratum,
-                    "title": transition.key,
+                    "title": (
+                        f"診斷 XIC · m/z {item.witnesses[0].precursor_mz:.4f}"
+                        if transition.quality_flags.get("new_diagnostic_extraction")
+                        else transition.key
+                    ),
                     "badge_label": "診斷曲線",
                     "method_label": "curve bundle",
                     "reason_label": (

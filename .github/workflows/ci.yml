@@ -29,7 +29,7 @@ jobs:
           python-version: "3.12"
       - id: install
         run: uv sync --locked --all-extras --dev
-      - run: uv run ruff check xic_extractor xic_inspector gui scripts tools tests
+      - run: uv run ruff check xic_extractor xic_inspector xic_workbench scripts tools tests
       - name: Static dependency contracts
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: uv run lint-imports --no-cache

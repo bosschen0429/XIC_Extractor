@@ -183,6 +183,25 @@ def _create_mock_db(
     return db_path, matrix_path, matrix_hash
 
 
+def test_interactive_and_offline_review_share_sample_scope_and_values(tmp_path):
+    from xic_inspector.api import prepare_report
+
+    report, _, _ = _create_mock_db(tmp_path)
+    selection = SelectionRequest(
+        strategy="query", group_ids=("G1",), sample_ids=("S1",)
+    )
+    prepared = prepare_report(report, selection)
+    assert prepared.payload["samples"] == [{"id": "S1", "label": "s1"}]
+    assert any(
+        row.get("quantitative_value") == 1000.0
+        for item in prepared.payload["items"]
+        for row in item["samples"]
+    )
+    output = tmp_path / "offline.html"
+    generate_report(report, selection, output)
+    assert _report_data(output) == json.loads(json.dumps(prepared.payload))
+
+
 def test_normalized_links_preserve_candidate_query_and_inspector_scope(tmp_path):
     from xic_extractor.diagnostics.alignment_explanation import read_cid_nl_explanation
 

@@ -8,7 +8,7 @@ For implementation entry points and module responsibilities, use the
 [architecture reading guide](../architecture-contract.md#reading-the-code).
 For task-specific execution and verification rules, use [AGENTS.md](../../AGENTS.md).
 
-Use this index when a GUI workflow, preset, review surface, matrix, or
+Use this index when an application workflow, preset, review surface, matrix, or
 validation claim needs a durable rule instead of a dated plan or private note.
 For definitions of domain-specific terms used in these pages, see the
 [XIC Extractor Domain Glossary](domain-glossary.md), the single vocabulary
@@ -45,7 +45,7 @@ owner for product documentation.
 
 | Topic | Start here | Scope |
 | --- | --- | --- |
-| XIC Inspector | [`xic-inspector.md`](xic-inspector.md) | Installed read-only review CLI/API, method-neutral selection and rendering, and portable offline evidence workbench |
+| XIC Inspector and HTML workspace | [`xic-inspector.md`](xic-inspector.md) | Local batch review and on-demand XIC, shared selection/rendering, and portable offline Inspector reports |
 | Review Roundtrip | [`review-roundtrip.md`](review-roundtrip.md) | Review action import, lockbox evidence, expected-diff gates |
 | Sample Metadata And QC | [`sample-metadata-qc.md`](sample-metadata-qc.md) | Sample identity/order/role/QC, activation gates |
 | Feature Quality And Selection | [`feature-quality.md`](feature-quality.md) | Finalized-matrix availability, explicit selection and traceable analysis sets |
@@ -57,7 +57,7 @@ owner for product documentation.
 | --- | --- | --- |
 | Presets | [`presets.md`](presets.md) | Resolver and alignment preset behavior, reproducibility rules |
 | Productization | [`productization.md`](productization.md) | Capability map, promotion boundaries, authority routing |
-| Untargeted GUI | [`untargeted-gui.md`](untargeted-gui.md) | Discovery workspace, run modes, local config, bundle resources |
+| Local HTML analysis workbench | [`untargeted-gui.md`](untargeted-gui.md) | Targeted and Untargeted setup/execution, result actions, local config, and bundle resources |
 
 ## Authority Boundary
 

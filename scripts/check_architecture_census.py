@@ -29,7 +29,13 @@ from typing import Any
 import grimp
 
 ROOT = Path(__file__).resolve().parents[1]
-REPOSITORY_ROOTS = ("xic_extractor", "gui", "scripts", "tools", "xic_inspector")
+REPOSITORY_ROOTS = (
+    "xic_extractor",
+    "scripts",
+    "tools",
+    "xic_inspector",
+    "xic_workbench",
+)
 STATIC_DEPENDENCY_SCOPE = "grimp_static_import_graph"
 _GIT_LOCAL_ENVIRONMENT_VARIABLES = frozenset(
     {

@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>XIC Extractor</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23155e75'/%3E%3Cpath d='M5 23c4 0 5-1 6.6-6S14.8 8 16 8s2.8 4 4.4 9 2.6 6 6.6 6' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
+    <script>
+      try {
+        const theme = localStorage.getItem("xic-theme");
+        if (theme) document.documentElement.dataset.theme = theme;
+      } catch (_) {}
+    </script>
+    <link rel="stylesheet" href="/assets/workspace.css" />
+    <link rel="stylesheet" href="/assets/analysis.css" />
+    <script src="/assets/workspace.js" defer></script>
+    <script src="/assets/analysis.js" defer></script>
+  </head>
+  <body class="booting">
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="i-folder" viewBox="0 0 24 24">
+        <path
+          d="M3 7.5A2.5 2.5 0 0 1 5.5 5H9l2 2h7.5A2.5 2.5 0 0 1 21 9.5v7a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 16.5z"
+        />
+      </symbol>
+      <symbol id="i-file" viewBox="0 0 24 24">
+        <path
+          d="M14 3H7.5A2.5 2.5 0 0 0 5 5.5v13A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5V8z"
+        />
+        <path d="M14 3v5h5" />
+      </symbol>
+      <symbol id="i-database" viewBox="0 0 24 24">
+        <ellipse cx="12" cy="5.5" rx="7.5" ry="2.5" />
+        <path d="M4.5 5.5v13c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5v-13" />
+        <path d="M4.5 12c0 1.4 3.4 2.5 7.5 2.5s7.5-1.1 7.5-2.5" />
+      </symbol>
+      <symbol id="i-target" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8.5" />
+        <circle cx="12" cy="12" r="4.5" />
+        <circle cx="12" cy="12" r="0.8" />
+      </symbol>
+      <symbol id="i-spectrum" viewBox="0 0 24 24">
+        <path d="M3 20h18M6 20v-5M9.5 20V6M13 20v-9M16.5 20v-3M19.5 20v-7" />
+      </symbol>
+      <symbol id="i-peak" viewBox="0 0 24 24">
+        <path d="M2.5 19.5h19" />
+        <path d="M3 17.5c3.2 0 4.6-.8 6-4.6S11 5 12 5s1.6 4.1 3 7.9 2.8 4.6 6 4.6" />
+      </symbol>
+      <symbol id="i-review" viewBox="0 0 24 24">
+        <path d="M4 6h16M4 12h8M4 18h6" />
+        <circle cx="16.5" cy="15.5" r="3.5" />
+        <path d="m19 18 2.5 2.5" />
+      </symbol>
+      <symbol id="i-play" viewBox="0 0 24 24">
+        <path
+          fill="currentColor"
+          d="M7.5 5.2v13.6a.8.8 0 0 0 1.2.7l11-6.8a.8.8 0 0 0 0-1.4l-11-6.8a.8.8 0 0 0-1.2.7z"
+        />
+      </symbol>
+      <symbol id="i-save" viewBox="0 0 24 24">
+        <path
+          d="M5.5 3.5h10l4 4v11a2 2 0 0 1-2 2h-12a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2z"
+        />
+        <path d="M7.5 3.5v4h7v-4M7.5 20.5v-6h9v6" />
+      </symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24">
+        <rect x="6" y="6" width="12" height="12" rx="2" />
+      </symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="4" />
+        <path
+          d="M12 2.5v2M12 19.5v2M4.6 4.6 6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"
+        />
+      </symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24">
+        <path d="M20 14.6A8.2 8.2 0 0 1 9.4 4 8.2 8.2 0 1 0 20 14.6z" />
+      </symbol>
+      <symbol id="i-help" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M9.6 9.3a2.5 2.5 0 1 1 3.4 2.4c-.6.3-1 .8-1 1.5v.6M12 17h.01" />
+      </symbol>
+      <symbol id="i-power" viewBox="0 0 24 24">
+        <path d="M12 3v8.5M7 6.4a7.5 7.5 0 1 0 10 0" />
+      </symbol>
+      <symbol id="i-check" viewBox="0 0 24 24">
+        <path d="m5 12.5 4.5 4.5L19 7.5" />
+      </symbol>
+      <symbol id="i-check-circle" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" />
+        <path d="m8.3 12.3 2.6 2.6 5-5.4" />
+      </symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24">
+        <path
+          d="M10.3 4 2.6 17.5A2 2 0 0 0 4.3 20.5h15.4a2 2 0 0 0 1.7-3L13.7 4a2 2 0 0 0-3.4 0z"
+        />
+        <path d="M12 9.5v4M12 17h.01" />
+      </symbol>
+      <symbol id="i-info" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 11v5.5M12 7.8h.01" />
+      </symbol>
+      <symbol id="i-dot" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8.5" stroke-dasharray="3 3" />
+      </symbol>
+      <symbol id="i-x" viewBox="0 0 24 24">
+        <path d="M6 6l12 12M18 6 6 18" />
+      </symbol>
+      <symbol id="i-up" viewBox="0 0 24 24">
+        <path d="M12 19V5M5.5 11.5 12 5l6.5 6.5" />
+      </symbol>
+      <symbol id="i-download" viewBox="0 0 24 24">
+        <path d="M12 4v11M7 10.5l5 5 5-5M5 20h14" />
+      </symbol>
+      <symbol id="i-external" viewBox="0 0 24 24">
+        <path
+          d="M14 4h6v6M20 4l-9 9M18 14v4.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10"
+        />
+      </symbol>
+      <symbol id="i-edit" viewBox="0 0 24 24">
+        <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z" />
+        <path d="m13.5 6.5 4 4" />
+      </symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24">
+        <path d="M12 5v14M5 12h14" />
+      </symbol>
+      <symbol id="i-search" viewBox="0 0 24 24">
+        <circle cx="11" cy="11" r="6.5" />
+        <path d="m20 20-4.4-4.4" />
+      </symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24">
+        <path
+          d="M19.5 11A7.5 7.5 0 0 0 6 7l-2 2M4 4.5V9h4.5M4.5 13A7.5 7.5 0 0 0 18 17l2-2M20 19.5V15h-4.5"
+        />
+      </symbol>
+      <symbol id="i-drive" viewBox="0 0 24 24">
+        <rect x="3" y="4.5" width="18" height="12" rx="2" />
+        <path d="M8 20.5h8M12 16.5v4" />
+      </symbol>
+      <symbol id="i-sliders" viewBox="0 0 24 24">
+        <path d="M4 7h9M17 7h3M4 17h3M11 17h9" />
+        <circle cx="15" cy="7" r="2" />
+        <circle cx="9" cy="17" r="2" />
+      </symbol>
+      <symbol id="i-vial" viewBox="0 0 24 24">
+        <path d="M8 3.5h8M9 3.5v13.5a3 3 0 0 0 6 0V3.5M9 11.5h6" />
+      </symbol>
+      <symbol id="i-list" viewBox="0 0 24 24">
+        <path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" />
+      </symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3 2" />
+      </symbol>
+      <symbol id="i-chevron-right" viewBox="0 0 24 24">
+        <path d="m9 6 6 6-6 6" />
+      </symbol>
+    </svg>
+
+    <header class="topbar">
+      <div class="topbar-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">XIC</span>
+        <span class="brand-name">XIC Extractor<small>本機工作區</small></span>
+      </div>
+      <nav class="view-tabs" aria-label="工作區">
+        <button
+          type="button"
+          data-view="targeted"
+          title="Targeted 分析（Ctrl+1）"
+        >
+          <svg class="icon"><use href="#i-target" /></svg>Targeted
+        </button>
+        <button
+          type="button"
+          data-view="untargeted"
+          title="Untargeted 分析（Ctrl+2）"
+        >
+          <svg class="icon"><use href="#i-spectrum" /></svg>Untargeted
+        </button>
+        <button type="button" data-view="review" title="結果檢閱（Ctrl+3）">
+          <svg class="icon"><use href="#i-review" /></svg>結果檢閱
+        </button>
+      </nav>
+      <div class="topbar-actions">
+        <button
+          type="button"
+          id="activity"
+          class="activity-pill"
+          title="前往目前工作"
+          hidden
+        ></button>
+        <button
+          type="button"
+          id="theme-toggle"
+          class="icon-button"
+          aria-label="切換深色模式"
+          title="切換深色模式"
+        >
+          <svg class="icon"><use href="#i-moon" /></svg>
+        </button>
+        <button
+          type="button"
+          id="about-workspace"
+          class="icon-button"
+          aria-label="關於與快捷鍵"
+          title="關於與快捷鍵"
+        >
+          <svg class="icon"><use href="#i-help" /></svg>
+        </button>
+        <button
+          type="button"
+          id="shutdown-workspace"
+          class="icon-button"
+          aria-label="結束工作區"
+          title="結束工作區"
+        >
+          <svg class="icon"><use href="#i-power" /></svg>
+        </button>
+      </div>
+      </div>
+    </header>
+    <div id="offline-banner" class="offline-banner" role="alert" hidden>
+      <svg class="icon"><use href="#i-alert" /></svg>
+      與本機工作區的連線中斷。若已關閉 XIC Extractor，請重新啟動後再開啟此頁。
+    </div>
+    <div id="analysis-root"></div>
+
+    <main id="workspace-review" class="page review-page">
+      <section class="source-card source-bar" id="source-card">
+        <div class="source-summary">
+          <span class="source-glyph" aria-hidden="true"
+            ><svg class="icon"><use href="#i-database" /></svg
+          ></span>
+          <div class="source-text">
+            <h1 id="batch-title">開啟已完成的分析</h1>
+            <p id="batch-description">
+              選擇批次輸出資料夾或 cid_nl_explanation.sqlite。
+            </p>
+          </div>
+          <div class="source-meta">
+            <span id="batch-count" class="chip" hidden></span>
+          </div>
+        </div>
+        <details id="source-settings" open>
+          <summary>結果與 RAW 位置</summary>
+          <form id="open-form" class="path-line">
+            <label for="source">結果資料夾或 SQLite</label
+            ><input
+              id="source"
+              type="text"
+              class="path"
+              placeholder="選擇批次結果資料夾"
+              required
+              data-idle
+            /><span class="path-actions"
+              ><button
+                type="button"
+                data-browse="source"
+                data-kind="report"
+                data-idle
+              >
+                瀏覽</button
+              ><button class="primary" type="submit" data-idle>
+                開啟批次
+              </button></span
+            >
+          </form>
+          <div class="path-line">
+            <label for="raw-dir">RAW 資料夾</label
+            ><input
+              id="raw-dir"
+              type="text"
+              class="path"
+              placeholder="取得 XIC 時才需要"
+              data-idle
+            /><button
+              type="button"
+              data-browse="raw-dir"
+              data-kind="folder"
+              data-idle
+            >
+              瀏覽
+            </button>
+          </div>
+          <div class="path-line">
+            <label for="dll-dir">RawFileReader DLL</label
+            ><input
+              id="dll-dir"
+              type="text"
+              class="path"
+              placeholder="Thermo RawFileReader DLL 資料夾"
+              data-idle
+            /><button
+              type="button"
+              data-browse="dll-dir"
+              data-kind="folder"
+              data-idle
+            >
+              瀏覽
+            </button>
+          </div>
+        </details>
+      </section>
+      <div
+        id="status"
+        class="inline-status"
+        role="status"
+        aria-live="polite"
+      ></div>
+      <section id="review-empty" class="card review-empty">
+        <span class="empty-glyph" aria-hidden="true"
+          ><svg class="icon"><use href="#i-review" /></svg
+        ></span>
+        <h2>還沒有開啟的批次</h2>
+        <ol class="review-steps">
+          <li>
+            <strong>選擇結果</strong
+            ><span>Untargeted 輸出資料夾，或其中的 cid_nl_explanation.sqlite。</span>
+          </li>
+          <li>
+            <strong>開啟批次</strong
+            ><span>搜尋全批項目，依 m/z、RT 或分組 ID 定位。</span>
+          </li>
+          <li>
+            <strong>需要時取得 XIC</strong
+            ><span>指定 RAW 與 DLL 資料夾，只讀取勾選的樣本。</span>
+          </li>
+        </ol>
+        <button type="button" data-view="untargeted" class="ghost">
+          還沒有結果？前往 Untargeted 分析<svg class="icon">
+            <use href="#i-chevron-right" /></svg>
+        </button>
+      </section>
+      <section id="review" class="review-grid" hidden>
+        <aside class="list-panel">
+          <form id="query-form">
+            <div class="section-heading">
+              <h2>檢閱項目</h2>
+              <button
+                type="button"
+                id="reset-query"
+                class="text-button"
+                data-idle
+              >
+                清除條件
+              </button>
+            </div>
+            <p class="subtle">搜尋範圍是整個批次的已儲存項目。</p>
+            <div class="range-row">
+              <span>m/z</span
+              ><input
+                id="mz-min"
+                type="number"
+                step="any"
+                placeholder="下限"
+                aria-label="m/z 下限"
+                data-idle
+              /><span aria-hidden="true">–</span
+              ><input
+                id="mz-max"
+                type="number"
+                step="any"
+                placeholder="上限"
+                aria-label="m/z 上限"
+                data-idle
+              />
+            </div>
+            <div class="range-row">
+              <span>RT</span
+              ><input
+                id="rt-min"
+                type="number"
+                step="any"
+                placeholder="起點 min"
+                aria-label="RT 起點（min）"
+                data-idle
+              /><span aria-hidden="true">–</span
+              ><input
+                id="rt-max"
+                type="number"
+                step="any"
+                placeholder="終點 min"
+                aria-label="RT 終點（min）"
+                data-idle
+              />
+            </div>
+            <details class="query-advanced">
+              <summary>以分組 ID 定位</summary>
+              <label class="field"
+                >完整分組 ID<input
+                  id="group-id"
+                  type="text"
+                  class="path"
+                  placeholder="從來源明細複製的識別碼"
+                  data-idle
+              /></label>
+            </details>
+            <button class="search-button" type="submit" data-idle>
+              <svg class="icon"><use href="#i-search" /></svg>搜尋全批結果
+            </button>
+          </form>
+          <div id="list-summary" class="list-summary"></div>
+          <div
+            id="item-list"
+            class="item-list"
+            aria-label="查詢結果"
+            tabindex="-1"
+          ></div>
+          <div class="pagination">
+            <button id="previous" type="button">上一頁</button
+            ><span id="page-label"></span
+            ><button id="next" type="button">下一頁</button>
+          </div>
+        </aside>
+        <section class="detail-card">
+          <div id="selection-empty" class="empty">
+            <span class="empty-glyph" aria-hidden="true"
+              ><svg class="icon"><use href="#i-peak" /></svg
+            ></span>
+            <h2>選擇一個項目開始檢閱</h2>
+            <p>查看當次分析紀錄，或為選定樣本重新取得 XIC。</p>
+          </div>
+          <div id="selection" hidden>
+            <div class="detail-heading">
+              <div>
+                <span class="eyebrow" id="item-kind"></span>
+                <h2 id="item-title"></h2>
+              </div>
+              <a id="download" class="button-link" hidden
+                ><svg class="icon"><use href="#i-download" /></svg
+                >下載目前檢閱頁</a
+              >
+            </div>
+            <details class="identity">
+              <summary>來源明細</summary>
+              <code id="item-identity"></code>
+            </details>
+            <section class="acquisition-panel">
+              <div class="section-heading">
+                <h3>
+                  <svg class="icon"><use href="#i-peak" /></svg>按需取得 XIC
+                </h3>
+                <span id="sample-count" class="chip"></span>
+              </div>
+              <p class="subtle">
+                勾選少數樣本，讀取保留峰頂附近的
+                RAW。缺少觀測座標的樣本無法自動擷取。
+              </p>
+              <div id="sample-list" class="sample-list"></div>
+              <div class="acquisition-actions">
+                <details class="parameters">
+                  <summary>擷取範圍</summary>
+                  <div>
+                    <label
+                      >m/z 容差
+                      <input
+                        id="ppm"
+                        type="number"
+                        min="0.0001"
+                        step="any"
+                        value="5"
+                        data-idle
+                      />
+                      ppm</label
+                    ><label
+                      >峰頂前後
+                      <input
+                        id="padding"
+                        type="number"
+                        min="0.0001"
+                        step="any"
+                        value="0.5"
+                        data-idle
+                      />
+                      min</label
+                    >
+                  </div>
+                </details>
+                <button id="cancel" type="button" hidden>
+                  <svg class="icon"><use href="#i-stop" /></svg>取消載入</button
+                ><button id="load-curves" type="button" class="primary">
+                  <svg class="icon"><use href="#i-peak" /></svg>載入所選樣本
+                  XIC
+                </button>
+              </div>
+              <p id="acquisition-hint" class="acquisition-hint"></p>
+              <div id="job-progress" class="job-progress" hidden>
+                <progress id="progress"></progress
+                ><span id="job-message"></span>
+              </div>
+            </section>
+            <div class="tabs" role="tablist" aria-label="檢閱來源">
+              <button
+                id="tab-recorded"
+                type="button"
+                role="tab"
+                aria-selected="true"
+              >
+                當次分析紀錄</button
+              ><button
+                id="tab-curves"
+                type="button"
+                role="tab"
+                aria-selected="false"
+                disabled
+              >
+                新取得 XIC
+              </button>
+            </div>
+            <p id="view-note" class="view-note"></p>
+            <iframe
+              id="inspector"
+              title="XIC Inspector 檢閱內容"
+              src="about:blank"
+              scrolling="no"
+            ></iframe>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+
+    <dialog id="browser-dialog">
+      <div class="dialog-head">
+        <h2 id="browse-title">選擇本機位置</h2>
+        <button
+          id="browse-close"
+          type="button"
+          class="dialog-close"
+          aria-label="關閉位置選擇"
+        >
+          <svg class="icon"><use href="#i-x" /></svg>
+        </button>
+      </div>
+      <div class="dialog-body">
+        <form id="browse-form">
+          <button
+            id="browse-parent"
+            type="button"
+            aria-label="上一層"
+            title="上一層"
+          >
+            <svg class="icon"><use href="#i-up" /></svg></button
+          ><input id="browse-path" type="text" aria-label="資料夾路徑" /><button
+            type="submit"
+          >
+            前往
+          </button>
+        </form>
+        <p id="browse-note" class="subtle" role="status"></p>
+        <div id="browse-entries"></div>
+      </div>
+      <div class="dialog-foot">
+        <button id="browse-roots" type="button" class="ghost spacer">
+          <svg class="icon"><use href="#i-drive" /></svg>本機磁碟
+        </button>
+        <button id="browse-use" type="button" class="primary">
+          使用此資料夾
+        </button>
+      </div>
+    </dialog>
+
+    <dialog id="confirm-dialog">
+      <form method="dialog">
+        <div class="dialog-head">
+          <h2 id="confirm-title">確認</h2>
+        </div>
+        <div class="dialog-body">
+          <p id="confirm-message" class="dialog-message"></p>
+        </div>
+        <div class="dialog-foot">
+          <button value="cancel" formnovalidate>取消</button
+          ><button id="confirm-accept" value="ok" class="primary">確定</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="about-dialog">
+      <div class="dialog-head">
+        <h2>XIC Extractor 本機工作區</h2>
+        <button
+          type="button"
+          class="dialog-close"
+          data-close="about-dialog"
+          aria-label="關閉"
+        >
+          <svg class="icon"><use href="#i-x" /></svg>
+        </button>
+      </div>
+      <div class="dialog-body">
+        <p class="dialog-message">
+          分析由本機 Python 核心執行；Inspector 只檢閱既有證據。RAW
+          檔案與結果都留在這台電腦，不會上傳。
+        </p>
+        <h3>快捷鍵</h3>
+        <div class="shortcut-list">
+          <span><kbd>Ctrl</kbd> <kbd>1</kbd></span><span>Targeted 分析</span>
+          <span><kbd>Ctrl</kbd> <kbd>2</kbd></span><span>Untargeted 分析</span>
+          <span><kbd>Ctrl</kbd> <kbd>3</kbd></span><span>結果檢閱</span>
+          <span><kbd>Ctrl</kbd> <kbd>Enter</kbd></span
+          ><span>開始目前頁面的分析</span>
+          <span><kbd>Ctrl</kbd> <kbd>S</kbd></span
+          ><span>儲存目前頁面的設定</span>
+          <span><kbd>Ctrl</kbd> <kbd>.</kbd></span><span>停止目前工作</span>
+          <span><kbd>↑</kbd> <kbd>↓</kbd></span
+          ><span>在檢閱清單中切換項目</span>
+        </div>
+      </div>
+    </dialog>
+  </body>
+</html>
