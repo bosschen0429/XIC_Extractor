@@ -498,10 +498,10 @@ def test_istd_rt_conflict_inside_target_window_stays_counted() -> None:
 
     projection = result.targeted_product_projection
     assert projection is not None
-    assert projection.product_state == "detected_flagged"
+    assert projection.product_state == "detected_clean"
     assert projection.counted_detection is True
     assert "targeted_rt_conflict" not in projection.conflict_reasons
-    assert "targeted_rt_review" in projection.review_reasons
+    assert "targeted_rt_review" not in projection.review_reasons
 
 
 @pytest.mark.parametrize(
@@ -545,7 +545,6 @@ def test_istd_combined_reviews_preserve_unresolved_conflicts(
     assert projection.conflict_reasons == unresolved
     assert projection.review_reasons == (
         "trace_morphology_review",
-        "targeted_rt_review",
     )
     assert projection.counted_detection is (not unresolved)
     assert projection.product_state == (
@@ -571,7 +570,7 @@ def test_istd_nl_dropout_waits_for_backfill_even_when_ms1_coherent() -> None:
     assert projection.product_state == "not_counted"
     assert projection.counted_detection is False
     assert "targeted_rt_conflict" not in projection.conflict_reasons
-    assert "targeted_rt_review" in projection.review_reasons
+    assert "targeted_rt_review" not in projection.review_reasons
     assert "cid_nl_method_not_supported" in projection.not_counted_reasons
     assert "istd_nl_fail_without_dropout_support" not in projection.not_counted_reasons
     assert "role_aware_istd_expected_present" not in projection.support_reasons
@@ -607,7 +606,7 @@ def test_paired_analyte_anchor_selected_trace_conflict_stays_counted() -> None:
     assert "trace_morphology_review" in projection.review_reasons
 
 
-def test_paired_analyte_anchor_and_trace_quality_are_review() -> None:
+def test_paired_analyte_reviews_trace_quality_not_anchor_distance() -> None:
     result = _result_with_targeted_projection_semantics(
         target=_target(is_istd=False),
         support_reasons=("candidate_aligned_ms2_nl",),
@@ -620,7 +619,7 @@ def test_paired_analyte_anchor_and_trace_quality_are_review() -> None:
     assert projection is not None
     assert projection.product_state == "detected_flagged"
     assert projection.counted_detection is True
-    assert "targeted_rt_review" in projection.review_reasons
+    assert "targeted_rt_review" not in projection.review_reasons
     assert "trace_morphology_review" in projection.review_reasons
 
 
@@ -763,6 +762,55 @@ def test_paired_analyte_reference_rt_without_istd_anchor_is_not_counted() -> Non
     assert "cid_nl_method_not_supported" in projection.not_counted_reasons
 
 
+@pytest.mark.parametrize("is_istd", [False, True])
+@pytest.mark.parametrize("confidence", ["HIGH", "LOW"])
+def test_confirmed_rt_drift_is_context_not_review(is_istd, confidence) -> None:
+    result = _result_with_targeted_projection_semantics(
+        target=_target(is_istd=is_istd),
+        support_reasons=("candidate_aligned_ms2_nl",),
+        conflict_reasons=("targeted_rt_conflict", "anchor_conflict"),
+        review_reasons=("targeted_rt_review", "paired_istd_rt_review"),
+        confidence=confidence,
+    )
+    projection = result.targeted_product_projection
+    assert projection is not None
+    assert projection.counted_detection is True
+    assert projection.product_state == "detected_clean"
+    assert projection.review_state == "none"
+    assert projection.review_reasons == ()
+    assert projection.conflict_reasons == ()
+    assert result.reported_rt == 8.5
+    assert result.reported_peak_area == 1234.5
+
+
+@pytest.mark.parametrize("quality_review", [(), ("trace_morphology_review",)])
+def test_confirmed_backfill_resolves_dropout_review_but_not_quality(quality_review):
+    from xic_extractor.extraction.targeted_product_projection import (
+        build_targeted_product_projection,
+    )
+    from xic_extractor.output.targeted_product_model import TargetedProductContext
+
+    projection = build_targeted_product_projection(
+        TargetedProductContext(role="ISTD", neutral_loss_required=True),
+        rt=9.1,
+        area=1234.5,
+        confidence="LOW",
+        nl_status="NL_FAIL",
+        backfill_supported=True,
+        review_reasons=(
+            "targeted_rt_review",
+            "plausible_nl_dropout_review",
+            "missing_ms2_not_observed",
+            "backfill_identity_confirmed",
+            *quality_review,
+        ),
+    )
+    assert projection.counted_detection is True
+    assert projection.review_reasons == quality_review
+    assert projection.review_state == ("flagged" if quality_review else "none")
+    assert "cross_sample_backfill_identity" in projection.support_reasons
+
+
 def test_legacy_very_low_does_not_decide_product_not_counted() -> None:
     result = _result_with_targeted_projection_semantics(
         target=_target(is_istd=False),
@@ -776,8 +824,8 @@ def test_legacy_very_low_does_not_decide_product_not_counted() -> None:
     projection = result.targeted_product_projection
     assert projection is not None
     assert projection.counted_detection is True
-    assert projection.product_state == "detected_flagged"
-    assert "legacy_confidence_review" in projection.review_reasons
+    assert projection.product_state == "detected_clean"
+    assert projection.review_reasons == ()
     assert projection.not_counted_reasons == ()
 
 
@@ -822,13 +870,13 @@ def test_rna_containing_strict_nl_target_downgrades_targeted_rt_conflict() -> No
 
     projection = result.targeted_product_projection
     assert projection is not None
-    assert projection.product_state == "detected_flagged"
+    assert projection.product_state == "detected_clean"
     assert projection.counted_detection is True
     assert "targeted_rt_conflict" not in projection.conflict_reasons
-    assert "targeted_rt_review" in projection.review_reasons
+    assert "targeted_rt_review" not in projection.review_reasons
 
 
-def test_strict_nl_analyte_keeps_rt_prior_conflict_as_review() -> None:
+def test_strict_nl_analyte_does_not_treat_rt_prior_as_review() -> None:
     result = _result_with_targeted_projection_semantics(
         target=_target(),
         sample_name="STDS",
@@ -837,10 +885,10 @@ def test_strict_nl_analyte_keeps_rt_prior_conflict_as_review() -> None:
     )
     projection = result.targeted_product_projection
     assert projection is not None
-    assert projection.product_state == "detected_flagged"
+    assert projection.product_state == "detected_clean"
     assert projection.counted_detection is True
     assert "targeted_rt_conflict" not in projection.conflict_reasons
-    assert "targeted_rt_review" in projection.review_reasons
+    assert "targeted_rt_review" not in projection.review_reasons
 
 
 def test_rna_containing_target_is_excluded_in_pure_dna_sample() -> None:
@@ -1177,7 +1225,7 @@ def _ms2_evidence() -> CandidateMS2Evidence:
 
 
 @pytest.mark.parametrize("is_istd", [False, True])
-def test_method_supported_quantifiable_peak_keeps_rt_and_shape_as_review(
+def test_method_supported_quantifiable_peak_reviews_shape_not_rt(
     is_istd: bool,
 ) -> None:
     result = _result_with_targeted_projection_semantics(
@@ -1196,6 +1244,6 @@ def test_method_supported_quantifiable_peak_keeps_rt_and_shape_as_review(
     assert projection is not None
     assert projection.counted_detection is True
     assert projection.conflict_reasons == ()
-    assert "targeted_rt_review" in projection.review_reasons
+    assert "targeted_rt_review" not in projection.review_reasons
     assert "trace_morphology_review" in projection.review_reasons
     assert result.reported_peak_area == 1234.5

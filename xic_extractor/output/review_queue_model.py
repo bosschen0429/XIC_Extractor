@@ -3,6 +3,16 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
+_INFORMATIONAL_EVENTS = {
+    "MULTI_PEAK",
+    "ANCHOR_RT_MISMATCH",
+    "ANCHOR_MISMATCH",
+    "NL_ANCHOR_FALLBACK",
+    "ISTD_ANCHOR_MISSING",
+    "ISTD_CONFIDENCE",
+    "BACKFILL_ACCEPTED",
+}
+
 
 def _review_queue_rows(
     rows: list[dict[str, str]],
@@ -85,7 +95,15 @@ def _primary_review_row(
 def _primary_review_issue(
     row: dict[str, str], diagnostics: list[dict[str, str]]
 ) -> str:
-    candidates = [diagnostic.get("Issue", "") for diagnostic in diagnostics]
+    if _has_product_projection(row):
+        # The completed projection owns current actions. Diagnostic events can
+        # explain an action, but cannot reopen a resolved/confirmed result.
+        return _row_review_issue(row)
+    candidates = [
+        diagnostic.get("Issue", "")
+        for diagnostic in diagnostics
+        if diagnostic.get("Issue", "") not in _INFORMATIONAL_EVENTS
+    ]
     row_issue = _row_review_issue(row)
     if row_issue:
         candidates.append(row_issue)
@@ -142,12 +160,6 @@ def _dedupe_text(values: Iterable[str]) -> list[str]:
 
 def _row_review_issue(row: dict[str, str]) -> str:
     nl = row.get("NL", "")
-    if nl == "NL_FAIL":
-        return "NL_FAIL"
-    if nl == "NO_MS2":
-        return "NO_MS2"
-    if nl.startswith("WARN_"):
-        return "NL_WARN"
     if _has_product_projection(row):
         if row.get("Projection Conflict Reasons", ""):
             return "PROJECTION_CONFLICT"
@@ -156,11 +168,19 @@ def _row_review_issue(row: dict[str, str]) -> str:
         product_state = row.get("Product State", "")
         if product_state == "ambiguous":
             return "PRODUCT_AMBIGUOUS"
-        if row.get("Projection Not Counted Reasons", ""):
+        if row.get("Counted Detection", "").upper() == "FALSE":
+            if nl in {"NL_FAIL", "NO_MS2"}:
+                return nl
             return "PRODUCT_NOT_COUNTED"
         if row.get("Review State", "") in {"flagged", "review_required"}:
             return "PROJECTION_FLAGGED"
         return ""
+    if nl == "NL_FAIL":
+        return "NL_FAIL"
+    if nl == "NO_MS2":
+        return "NO_MS2"
+    if nl.startswith("WARN_"):
+        return "NL_WARN"
     confidence = row.get("Confidence", "")
     if confidence in {"LOW", "VERY_LOW"}:
         return f"CONFIDENCE_{confidence}"

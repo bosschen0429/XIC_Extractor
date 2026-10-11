@@ -127,6 +127,7 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
         "Target",
         "Area",
         "RT",
+        "IntSmoothed",
         "Counted Detection",
         "Review",
         "Review Reason",
@@ -139,6 +140,8 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
         "Group",
         "NL",
         "Confidence",
+        "Int",
+        "PeakWidth",
     ]
     record = dict(
         zip(
@@ -151,20 +154,23 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     assert record["Target"] == "WithNL"
     assert record["RT"] == 9.0
     assert record["Area"] == 123.45
+    assert record["IntSmoothed"] == 450.0
+    assert record["Int"] == 500.0
+    assert record["PeakWidth"] == 0.3
     assert record["NL Evidence"] == "Observed with tolerance warning"
     assert record["NL"] == "⚠ 12.3ppm"
     assert record["Confidence"] == "LOW"
-    assert record["Review"] == "Review"
+    assert record["Review"] == "Check"
     assert (
         record["Review Reason"].replace("\n", "")
-        == "未取得符合條件的 NL 證據。量測是否計入，以已保存的判定為準。"
+        == "此筆結果帶有檢閱註記，請連同峰形及原始證據查看。"
     )
     assert not ws.merged_cells.ranges
     assert ws.freeze_panes == "C2"
     result_columns = {cell.value: cell.column_letter for cell in ws[1]}
-    for header in headers[:7]:
+    for header in headers[:6]:
         assert ws.column_dimensions[result_columns[header]].hidden is not True
-    for header in headers[7:]:
+    for header in headers[6:]:
         assert ws.column_dimensions[result_columns[header]].hidden is True
 
     ws_metadata = wb["Run Metadata"]
@@ -187,7 +193,7 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     assert saved["records"][0]["Area"] == 123.45
     assert (
         saved["review_queue"][0]["Why"].replace("\n", "")
-        == "未取得符合條件的 NL 證據。量測是否計入，以已保存的判定為準。"
+        == "此筆結果帶有檢閱註記，請連同峰形及原始證據查看。"
     )
 
 
@@ -279,13 +285,11 @@ def test_workbook_explains_backfill_without_changing_saved_counts(tmp_path):
     header_index = next(i for i, row in enumerate(values) if row[0] == "樣本")
     records = {
         row[0]: dict(zip(values[header_index], row))
-        for row in values[header_index + 1 : header_index + 3]
+        for row in values[header_index + 1 : header_index + 2]
     }
-    assert records["Recovered"]["結果"] == "已計入"
-    assert "跨樣本回填已確認" in records["Recovered"]["原因說明"].replace("\n", "")
+    assert "Recovered" not in records
     assert records["Held"]["結果"] == "未計入"
     assert "未找到" in records["Held"]["原因說明"].replace("\n", "")
-    assert records["Recovered"]["Area (counts·s)"] == 123.45
     assert records["Held"]["Area (counts·s)"] == 678.90
     assert any(
         row[2:4] == ("BACKFILL_HOLD", "no_unique_qualified_ms1_peak") for row in values
@@ -299,7 +303,7 @@ def test_workbook_explains_backfill_without_changing_saved_counts(tmp_path):
         ("Recovered", 123.45, 9.1, "TRUE"),
         ("Held", 678.90, 9.2, "FALSE"),
     ]
-    assert "跨樣本回填已確認" in source.records[0]["Review Reason"].replace("\n", "")
+    assert source.records[0]["Review Reason"] is None
 
 
 def _config(

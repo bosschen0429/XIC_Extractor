@@ -59,11 +59,11 @@ def build_diagnostics_sheet(
     for index, width in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(index)].width = width
     for row, text, size in (
-        (2, "結果檢閱與原因說明", 20),
-        (3, "每個樣本／目標只列一次。已計入與需檢閱可以同時成立。", 10),
+        (2, "待處理結果", 20),
+        (3, "僅列未確認或仍需處理的結果；一般流程資訊保留於原始紀錄。", 10),
         (
             5,
-            f"{len(worklist)} 筆結果有註記；"
+            f"{len(worklist)} 筆結果待處理；"
             f"原始 {len(rows)} 筆事件保留在下方，可展開查看。",
             10,
         ),
@@ -153,7 +153,7 @@ def build_diagnostics_sheet(
         ws.auto_filter.ref = f"A7:I{7 + len(worklist)}"
         _add_table(ws, "TargetedReview", ws.auto_filter.ref)
     else:
-        ws["A8"] = "本批沒有檢閱註記。"
+        ws["A8"] = "本批沒有待處理結果。"
 
     ws.merge_cells(
         start_row=raw_heading, start_column=1, end_row=raw_heading, end_column=9

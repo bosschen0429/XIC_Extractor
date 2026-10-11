@@ -57,8 +57,6 @@ def project_targeted_result(
     )
     if hard_quality_flags(result.quality_flags):
         review = _merge_reasons(review, ("trace_morphology_review",))
-    if result.confidence.upper() == "VERY_LOW":
-        review = _merge_reasons(review, ("legacy_confidence_review",))
     if (
         result.physical_evaluation is not None
         and result.physical_evaluation.requires_overlap_review
@@ -232,11 +230,17 @@ def build_targeted_product_projection(
         **(legacy_evidence or {}),
     }
     support = _stable_reasons(support_reasons)
-    review = _stable_reasons(review_reasons)
-    # RT and morphology describe localization/measurement quality, not identity.
+    # RT priors and legacy scores describe how the peak was located, not an
+    # unresolved action. Keep them in the source evidence, not the product queue.
+    context_only = {
+        "targeted_rt_review",
+        "paired_istd_rt_review",
+        "legacy_confidence_review",
+        "backfill_identity_confirmed",
+    }
+    review = _stable_reasons(tuple(r for r in review_reasons if r not in context_only))
+    localization_conflicts = {"targeted_rt_conflict", "anchor_conflict"}
     review_categories = {
-        "targeted_rt_conflict": "targeted_rt_review",
-        "anchor_conflict": "targeted_rt_review",
         "trace_morphology_conflict": "trace_morphology_review",
         "hard_local_quality_conflict": "trace_morphology_review",
         "hard_quality_flag_conflict": "trace_morphology_review",
@@ -251,7 +255,11 @@ def build_targeted_product_projection(
         ),
     )
     conflicts = _stable_reasons(
-        tuple(reason for reason in conflict_reasons if reason not in review_categories)
+        tuple(
+            reason
+            for reason in conflict_reasons
+            if reason not in review_categories and reason not in localization_conflicts
+        )
     )
     not_counted = _stable_reasons(not_counted_reasons)
     if (
@@ -302,7 +310,18 @@ def build_targeted_product_projection(
 
     if context.is_istd and backfill_supported:
         support = _merge_reasons(support, ("cross_sample_backfill_identity",))
-        review = _merge_reasons(review, ("backfill_identity_confirmed",))
+        # Accepted recovery resolves missing-direct-NL context; independent
+        # morphology or overlap concerns remain actionable.
+        review = tuple(
+            reason
+            for reason in review
+            if reason
+            not in {
+                "plausible_nl_dropout_review",
+                "missing_ms2_not_observed",
+                "missing_nl_support_review",
+            }
+        )
         not_counted = tuple(
             reason
             for reason in not_counted

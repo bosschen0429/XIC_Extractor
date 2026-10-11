@@ -43,8 +43,12 @@ def test_data_sheet_preserves_measurements_and_compact_review_fields() -> None:
     )
     assert ws["C2"].number_format == "#,##0.00"
     assert ws["D2"].number_format == "0.0000"
+    assert records[0]["IntSmoothed"] == 900
+    assert records[0]["Int"] == 1000
+    assert records[0]["PeakWidth"] == 0.4
+    assert ws["E2"].number_format == "0.00E+00"
     assert ws.freeze_panes == "C2"
-    assert ws.tables["TargetedResults"].ref == "A1:P4"
+    assert ws.tables["TargetedResults"].ref == "A1:S4"
     assert ws.auto_filter.ref is None
     wb.close()
 
@@ -161,6 +165,33 @@ def test_review_queue_aggregates_diagnostics_by_sample_target() -> None:
     assert review_rows[0]["Action"] == "在 Inspector 檢查所選 RT 附近的 MS2／NL 證據。"
     assert review_rows[0]["Issue Count"] == "2"
     assert review_rows[0]["Evidence"] == "NL_FAIL; ANCHOR_MISMATCH"
+
+
+def test_review_queue_does_not_reopen_confirmed_results_from_diagnostic_history():
+    row = _long_row(
+        "Recovered",
+        "ISTD",
+        "9.1",
+        "123",
+        "NL_FAIL",
+        role="ISTD",
+        confidence="LOW",
+        counted_detection="TRUE",
+        product_state="detected_clean",
+    ) | {
+        "Review State": "none",
+        "Projection Support Reasons": "cross_sample_backfill_identity",
+    }
+    diagnostics = [
+        {"SampleName": "Recovered", "Target": "ISTD", "Issue": issue, "Reason": issue}
+        for issue in (
+            "NL_FAIL",
+            "MULTI_PEAK",
+            "ANCHOR_RT_MISMATCH",
+            "BACKFILL_ACCEPTED",
+        )
+    ]
+    assert _review_queue_rows([row], diagnostics) == []
 
 
 def test_review_queue_product_mode_does_not_use_legacy_confidence_as_issue() -> None:
@@ -469,7 +500,12 @@ def test_csv_to_excel_retains_multi_peak_selection_and_candidate_count(
     assert "2 qualified physical candidates in selection window" in records[0].reason
     assert "selected RT 9.0000 min" in records[0].reason
     record = _sheet_records(workbook["XIC Results"])[0]
-    assert record["Review Evidence"] == "multi_peak=2"
+    assert record["Review"] is None
+    assert record["Review Evidence"] is None
+    assert any(
+        row[2:4] == ("MULTI_PEAK", records[0].reason)
+        for row in workbook["Diagnostics"].values
+    )
     assert record["RT"] == 9.0
     assert record["Area"] == 123.0
     workbook.close()
@@ -512,6 +548,7 @@ def _long_row(
             "ERROR": "Processing error",
         }.get(nl.split("_")[0] if nl.startswith("WARN_") else nl, "Unavailable"),
         "Int": "1000",
+        "IntSmoothed": "900",
         "PeakStart": "8.9",
         "PeakEnd": "9.3",
         "PeakWidth": "0.4000",

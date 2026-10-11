@@ -307,11 +307,15 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
 ## ISTD Evidence
 
 - ISTDs with candidate-aligned required CID-NL support and finite positive
-  quantitation remain confirmed despite RT or morphology review flags.
+  quantitation remain confirmed despite RT drift. RT-prior disagreement alone
+  creates neither an identity veto nor a review action. Unresolved morphology
+  or overlap concerns can still require measurement review.
 - Missing required NL initially leaves an ISTD unconfirmed, even when expected
   present and MS1-coherent. The existing cross-sample Backfill route can confirm
   its identity using a validated accepted receipt. Exclusions, unresolved
   identity conflicts, and unavailable quantitation still block counting.
+  Successful confirmation resolves the missing-direct-NL review; the recovery
+  route remains support provenance, not a new warning by itself.
 - Only direct confirmed observations seed the frozen support group. Recovered
   ISTDs do not become direct SUPPORT votes.
 - Paired ISTD RT remains matrix-specific localization evidence. RT prior and
@@ -323,9 +327,10 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
   quality. A configured RT window bounds acquisition context but does not veto
   an otherwise eligible retained peak solely because its apex lies outside the
   hint. This does not authorize unbounded RAW acquisition.
-- Paired ISTD RT guides candidate localization; RT distance and legacy quality
-  or confidence labels remain review evidence, not identity vetoes. A supported
-  and quantifiable peak can remain counted while requiring quality review.
+- Paired ISTD RT guides candidate localization. RT distance and legacy
+  confidence labels remain source context, not identity vetoes or standalone
+  review actions. A supported and quantifiable peak can still require review
+  for an unresolved typed measurement-quality concern.
 - Analyte `NL_FAIL` and `NO_MS2` retain measured quantities but remain
   not-counted. Paired RT, area ratio, and an accepted observation-only Backfill
   do not confer analyte identity confirmation.

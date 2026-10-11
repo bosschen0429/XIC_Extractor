@@ -18,7 +18,6 @@ from xic_extractor.output.workbook_styles import (
     _long_column_width,
     _long_number_format,
     _prepare_print_view,
-    _prose_line_count,
 )
 
 
@@ -35,12 +34,13 @@ def _build_data_sheet(
         "Target": "目標名稱。用篩選器查看單一目標的所有樣本。",
         "Area": "峰面積（counts·s）。保留正式積分值；有數值不代表已計入偵測。",
         "RT": "所選峰的頂點保留時間（min）。",
+        "IntSmoothed": "平滑後的峰頂強度（counts），沿用正式量測值；不是峰面積。",
+        "Int": "原始峰頂強度（counts），沿用正式量測值。",
+        "PeakWidth": "所選峰的寬度（min）。",
         "Counted Detection": (
             "是否計入偵測：TRUE＝已計入；FALSE＝未計入。與檢閱註記分開判讀。"
         ),
-        "Review": (
-            "Review／Check＝有待檢查的註記；Info＝補充資訊。空白表示沒有檢閱註記。"
-        ),
+        "Review": ("Review／Check＝尚待處理的結果。空白表示沒有待處理事項。"),
         "Review Reason": (
             "白話檢閱說明。完整原因、下一步與原始事件可在 Diagnostics 查看。"
         ),
@@ -77,7 +77,16 @@ def _build_data_sheet(
                     }
                     else (
                         Alignment(horizontal="right", vertical="center")
-                        if header in {"Area", "RT", "PeakStart", "PeakEnd"}
+                        if header
+                        in {
+                            "Area",
+                            "RT",
+                            "IntSmoothed",
+                            "Int",
+                            "PeakWidth",
+                            "PeakStart",
+                            "PeakEnd",
+                        }
                         else CENTER
                     )
                 ),
@@ -85,16 +94,13 @@ def _build_data_sheet(
             )
             if isinstance(cell.value, float):
                 cell.number_format = _long_number_format(header)
-        why = review.get("Why", "")
-        ws.row_dimensions[row_index].height = max(
-            26, 14 * _prose_line_count(why, 52) + 10
-        )
+        ws.row_dimensions[row_index].height = 26
     ws.auto_filter.ref = (
         f"A1:{get_column_letter(len(WORKBOOK_RESULT_HEADERS))}{max(1, len(rows) + 1)}"
     )
     ws.freeze_panes = "C2"
     _add_table(ws, "TargetedResults", ws.auto_filter.ref)
-    _prepare_print_view(ws, area=f"A1:G{max(2, len(rows) + 1)}")
+    _prepare_print_view(ws, area=f"A1:F{max(2, len(rows) + 1)}")
     for column, header in enumerate(WORKBOOK_RESULT_HEADERS, start=1):
         dimension = ws.column_dimensions[get_column_letter(column)]
         dimension.width = _long_column_width(header)

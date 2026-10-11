@@ -75,9 +75,11 @@ candidate evidence and physical eligibility. Chemical support precedes
 localization hints and trace quality; contextual RT and deterministic abundance
 break ties within the supported evidence ordering. Configured RT windows guide
 bounded acquisition, not a second hard apex veto within retained context.
-Strong method-supported, quantifiable peaks remain counted despite RT or
-morphology review flags; quality review remains separate from identity. Confidence and reason labels describe evidence; they do
-not start a second candidate ranking.
+Strong method-supported, quantifiable peaks remain counted despite RT drift.
+RT-prior disagreement and legacy confidence labels alone do not create product
+review actions. Unresolved morphology or overlap concerns can require quality
+review independently of identity. Confidence and reason labels describe source
+evidence; they do not start a second candidate ranking.
 
 The Targeted handoff retains all candidate physical evaluations, acquired
 method products, the search receipt and the relation answer. Production binds

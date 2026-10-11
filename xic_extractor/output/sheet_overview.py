@@ -78,7 +78,7 @@ def build_overview_sheet(
             "未計入偵測",
             overview.result_count - overview.counted_count - overview.count_unknown,
         ),
-        (9, "有檢閱註記", overview.review_count),
+        (9, "待處理結果", overview.review_count),
     )
     for column, label, value in cards:
         for row in (6, 7, 8):
@@ -103,7 +103,7 @@ def build_overview_sheet(
     ws.row_dimensions[6].height = 20
     ws.row_dimensions[7].height = 18
     ws.row_dimensions[8].height = 16
-    note = "計入偵測與檢閱註記是兩件事；例如回填確認的 ISTD 仍會保留 NL 未支持的註記。"
+    note = "僅列未確認、證據衝突或品質問題；一般 RT 漂移及已確認的回填不列為待處理。"
     if overview.count_unknown:
         note = (
             f"另有 {overview.count_unknown} 筆未記錄計數判定，未併入已計入或未計入。"
@@ -137,7 +137,7 @@ def build_overview_sheet(
     groups = ((1, 3), (4, 2), (6, 2), (8, 3), (11, 2))
     for (column, span), title in zip(
         groups,
-        ("目標", "計入 / 全部", "檢閱註記", "已計入 RT 範圍 (min)", "查看結果"),
+        ("目標", "計入 / 全部", "待處理", "已計入 RT 範圍 (min)", "查看結果"),
         strict=True,
     ):
         ws.merge_cells(
@@ -189,7 +189,7 @@ def build_overview_sheet(
         ws,
         end,
         "閱讀結果表：TRUE＝已計入；FALSE＝未計入。"
-        "Review／Check 為檢查註記，Info 為補充資訊。",
+        "待處理原因集中在 Diagnostics；完整證據可展開查看。",
         size=10,
     )
     _line(

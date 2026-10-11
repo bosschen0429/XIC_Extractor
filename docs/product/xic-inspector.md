@@ -67,10 +67,16 @@ records; other layouts are rejected rather than reinterpreted.
 In Excel, `Overview` presents saved counted/not-counted totals, per-target
 counts and a counted-result RT scatter plot. Its sample index is not injection
 time, and the charts do not recalculate scientific decisions. `Diagnostics`
-is a Traditional Chinese reading guide with one row per annotated sample/target,
+is a Traditional Chinese action list with one row per unresolved sample/target,
 the saved count outcome, a contextual explanation and links to the measurement.
 Original diagnostic events remain intact in an expandable appendix; event text
-alone does not override the final count outcome. The result and target tables
+alone does not override the final count outcome or reopen a confirmed result.
+Reference-RT drift, resolved multi-peak selection and confirmed ISTD backfill
+remain context rather than standalone review tasks. Unconfirmed identity,
+unresolved conflicts and independent peak-quality concerns remain actionable.
+The main results show Area, RT and IntSmoothed (smoothed apex intensity);
+raw Int and PeakWidth remain available in the grouped detail columns alongside
+review reasons. The result and target tables
 retain their canonical first-row headers and numeric values, with advanced
 columns grouped away. `Run Metadata` adds explanations alongside its unchanged
 key/value records. These presentation changes retain layout version 2 and the
