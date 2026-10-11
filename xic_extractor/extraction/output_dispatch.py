@@ -30,7 +30,6 @@ def write_outputs(
         targets,
         output.file_results,
         output.diagnostics,
-        emit_score_breakdown=config.emit_score_breakdown,
     )
     if write_manifest:
         write_method_manifest(config, targets, context=method_manifest_context)

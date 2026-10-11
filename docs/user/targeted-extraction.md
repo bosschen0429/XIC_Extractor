@@ -101,13 +101,10 @@ canonical smoothing-window compatibility.
 output/xic_results_YYYYMMDD_HHMM.xlsx
 ```
 
-The default limited-identity workflow places the verified workbook under
-`output/<run>/final/output/`. Open it from the workspace result actions;
-`baseline`, `support` and `final_unverified` folders are diagnostic artifacts,
-not alternate verified results. Cancellation or a failed gate may leave those
-diagnostics but does not publish a verified final folder.
-
-Daily review should start from the workbook, not the debug CSV files.
+The default limited-identity workflow publishes its gate-passed workbook under
+`output/<run>/`. Open it from the workspace result actions. Cancellation or a
+failed gate cleans the private working files without publishing a completed
+workbook.
 
 | Workbook sheet | Purpose |
 | --- | --- |
@@ -117,11 +114,17 @@ Daily review should start from the workbook, not the debug CSV files.
 | `Summary` | Per-target detection, area, NL, RT, and confidence summaries |
 | `Targets` | Snapshot of the target table used for the run |
 | `Diagnostics` | Technical issue rows |
-| `Run Metadata` | Reproducibility metadata and config hash |
-| `Score Breakdown` | Optional technical audit sheet |
+| `Run Metadata` | Actual method settings, config fragments, and gate receipt |
 
-Intermediate CSVs are kept only when `keep_intermediate_csv=true` or the CLI
-uses `--skip-excel`.
+The normal output directory contains one XLSX only. Temporary baseline/support/
+diff files are cleaned after the limited-identity gate, including on cancellation
+or failure; a failed gate does not publish a completed workbook. Nonempty supplied
+sample context, identity support, and selection approvals remain in hidden sheets
+so the decision inputs can be inspected without sidecar files.
+
+Inspector currently reads its supported evidence sources, not Targeted XLSX.
+Use the workbook's Review Queue and result reasons; do not assume a workbook can
+be opened as an Inspector chromatogram source.
 
 ## Detection And Review
 
@@ -161,7 +164,6 @@ Useful overrides:
 | `--data-dir` | One-run RAW directory override |
 | `--parallel-mode` | `serial` or `process` |
 | `--parallel-workers` | Worker count for process mode |
-| `--skip-excel` | Keep CSV-only output and skip workbook conversion |
 
 Tracked settings currently default to `parallel_mode=process`. Use serial mode
 for diagnosis or environment isolation.
@@ -183,5 +185,3 @@ For developer-level validation harness details, see
 | `data_dir` does not exist | Point Settings to the folder containing `.raw` files |
 | DLL load failure | Point Settings to the folder with Thermo RawFileReader DLLs |
 | One RAW file fails | Continue the run and inspect the `FILE_ERROR` diagnostic row |
-| Need debug CSVs | Enable `keep_intermediate_csv` or use `--skip-excel` |
-| Need scoring details | Enable `emit_score_breakdown` and inspect `Score Breakdown` |

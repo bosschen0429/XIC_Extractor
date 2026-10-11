@@ -547,8 +547,7 @@
   }
   const targetColumns = [
     ["label", "名稱"],
-    ["is_istd", "ISTD"],
-    ["istd_pair", "ISTD 配對"],
+    ["pairing", "角色／ISTD 配對"],
     ["mz", "m/z"],
     ["rt_min", "RT min"],
     ["rt_max", "RT max"],
@@ -566,11 +565,22 @@
       const tr = el("tr");
       for (const [key, label] of targetColumns) {
         const td = el("td");
-        const input = el("input");
+        const input = el(key === "pairing" ? "select" : "input");
         input.setAttribute("aria-label", `${label}（第 ${index + 1} 列）`);
-        if (key === "is_istd") {
-          input.type = "checkbox";
-          input.checked = isIstd(row);
+        if (key === "pairing") {
+          const choices = [["", "未配對"], ["role:istd", "此列是 ISTD"]];
+          for (const standard of state.targets.filter(isIstd)) {
+            if (standard !== row) choices.push([`pair:${standard.label}`, standard.label]);
+          }
+          const value = isIstd(row) ? "role:istd" : row.istd_pair ? `pair:${row.istd_pair}` : "";
+          if (!choices.some(([key]) => key === value))
+            choices.push([value, `${row.istd_pair}（請重新選擇）`]);
+          for (const [value, label] of choices) {
+            const option = el("option", label);
+            option.value = value;
+            input.append(option);
+          }
+          input.value = value;
         } else {
           input.value = row[key] || "";
           if (
@@ -581,7 +591,11 @@
             input.inputMode = "decimal";
         }
         input.addEventListener("input", () => {
-          row[key] = key === "is_istd" ? String(input.checked) : input.value;
+          if (key === "pairing") {
+            row.is_istd = String(input.value === "role:istd");
+            row.istd_pair = input.value.startsWith("pair:") ? input.value.slice(5) : "";
+            renderTargets();
+          } else row[key] = input.value;
           dirty("targeted");
           targetCount();
         });

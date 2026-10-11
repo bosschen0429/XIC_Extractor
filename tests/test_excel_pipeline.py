@@ -22,6 +22,45 @@ from xic_extractor.peak_detection.models import (
 )
 
 
+def test_workbook_retains_nonempty_decision_inputs_without_sidecars(tmp_path):
+    from xic_extractor.output.excel_pipeline import write_excel_from_run_output
+
+    context = tmp_path / "sample.csv"
+    context.write_text(
+        "sample_name,sample_role,injection_order\nSampleA,study_sample,2\nSampleB,qc,1\n",
+        encoding="utf-8",
+    )
+    support = tmp_path / "support.tsv"
+    support.write_text("sample\ttarget\nSampleA\t=unsafe\n", encoding="utf-8")
+    config = replace(
+        _config(tmp_path),
+        injection_order_source=context,
+        targeted_ms1_shape_identity_support_tsv=support,
+    )
+    path = config.output_csv.with_suffix(".xlsx")
+    write_excel_from_run_output(
+        config,
+        [replace(_target("WithNL"), sample_applicability="rna_containing")],
+        _run_output(with_diagnostics=False),
+        output_path=path,
+    )
+    context.unlink()
+    support.unlink()
+    assert list(path.parent.iterdir()) == [path]
+    wb = load_workbook(path)
+    assert list(wb["Sample Context"].values) == [
+        ("sample_name", "sample_role", "injection_order"),
+        ("SampleA", "study_sample", "2"),
+        ("SampleB", "qc", "1"),
+    ]
+    assert wb["Sample Context"].sheet_state == "hidden"
+    assert wb["Identity Support"]["B2"].data_type != "f"
+    assert wb["Identity Support"]["B2"].value.endswith("=unsafe")
+    assert wb["Targets"]["L1"].value == "Sample applicability"
+    assert wb["Targets"]["L2"].value == "rna_containing"
+    wb.close()
+
+
 def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     tmp_path: Path,
 ) -> None:
@@ -103,171 +142,8 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     } <= metadata_keys
 
 
-def test_write_excel_from_run_output_adds_score_breakdown_when_enabled(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.output.excel_pipeline import write_excel_from_run_output
-
-    config = _config(tmp_path, emit_score_breakdown=True)
-    output_path = tmp_path / "output" / "xic_results.xlsx"
-
-    write_excel_from_run_output(
-        config,
-        [_target("WithNL")],
-        _run_output(with_diagnostics=False),
-        output_path=output_path,
-    )
-
-    wb = load_workbook(output_path)
-    assert wb.sheetnames == [
-        "Overview",
-        "Review Queue",
-        "XIC Results",
-        "Summary",
-        "Targets",
-        "Diagnostics",
-        "Run Metadata",
-        "Score Breakdown",
-    ]
-    ws = wb["Score Breakdown"]
-    headers = [cell.value for cell in next(ws.iter_rows(max_row=1))]
-    values = next(ws.iter_rows(min_row=2, max_row=2, values_only=True))
-    row = dict(zip(headers, values, strict=False))
-    assert row["SampleName"] == "SampleA"
-    assert row["Target"] == "WithNL"
-    assert row["Base Score"] == 50
-    assert row["Positive Points"] == 40
-    assert row["Negative Points"] == 0
-    assert row["Raw Score"] == 90
-    assert row["Final Confidence"] == "HIGH"
-    assert row["Detection Counted"] == "TRUE"
-    assert row["Support"] == "strict_nl_ok; local_sn_strong"
-    assert row["Concerns"] is None
-    assert row["local_sn"] == 1
-    assert row["Quality Penalty"] == 1
-    assert row["Quality Flags"] == "too_broad"
-    assert row["Total Severity"] == 2
-    assert row["Confidence"] == "LOW"
-    assert row["Prior RT"] is None
-
-
-def test_write_excel_score_breakdown_keeps_schema_with_ms2_trace_labels(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.output.excel_pipeline import write_excel_from_run_output
-
-    config = _config(tmp_path, emit_score_breakdown=True)
-    output = _run_output(with_diagnostics=False)
-    result = output.file_results[0].results["WithNL"]
-    score_breakdown = (
-        ("Base Score", "50"),
-        ("Positive Points", "50"),
-        ("Negative Points", "8"),
-        ("Raw Score", "92"),
-        ("Caps", ""),
-        ("Final Confidence", "HIGH"),
-        ("Support", "strict_nl_ok; ms2_trace_strong; local_sn_strong"),
-        ("Concerns", "ms2_trace_weak"),
-    )
-    peak_result = replace(result.peak_result, score_breakdown=score_breakdown)
-    result = replace(
-        result,
-        peak_result=peak_result,
-        score_breakdown=score_breakdown,
-    )
-    file_result = replace(
-        output.file_results[0],
-        results={"WithNL": result},
-    )
-    output = replace(output, file_results=[file_result])
-    output_path = tmp_path / "output" / "xic_results.xlsx"
-
-    write_excel_from_run_output(
-        config,
-        [_target("WithNL")],
-        output,
-        output_path=output_path,
-    )
-
-    wb = load_workbook(output_path)
-    assert wb.sheetnames == [
-        "Overview",
-        "Review Queue",
-        "XIC Results",
-        "Summary",
-        "Targets",
-        "Diagnostics",
-        "Run Metadata",
-        "Score Breakdown",
-    ]
-    ws = wb["Score Breakdown"]
-    headers = [cell.value for cell in next(ws.iter_rows(max_row=1))]
-    values = next(ws.iter_rows(min_row=2, max_row=2, values_only=True))
-    row = dict(zip(headers, values, strict=False))
-    assert row["Support"] == "strict_nl_ok; ms2_trace_strong; local_sn_strong"
-    assert row["Concerns"] == "ms2_trace_weak"
-
-
-def test_write_excel_from_run_output_emits_review_report_when_enabled(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.output.excel_pipeline import write_excel_from_run_output
-
-    config = _config(tmp_path, emit_review_report=True)
-    output_path = tmp_path / "output" / "xic_results_20260505_1200.xlsx"
-
-    write_excel_from_run_output(
-        config,
-        [_target("WithNL")],
-        _run_output(with_diagnostics=False),
-        output_path=output_path,
-    )
-
-    report_path = output_path.with_name("review_report_20260505_1200.html")
-    assert report_path.exists()
-    assert "XIC Review Report" in report_path.read_text(encoding="utf-8")
-
-
-def test_write_excel_from_run_output_passes_injection_order_to_review_report(
-    tmp_path: Path, monkeypatch
-) -> None:
-    from xic_extractor.output.excel_pipeline import write_excel_from_run_output
-
-    config = replace(
-        _config(tmp_path, emit_review_report=True),
-        injection_order_source=tmp_path / "SampleInfo.csv",
-    )
-    config.injection_order_source.write_text(
-        "Sample_Name,Injection_Order\nSampleA,1\n",
-        encoding="utf-8",
-    )
-    calls = {}
-
-    def _fake_write_review_report(path, rows, **kwargs):
-        calls["injection_order"] = kwargs["injection_order"]
-        path.write_text("<html></html>", encoding="utf-8")
-        return path
-
-    monkeypatch.setattr(
-        "xic_extractor.output.excel_pipeline.write_review_report",
-        _fake_write_review_report,
-    )
-
-    write_excel_from_run_output(
-        config,
-        [_target("WithNL")],
-        _run_output(with_diagnostics=False),
-        output_path=tmp_path / "output" / "xic_results_20260505_1200.xlsx",
-    )
-
-    assert calls["injection_order"] == {"SampleA": 1}
-
-
 def _config(
     tmp_path: Path,
-    *,
-    emit_score_breakdown: bool = False,
-    emit_review_report: bool = False,
 ) -> ExtractionConfig:
     return ExtractionConfig(
         data_dir=tmp_path / "raw",
@@ -280,8 +156,6 @@ def _config(
         peak_min_prominence_ratio=0.10,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
-        emit_score_breakdown=emit_score_breakdown,
-        emit_review_report=emit_review_report,
         config_hash="abc12345",
     )
 

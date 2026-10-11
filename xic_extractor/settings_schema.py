@@ -46,9 +46,6 @@ CANONICAL_SETTINGS_DEFAULTS: dict[str, str] = {
     "model_selection_expected_diff_approval_registry": "",
     "targeted_ms1_shape_identity_support_tsv": "",
     "targeted_ms1_shape_identity_activation_policy": LIMITED_HMDC_MEDC_POLICY,
-    "emit_score_breakdown": "false",
-    "emit_review_report": "false",
-    "keep_intermediate_csv": "false",
     "nl_rt_anchor_search_margin_min": "2.0",
     "nl_rt_anchor_half_window_min": "1.0",
     "nl_fallback_half_window_min": "2.0",
@@ -102,9 +99,6 @@ CANONICAL_SETTINGS_DESCRIPTIONS: dict[str, str] = {
         f"support rows to 5-hmdC and 5-medC only. Use {EXPLICIT_SUPPORT_TSV_POLICY} "
         "to preserve explicit support TSV behavior."
     ),
-    "emit_score_breakdown": "是否輸出 Score Breakdown sheet（預設關閉）",
-    "emit_review_report": "是否輸出 Review Report HTML（預設關閉）",
-    "keep_intermediate_csv": "是否保留中間 CSV 檔（除錯用，預設關閉）",
     "nl_rt_anchor_search_margin_min": (
         "NL 錨定搜尋半徑（min）：以 rt_center ±此值搜尋 NL 確認的 MS2 作為 RT anchor"
     ),

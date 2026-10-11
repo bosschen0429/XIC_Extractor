@@ -31,10 +31,7 @@ from xic_extractor.extraction.result_models import (
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 from xic_extractor.output.method_manifest import (
     MethodManifestContext,
-    method_manifest_path,
-    write_method_manifest,
 )
-from xic_extractor.output.review_report import review_report_path_for_excel
 from xic_extractor.output.targeted_product_model import (
     TargetedProductProjection,
 )
@@ -120,29 +117,17 @@ def publish_targeted_outputs(
             output_csv=stage_root / _STAGE_OUTPUT_CSV,
             diagnostics_csv=stage_root / _STAGE_DIAGNOSTICS_CSV,
         )
-        write_outputs(
-            stage_config,
-            list(request.targets),
-            render_view,
-            write_manifest=False,
+        workbook_only = (
+            request.excel_output_path is not None
+            and not request.config.keep_intermediate_csv
         )
-        final_manifest = method_manifest_path(request.config)
-        stage_manifest = method_manifest_path(stage_config)
-        staged_before_excel = _staged_output_map(
-            stage_root,
-            request,
-            stage_config=stage_config,
-            stage_excel=None,
-        )
-        write_method_manifest(
-            request.config,
-            request.targets,
-            context=request.method_manifest_context,
-            destination=stage_manifest,
-            artifact_sources={
-                final: staged for staged, final in staged_before_excel.items()
-            },
-        )
+        if not workbook_only:
+            write_outputs(
+                stage_config,
+                list(request.targets),
+                render_view,
+                write_manifest=False,
+            )
         stage_excel: Path | None = None
         if request.excel_output_path is not None:
             stage_excel = stage_root / _STAGE_EXCEL_OUTPUT
@@ -158,7 +143,6 @@ def publish_targeted_outputs(
             stage_config=stage_config,
             stage_excel=stage_excel,
         )
-        staged_to_final[stage_manifest] = final_manifest
         _reject_duplicate_destinations(staged_to_final)
         paths = _commit_staged_outputs(
             staged_to_final,
@@ -415,11 +399,6 @@ def _staged_output_map(
         elif stage_excel is not None and staged == stage_excel:
             assert request.excel_output_path is not None
             final = request.excel_output_path
-        elif stage_excel is not None and staged == review_report_path_for_excel(
-            stage_excel
-        ):
-            assert request.excel_output_path is not None
-            final = review_report_path_for_excel(request.excel_output_path)
         else:
             final = request.config.output_csv.parent / staged.relative_to(stage_root)
         mapping[staged] = final

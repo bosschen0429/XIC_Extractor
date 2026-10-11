@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.output import metadata
 from xic_extractor.output.workbook_styles import (
@@ -14,7 +16,9 @@ from xic_extractor.output.workbook_styles import (
 )
 
 
-def _build_metadata_sheet(ws, config: ExtractionConfig) -> None:
+def _build_metadata_sheet(
+    ws, config: ExtractionConfig, *, extra_metadata: Sequence[tuple[str, object]] = ()
+) -> None:
     for col_idx, header in enumerate(("Key", "Value"), start=1):
         _apply(
             ws.cell(row=1, column=col_idx, value=header),
@@ -22,7 +26,7 @@ def _build_metadata_sheet(ws, config: ExtractionConfig) -> None:
         )
 
     for row_idx, (key, value) in enumerate(
-        metadata.build_metadata_rows(config), start=2
+        [*metadata.build_metadata_rows(config), *extra_metadata], start=2
     ):
         fill_hex = GREY if row_idx % 2 == 0 else WHITE
         _apply(

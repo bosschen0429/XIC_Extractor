@@ -1,8 +1,8 @@
 import logging
-import uuid
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from xic_extractor.configuration.csv_io import (
     _config_input_path,
@@ -36,11 +36,18 @@ LOGGER = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class PreparedTargetedConfig:
-    """Admitted configuration and the durable inputs used by calculation/replay."""
+    """Admitted configuration with inputs frozen only for this run's lifetime."""
 
     config: ExtractionConfig
     targets: tuple[Target, ...]
     input_config_dir: Path
+    _workspace: TemporaryDirectory | None = field(
+        default=None, repr=False, compare=False
+    )
+
+    def cleanup(self) -> None:
+        if self._workspace is not None:
+            self._workspace.cleanup()
 
 
 def prepare_targeted_config(
@@ -52,9 +59,8 @@ def prepare_targeted_config(
 ) -> PreparedTargetedConfig:
     """Freeze actual Targeted execution inputs, optionally binding a portable method.
 
-    The emitted CSVs are durable run receipts, not another active method. Only
-    these admitted files may become manifest/replay inputs. Resource-bound
-    portable cases are rejected rather than silently carried or downgraded.
+    The caller owns the returned workspace until execution finishes or is cancelled.
+    Resource-bound portable cases are rejected rather than silently downgraded.
     """
     config_dir = Path(config_dir).resolve()
     settings_path = _config_input_path(config_dir, "settings")
@@ -91,30 +97,34 @@ def prepare_targeted_config(
     output_dir = (
         Path(output_dir) if output_dir is not None else config_dir.parent / "output"
     ).resolve()
-    receipt_dir = output_dir / ".run_inputs" / uuid.uuid4().hex / "config"
-    receipt_dir.mkdir(parents=True)
-    if order_source:
-        source = Path(order_source).expanduser()
-        if not source.is_file():
-            raise ConfigError(f"{source}: 本批次注射順序資料不存在；未啟動分析。")
-        frozen_source = receipt_dir / f"injection_order{source.suffix}"
-        frozen_source.write_bytes(source.read_bytes())
-        values["injection_order_source"] = str(frozen_source)
-    if method is not None or overrides or order_source:
-        _write_csv(
-            receipt_dir / "settings.csv",
-            ("key", "value"),
-            [{"key": key, "value": value} for key, value in values.items()],
-        )
-    else:
-        (receipt_dir / "settings.csv").write_bytes(settings_bytes)
-    if method is not None:
-        _write_method_targets(method, receipt_dir / "targets.csv")
-    else:
-        assert targets_bytes is not None
-        (receipt_dir / "targets.csv").write_bytes(targets_bytes)
-    config, targets = load_config(receipt_dir, output_dir=output_dir)
-    return PreparedTargetedConfig(config, tuple(targets), receipt_dir)
+    workspace = TemporaryDirectory(prefix="xic-targeted-inputs-")
+    receipt_dir = Path(workspace.name)
+    try:
+        if order_source:
+            source = Path(order_source).expanduser()
+            if not source.is_file():
+                raise ConfigError(f"{source}: 本批次注射順序資料不存在；未啟動分析。")
+            frozen_source = receipt_dir / f"injection_order{source.suffix}"
+            frozen_source.write_bytes(source.read_bytes())
+            values["injection_order_source"] = str(frozen_source)
+        if method is not None or overrides or order_source:
+            _write_csv(
+                receipt_dir / "settings.csv",
+                ("key", "value"),
+                [{"key": key, "value": value} for key, value in values.items()],
+            )
+        else:
+            (receipt_dir / "settings.csv").write_bytes(settings_bytes)
+        if method is not None:
+            _write_method_targets(method, receipt_dir / "targets.csv")
+        else:
+            assert targets_bytes is not None
+            (receipt_dir / "targets.csv").write_bytes(targets_bytes)
+        config, targets = load_config(receipt_dir, output_dir=output_dir)
+        return PreparedTargetedConfig(config, tuple(targets), receipt_dir, workspace)
+    except BaseException:
+        workspace.cleanup()
+        raise
 
 
 def load_target_list_snapshot(

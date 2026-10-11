@@ -31,9 +31,6 @@ def test_new_keys_present() -> None:
         "injection_order_source": "",
         "rolling_window_size": "5",
         "dirty_matrix_mode": "false",
-        "emit_score_breakdown": "false",
-        "emit_review_report": "false",
-        "keep_intermediate_csv": "false",
         "model_selection_expected_diff_approval_registry": "",
         "targeted_ms1_shape_identity_support_tsv": "",
         "targeted_ms1_shape_identity_activation_policy": "limited_5hmdc_5medc",
@@ -47,9 +44,6 @@ def test_new_settings_are_in_canonical_defaults_and_descriptions() -> None:
         "injection_order_source",
         "rolling_window_size",
         "dirty_matrix_mode",
-        "emit_score_breakdown",
-        "emit_review_report",
-        "keep_intermediate_csv",
         "model_selection_expected_diff_approval_registry",
         "targeted_ms1_shape_identity_support_tsv",
         "targeted_ms1_shape_identity_activation_policy",
@@ -106,7 +100,6 @@ def test_load_config_parses_scoring_settings(tmp_path: Path) -> None:
         "model_selection_expected_diff_approval_registry": str(approval_registry),
         "targeted_ms1_shape_identity_support_tsv": str(shape_identity_support),
         "targeted_ms1_shape_identity_activation_policy": "limited_5hmdc_5medc",
-        "emit_score_breakdown": "true",
         "emit_review_report": "true",
         "keep_intermediate_csv": "true",
     }
@@ -148,9 +141,7 @@ def test_load_config_parses_scoring_settings(tmp_path: Path) -> None:
     assert config.targeted_ms1_shape_identity_activation_policy == (
         "limited_5hmdc_5medc"
     )
-    assert config.emit_score_breakdown is True
-    assert config.emit_review_report is True
-    assert config.keep_intermediate_csv is True
+    assert config.keep_intermediate_csv is False
     assert config.ms1_morphology_smoothing_window_points == 21
     assert config.config_hash == compute_config_hash(targets_path, settings_path)
     assert config.target_config_hash == compute_target_config_hash(targets_path)
@@ -215,8 +206,6 @@ def test_load_config_defaults_scoring_settings_for_legacy_settings_csv(
     assert config.targeted_ms1_shape_identity_activation_policy == (
         "limited_5hmdc_5medc"
     )
-    assert config.emit_score_breakdown is False
-    assert config.emit_review_report is False
     assert config.keep_intermediate_csv is False
 
 

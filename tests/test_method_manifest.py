@@ -60,7 +60,6 @@ def test_build_method_manifest_labels_hashes_as_fragments(tmp_path: Path) -> Non
         "output_csv",
         "long_csv",
         "diagnostics_csv",
-        "score_breakdown_csv",
         "method_manifest_json",
     }
     assert payload["input_artifacts"]["settings_csv"]["exists"] is True
@@ -94,7 +93,6 @@ def test_build_method_manifest_labels_hashes_as_fragments(tmp_path: Path) -> Non
         "analyte_count": 1,
         "istd_count": 1,
         "sample_applicability_values": ["all"],
-        "isotope_label_type_values": ["unknown"],
     }
     assert payload["output_schema"] == {
         "targeted_output_schema_version": "targeted_output",
@@ -134,39 +132,6 @@ def test_build_method_manifest_labels_hashes_as_fragments(tmp_path: Path) -> Non
             "schema_version": "targeted_diagnostics_csv",
             "headers": ["SampleName", "Target", "Issue", "Reason"],
         },
-        "xic_score_breakdown_csv": {
-            "schema_version": "targeted_score_breakdown_csv",
-            "headers": [
-                "SampleName",
-                "Target",
-                "Final Confidence",
-                "Detection Counted",
-                "Product State",
-                "Review State",
-                "Projection Reason",
-                "Legacy Authority Status",
-                "Caps",
-                "Raw Score",
-                "Support",
-                "Concerns",
-                "Base Score",
-                "Positive Points",
-                "Negative Points",
-                "symmetry",
-                "local_sn",
-                "nl_support",
-                "rt_prior",
-                "rt_centrality",
-                "noise_shape",
-                "peak_width",
-                "Quality Penalty",
-                "Quality Flags",
-                "Total Severity",
-                "Confidence",
-                "Prior RT",
-                "Prior Source",
-            ],
-        },
     }
     assert payload["artifact_replay_policy"] == {
         "schema_version": ARTIFACT_REPLAY_POLICY_SCHEMA_VERSION,
@@ -174,8 +139,7 @@ def test_build_method_manifest_labels_hashes_as_fragments(tmp_path: Path) -> Non
             "output_csv",
             "long_csv",
             "diagnostics_csv",
-            "score_breakdown_csv",
-        ],
+            ],
         "normalized_compare_artifacts": {
             "timestamped_workbook": {
                 "comparison": "scripts.compare_workbooks",

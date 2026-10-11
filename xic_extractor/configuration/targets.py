@@ -17,8 +17,6 @@ from xic_extractor.configuration.parsing import (
 
 LOGGER = logging.getLogger(__name__)
 
-ISOTOPE_LABEL_TYPES = frozenset({"deuterated", "heavy_non_deuterium", "unknown"})
-PAIRED_RT_RELATIONS = frozenset({"istd_not_later_than_pair", "none"})
 SAMPLE_APPLICABILITIES = frozenset({"all", "rna_containing"})
 
 
@@ -69,23 +67,7 @@ def _validate_target_relationships(path: Path, targets: list[Target]) -> None:
                 target.istd_pair,
                 "is_istd=true targets must not set istd_pair",
             )
-        if target.is_istd and target.paired_rt_relation != "none":
-            raise _config_error(
-                path,
-                row_number,
-                "paired_rt_relation",
-                target.paired_rt_relation,
-                "is_istd=true targets must leave paired_rt_relation blank",
-            )
         if not target.istd_pair:
-            if target.paired_rt_relation != "none":
-                raise _config_error(
-                    path,
-                    row_number,
-                    "paired_rt_relation",
-                    target.paired_rt_relation,
-                    "requires istd_pair",
-                )
             continue
         pair = by_label.get(target.istd_pair)
         if pair is None or not pair.is_istd:
@@ -95,17 +77,6 @@ def _validate_target_relationships(path: Path, targets: list[Target]) -> None:
                 "istd_pair",
                 target.istd_pair,
                 "must reference a target with is_istd=true",
-            )
-        if (
-            target.paired_rt_relation == "istd_not_later_than_pair"
-            and pair.isotope_label_type != "deuterated"
-        ):
-            raise _config_error(
-                path,
-                row_number,
-                "paired_rt_relation",
-                target.paired_rt_relation,
-                "requires paired ISTD isotope_label_type=deuterated",
             )
 
 
@@ -154,22 +125,6 @@ def _parse_target_row(path: Path, row_number: int, row: dict[str, str]) -> Targe
         nl_ppm_max=nl_ppm_max,
         is_istd=is_istd,
         istd_pair=values["istd_pair"],
-        isotope_label_type=_parse_target_metadata_enum(
-            path,
-            row_number,
-            "isotope_label_type",
-            values["isotope_label_type"],
-            ISOTOPE_LABEL_TYPES,
-            default="unknown",
-        ),
-        paired_rt_relation=_parse_target_metadata_enum(
-            path,
-            row_number,
-            "paired_rt_relation",
-            values["paired_rt_relation"],
-            PAIRED_RT_RELATIONS,
-            default="none",
-        ),
         sample_applicability=_parse_target_metadata_enum(
             path,
             row_number,
@@ -240,15 +195,6 @@ def _parse_target_metadata_enum(
     normalized = value.strip().lower()
     if normalized == "":
         return default
-    if field == "paired_rt_relation" and normalized == "learned_delta_only":
-        raise _config_error(
-            path,
-            row_number,
-            field,
-            value,
-            "learned_delta_only is retired; use none and current-run paired ISTD "
-            "RT reference, then re-run using the current method",
-        )
     if normalized not in allowed:
         raise _config_error(
             path,

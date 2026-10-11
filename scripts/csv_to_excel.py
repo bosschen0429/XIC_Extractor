@@ -14,7 +14,6 @@ from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.output.review_queue_model import (
     _review_queue_rows as _review_queue_rows,
 )
-from xic_extractor.output.review_report import write_review_report
 from xic_extractor.output.sheet_diagnostics import (
     _build_diagnostics_sheet as _build_diagnostics_sheet,
 )
@@ -27,9 +26,6 @@ from xic_extractor.output.sheet_overview import (
 from xic_extractor.output.sheet_results import _build_data_sheet as _build_data_sheet
 from xic_extractor.output.sheet_review_queue import (
     _build_review_queue_sheet as _build_review_queue_sheet,
-)
-from xic_extractor.output.sheet_score_breakdown import (
-    _build_score_breakdown_sheet as _build_score_breakdown_sheet,
 )
 from xic_extractor.output.sheet_summary import (
     _build_summary_sheet as _build_summary_sheet,
@@ -48,9 +44,6 @@ from xic_extractor.output.workbook_inputs import (
     _read_results as _read_results,
 )
 from xic_extractor.output.workbook_inputs import (
-    _read_score_breakdown as _read_score_breakdown,
-)
-from xic_extractor.output.workbook_inputs import (
     _wide_to_long_rows as _wide_to_long_rows,
 )
 from xic_extractor.output.workbook_styles import (
@@ -64,13 +57,11 @@ __all__ = [
     "_build_metadata_sheet",
     "_build_overview_sheet",
     "_build_review_queue_sheet",
-    "_build_score_breakdown_sheet",
     "_build_summary_sheet",
     "_build_targets_sheet",
     "_read_diagnostics",
     "_read_long_results",
     "_read_results",
-    "_read_score_breakdown",
     "_review_queue_rows",
     "_wide_to_long_rows",
     "main",
@@ -99,7 +90,7 @@ def run(
 
 
 def _run_with_config(config: ExtractionConfig, targets: list[Target]) -> Path:
-    return run_from_config(config, targets, report_writer=write_review_report)
+    return run_from_config(config, targets)
 
 
 def main() -> None:

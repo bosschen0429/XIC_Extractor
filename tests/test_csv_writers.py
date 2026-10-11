@@ -16,10 +16,8 @@ from xic_extractor.extraction.targeted_peak_selection import (
 from xic_extractor.output.csv_writers import (
     _long_output_rows,
     _output_row,
-    write_all,
     write_diagnostics_csv,
     write_long_csv,
-    write_score_breakdown_csv,
     write_wide_csv,
 )
 from xic_extractor.output.messages import DiagnosticRecord
@@ -370,9 +368,8 @@ def test_write_wide_csv_preserves_zero_nd_and_duplicate_sample_rows(
     }
 
 
-def test_write_diagnostics_and_score_breakdown_csv(tmp_path: Path) -> None:
+def test_write_diagnostics_csv(tmp_path: Path) -> None:
     config = _config(tmp_path)
-    file_result = _file_result()
     diagnostics = [
         DiagnosticRecord(
             sample_name="SampleA",
@@ -383,7 +380,6 @@ def test_write_diagnostics_and_score_breakdown_csv(tmp_path: Path) -> None:
     ]
 
     write_diagnostics_csv(config, diagnostics)
-    write_score_breakdown_csv(config, [file_result])
 
     assert _read_csv(config.diagnostics_csv) == [
         {
@@ -393,49 +389,9 @@ def test_write_diagnostics_and_score_breakdown_csv(tmp_path: Path) -> None:
             "Reason": "best match 80 ppm",
         }
     ]
-    breakdown = _read_csv(config.output_csv.with_name("xic_score_breakdown.csv"))[0]
-    assert breakdown["local_sn"] == "1"
-    assert breakdown["Quality Penalty"] == "1"
-    assert breakdown["Quality Flags"] == "too_broad"
-    assert breakdown["Total Severity"] == "2"
-    assert breakdown["Prior RT"] == "NA"
 
 
-def test_score_breakdown_csv_includes_weighted_evidence_fields(tmp_path: Path) -> None:
-    config = _config(tmp_path)
-    result = replace(
-        _result(),
-        score_breakdown=(
-            ("Base Score", "50"),
-            ("Positive Points", "40"),
-            ("Negative Points", "0"),
-            ("Raw Score", "90"),
-            ("Caps", ""),
-            ("Final Confidence", "HIGH"),
-            ("Support", "strict_nl_ok; local_sn_strong"),
-            ("Concerns", ""),
-        ),
-    )
-    file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
-
-    write_score_breakdown_csv(config, [file_result])
-
-    breakdown = _read_csv(config.output_csv.with_name("xic_score_breakdown.csv"))[0]
-    assert breakdown["Base Score"] == "50"
-    assert breakdown["Positive Points"] == "40"
-    assert breakdown["Negative Points"] == "0"
-    assert breakdown["Raw Score"] == "90"
-    assert breakdown["Caps"] == ""
-    assert breakdown["Final Confidence"] == "HIGH"
-    assert breakdown["Detection Counted"] == "TRUE"
-    assert breakdown["Support"] == "strict_nl_ok; local_sn_strong"
-    assert breakdown["Concerns"] == ""
-
-
-def test_long_and_score_breakdown_rows_use_targeted_product_projection(
-    tmp_path: Path,
-) -> None:
-    config = _config(tmp_path)
+def test_long_rows_use_targeted_product_projection() -> None:
     target = _target("WithNL")
     result = replace(
         _result(nl=NLResult("NL_FAIL", 125.0, None, 1, 0, 1)),
@@ -456,7 +412,6 @@ def test_long_and_score_breakdown_rows_use_targeted_product_projection(
     file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
 
     long_row = _long_output_rows(file_result, [target])[0]
-    write_score_breakdown_csv(config, [file_result])
 
     assert long_row["NL"] == "NL_FAIL"
     assert long_row["Confidence"] == "VERY_LOW"
@@ -467,10 +422,6 @@ def test_long_and_score_breakdown_rows_use_targeted_product_projection(
     assert long_row["Product State"] == "detected_flagged"
     assert long_row["Counted Detection"] == "TRUE"
     assert long_row["Projection Review Reasons"] == "plausible_dda_nl_dropout"
-    breakdown = _read_csv(config.output_csv.with_name("xic_score_breakdown.csv"))[0]
-    assert breakdown["Detection Counted"] == "TRUE"
-    assert breakdown["Product State"] == "detected_flagged"
-    assert breakdown["Projection Reason"].startswith("decision: detected_flagged")
 
 
 def test_long_row_reason_prefers_projection_over_legacy_not_counted_text() -> None:
@@ -597,39 +548,6 @@ def test_long_reason_prioritizes_unresolved_boundaries_over_review_flags() -> No
     assert row["Projection Review Reasons"] == (
         "legacy_confidence_review; selected_envelope_split_supported"
     )
-
-
-def test_score_breakdown_csv_can_emit_ms2_trace_labels_without_schema_change(
-    tmp_path: Path,
-) -> None:
-    config = _config(tmp_path)
-    result = replace(
-        _result(),
-        score_breakdown=(
-            ("Base Score", "50"),
-            ("Positive Points", "50"),
-            ("Negative Points", "8"),
-            ("Raw Score", "92"),
-            ("Caps", ""),
-            ("Final Confidence", "HIGH"),
-            ("Support", "strict_nl_ok; ms2_trace_strong; local_sn_strong"),
-            ("Concerns", "ms2_trace_weak"),
-        ),
-    )
-    file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
-
-    write_score_breakdown_csv(config, [file_result])
-
-    breakdown = _read_csv(config.output_csv.with_name("xic_score_breakdown.csv"))[0]
-    assert set(breakdown) >= {
-        "Support",
-        "Concerns",
-        "Positive Points",
-        "Negative Points",
-        "Raw Score",
-    }
-    assert breakdown["Support"] == ("strict_nl_ok; ms2_trace_strong; local_sn_strong")
-    assert breakdown["Concerns"] == "ms2_trace_weak"
 
 
 def test_csv_rows_preserve_values_with_runtime_selected_hypothesis() -> None:
@@ -767,31 +685,6 @@ def test_csv_rows_preserve_no_peak_nd_projection() -> None:
     assert long_row["PeakEnd"] == "ND"
     assert long_row["PeakWidth"] == "ND"
     assert long_row["NL"] == "NO_MS2"
-
-
-def test_write_all_gates_score_breakdown(tmp_path: Path) -> None:
-    config = _config(tmp_path)
-    target = _target("WithNL")
-    file_results = [_file_result()]
-
-    write_all(
-        config,
-        [target],
-        file_results,
-        diagnostics=[],
-        emit_score_breakdown=False,
-    )
-    assert config.output_csv.exists()
-    assert not config.output_csv.with_name("xic_score_breakdown.csv").exists()
-
-    write_all(
-        config,
-        [target],
-        file_results,
-        diagnostics=[],
-        emit_score_breakdown=True,
-    )
-    assert config.output_csv.with_name("xic_score_breakdown.csv").exists()
 
 
 class _Config:

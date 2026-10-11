@@ -74,13 +74,10 @@ credible paired ISTD from the current sample, transferring the observed shift
 while retaining the configured target/ISTD midpoint difference. Missing or
 untrusted pairs do not borrow an anchor from another sample.
 
-### Debug and Audit
+### Output
 
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `keep_intermediate_csv` | bool | `false` | Retain intermediate CSV files |
-| `emit_score_breakdown` | bool | `false` | Add Score Breakdown sheet to workbook |
-| `emit_review_report` | bool | `false` | Generate Review Report HTML |
+Normal Targeted runs deliver one XLSX. There are no report/CSV/score-export
+switches. Retired output keys are removed when settings are saved.
 
 ### Parallelization
 
@@ -131,17 +128,20 @@ identifier in workbook output and downstream CSV files.
 | --- | --- | --- | --- |
 | `is_istd` | bool | `false` | Whether this target is an internal standard |
 | `istd_pair` | string | *(empty)* | Label of the paired ISTD. Must reference a row with `is_istd=true`. Empty if this row is itself an ISTD |
-| `isotope_label_type` | enum | `unknown` | `unknown`, `deuterated`, or `heavy_non_deuterium` |
-| `paired_rt_relation` | enum | `none` | `none` or `istd_not_later_than_pair` |
 | `sample_applicability` | enum | `all` | `all` or `rna_containing` |
 
 ### ISTD Pairing Rules
 
-- If `is_istd=true`: do not set `istd_pair` or `paired_rt_relation`.
+- If `is_istd=true`: do not set `istd_pair`.
 - If `istd_pair` is set: `is_istd` must be `false`, and the referenced label
   must have `is_istd=true`.
-- `paired_rt_relation=istd_not_later_than_pair` requires the paired ISTD to
-  have `isotope_label_type=deuterated`.
+- The editor combines role and pairing in one dropdown: unpaired, this row is
+  an ISTD, or a specific ISTD label. Import prefills only unique exact isotope-name
+  counterparts (for example `d3-5-medC` / `5-medC`); existing roles and nonempty
+  pairs win. Ambiguous names remain unpaired and editable. Name guesses are not
+  chemical evidence or a hard RT-order rule.
+- Unused isotope-category and RT-relation declarations are not required and are
+  dropped on save; meaningful `sample_applicability` remains in force.
 
 ## Retired candidate audit outputs
 
@@ -161,5 +161,3 @@ settings. Nonempty values are rejected: the current sample's paired ISTD now
 provides its reference directly, without CSV feedback. Historical method
 manifests from the earlier RT policy cannot be replayed as equivalent current
 runs; start a new run with the current method instead.
-The unused `paired_rt_relation=learned_delta_only` value is also rejected;
-use `none`, or the applicable deuterated relation declaration.

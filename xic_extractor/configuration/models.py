@@ -50,8 +50,6 @@ class ExtractionConfig:
     model_selection_expected_diff_approval_registry: Path | None = None
     targeted_ms1_shape_identity_support_tsv: Path | None = None
     targeted_ms1_shape_identity_activation_policy: str = EXPLICIT_SUPPORT_TSV_POLICY
-    emit_score_breakdown: bool = False
-    emit_review_report: bool = False
     keep_intermediate_csv: bool = False
     baseline_integration_method: str = "asls"
     parallel_mode: str = "serial"
@@ -85,8 +83,6 @@ class Target:
     nl_ppm_max: float | None
     is_istd: bool
     istd_pair: str
-    isotope_label_type: str = "unknown"
-    paired_rt_relation: str = "none"
     sample_applicability: str = "all"
 
 

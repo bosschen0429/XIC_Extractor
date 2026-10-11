@@ -1,5 +1,4 @@
 import csv
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -293,11 +292,11 @@ def test_overview_explains_detected_and_flagged_rates() -> None:
     assert "Start with Summary Detection %" in joined
     assert "Review Queue has one row per sample-target needing attention" in joined
     assert "Diagnostics is a hidden technical log" in joined
-    assert "HTML Review Report is for visual batch QA" in joined
+    assert "Diagnostics retains technical issues" in joined
     assert "Flagged % is review workload" in joined
     assert "NL_FAIL rows are review evidence; counted detection follows" in joined
     assert "detected-but-flagged" not in joined
-    assert "Score Breakdown is a technical audit sheet" in joined
+    assert "Run Metadata records the method" in joined
 
 
 def test_build_summary_sheet_uses_row_based_target_metrics() -> None:
@@ -1059,167 +1058,8 @@ def test_run_blocks_legacy_wide_csv_without_product_projection(
         run(config, targets)
 
 
-def test_run_emits_score_breakdown_sheet_when_enabled(tmp_path: Path) -> None:
-    config = _config(tmp_path, emit_score_breakdown=True)
-    targets = [_target("Analyte")]
-    config.output_csv.parent.mkdir(parents=True)
-    _write_csv(
-        config.output_csv.with_name("xic_results_long.csv"),
-        [
-            _long_row(
-                "Tumor_1",
-                "Analyte",
-                "9.1",
-                "10000",
-                "OK",
-                confidence="MEDIUM",
-                reason="concerns: local_sn (minor)",
-                counted_detection="TRUE",
-                product_state="detected_clean",
-            )
-        ],
-    )
-    _write_csv(
-        config.output_csv.with_name("xic_score_breakdown.csv"),
-        [
-            {
-                "SampleName": "Tumor_1",
-                "Target": "Analyte",
-                "Final Confidence": "HIGH",
-                "Detection Counted": "TRUE",
-                "Caps": "",
-                "Raw Score": "90",
-                "Support": "strict_nl_ok; local_sn_strong",
-                "Concerns": "",
-                "Base Score": "50",
-                "Positive Points": "40",
-                "Negative Points": "0",
-                "symmetry": "0",
-                "local_sn": "1",
-                "nl_support": "0",
-                "rt_prior": "0",
-                "rt_centrality": "0",
-                "noise_shape": "0",
-                "peak_width": "0",
-                "Quality Penalty": "1",
-                "Quality Flags": "too_broad",
-                "Total Severity": "2",
-                "Confidence": "MEDIUM",
-                "Prior RT": "9.05",
-                "Prior Source": "rolling_median",
-            }
-        ],
-    )
-    _write_empty_diagnostics_csv(config.diagnostics_csv)
-
-    excel_path = run(config, targets)
-
-    wb = load_workbook(excel_path)
-    assert wb.sheetnames == [
-        "Overview",
-        "Review Queue",
-        "XIC Results",
-        "Summary",
-        "Targets",
-        "Diagnostics",
-        "Run Metadata",
-        "Score Breakdown",
-    ]
-    ws = wb["Score Breakdown"]
-    headers = [cell.value for cell in next(ws.iter_rows(max_row=1))]
-    values = next(ws.iter_rows(min_row=2, max_row=2, values_only=True))
-    row = dict(zip(headers, values, strict=False))
-    assert row["SampleName"] == "Tumor_1"
-    assert row["Base Score"] == 50
-    assert row["Positive Points"] == 40
-    assert row["Negative Points"] == 0
-    assert row["Raw Score"] == 90
-    assert row["Final Confidence"] == "HIGH"
-    assert row["Detection Counted"] == "TRUE"
-    assert row["Support"] == "strict_nl_ok; local_sn_strong"
-    assert row["Concerns"] is None
-    assert row["Quality Penalty"] == 1
-    assert row["Quality Flags"] == "too_broad"
-    assert row["Total Severity"] == 2
-    assert row["Confidence"] == "MEDIUM"
-
-
-def test_run_emits_review_report_when_enabled(tmp_path: Path) -> None:
-    config = _config(tmp_path, emit_review_report=True)
-    targets = [_target("Analyte")]
-    config.output_csv.parent.mkdir(parents=True)
-    _write_csv(
-        config.output_csv.with_name("xic_results_long.csv"),
-        [
-            _long_row(
-                "Tumor_1",
-                "Analyte",
-                "9.1",
-                "10000",
-                "OK",
-                counted_detection="TRUE",
-                product_state="detected_clean",
-            )
-        ],
-    )
-    _write_empty_diagnostics_csv(config.diagnostics_csv)
-
-    excel_path = run(config, targets)
-
-    report_path = excel_path.with_name(
-        excel_path.name.replace("xic_results_", "review_report_")
-    ).with_suffix(".html")
-    assert report_path.exists()
-    assert "XIC Review Report" in report_path.read_text(encoding="utf-8")
-
-
-def test_run_passes_injection_order_to_review_report(
-    tmp_path: Path, monkeypatch
-) -> None:
-    config = replace(
-        _config(tmp_path, emit_review_report=True),
-        injection_order_source=tmp_path / "SampleInfo.csv",
-    )
-    config.injection_order_source.write_text(
-        "Sample_Name,Injection_Order\nS1,1\n",
-        encoding="utf-8",
-    )
-    config.output_csv.parent.mkdir(parents=True, exist_ok=True)
-    _write_csv(config.output_csv, [_wide_row("S1", [_target("Analyte")])])
-    _write_csv(
-        config.output_csv.with_name("xic_results_long.csv"),
-        [
-            _long_row(
-                "S1",
-                "Analyte",
-                "9.1",
-                "10000",
-                "OK",
-                counted_detection="TRUE",
-                product_state="detected_clean",
-            )
-        ],
-    )
-    _write_empty_diagnostics_csv(config.diagnostics_csv)
-    calls = {}
-
-    def _fake_write_review_report(path, rows, **kwargs):
-        calls["injection_order"] = kwargs["injection_order"]
-        path.write_text("<html></html>", encoding="utf-8")
-        return path
-
-    monkeypatch.setattr(
-        "scripts.csv_to_excel.write_review_report",
-        _fake_write_review_report,
-    )
-
-    run(config, [_target("Analyte")])
-
-    assert calls["injection_order"] == {"S1": 1}
-
-
 def test_workbook_sheet_tabs_signal_review_and_technical_roles(tmp_path: Path) -> None:
-    config = _config(tmp_path, emit_score_breakdown=True)
+    config = _config(tmp_path)
     targets = [_target("Analyte")]
     config.output_csv.parent.mkdir(parents=True)
     _write_csv(
@@ -1236,28 +1076,6 @@ def test_workbook_sheet_tabs_signal_review_and_technical_roles(tmp_path: Path) -
             )
         ],
     )
-    _write_csv(
-        config.output_csv.with_name("xic_score_breakdown.csv"),
-        [
-            {
-                "SampleName": "Tumor_1",
-                "Target": "Analyte",
-                "symmetry": "0",
-                "local_sn": "1",
-                "nl_support": "2",
-                "rt_prior": "0",
-                "rt_centrality": "0",
-                "noise_shape": "0",
-                "peak_width": "0",
-                "Quality Penalty": "0",
-                "Quality Flags": "",
-                "Total Severity": "3",
-                "Confidence": "LOW",
-                "Prior RT": "NA",
-                "Prior Source": "",
-            }
-        ],
-    )
     _write_empty_diagnostics_csv(config.diagnostics_csv)
 
     excel_path = run(config, targets)
@@ -1268,7 +1086,6 @@ def test_workbook_sheet_tabs_signal_review_and_technical_roles(tmp_path: Path) -
     assert wb["XIC Results"].sheet_properties.tabColor.rgb.endswith("5B7C99")
     assert wb["Summary"].sheet_properties.tabColor.rgb.endswith("5B7C99")
     assert wb["Diagnostics"].sheet_properties.tabColor.rgb.endswith("B0BEC5")
-    assert wb["Score Breakdown"].sheet_properties.tabColor.rgb.endswith("B0BEC5")
 
 
 def test_review_queue_evidence_uses_short_tags() -> None:
@@ -1369,17 +1186,30 @@ def test_csv_to_excel_retains_multi_peak_selection_and_candidate_count(
     config.output_csv.parent.mkdir(parents=True)
     _write_csv(
         config.output_csv.with_name("xic_results_long.csv"),
-        [_long_row(
-            "S1", target.label, "9.0", "123.0", "OK",
-            counted_detection="TRUE", product_state="detected_clean",
-        )],
+        [
+            _long_row(
+                "S1",
+                target.label,
+                "9.0",
+                "123.0",
+                "OK",
+                counted_detection="TRUE",
+                product_state="detected_clean",
+            )
+        ],
     )
-    _write_csv(config.diagnostics_csv, [{
-        "SampleName": record.sample_name,
-        "Target": record.target_label,
-        "Issue": record.issue,
-        "Reason": record.reason,
-    } for record in records])
+    _write_csv(
+        config.diagnostics_csv,
+        [
+            {
+                "SampleName": record.sample_name,
+                "Target": record.target_label,
+                "Issue": record.issue,
+                "Reason": record.reason,
+            }
+            for record in records
+        ],
+    )
 
     workbook = load_workbook(run(config, [target]))
 
@@ -1515,9 +1345,6 @@ def _write_empty_diagnostics_csv(path: Path) -> None:
 
 def _config(
     tmp_path: Path,
-    *,
-    emit_score_breakdown: bool = False,
-    emit_review_report: bool = False,
 ) -> ExtractionConfig:
     return ExtractionConfig(
         data_dir=tmp_path / "raw",
@@ -1531,8 +1358,6 @@ def _config(
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
         count_no_ms2_as_detected=True,
-        emit_score_breakdown=emit_score_breakdown,
-        emit_review_report=emit_review_report,
     )
 
 

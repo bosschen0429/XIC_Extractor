@@ -60,12 +60,10 @@ def _isolate_cli_shell_from_production_workflow(monkeypatch):
                 )
             return TargetedApplicationExecution(active_output=output)
 
-    from xic_extractor.output.excel_pipeline import write_excel_from_run_output
-
     monkeypatch.setattr(
         module,
         "write_excel_from_run_output",
-        write_excel_from_run_output,
+        lambda *_args, output_path, **_kwargs: output_path,
         raising=False,
     )
     monkeypatch.setattr(
@@ -81,7 +79,7 @@ def _isolate_cli_shell_from_production_workflow(monkeypatch):
     )
 
 
-def test_cli_runs_extraction_with_base_dir_and_skips_excel(
+def test_cli_runs_extraction_with_base_dir_and_workbook(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
     module = _module()
@@ -102,14 +100,13 @@ def test_cli_runs_extraction_with_base_dir_and_skips_excel(
         raising=False,
     )
 
-    exit_code = module.main(["--base-dir", str(tmp_path), "--skip-excel"])
+    exit_code = module.main(["--base-dir", str(tmp_path)])
 
     assert exit_code == 0
     assert calls["config_dir"] == tmp_path / "config"
-    assert calls["run_config"] is not config
-    assert calls["run_config"].keep_intermediate_csv is True
+    assert calls["run_config"].keep_intermediate_csv is False
     assert calls["run_targets"] == targets
-    assert "excel" not in calls
+    assert calls["excel"] is True
     stdout = capsys.readouterr().out
     assert "Processed files: 2" in stdout
     assert "Diagnostics: 1" in stdout
@@ -202,7 +199,6 @@ def test_cli_accepts_data_dir_override_for_validation_subset(
     )
 
     assert exit_code == 0
-    assert calls["run_config"] is not config
     assert calls["run_config"].data_dir == validation_dir.resolve()
     assert calls["run_config"].output_csv == config.output_csv
     assert calls["excel_config"] is calls["run_config"]
@@ -302,7 +298,6 @@ def test_cli_accepts_parallel_execution_overrides(
         [
             "--base-dir",
             str(tmp_path),
-            "--skip-excel",
             "--parallel-mode",
             "process",
             "--parallel-workers",
@@ -311,11 +306,10 @@ def test_cli_accepts_parallel_execution_overrides(
     )
 
     assert exit_code == 0
-    assert calls["run_config"] is not config
     assert calls["run_config"].parallel_mode == "process"
     assert calls["run_config"].parallel_workers == 4
-    assert "excel" not in calls
-    assert "Excel skipped" in capsys.readouterr().out
+    assert calls["excel"] is True
+    assert "Processed files: 2" in capsys.readouterr().out
 
 
 def test_cli_rejects_invalid_parallel_mode(capsys) -> None:
@@ -356,12 +350,12 @@ def test_cli_preserves_loaded_parallel_settings_when_overrides_are_omitted(
         raising=False,
     )
 
-    exit_code = module.main(["--base-dir", str(tmp_path), "--skip-excel"])
+    exit_code = module.main(["--base-dir", str(tmp_path)])
 
     assert exit_code == 0
     assert calls["run_config"].parallel_mode == "process"
     assert calls["run_config"].parallel_workers == 4
-    assert "Excel skipped" in capsys.readouterr().out
+    assert "Processed files: 2" in capsys.readouterr().out
 
 
 def test_cli_loads_model_selection_expected_diff_approval_registry(
@@ -408,7 +402,6 @@ def test_cli_loads_model_selection_expected_diff_approval_registry(
         [
             "--base-dir",
             str(tmp_path),
-            "--skip-excel",
             "--model-selection-expected-diff-approvals",
             str(registry_path),
         ]
@@ -422,7 +415,7 @@ def test_cli_loads_model_selection_expected_diff_approval_registry(
     assert calls["model_selection_expected_diff_approvals"] == {
         approval.stable_row_id: approval
     }
-    assert "Excel skipped" in capsys.readouterr().out
+    assert "Processed files: 2" in capsys.readouterr().out
 
 
 def test_cli_passes_targeted_ms1_shape_identity_support_override(
@@ -466,7 +459,6 @@ def test_cli_passes_targeted_ms1_shape_identity_support_override(
         [
             "--base-dir",
             str(tmp_path),
-            "--skip-excel",
             "--targeted-ms1-shape-identity-support-tsv",
             str(support_path),
         ]
@@ -483,7 +475,7 @@ def test_cli_passes_targeted_ms1_shape_identity_support_override(
     assert calls["run_config"].targeted_ms1_shape_identity_activation_policy == (
         "explicit_support_tsv"
     )
-    assert "Excel skipped" in capsys.readouterr().out
+    assert "Processed files: 2" in capsys.readouterr().out
 
 
 def test_cli_explicit_shape_identity_activation_policy_override_keeps_normal_path(
@@ -519,7 +511,6 @@ def test_cli_explicit_shape_identity_activation_policy_override_keeps_normal_pat
         [
             "--base-dir",
             str(tmp_path),
-            "--skip-excel",
             "--targeted-ms1-shape-identity-activation-policy",
             "explicit_support_tsv",
         ]
@@ -532,7 +523,7 @@ def test_cli_explicit_shape_identity_activation_policy_override_keeps_normal_pat
     assert calls["run_config"].targeted_ms1_shape_identity_activation_policy == (
         "explicit_support_tsv"
     )
-    assert "Excel skipped" in capsys.readouterr().out
+    assert "Processed files: 2" in capsys.readouterr().out
 
 
 def test_cli_limited_policy_without_support_tsv_dispatches_auto_limited_default(
@@ -567,7 +558,7 @@ def test_cli_limited_policy_without_support_tsv_dispatches_auto_limited_default(
     )
     monkeypatch.setattr(module.extractor, "run", fake_normal_run)
 
-    exit_code = module.main(["--base-dir", str(tmp_path), "--skip-excel"])
+    exit_code = module.main(["--base-dir", str(tmp_path)])
 
     assert exit_code == 0
     assert calls["auto_config"].targeted_ms1_shape_identity_support_tsv is None
@@ -578,7 +569,7 @@ def test_cli_limited_policy_without_support_tsv_dispatches_auto_limited_default(
     assert calls["auto_kwargs"]["auto_output_dir"] is None
     assert calls["auto_kwargs"]["settings_overrides"] == {}
     assert "normal_run_called" not in calls
-    assert "Excel skipped." in capsys.readouterr().out
+    assert "Processed files: 0" in capsys.readouterr().out
 
 
 def test_cli_auto_limited_default_gate_failure_is_clean_and_unpublished(
@@ -620,7 +611,6 @@ def test_cli_auto_limited_default_gate_failure_is_clean_and_unpublished(
         [
             "--base-dir",
             str(tmp_path),
-            "--skip-excel",
             "--targeted-ms1-shape-identity-auto-limited-default",
             "--targeted-ms1-shape-identity-auto-output-dir",
             str(auto_dir),
@@ -629,7 +619,8 @@ def test_cli_auto_limited_default_gate_failure_is_clean_and_unpublished(
 
     assert exit_code == 2
     assert not (auto_dir / "final" / "output").exists()
-    assert (auto_dir / "final_unverified" / "output").is_dir()
+    assert not auto_dir.exists()
+    assert not list(auto_dir.parent.glob(".xic-limited-*"))
     stderr = capsys.readouterr().err
     assert "targeted MS1 shape identity auto-limited workflow failed" in stderr
     assert "verified final output was not published" in stderr
@@ -710,7 +701,6 @@ def test_cli_reports_missing_model_selection_expected_diff_approval_registry(
         [
             "--base-dir",
             str(tmp_path),
-            "--skip-excel",
             "--model-selection-expected-diff-approvals",
             str(missing_path),
         ]
@@ -720,52 +710,6 @@ def test_cli_reports_missing_model_selection_expected_diff_approval_registry(
     assert exit_code == 2
     assert "approval registry file not found" in captured.err
     assert "run_config" not in calls
-
-
-def test_cli_accepts_excel_flag_for_compatibility(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
-    import scripts.csv_to_excel as csv_to_excel
-
-    module = _module()
-    config = _config(tmp_path)
-    targets = [_target("Analyte")]
-    calls: dict[str, object] = {}
-
-    monkeypatch.setattr(module, "load_config", lambda _config_dir: (config, targets))
-    monkeypatch.setattr(module.extractor, "run", _fake_run(calls))
-    monkeypatch.setattr(
-        csv_to_excel,
-        "run",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("csv_to_excel.run should not be called")
-        ),
-    )
-    monkeypatch.setattr(
-        module,
-        "write_excel_from_run_output",
-        lambda excel_config, excel_targets, run_output, *, output_path: calls.update(
-            {
-                "excel_config": excel_config,
-                "excel_targets": excel_targets,
-                "excel_run_output": run_output,
-                "excel_output_path": output_path,
-            }
-        ),
-        raising=False,
-    )
-
-    exit_code = module.main(["--base-dir", str(tmp_path), "--excel"])
-
-    assert exit_code == 0
-    assert calls["excel_config"] is config
-    assert calls["excel_targets"] == targets
-    assert calls["excel_run_output"] is calls["run_output"]
-    output_path = calls["excel_output_path"]
-    assert isinstance(output_path, Path)
-    assert output_path.parent == tmp_path / "output"
-    assert re.fullmatch(r"xic_results_\d{8}_\d{4}\.xlsx", output_path.name)
-    assert "Excel skipped" not in capsys.readouterr().out
 
 
 def test_cli_replays_from_method_manifest(
@@ -787,7 +731,7 @@ def test_cli_replays_from_method_manifest(
         targets,
         context=MethodManifestContext(
             entrypoint="xic-extractor-cli",
-            argv=("--base-dir", str(tmp_path), "--skip-excel"),
+            argv=("--base-dir", str(tmp_path)),
             base_dir=tmp_path,
             config_dir=tmp_path / "config",
             settings_overrides={"data_dir": str(data_dir)},
@@ -817,15 +761,14 @@ def test_cli_replays_from_method_manifest(
     assert calls["config_dir"] == (tmp_path / "config").resolve()
     assert calls["settings_overrides"] == {"data_dir": str(data_dir)}
     assert calls["output_dir"] == manifest_path.parent
-    assert calls["run_config"] is not config
-    assert calls["run_config"].keep_intermediate_csv is True
+    assert calls["run_config"].keep_intermediate_csv is False
     assert calls["run_config"].parallel_mode == config.parallel_mode
     assert calls["run_config"].parallel_workers == config.parallel_workers
-    assert "excel" not in calls
+    assert calls["excel"] is True
     replay_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert replay_payload["invocation"]["entrypoint"] == "xic-extractor-cli-replay"
-    assert replay_payload["invocation"]["output_mode"] == "csv_only"
-    assert "Excel skipped" in capsys.readouterr().out
+    assert replay_payload["invocation"]["output_mode"] == "excel"
+    assert "Processed files: 2" in capsys.readouterr().out
 
 
 def test_cli_replay_rejects_runtime_overrides(
@@ -839,11 +782,13 @@ def test_cli_replay_rejects_runtime_overrides(
 
     monkeypatch.setattr(module.extractor, "run", _fake_run(calls))
 
-    exit_code = module.main(["--replay-manifest", str(manifest_path), "--skip-excel"])
+    exit_code = module.main(
+        ["--replay-manifest", str(manifest_path), "--parallel-mode", "serial"]
+    )
 
     captured = capsys.readouterr()
     assert exit_code == 2
-    assert "--replay-manifest cannot be combined with --skip-excel" in captured.err
+    assert "--replay-manifest cannot be combined with --parallel-mode" in captured.err
     assert "run_config" not in calls
 
 
@@ -1017,7 +962,7 @@ def test_cli_reports_publication_rejections_without_traceback(
         lambda _runner: _RejectingService(),
     )
 
-    exit_code = module.main(["--base-dir", str(tmp_path), "--skip-excel"])
+    exit_code = module.main(["--base-dir", str(tmp_path)])
 
     captured = capsys.readouterr()
     assert exit_code == 2
@@ -1218,7 +1163,7 @@ def _write_cli_config(config_dir: Path, *, data_dir: Path, dll_dir: Path) -> Non
         )
 
 
-def test_cli_reusable_method_freezes_inputs_and_replays_without_active_method(
+def test_cli_reusable_method_freezes_inputs_only_until_run_finishes(
     tmp_path, monkeypatch
 ):
     from dataclasses import asdict
@@ -1260,6 +1205,16 @@ def test_cli_reusable_method_freezes_inputs_and_replays_without_active_method(
         )
         return fake_run(config, targets, **kwargs)
 
+    def inspect_frozen_inputs(config, targets, *, context):
+        receipt = context.config_dir
+        calls["frozen_inputs"] = receipt
+        assert config.config_hash == compute_config_hash(
+            receipt / "targets.csv", receipt / "settings.csv"
+        )
+        assert targets[0].label == "MethodTarget"
+        assert context.settings_overrides == {}
+
+    monkeypatch.setattr(module, "write_method_manifest", inspect_frozen_inputs)
     monkeypatch.setattr(module.extractor, "run", run_and_change_active_sources)
     assert (
         module.main(
@@ -1270,7 +1225,6 @@ def test_cli_reusable_method_freezes_inputs_and_replays_without_active_method(
                 str(method_dir),
                 "--data-dir",
                 str(new_batch),
-                "--skip-excel",
                 "--parallel-mode",
                 "serial",
                 "--parallel-workers",
@@ -1285,18 +1239,8 @@ def test_cli_reusable_method_freezes_inputs_and_replays_without_active_method(
     assert config.nl_min_intensity_ratio == 0.07
     assert config.parallel_workers == 2
     assert [target.label for target in calls["run_targets"]] == ["MethodTarget"]
-    manifest_path = tmp_path / "output" / "method_manifest.json"
-    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    receipt = Path(payload["invocation"]["config_dir"])
-    assert receipt.parent.parent.parent == tmp_path / "output"
-    assert payload["invocation"]["settings_overrides"] == {}
-    assert config.config_hash == compute_config_hash(
-        receipt / "targets.csv", receipt / "settings.csv"
-    )
-    assert module.main(["--replay-manifest", str(manifest_path)]) == 0
-    assert calls["run_config"].config_hash == config.config_hash
-    assert calls["run_config"].output_csv == config.output_csv
-    assert [target.label for target in calls["run_targets"]] == ["MethodTarget"]
+    assert not calls["frozen_inputs"].exists()
+    assert not (tmp_path / "output" / ".run_inputs").exists()
 
 
 def test_cli_replay_rejects_reusable_method_selection(tmp_path, capsys):

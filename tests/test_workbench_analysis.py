@@ -173,7 +173,6 @@ def test_http_analysis_configuration_roundtrip_without_qt(tmp_path):
         assert config["targeted_form"]["settings"]
         settings = config["settings"] | {
             "data_dir": "C:/new batch",
-            "emit_review_report": "true",
         }
         targets = [
             config["targets"][0]
@@ -609,7 +608,6 @@ def test_http_method_reset_preserves_batch_resources_and_execution(tmp_path):
             "injection_order_source": "order.csv",
             "targeted_ms1_shape_identity_support_tsv": "support.tsv",
             "parallel_workers": "1",
-            "emit_review_report": "true",
         }
         settings = {**config["settings"], **local, "ms2_precursor_tol_da": "1.2"}
         status, summary, _ = request("/api/targeted/method", {"settings": settings})

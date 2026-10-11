@@ -74,6 +74,7 @@ def _build_overview_sheet(
     ws.column_dimensions["C"].width = 18
     ws.column_dimensions["D"].width = 18
 
+
 def _distinct_values(rows: list[dict[str, str]], key: str) -> set[str]:
     return {value for row in rows if (value := row.get(key, ""))}
 
@@ -172,8 +173,8 @@ def _write_overview_how_to_read(ws, start_row: int) -> int:
             "Product State and Counted Detection."
         ),
         "Diagnostics is a hidden technical log for debugging verbose evidence.",
-        "Score Breakdown is a technical audit sheet when enabled.",
-        "HTML Review Report is for visual batch QA when enabled.",
+        "Run Metadata records the method used for this workbook.",
+        "Diagnostics retains technical issues; review decisions remain in XIC Results.",
     ]
     for offset, note in enumerate(notes, start=1):
         row_idx = start_row + offset

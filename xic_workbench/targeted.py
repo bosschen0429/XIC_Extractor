@@ -58,6 +58,7 @@ class TargetedRun:
         config_dir = Path(config_dir)
         self._base_dir = config_dir.parent.resolve()
         prepared = config_loader.prepare_targeted_config(config_dir)
+        self._prepared = prepared
         self._config_dir = prepared.input_config_dir
         self._config, self._targets = prepared.config, list(prepared.targets)
         # Admission fixes the discovered file set, not analysis roles or RAW bytes.
@@ -70,6 +71,12 @@ class TargetedRun:
         self.cancellation_reason = "使用者要求停止，本次 Targeted 執行已停止。"
 
     def execute(self) -> dict[str, Any]:
+        try:
+            return self._execute()
+        finally:
+            self._prepared.cleanup()
+
+    def _execute(self) -> dict[str, Any]:
         if (
             not self._config.data_dir.is_dir()
             or discover_raw_files(self._config.data_dir) != self._raw_paths
@@ -296,9 +303,6 @@ _SETTING_FIELDS: tuple[tuple[str, str, str, dict[str, Any]], ...] = (
         "select",
         {"options": list(TARGETED_MS1_SHAPE_IDENTITY_ACTIVATION_POLICIES)},
     ),
-    ("emit_score_breakdown", "輸出 Score Breakdown 工作表", "checkbox", {}),
-    ("emit_review_report", "輸出 Review Report HTML", "checkbox", {}),
-    ("keep_intermediate_csv", "保留中間 CSV 檔", "checkbox", {"help": "除錯用。"}),
     (
         "nl_rt_anchor_search_margin_min",
         "NL 錨點搜尋半徑（min）",

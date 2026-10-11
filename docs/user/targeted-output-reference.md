@@ -162,20 +162,15 @@ Key-value pairs recording settings and provenance for the run.
 | signal_processing_method | `gaussian` | Shared physical signal smoothing method |
 | signal_processing_window_points | `15` | Gaussian smoothing window (points) |
 | targeted_output_schema_version | `targeted_output` | Output schema version |
-| method_manifest_sha256 | `b7c4...` | Method manifest hash |
+| limited_identity_gate | `pass` | Completed method-specific gate, when the limited workflow runs |
 
 ---
 
-## Score Breakdown (optional)
+## Embedded decision inputs
 
-Enabled by setting `emit_score_breakdown=true`. One row per detection with
-fine-grained scoring components.
-
-Key columns include: `symmetry`, `local_sn`, `nl_support`, `rt_prior`,
-`rt_centrality`, `noise_shape`, `peak_width`, `Quality Penalty`,
-`Total Severity`, `Base Score`, `Positive Points`, `Negative Points`,
-`Raw Score`, `Final Confidence`, `Quality Flags`, `Caps`, `Support`,
-`Concerns`.
-
-The exact column set depends on the active scoring model and may change
-between versions.
+Nonempty supplied `Sample Context`, `Identity Support`, and `Selection Approvals`
+are hidden technical sheets. They preserve the input tables used for sample roles/
+order and admitted evidence, rather than requiring external sidecars. They are
+not new decisions or evidence of scientific readiness. Empty inputs do not add
+sheets. `Targets` includes `Sample applicability`; `Run Metadata` includes the
+actual method settings, not a link to a separate manifest.

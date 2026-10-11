@@ -7,7 +7,7 @@ from xic_workbench.config_io import write_settings, write_targets
 from xic_workbench.jobs import AnalysisJobs
 
 
-def test_targeted_dispatch_freezes_values_and_manifest_inputs(tmp_path, monkeypatch):
+def test_targeted_dispatch_freezes_inputs_until_completion(tmp_path, monkeypatch):
     """A queued run must not read a later batch/method edit or publish its receipt."""
     from xic_workbench import targeted
 
@@ -44,6 +44,10 @@ def test_targeted_dispatch_freezes_values_and_manifest_inputs(tmp_path, monkeypa
     class Service:
         def execute_application(self, request):
             captured.append(request)
+            receipt = request.method_manifest_context.config_dir
+            assert (receipt / "settings.csv").read_bytes() == original_settings
+            assert (receipt / "targets.csv").read_bytes() == original_targets
+            assert request.method_manifest_context.config_dir.is_dir()
             return SimpleNamespace(
                 active_output=SimpleNamespace(file_results=[], diagnostics=[]),
                 published_paths=(),
@@ -76,8 +80,7 @@ def test_targeted_dispatch_freezes_values_and_manifest_inputs(tmp_path, monkeypa
         assert request.config.signal_processing_window_points == 17
         assert [(t.label, t.rt_max) for t in request.targets] == [("A", 3), ("B", 3)]
         receipt_dir = Path(request.method_manifest_context.config_dir)
-        assert (receipt_dir / "settings.csv").read_bytes() == original_settings
-        assert (receipt_dir / "targets.csv").read_bytes() == original_targets
+        assert not receipt_dir.exists()
         assert request.config.output_csv.parent == tmp_path / "output"
     finally:
         jobs.close()
@@ -122,10 +125,6 @@ def test_queued_targeted_metadata_membership_and_order_are_frozen(
 
     from xic_extractor.analysis_set import select_analysis_set
     from xic_extractor.extraction import targeted_inputs
-    from xic_extractor.output.method_manifest import (
-        load_method_manifest_for_replay,
-        write_method_manifest,
-    )
     from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
     from xic_workbench import targeted
 
@@ -184,10 +183,8 @@ def test_queued_targeted_metadata_membership_and_order_are_frozen(
                 injection_order=None,
                 model_selection_expected_diff_approvals=None,
             )
+            assert request.config.injection_order_source.read_bytes() == original_order
             captured.append((request, selected, inputs))
-            write_method_manifest(
-                request.config, request.targets, context=request.method_manifest_context
-            )
             return SimpleNamespace(
                 active_output=SimpleNamespace(file_results=[], diagnostics=[]),
                 published_paths=(),
@@ -208,13 +205,10 @@ def test_queued_targeted_metadata_membership_and_order_are_frozen(
         request, selected, inputs = captured[0]
         assert [path.stem for path in selected] == ["A"]
         assert inputs.injection_order == {"A": 1, "B": 2}
-        assert request.config.injection_order_source.read_bytes() == original_order
+        assert not request.config.injection_order_source.exists()
         assert request.config.injection_order_source != order_source
         assert order_source.read_bytes() != original_order
-        replay = load_method_manifest_for_replay(
-            tmp_path / "output" / "method_manifest.json"
-        )
-        assert replay.config_dir == request.method_manifest_context.config_dir
+        assert not request.method_manifest_context.config_dir.exists()
     finally:
         jobs.close()
 
@@ -254,13 +248,9 @@ def test_queued_targeted_changed_raw_file_set_requires_resubmission(
         jobs.close()
 
 
-def test_relative_workbench_config_produces_absolute_replay_receipt(
+def test_relative_workbench_config_uses_absolute_temporary_inputs(
     tmp_path, monkeypatch
 ):
-    from xic_extractor.output.method_manifest import (
-        load_method_manifest_for_replay,
-        write_method_manifest,
-    )
     from xic_workbench import targeted
 
     _snapshot_workspace(tmp_path)
@@ -270,9 +260,7 @@ def test_relative_workbench_config_produces_absolute_replay_receipt(
     class Service:
         def execute_application(self, request):
             captured.append(request)
-            write_method_manifest(
-                request.config, request.targets, context=request.method_manifest_context
-            )
+            assert request.method_manifest_context.config_dir.is_dir()
             return SimpleNamespace(
                 active_output=SimpleNamespace(file_results=[], diagnostics=[]),
                 published_paths=(),
@@ -288,9 +276,8 @@ def test_relative_workbench_config_produces_absolute_replay_receipt(
     )
     run.execute()
     request = captured[0]
-    manifest = tmp_path / "output" / "method_manifest.json"
-    replay = load_method_manifest_for_replay(manifest)
-    assert replay.config_dir == request.method_manifest_context.config_dir
-    assert replay.config_dir.is_absolute()
+    receipt = request.method_manifest_context.config_dir
+    assert receipt.is_absolute()
+    assert not receipt.exists()
     assert request.config.output_csv.parent == tmp_path / "output"
-    assert replay.base_dir == tmp_path
+    assert request.method_manifest_context.base_dir == tmp_path

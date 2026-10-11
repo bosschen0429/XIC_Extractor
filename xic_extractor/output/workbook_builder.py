@@ -1,25 +1,20 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+import csv
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
-from xic_extractor.injection_rolling import read_injection_order
 from xic_extractor.output.detection import MissingTargetedProductProjectionError
 from xic_extractor.output.review_queue_model import _review_queue_rows
-from xic_extractor.output.review_report import (
-    review_report_path_for_excel,
-    write_review_report,
-)
 from xic_extractor.output.sheet_diagnostics import _build_diagnostics_sheet
 from xic_extractor.output.sheet_metadata import _build_metadata_sheet
 from xic_extractor.output.sheet_overview import _build_overview_sheet
 from xic_extractor.output.sheet_results import _build_data_sheet
 from xic_extractor.output.sheet_review_queue import _build_review_queue_sheet
-from xic_extractor.output.sheet_score_breakdown import _build_score_breakdown_sheet
 from xic_extractor.output.sheet_summary import (
     _build_summary_sheet,
     _is_long_detected,
@@ -30,11 +25,9 @@ from xic_extractor.output.sheet_targets import _build_targets_sheet
 from xic_extractor.output.workbook_inputs import (
     _read_diagnostics,
     _read_long_results,
-    _read_score_breakdown,
 )
-from xic_extractor.output.workbook_styles import _apply_sheet_role_styles
+from xic_extractor.output.workbook_styles import _apply_sheet_role_styles, _excel_text
 
-ReviewReportWriter = Callable[..., Path]
 _COUNTED_PRODUCT_STATES = {"detected_clean", "detected_flagged"}
 _NOT_COUNTED_PRODUCT_STATES = {"not_counted", "excluded", "ambiguous"}
 _ALL_PRODUCT_STATES = _COUNTED_PRODUCT_STATES | _NOT_COUNTED_PRODUCT_STATES
@@ -46,10 +39,9 @@ def write_workbook_from_rows(
     rows: list[dict[str, str]],
     *,
     diagnostics: list[dict[str, str]],
-    score_breakdown: list[dict[str, str]] | None = None,
     output_path: Path,
-    report_writer: ReviewReportWriter = write_review_report,
     require_projection: bool = True,
+    extra_metadata: Sequence[tuple[str, object]] = (),
 ) -> Path:
     if require_projection:
         _require_product_projection(rows)
@@ -81,11 +73,15 @@ def write_workbook_from_rows(
     ws_diagnostics.sheet_state = "hidden"
 
     ws_metadata = wb.create_sheet("Run Metadata")
-    _build_metadata_sheet(ws_metadata, config)
+    _build_metadata_sheet(ws_metadata, config, extra_metadata=extra_metadata)
 
-    if config.emit_score_breakdown and score_breakdown:
-        ws_breakdown = wb.create_sheet("Score Breakdown")
-        _build_score_breakdown_sheet(ws_breakdown, score_breakdown)
+    for title, source in (
+        ("Sample Context", config.injection_order_source),
+        ("Identity Support", config.targeted_ms1_shape_identity_support_tsv),
+        ("Selection Approvals", config.model_selection_expected_diff_approval_registry),
+    ):
+        if source is not None:
+            _embed_input_table(wb, title, source)
 
     wb.active = wb.index(ws_overview)
     _apply_sheet_role_styles(wb)
@@ -93,29 +89,42 @@ def write_workbook_from_rows(
     wb.save(output_path)
     wb.close()
 
-    if config.emit_review_report:
-        injection_order = (
-            read_injection_order(config.injection_order_source)
-            if config.injection_order_source is not None
-            else None
-        )
-        report_writer(
-            review_report_path_for_excel(output_path),
-            rows,
-            diagnostics=diagnostics,
-            review_rows=review_rows,
-            count_no_ms2_as_detected=config.count_no_ms2_as_detected,
-            injection_order=injection_order,
-            require_projection=require_projection,
-        )
     return output_path
+
+
+def _embed_input_table(workbook: Workbook, title: str, source: Path) -> None:
+    """Keep supplied decision inputs reviewable after private run files expire."""
+    if source.suffix.lower() in {".xlsx", ".xlsm"}:
+        original = load_workbook(source, read_only=True, data_only=True)
+        try:
+            rows = list(original.active.values)
+        finally:
+            original.close()
+    else:
+        with source.open(encoding="utf-8-sig", newline="") as handle:
+            rows = list(
+                csv.reader(
+                    handle, delimiter="\t" if source.suffix.lower() == ".tsv" else ","
+                )
+            )
+    if len(rows) <= 1:
+        return
+    sheet = workbook.create_sheet(title)
+    for values in rows:
+        sheet.append(
+            [
+                _excel_text(value) if isinstance(value, str) else value
+                for value in values
+            ]
+        )
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = sheet.dimensions
+    sheet.sheet_state = "hidden"
 
 
 def run_from_config(
     config: ExtractionConfig,
     targets: list[Target],
-    *,
-    report_writer: ReviewReportWriter = write_review_report,
 ) -> Path:
     output_dir = config.output_csv.parent
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
@@ -128,15 +137,12 @@ def run_from_config(
     require_projection = config.output_csv.with_name("xic_results_long.csv").exists()
 
     diagnostics = _read_diagnostics(config.diagnostics_csv)
-    score_breakdown = _read_score_breakdown(config)
     write_workbook_from_rows(
         config,
         targets,
         rows,
         diagnostics=diagnostics,
-        score_breakdown=score_breakdown,
         output_path=excel_path,
-        report_writer=report_writer,
         require_projection=require_projection,
     )
     _print_summary(
@@ -146,6 +152,7 @@ def run_from_config(
         require_projection=require_projection,
     )
     return excel_path
+
 
 def _print_summary(
     excel_path: Path,

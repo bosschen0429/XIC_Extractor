@@ -130,8 +130,6 @@ def test_load_config_derives_output_paths_and_creates_output_dir(
     )
     assert targets[0].label == "Analyte"
     assert targets[0].neutral_loss_da == pytest.approx(116.0474)
-    assert targets[0].isotope_label_type == "unknown"
-    assert targets[0].paired_rt_relation == "none"
 
 
 def test_load_config_hash_reflects_settings_overrides(tmp_path: Path) -> None:
@@ -400,36 +398,6 @@ def test_load_config_accepts_process_parallel_settings(tmp_path: Path) -> None:
     assert config.parallel_workers == 4
 
 
-def test_load_config_parses_optional_target_pair_rt_metadata(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(config_dir)
-    _write_targets_with_optional_metadata(
-        config_dir,
-        [
-            _target_row(
-                label="Analyte",
-                istd_pair="ISTD",
-                paired_rt_relation="istd_not_later_than_pair",
-            ),
-            _target_row(
-                label="ISTD",
-                is_istd="true",
-                isotope_label_type="deuterated",
-            ),
-        ],
-    )
-
-    _, targets = load_config(config_dir)
-    by_label = {target.label: target for target in targets}
-
-    assert by_label["Analyte"].isotope_label_type == "unknown"
-    assert by_label["Analyte"].paired_rt_relation == "istd_not_later_than_pair"
-    assert by_label["ISTD"].isotope_label_type == "deuterated"
-    assert by_label["ISTD"].paired_rt_relation == "none"
-
-
 def test_load_config_parses_target_sample_applicability(tmp_path: Path) -> None:
     config_dir = tmp_path / "config"
     _write_settings(config_dir)
@@ -452,22 +420,6 @@ def test_load_config_parses_target_sample_applicability(tmp_path: Path) -> None:
     assert by_label["ISTD"].sample_applicability == "all"
 
 
-def test_load_config_rejects_invalid_target_pair_rt_metadata_enum(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(config_dir)
-    _write_targets_with_optional_metadata(
-        config_dir,
-        [_target_row(isotope_label_type="regex_guess")],
-    )
-
-    with pytest.raises(ConfigError) as exc_info:
-        load_config(config_dir)
-
-    _assert_error(exc_info, "targets.csv", "isotope_label_type", "regex_guess")
-
-
 def test_load_config_rejects_invalid_target_sample_applicability(
     tmp_path: Path,
 ) -> None:
@@ -482,65 +434,6 @@ def test_load_config_rejects_invalid_target_sample_applicability(
         load_config(config_dir)
 
     _assert_error(exc_info, "targets.csv", "sample_applicability", "dna_and_rna_only")
-
-
-def test_load_config_rejects_istd_relation_on_non_deuterated_pair(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(config_dir)
-    _write_targets_with_optional_metadata(
-        config_dir,
-        [
-            _target_row(
-                label="Analyte",
-                istd_pair="ISTD",
-                paired_rt_relation="istd_not_later_than_pair",
-            ),
-            _target_row(
-                label="ISTD",
-                is_istd="true",
-                isotope_label_type="heavy_non_deuterium",
-            ),
-        ],
-    )
-
-    with pytest.raises(ConfigError) as exc_info:
-        load_config(config_dir)
-
-    _assert_error(
-        exc_info,
-        "targets.csv",
-        "paired_rt_relation",
-        "requires paired ISTD isotope_label_type=deuterated",
-    )
-
-
-def test_load_config_rejects_istd_owned_paired_rt_relation(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(config_dir)
-    _write_targets_with_optional_metadata(
-        config_dir,
-        [
-            _target_row(
-                label="ISTD",
-                is_istd="true",
-                paired_rt_relation="istd_not_later_than_pair",
-            )
-        ],
-    )
-
-    with pytest.raises(ConfigError) as exc_info:
-        load_config(config_dir)
-
-    _assert_error(
-        exc_info,
-        "targets.csv",
-        "paired_rt_relation",
-        "is_istd=true targets must leave paired_rt_relation blank",
-    )
 
 
 def test_load_config_defaults_baseline_integration_method_to_asls(
@@ -638,15 +531,6 @@ def test_settings_example_omits_machine_specific_worker_count() -> None:
     assert "resolver_mode" not in rows
 
 
-def test_settings_example_includes_review_report_setting() -> None:
-    example_path = Path("config/settings.example.csv")
-
-    with example_path.open(newline="", encoding="utf-8-sig") as handle:
-        rows = {row["key"]: row["value"] for row in csv.DictReader(handle)}
-
-    assert rows["emit_review_report"] == "false"
-
-
 def test_retired_peak_candidate_setting_is_not_exposed() -> None:
     example_path = Path("config/settings.example.csv")
 
@@ -658,16 +542,14 @@ def test_retired_peak_candidate_setting_is_not_exposed() -> None:
     assert "emit_peak_candidates" not in CANONICAL_SETTINGS_DESCRIPTIONS
 
 
-def test_targets_example_includes_optional_target_pair_rt_metadata() -> None:
+def test_targets_example_preserves_pairing_and_sample_applicability() -> None:
     example_path = Path("config/targets.example.csv")
 
     with example_path.open(newline="", encoding="utf-8-sig") as handle:
         rows = {row["label"]: row for row in csv.DictReader(handle)}
 
-    assert rows["d3-5-medC"]["isotope_label_type"] == "deuterated"
-    assert rows["5-medC"]["paired_rt_relation"] == "istd_not_later_than_pair"
-    assert rows["15N5-8-oxodG"]["isotope_label_type"] == "heavy_non_deuterium"
-    assert rows["8-oxodG"]["paired_rt_relation"] == "none"
+    assert rows["5-medC"]["istd_pair"] == "d3-5-medC"
+    assert rows["8-oxodG"]["istd_pair"] == "15N5-8-oxodG"
     assert rows["8-oxo-Guo"]["sample_applicability"] == "rna_containing"
 
 
@@ -919,13 +801,3 @@ def test_retired_rt_feedback_requires_explicit_migration(key):
     values, warnings = migrate_settings_dict({key: ""})
     assert key not in values
     assert any(key in warning for warning in warnings)
-
-
-def test_learned_delta_relation_requires_explicit_migration(tmp_path):
-    config_dir = tmp_path / "config"
-    _write_settings(config_dir)
-    _write_targets_with_optional_metadata(
-        config_dir, [_target_row(paired_rt_relation="learned_delta_only")]
-    )
-    with pytest.raises(ConfigError, match="learned_delta_only is retired"):
-        load_config(config_dir)

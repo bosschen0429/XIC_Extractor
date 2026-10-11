@@ -29,9 +29,7 @@ def test_default_output_only_has_one_xlsx(tmp_path: Path, monkeypatch) -> None:
 
     assert list(output_dir.glob("*.csv")) == []
     assert list(output_dir.glob("*.xlsx")) == [xlsx_path]
-    assert [path.name for path in output_dir.glob("*.json")] == [
-        "method_manifest.json"
-    ]
+    assert [path.name for path in output_dir.glob("*.json")] == ["method_manifest.json"]
 
 
 def test_keep_intermediate_csv_emits_csvs(tmp_path: Path, monkeypatch) -> None:
@@ -43,7 +41,7 @@ def test_keep_intermediate_csv_emits_csvs(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_default_xlsx_has_overview_landing_sheet(tmp_path: Path, monkeypatch) -> None:
-    xlsx_path = _run_pipeline(tmp_path, monkeypatch, emit_score_breakdown=False)
+    xlsx_path = _run_pipeline(tmp_path, monkeypatch)
 
     wb = load_workbook(xlsx_path)
     assert wb.sheetnames == [
@@ -56,23 +54,6 @@ def test_default_xlsx_has_overview_landing_sheet(tmp_path: Path, monkeypatch) ->
         "Run Metadata",
     ]
     assert wb.active.title == "Overview"
-    assert wb["Diagnostics"].sheet_state == "hidden"
-
-
-def test_score_breakdown_appears_when_enabled(tmp_path: Path, monkeypatch) -> None:
-    xlsx_path = _run_pipeline(tmp_path, monkeypatch, emit_score_breakdown=True)
-
-    wb = load_workbook(xlsx_path)
-    assert wb.sheetnames == [
-        "Overview",
-        "Review Queue",
-        "XIC Results",
-        "Summary",
-        "Targets",
-        "Diagnostics",
-        "Run Metadata",
-        "Score Breakdown",
-    ]
     assert wb["Diagnostics"].sheet_state == "hidden"
 
 
@@ -110,13 +91,11 @@ def _run_pipeline(
     monkeypatch: pytest.MonkeyPatch,
     *,
     keep_intermediate_csv: bool = False,
-    emit_score_breakdown: bool = False,
     with_diagnostics: bool = False,
 ) -> Path:
     config = _config(
         tmp_path,
         keep_intermediate_csv=keep_intermediate_csv,
-        emit_score_breakdown=emit_score_breakdown,
     )
     config.data_dir.mkdir(parents=True)
     config.dll_dir.mkdir(parents=True)
@@ -152,7 +131,6 @@ def _config(
     tmp_path: Path,
     *,
     keep_intermediate_csv: bool,
-    emit_score_breakdown: bool,
 ) -> ExtractionConfig:
     return ExtractionConfig(
         data_dir=tmp_path / "raw",
@@ -166,7 +144,6 @@ def _config(
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
         keep_intermediate_csv=keep_intermediate_csv,
-        emit_score_breakdown=emit_score_breakdown,
         config_hash="abc12345",
     )
 

@@ -17,12 +17,9 @@ TARGET_FIELDS = (
     "is_istd",
     "istd_pair",
 )
-OPTIONAL_TARGET_METADATA_FIELDS = (
-    "isotope_label_type",
-    "paired_rt_relation",
-    "sample_applicability",
-)
+OPTIONAL_TARGET_METADATA_FIELDS = ("sample_applicability",)
 TARGET_WRITE_FIELDS = (*TARGET_FIELDS, *OPTIONAL_TARGET_METADATA_FIELDS)
+RETIRED_TARGET_FIELDS = frozenset({"isotope_label_type", "paired_rt_relation"})
 _REQUIRED_SETTING_FIELDS = ("key", "value")
 _TARGET_DRAFT_IDENTITY_FIELDS = ("label", "mz")
 

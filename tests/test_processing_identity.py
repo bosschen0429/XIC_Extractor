@@ -633,7 +633,6 @@ def test_request_excludes_output_callback_and_execution_policy(
             diagnostics_csv=tmp_path / "elsewhere" / "diagnostics.csv",
             parallel_mode="process",
             parallel_workers=8,
-            emit_review_report=True,
         ),
         paths,
     )

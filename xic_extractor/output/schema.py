@@ -11,7 +11,6 @@ class OutputColumn:
 TARGETED_OUTPUT_SCHEMA_VERSION = "targeted_output"
 TARGETED_LONG_CSV_SCHEMA_VERSION = "targeted_long_csv"
 TARGETED_DIAGNOSTIC_CSV_SCHEMA_VERSION = "targeted_diagnostics_csv"
-TARGETED_SCORE_BREAKDOWN_CSV_SCHEMA_VERSION = "targeted_score_breakdown_csv"
 
 MS1_SUFFIXES: tuple[str, ...] = (
     "RT",
@@ -72,35 +71,4 @@ DIAGNOSTIC_HEADERS: tuple[str, ...] = (
     "Target",
     "Issue",
     "Reason",
-)
-
-SCORE_BREAKDOWN_HEADERS: tuple[str, ...] = (
-    "SampleName",
-    "Target",
-    "Final Confidence",
-    "Detection Counted",
-    "Product State",
-    "Review State",
-    "Projection Reason",
-    "Legacy Authority Status",
-    "Caps",
-    "Raw Score",
-    "Support",
-    "Concerns",
-    "Base Score",
-    "Positive Points",
-    "Negative Points",
-    "symmetry",
-    "local_sn",
-    "nl_support",
-    "rt_prior",
-    "rt_centrality",
-    "noise_shape",
-    "peak_width",
-    "Quality Penalty",
-    "Quality Flags",
-    "Total Severity",
-    "Confidence",
-    "Prior RT",
-    "Prior Source",
 )

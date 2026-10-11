@@ -25,7 +25,6 @@ def test_config_round_trip_preserves_target_precision_and_hidden_metadata(
             "nl_ppm_max": "50",
             "is_istd": "false",
             "istd_pair": "d3-Analyte",
-            "paired_rt_relation": "istd_not_later_than_pair",
             "source_note": "preserve me",
         }
     ]
@@ -36,7 +35,7 @@ def test_config_round_trip_preserves_target_precision_and_hidden_metadata(
     assert len(restored) == 1
     assert restored[0]["mz"] == "258.108500"
     assert restored[0]["neutral_loss_da"] == "116.047400"
-    assert restored[0]["paired_rt_relation"] == "istd_not_later_than_pair"
+    assert restored[0]["istd_pair"] == "d3-Analyte"
     assert restored[0]["source_note"] == "preserve me"
 
 
@@ -141,8 +140,7 @@ def test_target_import_entrypoint_preserves_draft_precision_and_hidden_metadata(
 
     source = tmp_path / "targets.tsv"
     source.write_text(
-        "label\tmz\tpaired_rt_relation\tsource_note\n"
-        "Target A\t250.100000\tistd_not_later_than_pair\tkeep me\n",
+        "label\tmz\tsource_note\nTarget A\t250.100000\tkeep me\n",
         encoding="utf-8",
     )
 
@@ -150,7 +148,7 @@ def test_target_import_entrypoint_preserves_draft_precision_and_hidden_metadata(
         {
             "label": "Target A",
             "mz": "250.100000",
-            "paired_rt_relation": "istd_not_later_than_pair",
+            "is_istd": "false",
             "source_note": "keep me",
         }
     ]

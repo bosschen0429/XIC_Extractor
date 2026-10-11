@@ -50,7 +50,6 @@ def test_target_reorder_invalidates_ordered_snapshot_not_definition_identity() -
     analyte = replace(
         _target(),
         istd_pair="ISTD",
-        paired_rt_relation="none",
     )
     istd = replace(
         analyte,
@@ -58,7 +57,6 @@ def test_target_reorder_invalidates_ordered_snapshot_not_definition_identity() -
         mz=255.0,
         is_istd=True,
         istd_pair="",
-        paired_rt_relation="none",
     )
 
     forward = _snapshot(analyte, istd)
@@ -136,7 +134,5 @@ def _target() -> Target:
         nl_ppm_max=40.0,
         is_istd=False,
         istd_pair="",
-        isotope_label_type="unknown",
-        paired_rt_relation="none",
         sample_applicability="all",
     )

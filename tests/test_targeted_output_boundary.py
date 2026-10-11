@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 import inspect
-import json
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import replace
 from multiprocessing import get_context
@@ -38,8 +37,6 @@ from xic_extractor.extraction.targeted_inputs import (
     THERMO_RAW_OBSERVATION_NAMESPACE,
 )
 from xic_extractor.output.messages import DiagnosticRecord
-from xic_extractor.output.method_manifest import artifact_sha256, method_manifest_path
-from xic_extractor.output.review_report import review_report_path_for_excel
 from xic_extractor.peak_detection.peak_integration import find_peak_and_area
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
@@ -84,14 +81,13 @@ def test_complete_finalized_population_publishes_csv_excel_and_manifest(
         config.output_csv,
         config.output_csv.with_name("xic_results_long.csv"),
         config.diagnostics_csv,
-        config.output_csv.with_name("method_manifest.json"),
         excel_path,
     }
     assert all(path.is_file() for path in published.paths)
     assert not list(config.output_csv.parent.glob(".xic-targeted-publish-*"))
 
 
-def test_published_workbook_binds_the_published_method_manifest(
+def test_workbook_only_delivery_embeds_method_settings(
     tmp_path: Path,
 ) -> None:
     config, target, output = production_case(tmp_path)
@@ -109,31 +105,85 @@ def test_published_workbook_binds_the_published_method_manifest(
     workbook = load_workbook(excel_path, read_only=True, data_only=True)
     metadata = dict(workbook["Run Metadata"].iter_rows(values_only=True))
     workbook.close()
-    manifest = method_manifest_path(config)
-    assert metadata["method_manifest_path"] == manifest.name
-    assert metadata["method_manifest_sha256"] == artifact_sha256(manifest)
+    assert metadata["signal_processing_method"] == config.signal_processing_method
+    assert (
+        metadata["nl_rt_anchor_half_window_min"] == config.nl_rt_anchor_half_window_min
+    )
+    assert set(config.output_csv.parent.iterdir()) == {excel_path}
 
 
-def test_published_review_report_uses_the_public_workbook_name(
-    tmp_path: Path,
-) -> None:
+def test_limited_workflow_delivers_only_workbook_and_cleans_internal_files(tmp_path):
+    from xic_extractor.applications.targeted.limited_identity_workflow import (
+        execute_limited_identity_workflow,
+    )
+    from xic_extractor.output.method_manifest import MethodManifestContext
+
+    config, target, output = production_case(
+        tmp_path,
+        sample_names=("SampleA", "SampleB"),
+        sample_peak_scales={"SampleA": 1.0, "SampleB": 2.5},
+    )
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1, "SampleB": 2},
+        excel_output_path=tmp_path / "results.xlsx",
+        method_manifest_context=MethodManifestContext(config_dir=tmp_path),
+    )
+    destination = tmp_path / "delivery"
+    result = execute_limited_identity_workflow(
+        request,
+        application=TargetedApplicationService(lambda *_args, **_kwargs: output),
+        output_root=destination,
+    )
+    assert list(destination.iterdir()) == [destination / "results.xlsx"]
+    assert not list(tmp_path.glob(".xic-limited-*"))
+    assert result.final_execution.published_paths == (destination / "results.xlsx",)
+    wb = load_workbook(destination / "results.xlsx", data_only=True)
+    metadata = dict(wb["Run Metadata"].values)
+    assert metadata["limited_identity_gate"] == "pass"
+    assert "Identity Support" not in wb.sheetnames  # No empty technical tables.
+    rows = list(wb["XIC Results"].values)
+    records = [dict(zip(rows[0], row, strict=True)) for row in rows[1:]]
+    areas = {row["SampleName"]: row["Area"] for row in records}
+    assert areas["SampleB"] == pytest.approx(areas["SampleA"] * 2.5, rel=1e-2)
+    wb.close()
+
+
+@pytest.mark.parametrize(
+    "stop_stage", ["Auto limited support", "Auto limited expected-diff gate"]
+)
+def test_cancelled_limited_workflow_removes_internal_files(tmp_path, stop_stage):
+    from xic_extractor.applications.targeted.limited_identity_workflow import (
+        execute_limited_identity_workflow,
+    )
+    from xic_extractor.output.method_manifest import MethodManifestContext
+
     config, target, output = production_case(tmp_path)
-    config = replace(config, emit_review_report=True)
-    excel_path = config.output_csv.with_name("xic_results_20260903.xlsx")
+    cancelled = False
+
+    def progress(_current, _total, stage):
+        nonlocal cancelled
+        cancelled = stage == stop_stage
+
     request = build_targeted_application_request(
         config,
         [target],
         injection_order={"SampleA": 1},
-        excel_output_path=excel_path,
+        excel_output_path=tmp_path / "results.xlsx",
+        method_manifest_context=MethodManifestContext(config_dir=tmp_path),
+        progress_callback=progress,
+        should_stop=lambda: cancelled,
     )
-    finalized = execute_targeted_production_workflow(request, output)
-
-    publication = publish_targeted_outputs(request, finalized, output)
-
-    report_path = review_report_path_for_excel(excel_path)
-    assert report_path in publication.paths
-    assert report_path.is_file()
-    assert not excel_path.with_name("__targeted_output__.html").exists()
+    destination = tmp_path / "delivery"
+    with pytest.raises(InterruptedError):
+        execute_limited_identity_workflow(
+            request,
+            application=TargetedApplicationService(lambda *_args, **_kwargs: output),
+            output_root=destination,
+        )
+    assert not destination.exists()
+    assert not list(tmp_path.glob(".xic-limited-*"))
 
 
 def test_duplicate_declared_output_destinations_publish_nothing(
@@ -494,43 +544,6 @@ def test_publication_retires_equal_area_legacy_selection_authority(
     assert rendered.peak_result.candidate_scores == ()
 
 
-def test_manifest_does_not_claim_any_unstaged_stale_output(
-    tmp_path: Path,
-) -> None:
-    config, target, output = production_case(tmp_path)
-    config = replace(
-        config,
-        keep_intermediate_csv=False,
-        emit_score_breakdown=False,
-    )
-    stale_outputs = {
-        "output_csv": config.output_csv,
-        "long_csv": config.output_csv.with_name("xic_results_long.csv"),
-        "diagnostics_csv": config.diagnostics_csv,
-        "score_breakdown_csv": config.output_csv.with_name("xic_score_breakdown.csv"),
-    }
-    config.output_csv.parent.mkdir(parents=True)
-    for artifact_id, path in stale_outputs.items():
-        path.write_bytes(f"stale {artifact_id}".encode())
-    request = build_targeted_application_request(
-        config,
-        [target],
-        injection_order={"SampleA": 1},
-    )
-    finalized = execute_targeted_production_workflow(request, output)
-
-    publish_targeted_outputs(request, finalized, output)
-
-    manifest = json.loads(
-        config.output_csv.with_name("method_manifest.json").read_text(encoding="utf-8")
-    )
-    for artifact_id, path in stale_outputs.items():
-        artifact = manifest["output_artifacts"][artifact_id]
-        assert artifact["exists"] is False
-        assert artifact["sha256"] is None
-        assert path.read_bytes() == f"stale {artifact_id}".encode()
-
-
 def test_neutral_loss_disabled_target_publishes_ms1_backfill(
     tmp_path: Path,
 ) -> None:
@@ -561,8 +574,6 @@ def test_neutral_loss_disabled_target_publishes_ms1_backfill(
     assert row["NL Evidence"] == "Not requested"
     assert row["Area"] != "ND"
     assert row["Reason"].startswith("MS1 peak measured")
-
-
 
 
 def test_acquisition_baseline_projection_preserves_not_counted_cells(
@@ -723,6 +734,7 @@ def test_noncooperating_collision_after_precheck_is_not_replaced(
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     completed = execute_targeted_production_workflow(request, output)
@@ -813,7 +825,6 @@ def test_concurrent_non_replacing_publications_are_collision_atomic(
         config.output_csv,
         config.output_csv.with_name("xic_results_long.csv"),
         config.diagnostics_csv,
-        config.output_csv.with_name("method_manifest.json"),
     }
     assert set(winning.paths) == expected_paths
     assert all(path.is_file() for path in winning.paths)
@@ -1366,6 +1377,7 @@ def test_service_accepts_raw_order_that_differs_from_canonical_order(
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={
             sample_name: index
             for index, sample_name in enumerate(sample_names, start=1)

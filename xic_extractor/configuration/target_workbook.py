@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import re
 import sys
-from dataclasses import dataclass
-from difflib import SequenceMatcher
 from pathlib import Path
 
 import openpyxl
@@ -35,7 +33,6 @@ _ISTD_PREFIXES = (
     "[13C",
     "[15N",
 )
-_MAX_RT_DIFF_MIN = 3.0
 
 TargetRow = dict[str, str | float | int | bool]
 
@@ -72,103 +69,36 @@ def _strip_istd_prefix(label: str) -> str:
         index = label.find("]-")
         if index >= 0:
             return label[index + 2 :]
-    match = re.match(r"^(?:d\d+|(?:\d+[CN]\d*-))+", label)
+    match = re.match(r"^(?:d\d+-|\d+[CN]\d*-)+", label)
     if match:
         return label[match.end() :]
     return label
 
 
-def _normalize_name(name: str) -> str:
-    return re.sub(r"[^a-zA-Z]", "", name).lower()
-
-
-@dataclass(frozen=True)
-class _StandardMatchProfile:
-    row: TargetRow
-    normalized_label: str
-    rt_center: float
-
-
-@dataclass(frozen=True)
-class _IstdMatchCandidate:
-    standard: TargetRow
-    score: float
-
-
-@dataclass(frozen=True)
-class _IstdMatchPlan:
-    istd: TargetRow
-    rt_center: float
-    sort_score: float
-    candidates: tuple[_IstdMatchCandidate, ...]
-
-
 def _assign_istd_pairs(targets: list[TargetRow]) -> None:
-    """Assign each matching ISTD to at most one non-ISTD target in place."""
+    """Prefill only unique exact isotope-name counterparts; never infer identity.
 
-    standards = [target for target in targets if target["is_istd"] == "false"]
-    istds = [target for target in targets if target["is_istd"] == "true"]
-    standard_profiles = tuple(
-        _StandardMatchProfile(
-            row=standard,
-            normalized_label=_normalize_name(str(standard["label"])),
-            rt_center=_rt_center(standard),
-        )
-        for standard in standards
-    )
-
-    plans = tuple(_istd_match_plan(istd, standard_profiles) for istd in istds)
-    for plan in sorted(plans, key=lambda item: item.sort_score, reverse=True):
-        best_standard: TargetRow | None = None
-        best_score = 0.0
-        for candidate in plan.candidates:
-            standard = candidate.standard
-            if standard["istd_pair"]:
-                continue
-            if candidate.score > best_score:
-                best_score = candidate.score
-                best_standard = standard
-
-        if best_standard is not None:
-            best_standard["istd_pair"] = str(plan.istd["label"])
-        else:
-            print(
-                f"  Warning: no standard matched for ISTD '{plan.istd['label']}' "
-                f"(RT {plan.rt_center:.2f} min) – fill istd_pair manually",
-                file=sys.stderr,
-            )
-
-
-def _istd_match_plan(
-    istd: TargetRow,
-    standard_profiles: tuple[_StandardMatchProfile, ...],
-) -> _IstdMatchPlan:
-    normalized_core = _normalize_name(_strip_istd_prefix(str(istd["label"])))
-    istd_rt = _rt_center(istd)
-    sort_score = 0.0
-    candidates: list[_IstdMatchCandidate] = []
-    for standard in standard_profiles:
-        name_similarity = SequenceMatcher(
-            None, normalized_core, standard.normalized_label
-        ).ratio()
-        sort_score = max(sort_score, name_similarity)
-        if name_similarity < 0.70:
-            continue
-        if abs(istd_rt - standard.rt_center) > _MAX_RT_DIFF_MIN:
-            continue
-        candidates.append(
-            _IstdMatchCandidate(standard=standard.row, score=name_similarity)
-        )
-    return _IstdMatchPlan(
-        istd=istd,
-        rt_center=istd_rt,
-        sort_score=sort_score,
-        candidates=tuple(candidates),
-    )
-
-
-def _rt_center(target: TargetRow) -> float:
-    return (float(target["rt_min"]) + float(target["rt_max"])) / 2
+    Existing roles and pair choices win. Mass and RT remain method inputs, not
+    evidence for guessing a label relationship during table editing.
+    """
+    for target in targets:
+        if not str(target.get("is_istd", "")).strip():
+            target["is_istd"] = str(_is_istd(str(target["label"]))).lower()
+    istds: dict[str, list[str]] = {}
+    for target in targets:
+        if str(target.get("is_istd", "")).lower() == "true":
+            label = str(target["label"])
+            core = _strip_istd_prefix(label).casefold()
+            if core != label.casefold():
+                istds.setdefault(core, []).append(label)
+    analytes: dict[str, list[TargetRow]] = {}
+    for target in targets:
+        if str(target.get("is_istd", "")).lower() != "true":
+            analytes.setdefault(str(target["label"]).casefold(), []).append(target)
+    for name, rows in analytes.items():
+        matches = istds.get(name, [])
+        if len(rows) == len(matches) == 1 and not rows[0].get("istd_pair"):
+            rows[0]["istd_pair"] = matches[0]
 
 
 def parse_dna_sheet(

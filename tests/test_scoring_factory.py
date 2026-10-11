@@ -520,7 +520,6 @@ def _config(**overrides: object) -> ExtractionConfig:
         injection_order_source=None,
         rolling_window_size=1,
         dirty_matrix_mode=False,
-        emit_score_breakdown=False,
         config_hash="abcd1234",
     )
     return ExtractionConfig(**{**config.__dict__, **overrides})

@@ -39,6 +39,7 @@ _TARGETS_HEADERS = [
     "Expected product m/z",
     "NL ppm warn",
     "NL ppm max",
+    "Sample applicability",
 ]
 _SUMMARY_HEADERS = [
     "Target",
@@ -236,7 +237,9 @@ def _apply_sheet_role_styles(wb: Workbook) -> None:
         "Targets": _TECHNICAL_TAB,
         "Diagnostics": _TECHNICAL_TAB,
         "Run Metadata": _TECHNICAL_TAB,
-        "Score Breakdown": _TECHNICAL_TAB,
+        "Identity Support": _TECHNICAL_TAB,
+        "Sample Context": _TECHNICAL_TAB,
+        "Selection Approvals": _TECHNICAL_TAB,
     }
     for name, color in role_colors.items():
         if name in wb.sheetnames:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from xic_extractor.applications.targeted.application import (
     TargetedApplicationExecution,
@@ -12,16 +13,15 @@ from xic_extractor.applications.targeted.application import (
 )
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig
 from xic_extractor.diagnostics.targeted_ms1_shape_identity_auto_diff import (
-    TargetedMs1ShapeIdentityAutoDiffOutputs,
     write_targeted_ms1_shape_identity_auto_diff_artifacts,
 )
 from xic_extractor.diagnostics.targeted_ms1_shape_identity_support_producer import (
-    TargetedMs1ShapeIdentitySupportOutputs,
     run_build_targeted_ms1_shape_identity_supports,
 )
 from xic_extractor.extraction.targeted_inputs import (
     resolve_model_selection_expected_diff_approvals,
 )
+from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 from xic_extractor.output.method_manifest import MethodManifestContext
 from xic_extractor.targeted_ms1_shape_identity_policy import (
     LIMITED_HMDC_MEDC_POLICY,
@@ -41,9 +41,10 @@ def requires_limited_identity_workflow(config: ExtractionConfig) -> bool:
 class LimitedIdentityWorkflowExecution:
     final_execution: TargetedApplicationExecution
     final_config: ExtractionConfig
-    baseline_output_dir: Path
-    support_outputs: TargetedMs1ShapeIdentitySupportOutputs
-    diff_outputs: TargetedMs1ShapeIdentityAutoDiffOutputs
+    support_row_count: int
+    expected_diff_row_count: int
+    matrix_diff_cell_count: int
+    gate_status: str
 
 
 def execute_limited_identity_workflow(
@@ -52,13 +53,57 @@ def execute_limited_identity_workflow(
     application: TargetedApplicationService,
     output_root: Path,
 ) -> LimitedIdentityWorkflowExecution:
-    """Baseline → admitted-target support → final → expected-diff gate → publish.
+    """Publish only the workbook after the limited-identity gate has passed.
 
-    The caller freezes method inputs before entry and excludes replay. Cancellation
-    is cooperative between stages and between support RAW reads. Diagnostic
-    baseline/support and unverified outputs may remain after failure; no verified
-    final is published until the unchanged method-specific gate succeeds.
+    CSV/support/diff files serve the existing gate and live only for this call.
+    The final commit uses the same cancellation and collision-safe publication
+    transaction as ordinary Targeted output.
     """
+    from xic_extractor.applications.targeted.output_boundary import (
+        _commit_staged_outputs,
+        _TargetedPublicationCancelled,
+    )
+
+    if request.excel_output_path is None:
+        raise ConfigError("The Targeted workflow requires an XLSX output path")
+    output_root = Path(output_root)
+    output_root.parent.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(prefix=".xic-limited-", dir=output_root.parent) as temp:
+        result = _execute_limited_identity_stages(
+            request, application=application, output_root=Path(temp)
+        )
+        _check_cancel(request)
+        workbook = next(
+            path
+            for path in result.final_execution.published_paths
+            if path.suffix.lower() == ".xlsx"
+        )
+        destination = output_root / request.excel_output_path.name
+        try:
+            published = _commit_staged_outputs(
+                {workbook: destination}, should_cancel=request.should_stop
+            )
+        except _TargetedPublicationCancelled:
+            raise InterruptedError("Limited identity workflow cancelled") from None
+        return replace(
+            result,
+            final_execution=replace(result.final_execution, published_paths=published),
+            final_config=replace(
+                request.config,
+                output_csv=output_root / "xic_results.csv",
+                diagnostics_csv=output_root / "xic_diagnostics.csv",
+                keep_intermediate_csv=False,
+            ),
+        )
+
+
+def _execute_limited_identity_stages(
+    request: TargetedApplicationRequest,
+    *,
+    application: TargetedApplicationService,
+    output_root: Path,
+) -> LimitedIdentityWorkflowExecution:
+    """Run the unchanged scientific gate in a private working directory."""
     context = request.method_manifest_context
     if not isinstance(context, MethodManifestContext):
         raise ConfigError(
@@ -67,13 +112,6 @@ def execute_limited_identity_workflow(
     output_root = Path(output_root)
     baseline_dir = output_root / "baseline" / "output"
     staging_dir = output_root / "final_unverified" / "output"
-    final_dir = output_root / "final" / "output"
-    for path in (staging_dir, final_dir):
-        if path.exists():
-            raise ConfigError(
-                f"{path}: limited identity output already exists; "
-                "choose a new output directory"
-            )
     _check_cancel(request)
     approvals = resolve_model_selection_expected_diff_approvals(
         request.config, request.model_selection_expected_diff_approvals
@@ -139,11 +177,7 @@ def execute_limited_identity_workflow(
             request,
             config=final_config,
             model_selection_expected_diff_approvals=approvals,
-            excel_output_path=(
-                staging_dir / request.excel_output_path.name
-                if request.excel_output_path is not None
-                else None
-            ),
+            excel_output_path=None,
             replace_existing_outputs=False,
             output_projection="finalized",
             method_manifest_context=replace(
@@ -162,37 +196,28 @@ def execute_limited_identity_workflow(
         output_dir=output_root,
     )
     _check_cancel(request)
-    if not staging_dir.is_dir():
-        raise ConfigError(f"{staging_dir}: unverified final output directory missing")
-    if final_dir.exists():
-        raise ConfigError(f"{final_dir}: verified final output already exists")
-    published_paths = tuple(
-        final_dir / path.relative_to(staging_dir)
-        for path in final_execution.published_paths
+    assert request.excel_output_path is not None
+    workbook = staging_dir / request.excel_output_path.name
+    write_excel_from_run_output(
+        final_config,
+        list(request.targets),
+        final_execution.active_output,
+        output_path=workbook,
+        extra_metadata=(
+            ("limited_identity_gate", diff_outputs.gate_status),
+            ("identity_support_rows", support_outputs.evidence_row_count),
+            ("expected_diff_rows", diff_outputs.expected_diff_row_count),
+            ("matrix_diff_cells", diff_outputs.matrix_diff_cell_count),
+        ),
     )
-    final_dir.parent.mkdir(parents=True, exist_ok=True)
-    _check_cancel(request)
-    staging_dir.replace(final_dir)
-    try:
-        staging_dir.parent.rmdir()
-    except OSError:
-        pass
-    # Manifest output descriptors are relative to their containing output folder;
-    # input descriptors point to the retained frozen config and support, unchanged.
-    final_execution = replace(
-        final_execution,
-        published_paths=published_paths,
-    )
+    final_execution = replace(final_execution, published_paths=(workbook,))
     return LimitedIdentityWorkflowExecution(
         final_execution=final_execution,
-        final_config=replace(
-            final_config,
-            output_csv=final_dir / "xic_results.csv",
-            diagnostics_csv=final_dir / "xic_diagnostics.csv",
-        ),
-        baseline_output_dir=baseline_dir,
-        support_outputs=support_outputs,
-        diff_outputs=diff_outputs,
+        final_config=final_config,
+        support_row_count=support_outputs.evidence_row_count,
+        expected_diff_row_count=diff_outputs.expected_diff_row_count,
+        matrix_diff_cell_count=diff_outputs.matrix_diff_cell_count,
+        gate_status=diff_outputs.gate_status,
     )
 
 

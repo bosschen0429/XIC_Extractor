@@ -48,27 +48,29 @@ def test_build_metadata_rows_returns_contract_keys_in_order() -> None:
         "config_hash",
         "app_version",
         "generated_at",
+        "target_config_hash",
+        "targeted_output_schema_version",
+        "parallel_mode",
+        "parallel_workers",
         "signal_processing_method",
         "signal_processing_window_points",
-        "ms1_morphology_smoothing_window_points",
-        "nl_min_intensity_ratio",
         "ms2_precursor_tol_da",
-        "targeted_output_schema_version",
-        "method_manifest_schema",
-        "method_manifest_path",
-        "method_manifest_sha256",
+        "nl_min_intensity_ratio",
+        "count_no_ms2_as_detected",
+        "nl_rt_anchor_search_margin_min",
+        "nl_rt_anchor_half_window_min",
+        "nl_fallback_half_window_min",
+        "rolling_window_size",
+        "dirty_matrix_mode",
+        "targeted_ms1_shape_identity_activation_policy",
     ]
     values = dict(rows)
     assert values["config_hash"] == "abc12345"
     assert values["signal_processing_method"] == "gaussian"
     assert values["signal_processing_window_points"] == 21
-    assert values["ms1_morphology_smoothing_window_points"] == 21
     assert values["nl_min_intensity_ratio"] == 0.02
     assert values["ms2_precursor_tol_da"] == 0.4
     assert values["targeted_output_schema_version"] == "targeted_output"
-    assert values["method_manifest_schema"] == "current_sample_rt_method_manifest"
-    assert values["method_manifest_path"] == "method_manifest.json"
-    assert values["method_manifest_sha256"] == ""
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", values["generated_at"])
     generated_at = datetime.strptime(values["generated_at"], "%Y-%m-%dT%H:%M:%SZ")
     generated_at = generated_at.replace(tzinfo=timezone.utc)

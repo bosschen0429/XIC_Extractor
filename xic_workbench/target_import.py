@@ -20,7 +20,9 @@ def import_targets(path: Path, *, sheet: str = "both") -> list[dict[str, str]]:
     source = Path(path)
     suffix = source.suffix.lower()
     if suffix in {".csv", ".tsv"}:
-        return read_target_draft_rows(source)
+        targets = read_target_draft_rows(source)
+        _assign_istd_pairs(targets)
+        return targets
     if suffix not in {".xlsx", ".xls"}:
         raise ValueError(f"{source}: expected CSV, TSV, XLSX, or XLS target input")
 

@@ -17,11 +17,9 @@ from xic_extractor.configuration.settings import reject_retired_rt_reference_inp
 from xic_extractor.output.schema import (
     DIAGNOSTIC_HEADERS,
     LONG_HEADERS,
-    SCORE_BREAKDOWN_HEADERS,
     TARGETED_DIAGNOSTIC_CSV_SCHEMA_VERSION,
     TARGETED_LONG_CSV_SCHEMA_VERSION,
     TARGETED_OUTPUT_SCHEMA_VERSION,
-    TARGETED_SCORE_BREAKDOWN_CSV_SCHEMA_VERSION,
 )
 
 METHOD_MANIFEST_SCHEMA_VERSION = "current_sample_rt_method_manifest"
@@ -177,11 +175,6 @@ def build_method_manifest(
             ),
             "diagnostics_csv": _output_artifact(
                 config.diagnostics_csv,
-                output_dir,
-                artifact_sources,
-            ),
-            "score_breakdown_csv": _output_artifact(
-                config.output_csv.with_name("xic_score_breakdown.csv"),
                 output_dir,
                 artifact_sources,
             ),
@@ -618,8 +611,6 @@ def _method_settings(config: ExtractionConfig) -> dict[str, object]:
         ),
         "parallel_mode": config.parallel_mode,
         "parallel_workers": config.parallel_workers,
-        "emit_score_breakdown": config.emit_score_breakdown,
-        "emit_review_report": config.emit_review_report,
         "keep_intermediate_csv": config.keep_intermediate_csv,
     }
 
@@ -633,9 +624,6 @@ def _target_summary(targets: Sequence[Target]) -> dict[str, object]:
         "istd_count": istd_count,
         "sample_applicability_values": sorted(
             {target.sample_applicability for target in targets}
-        ),
-        "isotope_label_type_values": sorted(
-            {target.isotope_label_type for target in targets}
         ),
     }
 
@@ -651,10 +639,6 @@ def _output_schema() -> dict[str, object]:
             "schema_version": TARGETED_DIAGNOSTIC_CSV_SCHEMA_VERSION,
             "headers": list(DIAGNOSTIC_HEADERS),
         },
-        "xic_score_breakdown_csv": {
-            "schema_version": TARGETED_SCORE_BREAKDOWN_CSV_SCHEMA_VERSION,
-            "headers": list(SCORE_BREAKDOWN_HEADERS),
-        },
     }
 
 
@@ -665,7 +649,6 @@ def _artifact_replay_policy() -> dict[str, object]:
             "output_csv",
             "long_csv",
             "diagnostics_csv",
-            "score_breakdown_csv",
         ],
         "normalized_compare_artifacts": {
             "timestamped_workbook": {

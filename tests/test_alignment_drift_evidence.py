@@ -82,18 +82,25 @@ def test_known_reference_content_identity_tracks_declared_and_measured_content()
     target = Target("known", 500, 7, 10, 20, 116.0474, 20, 50, True, "")
     coordinates = {("known", "early"): 8, ("known", "late"): 9}
     reference = mint_known_istd_reference_from_measurements(
-        (target,), coordinates, source_sha256="a" * 64,
+        (target,),
+        coordinates,
+        source_sha256="a" * 64,
     )
     equivalent = mint_known_istd_reference_from_measurements(
-        (target,), {("known", "late"): 9.0, ("known", "early"): 8.0},
-        source_identifier="elsewhere.xlsx", source_sha256="b" * 64,
+        (target,),
+        {("known", "late"): 9.0, ("known", "early"): 8.0},
+        source_identifier="elsewhere.xlsx",
+        source_sha256="b" * 64,
     )
     changed_rt = mint_known_istd_reference_from_measurements(
-        (target,), {**coordinates, ("known", "late"): 9.5},
+        (target,),
+        {**coordinates, ("known", "late"): 9.5},
         source_sha256="a" * 64,
     )
     changed_target = mint_known_istd_reference_from_measurements(
-        (replace(target, ppm_tol=10),), coordinates, source_sha256="a" * 64,
+        (replace(target, ppm_tol=10),),
+        coordinates,
+        source_sha256="a" * 64,
     )
 
     assert (
@@ -151,7 +158,8 @@ def test_known_reference_rejects_invalid_consumed_input(
 
 @pytest.mark.parametrize("use_batch_context", [False, True])
 def test_known_reference_only_corrects_unique_same_target_support_pairs(
-    tmp_path: Path, use_batch_context: bool,
+    tmp_path: Path,
+    use_batch_context: bool,
 ) -> None:
     from dataclasses import replace
 
@@ -168,10 +176,16 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
             sample_universe=frozenset({"early", "late", "missing"}),
             injection_order={"early": 1, "late": 2, "missing": 3},
         )
-    early, late, other = tuple(_owner(
-        sample, precursor_mz=500, product_mz=383.9526,
-        observed_neutral_loss_da=116.0474, owner_apex_rt=rt,
-    ) for sample, rt in (("early", 8), ("late", 9), ("missing", 9.5)))
+    early, late, other = tuple(
+        _owner(
+            sample,
+            precursor_mz=500,
+            product_mz=383.9526,
+            observed_neutral_loss_da=116.0474,
+            owner_apex_rt=rt,
+        )
+        for sample, rt in (("early", 8), ("late", 9), ("missing", 9.5))
+    )
     lookup = reference.bind((early, late, other))
     config = AlignmentConfig()
     edge = evaluate_owner_edge(early, late, config=config, drift_lookup=lookup)
@@ -180,9 +194,13 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
     assert lookup.sample_delta_min("early") is None
     assert lookup.istd_identity_anchor is None
     no_event = replace(late, primary_identity_event=None)
-    wrong_nl = replace(late, primary_identity_event=replace(
-        late.primary_identity_event, observed_neutral_loss_da=132.0423,
-    ))
+    wrong_nl = replace(
+        late,
+        primary_identity_event=replace(
+            late.primary_identity_event,
+            observed_neutral_loss_da=132.0423,
+        ),
+    )
     for invalid in (no_event, wrong_nl):
         rejected = reference.bind((early, invalid))
         assert rejected.corrected_pair_delta_sec(early, invalid) is None
@@ -193,18 +211,29 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
         assert unavailable_lookup.corrected_pair_delta_sec(early, right) is None
         raw = evaluate_owner_edge(early, right, config=config)
         suffix = (
-            ";drift=raw_sufficient" if raw.decision == "strong_edge"
+            ";drift=raw_sufficient"
+            if raw.decision == "strong_edge"
             else ";drift=unavailable"
         )
         assert evaluate_owner_edge(
-            early, right, config=config, drift_lookup=unavailable_lookup,
+            early,
+            right,
+            config=config,
+            drift_lookup=unavailable_lookup,
         ) == replace(
-            raw, drift_prior_source="targeted_istd_trend", reason=raw.reason + suffix,
+            raw,
+            drift_prior_source="targeted_istd_trend",
+            reason=raw.reason + suffix,
         )
 
     assert_unavailable_pair_uses_only_raw(other, lookup)
-    other_rt = replace(late, owner_id="different-peak", owner_apex_rt=9.5,
-                       owner_peak_start_rt=9.4, owner_peak_end_rt=9.6)
+    other_rt = replace(
+        late,
+        owner_id="different-peak",
+        owner_apex_rt=9.5,
+        owner_peak_start_rt=9.4,
+        owner_peak_end_rt=9.6,
+    )
     assert_unavailable_pair_uses_only_raw(other_rt, lookup)
     # An overlapping SUPPORT owner prevents a unique binding; removing it later
     # from a group must not recreate reference authority.
@@ -223,7 +252,8 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
 
 @pytest.mark.parametrize("use_reference", (False, True))
 def test_known_reference_grouping_preserves_main_peak_against_closer_competitor(
-    tmp_path: Path, use_reference: bool,
+    tmp_path: Path,
+    use_reference: bool,
 ) -> None:
     from tests.test_alignment_owner_clustering import _owner
     from xic_extractor.acquisition.istd_reference import read_known_istd_reference
@@ -265,8 +295,7 @@ def _batch_reference(tmp_path: Path, observations):
     label_count = len(next(iter(observations.values())))
     for index in range(label_count):
         targets.append(
-            [f"landmark-{index}", "ISTD", 300 + index * 50, 0, 60,
-             20, 116.0474, 20, 50]
+            [f"landmark-{index}", "ISTD", 300 + index * 50, 0, 60, 20, 116.0474, 20, 50]
         )
     for sample, observed in observations.items():
         for index, rt in enumerate(observed):
@@ -277,12 +306,16 @@ def _batch_reference(tmp_path: Path, observations):
 
 @pytest.mark.parametrize(
     ("early_knots", "late_knots"),
-    [((8, 20, 40), (10, 24, 46)),
-     ((10, 24, 46), (8, 20, 40)),
-     ((8, 20, 40), (8, 20, 40))],
+    [
+        ((8, 20, 40), (10, 24, 46)),
+        ((10, 24, 46), (8, 20, 40)),
+        ((8, 20, 40), (8, 20, 40)),
+    ],
 )
 def test_batch_reference_corrects_bootstrap_unknowns_without_merging_distinct_peaks(
-    tmp_path: Path, early_knots, late_knots,
+    tmp_path: Path,
+    early_knots,
+    late_knots,
 ) -> None:
     from tests.test_alignment_owner_clustering import _owner
     from xic_extractor.alignment.config import AlignmentConfig
@@ -290,15 +323,28 @@ def test_batch_reference_corrects_bootstrap_unknowns_without_merging_distinct_pe
         construct_cross_sample_peak_group_hypotheses,
     )
 
-    reference = _batch_reference(
-        tmp_path, {"early": early_knots, "late": late_knots}
+    reference = _batch_reference(tmp_path, {"early": early_knots, "late": late_knots})
+    early = _owner(
+        "early",
+        "main",
+        apex_rt=sum(early_knots[:2]) / 2,
+        precursor_mz=600,
+        product_mz=483.9526,
     )
-    early = _owner("early", "main", apex_rt=sum(early_knots[:2]) / 2,
-                   precursor_mz=600, product_mz=483.9526)
-    late = _owner("late", "main", apex_rt=sum(late_knots[:2]) / 2,
-                  precursor_mz=600, product_mz=483.9526)
-    competitor = _owner("early", "other", apex_rt=early.owner_apex_rt + 2,
-                        precursor_mz=600, product_mz=483.9526)
+    late = _owner(
+        "late",
+        "main",
+        apex_rt=sum(late_knots[:2]) / 2,
+        precursor_mz=600,
+        product_mz=483.9526,
+    )
+    competitor = _owner(
+        "early",
+        "other",
+        apex_rt=early.owner_apex_rt + 2,
+        precursor_mz=600,
+        product_mz=483.9526,
+    )
     owners = (early, late, competitor)
     original = tuple((o.owner_apex_rt, o.selected_integration) for o in owners)
     universe = frozenset({"early", "late"})
@@ -308,8 +354,12 @@ def test_batch_reference_corrects_bootstrap_unknowns_without_merging_distinct_pe
     assert lookup.corrected_pair_delta_sec(early, late) == pytest.approx(0)
     assert lookup.corrected_pair_delta_sec(competitor, late) > 60
     groups = construct_cross_sample_peak_group_hypotheses(
-        owners, config=AlignmentConfig(), sample_universe=universe,
-        injection_order=order, drift_lookup=lookup, bootstrap=True,
+        owners,
+        config=AlignmentConfig(),
+        sample_universe=universe,
+        injection_order=order,
+        drift_lookup=lookup,
+        bootstrap=True,
     )
     assert {frozenset(group.owner_ids) for group in groups} == {
         frozenset((early.owner_id, late.owner_id)),
@@ -319,13 +369,18 @@ def test_batch_reference_corrects_bootstrap_unknowns_without_merging_distinct_pe
 
 
 def test_prepared_calibration_receipt_preserves_owner_map_without_refitting(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from xic_extractor.alignment.drift_evidence import interpolate_calibrated_rt_min
 
-    reference = _batch_reference(tmp_path, {
-        "early": (8, 20, 40), "late": (10, 24, 46),
-    })
+    reference = _batch_reference(
+        tmp_path,
+        {
+            "early": (8, 20, 40),
+            "late": (10, 24, 46),
+        },
+    )
     assert reference.explanation_provenance.get("calibration") is None
     prepared = reference.prepare_batch(
         sample_universe=frozenset({"early", "late", "missing"}),
@@ -368,17 +423,24 @@ def test_batch_reference_interpolates_missing_landmark_in_canonical_order(
 ) -> None:
     from tests.test_alignment_owner_clustering import _owner
 
-    reference = _batch_reference(tmp_path, {
-        "early": (8, 20, 40), "middle": (11, None, 48), "late": (10, 24, 46),
-        "outside-batch": (30, 35, 55),
-    })
+    reference = _batch_reference(
+        tmp_path,
+        {
+            "early": (8, 20, 40),
+            "middle": (11, None, 48),
+            "late": (10, 24, 46),
+            "outside-batch": (30, 35, 55),
+        },
+    )
     universe = frozenset({"early", "middle", "late"})
     order = {"early": 10, "middle": 20, "late": 40}
     early = _owner("early", "unknown", apex_rt=20, precursor_mz=600)
     middle = _owner("middle", "unknown", apex_rt=20 + 4 / 3, precursor_mz=600)
     late = _owner("late", "unknown", apex_rt=24, precursor_mz=600)
     lookup = reference.bind(
-        (early, middle, late), sample_universe=universe, injection_order=order,
+        (early, middle, late),
+        sample_universe=universe,
+        injection_order=order,
     )
     assert lookup.corrected_pair_delta_sec(early, middle) == pytest.approx(0)
     assert lookup.corrected_pair_delta_sec(middle, late) == pytest.approx(0)
@@ -386,15 +448,20 @@ def test_batch_reference_interpolates_missing_landmark_in_canonical_order(
 
 @pytest.mark.parametrize(
     ("observations", "early_rt", "late_rt"),
-    [({"early": (None, 20, 40), "late": (10, 24, 46)}, 8, 10),
-     ({"early": (8, 20, 40), "late": (10, 24, None)}, 40, 46),
-     ({"early": (8, 20, 40), "late": (10, 24, 46)}, 7, 9),
-     ({"early": (8, 20, 40), "late": (10, 24, 46)}, 41, 47),
-     ({"early": (8, 20, 40), "late": (10, 9, 46)}, 14, 15),
-     ({"early": (8, 20, 40), "late": (12, 0, 46)}, 14, 15)],
+    [
+        ({"early": (None, 20, 40), "late": (10, 24, 46)}, 8, 10),
+        ({"early": (8, 20, 40), "late": (10, 24, None)}, 40, 46),
+        ({"early": (8, 20, 40), "late": (10, 24, 46)}, 7, 9),
+        ({"early": (8, 20, 40), "late": (10, 24, 46)}, 41, 47),
+        ({"early": (8, 20, 40), "late": (10, 9, 46)}, 14, 15),
+        ({"early": (8, 20, 40), "late": (12, 0, 46)}, 14, 15),
+    ],
 )
 def test_batch_reference_declines_extrapolation_or_nonmonotone_knots(
-    tmp_path: Path, observations, early_rt, late_rt,
+    tmp_path: Path,
+    observations,
+    early_rt,
+    late_rt,
 ) -> None:
     from tests.test_alignment_owner_clustering import _owner
 
@@ -402,21 +469,28 @@ def test_batch_reference_declines_extrapolation_or_nonmonotone_knots(
     early = _owner("early", "unknown", apex_rt=early_rt, precursor_mz=600)
     late = _owner("late", "unknown", apex_rt=late_rt, precursor_mz=600)
     lookup = reference.bind(
-        (early, late), sample_universe=frozenset(observations),
+        (early, late),
+        sample_universe=frozenset(observations),
         injection_order={"early": 10, "late": 40},
     )
     assert lookup.corrected_pair_delta_sec(early, late) is None
 
 
 def test_batch_reference_preparation_is_shared_across_method_bindings(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from tests.test_alignment_owner_clustering import _owner
     from xic_extractor.alignment import drift_evidence
 
-    reference = _batch_reference(tmp_path, {
-        "early": (8, 20, 40), "late": (10, 24, 46), "unused": (15, 30, 50),
-    })
+    reference = _batch_reference(
+        tmp_path,
+        {
+            "early": (8, 20, 40),
+            "late": (10, 24, 46),
+            "unused": (15, 30, 50),
+        },
+    )
     universe = frozenset({"early", "late"})
     order = {"early": 10, "late": 40}
     prepared = reference.prepare_batch(sample_universe=universe, injection_order=order)
@@ -425,17 +499,27 @@ def test_batch_reference_preparation_is_shared_across_method_bindings(
         pytest.fail("unchanged prepared batch recomputed reference medians")
 
     monkeypatch.setattr(drift_evidence.statistics, "median", unexpected_recomputation)
-    assert prepared.prepare_batch(
-        sample_universe=universe, injection_order=dict(order),
-    ) is prepared
-    assert reference.prepare_batch(
-        sample_universe=universe, injection_order=dict(order),
-    ) is prepared
+    assert (
+        prepared.prepare_batch(
+            sample_universe=universe,
+            injection_order=dict(order),
+        )
+        is prepared
+    )
+    assert (
+        reference.prepare_batch(
+            sample_universe=universe,
+            injection_order=dict(order),
+        )
+        is prepared
+    )
     for index in range(3):
         early = _owner("early", f"unknown-{index}", apex_rt=14, precursor_mz=600)
         late = _owner("late", f"unknown-{index}", apex_rt=17, precursor_mz=600)
         lookup = prepared.bind(
-            (early, late), sample_universe=universe, injection_order=order,
+            (early, late),
+            sample_universe=universe,
+            injection_order=order,
         )
         assert lookup.reference is prepared
         assert lookup.corrected_pair_delta_sec(early, late) == pytest.approx(0)
@@ -446,18 +530,26 @@ def test_batch_reference_changed_universe_does_not_reuse_stale_medians(
 ) -> None:
     from tests.test_alignment_owner_clustering import _owner
 
-    reference = _batch_reference(tmp_path, {
-        "early": (8, 20, 40), "late": (10, 24, 46), "extra": (15, 30, 50),
-    })
+    reference = _batch_reference(
+        tmp_path,
+        {
+            "early": (8, 20, 40),
+            "late": (10, 24, 46),
+            "extra": (15, 30, 50),
+        },
+    )
     early = _owner("early", "unknown", apex_rt=14, precursor_mz=600)
     late = _owner("late", "unknown", apex_rt=17.5, precursor_mz=600)
     order = {"early": 1, "late": 2, "extra": 3}
     original = reference.bind(
-        (early, late), sample_universe=frozenset({"early", "late"}),
+        (early, late),
+        sample_universe=frozenset({"early", "late"}),
         injection_order=order,
     )
     changed = reference.bind(
-        (early, late), sample_universe=frozenset(order), injection_order=order,
+        (early, late),
+        sample_universe=frozenset(order),
+        injection_order=order,
     )
     assert original.corrected_pair_delta_sec(early, late) == pytest.approx(195 / 7)
     assert changed.corrected_pair_delta_sec(early, late) == pytest.approx(30)
@@ -889,8 +981,6 @@ def test_targeted_istd_anchor_matches_only_observed_dna_dr_target() -> None:
         nl_ppm_max=50.0,
         is_istd=True,
         istd_pair="",
-        isotope_label_type="deuterated",
-        paired_rt_relation="none",
         sample_applicability="all",
     )
     anchor = build_targeted_istd_identity_anchor(
@@ -907,22 +997,28 @@ def test_targeted_istd_anchor_matches_only_observed_dna_dr_target() -> None:
             observed_labels=("d3-5-hmdC",),
         )
 
-    assert anchor.matching_target(
-        SimpleNamespace(
-            feature_family_id="FAM_ISTD",
-            neutral_loss_tag="DNA_dR",
-            family_center_mz=261.1270,
-            family_center_rt=9.0,
+    assert (
+        anchor.matching_target(
+            SimpleNamespace(
+                feature_family_id="FAM_ISTD",
+                neutral_loss_tag="DNA_dR",
+                family_center_mz=261.1270,
+                family_center_rt=9.0,
+            )
         )
-    ) == target
-    assert anchor.matching_target(
-        SimpleNamespace(
-            feature_family_id="FAM_OTHER",
-            neutral_loss_tag="DNA_dR",
-            family_center_mz=300.1605,
-            family_center_rt=23.0,
+        == target
+    )
+    assert (
+        anchor.matching_target(
+            SimpleNamespace(
+                feature_family_id="FAM_OTHER",
+                neutral_loss_tag="DNA_dR",
+                family_center_mz=300.1605,
+                family_center_rt=23.0,
+            )
         )
-    ) is None
+        is None
+    )
     assert anchor.matches_observation(
         target,
         neutral_loss_tag="DNA_dR",

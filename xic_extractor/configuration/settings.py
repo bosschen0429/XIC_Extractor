@@ -65,9 +65,6 @@ class _ParsedSettings:
     model_selection_expected_diff_approval_registry: Path | None
     targeted_ms1_shape_identity_support_tsv: Path | None
     targeted_ms1_shape_identity_activation_policy: str
-    emit_score_breakdown: bool
-    emit_review_report: bool
-    keep_intermediate_csv: bool
     parallel_mode: str
     parallel_workers: int
 
@@ -76,6 +73,12 @@ def migrate_settings_dict(raw: dict[str, str]) -> tuple[dict[str, str], list[str
     reject_retired_rt_reference_inputs(raw)
     migrated = dict(raw)
     warnings: list[str] = []
+    for key in ("emit_review_report", "keep_intermediate_csv", "emit_score_breakdown"):
+        if key in migrated:
+            migrated.pop(key)
+            warnings.append(
+                f"Removed retired output setting {key}; Targeted delivers XLSX."
+            )
     for key in _RETIRED_RT_REFERENCE_INPUT_KEYS:
         if key in migrated:
             migrated.pop(key)
@@ -289,24 +292,6 @@ def _parse_settings_values(
             settings_path,
             "targeted_ms1_shape_identity_activation_policy",
         ),
-        emit_score_breakdown=_parse_bool(
-            settings_path,
-            None,
-            "emit_score_breakdown",
-            _setting_value(settings, settings_path, "emit_score_breakdown"),
-        ),
-        emit_review_report=_parse_bool(
-            settings_path,
-            None,
-            "emit_review_report",
-            _setting_value(settings, settings_path, "emit_review_report"),
-        ),
-        keep_intermediate_csv=_parse_bool(
-            settings_path,
-            None,
-            "keep_intermediate_csv",
-            _setting_value(settings, settings_path, "keep_intermediate_csv"),
-        ),
         parallel_mode=_setting_value(settings, settings_path, "parallel_mode"),
         parallel_workers=_parse_int(
             settings_path,
@@ -431,9 +416,6 @@ def _build_config(
         targeted_ms1_shape_identity_activation_policy=(
             parsed.targeted_ms1_shape_identity_activation_policy
         ),
-        emit_score_breakdown=parsed.emit_score_breakdown,
-        emit_review_report=parsed.emit_review_report,
-        keep_intermediate_csv=parsed.keep_intermediate_csv,
         baseline_integration_method="asls",
         parallel_mode=parsed.parallel_mode,
         parallel_workers=parsed.parallel_workers,

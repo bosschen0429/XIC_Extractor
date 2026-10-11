@@ -21,14 +21,36 @@ def test_assign_istd_pairs_preserves_standard_claims_and_istd_rows() -> None:
     assert istd_b["istd_pair"] == ""
 
 
-def test_assign_istd_pairs_keeps_hard_rt_gate(capsys) -> None:
+def test_name_prefill_does_not_make_rt_a_pairing_veto() -> None:
     standard = _target("5-hmdC", rt=20.0)
     istd = _target("d3-5-hmdC", rt=8.0, is_istd=True)
 
     _assign_istd_pairs([standard, istd])
 
-    assert standard["istd_pair"] == ""
-    assert "no standard matched for ISTD 'd3-5-hmdC'" in capsys.readouterr().err
+    assert standard["istd_pair"] == "d3-5-hmdC"
+
+
+def test_name_prefill_preserves_explicit_choices_and_ambiguous_names() -> None:
+    analyte = _target("5-medC", rt=8.0)
+    first = _target("d3-5-medC", rt=8.0, is_istd=True)
+    second = _target("d4-5-medC", rt=8.0, is_istd=True)
+    nearby_name = _target("6-medC", rt=8.0)
+    _assign_istd_pairs([analyte, first, second, nearby_name])
+    assert analyte["istd_pair"] == nearby_name["istd_pair"] == ""
+    analyte["istd_pair"] = "d4-5-medC"
+    _assign_istd_pairs([analyte, first, second])
+    assert analyte["istd_pair"] == "d4-5-medC"
+
+
+def test_name_prefill_fills_missing_roles_without_overriding_explicit_roles() -> None:
+    analyte = _target("5-medC", rt=8.0)
+    standard = _target("d3-5-medC", rt=8.0)
+    del standard["is_istd"]
+    explicitly_analyte = _target("d4-5-medC", rt=8.0)
+    _assign_istd_pairs([analyte, standard, explicitly_analyte])
+    assert standard["is_istd"] == "true"
+    assert explicitly_analyte["is_istd"] == "false"
+    assert analyte["istd_pair"] == "d3-5-medC"
 
 
 def test_write_targets_csv_preserves_public_csv_contract(

@@ -40,6 +40,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     multiprocessing.freeze_support()
     cli_argv = tuple(sys.argv[1:] if argv is None else argv)
     args = _parse_args(argv)
+    prepared = None
     try:
         if args.replay_manifest is None:
             _validate_targeted_ms1_shape_identity_auto_args(args)
@@ -50,12 +51,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             base_dir = replay_request.base_dir
             config_dir = replay_request.config_dir
             settings_overrides = replay_request.settings_overrides
-            output_mode = replay_request.output_mode
+            output_mode = "excel"
         else:
             base_dir = (args.base_dir or Path.cwd()).resolve()
             config_dir = base_dir / "config"
             settings_overrides = {}
-            output_mode = "csv_only" if args.skip_excel else "excel"
+            output_mode = "excel"
             if args.data_dir is not None:
                 data_dir = args.data_dir.resolve()
                 if not data_dir.is_dir():
@@ -89,8 +90,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 settings_overrides["parallel_mode"] = args.parallel_mode
             if args.parallel_workers is not None:
                 settings_overrides["parallel_workers"] = str(args.parallel_workers)
-            if output_mode == "csv_only":
-                settings_overrides["keep_intermediate_csv"] = "true"
             prepared = prepare_targeted_config(
                 config_dir,
                 method_dir=args.method_dir.resolve(),
@@ -123,10 +122,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 parallel_mode=replay_request.parallel_mode,
                 parallel_workers=replay_request.parallel_workers,
             )
-        skip_excel = output_mode == "csv_only"
-        run_config = (
-            replace(config, keep_intermediate_csv=True) if skip_excel else config
-        )
+        run_config = config
         if _should_run_targeted_ms1_shape_identity_auto_limited_default(
             args,
             config,
@@ -154,7 +150,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ) from exc
             output, _ = auto_result
         else:
-            excel_output_path = None if skip_excel else _excel_output_path(config)
+            excel_output_path = _excel_output_path(config)
             output = (
                 build_canonical_targeted_application_service(extractor.acquire)
                 .execute_application(
@@ -189,19 +185,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
+    finally:
+        if prepared is not None:
+            prepared.cleanup()
+
     print(f"Processed files: {len(output.file_results)}")
     print(f"Diagnostics: {len(output.diagnostics)}")
-
-    if skip_excel:
-        print("Excel skipped.")
-        return 0
 
     return 0
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run Python XIC extraction and optional Excel conversion."
+        description="Run Targeted XIC extraction and deliver one XLSX workbook."
     )
     parser.add_argument(
         "--base-dir",
@@ -239,16 +235,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         type=Path,
         default=None,
         help="Explicit injection-order CSV/XLSX for this RAW batch.",
-    )
-    parser.add_argument(
-        "--skip-excel",
-        action="store_true",
-        help="Write CSV outputs only and skip Excel conversion.",
-    )
-    parser.add_argument(
-        "--excel",
-        action="store_true",
-        help="Run Excel conversion after writing CSV outputs; this is the default.",
     )
     parser.add_argument(
         "--parallel-mode",
@@ -322,10 +308,6 @@ def _reject_replay_overrides(args: argparse.Namespace) -> None:
         conflicts.append("--method-dir")
     if args.injection_order_source is not None:
         conflicts.append("--injection-order-source")
-    if args.skip_excel:
-        conflicts.append("--skip-excel")
-    if args.excel:
-        conflicts.append("--excel")
     if args.parallel_mode is not None:
         conflicts.append("--parallel-mode")
     if args.parallel_workers is not None:
@@ -413,23 +395,16 @@ def _run_targeted_ms1_shape_identity_auto_limited_default(
                 settings_overrides=settings_overrides,
                 output_mode=output_mode,
             ),
-            excel_output_path=(
-                None if output_mode == "csv_only" else _excel_output_path(config)
-            ),
+            excel_output_path=_excel_output_path(config),
         ),
         application=build_canonical_targeted_application_service(extractor.acquire),
         output_root=output_root,
     )
-    print(f"Auto limited baseline output: {result.baseline_output_dir}")
-    print(f"Auto limited support TSV: {result.support_outputs.evidence_tsv}")
-    print(f"Auto limited support rows: {result.support_outputs.evidence_row_count}")
-    diff = result.diff_outputs
-    print(f"Auto limited expected diff: {diff.expected_diff_summary_tsv}")
-    print(f"Auto limited matrix diff: {diff.matrix_diff_summary_tsv}")
+    print(f"Auto limited support rows: {result.support_row_count}")
     print(
-        f"Auto limited expected-diff gate: {diff.gate_status} "
-        f"({diff.expected_diff_row_count} rows, "
-        f"{diff.matrix_diff_cell_count} matrix cells)"
+        f"Auto limited expected-diff gate: {result.gate_status} "
+        f"({result.expected_diff_row_count} rows, "
+        f"{result.matrix_diff_cell_count} matrix cells)"
     )
     print(
         f"Auto limited verified final output: {result.final_config.output_csv.parent}"

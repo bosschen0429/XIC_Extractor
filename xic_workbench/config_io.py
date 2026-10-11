@@ -11,7 +11,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-from xic_extractor.configuration.csv_io import TARGET_WRITE_FIELDS, _read_settings
+from xic_extractor.configuration.csv_io import (
+    RETIRED_TARGET_FIELDS,
+    TARGET_WRITE_FIELDS,
+    _read_settings,
+)
 from xic_extractor.configuration.settings import resolve_settings
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DESCRIPTIONS
 
@@ -214,7 +218,7 @@ def write_targets(
 
 def _target_write_fieldnames(targets: list[dict[str, str]]) -> list[str]:
     fieldnames = list(_TARGETS_FIELDS)
-    seen = set(fieldnames)
+    seen = set(fieldnames) | RETIRED_TARGET_FIELDS
     for target in targets:
         for field in target:
             if field not in seen:

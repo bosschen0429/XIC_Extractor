@@ -6,9 +6,8 @@ diaries.
 
 [`processing-lineage.md`](processing-lineage.md) owns the workflow-neutral
 request/attempt/artifact/delivery identity and retention contract. This page
-owns the current Targeted method-manifest and run-metadata projection of the
-processing-lineage contract. `method_manifest.json` is not yet a complete
-lineage seal.
+owns Targeted workbook run metadata and diagnostic method-manifest projection.
+Neither a workbook config hash nor a diagnostic manifest is a complete lineage seal.
 
 ## Contract
 
@@ -30,11 +29,21 @@ lineage seal.
 - Provenance writers render run context only. They must not recompute domain
   evidence or change selected peaks, areas, confidence, counted detections,
   workbook values, or matrix values.
-- A saved Targeted method is reusable intent, not a run receipt. Workbench and
-  CLI method runs bind their manifest to admitted copies of settings and targets
-  under the run's `.run_inputs` directory, including a frozen injection-order
-  source when supplied. Editing the active workspace or saved method does not
-  alter those queued inputs. These receipts do not snapshot RAW bytes.
+- Normal Targeted delivery is one XLSX. `Run Metadata` records actual method
+  settings, runtime configuration, config fragments, and the limited-identity
+  gate receipt. `Targets` records target identity, ranges, pairing, and sample
+  applicability. No automatic HTML, CSV/TSV, or manifest sidecar is published.
+- A saved Targeted method is reusable intent, not a run receipt. Admission freezes
+  settings, targets, and supplied injection-order input in a private temporary
+  workspace. The caller retains it while queued/running and cleans it on completion
+  or failure. Editing an active method cannot change the admitted inputs.
+- Nonempty supplied sample context, identity support, and selection approval
+  tables are embedded as hidden workbook sheets for reviewing the inputs behind
+  decisions. This preserves values, not a byte-for-byte replay archive. No empty
+  evidence sheet is added. RAW bytes are not snapshotted into the workbook.
+- The limited-identity workflow's baseline/final CSVs and support/diff TSVs are
+  internal gate inputs. They are temporary and cleaned on success, failure, or
+  cancellation. Only a gate-passed workbook crosses the publication transaction.
 - A command diary is not a durable replay contract. If a run matters, the
   stable command shape and artifact contract must move into a repo owner.
 
@@ -44,7 +53,7 @@ lineage seal.
 | --- | --- |
 | `Run Metadata` workbook sheet | Human-readable run metadata |
 | `config_hash` / `target_config_hash` | Configuration and target fragments |
-| `method_manifest.json` | Machine-readable run envelope when enabled |
+| `method_manifest.json` | Explicit diagnostic/replay envelope, not normal delivery |
 | CLI arguments and runner config | Replay inputs and behavior surface |
 | Output schema versions | Contract for produced CSV/TSV/workbook sidecars |
 

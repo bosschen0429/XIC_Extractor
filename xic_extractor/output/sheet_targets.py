@@ -51,6 +51,7 @@ def _build_targets_sheet(ws, targets: list[Target]) -> None:
             expected_product if expected_product is not None else "—",
             target.nl_ppm_warn if target.nl_ppm_warn is not None else "—",
             target.nl_ppm_max if target.nl_ppm_max is not None else "—",
+            target.sample_applicability,
         ]
         for col_idx, value in enumerate(values, start=1):
             cell = ws.cell(row=row_idx, column=col_idx, value=value)
@@ -62,8 +63,8 @@ def _build_targets_sheet(ws, targets: list[Target]) -> None:
                 elif header in {"RT min", "RT max"}:
                     cell.number_format = "0.00"
 
-    widths = [24, 12, 24, 14, 10, 10, 10, 12, 22, 14, 14]
+    widths = [24, 12, 24, 14, 10, 10, 10, 12, 22, 14, 14, 24]
     for col_idx, width in enumerate(widths, start=1):
         ws.column_dimensions[get_column_letter(col_idx)].width = width
-    ws.auto_filter.ref = f"A1:K{max(1, len(targets) + 1)}"
+    ws.auto_filter.ref = f"A1:L{max(1, len(targets) + 1)}"
     ws.freeze_panes = "A2"
