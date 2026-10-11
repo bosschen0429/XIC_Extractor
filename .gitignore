@@ -38,6 +38,13 @@ local_validation_artifacts/
 graphify-out/
 .worktrees/
 .codex/execpolicy/
+
+# Local browser/tool captures and scratch inputs
+/.playwright-mcp/
+/args.json
+/cbm-args.json
+/scratch/
+
 progress-report.html
 progress-report.notes.json
 progress-report.snapshot.json
