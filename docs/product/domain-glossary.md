@@ -18,8 +18,8 @@ evidence rather than through dataset-specific shortcuts.
 
 The three core product stages are **Discovery → Alignment → Backfill（回填）**.
 Backfill is the canonical name for the bounded missing-cell revisit, in product
-text and in implementation identifiers. `ObservationRevisit` names the retained
-typed receipt for such a revisit. Backfill is conditional: cells with sufficient
+text and in implementation identifiers. `ObservationRevisit` describes the local
+revisit, not a separate receipt API. Backfill is conditional: cells with sufficient
 existing observations need no revisit.
 
 XIC has one shared scientific processing lifecycle. Untargeted extraction is
@@ -51,9 +51,9 @@ identity, disposition, and lineage. It returns one immutable
 `CrossSampleGroupingResult`; the same object is consumed before bounded
 Backfill and through finalization. Backfill uses an already established Target or group
 context to make one bounded revisit of a missing cell and may
-return an observation or typed no-observation result. The retained
-`ObservationRevisit` receipt can represent that decision; the current Untargeted
-CID-NL production route uses the conservative Backfill decision. Backfill may
+return an observation or typed no-observation result. The current Untargeted
+CID-NL production route uses the conservative Backfill decision and completed
+cell evidence. Backfill may
 produce the first usable observation for that cell,
 but it cannot originate the Target/group, mint membership, select a product
 value, or grant writer authority.
@@ -115,7 +115,7 @@ Use these terms consistently:
 - `CrossSampleGroupDisposition`: the CrossSample-owned, mutually exclusive
   disposition of one finalized group: `established`, `provisional`,
   `unresolved`, or `rejected`. Disposition does not decide output inclusion.
-- `ObservationRevisit`: the retained typed receipt for one bounded Backfill
+- `ObservationRevisit`: one bounded local Backfill
   revisit of a pre-existing Target or group cell. The revisit may produce its
   first usable observation.
   It is not imputation, group membership, or product-value authority.
@@ -124,7 +124,7 @@ Use these terms consistently:
   Observations retain measurement facts; they do not select the delivered
   value themselves.
 - `FinalizedScientificAlignment`: immutable shared core containing the stable
-  grouping result, dispositions, membership/lineage, and closed revisit receipts
+  grouping result, dispositions, membership/lineage, and completed cell evidence
   needed by a workflow projection. It is not an output artifact or mutable
   Matrix.
 - `TargetRowBinding`: Target projection decision that binds one fixed

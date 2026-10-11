@@ -6,12 +6,6 @@ from collections.abc import Sequence
 from dataclasses import InitVar, dataclass, field, fields
 from typing import Literal, TypeAlias
 
-from xic_extractor.alignment.backfill.observation_revisit import (
-    ObservationRevisitReceipt,
-)
-from xic_extractor.alignment.backfill_peak_fact import (
-    BackfillPeakFactObservation,
-)
 from xic_extractor.alignment.cell_observations import (
     CellObservationContractError,
     CellObservationRef,
@@ -197,8 +191,6 @@ def finalize_scientific_alignment(
     cell_observation_handoff: CrossSampleAssociationLineageHandoff | None,
     predecessor_cell_observations: Sequence[CellObservationRef],
     backfill_cell_observations: Sequence[CellObservationRef] = (),
-    repair_receipts: Sequence[ObservationRevisitReceipt] = (),
-    repaired_observations: Sequence[BackfillPeakFactObservation] = (),
     targeted_backfill_decisions: tuple[ConservativeBackfillCellDecision, ...] = (),
 ) -> FinalizedScientificAlignment:
     """Validate one complete capture population and seal its shared core."""
@@ -241,12 +233,7 @@ def finalize_scientific_alignment(
         )
     canonical_cells: tuple[FinalGroupCellObservation, ...]
     if cell_observation_handoff is None:
-        if (
-            predecessor_cell_observations
-            or backfill_cell_observations
-            or repair_receipts
-            or repaired_observations
-        ):
+        if predecessor_cell_observations or backfill_cell_observations:
             raise FinalizedScientificAlignmentContractError(
                 "repair-free finalization cannot carry repair lineage"
             )
@@ -263,8 +250,6 @@ def finalize_scientific_alignment(
                 handoff=cell_observation_handoff,
                 predecessor_cells=predecessor_cell_observations,
                 backfill_cells=backfill_cell_observations,
-                repair_receipts=repair_receipts,
-                repaired_observations=repaired_observations,
             )
         except CellObservationContractError as exc:
             raise FinalizedScientificAlignmentContractError(str(exc)) from exc

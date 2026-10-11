@@ -152,15 +152,17 @@ continuity; smoothing it into a peak does not supply missing acquired support.
    assessment must earn SUPPORT through the normal relation owner before the
    cell can hold a numeric value.
 
-### Observation revisit contract
+### Final cell evidence
 
-1. Final cell composition still accepts the typed `ObservationRevisitReceipt`
-   input for a revisited member.
-2. No installed workflow calls the former execute/close operation. No
-   code creates the receipt, because the receipt mint token in
-   `alignment/backfill/observation_revisit.py` is never passed to the receipt
-   constructor. The receipt type alone does not prove that a revisit transaction
-   ran.
+Final cell composition consumes the exact CrossSample coverage handoff,
+predecessor observations, and completed Backfill cell evidence. It does not
+accept a separate repair receipt or repaired-observation population.
+Conservative Backfill decisions, candidate mapping, and coverage terminals
+retain their own provenance and authority boundaries.
+
+Canonical final-cell and cell-decision identity encodings retain their existing
+empty repair fields at the serialization boundary. These fields do not represent
+an additional runtime repair path or change published identities.
 
 ## Surfaces
 

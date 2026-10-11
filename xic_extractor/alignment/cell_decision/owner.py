@@ -73,7 +73,7 @@ _NO_WRITE_STATES = frozenset(
         "unavailable",
     }
 )
-_GROUP_VALUE_STATES = frozenset({"direct_observation", "repaired_observation"})
+_GROUP_VALUE_STATES = frozenset({"direct_observation"})
 _GROUP_TERMINAL_COMPANION_STATES = frozenset(
     {"not_searched", "searched_no_observation", "unavailable"}
 )
@@ -799,12 +799,9 @@ def _decision_basis(
             "coverage_terminal_ids": tuple(
                 item.terminal_id for item in evidence.coverage_terminals
             ),
-            "repair_receipt_ids": tuple(
-                item.receipt_id for item in evidence.repair_receipts
-            ),
-            "repaired_observation_keys": tuple(
-                item.work_unit_key for item in evidence.repaired_observations
-            ),
+            # Preserve the canonical decision identity for published artifacts.
+            "repair_receipt_ids": (),
+            "repaired_observation_keys": (),
             "integrations": tuple(
                 _integration_identity(item) for item in evidence.integrations
             ),
