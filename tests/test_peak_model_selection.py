@@ -24,7 +24,7 @@ def test_characterization_map_covers_required_fixture_families() -> None:
     required = [
         "clean single peak",
         "confidence rank",
-        "role-aware RT prior / ISTD",
+        "role-aware RT context / ISTD",
         "strict selection RT",
         "final intensity tie-break",
         "local S/N with AsLS",

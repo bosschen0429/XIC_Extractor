@@ -74,8 +74,12 @@ def test_limited_workflow_publishes_only_gated_completed_outputs(
     """Use the real expected-diff gate and manifest reader; replace only RAW science."""
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    for name in ("settings", "targets"):
-        (config_dir / f"{name}.csv").write_text("frozen input", encoding="utf-8")
+    (config_dir / "settings.csv").write_text(
+        "key,value\nsignal_processing_window_points,15\n", encoding="utf-8"
+    )
+    (config_dir / "targets.csv").write_text(
+        "label,mz,rt_min,rt_max,ppm_tol\n", encoding="utf-8"
+    )
     raw_dir, dll_dir = tmp_path / "raw", tmp_path / "dll"
     raw_dir.mkdir()
     dll_dir.mkdir()
