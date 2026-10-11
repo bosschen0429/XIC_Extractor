@@ -2,19 +2,14 @@ from pathlib import Path
 
 from openpyxl import Workbook
 
-from scripts.compare_workbooks import COMPARE_SHEETS, compare_workbooks
+from scripts.compare_workbooks import compare_workbooks
 
 
-def test_compare_workbooks_uses_review_workflow_sheet_order() -> None:
-    assert COMPARE_SHEETS == (
-        "Overview",
-        "Review Queue",
-        "XIC Results",
-        "Summary",
-        "Targets",
-        "Diagnostics",
-        "Run Metadata",
-    )
+def test_compare_workbooks_accepts_compact_layout(tmp_path: Path) -> None:
+    left, right = tmp_path / "left.xlsx", tmp_path / "right.xlsx"
+    for path in (left, right):
+        _write_workbook(path, sheet_order=("XIC Results", "Targets", "Run Metadata"))
+    assert compare_workbooks(left, right).matched
 
 
 def test_compare_workbooks_accepts_identical_workbooks(tmp_path: Path) -> None:

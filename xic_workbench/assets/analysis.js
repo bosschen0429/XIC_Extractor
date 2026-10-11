@@ -1131,7 +1131,6 @@
       const metrics = el("div", undefined, "result-metrics");
       metric(metrics, targeted.total_files, "RAW 檔案");
       metric(metrics, targeted.targets?.length, "目標");
-      metric(metrics, targeted.diagnostics_count, "診斷紀錄");
       container.append(metrics);
       if (targeted.excel_path) container.append(button("在結果檢閱開啟", () => openReview(targeted.excel_path), "primary", "review"));
       container.append(artifacts);
@@ -1145,46 +1144,7 @@
         warnings.append(line);
       }
       if (warnings.childElementCount) container.append(warnings);
-      const table = el("table");
-      const head = el("tr");
-      for (const [label, cls] of [
-        ["目標", ""],
-        ["偵測到 / 總數", ""],
-        ["NL OK", "num"],
-        ["NL WARN", "num"],
-        ["NL FAIL", "num"],
-        ["NO MS2", "num"],
-        ["面積中位數", "num"],
-      ])
-        head.append(el("th", label, cls));
-      const thead = el("thead");
-      thead.append(head);
-      const body = el("tbody");
-      for (const row of targeted.targets || []) {
-        const tr = el("tr");
-        const detect = el("td");
-        const bar = el("span", undefined, "detect-bar");
-        const track = el("span");
-        const fill = el("i");
-        fill.style.width = `${row.total ? (100 * row.detected) / row.total : 0}%`;
-        track.append(fill);
-        bar.append(track, `${row.detected} / ${row.total}`);
-        detect.append(bar);
-        tr.append(el("td", row.label ?? "—"), detect);
-        for (const value of [
-          row.nl_ok,
-          row.nl_warn,
-          row.nl_fail,
-          row.nl_no_ms2,
-          formatNumber(row.median_area),
-        ])
-          tr.append(el("td", value ?? "—", "num"));
-        body.append(tr);
-      }
-      table.append(thead, body);
-      const scroll = el("div", undefined, "table-scroll");
-      scroll.append(table);
-      container.append(scroll);
+      container.append(el("p", "樣本量值與需檢閱項目集中在結果檢閱；XLSX 保留同一份結果。", "subtle"));
     }
     const result = state.analysis.results.untargeted;
     if (result) {

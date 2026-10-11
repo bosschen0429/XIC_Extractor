@@ -59,20 +59,26 @@ A folder containing exactly one XLSX can also be opened; multiple workbooks
 require an explicit file choice. Normal Targeted delivery remains one XLSX:
 review creates no report or sidecar beside it and exposes no new export option.
 
-The supported workbook contains `Targets`, `XIC Results`, `Review Queue`, and
-`Run Metadata`, with the `targeted_output` schema marker. Inspector reads the
-saved target settings, sample values, peak bounds, decision/review reasons and
-method context. Merged sample/group labels are restored only within their
-actual merged ranges. Literal `ND`, zero and blank values remain distinct.
+The current workbook layout contains `XIC Results`, `Targets`, and
+`Run Metadata`, with the `targeted_output` schema marker and workbook layout
+version 2. Legacy workbooks with a separate `Review Queue` remain readable.
+Choose a target to see one compact sample table: saved Area, RT, counted
+status, review status and its short reason. Select a sample for peak bounds,
+NL evidence and the full recorded explanation; target and method settings
+are separate expandable details. The attention filter retains only rows
+carrying saved review conditions, rather than showing every sample of a
+flagged target. Inspector does not reclassify results.
+
+Merged legacy sample/group labels are restored only within their actual
+merged ranges. Literal `ND`, zero and blank values remain distinct.
 The workbook is not modified, and its SHA-256 binds subsequent queries to the
 opened version; reopen the file after an external edit.
 
-Filter by full target name, sample, saved Review Queue membership, target m/z
-or saved sample RT. RT filtering matches a recorded numeric RT in the selected
-sample scope, not the target's configured search window. The full sample record
-includes the original projection reasons and supporting/conflicting evidence;
-Inspector does not reclassify these facts or treat absence from Review Queue as
-scientific acceptance.
+Filter by full target name, sample, saved review condition, target m/z or
+saved sample RT. RT filtering matches a recorded numeric RT in the selected
+sample scope, not the target's configured search window. The focused sample
+detail shows retained peak and review evidence; absence of a review condition
+is not scientific acceptance.
 
 Saved-result review does not require RAW or DLL access. The workbook does not
 retain point-by-point chromatograms or a verified sample-to-RAW binding, so this

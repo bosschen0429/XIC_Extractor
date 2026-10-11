@@ -206,3 +206,20 @@ def test_workbook_binding_and_ambiguous_directory(workbook):
         prepare_report(
             workbook, SelectionRequest(strategy="sample"), expected_source=report.source
         )
+
+
+def test_review_filter_scopes_sample_records_not_just_targets(workbook):
+    book = load_workbook(workbook)
+    book["Review Queue"].delete_rows(3)
+    book.save(workbook)
+    book.close()
+    report = prepare_report(
+        workbook, SelectionRequest(strategy="query", attention_only=True)
+    )
+    records = report.payload["items"][0]["details"]["records"]
+    assert [(row["SampleName"], row["Area"]) for row in records] == [("Sample A", "ND")]
+    # Sample B's RT cannot match after the saved-review filter excluded its row.
+    report = prepare_report(
+        workbook, SelectionRequest(strategy="query", attention_only=True, rt_min=9)
+    )
+    assert report.matched_count == 0

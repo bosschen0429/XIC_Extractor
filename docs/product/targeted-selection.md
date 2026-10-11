@@ -160,9 +160,12 @@ those facts itself.
 - A typed no-write clears the retained peak before rendering.
 - Missing NL alone is not another writer veto.
 - Accepted MS1-only cells in Untargeted output follow the same distinction.
-- The main workbook table shows measurements, integration boundaries,
-  `NL Evidence`, and a plain-language `Reason` for user interpretation.
-- Internal product/count/review codes remain available in advanced columns.
+- The main workbook table shows measurements, counted status and review
+  reasons. Secondary columns retain integration boundaries, `NL Evidence`
+  and the full plain-language `Reason`.
+- Internal projection codes remain in the internal long-row model, not the
+  delivered workbook. The workbook consumes the finished owner decisions;
+  its display layout does not change scientific or count policy.
 
 ### Detection and review policy
 

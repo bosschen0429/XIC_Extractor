@@ -1,7 +1,6 @@
 from pathlib import Path
 
 from openpyxl import load_workbook
-from openpyxl.utils import get_column_letter
 
 from scripts import csv_to_excel
 from xic_extractor import extractor as extractor_module
@@ -153,20 +152,6 @@ def test_main_sheet_has_confidence_and_reason(tmp_path: Path) -> None:
     assert "Reason" in headers
 
 
-def test_summary_sheet_has_confidence_counts(tmp_path: Path) -> None:
-    out = _write_workbook(tmp_path)
-    wb = load_workbook(out, read_only=True)
-    ws = wb["Summary"]
-    headers = [cell.value for cell in next(ws.iter_rows(max_row=1))]
-    for label in (
-        "Confidence HIGH",
-        "Confidence MEDIUM",
-        "Confidence LOW",
-        "Confidence VERY_LOW",
-    ):
-        assert label in headers
-
-
 def test_output_rows_use_selection_apex_rt_for_reporting() -> None:
     run_output = _fabricate_run_output()
     file_result = run_output.file_results[0]
@@ -194,8 +179,7 @@ def test_xlsx_results_sheet_uses_selection_apex_rt_for_reporting(
     assert row["Target"] == "d3-5-hmdC"
     assert row["RT"] == 9
     assert row["Area"] == 123
-    assert row["Int"] == 500
-    assert row["IntSmoothed"] == 450
-    smoothed_column = headers.index("IntSmoothed") + 1
-    assert ws.cell(2, smoothed_column).number_format == "0.00E+00"
-    assert not ws.column_dimensions[get_column_letter(smoothed_column)].hidden
+    assert row["PeakStart"] == 8.9
+    assert row["PeakEnd"] == 9.2
+    assert "Int" not in row and "IntSmoothed" not in row
+    wb.close()

@@ -108,13 +108,9 @@ workbook.
 
 | Workbook sheet | Purpose |
 | --- | --- |
-| `Overview` | Run summary, counts, and review priorities |
-| `Review Queue` | Human worklist for sample-target rows needing attention |
-| `XIC Results` | Sample-target RT, Area, NL status, confidence, and reason |
-| `Summary` | Per-target detection, area, NL, RT, and confidence summaries |
+| `XIC Results` | Sample-target Area, RT, counted status and review reason; expand secondary columns for evidence |
 | `Targets` | Snapshot of the target table used for the run |
-| `Diagnostics` | Technical issue rows |
-| `Run Metadata` | Actual method settings, config fragments, and gate receipt |
+| `Run Metadata` | Actual method settings, config fragments, layout version and gate receipt |
 
 The normal output directory contains one XLSX only. Temporary baseline/support/
 diff files are cleaned after the limited-identity gate, including on cancellation
@@ -122,20 +118,20 @@ or failure; a failed gate does not publish a completed workbook. Nonempty suppli
 sample context, identity support, and selection approvals remain in hidden sheets
 so the decision inputs can be inspected without sidecar files.
 
-Inspector currently reads its supported evidence sources, not Targeted XLSX.
-Use the workbook's Review Queue and result reasons; do not assume a workbook can
-be opened as an Inspector chromatogram source.
+Use **在結果檢閱開啟** after completion, or open the XLSX in the
+workbench's result picker. Inspector shows saved values without RAW, DLLs,
+recomputation or additional output files. Select a target, then a sample for
+its details. The workbook does not contain chromatogram curves.
 
 ## Detection And Review
 
-The `Overview` sheet reports two key percentages:
+`XIC Results` keeps two separate answers beside the measurements:
 
-- **Detection %** — the count decided by the formal Targeted projection.
-  Numeric availability and counted detection are separate: a row can retain
-  RT/area without counting. Read `Counted Detection`, `Product State`, and the
-  recorded reasons in the advanced columns; NL tokens alone do not decide it.
-- **Flagged %** — review workload. A detected row can still be flagged for
-  manual inspection (e.g. low confidence, unusual RT shift).
+- **Counted Detection** is decided by the formal Targeted projection. A row
+  can retain RT/area without counting; NL tokens alone do not decide it.
+- **Review / Review Reason** identify rows needing attention. A counted
+  detection can still require review. Filter `Review` in Excel or use the
+  Inspector's attention filter, then inspect the recorded explanation.
 
 For missing MS2, the formal projection applies the ISTD/analyte role and
 support policy. `count_no_ms2_as_detected` controls only the legacy fallback
@@ -170,9 +166,9 @@ for diagnosis or environment isolation.
 
 ## Validation
 
-After a run, review the `Overview` sheet for detection rates and the
-`Review Queue` for rows that need attention. If detection rates or RT deltas
-look abnormal, check the `Diagnostics` sheet before re-running.
+After a run, review `XIC Results` or open the workbook in Inspector. Inspect
+rows with a review condition and their saved peak/NL evidence before rerunning.
+See the [output reference](targeted-output-reference.md) for column meanings.
 
 For developer-level validation harness details, see
 [docs/agent/parameter-settings.md](../agent/parameter-settings.md).

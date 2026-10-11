@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from collections import Counter, defaultdict
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
@@ -8,19 +9,14 @@ from pathlib import Path
 from openpyxl import Workbook, load_workbook
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
-from xic_extractor.output.detection import MissingTargetedProductProjectionError
-from xic_extractor.output.review_queue_model import _review_queue_rows
-from xic_extractor.output.sheet_diagnostics import _build_diagnostics_sheet
-from xic_extractor.output.sheet_metadata import _build_metadata_sheet
-from xic_extractor.output.sheet_overview import _build_overview_sheet
-from xic_extractor.output.sheet_results import _build_data_sheet
-from xic_extractor.output.sheet_review_queue import _build_review_queue_sheet
-from xic_extractor.output.sheet_summary import (
-    _build_summary_sheet,
-    _is_long_detected,
-    _long_nl_counts,
-    _target_summaries,
+from xic_extractor.output.detection import (
+    MissingTargetedProductProjectionError,
+    is_accepted_row_detection,
 )
+from xic_extractor.output.review_queue_model import _review_queue_rows
+from xic_extractor.output.schema import TARGETED_WORKBOOK_LAYOUT_VERSION
+from xic_extractor.output.sheet_metadata import _build_metadata_sheet
+from xic_extractor.output.sheet_results import _build_data_sheet
 from xic_extractor.output.sheet_targets import _build_targets_sheet
 from xic_extractor.output.workbook_inputs import (
     _read_diagnostics,
@@ -47,33 +43,18 @@ def write_workbook_from_rows(
         _require_product_projection(rows)
     review_rows = _review_queue_rows(rows, diagnostics)
     wb = Workbook()
-    ws_overview = wb.active
-    _build_overview_sheet(ws_overview, rows, diagnostics, review_rows)
-
-    ws_review = wb.create_sheet("Review Queue")
-    _build_review_queue_sheet(ws_review, review_rows)
-
-    ws_data = wb.create_sheet("XIC Results")
-    _build_data_sheet(ws_data, rows)
-
-    ws_summary = wb.create_sheet("Summary")
-    _build_summary_sheet(
-        ws_summary,
-        rows,
-        count_no_ms2_as_detected=config.count_no_ms2_as_detected,
-        review_rows=review_rows,
-        require_projection=require_projection,
+    ws_data = wb.active
+    ws_data.title = "XIC Results"
+    _build_data_sheet(ws_data, rows, review_rows=review_rows)
+    _build_targets_sheet(wb.create_sheet("Targets"), targets)
+    _build_metadata_sheet(
+        wb.create_sheet("Run Metadata"),
+        config,
+        extra_metadata=(
+            ("targeted_workbook_layout_version", TARGETED_WORKBOOK_LAYOUT_VERSION),
+            *extra_metadata,
+        ),
     )
-
-    ws_targets = wb.create_sheet("Targets")
-    _build_targets_sheet(ws_targets, targets)
-
-    ws_diagnostics = wb.create_sheet("Diagnostics")
-    _build_diagnostics_sheet(ws_diagnostics, diagnostics)
-    ws_diagnostics.sheet_state = "hidden"
-
-    ws_metadata = wb.create_sheet("Run Metadata")
-    _build_metadata_sheet(ws_metadata, config, extra_metadata=extra_metadata)
 
     for title, source in (
         ("Sample Context", config.injection_order_source),
@@ -83,7 +64,7 @@ def write_workbook_from_rows(
         if source is not None:
             _embed_input_table(wb, title, source)
 
-    wb.active = wb.index(ws_overview)
+    wb.active = wb.index(ws_data)
     _apply_sheet_role_styles(wb)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(output_path)
@@ -164,44 +145,27 @@ def _print_summary(
     print(f"Saved : {excel_path}")
     sample_count = len({row.get("SampleName", "") for row in rows})
     print(f"Rows  : {sample_count}")
-    for target in _target_summaries(rows):
-        label = target["Target"]
-        target_rows = [row for row in rows if row.get("Target") == label]
+    by_target: dict[str, list[dict[str, str]]] = defaultdict(list)
+    for row in rows:
+        by_target[row.get("Target", "")].append(row)
+    for label, target_rows in by_target.items():
         detected = sum(
-            1
-            for row in target_rows
-            if _is_long_detected(
-                row,
-                count_no_ms2_as_detected,
-                require_projection=require_projection,
+            is_accepted_row_detection(
+                row, count_no_ms2_as_detected, require_projection=require_projection
             )
+            for row in target_rows
         )
         print(f"  {label} counted detection: {detected}/{len(target_rows)}")
-    for target in _target_summaries(rows):
-        label = target["Target"]
-        target_rows = [row for row in rows if row.get("Target") == label]
-        if not any(row.get("NL", "") for row in target_rows):
-            continue
-        counts = _long_nl_counts(target_rows)
-        print(
-            f"  {label}_NL  OK:{counts['OK']}  WARN:{counts['WARN']}  "
-            f"FAIL:{counts['NL_FAIL']}  NO_MS2:{counts['NO_MS2']}"
-        )
-    for target in _target_summaries(rows):
-        if target.get("Role") != "ISTD":
-            continue
-        label = target["Target"]
-        target_rows = [row for row in rows if row.get("Target") == label]
-        detected = sum(
-            1
-            for row in target_rows
-            if _is_long_detected(
-                row,
-                count_no_ms2_as_detected,
-                require_projection=require_projection,
+        counts = Counter(row.get("NL", "") for row in target_rows)
+        if any(counts):
+            warning_count = sum(
+                count for value, count in counts.items() if value.startswith("WARN_")
             )
-        )
-        if detected < len(target_rows):
+            print(
+                f"  {label}_NL  OK:{counts['OK']}  WARN:{warning_count}  "
+                f"FAIL:{counts['NL_FAIL']}  NO_MS2:{counts['NO_MS2']}"
+            )
+        if target_rows[0].get("Role") == "ISTD" and detected < len(target_rows):
             print(f"ISTD_ND: {label} {detected}/{len(target_rows)}")
 
 

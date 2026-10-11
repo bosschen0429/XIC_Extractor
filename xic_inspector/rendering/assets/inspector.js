@@ -6,58 +6,104 @@
   }
 
   function renderTargetedWorkbook(payload) {
-    const node = (tag, text) => {
-      const element = document.createElement(tag);
-      if (text !== undefined) element.textContent = text === null ? '未提供' : String(text);
-      return element;
+    const element = (tag, text, className) => {
+      const node = document.createElement(tag);
+      if (text !== undefined) node.textContent = text;
+      if (className) node.className = className;
+      return node;
     };
-    const table = (rows, columns) => {
-      const wrap = node('div');
-      wrap.style.overflowX = 'auto';
-      const result = node('table'), head = node('tr'), body = node('tbody');
-      for (const column of columns) head.append(node('th', column));
-      const thead = node('thead');
-      thead.append(head);
-      for (const row of rows) {
-        const tr = node('tr');
-        for (const column of columns) tr.append(node('td', row[column] ?? null));
-        body.append(tr);
+    const value = (v, digits = 4) => v === null || v === undefined || v === ''
+      ? '未提供' : typeof v === 'number' ? v.toLocaleString('en-US', {maximumFractionDigits: digits}) : String(v);
+    const range = (start, end) => `${value(start)} – ${value(end)} min`;
+    const counted = v => v === true || v === 'TRUE' ? '是' : v === false || v === 'FALSE' ? '否' : '未記錄';
+    const badge = review => element('span', review ? ({Review: '需檢閱', Check: '待確認'}[review.Status] || review.Status) : '已記錄', `tgt-badge${review ? ' attention' : ''}`);
+    const facts = pairs => {
+      const grid = element('dl', undefined, 'tgt-facts');
+      for (const [label, saved] of pairs) {
+        const field = element('div');
+        field.append(element('dt', label), element('dd', value(saved)));
+        grid.append(field);
       }
-      result.append(thead, body);
-      wrap.append(result);
-      return wrap;
+      return grid;
     };
-    const facts = record => table(Object.entries(record).map(([field, value]) => ({欄位: field, 已保存值: value})), ['欄位', '已保存值']);
-    const root = node('main');
-    root.className = 'panel detail-panel';
-    root.append(node('h1', 'Targeted 結果檢閱'), node('p', '唯讀 XLSX · 保留原始量值與判定。ND 不等於 0；未提供不等於未偵測。工作簿未保存逐點曲線，不顯示推測的色譜圖。'));
+    const root = element('main', undefined, 'tgt-review');
+    if (!new URLSearchParams(location.search).has('embed')) root.append(element('h1', 'Targeted 結果'));
     for (const item of payload.items) {
-      const section = node('section');
-      section.append(node('h2', item.title));
-      const target = node('details'), targetSummary = node('summary', '目標設定：角色、ISTD 配對、m/z、RT 範圍與容差');
-      target.append(targetSummary, facts(item.details.target));
-      section.append(target);
-      section.append(node('h3', '樣本量值與已保存判定'));
-      section.append(table(item.details.records, ['SampleName', 'Group', 'RT', 'Area', 'PeakStart', 'PeakEnd', 'Review State', 'Reason', 'Product State', 'Counted Detection']));
-      section.append(node('h3', 'ReviewQueue'));
-      if (item.details.review_queue.length) section.append(table(item.details.review_queue, Object.keys(item.details.review_queue[0])));
-      else section.append(node('p', '目前樣本範圍未列入 ReviewQueue；這不是額外的科學通過判定。'));
-      const label = node('label', '樣本完整紀錄 '), select = node('select');
-      select.setAttribute('aria-label', '樣本完整紀錄');
-      for (const record of item.details.records) select.append(new Option(record.SampleName, record.SampleName));
-      label.append(select);
-      const detail = node('div');
-      const showRecord = () => detail.replaceChildren(facts(item.details.records.find(record => record.SampleName === select.value)));
-      select.addEventListener('change', showRecord);
-      section.append(label, detail);
-      showRecord();
+      const target = item.details.target;
+      const section = element('section');
+      if (payload.items.length > 1) section.append(element('h2', item.title));
+      const context = [target.Role, target['ISTD Pair'] ? `ISTD：${target['ISTD Pair']}` : null, `設定 RT ${range(target['RT min'], target['RT max'])}`].filter(Boolean);
+      section.append(element('p', context.join(' · '), 'tgt-context'));
+      const reviews = new Map(item.details.review_queue.map(row => [row.Sample, row]));
+      const table = element('table', undefined, 'tgt-table');
+      const head = element('tr');
+      for (const title of ['樣本', '面積', 'RT (min)', '計入偵測', '檢閱', '原因']) head.append(element('th', title));
+      const thead = element('thead');thead.append(head);
+      const body = element('tbody');
+      const evidence = element('section', undefined, 'tgt-evidence');
+      evidence.hidden = true;
+      evidence.setAttribute('aria-label', '樣本證據');
+      const sampleButtons = [];
+      const selectSample = (record, button) => {
+        for (const other of sampleButtons) {
+          other.setAttribute('aria-pressed', String(other === button));
+          other.closest('tr').classList.toggle('selected', other === button);
+        }
+        const review = reviews.get(record.SampleName);
+        const heading = element('div', undefined, 'tgt-evidence-heading');
+        const close = element('button', '收起', 'tgt-close');close.type = 'button';
+        close.addEventListener('click', () => {
+          evidence.hidden = true;
+          button.setAttribute('aria-pressed', 'false');button.closest('tr').classList.remove('selected');button.focus();
+        });
+        heading.append(element('h3', record.SampleName), close);
+        evidence.replaceChildren(heading, facts([
+          ['積分範圍', range(record.PeakStart, record.PeakEnd)],
+          ['NL 證據', record['NL Evidence']],
+        ]));
+        if (record.Reason) evidence.append(element('h4', '選峰與判讀說明'), element('p', record.Reason));
+        if (review?.Evidence) evidence.append(element('h4', '檢閱線索'), element('p', review.Evidence));
+        if (review?.Action) evidence.append(element('h4', '檢閱建議'), element('p', review.Action));
+        evidence.hidden = false;
+      };
+      for (const record of item.details.records) {
+        const review = reviews.get(record.SampleName), row = element('tr');
+        const sampleCell = element('td'), button = element('button', record.SampleName, 'tgt-sample');
+        button.type = 'button';button.setAttribute('aria-pressed', 'false');
+        button.addEventListener('click', () => selectSample(record, button));
+        sampleButtons.push(button);sampleCell.append(button);row.append(sampleCell);
+        row.append(element('td', value(record.Area, 6), 'tgt-number'), element('td', value(record.RT), 'tgt-number'), element('td', counted(record['Counted Detection']), 'tgt-counted'));
+        const state = element('td');state.append(badge(review));row.append(state);
+        const reason = element('td', review?.Why || record.Reason || '—', 'tgt-reason');
+        row.append(reason);body.append(row);
+      }
+      table.append(thead, body);
+      const scroll = element('div', undefined, 'tgt-table-scroll');scroll.append(table);
+      section.append(scroll, element('p', '點選樣本查看峰界與證據。面積是保存的量值；「計入偵測」是當次分析的判定，兩者分開呈現。', 'tgt-note'), evidence);
+      const method = element('details', undefined, 'tgt-method');
+      method.append(element('summary', '方法設定'));
+      method.append(facts([
+        ['目標 m/z', target['m/z']], ['m/z 容差 (ppm)', target['ppm tol']],
+        ['NL (Da)', target['NL (Da)']], ['NL 容差 warn / max (ppm)', `${value(target['NL ppm warn'])} / ${value(target['NL ppm max'])}`],
+        ['樣本適用範圍', target['Sample applicability']],
+      ]));
+      const labels = {
+        signal_processing_method: '平滑方法', signal_processing_window_points: '平滑視窗 (points)',
+        ms2_precursor_tol_da: 'MS2 precursor 容差 (Da)', nl_min_intensity_ratio: 'NL 最低相對強度',
+        nl_rt_anchor_search_margin_min: 'NL 錨定搜尋半徑 (min)', nl_rt_anchor_half_window_min: '錨定後 XIC 半寬 (min)',
+        nl_fallback_half_window_min: 'NL fallback 半寬 (min)', rolling_window_size: 'ISTD RT 滾動視窗',
+        dirty_matrix_mode: '髒基質模式', targeted_ms1_shape_identity_activation_policy: 'MS1 shape identity policy',
+      };
+      method.append(facts(payload.summary.method_context.filter(([key]) => labels[key]).map(([key, saved]) => [labels[key], saved])));
+      section.append(method);
       root.append(section);
     }
-    if (!payload.items.length) root.append(node('p', '沒有符合條件的目標。'));
-    const metadata = node('details');
-    metadata.append(node('summary', '工作簿方法與執行資訊（Metadata 原值）'));
-    metadata.append(table(payload.summary.method_context.map(row => ({欄位: row[0], 已保存值: row[1]})), ['欄位', '已保存值']));
-    root.append(metadata);
+    if (!payload.items.length) root.append(element('p', '沒有符合條件的目標。'));
+    const provenance = element('details', undefined, 'tgt-provenance');
+    provenance.append(element('summary', '執行資訊'));
+    const labels = {generated_at: '建立時間', app_version: '版本', config_hash: '設定識別', target_config_hash: '目標設定識別', parallel_mode: '執行模式', parallel_workers: 'Workers', limited_identity_gate: 'Limited identity gate'};
+    provenance.append(facts(payload.summary.method_context.filter(([key]) => labels[key]).map(([key, saved]) => [labels[key], saved])));
+    root.append(provenance, element('p', '唯讀結果 · 未保存逐點曲線，不重建色譜圖。「已記錄」不代表額外的科學通過判定。', 'tgt-note'));
     document.body.replaceChildren(root);
   }
   const items=Array.isArray(data.items)?data.items:[], samples=Array.isArray(data.samples)?data.samples:[];

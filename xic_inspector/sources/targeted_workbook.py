@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 from xml.etree.ElementTree import ParseError
@@ -14,6 +14,7 @@ from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 
 from xic_extractor.diagnostics.alignment_explanation import ExplanationError
+from xic_extractor.output.schema import TARGETED_WORKBOOK_LAYOUT_VERSION
 from xic_inspector.selection.canonical import CanonicalItem, build_canonical_ref
 from xic_inspector.selection.sampler import sample_cross_sample_sha256
 
@@ -90,6 +91,13 @@ class TargetedWorkbookSource:
         ) as exc:
             raise ExplanationError(f"無法讀取 Targeted XLSX：{exc}") from exc
         try:
+            metadata = [
+                [row["Key"], row["Value"]]
+                for row in _table(book, "Run Metadata", {"Key", "Value"})
+            ]
+            layout = dict(metadata).get("targeted_workbook_layout_version", 1)
+            if layout not in (1, TARGETED_WORKBOOK_LAYOUT_VERSION):
+                raise ExplanationError(f"不支援的 Targeted XLSX layout：{layout}")
             self.targets = _table(
                 book, "Targets", {"Label", "Role", "m/z", "RT min", "RT max"}
             )
@@ -103,17 +111,31 @@ class TargetedWorkbookSource:
                     "Area",
                     "PeakStart",
                     "PeakEnd",
-                    "Review State",
                     "Reason",
+                    *(
+                        ("Review", "Review Reason", "Counted Detection")
+                        if layout == 2
+                        else ("Review State",)
+                    ),
                 },
             )
-            self.queue = _table(
-                book, "Review Queue", {"Sample", "Target", "Status", "Why"}
-            )
-            metadata = [
-                [row["Key"], row["Value"]]
-                for row in _table(book, "Run Metadata", {"Key", "Value"})
-            ]
+            if layout == 2:
+                self.queue = [
+                    {
+                        "Sample": row["SampleName"],
+                        "Target": row["Target"],
+                        "Status": row["Review"],
+                        "Why": row["Review Reason"],
+                        "Evidence": row.get("Review Evidence"),
+                    }
+                    for row in self.records
+                    if row["Review"]
+                ]
+            else:
+                # Previously delivered workbooks keep review routing separately.
+                self.queue = _table(
+                    book, "Review Queue", {"Sample", "Target", "Status", "Why"}
+                )
         finally:
             book.close()
         labels = [row["Label"] for row in self.targets]
@@ -157,6 +179,8 @@ class TargetedWorkbookSource:
             "processing_request_id": "targeted-workbook",
             "processing_attempt_id": digest,
             "method_context": metadata,
+            "target_names": labels,
+            "review_record_count": len(self.queue),
             "samples": [
                 {"canonical_sample_identity_id": name, "sample_stem": name}
                 for name in dict.fromkeys(row["SampleName"] for row in self.records)
@@ -217,6 +241,7 @@ class TargetedWorkbookSource:
             )
         if selection.strategy == "attention" or selection.attention_only:
             items = [item for item in items if item.is_attention]
+            items = [self._review_scope(item) for item in items]
         if selection.target_ids:
             items = [item for item in items if item.identifier in selection.target_ids]
         if selection.group_ids or selection.candidate_ids:
@@ -256,6 +281,24 @@ class TargetedWorkbookSource:
             eligible,
             len(items),
             missing,
+        )
+
+    @staticmethod
+    def _review_scope(item: CanonicalItem) -> CanonicalItem:
+        """The review filter selects saved review rows, not their other peers."""
+        sample_ids = {row["Sample"] for row in item.details["review_queue"]}
+        records = [
+            row for row in item.details["records"] if row["SampleName"] in sample_ids
+        ]
+        return replace(
+            item,
+            sample_ids=tuple(row["SampleName"] for row in records),
+            details=item.details
+            | {
+                "records": records,
+                "review_summary": item.details["review_summary"]
+                | {"scope_sample_count": len(records)},
+            },
         )
 
     def load_render_items(self, items, *, capability, check_cancel):

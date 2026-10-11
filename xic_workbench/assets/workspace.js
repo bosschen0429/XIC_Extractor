@@ -193,6 +193,10 @@ window.XicUi = (() => {
     const targeted = page.source_kind === "targeted_workbook";
     $("targeted-filters").hidden = !targeted;
     $("group-filter").hidden = targeted;
+    $("review-range-filters").open = !targeted;
+    const selectedTarget = $("target-id").value;
+    $("target-id").replaceChildren(new Option("全部目標", ""), ...(page.target_names || []).map(name => new Option(name, name)));
+    $("target-id").value = selectedTarget;
     document.querySelector(".acquisition-panel").hidden = targeted;
     $("tab-curves").hidden = targeted;
     const selectedSample = $("target-sample").value;
@@ -201,8 +205,11 @@ window.XicUi = (() => {
     clearSelection();
     $("review").hidden = false;
     $("review-empty").hidden = true;
-    $("batch-title").textContent = "批次結果已開啟";
-    $("batch-description").textContent = page.source;
+    $("batch-title").textContent = targeted ? "Targeted 結果" : "批次結果已開啟";
+    $("batch-description").textContent = targeted ? page.source.split(/[\\/]/).pop() : page.source;
+    $("raw-dir").closest(".path-line").hidden = targeted;
+    $("dll-dir").closest(".path-line").hidden = targeted;
+    $("source-settings").querySelector("summary").textContent = targeted ? "切換結果來源" : "結果與 RAW 位置";
     $("batch-description").className = "mono";
     $("batch-description").title = page.source;
     $("batch-count").hidden = false;
@@ -351,7 +358,7 @@ window.XicUi = (() => {
       tab === "curves"
         ? `新取得的診斷曲線 · ${state.curveLabels.join("、")}。依報告樣本檔名取檔，已核對 RAW 內容屬於此批次；來源未保留獨立的樣本與 RAW 綁定。這些曲線不改寫當次定量值。`
         : state.page.source_kind === "targeted_workbook"
-          ? "Targeted XLSX 唯讀結果；未保存逐點曲線或可驗證的 RAW 綁定，因此不提供曲線擷取，不改寫量值或判定。"
+          ? "唯讀 XLSX · 只顯示已保存結果，不重新計算。"
           : "這是當次分析保存的證據與量值。若未保留曲線，可在上方按需取得 XIC。";
     $("inspector").src = `/reports/${view}.html?embed=1`;
     $("download").href = `/reports/${view}.html?download=1`;
