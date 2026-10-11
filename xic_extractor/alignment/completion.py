@@ -184,8 +184,6 @@ class _WorkflowAdapterFields:
             raise AlignmentWorkflowContractError(
                 "adapter capture inputs must be an immutable typed tuple"
             )
-        for item in self.capture_inputs:
-            item.__post_init__()
         if type(self.predecessor_cell_observations) is not tuple or any(
             type(item) is not CellObservationRef
             for item in self.predecessor_cell_observations
@@ -221,17 +219,14 @@ class TargetWorkflowAdapter(_WorkflowAdapterFields):
             )
         if type(self.alignment_config) is not AlignmentConfig:
             raise AlignmentWorkflowContractError("alignment_config must be exact")
-        completed_captures = getattr(
-            self,
-            "_completed_captures",
-            completed_capture_handoff,
-        )
-        if completed_captures is not None and type(completed_captures) is not tuple:
+        if (
+            completed_capture_handoff is not None
+            and type(completed_capture_handoff) is not tuple
+        ):
             raise AlignmentWorkflowContractError(
                 "completed captures require an immutable owner population"
             )
-        if not hasattr(self, "_completed_captures"):
-            object.__setattr__(self, "_completed_captures", completed_captures)
+        object.__setattr__(self, "_completed_captures", completed_capture_handoff)
 
     @property
     def completed_captures(self) -> tuple[SampleLocalCapture, ...] | None:
@@ -316,8 +311,6 @@ class UntargetWorkflowBundle:
             raise AlignmentWorkflowContractError(
                 "Untarget workflow bundle requires an exact adapter"
             )
-        self.request.__post_init__()
-        self.adapter.__post_init__()
 
 
 def compose_untarget_subject(
@@ -390,7 +383,6 @@ def _compose_application_result(
                     raise AlignmentWorkflowContractError(
                         "completed capture crossed its workflow scope or input"
                     )
-                capture.__post_init__()
                 if item.owner_hypothesis is not None and (
                     capture.selected_hypothesis is not item.owner_hypothesis
                     or item.owner_observation
@@ -502,7 +494,6 @@ def _validate_untarget_batch_composition_request(
         raise AlignmentWorkflowContractError(
             "Untarget batch composition requires an exact completed request"
         )
-    request.__post_init__()
     if request.processing_request is not request.scope.request:
         raise AlignmentWorkflowContractError(
             "Untarget batch request crossed its processing request"
@@ -587,7 +578,6 @@ def _validate_untarget_batch_bundles(
             raise AlignmentWorkflowContractError(
                 "Untarget batch provider returned a non-owner bundle"
             )
-        bundle.__post_init__()
         child_request = bundle.request
         child_scope = child_request.scope
         if (
@@ -699,6 +689,7 @@ def validate_completion_inputs(
     request: WorkflowRequest,
     adapter: WorkflowAdapter,
 ) -> ProcessingOwnerReferences:
+    """Bind constructed workflow inputs without replaying upstream validation."""
     variants = {
         TargetWorkflowRequest: (TargetWorkflowAdapter, TargetSearchScope),
         UntargetWorkflowCompositionRequest: (
@@ -715,8 +706,6 @@ def validate_completion_inputs(
         raise AlignmentWorkflowContractError(
             "workflow request, adapter, and scope variants must match exactly"
         )
-    request.__post_init__()
-    adapter.__post_init__()
     if (
         request.processing_request is not request.scope.request
         or request.processing_attempt.processing_request_id
@@ -810,13 +799,6 @@ def validate_completion_inputs(
     ):
         raise AlignmentWorkflowContractError(
             "only an MS1-only Target may use captured owner facts without assessments"
-        )
-    if type(adapter.predecessor_cell_observations) is not tuple or any(
-        type(item) is not CellObservationRef
-        for item in adapter.predecessor_cell_observations
-    ):
-        raise AlignmentWorkflowContractError(
-            "predecessor cells must be exact immutable references"
         )
     return owners
 
