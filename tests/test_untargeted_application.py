@@ -701,9 +701,12 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
         completed.close()
 
 
+@pytest.mark.parametrize("canonical_window, override_window", ((21, 15), (15, 21)))
 def test_pipeline_rejects_profile_config_conflict_before_read_or_raw(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    canonical_window: int,
+    override_window: int,
 ) -> None:
     touched = False
 
@@ -726,13 +729,11 @@ def test_pipeline_rejects_profile_config_conflict_before_read_or_raw(
                 alignment_config=AlignmentConfig(),
                 peak_config=replace(
                     _peak_config(),
-                    signal_processing_window_points=21,
+                    signal_processing_window_points=canonical_window,
                 ),
                 discovery_settings=_settings(),
-                legacy=RetainedAlignmentOptions(
-                    signal_processing_profile=resolve_signal_processing_profile(
-                        signal_processing_window_points=15,
-                    )
+                signal_processing_profile=resolve_signal_processing_profile(
+                    signal_processing_window_points=override_window,
                 ),
             )
         )

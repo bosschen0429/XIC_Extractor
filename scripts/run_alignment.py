@@ -32,6 +32,7 @@ from xic_extractor.applications.untargeted.request import (
     RetainedAlignmentOptions,
     UntargetedExecutionContext,
     UntargetedRequest,
+    validate_retained_processing_profile,
 )
 from xic_extractor.configuration.execution_profile import (
     DEFAULT_ALIGNMENT_WORKER_BACKEND,
@@ -124,10 +125,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_partition_jobs=args.max_partition_jobs,
         )
         legacy = RetainedAlignmentOptions(
-            signal_processing_profile=signal_processing_profile,
             owner_build_xic_backend=owner_build_xic_backend,
             require_discovery_owner_closure=True,
         )
+        validate_retained_processing_profile(signal_processing_profile)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -239,6 +240,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 nl_min_intensity_ratio=peak_config_nl_min_intensity_ratio,
             ),
             discovery_settings=recipe.discovery_settings,
+            signal_processing_profile=signal_processing_profile,
             sample_metadata=sample_metadata,
             known_istd_reference_workbook=args.known_istd_reference_workbook,
             targets_csv=args.targets_csv,

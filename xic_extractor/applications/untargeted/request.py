@@ -41,7 +41,6 @@ from xic_extractor.untargeted_execution.input_planning import (
 class RetainedAlignmentOptions:
     """Accepted advanced overrides for the retained single-provider route."""
 
-    signal_processing_profile: SignalProcessingProfile | None = None
     raw_xic_batch_size: int = 1
     owner_build_xic_backend: OwnerBuildXicBackend = "raw"
     owner_backfill_xic_backend: BackfillXicBackend = "raw"
@@ -55,12 +54,6 @@ class RetainedAlignmentOptions:
     require_discovery_owner_closure: bool = False
 
     def __post_init__(self) -> None:
-        if self.signal_processing_profile is not None and not isinstance(
-            self.signal_processing_profile, SignalProcessingProfile
-        ):
-            raise TypeError(
-                "signal_processing_profile must be a SignalProcessingProfile"
-            )
         unsupported: list[str] = []
         if self.raw_xic_batch_size != 1:
             unsupported.append("raw_xic_batch_size")
@@ -80,12 +73,6 @@ class RetainedAlignmentOptions:
             unsupported.append("selected_family_ids")
         if self.selected_family_source.strip():
             unsupported.append("selected_family_source")
-        if (
-            self.signal_processing_profile is not None
-            and self.signal_processing_profile.profile_id
-            != DEFAULT_SIGNAL_PROCESSING_PROFILE_ID
-        ):
-            unsupported.append("signal_processing_profile")
         if unsupported:
             raise ValueError(
                 "pure CID-NL retained route does not support legacy Alignment options: "
@@ -108,6 +95,7 @@ class UntargetedRequest:
     alignment_config: AlignmentConfig
     peak_config: ExtractionConfig
     discovery_settings: DiscoverySettings
+    signal_processing_profile: SignalProcessingProfile | None = None
     sample_metadata: tuple[SampleMetadata, ...] | None = None
     known_istd_reference_workbook: Path | None = None
     targets_csv: Path | None = None
@@ -138,18 +126,17 @@ class UntargetedRequest:
             signal_processing_method=self.peak_config.signal_processing_method,
             signal_processing_window_points=self.peak_config.signal_processing_window_points,
         )
-        override = self.legacy.signal_processing_profile
+        override = self.signal_processing_profile
         if override is not None:
+            if not isinstance(override, SignalProcessingProfile):
+                raise TypeError(
+                    "signal_processing_profile must be a SignalProcessingProfile"
+                )
             if override != profile:
                 raise ValueError(
                     "signal_processing_profile conflicts with peak_config "
                     "canonical fields"
                 )
-        elif profile.profile_id != DEFAULT_SIGNAL_PROCESSING_PROFILE_ID:
-            raise ValueError(
-                "pure CID-NL retained route does not support legacy Alignment "
-                "options: signal_processing_profile"
-            )
         if (
             self.publication.emit_provisional_matrix
             and not self.legacy.require_discovery_owner_closure
@@ -157,7 +144,21 @@ class UntargetedRequest:
             raise ValueError(
                 "provisional matrix emission requires Discovery owner closure"
             )
+        validate_retained_processing_profile(profile)
         return profile
+
+
+def validate_retained_processing_profile(profile: SignalProcessingProfile) -> None:
+    """Retained-route capability check, also used by CLI preflight before I/O.
+
+    Request/config conflicts are resolved by the application entry before this
+    capability check; the CLI's canonical profile is already bound to its flags.
+    """
+    if profile.profile_id != DEFAULT_SIGNAL_PROCESSING_PROFILE_ID:
+        raise ValueError(
+            "pure CID-NL retained route does not support legacy Alignment "
+            "options: signal_processing_profile"
+        )
 
 
 @dataclass(frozen=True, slots=True)
