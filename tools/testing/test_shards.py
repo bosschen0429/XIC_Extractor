@@ -49,6 +49,12 @@ SNAPSHOT_MARKER = "ledger_snapshot"
 # (.github/workflows/ci.yml) and local shard runs both read this table, so the
 # two select the same tests for the same change.
 RELEVANCE_RULES: dict[str, re.Pattern[str]] = {
+    "browser_e2e": re.compile(
+        r"^(xic_workbench/|xic_inspector/"
+        r"|tests/test_(workbench_browser|xic_inspector_api|test_shards)\.py$"
+        r"|tools/testing/test_shards\.py$|\.github/workflows/ci\.yml$"
+        r"|pyproject\.toml$|uv\.lock$)"
+    ),
     # Include whole shipped package roots: an installed/frozen import can depend
     # on any of their code or data. A shortlist of entry points misses package
     # inputs and resources, while ordinary documentation can still skip.
