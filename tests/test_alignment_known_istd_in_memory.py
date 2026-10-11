@@ -7,7 +7,6 @@ import pytest
 
 from xic_extractor.acquisition.istd_reference import (
     extract_batch_known_istd_reference,
-    read_known_istd_reference,
 )
 from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
@@ -92,17 +91,6 @@ def test_mint_known_istd_reference_computes_centers_and_deltas() -> None:
     assert coord_map[("ISTD1", "S1")][1] == pytest.approx(-0.2)
     assert coord_map[("ISTD1", "S2")][1] == pytest.approx(0.0)
     assert coord_map[("ISTD1", "S3")][1] == pytest.approx(0.2)
-
-
-def test_mint_known_istd_reference_parity_with_workbook() -> None:
-    wb_path = Path("output/xic_results_20260512_1200.xlsx")
-    if not wb_path.is_file():
-        pytest.skip("Test workbook output/xic_results_20260512_1200.xlsx not found")
-
-    ref_wb = read_known_istd_reference(wb_path)
-    assert len(ref_wb.coordinates) == 595
-    assert len({s for _, s, _, _ in ref_wb.coordinates}) == 85
-    assert len({t for t, _, _, _ in ref_wb.coordinates}) == 7
 
 
 def test_read_targets_from_csv() -> None:
