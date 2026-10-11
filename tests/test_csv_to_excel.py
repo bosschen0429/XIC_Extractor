@@ -243,9 +243,9 @@ def test_run_writes_one_review_table_and_method_context(tmp_path: Path) -> None:
     _write_csv(config.output_csv.with_name("xic_results_long.csv"), rows)
     _write_empty_diagnostics_csv(config.diagnostics_csv)
     wb = load_workbook(run(config, [_target("Analyte")]))
-    assert wb.sheetnames == ["XIC Results", "Targets", "Run Metadata"]
-    assert wb.active.title == "XIC Results"
-    records = _sheet_records(wb.active)
+    assert wb.sheetnames == ["Overview", "XIC Results", "Targets", "Run Metadata"]
+    assert wb.active.title == "Overview"
+    records = _sheet_records(wb["XIC Results"])
     assert [(r["SampleName"], r["Area"], r["Counted Detection"]) for r in records] == [
         ("Sample A", 123, "TRUE"),
         ("Sample B", 456, "FALSE"),

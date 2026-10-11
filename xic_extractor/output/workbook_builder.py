@@ -15,7 +15,9 @@ from xic_extractor.output.detection import (
 )
 from xic_extractor.output.review_queue_model import _review_queue_rows
 from xic_extractor.output.schema import TARGETED_WORKBOOK_LAYOUT_VERSION
+from xic_extractor.output.sheet_diagnostics import build_diagnostics_sheet
 from xic_extractor.output.sheet_metadata import _build_metadata_sheet
+from xic_extractor.output.sheet_overview import build_overview_sheet
 from xic_extractor.output.sheet_results import _build_data_sheet
 from xic_extractor.output.sheet_targets import _build_targets_sheet
 from xic_extractor.output.workbook_inputs import (
@@ -43,8 +45,12 @@ def write_workbook_from_rows(
         _require_product_projection(rows)
     review_rows = _review_queue_rows(rows, diagnostics)
     wb = Workbook()
-    ws_data = wb.active
-    ws_data.title = "XIC Results"
+    ws_overview = wb.active
+    ws_overview.title = "Overview"
+    build_overview_sheet(
+        ws_overview, rows, review_rows, has_diagnostics=bool(diagnostics)
+    )
+    ws_data = wb.create_sheet("XIC Results")
     _build_data_sheet(ws_data, rows, review_rows=review_rows)
     _build_targets_sheet(wb.create_sheet("Targets"), targets)
     _build_metadata_sheet(
@@ -56,6 +62,9 @@ def write_workbook_from_rows(
         ),
     )
 
+    if diagnostics:
+        build_diagnostics_sheet(wb.create_sheet("Diagnostics"), diagnostics)
+
     for title, source in (
         ("Sample Context", config.injection_order_source),
         ("Identity Support", config.targeted_ms1_shape_identity_support_tsv),
@@ -64,7 +73,7 @@ def write_workbook_from_rows(
         if source is not None:
             _embed_input_table(wb, title, source)
 
-    wb.active = wb.index(ws_data)
+    wb.active = wb.index(ws_overview)
     _apply_sheet_role_styles(wb)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(output_path)

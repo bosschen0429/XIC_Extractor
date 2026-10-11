@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections import defaultdict
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 from xml.etree.ElementTree import ParseError
@@ -15,6 +15,7 @@ from openpyxl.utils.exceptions import InvalidFileException
 
 from xic_extractor.diagnostics.alignment_explanation import ExplanationError
 from xic_extractor.output.schema import TARGETED_WORKBOOK_LAYOUT_VERSION
+from xic_extractor.output.targeted_overview import summarize_targeted_results
 from xic_inspector.selection.canonical import CanonicalItem, build_canonical_ref
 from xic_inspector.selection.sampler import sample_cross_sample_sha256
 
@@ -181,6 +182,7 @@ class TargetedWorkbookSource:
             "method_context": metadata,
             "target_names": labels,
             "review_record_count": len(self.queue),
+            "overview": asdict(summarize_targeted_results(self.records, self.queue)),
             "samples": [
                 {"canonical_sample_identity_id": name, "sample_stem": name}
                 for name in dict.fromkeys(row["SampleName"] for row in self.records)

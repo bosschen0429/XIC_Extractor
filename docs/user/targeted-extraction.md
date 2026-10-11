@@ -108,9 +108,11 @@ workbook.
 
 | Workbook sheet | Purpose |
 | --- | --- |
+| `Overview` | First view: batch outcome, review priorities and links to detailed results |
 | `XIC Results` | Sample-target Area, RT, counted status and review reason; expand secondary columns for evidence |
-| `Targets` | Snapshot of the target table used for the run |
-| `Run Metadata` | Actual method settings, config fragments, layout version and gate receipt |
+| `Targets` | Supporting reference: snapshot of the target table used for the run |
+| `Run Metadata` | Supporting reference: method settings, provenance and gate receipt |
+| `Diagnostics` (when nonempty) | Supporting reference: complete supplied diagnostic text |
 
 The normal output directory contains one XLSX only. Temporary baseline/support/
 diff files are cleaned after the limited-identity gate, including on cancellation
@@ -120,8 +122,8 @@ so the decision inputs can be inspected without sidecar files.
 
 Use **在結果檢閱開啟** after completion, or open the XLSX in the
 workbench's result picker. Inspector shows saved values without RAW, DLLs,
-recomputation or additional output files. Select a target, then a sample for
-its details. The workbook does not contain chromatogram curves.
+recomputation or additional output files. Start with the batch overview, select
+a target or review action, then a sample for its details. The workbook does not contain chromatogram curves.
 
 ## Detection And Review
 
@@ -166,8 +168,9 @@ for diagnosis or environment isolation.
 
 ## Validation
 
-After a run, review `XIC Results` or open the workbook in Inspector. Inspect
-rows with a review condition and their saved peak/NL evidence before rerunning.
+After a run, start with `Overview` or the workbench's batch overview. Follow its
+review priorities into `XIC Results` or a sample detail; inspect saved peak/NL
+evidence and diagnostic text before rerunning.
 See the [output reference](targeted-output-reference.md) for column meanings.
 
 For developer-level validation harness details, see

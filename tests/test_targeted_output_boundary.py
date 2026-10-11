@@ -396,13 +396,13 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
         headers = next(rows)
         workbook_rows = {row[0]: dict(zip(headers, row)) for row in rows}
         sheet = workbook["XIC Results"]
-        for header in ("Reason", "NL Evidence", "PeakStart", "PeakEnd"):
+        for header in ("Area", "RT", "Counted Detection", "Review", "Review Reason"):
             index = headers.index(header) + 1
             assert not any(
                 dimension.hidden and dimension.min <= index <= dimension.max
                 for dimension in sheet.column_dimensions.values()
             )
-        for header in ("Product State", "Counted Detection", "Review State", "NL"):
+        for header in ("Reason", "NL Evidence", "PeakStart", "PeakEnd", "NL"):
             index = headers.index(header) + 1
             assert any(
                 dimension.hidden and dimension.min <= index <= dimension.max
@@ -434,7 +434,8 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
             expected_text = f"{value:.{digits}f}"
             assert wide_rows[sample_name][f"{target.label}_{field}"] == expected_text
             assert long_rows[sample_name][field] == expected_text
-            assert workbook_rows[sample_name][field] == float(expected_text)
+            if field != "PeakWidth":
+                assert workbook_rows[sample_name][field] == float(expected_text)
         for row in (long_rows[sample_name], workbook_rows[sample_name]):
             assert row["NL Evidence"] == (
                 "Not observed within tolerance"
@@ -443,11 +444,21 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
             )
             assert row["Reason"].startswith("MS1 peak measured; review:")
             assert "Not counted" not in row["Reason"]
-            assert row["Product State"] == "not_counted"
             assert row["Counted Detection"] == "FALSE"
-            assert row["Review State"] == "review_required"
-            assert row["Projection Not Counted Reasons"] == not_counted_reason
-            assert row["Projection Reason"] == projection.projection_reason
+        assert long_rows[sample_name]["Product State"] == "not_counted"
+        assert long_rows[sample_name]["Review State"] == "review_required"
+        assert (
+            long_rows[sample_name]["Projection Not Counted Reasons"]
+            == not_counted_reason
+        )
+        assert (
+            long_rows[sample_name]["Projection Reason"] == projection.projection_reason
+        )
+        assert workbook_rows[sample_name]["Review"] == (
+            "Review" if nl_status == "NL_FAIL" else "Check"
+        )
+        assert workbook_rows[sample_name]["Review Reason"]
+        assert "PeakWidth" not in workbook_rows[sample_name]
 
 
 def test_service_publishes_no_numeric_for_finalized_no_observation(
@@ -516,11 +527,16 @@ def test_service_publishes_no_numeric_for_finalized_no_observation(
         workbook.close()
     for field in ("RT", "Area", "PeakStart", "PeakEnd", "PeakWidth"):
         assert wide_row[f"{target.label}_{field}"] == "ND"
-        assert long_row[field] == workbook_row[field] == "ND"
+        assert long_row[field] == "ND"
+        if field != "PeakWidth":
+            assert workbook_row[field] == "ND"
     for row in (long_row, workbook_row):
         assert row["Counted Detection"] == "FALSE"
-        assert row["Review State"] == "review_required"
-        assert row["Projection Reason"] == "finalized_searched_no_observation"
+    assert long_row["Review State"] == "review_required"
+    assert long_row["Projection Reason"] == "finalized_searched_no_observation"
+    assert workbook_row["Review"] == "Check"
+    assert workbook_row["Review Reason"]
+    assert workbook_row["Reason"] == long_row["Reason"]
 
 
 def test_publication_retires_equal_area_legacy_selection_authority(

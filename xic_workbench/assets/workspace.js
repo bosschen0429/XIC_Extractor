@@ -188,9 +188,109 @@ window.XicUi = (() => {
     $("inspector").src = "about:blank";
     $("job-progress").hidden = true;
   }
+  function showTargetedOverview() {
+    $("targeted-overview").hidden = false;
+    $("targeted-review-nav").hidden = true;
+    $("review").hidden = true;
+  }
+  async function openTargetedResults(target = "", attentionOnly = false) {
+    $("query-form").reset();
+    $("target-id").value = target;
+    $("target-attention").checked = attentionOnly;
+    await query(0, queryFields());
+    $("targeted-review-nav").scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+  function renderTargetedOverview(summary) {
+    const host = $("targeted-overview");
+    host.replaceChildren();
+    if (!summary) return;
+    const node = (tag, text, className = "") => {
+      const element = document.createElement(tag);
+      if (text !== undefined) element.textContent = text;
+      element.className = className;
+      return element;
+    };
+    const resultButton = (text, target = "", attentionOnly = false, className = "") => {
+      const button = node("button", text, className);
+      button.type = "button";
+      button.dataset.idle = "";
+      button.addEventListener("click", () => action(
+        () => openTargetedResults(target, attentionOnly), "正在開啟樣本結果…",
+      ));
+      return button;
+    };
+    const heading = node("div", undefined, "overview-heading");
+    heading.append(node("span", "整批結果總覽", "eyebrow"));
+    const conclusion = !summary.result_count ? "尚無已保存結果"
+      : summary.review_count ? `先看 ${count(summary.review_count)} 筆需檢閱結果`
+        : "沒有記錄到需檢閱條件";
+    heading.append(node("h2", conclusion));
+    const scope = `${count(summary.sample_count)} 個樣本 · ${count(summary.targets.length)} 個目標 · ${count(summary.result_count)} 筆樣本／目標結果`;
+    heading.append(node("p", scope, "subtle"));
+    host.append(heading);
+    const metrics = node("div", undefined, "overview-metrics");
+    for (const [value, label] of [
+      [`${count(summary.counted_count)} / ${count(summary.result_count)}`, "計入偵測"],
+      [count(summary.review_count), "需檢閱結果"],
+      [count(summary.review_sample_count), "涉及樣本"],
+    ]) {
+      const metric = node("div");
+      metric.append(node("strong", value), node("span", label));
+      metrics.append(metric);
+    }
+    host.append(metrics);
+    if (summary.count_unknown) host.append(node("p", `${count(summary.count_unknown)} 筆未記錄偵測判定，未推測為未偵測。`, "overview-unknown"));
+    const actions = node("div", undefined, "overview-actions");
+    if (summary.review_count) actions.append(resultButton("檢閱這些結果 →", "", true, "primary"));
+    actions.append(resultButton("查看所有樣本結果 →"));
+    host.append(actions);
+    host.append(node("h3", "各目標結果"), node("p", "需檢閱項目優先。選擇目標，再看各樣本的量值與原因。", "subtle"));
+    const table = node("table", undefined, "overview-table");
+    const head = node("thead");
+    const header = node("tr");
+    for (const text of ["目標", "計入偵測 / 結果數", "需檢閱", "主要原因"]) header.append(node("th", text));
+    head.append(header);
+    const body = node("tbody");
+    for (const target of summary.targets) {
+      const row = node("tr");
+      if (target.review) row.className = "has-review";
+      const name = node("td");
+      name.append(resultButton(target.label, target.label, false, "text-button"));
+      const counted = node("td", `${target.counted} / ${target.total}${target.count_unknown ? `（${target.count_unknown} 未記錄）` : ""}`);
+      const review = node("td");
+      if (target.review) review.append(resultButton(`${target.review} 筆 →`, target.label, true, "text-button"));
+      else review.textContent = "—";
+      const reason = target.reasons.slice(0, 2).join("；") || "未記錄需檢閱條件";
+      row.append(name, counted, review, node("td", `${reason}${target.reasons.length > 2 ? `；另 ${target.reasons.length - 2} 種` : ""}`));
+      body.append(row);
+    }
+    table.append(head, body);
+    const scroll = node("div", undefined, "overview-table-scroll");
+    scroll.append(table);
+    host.append(scroll);
+    const quantities = node("details", undefined, "overview-quantities");
+    quantities.append(node("summary", "量值摘要（僅計入偵測的結果）"));
+    const values = node("table", undefined, "overview-table");
+    const valueHeader = node("tr");
+    for (const text of ["目標", "Area 中位數", "RT 範圍 (min)"]) valueHeader.append(node("th", text));
+    const valueHead = node("thead");
+    valueHead.append(valueHeader);
+    const valueBody = node("tbody");
+    for (const target of summary.targets) {
+      const row = node("tr");
+      row.append(node("td", target.label), node("td", Number.isFinite(target.median_area) ? target.median_area.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"), node("td", target.rt_min === null ? "—" : `${fmt(target.rt_min, 4)}–${fmt(target.rt_max, 4)}`));
+      valueBody.append(row);
+    }
+    values.append(valueHead, valueBody);
+    quantities.append(values);
+    host.append(quantities, node("p", "計入偵測與需檢閱可重疊。此頁摘要已保存的判定，不代表整批通過科學或品質驗收。", "overview-footnote"));
+  }
   function renderPage(page) {
     state.page = page;
     const targeted = page.source_kind === "targeted_workbook";
+    $("targeted-overview").hidden = true;
+    $("targeted-review-nav").hidden = !targeted;
+    renderTargetedOverview(page.overview);
     $("targeted-filters").hidden = !targeted;
     $("group-filter").hidden = targeted;
     $("review-range-filters").open = !targeted;
@@ -371,7 +471,8 @@ window.XicUi = (() => {
     state.samples = new Set();
     renderPage(page);
     $("source-settings").open = false;
-    if (page.items.length) await selectItem(page.items[0]);
+    if (page.source_kind === "targeted_workbook") showTargetedOverview();
+    else if (page.items.length) await selectItem(page.items[0]);
   }
   function queryFields() {
     const filters = state.page?.source_kind === "targeted_workbook"
@@ -572,6 +673,7 @@ window.XicUi = (() => {
     event.preventDefault();
     action(() => query(0, queryFields()), "正在搜尋全批結果…");
   });
+  $("back-to-overview").addEventListener("click", showTargetedOverview);
   $("reset-query").addEventListener("click", () =>
     action(async () => {
       $("query-form").reset();
@@ -668,7 +770,8 @@ window.XicUi = (() => {
       $("source").value = review.page.source;
       renderPage(review.page);
       if (review.job) state.samples = new Set(review.job.sample_ids);
-      if (review.detail) restoreDetail(review.detail);
+      if (review.page.source_kind === "targeted_workbook") showTargetedOverview();
+      else if (review.detail) restoreDetail(review.detail);
       if (review.job) {
         state.job = review.job;
         $("job-progress").hidden = false;

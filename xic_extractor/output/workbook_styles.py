@@ -146,9 +146,11 @@ def _long_column_width(header: str) -> int:
 
 def _apply_sheet_role_styles(wb: Workbook) -> None:
     role_colors = {
+        "Overview": _RESULT_TAB,
         "XIC Results": _RESULT_TAB,
         "Targets": _TECHNICAL_TAB,
         "Run Metadata": _TECHNICAL_TAB,
+        "Diagnostics": _TECHNICAL_TAB,
         "Identity Support": _TECHNICAL_TAB,
         "Sample Context": _TECHNICAL_TAB,
         "Selection Approvals": _TECHNICAL_TAB,

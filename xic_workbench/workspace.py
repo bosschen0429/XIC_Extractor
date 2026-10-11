@@ -174,6 +174,7 @@ class ReviewWorkspace:
             "source": str(self._report),
             "source_kind": page.payload["summary"].get("source_kind", "evidence"),
             "target_names": page.payload["summary"].get("target_names", []),
+            "overview": page.payload["summary"].get("overview"),
             "all_samples": [
                 {
                     "id": row["canonical_sample_identity_id"],

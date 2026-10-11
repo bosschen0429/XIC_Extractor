@@ -105,6 +105,13 @@ def test_targeted_http_review_preserves_values_scope_and_source(workbook):
         status, page, _ = request("/api/open", {"source": str(workbook.parent)})
         assert status == 200
         assert page["source_kind"] == "targeted_workbook"
+        overview = page["overview"]
+        assert (
+            overview["result_count"],
+            overview["counted_count"],
+            overview["review_count"],
+        ) == (4, 1, 2)
+        assert overview["targets"][0]["median_area"] == 123.456
         assert [item["title"] for item in page["items"]] == ["Analyte", "ISTD"]
         assert all(not item["observed_sample_ids"] for item in page["items"])
         _, detail, _ = request("/api/detail", {"item_id": page["items"][0]["id"]})
@@ -126,6 +133,7 @@ def test_targeted_http_review_preserves_values_scope_and_source(workbook):
             {"sample_id": "Sample B", "target_id": "Analyte", "attention_only": True},
         )
         assert (scoped["run_total"], scoped["matched_count"]) == (2, 1)
+        assert scoped["overview"] == overview  # The landing summary is always full-run.
         assert scoped["samples"] == [{"id": "Sample B", "label": "Sample B"}]
         assert len(scoped["all_samples"]) == 2
         _, detail, _ = request("/api/detail", {"item_id": scoped["items"][0]["id"]})

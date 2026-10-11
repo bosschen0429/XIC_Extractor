@@ -84,8 +84,14 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     assert not config.diagnostics_csv.exists()
 
     wb = load_workbook(output_path)
-    assert wb.sheetnames == ["XIC Results", "Targets", "Run Metadata"]
-    assert wb.active.title == "XIC Results"
+    assert wb.sheetnames == [
+        "Overview",
+        "XIC Results",
+        "Targets",
+        "Run Metadata",
+        "Diagnostics",
+    ]
+    assert wb.active.title == "Overview"
     ws = wb["XIC Results"]
     headers = [cell.value for cell in ws[1]]
     assert headers == [
@@ -149,6 +155,32 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     saved = report.payload["items"][0]["details"]
     assert saved["records"][0]["Area"] == 123.45
     assert saved["review_queue"][0]["Why"] == "NL support failed"
+
+
+def test_workbook_retains_complete_diagnostic_text_in_secondary_appendix(tmp_path):
+    from xic_extractor.output.excel_pipeline import write_excel_from_run_output
+
+    config = _config(tmp_path)
+    original = _run_output(with_diagnostics=False)
+    # An event without a matching result key must not disappear into the worklist.
+    diagnostic = DiagnosticRecord(
+        sample_name="Another sample",
+        target_label="Another target",
+        issue="FILE_ERROR",
+        reason="=original diagnostic text; acquisition detail remains attributable",
+    )
+    output = RunOutput(file_results=original.file_results, diagnostics=[diagnostic])
+    path = write_excel_from_run_output(
+        config, [_target("WithNL")], output, output_path=tmp_path / "results.xlsx"
+    )
+    book = load_workbook(path)
+    assert book.active.title == "Overview"
+    sheet = book["Diagnostics"]
+    assert sheet["A2"].value == "Another sample"
+    assert sheet["B2"].value == "Another target"
+    assert sheet["D2"].value.endswith(diagnostic.reason)
+    assert sheet["D2"].data_type != "f"
+    book.close()
 
 
 def _config(

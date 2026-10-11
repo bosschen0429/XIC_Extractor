@@ -59,9 +59,20 @@ A folder containing exactly one XLSX can also be opened; multiple workbooks
 require an explicit file choice. Normal Targeted delivery remains one XLSX:
 review creates no report or sidecar beside it and exposes no new export option.
 
-The current workbook layout contains `XIC Results`, `Targets`, and
-`Run Metadata`, with the `targeted_output` schema marker and workbook layout
-version 2. Legacy workbooks with a separate `Review Queue` remain readable.
+The current workbook has an `Overview` landing sheet and `XIC Results`, with
+`Targets`, `Run Metadata` and nonempty `Diagnostics` as supporting references.
+The `targeted_output` schema marker and workbook layout version 2 bind the saved
+records. Legacy workbooks with a separate `Review Queue` remain readable.
+
+Opening Targeted results first shows a full-batch overview: sample/target/result
+counts, saved counted detections, review workload and the main reasons by target.
+It combines overview and summary rather than opening a detail table immediately.
+Review targets appear first. Buttons open all results or only the review rows;
+click a target to narrow the next level. **整批結果總覽** returns to the full batch,
+independent of the current filters or page. A collapsed quantity summary shows
+per-target median Area and RT range for counted results only. Missing legacy
+count decisions are reported as unknown, never inferred from numeric values.
+
 Choose a target to see one compact sample table: saved Area, RT, counted
 status, review status and its short reason. Select a sample for peak bounds,
 NL evidence and the full recorded explanation; target and method settings

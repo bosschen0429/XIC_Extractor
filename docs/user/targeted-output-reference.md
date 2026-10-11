@@ -1,10 +1,29 @@
 # Targeted Output Reference
 
 The normal completed Targeted run delivers one `xic_results_YYYYMMDD_HHMM.xlsx`
-inside its run directory. Workbook layout 2 has three primary sheets:
-`XIC Results`, `Targets`, and `Run Metadata`. It opens directly on results.
+inside its run directory. Workbook layout 2 opens on `Overview`, followed by
+`XIC Results`. `Targets`, `Run Metadata` and the nonempty `Diagnostics` appendix
+are supporting references, not the first reading layer.
 Inspector can read this layout and legacy workbooks with a separate Review Queue.
 Opening a workbook for review does not modify it or create sidecar files.
+
+## Overview: start here
+
+The combined overview/summary answers three questions before showing row details:
+
+1. How many samples, targets and sample-target results are represented?
+2. How many saved results count as detections, and how many need review?
+3. Which targets should be inspected first, and why?
+
+Targets with review conditions appear first. Links lead to their sample rows in
+`XIC Results`; filter that table by Target or Review. Counted detections and review
+conditions may overlap. Missing legacy detection decisions remain unknown, not
+inferred from Area, NL or review status. No review condition is not a batch pass.
+
+A collapsed row group contains per-target median Area and RT range for counted
+detections only. Expand it when assessing quantities. Reference links at the
+bottom lead to target settings, run metadata and, when present, diagnostic text.
+There is no separate Summary dashboard or duplicated Review Queue table.
 
 ## XIC Results
 
@@ -68,6 +87,13 @@ One row per configured target. Mirrors `targets.csv` with computed columns.
 
 ---
 
+## Diagnostics (when nonempty)
+
+Supporting records with `SampleName`, `Target`, `Issue` and the full supplied
+`Reason`, including records not attached to a result row. The appendix preserves
+traceability; it is not another review verdict. `Review Evidence` is a concise
+row-level guide, not a replacement for this diagnostic text.
+
 ## Run Metadata
 
 Key-value pairs recording settings and provenance for the run.
@@ -93,9 +119,3 @@ order and admitted evidence, rather than requiring external sidecars. They are
 not new decisions or evidence of scientific readiness. Empty inputs do not add
 sheets. `Targets` includes `Sample applicability`; `Run Metadata` includes the
 actual method settings, not a link to a separate manifest.
-
-## Retained decision inputs
-
-Nonempty supplied sample context, identity support and selection approvals are
-retained in hidden input sheets for provenance and decision replay. These are not
-duplicate review dashboards and are not generated when no such input was supplied.
