@@ -1,45 +1,26 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from pathlib import Path
 
 from xic_extractor.acquisition.istd_reference import (
     extract_batch_known_istd_reference,
     read_known_istd_reference,
 )
-from xic_extractor.alignment.backfill_peak_fact import BackfillWindowStrategy
 from xic_extractor.alignment.backfill_peak_fact_provenance import (
     EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
 )
-from xic_extractor.alignment.backfill_scope import BackfillScope
-from xic_extractor.alignment.config import (
-    AlignmentConfig,
-    BackfillXicBackend,
-    OwnerBuildXicBackend,
-)
-from xic_extractor.alignment.drift_evidence import (
-    KnownIstdReference,
-)
 from xic_extractor.alignment.owner_build_route_receipt import (
     _mint_retained_untargeted_cid_nl_route_receipt,
-    _validate_owner_build_xic_backend,
 )
 from xic_extractor.applications.untargeted.publication import publish_untargeted_outputs
-from xic_extractor.configuration.execution_profile import (
-    DEFAULT_ALIGNMENT_WORKER_BACKEND,
-    DEFAULT_ALIGNMENT_WORKERS,
-)
-from xic_extractor.configuration.models import ExtractionConfig
-from xic_extractor.configuration.signal_processing_profile import (
-    DEFAULT_SIGNAL_PROCESSING_PROFILE,
-    DEFAULT_SIGNAL_PROCESSING_PROFILE_ID,
-    SignalProcessingProfile,
-    resolve_signal_processing_profile,
+from xic_extractor.applications.untargeted.request import (
+    UntargetedExecutionContext,
+    UntargetedRequest,
 )
 from xic_extractor.discovery.csv_reader import read_discovery_batch_index
 from xic_extractor.discovery.input_source import DiscoveryInputSource
-from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment.output_levels import (
     AlignmentOutputLevel,
@@ -48,13 +29,8 @@ from xic_extractor.output.alignment.output_levels import (
 from xic_extractor.output.alignment.pipeline_outputs import (
     AlignmentRunOutputs,
     alignment_metadata,
-    output_paths,
 )
-from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.alignment import complete_untargeted_alignment
-from xic_extractor.untargeted_execution.input_planning import (
-    is_supported_alignment_discovery,
-)
 
 
 class AlignmentProcessExecutionError(RuntimeError):
@@ -62,118 +38,38 @@ class AlignmentProcessExecutionError(RuntimeError):
 
 
 def run_untargeted_application(
-    *,
-    discovery_batch_index: Path,
-    raw_dir: Path,
-    dll_dir: Path,
-    output_dir: Path,
-    alignment_config: AlignmentConfig,
-    peak_config: ExtractionConfig,
-    discovery_settings: DiscoverySettings | None = None,
-    signal_processing_profile: SignalProcessingProfile | None = None,
-    output_level: AlignmentOutputLevel = "production",
-    emit_alignment_cells: bool = False,
-    emit_alignment_status_matrix: bool = False,
-    emit_cid_nl_explanation: bool = False,
-    explanation_full_audit: bool = False,
-    explanation_curve_mz_ranges: tuple[tuple[float, float], ...] = (),
-    retain_acquisition_cache: bool = False,
-    acquisition_cache_dir: Path | None = None,
-    emit_alignment_backfill_seed_audit: bool = False,
-    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
-    raw_worker_backend: str = DEFAULT_ALIGNMENT_WORKER_BACKEND,
-    raw_xic_batch_size: int = 1,
-    owner_build_xic_backend: OwnerBuildXicBackend = "raw",
-    owner_backfill_xic_backend: BackfillXicBackend = "raw",
-    owner_backfill_window_strategy: BackfillWindowStrategy = "exact",
-    owner_backfill_superwindow_span_factor: int = 2,
-    sample_column_injection_order: Path | None = None,
-    sample_metadata: tuple[SampleMetadata, ...] | None = None,
-    known_istd_reference_workbook: Path | None = None,
-    targets_csv: Path | None = None,
-    known_istd_reference: KnownIstdReference | None = None,
-    timing_recorder: TimingRecorder | None = None,
-    capture_artifact_fingerprints: bool = False,
-    backfill_scope: BackfillScope = "full-audit",
-    audit_evidence_mode: str = "auto",
-    selected_family_ids: frozenset[str] = frozenset(),
-    selected_family_source: str = "",
-    require_discovery_owner_closure: bool = False,
-    emit_provisional_matrix: bool = False,
-    should_cancel: Callable[[], bool] | None = None,
-    max_partition_jobs: int = 100_000,
+    request: UntargetedRequest,
+    context: UntargetedExecutionContext | None = None,
 ) -> AlignmentRunOutputs:
-    """Publish finalized single-provider CID-NL Alignment owner results."""
-    if (
-        discovery_settings is not None
-        and type(discovery_settings) is not DiscoverySettings
-    ):
-        raise TypeError("discovery_settings must be an exact DiscoverySettings")
-    if discovery_settings is None or not is_supported_alignment_discovery(
-        discovery_settings
-    ):
-        raise ValueError(
-            "run_untargeted_application supports only supported CID-NL "
-            "discovery_settings; "
-            "pure single-provider CID-NL or compatible composite settings; "
-            "use scripts.run_alignment --preset dna_dr with an "
-            "owner-closed discovery batch index"
-        )
-    owner_build_xic_backend = _validate_owner_build_xic_backend(owner_build_xic_backend)
-    resolved_profile = resolve_signal_processing_profile(
-        signal_processing_method=peak_config.signal_processing_method,
-        signal_processing_window_points=peak_config.signal_processing_window_points,
-    )
-    if signal_processing_profile is not None:
-        if not isinstance(signal_processing_profile, SignalProcessingProfile):
-            raise TypeError(
-                "signal_processing_profile must be a SignalProcessingProfile"
-            )
-        if signal_processing_profile != resolved_profile:
-            raise ValueError(
-                "signal_processing_profile conflicts with peak_config canonical fields"
-            )
-    signal_processing_profile = resolved_profile
-    if emit_provisional_matrix and not require_discovery_owner_closure:
-        raise ValueError("provisional matrix emission requires Discovery owner closure")
-    validate_untargeted_application_options(
-        raw_workers=raw_workers,
-        raw_worker_backend=raw_worker_backend,
-        raw_xic_batch_size=raw_xic_batch_size,
-        owner_backfill_xic_backend=owner_backfill_xic_backend,
-        owner_backfill_window_strategy=owner_backfill_window_strategy,
-        owner_backfill_superwindow_span_factor=owner_backfill_superwindow_span_factor,
-        sample_column_injection_order=sample_column_injection_order,
-        backfill_scope=backfill_scope,
-        audit_evidence_mode=audit_evidence_mode,
-        selected_family_ids=selected_family_ids,
-        selected_family_source=selected_family_source,
-        signal_processing_profile=signal_processing_profile,
-    )
-    recorder = timing_recorder or TimingRecorder.disabled("alignment")
+    """Execute and publish a normalized retained CID-NL Alignment request."""
+    signal_processing_profile = request.resolve_processing_profile()
+    context = context or UntargetedExecutionContext()
+    recorder = context.timing_recorder or TimingRecorder.disabled("alignment")
     recorder.record(
         "alignment.run_config",
         elapsed_sec=0.0,
         metrics={
-            "raw_workers": raw_workers,
-            "raw_worker_backend": raw_worker_backend,
-            "raw_xic_batch_size": raw_xic_batch_size,
-            "owner_build_xic_backend": owner_build_xic_backend,
-            "owner_backfill_xic_backend": owner_backfill_xic_backend,
-            "owner_backfill_window_strategy": owner_backfill_window_strategy,
-            "owner_backfill_superwindow_span_factor": (
-                owner_backfill_superwindow_span_factor
+            "raw_workers": request.execution.raw_workers,
+            "raw_worker_backend": request.execution.raw_worker_backend,
+            "raw_xic_batch_size": request.legacy.raw_xic_batch_size,
+            "owner_build_xic_backend": request.legacy.owner_build_xic_backend,
+            "owner_backfill_xic_backend": request.legacy.owner_backfill_xic_backend,
+            "owner_backfill_window_strategy": (
+                request.legacy.owner_backfill_window_strategy
             ),
-            "output_level": output_level,
-            "backfill_scope": backfill_scope,
-            "requested_audit_evidence_mode": audit_evidence_mode,
+            "owner_backfill_superwindow_span_factor": (
+                request.legacy.owner_backfill_superwindow_span_factor
+            ),
+            "output_level": request.publication.output_level,
+            "backfill_scope": request.legacy.backfill_scope,
+            "requested_audit_evidence_mode": request.legacy.audit_evidence_mode,
             "require_discovery_owner_closure": True,
-            "emit_provisional_matrix": emit_provisional_matrix,
+            "emit_provisional_matrix": request.publication.emit_provisional_matrix,
         },
     )
     with recorder.stage("alignment.read_batch_index"):
         batch = read_discovery_batch_index(
-            discovery_batch_index, require_owner_closure=True
+            request.discovery_batch_index, require_owner_closure=True
         )
     with recorder.stage("alignment.read_candidates") as stage:
         candidates_by_sample = DiscoveryInputSource(batch)
@@ -182,58 +78,51 @@ def run_untargeted_application(
             candidates_by_sample.feature_candidate_ids()
         )
     owner_build_route_receipt = _mint_retained_untargeted_cid_nl_route_receipt(
-        configured_backend=owner_build_xic_backend,
+        configured_backend=request.legacy.owner_build_xic_backend,
     )
-    outputs = output_paths(
-        output_dir,
-        output_level=output_level,
-        emit_alignment_cells=emit_alignment_cells,
-        emit_alignment_status_matrix=emit_alignment_status_matrix,
-        emit_alignment_backfill_seed_audit=emit_alignment_backfill_seed_audit,
-        emit_provisional_matrix=emit_provisional_matrix,
-    )
-    _reject_alignment_output_collisions(output_dir=output_dir, outputs=outputs)
-    if known_istd_reference is not None:
-        resolved_known_istd_reference = known_istd_reference
-    elif targets_csv is not None:
+    outputs = request.publication.output_paths(request.output_dir)
+    _reject_alignment_output_collisions(output_dir=request.output_dir, outputs=outputs)
+    if request.known_istd_reference is not None:
+        resolved_known_istd_reference = request.known_istd_reference
+    elif request.targets_csv is not None:
         from xic_extractor.acquisition.raw_paths import existing_raw_paths
         from xic_extractor.configuration.targets import read_istd_targets
 
-        targets = read_istd_targets(targets_csv).targets
+        targets = read_istd_targets(request.targets_csv).targets
         raw_paths_by_sample = existing_raw_paths(
             sample_order=batch.sample_order,
             raw_files=batch.raw_files,
-            raw_dir=raw_dir,
+            raw_dir=request.raw_dir,
         )
         resolved_known_istd_reference = extract_batch_known_istd_reference(
             targets=targets,
             raw_paths_by_sample=raw_paths_by_sample,
-            dll_dir=dll_dir,
-            peak_config=peak_config,
-            source_identifier=str(targets_csv.resolve()),
-            source_sha256=hashlib.sha256(targets_csv.read_bytes()).hexdigest(),
+            dll_dir=request.dll_dir,
+            peak_config=request.peak_config,
+            source_identifier=str(request.targets_csv.resolve()),
+            source_sha256=hashlib.sha256(request.targets_csv.read_bytes()).hexdigest(),
         )
-    elif known_istd_reference_workbook is not None:
+    elif request.known_istd_reference_workbook is not None:
         resolved_known_istd_reference = read_known_istd_reference(
-            known_istd_reference_workbook
+            request.known_istd_reference_workbook
         )
     else:
         resolved_known_istd_reference = None
 
     metadata = alignment_metadata(
-        discovery_batch_index=discovery_batch_index,
-        raw_dir=raw_dir,
-        dll_dir=dll_dir,
-        owner_build_xic_backend=owner_build_xic_backend,
-        owner_backfill_xic_backend=owner_backfill_xic_backend,
-        owner_backfill_window_strategy=owner_backfill_window_strategy,
-        owner_backfill_superwindow_span_factor=owner_backfill_superwindow_span_factor,
-        output_level=output_level,
-        peak_config=peak_config,
+        discovery_batch_index=request.discovery_batch_index,
+        raw_dir=request.raw_dir,
+        dll_dir=request.dll_dir,
+        owner_build_xic_backend=request.legacy.owner_build_xic_backend,
+        owner_backfill_xic_backend=request.legacy.owner_backfill_xic_backend,
+        owner_backfill_window_strategy=request.legacy.owner_backfill_window_strategy,
+        owner_backfill_superwindow_span_factor=request.legacy.owner_backfill_superwindow_span_factor,
+        output_level=request.publication.output_level,
+        peak_config=request.peak_config,
         backfill_scope="full-audit",
         output_scope="full-audit",
         audit_evidence_mode="none",
-        requested_audit_evidence_mode=audit_evidence_mode,
+        requested_audit_evidence_mode=request.legacy.audit_evidence_mode,
         heavy_audit_enabled=False,
         audit_evidence_mode_reason="retained_untargeted_cid_nl_owner",
         require_discovery_owner_closure=True,
@@ -261,7 +150,7 @@ def run_untargeted_application(
                 for key, value in resolved_known_istd_reference.provenance.items()
             }
         )
-    if should_cancel is not None and should_cancel():
+    if context.should_cancel is not None and context.should_cancel():
         raise InterruptedError(
             "Alignment cancelled before retained untargeted execution"
         )
@@ -269,93 +158,39 @@ def run_untargeted_application(
         completed = complete_untargeted_alignment(
             discovery_batch=batch,
             candidates_by_sample=candidates_by_sample,
-            raw_dir=raw_dir,
-            dll_dir=dll_dir,
-            output_dir=output_dir,
-            settings=discovery_settings,
-            peak_config=peak_config,
-            alignment_config=alignment_config,
-            sample_metadata=sample_metadata,
+            raw_dir=request.raw_dir,
+            dll_dir=request.dll_dir,
+            output_dir=request.output_dir,
+            settings=request.discovery_settings,
+            peak_config=request.peak_config,
+            alignment_config=request.alignment_config,
+            sample_metadata=request.sample_metadata,
             known_istd_reference=resolved_known_istd_reference,
             timing_recorder=recorder,
             signal_processing_profile=signal_processing_profile,
-            raw_workers=raw_workers,
-            raw_worker_backend=raw_worker_backend,
-            should_cancel=should_cancel,
+            raw_workers=request.execution.raw_workers,
+            raw_worker_backend=request.execution.raw_worker_backend,
+            should_cancel=context.should_cancel,
             retain_partition_memory=False,
-            retain_acquisition_cache=retain_acquisition_cache,
-            acquisition_cache_dir=acquisition_cache_dir,
-            max_partition_jobs=max_partition_jobs,
+            retain_acquisition_cache=request.execution.retain_acquisition_cache,
+            acquisition_cache_dir=request.execution.acquisition_cache_dir,
+            max_partition_jobs=request.execution.max_partition_jobs,
         )
     except RuntimeError as exc:
         raise AlignmentProcessExecutionError(str(exc)) from exc
     return publish_untargeted_outputs(
         completed,
-        output_dir=output_dir,
+        output_dir=request.output_dir,
         outputs=outputs,
         candidates_by_sample=candidates_by_sample,
-        alignment_config=alignment_config,
-        output_level=output_level,
-        emit_cid_nl_explanation=emit_cid_nl_explanation,
-        explanation_full_audit=explanation_full_audit,
-        explanation_curve_mz_ranges=explanation_curve_mz_ranges,
+        alignment_config=request.alignment_config,
+        policy=request.publication,
         known_istd_reference=resolved_known_istd_reference,
         metadata=metadata,
         timing_recorder=recorder,
-        capture_artifact_fingerprints=capture_artifact_fingerprints,
-        should_cancel=should_cancel,
+        should_cancel=context.should_cancel,
         owner_build_route_receipt=owner_build_route_receipt,
     )
-
-
-def validate_untargeted_application_options(
-    *,
-    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
-    raw_worker_backend: str = DEFAULT_ALIGNMENT_WORKER_BACKEND,
-    raw_xic_batch_size: int = 1,
-    owner_backfill_xic_backend: BackfillXicBackend = "raw",
-    owner_backfill_window_strategy: BackfillWindowStrategy = "exact",
-    owner_backfill_superwindow_span_factor: int = 2,
-    sample_column_injection_order: Path | None = None,
-    backfill_scope: BackfillScope = "full-audit",
-    audit_evidence_mode: str = "auto",
-    selected_family_ids: frozenset[str] = frozenset(),
-    selected_family_source: str = "",
-    signal_processing_profile: SignalProcessingProfile = (
-        DEFAULT_SIGNAL_PROCESSING_PROFILE
-    ),
-) -> None:
-    """Reject legacy Alignment options unsupported by the retained untargeted route."""
-    unsupported: list[str] = []
-    if type(raw_workers) is not int or raw_workers < 1:
-        raise ValueError("raw_workers must be a positive integer")
-    if raw_worker_backend not in {"process", "thread"}:
-        raise ValueError("raw_worker_backend must be 'process' or 'thread'")
-    if raw_xic_batch_size != 1:
-        unsupported.append("raw_xic_batch_size")
-    if owner_backfill_xic_backend != "raw":
-        unsupported.append("owner_backfill_xic_backend")
-    if owner_backfill_window_strategy != "exact":
-        unsupported.append("owner_backfill_window_strategy")
-    if owner_backfill_superwindow_span_factor != 2:
-        unsupported.append("owner_backfill_superwindow_span_factor")
-    if sample_column_injection_order is not None:
-        unsupported.append("sample_column_injection_order")
-    if backfill_scope != "full-audit":
-        unsupported.append("backfill_scope")
-    if audit_evidence_mode not in {"auto", "none"}:
-        unsupported.append("audit_evidence_mode")
-    if selected_family_ids:
-        unsupported.append("selected_family_ids")
-    if selected_family_source.strip():
-        unsupported.append("selected_family_source")
-    if signal_processing_profile.profile_id != DEFAULT_SIGNAL_PROCESSING_PROFILE_ID:
-        unsupported.append("signal_processing_profile")
-    if unsupported:
-        raise ValueError(
-            "pure CID-NL retained route does not support legacy Alignment options: "
-            + ", ".join(unsupported)
-        )
 
 
 # No level writes these any more. They stay owned so that a copy left by an

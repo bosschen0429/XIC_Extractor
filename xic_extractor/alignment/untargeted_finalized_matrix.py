@@ -29,14 +29,8 @@ from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
     ObservedSearchSubject,
 )
-from xic_extractor.peak_detection.physical_peak_evaluation import (
-    validate_bounded_physical_peak_evaluation,
-)
 
 if TYPE_CHECKING:
-    from xic_extractor.alignment.backfill_peak_fact import (
-        BackfillPeakFactObservation,
-    )
     from xic_extractor.alignment.cell_decision.owner import (
         ProductionCellDecision as OwnerProductionCellDecision,
     )
@@ -372,37 +366,6 @@ def _presentation_facts(
                 mz=direct.content.mz,
                 rt=direct.content.integration.rt_apex_min,
             )
-        for repaired in observation.repaired_observations:
-            if not repaired.selected_for_output:
-                continue
-            receipt = repaired.facts
-            if receipt is None:
-                raise ValueError(
-                    "selected repaired observation lacks a physical fact receipt"
-                )
-            physical_evaluation = receipt.physical_evaluation
-            if physical_evaluation is None:
-                raise ValueError(
-                    "selected repaired observation lacks a physical evaluation"
-                )
-            try:
-                validate_bounded_physical_peak_evaluation(physical_evaluation)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    "selected repaired observation has invalid physical evaluation"
-                ) from exc
-            physical_facts = physical_evaluation.facts
-            if physical_facts is None:
-                raise ValueError(
-                    "selected repaired observation lacks complete physical facts"
-                )
-            physical_id = physical_facts.fact_content_id
-            _add_presentation_fact(
-                facts,
-                physical_id=physical_id,
-                mz=repaired.cell.backfill_seed_mz,
-                rt=repaired.cell.apex_rt,
-            )
     if not facts:
         raise ValueError("Matrix row lacks owner-backed Mz/RT observations")
     ordered = tuple(sorted(facts.items()))
@@ -450,26 +413,20 @@ def _aligned_cell(
         raise TypeError("writer cell requires final group-cell evidence")
     status = _cell_status(owner_decision, evidence)
     integration = owner_decision.selected_integration
-    source_id, repaired = _selected_cell_source(
+    source_id = _selected_cell_source(
         owner_decision,
         evidence,
         direct_candidate_ids=direct_candidate_ids,
     )
-    if repaired:
-        request_rt = (
-            repaired.cell.backfill_request_rt_min,
-            repaired.cell.backfill_request_rt_max,
+    query_bounds = {
+        (
+            assessment.content.evaluation_receipt.query_rt_min,
+            assessment.content.evaluation_receipt.query_rt_max,
         )
-    else:
-        query_bounds = {
-            (
-                assessment.content.evaluation_receipt.query_rt_min,
-                assessment.content.evaluation_receipt.query_rt_max,
-            )
-            for assessment in evidence.method_assessments
-            if assessment.content.detector_invocation_id == "untargeted-cid-nl-backfill"
-        }
-        request_rt = query_bounds.pop() if len(query_bounds) == 1 else (None, None)
+        for assessment in evidence.method_assessments
+        if assessment.content.detector_invocation_id == "untargeted-cid-nl-backfill"
+    }
+    request_rt = query_bounds.pop() if len(query_bounds) == 1 else (None, None)
     return AlignedCell(
         sample_stem=owner_decision.subject.canonical_sample.metadata.raw_stem,
         cluster_id=row.feature_family_id,
@@ -489,11 +446,11 @@ def _aligned_cell(
         source_candidate_id=source_id,
         reason=owner_decision.source or owner_decision.variant,
         selected_integration=integration,
-        backfill_seed_mz=(repaired.cell.backfill_seed_mz if repaired else None),
-        backfill_seed_rt=(repaired.cell.backfill_seed_rt if repaired else None),
+        backfill_seed_mz=None,
+        backfill_seed_rt=None,
         backfill_request_rt_min=request_rt[0],
         backfill_request_rt_max=request_rt[1],
-        backfill_request_ppm=(repaired.cell.backfill_request_ppm if repaired else None),
+        backfill_request_ppm=None,
         group_hypothesis_id=row.group_hypothesis_id,
         public_family_id=row.public_family_id,
         group_construction_role=row.group_construction_role,
@@ -518,54 +475,48 @@ def _selected_cell_source(
     evidence: FinalGroupCellObservation,
     *,
     direct_candidate_ids: Mapping[tuple[str, str], str],
-) -> tuple[str | None, BackfillPeakFactObservation | None]:
+) -> str | None:
     if decision.value is None or evidence.ms1_only_backfill_observations:
-        return None, None
+        return None
     direct = tuple(evidence.direct_observations)
-    repaired = tuple(
-        item for item in evidence.repaired_observations if item.selected_for_output
-    )
-    if len(direct) + len(repaired) != 1:
+    if len(direct) != 1:
         raise ValueError("numeric writer cell requires one physical source")
-    if direct:
-        hypothesis_ids = tuple(
-            hypothesis.hypothesis_id for hypothesis in evidence.direct_hypotheses
+    hypothesis_ids = tuple(
+        hypothesis.hypothesis_id for hypothesis in evidence.direct_hypotheses
+    )
+    if len(hypothesis_ids) != 1:
+        raise ValueError(
+            "direct writer cell requires one source PeakHypothesis identity"
         )
-        if len(hypothesis_ids) != 1:
-            raise ValueError(
-                "direct writer cell requires one source PeakHypothesis identity"
+    key = (
+        decision.subject.canonical_sample.identity.sample_identity_id,
+        hypothesis_ids[0],
+    )
+    try:
+        return direct_candidate_ids[key]
+    except KeyError as exc:
+        # A completed recovery can supply direct CID-NL support
+        # outside the closed Discovery candidate universe. Keep its physical
+        # identity and explicit absent candidate instead of inventing one.
+        assessments = evidence.method_assessments
+        if len(assessments) == 1 and (
+            assessments[0].content.method_subject.composition is not None
+            or assessments[0].content.detector_invocation_id
+            == "untargeted-cid-nl-backfill"
+        ):
+            from xic_extractor.alignment.hypothesis_owner_adapter import (
+                validate_cid_nl_assessment_hypothesis_closure,
             )
-        key = (
-            decision.subject.canonical_sample.identity.sample_identity_id,
-            hypothesis_ids[0],
-        )
-        try:
-            return direct_candidate_ids[key], None
-        except KeyError as exc:
-            # A completed recovery can supply direct CID-NL support
-            # outside the closed Discovery candidate universe. Keep its physical
-            # identity and explicit absent candidate instead of inventing one.
-            assessments = evidence.method_assessments
-            if len(assessments) == 1 and (
-                assessments[0].content.method_subject.composition is not None
-                or assessments[0].content.detector_invocation_id
-                == "untargeted-cid-nl-backfill"
-            ):
-                from xic_extractor.alignment.hypothesis_owner_adapter import (
-                    validate_cid_nl_assessment_hypothesis_closure,
-                )
 
-                validate_cid_nl_assessment_hypothesis_closure(
-                    sample=decision.subject.canonical_sample,
-                    assessment=assessments[0],
-                    hypothesis=evidence.direct_hypotheses[0],
-                )
-                return None, None
-            raise ValueError(
-                "direct writer cell lacks its terminal Discovery candidate identity"
-            ) from exc
-    selected = repaired[0]
-    return None, selected
+            validate_cid_nl_assessment_hypothesis_closure(
+                sample=decision.subject.canonical_sample,
+                assessment=assessments[0],
+                hypothesis=evidence.direct_hypotheses[0],
+            )
+            return None
+        raise ValueError(
+            "direct writer cell lacks its terminal Discovery candidate identity"
+        ) from exc
 
 
 def _direct_candidate_ids(
@@ -642,8 +593,6 @@ def _cell_status(
         return "ambiguous_ms1_owner"
     if evidence.direct_observations:
         return "detected"
-    if any(item.selected_for_output for item in evidence.repaired_observations):
-        return "backfilled"
     return "absent"
 
 

@@ -7,10 +7,10 @@ from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.peak_detection import (
     detection_result as output_flow,
 )
-from xic_extractor.peak_detection import (
-    scoring_summary as scoring_flow,
+from xic_extractor.peak_detection.candidate_scoring import (
+    candidate_score_summary,
+    score_candidate,
 )
-from xic_extractor.peak_detection.candidate_scoring import score_candidate
 from xic_extractor.peak_detection.candidate_selection import (
     select_candidate_by_evidence,
 )
@@ -102,20 +102,22 @@ def select_peak_and_area(
             selection_rt = preferred_rt
 
         if scoring_context_builder is not None:
-            scored_candidates = [
-                scoring_flow.score_with_context(
-                    candidate,
-                    scoring_context_builder(candidate),
-                    istd_confidence_note=istd_confidence_note,
-                    evidence_role=evidence_role,
-                    istd_pair=istd_pair,
-                    paired_istd_anchor_rt=paired_istd_anchor_rt,
-                    score_candidate_func=score_candidate_func,
+            scored_candidates = []
+            for candidate in all_candidates:
+                context = scoring_context_builder(candidate)
+                scored_candidates.append(
+                    score_candidate_func(
+                        candidate,
+                        context,
+                        prior_rt=context.rt_prior,
+                        istd_confidence_note=istd_confidence_note,
+                        evidence_role=evidence_role,
+                        istd_pair=istd_pair,
+                        paired_istd_anchor_rt=paired_istd_anchor_rt,
+                    )
                 )
-                for candidate in all_candidates
-            ]
             candidate_scores = tuple(
-                scoring_flow.candidate_score_summary(scored_candidate)
+                candidate_score_summary(scored_candidate)
                 for scored_candidate in scored_candidates
             )
             chosen = evidence_selector(
@@ -155,18 +157,17 @@ def select_peak_and_area(
             relaxed_search_result,
         )
         if scoring_context_builder is not None:
-            scored_relaxed_search = scoring_flow.score_with_context(
+            context = scoring_context_builder(relaxed_candidate)
+            scored_relaxed_search = score_candidate_func(
                 relaxed_candidate,
-                scoring_context_builder(relaxed_candidate),
+                context,
+                prior_rt=context.rt_prior,
                 istd_confidence_note=istd_confidence_note,
                 evidence_role=evidence_role,
                 istd_pair=istd_pair,
                 paired_istd_anchor_rt=paired_istd_anchor_rt,
-                score_candidate_func=score_candidate_func,
             )
-            candidate_scores = (
-                scoring_flow.candidate_score_summary(scored_relaxed_search),
-            )
+            candidate_scores = (candidate_score_summary(scored_relaxed_search),)
             return output_flow.detection_success(
                 relaxed_search_result,
                 relaxed_candidate,

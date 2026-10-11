@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
+import math
+from typing import Any, cast
 
 from xic_extractor.peak_detection.evidence_facts import (
     build_candidate_evidence_facts,
@@ -8,14 +9,11 @@ from xic_extractor.peak_detection.evidence_facts import (
     projected_confidence_from_candidate_facts,
     projected_reason_from_candidate_facts,
 )
+from xic_extractor.peak_detection.models import PeakCandidateScore
 from xic_extractor.peak_detection.peak_scoring_evidence import (
     ConfidenceCap,
     EvidenceSignal,
     score_evidence,
-)
-from xic_extractor.peak_detection.scoring_cwt_support import (
-    CWT_SAME_APEX_SUPPORT_POINTS,
-    has_same_apex_cwt_support,
 )
 from xic_extractor.peak_detection.scoring_metrics import (
     LABEL_LOCAL_SN,
@@ -46,6 +44,9 @@ from xic_extractor.peak_detection.scoring_quality import (
     trace_quality_cap_required,
     trace_quality_severities,
 )
+
+CWT_PROPOSAL_SOURCE = "centwave_cwt"
+CWT_SAME_APEX_SUPPORT_POINTS = 5
 
 
 def score_candidate(
@@ -268,3 +269,46 @@ def _has_cwt_chemical_support(ctx: ScoringContext) -> bool:
     if not ctx.neutral_loss_required:
         return True
     return ctx.ms2_present and ctx.nl_match
+
+
+def has_same_apex_cwt_support(candidate: Any) -> bool:
+    sources = {str(source) for source in getattr(candidate, "proposal_sources", ())}
+    if CWT_PROPOSAL_SOURCE not in sources:
+        return False
+    if not sources.difference({CWT_PROPOSAL_SOURCE}):
+        return False
+    return positive_finite_legacy_cwt_presence_metric(
+        getattr(candidate, "cwt_best_scale", None)
+    ) or positive_finite_legacy_cwt_presence_metric(
+        getattr(candidate, "cwt_ridge_persistence", None)
+    )
+
+
+def positive_finite_legacy_cwt_presence_metric(value: object) -> bool:
+    try:
+        metric = float(cast(Any, value))
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(metric) and metric > 0
+
+
+def candidate_score_summary(scored_candidate: ScoredCandidate) -> PeakCandidateScore:
+    evidence_score = scored_candidate.evidence_score
+    return PeakCandidateScore(
+        candidate=scored_candidate.candidate,
+        confidence=scored_candidate.confidence.value,
+        reason=scored_candidate.reason,
+        raw_score=evidence_score.raw_score if evidence_score is not None else None,
+        support_labels=(
+            evidence_score.support_labels if evidence_score is not None else ()
+        ),
+        concern_labels=(
+            evidence_score.concern_labels if evidence_score is not None else ()
+        ),
+        cap_labels=evidence_score.cap_labels if evidence_score is not None else (),
+        prior_rt=scored_candidate.prior_rt,
+        quality_penalty=scored_candidate.quality_penalty,
+        selection_quality_penalty=scored_candidate.selection_quality_penalty,
+        severities=scored_candidate.severities,
+        evidence_facts=scored_candidate.evidence_facts,
+    )

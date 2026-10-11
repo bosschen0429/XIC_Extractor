@@ -27,15 +27,9 @@ from xic_extractor.peak_detection.observations import (
     physical_peak_observation_integration,
 )
 from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
-    selected_physical_segment,
-)
-from xic_extractor.peak_detection.physical_peak_evaluation import (
-    answer_physical_peak_question,
-    mint_physical_peak_question,
+    answer_selected_physical_candidate,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
-    PHYSICAL_PEAK_NO_SELECTION_POLICY,
-    PHYSICAL_PEAK_POINT_POLICY,
     PhysicalPeakEvaluation,
     PhysicalSegmentUniverse,
     PreparedSignalResult,
@@ -136,30 +130,14 @@ def select_targeted_peak(
         if candidate is not None and candidate_ms2_evidence is not None
         else None
     )
-    selected_segment = selected_physical_segment(candidate, universe)
-    if selected_segment is not None:
-        query_rt_min = selected_segment.apex_rt_min
-    elif universe.state != "available":
-        acquisition_trace = trace_group.primary_trace
-        query_rt_min = (acquisition_trace.rt_min + acquisition_trace.rt_max) / 2
-    else:
-        # A wide context may contain segments outside the selection window.
-        query_rt_min = (selection_rt_min + selection_rt_max) / 2
-    question = mint_physical_peak_question(
-        prepared_result.projection,
+    physical_evaluation = answer_selected_physical_candidate(
+        prepared_result,
         universe,
+        candidate,
         selection_subject_id=target.label,
-        query_rt_min=query_rt_min,
-        selection_policy_version=(
-            PHYSICAL_PEAK_POINT_POLICY
-            if selected_segment is not None
-            else PHYSICAL_PEAK_NO_SELECTION_POLICY
-        ),
-    )
-    physical_evaluation = (
-        candidate_evaluations[candidate]
-        if candidate is not None and candidate_evaluations is not None
-        else answer_physical_peak_question(prepared_result, universe, question)
+        acquisition_rt_window=(trace.rt_min, trace.rt_max),
+        selection_rt_window=(selection_rt_min, selection_rt_max),
+        candidate_evaluations=candidate_evaluations,
     )
     if physical_evaluation.state != "available":
         # The final physical owner withdraws the ranked value and selection authority.

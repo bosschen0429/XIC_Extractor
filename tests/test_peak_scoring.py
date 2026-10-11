@@ -13,7 +13,6 @@ from xic_extractor.peak_detection.scoring_models import (
     ScoringContext,
     confidence_from_total,
 )
-from xic_extractor.peak_detection.scoring_summary import score_with_context
 
 
 @pytest.mark.parametrize(
@@ -665,9 +664,10 @@ def test_score_candidate_penalizes_flagged_candidate_quality(
     if evidence_context is None:
         scored = score_candidate(cand, ctx, prior_rt=10.0, istd_confidence_note=note)
     else:
-        scored = score_with_context(
+        scored = score_candidate(
             cand,
             ctx,
+            prior_rt=ctx.rt_prior,
             istd_confidence_note=note,
             **evidence_context,
         )

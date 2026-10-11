@@ -64,7 +64,9 @@ def _uninitialized(value_type, **values):
     return value
 
 
-def test_batch_request_requires_real_complete_request_scope(tmp_path) -> None:
+def test_batch_request_requires_real_complete_request_scope(
+    tmp_path, monkeypatch
+) -> None:
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"sample-a": "qc"},
@@ -147,7 +149,13 @@ def test_batch_request_requires_real_complete_request_scope(tmp_path) -> None:
         processing_request=request_identity,
         processing_attempt=attempt,
     )
-    workflow_owner._validate_untarget_batch_composition_request(request)
+    with monkeypatch.context() as trusted:
+        trusted.setattr(
+            UntargetWorkflowCompositionRequest,
+            "__post_init__",
+            lambda *_: pytest.fail("batch completion replayed request construction"),
+        )
+        workflow_owner._validate_untarget_batch_composition_request(request)
 
     child_scope = UntargetedSearchScope(
         schema_version=scope.schema_version,

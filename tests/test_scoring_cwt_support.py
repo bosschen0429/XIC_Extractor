@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from xic_extractor.peak_detection.scoring_cwt_support import (
+from xic_extractor.peak_detection.candidate_scoring import (
     has_same_apex_cwt_support,
 )
 

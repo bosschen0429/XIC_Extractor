@@ -14,13 +14,6 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     validate_backfill_conservative_no_request_position,
     validate_backfill_retained_candidate_position,
 )
-from xic_extractor.alignment.backfill.observation_revisit import (
-    ObservationRevisitReceipt,
-)
-from xic_extractor.alignment.backfill_peak_fact import (
-    BackfillPeakFactObservation,
-    validate_backfill_peak_fact_observation,
-)
 from xic_extractor.alignment.cell_group_context import (
     CidNlCellGroupContext,
     CidNlCellGroupSupport,
@@ -31,7 +24,6 @@ from xic_extractor.alignment.cell_observation_records import (
     CellObservationRef,
     OutsideGroupCellRelation,
     _direct_member_integration,
-    _repaired_member_integration,
     canonical_cell_observation_bytes,
     mint_cell_observation_ref,
 )
@@ -87,7 +79,6 @@ _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
 
 FinalCellEvidenceState: TypeAlias = Literal[
     "direct_observation",
-    "repaired_observation",
     "ms1_only_backfill_observation",
     "unresolved",
     "rejected_observation",
@@ -105,13 +96,9 @@ TerminalObservationVariant: TypeAlias = Literal[
 # Exact CrossSample/Backfill handoff closure
 # ---------------------------------------------------------------------------
 #
-# The first implementation of this module exposed a final-cell mint function
-# whose caller supplied group, terminal, provider, and evidence arguments.  A
-# final cell is a correlation boundary, so those arguments are not an owner
-# contract: the only admissible inputs are the CrossSample handoff and the
-# owner-minted predecessor cell population.  The definitions below intentionally
-# supersede the legacy names above while keeping the low-level
-# ``mint_cell_observation_ref`` owner API intact.
+# A final cell is a correlation boundary. Its inputs are the exact CrossSample
+# handoff and owner-minted predecessor/completed Backfill cell evidence, not
+# caller-assembled group, terminal, provider, or repair arguments.
 
 
 FinalCellEvidenceAggregate: TypeAlias = FinalCellEvidenceState | Literal["mixed"]
@@ -135,8 +122,6 @@ class FinalGroupCellObservation:
     position_associations: tuple[CrossSampleCoveragePositionAssociation, ...]
     predecessor_cells: tuple[CellObservationRef, ...]
     coverage_terminals: tuple[BackfillAttemptTerminal, ...]
-    repair_receipts: tuple[ObservationRevisitReceipt, ...]
-    repaired_observations: tuple[BackfillPeakFactObservation, ...]
     evidence_states: tuple[FinalCellEvidenceState, ...]
     basis_bytes: bytes
     backfill_cell: CellObservationRef | None = None
@@ -203,16 +188,11 @@ class FinalGroupCellObservation:
             for hypothesis in self.direct_hypotheses
             if hypothesis.integration is not None
         )
-        repaired = tuple(
-            observation.facts.integration
-            for observation in self.repaired_observations
-            if observation.facts is not None
-        )
         ms1_only = tuple(
             observation.content.integration
             for observation in self.ms1_only_backfill_observations
         )
-        return direct + repaired + ms1_only
+        return direct + ms1_only
 
     @property
     def ms1_only_backfill_observations(self) -> tuple[PeakObservationRef, ...]:
@@ -251,22 +231,11 @@ class FinalGroupCellObservation:
             )
         )
 
-    @property
-    def repair_provenance(
-        self,
-    ) -> tuple[
-        tuple[ObservationRevisitReceipt, ...],
-        tuple[BackfillPeakFactObservation, ...],
-    ]:
-        return self.repair_receipts, self.repaired_observations
-
 
 def compose_final_group_cell_observation_population(
     *,
     handoff: CrossSampleAssociationLineageHandoff,
     predecessor_cells: Sequence[CellObservationRef],
-    repair_receipts: Sequence[ObservationRevisitReceipt] = (),
-    repaired_observations: Sequence[BackfillPeakFactObservation] = (),
     backfill_cells: Sequence[CellObservationRef] = (),
 ) -> tuple[FinalGroupCellObservation, ...]:
     """Compose one exact final closure for every final Group × sample key.
@@ -281,20 +250,10 @@ def compose_final_group_cell_observation_population(
         raise CellObservationContractError(
             "predecessor cells must be a finite owner-sealed sequence"
         )
-    if isinstance(repair_receipts, (str, bytes)) or isinstance(
-        repaired_observations, (str, bytes)
-    ):
-        raise CellObservationContractError(
-            "repair evidence must be finite owner-sealed sequences"
-        )
     sources = tuple(predecessor_cells)
-    receipts = tuple(repair_receipts)
-    observations = tuple(repaired_observations)
     return _compose_final_group_cell_observation_population(
         handoff=handoff,
         predecessor_cells=sources,
-        repair_receipts=receipts,
-        repaired_observations=observations,
         backfill_cells=tuple(backfill_cells),
     )
 
@@ -303,8 +262,6 @@ def _compose_final_group_cell_observation_population(
     *,
     handoff: CrossSampleAssociationLineageHandoff,
     predecessor_cells: tuple[CellObservationRef, ...],
-    repair_receipts: tuple[ObservationRevisitReceipt, ...],
-    repaired_observations: tuple[BackfillPeakFactObservation, ...],
     backfill_cells: tuple[CellObservationRef, ...] = (),
 ) -> tuple[FinalGroupCellObservation, ...]:
     request_id = _validate_final_handoff(handoff)
@@ -341,21 +298,6 @@ def _compose_final_group_cell_observation_population(
                 ),
             )
             checked_facts.add(id(proof.decision.group_facts))
-    receipt_by_position, observation_by_receipt = _index_repair_inputs(
-        repair_receipts,
-        repaired_observations,
-        positions=positions,
-        final_population=handoff.final_population,
-        processing_request_id=request_id,
-    )
-    _validate_handoff_repair_closure(
-        handoff=handoff,
-        positions=positions,
-        repair_receipts=repair_receipts,
-        repaired_observations=repaired_observations,
-        receipt_by_position=receipt_by_position,
-        observation_by_receipt=observation_by_receipt,
-    )
     terminal_lists: dict[str, list[BackfillAttemptTerminal]] = {}
     for terminal in handoff.coverage.terminals:
         terminal_lists.setdefault(terminal.position_id, []).append(terminal)
@@ -387,32 +329,6 @@ def _compose_final_group_cell_observation_population(
             coverage_lanes = _canonical_terminal_subset(
                 associations,
                 terminals_by_position,
-            )
-            receipts = tuple(
-                sorted(
-                    (
-                        receipt
-                        for association in associations
-                        for receipt in receipt_by_position.get(
-                            association.position.position_id,
-                            (),
-                        )
-                    ),
-                    key=lambda item: item.receipt_id,
-                )
-            )
-            repaired = tuple(
-                sorted(
-                    (
-                        observation
-                        for receipt in receipts
-                        for observation in observation_by_receipt.get(
-                            receipt.receipt_id,
-                            (),
-                        )
-                    ),
-                    key=lambda item: item.work_unit_key,
-                )
             )
             states: tuple[FinalCellEvidenceState, ...]
             recovered = backfilled_by_key.pop(
@@ -467,21 +383,6 @@ def _compose_final_group_cell_observation_population(
                         coverage_terminals=terminals_by_position[
                             association.position.position_id
                         ],
-                        repair_receipts=receipt_by_position.get(
-                            association.position.position_id,
-                            (),
-                        ),
-                        repaired_observations=tuple(
-                            observation
-                            for receipt in receipt_by_position.get(
-                                association.position.position_id,
-                                (),
-                            )
-                            for observation in observation_by_receipt.get(
-                                receipt.receipt_id,
-                                (),
-                            )
-                        ),
                         final_group=group,
                         canonical_sample=sample,
                         processing_request_id=request_id,
@@ -497,8 +398,6 @@ def _compose_final_group_cell_observation_population(
                     position_associations=associations,
                     predecessor_cells=source_lanes,
                     coverage_terminals=coverage_lanes,
-                    repair_receipts=receipts,
-                    repaired_observations=repaired,
                     evidence_states=states,
                     backfill_cell=recovered,
                 )
@@ -554,19 +453,9 @@ def validate_final_group_cell_observation_population(
     source_cells = tuple(
         cell for item in observations for cell in item.predecessor_cells
     )
-    receipts = tuple(
-        receipt for item in observations for receipt in item.repair_receipts
-    )
-    repaired = tuple(
-        observation
-        for item in observations
-        for observation in item.repaired_observations
-    )
     expected = compose_final_group_cell_observation_population(
         handoff=handoff,
         predecessor_cells=source_cells,
-        repair_receipts=receipts,
-        repaired_observations=repaired,
         backfill_cells=tuple(
             item.backfill_cell
             for item in observations
@@ -616,6 +505,8 @@ def _validate_final_handoff(
         raise CellObservationContractError(
             "handoff final population is not the exact retained CrossSample receipt"
         )
+    if not handoff.final_population:
+        raise CellObservationContractError("handoff final population is empty")
     final_groups = {id(group) for group in handoff.final_population}
     epoch_groups = {id(group) for group in handoff.coverage.epoch.group_identities}
     epoch_samples = {id(sample) for sample in handoff.coverage.epoch.samples}
@@ -722,143 +613,6 @@ def _validate_source_cell(
         )
 
 
-def _index_repair_inputs(
-    repair_receipts: Sequence[ObservationRevisitReceipt],
-    repaired_observations: Sequence[BackfillPeakFactObservation],
-    *,
-    positions: tuple[BackfillPlanningPosition, ...],
-    final_population: tuple[CrossSampleGroupIdentity, ...],
-    processing_request_id: str,
-) -> tuple[
-    dict[str, tuple[ObservationRevisitReceipt, ...]],
-    dict[str, tuple[BackfillPeakFactObservation, ...]],
-]:
-    if isinstance(repair_receipts, (str, bytes)) or isinstance(
-        repaired_observations,
-        (str, bytes),
-    ):
-        raise CellObservationContractError(
-            "repair evidence must be finite owner-sealed sequences"
-        )
-    receipts = tuple(repair_receipts)
-    observations = tuple(repaired_observations)
-    if any(type(receipt) is not ObservationRevisitReceipt for receipt in receipts):
-        raise CellObservationContractError(
-            "repair population contains a non-owner receipt"
-        )
-    if len({receipt.receipt_id for receipt in receipts}) != len(receipts):
-        raise CellObservationContractError("repair population duplicates a receipt")
-    if any(
-        type(observation) is not BackfillPeakFactObservation
-        for observation in observations
-    ):
-        raise CellObservationContractError(
-            "repair population contains a non-owner Backfill observation"
-        )
-    for observation in observations:
-        try:
-            validate_backfill_peak_fact_observation(observation)
-        except (AttributeError, TypeError, ValueError) as exc:
-            raise CellObservationContractError(
-                f"repaired observation is not revalidatable: {exc}"
-            ) from exc
-    if len({observation.work_unit_key for observation in observations}) != len(
-        observations
-    ):
-        raise CellObservationContractError(
-            "repair population duplicates a Backfill work unit"
-        )
-    position_by_id = {position.position_id: position for position in positions}
-    receipts_by_position: dict[str, list[ObservationRevisitReceipt]] = {}
-    for receipt in receipts:
-        subject = receipt.subject
-        if subject.predecessor_group.processing_request_id != processing_request_id:
-            raise CellObservationContractError(
-                "repair receipt crossed its processing request"
-            )
-        matching_positions = tuple(
-            position
-            for position in positions
-            if position.sample.identity.sample_identity_id
-            == subject.sample_identity.identity.sample_identity_id
-            and subject.predecessor_group == position.group_identity
-        )
-        if len(matching_positions) != 1:
-            raise CellObservationContractError(
-                "repair receipt does not bind exactly one coverage position"
-            )
-        receipts_by_position.setdefault(
-            matching_positions[0].position_id,
-            [],
-        ).append(receipt)
-    observation_by_receipt: dict[str, list[BackfillPeakFactObservation]] = {}
-    for observation in observations:
-        matching_receipts = tuple(
-            receipt
-            for receipt in receipts
-            if observation.logical_request == receipt.subject.logical_request
-            and observation.request_identity == receipt.subject.request_identity
-            and observation.cell.group_hypothesis_id
-            == receipt.subject.predecessor_group.group_hypothesis_id
-            and observation.cell.sample_stem == receipt.sample_stem
-        )
-        if len(matching_receipts) != 1:
-            raise CellObservationContractError(
-                "repaired observation does not bind exactly one repair receipt"
-            )
-        receipt = matching_receipts[0]
-        if receipt.outcome != "repaired":
-            raise CellObservationContractError(
-                "a no-repair receipt cannot carry repaired observation facts"
-            )
-        observation_by_receipt.setdefault(receipt.receipt_id, []).append(observation)
-    for receipt in receipts:
-        matched_observations = observation_by_receipt.get(receipt.receipt_id, ())
-        if receipt.outcome == "repaired" and len(matched_observations) != 1:
-            raise CellObservationContractError(
-                "repaired receipt requires exactly one live Backfill observation"
-            )
-        if receipt.outcome == "no_repair" and matched_observations:
-            raise CellObservationContractError(
-                "no-repair receipt carries contradictory repaired observation facts"
-            )
-    if any(position_id not in position_by_id for position_id in receipts_by_position):
-        raise CellObservationContractError(
-            "repair receipt references an extra position"
-        )
-    # ``final_population`` is consumed here to make the owner boundary explicit:
-    # a repair is only accepted as evidence for a CrossSample successor that is
-    # actually present in the handoff; no successor is minted or inferred here.
-    if not final_population:
-        raise CellObservationContractError("handoff final population is empty")
-    return (
-        {
-            key: tuple(sorted(value, key=lambda item: item.receipt_id))
-            for key, value in receipts_by_position.items()
-        },
-        {
-            key: tuple(sorted(value, key=lambda item: item.work_unit_key))
-            for key, value in observation_by_receipt.items()
-        },
-    )
-
-
-def _validate_handoff_repair_closure(
-    *,
-    handoff: CrossSampleAssociationLineageHandoff,
-    positions: tuple[BackfillPlanningPosition, ...],
-    repair_receipts: Sequence[ObservationRevisitReceipt],
-    repaired_observations: Sequence[BackfillPeakFactObservation],
-    receipt_by_position: dict[str, tuple[ObservationRevisitReceipt, ...]],
-    observation_by_receipt: dict[str, tuple[BackfillPeakFactObservation, ...]],
-) -> None:
-    """Reject the retired grouping-time repair injection path."""
-    if repair_receipts or repaired_observations:
-        raise CellObservationContractError(
-            "repair observations must be closed by bounded Backfill before finalization"
-        )
-
-
 def _canonical_terminal_subset(
     associations: tuple[CrossSampleCoveragePositionAssociation, ...],
     terminals_by_position: dict[str, tuple[BackfillAttemptTerminal, ...]],
@@ -892,8 +646,6 @@ def _derive_lane_evidence_state(
     association: CrossSampleCoveragePositionAssociation,
     source_cell: CellObservationRef | None,
     coverage_terminals: tuple[BackfillAttemptTerminal, ...],
-    repair_receipts: tuple[ObservationRevisitReceipt, ...],
-    repaired_observations: tuple[BackfillPeakFactObservation, ...],
     final_group: CrossSampleGroupIdentity,
     canonical_sample: ResolvedCanonicalSampleIdentity,
     processing_request_id: str,
@@ -905,8 +657,6 @@ def _derive_lane_evidence_state(
             or association.position.sample is not canonical_sample
             or association.final_successor is not final_group
             or coverage_terminals
-            or repair_receipts
-            or repaired_observations
         ):
             raise CellObservationContractError(
                 "missing source cell requires exact no-input coverage"
@@ -939,14 +689,6 @@ def _derive_lane_evidence_state(
         raise CellObservationContractError(
             "CrossSample successor dropped the exact source member evidence"
         )
-    if len(repair_receipts) > 1:
-        raise CellObservationContractError(
-            "one exact predecessor position has multiple repair receipts"
-        )
-    if len(repaired_observations) > 1:
-        raise CellObservationContractError(
-            "one exact repair receipt has multiple live observations"
-        )
     assessment = source_cell.method_assessment
     technical_state = assessment.content.technical_state
     method_result = assessment.content.method_result
@@ -961,14 +703,12 @@ def _derive_lane_evidence_state(
             source_member is not None
             or source_cell.peak_observation is not None
             or source_cell.peak_hypothesis is not None
-            or repair_receipts
-            or repaired_observations
             or coverage_terminals
             or association.position.planning_state != "not_planned"
             or association.position.planning_reason != "local_owner_not_supersedable"
         ):
             raise CellObservationContractError(
-                "outside-group lane cannot supply local observation or repair evidence"
+                "outside-group lane cannot supply local observation evidence"
             )
         # A merged sibling may supply a direct lane; this lane adds no value.
         return "not_searched"
@@ -976,14 +716,9 @@ def _derive_lane_evidence_state(
         association.position, source_cell=source_cell
     )
     if no_request_proof is not None:
-        if (
-            coverage_terminals
-            or repair_receipts
-            or repaired_observations
-            or final_member is not None
-        ):
+        if coverage_terminals or final_member is not None:
             raise CellObservationContractError(
-                "conservative no-request lane cannot carry physical or repair evidence"
+                "conservative no-request lane cannot carry physical evidence"
             )
         return (
             "not_searched"
@@ -997,42 +732,11 @@ def _derive_lane_evidence_state(
     if validate_backfill_retained_candidate_position(
         association.position, source_cell=source_cell
     ):
-        if coverage_terminals or repair_receipts or repaired_observations:
+        if coverage_terminals:
             raise CellObservationContractError(
-                "retained unresolved candidates cannot claim acquisition or repair"
+                "retained unresolved candidates cannot claim acquisition"
             )
         return "unresolved"
-    if repair_receipts:
-        receipt = repair_receipts[0]
-        if receipt.outcome == "repaired":
-            if not repaired_observations:
-                raise CellObservationContractError(
-                    "repaired receipt lacks its exact live observation"
-                )
-            if final_member is None:
-                raise CellObservationContractError(
-                    "repair evidence cannot create CrossSample membership"
-                )
-            _repaired_member_integration(
-                member=final_member,
-                group=final_group,
-                canonical_sample=canonical_sample,
-                repair_receipt=receipt,
-                repaired_observation=repaired_observations[0],
-            )
-            if source_cell.peak_observation is not None or source_cell.peak_hypothesis:
-                raise CellObservationContractError(
-                    "one evidence lane cannot claim direct and repaired observation"
-                )
-            if method_result == "REJECT":
-                raise CellObservationContractError(
-                    "repaired evidence cannot override a rejected method lane"
-                )
-            return "repaired_observation"
-        if repaired_observations:
-            raise CellObservationContractError(
-                "no-repair lane contains contradictory live observation facts"
-            )
     retained_local_owner = (
         association.position.planning_state == "not_planned"
         and association.position.planning_reason == "retained_local_owner"
@@ -1153,8 +857,6 @@ def _mint_final_group_cell_observation(
     position_associations: tuple[CrossSampleCoveragePositionAssociation, ...],
     predecessor_cells: tuple[CellObservationRef, ...],
     coverage_terminals: tuple[BackfillAttemptTerminal, ...],
-    repair_receipts: tuple[ObservationRevisitReceipt, ...],
-    repaired_observations: tuple[BackfillPeakFactObservation, ...],
     evidence_states: tuple[FinalCellEvidenceState, ...],
     backfill_cell: CellObservationRef | None = None,
 ) -> FinalGroupCellObservation:
@@ -1166,8 +868,6 @@ def _mint_final_group_cell_observation(
         position_associations=position_associations,
         predecessor_cells=predecessor_cells,
         coverage_terminals=coverage_terminals,
-        repair_receipts=repair_receipts,
-        repaired_observations=repaired_observations,
         evidence_states=evidence_states,
         backfill_cell=backfill_cell,
     )
@@ -1180,8 +880,6 @@ def _mint_final_group_cell_observation(
         position_associations=position_associations,
         predecessor_cells=predecessor_cells,
         coverage_terminals=coverage_terminals,
-        repair_receipts=repair_receipts,
-        repaired_observations=repaired_observations,
         evidence_states=evidence_states,
         basis_bytes=basis,
         backfill_cell=backfill_cell,
@@ -1199,8 +897,6 @@ def _final_closure_basis(
     position_associations: tuple[CrossSampleCoveragePositionAssociation, ...],
     predecessor_cells: tuple[CellObservationRef, ...],
     coverage_terminals: tuple[BackfillAttemptTerminal, ...],
-    repair_receipts: tuple[ObservationRevisitReceipt, ...],
-    repaired_observations: tuple[BackfillPeakFactObservation, ...],
     evidence_states: tuple[FinalCellEvidenceState, ...],
     backfill_cell: CellObservationRef | None = None,
 ) -> dict[str, object]:
@@ -1263,19 +959,9 @@ def _final_closure_basis(
             for cell in predecessor_cells
         ],
         "coverage_terminals": [item.terminal_id for item in coverage_terminals],
-        "repair_receipts": [item.receipt_id for item in repair_receipts],
-        "repaired_observations": [
-            {
-                "work_unit_key": item.work_unit_key,
-                "fact_content_id": (
-                    None
-                    if item.physical_evaluation is None
-                    or item.physical_evaluation.facts is None
-                    else item.physical_evaluation.facts.fact_content_id
-                ),
-            }
-            for item in repaired_observations
-        ],
+        # Keep the canonical identity encoding stable for existing artifacts.
+        "repair_receipts": [],
+        "repaired_observations": [],
         "evidence_states": list(evidence_states),
     }
     if backfill_cell is not None:
@@ -1368,28 +1054,6 @@ def _require_same_refs(
     ):
         raise CellObservationContractError(
             "final cell did not retain exact coverage terminal references"
-        )
-    if any(
-        actual_ref is not expected_ref
-        for actual_ref, expected_ref in zip(
-            actual.repair_receipts,
-            expected.repair_receipts,
-            strict=True,
-        )
-    ):
-        raise CellObservationContractError(
-            "final cell did not retain exact repair receipt references"
-        )
-    if any(
-        actual_ref is not expected_ref
-        for actual_ref, expected_ref in zip(
-            actual.repaired_observations,
-            expected.repaired_observations,
-            strict=True,
-        )
-    ):
-        raise CellObservationContractError(
-            "final cell did not retain exact repaired observation references"
         )
 
 

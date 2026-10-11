@@ -204,8 +204,10 @@ contract 沒有 ignore，並包含間接依賴。
   Source adapters own method-specific record/schema interpretation; its public
   API, selection, and renderer remain method-neutral. Scientific/core packages
   must not import or invoke the Inspector.
-- `applications.untargeted.application.run_untargeted_application` prepares
-  inputs, rejects output collisions before acquisition, and invokes retained
+- `applications.untargeted.application.run_untargeted_application` accepts
+  one `UntargetedRequest` and optional run-scoped `UntargetedExecutionContext`,
+  resolves canonical config dependencies once at entry, rejects output collisions
+  before acquisition, and invokes retained
   CID-NL execution in `untargeted_execution/`. Its publication boundary consumes the
   completed typed batch, delegates Matrix publishing to `output/alignment/`,
   and closes its private stores on every exit;
@@ -213,6 +215,11 @@ contract 沒有 ignore，並包含間接依賴。
   CLI and HTML workbench receive only
   published output paths and durable evidence locators. Alignment owns neither
   this application lifecycle nor a duplicate runtime or writer transaction.
+  The request reuses `AlignmentConfig`, `ExtractionConfig`, and `DiscoverySettings`;
+  resource options belong to `configuration.execution_profile`, public artifact
+  options to `applications.untargeted.publication`, and retained advanced overrides
+  to `applications.untargeted.request`. Callers supply intent, not flattened execution
+  and publication kwargs.
 - Retained CID-NL execution partitions complete subjects across the sample cohort
   under one runtime attempt. It adapts method acquisition and composition to the
   generic execution engine in `execution/`. The engine's private result store
@@ -316,6 +323,14 @@ candidates directly to selection, with preferred-RT recovery restricted to that
 set. Discovery, capture, QC, Alignment Backfill, CID-NL acquisition and ISTD
 reference use the full integration entry. The public
 `xic_extractor.signal_processing.find_peak_and_area` remains the integration entry.
+
+Targeted selection retains target policy and consumes the completed selected
+physical answer from `physical_peak_candidate_adapter.answer_selected_physical_candidate`.
+The adapter owns candidate-to-segment binding, no-selection questions and reuse
+of prepared candidate evaluations; callers do not mint another question for an
+answer already computed. `candidate_scoring` owns CWT support and score-summary
+projection; selection calls the configured scorer directly and preserves its
+override and context RT prior.
 
 ## Module Naming
 

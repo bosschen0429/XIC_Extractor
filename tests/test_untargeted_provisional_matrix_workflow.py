@@ -47,8 +47,9 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
         ),
     )
 
-    def fake_alignment(**kwargs):
-        captured["alignment"] = kwargs
+    def fake_alignment(request, context=None):
+        captured["alignment"] = request
+        captured["alignment_context"] = context
         return AlignmentRunOutputs(
             owner_backfill_peak_fact_provenance_tsv=physical_provenance,
             provisional_matrix_tsv=provisional_matrix,
@@ -82,18 +83,17 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
     assert discovery["timing_recorder"] is timing_recorder
     assert discovery["max_workers"] == raw_workers
     alignment = captured["alignment"]
-    assert isinstance(alignment, dict)
-    assert alignment["discovery_batch_index"] == discovery_index
-    assert alignment["discovery_settings"] is discovery_settings
-    assert alignment["backfill_scope"] == "full-audit"
-    assert alignment["selected_family_ids"] == frozenset()
-    assert alignment["emit_provisional_matrix"] is True
-    assert alignment["require_discovery_owner_closure"] is True
-    assert alignment["raw_workers"] == raw_workers
-    assert alignment["raw_xic_batch_size"] == 1
-    assert alignment["capture_artifact_fingerprints"] is True
-    assert "signal_processing_profile" not in alignment
-    peak_config = alignment["peak_config"]
+    assert isinstance(alignment, workflow.UntargetedRequest)
+    assert alignment.discovery_batch_index == discovery_index
+    assert alignment.discovery_settings is discovery_settings
+    assert alignment.legacy.backfill_scope == "full-audit"
+    assert alignment.legacy.selected_family_ids == frozenset()
+    assert alignment.publication.emit_provisional_matrix is True
+    assert alignment.legacy.require_discovery_owner_closure is True
+    assert alignment.execution.raw_workers == raw_workers
+    assert alignment.legacy.raw_xic_batch_size == 1
+    assert alignment.publication.capture_artifact_fingerprints is True
+    peak_config = alignment.peak_config
     resolved_profile = resolve_signal_processing_profile(
         signal_processing_method=getattr(
             peak_config,
@@ -109,7 +109,6 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
     assert resolved_profile == DEFAULT_SIGNAL_PROCESSING_PROFILE
     assert resolved_profile.method == "gaussian"
     assert resolved_profile.window_points == 15
-    assert "precursor_mz" not in alignment
     assert result.discovery_index == discovery_index
     assert result.alignment_outputs.provisional_matrix_tsv == provisional_matrix
     assert (

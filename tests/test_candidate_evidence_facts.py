@@ -11,6 +11,10 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.peak_detection.baseline import asls_baseline, asls_baseline_on_rt
+from xic_extractor.peak_detection.candidate_scoring import (
+    candidate_score_summary,
+    score_candidate,
+)
 from xic_extractor.peak_detection.evidence_facts import (
     build_candidate_evidence_facts,
     decision_semantics_from_candidate_facts,
@@ -46,10 +50,6 @@ from xic_extractor.peak_detection.physical_peak_identity import (
 )
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakQuestion
 from xic_extractor.peak_detection.scoring_models import ScoringContext
-from xic_extractor.peak_detection.scoring_summary import (
-    candidate_score_summary,
-    score_with_context,
-)
 
 
 def test_trace_window_evidence_uses_shared_gaussian15_own_max_trace() -> None:
@@ -787,9 +787,10 @@ def test_paired_istd_anchor_delta_is_typed_rt_evidence() -> None:
         residual_mad=5.0,
     )
 
-    scored = score_with_context(
+    scored = score_candidate(
         candidate,
         ctx,
+        prior_rt=ctx.rt_prior,
         istd_confidence_note="paired ISTD confirmed",
         evidence_role="Analyte",
         istd_pair="ISTD",

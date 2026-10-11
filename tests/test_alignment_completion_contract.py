@@ -19,6 +19,7 @@ from xic_extractor.alignment.completion import (
     CaptureWorkflowArguments,
     TargetWorkflowAdapter,
     TargetWorkflowRequest,
+    UntargetWorkflowAdapter,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.peak_detection.capture import capture_peak_hypotheses
@@ -133,11 +134,24 @@ def test_public_workflow_carriers_reject_non_exact_mutable_inputs() -> None:
             alignment_config=AlignmentConfig(),
         )
 
+    with pytest.raises(
+        workflow_owner.AlignmentWorkflowContractError,
+        match="Untarget adapter requires closed cell coverage",
+    ):
+        UntargetWorkflowAdapter(
+            capture_inputs=(),
+            predecessor_cell_observations=(),
+            sample_assessments=(),
+        )
+
 
 @pytest.mark.parametrize(
     "mismatch",
     [
         "capture-subset",
+        "capture-order",
+        "crossed-request",
+        "crossed-attempt",
         "missing-assessment",
         "crossed-sample",
         "unknown-sample",
@@ -171,6 +185,17 @@ def test_workflow_rejects_incomplete_or_crossed_owner_population(
         processing_request=fixture.request,
         processing_attempt=fixture.attempt,
     )
+    if mismatch in {"crossed-request", "crossed-attempt"}:
+        (tmp_path / "other").mkdir()
+        other = build_processing_identity_no_raw_fixture(
+            tmp_path / "other", sample_stems=("Other",)
+        )
+        if mismatch == "crossed-request":
+            request = replace(request, processing_request=other.request)
+        else:
+            request = replace(request, processing_attempt=other.attempt)
+    if mismatch == "capture-order":
+        captures = tuple(reversed(captures))
     assessments = tuple(
         sorted(
             zip(fixture.samples, spine.assessments, strict=True),
@@ -218,9 +243,13 @@ def test_workflow_rejects_incomplete_or_crossed_owner_population(
 
     with pytest.raises(
         workflow_owner.AlignmentWorkflowContractError,
-        match="declared candidate order"
-        if mismatch == "capture-subset"
-        else "exact scope samples",
+        match=(
+            "declared candidate order"
+            if mismatch in {"capture-subset", "capture-order"}
+            else "crossed processing request or attempt"
+            if mismatch in {"crossed-request", "crossed-attempt"}
+            else "exact scope samples"
+        ),
     ):
         production_workflow._complete_retained_target(
             request,
