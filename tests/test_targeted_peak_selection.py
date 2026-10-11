@@ -56,7 +56,7 @@ def test_build_production_peak_hypotheses_maps_selected_ms2_only(tmp_path) -> No
         sample_name="SampleA",
         target=target,
         peak_result=peak_result,
-        selected_candidate_ms2_evidence=_ms2_evidence(),
+        candidate_ms2_evidence={selected: _ms2_evidence()},
         rt=rt,
         intensity=intensity,
         trace_group=trace_group,
@@ -122,17 +122,19 @@ def test_build_production_peak_hypotheses_passes_no_ms2_detection_policy(
             sample_name="SampleA",
             target=_target(),
             peak_result=peak_result,
-            selected_candidate_ms2_evidence=CandidateMS2Evidence(
-                ms2_present=False,
-                nl_match=False,
-                nl_status="NO_MS2",
-                trigger_scan_count=0,
-                strict_nl_scan_count=0,
-                best_loss_ppm=None,
-                best_scan_rt=None,
-                best_product_base_ratio=None,
-                alignment_source="none",
-            ),
+            candidate_ms2_evidence={
+                candidate: CandidateMS2Evidence(
+                    ms2_present=False,
+                    nl_match=False,
+                    nl_status="NO_MS2",
+                    trigger_scan_count=0,
+                    strict_nl_scan_count=0,
+                    best_loss_ppm=None,
+                    best_scan_rt=None,
+                    best_product_base_ratio=None,
+                    alignment_source="none",
+                )
+            },
         )
     )
 
@@ -325,6 +327,150 @@ def test_hypothesis_policy_falls_back_on_unapproved_successor_diff(
     )
 
 
+@pytest.mark.parametrize(
+    "sample_name,shift,scale", [("SampleA_RNA", 0.0, 1.0), ("SampleB_RNA", 0.2, 1.7)]
+)
+def test_successor_handoff_keeps_identity_and_physical_measurement_together(
+    tmp_path, sample_name, shift, scale
+) -> None:
+    from xic_extractor.configuration.signal_processing_profile import (
+        resolve_signal_processing_profile,
+    )
+    from xic_extractor.extraction.result_assembly import build_extraction_result
+    from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
+        physical_candidates_result,
+    )
+    from xic_extractor.peak_detection.physical_peak_evaluation import (
+        enumerate_physical_segment_universe,
+        prepare_physical_signal,
+    )
+
+    config = _config(tmp_path)
+    target = replace(
+        _target(sample_applicability="rna_containing"), rt_min=7.0, rt_max=10.5
+    )
+    rt = np.linspace(7.0, 10.5, 701)
+    intensity = 30.0 + scale * (
+        1000.0 * np.exp(-0.5 * ((rt - (8.0 + shift)) / 0.08) ** 2)
+        + 3000.0 * np.exp(-0.5 * ((rt - (9.0 + shift)) / 0.09) ** 2)
+    )
+    prepared = prepare_physical_signal(
+        rt, intensity, profile=resolve_signal_processing_profile()
+    )
+    universe = enumerate_physical_segment_universe(
+        prepared, request_context_rt_start_min=7.0, request_context_rt_end_min=10.5
+    )
+    candidates = physical_candidates_result(prepared, universe).candidates
+    assert len(candidates) == 2
+    predecessor, successor = candidates
+    predecessor_ms2 = replace(_ms2_evidence(), best_scan_rt=predecessor.peak.rt)
+    successor_ms2 = replace(_ms2_evidence(), best_scan_rt=successor.peak.rt)
+    peak_result = PeakDetectionResult(
+        status="OK",
+        peak=predecessor.peak,
+        n_points=len(rt),
+        max_smoothed=float(intensity.max()),
+        n_prominent_peaks=2,
+        candidates=candidates,
+        confidence="VERY_LOW",
+        reason="decision: predecessor selected",
+        candidate_scores=(
+            _score(
+                predecessor,
+                confidence="VERY_LOW",
+                raw_score=20,
+                support_labels=("strict_nl_ok",),
+                concern_labels=("rt_centrality_poor", "shape_poor"),
+            ),
+            _score(
+                successor,
+                confidence="HIGH",
+                raw_score=120,
+                support_labels=("strict_nl_ok", "candidate_aligned_ms2_nl"),
+                concern_labels=(),
+            ),
+        ),
+    )
+    trace_group = targeted_extraction_trace_group(
+        config=config,
+        sample_name=sample_name,
+        target=target,
+        rt=rt,
+        intensity=intensity,
+        rt_min=7.0,
+        rt_max=10.5,
+        expected_rt_min=successor.peak.rt,
+    )
+    handoff = targeted_peak_selection.select_targeted_peak(
+        config=config,
+        target=target,
+        peak_result=peak_result,
+        trace_group=trace_group,
+        candidate_ms2_evidence={predecessor: predecessor_ms2, successor: successor_ms2},
+        prepared_result=prepared,
+        universe=universe,
+        selection_rt_min=7.0,
+        selection_rt_max=10.5,
+    )
+    assert handoff.model_selection_result is not None
+    assert handoff.selected_hypothesis is not None
+    assert handoff.candidate_ms2_evidence == successor_ms2
+    assert handoff.peak_result.confidence == "HIGH"
+    assert handoff.model_selection_result.product_switch_allowed is True
+    assert f"{successor.peak.rt:.5f}" in handoff.selected_hypothesis.hypothesis_id
+    assert handoff.selected_hypothesis.integration.rt_apex_min == pytest.approx(
+        9.0 + shift
+    )
+    assert handoff.peak_result.peak == successor.peak
+    assert handoff.selected_hypothesis.integration.area_ms1_morphology == pytest.approx(
+        successor.peak.area
+    )
+    result = build_extraction_result(
+        peak_result=handoff.peak_result,
+        nl_result=None,
+        candidate_ms2_evidence=handoff.candidate_ms2_evidence,
+        target=target,
+        candidate=successor,
+        scoring_context_builder=None,
+        selected_hypothesis=handoff.selected_hypothesis,
+        selection_decision=handoff.selection_decision,
+        model_selection_result=handoff.model_selection_result,
+        physical_evaluation=handoff.physical_evaluation,
+        acquisition_trace=trace_group.primary_trace,
+        sample_name=sample_name,
+    )
+    assert result.reported_rt == pytest.approx(9.0 + shift)
+    assert result.reported_peak_area == pytest.approx(successor.peak.area)
+    assert result.reported_peak_start == pytest.approx(successor.peak.peak_start)
+    assert result.reported_peak_end == pytest.approx(successor.peak.peak_end)
+
+    from openpyxl import load_workbook
+
+    from xic_extractor.extraction.result_models import FileResult, RunOutput
+    from xic_extractor.output.excel_pipeline import write_excel_from_run_output
+
+    output_path = tmp_path / "successor.xlsx"
+    write_excel_from_run_output(
+        config,
+        [target],
+        RunOutput([FileResult(sample_name, {target.label: result})], []),
+        output_path=output_path,
+    )
+    workbook = load_workbook(output_path, read_only=True, data_only=True)
+    try:
+        rows = workbook["XIC Results"].iter_rows(values_only=True)
+        row = dict(zip(next(rows), next(rows), strict=True))
+    finally:
+        workbook.close()
+    for field, value, digits in (
+        ("RT", successor.peak.rt, 4),
+        ("Area", successor.peak.area, 2),
+        ("PeakStart", successor.peak.peak_start, 4),
+        ("PeakEnd", successor.peak.peak_end, 4),
+    ):
+        assert row[field] == float(f"{value:.{digits}f}")
+
+
 def test_hypothesis_policy_promotes_rna_containing_strict_nl_successor(
     tmp_path,
 ) -> None:
@@ -366,17 +512,19 @@ def test_hypothesis_policy_promotes_rna_containing_strict_nl_successor(
         config=_config(tmp_path),
         target=_target(sample_applicability="rna_containing"),
         peak_result=peak_result,
-        candidate_ms2_evidence=CandidateMS2Evidence(
-            ms2_present=True,
-            nl_match=True,
-            nl_status="OK",
-            trigger_scan_count=3,
-            strict_nl_scan_count=3,
-            best_loss_ppm=2.5,
-            best_scan_rt=12.76,
-            best_product_base_ratio=0.8,
-            alignment_source="region",
-        ),
+        candidate_ms2_evidence={
+            legacy_selected: CandidateMS2Evidence(
+                ms2_present=True,
+                nl_match=True,
+                nl_status="OK",
+                trigger_scan_count=3,
+                strict_nl_scan_count=3,
+                best_loss_ppm=2.5,
+                best_scan_rt=12.76,
+                best_product_base_ratio=0.8,
+                alignment_source="region",
+            )
+        },
         trace_group=targeted_extraction_trace_group(
             config=_config(tmp_path),
             sample_name="TumorBC2304_DNAandRNA",

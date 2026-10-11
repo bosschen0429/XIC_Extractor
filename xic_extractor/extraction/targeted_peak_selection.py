@@ -19,12 +19,15 @@ from xic_extractor.extraction.targeted_peak_hypotheses import (
     build_targeted_peak_hypotheses as build_peak_hypotheses,
 )
 from xic_extractor.peak_detection.baseline import BaselineMethod
-from xic_extractor.peak_detection.hypotheses import PeakHypothesis
+from xic_extractor.peak_detection.hypotheses import (
+    CandidateMS2EvidenceMap,
+    PeakHypothesis,
+)
 from xic_extractor.peak_detection.model_selection import (
     PeakModelSelectionResult,
     model_select_peak_hypothesis,
 )
-from xic_extractor.peak_detection.models import PeakDetectionResult
+from xic_extractor.peak_detection.models import PeakCandidate, PeakDetectionResult
 from xic_extractor.peak_detection.ms1_morphology import (
     configured_morphology_window_points,
 )
@@ -65,6 +68,7 @@ class TargetedPeakSelection:
 
 @dataclass(frozen=True)
 class _TargetedHypothesisSelection:
+    candidate: PeakCandidate | None
     selected_hypothesis: PeakHypothesis | None
     selection_decision: PeakHypothesisSelectionDecision | None
     model_selection_result: PeakModelSelectionResult | None
@@ -76,17 +80,11 @@ def build_production_peak_hypotheses(
     sample_name: str,
     target: Target,
     peak_result: PeakDetectionResult,
-    selected_candidate_ms2_evidence: CandidateMS2Evidence | None = None,
+    candidate_ms2_evidence: CandidateMS2EvidenceMap | None = None,
     rt: object | None = None,
     intensity: object | None = None,
     trace_group: TraceGroup | None = None,
 ) -> tuple[PeakHypothesis, ...]:
-    candidate = selected_candidate(peak_result)
-    evidence_by_candidate = (
-        {candidate: selected_candidate_ms2_evidence}
-        if candidate is not None and selected_candidate_ms2_evidence is not None
-        else None
-    )
     hypotheses = build_peak_hypotheses(
         sample_name=sample_name,
         target_label=target.label,
@@ -94,7 +92,7 @@ def build_production_peak_hypotheses(
         istd_pair=target.istd_pair,
         resolver_mode=config.resolver_mode,
         peak_result=peak_result,
-        candidate_ms2_evidence=evidence_by_candidate,
+        candidate_ms2_evidence=candidate_ms2_evidence,
         rt=rt,
         intensity=intensity,
         trace_group=trace_group,
@@ -129,7 +127,7 @@ def select_targeted_peak(
     target: Target,
     peak_result: PeakDetectionResult,
     trace_group: TraceGroup,
-    candidate_ms2_evidence: CandidateMS2Evidence | None,
+    candidate_ms2_evidence: CandidateMS2EvidenceMap | None,
     prepared_result: PreparedSignalResult,
     universe: PhysicalSegmentUniverse,
     selection_rt_min: float,
@@ -143,9 +141,33 @@ def select_targeted_peak(
         trace_group=trace_group,
         candidate_ms2_evidence=candidate_ms2_evidence,
     )
-    selected_segment = selected_physical_segment(
-        selected_candidate(peak_result), universe
+    candidate = hypothesis_selection.candidate
+    selected_ms2_evidence = (
+        candidate_ms2_evidence.get(candidate)
+        if candidate is not None and candidate_ms2_evidence is not None
+        else None
     )
+    if candidate is not None and candidate != selected_candidate(peak_result):
+        hypothesis = hypothesis_selection.selected_hypothesis
+        assert hypothesis is not None
+        score = next(
+            (
+                score
+                for score in peak_result.candidate_scores
+                if score.candidate == candidate
+            ),
+            None,
+        )
+        peak_result = replace(
+            peak_result,
+            peak=candidate.peak,
+            confidence=hypothesis.evidence.confidence,
+            reason=hypothesis.evidence.reason,
+            severities=score.severities if score is not None else (),
+            # The predecessor's formatted score cannot describe the successor.
+            score_breakdown=(),
+        )
+    selected_segment = selected_physical_segment(candidate, universe)
     if selected_segment is not None:
         query_rt_min = selected_segment.apex_rt_min
     elif universe.state != "available":
@@ -186,8 +208,8 @@ def select_targeted_peak(
             score_breakdown=(),
             candidate_scores=(),
         )
-        candidate_ms2_evidence = None
-        hypothesis_selection = _TargetedHypothesisSelection(None, None, None)
+        selected_ms2_evidence = None
+        hypothesis_selection = _TargetedHypothesisSelection(None, None, None, None)
     elif (
         hypothesis_selection.selected_hypothesis is not None
         and physical_evaluation.integration is not None
@@ -207,7 +229,7 @@ def select_targeted_peak(
     return TargetedPeakSelection(
         peak_result=peak_result,
         physical_evaluation=physical_evaluation,
-        candidate_ms2_evidence=candidate_ms2_evidence,
+        candidate_ms2_evidence=selected_ms2_evidence,
         selected_hypothesis=hypothesis_selection.selected_hypothesis,
         selection_decision=hypothesis_selection.selection_decision,
         trace_group=trace_group,
@@ -221,7 +243,7 @@ def _select_targeted_hypothesis(
     target: Target,
     peak_result: PeakDetectionResult,
     trace_group: TraceGroup,
-    candidate_ms2_evidence: CandidateMS2Evidence | None,
+    candidate_ms2_evidence: CandidateMS2EvidenceMap | None,
 ) -> _TargetedHypothesisSelection:
     """Apply the Targeted role policy to the ranked peak hypotheses."""
     sample_name = trace_group.sample_name
@@ -231,7 +253,7 @@ def _select_targeted_hypothesis(
         sample_name=sample_name,
         target=target,
         peak_result=peak_result,
-        selected_candidate_ms2_evidence=candidate_ms2_evidence,
+        candidate_ms2_evidence=candidate_ms2_evidence,
         rt=np.asarray(trace.rt, dtype=float),
         intensity=np.asarray(trace.intensity, dtype=float),
         trace_group=trace_group,
@@ -251,7 +273,20 @@ def _select_targeted_hypothesis(
         model_selection_result,
         legacy_selected_hypothesis,
     )
+    # Hypothesis construction preserves candidate order; bind identity here rather
+    # than recovering a candidate from a rounded RT or a serialized ID.
+    candidate = next(
+        (
+            candidate
+            for hypothesis, candidate in zip(
+                hypotheses, peak_result.candidates, strict=True
+            )
+            if hypothesis is selected_hypothesis
+        ),
+        None,
+    )
     return _TargetedHypothesisSelection(
+        candidate=candidate,
         selected_hypothesis=selected_hypothesis,
         selection_decision=(
             selection_decision_from_hypothesis(

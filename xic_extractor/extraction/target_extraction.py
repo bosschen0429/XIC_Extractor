@@ -468,7 +468,7 @@ def extract_one_target(
         rt_max=context_rt_max,
         expected_rt_min=anchor_rt,
     )
-    candidate_ms2_evidence = selected_candidate_ms2_evidence(
+    selected_candidate_ms2_evidence(
         candidate,
         candidate_ms2_cache,
         _cached_candidate_ms2_builder,
@@ -478,7 +478,7 @@ def extract_one_target(
         target=target,
         peak_result=peak_result,
         trace_group=trace_group,
-        candidate_ms2_evidence=candidate_ms2_evidence,
+        candidate_ms2_evidence=candidate_ms2_cache,
         prepared_result=prepared,
         universe=universe,
         selection_rt_min=selection_rt_min,

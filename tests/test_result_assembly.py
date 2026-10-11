@@ -487,7 +487,7 @@ def test_build_extraction_result_adds_targeted_product_projection() -> None:
             sample_name="SampleA",
             target=target,
             peak_result=peak_result,
-            selected_candidate_ms2_evidence=_ms2_evidence(),
+            candidate_ms2_evidence={candidate: _ms2_evidence()},
         )
     )
 
