@@ -172,5 +172,7 @@ def test_xlsx_results_sheet_uses_selection_apex_rt_for_reporting(
     assert row["Area"] == 123
     assert row["PeakStart"] == 8.9
     assert row["PeakEnd"] == 9.2
-    assert "Int" not in row and "IntSmoothed" not in row
+    assert row["Int"] == 500
+    assert row["IntSmoothed"] == 450
+    assert row["PeakWidth"] == 0.3
     wb.close()

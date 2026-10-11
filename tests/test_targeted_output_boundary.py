@@ -498,13 +498,23 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
         headers = next(rows)
         workbook_rows = {row[0]: dict(zip(headers, row)) for row in rows}
         sheet = workbook["XIC Results"]
-        for header in ("Area", "RT", "Counted Detection", "Review", "Review Reason"):
+        for header in ("Area", "RT", "IntSmoothed", "Counted Detection"):
             index = headers.index(header) + 1
             assert not any(
                 dimension.hidden and dimension.min <= index <= dimension.max
                 for dimension in sheet.column_dimensions.values()
             )
-        for header in ("Reason", "NL Evidence", "PeakStart", "PeakEnd", "NL"):
+        for header in (
+            "Review",
+            "Review Reason",
+            "Reason",
+            "NL Evidence",
+            "PeakStart",
+            "PeakEnd",
+            "NL",
+            "Int",
+            "PeakWidth",
+        ):
             index = headers.index(header) + 1
             assert any(
                 dimension.hidden and dimension.min <= index <= dimension.max
@@ -535,8 +545,7 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
         for field, (value, digits) in expected_values.items():
             expected_text = f"{value:.{digits}f}"
             assert long_rows[sample_name][field] == expected_text
-            if field != "PeakWidth":
-                assert workbook_rows[sample_name][field] == float(expected_text)
+            assert workbook_rows[sample_name][field] == float(expected_text)
         for row in (long_rows[sample_name], workbook_rows[sample_name]):
             assert row["NL Evidence"] == (
                 "Not observed within tolerance"
@@ -559,7 +568,10 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
             "Review" if nl_status == "NL_FAIL" else "Check"
         )
         assert workbook_rows[sample_name]["Review Reason"]
-        assert "PeakWidth" not in workbook_rows[sample_name]
+        for field in ("Int", "IntSmoothed"):
+            assert workbook_rows[sample_name][field] == float(
+                long_rows[sample_name][field]
+            )
 
 
 def test_service_publishes_no_numeric_for_finalized_no_observation(
@@ -633,7 +645,7 @@ def test_service_publishes_no_numeric_for_finalized_no_observation(
         assert row["Counted Detection"] == "FALSE"
     assert long_row["Review State"] == "review_required"
     assert long_row["Projection Reason"] == "finalized_searched_no_observation"
-    assert workbook_row["Review"] == "Check"
+    assert workbook_row["Review"] == "Review"
     assert workbook_row["Review Reason"]
     assert workbook_row["Reason"] == long_row["Reason"]
 
@@ -1758,6 +1770,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
     values = iter(workbook["XIC Results"].values)
     headers = next(values)
     rows = [dict(zip(headers, row)) for row in values]
+    diagnostic_values = list(workbook["Diagnostics"].values)
     workbook.close()
     row = next(
         r for r in rows if r["SampleName"] == "SampleC" and r["Target"] == "Analyte"
@@ -1768,7 +1781,16 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
     if not missing_pair:
         assert row["RT"] == pytest.approx(1.49 if istd_backfill else 1.9, abs=0.005)
         assert row["Area"] > 0
-        assert "backfill" in str(row["Review Evidence"]).lower()
+        if istd_backfill:
+            assert row["Review"] is None
+            assert row["Review Reason"] is None
+            assert row["Review Evidence"] is None
+        else:
+            assert "backfill" in str(row["Review Evidence"]).lower()
+        assert any(
+            "SampleC" in cells and "Analyte" in cells and "BACKFILL_ACCEPTED" in cells
+            for cells in diagnostic_values
+        )
         ref = next(
             r for r in rows if r["SampleName"] == "SampleA" and r["Target"] == "Analyte"
         )

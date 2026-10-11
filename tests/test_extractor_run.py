@@ -180,7 +180,9 @@ def test_run_no_nl_reference_selects_each_samples_component(
         )
         if pair_state == "shape_review":
             projection = result.targeted_product_projection
-            assert projection is not None and not projection.counted_detection
+            assert projection is not None and projection.counted_detection
+            assert projection.review_state == "flagged"
+            assert "trace_morphology_review" in projection.review_reasons
         if pair_state == "same_reference":
             other = file.results["SameReference"]
             assert other.reported_rt == result.reported_rt

@@ -497,7 +497,9 @@ def test_csv_to_excel_retains_multi_peak_selection_and_candidate_count(
 
     workbook = load_workbook(run(config, [target]))
 
-    assert "2 qualified physical candidates in selection window" in records[0].reason
+    assert (
+        "2 qualified physical candidates in retained trace context" in records[0].reason
+    )
     assert "selected RT 9.0000 min" in records[0].reason
     record = _sheet_records(workbook["XIC Results"])[0]
     assert record["Review"] is None

@@ -148,10 +148,15 @@ def _selected_or_window_nl_issue(result: ExtractionResultLike) -> str | None:
     candidate_ms2 = result.candidate_ms2_evidence
     if candidate_ms2 is not None and candidate_ms2.nl_status in {"NL_FAIL", "NO_MS2"}:
         return candidate_ms2.nl_status
-    if candidate_ms2 is None and result.nl is not None and result.nl.status in {
-        "NL_FAIL",
-        "NO_MS2",
-    }:
+    if (
+        candidate_ms2 is None
+        and result.nl is not None
+        and result.nl.status
+        in {
+            "NL_FAIL",
+            "NO_MS2",
+        }
+    ):
         return result.nl.status
     return None
 
@@ -255,7 +260,7 @@ def _candidate_product_probe_info(evidence: CandidateMS2Evidence) -> str:
 def _multi_peak_reason(result: ExtractionResultLike) -> str:
     base = (
         f"{result.peak_result.n_prominent_peaks} qualified physical candidates "
-        "in selection window"
+        "in retained trace context"
     )
     if result.reported_rt is not None:
         base += f"; selected RT {result.reported_rt:.4f} min"
@@ -265,8 +270,7 @@ def _multi_peak_reason(result: ExtractionResultLike) -> str:
     evidence = result.candidate_ms2_evidence
     if evidence is not None and evidence.nl_match and evidence.best_scan_rt is not None:
         base += (
-            "; selected candidate NL-matched MS2 at RT "
-            f"{evidence.best_scan_rt:.3f} min"
+            f"; selected candidate NL-matched MS2 at RT {evidence.best_scan_rt:.3f} min"
         )
     return base
 

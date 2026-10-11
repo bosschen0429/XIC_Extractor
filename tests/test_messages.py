@@ -20,12 +20,16 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 )
 
 
-@pytest.mark.parametrize("point_count, expected_reason", [
-    (2, "insufficient_points_for_profile"),
-    (21, "no_signal_above_baseline"),
-])
+@pytest.mark.parametrize(
+    "point_count, expected_reason",
+    [
+        (2, "insufficient_points_for_profile"),
+        (21, "no_signal_above_baseline"),
+    ],
+)
 def test_physical_unavailability_keeps_owner_reason_in_diagnostics(
-    point_count: int, expected_reason: str,
+    point_count: int,
+    expected_reason: str,
 ) -> None:
     evaluation = evaluate_physical_peak(
         prepare_physical_signal(
@@ -105,16 +109,23 @@ def test_multi_peak_diagnostic_reports_formally_selected_lower_peak() -> None:
     results = {}
     diagnostics = []
     extract_one_target(
-        Raw(), _config(), "SampleA", target,
+        Raw(),
+        _config(),
+        "SampleA",
+        target,
         reference_rt=None,
-        results=results, diagnostics=diagnostics,
+        results=results,
+        diagnostics=diagnostics,
     )
     result = results[target.label]
     assert result.reported_rt == pytest.approx(9.0, abs=0.01)
     assert result.reported_peak_intensity < 300.0
-    assert result.peak_result.n_prominent_peaks == 2
+    assert [
+        candidate.peak.rt for candidate in result.peak_result.candidates
+    ] == pytest.approx([8.5, 9.0, 11.0], abs=0.01)
+    assert result.peak_result.n_prominent_peaks == 3
     record = next(record for record in diagnostics if record.issue == "MULTI_PEAK")
-    assert "2 qualified physical candidates in selection window" in record.reason
+    assert "3 qualified physical candidates in retained trace context" in record.reason
     assert f"selected RT {result.reported_rt:.4f} min" in record.reason
     assert "tallest" not in record.reason
 

@@ -86,14 +86,19 @@ def test_build_metadata_sheet_writes_headers_values_layout_and_styles() -> None:
 
     assert ws["A1"].value == "Key"
     assert ws["B1"].value == "Value"
+    assert ws["C1"].value == "說明"
     assert ws["A2"].value == "config_hash"
     assert ws["B2"].value == "abc12345"
     assert ws["A4"].value == "generated_at"
-    assert ws["A1"].fill.fgColor.rgb.endswith("2E4057")
+    assert ws["C2"].value
+    assert ws["A1"].font.name == "Microsoft JhengHei"
+    assert ws["A1"].fill.fgColor.rgb != ws["A1"].font.color.rgb
     assert ws["A1"].font.bold is True
-    assert ws["B2"].border.left.style == "thin"
-    assert ws.column_dimensions["A"].width == 28
-    assert ws.column_dimensions["B"].width == 48
+    assert ws["B2"].border.bottom.style == "thin"
+    assert ws.column_dimensions["A"].width >= 28
+    assert ws.column_dimensions["B"].width >= 24
+    assert ws.column_dimensions["C"].width >= 48
+    assert ws.tables["TargetedRunMetadata"].ref == f"A1:C{ws.max_row}"
     assert ws.freeze_panes == "A2"
 
 
