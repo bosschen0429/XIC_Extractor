@@ -655,7 +655,7 @@
   margin: 8px 0;
 }
 .settings-warning { color: var(--warning, #a76816); }
-#targeted-resources .settings-grid, #targeted-data .settings-grid { grid-template-columns: minmax(0, 1fr); }
+#targeted-data .settings-grid { grid-template-columns: minmax(0, 1fr); }
 #targeted-execution .settings-group + .settings-group { margin-top: 16px; }
 
 .settings-source {

@@ -23,9 +23,7 @@
     "notes"
   ],
   "required_lane_ids": [
-    "targeted_ms1_shape_identity_limited_rescue",
     "sample_metadata_order_projection",
-    "targeted_ms1_shape_identity_broader_targets",
     "sample_metadata_role_value_behavior",
     "review_action_selected_candidate_switch",
     "review_action_manual_boundary_area_writer"
@@ -49,17 +47,10 @@
     "no_target_expansion": true,
     "no_matrix_workbook_quant_or_selection_change_beyond_existing_contract": true,
     "production_ready_lanes": [
-      "targeted_ms1_shape_identity_limited_rescue",
       "sample_metadata_order_projection"
     ],
     "production_candidate_lanes": [],
     "blocked_or_parked_lanes_have_no_allowed_effect": true,
-    "targeted_limited_scope": [
-      "limited_5hmdc_5medc",
-      "5-hmdC",
-      "5-medC"
-    ],
-    "targeted_limited_effect": "detected_flagged_only",
     "sample_metadata_effect": "no_output_order_projection"
   }
 }

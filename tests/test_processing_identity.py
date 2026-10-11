@@ -22,9 +22,6 @@ from xic_extractor.extraction.targeted_inputs import (
     build_targeted_processing_request_identity,
     resolve_targeted_inputs,
 )
-from xic_extractor.peak_detection.model_selection import (
-    ExpectedDiffApprovalRecord,
-)
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
     AcquisitionSourceIdentity,
@@ -453,7 +450,6 @@ def test_real_data_discovery_settings_change_processing_request_identity(
     path = _raw(tmp_path / "sample_a.raw", b"source-a")
     resolved = ResolvedTargetedInputs(
         injection_order={"sample_a": 1},
-        model_selection_expected_diff_approvals=None,
     )
     settings = DiscoverySettings(
         neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474),
@@ -497,7 +493,6 @@ def test_adapter_input_key_change_invalidates_request_not_source_content(
         [original_path],
         resolved=ResolvedTargetedInputs(
             injection_order={"sample_a": 1},
-            model_selection_expected_diff_approvals=None,
         ),
     )
     renamed = _request(
@@ -505,7 +500,6 @@ def test_adapter_input_key_change_invalidates_request_not_source_content(
         [renamed_path],
         resolved=ResolvedTargetedInputs(
             injection_order={"renamed_sample": 1},
-            model_selection_expected_diff_approvals=None,
         ),
     )
 
@@ -513,7 +507,7 @@ def test_adapter_input_key_change_invalidates_request_not_source_content(
     assert original.processing_request_id != renamed.processing_request_id
 
 
-def test_request_invalidates_changed_source_target_window_or_approval(
+def test_request_invalidates_changed_source_or_target_window(
     tmp_path: Path,
 ) -> None:
     first = _raw(tmp_path / "sample_a.raw", b"source-a")
@@ -537,26 +531,14 @@ def test_request_invalidates_changed_source_target_window_or_approval(
         resolved=inputs,
         targets=(replace(_target(), rt_max=2.5),),
     )
-    approval = inputs.model_selection_expected_diff_approvals["approval-1"]
-    approval_changed = _request(
-        config,
-        paths,
-        resolved=replace(
-            inputs,
-            model_selection_expected_diff_approvals={
-                "approval-1": replace(approval, evidence_summary="new evidence")
-            },
-        ),
-    )
 
     changed_ids = {
         substituted.processing_request_id,
         target_changed.processing_request_id,
         rt_changed.processing_request_id,
-        approval_changed.processing_request_id,
     }
     assert baseline.processing_request_id not in changed_ids
-    assert len(changed_ids) == 4
+    assert len(changed_ids) == 3
 
 
 def test_request_pins_owner_target_snapshot_order(tmp_path: Path) -> None:
@@ -566,7 +548,6 @@ def test_request_pins_owner_target_snapshot_order(tmp_path: Path) -> None:
     raw_path = _raw(tmp_path / "sample_a.raw", b"source-a")
     resolved = ResolvedTargetedInputs(
         injection_order={"sample_a": 1},
-        model_selection_expected_diff_approvals=None,
     )
 
     forward = _request(
@@ -584,37 +565,6 @@ def test_request_pins_owner_target_snapshot_order(tmp_path: Path) -> None:
 
     assert reordered.processing_request_id != forward.processing_request_id
     assert "target_list_snapshot" in forward.normalized_scientific_inputs_json
-
-
-def test_request_invalidates_ms1_shape_support_content_or_policy(
-    tmp_path: Path,
-) -> None:
-    raw_path = _raw(tmp_path / "sample_a.raw", b"source-a")
-    support_path = tmp_path / "shape-support.tsv"
-    support_path.write_bytes(b"support")
-    config = replace(
-        _config(tmp_path),
-        targeted_ms1_shape_identity_support_tsv=support_path,
-    )
-    resolved = ResolvedTargetedInputs(
-        injection_order={"sample_a": 1},
-        model_selection_expected_diff_approvals=None,
-    )
-    baseline = _request(config, [raw_path], resolved=resolved)
-
-    support_path.write_bytes(b"changed-support")
-    content_changed = _request(config, [raw_path], resolved=resolved)
-    policy_changed = _request(
-        replace(
-            config,
-            targeted_ms1_shape_identity_activation_policy="limited_5hmdc_5medc",
-        ),
-        [raw_path],
-        resolved=resolved,
-    )
-
-    assert content_changed.processing_request_id != baseline.processing_request_id
-    assert policy_changed.processing_request_id != content_changed.processing_request_id
 
 
 def test_request_excludes_output_callback_and_execution_policy(
@@ -639,38 +589,6 @@ def test_request_excludes_output_callback_and_execution_policy(
 
     assert execution_changed == baseline
 
-    inactive_policy_changed = _request(
-        replace(
-            config,
-            targeted_ms1_shape_identity_activation_policy="limited_5hmdc_5medc",
-        ),
-        paths,
-    )
-    assert inactive_policy_changed == baseline
-
-
-def test_none_and_empty_approval_snapshots_are_same_effective_input(
-    tmp_path: Path,
-) -> None:
-    path = _raw(tmp_path / "sample_a.raw", b"source-a")
-    config = _config(tmp_path)
-    base = ResolvedTargetedInputs(
-        injection_order={"sample_a": 1},
-        model_selection_expected_diff_approvals=None,
-    )
-
-    absent = _request(config, [path], resolved=base)
-    empty = _request(
-        config,
-        [path],
-        resolved=replace(
-            base,
-            model_selection_expected_diff_approvals={},
-        ),
-    )
-
-    assert absent == empty
-
 
 def test_request_snapshot_is_immutable_after_caller_mapping_mutation(
     tmp_path: Path,
@@ -685,7 +603,6 @@ def test_request_snapshot_is_immutable_after_caller_mapping_mutation(
     original_id = request.processing_request_id
 
     inputs.injection_order["sample_a"] = 9
-    inputs.model_selection_expected_diff_approvals.clear()
 
     assert request.processing_request_id == original_id
     assert _request(config, paths, resolved=inputs).processing_request_id != original_id
@@ -725,17 +642,6 @@ def test_missing_ambiguous_or_rebound_inputs_fail_closed(tmp_path: Path) -> None
     with pytest.raises(IdentityContractError, match="unable to hash"):
         _source_identity(tmp_path / "missing.raw")
 
-    approval = _approval()
-    with pytest.raises(IdentityContractError, match="approval mapping key"):
-        _request(
-            config,
-            [first],
-            resolved=ResolvedTargetedInputs(
-                injection_order={"sample_a": 1},
-                model_selection_expected_diff_approvals={"wrong-key": approval},
-            ),
-        )
-
     source = _source_identity(first)
     with pytest.raises(IdentityContractError, match="rebind"):
         replace(source, byte_size=source.byte_size + 1)
@@ -745,7 +651,6 @@ def test_missing_ambiguous_or_rebound_inputs_fail_closed(tmp_path: Path) -> None
         [first],
         resolved=ResolvedTargetedInputs(
             injection_order={"sample_a": 1},
-            model_selection_expected_diff_approvals=None,
         ),
     )
     with pytest.raises(IdentityContractError, match="rebind"):
@@ -863,7 +768,6 @@ def test_sample_metadata_alias_projection_builds_targeted_request(
         config,
         raw_paths=[raw_path],
         injection_order=None,
-        model_selection_expected_diff_approvals=None,
     )
 
     request = _request(config, [raw_path], resolved=resolved)
@@ -882,7 +786,6 @@ def test_retry_issues_new_attempt_without_mutating_request_or_predecessor(
         [path],
         resolved=ResolvedTargetedInputs(
             injection_order={"sample_a": 1},
-            model_selection_expected_diff_approvals=None,
         ),
     )
     first_attempt = issue_processing_attempt(request)
@@ -905,7 +808,6 @@ def test_retry_issues_new_attempt_without_mutating_request_or_predecessor(
         [path],
         resolved=ResolvedTargetedInputs(
             injection_order={"sample_a": 1},
-            model_selection_expected_diff_approvals=None,
         ),
     )
     with pytest.raises(IdentityContractError, match="different processing request"):
@@ -979,25 +881,6 @@ def _raw(path: Path, content: bytes) -> Path:
 def _resolved_inputs() -> ResolvedTargetedInputs:
     return ResolvedTargetedInputs(
         injection_order={"sample_a": 1, "sample_b": 2},
-        model_selection_expected_diff_approvals={"approval-1": _approval()},
-    )
-
-
-def _approval() -> ExpectedDiffApprovalRecord:
-    return ExpectedDiffApprovalRecord(
-        stable_row_id="approval-1",
-        sample_name="sample_a",
-        target_label="Analyte",
-        legacy_selected_candidate_id="legacy",
-        successor_selected_candidate_id="successor",
-        public_outputs_touched=("selected marker",),
-        matrix_value_impact="none",
-        evidence_sources=("fixture",),
-        evidence_summary="reviewed evidence",
-        validation_tier="synthetic_fixture",
-        reviewer_role="reviewer",
-        reviewer_verdict="approved",
-        final_label="expected_diff",
     )
 
 

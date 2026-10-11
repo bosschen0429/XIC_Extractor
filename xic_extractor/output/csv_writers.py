@@ -1,17 +1,13 @@
-import csv
 from collections.abc import Mapping, Sequence
 from typing import Protocol
 
-from xic_extractor.configuration.models import ExtractionConfig, Target
+from xic_extractor.configuration.models import Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.output.reason_display import (
     display_measurement_reason,
     display_nl_evidence,
 )
 from xic_extractor.output.schema import (
-    DIAGNOSTIC_HEADERS,
-    LONG_HEADERS,
-    MS1_SUFFIXES,
     TARGETED_PRODUCT_PROJECTION_HEADERS,
 )
 from xic_extractor.output.targeted_product_model import (
@@ -115,63 +111,6 @@ class FileResultLike(Protocol):
 
     @property
     def extraction_results(self) -> Sequence[ExtractionResultLike]: ...
-
-
-def write_all(
-    config: ExtractionConfig,
-    targets: Sequence[Target],
-    file_results: Sequence[FileResultLike],
-    diagnostics: Sequence[DiagnosticRecordLike],
-) -> None:
-    write_wide_csv(config, targets, file_results)
-    write_long_csv(config, targets, file_results)
-    write_diagnostics_csv(config, diagnostics)
-
-
-def write_wide_csv(
-    config: ExtractionConfig,
-    targets: Sequence[Target],
-    file_results: Sequence[FileResultLike],
-) -> None:
-    config.output_csv.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = _output_fieldnames(targets)
-    with config.output_csv.open("w", newline="", encoding="utf-8-sig") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        for file_result in file_results:
-            writer.writerow(_output_row(file_result, targets))
-
-
-def write_diagnostics_csv(
-    config: ExtractionConfig, diagnostics: Sequence[DiagnosticRecordLike]
-) -> None:
-    config.diagnostics_csv.parent.mkdir(parents=True, exist_ok=True)
-    with config.diagnostics_csv.open("w", newline="", encoding="utf-8-sig") as handle:
-        writer = csv.DictWriter(handle, fieldnames=DIAGNOSTIC_HEADERS)
-        writer.writeheader()
-        for record in diagnostics:
-            writer.writerow(
-                {
-                    "SampleName": record.sample_name,
-                    "Target": record.target_label,
-                    "Issue": record.issue,
-                    "Reason": record.reason,
-                }
-            )
-
-
-def write_long_csv(
-    config: ExtractionConfig,
-    targets: Sequence[Target],
-    file_results: Sequence[FileResultLike],
-) -> None:
-    path = config.output_csv.with_name("xic_results_long.csv")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8-sig") as handle:
-        writer = csv.DictWriter(handle, fieldnames=LONG_HEADERS)
-        writer.writeheader()
-        for file_result in file_results:
-            writer.writerows(_long_output_rows(file_result, targets))
 
 
 def _long_output_rows(
@@ -326,80 +265,6 @@ def _set_long_peak_values(row: dict[str, str], result: ExtractionResultLike) -> 
     row["PeakStart"] = _format_peak_decimal(result.reported_peak_start, digits=4)
     row["PeakEnd"] = _format_peak_decimal(result.reported_peak_end, digits=4)
     row["PeakWidth"] = _format_peak_decimal(result.reported_peak_width, digits=4)
-
-
-def _output_fieldnames(targets: Sequence[Target]) -> list[str]:
-    fieldnames = ["SampleName"]
-    for target in targets:
-        fieldnames.extend(_target_fieldnames(target))
-    return fieldnames
-
-
-def _target_fieldnames(target: Target) -> list[str]:
-    fieldnames = [f"{target.label}_{suffix}" for suffix in MS1_SUFFIXES]
-    if target.neutral_loss_da is not None:
-        fieldnames.append(f"{target.label}_NL")
-    return fieldnames
-
-
-def _output_row(
-    file_result: FileResultLike, targets: Sequence[Target]
-) -> dict[str, str]:
-    row = {"SampleName": file_result.sample_name}
-    for target in targets:
-        if file_result.error is not None:
-            _set_target_values(row, target, "ERROR")
-            continue
-
-        result = file_result.results[target.label]
-        _set_peak_values(row, target, result)
-        if target.neutral_loss_da is not None:
-            row[f"{target.label}_NL"] = result.nl_token or "ND"
-    return row
-
-
-def _set_target_values(row: dict[str, str], target: Target, value: str) -> None:
-    for suffix in MS1_SUFFIXES:
-        row[f"{target.label}_{suffix}"] = value
-    if target.neutral_loss_da is not None:
-        row[f"{target.label}_NL"] = value
-
-
-def _set_peak_values(
-    row: dict[str, str],
-    target: Target,
-    result: ExtractionResultLike,
-) -> None:
-    if not _has_reported_peak(result):
-        for suffix in MS1_SUFFIXES:
-            row[f"{target.label}_{suffix}"] = "ND"
-        return
-
-    row[f"{target.label}_RT"] = _format_peak_decimal(result.reported_rt, digits=4)
-    row[f"{target.label}_Int"] = _format_peak_decimal(
-        result.reported_peak_intensity,
-        digits=0,
-    )
-    row[f"{target.label}_IntSmoothed"] = _format_peak_decimal(
-        result.reported_smoothed_peak_intensity,
-        digits=0,
-    )
-    row[f"{target.label}_Area"] = _format_peak_decimal(
-        result.reported_peak_area,
-        digits=2,
-    )
-    row[f"{target.label}_PeakStart"] = _format_peak_decimal(
-        result.reported_peak_start,
-        digits=4,
-    )
-    row[f"{target.label}_PeakEnd"] = _format_peak_decimal(
-        result.reported_peak_end,
-        digits=4,
-    )
-    row[f"{target.label}_PeakWidth"] = _format_peak_decimal(
-        result.reported_peak_width,
-        digits=4,
-    )
 
 
 def _has_reported_peak(result: ExtractionResultLike) -> bool:

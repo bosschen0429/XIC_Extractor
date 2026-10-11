@@ -23,8 +23,6 @@ Promotion requirements belong to
 - `broad_backfill_autowrite`
 - `productization_authority_firewall`
 - `quality_explanation_sidecar`
-- `targeted_ms1_shape_identity_limited_rescue`
-- `targeted_ms1_shape_identity_broader_targets`
 - `sample_metadata_order_projection`
 - `sample_metadata_role_value_behavior`
 - `review_action_selected_candidate_switch`

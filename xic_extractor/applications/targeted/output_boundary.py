@@ -22,7 +22,6 @@ from xic_extractor.applications.targeted.application import (
 from xic_extractor.applications.targeted.production_workflow import (
     acquisition_snapshot_for_publication,
 )
-from xic_extractor.extraction.output_dispatch import write_outputs
 from xic_extractor.extraction.result_models import (
     ExtractionResult,
     FileResult,
@@ -52,8 +51,6 @@ class _TargetedRollbackRecoveryRequired(TargetedOutputBoundaryError):
     """A failed rollback retained recoverable files in the staging root."""
 
 
-_STAGE_OUTPUT_CSV = "__targeted_output__.csv"
-_STAGE_DIAGNOSTICS_CSV = "__targeted_diagnostics__.csv"
 _STAGE_EXCEL_OUTPUT = "__targeted_output__.xlsx"
 _PUBLICATION_LOCK_NAME = ".xic-targeted-publish.lock"
 
@@ -92,42 +89,23 @@ def publish_targeted_outputs(
         expected_processing_request=prepared.owners.request,
         expected_samples=prepared.samples,
     )
-    render_view = (
-        _build_acquisition_baseline_view(acquisition_snapshot)
-        if request.output_projection == "acquisition_baseline"
-        else _build_render_view(finalized_results, acquisition_snapshot)
-    )
+    render_view = _build_render_view(finalized_results, acquisition_snapshot)
     output_dir = request.config.output_csv.parent
     output_dir.mkdir(parents=True, exist_ok=True)
     stage_root = Path(tempfile.mkdtemp(prefix=".xic-targeted-publish-", dir=output_dir))
     preserve_stage_root = False
     try:
-        stage_config = replace(
-            request.config,
-            output_csv=stage_root / _STAGE_OUTPUT_CSV,
-            diagnostics_csv=stage_root / _STAGE_DIAGNOSTICS_CSV,
-        )
-        workbook_only = (
-            request.excel_output_path is not None
-            and not request.config.keep_intermediate_csv
-        )
-        if not workbook_only:
-            write_outputs(stage_config, list(request.targets), render_view)
-        stage_excel: Path | None = None
+        # Without a workbook destination the run is computed but not published.
+        staged_to_final: dict[Path, Path] = {}
         if request.excel_output_path is not None:
             stage_excel = stage_root / _STAGE_EXCEL_OUTPUT
             write_excel_from_run_output(
-                stage_config,
+                request.config,
                 list(request.targets),
                 render_view,
                 output_path=stage_excel,
             )
-        staged_to_final = _staged_output_map(
-            stage_root,
-            request,
-            stage_config=stage_config,
-            stage_excel=stage_excel,
-        )
+            staged_to_final[stage_excel] = request.excel_output_path
         _reject_duplicate_destinations(staged_to_final)
         paths = _commit_staged_outputs(
             staged_to_final,
@@ -355,39 +333,6 @@ def _finalized_product_projection(
             projection_reason=no_write_reason,
         )
     return projection
-
-
-def _build_acquisition_baseline_view(
-    acquisition_evidence: RunOutput,
-) -> RunOutput:
-    return RunOutput(
-        file_results=list(acquisition_evidence.file_results),
-        diagnostics=list(acquisition_evidence.diagnostics),
-    )
-
-
-def _staged_output_map(
-    stage_root: Path,
-    request: TargetedApplicationRequest,
-    *,
-    stage_config: Any,
-    stage_excel: Path | None,
-) -> dict[Path, Path]:
-    mapping: dict[Path, Path] = {}
-    for staged in stage_root.rglob("*"):
-        if not staged.is_file():
-            continue
-        if staged == stage_config.output_csv:
-            final = request.config.output_csv
-        elif staged == stage_config.diagnostics_csv:
-            final = request.config.diagnostics_csv
-        elif stage_excel is not None and staged == stage_excel:
-            assert request.excel_output_path is not None
-            final = request.excel_output_path
-        else:
-            final = request.config.output_csv.parent / staged.relative_to(stage_root)
-        mapping[staged] = final
-    return mapping
 
 
 def _reject_collisions(paths: Any) -> None:

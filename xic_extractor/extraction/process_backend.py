@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any
 
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.output.messages import DiagnosticRecord
-from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecords
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 
 if TYPE_CHECKING:
@@ -25,7 +24,6 @@ def run_process(
     injection_order: dict[str, int],
     progress_callback: Callable[[int, int, str], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
-    model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
     acquisition_sources_by_sample: Mapping[str, AcquisitionSourceExpectation]
     | None = None,
 ) -> RunOutput:
@@ -51,9 +49,6 @@ def run_process(
         scoring_inputs,
         progress_callback=progress_callback,
         should_stop=should_stop,
-        model_selection_expected_diff_approvals=(
-            model_selection_expected_diff_approvals
-        ),
         acquisition_sources_by_sample=acquisition_sources_by_sample,
     )
 
@@ -73,7 +68,6 @@ def collect_raw_file_results_process(
     *,
     progress_callback: Callable[[int, int, str], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
-    model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
     acquisition_sources_by_sample: Mapping[str, AcquisitionSourceExpectation]
     | None = None,
     runner: Callable[..., list[Any]] | None = None,
@@ -93,9 +87,6 @@ def collect_raw_file_results_process(
             config=config,
             targets=targets,
             scoring_inputs=scoring_inputs,
-            model_selection_expected_diff_approvals=(
-                dict(model_selection_expected_diff_approvals or {})
-            ),
             expected_acquisition_source=_expected_source(
                 raw_path,
                 acquisition_sources_by_sample,

@@ -5,15 +5,9 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
-from xic_extractor.extraction.output_dispatch import write_outputs
 from xic_extractor.extraction.paired_area_ratio_projection import (
     apply_paired_area_ratio_projection,
 )
-from xic_extractor.extraction.targeted_ms1_shape_identity_projection import (
-    apply_targeted_ms1_shape_identity_projection,
-    load_targeted_ms1_shape_identity_supports,
-)
-from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecords
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.raw_reader import RawReaderError, preflight_raw_reader
 
@@ -30,10 +24,8 @@ def run_pipeline(
     progress_callback: Callable[[int, int, str], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
     injection_order: dict[str, int] | None = None,
-    model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
     acquisition_sources_by_sample: Mapping[str, AcquisitionSourceExpectation]
     | None = None,
-    publish_outputs: bool = True,
 ) -> RunOutput:
     reader_errors = preflight_raw_reader(config.dll_dir)
     if reader_errors:
@@ -44,9 +36,6 @@ def run_pipeline(
         config,
         raw_paths=raw_paths,
         injection_order=injection_order,
-        model_selection_expected_diff_approvals=(
-            model_selection_expected_diff_approvals
-        ),
     )
     acquisition_kwargs = (
         {}
@@ -64,9 +53,6 @@ def run_pipeline(
             progress_callback=progress_callback,
             should_stop=should_stop,
             injection_order=resolved_inputs.injection_order,
-            model_selection_expected_diff_approvals=(
-                resolved_inputs.model_selection_expected_diff_approvals
-            ),
             **acquisition_kwargs,
         )
     else:
@@ -79,34 +65,12 @@ def run_pipeline(
             progress_callback=progress_callback,
             should_stop=should_stop,
             injection_order=resolved_inputs.injection_order,
-            model_selection_expected_diff_approvals=(
-                resolved_inputs.model_selection_expected_diff_approvals
-            ),
             **acquisition_kwargs,
         )
 
     if acquisition_sources_by_sample is not None:
         output = _bind_acquisition_sources(output, acquisition_sources_by_sample)
     output = apply_paired_area_ratio_projection(output, targets=targets)
-    if config.targeted_ms1_shape_identity_support_tsv is not None:
-        try:
-            targeted_ms1_shape_identity_supports = (
-                load_targeted_ms1_shape_identity_supports(
-                    config.targeted_ms1_shape_identity_support_tsv,
-                    activation_policy=(
-                        config.targeted_ms1_shape_identity_activation_policy
-                    ),
-                )
-            )
-        except (FileNotFoundError, ValueError) as exc:
-            raise ConfigError(str(exc)) from exc
-        output = apply_targeted_ms1_shape_identity_projection(
-            output,
-            targets=targets,
-            supports=targeted_ms1_shape_identity_supports,
-        )
-    if publish_outputs:
-        write_outputs(config, targets, output)
     return output
 
 

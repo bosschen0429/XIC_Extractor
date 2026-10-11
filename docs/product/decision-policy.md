@@ -155,8 +155,8 @@ generic evidence provider.
 | --- | --- |
 | Unit | Candidate `PeakHypothesis` for a known target/sample pair |
 | Required evidence | Selected candidate or explicit no-peak state, target identity, target/sample applicability, positive MS1 state when counted, and provenance-valid trace context |
-| Hard blockers | Sample not applicable, invalid selected hypothesis, hard wrong-peak conflict, missing positive MS1 for counted detection, unapproved expected diff, role-incoherent paired context, missing activation for value-changing rescue |
-| Support | Candidate-aligned MS2/NL, target RT window, paired ISTD/standard RT context, paired area ratio, own-max same-peak support, morphology, boundary assessability, local S/N |
+| Hard blockers | Sample not applicable, invalid selected hypothesis, hard wrong-peak conflict, missing positive MS1 for counted detection, role-incoherent paired context |
+| Support | Candidate-aligned MS2/NL, target RT window, paired ISTD/standard RT context, paired area ratio, morphology, boundary assessability, local S/N |
 | Tie-break | Decision class first, then blocker count, abundance demotion, role-aware RT/context, chemical evidence, trace strength, quality penalty, RT distance, abundance, and finally compatibility score only when comparable |
 | Projection | `TargetedProductProjection` first owns fixed Target row binding and Target cell-subject construction; `ProductionCellDecision` then supplies the selected value/no-write result; the same projection finally owns product state, counted detection, confidence, reason, Review Queue routing, and Targeted output fields |
 
@@ -174,15 +174,13 @@ Targeted-specific rules to keep explicit:
   such as role or sample-matrix constraints.
 - ISTD and analyte missing-MS2/NL behavior are not symmetric. A configured ISTD
   plausible dropout can be counted as `detected_flagged`; an analyte NL fail or
-  missing MS2 needs paired-support or expected-diff policy before it can count.
+  missing MS2 needs paired support before it can count.
   This is count/trusted-reference eligibility, not a second quantification
   decision. Neither branch can discard the finalized cell owner's numeric
   answer or manufacture a value when that owner returned no-write.
 - Paired analyte support is a bundle: coherent MS1, role-aware RT context,
   paired-area support, same-peak support, and no hard quality blocker. No single
   paired fact is standalone product authority.
-- Expected-diff support is product-relevant only when the selected row,
-  affected outputs, validation tier, and matrix impact are explicitly approved.
 - `legacy_review_only_projection` and legacy confidence labels are review or
   compatibility context; they do not by themselves create a not-counted product
   decision.

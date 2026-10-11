@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import csv
 from collections import Counter, defaultdict
-from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
 
@@ -39,7 +38,6 @@ def write_workbook_from_rows(
     diagnostics: list[dict[str, str]],
     output_path: Path,
     require_projection: bool = True,
-    extra_metadata: Sequence[tuple[str, object]] = (),
 ) -> Path:
     if require_projection:
         _require_product_projection(rows)
@@ -58,20 +56,14 @@ def write_workbook_from_rows(
         config,
         extra_metadata=(
             ("targeted_workbook_layout_version", TARGETED_WORKBOOK_LAYOUT_VERSION),
-            *extra_metadata,
         ),
     )
 
     if diagnostics:
         build_diagnostics_sheet(wb.create_sheet("Diagnostics"), diagnostics)
 
-    for title, source in (
-        ("Sample Context", config.injection_order_source),
-        ("Identity Support", config.targeted_ms1_shape_identity_support_tsv),
-        ("Selection Approvals", config.model_selection_expected_diff_approval_registry),
-    ):
-        if source is not None:
-            _embed_input_table(wb, title, source)
+    if config.injection_order_source is not None:
+        _embed_input_table(wb, "Sample Context", config.injection_order_source)
 
     wb.active = wb.index(ws_overview)
     _apply_sheet_role_styles(wb)

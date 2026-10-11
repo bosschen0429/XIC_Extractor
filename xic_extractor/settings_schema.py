@@ -2,10 +2,6 @@ from xic_extractor.configuration.execution_profile import default_parallel_worke
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
-from xic_extractor.targeted_ms1_shape_identity_policy import (
-    EXPLICIT_SUPPORT_TSV_POLICY,
-    LIMITED_HMDC_MEDC_POLICY,
-)
 
 RESOLVER_MODES: tuple[str, ...] = (
     "savgol",
@@ -38,9 +34,6 @@ CANONICAL_SETTINGS_DEFAULTS: dict[str, str] = {
     "injection_order_source": "",
     "rolling_window_size": "5",
     "dirty_matrix_mode": "false",
-    "model_selection_expected_diff_approval_registry": "",
-    "targeted_ms1_shape_identity_support_tsv": "",
-    "targeted_ms1_shape_identity_activation_policy": LIMITED_HMDC_MEDC_POLICY,
     "nl_rt_anchor_search_margin_min": "2.0",
     "nl_rt_anchor_half_window_min": "1.0",
     "nl_fallback_half_window_min": "2.0",
@@ -75,22 +68,6 @@ CANONICAL_SETTINGS_DESCRIPTIONS: dict[str, str] = {
     ),
     "rolling_window_size": "ISTD RT prior 的滾動視窗半徑（±N 個注射）",
     "dirty_matrix_mode": "髒基質模式（放寬 S/N、收緊峰形；尿液等複雜基質用）",
-    "model_selection_expected_diff_approval_registry": (
-        "Durable expected-diff approval registry TSV for selected-hypothesis "
-        "model selection; leave empty unless approved real-data evidence exists"
-    ),
-    "targeted_ms1_shape_identity_support_tsv": (
-        "Reviewed targeted_ms1_shape_identity support TSV for explicit "
-        "own-max same-peak product projection support. Leave empty to let the "
-        "limited default auto workflow decide eligible support rows."
-    ),
-    "targeted_ms1_shape_identity_activation_policy": (
-        "Activation policy for targeted MS1 shape identity support. "
-        f"Default {LIMITED_HMDC_MEDC_POLICY} runs the headless bounded auto "
-        "workflow when no support TSV is configured, restricting accepted "
-        f"support rows to 5-hmdC and 5-medC only. Use {EXPLICIT_SUPPORT_TSV_POLICY} "
-        "to preserve explicit support TSV behavior."
-    ),
     "nl_rt_anchor_search_margin_min": (
         "NL 錨定搜尋半徑（min）：以 rt_center ±此值搜尋 NL 確認的 MS2 作為 RT anchor"
     ),
@@ -116,10 +93,4 @@ METHOD_KEYS = (
     "nl_fallback_half_window_min",
     "rolling_window_size",
     "dirty_matrix_mode",
-    "targeted_ms1_shape_identity_activation_policy",
-)
-
-RESOURCE_KEYS = (
-    "model_selection_expected_diff_approval_registry",
-    "targeted_ms1_shape_identity_support_tsv",
 )

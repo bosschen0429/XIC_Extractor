@@ -221,7 +221,6 @@ def build_targeted_processing_identity_raw_fixture(
             injection_order={
                 stem: order for order, stem in enumerate(sample_stems, start=1)
             },
-            model_selection_expected_diff_approvals=None,
         ),
         current_discovery_settings=current_discovery_settings,
         current_discovery_candidates_by_sample=(current_discovery_candidates_by_sample),

@@ -8,6 +8,10 @@ import pytest
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.extraction.result_models import ExtractionResult
+from xic_extractor.output.excel_pipeline import (
+    _diagnostics_to_rows,
+    _run_output_to_long_rows,
+)
 from xic_extractor.peak_detection.evidence_facts import (
     build_candidate_evidence_facts,
 )
@@ -96,41 +100,15 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
 
     output = _run(config, targets, progress_callback=lambda *_args: None)
 
-    rows = _read_csv(config.output_csv)
-    assert list(rows[0].keys()) == [
-        "SampleName",
-        "NoNL_RT",
-        "NoNL_Int",
-        "NoNL_IntSmoothed",
-        "NoNL_Area",
-        "NoNL_PeakStart",
-        "NoNL_PeakEnd",
-        "NoNL_PeakWidth",
-        "WithNL_RT",
-        "WithNL_Int",
-        "WithNL_IntSmoothed",
-        "WithNL_Area",
-        "WithNL_PeakStart",
-        "WithNL_PeakEnd",
-        "WithNL_PeakWidth",
-        "WithNL_NL",
-    ]
     results = output.file_results[0].results
-    assert rows == [
-        {
-            "SampleName": "SampleA",
-            **_formatted_peak_columns("NoNL", results["NoNL"]),
-            **_formatted_peak_columns("WithNL", results["WithNL"]),
-            "WithNL_NL": "WARN_12.3ppm",
-        }
-    ]
     # WithNL target triggers NL_ANCHOR_FALLBACK; no error diagnostics.
     assert all(
-        d["Issue"] == "NL_ANCHOR_FALLBACK" for d in _read_csv(config.diagnostics_csv)
+        d["Issue"] == "NL_ANCHOR_FALLBACK"
+        for d in _diagnostics_to_rows(output.diagnostics)
     )
     assert len(output.file_results) == 1
     assert all(d.issue == "NL_ANCHOR_FALLBACK" for d in output.diagnostics)
-    long_rows = _read_csv(config.output_csv.with_name("xic_results_long.csv"))
+    long_rows = _run_output_to_long_rows(output, targets)
     no_nl_projection = results["NoNL"].targeted_product_projection
     assert no_nl_projection is not None
     assert no_nl_projection.conflict_reasons == ("targeted_rt_conflict",)
@@ -251,8 +229,7 @@ def test_formal_target_ranks_only_physically_supported_signal(
     )
     projection = result.targeted_product_projection
     assert projection is not None
-    rows = _read_csv(config.output_csv)
-    long_rows = _read_csv(config.output_csv.with_name("xic_results_long.csv"))
+    long_rows = _run_output_to_long_rows(output, [target])
 
     if with_supported_main:
         # The asymmetric analytic lobe is supported even though its canonical
@@ -284,8 +261,8 @@ def test_formal_target_ranks_only_physically_supported_signal(
         assert result.reported_peak_area == evaluation.facts.area_counts_seconds
         assert result.reported_peak_area > 0
         assert projection.counted_detection is True
-        assert rows[0]["Qualified_RT"] != "ND"
-        assert rows[0]["Qualified_Area"] != "ND"
+        assert _result_row(output, [target], "Qualified", 0)["RT"] != "ND"
+        assert _result_row(output, [target], "Qualified", 0)["Area"] != "ND"
         assert long_rows[0]["Counted Detection"] == "TRUE"
 
 
@@ -330,8 +307,8 @@ def test_formal_target_drops_selection_when_final_physical_owner_is_unavailable(
     assert result.model_selection_result is None
     assert result.targeted_product_projection is not None
     assert result.targeted_product_projection.counted_detection is False
-    row = _read_csv(config.output_csv)[0]
-    assert row["Rejected_RT"] == row["Rejected_Area"] == "ND"
+    row = _run_output_to_long_rows(output, [target])[0]
+    assert row["RT"] == row["Area"] == "ND"
 
 
 @pytest.mark.parametrize("neutral_loss_da", [None, 116.0474])
@@ -387,8 +364,8 @@ def test_no_selected_apex_does_not_capture_a_broad_tail(
     assert result.reported_peak_area is None
     assert result.targeted_product_projection is not None
     assert result.targeted_product_projection.counted_detection is False
-    row = _read_csv(config.output_csv)[0]
-    assert row["OutsideApex_RT"] == row["OutsideApex_Area"] == "ND"
+    row = _run_output_to_long_rows(output, [target])[0]
+    assert row["RT"] == row["Area"] == "ND"
 
     from xic_extractor.applications.targeted.application import (
         build_targeted_application_request,
@@ -478,15 +455,20 @@ def test_run_multi_sample_preserves_sample_attribution_and_ordering(
     res_b = output.file_results[1].results["Analyte"].peak_result.peak
     assert res_b.rt == pytest.approx(9.50, abs=0.05)
 
-    rows = _read_csv(config.output_csv)
-    assert len(rows) == 2
-    assert rows[0]["SampleName"] == "SampleA"
-    assert float(rows[0]["Analyte_RT"]) == pytest.approx(8.50, abs=0.05)
-    assert rows[1]["SampleName"] == "SampleB"
-    assert float(rows[1]["Analyte_RT"]) == pytest.approx(9.50, abs=0.05)
-    assert float(rows[0]["Analyte_RT"]) != float(rows[1]["Analyte_RT"])
+    assert len(output.file_results) == 2
+    assert output.file_results[0].sample_name == "SampleA"
+    assert float(_result_row(output, targets, "Analyte", 0)["RT"]) == pytest.approx(
+        8.50, abs=0.05
+    )
+    assert output.file_results[1].sample_name == "SampleB"
+    assert float(_result_row(output, targets, "Analyte", 1)["RT"]) == pytest.approx(
+        9.50, abs=0.05
+    )
+    assert float(_result_row(output, targets, "Analyte", 0)["RT"]) != float(
+        _result_row(output, targets, "Analyte", 1)["RT"]
+    )
 
-    long_rows = _read_csv(config.output_csv.with_name("xic_results_long.csv"))
+    long_rows = _run_output_to_long_rows(output, targets)
     assert [r["SampleName"] for r in long_rows] == ["SampleA", "SampleB"]
     assert float(long_rows[0]["RT"]) == pytest.approx(8.50, abs=0.05)
     assert float(long_rows[1]["RT"]) == pytest.approx(9.50, abs=0.05)
@@ -568,7 +550,7 @@ def test_run_wires_candidate_ms2_evidence_into_scoring_context(
 def test_run_does_not_write_intermediate_csv_by_default(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = _config(tmp_path, keep_intermediate_csv=False)
+    config = _config(tmp_path)
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [_target("NoNL", neutral_loss_da=None)]
     monkeypatch.setattr(
@@ -827,17 +809,16 @@ def test_run_writes_nd_for_peak_failure_but_keeps_nl_result(
         _nl_sequence([NLResult("OK", 1.2, None, 3, 0, 2)]),
     )
 
-    _run(config, targets)
+    output = _run(config, targets)
 
-    rows = _read_csv(config.output_csv)
-    assert rows[0]["WithNL_RT"] == "ND"
-    assert rows[0]["WithNL_Int"] == "ND"
-    assert rows[0]["WithNL_Area"] == "ND"
-    assert rows[0]["WithNL_PeakStart"] == "ND"
-    assert rows[0]["WithNL_PeakEnd"] == "ND"
-    assert rows[0]["WithNL_PeakWidth"] == "ND"
-    assert rows[0]["WithNL_NL"] == "OK"
-    diagnostics = _read_csv(config.diagnostics_csv)
+    assert _result_row(output, targets, "WithNL", 0)["RT"] == "ND"
+    assert _result_row(output, targets, "WithNL", 0)["Int"] == "ND"
+    assert _result_row(output, targets, "WithNL", 0)["Area"] == "ND"
+    assert _result_row(output, targets, "WithNL", 0)["PeakStart"] == "ND"
+    assert _result_row(output, targets, "WithNL", 0)["PeakEnd"] == "ND"
+    assert _result_row(output, targets, "WithNL", 0)["PeakWidth"] == "ND"
+    assert _result_row(output, targets, "WithNL", 0)["NL"] == "OK"
+    diagnostics = _diagnostics_to_rows(output.diagnostics)
     assert diagnostics[0]["Issue"] == "PEAK_NOT_FOUND"
     assert diagnostics[0]["Target"] == "WithNL"
     assert diagnostics[0]["Reason"] == "Physical peak unavailable: peak_not_found"
@@ -863,7 +844,7 @@ def test_run_projects_very_low_for_nd_rows_with_failed_nl(
 
     output = _run(config, targets)
 
-    long_rows = _read_csv(config.output_csv.with_name("xic_results_long.csv"))
+    long_rows = _run_output_to_long_rows(output, targets)
     assert [_core_long_row(row) for row in long_rows] == [
         {
             "SampleName": "SampleA",
@@ -906,9 +887,9 @@ def test_run_leaves_confidence_blank_for_file_error_rows(
         _open_raw_factory(errors={"Bad.raw": RuntimeError("file locked")}),
     )
 
-    _run(config, targets)
+    output = _run(config, targets)
 
-    long_rows = _read_csv(config.output_csv.with_name("xic_results_long.csv"))
+    long_rows = _run_output_to_long_rows(output, targets)
     assert [_core_long_row(row) for row in long_rows] == [
         {
             "SampleName": "Bad",
@@ -954,27 +935,8 @@ def test_run_writes_file_error_row_and_continues(
 
     output = _run(config, targets)
 
-    rows = _read_csv(config.output_csv)
-    assert rows[0] == {
-        "SampleName": "Bad",
-        "NoNL_RT": "ERROR",
-        "NoNL_Int": "ERROR",
-        "NoNL_IntSmoothed": "ERROR",
-        "NoNL_Area": "ERROR",
-        "NoNL_PeakStart": "ERROR",
-        "NoNL_PeakEnd": "ERROR",
-        "NoNL_PeakWidth": "ERROR",
-        "WithNL_RT": "ERROR",
-        "WithNL_Int": "ERROR",
-        "WithNL_IntSmoothed": "ERROR",
-        "WithNL_Area": "ERROR",
-        "WithNL_PeakStart": "ERROR",
-        "WithNL_PeakEnd": "ERROR",
-        "WithNL_PeakWidth": "ERROR",
-        "WithNL_NL": "ERROR",
-    }
-    assert rows[1]["SampleName"] == "Good"
-    diagnostics = _read_csv(config.diagnostics_csv)
+    assert output.file_results[1].sample_name == "Good"
+    diagnostics = _diagnostics_to_rows(output.diagnostics)
     assert diagnostics[0]["SampleName"] == "Bad"
     assert diagnostics[0]["Target"] == ""
     assert diagnostics[0]["Issue"] == "FILE_ERROR"
@@ -1055,11 +1017,10 @@ def test_run_writes_neutral_loss_diagnostics(
         "xic_extractor.extraction.diagnostics.check_nl", _nl_sequence([nl_result])
     )
 
-    _run(config, targets)
+    output = _run(config, targets)
 
-    rows = _read_csv(config.output_csv)
-    assert rows[0]["WithNL_NL"] == nl_result.to_token()
-    diagnostics = _read_csv(config.diagnostics_csv)
+    assert _result_row(output, targets, "WithNL", 0)["NL"] == nl_result.to_token()
+    diagnostics = _diagnostics_to_rows(output.diagnostics)
     assert diagnostics[0]["Issue"] == issue
     assert diagnostics[0]["Target"] == "WithNL"
     assert reason_part in diagnostics[0]["Reason"]
@@ -1090,13 +1051,12 @@ def test_istd_no_ms2_keeps_ms1_peak_and_writes_confidence_flags(
 
     output = _run(config, targets)
 
-    rows = _read_csv(config.output_csv)
     result = output.file_results[0].results["ISTD"]
     expected = _formatted_peak_columns("ISTD", result)
-    assert rows[0]["ISTD_RT"] == expected["ISTD_RT"]
-    assert rows[0]["ISTD_Int"] == expected["ISTD_Int"]
-    assert rows[0]["ISTD_Area"] == expected["ISTD_Area"]
-    diagnostics = _read_csv(config.diagnostics_csv)
+    assert _result_row(output, targets, "ISTD", 0)["RT"] == expected["ISTD_RT"]
+    assert _result_row(output, targets, "ISTD", 0)["Int"] == expected["ISTD_Int"]
+    assert _result_row(output, targets, "ISTD", 0)["Area"] == expected["ISTD_Area"]
+    diagnostics = _diagnostics_to_rows(output.diagnostics)
     assert any(
         record["Target"] == "ISTD" and record["Issue"] == "NO_MS2"
         for record in diagnostics
@@ -1136,7 +1096,6 @@ def test_run_reports_progress_and_stops_between_files(
 
     assert progress_calls == [(1, 2, "A.raw")]
     assert [file_result.sample_name for file_result in output.file_results] == ["A"]
-    assert [row["SampleName"] for row in _read_csv(config.output_csv)] == ["A"]
 
 
 def test_paired_analyte_uses_strict_anchor_peak_selection(
@@ -1524,7 +1483,6 @@ def test_paired_analyte_preserves_mismatched_target_anchor_peak_as_ambiguous(
 
     output = _run(config, targets)
 
-    rows = _read_csv(config.output_csv)
     expected_peak = _formatted_peak_columns(
         "Analyte", output.file_results[0].results["Analyte"]
     )
@@ -1534,17 +1492,23 @@ def test_paired_analyte_preserves_mismatched_target_anchor_peak_as_ambiguous(
     assert len(raw.windows) == 2
     sampled_rt = np.linspace(*raw.windows[1], 201)
     expected_apex_rt = sampled_rt[np.argmin(np.abs(sampled_rt - 13.06))]
-    assert rows[0]["Analyte_RT"] == f"{expected_apex_rt:.4f}"
-    assert rows[0]["Analyte_Int"] == expected_peak["Analyte_Int"]
-    assert rows[0]["Analyte_Area"] == expected_peak["Analyte_Area"]
-    long_rows = _read_csv(config.output_csv.with_name("xic_results_long.csv"))
+    assert _result_row(output, targets, "Analyte", 0)["RT"] == f"{expected_apex_rt:.4f}"
+    assert (
+        _result_row(output, targets, "Analyte", 0)["Int"]
+        == expected_peak["Analyte_Int"]
+    )
+    assert (
+        _result_row(output, targets, "Analyte", 0)["Area"]
+        == expected_peak["Analyte_Area"]
+    )
+    long_rows = _run_output_to_long_rows(output, targets)
     analyte_row = next(row for row in long_rows if row["Target"] == "Analyte")
     assert analyte_row["Confidence"] == "VERY_LOW"
     assert analyte_row["Product State"] == "ambiguous"
     assert analyte_row["Counted Detection"] == "FALSE"
     assert "targeted_rt_conflict" in analyte_row["Projection Conflict Reasons"]
     assert output.file_results[0].results["Analyte"].confidence == "LOW"
-    diagnostics = _read_csv(config.diagnostics_csv)
+    diagnostics = _diagnostics_to_rows(output.diagnostics)
     assert any(
         record["Target"] == "Analyte"
         and record["Issue"] == "ANCHOR_RT_MISMATCH"
@@ -1596,12 +1560,15 @@ def test_paired_analyte_accepts_peak_close_to_target_anchor_even_if_farther_from
     output = _run(config, targets)
 
     result = output.file_results[0].results["Analyte"]
-    rows = _read_csv(config.output_csv)
     expected = _formatted_peak_columns("Analyte", result)
-    assert rows[0]["Analyte_RT"] == expected["Analyte_RT"]
-    assert float(rows[0]["Analyte_RT"]) == pytest.approx(13.95, abs=0.03)
-    assert rows[0]["Analyte_Area"] == expected["Analyte_Area"]
-    diagnostics = _read_csv(config.diagnostics_csv)
+    assert _result_row(output, targets, "Analyte", 0)["RT"] == expected["Analyte_RT"]
+    assert float(_result_row(output, targets, "Analyte", 0)["RT"]) == pytest.approx(
+        13.95, abs=0.03
+    )
+    assert (
+        _result_row(output, targets, "Analyte", 0)["Area"] == expected["Analyte_Area"]
+    )
+    diagnostics = _diagnostics_to_rows(output.diagnostics)
     assert not any(
         record["Target"] == "Analyte" and record["Issue"] == "ANCHOR_RT_MISMATCH"
         for record in diagnostics
@@ -1717,7 +1684,7 @@ def test_paired_analyte_istd_rt_fallback_does_not_force_counted_detection(
 
     output = _run(config, targets)
 
-    long_rows = _read_csv(config.output_csv.with_name("xic_results_long.csv"))
+    long_rows = _run_output_to_long_rows(output, targets)
     analyte_row = next(row for row in long_rows if row["Target"] == "Analyte")
     expected_peak = _formatted_peak_columns(
         "Analyte", output.file_results[0].results["Analyte"]
@@ -1780,16 +1747,18 @@ def test_paired_analyte_fallback_preserves_not_counted_peak_in_matrix(
 
     output = _run(config, targets)
 
-    rows = _read_csv(config.output_csv)
     expected_peak = _formatted_peak_columns(
         "Analyte", output.file_results[0].results["Analyte"]
     )
     assert len(raw.windows) == 2
     sampled_rt = np.linspace(*raw.windows[1], 201)
     expected_apex_rt = sampled_rt[np.argmin(np.abs(sampled_rt - 14.31))]
-    assert rows[0]["Analyte_RT"] == f"{expected_apex_rt:.4f}"
-    assert rows[0]["Analyte_Area"] == expected_peak["Analyte_Area"]
-    long_rows = _read_csv(config.output_csv.with_name("xic_results_long.csv"))
+    assert _result_row(output, targets, "Analyte", 0)["RT"] == f"{expected_apex_rt:.4f}"
+    assert (
+        _result_row(output, targets, "Analyte", 0)["Area"]
+        == expected_peak["Analyte_Area"]
+    )
+    long_rows = _run_output_to_long_rows(output, targets)
     analyte_row = next(row for row in long_rows if row["Target"] == "Analyte")
     assert analyte_row["RT"] == expected_peak["Analyte_RT"]
     assert analyte_row["Area"] == expected_peak["Analyte_Area"]
@@ -1805,7 +1774,7 @@ def test_paired_analyte_fallback_preserves_not_counted_peak_in_matrix(
     assert selected_peak is not None
     istd_rt = output.file_results[0].results["ISTD"].reported_rt
     assert istd_rt is not None
-    diagnostics = _read_csv(config.diagnostics_csv)
+    diagnostics = _diagnostics_to_rows(output.diagnostics)
     assert any(
         record["Target"] == "Analyte"
         and record["Issue"] == "ANCHOR_RT_MISMATCH"
@@ -1817,15 +1786,20 @@ def test_paired_analyte_fallback_preserves_not_counted_peak_in_matrix(
 
 
 def _run(config: ExtractionConfig, targets: list[Target], **kwargs):
-    from xic_extractor.extraction.output_dispatch import write_outputs
     from xic_extractor.extractor import acquire
 
-    output = acquire(config, targets, **kwargs)
-    write_outputs(config, targets, output)
-    return output
+    return acquire(config, targets, **kwargs)
 
 
-def _config(tmp_path: Path, *, keep_intermediate_csv: bool = True) -> ExtractionConfig:
+def _result_row(output, targets, label, sample_index=0):
+    rows = _run_output_to_long_rows(output, targets)
+    sample = output.file_results[sample_index].sample_name
+    return next(
+        row for row in rows if row["SampleName"] == sample and row["Target"] == label
+    )
+
+
+def _config(tmp_path: Path) -> ExtractionConfig:
     data_dir = tmp_path / "raw"
     output_dir = tmp_path / "output"
     dll_dir = tmp_path / "dll"
@@ -1843,7 +1817,6 @@ def _config(tmp_path: Path, *, keep_intermediate_csv: bool = True) -> Extraction
         peak_min_prominence_ratio=0.10,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
-        keep_intermediate_csv=keep_intermediate_csv,
     )
 
 
@@ -2224,11 +2197,6 @@ class _WidePhysicalContextRaw(_FakeRaw):
         selected = 5000.0 * np.exp(-0.5 * ((rt - 9.6) / 0.55) ** 2)
         outside_selection = 15000.0 * np.exp(-0.5 * ((rt - 11.4) / 0.12) ** 2)
         return rt, 10.0 + selected + outside_selection
-
-
-def _read_csv(path: Path) -> list[dict[str, str]]:
-    with path.open(newline="", encoding="utf-8-sig") as handle:
-        return list(csv.DictReader(handle))
 
 
 def _core_long_row(row: dict[str, str]) -> dict[str, str]:

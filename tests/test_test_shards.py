@@ -106,7 +106,7 @@ def test_test_shards_keep_changed_shard_contracts() -> None:
             Path("tests/test_physical_peak_evaluation_persistence.py"),
             Path("tests/test_run_discovery_run_spec_cli.py"),
             Path("tests/test_process_job_execution.py"),
-            Path("tests/test_targeted_ms1_shape_identity.py"),
+            Path("tests/test_evidence_artifacts.py"),
         )
     )
 
@@ -135,7 +135,7 @@ def test_test_shards_keep_changed_shard_contracts() -> None:
         assert _matching_shards(path) == ("alignment-core",)
         assert shard_for_path(path) == "alignment-core"
     assert assigned["product-gates-evidence"] == (
-        Path("tests/test_targeted_ms1_shape_identity.py"),
+        Path("tests/test_evidence_artifacts.py"),
     )
 
 

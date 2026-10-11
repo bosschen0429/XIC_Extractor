@@ -36,6 +36,7 @@ def build_scoring_context_factory(
         istd_rt_in_this_sample: float | None,
         paired_istd_fwhm: float | None,
         nl_result: NLResult | None,
+        target_reference_rt: float | None = None,
         candidate_ms2_evidence_builder: Callable[
             [PeakCandidate], CandidateMS2Evidence | None
         ]
@@ -56,6 +57,17 @@ def build_scoring_context_factory(
             )
             if rt_prior is not None:
                 prior_source = "rolling_median"
+
+        scoring_rt_min, scoring_rt_max = target.rt_min, target.rt_max
+        if not target.is_istd and target_reference_rt is not None:
+            # The extraction owner transfers the method offset and sample drift.
+            # Score in that same frame, not the unshifted method window.
+            half_width = (target.rt_max - target.rt_min) / 2.0
+            scoring_rt_min = target_reference_rt - half_width
+            scoring_rt_max = target_reference_rt + half_width
+            if target.istd_pair and istd_rt_in_this_sample is not None:
+                rt_prior = target_reference_rt
+                prior_source = "paired_istd"
 
         rt_values = np.asarray(rt, dtype=float)
         intensity_values = np.asarray(intensity, dtype=float)
@@ -188,8 +200,8 @@ def build_scoring_context_factory(
                 nl_match=nl_match,
                 rt_prior=rt_prior,
                 rt_prior_sigma=rt_prior_sigma,
-                rt_min=target.rt_min,
-                rt_max=target.rt_max,
+                rt_min=scoring_rt_min,
+                rt_max=scoring_rt_max,
                 dirty_matrix=config.dirty_matrix_mode,
                 neutral_loss_required=target.neutral_loss_da is not None,
                 count_no_ms2_as_detected=config.count_no_ms2_as_detected,

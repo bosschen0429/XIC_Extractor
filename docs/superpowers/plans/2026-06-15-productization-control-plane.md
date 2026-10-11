@@ -55,18 +55,6 @@ Lane key: `quality_explanation_sidecar`
 
 Routes: [state](../validation/productization_status_index.tsv), [writer authority](../productization/status/productization_authority_manifest.json), [stable capability](../../product/productization.md).
 
-### Targeted MS1 shape identity limited rescue remains production-ready
-
-Lane key: `targeted_ms1_shape_identity_limited_rescue`
-
-Routes: [state](../validation/productization_status_index.tsv), [writer authority](../productization/status/productization_authority_manifest.json), [stable capability](../../product/productization.md).
-
-### GUI and broader targets remain blocked
-
-Lane key: `targeted_ms1_shape_identity_broader_targets`
-
-Routes: [state](../validation/productization_status_index.tsv), [writer authority](../productization/status/productization_authority_manifest.json), [stable capability](../../product/productization.md).
-
 ### sample_metadata cross-module parity
 
 Lane key: `sample_metadata_order_projection`

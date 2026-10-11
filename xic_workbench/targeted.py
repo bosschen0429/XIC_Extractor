@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import statistics
-import uuid
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -15,10 +14,6 @@ from xic_extractor.applications.targeted.application import (
     build_canonical_targeted_application_service,
     build_targeted_application_request,
 )
-from xic_extractor.applications.targeted.limited_identity_workflow import (
-    execute_limited_identity_workflow,
-    requires_limited_identity_workflow,
-)
 from xic_extractor.configuration import loader as config_loader
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.configuration.settings import method_settings_differences
@@ -26,10 +21,6 @@ from xic_extractor.extraction.result_models import ExtractionResult, RunOutput
 from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,
     METHOD_KEYS,
-    RESOURCE_KEYS,
-)
-from xic_extractor.targeted_ms1_shape_identity_policy import (
-    TARGETED_MS1_SHAPE_IDENTITY_ACTIVATION_POLICIES,
 )
 
 
@@ -94,27 +85,7 @@ class TargetedRun:
                 should_stop=self._should_cancel,
                 excel_output_path=excel_path,
             )
-            if requires_limited_identity_workflow(config):
-                self.stage = "Targeted 基準、身分支持與驗證後交付"
-                output_root = config.output_csv.parent / (
-                    f"targeted_{datetime.now():%Y%m%d_%H%M%S}_{uuid.uuid4().hex[:8]}"
-                )
-                workflow = execute_limited_identity_workflow(
-                    request, application=application, output_root=output_root
-                )
-                config = workflow.final_config
-                self.output_dir = config.output_csv.parent
-                execution = workflow.final_execution
-                excel_path = next(
-                    (
-                        Path(path)
-                        for path in execution.published_paths
-                        if Path(path).suffix.lower() == ".xlsx"
-                    ),
-                    self.output_dir / excel_path.name,
-                )
-            else:
-                execution = application.execute_application(request)
+            execution = application.execute_application(request)
         except InterruptedError as exc:
             if str(exc):
                 self.cancellation_reason = str(exc)
@@ -277,24 +248,6 @@ _SETTING_FIELDS: tuple[tuple[str, str, str, dict[str, Any]], ...] = (
         {"help": "放寬 S/N、收緊峰形；用於尿液等複雜基質。"},
     ),
     (
-        "model_selection_expected_diff_approval_registry",
-        "預期差異核准紀錄",
-        "file",
-        {"help": "已核准的 expected-diff registry TSV；沒有對應核准紀錄時留空。"},
-    ),
-    (
-        "targeted_ms1_shape_identity_support_tsv",
-        "MS1 峰形身分支持資料",
-        "file",
-        {"help": "已審核的 support TSV；留空時由目前啟用政策處理，不隨方法參數匯出。"},
-    ),
-    (
-        "targeted_ms1_shape_identity_activation_policy",
-        "MS1 shape identity 啟用政策",
-        "select",
-        {"options": list(TARGETED_MS1_SHAPE_IDENTITY_ACTIVATION_POLICIES)},
-    ),
-    (
         "nl_rt_anchor_search_margin_min",
         "NL 錨點搜尋半徑（min）",
         "number",
@@ -336,8 +289,6 @@ def setting_fields() -> list[dict[str, Any]]:
         scope = (
             "method"
             if key in METHOD_KEYS
-            else "resource"
-            if key in RESOURCE_KEYS
             else "batch"
             if key in {"data_dir", "injection_order_source"}
             else "environment"
@@ -365,7 +316,4 @@ def method_summary(settings: dict[str, str]) -> dict[str, Any]:
         "label": f"自訂參數 · {len(differences)} 項調整" if differences else "標準參數",
         "custom_keys": [row["key"] for row in differences],
         "differences": differences,
-        "resource_keys": [
-            key for key in RESOURCE_KEYS if settings.get(key, "").strip()
-        ],
     }

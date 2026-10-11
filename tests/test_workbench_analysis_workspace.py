@@ -4,7 +4,7 @@ import pytest
 
 from tests.test_targeted_method_files import rows
 from tests.test_xic_workbench import _client
-from xic_extractor.settings_schema import METHOD_KEYS, RESOURCE_KEYS
+from xic_extractor.settings_schema import METHOD_KEYS
 from xic_workbench.workspace import ReviewWorkspace
 
 
@@ -71,34 +71,6 @@ def test_http_method_save_load_replaces_intent_preserves_batch_and_metadata(tmp_
         assert unchanged["settings"] == original["settings"]
         assert unchanged["targets"] == original["targets"]
         assert not (config_dir / "settings.csv").exists()
-
-
-@pytest.mark.parametrize("resource", RESOURCE_KEYS)
-def test_resource_bound_method_actions_reject_without_mutating_active(
-    tmp_path, resource
-):
-    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
-    with _client(workspace) as request:
-        _, original, _ = request("/api/config")
-        settings = original["settings"]
-        _, saved, _ = request(
-            "/api/targeted/method/save",
-            {"name": "valid", "settings": settings, "targets": rows()},
-        )
-        bound = {**settings, resource: "scientific-reference.csv"}
-        for route, values in (
-            ("save", {"name": "bound", "targets": rows()}),
-            ("load", {"path": saved["methods"][0]["path"]}),
-        ):
-            status, error, _ = request(
-                f"/api/targeted/method/{route}", {**values, "settings": bound}
-            )
-            assert status == 400
-            assert error["error"]
-        _, after, _ = request("/api/config")
-        assert after["settings"] == original["settings"]
-        assert after["targets"] == original["targets"]
-        assert [method["name"] for method in after["targeted_methods"]] == ["valid"]
 
 
 @pytest.mark.parametrize(

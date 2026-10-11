@@ -200,12 +200,10 @@ numbers), with a type/version prefix. Its current content boundary is:
   contract, that content identity, and a canonical set of upstream artifact
   references. Equal bytes across attempts preserve content equality but never
   collapse artifact-instance identity;
-- the two artifact-envelope adapters are deliberately diagnostic-only. The
-  Targeted MS1-shape owner fixes the
-  `targeted_ms1_shape_identity` UTF-8 TSV bytes and role; the Pt Discovery
-  evidence CSV owner fixes the `pt_pattern_discovery_evidence` UTF-8 CSV
-  bytes and role. Callers cannot supply role/schema strings, and both owner APIs
-  require an owner-issued processing attempt;
+- the Pt Discovery evidence CSV artifact-envelope adapter is diagnostic-only.
+  Its owner fixes the `pt_pattern_discovery_evidence` UTF-8 CSV bytes and role.
+  Callers cannot supply role/schema strings; minting requires an owner-issued
+  processing attempt;
 - the sample-metadata owner mints `xic.sample` from the
   stable owner namespace, `sample_metadata` identity schema, and canonical
   `sample_name` key. Its `raw_stem` may resolve that key but is not identity

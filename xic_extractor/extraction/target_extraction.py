@@ -48,7 +48,6 @@ from xic_extractor.peak_detection.candidate_selection import (
 from xic_extractor.peak_detection.evidence_facts import (
     decision_semantics_from_candidate_facts,
 )
-from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecords
 from xic_extractor.peak_detection.models import (
     PeakCandidate,
     PeakCandidatesResult,
@@ -88,7 +87,6 @@ def extract_raw_file_result(
     raw_path: Path,
     *,
     scoring_context_factory: Callable[..., Any] | None = None,
-    model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
     expected_acquisition_source: AcquisitionSourceExpectation | None = None,
 ) -> RawFileExtractionResult:
     from xic_extractor.extraction import result_models
@@ -98,7 +96,6 @@ def extract_raw_file_result(
         targets,
         raw_path,
         scoring_context_factory=scoring_context_factory,
-        model_selection_expected_diff_approvals=model_selection_expected_diff_approvals,
         expected_acquisition_source=expected_acquisition_source,
     )
     return result_models.RawFileExtractionResult(
@@ -119,13 +116,11 @@ def process_file(
     precomputed_istd_diagnostics: list[DiagnosticRecord] | None = None,
     precomputed_istd_anchor_rts: dict[str, float] | None = None,
     precomputed_istd_shape_metrics: dict[str, tuple[float, float | None]] | None = None,
-    model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
     expected_acquisition_source: AcquisitionSourceExpectation | None = None,
 ) -> tuple[FileResult, list[DiagnosticRecord]]:
     from xic_extractor.extraction import result_models
 
     sample_name = raw_path.stem
-    approval_records = model_selection_expected_diff_approvals
     try:
         raw_context = (
             open_raw(raw_path, config.dll_dir)
@@ -165,7 +160,6 @@ def process_file(
                         results=results,
                         diagnostics=diagnostics,
                         scoring_context_factory=scoring_context_factory,
-                        model_selection_expected_diff_approvals=approval_records,
                         shape_metrics_by_label=istd_shape_metrics_by_label,
                     )
                     confidence = results[target.label].peak_result.confidence
@@ -204,7 +198,6 @@ def process_file(
                     results=results,
                     diagnostics=diagnostics,
                     scoring_context_factory=scoring_context_factory,
-                    model_selection_expected_diff_approvals=approval_records,
                     istd_confidence_note=istd_confidence_note(
                         istd_confidence_by_label.get(target.istd_pair)
                     ),
@@ -243,7 +236,6 @@ def extract_one_target(
     istd_rt_in_this_sample: float | None = None,
     paired_istd_fwhm: float | None = None,
     shape_metrics_by_label: dict[str, tuple[float, float | None]] | None = None,
-    model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
 ) -> float | None:
     selection_config = replace(
         config,
@@ -428,6 +420,7 @@ def extract_one_target(
             rt=rt,
             intensity=intensity,
             istd_rt_in_this_sample=istd_rt_in_this_sample,
+            target_reference_rt=target_reference_rt,
             paired_istd_fwhm=paired_istd_fwhm,
             nl_result=nl_result,
             candidate_ms2_evidence_builder=_cached_candidate_ms2_builder,
@@ -490,8 +483,6 @@ def extract_one_target(
         universe=universe,
         selection_rt_min=selection_rt_min,
         selection_rt_max=selection_rt_max,
-        paired_istd_anchor_rt=istd_rt_in_this_sample,
-        model_selection_expected_diff_approvals=model_selection_expected_diff_approvals,
     )
     peak_result = handoff_peak.peak_result
     candidate = selected_candidate(peak_result)

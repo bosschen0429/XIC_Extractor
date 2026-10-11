@@ -310,7 +310,6 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
         target_extraction.selected_candidate(handoff_inputs["peak_result"])
         == selected_candidate_value
     )
-    assert handoff_inputs["paired_istd_anchor_rt"] == 8.55
     trace_group = handoff_inputs["trace_group"]
     assert trace_group.expected_rt_min == pytest.approx(8.5)
     np.testing.assert_array_equal(trace_group.primary_trace.rt, prepared.rt)

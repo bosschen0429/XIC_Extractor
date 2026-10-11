@@ -6,18 +6,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from xic_extractor.applications.targeted import limited_identity_workflow
 from xic_extractor.applications.targeted.application import TargetedApplicationExecution
 from xic_extractor.applications.targeted.output_boundary import (
     TargetedOutputBoundaryError,
 )
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.extraction.result_models import RunOutput
-from xic_extractor.extraction.targeted_inputs import (
-    resolve_model_selection_expected_diff_approvals,
-)
 from xic_extractor.output.messages import DiagnosticRecord
-from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecord
 from xic_extractor.raw_reader import RawReaderError
 
 
@@ -29,17 +24,12 @@ def _isolate_cli_shell_from_production_workflow(monkeypatch):
 
     class _Service:
         def execute_application(self, request):
-            approvals = resolve_model_selection_expected_diff_approvals(
-                request.config,
-                request.model_selection_expected_diff_approvals,
-            )
             output = module.extractor.run(
                 request.config,
                 list(request.targets),
                 progress_callback=request.progress_callback,
                 should_stop=request.should_stop,
                 injection_order=request.injection_order,
-                model_selection_expected_diff_approvals=approvals,
             )
             if request.excel_output_path is not None:
                 module.write_excel_from_run_output(
@@ -88,7 +78,6 @@ def test_cli_runs_extraction_with_base_dir_and_workbook(
 
     assert exit_code == 0
     assert calls["config_dir"] == tmp_path / "config"
-    assert calls["run_config"].keep_intermediate_csv is False
     assert calls["run_targets"] == targets
     assert calls["excel"] is True
     stdout = capsys.readouterr().out
@@ -342,359 +331,6 @@ def test_cli_preserves_loaded_parallel_settings_when_overrides_are_omitted(
     assert "Processed files: 2" in capsys.readouterr().out
 
 
-def test_cli_loads_model_selection_expected_diff_approval_registry(
-    tmp_path: Path,
-    monkeypatch,
-    capsys,
-) -> None:
-    module = _module()
-    config = _config(tmp_path)
-    targets = [_target("Analyte")]
-    registry_path = tmp_path / "expected_diff_approvals.tsv"
-    registry_path.write_text("stub\n", encoding="utf-8")
-    approval = _expected_diff_approval()
-    calls: dict[str, object] = {}
-
-    def _load_approvals(path: Path):
-        calls["approval_registry_path"] = path
-        return {approval.stable_row_id: approval}
-
-    def fake_load_config(_config_dir: Path, *, settings_overrides=None):
-        calls["settings_overrides"] = settings_overrides
-        loaded_config = replace(
-            config,
-            model_selection_expected_diff_approval_registry=Path(
-                settings_overrides["model_selection_expected_diff_approval_registry"]
-            ),
-        )
-        return loaded_config, targets
-
-    monkeypatch.setattr(module, "load_config", fake_load_config)
-    monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_inputs.load_expected_diff_approval_registry",
-        _load_approvals,
-    )
-    monkeypatch.setattr(module.extractor, "run", _fake_run(calls))
-    monkeypatch.setattr(
-        module,
-        "write_excel_from_run_output",
-        lambda *_args, **_kwargs: calls.setdefault("excel", True),
-        raising=False,
-    )
-
-    exit_code = module.main(
-        [
-            "--base-dir",
-            str(tmp_path),
-            "--model-selection-expected-diff-approvals",
-            str(registry_path),
-        ]
-    )
-
-    assert exit_code == 0
-    assert calls["settings_overrides"] == {
-        "model_selection_expected_diff_approval_registry": str(registry_path.resolve())
-    }
-    assert calls["approval_registry_path"] == registry_path.resolve()
-    assert calls["model_selection_expected_diff_approvals"] == {
-        approval.stable_row_id: approval
-    }
-    assert "Processed files: 2" in capsys.readouterr().out
-
-
-def test_cli_passes_targeted_ms1_shape_identity_support_override(
-    tmp_path: Path,
-    monkeypatch,
-    capsys,
-) -> None:
-    module = _module()
-    config = replace(
-        _config(tmp_path),
-        targeted_ms1_shape_identity_activation_policy="limited_5hmdc_5medc",
-    )
-    targets = [_target("Analyte")]
-    support_path = tmp_path / "targeted_ms1_shape_identity.tsv"
-    support_path.write_text("stub\n", encoding="utf-8")
-    calls: dict[str, object] = {}
-
-    def fake_load_config(_config_dir: Path, *, settings_overrides=None):
-        calls["settings_overrides"] = settings_overrides
-        loaded_config = replace(
-            config,
-            targeted_ms1_shape_identity_support_tsv=Path(
-                settings_overrides["targeted_ms1_shape_identity_support_tsv"]
-            ),
-            targeted_ms1_shape_identity_activation_policy=settings_overrides[
-                "targeted_ms1_shape_identity_activation_policy"
-            ],
-        )
-        return loaded_config, targets
-
-    monkeypatch.setattr(module, "load_config", fake_load_config)
-    monkeypatch.setattr(module.extractor, "run", _fake_run(calls))
-    monkeypatch.setattr(
-        module,
-        "write_excel_from_run_output",
-        lambda *_args, **_kwargs: calls.setdefault("excel", True),
-        raising=False,
-    )
-
-    exit_code = module.main(
-        [
-            "--base-dir",
-            str(tmp_path),
-            "--targeted-ms1-shape-identity-support-tsv",
-            str(support_path),
-        ]
-    )
-
-    assert exit_code == 0
-    assert calls["settings_overrides"] == {
-        "targeted_ms1_shape_identity_support_tsv": str(support_path.resolve()),
-        "targeted_ms1_shape_identity_activation_policy": "explicit_support_tsv",
-    }
-    assert calls["run_config"].targeted_ms1_shape_identity_support_tsv == (
-        support_path.resolve()
-    )
-    assert calls["run_config"].targeted_ms1_shape_identity_activation_policy == (
-        "explicit_support_tsv"
-    )
-    assert "Processed files: 2" in capsys.readouterr().out
-
-
-def test_cli_explicit_shape_identity_activation_policy_override_keeps_normal_path(
-    tmp_path: Path,
-    monkeypatch,
-    capsys,
-) -> None:
-    module = _module()
-    config = _config(tmp_path)
-    targets = [_target("Analyte")]
-    calls: dict[str, object] = {}
-
-    def fake_load_config(_config_dir: Path, *, settings_overrides=None):
-        calls["settings_overrides"] = settings_overrides
-        loaded_config = replace(
-            config,
-            targeted_ms1_shape_identity_activation_policy=settings_overrides[
-                "targeted_ms1_shape_identity_activation_policy"
-            ],
-        )
-        return loaded_config, targets
-
-    monkeypatch.setattr(module, "load_config", fake_load_config)
-    monkeypatch.setattr(module.extractor, "run", _fake_run(calls))
-    monkeypatch.setattr(
-        module,
-        "write_excel_from_run_output",
-        lambda *_args, **_kwargs: calls.setdefault("excel", True),
-        raising=False,
-    )
-
-    exit_code = module.main(
-        [
-            "--base-dir",
-            str(tmp_path),
-            "--targeted-ms1-shape-identity-activation-policy",
-            "explicit_support_tsv",
-        ]
-    )
-
-    assert exit_code == 0
-    assert calls["settings_overrides"] == {
-        "targeted_ms1_shape_identity_activation_policy": ("explicit_support_tsv")
-    }
-    assert calls["run_config"].targeted_ms1_shape_identity_activation_policy == (
-        "explicit_support_tsv"
-    )
-    assert "Processed files: 2" in capsys.readouterr().out
-
-
-def test_cli_limited_policy_without_support_tsv_dispatches_auto_limited_default(
-    tmp_path: Path,
-    monkeypatch,
-    capsys,
-) -> None:
-    module = _module()
-    config = replace(
-        _config(tmp_path),
-        targeted_ms1_shape_identity_activation_policy="limited_5hmdc_5medc",
-    )
-    targets = [_target("Analyte")]
-    calls: dict[str, object] = {}
-
-    monkeypatch.setattr(module, "load_config", lambda _config_dir: (config, targets))
-
-    def fake_auto_workflow(run_config, run_targets, **kwargs):
-        calls["auto_config"] = run_config
-        calls["auto_targets"] = run_targets
-        calls["auto_kwargs"] = kwargs
-        return RunOutput(file_results=[], diagnostics=[])
-
-    def fake_normal_run(*_args, **_kwargs):
-        calls["normal_run_called"] = True
-        return RunOutput(file_results=[], diagnostics=[])
-
-    monkeypatch.setattr(
-        module,
-        "_run_targeted_ms1_shape_identity_auto_limited_default",
-        fake_auto_workflow,
-    )
-    monkeypatch.setattr(module.extractor, "run", fake_normal_run)
-
-    exit_code = module.main(["--base-dir", str(tmp_path)])
-
-    assert exit_code == 0
-    assert calls["auto_config"].targeted_ms1_shape_identity_support_tsv is None
-    assert calls["auto_config"].targeted_ms1_shape_identity_activation_policy == (
-        "limited_5hmdc_5medc"
-    )
-    assert calls["auto_targets"] == targets
-    assert calls["auto_kwargs"]["auto_output_dir"] is None
-    assert "normal_run_called" not in calls
-    assert "Processed files: 0" in capsys.readouterr().out
-
-
-def test_cli_auto_limited_default_gate_failure_is_clean_and_unpublished(
-    tmp_path: Path,
-    monkeypatch,
-    capsys,
-) -> None:
-    module = _module()
-    config = _config(tmp_path)
-    targets = [_target("Analyte")]
-    auto_dir = tmp_path / "auto"
-
-    monkeypatch.setattr(module, "load_config", lambda _config_dir: (config, targets))
-
-    def fake_run(run_config, _run_targets, **_kwargs):
-        run_config.output_csv.parent.mkdir(parents=True, exist_ok=True)
-        run_config.output_csv.write_text("SampleName\n", encoding="utf-8")
-        run_config.diagnostics_csv.write_text("SampleName\n", encoding="utf-8")
-        return RunOutput(file_results=[], diagnostics=[])
-
-    monkeypatch.setattr(module.extractor, "run", fake_run)
-    monkeypatch.setattr(
-        limited_identity_workflow,
-        "run_build_targeted_ms1_shape_identity_supports",
-        lambda **kwargs: SimpleNamespace(
-            evidence_tsv=kwargs["output_tsv"],
-            candidate_count=1,
-            evidence_row_count=1,
-            trace_request_count=2,
-        ),
-    )
-    monkeypatch.setattr(
-        limited_identity_workflow,
-        "write_targeted_ms1_shape_identity_auto_diff_artifacts",
-        lambda **_kwargs: (_ for _ in ()).throw(ValueError("support key set mismatch")),
-    )
-
-    exit_code = module.main(
-        [
-            "--base-dir",
-            str(tmp_path),
-            "--targeted-ms1-shape-identity-auto-limited-default",
-            "--targeted-ms1-shape-identity-auto-output-dir",
-            str(auto_dir),
-        ]
-    )
-
-    assert exit_code == 2
-    assert not (auto_dir / "final" / "output").exists()
-    assert not auto_dir.exists()
-    assert not list(auto_dir.parent.glob(".xic-limited-*"))
-    stderr = capsys.readouterr().err
-    assert "targeted MS1 shape identity auto-limited workflow failed" in stderr
-    assert "verified final output was not published" in stderr
-    assert "support key set mismatch" in stderr
-
-
-def test_cli_auto_limited_default_rejects_manual_support_tsv(
-    tmp_path: Path,
-    capsys,
-) -> None:
-    module = _module()
-    support_tsv = tmp_path / "targeted_ms1_shape_identity.tsv"
-    support_tsv.write_text("stub\n", encoding="utf-8")
-
-    exit_code = module.main(
-        [
-            "--base-dir",
-            str(tmp_path),
-            "--targeted-ms1-shape-identity-auto-limited-default",
-            "--targeted-ms1-shape-identity-support-tsv",
-            str(support_tsv),
-        ]
-    )
-
-    assert exit_code == 2
-    assert (
-        "--targeted-ms1-shape-identity-auto-limited-default cannot be combined "
-        "with --targeted-ms1-shape-identity-support-tsv"
-    ) in capsys.readouterr().err
-
-
-def test_cli_auto_output_dir_requires_auto_flag(
-    tmp_path: Path,
-    capsys,
-) -> None:
-    module = _module()
-
-    exit_code = module.main(
-        [
-            "--base-dir",
-            str(tmp_path),
-            "--targeted-ms1-shape-identity-auto-output-dir",
-            str(tmp_path / "auto"),
-        ]
-    )
-
-    assert exit_code == 2
-    assert (
-        "--targeted-ms1-shape-identity-auto-output-dir requires "
-        "--targeted-ms1-shape-identity-auto-limited-default"
-    ) in capsys.readouterr().err
-
-
-def test_cli_reports_missing_model_selection_expected_diff_approval_registry(
-    tmp_path: Path,
-    monkeypatch,
-    capsys,
-) -> None:
-    module = _module()
-    config = _config(tmp_path)
-    targets = [_target("Analyte")]
-    missing_path = tmp_path / "missing_approvals.tsv"
-    calls: dict[str, object] = {}
-
-    def fake_load_config(_config_dir: Path, *, settings_overrides=None):
-        loaded_config = replace(
-            config,
-            model_selection_expected_diff_approval_registry=Path(
-                settings_overrides["model_selection_expected_diff_approval_registry"]
-            ),
-        )
-        return loaded_config, targets
-
-    monkeypatch.setattr(module, "load_config", fake_load_config)
-    monkeypatch.setattr(module.extractor, "run", _fake_run(calls))
-
-    exit_code = module.main(
-        [
-            "--base-dir",
-            str(tmp_path),
-            "--model-selection-expected-diff-approvals",
-            str(missing_path),
-        ]
-    )
-
-    captured = capsys.readouterr()
-    assert exit_code == 2
-    assert "approval registry file not found" in captured.err
-    assert "run_config" not in calls
-
-
 def test_cli_reports_config_errors_without_traceback(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:
@@ -775,13 +411,9 @@ def _fake_run(calls: dict[str, object]):
         progress_callback=None,
         should_stop=None,
         injection_order=None,
-        model_selection_expected_diff_approvals=None,
     ):
         calls["run_config"] = config
         calls["run_targets"] = targets
-        calls["model_selection_expected_diff_approvals"] = (
-            model_selection_expected_diff_approvals
-        )
         calls["should_stop"] = should_stop
         calls["injection_order"] = injection_order
 
@@ -805,24 +437,6 @@ def _fake_run(calls: dict[str, object]):
         return output
 
     return _run
-
-
-def _expected_diff_approval() -> ExpectedDiffApprovalRecord:
-    return ExpectedDiffApprovalRecord(
-        stable_row_id="SampleA|Analyte|legacy|successor",
-        sample_name="SampleA",
-        target_label="Analyte",
-        legacy_selected_candidate_id="legacy",
-        successor_selected_candidate_id="successor",
-        final_label="expected_diff",
-        reviewer_verdict="approved",
-        validation_tier="targeted_benchmark",
-        public_outputs_touched=("peak_candidate_table",),
-        matrix_value_impact="none",
-        evidence_sources=("rt",),
-        evidence_summary="reviewed",
-        reviewer_role="domain_reviewer",
-    )
 
 
 def _config(tmp_path: Path) -> ExtractionConfig:
@@ -867,7 +481,6 @@ def _write_cli_config(config_dir: Path, *, data_dir: Path, dll_dir: Path) -> Non
         "ms2_precursor_tol_da": "0.5",
         "nl_min_intensity_ratio": "0.01",
         "count_no_ms2_as_detected": "false",
-        "targeted_ms1_shape_identity_activation_policy": "explicit_support_tsv",
     }
     with (config_dir / "settings.csv").open(
         "w", newline="", encoding="utf-8-sig"
@@ -936,7 +549,6 @@ def test_cli_reusable_method_freezes_inputs_only_until_run_finishes(
         create_targeted_method(
             {
                 "nl_min_intensity_ratio": "0.07",
-                "targeted_ms1_shape_identity_activation_policy": "explicit_support_tsv",
             },
             target_rows,
         ),

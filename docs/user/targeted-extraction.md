@@ -42,8 +42,7 @@ private lab paths.
 | RAW directory | Batch of Thermo `.raw` files to process |
 | DLL directory | Folder containing Thermo RawFileReader DLLs |
 | Target table | Labels, m/z, RT windows, ppm tolerance, NL mass, and ISTD pairing |
-| Reusable analysis method | Eleven method parameters plus the complete targets/ISTD table; Gaussian smoothing is fixed |
-| Resources | Optional expected-diff registry and reviewed support inputs |
+| Reusable analysis method | Ten method parameters plus the complete targets/ISTD table; Gaussian smoothing is fixed |
 | Environment and output | DLL, workers, and output controls; not method customization |
 
 Target labels become public workbook and CSV identifiers. Rename them only when
@@ -61,11 +60,6 @@ method and target table in the draft, retaining the current batch and machine
 settings; Save or Run applies that draft. Existing names are not overwritten:
 save a new version under a new name.
 
-Portable methods currently do not support external scientific resource bindings.
-Saving or switching a resource-bound configuration is rejected rather than
-silently discarding or inheriting approvals or support.
-Continue using the complete workspace configuration for those methods.
-
 The current sample's credible paired ISTD supplies the RT shift directly;
 the configured analyte/ISTD midpoint difference is preserved. You do not create
 or reload an RT-prior/pair calibration CSV. Keep the target identities, pairing
@@ -75,19 +69,16 @@ automatically establish every analyte's identity.
 The CLI accepts `--method-dir <folder>` with the same method format, plus
 `--data-dir <new-batch>` and the existing workspace/local settings. The run
 uses input CSVs frozen at start, not a later mutable saved-method folder.
-GUI and CLI use the same limited-identity workflow when selected by the method;
-only a successful existing expected-diff gate publishes its verified final result.
+GUI and CLI run the same single extraction pass and publish one workbook.
 
 `settings.csv` is the active Targeted configuration; `targets.csv` remains the
 separate target table. Platform defaults are owned by the application, not by
 one custom config file per concern. **自訂參數 · N 項調整** compares only the
-11 scalar parameters owned by `xic_extractor.settings_schema.METHOD_KEYS`. RAW/DLL paths,
-workers, output options, targets, and external resources do not increase this
-count. Gaussian smoothing is fixed information, not a selectable method.
+10 scalar parameters owned by `xic_extractor.settings_schema.METHOD_KEYS`. RAW/DLL paths,
+workers, output options and targets do not increase this count. Gaussian smoothing is fixed information, not a selectable method.
 
-**還原方法參數** restores those parameters while preserving targets, batch, environment,
-output settings and resource selections. Resources remain separately visible;
-changing a resource is not hidden inside the custom-method count.
+**還原方法參數** restores those parameters while preserving targets, batch, environment
+and output settings.
 
 `count_no_ms2_as_detected` is a compatibility fallback for legacy rows without
 formal projection fields, not a global switch for formal Detection %. See the
@@ -100,24 +91,20 @@ canonical smoothing-window compatibility.
 output/xic_results_YYYYMMDD_HHMM.xlsx
 ```
 
-The default limited-identity workflow publishes its gate-passed workbook under
-`output/<run>/`. Open it from the workspace result actions. Cancellation or a
-failed gate cleans the private working files without publishing a completed
-workbook.
+Open it from the workspace result actions. Cancellation or failure publishes no
+completed workbook.
 
 | Workbook sheet | Purpose |
 | --- | --- |
 | `Overview` | First view: batch outcome, review priorities and links to detailed results |
 | `XIC Results` | Sample-target Area, RT, counted status and review reason; expand secondary columns for evidence |
 | `Targets` | Supporting reference: snapshot of the target table used for the run |
-| `Run Metadata` | Supporting reference: method settings, provenance and gate receipt |
+| `Run Metadata` | Supporting reference: method settings and provenance |
 | `Diagnostics` (when nonempty) | Supporting reference: complete supplied diagnostic text |
 
-The normal output directory contains one XLSX only. Temporary baseline/support/
-diff files are cleaned after the limited-identity gate, including on cancellation
-or failure; a failed gate does not publish a completed workbook. Nonempty supplied
-sample context, identity support, and selection approvals remain in hidden sheets
-so the decision inputs can be inspected without sidecar files.
+The normal output directory contains one XLSX only. A nonempty supplied sample
+context table remains in a hidden sheet so it can be inspected without sidecar
+files.
 
 Use **在結果檢閱開啟** after completion, or open the XLSX in the
 workbench's result picker. Inspector shows saved values without RAW, DLLs,

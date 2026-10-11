@@ -62,7 +62,6 @@ def test_build_metadata_rows_returns_contract_keys_in_order() -> None:
         "nl_fallback_half_window_min",
         "rolling_window_size",
         "dirty_matrix_mode",
-        "targeted_ms1_shape_identity_activation_policy",
     ]
     values = dict(rows)
     assert values["config_hash"] == "abc12345"

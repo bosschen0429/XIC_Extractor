@@ -21,10 +21,7 @@ from xic_extractor.extraction.targeted_peak_hypotheses import (
 from xic_extractor.peak_detection.baseline import BaselineMethod
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.model_selection import (
-    ExpectedDiffApprovalRecords,
     PeakModelSelectionResult,
-    expected_diff_approval_for_legacy_selection,
-    expected_diff_approval_for_result,
     model_select_peak_hypothesis,
 )
 from xic_extractor.peak_detection.models import PeakDetectionResult
@@ -137,8 +134,6 @@ def select_targeted_peak(
     universe: PhysicalSegmentUniverse,
     selection_rt_min: float,
     selection_rt_max: float,
-    paired_istd_anchor_rt: float | None = None,
-    model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
 ) -> TargetedPeakSelection:
     """Return selection facts synced with physical availability and integration."""
     hypothesis_selection = _select_targeted_hypothesis(
@@ -147,8 +142,6 @@ def select_targeted_peak(
         peak_result=peak_result,
         trace_group=trace_group,
         candidate_ms2_evidence=candidate_ms2_evidence,
-        paired_istd_anchor_rt=paired_istd_anchor_rt,
-        model_selection_expected_diff_approvals=model_selection_expected_diff_approvals,
     )
     selected_segment = selected_physical_segment(
         selected_candidate(peak_result), universe
@@ -229,10 +222,8 @@ def _select_targeted_hypothesis(
     peak_result: PeakDetectionResult,
     trace_group: TraceGroup,
     candidate_ms2_evidence: CandidateMS2Evidence | None,
-    paired_istd_anchor_rt: float | None = None,
-    model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
 ) -> _TargetedHypothesisSelection:
-    """Apply approval and Targeted role policy to the ranked peak hypotheses."""
+    """Apply the Targeted role policy to the ranked peak hypotheses."""
     sample_name = trace_group.sample_name
     trace = trace_group.primary_trace
     hypotheses = build_production_peak_hypotheses(
@@ -245,18 +236,14 @@ def _select_targeted_hypothesis(
         intensity=np.asarray(trace.intensity, dtype=float),
         trace_group=trace_group,
     )
-    model_selection_result = _model_selection_result_for_handoff(
-        hypotheses,
-        sample_name=sample_name,
-        target_label=target.label,
-        expected_diff_approvals=model_selection_expected_diff_approvals,
+    model_selection_result = (
+        model_select_peak_hypothesis(hypotheses) if hypotheses else None
     )
     model_selection_result = _targeted_product_switch_policy(
         model_selection_result,
         hypotheses=hypotheses,
         sample_name=sample_name,
         target=target,
-        paired_istd_anchor_rt=paired_istd_anchor_rt,
     )
     legacy_selected_hypothesis = selected_peak_hypothesis(hypotheses)
     selected_hypothesis = _product_selected_hypothesis(
@@ -278,45 +265,12 @@ def _select_targeted_hypothesis(
     )
 
 
-def _model_selection_result_for_handoff(
-    hypotheses: tuple[PeakHypothesis, ...],
-    *,
-    sample_name: str,
-    target_label: str,
-    expected_diff_approvals: ExpectedDiffApprovalRecords | None,
-) -> PeakModelSelectionResult | None:
-    if not hypotheses:
-        return None
-    shadow_result = model_select_peak_hypothesis(hypotheses)
-    approval = expected_diff_approval_for_result(
-        shadow_result,
-        expected_diff_approvals,
-        sample_name=sample_name,
-        target_label=target_label,
-    )
-    if approval is None:
-        approval = expected_diff_approval_for_legacy_selection(
-            shadow_result,
-            expected_diff_approvals,
-            sample_name=sample_name,
-            target_label=target_label,
-        )
-    if approval is None:
-        return shadow_result
-    return model_select_peak_hypothesis(
-        hypotheses,
-        successor_selected_candidate_id=approval.successor_selected_candidate_id,
-        expected_diff_approval=approval,
-    )
-
-
 def _targeted_product_switch_policy(
     model_selection_result: PeakModelSelectionResult | None,
     *,
     hypotheses: tuple[PeakHypothesis, ...],
     sample_name: str,
     target: Target,
-    paired_istd_anchor_rt: float | None,
 ) -> PeakModelSelectionResult | None:
     if _target_applicable_strict_nl_successor_switch(
         model_selection_result,
@@ -328,6 +282,11 @@ def _targeted_product_switch_policy(
         return replace(
             model_selection_result,
             product_switch_allowed=True,
+            diff_reasons=tuple(
+                reason
+                for reason in model_selection_result.diff_reasons
+                if reason != "successor_selection_not_adopted"
+            ),
             evidence_sources=tuple(
                 dict.fromkeys(
                     (
@@ -337,34 +296,7 @@ def _targeted_product_switch_policy(
                 )
             ),
         )
-    if (
-        model_selection_result is None
-        or not model_selection_result.product_switch_allowed
-        or model_selection_result.selection_status != "expected_diff"
-    ):
-        return model_selection_result
-    if target.is_istd:
-        return model_selection_result
-    if target.istd_pair and _finite_anchor_rt(paired_istd_anchor_rt):
-        return model_selection_result
-    reason = (
-        "paired_istd_not_credible_in_sample"
-        if target.istd_pair
-        else "target_role_not_auto_reselection_eligible"
-    )
-    return replace(
-        model_selection_result,
-        selection_status="blocked_diff",
-        product_switch_allowed=False,
-        diff_reasons=tuple(
-            dict.fromkeys(
-                (
-                    *model_selection_result.diff_reasons,
-                    reason,
-                )
-            )
-        ),
-    )
+    return model_selection_result
 
 
 def _target_applicable_strict_nl_successor_switch(
@@ -432,10 +364,6 @@ def _hypothesis_reason_set(hypothesis: PeakHypothesis) -> frozenset[str]:
     return frozenset(reason for reason in reasons if reason)
 
 
-def _finite_anchor_rt(value: float | None) -> bool:
-    return value is not None and math.isfinite(value)
-
-
 def _product_selected_hypothesis(
     hypotheses: tuple[PeakHypothesis, ...],
     model_selection_result: PeakModelSelectionResult | None,
@@ -468,8 +396,7 @@ def _with_final_selected_result_evidence(
                 hypothesis,
                 evidence=replace(
                     hypothesis.evidence,
-                    confidence=peak_result.confidence
-                    or hypothesis.evidence.confidence,
+                    confidence=peak_result.confidence or hypothesis.evidence.confidence,
                     reason=peak_result.reason or hypothesis.evidence.reason,
                 ),
             )

@@ -25,21 +25,19 @@ lineage seal.
   evidence or change selected peaks, areas, confidence, counted detections,
   workbook values, or matrix values.
 - Normal Targeted delivery is one XLSX. `Run Metadata` records actual method
-  settings, runtime configuration, config fragments, and the limited-identity
-  gate receipt. `Targets` records target identity, ranges, pairing, and sample
+  settings, runtime configuration, and config fragments. `Targets` records target identity, ranges, pairing, and sample
   applicability. No HTML, CSV/TSV, or manifest sidecar is published, and
   Targeted runs have no replay entrypoint.
 - A saved Targeted method is reusable intent, not a run receipt. Admission freezes
   settings, targets, and supplied injection-order input in a private temporary
   workspace. The caller retains it while queued/running and cleans it on completion
   or failure. Editing an active method cannot change the admitted inputs.
-- Nonempty supplied sample context, identity support, and selection approval
-  tables are embedded as hidden workbook sheets for reviewing the inputs behind
+- A nonempty supplied sample context table is embedded as a hidden workbook
+  sheet for reviewing the inputs behind
   decisions. This preserves values, not a byte-for-byte replay archive. No empty
   evidence sheet is added. RAW bytes are not snapshotted into the workbook.
-- The limited-identity workflow's baseline/final CSVs and support/diff TSVs are
-  internal gate inputs. They are temporary and cleaned on success, failure, or
-  cancellation. Only a gate-passed workbook crosses the publication transaction.
+- A Targeted run is one extraction pass; only its workbook crosses the
+  publication transaction.
 - A command diary is not a durable replay contract. If a run matters, the
   stable command shape and artifact contract must move into a repo owner.
 

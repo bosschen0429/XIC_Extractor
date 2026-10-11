@@ -30,7 +30,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | 要追的行為 | 從哪裡讀 | 下一個負責的 module／交接 |
 | --- | --- | --- |
 | HTML 工作區啟動與工作 | [`xic_workbench/cli.py`](../xic_workbench/cli.py)、[`xic_workbench/server.py`](../xic_workbench/server.py) | `analysis_workspace.py` 管設定與檔案操作；`jobs.py` 將 HTML request 交給既有 application／export owner；`workspace.py` 管完成證據檢閱 |
-| Targeted 分析與交付 | [`xic_workbench/targeted.py`](../xic_workbench/targeted.py)、[`scripts/run_extraction.py`](../scripts/run_extraction.py) | [`TargetedApplicationService.execute_application`](../xic_extractor/applications/targeted/application.py) 組合單次 acquisition、科學處理與交付；HTML 與 CLI 共用 [`limited_identity_workflow.py`](../xic_extractor/applications/targeted/limited_identity_workflow.py) 的 baseline／support／final／gate 流程，不在 caller 複製方法政策 |
+| Targeted 分析與交付 | [`xic_workbench/targeted.py`](../xic_workbench/targeted.py)、[`scripts/run_extraction.py`](../scripts/run_extraction.py) | [`TargetedApplicationService.execute_application`](../xic_extractor/applications/targeted/application.py) 組合單次 acquisition、科學處理與交付；HTML 與 CLI 共用此 application 的完成結果與 workbook publication，不在 caller 複製方法政策 |
 | 既有 Python Targeted 入口 | [`extractor.run`](../xic_extractor/extractor.py) | 進入同一 application；`extractor.acquire` 是它使用的 acquisition 入口；結果模型在 `extraction/result_models.py` |
 | Discovery 候選產生 | [`scripts/run_discovery.py`](../scripts/run_discovery.py) | [`discovery/pipeline.py`](../xic_extractor/discovery/pipeline.py) 的 `run_discovery`／`run_discovery_batch`，交出候選檔與 batch index |
 | Untargeted HTML 全流程 | [`xic_workbench/untargeted.py`](../xic_workbench/untargeted.py) | `full` 呼叫 Discovery 再交接 Alignment；`discovery_only` 與 `align_only` 保留各自輸入契約 |

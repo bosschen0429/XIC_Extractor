@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from xic_extractor.configuration.models import ConfigError, ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.scientific_settings import SCIENTIFIC_SETTING_FIELDS
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -17,12 +17,6 @@ from xic_extractor.configuration.target_identity import (
 )
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
 from xic_extractor.injection_rolling import read_injection_order
-from xic_extractor.peak_detection.model_selection import (
-    ExpectedDiffApprovalRecord,
-)
-from xic_extractor.peak_detection.model_selection_approval_registry import (
-    load_expected_diff_approval_registry,
-)
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.peak_detection.search_scope import (
     PHYSICAL_CAPTURE_INPUT_KEY,
@@ -34,7 +28,6 @@ from xic_extractor.processing_identity import (
     ProcessingRequestIdentity,
     build_acquisition_source_identity,
     build_processing_request_identity,
-    fingerprint_file_content,
 )
 from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,
@@ -68,10 +61,6 @@ TARGETED_REAL_DATA_DISCOVERY_SETTINGS_SCHEMA_VERSION = (
 @dataclass(frozen=True)
 class ResolvedTargetedInputs:
     injection_order: dict[str, int]
-
-    model_selection_expected_diff_approvals: (
-        Mapping[str, ExpectedDiffApprovalRecord] | None
-    )
     acquisition_injection_order: dict[str, int] | None = None
 
 
@@ -80,9 +69,6 @@ def resolve_targeted_inputs(
     *,
     raw_paths: list[Path],
     injection_order: dict[str, int] | None,
-    model_selection_expected_diff_approvals: (
-        Mapping[str, ExpectedDiffApprovalRecord] | None
-    ),
 ) -> ResolvedTargetedInputs:
     resolved_injection_order, acquisition_injection_order = _resolve_injection_orders(
         config,
@@ -91,9 +77,6 @@ def resolve_targeted_inputs(
     )
     return ResolvedTargetedInputs(
         injection_order=resolved_injection_order,
-        model_selection_expected_diff_approvals=(
-            model_selection_expected_diff_approvals
-        ),
         acquisition_injection_order=acquisition_injection_order,
     )
 
@@ -164,12 +147,6 @@ def build_targeted_processing_request_identity(
             field: getattr(config, field) for field in SCIENTIFIC_SETTING_FIELDS
         },
         "target_list_snapshot": target_list_snapshot_payload(target_snapshot),
-        "model_selection_expected_diff_approvals": _approval_snapshot(
-            resolved_inputs.model_selection_expected_diff_approvals
-        ),
-        "targeted_ms1_shape_identity_support": (
-            _targeted_ms1_shape_identity_support_snapshot(config)
-        ),
         TARGETED_REAL_DATA_CANDIDATE_UNIVERSE_INPUT_KEY: (
             targeted_real_data_candidate_universe_payload(
                 current_discovery_candidates_by_sample,
@@ -477,34 +454,6 @@ def targeted_real_data_discovery_settings_payload(
     return normalized
 
 
-def _approval_snapshot(
-    approvals: Mapping[str, ExpectedDiffApprovalRecord] | None,
-) -> list[dict[str, object]]:
-    snapshot: list[dict[str, object]] = []
-    for stable_row_id, approval in sorted((approvals or {}).items()):
-        if approval.stable_row_id != stable_row_id:
-            raise IdentityContractError(
-                "approval mapping key must match the bound approval record"
-            )
-        snapshot.append(asdict(approval))
-    return snapshot
-
-
-def _targeted_ms1_shape_identity_support_snapshot(
-    config: ExtractionConfig,
-) -> dict[str, object] | None:
-    path = config.targeted_ms1_shape_identity_support_tsv
-    if path is None:
-        return None
-    fingerprint = fingerprint_file_content(path)
-    return {
-        "schema_version": "targeted_ms1_shape_identity_support_input",
-        "activation_policy": config.targeted_ms1_shape_identity_activation_policy,
-        "content_sha256": fingerprint.content_sha256,
-        "byte_size": fingerprint.byte_size,
-    }
-
-
 def resolve_injection_order(
     config: ExtractionConfig,
     raw_paths: list[Path],
@@ -542,21 +491,6 @@ def _read_injection_order_source(
         )
     injection_order = read_injection_order(path)
     return injection_order, injection_order
-
-
-def resolve_model_selection_expected_diff_approvals(
-    config: ExtractionConfig,
-    approvals: Mapping[str, ExpectedDiffApprovalRecord] | None,
-) -> Mapping[str, ExpectedDiffApprovalRecord] | None:
-    if approvals is not None:
-        return approvals
-    registry_path = config.model_selection_expected_diff_approval_registry
-    if registry_path is None:
-        return None
-    try:
-        return load_expected_diff_approval_registry(registry_path)
-    except ValueError as exc:
-        raise ConfigError(str(exc)) from exc
 
 
 def fallback_injection_order_from_mtime(raw_paths: list[Path]) -> dict[str, int]:

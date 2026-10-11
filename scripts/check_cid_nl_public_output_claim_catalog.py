@@ -21,8 +21,7 @@ from xic_extractor.tabular_io import read_delimited_rows  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CATALOG_PATH = (
-    ROOT
-    / "docs/superpowers/validation/cid_nl_public_output_claim_catalog.tsv"
+    ROOT / "docs/superpowers/validation/cid_nl_public_output_claim_catalog.tsv"
 )
 
 CATALOG_COLUMNS = (
@@ -37,15 +36,13 @@ CATALOG_COLUMNS = (
     "replacement_or_retirement_gate",
 )
 SCHEMA_VERSION = "cid_nl_public_output_claim_catalog"
-ALLOWED_DISPOSITIONS = frozenset(
-    {"retain", "rewrite", "replace", "retire", "unknown"}
-)
+ALLOWED_DISPOSITIONS = frozenset({"retain", "rewrite", "replace", "retire", "unknown"})
 REQUIRED_CLAIM_IDS = frozenset(
     {
-        "targeted_output.file_bytes",
+        "targeted_output.artifact_set",
         "targeted_output.schema_and_order",
         "targeted_output.numeric_and_nl_projection",
-        "targeted_output.missing_zero_error_and_duplicates",
+        "targeted_output.missing_and_error",
         "targeted_output.selected_value_authority_ref",
         "targeted_output.counted_detection_authority_ref",
         "untargeted_matrix.authority_boundary_ref",
@@ -55,6 +52,7 @@ CHARACTERIZATION_EVIDENCE_PREFIXES = (
     "docs/superpowers/validation/cid_nl_legacy_baseline/",
     "docs/superpowers/validation/cid_nl_targeted_csv_contract/",
 )
+
 
 def check_cid_nl_public_output_claim_catalog(
     *, catalog_path: Path = DEFAULT_CATALOG_PATH
@@ -96,9 +94,7 @@ def check_cid_nl_public_output_claim_catalog(
     return problems
 
 
-def _check_row(
-    row: Mapping[str, str], *, row_index: int, problems: list[str]
-) -> None:
+def _check_row(row: Mapping[str, str], *, row_index: int, problems: list[str]) -> None:
     claim_id = row["claim_id"].strip()
     for column in CATALOG_COLUMNS:
         if not row[column].strip():
@@ -162,6 +158,7 @@ def _check_row(
         problems.append(
             f"row {row_index} ({claim_id}): delivery claims must be marked hard_exact"
         )
+
 
 def _check_repo_reference(
     ref: str,

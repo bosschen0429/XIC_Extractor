@@ -175,8 +175,6 @@
         (fieldNode.querySelector(":scope > span") || fieldNode).append(hint);
       }
     }
-    $("target-resource-state").textContent = (summary?.resource_keys || []).length
-      ? `${summary.resource_keys.length} 項本機資源` : "未指定外部資源";
     const notes = $("target-method-note");
     notes.replaceChildren();
     for (const difference of summary?.differences || []) {
@@ -414,9 +412,8 @@
   function renderSettings(values) {
     const data = $("targeted-data");
     const method = $("targeted-settings");
-    const resources = $("targeted-resources");
     const execution = $("targeted-execution");
-    for (const panel of [data, method, resources, execution]) panel.replaceChildren();
+    for (const panel of [data, method, execution]) panel.replaceChildren();
     const advanced = el("details");
     advanced.id = "targeted-advanced";
     advanced.append(el("summary", "調整方法參數"));
@@ -425,8 +422,7 @@
     const note = el("div", undefined, "method-note");
     note.id = "target-method-note";
     method.append(el("p", "訊號處理固定使用 Gaussian；正式 Targeted 結果不將 NO_MS2 算為偵測到。", "settings-notice"), advanced, note);
-    resources.append(el("p", "外部資源會影響本次分析；請確認本機路徑與適用性。", "settings-notice"));
-    const panels = { batch: data, method: methodPanel, resource: resources, environment: execution, runtime: execution, output: execution };
+    const panels = { batch: data, method: methodPanel, environment: execution, runtime: execution, output: execution };
     const groups = new Map();
     for (const spec of state.config.targeted_form.settings) {
       const panel = panels[spec.scope];
@@ -434,7 +430,7 @@
       const groupKey = spec.scope;
       if (!groups.has(groupKey)) {
         const section = el("section", undefined, "settings-group");
-        const scopeHeading = { method: "進階方法參數", batch: "批次輸入", resource: "本機資源", environment: "本機環境", runtime: "執行方式", output: "輸出選項" };
+        const scopeHeading = { method: "進階方法參數", batch: "批次輸入", environment: "本機環境", runtime: "執行方式", output: "輸出選項" };
         section.append(el("h3", scopeHeading[spec.scope] || spec.group));
         const grid = el("div", undefined, "settings-grid");
         section.append(grid);

@@ -32,34 +32,41 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 from xic_extractor.peak_detection.scoring_metrics import local_sn_severity
 
 
-def test_factory_does_not_add_analyte_reference_as_prior_bonus() -> None:
+@pytest.mark.parametrize(
+    "sample,anchor,reference", [("S1", 11.8, 12.0), ("S2", 13.8, 14.0)]
+)
+def test_factory_scores_analyte_against_current_sample_reference(
+    sample, anchor, reference
+):
     factory = build_scoring_context_factory(
         config=_config(dirty_matrix_mode=True),
         injection_order={},
         istd_rts_by_sample={},
     )
-
+    rt = np.linspace(reference - 0.3, reference + 0.3, 7)
+    intensity = np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0])
     builder = factory(
         target=_target(label="Analyte-A", is_istd=False, istd_pair="ISTD-A"),
-        sample_name="S2",
-        rt=np.linspace(9.9, 10.5, 7),
-        intensity=np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0]),
-        prepared_result=_prepared(
-            np.linspace(9.9, 10.5, 7), np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0])
-        ),
-        istd_rt_in_this_sample=10.0,
+        sample_name=sample,
+        rt=rt,
+        intensity=intensity,
+        prepared_result=_prepared(rt, intensity),
+        istd_rt_in_this_sample=anchor,
+        target_reference_rt=reference,
         paired_istd_fwhm=2.0,
         nl_result=None,
     )
-
-    ctx = builder(_candidate(apex_index=3))
-
-    assert ctx.rt_prior is None
+    candidate = replace(_candidate(apex_index=3), selection_apex_rt=reference)
+    ctx = builder(candidate)
+    assert ctx.rt_prior == reference
+    assert (ctx.rt_min, ctx.rt_max) == (reference - 1.0, reference + 1.0)
     assert ctx.rt_prior_sigma is None
-    assert ctx.dirty_matrix is True
-
-    assert getattr(builder, "rt_prior") is None
-    assert getattr(builder, "prior_source") == ""
+    assert getattr(builder, "prior_source") == "paired_istd"
+    facts = build_candidate_evidence_facts(candidate, ctx)
+    assert facts.rt.rt_prior_status == "close"
+    assert facts.rt.window_status != "outside"
+    far = replace(candidate, selection_apex_rt=reference - 1.5)
+    assert build_candidate_evidence_facts(far, builder(far)).rt.rt_prior_status == "far"
 
 
 def test_selected_candidate_and_prepass_anchor_reject_quality_flags() -> None:

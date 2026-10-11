@@ -47,7 +47,6 @@ def test_settings_round_trip_preserves_hidden_canonical_values(tmp_path: Path) -
         "dll_dir": "C:\\Thermo",
         "signal_processing_method": "gaussian",
         "model_selection_expected_diff_approval_registry": "C:\\approval.tsv",
-        "targeted_ms1_shape_identity_support_tsv": "C:\\support.tsv",
         "targeted_ms1_shape_identity_activation_policy": "explicit_support_tsv",
         "parallel_mode": "serial",
         "parallel_workers": "2",
@@ -89,13 +88,11 @@ def test_method_summary_labels_visible_and_hidden_nondefaults_as_custom() -> Non
     settings = {
         **CANONICAL_SETTINGS_DEFAULTS,
         "ms2_precursor_tol_da": "0.7",
-        "targeted_ms1_shape_identity_support_tsv": "C:\\reviewed-support.tsv",
     }
 
     summary = method_summary(resolve_settings(settings)[0])
     assert summary["label"] == "自訂參數 · 1 項調整"
     assert summary["custom_keys"] == ["ms2_precursor_tol_da"]
-    assert summary["resource_keys"] == ["targeted_ms1_shape_identity_support_tsv"]
 
 
 def test_failed_target_import_leaves_the_callers_rows_unchanged(tmp_path: Path) -> None:
@@ -191,7 +188,6 @@ def test_targeted_fields_are_owned_scoped_and_do_not_hide_resources() -> None:
     assert fields["parallel_mode"]["scope"] == "runtime"
     assert fields["parallel_mode"]["options"] == ["serial", "process"]
     assert fields["signal_processing_window_points"]["step"] == 2
-    assert fields["targeted_ms1_shape_identity_support_tsv"]["scope"] == "resource"
     assert fields["count_no_ms2_as_detected"]["compatibility_only"]
     assert "ms1_morphology_smoothing_window_points" not in fields
 
@@ -327,94 +323,6 @@ def test_targeted_run_raises_cancellation_before_publication(
         run.execute()
 
     assert run.available_outputs == ()
-
-
-@pytest.mark.parametrize("completion", ["published", "cancelled", "late_cancel"])
-def test_default_limited_method_dispatches_workflow_and_reports_verified_paths(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, completion: str
-) -> None:
-    """Workbench translates the default method; science is tested at its owner."""
-    import xic_workbench.targeted as module
-
-    config_dir = tmp_path / "config"
-    config_dir.mkdir()
-    for name in ("settings", "targets"):
-        (config_dir / f"{name}.csv").write_text("frozen input", encoding="utf-8")
-    config = SimpleNamespace(
-        output_csv=tmp_path / "output" / "xic_results.csv",
-        count_no_ms2_as_detected=False,
-        targeted_ms1_shape_identity_activation_policy="limited_5hmdc_5medc",
-        targeted_ms1_shape_identity_support_tsv=None,
-    )
-    targets = [_target("Analyte")]
-    cancelled = False
-    captured = {}
-    application = object()
-    progress_events = []
-
-    def execute_workflow(request, *, application, output_root):
-        nonlocal cancelled
-        captured["request"] = request
-        captured["application"] = application
-        captured["root"] = output_root
-        assert request.config is config
-        assert request.targets == tuple(targets)
-        assert request.should_stop is not None and not request.should_stop()
-        request.progress_callback(0, 0, "Auto limited baseline")
-        if completion == "cancelled":
-            cancelled = True
-            raise InterruptedError(
-                "limited workflow cancellation before verified publish"
-            )
-        final_dir = output_root / "final" / "output"
-        final_dir.mkdir(parents=True)
-        excel_path = final_dir / "verified.xlsx"
-        csv_path = final_dir / "xic_results.csv"
-        excel_path.write_text("verified workbook", encoding="utf-8")
-        csv_path.write_text("verified matrix", encoding="utf-8")
-        final_config = SimpleNamespace(
-            output_csv=csv_path, count_no_ms2_as_detected=False
-        )
-        captured["final_config"] = final_config
-        captured["paths"] = (excel_path, csv_path)
-        cancelled = completion == "late_cancel"
-        return SimpleNamespace(
-            final_config=final_config,
-            final_execution=SimpleNamespace(
-                active_output=SimpleNamespace(file_results=[], diagnostics=[]),
-                published_paths=captured["paths"],
-            ),
-        )
-
-    _substitute_prepared_inputs(monkeypatch, module, config_dir, config, targets)
-    monkeypatch.setattr(
-        module, "build_canonical_targeted_application_service", lambda _: application
-    )
-    monkeypatch.setattr(module, "execute_limited_identity_workflow", execute_workflow)
-    run = module.TargetedRun(
-        config_dir,
-        progress=lambda *event: progress_events.append(event),
-        should_cancel=lambda: cancelled,
-    )
-    if completion == "cancelled":
-        with pytest.raises(InterruptedError, match="before verified publish"):
-            run.execute()
-        assert (
-            run.cancellation_reason
-            == "limited workflow cancellation before verified publish"
-        )
-        assert not (captured["root"] / "final" / "output").exists()
-        assert run.available_outputs == ()
-        return
-    summary = run.execute()
-    assert captured["application"] is application
-    assert run.output_dir == captured["final_config"].output_csv.parent
-    assert summary["excel_path"] == str(captured["paths"][0])
-    assert summary["published_paths"] == [str(path) for path in captured["paths"]]
-    assert run.available_outputs == tuple(
-        ("已發布 Targeted 結果", path) for path in captured["paths"]
-    )
-    assert progress_events == [(0, 0, "Auto limited baseline")]
 
 
 def test_targeted_run_keeps_success_when_cancellation_arrives_after_publication(

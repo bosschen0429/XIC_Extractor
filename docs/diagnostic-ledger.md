@@ -1005,7 +1005,11 @@ change remains an expected-diff product decision, not a performance-only edit.
 
 ### 2026-06-16/17 5-hmdC Own-Max Support Limited Rescue Smoke
 
-Verdict: `production_ready` for three headless workflows: explicit reviewed
+Historical evidence for a retired workflow. These artifacts are not a current
+activation or readiness claim; the current single-pass behavior is owned by
+[Targeted selection](product/targeted-selection.md#counting-and-product-selection).
+
+Historical verdict: `production_ready` for three headless workflows: explicit reviewed
 `targeted_ms1_shape_identity_support_tsv`, explicit
 `xic-extractor-cli --targeted-ms1-shape-identity-auto-limited-default`, and the
 canonical no-flag normal CLI default. The ready claim is limited to

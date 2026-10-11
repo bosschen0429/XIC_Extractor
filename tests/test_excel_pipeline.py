@@ -29,12 +29,9 @@ def test_workbook_retains_nonempty_decision_inputs_without_sidecars(tmp_path):
         "sample_name,sample_role,injection_order\nSampleA,study_sample,2\nSampleB,qc,1\n",
         encoding="utf-8",
     )
-    support = tmp_path / "support.tsv"
-    support.write_text("sample\ttarget\nSampleA\t=unsafe\n", encoding="utf-8")
     config = replace(
         _config(tmp_path),
         injection_order_source=context,
-        targeted_ms1_shape_identity_support_tsv=support,
     )
     path = config.output_csv.with_suffix(".xlsx")
     write_excel_from_run_output(
@@ -44,7 +41,6 @@ def test_workbook_retains_nonempty_decision_inputs_without_sidecars(tmp_path):
         output_path=path,
     )
     context.unlink()
-    support.unlink()
     assert list(path.parent.iterdir()) == [path]
     wb = load_workbook(path)
     assert list(wb["Sample Context"].values) == [
@@ -53,8 +49,6 @@ def test_workbook_retains_nonempty_decision_inputs_without_sidecars(tmp_path):
         ("SampleB", "qc", "1"),
     ]
     assert wb["Sample Context"].sheet_state == "hidden"
-    assert wb["Identity Support"]["B2"].data_type != "f"
-    assert wb["Identity Support"]["B2"].value.endswith("=unsafe")
     assert wb["Targets"]["L1"].value == "Sample applicability"
     assert wb["Targets"]["L2"].value == "rna_containing"
     wb.close()

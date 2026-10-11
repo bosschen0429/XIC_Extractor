@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 import inspect
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import replace
@@ -36,6 +35,7 @@ from xic_extractor.extraction.targeted_inputs import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
 )
+from xic_extractor.output.excel_pipeline import _run_output_to_long_rows
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.peak_detection.peak_integration import find_peak_and_area
 from xic_extractor.peak_detection.physical_peak_evaluation import (
@@ -61,11 +61,10 @@ def _commit_staged_output_in_process(
     return ("success", str(paths[0]))
 
 
-def test_complete_finalized_population_publishes_csv_excel_and_manifest(
+def test_complete_finalized_population_publishes_only_workbook(
     tmp_path: Path,
 ) -> None:
     config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
     excel_path = config.output_csv.with_name("xic_results.xlsx")
     request = build_targeted_application_request(
         config,
@@ -78,9 +77,6 @@ def test_complete_finalized_population_publishes_csv_excel_and_manifest(
     published = publish_targeted_outputs(request, finalized, output)
 
     assert set(published.paths) == {
-        config.output_csv,
-        config.output_csv.with_name("xic_results_long.csv"),
-        config.diagnostics_csv,
         excel_path,
     }
     assert all(path.is_file() for path in published.paths)
@@ -112,101 +108,6 @@ def test_workbook_only_delivery_embeds_method_settings(
     assert set(config.output_csv.parent.iterdir()) == {excel_path}
 
 
-def test_limited_workflow_delivers_only_workbook_and_cleans_internal_files(tmp_path):
-    from xic_extractor.applications.targeted.limited_identity_workflow import (
-        execute_limited_identity_workflow,
-    )
-
-    config, target, output = production_case(
-        tmp_path,
-        sample_names=("SampleA", "SampleB"),
-        sample_peak_scales={"SampleA": 1.0, "SampleB": 2.5},
-    )
-    request = build_targeted_application_request(
-        config,
-        [target],
-        injection_order={"SampleA": 1, "SampleB": 2},
-        excel_output_path=tmp_path / "results.xlsx",
-    )
-    destination = tmp_path / "delivery"
-    result = execute_limited_identity_workflow(
-        request,
-        application=TargetedApplicationService(lambda *_args, **_kwargs: output),
-        output_root=destination,
-    )
-    assert list(destination.iterdir()) == [destination / "results.xlsx"]
-    assert not list(tmp_path.glob(".xic-limited-*"))
-    assert result.final_execution.published_paths == (destination / "results.xlsx",)
-    wb = load_workbook(destination / "results.xlsx", data_only=True)
-    metadata = dict(wb["Run Metadata"].values)
-    assert metadata["limited_identity_gate"] == "pass"
-    assert "Identity Support" not in wb.sheetnames  # No empty technical tables.
-    rows = list(wb["XIC Results"].values)
-    records = [dict(zip(rows[0], row, strict=True)) for row in rows[1:]]
-    areas = {row["SampleName"]: row["Area"] for row in records}
-    assert areas["SampleB"] == pytest.approx(areas["SampleA"] * 2.5, rel=1e-2)
-    wb.close()
-
-
-@pytest.mark.parametrize(
-    "stop_stage", ["Auto limited support", "Auto limited expected-diff gate"]
-)
-def test_cancelled_limited_workflow_removes_internal_files(tmp_path, stop_stage):
-    from xic_extractor.applications.targeted.limited_identity_workflow import (
-        execute_limited_identity_workflow,
-    )
-
-    config, target, output = production_case(tmp_path)
-    cancelled = False
-
-    def progress(_current, _total, stage):
-        nonlocal cancelled
-        cancelled = stage == stop_stage
-
-    request = build_targeted_application_request(
-        config,
-        [target],
-        injection_order={"SampleA": 1},
-        excel_output_path=tmp_path / "results.xlsx",
-        progress_callback=progress,
-        should_stop=lambda: cancelled,
-    )
-    destination = tmp_path / "delivery"
-    with pytest.raises(InterruptedError):
-        execute_limited_identity_workflow(
-            request,
-            application=TargetedApplicationService(lambda *_args, **_kwargs: output),
-            output_root=destination,
-        )
-    assert not destination.exists()
-    assert not list(tmp_path.glob(".xic-limited-*"))
-
-
-def test_duplicate_declared_output_destinations_publish_nothing(
-    tmp_path: Path,
-) -> None:
-    config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
-    duplicate_excel_path = (
-        config.output_csv.parent
-        / "equivalent-destination"
-        / ".."
-        / config.output_csv.name
-    )
-    request = build_targeted_application_request(
-        config,
-        [target],
-        injection_order={"SampleA": 1},
-        excel_output_path=duplicate_excel_path,
-    )
-    finalized = execute_targeted_production_workflow(request, output)
-
-    with pytest.raises(TargetedOutputBoundaryError, match="duplicate destination"):
-        publish_targeted_outputs(request, finalized, output)
-
-    assert not any(config.output_csv.parent.iterdir())
-
-
 def test_publication_returns_concrete_public_result_models(tmp_path: Path) -> None:
     config, target, output = production_case(
         tmp_path,
@@ -216,6 +117,7 @@ def test_publication_returns_concrete_public_result_models(tmp_path: Path) -> No
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1, "SampleB": 2},
     )
     finalized = execute_targeted_production_workflow(request, output)
@@ -246,6 +148,7 @@ def test_publication_renders_the_finalized_numeric_hypothesis(tmp_path: Path) ->
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     finalized = execute_targeted_production_workflow(request, output)
@@ -305,7 +208,6 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
     )
     config = replace(
         config,
-        keep_intermediate_csv=True,
         count_no_ms2_as_detected=count_no_ms2_as_detected,
     )
     assert not target.is_istd and target.istd_pair == ""
@@ -380,12 +282,10 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
     assert set(decisions) == {"SampleA", "SampleB"}
     assert all(decision.variant == "numeric" for decision in decisions.values())
     assert decisions["SampleB"].value == pytest.approx(decisions["SampleA"].value * 2.5)
-    with config.output_csv.open(newline="", encoding="utf-8-sig") as handle:
-        wide_rows = {row["SampleName"]: row for row in csv.DictReader(handle)}
-    with config.output_csv.with_name("xic_results_long.csv").open(
-        newline="", encoding="utf-8-sig"
-    ) as handle:
-        long_rows = {row["SampleName"]: row for row in csv.DictReader(handle)}
+    long_rows = {
+        row["SampleName"]: row
+        for row in _run_output_to_long_rows(execution.active_output, [target])
+    }
     workbook = load_workbook(excel_path, data_only=True)
     try:
         rows = workbook["XIC Results"].iter_rows(values_only=True)
@@ -406,7 +306,7 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
             )
     finally:
         workbook.close()
-    assert set(wide_rows) == set(long_rows) == set(workbook_rows) == set(decisions)
+    assert set(long_rows) == set(workbook_rows) == set(decisions)
     rendered = {
         item.sample_name: item.results[target.label]
         for item in execution.active_output.file_results
@@ -428,7 +328,6 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
         assert rendered[sample_name].reported_peak_area == decision.value
         for field, (value, digits) in expected_values.items():
             expected_text = f"{value:.{digits}f}"
-            assert wide_rows[sample_name][f"{target.label}_{field}"] == expected_text
             assert long_rows[sample_name][field] == expected_text
             if field != "PeakWidth":
                 assert workbook_rows[sample_name][field] == float(expected_text)
@@ -461,7 +360,6 @@ def test_service_publishes_no_numeric_for_finalized_no_observation(
     tmp_path: Path,
 ) -> None:
     config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
     target = replace(target, neutral_loss_da=None, nl_ppm_warn=None, nl_ppm_max=None)
     extraction = output.file_results[0].results[target.label]
     original_trace = extraction.acquisition_trace
@@ -509,12 +407,7 @@ def test_service_publishes_no_numeric_for_finalized_no_observation(
     rendered = execution.active_output.file_results[0].results[target.label]
     assert rendered.reported_peak_area is None
     assert rendered.peak is None
-    with config.output_csv.open(newline="", encoding="utf-8-sig") as handle:
-        wide_row = next(csv.DictReader(handle))
-    with config.output_csv.with_name("xic_results_long.csv").open(
-        newline="", encoding="utf-8-sig"
-    ) as handle:
-        long_row = next(csv.DictReader(handle))
+    long_row = _run_output_to_long_rows(execution.active_output, [target])[0]
     workbook = load_workbook(excel_path, read_only=True, data_only=True)
     try:
         rows = workbook["XIC Results"].iter_rows(values_only=True)
@@ -522,7 +415,6 @@ def test_service_publishes_no_numeric_for_finalized_no_observation(
     finally:
         workbook.close()
     for field in ("RT", "Area", "PeakStart", "PeakEnd", "PeakWidth"):
-        assert wide_row[f"{target.label}_{field}"] == "ND"
         assert long_row[field] == "ND"
         if field != "PeakWidth":
             assert workbook_row[field] == "ND"
@@ -542,6 +434,7 @@ def test_publication_retires_equal_area_legacy_selection_authority(
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     finalized = execute_targeted_production_workflow(request, output)
@@ -560,7 +453,6 @@ def test_neutral_loss_disabled_target_publishes_ms1_backfill(
     tmp_path: Path,
 ) -> None:
     config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
     target = replace(
         target,
         neutral_loss_da=None,
@@ -570,61 +462,20 @@ def test_neutral_loss_disabled_target_publishes_ms1_backfill(
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
 
     finalized = execute_targeted_production_workflow(request, output)
     published = publish_targeted_outputs(request, finalized, output)
 
-    assert config.output_csv in published.paths
-    assert config.output_csv.is_file()
-    with config.output_csv.with_name("xic_results_long.csv").open(
-        newline="", encoding="utf-8-sig"
-    ) as handle:
-        row = next(csv.DictReader(handle))
+    assert published.paths == (request.excel_output_path,)
+    assert request.excel_output_path.is_file()
+    row = _run_output_to_long_rows(published.output, [target])[0]
     assert row["NL"] == ""
     assert row["NL Evidence"] == "Not requested"
     assert row["Area"] != "ND"
     assert row["Reason"].startswith("MS1 peak measured")
-
-
-def test_acquisition_baseline_projection_preserves_not_counted_cells(
-    tmp_path: Path,
-) -> None:
-    config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
-    extraction = output.file_results[0].results[target.label]
-    projection = extraction.targeted_product_projection
-    assert projection is not None
-    output.file_results[0].results[target.label] = replace(
-        extraction,
-        targeted_product_projection=replace(
-            projection,
-            product_state="not_counted",
-            counted_detection=False,
-            projection_reason="baseline_nl_fail",
-        ),
-    )
-    request = build_targeted_application_request(
-        config,
-        [target],
-        injection_order={"SampleA": 1},
-        output_projection="acquisition_baseline",
-    )
-    finalized = execute_targeted_production_workflow(request, output)
-
-    publication = publish_targeted_outputs(request, finalized, output)
-
-    with config.output_csv.with_name("xic_results_long.csv").open(
-        newline="",
-        encoding="utf-8-sig",
-    ) as handle:
-        row = next(csv.DictReader(handle))
-    assert row["Product State"] == "not_counted"
-    assert row["Counted Detection"] == "FALSE"
-    assert row["RT"] == f"{extraction.reported_rt:.4f}"
-    assert row["Area"] == f"{extraction.reported_peak_area:.2f}"
-    assert publication.output is not output
 
 
 def test_workbench_summary_consumes_the_finalized_publication_view(
@@ -633,7 +484,6 @@ def test_workbench_summary_consumes_the_finalized_publication_view(
     from xic_workbench.targeted import build_summary
 
     config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
     extraction = output.file_results[0].results[target.label]
     candidate_evidence = extraction.candidate_ms2_evidence
     assert candidate_evidence is not None
@@ -676,6 +526,7 @@ def test_workbench_summary_consumes_the_finalized_publication_view(
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     service = TargetedApplicationService(
@@ -705,10 +556,7 @@ def test_workbench_summary_consumes_the_finalized_publication_view(
     assert final_output is not output
     assert summary["targets"][0]["detected"] == 0
     assert summary["targets"][0]["median_area"] == finalized_value
-    with config.output_csv.with_name("xic_results_long.csv").open(
-        newline="", encoding="utf-8-sig"
-    ) as handle:
-        row = next(csv.DictReader(handle))
+    row = _run_output_to_long_rows(final_output, [target])[0]
     assert row["Product State"] == "not_counted"
     assert row["Counted Detection"] == "FALSE"
     assert row["RT"] == f"{final_result.reported_rt:.4f}"
@@ -719,22 +567,22 @@ def test_collision_leaves_existing_output_and_publishes_nothing_else(
     tmp_path: Path,
 ) -> None:
     config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     finalized = execute_targeted_production_workflow(request, output)
     config.output_csv.parent.mkdir(parents=True, exist_ok=True)
-    config.output_csv.write_bytes(b"existing")
+    request.excel_output_path.write_bytes(b"existing")
 
     with pytest.raises(TargetedOutputBoundaryError, match="already exists"):
         publish_targeted_outputs(request, finalized, output)
 
-    assert config.output_csv.read_bytes() == b"existing"
+    assert request.excel_output_path.read_bytes() == b"existing"
     assert sorted(path.name for path in config.output_csv.parent.iterdir()) == [
-        config.output_csv.name
+        request.excel_output_path.name
     ]
 
 
@@ -780,10 +628,10 @@ def test_concurrent_non_replacing_publications_are_collision_atomic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     original_commit = targeted_output_boundary._commit_staged_outputs
@@ -833,14 +681,12 @@ def test_concurrent_non_replacing_publications_are_collision_atomic(
 
     winning = successes[0]
     assert isinstance(winning, targeted_output_boundary.TargetedPublication)
-    expected_paths = {
-        config.output_csv,
-        config.output_csv.with_name("xic_results_long.csv"),
-        config.diagnostics_csv,
-    }
+    expected_paths = {request.excel_output_path}
     assert set(winning.paths) == expected_paths
     assert all(path.is_file() for path in winning.paths)
-    diagnostics_text = config.diagnostics_csv.read_text(encoding="utf-8-sig")
+    workbook = load_workbook(request.excel_output_path, read_only=True)
+    diagnostics_text = str(list(workbook["Diagnostics"].values))
+    workbook.close()
     assert (
         sum(marker in diagnostics_text for marker in ("concurrent-a", "concurrent-b"))
         == 1
@@ -952,10 +798,10 @@ def test_commit_failure_rolls_back_all_final_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     finalized = execute_targeted_production_workflow(request, output)
@@ -963,10 +809,10 @@ def test_commit_failure_rolls_back_all_final_paths(
     commit_count = 0
     failed = False
 
-    def fail_second_commit(source: Path, target_path: Path) -> None:
+    def fail_commit(source: Path, target_path: Path) -> None:
         nonlocal commit_count, failed
         commit_count += 1
-        if commit_count == 2 and not failed:
+        if commit_count == 1 and not failed:
             failed = True
             raise OSError("commit failed")
         original_publish(source, target_path)
@@ -974,7 +820,7 @@ def test_commit_failure_rolls_back_all_final_paths(
     monkeypatch.setattr(
         targeted_output_boundary,
         "_publish_without_replace",
-        fail_second_commit,
+        fail_commit,
     )
 
     with pytest.raises(TargetedOutputBoundaryError, match="rolled back"):
@@ -988,11 +834,11 @@ def test_commit_cancellation_after_first_move_rolls_back_all_final_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
     cancellation_requested = False
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
         should_stop=lambda: cancellation_requested,
     )
@@ -1067,10 +913,10 @@ def test_callback_exception_after_move_restores_complete_previous_set(
 
 def test_replay_replaces_its_owned_output_set(tmp_path: Path) -> None:
     config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     finalized = execute_targeted_production_workflow(request, output)
@@ -1090,10 +936,10 @@ def test_replay_commit_failure_restores_previous_output_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     finalized = execute_targeted_production_workflow(request, output)
@@ -1102,15 +948,15 @@ def test_replay_commit_failure_restores_previous_output_set(
     original_replace = Path.replace
     commit_count = 0
 
-    def fail_second_new_output(source: Path, target_path: Path) -> Path:
+    def fail_new_output(source: Path, target_path: Path) -> Path:
         nonlocal commit_count
         if source.parent.name.startswith(".xic-targeted-publish-"):
             commit_count += 1
-            if commit_count == 2:
+            if commit_count == 1:
                 raise OSError("replacement failed")
         return original_replace(source, target_path)
 
-    monkeypatch.setattr(Path, "replace", fail_second_new_output)
+    monkeypatch.setattr(Path, "replace", fail_new_output)
 
     with pytest.raises(TargetedOutputBoundaryError, match="rolled back"):
         publish_targeted_outputs(
@@ -1127,10 +973,10 @@ def test_failed_primary_restore_uses_fallback_to_restore_live_output_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     finalized = execute_targeted_production_workflow(request, output)
@@ -1144,7 +990,7 @@ def test_failed_primary_restore_uses_fallback_to_restore_live_output_set(
         nonlocal commit_count, restore_failed
         if source.parent.name.startswith(".xic-targeted-publish-"):
             commit_count += 1
-            if commit_count == 2:
+            if commit_count == 1:
                 raise OSError("replacement failed")
         if source.parent.name == ".existing" and not restore_failed:
             restore_failed = True
@@ -1253,6 +1099,7 @@ def test_publisher_rejects_finalized_results_from_another_acquisition(
     stale_request = build_targeted_application_request(
         stale_config,
         [stale_target],
+        excel_output_path=stale_config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     stale_finalized = execute_targeted_production_workflow(
@@ -1262,6 +1109,7 @@ def test_publisher_rejects_finalized_results_from_another_acquisition(
     current_request = build_targeted_application_request(
         current_config,
         [current_target],
+        excel_output_path=current_config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     with pytest.raises(
@@ -1280,6 +1128,7 @@ def test_publisher_rejects_unsealed_finalized_result_tuple(tmp_path: Path) -> No
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     completed = execute_targeted_production_workflow(request, output)
@@ -1300,6 +1149,7 @@ def test_publisher_uses_frozen_acquisition_snapshot(tmp_path: Path) -> None:
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     completed = execute_targeted_production_workflow(request, output)
@@ -1327,6 +1177,7 @@ def test_publisher_rejects_mutated_owner_snapshot(tmp_path: Path) -> None:
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     completed = execute_targeted_production_workflow(request, output)
@@ -1346,6 +1197,7 @@ def test_publisher_rejects_reordered_acquisition_after_completion(
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1, "SampleB": 2},
     )
     completed = execute_targeted_production_workflow(request, output)
@@ -1395,6 +1247,7 @@ def test_service_rejects_inputs_mutated_during_acquisition(tmp_path: Path) -> No
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
 
@@ -1422,6 +1275,7 @@ def test_service_fingerprints_each_raw_only_once(
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1, "SampleB": 2},
     )
     original_fingerprint = identity.fingerprint_file_content
@@ -1452,6 +1306,7 @@ def test_cancellation_after_typed_completion_never_invokes_publisher(
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
         should_stop=lambda: next(stop_results),
     )
@@ -1479,6 +1334,7 @@ def test_cancellation_during_input_fingerprint_skips_acquisition_and_finalizatio
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
         should_stop=lambda: True,
     )

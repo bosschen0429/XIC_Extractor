@@ -21,9 +21,6 @@ from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,
     METHOD_KEYS,
 )
-from xic_extractor.targeted_ms1_shape_identity_policy import (
-    TARGETED_MS1_SHAPE_IDENTITY_ACTIVATION_POLICIES,
-)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -48,9 +45,6 @@ class _ParsedSettings:
     injection_order_source: Path | None
     rolling_window_size: int
     dirty_matrix_mode: bool
-    model_selection_expected_diff_approval_registry: Path | None
-    targeted_ms1_shape_identity_support_tsv: Path | None
-    targeted_ms1_shape_identity_activation_policy: str
     parallel_mode: str
     parallel_workers: int
 
@@ -108,7 +102,7 @@ def resolve_settings(
 
 
 def reset_method_settings(settings: dict[str, str]) -> dict[str, str]:
-    """Reset method parameters, preserving batch, resource and execution values."""
+    """Reset method parameters, preserving batch and execution values."""
     values, _warnings = fill_setting_defaults(settings)
     values.update({key: CANONICAL_SETTINGS_DEFAULTS[key] for key in METHOD_KEYS})
     return values
@@ -188,17 +182,6 @@ def _parse_settings_values(
             "dirty_matrix_mode",
             _setting_value(settings, settings_path, "dirty_matrix_mode"),
         ),
-        model_selection_expected_diff_approval_registry=_parse_optional_path(
-            settings.get("model_selection_expected_diff_approval_registry", "")
-        ),
-        targeted_ms1_shape_identity_support_tsv=_parse_optional_path(
-            settings.get("targeted_ms1_shape_identity_support_tsv", "")
-        ),
-        targeted_ms1_shape_identity_activation_policy=_setting_value(
-            settings,
-            settings_path,
-            "targeted_ms1_shape_identity_activation_policy",
-        ),
         parallel_mode=_setting_value(settings, settings_path, "parallel_mode"),
         parallel_workers=_parse_int(
             settings_path,
@@ -274,18 +257,6 @@ def _validate_settings_ranges(
             settings["parallel_workers"],
             "must be >= 1",
         )
-    if (
-        parsed.targeted_ms1_shape_identity_activation_policy
-        not in TARGETED_MS1_SHAPE_IDENTITY_ACTIVATION_POLICIES
-    ):
-        allowed = ", ".join(TARGETED_MS1_SHAPE_IDENTITY_ACTIVATION_POLICIES)
-        raise _config_error(
-            settings_path,
-            None,
-            "targeted_ms1_shape_identity_activation_policy",
-            settings["targeted_ms1_shape_identity_activation_policy"],
-            f"must be {allowed}",
-        )
 
 
 def _build_config(
@@ -314,15 +285,6 @@ def _build_config(
         injection_order_source=parsed.injection_order_source,
         rolling_window_size=parsed.rolling_window_size,
         dirty_matrix_mode=parsed.dirty_matrix_mode,
-        model_selection_expected_diff_approval_registry=(
-            parsed.model_selection_expected_diff_approval_registry
-        ),
-        targeted_ms1_shape_identity_support_tsv=(
-            parsed.targeted_ms1_shape_identity_support_tsv
-        ),
-        targeted_ms1_shape_identity_activation_policy=(
-            parsed.targeted_ms1_shape_identity_activation_policy
-        ),
         baseline_integration_method="asls",
         parallel_mode=parsed.parallel_mode,
         parallel_workers=parsed.parallel_workers,

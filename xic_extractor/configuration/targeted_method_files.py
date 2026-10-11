@@ -26,7 +26,6 @@ from xic_extractor.configuration.targets import parse_target_rows
 from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,
     METHOD_KEYS,
-    RESOURCE_KEYS,
 )
 
 _FILES = frozenset({"settings.csv", "targets.csv"})
@@ -44,9 +43,8 @@ class TargetedMethod:
 def create_targeted_method(
     settings: Mapping[str, str], target_rows: Sequence[Mapping[str, str]]
 ) -> TargetedMethod:
-    """Admit an editable method without files or discarded resource knowledge."""
+    """Admit an editable method without reading files."""
     normalized, _warnings = fill_setting_defaults(dict(settings))
-    _reject_portable_resources(normalized)
     unknown = sorted(set(normalized) - CANONICAL_SETTINGS_DEFAULTS.keys())
     if unknown:
         raise ConfigError(f"方法包含尚未支援的設定：{', '.join(unknown)}；原設定保留。")
@@ -69,26 +67,12 @@ def apply_targeted_method(
 ) -> dict[str, str]:
     """Replace all method intent while retaining this batch and local configuration.
 
-    Explicit overrides are applied after method selection. Resource-bound cases
-    are not portable yet: neither inherited nor explicitly rebound resources may
-    silently turn a selected method into a differently supported calculation.
+    Explicit overrides are applied after method selection.
     """
-    _reject_portable_resources(settings)
     values, _warnings = fill_setting_defaults(dict(settings))
     values.update(method.settings)
     values.update(overrides or {})
-    _reject_portable_resources(values)
     return values
-
-
-def _reject_portable_resources(settings: Mapping[str, str]) -> None:
-    resources = [key for key in RESOURCE_KEYS if settings.get(key, "").strip()]
-    if resources:
-        raise ConfigError(
-            "此設定使用科學參考資料，尚不支援可跨批次方法的保存或套用："
-            + ", ".join(resources)
-            + "。原設定保留；請使用現有完整設定執行，不可省略參考資料。"
-        )
 
 
 def load_targeted_method(directory: Path) -> TargetedMethod:

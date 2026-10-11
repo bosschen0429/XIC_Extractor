@@ -30,12 +30,12 @@ historical filename as the stable topic locator.
   until the operator opens them. The separate DLL section expands when its
   value needs attention.
 - A persisted setting that differs from the canonical method is labelled
-  `自訂參數 · N 項調整`. Only the 11 scalar parameters owned by
+  `自訂參數 · N 項調整`. Only the 10 scalar parameters owned by
   `xic_extractor.settings_schema.METHOD_KEYS` contribute to the count; batch, environment,
-  workers, output, targets, and resources do not. **回到預設** restores those
+  workers, output, and targets do not. **回到預設** restores those
   scalar parameters. Gaussian is fixed information, not a method choice.
 - `settings.csv` is the sole active Targeted settings file. Reset preserves
-  batch, resource and execution settings. GUI and CLI use the existing settings
+  batch and execution settings. GUI and CLI use the existing settings
   parser; the Workbench only presents its method values and differences.
 - Ordinary configuration reads do not write files. The workspace supplies the
   shared DLL value to both workflows; saving it does not validate Targeted

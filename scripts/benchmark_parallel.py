@@ -13,9 +13,6 @@ from xic_extractor import extractor
 from xic_extractor.configuration.loader import load_config
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
-from xic_extractor.peak_detection.model_selection_approval_registry import (
-    load_expected_diff_approval_registry,
-)
 from xic_extractor.raw_reader import RawReaderError
 from xic_extractor.tabular_io import write_delimited_rows
 
@@ -137,18 +134,7 @@ def _run_extraction_once(
         parallel_mode=mode,
         parallel_workers=workers,
     )
-    expected_diff_approvals = (
-        load_expected_diff_approval_registry(
-            run_config.model_selection_expected_diff_approval_registry
-        )
-        if run_config.model_selection_expected_diff_approval_registry is not None
-        else None
-    )
-    output = extractor.acquire(
-        run_config,
-        targets,
-        model_selection_expected_diff_approvals=expected_diff_approvals,
-    )
+    output = extractor.acquire(run_config, targets)
     workbook_path = output_dir / f"xic_results_{mode}_w{workers}.xlsx"
     return write_excel_from_run_output(
         run_config,

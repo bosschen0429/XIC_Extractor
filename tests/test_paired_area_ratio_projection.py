@@ -15,11 +15,6 @@ from xic_extractor.extraction.paired_area_ratio_projection import (
 )
 from xic_extractor.extraction.result_assembly import build_extraction_result
 from xic_extractor.extraction.result_models import FileResult, RunOutput
-from xic_extractor.extraction.targeted_ms1_shape_identity_projection import (
-    TargetedMs1ShapeIdentitySupport,
-    apply_targeted_ms1_shape_identity_projection,
-    result_with_targeted_ms1_shape_identity_support,
-)
 from xic_extractor.output.targeted_product_model import (
     OWN_MAX_SAME_PEAK_SUPPORT_REASON,
 )
@@ -42,8 +37,9 @@ from xic_extractor.peak_detection.selection_decision import (
 _NLStatus = Literal["OK", "WARN", "NL_FAIL", "NO_MS2"]
 
 
-def test_run_level_area_ratio_support_without_own_max_keeps_nl_fail_not_counted(
-) -> None:
+def test_run_level_area_ratio_support_without_own_max_keeps_nl_fail_not_counted() -> (
+    None
+):
     output = RunOutput(
         file_results=[
             _file_result("SampleA", target_area=50_000.0, nl_status="NL_FAIL"),
@@ -105,69 +101,6 @@ def test_run_level_area_ratio_support_can_count_own_max_supported_nl_fail() -> N
     assert "paired_istd_rt_within_1min_support" in projected.support_reasons
     assert OWN_MAX_SAME_PEAK_SUPPORT_REASON in projected.support_reasons
     assert "analyte_nl_fail_requires_policy" not in projected.not_counted_reasons
-
-
-def test_external_ms1_shape_identity_support_can_unlock_area_ratio_projection(
-) -> None:
-    output = RunOutput(
-        file_results=[
-            _file_result("SampleA", target_area=50_000.0, nl_status="NL_FAIL"),
-            _file_result("RefA", target_area=40_000.0, nl_status="OK"),
-            _file_result("RefB", target_area=50_000.0, nl_status="OK"),
-            _file_result("RefC", target_area=60_000.0, nl_status="OK"),
-        ],
-        diagnostics=[],
-    )
-
-    apply_paired_area_ratio_projection(output, targets=[_target(), _istd()])
-    before = output.file_results[0].results["Analyte"].targeted_product_projection
-    assert before is not None
-    assert before.counted_detection is False
-    assert "paired_area_ratio_support" in before.support_reasons
-    assert OWN_MAX_SAME_PEAK_SUPPORT_REASON not in before.support_reasons
-    assert "analyte_nl_fail_requires_policy" in before.not_counted_reasons
-
-    apply_targeted_ms1_shape_identity_projection(
-        output,
-        targets=[_target(), _istd()],
-        supports=(
-            TargetedMs1ShapeIdentitySupport(
-                sample_name="SampleA",
-                target_name="Analyte",
-            ),
-        ),
-    )
-
-    after = output.file_results[0].results["Analyte"].targeted_product_projection
-    decision = output.file_results[0].results["Analyte"].selection_decision
-    assert after is not None
-    assert decision is not None
-    assert after.product_state == "detected_flagged"
-    assert after.counted_detection is True
-    assert "paired_area_ratio_support" in after.support_reasons
-    assert OWN_MAX_SAME_PEAK_SUPPORT_REASON in after.support_reasons
-    assert "analyte_nl_fail_requires_policy" not in after.not_counted_reasons
-    assert "targeted_ms1_shape_identity" in decision.evidence_sources
-
-
-def test_direct_ms1_shape_identity_support_requires_matching_sample() -> None:
-    result = _file_result(
-        "SampleA",
-        target_area=50_000.0,
-        nl_status="NL_FAIL",
-    ).results["Analyte"]
-
-    updated = result_with_targeted_ms1_shape_identity_support(
-        result,
-        target=_target(),
-        sample_name="SampleA",
-        support=TargetedMs1ShapeIdentitySupport(
-            sample_name="OtherSample",
-            target_name="Analyte",
-        ),
-    )
-
-    assert updated is result
 
 
 def test_run_level_area_ratio_outside_reference_stays_not_counted() -> None:
@@ -386,8 +319,7 @@ def _result(
             decision_class="not_counted",
             projected_confidence="VERY_LOW",
             projected_reason=(
-                "decision: not_counted; not_counted: "
-                "selected_envelope_boundary_defer"
+                "decision: not_counted; not_counted: selected_envelope_boundary_defer"
             ),
             support_reasons=("ms1_coherent",),
             not_counted_reasons=("selected_envelope_boundary_defer",),

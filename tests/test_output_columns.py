@@ -2,7 +2,6 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
-from scripts import csv_to_excel
 from xic_extractor import extractor as extractor_module
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extraction.result_models import (
@@ -12,9 +11,8 @@ from xic_extractor.extraction.result_models import (
 )
 from xic_extractor.output.csv_writers import (
     _long_output_rows,
-    _output_row,
-    write_all,
 )
+from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 from xic_extractor.output.targeted_product_model import (
     TargetedProductProjection,
 )
@@ -130,13 +128,9 @@ def _write_workbook(tmp_path: Path) -> Path:
     config = _config(tmp_path)
     target = _target("d3-5-hmdC", is_istd=True)
     run_output = _fabricate_run_output()
-    write_all(
-        config,
-        [target],
-        run_output.file_results,
-        run_output.diagnostics,
+    return write_excel_from_run_output(
+        config, [target], run_output, output_path=tmp_path / "results.xlsx"
     )
-    return csv_to_excel.run(config, [target])
 
 
 def test_extractor_no_longer_exposes_test_only_xlsx_writer() -> None:
@@ -157,12 +151,9 @@ def test_output_rows_use_selection_apex_rt_for_reporting() -> None:
     file_result = run_output.file_results[0]
     target = _target("d3-5-hmdC")
 
-    wide_row = _output_row(file_result, [target])
     long_row = _long_output_rows(file_result, [target])[0]
 
-    assert wide_row["d3-5-hmdC_RT"] == "9.0000"
     assert long_row["RT"] == "9.0000"
-    assert wide_row["d3-5-hmdC_Area"] == "123.00"
     assert long_row["Area"] == "123.00"
 
 

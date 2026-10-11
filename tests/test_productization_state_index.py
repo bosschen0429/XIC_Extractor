@@ -46,7 +46,7 @@ def test_status_schema_matches_index_header() -> None:
     assert tuple(schema) == CONTROL_PLANE_SCHEMA_FIELDS
     assert tuple(header) == STATUS_INDEX_FIELDS
     assert tuple(schema["required_lane_ids"]) == REQUIRED_LANE_IDS
-    assert len(rows) == len(REQUIRED_LANE_IDS) == 12
+    assert len(rows) == len(REQUIRED_LANE_IDS)
     assert schema["required_control_plane_anchors"] == {
         row["lane_id"]: row["control_plane_anchor"] for row in rows
     }
@@ -222,8 +222,7 @@ def test_checker_rejects_unsupported_control_plane_schema(tmp_path: Path) -> Non
     problems = check_productization_state(schema_path=predecessor)
 
     assert any(
-        "unsupported productization control-plane" in problem
-        for problem in problems
+        "unsupported productization control-plane" in problem for problem in problems
     )
 
 
@@ -348,7 +347,9 @@ def test_checker_rejects_non_exact_anchor_registry(
 
     problems = check_productization_state(schema_path=mutated)
 
-    assert any("ordered 12-anchor" in problem for problem in problems)
+    assert any(
+        f"ordered {len(REQUIRED_LANE_IDS)}-anchor" in problem for problem in problems
+    )
 
 
 def test_checker_rejects_crossed_or_active_dependent_status_row(

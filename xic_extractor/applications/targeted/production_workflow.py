@@ -374,9 +374,6 @@ def snapshot_targeted_production_inputs(
         request.config,
         raw_paths=raw_paths,
         injection_order=request.injection_order,
-        model_selection_expected_diff_approvals=(
-            request.model_selection_expected_diff_approvals
-        ),
     )
     target_snapshot = mint_target_list_snapshot(
         request.targets,
@@ -411,9 +408,6 @@ def _validate_targeted_production_input_snapshot(
         request.config,
         raw_paths=raw_paths,
         injection_order=request.injection_order,
-        model_selection_expected_diff_approvals=(
-            request.model_selection_expected_diff_approvals
-        ),
     )
     target_snapshot = mint_target_list_snapshot(
         request.targets,

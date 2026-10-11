@@ -200,6 +200,11 @@ own configured midpoint. NL and no-NL analytes use this same answer. The
 configured difference is retained, including nonzero isotope-labelled offsets;
 pairing does not force identical apex times.
 
+Candidate scoring uses this same reference as its paired-ISTD RT prior and
+centers the configured-width RT scoring window on it. Agreement can support
+ranking; shared sample drift does not incur an unshifted-window penalty.
+The RT prior is not an additional chemical identity or NL confirmation.
+
 Missing or untrusted paired ISTD observations do not become anchors. The
 fallback remains the configured analyte midpoint plus the available sample
 drift. Neither fallback nor RT agreement establishes chemical identity. Humans
@@ -211,41 +216,15 @@ RT-prior/pair calibration files are not analysis inputs. The retained rolling
 ISTD context assesses within-batch ISTD consistency; it is not a replacement for
 a missing current-sample paired observation or an independent identity oracle.
 
-### Rescue scope
+### Counting and product selection
 
-- The bounded headless `5-hmdC + 5-medC` contract is the only MS1
-  shape-identity rescue scope with accepted `detected_flagged` expected-diff
-  evidence.
-- That contract grants no authority to broader targets, application wiring, or default
-  broad NL_FAIL rescue. These extensions require a new target-family evidence
-  gate.
-- Current lane readiness lives in the status index.
-
-### Expected-diff inputs
-
-- Targeted expected-diff approvals must reference runtime product
-  `PeakHypothesis` candidate IDs.
-- Overlay-only or audit-table candidate IDs can explain support. These IDs are
-  not valid product-switch inputs.
-- Product action or verdict tables are review/reason surfaces. These tables
-  must not hide the evidence chain or grant writer authority.
-
-## Retained Validation Anchors
-
-- The 2026-06-04 `BenignfatBC1055_DNA / 8-oxodG` closeout is a row-specific
-  expected-diff activation. The closeout is not a general target-pair RT
-  auto-reselection rule.
-- The closeout changed one Targeted product row. The change happened after the
-  approved successor existed in runtime product hypotheses and had role-aware
-  RT, paired-area-ratio, MS1, and trace support.
-- The visible product decision surface for that slice is `Product State`,
-  `Counted Detection`, `Review State`, and projection-backed `Reason`. Legacy
-  `Confidence`, score, and cap evidence remain technical audit material while
-  this projection contract is active.
-- The observed 8RAW count change for that slice was `8-oxodG: 3/8 -> 4/8`,
-  with all other target labels unchanged. That count change is a validation
-  anchor for the activation gate. That count change is not broad target-pair
-  policy.
+- One extraction pass decides each row. Analyte `NL_FAIL` or `NO_MS2` rows
+  keep their measured RT, area and bounds; counting follows the NL evidence
+  rules. There is no MS1-shape rescue that re-counts such rows.
+- The successor model selection is recorded for comparison. It replaces the
+  product selection only through the target-applicable strict-NL successor
+  rule for `rna_containing` targets; no approval registry or per-row switch
+  input exists.
 
 ## Surfaces
 
@@ -266,7 +245,7 @@ a missing current-sample paired observation or an independent identity oracle.
 - **Owns:** fixed `TargetKey` row projection, pre-cell
   `TargetRowBinding`/`TargetCellSubject`, post-cell inclusion,
   typed confidence/reason/product-state/counting decisions, existing Review Queue
-  routing, MS1 rescue policy scope, and target-pair RT rules.
+  routing, and target-pair RT rules.
 - **Selected value:** `ProductionCellDecision` owns the selected numeric value.
   Targeted projection renders that decision and its retained physical
   evidence. Targeted projection does not rerun peak selection or integration.

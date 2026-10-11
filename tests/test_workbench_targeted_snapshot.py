@@ -199,7 +199,6 @@ def test_queued_targeted_metadata_membership_and_order_are_frozen(
                 request.config,
                 raw_paths=selected,
                 injection_order=None,
-                model_selection_expected_diff_approvals=None,
             )
             assert request.config.injection_order_source.read_bytes() == original_order
             captured.append((request, selected, inputs))

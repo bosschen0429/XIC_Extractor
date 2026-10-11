@@ -8,16 +8,16 @@ contain local machine paths.
 ## Settings (`settings.csv`)
 
 `settings.csv` is the only active Targeted settings file; `targets.csv` is a
-separate target list. Reset restores the 11 method parameters declared in
-`xic_extractor.settings_schema.METHOD_KEYS`, preserving batch, environment,
-output and resource settings.
+separate target list. Reset restores the 10 method parameters declared in
+`xic_extractor.settings_schema.METHOD_KEYS`, preserving batch, environment
+and output settings.
 
 The shared DLL location is persisted only in `settings.csv`, for both Targeted
 and Untargeted. UI preferences and Discovery batch files do not override this value. An explicit launch
 override remains session-local until saved.
 
-The custom-method label compares only those 11 parameters with platform-owned
-defaults. Resource selections are separately visible, not part of this count.
+The custom-method label compares only those 10 parameters with platform-owned
+defaults.
 
 ### Paths
 
@@ -79,17 +79,6 @@ have no effect.
 | --- | --- | --- | --- |
 | `parallel_mode` | enum | `process` | Execution backend: `serial` or `process` |
 | `parallel_workers` | int | CPU count - 1 | Worker count for process mode |
-
-### External Resources
-
-These optional resources have a separate visible section. Method reset/import
-preserves their selected values; they are not counted as scalar method changes.
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `model_selection_expected_diff_approval_registry` | path | Expected-diff approval registry TSV |
-| `targeted_ms1_shape_identity_support_tsv` | path | Reviewed MS1 shape-identity support TSV |
-| `targeted_ms1_shape_identity_activation_policy` | enum | `limited_5hmdc_5medc` or `explicit_support_tsv` |
 
 ---
 

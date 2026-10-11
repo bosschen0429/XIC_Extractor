@@ -25,23 +25,6 @@ def test_bounded_schema_matches_acceptance_header() -> None:
     assert {row["lane_id"] for row in rows} == set(schema["required_lane_ids"])
 
 
-@pytest.mark.ledger_snapshot
-def test_limited_targeted_ms1_scope_and_effect_are_pinned() -> None:
-    _, rows = _read_tsv(DEFAULT_ACCEPTANCE)
-    row = _row(rows, "targeted_ms1_shape_identity_limited_rescue")
-
-    assert row["readiness_status"] == "production_ready"
-    assert row["allowed_effect"] == "detected_flagged_only"
-    assert set(row["allowed_scope"].split(";")) == {
-        "limited_5hmdc_5medc",
-        "5-hmdC",
-        "5-medC",
-    }
-    assert row["may_enable_gui"] == "FALSE"
-    assert row["may_expand_targets"] == "FALSE"
-    assert row["grants_new_product_authority"] == "FALSE"
-
-
 def test_acceptance_packet_does_not_include_backfill() -> None:
     _, rows = _read_tsv(DEFAULT_ACCEPTANCE)
 
@@ -64,10 +47,10 @@ def test_checker_rejects_broad_backfill_row(tmp_path: Path) -> None:
     assert any("unregistered lane_id" in problem for problem in problems)
 
 
-def test_checker_rejects_broader_target_promotion(tmp_path: Path) -> None:
+def test_checker_rejects_unapproved_metadata_value_promotion(tmp_path: Path) -> None:
     mutated = _mutated_acceptance(
         tmp_path,
-        lane_id="targeted_ms1_shape_identity_broader_targets",
+        lane_id="sample_metadata_role_value_behavior",
         updates={
             "readiness_status": "production_ready",
             "current_bounded_surface": "TRUE",
@@ -171,12 +154,12 @@ def test_checker_rejects_coordinated_schema_acceptance_status_promotion(
 ) -> None:
     status = _mutated_status_index(
         tmp_path,
-        "targeted_ms1_shape_identity_broader_targets",
+        "sample_metadata_role_value_behavior",
         {"readiness_status": "production_ready"},
     )
     acceptance = _mutated_acceptance(
         tmp_path,
-        lane_id="targeted_ms1_shape_identity_broader_targets",
+        lane_id="sample_metadata_role_value_behavior",
         updates={
             "readiness_status": "production_ready",
             "current_bounded_surface": "TRUE",
@@ -191,7 +174,7 @@ def test_checker_rejects_coordinated_schema_acceptance_status_promotion(
                 "production_ready_lanes": [
                     "targeted_ms1_shape_identity_limited_rescue",
                     "sample_metadata_order_projection",
-                    "targeted_ms1_shape_identity_broader_targets",
+                    "sample_metadata_role_value_behavior",
                 ]
             }
         },

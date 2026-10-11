@@ -254,20 +254,3 @@ def test_new_batch_does_not_inherit_injection_order_and_explicit_order_is_frozen
     assert prepared.config.data_dir == batch_two
     assert prepared.config.injection_order_source.read_bytes() == original
     assert prepared.config.injection_order_source.parent == prepared.input_config_dir
-
-
-def test_preparation_rejects_workspace_and_explicit_resource_bindings(tmp_path):
-    from xic_extractor.configuration.loader import prepare_targeted_config
-
-    config_dir = _workspace(tmp_path)
-    method_dir = tmp_path / "method"
-    files.save_targeted_method(files.create_targeted_method({}, rows()), method_dir)
-    with pytest.raises(ConfigError, match="targeted_ms1_shape_identity_support_tsv"):
-        prepare_targeted_config(
-            config_dir,
-            method_dir=method_dir,
-            settings_overrides={
-                "targeted_ms1_shape_identity_support_tsv": "support.tsv"
-            },
-        )
-    assert not (tmp_path / "output").exists()

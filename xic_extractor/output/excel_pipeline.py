@@ -24,7 +24,6 @@ def write_excel_from_run_output(
     run_output: RunOutputLike,
     *,
     output_path: Path,
-    extra_metadata: Sequence[tuple[str, object]] = (),
 ) -> Path:
     """Write an xlsx workbook directly from in-memory extraction output."""
     rows = _run_output_to_long_rows(run_output, targets)
@@ -36,7 +35,6 @@ def write_excel_from_run_output(
         diagnostics=diagnostics,
         output_path=output_path,
         require_projection=True,
-        extra_metadata=extra_metadata,
     )
 
 

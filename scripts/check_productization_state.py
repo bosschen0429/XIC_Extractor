@@ -96,9 +96,7 @@ EXPECTED_SCHEMA_PURPOSE = (
     "authority rules, and stable compatibility anchors. Mutable state lives in "
     "the status index and writer scope lives in the authority manifest."
 )
-DEPENDENT_EFFECT_LANE_ID = (
-    "untargeted_owner_backfill_canonical_quantitative_projection"
-)
+DEPENDENT_EFFECT_LANE_ID = "untargeted_owner_backfill_canonical_quantitative_projection"
 DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT = (
     "xic_extractor/alignment/data/quantitative_projection_authority.json"
 )
@@ -118,9 +116,7 @@ DEPENDENT_EFFECT_LANE_AUTHORITY_FIELDS = (
 )
 EXPECTED_DEPENDENT_EFFECT_LANE_AUTHORITY = {
     "lane_id": DEPENDENT_EFFECT_LANE_ID,
-    "authority_manifest_schema_version": (
-        "quantitative_projection_authority_manifest"
-    ),
+    "authority_manifest_schema_version": ("quantitative_projection_authority_manifest"),
     "package_authority_schema_version": "quantitative_projection_authority",
     "required_signal_processing_profile_id": (
         "signal-profile:"
@@ -138,12 +134,6 @@ REQUIRED_CONTROL_PLANE_ANCHORS = {
     "quality_explanation_sidecar": (
         "quality_explanations and quality_blockers are explanation and triage "
         "inputs only"
-    ),
-    "targeted_ms1_shape_identity_limited_rescue": (
-        "Targeted MS1 shape identity limited rescue remains production-ready"
-    ),
-    "targeted_ms1_shape_identity_broader_targets": (
-        "GUI and broader targets remain blocked"
     ),
     "sample_metadata_order_projection": "sample_metadata cross-module parity",
     "sample_metadata_role_value_behavior": "role/value behavior remains blocked",
@@ -224,14 +214,11 @@ EXPECTED_HOLD_ROW = {
     "control_plane_anchor": (
         "Untargeted Owner Backfill Canonical Quantitative Projection"
     ),
-    "handoff_anchor": (
-        "Untargeted Owner Backfill Canonical Quantitative Projection"
-    ),
+    "handoff_anchor": ("Untargeted Owner Backfill Canonical Quantitative Projection"),
     "next_checkpoint": ("rehydrate_registered_writer_membership_without_new_raw"),
     "expiration_condition": ("superseded by membership-bound ACTIVE effect or retired"),
     "notes": (
-        "HOLD; no ProductWriter authority; no registered-writer membership "
-        "owner exists"
+        "HOLD; no ProductWriter authority; no registered-writer membership owner exists"
     ),
 }
 PRODUCT_TOPIC_BY_LANE_GROUP = {
@@ -445,10 +432,7 @@ def _check_schema_and_rows(
         not isinstance(raw_anchor_contract, Mapping)
         or not raw_anchor_contract
         or not all(
-            isinstance(lane_id, str)
-            and isinstance(anchor, str)
-            and lane_id
-            and anchor
+            isinstance(lane_id, str) and isinstance(anchor, str) and lane_id and anchor
             for lane_id, anchor in (
                 raw_anchor_contract.items()
                 if isinstance(raw_anchor_contract, Mapping)
@@ -688,9 +672,7 @@ def _check_authority_boundaries(
                 )
         if row.get("lane_id") == "quality_explanation_sidecar":
             if status != "diagnostic_only" or write or scope:
-                problems.append(
-                    "quality_explanation_sidecar must be diagnostic only"
-                )
+                problems.append("quality_explanation_sidecar must be diagnostic only")
 
 
 def _check_artifacts(
@@ -926,9 +908,7 @@ def _check_narrative_authority_partition(
     mutable_field_names = {
         column
         for column in required_columns
-        if isinstance(column, str)
-        and column
-        and column not in stable_or_routing_fields
+        if isinstance(column, str) and column and column not in stable_or_routing_fields
     }
     forbidden_literals.update(
         status
@@ -1036,21 +1016,22 @@ def _readiness_assignment(
                 if unit_tokens[index : index + width] != status_tokens:
                     continue
                 preceding = unit_tokens[max(0, index - 5) : index]
-                has_assignment_verb = bool(set(preceding) & {
-                    "are",
-                    "is",
-                    "remain",
-                    "remains",
-                    "stay",
-                    "stays",
-                })
+                has_assignment_verb = bool(
+                    set(preceding)
+                    & {
+                        "are",
+                        "is",
+                        "remain",
+                        "remains",
+                        "stay",
+                        "stays",
+                    }
+                )
                 local_identity_count = len(
-                    identity_tokens
-                    & set(unit_tokens[max(0, index - 12) : index])
+                    identity_tokens & set(unit_tokens[max(0, index - 12) : index])
                 )
                 adjacent_identity_count = len(
-                    identity_tokens
-                    & set(unit_tokens[max(0, index - 4) : index])
+                    identity_tokens & set(unit_tokens[max(0, index - 4) : index])
                 )
                 if (
                     has_assignment_verb and local_identity_count >= 2
@@ -1107,8 +1088,7 @@ def _check_product_topic_authority_partition(
                 )
         for row in rows:
             if not accepts_all_lane_groups and (
-                PRODUCT_TOPIC_BY_LANE_GROUP.get(row.get("lane_group", ""))
-                != path.name
+                PRODUCT_TOPIC_BY_LANE_GROUP.get(row.get("lane_group", "")) != path.name
             ):
                 continue
             duplicated_status = _readiness_assignment(

@@ -349,11 +349,10 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
 - Analyte `NL_FAIL` and `NO_MS2` remain not-counted unless the active paired
   analyte rescue policy has all required support. Pair evidence must not
   silently convert missing or failed product evidence into a counted detection.
-- The current targeted MS1 own-max opt-in verdict is limited to the headless
-  explicit `limited_5hmdc_5medc` support-TSV workflow. It may project
-  reviewed `5-hmdC`/`5-medC` `NL_FAIL` candidates to `detected_flagged` only
-  under the support-TSV key-set and expected-diff gate. Default automatic
-  rescue, GUI rescue, and broader-target rescue remain blocked.
+- Targeted rows with missing or failed NL retain physically measured quantities
+  without a counted-detection rescue. The single-pass application owns the
+  completed result; external MS1-shape support and approval files do not
+  authorize a different selection or counting decision.
 - DDA MS2 trigger without the key target NL/product tag is acquisition
   opportunity evidence, not analyte identity support. When the key NL/product
   tag is missing or failed, analyte rescue must rely on coherent MS1 peak

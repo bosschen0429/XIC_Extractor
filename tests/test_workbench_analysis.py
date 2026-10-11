@@ -551,8 +551,6 @@ def test_inspector_job_rejects_source_not_bound_to_published_untargeted_result(
         jobs.close()
 
 
-
-
 def test_http_targeted_bootstrap_explains_active_source(tmp_path):
     config_dir = tmp_path / "config"
     config_dir.mkdir()
@@ -593,7 +591,6 @@ def test_targeted_bootstrap_combines_saved_settings_and_launch_values(
         workspace.jobs.close()
 
 
-
 def test_http_method_reset_preserves_batch_resources_and_execution(tmp_path):
     workspace = ReviewWorkspace(config_dir=tmp_path / "config")
     with _client(workspace) as request:
@@ -603,14 +600,12 @@ def test_http_method_reset_preserves_batch_resources_and_execution(tmp_path):
             "data_dir": "different-batch",
             "dll_dir": "different-dll",
             "injection_order_source": "order.csv",
-            "targeted_ms1_shape_identity_support_tsv": "support.tsv",
             "parallel_workers": "1",
         }
         settings = {**config["settings"], **local, "ms2_precursor_tol_da": "1.2"}
         status, summary, _ = request("/api/targeted/method", {"settings": settings})
         assert status == 200
         assert summary["custom_keys"] == ["ms2_precursor_tol_da"]
-        assert summary["resource_keys"] == ["targeted_ms1_shape_identity_support_tsv"]
         status, reset, _ = request("/api/targeted/method/reset", {"settings": settings})
         assert status == 200
         assert reset["settings"]["ms2_precursor_tol_da"] == "0.8"

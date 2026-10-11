@@ -106,15 +106,13 @@ Key-value pairs recording settings and provenance for the run.
 | signal_processing_window_points | `15` | Gaussian smoothing window (points) |
 | targeted_workbook_layout_version | `2` | Delivered workbook presentation layout |
 | targeted_output_schema_version | `targeted_output` | Output schema version |
-| limited_identity_gate | `pass` | Completed method-specific gate, when the limited workflow runs |
 
 ---
 
 ## Embedded decision inputs
 
-Nonempty supplied `Sample Context`, `Identity Support`, and `Selection Approvals`
-are hidden technical sheets. They preserve the input tables used for sample roles/
-order and admitted evidence, rather than requiring external sidecars. They are
-not new decisions or evidence of scientific readiness. Empty inputs do not add
-sheets. `Targets` includes `Sample applicability`; `Run Metadata` includes the
+A nonempty supplied `Sample Context` is a hidden technical sheet. It preserves
+the input table used for sample roles/order rather than requiring an external
+sidecar. It is not a new decision or evidence of scientific readiness. An empty
+input adds no sheet. `Targets` includes `Sample applicability`; `Run Metadata` includes the
 actual method settings, not a link to a separate manifest.
