@@ -37,7 +37,7 @@ class ScoredCandidate:
     prior_rt: float | None
     quality_penalty: int = 0
     selection_quality_penalty: float | None = None
-    prefer_rt_prior_tiebreak: bool = False
+
     evidence_score: EvidenceScore | None = None
     evidence_facts: CandidateEvidenceFacts | None = None
 
@@ -72,7 +72,7 @@ class ScoringContext:
     outside_ms1_peak_group_strict_nl_scan_count: int | None = None
     baseline_array: np.ndarray | None = None
     residual_mad: float | None = None
-    prefer_rt_prior_tiebreak: bool = False
+
     active_trace_source: str = ""
     morphology_trace_method: str = ""
     morphology_trace_window_points: int | None = None

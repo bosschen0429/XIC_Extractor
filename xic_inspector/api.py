@@ -30,12 +30,18 @@ from xic_inspector.sources import (
     ExplanationUnavailableError,
     open_source,
 )
+from xic_inspector.sources.targeted_workbook import (
+    TargetedWorkbookLocator,
+    TargetedWorkbookSource,
+)
 
 
 def read_evidence_summary(path):
-    """Read metadata from the existing SQLite evidence source."""
+    """Read metadata from a supported saved-result source."""
     from xic_inspector.sources.cid_nl import read_summary
 
+    if Path(path).suffix.lower() == ".xlsx":
+        return open_source(Path(path)).summary
     return read_summary(path)
 
 
@@ -46,7 +52,13 @@ def resolve_source(path: Path) -> Path:
     for candidate in (path / REPORT_FILENAME, path / "alignment" / REPORT_FILENAME):
         if candidate.is_file():
             return candidate
-    raise FileNotFoundError(f"No {REPORT_FILENAME} in {path} or its alignment folder")
+    # Excel keeps "~$name.xlsx" lock files beside workbooks that are open.
+    workbooks = sorted(p for p in path.glob("*.xlsx") if not p.name.startswith("~$"))
+    if len(workbooks) == 1:
+        return workbooks[0]
+    if len(workbooks) > 1:
+        raise ValueError("資料夾有多份 XLSX；請明確選擇 Targeted XLSX 檔案。")
+    raise FileNotFoundError(f"No Targeted XLSX or {REPORT_FILENAME} in {path}")
 
 
 StrategyKind = Literal["sample", "attention", "query"]
@@ -82,6 +94,8 @@ class SelectionRequest:
     sample_ids: tuple[str, ...] = ()
     candidate_ids: tuple[str, ...] = ()
     group_ids: tuple[str, ...] = ()
+    target_ids: tuple[str, ...] = ()
+    attention_only: bool = False
     mz_min: float | None = None
     mz_max: float | None = None
     rt_min: float | None = None
@@ -114,10 +128,14 @@ class SelectionRequest:
                 2, f"Offset must be an integer >= 0, got {self.offset}"
             )
 
+        if not isinstance(self.attention_only, bool):
+            raise InspectorError(2, "attention_only must be a boolean")
+
         for name, ids in (
             ("sample_ids", self.sample_ids),
             ("candidate_ids", self.candidate_ids),
             ("group_ids", self.group_ids),
+            ("target_ids", self.target_ids),
         ):
             for ident in ids:
                 if not isinstance(ident, str) or not ident.strip():
@@ -163,6 +181,8 @@ class SelectionRequest:
             has_query_params = (
                 bool(self.candidate_ids)
                 or bool(self.group_ids)
+                or bool(self.target_ids)
+                or self.attention_only
                 or self.mz_min is not None
                 or self.mz_max is not None
                 or self.rt_min is not None
@@ -180,6 +200,8 @@ class SelectionRequest:
                 self.sample_ids
                 or self.candidate_ids
                 or self.group_ids
+                or self.target_ids
+                or self.attention_only
                 or self.mz_min is not None
                 or self.mz_max is not None
                 or self.rt_min is not None
@@ -205,7 +227,7 @@ class ReportResult:
     """Immutable result of successful report generation."""
 
     output_path: Path
-    source: EvidenceLocator | CurveBundleLocator
+    source: EvidenceLocator | CurveBundleLocator | TargetedWorkbookLocator
     evidence_capability: CapabilityKind
     run_total: int
     eligible_count: int
@@ -219,7 +241,7 @@ class ReportResult:
 class PreparedReport:
     """Selected owner facts shared by interactive and offline presentation."""
 
-    source: EvidenceLocator | CurveBundleLocator
+    source: EvidenceLocator | CurveBundleLocator | TargetedWorkbookLocator
     source_name: str
     evidence_capability: CapabilityKind
     run_total: int
@@ -248,7 +270,10 @@ def prepare_report(
     report: Path,
     selection: SelectionRequest,
     *,
-    expected_source: EvidenceLocator | CurveBundleLocator | None = None,
+    expected_source: EvidenceLocator
+    | CurveBundleLocator
+    | TargetedWorkbookLocator
+    | None = None,
     on_progress: Callable[[ReportProgress], None] | None = None,
     is_cancelled: Callable[[], bool] | None = None,
     _output_path: Path | None = None,
@@ -285,16 +310,23 @@ def prepare_report(
     except ExplanationError as exc:
         raise InspectorError(4, f"Invalid source: {exc}", cause=exc) from exc
 
+    if (selection.target_ids or selection.attention_only) and not isinstance(
+        source, TargetedWorkbookSource
+    ):
+        raise InspectorError(2, "Target filters require a Targeted XLSX source")
+
     schema_version = summary["schema_version"]
     req_id = summary.get("processing_request_id", "")
     att_id = summary.get("processing_attempt_id", "")
-    if isinstance(source, CurveBundleSource):
-        source_locator: EvidenceLocator | CurveBundleLocator = source.locator
+    if isinstance(source, (CurveBundleSource, TargetedWorkbookSource)):
+        source_locator: (
+            EvidenceLocator | CurveBundleLocator | TargetedWorkbookLocator
+        ) = source.locator
         if expected_source is not None and expected_source != source_locator:
             raise InspectorError(4, "Source does not match expected_source contract")
     else:
-        # The SQLite source is bound to its published Matrix. A portable bundle
-        # carries its own provenance and has no Matrix dependency.
+        # The SQLite source is bound to its published Matrix. Self-contained
+        # workbook/bundle sources instead carry their own binding.
         matrix_path_str = summary.get("matrix_path")
         if not matrix_path_str:
             raise InspectorError(4, "Source summary missing matrix_path")
@@ -387,6 +419,10 @@ def prepare_report(
             ) = source.select_items(normalized_set, selection)
         except sqlite3.Error as exc:
             raise InspectorError(4, f"Invalid query index: {exc}", cause=exc) from exc
+        except ExplanationError as exc:
+            raise InspectorError(
+                4, f"Invalid source selection: {exc}", cause=exc
+            ) from exc
     else:
         try:
             all_items = source.load_items(normalized_set)
@@ -488,6 +524,8 @@ def prepare_report(
             "sample_ids": selection.sample_ids,
             "candidate_ids": selection.candidate_ids,
             "group_ids": selection.group_ids,
+            "target_ids": selection.target_ids,
+            "attention_only": selection.attention_only,
             "mz_min": selection.mz_min,
             "mz_max": selection.mz_max,
             "rt_min": selection.rt_min,
@@ -523,15 +561,21 @@ def generate_report(
     selection: SelectionRequest,
     output: Path,
     *,
-    expected_source: EvidenceLocator | CurveBundleLocator | None = None,
+    expected_source: EvidenceLocator
+    | CurveBundleLocator
+    | TargetedWorkbookLocator
+    | None = None,
     on_progress: Callable[[ReportProgress], None] | None = None,
     is_cancelled: Callable[[], bool] | None = None,
 ) -> ReportResult:
     """Write the same selected review as a self-contained offline report."""
     output_path = Path(output).resolve()
     prepared = prepare_report(
-        report, selection, expected_source=expected_source,
-        on_progress=on_progress, is_cancelled=is_cancelled,
+        report,
+        selection,
+        expected_source=expected_source,
+        on_progress=on_progress,
+        is_cancelled=is_cancelled,
         _output_path=output_path,
     )
     html_str = prepared.to_html()

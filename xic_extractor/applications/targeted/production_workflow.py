@@ -10,6 +10,11 @@ from dataclasses import InitVar, dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
+from xic_extractor.alignment.cell_observations import (
+    CidNlCellGroupContext,
+    CidNlCellGroupSupport,
+    mint_cell_observation_ref,
+)
 from xic_extractor.alignment.completion import (
     AlignmentWorkflowContractError,
     CaptureWorkflowArguments,
@@ -21,9 +26,21 @@ from xic_extractor.alignment.completion import (
     validate_completion_inputs,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.conservative_backfill import (
+    ConservativeBackfillCellDecision,
+    assess_conservative_backfill_group,
+    map_conservative_backfill_candidates,
+    mint_conservative_backfill_candidate_universe,
+    plan_conservative_backfill_targets,
+)
+from xic_extractor.alignment.cross_sample_peak_groups import (
+    construct_cross_sample_peak_group_hypotheses,
+)
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
+    owner_from_cid_nl_assessment_support,
 )
+from xic_extractor.alignment.peak_trajectories import PeakTrajectory
 from xic_extractor.applications.targeted.application import (
     FinalizedTargetProductionResult,
     TargetedApplicationRequest,
@@ -66,6 +83,7 @@ from xic_extractor.extraction.result_models import (
     FileResult,
     RunOutput,
 )
+from xic_extractor.extraction.target_extraction import credible_istd_anchor_rt
 from xic_extractor.extraction.targeted_inputs import (
     ResolvedTargetedInputs,
     bind_targeted_physical_capture_request,
@@ -73,7 +91,6 @@ from xic_extractor.extraction.targeted_inputs import (
     resolve_targeted_inputs,
     resolve_targeted_raw_paths,
 )
-from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.peak_detection.capture import (
     SampleLocalCapture,
     bind_owner_backed_capture_hypothesis,
@@ -85,21 +102,24 @@ from xic_extractor.peak_detection.cid_nl_evidence import (
     mint_cid_nl_evidence_ref,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlEvaluationReceipt,
     CidNlMethodAssessmentRef,
     mint_cid_nl_method_assessment_ref,
+    resolve_cid_nl_method_relations,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     cid_nl_method_subject_from_target,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
-    DdaCidNlPeakSupportPolicy,
     DdaCidNlPeakSupportRef,
-    resolve_dda_cid_nl_peak_support_ref,
 )
-from xic_extractor.peak_detection.observations import PeakObservationRef
+from xic_extractor.peak_detection.observations import (
+    PeakObservationRef,
+    mint_peak_observation_ref,
+    physical_peak_observation_integration,
+)
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
+    HYPOTHESIS_METHOD_DDA_CID_NL,
     compose_ms1_observation_peak_hypothesis,
 )
 from xic_extractor.peak_detection.search_scope import (
@@ -121,7 +141,6 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.sample_metadata import (
     ResolvedCanonicalSampleIdentity,
-    SampleMetadata,
     mint_sample_metadata_snapshot,
     resolve_canonical_sample_identity,
 )
@@ -276,8 +295,10 @@ def prepare_targeted_production_workflow(
     )
     resolved_inputs = current_inputs.resolved_inputs
     target_snapshot = current_inputs.target_snapshot
+    metadata_by_stem = {row.raw_stem: row for row in resolved_inputs.sample_metadata}
     rows = tuple(
-        SampleMetadata(
+        replace(
+            metadata_by_stem[raw_path.stem],
             sample_name=file_result.sample_name,
             raw_stem=raw_path.stem,
             injection_order=resolved_inputs.injection_order[raw_path.stem],
@@ -309,6 +330,12 @@ def prepare_targeted_production_workflow(
                 physical_evaluations[_candidate_id(target, sample)] = (
                     result.physical_evaluation
                 )
+                for index, evaluation in enumerate(
+                    result.candidate_physical_evaluations
+                ):
+                    physical_evaluations[
+                        f"{_candidate_id(target, sample)}:universe:{index}"
+                    ] = evaluation
     if any(
         evaluation.prepared.profile_id != profile.profile_id
         for evaluation in physical_evaluations.values()
@@ -374,10 +401,6 @@ def snapshot_targeted_production_inputs(
         request.config,
         raw_paths=raw_paths,
         injection_order=request.injection_order,
-        rt_prior_library=request.rt_prior_library,
-        model_selection_expected_diff_approvals=(
-            request.model_selection_expected_diff_approvals
-        ),
     )
     target_snapshot = mint_target_list_snapshot(
         request.targets,
@@ -412,10 +435,6 @@ def _validate_targeted_production_input_snapshot(
         request.config,
         raw_paths=raw_paths,
         injection_order=request.injection_order,
-        rt_prior_library=request.rt_prior_library,
-        model_selection_expected_diff_approvals=(
-            request.model_selection_expected_diff_approvals
-        ),
     )
     target_snapshot = mint_target_list_snapshot(
         request.targets,
@@ -575,10 +594,12 @@ def _execute_target(
         sample.identity.sample_identity_id: (result, candidate_id)
         for sample, result, candidate_id in candidates
     }
-    for sample in context.samples:
+    for sample, file_result in context.results_by_sample:
+        result = file_result.results[target.definition.target.label]
         candidate = candidate_by_sample.get(sample.identity.sample_identity_id)
         observations: tuple[PeakObservationRef, ...] = ()
         captured = None
+        selected_observation = None
         evidence_refs: tuple[CidNlEvidenceRef, ...] = ()
         support_refs: tuple[DdaCidNlPeakSupportRef, ...] = ()
         if candidate is not None:
@@ -629,33 +650,59 @@ def _execute_target(
                     )
                 )
                 continue
-            candidate_ms2_evidence = result.candidate_ms2_evidence
-            product = (
-                None
-                if candidate_ms2_evidence is None
-                else candidate_ms2_evidence.best_product_evidence
-            )
-            if product is not None:
-                acquisition_source = resolve_request_acquisition_source(
-                    processing_owners=context.owners,
-                    sample=sample,
-                )
+            selected_observation = observations[0] if observations else None
+            all_observations = []
+            for evaluation in result.candidate_physical_evaluations:
                 if (
-                    product.acquisition_source_id
-                    != acquisition_source.acquisition_source_id
+                    evaluation is result.physical_evaluation
+                    and selected_observation is not None
                 ):
-                    raise RuntimeError(
-                        "Targeted MS2 evidence crossed the resolved acquisition source"
+                    all_observations.append(selected_observation)
+                else:
+                    all_observations.append(
+                        mint_peak_observation_ref(
+                            processing_owners=context.owners,
+                            sample=sample,
+                            trace=trace,
+                            integration=physical_peak_observation_integration(
+                                evaluation
+                            ),
+                            selection_intensity=(
+                                evaluation.retained_prepared_signal.positive_signal
+                                if evaluation.retained_prepared_signal is not None
+                                else None
+                            ),
+                            resolver_mode=request.config.resolver_mode,
+                            proposal_sources=("canonical_physical_segment",),
+                            physical_evaluation=evaluation,
+                            signal_processing_profile=scope.method_constraints.signal_processing_profile,
+                        )
                     )
+            observations = tuple(all_observations)
+        if ms1_only:
+            raise RuntimeError(
+                "MS1-only Target lost its retained acquisition candidate"
+            )
+        if result.cid_nl_evaluation_receipt is None or result.cid_nl_relations is None:
+            raise RuntimeError("Targeted acquisition lost its complete CID-NL universe")
+        acquisition_source = resolve_request_acquisition_source(
+            processing_owners=context.owners, sample=sample
+        )
+        evidence = []
+        for product in result.cid_nl_products:
             if (
-                product is not None
-                and product.scan_number is not None
-                and _matches_target_precursor(
-                    product.precursor_mz,
-                    target.definition.target,
-                )
+                product.acquisition_source_id
+                != acquisition_source.acquisition_source_id
             ):
-                evidence = mint_cid_nl_evidence_ref(
+                raise RuntimeError(
+                    "Targeted MS2 evidence crossed the resolved acquisition source"
+                )
+            if product.scan_number is None:
+                raise RuntimeError(
+                    "Targeted MS2 evidence lost its acquired scan identity"
+                )
+            evidence.append(
+                mint_cid_nl_evidence_ref(
                     processing_owners=context.owners,
                     sample=sample,
                     scan_number=product.scan_number,
@@ -670,55 +717,30 @@ def _execute_target(
                     scan_precursor_mz=product.scan_precursor_mz,
                     precursor_metadata=product.precursor_metadata,
                 )
-                evidence_refs = (evidence,)
-                if (
-                    observations
-                    and neutral_loss_match(
-                        product.precursor_mz,
-                        product.product_mz,
-                        _neutral_loss(target.definition.target),
-                        _support_policy(
-                            target.definition.target
-                        ).neutral_loss_tolerance_ppm,
-                        observed_loss_da=product.observed_loss_da,
-                    )[2]
-                    and observations[0].content.integration.rt_left_min
-                    <= product.scan_rt
-                    <= observations[0].content.integration.rt_right_min
-                ):
-                    support = resolve_dda_cid_nl_peak_support_ref(
-                        processing_owners=context.owners,
-                        sample=sample,
-                        canonical_evidence=evidence,
-                        candidate_peaks=observations,
-                        policy=_support_policy(target.definition.target),
-                    )
-                    support_refs = (support,)
-        if ms1_only:
-            raise RuntimeError(
-                "MS1-only Target lost its retained acquisition candidate"
             )
+        evidence_refs = tuple(evidence)
+        support_refs, set_refs = resolve_cid_nl_method_relations(
+            processing_owners=context.owners,
+            sample=sample,
+            evidence_refs=evidence_refs,
+            candidate_peaks=observations,
+            policy=result.cid_nl_evaluation_receipt.support_policy,
+            relations=result.cid_nl_relations,
+        )
         assessment = mint_cid_nl_method_assessment_ref(
             processing_owners=context.owners,
             sample=sample,
             target=target,
             detector_invocation_id="targeted-production-retained-trace",
-            evaluation_receipt=CidNlEvaluationReceipt(
-                query_rt_min=target.definition.target.rt_min,
-                query_rt_max=target.definition.target.rt_max,
-                support_policy=_support_policy(target.definition.target),
-                acquisition_supported=True,
-                search_completed=True,
-                scanned_event_count=len(evidence_refs),
-                reason_code=None,
-            ),
+            evaluation_receipt=result.cid_nl_evaluation_receipt,
             candidate_peaks=observations,
             evidence_refs=evidence_refs,
             individual_support_refs=support_refs,
+            set_relation_refs=set_refs,
         )
         assessments.append((sample, assessment))
         if captured is not None:
-            if not observations:
+            if selected_observation is None:
                 completed_captures.append(captured)
                 capture_inputs.append(
                     CaptureWorkflowArguments(
@@ -735,13 +757,13 @@ def _execute_target(
             matches = tuple(
                 hypothesis
                 for hypothesis in hypotheses
-                if observations[0] in hypothesis.peak_observation_refs
+                if selected_observation in hypothesis.peak_observation_refs
             )
             if len(matches) != 1:
                 raise RuntimeError("Targeted assessment lost its captured observation")
             bound = bind_owner_backed_capture_hypothesis(
                 captured,
-                observation=observations[0],
+                observation=selected_observation,
                 hypothesis=matches[0],
             )
             completed_captures.append(bound)
@@ -749,17 +771,276 @@ def _execute_target(
                 CaptureWorkflowArguments(
                     candidate_id=bound.candidate_id,
                     trace=bound.trace,
-                    owner_observation=observations[0],
+                    owner_observation=selected_observation,
                     owner_hypothesis=matches[0],
                 )
             )
+    # Direct CID/NL observations freeze the reference group. Missing-sample
+    # observations never vote for their own Backfill eligibility.
+    alignment_config = AlignmentConfig()
+    backfill_decisions: list[ConservativeBackfillCellDecision] = []
+    if (
+        target.definition.target.is_istd or target.definition.target.istd_pair
+    ) and assessments:
+        assessment_by_sample = {
+            s.identity.sample_identity_id: a for s, a in assessments
+        }
+        sample_by_id = {s.identity.sample_identity_id: s for s in context.samples}
+        direct = tuple(
+            CidNlCellGroupSupport(
+                sample=sample_by_id[
+                    item.owner_observation.content.canonical_sample_identity_id
+                ],
+                assessment=assessment_by_sample[
+                    item.owner_observation.content.canonical_sample_identity_id
+                ],
+                hypothesis=item.owner_hypothesis,
+            )
+            for item in capture_inputs
+            if item.owner_hypothesis is not None
+            and item.owner_observation is not None
+            and item.owner_hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
+        )
+        groups = (
+            construct_cross_sample_peak_group_hypotheses(
+                tuple(
+                    owner_from_cid_nl_assessment_support(
+                        sample=support.sample,
+                        assessment=support.assessment,
+                        hypothesis=support.hypothesis,
+                    )
+                    for support in direct
+                ),
+                config=alignment_config,
+            )
+            if direct
+            else ()
+        )
+        # A fixed Target with competing confirmed groups cannot acquire an
+        # identity merely by choosing one of their recovery windows.
+        plans = (
+            plan_conservative_backfill_targets(
+                groups, sample_population=context.samples
+            )
+            if len(groups) == 1
+            else ()
+        )
+        paired_observations = []
+        if plans:
+            for sample, file_result in context.results_by_sample:
+                pair = file_result.results.get(target.definition.target.istd_pair)
+                if pair is None or credible_istd_anchor_rt(pair) is None:
+                    continue
+                pair_evaluation = pair.physical_evaluation
+                if (
+                    pair_evaluation is None
+                    or pair_evaluation.retained_prepared_signal is None
+                ):
+                    continue
+                paired_observations.append(
+                    mint_peak_observation_ref(
+                        processing_owners=context.owners,
+                        sample=sample,
+                        trace=_owner_bound_trace(context.owners, sample, pair),
+                        integration=physical_peak_observation_integration(
+                            pair_evaluation
+                        ),
+                        selection_intensity=pair_evaluation.retained_prepared_signal.positive_signal,
+                        resolver_mode=request.config.resolver_mode,
+                        proposal_sources=("canonical_physical_segment",),
+                        physical_evaluation=pair_evaluation,
+                        signal_processing_profile=scope.method_constraints.signal_processing_profile,
+                    )
+                )
+        pair_rts = {
+            sample_by_id[
+                peak.content.canonical_sample_identity_id
+            ].metadata.raw_stem: peak.content.integration.rt_apex_min
+            for peak in paired_observations
+        }
+        for group, missing_ids in plans:
+            group_context = CidNlCellGroupContext(
+                group=group,
+                supports=tuple(
+                    sorted(
+                        direct,
+                        key=lambda support: support.sample.identity.sample_identity_id,
+                    )
+                ),
+                config=alignment_config,
+                processing_attempt=context.owners.attempt,
+            )
+            direct_by_sample = {
+                support.sample.identity.sample_identity_id: support
+                for support in direct
+            }
+            cells = tuple(
+                mint_cell_observation_ref(
+                    processing_owners=context.owners,
+                    sample=sample,
+                    target=target,
+                    group_context=group_context,
+                    method_assessment=assessment,
+                    peak_observation=(
+                        direct_by_sample[
+                            sample.identity.sample_identity_id
+                        ].hypothesis.peak_observation_refs[0]
+                        if sample.identity.sample_identity_id in direct_by_sample
+                        else None
+                    ),
+                    peak_hypothesis=(
+                        direct_by_sample[sample.identity.sample_identity_id].hypothesis
+                        if sample.identity.sample_identity_id in direct_by_sample
+                        else None
+                    ),
+                    unassigned_support=(
+                        assessment.content.method_result == "SUPPORT"
+                        and sample.identity.sample_identity_id not in direct_by_sample
+                    ),
+                )
+                for sample, assessment in assessments
+            )
+            facts = assess_conservative_backfill_group(
+                cells, sample_population=context.samples
+            )
+            trajectory = PeakTrajectory(
+                group.owner_ids,
+                tuple(
+                    (
+                        support.sample.metadata.raw_stem,
+                        support.hypothesis.integration.rt_apex_min,
+                    )
+                    for support in direct
+                ),
+            )
+            locations = trajectory.backfill_locations(
+                tuple(
+                    sample_by_id[sample_id].metadata.raw_stem
+                    for sample_id in sorted(missing_ids)
+                ),
+                reference_samples=frozenset(
+                    support.sample.metadata.raw_stem for support in direct
+                ),
+                injection_order={
+                    s.metadata.raw_stem: s.metadata.injection_order
+                    for s in context.samples
+                    if s.metadata.injection_order is not None
+                },
+                sample_cohorts={
+                    s.metadata.raw_stem: s.metadata.batch_id for s in context.samples
+                },
+                rt_warp=None,
+                backfill_half_window_min=request.config.nl_rt_anchor_half_window_min,
+                paired_istd_rts=pair_rts,
+            )
+            for sample_id in sorted(missing_ids):
+                sample = sample_by_id[sample_id]
+                if assessment_by_sample[sample_id].content.method_result != "HOLD":
+                    continue
+                location = locations[sample.metadata.raw_stem]
+                if (
+                    not target.definition.target.is_istd
+                    and location.location.basis != "paired_istd"
+                ):
+                    continue
+                universe = mint_conservative_backfill_candidate_universe(
+                    processing_owners=context.owners,
+                    sample=sample,
+                    group_facts=(facts,),
+                    candidate_assessment=assessment_by_sample[sample_id],
+                    localization=location,
+                    localization_sources=tuple(paired_observations),
+                )
+                backfill_decisions.extend(
+                    map_conservative_backfill_candidates(
+                        (facts,),
+                        sample=sample,
+                        candidate_universes=(universe,),
+                    )
+                )
+        mapped = {
+            decision.target_cell.content.canonical_sample_identity_id: (
+                decision.matched_candidate.peak_observation
+            )
+            for decision in backfill_decisions
+            if decision.matched_candidate is not None
+        }
+        replacements = {}
+        for sample, result, candidate_id in candidates:
+            recovery_observation = mapped.get(sample.identity.sample_identity_id)
+            if (
+                recovery_observation is None
+                or recovery_observation.physical_evaluation
+                is result.physical_evaluation
+            ):
+                continue
+            index = next(
+                i
+                for i, evaluation in enumerate(result.candidate_physical_evaluations)
+                if evaluation is recovery_observation.physical_evaluation
+            )
+            replacements[candidate_id] = _capture_binding(
+                context.owners,
+                target,
+                sample,
+                replace(
+                    result, physical_evaluation=recovery_observation.physical_evaluation
+                ),
+                f"{candidate_id}:universe:{index}",
+                method_subject_id=method_subject_id,
+            )
+        if replacements:
+            bindings = tuple(
+                replacements.get(binding.candidate_id, binding) for binding in bindings
+            )
+            scope = replace(
+                scope,
+                capture_bindings=bindings,
+                declared_candidate_ids=tuple(
+                    binding.candidate_id for binding in bindings
+                ),
+            )
+            new_inputs = []
+            new_captures = []
+            for old in capture_inputs:
+                binding = replacements.get(old.candidate_id)
+                candidate_id = (
+                    old.candidate_id if binding is None else binding.candidate_id
+                )
+                captured = capture_peak_hypotheses(
+                    scope=scope, candidate_id=candidate_id, trace=old.trace
+                )
+                recovery_observation = old.owner_observation
+                hypothesis = old.owner_hypothesis
+                if binding is not None:
+                    recovery_observation = mapped[binding.sample_identity_id]
+                    hypothesis = compose_ms1_observation_peak_hypothesis(
+                        processing_owners=context.owners,
+                        sample=sample_by_id[binding.sample_identity_id],
+                        peak_observation=recovery_observation,
+                    )
+                if recovery_observation is not None and hypothesis is not None:
+                    captured = bind_owner_backed_capture_hypothesis(
+                        captured,
+                        observation=recovery_observation,
+                        hypothesis=hypothesis,
+                    )
+                new_inputs.append(
+                    CaptureWorkflowArguments(
+                        candidate_id=candidate_id,
+                        trace=old.trace,
+                        owner_observation=recovery_observation,
+                        owner_hypothesis=hypothesis,
+                    )
+                )
+                new_captures.append(captured)
+            capture_inputs, completed_captures = new_inputs, new_captures
     assessment_tuple = tuple(
         sorted(
             assessments,
             key=lambda item: item[0].identity.sample_identity_id,
         )
     )
-    alignment_config = AlignmentConfig()
     workflow_artifact: EvidenceArtifactRef
     if assessment_tuple:
         workflow_artifact = assessment_tuple[0][1].artifact
@@ -801,6 +1082,7 @@ def _execute_target(
             alignment_config=alignment_config,
             predecessor_cell_observations=(),
             completed_capture_handoff=tuple(completed_captures),
+            targeted_backfill_decisions=tuple(backfill_decisions),
         ),
         runtime=runtime,
         workflow_artifact=workflow_artifact,
@@ -1011,20 +1293,6 @@ def _candidate_id(
             target.definition.target_definition_id,
             sample.identity.sample_identity_id,
         )
-    )
-
-
-def _support_policy(target: Target) -> DdaCidNlPeakSupportPolicy:
-    return DdaCidNlPeakSupportPolicy(
-        precursor_tolerance_da=max(target.mz * target.ppm_tol / 1_000_000, 1e-9),
-        neutral_loss_tolerance_ppm=target.nl_ppm_max or 20.0,
-    )
-
-
-def _matches_target_precursor(observed_mz: float, target: Target) -> bool:
-    return abs(observed_mz - target.mz) <= max(
-        target.mz * target.ppm_tol / 1_000_000,
-        1e-9,
     )
 
 

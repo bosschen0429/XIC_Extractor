@@ -3,8 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-OWN_MAX_SAME_PEAK_SUPPORT_REASON = "own_max_same_peak_support"
-
 ProductState = Literal[
     "detected_clean",
     "detected_flagged",
@@ -22,6 +20,7 @@ class TargetedProductContext:
     expected_present: bool = False
     target_label: str = ""
     istd_pair: str = ""
+    neutral_loss_required: bool = False
 
     @property
     def is_istd(self) -> bool:

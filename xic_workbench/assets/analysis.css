@@ -648,3 +648,19 @@
     grid-column: 1 / -1;
   }
 }
+
+.settings-notice, .settings-warning {
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 8px 0;
+}
+.settings-warning { color: var(--warning, #a76816); }
+#targeted-data .settings-grid { grid-template-columns: minmax(0, 1fr); }
+#targeted-execution .settings-group + .settings-group { margin-top: 16px; }
+
+.settings-source {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 10px 0 4px;
+}
+.method-difference { font-weight: 600; }

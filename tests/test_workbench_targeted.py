@@ -25,7 +25,6 @@ def test_config_round_trip_preserves_target_precision_and_hidden_metadata(
             "nl_ppm_max": "50",
             "is_istd": "false",
             "istd_pair": "d3-Analyte",
-            "paired_rt_relation": "istd_not_later_than_pair",
             "source_note": "preserve me",
         }
     ]
@@ -36,7 +35,7 @@ def test_config_round_trip_preserves_target_precision_and_hidden_metadata(
     assert len(restored) == 1
     assert restored[0]["mz"] == "258.108500"
     assert restored[0]["neutral_loss_da"] == "116.047400"
-    assert restored[0]["paired_rt_relation"] == "istd_not_later_than_pair"
+    assert restored[0]["istd_pair"] == "d3-Analyte"
     assert restored[0]["source_note"] == "preserve me"
 
 
@@ -48,7 +47,6 @@ def test_settings_round_trip_preserves_hidden_canonical_values(tmp_path: Path) -
         "dll_dir": "C:\\Thermo",
         "signal_processing_method": "gaussian",
         "model_selection_expected_diff_approval_registry": "C:\\approval.tsv",
-        "targeted_ms1_shape_identity_support_tsv": "C:\\support.tsv",
         "targeted_ms1_shape_identity_activation_policy": "explicit_support_tsv",
         "parallel_mode": "serial",
         "parallel_workers": "2",
@@ -61,29 +59,10 @@ def test_settings_round_trip_preserves_hidden_canonical_values(tmp_path: Path) -
     assert restored["signal_processing_window_points"] == "15"
 
 
-def test_read_settings_migrates_legacy_keys_at_the_workbench_boundary(
-    tmp_path: Path,
-) -> None:
-    from xic_workbench.config_io import read_settings, write_settings
-
-    write_settings(
-        {
-            "data_dir": "C:\\RAW",
-            "dll_dir": "C:\\Thermo",
-            "ms1_morphology_smoothing_window_points": "21",
-        },
-        config_dir=tmp_path,
-    )
-
-    restored = read_settings(config_dir=tmp_path)
-
-    assert restored["signal_processing_window_points"] == "21"
-    assert "ms1_morphology_smoothing_window_points" not in restored
-    assert restored["parallel_mode"] == "process"
-
-
-def test_method_summary_normalizes_canonical_numeric_boolean_and_legacy_values(
-) -> None:
+def test_method_summary_normalizes_canonical_numeric_boolean_and_legacy_values() -> (
+    None
+):
+    from xic_extractor.configuration.settings import resolve_settings
     from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
     from xic_workbench.targeted import method_summary
 
@@ -96,29 +75,24 @@ def test_method_summary_normalizes_canonical_numeric_boolean_and_legacy_values(
     settings["data_dir"] = "C:\\another-batch"
     settings["dll_dir"] = "C:\\another-install"
 
-    assert method_summary(settings) == {
-        "label": "標準方法",
-        "custom_keys": [],
-    }
+    summary = method_summary(resolve_settings(settings)[0])
+    assert summary["label"] == "標準參數"
+    assert summary["custom_keys"] == []
 
 
 def test_method_summary_labels_visible_and_hidden_nondefaults_as_custom() -> None:
+    from xic_extractor.configuration.settings import resolve_settings
     from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
     from xic_workbench.targeted import method_summary
 
     settings = {
         **CANONICAL_SETTINGS_DEFAULTS,
         "ms2_precursor_tol_da": "0.7",
-        "targeted_ms1_shape_identity_support_tsv": "C:\\reviewed-support.tsv",
     }
 
-    assert method_summary(settings) == {
-        "label": "自訂方法 · 2 項調整",
-        "custom_keys": [
-            "ms2_precursor_tol_da",
-            "targeted_ms1_shape_identity_support_tsv",
-        ],
-    }
+    summary = method_summary(resolve_settings(settings)[0])
+    assert summary["label"] == "自訂參數 · 1 項調整"
+    assert summary["custom_keys"] == ["ms2_precursor_tol_da"]
 
 
 def test_failed_target_import_leaves_the_callers_rows_unchanged(tmp_path: Path) -> None:
@@ -141,8 +115,7 @@ def test_target_import_entrypoint_preserves_draft_precision_and_hidden_metadata(
 
     source = tmp_path / "targets.tsv"
     source.write_text(
-        "label\tmz\tpaired_rt_relation\tsource_note\n"
-        "Target A\t250.100000\tistd_not_later_than_pair\tkeep me\n",
+        "label\tmz\tsource_note\nTarget A\t250.100000\tkeep me\n",
         encoding="utf-8",
     )
 
@@ -150,7 +123,7 @@ def test_target_import_entrypoint_preserves_draft_precision_and_hidden_metadata(
         {
             "label": "Target A",
             "mz": "250.100000",
-            "paired_rt_relation": "istd_not_later_than_pair",
+            "is_istd": "false",
             "source_note": "keep me",
         }
     ]
@@ -207,30 +180,16 @@ def test_excel_target_import_without_target_rows_is_rejected(tmp_path: Path) -> 
         import_targets(source)
 
 
-def test_targeted_form_exposes_only_existing_controls_and_preserves_hidden_values() -> (
-    None
-):
-    from xic_workbench.targeted import targeted_form
+def test_targeted_fields_are_owned_scoped_and_do_not_hide_resources() -> None:
+    from xic_workbench.targeted import setting_fields
 
-    form = targeted_form()
-    fields = {field["key"]: field for field in form["settings"]}
-
-    assert fields["data_dir"] == {
-        "key": "data_dir",
-        "label": "資料目錄",
-        "kind": "folder",
-        "group": "資料與環境",
-    }
+    fields = {field["key"]: field for field in setting_fields()}
+    assert fields["data_dir"]["scope"] == "batch"
+    assert fields["parallel_mode"]["scope"] == "runtime"
     assert fields["parallel_mode"]["options"] == ["serial", "process"]
-    assert fields["signal_processing_window_points"]["min"] == 3
     assert fields["signal_processing_window_points"]["step"] == 2
-    assert form["defaults"]["parallel_mode"] == "process"
-    assert all(isinstance(value, str) for value in form["defaults"].values())
-    assert (
-        "model_selection_expected_diff_approval_registry"
-        in form["passthrough_settings"]
-    )
-    assert "ms1_morphology_smoothing_window_points" not in form["defaults"]
+    assert fields["count_no_ms2_as_detected"]["compatibility_only"]
+    assert "ms1_morphology_smoothing_window_points" not in fields
 
 
 def test_targeted_run_uses_canonical_service_and_returns_published_two_sample_summary(
@@ -239,6 +198,9 @@ def test_targeted_run_uses_canonical_service_and_returns_published_two_sample_su
     import xic_workbench.targeted as module
 
     config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "settings.csv").write_text("settings", encoding="utf-8")
+    (config_dir / "targets.csv").write_text("targets", encoding="utf-8")
     output_dir = tmp_path / "output"
     output_dir.mkdir()
     excel_path = output_dir / "xic_results_20261002_1200.xlsx"
@@ -248,6 +210,7 @@ def test_targeted_run_uses_canonical_service_and_returns_published_two_sample_su
     config = SimpleNamespace(
         output_csv=output_dir / "xic_results.csv",
         count_no_ms2_as_detected=True,
+        targeted_ms1_shape_identity_activation_policy="explicit_support_tsv",
     )
     targets = [
         _target("Analyte", istd_pair="ISTD"),
@@ -283,9 +246,7 @@ def test_targeted_run_uses_canonical_service_and_returns_published_two_sample_su
                 published_paths=(excel_path, report_path),
             )
 
-    monkeypatch.setattr(
-        module.config_loader, "load_config", lambda actual: (config, targets)
-    )
+    _substitute_prepared_inputs(monkeypatch, module, config_dir, config, targets)
     monkeypatch.setattr(
         module,
         "build_canonical_targeted_application_service",
@@ -302,7 +263,6 @@ def test_targeted_run_uses_canonical_service_and_returns_published_two_sample_su
     summary = run.execute()
 
     request = captured["request"]
-    assert request.method_manifest_context.entrypoint == "xic-extractor-html"
     assert request.excel_output_path.parent == output_dir
     assert progress_events == [(1, 2, "Sample_A.raw")]
     assert summary["published_paths"] == [str(excel_path), str(report_path)]
@@ -331,9 +291,13 @@ def test_targeted_run_raises_cancellation_before_publication(
     import xic_workbench.targeted as module
 
     config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "settings.csv").write_text("settings", encoding="utf-8")
+    (config_dir / "targets.csv").write_text("targets", encoding="utf-8")
     config = SimpleNamespace(
         output_csv=tmp_path / "output" / "xic_results.csv",
         count_no_ms2_as_detected=False,
+        targeted_ms1_shape_identity_activation_policy="explicit_support_tsv",
     )
 
     class Service:
@@ -343,9 +307,7 @@ def test_targeted_run_raises_cancellation_before_publication(
                 published_paths=(),
             )
 
-    monkeypatch.setattr(
-        module.config_loader, "load_config", lambda _actual: (config, [])
-    )
+    _substitute_prepared_inputs(monkeypatch, module, config_dir, config, [])
     monkeypatch.setattr(
         module,
         "build_canonical_targeted_application_service",
@@ -369,6 +331,9 @@ def test_targeted_run_keeps_success_when_cancellation_arrives_after_publication(
     import xic_workbench.targeted as module
 
     config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "settings.csv").write_text("settings", encoding="utf-8")
+    (config_dir / "targets.csv").write_text("targets", encoding="utf-8")
     output_dir = tmp_path / "output"
     output_dir.mkdir()
     published = output_dir / "xic_results_done.xlsx"
@@ -376,6 +341,7 @@ def test_targeted_run_keeps_success_when_cancellation_arrives_after_publication(
     config = SimpleNamespace(
         output_csv=output_dir / "xic_results.csv",
         count_no_ms2_as_detected=False,
+        targeted_ms1_shape_identity_activation_policy="explicit_support_tsv",
     )
     target = _target("Analyte")
     output = SimpleNamespace(
@@ -391,9 +357,7 @@ def test_targeted_run_keeps_success_when_cancellation_arrives_after_publication(
         def execute_application(self, _request):
             return SimpleNamespace(active_output=output, published_paths=(published,))
 
-    monkeypatch.setattr(
-        module.config_loader, "load_config", lambda _actual: (config, [target])
-    )
+    _substitute_prepared_inputs(monkeypatch, module, config_dir, config, [target])
     monkeypatch.setattr(
         module,
         "build_canonical_targeted_application_service",
@@ -416,18 +380,21 @@ def test_targeted_run_preserves_the_canonical_cancellation_reason(
 ) -> None:
     import xic_workbench.targeted as module
 
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "settings.csv").write_text("settings", encoding="utf-8")
+    (config_dir / "targets.csv").write_text("targets", encoding="utf-8")
     config = SimpleNamespace(
         output_csv=tmp_path / "output" / "xic_results.csv",
         count_no_ms2_as_detected=False,
+        targeted_ms1_shape_identity_activation_policy="explicit_support_tsv",
     )
 
     class Service:
         def execute_application(self, _request):
             raise InterruptedError("fingerprinting stopped at Sample_B.raw")
 
-    monkeypatch.setattr(
-        module.config_loader, "load_config", lambda _actual: (config, [])
-    )
+    _substitute_prepared_inputs(monkeypatch, module, config_dir, config, [])
     monkeypatch.setattr(
         module,
         "build_canonical_targeted_application_service",
@@ -443,6 +410,26 @@ def test_targeted_run_preserves_the_canonical_cancellation_reason(
         run.execute()
 
     assert run.cancellation_reason == "fingerprinting stopped at Sample_B.raw"
+
+
+def _substitute_prepared_inputs(monkeypatch, module, config_dir, config, targets):
+    """Substitute the admission interface, not parsing internals.
+
+    These adapter tests start with admitted inputs. The neighboring snapshot
+    tests use real CSV preparation and verify frozen calculation/manifest bytes.
+    RAW membership still crosses the real discovery/check interface here.
+    """
+    from xic_extractor.configuration.loader import PreparedTargetedConfig
+
+    config.data_dir = config_dir.parent / "raw"
+    config.data_dir.mkdir(exist_ok=True)
+    monkeypatch.setattr(
+        module.config_loader,
+        "prepare_targeted_config",
+        lambda *_args, **_kwargs: PreparedTargetedConfig(
+            config, tuple(targets), config_dir
+        ),
+    )
 
 
 def _target(label: str, *, is_istd: bool = False, istd_pair: str = "") -> Target:

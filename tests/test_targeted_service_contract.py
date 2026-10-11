@@ -11,7 +11,6 @@ from xic_extractor.applications.targeted.application import (
 )
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.extraction.result_models import FileResult, RunOutput
-from xic_extractor.extraction.targeted_inputs import resolve_targeted_inputs
 
 
 def test_cli_and_html_use_same_targeted_application_service() -> None:
@@ -107,7 +106,6 @@ def test_headless_service_preserves_inputs_and_callbacks(tmp_path: Path) -> None
     assert calls["targets"] == targets
     assert calls["progress_callback"] is progress
     assert calls["should_stop"] is should_stop
-    assert calls["publish_outputs"] is False
     acquisition_sources = calls["acquisition_sources_by_sample"]
     assert set(acquisition_sources) == {"SampleA"}
     assert acquisition_sources["SampleA"].source.byte_size == len(b"sample")
@@ -188,46 +186,6 @@ def test_service_retains_noncopyable_bound_lifecycle_callbacks(tmp_path: Path) -
     TargetedApplicationService(runner).execute(request)
 
     assert adapter.progress_calls == [(1, 1, "SampleA.raw")]
-
-
-def test_service_resolves_approval_registry_at_adapter_boundary(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    resolved_approvals: dict[str, object] = {}
-    calls: dict[str, object] = {}
-    stopped = False
-
-    def resolve_approvals(actual_config, approvals):
-        assert actual_config is config
-        assert approvals is None
-        return resolved_approvals
-
-    def runner(_config, _targets, **kwargs):
-        nonlocal stopped
-        calls.update(kwargs)
-        stopped = True
-        return RunOutput(file_results=[], diagnostics=[])
-
-    data_dir = tmp_path / "data"
-    data_dir.mkdir()
-    (data_dir / "SampleA.raw").write_bytes(b"sample")
-    config = replace(_config(), data_dir=data_dir)
-    monkeypatch.setattr(
-        "xic_extractor.applications.targeted.application."
-        "resolve_model_selection_expected_diff_approvals",
-        resolve_approvals,
-    )
-
-    TargetedApplicationService(runner).execute(
-        build_targeted_application_request(
-            config,
-            [_target()],
-            should_stop=lambda: stopped,
-        )
-    )
-
-    assert calls["model_selection_expected_diff_approvals"] == resolved_approvals
 
 
 def test_typed_workflow_failure_never_reaches_publication(
@@ -336,7 +294,6 @@ def test_cancellation_after_partial_acquisition_skips_handoff_and_publication(
 
     def acquire(*_args, **kwargs):
         nonlocal cancelled
-        assert kwargs["publish_outputs"] is False
         calls.append("acquire")
         cancelled = True
         return acquisition
@@ -387,33 +344,6 @@ def test_empty_acquisition_reports_no_input_before_finalization(tmp_path: Path) 
         )
 
     assert calls == ["acquire"]
-
-
-def test_pipeline_input_resolution_keeps_approvals_explicit(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    config = replace(
-        _config(),
-        data_dir=tmp_path,
-        model_selection_expected_diff_approval_registry=tmp_path / "registry.tsv",
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_inputs.load_expected_diff_approval_registry",
-        lambda _path: (_ for _ in ()).throw(
-            AssertionError("pipeline resolver must not load adapter policy")
-        ),
-    )
-
-    resolved = resolve_targeted_inputs(
-        config,
-        raw_paths=[],
-        injection_order={},
-        rt_prior_library={},
-        model_selection_expected_diff_approvals=None,
-    )
-
-    assert resolved.model_selection_expected_diff_approvals is None
 
 
 def test_contract_modules_do_not_import_gui_writer_or_raw_adapter() -> None:

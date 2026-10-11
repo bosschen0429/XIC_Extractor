@@ -1,11 +1,23 @@
 # Targeted Config Reference
 
-Complete field reference for the two config files used by Targeted Extraction.
+Field reference for Targeted settings and the separate target list.
 Runtime copies (`config/settings.csv`, `config/targets.csv`) are created from
 the example files after Save or Run. Do not commit runtime copies — they
 contain local machine paths.
 
 ## Settings (`settings.csv`)
+
+`settings.csv` is the only active Targeted settings file; `targets.csv` is a
+separate target list. Reset restores the 10 method parameters declared in
+`xic_extractor.settings_schema.METHOD_KEYS`, preserving batch, environment
+and output settings.
+
+The shared DLL location is persisted only in `settings.csv`, for both Targeted
+and Untargeted. UI preferences and Discovery batch files do not override this value. An explicit launch
+override remains session-local until saved.
+
+The custom-method label compares only those 10 parameters with platform-owned
+defaults.
 
 ### Paths
 
@@ -24,9 +36,8 @@ reference and ISTD evidence select a component without recomputing its area.
 
 | Field | Type | Default | Valid range | Description |
 | --- | --- | --- | --- | --- |
-| `signal_processing_method` | enum | `gaussian` | `gaussian` | Shared physical signal smoothing method |
+| `signal_processing_method` | enum | `gaussian` | `gaussian` | Fixed shared physical signal smoothing; informational, not a GUI choice |
 | `signal_processing_window_points` | int | 15 | odd, 3–999 | Gaussian smoothing window (points) |
-| `ms1_morphology_smoothing_window_points` | int | 15 | odd, >= 3 | MS1 morphology Gaussian smoothing window (points) |
 
 ### Neutral Loss Confirmation
 
@@ -45,19 +56,22 @@ reference and ISTD evidence select a component without recomputing its area.
 | `count_no_ms2_as_detected` | bool | `false` | Legacy fallback for rows without formal projection fields; does not override the Targeted projection's `Counted Detection` (see [Decision Policy](../product/decision-policy.md)) |
 | `dirty_matrix_mode` | bool | `false` | Relax S/N and tighten peak shape criteria for complex matrices (e.g., urine) |
 
-### ISTD RT Prior
+### Within-batch ISTD Context
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `rolling_window_size` | int | 5 | Rolling window radius for ISTD RT prior (±N injections) |
 
-### Debug and Audit
+This reviews ISTD consistency within the batch. An analyte instead uses its
+credible paired ISTD from the current sample, transferring the observed shift
+while retaining the configured target/ISTD midpoint difference. Missing or
+untrusted pairs do not borrow an anchor from another sample.
 
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `keep_intermediate_csv` | bool | `false` | Retain intermediate CSV files |
-| `emit_score_breakdown` | bool | `false` | Add Score Breakdown sheet to workbook |
-| `emit_review_report` | bool | `false` | Generate Review Report HTML |
+### Output
+
+Normal Targeted runs deliver one XLSX. There are no report/CSV/score-export
+switches. Settings keys outside this reference are reported as unknown and
+have no effect.
 
 ### Parallelization
 
@@ -65,18 +79,6 @@ reference and ISTD evidence select a component without recomputing its area.
 | --- | --- | --- | --- |
 | `parallel_mode` | enum | `process` | Execution backend: `serial` or `process` |
 | `parallel_workers` | int | CPU count - 1 | Worker count for process mode |
-
-### Developer-Only
-
-These are rarely needed and not exposed in the GUI by default.
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `rt_prior_library_path` | path | Debug RT prior library CSV |
-| `target_pair_rt_calibration_path` | path | Target-pair RT calibration TSV for RT priors |
-| `model_selection_expected_diff_approval_registry` | path | Expected-diff approval registry TSV |
-| `targeted_ms1_shape_identity_support_tsv` | path | Reviewed MS1 shape-identity support TSV |
-| `targeted_ms1_shape_identity_activation_policy` | enum | `limited_5hmdc_5medc` or `explicit_support_tsv` |
 
 ---
 
@@ -109,17 +111,18 @@ identifier in workbook output and downstream CSV files.
 | --- | --- | --- | --- |
 | `is_istd` | bool | `false` | Whether this target is an internal standard |
 | `istd_pair` | string | *(empty)* | Label of the paired ISTD. Must reference a row with `is_istd=true`. Empty if this row is itself an ISTD |
-| `isotope_label_type` | enum | `unknown` | `unknown`, `deuterated`, or `heavy_non_deuterium` |
-| `paired_rt_relation` | enum | `none` | `none`, `istd_not_later_than_pair`, or `learned_delta_only` |
 | `sample_applicability` | enum | `all` | `all` or `rna_containing` |
 
 ### ISTD Pairing Rules
 
-- If `is_istd=true`: do not set `istd_pair` or `paired_rt_relation`.
+- If `is_istd=true`: do not set `istd_pair`.
 - If `istd_pair` is set: `is_istd` must be `false`, and the referenced label
   must have `is_istd=true`.
-- `paired_rt_relation=istd_not_later_than_pair` requires the paired ISTD to
-  have `isotope_label_type=deuterated`.
+- The editor combines role and pairing in one dropdown: unpaired, this row is
+  an ISTD, or a specific ISTD label. Import prefills only unique exact isotope-name
+  counterparts (for example `d3-5-medC` / `5-medC`); existing roles and nonempty
+  pairs win. Ambiguous names remain unpaired and editable. Name guesses are not
+  chemical evidence or a hard RT-order rule.
 
 ## Retired candidate audit outputs
 
@@ -129,5 +132,5 @@ existing settings CSVs; there is no compatibility alias. Candidate-sidecar
 verification and the dedicated shadow/pressure review commands are unavailable.
 Use [XIC Inspector](../product/xic-inspector.md) for visual review of its supported retained
 evidence sources. Inspector does not apply candidate switches or generate RT
-reselection comparison tables. `target_pair_rt_calibration_path` remains an
-RT-prior input; formal peak selection and numerical output remain owner-controlled.
+reselection comparison tables. Formal peak selection and numerical output remain
+owner-controlled.

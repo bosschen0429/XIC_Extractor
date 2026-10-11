@@ -126,9 +126,7 @@ def classify_evidence_consistency(signals: EvidenceSignalSet) -> tuple[str, ...]
     hard_quality_flags = quality_flags - _SOFT_TRACE_QUALITY_FLAGS
     trace_context_ok = "trace_clean" in support or not hard_quality_flags
     ms1_coherent = (
-        "local_sn_strong" in support
-        and trace_context_ok
-        and has_shape_context
+        "local_sn_strong" in support and trace_context_ok and has_shape_context
     )
     hard_local_conflict = bool(hard_quality_flags) or bool(
         concerns & _HARD_LOCAL_CONCERN_LABELS
@@ -193,10 +191,7 @@ def decision_semantics_from_signal_set(
             review_reasons,
             "cwt_requires_correlated_evidence",
         )
-    if (
-        "chrom_peak_segment_context" in support_reasons
-        and len(support_reasons) == 1
-    ):
+    if "chrom_peak_segment_context" in support_reasons and len(support_reasons) == 1:
         review_reasons = _append_unique(
             review_reasons,
             "chrom_peak_segment_requires_correlated_evidence",
@@ -240,11 +235,7 @@ def _decision_support_reasons(
         reasons.append("ms1_coherent")
     if "strict_nl_ok" in support or "nl_match" in support:
         reasons.append("candidate_aligned_ms2_nl")
-    if (
-        "rt_prior_close" in support
-        or "paired_istd_aligned" in support
-        or "paired_istd_rt_close" in support
-    ):
+    if "rt_prior_close" in support or "paired_istd_rt_close" in support:
         reasons.append("role_aware_rt_support")
     if "paired_area_ratio_plausible" in support:
         reasons.append("paired_area_ratio_support")
@@ -412,10 +403,4 @@ def _label_set(values: tuple[str, ...]) -> frozenset[str]:
 
 
 def _normalize_label(value: str) -> str:
-    return (
-        value.strip()
-        .lower()
-        .replace(" ", "_")
-        .replace("-", "_")
-        .replace("/", "_")
-    )
+    return value.strip().lower().replace(" ", "_").replace("-", "_").replace("/", "_")

@@ -11,7 +11,8 @@ scientific decisions, or write Matrix values.
 `xic-extractor`, `xic-workbench <result-folder>`, or
 `python -m xic_workbench <result-folder>` starts the unified local HTML
 workspace and opens its browser URL. The source argument
-is optional; the page can choose a folder or completed CID-NL SQLite report.
+is optional; the page can choose a folder, Targeted XLSX, or completed CID-NL
+SQLite report.
 `--raw-dir` and `--dll-dir` initialize the local source locations; the process
 environment's `XIC_RAW_ROOT` and `THERMO_RAWFILE_READER_DLL_DIR` supply defaults.
 `--no-open` prints the URL without opening a browser. `--port` selects its
@@ -50,6 +51,69 @@ HTML/JavaScript package assets and embeds them into the exported file.
 The transport binds only to `127.0.0.1` and serves packaged assets and this
 session's reports. It is one local analysis and review session.
 
+### Targeted XLSX review
+
+After a Targeted run, **在結果檢閱開啟** opens its delivered workbook directly.
+Alternatively, choose the XLSX in the review source picker or enter its path.
+A folder containing exactly one XLSX can also be opened; multiple workbooks
+require an explicit file choice. Normal Targeted delivery remains one XLSX:
+review creates no report or sidecar beside it and exposes no new export option.
+
+The current workbook has an `Overview` landing sheet and `XIC Results`, with
+`Targets`, `Run Metadata` and nonempty `Diagnostics` as supporting references.
+The `targeted_output` schema marker and workbook layout version 2 bind the saved
+records; other layouts are rejected rather than reinterpreted.
+
+In Excel, `Overview` presents saved counted/not-counted totals, per-target
+counts and a counted-result RT scatter plot. Its sample index is not injection
+time, and the charts do not recalculate scientific decisions. `Diagnostics`
+is a Traditional Chinese action list with one row per unresolved sample/target,
+the saved count outcome, a contextual explanation and links to the measurement.
+Original diagnostic events remain intact in an expandable appendix; event text
+alone does not override the final count outcome or reopen a confirmed result.
+Reference-RT drift, resolved multi-peak selection and confirmed ISTD backfill
+remain context rather than standalone review tasks. Unconfirmed identity,
+unresolved conflicts and independent peak-quality concerns remain actionable.
+The main results show Area, RT and IntSmoothed (smoothed apex intensity);
+raw Int and PeakWidth remain available in the grouped detail columns alongside
+review reasons. The result and target tables
+retain their canonical first-row headers and numeric values, with advanced
+columns grouped away. `Run Metadata` adds explanations alongside its unchanged
+key/value records. These presentation changes retain layout version 2 and the
+Inspector reader contract.
+
+Opening Targeted results first shows a full-batch overview: sample/target/result
+counts, saved counted detections, review workload and the main reasons by target.
+It combines overview and summary rather than opening a detail table immediately.
+Review targets appear first. Buttons open all results or only the review rows;
+click a target to narrow the next level. **整批結果總覽** returns to the full batch,
+independent of the current filters or page. A collapsed quantity summary shows
+per-target median Area and RT range for counted results only. Missing
+count decisions are reported as unknown, never inferred from numeric values.
+
+Choose a target to see one compact sample table: saved Area, RT, counted
+status, review status and its short reason. Select a sample for peak bounds,
+NL evidence and the full recorded explanation; target and method settings
+are separate expandable details. The attention filter retains only rows
+carrying saved review conditions, rather than showing every sample of a
+flagged target. Inspector does not reclassify results.
+
+Literal `ND`, zero and blank values remain distinct.
+The workbook is not modified, and its SHA-256 binds subsequent queries to the
+opened version; reopen the file after an external edit.
+
+Filter by full target name, sample, saved review condition, target m/z or
+saved sample RT. RT filtering matches a recorded numeric RT in the selected
+sample scope, not the target's configured search window. The focused sample
+detail shows retained peak and review evidence; absence of a review condition
+is not scientific acceptance.
+
+Saved-result review does not require RAW or DLL access. The workbook does not
+retain point-by-point chromatograms or a verified sample-to-RAW binding, so this
+view offers neither reconstructed plots nor on-demand acquisition. Sample names
+are workbook labels, not verified acquisition identities. Its review pages are
+temporary session views, not additional normal-run outputs.
+
 ## Public entry points
 
 The package installs the `xic-inspector` command and provides the equivalent
@@ -61,9 +125,11 @@ xic-inspector cid_nl_explanation.sqlite --strategy attention
 python -m xic_inspector diagnostic_curves.json --output review.html --no-open
 ```
 
-- The source is a completed feature-evidence SQLite report, a versioned
-  curve-bundle JSON file, or an alignment output folder. A folder resolves to
+- The source is a completed feature-evidence SQLite report, a Targeted workbook,
+  a versioned curve-bundle JSON file, or an output folder. A folder resolves to
   its `cid_nl_explanation.sqlite`, or to the one in its `alignment` subfolder.
+  Without SQLite evidence, a single XLSX is accepted; multiple XLSX files
+  require an explicit path.
   `--report` is an equivalent named form.
 - Without `--output`, the report is written as `xic_inspector.html` beside the
   resolved source, the same default as the workbench export.

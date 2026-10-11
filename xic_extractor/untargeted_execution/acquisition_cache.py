@@ -102,6 +102,35 @@ class CachedUntargetedRaw:
     def scan_window_for_request(self, request: XICRequest) -> tuple[int, int]:
         return self._raw.scan_window_for_request(request)
 
+    def acquisition_rt_bounds(self) -> tuple[float, float]:
+        key = _key_bytes("acquisition_rt_bounds")
+        cached = self._cache.read("metadata", key)
+        if cached is not None:
+            try:
+                values = json.loads(cached)
+                if not isinstance(values, list) or len(values) != 2:
+                    raise UntargetedAcquisitionCacheError(
+                        "invalid cached acquisition bounds"
+                    )
+                start = _float(values[0], field="acquisition_rt_start")
+                end = _float(values[1], field="acquisition_rt_end")
+                if start < 0 or end < start:
+                    raise UntargetedAcquisitionCacheError(
+                        "invalid cached acquisition span"
+                    )
+                return start, end
+            except (
+                UnicodeDecodeError,
+                json.JSONDecodeError,
+                UntargetedAcquisitionCacheError,
+            ) as exc:
+                self._cache.reject("metadata", key, exc)
+        bounds = self._raw.acquisition_rt_bounds()
+        self._cache.write(
+            "metadata", key, _canonical_json([_float_text(value) for value in bounds])
+        )
+        return bounds
+
     def read_ms1_mass_windows(
         self, requests: Sequence[tuple[int, float, float]]
     ) -> tuple[Ms1PrecursorObservation | None, ...]:

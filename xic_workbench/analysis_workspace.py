@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import dataclasses
-import json
 import os
+import re
 import shutil
 import uuid
 from pathlib import Path
@@ -34,6 +34,11 @@ class AnalysisWorkspace:
         self._files: dict[str, Path] = {}
 
     def bootstrap(self) -> dict[str, Any]:
+        from xic_extractor.configuration.models import ConfigError
+        from xic_extractor.configuration.settings import (
+            fill_setting_defaults,
+            resolve_settings,
+        )
         from xic_workbench.config_io import (
             read_settings,
             read_targets,
@@ -41,44 +46,70 @@ class AnalysisWorkspace:
         )
         from xic_workbench.discovery_config_io import read_discovery_config
         from xic_workbench.methods import list_methods
-        from xic_workbench.targeted import method_summary, targeted_form
+        from xic_workbench.targeted import method_summary, setting_fields
 
-        settings = read_settings(config_dir=self.config_dir)
+        raw = read_settings(config_dir=self.config_dir)
+        overrides = {}
+        if self.defaults.get("dll_dir"):
+            overrides["dll_dir"] = self.defaults["dll_dir"]
+        if self.defaults.get("raw_dir") and (
+            not raw.get("data_dir") or raw["data_dir"] == "C:/your/data/folder"
+        ):
+            overrides["data_dir"] = self.defaults["raw_dir"]
+        try:
+            settings, _parsed, warnings = resolve_settings(raw, overrides)
+        except ConfigError as exc:
+            # Opening the workspace must stay possible so the value can be fixed.
+            settings, warnings = fill_setting_defaults({**raw, **overrides})
+            warnings.append(f"settings.csv 有無效值，修正後才能執行 Targeted：{exc}")
+        if overrides:
+            warnings.append("啟動選項覆寫：" + ", ".join(overrides))
         discovery = read_discovery_config(config_dir=self.config_dir)
-        preferences = self.preferences()
-        dll = self.defaults.get("dll_dir") or preferences.get("dll_dir")
-        if dll:
-            settings["dll_dir"] = discovery["dll_dir"] = dll
-        if self.defaults.get("raw_dir"):
-            if (
-                not settings.get("data_dir")
-                or settings["data_dir"] == "C:/your/data/folder"
-            ):
-                settings["data_dir"] = self.defaults["raw_dir"]
-            if not discovery.get("raw_dir"):
-                discovery["raw_dir"] = self.defaults["raw_dir"]
+        discovery["dll_dir"] = settings.get("dll_dir", "")
+        if self.defaults.get("raw_dir") and not discovery.get("raw_dir"):
+            discovery["raw_dir"] = self.defaults["raw_dir"]
+        source = (
+            "settings.csv"
+            if (self.config_dir / "settings.csv").exists()
+            else "settings.example.csv"
+        )
+        if source == "settings.example.csv":
+            warnings.append("尚未儲存 settings.csv，目前使用範本設定。")
         return {
             "config_dir": str(self.config_dir),
             "targets_example": str(targets_example_path()),
             "review_source": self.defaults.get("source", ""),
             "settings": settings,
             "targets": read_targets(config_dir=self.config_dir),
-            "targeted_form": targeted_form(),
-            "targeted_method": method_summary(settings),
+            "targeted_form": {"settings": setting_fields()},
+            "targeted_method": {
+                **method_summary(settings),
+                "warnings": warnings,
+            },
+            "settings_source": source,
             "untargeted": discovery,
             "methods": list_methods(),
-            "preferences": preferences,
+            "targeted_methods": self.targeted_methods(),
+            "preferences": self.preferences(),
             "analysis": self.state(),
         }
 
+    def targeted_methods(self) -> list[dict[str, str]]:
+        root = self.config_dir / "methods"
+        if not root.exists():
+            return []
+        return [
+            {"name": path.name, "path": str(path.absolute())}
+            for path in sorted(root.iterdir())
+            if path.is_dir()
+            and (path / "settings.csv").is_file()
+            and (path / "targets.csv").is_file()
+        ]
+
     def preferences(self) -> dict[str, str]:
-        try:
-            data = json.loads(
-                (self.config_dir / "workbench.json").read_text(encoding="utf-8")
-            )
-            return data if isinstance(data, dict) else {}
-        except (OSError, ValueError):
-            return {}
+        from xic_workbench.config_io import read_preferences
+
+        return read_preferences(config_dir=self.config_dir)
 
     def state(self) -> dict[str, Any]:
         state = json_value(self.jobs.state())
@@ -112,25 +143,91 @@ class AnalysisWorkspace:
             raise ValueError("這個檔案不屬於目前工作區的輸出。") from exc
 
     def action(self, action: str, values: dict[str, Any]) -> dict[str, Any]:
-        if action == "preferences":
-            if set(values) - {"theme", "view", "dll_dir"}:
-                raise ValueError("不支援此偏好設定。")
-            data = self.preferences() | values
-            self.config_dir.mkdir(parents=True, exist_ok=True)
-            (self.config_dir / "workbench.json").write_text(
-                json.dumps(data, ensure_ascii=False), encoding="utf-8"
+        if action == "targeted/method/save":
+            from xic_extractor.configuration.targeted_method_files import (
+                create_targeted_method,
+                save_targeted_method,
             )
-            return data
-        if action == "targeted/save":
-            from xic_workbench.config_io import write_settings, write_targets
 
-            write_settings(values["settings"], config_dir=self.config_dir)
-            write_targets(values["targets"], config_dir=self.config_dir)
-            return {"message": "設定與目標已儲存。"}
-        if action == "targeted/method":
+            name = str(values["name"]).strip()
+            if (
+                not name
+                or name in {".", ".."}
+                or re.search(r'[<>:"/\\|?*\x00-\x1f]', name)
+                or name.endswith((".", " "))
+                or name.split(".")[0].upper()
+                in {
+                    "CON",
+                    "PRN",
+                    "AUX",
+                    "NUL",
+                    *(f"COM{i}" for i in range(1, 10)),
+                    *(f"LPT{i}" for i in range(1, 10)),
+                }
+            ):
+                raise ValueError("請輸入有效的方法名稱，不可使用路徑或系統保留名稱。")
+            path = self.config_dir / "methods" / name
+            if path.exists():
+                raise ValueError(
+                    "方法名稱已存在；請使用新名稱另存版本，原方法不會被覆寫。"
+                )
+            method = create_targeted_method(values["settings"], values["targets"])
+            save_targeted_method(method, path)
+            return {
+                "name": name,
+                "methods": self.targeted_methods(),
+                "message": f"已儲存方法：{name}",
+            }
+        if action == "targeted/method/load":
+            from xic_extractor.configuration.targeted_method_files import (
+                apply_targeted_method,
+                load_targeted_method,
+            )
             from xic_workbench.targeted import method_summary
 
-            return method_summary(values["settings"])
+            method = load_targeted_method(Path(values["path"]))
+            settings = apply_targeted_method(values["settings"], method)
+            return {
+                "settings": settings,
+                "targets": [dict(row) for row in method.target_rows],
+                "summary": method_summary(settings),
+            }
+        if action == "preferences":
+            from xic_workbench.config_io import write_preferences
+
+            return write_preferences(values, config_dir=self.config_dir)
+        if action == "targeted/save":
+            from xic_workbench.config_io import write_settings, write_targets
+            from xic_workbench.targeted import method_summary
+
+            settings = write_settings(values["settings"], config_dir=self.config_dir)
+            write_targets(values["targets"], config_dir=self.config_dir)
+            return {
+                "message": "設定與目標已儲存。",
+                "summary": method_summary(settings),
+            }
+        if action in {"targeted/method", "targeted/method/reset"}:
+            from xic_extractor.configuration.settings import (
+                reset_method_settings,
+                resolve_settings,
+            )
+            from xic_workbench.config_io import read_settings
+            from xic_workbench.targeted import method_summary
+
+            raw = (
+                values["settings"]
+                if "settings" in values
+                else read_settings(config_dir=self.config_dir)
+            )
+            if action == "targeted/method/reset":
+                raw = reset_method_settings(raw)
+            settings, _parsed, warnings = resolve_settings(raw)
+            summary = {**method_summary(settings), "warnings": warnings}
+            return (
+                {"settings": settings, "summary": summary}
+                if action.endswith("/reset")
+                else summary
+            )
         if action == "targets/import":
             from xic_workbench.target_import import import_targets
 
@@ -140,8 +237,11 @@ class AnalysisWorkspace:
                 )
             }
         if action == "untargeted/save":
+            from xic_workbench.config_io import write_dll_dir
             from xic_workbench.discovery_config_io import write_discovery_config
 
+            if "dll_dir" in values:
+                write_dll_dir(values["dll_dir"], config_dir=self.config_dir)
             write_discovery_config(values, config_dir=self.config_dir)
             return {"message": "批次與方法設定已儲存。"}
         if action == "method":

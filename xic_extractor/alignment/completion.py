@@ -11,6 +11,9 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
 )
 from xic_extractor.alignment.cell_observations import CellObservationRef
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.conservative_backfill import (
+    ConservativeBackfillCellDecision,
+)
 from xic_extractor.alignment.cross_sample.association import (
     build_cross_sample_association_lineage_handoff,
 )
@@ -199,6 +202,7 @@ class TargetWorkflowAdapter(_WorkflowAdapterFields):
     ] = field(kw_only=True)
     alignment_config: AlignmentConfig = field(kw_only=True)
     completed_capture_handoff: InitVar[tuple[SampleLocalCapture, ...] | None] = None
+    targeted_backfill_decisions: tuple[ConservativeBackfillCellDecision, ...] = ()
 
     def __post_init__(
         self,
@@ -453,6 +457,11 @@ def _compose_application_result(
                 else ()
             ),
             backfill_cell_observations=adapter.backfill_cell_observations,
+            targeted_backfill_decisions=(
+                adapter.targeted_backfill_decisions
+                if type(adapter) is TargetWorkflowAdapter
+                else ()
+            ),
         )
         return _finish_variant(
             request=request,

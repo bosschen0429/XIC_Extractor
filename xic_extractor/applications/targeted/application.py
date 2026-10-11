@@ -4,7 +4,7 @@ from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias
+from typing import TYPE_CHECKING, Protocol, TypeAlias
 
 from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
@@ -18,10 +18,6 @@ from xic_extractor.execution.attempt import (
     RuntimeTelemetryProvider,
 )
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
-from xic_extractor.extraction.rt_prior_library import LibraryEntry
-from xic_extractor.extraction.targeted_inputs import (
-    resolve_model_selection_expected_diff_approvals,
-)
 from xic_extractor.extraction.targeted_runtime_adapter import (
     TargetedRuntimeAdapterError,
     TargetedRuntimeLifecycleApplicationResult,
@@ -34,9 +30,6 @@ if TYPE_CHECKING:
         TargetedProductionInputSnapshot,
     )
     from xic_extractor.extraction.result_models import RunOutput
-    from xic_extractor.peak_detection.model_selection import (
-        ExpectedDiffApprovalRecord,
-    )
     from xic_extractor.processing_identity import (
         AcquisitionSourceExpectation,
         ProcessingRequestIdentity,
@@ -52,15 +45,9 @@ class TargetedRunner(Protocol):
         progress_callback: Callable[[int, int, str], None] | None = None,
         should_stop: Callable[[], bool] | None = None,
         injection_order: dict[str, int] | None = None,
-        rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
-        model_selection_expected_diff_approvals: (
-            Mapping[str, ExpectedDiffApprovalRecord] | None
-        ) = None,
         acquisition_sources_by_sample: (
             Mapping[str, AcquisitionSourceExpectation] | None
         ) = None,
-        *,
-        publish_outputs: Literal[False] = False,
     ) -> RunOutput: ...
 
 
@@ -91,14 +78,9 @@ class TargetedApplicationRequest:
     progress_callback: Callable[[int, int, str], None] | None = None
     should_stop: Callable[[], bool] | None = None
     injection_order: dict[str, int] | None = None
-    rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None
-    model_selection_expected_diff_approvals: (
-        Mapping[str, ExpectedDiffApprovalRecord] | None
-    ) = None
-    method_manifest_context: object | None = None
+
     excel_output_path: Path | None = None
     replace_existing_outputs: bool = False
-    output_projection: Literal["finalized", "acquisition_baseline"] = "finalized"
 
 
 @dataclass(frozen=True)
@@ -161,14 +143,9 @@ class TargetedApplicationService:
             progress_callback=runner_request.progress_callback,
             should_stop=runner_request.should_stop,
             injection_order=runner_request.injection_order,
-            rt_prior_library=runner_request.rt_prior_library,
-            model_selection_expected_diff_approvals=(
-                runner_request.model_selection_expected_diff_approvals
-            ),
             acquisition_sources_by_sample=_acquisition_sources_by_sample(
                 input_snapshot
             ),
-            publish_outputs=False,
         )
         if resolved_request.should_stop is not None and resolved_request.should_stop():
             return TargetedApplicationExecution(active_output=active_output)
@@ -354,14 +331,8 @@ def build_targeted_application_request(
     progress_callback: Callable[[int, int, str], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
     injection_order: dict[str, int] | None = None,
-    rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
-    model_selection_expected_diff_approvals: (
-        Mapping[str, ExpectedDiffApprovalRecord] | None
-    ) = None,
-    method_manifest_context: object | None = None,
     excel_output_path: Path | None = None,
     replace_existing_outputs: bool = False,
-    output_projection: Literal["finalized", "acquisition_baseline"] = "finalized",
 ) -> TargetedApplicationRequest:
     return TargetedApplicationRequest(
         config=config,
@@ -369,14 +340,8 @@ def build_targeted_application_request(
         progress_callback=progress_callback,
         should_stop=should_stop,
         injection_order=injection_order,
-        rt_prior_library=rt_prior_library,
-        model_selection_expected_diff_approvals=(
-            model_selection_expected_diff_approvals
-        ),
-        method_manifest_context=method_manifest_context,
         excel_output_path=excel_output_path,
         replace_existing_outputs=replace_existing_outputs,
-        output_projection=output_projection,
     )
 
 
@@ -385,18 +350,7 @@ def _resolve_application_request(
 ) -> TargetedApplicationRequest:
     if not isinstance(request, TargetedApplicationRequest):
         raise TypeError("request must be a TargetedApplicationRequest")
-    if request.output_projection not in {"finalized", "acquisition_baseline"}:
-        raise TargetedRuntimeAdapterError(
-            "output_projection must be finalized or acquisition_baseline"
-        )
-    resolved_approvals = resolve_model_selection_expected_diff_approvals(
-        request.config,
-        request.model_selection_expected_diff_approvals,
-    )
-    return replace(
-        request,
-        model_selection_expected_diff_approvals=resolved_approvals,
-    )
+    return request
 
 
 def _isolate_application_request(
@@ -409,11 +363,6 @@ def _isolate_application_request(
         config=deepcopy(request.config),
         targets=deepcopy(request.targets),
         injection_order=deepcopy(request.injection_order),
-        rt_prior_library=deepcopy(request.rt_prior_library),
-        model_selection_expected_diff_approvals=deepcopy(
-            request.model_selection_expected_diff_approvals
-        ),
-        method_manifest_context=deepcopy(request.method_manifest_context),
     )
 
 

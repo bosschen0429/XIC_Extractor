@@ -117,7 +117,8 @@
   function lock() {
     document
       .querySelectorAll("[data-analysis-idle]")
-      .forEach((node) => (node.disabled = isBusy()));
+      .forEach((node) => (node.disabled = isBusy() ||
+        (node.dataset.rtBound === "true" && !$("u-rt-crop")?.checked)));
     document.dispatchEvent(
       new CustomEvent("xic:analysis-busy", { detail: isRunning() }),
     );
@@ -144,12 +145,11 @@
     checklist(kind);
   }
   function setMethodState(summary) {
-    const label = summary?.label || "標準方法";
+    const label = summary?.label || "標準參數";
     const custom = new Set(summary?.custom_keys || []);
     const chip = $("target-method-state");
     chip.textContent = label;
     chip.className = `chip ${custom.size ? "warn" : "ok"}`;
-    const defaults = state.config.targeted_form.defaults;
     for (const spec of state.config.targeted_form.settings) {
       const input = $(`t-${spec.key}`);
       const fieldNode = input?.closest(".field");
@@ -157,14 +157,14 @@
       fieldNode.classList.toggle("is-custom", custom.has(spec.key));
       fieldNode.querySelector(".default-hint")?.remove();
       if (custom.has(spec.key)) {
-        const value = defaults[spec.key];
+        const value = spec.default;
         const hint = el(
           "button",
           `標準值 ${value === "" ? "（空白）" : value === "true" ? "開" : value === "false" ? "關" : value} · 還原`,
           "default-hint",
         );
         hint.type = "button";
-        hint.title = "把這一欄改回標準方法的值";
+        hint.title = "把這一欄改回標準參數的值";
         hint.addEventListener("click", (event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -175,12 +175,16 @@
         (fieldNode.querySelector(":scope > span") || fieldNode).append(hint);
       }
     }
-    const hidden = [...custom].filter(
-      (key) => !state.config.targeted_form.settings.some((spec) => spec.key === key),
-    );
-    $("target-method-note").textContent = hidden.length
-      ? `另有 ${hidden.length} 項未顯示的進階設定與標準方法不同；按「回到標準方法」可一併重設。`
-      : "";
+    const notes = $("target-method-note");
+    notes.replaceChildren();
+    for (const difference of summary?.differences || []) {
+      const spec = state.config.targeted_form.settings.find((item) => item.key === difference.key);
+      notes.append(el("p", `${spec?.label || difference.key}：${difference.default || "（空白）"} → ${difference.value || "（空白）"}`, "method-difference"));
+    }
+    notes.append(el("p", `設定檔：${state.config.settings_source || "settings.csv"}`, "settings-source"));
+    for (const warning of summary?.warnings || []) {
+      notes.append(el("p", warning, "settings-warning"));
+    }
     checklist("targeted");
   }
   function selectView(view, persist = true) {
@@ -231,7 +235,7 @@
             ? "number"
             : "text";
     if (kind === "number") {
-      input.step = "any";
+      input.step = spec.step ?? "any";
       if (spec.min !== undefined || spec.minimum !== undefined)
         input.min = spec.min ?? spec.minimum;
       if (spec.max !== undefined || spec.maximum !== undefined)
@@ -400,61 +404,74 @@
     const values = { ...state.config.settings };
     for (const spec of state.config.targeted_form.settings) {
       const input = $(`t-${spec.key}`);
-      values[spec.key] =
+      if (input) values[spec.key] =
         spec.kind === "checkbox" ? String(input.checked) : input.value;
     }
     return values;
   }
   function renderSettings(values) {
     const data = $("targeted-data");
-    const container = $("targeted-settings");
-    data.replaceChildren();
-    container.replaceChildren();
+    const method = $("targeted-settings");
+    const execution = $("targeted-execution");
+    for (const panel of [data, method, execution]) panel.replaceChildren();
     const advanced = el("details");
     advanced.id = "targeted-advanced";
-    advanced.append(el("summary", "進階設定（選用）"));
-    const advancedPanel = el("div", undefined, "advanced-panel");
-    advanced.append(advancedPanel);
-    const environment = el("details");
-    environment.id = "targeted-environment";
-    environment.className = "method-section";
-    environment.append(el("summary", "本機環境 · RawFileReader DLL"));
-    const environmentPanel = el("div", undefined, "advanced-panel");
-    environment.append(environmentPanel);
-    environment.open = !values.dll_dir || values.dll_dir.startsWith("<");
+    advanced.append(el("summary", "調整方法參數"));
+    const methodPanel = el("div", undefined, "advanced-panel");
+    advanced.append(methodPanel);
+    const note = el("div", undefined, "method-note");
+    note.id = "target-method-note";
+    method.append(el("p", "訊號處理固定使用 Gaussian；正式 Targeted 結果不將 NO_MS2 算為偵測到。", "settings-notice"), advanced, note);
+    const panels = { batch: data, method: methodPanel, environment: execution, runtime: execution, output: execution };
     const groups = new Map();
     for (const spec of state.config.targeted_form.settings) {
-      if (spec.key === "data_dir") {
-        data.append(field(spec, values[spec.key], "t-"));
-        continue;
-      }
-      if (spec.key === "dll_dir") {
-        environmentPanel.append(field(spec, values[spec.key], "t-"));
-        continue;
-      }
-      if (!groups.has(spec.group)) {
+      const panel = panels[spec.scope];
+      if (!panel || spec.kind === "readonly" || spec.key === "signal_processing_method" || spec.key === "count_no_ms2_as_detected") continue;
+      const groupKey = spec.scope;
+      if (!groups.has(groupKey)) {
         const section = el("section", undefined, "settings-group");
-        section.append(el("h3", spec.group));
+        const scopeHeading = { method: "進階方法參數", batch: "批次輸入", environment: "本機環境", runtime: "執行方式", output: "輸出選項" };
+        section.append(el("h3", scopeHeading[spec.scope] || spec.group));
         const grid = el("div", undefined, "settings-grid");
         section.append(grid);
-        advancedPanel.append(section);
-        groups.set(spec.group, grid);
+        panel.append(section);
+        groups.set(groupKey, grid);
       }
-      groups.get(spec.group).append(field(spec, values[spec.key], "t-"));
+      groups.get(groupKey).append(field(spec, values[spec.key], "t-"));
     }
-    const note = el("p", "", "method-note");
-    note.id = "target-method-note";
-    container.append(note, advanced, environment);
     setMethodState(state.config.targeted_method);
+    $("t-data_dir").dataset.batchPath = values.data_dir || "";
+    lock();
+  }
+  function applyTargetedDraft(result) {
+    state.config.settings = result.settings;
+    renderSettings(result.settings);
+    setMethodState(result.summary);
+    dirty("targeted");
+  }
+  function renderTargetedMethods(methods, selected = "") {
+    const select = $("target-method-select");
+    select.replaceChildren(new Option("目前工作區設定", ""));
+    for (const method of methods) select.add(new Option(method.name, method.path));
+    select.value = selected;
+  }
+  async function loadTargetedMethod(path) {
+    if (!path) throw new Error("請先選擇方法。");
+    const result = await api("/api/targeted/method/load", { path, settings: settingsValues() });
+    state.targets = result.targets;
+    applyTargetedDraft(result);
+    targetCount();
+    done("已載入完整方法與目標；批次及本機設定保持不變。儲存或開始分析後套用。");
   }
   async function saveTargeted(quiet = false) {
     const settings = settingsValues();
-    await api("/api/targeted/save", { settings, targets: state.targets });
+    const receipt = await api("/api/targeted/save", { settings, targets: state.targets });
     state.config.settings = settings;
+    state.config.settings_source = "settings.csv";
+    state.config.targeted_method = receipt.summary;
+    setMethodState(receipt.summary);
     dirty("targeted", false);
     if (!quiet) done("Targeted 設定與目標已儲存。");
-    if (settings.dll_dir)
-      await api("/api/preferences", { dll_dir: settings.dll_dir });
   }
   const isIstd = (row) => String(row.is_istd).toLowerCase() === "true";
   function targetCount() {
@@ -526,8 +543,7 @@
   }
   const targetColumns = [
     ["label", "名稱"],
-    ["is_istd", "ISTD"],
-    ["istd_pair", "ISTD 配對"],
+    ["pairing", "角色／ISTD 配對"],
     ["mz", "m/z"],
     ["rt_min", "RT min"],
     ["rt_max", "RT max"],
@@ -545,11 +561,22 @@
       const tr = el("tr");
       for (const [key, label] of targetColumns) {
         const td = el("td");
-        const input = el("input");
+        const input = el(key === "pairing" ? "select" : "input");
         input.setAttribute("aria-label", `${label}（第 ${index + 1} 列）`);
-        if (key === "is_istd") {
-          input.type = "checkbox";
-          input.checked = isIstd(row);
+        if (key === "pairing") {
+          const choices = [["", "未配對"], ["role:istd", "此列是 ISTD"]];
+          for (const standard of state.targets.filter(isIstd)) {
+            if (standard !== row) choices.push([`pair:${standard.label}`, standard.label]);
+          }
+          const value = isIstd(row) ? "role:istd" : row.istd_pair ? `pair:${row.istd_pair}` : "";
+          if (!choices.some(([key]) => key === value))
+            choices.push([value, `${row.istd_pair}（請重新選擇）`]);
+          for (const [value, label] of choices) {
+            const option = el("option", label);
+            option.value = value;
+            input.append(option);
+          }
+          input.value = value;
         } else {
           input.value = row[key] || "";
           if (
@@ -560,7 +587,11 @@
             input.inputMode = "decimal";
         }
         input.addEventListener("input", () => {
-          row[key] = key === "is_istd" ? String(input.checked) : input.value;
+          if (key === "pairing") {
+            row.is_istd = String(input.value === "role:istd");
+            row.istd_pair = input.value.startsWith("pair:") ? input.value.slice(5) : "";
+            renderTargets();
+          } else row[key] = input.value;
           dirty("targeted");
           targetCount();
         });
@@ -621,13 +652,22 @@
     values.targets_csv = $("u-targets_csv").value;
     for (const control of state.method?.tuning_controls || []) {
       const input = $(`tune-${control.key}`);
+      if (["rt_min", "rt_max"].includes(control.key) &&
+          (!$("u-rt-crop").checked || input.value.trim() === "")) continue;
       values.overrides[control.key] =
         input.type === "number" ? Number(input.value) : input.value;
     }
     for (const sample of state.samples)
       values.custom_roles[sample.raw_stem] = sample.sample_role;
     values.samples = state.samples.length ? state.samples : null;
-    if (state.method) values.preset_snapshot = state.method.draft;
+    if (state.method) {
+      values.preset_snapshot = structuredClone(state.method.draft);
+      const snapshotOverrides = values.preset_snapshot.overrides;
+      for (const key of ["rt_min", "rt_max"]) {
+        delete snapshotOverrides[key];
+        if (Object.hasOwn(values.overrides, key)) snapshotOverrides[key] = values.overrides[key];
+      }
+    }
     return values;
   }
   async function saveUntargeted(quiet = false) {
@@ -636,8 +676,6 @@
     state.config.untargeted = values;
     dirty("untargeted", false);
     if (!quiet) done("Untargeted 批次設定已儲存。");
-    if (values.dll_dir)
-      await api("/api/preferences", { dll_dir: values.dll_dir });
   }
   async function loadMethod(preset, overrides = {}) {
     const data = await api("/api/method", { preset });
@@ -648,15 +686,39 @@
       $("u-preset").append(option);
     }
     $("u-preset").value = preset;
-    $("method-tuning").replaceChildren(
-      ...data.tuning_controls.map((control) =>
-        field(
-          control,
-          overrides[control.key] ?? data.effective_values[control.key],
-          "tune-",
-        ),
-      ),
-    );
+    const tuning = $("method-tuning");
+    tuning.replaceChildren();
+    const cropFields = el("div", undefined, "settings-grid span-all");
+    cropFields.id = "method-rt-crop-fields";
+    let hasCrop = false;
+    for (const control of data.tuning_controls) {
+      const value = Object.hasOwn(overrides, control.key)
+        ? overrides[control.key] : data.effective_values[control.key];
+      const node = field(control, value, "tune-");
+      if (["rt_min", "rt_max"].includes(control.key)) {
+        hasCrop ||= value !== null && value !== undefined && value !== "";
+        const input = node.querySelector("input");
+        input.dataset.rtBound = "true";
+        input.placeholder = control.key === "rt_min" ? "RAW 採集起點（自動）" : "RAW 採集終點（自動）";
+        cropFields.append(node);
+      } else tuning.append(node);
+    }
+    const cropLabel = el("label", undefined, "field checkbox span-all");
+    const crop = el("input");
+    crop.type = "checkbox";
+    crop.id = "u-rt-crop";
+    crop.dataset.analysisIdle = "";
+    crop.checked = hasCrop;
+    cropLabel.append(crop, el("span", "限制分析 RT 範圍（選用）"));
+    const cropNote = el("p", "預設分析完整 RAW 採集範圍（自動）。需要裁切時才啟用；任一端留空會使用該 RAW 的採集起點／終點。", "settings-notice span-all");
+    cropFields.hidden = !hasCrop;
+    crop.addEventListener("change", () => {
+      cropFields.hidden = !crop.checked;
+      lock();
+      updateMethodPreview();
+    });
+    tuning.append(cropLabel, cropNote, cropFields);
+    lock();
     updateMethodPreview();
   }
   function updateMethodPreview() {
@@ -666,13 +728,12 @@
       el("span", `${tag.name} · ${tag.neutral_loss_da} Da`, "chip accent"),
     );
     chips.push(el("span", preview.combine_mode, "chip"));
-    chips.push(
-      el(
-        "span",
-        `RT ${$("tune-rt_min")?.value ?? preview.rt_min}–${$("tune-rt_max")?.value ?? preview.rt_max} min`,
-        "chip",
-      ),
-    );
+    const crop = $("u-rt-crop")?.checked;
+    const lower = crop ? $("tune-rt_min")?.value.trim() : "";
+    const upper = crop ? $("tune-rt_max")?.value.trim() : "";
+    chips.push(el("span", !lower && !upper
+      ? "完整 RAW 採集範圍（自動）"
+      : `RT ${lower || "RAW 起點"}–${upper || "RAW 終點"} min`, "chip"));
     $("method-preview").replaceChildren(...chips);
     checklist("untargeted");
   }
@@ -858,11 +919,14 @@
   // Jobs
   async function startJob(kind, values) {
     if (isBusy()) throw new Error("請等待目前工作完成或先停止。");
-    if (["targeted", "untargeted"].includes(kind)) {
-      if (kind === "targeted") await saveTargeted(true);
-      else await saveUntargeted(true);
-    }
+    if (kind === "untargeted") await saveUntargeted(true);
     state.analysis = await api("/api/analysis/start", { kind, values });
+    if (kind === "targeted") {
+      state.config.settings = { ...values.settings };
+      state.config.targeted_method = await api("/api/targeted/method", {});
+      setMethodState(state.config.targeted_method);
+      dirty("targeted", false);
+    }
     state.seenJob = null;
     renderJob();
     status("工作已開始。關閉分頁不會停止分析。");
@@ -1063,8 +1127,9 @@
       const metrics = el("div", undefined, "result-metrics");
       metric(metrics, targeted.total_files, "RAW 檔案");
       metric(metrics, targeted.targets?.length, "目標");
-      metric(metrics, targeted.diagnostics_count, "診斷紀錄");
-      container.append(metrics, artifacts);
+      container.append(metrics);
+      if (targeted.excel_path) container.append(button("在結果檢閱開啟", () => openReview(targeted.excel_path), "primary", "review"));
+      container.append(artifacts);
       const warnings = el("div");
       for (const warning of targeted.istd_warnings || []) {
         const line = el("p", undefined, "result-warning");
@@ -1075,46 +1140,7 @@
         warnings.append(line);
       }
       if (warnings.childElementCount) container.append(warnings);
-      const table = el("table");
-      const head = el("tr");
-      for (const [label, cls] of [
-        ["目標", ""],
-        ["偵測到 / 總數", ""],
-        ["NL OK", "num"],
-        ["NL WARN", "num"],
-        ["NL FAIL", "num"],
-        ["NO MS2", "num"],
-        ["面積中位數", "num"],
-      ])
-        head.append(el("th", label, cls));
-      const thead = el("thead");
-      thead.append(head);
-      const body = el("tbody");
-      for (const row of targeted.targets || []) {
-        const tr = el("tr");
-        const detect = el("td");
-        const bar = el("span", undefined, "detect-bar");
-        const track = el("span");
-        const fill = el("i");
-        fill.style.width = `${row.total ? (100 * row.detected) / row.total : 0}%`;
-        track.append(fill);
-        bar.append(track, `${row.detected} / ${row.total}`);
-        detect.append(bar);
-        tr.append(el("td", row.label ?? "—"), detect);
-        for (const value of [
-          row.nl_ok,
-          row.nl_warn,
-          row.nl_fail,
-          row.nl_no_ms2,
-          formatNumber(row.median_area),
-        ])
-          tr.append(el("td", value ?? "—", "num"));
-        body.append(tr);
-      }
-      table.append(thead, body);
-      const scroll = el("div", undefined, "table-scroll");
-      scroll.append(table);
-      container.append(scroll);
+      container.append(el("p", "樣本量值與需檢閱項目集中在結果檢閱；XLSX 保留同一份結果。", "subtle"));
     }
     const result = state.analysis.results.untargeted;
     if (result) {
@@ -1214,8 +1240,9 @@
     }
     $("inspector-export-dialog").showModal();
   }
-  function requestPath(title, value = "") {
+  function requestPath(title, value = "", label = "完整路徑") {
     $("path-dialog-title").textContent = title;
+    $("path-dialog-label").textContent = label;
     $("path-dialog-value").value = value;
     $("path-dialog").returnValue = "cancel";
     $("path-dialog").showModal();
@@ -1300,6 +1327,17 @@
     document.body.append(screen);
   }
   function bind() {
+    document.addEventListener("input", (event) => {
+      if (!["t-dll_dir", "u-dll_dir", "dll-dir"].includes(event.target.id)) return;
+      const value = event.target.value;
+      state.config.settings.dll_dir = value;
+      state.config.untargeted.dll_dir = value;
+      for (const id of ["t-dll_dir", "u-dll_dir", "dll-dir"]) {
+        if ($(id)) $(id).value = value;
+      }
+      dirty("targeted");
+      dirty("untargeted");
+    });
     document
       .querySelectorAll("[data-view]")
       .forEach((node) =>
@@ -1348,24 +1386,41 @@
       act(() => startJob("untargeted", untargetedValues()));
     });
     $("target-save").onclick = () => act(() => saveTargeted());
+    $("target-method-load").onclick = () => act(() => loadTargetedMethod($("target-method-select").value));
+    $("target-method-import").onclick = () => act(async () => {
+      const path = await requestPath("載入方法資料夾（settings.csv 與 targets.csv）");
+      if (!path) return;
+      await loadTargetedMethod(path);
+      $("target-method-select").value = "";
+    });
+    $("target-method-save").onclick = () => act(async () => {
+      const name = await requestPath("另存為可重複使用的方法", "", "方法名稱");
+      if (!name) return;
+      const result = await api("/api/targeted/method/save", { name, settings: settingsValues(), targets: state.targets });
+      state.config.targeted_methods = result.methods;
+      renderTargetedMethods(result.methods, result.methods.find((method) => method.name === result.name)?.path);
+      done(result.message);
+    });
     $("untargeted-save").onclick = () => act(() => saveUntargeted());
     $("target-new").onclick = () => {
       $("t-data_dir").value = "";
+      $("t-injection_order_source").value = "";
+      state.config.settings.data_dir = "";
+      state.config.settings.injection_order_source = "";
       $("target-result").hidden = true;
       dirty("targeted");
       focusField("t-data_dir");
     };
-    $("target-reset").onclick = () => {
-      const values = settingsValues();
-      state.config.settings = {
-        ...state.config.targeted_form.defaults,
-        data_dir: values.data_dir,
-        dll_dir: values.dll_dir,
-      };
-      renderSettings(state.config.settings);
-      dirty("targeted");
-      ui.toast("已回到標準方法；RAW 位置與目標清單保持不變。儲存後生效。");
-    };
+    $("targeted-data").addEventListener("input", (event) => {
+      if (event.target.id === "t-data_dir" && event.target.value !== event.target.dataset.batchPath) {
+        $("t-injection_order_source").value = "";
+        event.target.dataset.batchPath = event.target.value;
+      }
+    });
+    $("target-reset").onclick = () => act(async () => {
+      applyTargetedDraft(await api("/api/targeted/method/reset", { settings: settingsValues() }));
+      done("已還原方法參數；批次、目標、外部資源與執行設定保持不變。");
+    });
     $("target-edit").onclick = () => {
       renderTargets();
       $("target-editor").showModal();
@@ -1428,7 +1483,7 @@
             neutral_loss_da: 116.0474,
           },
         ],
-        overrides: { rt_max: 60 },
+        overrides: {},
       };
       renderMethodEditor();
       $("method-editor").showModal();
@@ -1656,10 +1711,10 @@
     state.config = await api("/api/config");
     state.targets = state.config.targets;
     ui.setTheme(state.config.preferences.theme || "light");
-    if (!$("dll-dir").value && state.config.preferences.dll_dir)
-      $("dll-dir").value = state.config.preferences.dll_dir;
+    $("dll-dir").value = state.config.settings.dll_dir || "";
     applyThemeButton();
     renderSettings(state.config.settings);
+    renderTargetedMethods(state.config.targeted_methods || []);
     for (const [key, label, kind] of pathFields)
       pathField(
         $("untargeted-paths"),

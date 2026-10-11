@@ -209,6 +209,8 @@ def _render_preset(
     lines.append("")
     lines.append("[discovery]")
     for field in discovery_fields:
+        if field in {"rt_min", "rt_max"} and discovery_values[field] is None:
+            continue
         lines.append(f"{field} = {_toml_scalar(discovery_values[field], field=field)}")
     lines.extend(
         (

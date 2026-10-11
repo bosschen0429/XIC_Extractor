@@ -379,7 +379,7 @@ def _peak_config(raw_dir: Path, dll_dir: Path) -> ExtractionConfig:
         smooth_window=15,
         smooth_polyorder=3,
         ms1_morphology_smoothing_window_points=int(
-            defaults["ms1_morphology_smoothing_window_points"]
+            defaults["signal_processing_window_points"]
         ),
         peak_rel_height=0.95,
         peak_min_prominence_ratio=0.10,

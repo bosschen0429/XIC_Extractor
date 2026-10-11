@@ -10,9 +10,6 @@ from xic_extractor.settings_schema import (
     CANONICAL_RESOLVER_MODE,
     normalize_resolver_mode,
 )
-from xic_extractor.targeted_ms1_shape_identity_policy import (
-    EXPLICIT_SUPPORT_TSV_POLICY,
-)
 
 
 @dataclass(frozen=True)
@@ -47,14 +44,6 @@ class ExtractionConfig:
     injection_order_source: Path | None = None
     rolling_window_size: int = 5
     dirty_matrix_mode: bool = False
-    rt_prior_library_path: Path | None = None
-    target_pair_rt_calibration_path: Path | None = None
-    model_selection_expected_diff_approval_registry: Path | None = None
-    targeted_ms1_shape_identity_support_tsv: Path | None = None
-    targeted_ms1_shape_identity_activation_policy: str = EXPLICIT_SUPPORT_TSV_POLICY
-    emit_score_breakdown: bool = False
-    emit_review_report: bool = False
-    keep_intermediate_csv: bool = False
     baseline_integration_method: str = "asls"
     parallel_mode: str = "serial"
     parallel_workers: int = field(default_factory=default_parallel_workers)
@@ -87,8 +76,6 @@ class Target:
     nl_ppm_max: float | None
     is_istd: bool
     istd_pair: str
-    isotope_label_type: str = "unknown"
-    paired_rt_relation: str = "none"
     sample_applicability: str = "all"
 
 

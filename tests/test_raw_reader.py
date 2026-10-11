@@ -12,6 +12,58 @@ def test_importing_raw_reader_does_not_import_clr() -> None:
     assert "clr" not in module.__dict__
 
 
+def test_default_ms2_acquisition_uses_each_raw_span_without_fixed_ceiling() -> None:
+    from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
+    from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
+    from xic_extractor.raw_reader import RawFileHandle
+
+    settings = DiscoverySettings(neutral_loss_profile=NeutralLossProfile("NL", 116.0))
+    for start, end in ((0.25, 65.0), (1.5, 1100.0)):
+        raw = _FakeRaw(
+            filters={
+                index: _FakeFilter(is_ms2=True, precursor_mz=500.0) for index in (1, 2)
+            },
+            scans={index: _FakeScan([384.0], [100.0]) for index in (1, 2)},
+        )
+        raw.RunHeaderEx = SimpleNamespace(StartTime=start, EndTime=end)
+        raw.ScanNumberFromRetentionTime = lambda rt: 1 if rt <= (start + end) / 2 else 2
+        raw.RetentionTimeFromScanNumber = lambda number: start if number == 1 else end
+        handle = RawFileHandle(raw, _fake_thermo(raw))
+        seeds = collect_strict_nl_seeds(
+            handle, raw_file=Path("span.raw"), settings=settings
+        )
+        assert tuple(seed.rt for seed in seeds) == (start, end)
+        # Existing explicit windows retain native nearest-scan mapping (Targeted too).
+        assert tuple(
+            event.scan.rt
+            for event in handle.iter_ms2_scans(start + 0.1, end)
+            if event.scan
+        ) == (start, end)
+        assert tuple(
+            event.scan.rt
+            for event in handle.iter_ms2_scans(rt_min=start + 0.1)
+            if event.scan
+        ) == (end,)
+        assert tuple(
+            event.scan.rt for event in handle.iter_ms2_scans(rt_min=60.0) if event.scan
+        ) == (end,)
+        assert tuple(
+            event.scan.rt for event in handle.iter_ms2_scans(rt_max=60.0) if event.scan
+        ) == (start,)
+        assert list(handle.iter_ms2_scans(rt_min=end + 1.0)) == []
+        assert list(handle.iter_ms2_scans(rt_max=start / 2)) == []
+
+
+@pytest.mark.parametrize("bounds", [(4.0, 3.0), (float("nan"), 4.0)])
+def test_default_ms2_acquisition_rejects_invalid_raw_span(bounds) -> None:
+    from xic_extractor.raw_reader import RawFileHandle
+
+    raw = _FakeRaw()
+    raw.RunHeaderEx = SimpleNamespace(StartTime=bounds[0], EndTime=bounds[1])
+    with pytest.raises(ValueError, match="RAW acquisition RT bounds"):
+        list(RawFileHandle(raw, _fake_thermo(raw)).iter_ms2_scans())
+
+
 def test_parent_ms1_mass_windows_keep_ambiguity_and_share_one_spectrum_read():
     from xic_extractor.raw_reader import RawFileHandle
 
@@ -1149,8 +1201,11 @@ def test_ms2_trailer_headers_are_file_local_and_reused_across_windows() -> None:
     from xic_extractor.raw_reader import RawFileHandle
 
     labels = [
-        "Monoisotopic M/Z:", "Charge State:", "Master Scan Number:",
-        "MS2 Isolation Width:", "Unused:",
+        "Monoisotopic M/Z:",
+        "Charge State:",
+        "Master Scan Number:",
+        "MS2 Isolation Width:",
+        "Unused:",
     ]
     for file_index, file_labels in enumerate((labels, list(reversed(labels)))):
         mono = 300.1615 + file_index
@@ -1160,8 +1215,10 @@ def test_ms2_trailer_headers_are_file_local_and_reused_across_windows() -> None:
         )
         raw.trailer_labels = file_labels
         values = {
-            "Monoisotopic M/Z:": str(mono), "Charge State:": "1",
-            "Master Scan Number:": "10", "MS2 Isolation Width:": "1.60",
+            "Monoisotopic M/Z:": str(mono),
+            "Charge State:": "1",
+            "Master Scan Number:": "10",
+            "MS2 Isolation Width:": "1.60",
             "Unused:": "not a number",
         }
         raw.GetTrailerExtraInformation = lambda _: SimpleNamespace(

@@ -24,8 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="xic-inspector",
         description=(
-            "XIC Inspector — Standalone review and offline workbench "
-            "for XIC Extractor."
+            "XIC Inspector — Standalone review and offline workbench for XIC Extractor."
         ),
     )
     parser.add_argument(
@@ -33,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         type=Path,
         help=(
-            "Feature evidence SQLite report, versioned curve-bundle JSON, or an "
+            "Feature evidence SQLite report, Targeted XLSX, curve-bundle JSON, or an "
             f"alignment output folder containing {REPORT_FILENAME}."
         ),
     )
@@ -143,6 +142,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except FileNotFoundError as exc:
         sys.stderr.write(f"Error [code 3]: Source unavailable: {exc}\n")
         return 3
+    except ValueError as exc:
+        sys.stderr.write(f"Error [code 2]: {exc}\n")
+        return 2
     output = args.output or report.parent / DEFAULT_OUTPUT_NAME
 
     try:

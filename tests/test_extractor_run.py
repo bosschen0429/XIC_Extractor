@@ -1,4 +1,3 @@
-import csv
 import pickle
 from dataclasses import replace
 from pathlib import Path
@@ -6,20 +5,15 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
+from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extraction.result_models import RunOutput
-from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.extraction.targeted_inputs import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
 )
-from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecord
 from xic_extractor.processing_identity import (
     AcquisitionSourceExpectation,
     build_acquisition_source_identity,
-)
-from xic_extractor.target_pair_rt_calibration import (
-    TARGET_PAIR_RT_CALIBRATION_FIELDS,
 )
 
 _OPEN_RAW_SEAM = "xic_extractor.extraction.target_extraction.open_raw"
@@ -41,13 +35,12 @@ def test_acquire_uses_serial_backend_by_default(
     from xic_extractor import extractor
     from xic_extractor.extraction import serial_backend
 
-    config = _config(tmp_path, keep_intermediate_csv=False)
+    config = _config(tmp_path)
     (config.data_dir / "B.raw").write_text("", encoding="utf-8")
     (config.data_dir / "A.raw").write_text("", encoding="utf-8")
     targets = [_target("Analyte")]
     returned = RunOutput(file_results=[], diagnostics=[])
     calls: list[tuple[ExtractionConfig, list[Target], list[str]]] = []
-    approval = _expected_diff_approval()
 
     def _fake_run_serial(
         config_arg: ExtractionConfig,
@@ -57,17 +50,12 @@ def test_acquire_uses_serial_backend_by_default(
         progress_callback=None,
         should_stop=None,
         injection_order=None,
-        rt_prior_library=None,
-        model_selection_expected_diff_approvals=None,
     ) -> RunOutput:
         calls.append((config_arg, targets_arg, [path.name for path in raw_paths]))
         assert progress_callback is _progress
         assert should_stop is _should_stop
         assert injection_order == {"SampleA": 1}
-        assert rt_prior_library == {}
-        assert model_selection_expected_diff_approvals == {
-            approval.stable_row_id: approval
-        }
+
         return returned
 
     def _progress(_current: int, _total: int, _filename: str) -> None:
@@ -84,8 +72,6 @@ def test_acquire_uses_serial_backend_by_default(
         progress_callback=_progress,
         should_stop=_should_stop,
         injection_order={"SampleA": 1},
-        rt_prior_library={},
-        model_selection_expected_diff_approvals={approval.stable_row_id: approval},
     )
 
     assert output is returned
@@ -95,8 +81,12 @@ def test_acquire_uses_serial_backend_by_default(
 @pytest.mark.parametrize(
     "pair_state",
     [
-        "unpaired", "no_signal", "untrusted", "credible", "reference_impulse",
-        "credible_library", "shape_review",
+        "unpaired",
+        "no_signal",
+        "untrusted",
+        "credible",
+        "reference_impulse",
+        "shape_review",
         "same_reference",
     ],
 )
@@ -105,7 +95,7 @@ def test_run_no_nl_reference_selects_each_samples_component(
 ) -> None:
     from xic_extractor import extractor
 
-    config = _config(tmp_path, keep_intermediate_csv=True)
+    config = _config(tmp_path)
     target = replace(_target("Analyte"), rt_min=7.5, rt_max=10.5)
     expected = {"SampleA": (9.0, 1000.0), "SampleB": (9.1, 2500.0)}
     targets = [target]
@@ -114,16 +104,21 @@ def test_run_no_nl_reference_selects_each_samples_component(
         targets = [target]
     if pair_state == "same_reference":
         targets.append(replace(target, label="SameReference"))
-    if pair_state in {"no_signal", "untrusted", "credible", "credible_library"}:
+    if pair_state in {"no_signal", "untrusted", "credible"}:
         target = replace(target, istd_pair="ISTD")
         targets = [target]
         targets.append(
             replace(
-                target, label="ISTD", mz=261.1, rt_min=6.5, rt_max=9.5,
-                is_istd=True, istd_pair="",
+                target,
+                label="ISTD",
+                mz=261.1,
+                rt_min=6.5,
+                rt_max=9.5,
+                is_istd=True,
+                istd_pair="",
             )
         )
-    if pair_state in {"credible", "credible_library"}:
+    if pair_state in {"credible"}:
         expected = {"SampleA": (9.3, 1000.0), "SampleB": (9.4, 2500.0)}
     for sample in expected:
         (config.data_dir / f"{sample}.raw").write_bytes(sample.encode())
@@ -154,46 +149,29 @@ def test_run_no_nl_reference_selects_each_samples_component(
                 istd_peak = height * np.exp(-0.5 * ((rt - (apex - 1.0)) / 0.06) ** 2)
                 return rt, 1.0 + istd_peak
             width = (
-                np.where(rt < apex, 0.04, 0.2)
-                if pair_state == "shape_review" else 0.06
+                np.where(rt < apex, 0.04, 0.2) if pair_state == "shape_review" else 0.06
             )
             signal = height * np.exp(-0.5 * ((rt - apex) / width) ** 2)
             if pair_state == "reference_impulse":
                 signal[np.abs(rt - apex) > 0.2] = 0.0
                 signal[np.argmin(np.abs(rt - (apex + 0.4)))] = height * 10
                 return rt, signal
-            other_apex = (
-                apex - 0.3
-                if pair_state in {"credible", "credible_library"}
-                else apex + 1.0
-            )
+            other_apex = apex - 0.3 if pair_state in {"credible"} else apex + 1.0
             interferent = height * 4 * np.exp(-0.5 * ((rt - other_apex) / 0.06) ** 2)
             return rt, 1.0 + signal + interferent
 
         def iter_ms2_scans(self, rt_min, rt_max):
             pytest.fail("no-NL must not query MS2")
 
-    monkeypatch.setattr(
-        _OPEN_RAW_SEAM, lambda path, _dll, **_kwargs: Raw(path.stem)
-    )
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda path, _dll, **_kwargs: Raw(path.stem))
     monkeypatch.setattr(
         "xic_extractor.extraction.istd_prepass.open_raw",
         lambda path, _dll, **_kwargs: Raw(path.stem),
     )
-    library = {}
-    if pair_state == "credible_library":
-        library[(target.label, "analyte")] = LibraryEntry(
-            config_hash="fixture", target_label=target.label, role="analyte",
-            istd_pair="ISTD", median_delta_rt=0.7, sigma_delta_rt=0.01,
-            median_abs_rt=None, sigma_abs_rt=None, n_samples=10,
-            updated_at="fixture",
-        )
-    output = extractor.run(config, targets, rt_prior_library=library)
+    output = extractor.run(config, targets)
 
     assert {file.sample_name for file in output.file_results} == set(expected)
     assert all(file.error is None for file in output.file_results)
-    with config.output_csv.open(encoding="utf-8-sig", newline="") as handle:
-        published = {row["SampleName"]: row for row in csv.DictReader(handle)}
     areas = {}
     for file in output.file_results:
         result = file.results[target.label]
@@ -202,19 +180,13 @@ def test_run_no_nl_reference_selects_each_samples_component(
         )
         if pair_state == "shape_review":
             projection = result.targeted_product_projection
-            assert projection is not None and not projection.counted_detection
+            assert projection is not None and projection.counted_detection
+            assert projection.review_state == "flagged"
+            assert "trace_morphology_review" in projection.review_reasons
         if pair_state == "same_reference":
             other = file.results["SameReference"]
             assert other.reported_rt == result.reported_rt
             assert other.reported_peak_area == result.reported_peak_area
-            assert float(published[file.sample_name]["SameReference_RT"]) == (
-                pytest.approx(result.reported_rt, abs=0.0001)
-            )
-        if pair_state == "credible_library":
-            assert result.prior_rt is None
-            assert result.peak_result.selection_reference_rt == pytest.approx(
-                expected[file.sample_name][0], abs=0.01
-            )
         if pair_state in {"no_signal", "untrusted"}:
             assert result.peak_result.paired_istd_anchor_rt is None
             assert result.peak_result.selection_reference_rt == pytest.approx(9.0)
@@ -225,13 +197,6 @@ def test_run_no_nl_reference_selects_each_samples_component(
         )
         assert result.reported_peak_start == physical.facts.left_rt_min
         assert result.reported_peak_end == physical.facts.right_rt_min
-        row = published[file.sample_name]
-        assert float(row[f"{target.label}_RT"]) == pytest.approx(
-            result.reported_rt, abs=0.0001
-        )
-        assert float(row[f"{target.label}_Area"]) == pytest.approx(
-            result.reported_peak_area, abs=0.01
-        )
         areas[file.sample_name] = result.reported_peak_area
     assert areas["SampleB"] == pytest.approx(areas["SampleA"] * 2.5, rel=0.01)
 
@@ -242,7 +207,7 @@ def test_process_file_opens_raw_with_expected_acquisition_source(
 ) -> None:
     from xic_extractor.extraction.target_extraction import process_file
 
-    config = _config(tmp_path, keep_intermediate_csv=False)
+    config = _config(tmp_path)
     raw_path = config.data_dir / "SampleA.raw"
     raw_path.write_bytes(b"identity-bound-raw")
     source = build_acquisition_source_identity(
@@ -309,7 +274,7 @@ def test_acquire_passes_expected_sources_to_serial_backend(
     from xic_extractor import extractor
     from xic_extractor.extraction import serial_backend
 
-    config = _config(tmp_path, keep_intermediate_csv=False)
+    config = _config(tmp_path)
     raw_path = config.data_dir / "SampleA.raw"
     raw_path.write_bytes(b"identity-bound-raw")
     source = build_acquisition_source_identity(
@@ -340,215 +305,10 @@ def test_acquire_passes_expected_sources_to_serial_backend(
         config,
         [_target("Analyte")],
         injection_order={"SampleA": 1},
-        rt_prior_library={},
         acquisition_sources_by_sample={"SampleA": expectation},
     )
 
     assert captured["acquisition_sources_by_sample"] == {"SampleA": expectation}
-
-
-def test_acquire_applies_targeted_ms1_shape_identity_support_tsv(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from xic_extractor import extractor
-    from xic_extractor.extraction import serial_backend
-
-    support_path = tmp_path / "targeted_ms1_shape_identity.tsv"
-    config = ExtractionConfig(
-        **{
-            **_config(tmp_path, keep_intermediate_csv=False).__dict__,
-            "targeted_ms1_shape_identity_support_tsv": support_path,
-            "targeted_ms1_shape_identity_activation_policy": ("limited_5hmdc_5medc"),
-        }
-    )
-    (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
-    targets = [_target("Analyte")]
-    returned = RunOutput(file_results=[], diagnostics=[])
-    supports = (object(),)
-    calls: dict[str, object] = {}
-
-    def _fake_run_serial(
-        config_arg: ExtractionConfig,
-        targets_arg: list[Target],
-        *,
-        raw_paths: list[Path],
-        progress_callback=None,
-        should_stop=None,
-        injection_order=None,
-        rt_prior_library=None,
-        model_selection_expected_diff_approvals=None,
-    ) -> RunOutput:
-        calls["serial_output_written"] = False
-        return returned
-
-    def _fake_load_supports(path: Path, *, activation_policy: str):
-        calls["support_path"] = path
-        calls["activation_policy"] = activation_policy
-        return supports
-
-    def _fake_apply_supports(output, *, targets, supports):
-        calls["projection_input"] = output
-        calls["projection_targets"] = targets
-        calls["projection_supports"] = supports
-        return output
-
-    def _fake_write_outputs(config_arg, targets_arg, output):
-        calls["written_output"] = output
-
-    monkeypatch.setattr(serial_backend, "run_serial", _fake_run_serial)
-    monkeypatch.setattr(
-        "xic_extractor.extraction.pipeline.load_targeted_ms1_shape_identity_supports",
-        _fake_load_supports,
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.pipeline.apply_targeted_ms1_shape_identity_projection",
-        _fake_apply_supports,
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.pipeline.write_outputs",
-        _fake_write_outputs,
-    )
-
-    output = extractor.acquire(config, targets)
-
-    assert output is returned
-    assert calls["support_path"] == support_path
-    assert calls["activation_policy"] == "limited_5hmdc_5medc"
-    assert calls["projection_input"] is returned
-    assert calls["projection_targets"] == targets
-    assert calls["projection_supports"] == supports
-    assert "written_output" not in calls
-
-
-def test_acquire_limited_shape_identity_policy_without_support_tsv_keeps_output(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from xic_extractor import extractor
-    from xic_extractor.extraction import serial_backend
-
-    config = ExtractionConfig(
-        **{
-            **_config(tmp_path, keep_intermediate_csv=False).__dict__,
-            "targeted_ms1_shape_identity_activation_policy": ("limited_5hmdc_5medc"),
-        }
-    )
-    (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
-    targets = [_target("Analyte")]
-    returned = RunOutput(file_results=[], diagnostics=[])
-    calls: dict[str, object] = {}
-
-    def _fake_run_serial(
-        config_arg: ExtractionConfig,
-        targets_arg: list[Target],
-        *,
-        raw_paths: list[Path],
-        progress_callback=None,
-        should_stop=None,
-        injection_order=None,
-        rt_prior_library=None,
-        model_selection_expected_diff_approvals=None,
-    ) -> RunOutput:
-        return returned
-
-    def _unexpected_load_supports(*_args, **_kwargs):
-        raise AssertionError("support loader must not run without support TSV")
-
-    def _unexpected_apply_supports(*_args, **_kwargs):
-        raise AssertionError("projection must not run without support TSV")
-
-    def _fake_write_outputs(config_arg, targets_arg, output):
-        calls["written_output"] = output
-
-    monkeypatch.setattr(serial_backend, "run_serial", _fake_run_serial)
-    monkeypatch.setattr(
-        "xic_extractor.extraction.pipeline.load_targeted_ms1_shape_identity_supports",
-        _unexpected_load_supports,
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.pipeline.apply_targeted_ms1_shape_identity_projection",
-        _unexpected_apply_supports,
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.pipeline.write_outputs",
-        _fake_write_outputs,
-    )
-
-    output = extractor.acquire(config, targets)
-
-    assert output is returned
-    assert "written_output" not in calls
-
-
-def test_acquire_returns_projected_output_without_publishing(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from xic_extractor import extractor
-    from xic_extractor.extraction import serial_backend
-
-    config = _config(tmp_path, keep_intermediate_csv=False)
-    (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
-    targets = [_target("Analyte")]
-    returned = RunOutput(file_results=[], diagnostics=[])
-
-    monkeypatch.setattr(
-        serial_backend,
-        "run_serial",
-        lambda *_args, **_kwargs: returned,
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.pipeline.write_outputs",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("acquisition must not publish final artifacts")
-        ),
-    )
-
-    assert extractor.acquire(config, targets) is returned
-
-
-def test_acquire_reports_invalid_targeted_ms1_shape_identity_support_as_config_error(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from xic_extractor import extractor
-    from xic_extractor.extraction import serial_backend
-
-    support_path = tmp_path / "targeted_ms1_shape_identity.tsv"
-    config = ExtractionConfig(
-        **{
-            **_config(tmp_path, keep_intermediate_csv=False).__dict__,
-            "targeted_ms1_shape_identity_support_tsv": support_path,
-        }
-    )
-    (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
-    targets = [_target("Analyte")]
-    returned = RunOutput(file_results=[], diagnostics=[])
-
-    def _fake_run_serial(
-        config_arg: ExtractionConfig,
-        targets_arg: list[Target],
-        *,
-        raw_paths: list[Path],
-        progress_callback=None,
-        should_stop=None,
-        injection_order=None,
-        rt_prior_library=None,
-        model_selection_expected_diff_approvals=None,
-    ) -> RunOutput:
-        return returned
-
-    monkeypatch.setattr(serial_backend, "run_serial", _fake_run_serial)
-    monkeypatch.setattr(
-        "xic_extractor.extraction.pipeline.load_targeted_ms1_shape_identity_supports",
-        lambda _path, *, activation_policy: (_ for _ in ()).throw(
-            ValueError("missing required columns")
-        ),
-    )
-
-    with pytest.raises(ConfigError, match="missing required columns"):
-        extractor.acquire(config, targets)
 
 
 def test_acquire_resolves_scoring_inputs_before_backend(
@@ -558,39 +318,20 @@ def test_acquire_resolves_scoring_inputs_before_backend(
     from xic_extractor import extractor
     from xic_extractor.extraction import serial_backend
 
-    config = _config(tmp_path, keep_intermediate_csv=False)
+    config = _config(tmp_path)
     config = ExtractionConfig(
         **{
             **config.__dict__,
             "injection_order_source": tmp_path / "sample_info.csv",
-            "rt_prior_library_path": tmp_path / "rt_prior_library.csv",
             "config_hash": "abcd1234",
         }
     )
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [_target("Analyte")]
-    library = {
-        ("Analyte", "Analyte"): LibraryEntry(
-            config_hash="abcd1234",
-            target_label="Analyte",
-            role="Analyte",
-            istd_pair="",
-            median_delta_rt=None,
-            sigma_delta_rt=None,
-            median_abs_rt=8.5,
-            sigma_abs_rt=0.1,
-            n_samples=3,
-            updated_at="2026-05-07",
-        )
-    }
 
     monkeypatch.setattr(
         "xic_extractor.extraction.targeted_inputs.read_injection_order",
         lambda path: {"SampleA": 1},
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_inputs.load_library",
-        lambda path, config_hash: library,
     )
 
     def _fake_run_serial(
@@ -601,15 +342,12 @@ def test_acquire_resolves_scoring_inputs_before_backend(
         progress_callback=None,
         should_stop=None,
         injection_order=None,
-        rt_prior_library=None,
-        model_selection_expected_diff_approvals=None,
     ) -> RunOutput:
         assert config_arg is config
         assert targets_arg is targets
         assert [path.name for path in raw_paths] == ["SampleA.raw"]
         assert injection_order == {"SampleA": 1}
-        assert rt_prior_library == library
-        assert model_selection_expected_diff_approvals is None
+
         return RunOutput(file_results=[], diagnostics=[])
 
     monkeypatch.setattr(serial_backend, "run_serial", _fake_run_serial)
@@ -627,7 +365,7 @@ def test_acquire_resolves_sample_metadata_source_as_injection_order(
     from xic_extractor.extraction import serial_backend
     from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
 
-    config = _config(tmp_path, keep_intermediate_csv=False)
+    config = _config(tmp_path)
     sample_metadata_path = tmp_path / "sample_metadata.tsv"
     config = ExtractionConfig(
         **{
@@ -667,14 +405,12 @@ def test_acquire_resolves_sample_metadata_source_as_injection_order(
         progress_callback=None,
         should_stop=None,
         injection_order=None,
-        rt_prior_library=None,
-        model_selection_expected_diff_approvals=None,
     ) -> RunOutput:
         assert config_arg is config
         assert targets_arg is targets
         assert [path.name for path in raw_paths] == ["RawA.raw"]
         assert injection_order == {"SampleA": 7, "RawA": 7}
-        assert rt_prior_library == {}
+
         return RunOutput(file_results=[], diagnostics=[])
 
     monkeypatch.setattr(serial_backend, "run_serial", _fake_run_serial)
@@ -684,75 +420,12 @@ def test_acquire_resolves_sample_metadata_source_as_injection_order(
     assert output.file_results == []
 
 
-def test_target_pair_rt_calibration_fences_legacy_rt_prior_library(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from xic_extractor import extractor
-    from xic_extractor.extraction import serial_backend
-
-    config = _config(tmp_path, keep_intermediate_csv=False)
-    config = ExtractionConfig(
-        **{
-            **config.__dict__,
-            "rt_prior_library_path": tmp_path / "rt_prior_library.csv",
-            "target_pair_rt_calibration_path": (
-                tmp_path / "target_pair_rt_calibration.tsv"
-            ),
-            "config_hash": "abcd1234",
-        }
-    )
-    (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
-    assert config.target_pair_rt_calibration_path is not None
-    config.target_pair_rt_calibration_path.write_text(
-        "\t".join(TARGET_PAIR_RT_CALIBRATION_FIELDS) + "\n",
-        encoding="utf-8",
-    )
-    targets = [_target("Analyte")]
-    injected_library = {
-        ("Analyte", "analyte"): LibraryEntry(
-            config_hash="abcd1234",
-            target_label="Analyte",
-            role="analyte",
-            istd_pair="ISTD",
-            median_delta_rt=0.25,
-            sigma_delta_rt=0.05,
-            median_abs_rt=None,
-            sigma_abs_rt=None,
-            n_samples=8,
-            updated_at="2026-06-03",
-        )
-    }
-    monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_inputs.load_library",
-        lambda path, config_hash: injected_library,
-    )
-
-    def _fake_run_serial(
-        config_arg: ExtractionConfig,
-        targets_arg: list[Target],
-        *,
-        raw_paths: list[Path],
-        progress_callback=None,
-        should_stop=None,
-        injection_order=None,
-        rt_prior_library=None,
-        model_selection_expected_diff_approvals=None,
-    ) -> RunOutput:
-        assert rt_prior_library == {}
-        return RunOutput(file_results=[], diagnostics=[])
-
-    monkeypatch.setattr(serial_backend, "run_serial", _fake_run_serial)
-
-    extractor.acquire(config, targets, rt_prior_library=injected_library)
-
-
 def test_resolve_injection_order_returns_empty_dict_without_raw_files(
     tmp_path: Path,
 ) -> None:
     from xic_extractor.extraction.targeted_inputs import resolve_injection_order
 
-    config = _config(tmp_path, keep_intermediate_csv=False)
+    config = _config(tmp_path)
 
     assert resolve_injection_order(config, [], None) == {}
 
@@ -763,7 +436,7 @@ def test_serial_backend_keeps_sorted_raw_output_order(
 ) -> None:
     from xic_extractor.extractor import acquire
 
-    config = _config(tmp_path, keep_intermediate_csv=False)
+    config = _config(tmp_path)
     (config.data_dir / "B.raw").write_text("", encoding="utf-8")
     (config.data_dir / "A.raw").write_text("", encoding="utf-8")
     targets = [_target("Analyte")]
@@ -783,7 +456,7 @@ def test_per_file_result_primitive_returns_worker_payload_and_is_pickleable(
 ) -> None:
     from xic_extractor.extraction.target_extraction import extract_raw_file_result
 
-    config = _config(tmp_path, keep_intermediate_csv=False)
+    config = _config(tmp_path)
     raw_path = config.data_dir / "SampleA.raw"
     raw_path.write_text("", encoding="utf-8")
     targets = [_target("Analyte")]
@@ -815,7 +488,7 @@ def test_per_file_result_primitive_captures_file_errors(
 ) -> None:
     from xic_extractor.extraction.target_extraction import extract_raw_file_result
 
-    config = _config(tmp_path, keep_intermediate_csv=False)
+    config = _config(tmp_path)
     raw_path = config.data_dir / "Bad.raw"
     raw_path.write_text("", encoding="utf-8")
     targets = [_target("Analyte")]
@@ -843,7 +516,7 @@ def test_per_file_result_primitive_captures_file_errors(
     assert result.diagnostics[0].issue == "FILE_ERROR"
 
 
-def _config(tmp_path: Path, *, keep_intermediate_csv: bool) -> ExtractionConfig:
+def _config(tmp_path: Path) -> ExtractionConfig:
     data_dir = tmp_path / "raw"
     output_dir = tmp_path / "output"
     dll_dir = tmp_path / "dll"
@@ -861,7 +534,6 @@ def _config(tmp_path: Path, *, keep_intermediate_csv: bool) -> ExtractionConfig:
         peak_min_prominence_ratio=0.10,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
-        keep_intermediate_csv=keep_intermediate_csv,
     )
 
 
@@ -877,24 +549,6 @@ def _target(label: str) -> Target:
         nl_ppm_max=None,
         is_istd=False,
         istd_pair="",
-    )
-
-
-def _expected_diff_approval() -> ExpectedDiffApprovalRecord:
-    return ExpectedDiffApprovalRecord(
-        stable_row_id="SampleA|Analyte|expected-diff",
-        sample_name="SampleA",
-        target_label="Analyte",
-        legacy_selected_candidate_id="legacy",
-        successor_selected_candidate_id="successor",
-        public_outputs_touched=("selected rt", "area", "final matrix value"),
-        matrix_value_impact="area_value_changed",
-        evidence_sources=("ms1_trace",),
-        evidence_summary="approved expected-diff fixture",
-        validation_tier="targeted_benchmark",
-        reviewer_role="implementation-contract-reviewer",
-        reviewer_verdict="approved",
-        final_label="expected_diff",
     )
 
 

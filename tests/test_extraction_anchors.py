@@ -1,8 +1,9 @@
-from xic_extractor.extraction.anchors import apply_anchor_mismatch_penalty
+from tests.test_result_assembly import _target
+from xic_extractor.extraction.anchors import paired_anchor_mismatch_diagnostic
 from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 
 
-def test_anchor_mismatch_penalty_syncs_score_breakdown_confidence_and_caps() -> None:
+def test_anchor_mismatch_is_diagnostic_without_changing_quantification() -> None:
     peak_result = PeakDetectionResult(
         status="OK",
         peak=PeakResult(
@@ -28,17 +29,16 @@ def test_anchor_mismatch_penalty_syncs_score_breakdown_confidence_and_caps() -> 
         ),
     )
 
-    downgraded = apply_anchor_mismatch_penalty(
+    diagnostic = paired_anchor_mismatch_diagnostic(
+        "SampleA",
+        _target(),
         peak_result,
-        "Paired analyte peak RT 13.060 min deviates from anchor",
+        reference_rt=10.0,
+        anchor_rt=10.0,
+        anchor_used=True,
+        strict_preferred_rt=True,
     )
-
-    breakdown = dict(downgraded.score_breakdown)
-    assert downgraded.confidence == "VERY_LOW"
-    assert breakdown["Final Confidence"] == "VERY_LOW"
-    assert breakdown["Caps"] == "anchor_mismatch_cap"
-    assert breakdown["Concerns"] == "anchor_mismatch"
-    assert breakdown["Raw Score"] == "45"
-    assert breakdown["Negative Points"] == "45"
-    assert downgraded.reason.startswith("decision: review only, not counted")
-    assert "decision: accepted" not in downgraded.reason
+    assert diagnostic is not None and diagnostic.issue == "ANCHOR_RT_MISMATCH"
+    assert peak_result.confidence == "HIGH"
+    assert peak_result.peak.area == 8000.0
+    assert dict(peak_result.score_breakdown)["Raw Score"] == "90"

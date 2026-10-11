@@ -81,7 +81,7 @@ def test_raw_process_collector_does_not_schedule_when_already_cancelled(
         config,
         (_target("Analyte"),),
         [tmp_path / "A.raw"],
-        ScoringInputs({}, {}, {}),
+        ScoringInputs(injection_order={}, istd_rts_by_sample={}),
         should_stop=lambda: True,
         runner=_runner,
     )

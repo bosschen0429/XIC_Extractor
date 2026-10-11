@@ -21,3 +21,12 @@ def _clear_outer_git_repository_bindings(
     for key in tuple(os.environ):
         if key.startswith("GIT_"):
             monkeypatch.delenv(key, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_raw_reader_assembly_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fake DLL loads must not make later tests skip the real assembly loader."""
+    from xic_extractor import raw_reader
+
+    # Register the original state for teardown without changing in-test caching.
+    monkeypatch.setattr(raw_reader, "_ASSEMBLIES_LOADED", raw_reader._ASSEMBLIES_LOADED)

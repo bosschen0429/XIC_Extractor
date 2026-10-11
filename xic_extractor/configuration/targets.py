@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,18 +17,31 @@ from xic_extractor.configuration.parsing import (
 
 LOGGER = logging.getLogger(__name__)
 
-ISOTOPE_LABEL_TYPES = frozenset({"deuterated", "heavy_non_deuterium", "unknown"})
-PAIRED_RT_RELATIONS = frozenset(
-    {"istd_not_later_than_pair", "learned_delta_only", "none"}
-)
 SAMPLE_APPLICABILITIES = frozenset({"all", "rna_containing"})
 
 
 def _read_targets(path: Path) -> list[Target]:
+    return _parse_target_rows(path, _read_target_rows(path))
+
+
+def parse_target_rows(
+    rows: Sequence[Mapping[str, str]], path: Path = Path("targets.csv")
+) -> tuple[Target, ...]:
+    """Validate an in-memory table with the same target and ISTD rules as CSV intake."""
+    return tuple(
+        _parse_target_rows(
+            path, [(number, dict(row)) for number, row in enumerate(rows, 2)]
+        )
+    )
+
+
+def _parse_target_rows(
+    path: Path, rows: list[tuple[int, dict[str, str]]]
+) -> list[Target]:
     targets: list[Target] = []
     seen: set[str] = set()
 
-    for row_number, row in _read_target_rows(path):
+    for row_number, row in rows:
         target = _parse_target_row(path, row_number, row)
         if target.label in seen:
             raise _config_error(
@@ -53,23 +67,7 @@ def _validate_target_relationships(path: Path, targets: list[Target]) -> None:
                 target.istd_pair,
                 "is_istd=true targets must not set istd_pair",
             )
-        if target.is_istd and target.paired_rt_relation != "none":
-            raise _config_error(
-                path,
-                row_number,
-                "paired_rt_relation",
-                target.paired_rt_relation,
-                "is_istd=true targets must leave paired_rt_relation blank",
-            )
         if not target.istd_pair:
-            if target.paired_rt_relation != "none":
-                raise _config_error(
-                    path,
-                    row_number,
-                    "paired_rt_relation",
-                    target.paired_rt_relation,
-                    "requires istd_pair",
-                )
             continue
         pair = by_label.get(target.istd_pair)
         if pair is None or not pair.is_istd:
@@ -79,17 +77,6 @@ def _validate_target_relationships(path: Path, targets: list[Target]) -> None:
                 "istd_pair",
                 target.istd_pair,
                 "must reference a target with is_istd=true",
-            )
-        if (
-            target.paired_rt_relation == "istd_not_later_than_pair"
-            and pair.isotope_label_type != "deuterated"
-        ):
-            raise _config_error(
-                path,
-                row_number,
-                "paired_rt_relation",
-                target.paired_rt_relation,
-                "requires paired ISTD isotope_label_type=deuterated",
             )
 
 
@@ -138,22 +125,6 @@ def _parse_target_row(path: Path, row_number: int, row: dict[str, str]) -> Targe
         nl_ppm_max=nl_ppm_max,
         is_istd=is_istd,
         istd_pair=values["istd_pair"],
-        isotope_label_type=_parse_target_metadata_enum(
-            path,
-            row_number,
-            "isotope_label_type",
-            values["isotope_label_type"],
-            ISOTOPE_LABEL_TYPES,
-            default="unknown",
-        ),
-        paired_rt_relation=_parse_target_metadata_enum(
-            path,
-            row_number,
-            "paired_rt_relation",
-            values["paired_rt_relation"],
-            PAIRED_RT_RELATIONS,
-            default="none",
-        ),
         sample_applicability=_parse_target_metadata_enum(
             path,
             row_number,

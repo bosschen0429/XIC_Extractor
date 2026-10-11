@@ -88,8 +88,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"{blank_dir}: blank directory does not exist", file=sys.stderr)
             return 2
         blank_raws = sorted(
-            p for p in blank_dir.iterdir()
-            if p.is_file() and p.suffix.lower() == ".raw"
+            p for p in blank_dir.iterdir() if p.is_file() and p.suffix.lower() == ".raw"
         )
         if not blank_raws:
             print(
@@ -296,8 +295,16 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--nl-min-intensity-ratio", type=_positive_float)
     parser.add_argument("--seed-rt-gap-min", type=_positive_float)
     parser.add_argument("--ms1-search-padding-min", type=_positive_float)
-    parser.add_argument("--rt-min", type=_rt_bound)
-    parser.add_argument("--rt-max", type=_rt_bound)
+    parser.add_argument(
+        "--rt-min",
+        type=_rt_bound,
+        help="Optional acquisition crop start (default: each RAW start).",
+    )
+    parser.add_argument(
+        "--rt-max",
+        type=_rt_bound,
+        help="Optional acquisition crop end (default: each RAW end).",
+    )
     parser.add_argument(
         "--resolver-mode",
         type=_resolver_mode,
@@ -348,11 +355,11 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         ),
     )
     args = parser.parse_args(argv)
-    rt_min = args.rt_min if args.rt_min is not None else 0.0
-    rt_max = args.rt_max if args.rt_max is not None else 999.0
     if (
-        args.preset is None or (args.rt_min is not None and args.rt_max is not None)
-    ) and rt_min > rt_max:
+        args.rt_min is not None
+        and args.rt_max is not None
+        and args.rt_min > args.rt_max
+    ):
         parser.error("rt-min must be <= rt-max")
     if args.preset is not None and any(
         value is not None
@@ -460,7 +467,7 @@ def _peak_config(
         smooth_window=15,
         smooth_polyorder=3,
         ms1_morphology_smoothing_window_points=int(
-            defaults["ms1_morphology_smoothing_window_points"]
+            defaults["signal_processing_window_points"]
         ),
         peak_rel_height=0.95,
         peak_min_prominence_ratio=0.10,

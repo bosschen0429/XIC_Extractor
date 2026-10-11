@@ -2,10 +2,6 @@ from xic_extractor.configuration.execution_profile import default_parallel_worke
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
-from xic_extractor.targeted_ms1_shape_identity_policy import (
-    EXPLICIT_SUPPORT_TSV_POLICY,
-    LIMITED_HMDC_MEDC_POLICY,
-)
 
 RESOLVER_MODES: tuple[str, ...] = (
     "savgol",
@@ -17,6 +13,7 @@ CANONICAL_RESOLVER_MODE = "local_minimum"
 def normalize_resolver_mode(value: str) -> str:
     """Accept the saved-settings alias; new effective settings use savgol."""
     return "savgol" if value == "legacy_savgol" else value
+
 
 ARBITRATED_RESOLVER_RETIRED_MESSAGE = (
     "arbitrated resolver mode is retired; legacy diagnostics use local_minimum. "
@@ -31,25 +28,12 @@ CANONICAL_SETTINGS_DEFAULTS: dict[str, str] = {
     "signal_processing_window_points": str(
         DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points
     ),
-    # Direct lookup compatibility for excluded callers that have not migrated.
-    # The settings loader maps this spelling one-way into the canonical key.
-    "ms1_morphology_smoothing_window_points": str(
-        DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points
-    ),
     "ms2_precursor_tol_da": "0.8",
     "nl_min_intensity_ratio": "0.01",
     "count_no_ms2_as_detected": "false",
     "injection_order_source": "",
     "rolling_window_size": "5",
     "dirty_matrix_mode": "false",
-    "rt_prior_library_path": "",
-    "target_pair_rt_calibration_path": "",
-    "model_selection_expected_diff_approval_registry": "",
-    "targeted_ms1_shape_identity_support_tsv": "",
-    "targeted_ms1_shape_identity_activation_policy": LIMITED_HMDC_MEDC_POLICY,
-    "emit_score_breakdown": "false",
-    "emit_review_report": "false",
-    "keep_intermediate_csv": "false",
     "nl_rt_anchor_search_margin_min": "2.0",
     "nl_rt_anchor_half_window_min": "1.0",
     "nl_fallback_half_window_min": "2.0",
@@ -67,10 +51,6 @@ CANONICAL_SETTINGS_DESCRIPTIONS: dict[str, str] = {
     "signal_processing_window_points": (
         "Canonical Gaussian smoothing window points (odd integer 3-999; default 15)"
     ),
-    "ms1_morphology_smoothing_window_points": (
-        "Legacy Gaussian15 alias for signal_processing_window_points; "
-        "do not use in new settings"
-    ),
     "ms2_precursor_tol_da": (
         "MS2 precursor m/z 半徑（Da，|scan precursor − 推算 precursor| 上限；"
         "方法隔離全寬 1.6 Da 對應名義半寬 0.8 Da）"
@@ -79,7 +59,8 @@ CANONICAL_SETTINGS_DESCRIPTIONS: dict[str, str] = {
         "NL product 強度至少為該 scan base peak 的比例（1% 排除 noise）"
     ),
     "count_no_ms2_as_detected": (
-        "是否將無 MS2 觸發的樣品算為偵測到（DDA 隨機性假陰性補救用）"
+        "相容性 evidence 設定；正式 Targeted product projection "
+        "不將 NO_MS2 算為偵測到，並非全域偵測開關"
     ),
     "injection_order_source": (
         "Sample 注射順序來源檔（CSV/XLSX 有 Sample_Name 與 Injection_Order 欄；"
@@ -87,32 +68,6 @@ CANONICAL_SETTINGS_DESCRIPTIONS: dict[str, str] = {
     ),
     "rolling_window_size": "ISTD RT prior 的滾動視窗半徑（±N 個注射）",
     "dirty_matrix_mode": "髒基質模式（放寬 S/N、收緊峰形；尿液等複雜基質用）",
-    "rt_prior_library_path": (
-        "developer/debug RT prior library CSV path; leave empty for normal use"
-    ),
-    "target_pair_rt_calibration_path": (
-        "target pair RT calibration TSV path for RT priors; "
-        "leave empty to disable"
-    ),
-    "model_selection_expected_diff_approval_registry": (
-        "Durable expected-diff approval registry TSV for selected-hypothesis "
-        "model selection; leave empty unless approved real-data evidence exists"
-    ),
-    "targeted_ms1_shape_identity_support_tsv": (
-        "Reviewed targeted_ms1_shape_identity support TSV for explicit "
-        "own-max same-peak product projection support. Leave empty to let the "
-        "limited default auto workflow decide eligible support rows."
-    ),
-    "targeted_ms1_shape_identity_activation_policy": (
-        "Activation policy for targeted MS1 shape identity support. "
-        f"Default {LIMITED_HMDC_MEDC_POLICY} runs the headless bounded auto "
-        "workflow when no support TSV is configured, restricting accepted "
-        f"support rows to 5-hmdC and 5-medC only. Use {EXPLICIT_SUPPORT_TSV_POLICY} "
-        "to preserve explicit support TSV behavior."
-    ),
-    "emit_score_breakdown": "是否輸出 Score Breakdown sheet（預設關閉）",
-    "emit_review_report": "是否輸出 Review Report HTML（預設關閉）",
-    "keep_intermediate_csv": "是否保留中間 CSV 檔（除錯用，預設關閉）",
     "nl_rt_anchor_search_margin_min": (
         "NL 錨定搜尋半徑（min）：以 rt_center ±此值搜尋 NL 確認的 MS2 作為 RT anchor"
     ),
@@ -125,3 +80,17 @@ CANONICAL_SETTINGS_DESCRIPTIONS: dict[str, str] = {
     "parallel_mode": "執行後端（serial 或 process；預設 process）",
     "parallel_workers": "Process mode worker 數量（>= 1；預設 CPU 核心數 - 1）",
 }
+
+
+METHOD_KEYS = (
+    "signal_processing_method",
+    "signal_processing_window_points",
+    "ms2_precursor_tol_da",
+    "nl_min_intensity_ratio",
+    "count_no_ms2_as_detected",
+    "nl_rt_anchor_search_margin_min",
+    "nl_rt_anchor_half_window_min",
+    "nl_fallback_half_window_min",
+    "rolling_window_size",
+    "dirty_matrix_mode",
+)

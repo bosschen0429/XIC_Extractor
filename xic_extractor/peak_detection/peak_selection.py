@@ -56,6 +56,7 @@ def select_peak_and_area(
     With no search recovery supplied, preferred-RT recovery is restricted to
     this candidate set, preserving the physical-candidate selection policy.
     """
+    retained_candidate_recovery = preferred_rt_recovery is None
     if preferred_rt_recovery is None:
         preferred_rt_recovery = preferred_rt_recovery_from_candidates(
             candidates_result,
@@ -72,18 +73,20 @@ def select_peak_and_area(
     if candidates_result.status == "OK":
         all_candidates = candidates_result.candidates
         result_for_output = candidates_result
-        if relaxed_candidate is not None and relaxed_search_result is not None:
-            relaxed_candidate, relaxed_search_result = (
-                mark_relaxed_candidate(
-                    relaxed_candidate,
-                    relaxed_search_result,
-                )
+        if (
+            not retained_candidate_recovery
+            and relaxed_candidate is not None
+            and relaxed_search_result is not None
+        ):
+            # External search can introduce a new proposal. Recovery within the
+            # supplied set must preserve the keys of already-bound evidence.
+            relaxed_candidate, relaxed_search_result = mark_relaxed_candidate(
+                relaxed_candidate,
+                relaxed_search_result,
             )
-            all_candidates, relaxed_candidate = (
-                append_or_merge_relaxed_candidate(
-                    all_candidates,
-                    relaxed_candidate,
-                )
+            all_candidates, relaxed_candidate = append_or_merge_relaxed_candidate(
+                all_candidates,
+                relaxed_candidate,
             )
             result_for_output = with_candidates(
                 candidates_result,
@@ -147,11 +150,9 @@ def select_peak_and_area(
         )
 
     if relaxed_candidate is not None and relaxed_search_result is not None:
-        relaxed_candidate, relaxed_search_result = (
-            mark_relaxed_candidate(
-                relaxed_candidate,
-                relaxed_search_result,
-            )
+        relaxed_candidate, relaxed_search_result = mark_relaxed_candidate(
+            relaxed_candidate,
+            relaxed_search_result,
         )
         if scoring_context_builder is not None:
             scored_relaxed_search = scoring_flow.score_with_context(
@@ -172,7 +173,9 @@ def select_peak_and_area(
                 confidence=scored_relaxed_search.confidence.value,
                 reason=scored_relaxed_search.reason,
                 severities=scored_relaxed_search.severities,
-                score_breakdown=score_breakdown_fields(scored_relaxed_search.evidence_score),
+                score_breakdown=score_breakdown_fields(
+                    scored_relaxed_search.evidence_score
+                ),
                 candidate_scores=candidate_scores,
                 selection_reference_rt=preferred_rt,
                 paired_istd_anchor_rt=paired_istd_anchor_rt,
@@ -262,7 +265,5 @@ def _with_added_proposal_source(
 ) -> PeakCandidate:
     return replace(
         candidate,
-        proposal_sources=tuple(
-            dict.fromkeys((*candidate.proposal_sources, source))
-        ),
+        proposal_sources=tuple(dict.fromkeys((*candidate.proposal_sources, source))),
     )

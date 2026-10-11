@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import csv
+import io
+import json
 import os
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
-from xic_extractor.configuration.csv_io import TARGET_WRITE_FIELDS
-from xic_extractor.configuration.settings import migrate_settings_dict
-from xic_extractor.settings_schema import (
-    CANONICAL_SETTINGS_DEFAULTS,
-    CANONICAL_SETTINGS_DESCRIPTIONS,
+from xic_extractor.configuration.csv_io import (
+    TARGET_WRITE_FIELDS,
+    _read_settings,
 )
+from xic_extractor.configuration.settings import resolve_settings
+from xic_extractor.settings_schema import CANONICAL_SETTINGS_DESCRIPTIONS
 
 _PACKAGE_PARENT = Path(__file__).resolve().parent.parent
 
@@ -31,9 +35,7 @@ def _default_root() -> Path:
 
 ROOT = _default_root()
 _BUNDLE = (
-    Path(getattr(sys, "_MEIPASS"))
-    if getattr(sys, "frozen", False)
-    else _PACKAGE_PARENT
+    Path(getattr(sys, "_MEIPASS")) if getattr(sys, "frozen", False) else _PACKAGE_PARENT
 )
 
 CONFIG_DIR = ROOT / "config"
@@ -71,39 +73,114 @@ def _read_path(name: str, config_dir: Path | None = None) -> Path:
 
 
 def read_settings(*, config_dir: Path | None = None) -> dict[str, str]:
-    with _read_path("settings", config_dir).open(
-        newline="", encoding="utf-8-sig"
-    ) as handle:
-        raw = {
-            "parallel_workers": CANONICAL_SETTINGS_DEFAULTS["parallel_workers"],
-            **{row["key"]: row["value"] for row in csv.DictReader(handle)},
+    """Read CSV inputs only; normalization and admission belong to their consumers."""
+    return _read_settings(_read_path("settings", config_dir))
+
+
+def write_settings(
+    settings: dict[str, str], *, config_dir: Path | None = None
+) -> dict[str, str]:
+    """Persist Targeted settings only after the effective values pass validation."""
+    persisted, source, descriptions = _persisted_settings(config_dir)
+    values, _parsed, _warnings = resolve_settings(
+        persisted, settings, settings_path=source
+    )
+    _write_settings_rows(config_dir, values, descriptions)
+    return values
+
+
+def write_dll_dir(dll_dir: str, *, config_dir: Path | None = None) -> None:
+    """Persist the shared machine DLL location without admitting Targeted values."""
+    persisted, _source, descriptions = _persisted_settings(config_dir)
+    _write_settings_rows(config_dir, {**persisted, "dll_dir": dll_dir}, descriptions)
+
+
+def _persisted_settings(
+    config_dir: Path | None,
+) -> tuple[dict[str, str], Path, dict[str, str]]:
+    path = _runtime_dir(config_dir) / "settings.csv"
+    source = path if path.exists() else _read_path("settings", config_dir)
+    if not source.exists():
+        return {}, source, {}
+    with source.open(newline="", encoding="utf-8-sig") as handle:
+        descriptions = {
+            row["key"]: row.get("description", "") for row in csv.DictReader(handle)
         }
-    migrated, _warnings = migrate_settings_dict(raw)
-    return migrated
+    return _read_settings(source), source, descriptions
 
 
-def write_settings(settings: dict[str, str], *, config_dir: Path | None = None) -> None:
-    destination_dir = _runtime_dir(config_dir)
-    destination_dir.mkdir(parents=True, exist_ok=True)
-    path = destination_dir / "settings.csv"
-    source_path = path if path.exists() else _read_path("settings", config_dir)
-    existing: dict[str, dict[str, str]] = {}
-    if source_path.exists():
-        with source_path.open(newline="", encoding="utf-8-sig") as handle:
-            existing = {row["key"]: row for row in csv.DictReader(handle)}
-
-    with path.open("w", newline="", encoding="utf-8-sig") as handle:
-        writer = csv.DictWriter(handle, fieldnames=_SETTINGS_FIELDS)
-        writer.writeheader()
-        for key, value in settings.items():
-            writer.writerow(
-                {
-                    "key": key,
-                    "value": value,
-                    "description": existing.get(key, {}).get("description", "")
-                    or CANONICAL_SETTINGS_DESCRIPTIONS.get(key, ""),
-                }
+def _write_settings_rows(
+    config_dir: Path | None,
+    values: dict[str, str],
+    descriptions: dict[str, str],
+) -> None:
+    buffer = io.StringIO(newline="")
+    writer = csv.DictWriter(buffer, fieldnames=_SETTINGS_FIELDS)
+    writer.writeheader()
+    for key, value in values.items():
+        writer.writerow(
+            dict(
+                key=key,
+                value=value,
+                description=(
+                    descriptions.get(key)
+                    or CANONICAL_SETTINGS_DESCRIPTIONS.get(key, "")
+                ),
             )
+        )
+    _atomic_write(
+        _runtime_dir(config_dir) / "settings.csv", "\ufeff" + buffer.getvalue()
+    )
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    """Replace a local configuration file with a recoverable backup."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="",
+            dir=path.parent,
+            prefix=f".{path.stem}-",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if path.exists():
+            shutil.copy2(path, path.with_suffix(path.suffix + ".bak"))
+        os.replace(temporary_path, path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+def _read_json_object(path: Path) -> dict:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, ValueError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _write_json_object(path: Path, payload: dict) -> None:
+    _atomic_write(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+
+
+def read_preferences(*, config_dir: Path | None = None) -> dict:
+    return _read_json_object(_runtime_dir(config_dir) / "workbench.json")
+
+
+def write_preferences(values: dict, *, config_dir: Path | None = None) -> dict:
+    if set(values) - {"theme", "view"}:
+        raise ValueError("不支援此偏好設定；DLL 目錄由 settings.csv 管理。")
+    payload = read_preferences(config_dir=config_dir) | values
+    _write_json_object(_runtime_dir(config_dir) / "workbench.json", payload)
+    return payload
 
 
 def read_targets(*, config_dir: Path | None = None) -> list[dict[str, str]]:

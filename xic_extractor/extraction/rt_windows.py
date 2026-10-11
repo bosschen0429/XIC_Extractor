@@ -36,38 +36,20 @@ def get_rt_window(
     config: ExtractionConfig,
     *,
     sample_key: str,
-    reference_rt: float | None,
-    target_reference_rt: float | None = None,
-    sample_drift: float = 0.0,
+    target_reference_rt: float,
+    paired_istd_credible: bool = False,
 ) -> tuple[float, float, bool, float | None]:
     """Return (rt_min, rt_max, anchor_used, anchor_rt)."""
     if target.neutral_loss_da is None:
         # The configured center guides identity; acquisition retains its full
         # scope and the reference does not claim a measured NL anchor.
-        reference = (
-            target_reference_rt
-            if target_reference_rt is not None
-            else (target.rt_min + target.rt_max) / 2.0 + sample_drift
-        )
-        return target.rt_min, target.rt_max, False, reference
+        return target.rt_min, target.rt_max, False, target_reference_rt
     if target.nl_ppm_max is None:
         return target.rt_min, target.rt_max, False, None
 
-    rt_center = (target.rt_min + target.rt_max) / 2.0 + sample_drift
-    paired_reference_rt = _paired_reference_inside_target_window(
-        target,
-        reference_rt=reference_rt,
-    )
-    fallback_reference_rt = (
-        target_reference_rt
-        if target_reference_rt is not None
-        else paired_reference_rt
-        if paired_reference_rt is not None
-        else rt_center
-    )
-    anchor_reference_rt = (
-        target_reference_rt if target_reference_rt is not None else paired_reference_rt
-    )
+    # The caller has already completed current-sample reference selection.
+    rt_center = target_reference_rt
+    anchor_reference_rt = target_reference_rt if paired_istd_credible else None
     anchor_rt = find_nl_anchor_rt(
         raw,
         sample_key=sample_key,
@@ -91,35 +73,21 @@ def get_rt_window(
         ):
             half = config.nl_fallback_half_window_min
             return (
-                max(0.0, fallback_reference_rt - half),
-                fallback_reference_rt + half,
+                max(0.0, target_reference_rt - half),
+                target_reference_rt + half,
                 False,
-                fallback_reference_rt,
+                target_reference_rt,
             )
         half = config.nl_rt_anchor_half_window_min
         return max(0.0, anchor_rt - half), anchor_rt + half, True, anchor_rt
 
     half = config.nl_fallback_half_window_min
-    if reference_rt is not None:
-        return (
-            max(0.0, fallback_reference_rt - half),
-            fallback_reference_rt + half,
-            False,
-            fallback_reference_rt,
-        )
-    return max(0.0, rt_center - half), rt_center + half, False, None
-
-
-def _paired_reference_inside_target_window(
-    target: Target,
-    *,
-    reference_rt: float | None,
-) -> float | None:
-    if target.is_istd or not target.istd_pair or reference_rt is None:
-        return None
-    if target.rt_min <= reference_rt <= target.rt_max:
-        return reference_rt
-    return None
+    return (
+        max(0.0, target_reference_rt - half),
+        target_reference_rt + half,
+        False,
+        target_reference_rt if paired_istd_credible else None,
+    )
 
 
 def _paired_target_anchor_is_too_far_from_reference(

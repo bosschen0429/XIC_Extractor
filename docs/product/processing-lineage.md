@@ -101,8 +101,7 @@ This page owns:
 
 Other owners remain:
 
-- [`run-provenance.md`](run-provenance.md): the current Targeted
-  `method_manifest.json`, run metadata, and replay projection;
+- [`run-provenance.md`](run-provenance.md): Targeted workbook run metadata;
 - [`sample-metadata-qc.md`](sample-metadata-qc.md): canonical sample identity
   schema and lookup projection;
 - [`review-roundtrip.md`](review-roundtrip.md): typed review actions, review
@@ -201,12 +200,10 @@ numbers), with a type/version prefix. Its current content boundary is:
   contract, that content identity, and a canonical set of upstream artifact
   references. Equal bytes across attempts preserve content equality but never
   collapse artifact-instance identity;
-- the two artifact-envelope adapters are deliberately diagnostic-only. The
-  Targeted MS1-shape owner fixes the
-  `targeted_ms1_shape_identity` UTF-8 TSV bytes and role; the Pt Discovery
-  evidence CSV owner fixes the `pt_pattern_discovery_evidence` UTF-8 CSV
-  bytes and role. Callers cannot supply role/schema strings, and both owner APIs
-  require an owner-issued processing attempt;
+- the Pt Discovery evidence CSV artifact-envelope adapter is diagnostic-only.
+  Its owner fixes the `pt_pattern_discovery_evidence` UTF-8 CSV bytes and role.
+  Callers cannot supply role/schema strings; minting requires an owner-issued
+  processing attempt;
 - the sample-metadata owner mints `xic.sample` from the
   stable owner namespace, `sample_metadata` identity schema, and canonical
   `sample_name` key. Its `raw_stem` may resolve that key but is not identity
@@ -566,8 +563,8 @@ The model fails and must be narrowed or redrawn if:
 
 ## Current Implementation Gaps And Reuse
 
-- `method_manifest.json` and current output metadata retain useful settings,
-  paths, hashes, and replay context, but do not provide a product delivery seal.
+- Current output metadata retains useful settings, paths, and hashes, but does
+  not provide a product delivery seal.
   Diagnostic `run_id` / `source_run_id` labels are not processing identities.
 - `processing_identity.py` implements request, attempt, retry-predecessor, and
   artifact-closure identities. Its full-file source fingerprint and diagnostic
@@ -598,7 +595,7 @@ manifest rewrite, new persistence framework, or change to either writer.
 
 | Option | Decision | Reason |
 | --- | --- | --- |
-| Treat `method_manifest.json` or diagnostic `run_id` as the universal lineage owner | Rejected | They are current workflow/run projections and do not close attempt, decision, artifact, delivery-cell, or seal identity |
+| Treat run metadata or diagnostic `run_id` as the universal lineage owner | Rejected | They are current workflow/run projections and do not close attempt, decision, artifact, delivery-cell, or seal identity |
 | Choose a database, cache format, or archive layout first | Rejected | Physical fidelity, cost, and rebuild capability remain unanswered by #124 |
 | Retain every intermediate artifact forever | Rejected | It hides dependency semantics and commits storage cost before evidence; unreferenced, unreviewed artifacts may be evictable |
 | Define the minimum logical contract and test it through one no-write/no-RAW dual-projection tracer | Selected | It can falsify the shared model before persistence or writer integration |

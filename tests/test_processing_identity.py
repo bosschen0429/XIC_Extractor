@@ -13,7 +13,6 @@ import xic_extractor.processing_identity as processing_identity_module
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.target_identity import mint_target_list_snapshot
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
-from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.extraction.targeted_inputs import (
     TARGETED_PROCESSING_ALGORITHM_VERSION,
     TARGETED_PROCESSING_CONTRACT_VERSION,
@@ -22,9 +21,6 @@ from xic_extractor.extraction.targeted_inputs import (
     ResolvedTargetedInputs,
     build_targeted_processing_request_identity,
     resolve_targeted_inputs,
-)
-from xic_extractor.peak_detection.model_selection import (
-    ExpectedDiffApprovalRecord,
 )
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
@@ -454,8 +450,6 @@ def test_real_data_discovery_settings_change_processing_request_identity(
     path = _raw(tmp_path / "sample_a.raw", b"source-a")
     resolved = ResolvedTargetedInputs(
         injection_order={"sample_a": 1},
-        rt_prior_library={},
-        model_selection_expected_diff_approvals=None,
     )
     settings = DiscoverySettings(
         neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474),
@@ -499,8 +493,6 @@ def test_adapter_input_key_change_invalidates_request_not_source_content(
         [original_path],
         resolved=ResolvedTargetedInputs(
             injection_order={"sample_a": 1},
-            rt_prior_library={},
-            model_selection_expected_diff_approvals=None,
         ),
     )
     renamed = _request(
@@ -508,8 +500,6 @@ def test_adapter_input_key_change_invalidates_request_not_source_content(
         [renamed_path],
         resolved=ResolvedTargetedInputs(
             injection_order={"renamed_sample": 1},
-            rt_prior_library={},
-            model_selection_expected_diff_approvals=None,
         ),
     )
 
@@ -517,7 +507,7 @@ def test_adapter_input_key_change_invalidates_request_not_source_content(
     assert original.processing_request_id != renamed.processing_request_id
 
 
-def test_request_invalidates_changed_source_target_rt_prior_or_approval(
+def test_request_invalidates_changed_source_or_target_window(
     tmp_path: Path,
 ) -> None:
     first = _raw(tmp_path / "sample_a.raw", b"source-a")
@@ -535,37 +525,20 @@ def test_request_invalidates_changed_source_target_rt_prior_or_approval(
         resolved=inputs,
         targets=(replace(_target(), mz=251.0),),
     )
-    prior = inputs.rt_prior_library[("Analyte", "analyte")]
     rt_changed = _request(
         config,
         paths,
-        resolved=replace(
-            inputs,
-            rt_prior_library={
-                ("Analyte", "analyte"): replace(prior, median_abs_rt=2.5)
-            },
-        ),
-    )
-    approval = inputs.model_selection_expected_diff_approvals["approval-1"]
-    approval_changed = _request(
-        config,
-        paths,
-        resolved=replace(
-            inputs,
-            model_selection_expected_diff_approvals={
-                "approval-1": replace(approval, evidence_summary="new evidence")
-            },
-        ),
+        resolved=inputs,
+        targets=(replace(_target(), rt_max=2.5),),
     )
 
     changed_ids = {
         substituted.processing_request_id,
         target_changed.processing_request_id,
         rt_changed.processing_request_id,
-        approval_changed.processing_request_id,
     }
     assert baseline.processing_request_id not in changed_ids
-    assert len(changed_ids) == 4
+    assert len(changed_ids) == 3
 
 
 def test_request_pins_owner_target_snapshot_order(tmp_path: Path) -> None:
@@ -575,8 +548,6 @@ def test_request_pins_owner_target_snapshot_order(tmp_path: Path) -> None:
     raw_path = _raw(tmp_path / "sample_a.raw", b"source-a")
     resolved = ResolvedTargetedInputs(
         injection_order={"sample_a": 1},
-        rt_prior_library={},
-        model_selection_expected_diff_approvals=None,
     )
 
     forward = _request(
@@ -596,38 +567,6 @@ def test_request_pins_owner_target_snapshot_order(tmp_path: Path) -> None:
     assert "target_list_snapshot" in forward.normalized_scientific_inputs_json
 
 
-def test_request_invalidates_ms1_shape_support_content_or_policy(
-    tmp_path: Path,
-) -> None:
-    raw_path = _raw(tmp_path / "sample_a.raw", b"source-a")
-    support_path = tmp_path / "shape-support.tsv"
-    support_path.write_bytes(b"support")
-    config = replace(
-        _config(tmp_path),
-        targeted_ms1_shape_identity_support_tsv=support_path,
-    )
-    resolved = ResolvedTargetedInputs(
-        injection_order={"sample_a": 1},
-        rt_prior_library={},
-        model_selection_expected_diff_approvals=None,
-    )
-    baseline = _request(config, [raw_path], resolved=resolved)
-
-    support_path.write_bytes(b"changed-support")
-    content_changed = _request(config, [raw_path], resolved=resolved)
-    policy_changed = _request(
-        replace(
-            config,
-            targeted_ms1_shape_identity_activation_policy="limited_5hmdc_5medc",
-        ),
-        [raw_path],
-        resolved=resolved,
-    )
-
-    assert content_changed.processing_request_id != baseline.processing_request_id
-    assert policy_changed.processing_request_id != content_changed.processing_request_id
-
-
 def test_request_excludes_output_callback_and_execution_policy(
     tmp_path: Path,
 ) -> None:
@@ -644,45 +583,11 @@ def test_request_excludes_output_callback_and_execution_policy(
             diagnostics_csv=tmp_path / "elsewhere" / "diagnostics.csv",
             parallel_mode="process",
             parallel_workers=8,
-            emit_review_report=True,
         ),
         paths,
     )
 
     assert execution_changed == baseline
-
-    inactive_policy_changed = _request(
-        replace(
-            config,
-            targeted_ms1_shape_identity_activation_policy="limited_5hmdc_5medc",
-        ),
-        paths,
-    )
-    assert inactive_policy_changed == baseline
-
-
-def test_none_and_empty_approval_snapshots_are_same_effective_input(
-    tmp_path: Path,
-) -> None:
-    path = _raw(tmp_path / "sample_a.raw", b"source-a")
-    config = _config(tmp_path)
-    base = ResolvedTargetedInputs(
-        injection_order={"sample_a": 1},
-        rt_prior_library={},
-        model_selection_expected_diff_approvals=None,
-    )
-
-    absent = _request(config, [path], resolved=base)
-    empty = _request(
-        config,
-        [path],
-        resolved=replace(
-            base,
-            model_selection_expected_diff_approvals={},
-        ),
-    )
-
-    assert absent == empty
 
 
 def test_request_snapshot_is_immutable_after_caller_mapping_mutation(
@@ -697,11 +602,7 @@ def test_request_snapshot_is_immutable_after_caller_mapping_mutation(
     request = _request(config, paths, resolved=inputs)
     original_id = request.processing_request_id
 
-    inputs.rt_prior_library[("Analyte", "analyte")] = replace(
-        inputs.rt_prior_library[("Analyte", "analyte")],
-        median_abs_rt=9.0,
-    )
-    inputs.model_selection_expected_diff_approvals.clear()
+    inputs.injection_order["sample_a"] = 9
 
     assert request.processing_request_id == original_id
     assert _request(config, paths, resolved=inputs).processing_request_id != original_id
@@ -741,18 +642,6 @@ def test_missing_ambiguous_or_rebound_inputs_fail_closed(tmp_path: Path) -> None
     with pytest.raises(IdentityContractError, match="unable to hash"):
         _source_identity(tmp_path / "missing.raw")
 
-    approval = _approval()
-    with pytest.raises(IdentityContractError, match="approval mapping key"):
-        _request(
-            config,
-            [first],
-            resolved=ResolvedTargetedInputs(
-                injection_order={"sample_a": 1},
-                rt_prior_library={},
-                model_selection_expected_diff_approvals={"wrong-key": approval},
-            ),
-        )
-
     source = _source_identity(first)
     with pytest.raises(IdentityContractError, match="rebind"):
         replace(source, byte_size=source.byte_size + 1)
@@ -762,8 +651,6 @@ def test_missing_ambiguous_or_rebound_inputs_fail_closed(tmp_path: Path) -> None
         [first],
         resolved=ResolvedTargetedInputs(
             injection_order={"sample_a": 1},
-            rt_prior_library={},
-            model_selection_expected_diff_approvals=None,
         ),
     )
     with pytest.raises(IdentityContractError, match="rebind"):
@@ -881,8 +768,6 @@ def test_sample_metadata_alias_projection_builds_targeted_request(
         config,
         raw_paths=[raw_path],
         injection_order=None,
-        rt_prior_library={},
-        model_selection_expected_diff_approvals=None,
     )
 
     request = _request(config, [raw_path], resolved=resolved)
@@ -901,8 +786,6 @@ def test_retry_issues_new_attempt_without_mutating_request_or_predecessor(
         [path],
         resolved=ResolvedTargetedInputs(
             injection_order={"sample_a": 1},
-            rt_prior_library={},
-            model_selection_expected_diff_approvals=None,
         ),
     )
     first_attempt = issue_processing_attempt(request)
@@ -925,8 +808,6 @@ def test_retry_issues_new_attempt_without_mutating_request_or_predecessor(
         [path],
         resolved=ResolvedTargetedInputs(
             injection_order={"sample_a": 1},
-            rt_prior_library={},
-            model_selection_expected_diff_approvals=None,
         ),
     )
     with pytest.raises(IdentityContractError, match="different processing request"):
@@ -1000,39 +881,6 @@ def _raw(path: Path, content: bytes) -> Path:
 def _resolved_inputs() -> ResolvedTargetedInputs:
     return ResolvedTargetedInputs(
         injection_order={"sample_a": 1, "sample_b": 2},
-        rt_prior_library={
-            ("Analyte", "analyte"): LibraryEntry(
-                config_hash="legacy-fragment",
-                target_label="Analyte",
-                role="analyte",
-                istd_pair="",
-                median_delta_rt=None,
-                sigma_delta_rt=None,
-                median_abs_rt=1.5,
-                sigma_abs_rt=0.2,
-                n_samples=8,
-                updated_at="2026-07-25T00:00:00Z",
-            )
-        },
-        model_selection_expected_diff_approvals={"approval-1": _approval()},
-    )
-
-
-def _approval() -> ExpectedDiffApprovalRecord:
-    return ExpectedDiffApprovalRecord(
-        stable_row_id="approval-1",
-        sample_name="sample_a",
-        target_label="Analyte",
-        legacy_selected_candidate_id="legacy",
-        successor_selected_candidate_id="successor",
-        public_outputs_touched=("selected marker",),
-        matrix_value_impact="none",
-        evidence_sources=("fixture",),
-        evidence_summary="reviewed evidence",
-        validation_tier="synthetic_fixture",
-        reviewer_role="reviewer",
-        reviewer_verdict="approved",
-        final_label="expected_diff",
     )
 
 

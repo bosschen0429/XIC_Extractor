@@ -33,10 +33,11 @@ same local HTML workspace for analysis and result review. Use `--no-open` when
 you only want the printed URL, `--port` to choose a port, and `--config-dir` to
 choose the writable settings directory.
 
-For Targeted, select the RAW folder, load or edit the targets, and run. The
-standard method is the default; optional advanced settings stay collapsed.
-Persisted changes are labelled **自訂方法**, and **回到預設** restores the
-standard method values. Untargeted provides full, Discovery-only, and
+For Targeted, load a saved method (parameters and targets/ISTD), select the new
+RAW folder, and run. Save a new method once with **另存為方法**; DLL and worker
+settings remain local. The standard parameters are the default; optional advanced
+settings stay collapsed. **還原方法參數** restores standard scalar values without
+replacing targets. Untargeted provides full, Discovery-only, and
 Alignment-only modes, plus method import/edit/export, sample metadata and role
 correction. Both workflows show progress, cancellation, outputs, and result
 actions in this workspace.

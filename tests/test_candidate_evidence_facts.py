@@ -656,7 +656,6 @@ def test_build_candidate_evidence_facts_from_scoring_context() -> None:
         strict_nl_scan_count=2,
         baseline_array=np.asarray([80.0, 90.0, 95.0, 90.0, 85.0]),
         residual_mad=5.0,
-        prefer_rt_prior_tiebreak=True,
         active_trace_source="gaussian15_positive_asls_residual",
         morphology_trace_method="gaussian_15",
         morphology_trace_window_points=15,
@@ -687,7 +686,7 @@ def test_build_candidate_evidence_facts_from_scoring_context() -> None:
     assert facts.rt.rt_prior_delta_min == 0.05
     assert facts.rt.rt_prior_status == "close"
     assert facts.rt.window_status == "inside"
-    assert facts.rt.prefer_rt_prior_tiebreak is True
+
     assert facts.boundary.cwt_same_apex_observed is True
     assert facts.boundary.cwt_best_scale == 4.0
 
@@ -840,7 +839,6 @@ def test_paired_istd_anchor_projects_one_role_aware_rt_support_reason() -> None:
         dirty_matrix=False,
         baseline_array=np.asarray([80.0, 90.0, 95.0, 90.0, 85.0]),
         residual_mad=5.0,
-        prefer_rt_prior_tiebreak=True,
     )
     facts = build_candidate_evidence_facts(
         candidate,
@@ -857,7 +855,7 @@ def test_paired_istd_anchor_projects_one_role_aware_rt_support_reason() -> None:
     assert semantics.support_reasons.count("role_aware_rt_support") == 1
     assert "paired_istd_rt_support" not in semantics.support_reasons
     assert not {
-        "paired_istd_aligned",
+        "paired_istd_rt_close",
         "paired_istd_rt_close",
     }.intersection(semantics.compatibility_labels)
 

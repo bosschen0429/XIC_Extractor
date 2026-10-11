@@ -247,7 +247,7 @@
         <details id="source-settings" open>
           <summary>結果與 RAW 位置</summary>
           <form id="open-form" class="path-line">
-            <label for="source">結果資料夾或 SQLite</label
+            <label for="source">結果資料夾、Targeted XLSX 或 SQLite</label
             ><input
               id="source"
               type="text"
@@ -318,7 +318,7 @@
         <ol class="review-steps">
           <li>
             <strong>選擇結果</strong
-            ><span>Untargeted 輸出資料夾，或其中的 cid_nl_explanation.sqlite。</span>
+            ><span>Targeted XLSX 或 Untargeted 結果資料夾。</span>
           </li>
           <li>
             <strong>開啟批次</strong
@@ -334,6 +334,11 @@
             <use href="#i-chevron-right" /></svg>
         </button>
       </section>
+      <section id="targeted-overview" class="targeted-overview" aria-label="整批結果總覽" hidden></section>
+      <nav id="targeted-review-nav" class="targeted-review-nav" aria-label="結果閱讀層級" hidden>
+        <button id="back-to-overview" type="button" data-idle>← 整批結果總覽</button>
+        <span>樣本結果 → 點選樣本查看峰界與證據</span>
+      </nav>
       <section id="review" class="review-grid" hidden>
         <aside class="list-panel">
           <form id="query-form">
@@ -349,6 +354,13 @@
               </button>
             </div>
             <p class="subtle">搜尋範圍是整個批次的已儲存項目。</p>
+            <div id="targeted-filters" hidden>
+              <label class="field">目標<select id="target-id" data-idle></select></label>
+              <label class="field">樣本<select id="target-sample" data-idle></select></label>
+              <label><input id="target-attention" type="checkbox" data-idle />只看需檢閱</label>
+            </div>
+            <details id="review-range-filters" class="query-advanced" open>
+              <summary>m/z / RT 範圍</summary>
             <div class="range-row">
               <span>m/z</span
               ><input
@@ -387,7 +399,8 @@
                 data-idle
               />
             </div>
-            <details class="query-advanced">
+            </details>
+            <details class="query-advanced" id="group-filter">
               <summary>以分組 ID 定位</summary>
               <label class="field"
                 >完整分組 ID<input

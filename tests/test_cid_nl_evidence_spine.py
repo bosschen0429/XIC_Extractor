@@ -62,6 +62,36 @@ from xic_extractor.review_records import (
 
 
 @pytest.mark.parametrize(
+    "changes",
+    [
+        {"query_rt_min": 7.5},
+        {"query_rt_max": 8.5},
+        {"search_completed": True},
+        {"scanned_event_count": 1},
+        {"evidence_scope": "subject_window"},
+    ],
+)
+def test_absent_rt_receipt_is_only_valid_for_unattempted_declared_search(
+    changes,
+) -> None:
+    values = dict(
+        query_rt_min=None,
+        query_rt_max=None,
+        support_policy=cid_nl_support_policy(),
+        acquisition_supported=True,
+        search_completed=False,
+        scanned_event_count=0,
+        reason_code="no_search_eligible_discovery_input",
+        evidence_scope="declared_scans",
+    )
+    assert CidNlEvaluationReceipt(**values).query_rt_min is None
+    with pytest.raises(
+        CidNlMethodAssessmentContractError, match="absent evaluation query"
+    ):
+        CidNlEvaluationReceipt(**(values | changes))
+
+
+@pytest.mark.parametrize(
     "width,offset,supported",
     [
         (1.6, 0.0, False),
@@ -479,11 +509,14 @@ def test_zero_buffer_boundary_is_set_level_hold(tmp_path: Path) -> None:
         pytest.param(7.95, 7.9, "HOLD", id="positive-overlap-outside-scan"),
     ),
 )
+@pytest.mark.parametrize("retain_relations", [False, True])
 def test_assessment_distinguishes_adjacent_interior_from_boundary_and_overlap(
     tmp_path: Path,
+    monkeypatch,
     right_start: float,
     scan_rt: float,
     expected_result: str,
+    retain_relations: bool,
 ) -> None:
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("adjacent",)
@@ -534,15 +567,60 @@ def test_assessment_distinguishes_adjacent_interior_from_boundary_and_overlap(
             individual_support_refs=individual_refs,
             set_relation_refs=set_refs,
         )
-        resolved_individual, resolved_sets = (
-            assessment_module.resolve_cid_nl_method_relations(
-                processing_owners=fixture.owners,
-                sample=sample,
-                evidence_refs=(evidence,),
-                candidate_peaks=peaks,
+        relations = None
+        if retain_relations:
+            relations = assessment_module.evaluate_cid_nl_method_relations(
+                candidate_intervals=tuple(
+                    assessment_module.CidNlCandidateInterval(
+                        peak.content.mz,
+                        peak.content.integration.rt_left_min,
+                        peak.content.integration.rt_right_min,
+                    )
+                    for peak in peaks
+                ),
+                event_queries=(
+                    assessment_module.CidNlEventQuery(
+                        evidence.observation.assess_precursor_loss(
+                            cid_nl_support_policy().neutral_loss_tolerance_ppm
+                        ),
+                        evidence.observation.scan_rt_min,
+                        evidence.observation.support_rt_min,
+                    ),
+                ),
                 policy=cid_nl_support_policy(),
             )
-        )
+        with monkeypatch.context() as binding:
+            if retain_relations:
+                binding.setattr(
+                    assessment_module,
+                    "evaluate_cid_nl_method_relations",
+                    lambda **_kwargs: pytest.fail(
+                        "artifact binding must reuse the relation answer"
+                    ),
+                )
+            resolved_individual, resolved_sets = (
+                assessment_module.resolve_cid_nl_method_relations(
+                    processing_owners=fixture.owners,
+                    sample=sample,
+                    evidence_refs=(evidence,),
+                    candidate_peaks=peaks,
+                    policy=cid_nl_support_policy(),
+                    relations=relations,
+                )
+            )
+            if retain_relations:
+                with pytest.raises(
+                    CidNlMethodAssessmentContractError,
+                    match="exact candidate/event universe",
+                ):
+                    assessment_module.resolve_cid_nl_method_relations(
+                        processing_owners=fixture.owners,
+                        sample=sample,
+                        evidence_refs=(evidence,),
+                        candidate_peaks=peaks[:1],
+                        policy=cid_nl_support_policy(),
+                        relations=relations,
+                    )
         assert resolved_individual == individual_refs
         assert resolved_sets == set_refs
         resolved_assessment = mint_cid_nl_method_assessment_ref(
@@ -635,11 +713,6 @@ def test_reference_spine_mints_once_and_fans_out_same_cell(
         raise AssertionError("diagnostic evidence spine invoked product output")
 
     for path in (
-        "xic_extractor.extraction.output_dispatch.write_outputs",
-        "xic_extractor.output.csv_writers.write_wide_csv",
-        "xic_extractor.output.csv_writers.write_long_csv",
-        "xic_extractor.output.csv_writers.write_diagnostics_csv",
-        "xic_extractor.output.csv_writers.write_score_breakdown_csv",
         "xic_extractor.output.workbook_builder.write_workbook_from_rows",
         "xic_extractor.output.alignment.tsv_writer.write_alignment_matrix_tsv",
         "xic_extractor.output.alignment.product_matrix.build_product_matrix_rows",

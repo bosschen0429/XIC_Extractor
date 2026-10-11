@@ -22,23 +22,25 @@ from xic_extractor.applications.targeted.application import (
 from xic_extractor.applications.targeted.production_workflow import (
     acquisition_snapshot_for_publication,
 )
-from xic_extractor.extraction.output_dispatch import write_outputs
+from xic_extractor.configuration.models import Target
 from xic_extractor.extraction.result_models import (
     ExtractionResult,
     FileResult,
     RunOutput,
 )
-from xic_extractor.output.excel_pipeline import write_excel_from_run_output
-from xic_extractor.output.method_manifest import (
-    MethodManifestContext,
-    method_manifest_path,
-    write_method_manifest,
+from xic_extractor.extraction.targeted_product_projection import (
+    build_targeted_product_projection,
 )
-from xic_extractor.output.review_report import review_report_path_for_excel
+from xic_extractor.output.excel_pipeline import write_excel_from_run_output
+from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.output.targeted_product_model import (
+    TargetedProductContext,
     TargetedProductProjection,
 )
 from xic_extractor.peak_detection.models import PeakResult
+from xic_extractor.peak_detection.peak_hypothesis_identity import (
+    HYPOTHESIS_METHOD_DDA_CID_NL,
+)
 
 if TYPE_CHECKING:
     from xic_extractor.applications.targeted.production_workflow import (
@@ -58,8 +60,6 @@ class _TargetedRollbackRecoveryRequired(TargetedOutputBoundaryError):
     """A failed rollback retained recoverable files in the staging root."""
 
 
-_STAGE_OUTPUT_CSV = "__targeted_output__.csv"
-_STAGE_DIAGNOSTICS_CSV = "__targeted_diagnostics__.csv"
 _STAGE_EXCEL_OUTPUT = "__targeted_output__.xlsx"
 _PUBLICATION_LOCK_NAME = ".xic-targeted-publish.lock"
 
@@ -78,13 +78,6 @@ def publish_targeted_outputs(
     if type(completed_workflow) is not CompletedTargetedProductionWorkflow:
         raise TargetedOutputBoundaryError(
             "publication requires an exact attempt-bound completed workflow"
-        )
-    if request.method_manifest_context is not None and not isinstance(
-        request.method_manifest_context,
-        MethodManifestContext,
-    ):
-        raise TargetedOutputBoundaryError(
-            "method_manifest_context must be a MethodManifestContext"
         )
     prepared = completed_workflow.prepared
     finalized_results = completed_workflow.finalized_results
@@ -105,60 +98,23 @@ def publish_targeted_outputs(
         expected_processing_request=prepared.owners.request,
         expected_samples=prepared.samples,
     )
-    render_view = (
-        _build_acquisition_baseline_view(acquisition_snapshot)
-        if request.output_projection == "acquisition_baseline"
-        else _build_render_view(finalized_results, acquisition_snapshot)
-    )
+    render_view = _build_render_view(finalized_results, acquisition_snapshot)
     output_dir = request.config.output_csv.parent
     output_dir.mkdir(parents=True, exist_ok=True)
     stage_root = Path(tempfile.mkdtemp(prefix=".xic-targeted-publish-", dir=output_dir))
     preserve_stage_root = False
     try:
-        stage_config = replace(
-            request.config,
-            output_csv=stage_root / _STAGE_OUTPUT_CSV,
-            diagnostics_csv=stage_root / _STAGE_DIAGNOSTICS_CSV,
-        )
-        write_outputs(
-            stage_config,
-            list(request.targets),
-            render_view,
-            write_manifest=False,
-        )
-        final_manifest = method_manifest_path(request.config)
-        stage_manifest = method_manifest_path(stage_config)
-        staged_before_excel = _staged_output_map(
-            stage_root,
-            request,
-            stage_config=stage_config,
-            stage_excel=None,
-        )
-        write_method_manifest(
-            request.config,
-            request.targets,
-            context=request.method_manifest_context,
-            destination=stage_manifest,
-            artifact_sources={
-                final: staged for staged, final in staged_before_excel.items()
-            },
-        )
-        stage_excel: Path | None = None
+        # Without a workbook destination the run is computed but not published.
+        staged_to_final: dict[Path, Path] = {}
         if request.excel_output_path is not None:
             stage_excel = stage_root / _STAGE_EXCEL_OUTPUT
             write_excel_from_run_output(
-                stage_config,
+                request.config,
                 list(request.targets),
                 render_view,
                 output_path=stage_excel,
             )
-        staged_to_final = _staged_output_map(
-            stage_root,
-            request,
-            stage_config=stage_config,
-            stage_excel=stage_excel,
-        )
-        staged_to_final[stage_manifest] = final_manifest
+            staged_to_final[stage_excel] = request.excel_output_path
         _reject_duplicate_destinations(staged_to_final)
         paths = _commit_staged_outputs(
             staged_to_final,
@@ -205,6 +161,9 @@ def _build_render_view(
 
     decisions: dict[tuple[str, str], Any] = {}
     target_ids_by_label: dict[str, str] = {}
+    targets_by_label: dict[str, Target] = {}
+    backfills = {}
+    backfill_diagnostics = []
     for result in finalized_results:
         if (
             result.processing_request != expected_request
@@ -225,6 +184,10 @@ def _build_render_view(
                 "finalized Targeted result population contains duplicate Targets"
             )
         target_ids_by_label[target_label] = target_id
+        targets_by_label[target_label] = target.target
+        for backfill in result.scientific_core.targeted_backfill_decisions:
+            sample_id = backfill.target_cell.content.canonical_sample_identity_id
+            backfills[(sample_id, target_id)] = backfill
         for projection_decision in result.completed_projection.decisions:
             subject = cast(Any, projection_decision.subject)
             sample_id = subject.sample.identity.sample_identity_id
@@ -274,6 +237,26 @@ def _build_render_view(
                     "finalized Targeted decisions do not cover acquisition evidence"
                 )
             consumed.add(key)
+            backfill_decision = backfills.get(key)
+            if backfill_decision is not None:
+                backfill_diagnostics.append(
+                    DiagnosticRecord(
+                        file_result.sample_name,
+                        target_label,
+                        "BACKFILL_ACCEPTED"
+                        if backfill_decision.matched_candidate is not None
+                        else "BACKFILL_HOLD",
+                        "Cross-sample confirmed peak localization: "
+                        + "; ".join(backfill_decision.reason_codes)
+                        + "; direct CID/NL remains HOLD; "
+                        + (
+                            "ISTD identity confirmed by Backfill."
+                            if targets_by_label[target_label].is_istd
+                            and backfill_decision.matched_candidate is not None
+                            else "confirmed=False."
+                        ),
+                    )
+                )
             no_write_reason = (
                 ""
                 if render_decision.variant == "numeric"
@@ -285,9 +268,14 @@ def _build_render_view(
             )
             rendered[target_label] = _finalized_extraction_result(
                 extraction,
+                target=targets_by_label[target_label],
                 value=render_decision.value,
                 no_write_reason=no_write_reason,
                 evidence=getattr(render_decision, "evidence", None),
+                backfill_supported=(
+                    backfill_decision is not None
+                    and backfill_decision.matched_candidate is not None
+                ),
             )
         files.append(replace(file_result, results=rendered))
     if consumed != set(decisions):
@@ -296,20 +284,26 @@ def _build_render_view(
         )
     return RunOutput(
         file_results=files,
-        diagnostics=list(acquisition_evidence.diagnostics),
+        diagnostics=[*acquisition_evidence.diagnostics, *backfill_diagnostics],
     )
 
 
 def _finalized_extraction_result(
     extraction: ExtractionResult,
     *,
+    target: Target,
     value: float | None,
     no_write_reason: str,
     evidence: object,
+    backfill_supported: bool = False,
 ) -> ExtractionResult:
     projection = _finalized_product_projection(
         extraction.targeted_product_projection,
+        target=target,
+        evidence=evidence,
+        value=value,
         no_write_reason=no_write_reason,
+        backfill_supported=backfill_supported,
     )
     if not no_write_reason:
         if (
@@ -321,6 +315,9 @@ def _finalized_extraction_result(
                 "finalized Targeted value does not match its public result model"
             )
         integration = evidence.hypothesis.integration
+        physical_evaluation = evidence.hypothesis.peak_observation_refs[
+            0
+        ].physical_evaluation
         rendered = replace(
             extraction,
             peak_result=replace(
@@ -338,7 +335,17 @@ def _finalized_extraction_result(
             ),
             selected_hypothesis=None,
             selection_decision=None,
-            model_selection_result=None,
+            physical_evaluation=physical_evaluation,
+            selected_cid_nl_candidate_index=next(
+                (
+                    index
+                    for index, evaluation in enumerate(
+                        extraction.candidate_physical_evaluations
+                    )
+                    if evaluation is physical_evaluation
+                ),
+                None,
+            ),
             targeted_product_projection=projection,
         )
         if rendered.reported_peak_area != value:
@@ -358,7 +365,6 @@ def _finalized_extraction_result(
         ),
         selected_hypothesis=None,
         selection_decision=None,
-        model_selection_result=None,
         targeted_product_projection=projection,
     )
 
@@ -373,7 +379,11 @@ def _hypothesis_area(hypothesis: Any) -> float:
 def _finalized_product_projection(
     projection: TargetedProductProjection | None,
     *,
+    target: Target,
+    evidence: object,
+    value: float | None,
     no_write_reason: str,
+    backfill_supported: bool = False,
 ) -> TargetedProductProjection | None:
     if projection is None:
         return None
@@ -385,45 +395,33 @@ def _finalized_product_projection(
             review_state="review_required",
             projection_reason=no_write_reason,
         )
-    return projection
-
-
-def _build_acquisition_baseline_view(
-    acquisition_evidence: RunOutput,
-) -> RunOutput:
-    return RunOutput(
-        file_results=list(acquisition_evidence.file_results),
-        diagnostics=list(acquisition_evidence.diagnostics),
+    if type(evidence) is not ObservedSearchSubject:
+        raise TargetedOutputBoundaryError(
+            "numeric projection lost its finalized evidence"
+        )
+    return build_targeted_product_projection(
+        TargetedProductContext(
+            role="ISTD" if target.is_istd else "Analyte",
+            expected_present=target.is_istd,
+            target_label=target.label,
+            istd_pair=target.istd_pair,
+            neutral_loss_required=target.neutral_loss_da is not None,
+        ),
+        rt=evidence.hypothesis.integration.rt_apex_min,
+        area=value,
+        confidence=projection.legacy_evidence.get("confidence", ""),
+        nl_status=projection.legacy_evidence.get("nl_status", ""),
+        cid_nl_supported=(
+            evidence.hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
+        ),
+        backfill_supported=backfill_supported,
+        support_reasons=projection.support_reasons,
+        review_reasons=projection.review_reasons,
+        conflict_reasons=projection.conflict_reasons,
+        not_counted_reasons=projection.not_counted_reasons,
+        exclusion_reasons=projection.exclusion_reasons,
+        legacy_evidence=projection.legacy_evidence,
     )
-
-
-def _staged_output_map(
-    stage_root: Path,
-    request: TargetedApplicationRequest,
-    *,
-    stage_config: Any,
-    stage_excel: Path | None,
-) -> dict[Path, Path]:
-    mapping: dict[Path, Path] = {}
-    for staged in stage_root.rglob("*"):
-        if not staged.is_file():
-            continue
-        if staged == stage_config.output_csv:
-            final = request.config.output_csv
-        elif staged == stage_config.diagnostics_csv:
-            final = request.config.diagnostics_csv
-        elif stage_excel is not None and staged == stage_excel:
-            assert request.excel_output_path is not None
-            final = request.excel_output_path
-        elif stage_excel is not None and staged == review_report_path_for_excel(
-            stage_excel
-        ):
-            assert request.excel_output_path is not None
-            final = review_report_path_for_excel(request.excel_output_path)
-        else:
-            final = request.config.output_csv.parent / staged.relative_to(stage_root)
-        mapping[staged] = final
-    return mapping
 
 
 def _reject_collisions(paths: Any) -> None:

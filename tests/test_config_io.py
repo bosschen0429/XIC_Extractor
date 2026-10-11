@@ -2,6 +2,9 @@ import csv
 
 import pytest
 
+from xic_extractor.configuration.csv_io import _read_settings
+from xic_extractor.configuration.models import ConfigError
+from xic_extractor.configuration.settings import resolve_settings
 from xic_workbench.config_io import (
     read_settings,
     read_targets,
@@ -204,12 +207,15 @@ def test_write_settings_creates_runtime_copy_from_values_and_example_description
 
     write_settings({"data_dir": "C:\\real"})
 
-    rows = list(
-        csv.DictReader((tmp_path / "settings.csv").open(encoding="utf-8-sig"))
-    )
-    assert rows == [
-        {"key": "data_dir", "value": "C:\\real", "description": "資料目錄"}
-    ]
+    rows = list(csv.DictReader((tmp_path / "settings.csv").open(encoding="utf-8-sig")))
+    saved = {row["key"]: row for row in rows}
+    assert saved["data_dir"] == {
+        "key": "data_dir",
+        "value": "C:\\real",
+        "description": "資料目錄",
+    }
+    assert saved["signal_processing_method"]["value"] == "gaussian"
+    assert saved["signal_processing_window_points"]["value"] == "15"
 
 
 def test_write_targets_creates_runtime_copy_only_on_save(tmp_path, monkeypatch):
@@ -232,3 +238,98 @@ def test_write_targets_creates_runtime_copy_only_on_save(tmp_path, monkeypatch):
 
     assert (tmp_path / "targets.csv").exists()
     assert read_targets()[0]["label"] == "ExA"
+
+
+def test_csv_conflicts_are_rejected_in_ui_and_runtime_reader(tmp_path):
+    path = tmp_path / "settings.csv"
+    path.write_text(
+        "key,value\n"
+        "signal_processing_window_points,15\n"
+        "signal_processing_window_points,21\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="conflict"):
+        resolve_settings(read_settings(config_dir=tmp_path))
+    with pytest.raises(ConfigError, match="conflict"):
+        _read_settings(path)
+
+
+def test_equal_csv_duplicates_have_one_written_row(tmp_path):
+    path = tmp_path / "settings.csv"
+    path.write_text(
+        "key,value,description\n"
+        "signal_processing_window_points,15,canonical\n"
+        "signal_processing_window_points,15,duplicate\n"
+        "retired_setting,keep,old description\n",
+        encoding="utf-8",
+    )
+    original = path.read_bytes()
+    write_settings({"dirty_matrix_mode": "true"}, config_dir=tmp_path)
+    rows = list(csv.DictReader(path.open(encoding="utf-8-sig")))
+    assert sum(row["key"] == "signal_processing_window_points" for row in rows) == 1
+    assert next(row for row in rows if row["key"] == "retired_setting") == {
+        "key": "retired_setting",
+        "value": "keep",
+        "description": "old description",
+    }
+    assert path.with_suffix(".csv.bak").read_bytes() == original
+
+
+
+def test_save_merges_partial_values_and_preserves_existing_runtime_and_resources(
+    tmp_path,
+):
+    write_settings(
+        {
+            "data_dir": "local",
+            "parallel_workers": "1",
+            "targeted_ms1_shape_identity_support_tsv": "prior.csv",
+        },
+        config_dir=tmp_path,
+    )
+    write_settings({"dirty_matrix_mode": "true"}, config_dir=tmp_path)
+    values = read_settings(config_dir=tmp_path)
+    assert values["data_dir"] == "local"
+    assert values["parallel_workers"] == "1"
+    assert values["targeted_ms1_shape_identity_support_tsv"] == "prior.csv"
+    assert values["dirty_matrix_mode"] == "true"
+
+
+
+def test_failed_atomic_replace_preserves_active_settings_and_cleans_temporary(
+    tmp_path, monkeypatch
+):
+    write_settings({"dirty_matrix_mode": "false"}, config_dir=tmp_path)
+    path = tmp_path / "settings.csv"
+    before = path.read_bytes()
+
+    def failed_replace(*_args):
+        raise OSError("simulated interrupted save")
+
+    monkeypatch.setattr("xic_workbench.config_io.os.replace", failed_replace)
+    with pytest.raises(OSError, match="interrupted"):
+        write_settings({"dirty_matrix_mode": "true"}, config_dir=tmp_path)
+    assert path.read_bytes() == before
+    assert list(tmp_path.glob(".settings-*.tmp")) == []
+
+
+
+def test_invalid_save_preserves_active_file(tmp_path):
+    write_settings({}, config_dir=tmp_path)
+    path = tmp_path / "settings.csv"
+    before = path.read_bytes()
+    with pytest.raises(ConfigError):
+        write_settings({"signal_processing_window_points": "16"}, config_dir=tmp_path)
+    assert path.read_bytes() == before
+
+
+
+def test_retired_resolver_setting_round_trips_without_changing_its_value(tmp_path):
+    write_settings({"resolver_mode": "legacy_savgol"}, config_dir=tmp_path)
+    write_settings({"dirty_matrix_mode": "true"}, config_dir=tmp_path)
+    values, _parsed, warnings = resolve_settings(read_settings(config_dir=tmp_path))
+    assert values["resolver_mode"] == "legacy_savgol"
+    assert any(
+        "resolver_mode" in warning and "not consumed" in warning
+        for warning in warnings
+    )

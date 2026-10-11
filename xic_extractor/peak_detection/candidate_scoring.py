@@ -127,7 +127,6 @@ def score_candidate(
         prior_rt=prior_rt,
         quality_penalty=quality_penalty,
         selection_quality_penalty=selection_quality_penalty,
-        prefer_rt_prior_tiebreak=ctx.prefer_rt_prior_tiebreak,
         evidence_score=evidence_score,
         evidence_facts=evidence_facts,
     )
@@ -170,8 +169,6 @@ def _evidence_from_context(
         if rt_severity == 0:
             positive.append(EvidenceSignal("rt_prior_close", 15))
             rt_prior_close = True
-            if ctx.prefer_rt_prior_tiebreak:
-                positive.append(EvidenceSignal("paired_istd_aligned", 20))
         elif rt_severity == 1:
             negative.append(EvidenceSignal("rt_prior_borderline", 15))
         else:
@@ -216,9 +213,9 @@ def _evidence_from_context(
     if not has_adap_like_quality_flags(tuple(getattr(candidate, "quality_flags", ()))):
         positive.append(EvidenceSignal("trace_clean", 10))
 
-    has_cwt_same_apex_support = (
-        has_same_apex_cwt_support(candidate) and _has_cwt_chemical_support(ctx)
-    )
+    has_cwt_same_apex_support = has_same_apex_cwt_support(
+        candidate
+    ) and _has_cwt_chemical_support(ctx)
     if has_cwt_same_apex_support:
         positive.append(
             EvidenceSignal(

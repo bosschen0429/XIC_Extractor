@@ -175,7 +175,7 @@ def test_decision_semantics_counts_paired_ratio_supported_nl_dropout_as_review(
         EvidenceSignalSet(
             support_labels=(
                 "paired_area_ratio_plausible",
-                "paired_istd_aligned",
+                "paired_istd_rt_close",
                 "local_sn_strong",
                 "shape_clean",
                 "trace_clean",
@@ -198,8 +198,7 @@ def test_decision_semantics_counts_paired_ratio_supported_nl_dropout_as_review(
     assert decision.not_counted_reasons == ()
 
 
-def test_decision_semantics_maps_no_ms2_cap_to_not_counted_without_exclusion(
-) -> None:
+def test_decision_semantics_maps_no_ms2_cap_to_not_counted_without_exclusion() -> None:
     decision = decision_semantics_from_signal_set(
         EvidenceSignalSet(
             support_labels=("local_sn_strong", "shape_clean", "trace_clean"),
@@ -223,8 +222,7 @@ def test_decision_semantics_maps_no_ms2_cap_to_not_counted_without_exclusion(
     assert decision.exclusion_reasons == ()
 
 
-def test_decision_semantics_honors_count_no_ms2_as_detected_policy(
-) -> None:
+def test_decision_semantics_honors_count_no_ms2_as_detected_policy() -> None:
     decision = decision_semantics_from_signal_set(
         EvidenceSignalSet(
             support_labels=("local_sn_strong", "shape_clean", "trace_clean"),
@@ -265,8 +263,7 @@ def test_decision_semantics_does_not_let_medium_caps_force_not_counted() -> None
     assert decision.not_counted_reasons == ()
 
 
-def test_decision_semantics_keeps_cwt_as_context_not_standalone_authority(
-) -> None:
+def test_decision_semantics_keeps_cwt_as_context_not_standalone_authority() -> None:
     decision = decision_semantics_from_signal_set(
         EvidenceSignalSet(
             proposal_sources=("centwave_cwt",),
@@ -394,8 +391,7 @@ def test_decision_semantics_unions_zero_area_and_hard_quality_caps() -> None:
     )
 
 
-def test_decision_semantics_unions_anchor_mismatch_and_missing_ms2_policies(
-) -> None:
+def test_decision_semantics_unions_anchor_mismatch_and_missing_ms2_policies() -> None:
     decision = decision_semantics_from_signal_set(
         EvidenceSignalSet(
             support_labels=("local_sn_strong", "shape_clean", "trace_clean"),

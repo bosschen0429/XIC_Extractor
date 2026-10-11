@@ -142,6 +142,8 @@ class CidNlAcquisitionError(ValueError):
 
 
 class CidNlRawSource(BatchXICAdapter, Protocol):
+    def acquisition_rt_bounds(self) -> tuple[float, float]: ...
+
     def iter_ms2_scans(
         self,
         rt_min: float,
@@ -435,9 +437,7 @@ class _PartitionWorkObserver:
             )
         existing = self._artifacts.get(artifact.evidence_artifact_id)
         if existing is not None and existing != artifact:
-            raise CidNlAcquisitionError(
-                "observer artifact identity was rebound"
-            )
+            raise CidNlAcquisitionError("observer artifact identity was rebound")
         self._artifacts[artifact.evidence_artifact_id] = artifact
 
     def artifact_closure(self) -> tuple[EvidenceArtifactRef, ...]:
@@ -658,8 +658,6 @@ def _elution_context_requests(
     return tuple(merged)
 
 
-
-
 def _backfill_xic_request(
     *,
     mz: float,
@@ -871,6 +869,7 @@ def adapt_current_discovery_sample_subject(
             sample=sample,
             method_subject=method_subject,
             settings=settings,
+            raw=None,
             support_policy=support_policy,
             technical_state="not_evaluated",
             technical_reason_code="no_search_eligible_discovery_input",
@@ -1026,6 +1025,7 @@ def adapt_current_discovery_sample_subject(
         sample=sample,
         method_subject=method_subject,
         settings=settings,
+        raw=raw,
         support_policy=support_policy,
         candidate_peaks=candidate_universe,
         evidence_refs=tuple(evidence_refs),
@@ -1276,7 +1276,8 @@ def backfill_untargeted_cid_nl_sample_subject(
                 trace=trace,
                 query_rt_min=float(query_rt),
                 location_reliable=query_rt_reliable,
-                search_rt_window=selection_window or (
+                search_rt_window=selection_window
+                or (
                     (query_rt_min, query_rt_max)
                     if capture_request is context_request
                     else None
@@ -1779,6 +1780,7 @@ def _mint_assessment(
     sample: ResolvedCanonicalSampleIdentity,
     method_subject: CidNlMethodSubject,
     settings: DiscoverySettings,
+    raw: CidNlRawSource | None,
     support_policy: DdaCidNlPeakSupportPolicy,
     candidate_peaks: tuple[PeakObservationRef, ...] = (),
     evidence_refs: tuple[CidNlEvidenceRef, ...] = (),
@@ -1794,6 +1796,17 @@ def _mint_assessment(
     candidate_query_rt_maxes = tuple(
         peak.generation_provenance.query_rt_max for peak in candidate_peaks
     )
+    query_rt_min, query_rt_max = settings.rt_min, settings.rt_max
+    if search_completed and (query_rt_min is None or query_rt_max is None):
+        if raw is None:
+            raise CidNlAcquisitionError(
+                "automatic acquisition bounds require an opened RAW"
+            )
+        acquisition_start, acquisition_end = raw.acquisition_rt_bounds()
+        query_rt_min = acquisition_start if query_rt_min is None else query_rt_min
+        query_rt_max = acquisition_end if query_rt_max is None else query_rt_max
+    elif not search_completed and (query_rt_min is None or query_rt_max is None):
+        query_rt_min = query_rt_max = None
     try:
         return mint_cid_nl_method_assessment_ref(
             processing_owners=processing_owners,
@@ -1804,14 +1817,14 @@ def _mint_assessment(
             ),
             evaluation_receipt=CidNlEvaluationReceipt(
                 query_rt_min=(
-                    min(settings.rt_min, *candidate_query_rt_mins)
-                    if candidate_query_rt_mins
-                    else settings.rt_min
+                    min(query_rt_min, *candidate_query_rt_mins)
+                    if query_rt_min is not None and candidate_query_rt_mins
+                    else query_rt_min
                 ),
                 query_rt_max=(
-                    max(settings.rt_max, *candidate_query_rt_maxes)
-                    if candidate_query_rt_maxes
-                    else settings.rt_max
+                    max(query_rt_max, *candidate_query_rt_maxes)
+                    if query_rt_max is not None and candidate_query_rt_maxes
+                    else query_rt_max
                 ),
                 support_policy=support_policy,
                 acquisition_supported=technical_state != "unsupported",
@@ -1843,9 +1856,7 @@ def _bounded_subject_candidates(
 ) -> tuple[DiscoveryCandidate, ...]:
     ids = tuple(candidate.candidate_id for candidate in candidates)
     if len(ids) != len(set(ids)):
-        raise CidNlAcquisitionError(
-            "Discovery candidate IDs must be unique"
-        )
+        raise CidNlAcquisitionError("Discovery candidate IDs must be unique")
     for candidate in candidates:
         if candidate.sample_stem != sample.metadata.raw_stem:
             raise CidNlAcquisitionError(
@@ -1965,9 +1976,7 @@ def _validate_inputs(**values: object) -> None:
     }
     for name, kind in expected.items():
         if not isinstance(values[name], kind):
-            raise CidNlAcquisitionError(
-                f"{name} has the wrong owner type"
-            )
+            raise CidNlAcquisitionError(f"{name} has the wrong owner type")
     candidates = values["candidates"]
     assert isinstance(candidates, tuple)
     if any(not isinstance(item, DiscoveryCandidate) for item in candidates):

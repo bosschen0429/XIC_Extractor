@@ -178,9 +178,8 @@ The owner-backed CID-NL hypothesis branch closes the handoff from
    and exact upstream closure.
 4. Target label, role, ISTD pairing, trace-group identity, decision semantics,
    selection audit, counting, and workflow projection are prohibited on this
-   branch. Selection-decision, the `PeakModelSelectionResult` value boundary,
-   model-selection, `ExtractionResult`, and
-   Targeted result-assembly boundaries reject this diagnostic branch before it
+   branch. Selection-decision, `ExtractionResult`, and Targeted result-assembly
+   boundaries reject this diagnostic branch before it
    can expose RT/area or produce a counted projection. The legacy Targeted
    constructor remains unchanged.
 5. Missing refs, physical-peak/event mismatch, request/attempt/sample

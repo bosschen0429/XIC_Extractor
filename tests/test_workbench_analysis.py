@@ -173,7 +173,6 @@ def test_http_analysis_configuration_roundtrip_without_qt(tmp_path):
         assert config["targeted_form"]["settings"]
         settings = config["settings"] | {
             "data_dir": "C:/new batch",
-            "emit_review_report": "true",
         }
         targets = [
             config["targets"][0]
@@ -550,3 +549,70 @@ def test_inspector_job_rejects_source_not_bound_to_published_untargeted_result(
         assert not stale_output.exists()
     finally:
         jobs.close()
+
+
+def test_http_targeted_bootstrap_explains_active_source(tmp_path):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "settings.csv").write_text(
+        "key,value,description\nsignal_processing_window_points,21,saved\n",
+        encoding="utf-8",
+    )
+    workspace = ReviewWorkspace(config_dir=config_dir)
+    with _client(workspace) as request:
+        status, config, _ = request("/api/config")
+        assert status == 200
+        assert config["settings"]["signal_processing_window_points"] == "21"
+        summary = config["targeted_method"]
+        assert summary["warnings"]
+        assert config["settings_source"] == "settings.csv"
+
+
+def test_targeted_bootstrap_combines_saved_settings_and_launch_values(
+    tmp_path,
+):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "settings.csv").write_text(
+        "key,value,description\nsignal_processing_window_points,21,saved\n",
+        encoding="utf-8",
+    )
+    workspace = AnalysisWorkspace(
+        config_dir, {"raw_dir": "C:/launch-batch", "dll_dir": "C:/preferred-dll"}
+    )
+    try:
+        config = workspace.bootstrap()
+        assert config["settings"]["data_dir"] == "C:/launch-batch"
+        assert config["settings"]["dll_dir"] == "C:/preferred-dll"
+        assert config["settings"]["signal_processing_window_points"] == "21"
+        assert config["untargeted"]["dll_dir"] == "C:/preferred-dll"
+        assert config["targeted_method"]["warnings"]
+    finally:
+        workspace.jobs.close()
+
+
+def test_http_method_reset_preserves_batch_resources_and_execution(tmp_path):
+    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
+    with _client(workspace) as request:
+        status, config, _ = request("/api/config")
+        assert status == 200
+        local = {
+            "data_dir": "different-batch",
+            "dll_dir": "different-dll",
+            "injection_order_source": "order.csv",
+            "parallel_workers": "1",
+        }
+        settings = {**config["settings"], **local, "ms2_precursor_tol_da": "1.2"}
+        status, summary, _ = request("/api/targeted/method", {"settings": settings})
+        assert status == 200
+        assert summary["custom_keys"] == ["ms2_precursor_tol_da"]
+        status, reset, _ = request("/api/targeted/method/reset", {"settings": settings})
+        assert status == 200
+        assert reset["settings"]["ms2_precursor_tol_da"] == "0.8"
+        assert {key: reset["settings"][key] for key in local} == local
+        assert reset["summary"]["custom_keys"] == []
+        # Draft operations do not persist settings or alter the target input.
+        assert not (tmp_path / "config" / "settings.csv").exists()
+        _, unchanged, _ = request("/api/config")
+        assert unchanged["targets"] == config["targets"]
+        assert unchanged["settings"] == config["settings"]

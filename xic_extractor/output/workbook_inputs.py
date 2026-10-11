@@ -80,13 +80,6 @@ def _legacy_wide_long_row(
     return long_row
 
 
-def _read_score_breakdown(config: ExtractionConfig) -> list[dict[str, str]]:
-    path = config.output_csv.with_name("xic_score_breakdown.csv")
-    if not path.exists():
-        return []
-    return _read_results(path)
-
-
 def _legacy_peak_width(row: dict[str, str], label: str) -> str:
     existing = row.get(f"{label}_PeakWidth", "")
     if existing:

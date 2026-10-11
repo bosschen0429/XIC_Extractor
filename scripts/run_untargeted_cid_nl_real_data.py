@@ -607,7 +607,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--ms1-morphology-smoothing-window-points",
         type=_positive_int,
-        default=int(defaults["ms1_morphology_smoothing_window_points"]),
+        default=int(defaults["signal_processing_window_points"]),
     )
     parser.add_argument(
         "--peak-rel-height",

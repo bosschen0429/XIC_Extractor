@@ -18,10 +18,12 @@ In **Untargeted Discovery → 分析方法**:
    analytical result.
 4. Apply to use the edited method for the current run. Save As writes a reusable
    TOML independently. Cancel leaves the previously applied method intact.
-5. Advanced parameters remain a secondary, collapsed control. GUI starting
-   methods explicitly use RT 0–60 minutes; Apply and Save As preserve this
-   effective value for CLI use. Imported values outside the GUI range are not
-   silently truncated.
+5. Advanced parameters remain a secondary, collapsed control. RT defaults to
+   each RAW file's full acquisition range from instrument metadata. Enable
+   optional RT cropping only when needed; either bound may remain automatic.
+   Apply and Save As preserve explicit crop values, while automatic bounds are
+   omitted from the TOML. Finite, non-negative crop bounds are owner-validated
+   and limited to the acquired span. Compound target windows are unchanged.
 
 The saved file is accepted by the same CLI `--preset` input. It includes the
 effective Discovery values and preset-owned runtime option, so export does not
@@ -119,8 +121,8 @@ These values apply unless overridden in the `[discovery]` section.
 | `nl_min_intensity_ratio` | 0.01 | Minimum NL intensity ratio (1%) |
 | `seed_rt_gap_min` | 0.20 | Minimum RT gap between seeds (min) |
 | `ms1_search_padding_min` | 0.35 | MS1 search window padding (min) |
-| `rt_min` | 0.0 | Minimum RT filter (min) |
-| `rt_max` | 999.0 | Maximum RT filter (min) |
+| `rt_min` | automatic | Optional lower RT crop bound; otherwise RAW acquisition start |
+| `rt_max` | automatic | Optional upper RT crop bound; otherwise RAW acquisition end |
 | `resolver_mode` | `local_minimum` | Peak resolver algorithm |
 
 ---

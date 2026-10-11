@@ -166,8 +166,8 @@ replay.
 
 Owners:
 
-- `xic_extractor/extraction/rt_prior_library.py`
-- `xic_extractor/target_pair_rt_calibration.py`
+- `xic_extractor/extraction/target_extraction.py`: current-sample paired reference
+- `xic_extractor/injection_rolling.py`: within-batch ISTD context
 - `xic_extractor/peak_detection/evidence_facts.py`
 - `xic_extractor/alignment/shared_peak_identity_explanation/*`
 - `docs/lc-msms-evidence-rules.md`

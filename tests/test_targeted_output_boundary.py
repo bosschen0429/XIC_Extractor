@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import csv
 import inspect
-import json
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import replace
 from multiprocessing import get_context
@@ -14,7 +12,10 @@ import numpy as np
 import pytest
 from openpyxl import load_workbook
 
-from tests.test_targeted_production_workflow import production_case
+from tests.test_targeted_production_workflow import (
+    production_case,
+    with_method_universe,
+)
 from xic_extractor.applications.targeted import (
     output_boundary as targeted_output_boundary,
 )
@@ -37,9 +38,8 @@ from xic_extractor.extraction.targeted_inputs import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
 )
+from xic_extractor.output.excel_pipeline import _run_output_to_long_rows
 from xic_extractor.output.messages import DiagnosticRecord
-from xic_extractor.output.method_manifest import artifact_sha256, method_manifest_path
-from xic_extractor.output.review_report import review_report_path_for_excel
 from xic_extractor.peak_detection.peak_integration import find_peak_and_area
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     evaluate_physical_peak,
@@ -64,11 +64,210 @@ def _commit_staged_output_in_process(
     return ("success", str(paths[0]))
 
 
-def test_complete_finalized_population_publishes_csv_excel_and_manifest(
+@pytest.mark.parametrize(
+    "with_nl,with_signal", [(True, True), (False, True), (True, False)]
+)
+def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
+    tmp_path: Path, monkeypatch, with_nl: bool, with_signal: bool
+) -> None:
+    from contextlib import nullcontext
+
+    from xic_extractor.applications.targeted import production_workflow
+    from xic_extractor.configuration.models import ExtractionConfig, Target
+    from xic_extractor.extraction import pipeline, target_extraction
+    from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
+    from xic_extractor.peak_detection import cid_nl_method_assessment
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    scales = {"SampleA": 1.0, "SampleB": 2.0}
+    for name in scales:
+        (data_dir / f"{name}.raw").write_bytes(name.encode())
+    config = ExtractionConfig(
+        data_dir=data_dir,
+        dll_dir=tmp_path,
+        output_csv=tmp_path / "xic_results.csv",
+        diagnostics_csv=tmp_path / "diagnostics.csv",
+        smooth_window=9,
+        smooth_polyorder=2,
+        peak_rel_height=0.02,
+        peak_min_prominence_ratio=0.01,
+        ms2_precursor_tol_da=0.5,
+        nl_min_intensity_ratio=0.01,
+        nl_rt_anchor_half_window_min=0.5,
+        nl_fallback_half_window_min=0.5,
+        count_no_ms2_as_detected=True,
+    )
+    target = Target(
+        label="Analyte",
+        mz=250.0,
+        rt_min=1.0,
+        rt_max=2.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=40.0,
+        is_istd=False,
+        istd_pair="",
+    )
+
+    class Raw:
+        def __init__(self, scale: float) -> None:
+            self.scale = scale
+
+        def extract_xic(self, _mz, rt_min, rt_max, _ppm):
+            rt = np.linspace(rt_min, rt_max, 1201)
+            intensity = 10.0 + (self.scale if with_signal else 0.0) * (
+                1000.0 * np.exp(-(((rt - 1.4) / 0.025) ** 2))
+                + 700.0 * np.exp(-(((rt - 1.7) / 0.025) ** 2))
+            )
+            return rt, intensity
+
+        def iter_ms2_scans(self, rt_min, rt_max):
+            for index, rt in enumerate((1.39, 1.4, 1.41, 1.69, 1.7, 1.71), 1):
+                if rt_min <= rt <= rt_max:
+                    yield Ms2ScanEvent(
+                        scan=Ms2Scan(
+                            scan_number=index,
+                            rt=rt,
+                            precursor_mz=250.0,
+                            masses=np.array([134.0 if with_nl else 135.0]),
+                            intensities=np.array([500.0]),
+                            base_peak=500.0,
+                        ),
+                        parse_error=None,
+                        scan_number=index,
+                    )
+
+    monkeypatch.setattr(pipeline, "preflight_raw_reader", lambda _path: [])
+    monkeypatch.setattr(
+        target_extraction,
+        "open_raw",
+        lambda path, *_args, **_kwargs: nullcontext(Raw(scales[path.stem])),
+    )
+    assessments = []
+    relation_answers = []
+    evaluate_relations = cid_nl_method_assessment.evaluate_cid_nl_method_relations
+
+    def record_relations(**kwargs):
+        answer = evaluate_relations(**kwargs)
+        relation_answers.append(answer)
+        return answer
+
+    monkeypatch.setattr(
+        target_extraction, "evaluate_cid_nl_method_relations", record_relations
+    )
+    monkeypatch.setattr(
+        cid_nl_method_assessment, "evaluate_cid_nl_method_relations", record_relations
+    )
+    mint_assessment = production_workflow.mint_cid_nl_method_assessment_ref
+
+    def record_assessment(**kwargs):
+        result = mint_assessment(**kwargs)
+        assessments.append(result)
+        return result
+
+    monkeypatch.setattr(
+        production_workflow, "mint_cid_nl_method_assessment_ref", record_assessment
+    )
+    workbook_path = tmp_path / "xic_results.xlsx"
+    execution = TargetedApplicationService(
+        runner=pipeline.run_pipeline
+    ).execute_application(
+        build_targeted_application_request(
+            config,
+            [target],
+            injection_order={"SampleA": 1, "SampleB": 2},
+            excel_output_path=workbook_path,
+        )
+    )
+
+    assert len(assessments) == 2
+    assert len(relation_answers) == 2
+    assert all(
+        len(item.candidate_peaks) == (2 if with_signal else 0) for item in assessments
+    )
+    assert all(
+        item.content.evaluation_receipt.scanned_event_count == 6 for item in assessments
+    )
+    assert all(len(item.evidence_refs) == (6 if with_nl else 0) for item in assessments)
+    assert all(
+        item.content.method_result
+        == (
+            "SUPPORT"
+            if with_signal and with_nl
+            else "HOLD"
+            if with_signal
+            else "REJECT"
+        )
+        for item in assessments
+    )
+    rendered = {
+        file.sample_name: file.results[target.label]
+        for file in execution.active_output.file_results
+    }
+    if with_signal:
+        assert rendered["SampleA"].reported_peak_area > 0
+        assert rendered["SampleB"].reported_peak_area == pytest.approx(
+            rendered["SampleA"].reported_peak_area * 2.0, rel=0.01
+        )
+    for result in rendered.values():
+        assert result.targeted_product_projection.counted_detection is (
+            with_nl and with_signal
+        )
+        if with_signal:
+            assert result.reported_rt == pytest.approx(1.4, abs=0.01)
+        else:
+            assert result.reported_peak_area is None
+            assert result.reported_rt is None
+    workbook = load_workbook(workbook_path, read_only=True, data_only=True)
+    rows = list(workbook["XIC Results"].values)
+    workbook.close()
+    headers = rows[0]
+    workbook_rows = {row[0]: dict(zip(headers, row, strict=True)) for row in rows[1:]}
+    assert set(workbook_rows) == set(scales)
+    for sample_name, result in rendered.items():
+        row = workbook_rows[sample_name]
+        assert row["Area"] == (
+            round(result.reported_peak_area, 2) if with_signal else "ND"
+        )
+        assert row["RT"] == (round(result.reported_rt, 4) if with_signal else "ND")
+        assert row["Counted Detection"] == (
+            "TRUE" if with_nl and with_signal else "FALSE"
+        )
+
+
+def test_finalized_method_hold_cannot_inherit_an_acquisition_detection_claim(tmp_path):
+    config, target, output = production_case(tmp_path)
+    source = output.file_results[0].results[target.label]
+    expected_area = source.reported_peak_area
+    output.file_results[0].results[target.label] = with_method_universe(
+        replace(source, candidate_ms2_evidence=None), target
+    )
+    # The acquisition projection still says detected_clean. It is not a
+    # replacement for the completed method's observation-only hypothesis.
+    assert source.targeted_product_projection.counted_detection is True
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
+    )
+    completed = execute_targeted_production_workflow(request, output)
+    published = publish_targeted_outputs(request, completed, output)
+    result = published.output.file_results[0].results[target.label]
+    assert result.reported_peak_area == expected_area
+    assert result.targeted_product_projection.counted_detection is False
+    assert (
+        "cid_nl_method_not_supported"
+        in result.targeted_product_projection.not_counted_reasons
+    )
+
+
+def test_complete_finalized_population_publishes_only_workbook(
     tmp_path: Path,
 ) -> None:
     config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
     excel_path = config.output_csv.with_name("xic_results.xlsx")
     request = build_targeted_application_request(
         config,
@@ -81,17 +280,13 @@ def test_complete_finalized_population_publishes_csv_excel_and_manifest(
     published = publish_targeted_outputs(request, finalized, output)
 
     assert set(published.paths) == {
-        config.output_csv,
-        config.output_csv.with_name("xic_results_long.csv"),
-        config.diagnostics_csv,
-        config.output_csv.with_name("method_manifest.json"),
         excel_path,
     }
     assert all(path.is_file() for path in published.paths)
     assert not list(config.output_csv.parent.glob(".xic-targeted-publish-*"))
 
 
-def test_published_workbook_binds_the_published_method_manifest(
+def test_workbook_only_delivery_embeds_method_settings(
     tmp_path: Path,
 ) -> None:
     config, target, output = production_case(tmp_path)
@@ -107,58 +302,15 @@ def test_published_workbook_binds_the_published_method_manifest(
     publish_targeted_outputs(request, finalized, output)
 
     workbook = load_workbook(excel_path, read_only=True, data_only=True)
-    metadata = dict(workbook["Run Metadata"].iter_rows(values_only=True))
+    metadata = dict(
+        row[:2] for row in workbook["Run Metadata"].iter_rows(values_only=True)
+    )
     workbook.close()
-    manifest = method_manifest_path(config)
-    assert metadata["method_manifest_path"] == manifest.name
-    assert metadata["method_manifest_sha256"] == artifact_sha256(manifest)
-
-
-def test_published_review_report_uses_the_public_workbook_name(
-    tmp_path: Path,
-) -> None:
-    config, target, output = production_case(tmp_path)
-    config = replace(config, emit_review_report=True)
-    excel_path = config.output_csv.with_name("xic_results_20260903.xlsx")
-    request = build_targeted_application_request(
-        config,
-        [target],
-        injection_order={"SampleA": 1},
-        excel_output_path=excel_path,
+    assert metadata["signal_processing_method"] == config.signal_processing_method
+    assert (
+        metadata["nl_rt_anchor_half_window_min"] == config.nl_rt_anchor_half_window_min
     )
-    finalized = execute_targeted_production_workflow(request, output)
-
-    publication = publish_targeted_outputs(request, finalized, output)
-
-    report_path = review_report_path_for_excel(excel_path)
-    assert report_path in publication.paths
-    assert report_path.is_file()
-    assert not excel_path.with_name("__targeted_output__.html").exists()
-
-
-def test_duplicate_declared_output_destinations_publish_nothing(
-    tmp_path: Path,
-) -> None:
-    config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
-    duplicate_excel_path = (
-        config.output_csv.parent
-        / "equivalent-destination"
-        / ".."
-        / config.output_csv.name
-    )
-    request = build_targeted_application_request(
-        config,
-        [target],
-        injection_order={"SampleA": 1},
-        excel_output_path=duplicate_excel_path,
-    )
-    finalized = execute_targeted_production_workflow(request, output)
-
-    with pytest.raises(TargetedOutputBoundaryError, match="duplicate destination"):
-        publish_targeted_outputs(request, finalized, output)
-
-    assert not any(config.output_csv.parent.iterdir())
+    assert set(config.output_csv.parent.iterdir()) == {excel_path}
 
 
 def test_publication_returns_concrete_public_result_models(tmp_path: Path) -> None:
@@ -170,6 +322,7 @@ def test_publication_returns_concrete_public_result_models(tmp_path: Path) -> No
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1, "SampleB": 2},
     )
     finalized = execute_targeted_production_workflow(request, output)
@@ -200,6 +353,7 @@ def test_publication_renders_the_finalized_numeric_hypothesis(tmp_path: Path) ->
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     finalized = execute_targeted_production_workflow(request, output)
@@ -235,15 +389,14 @@ def test_publication_renders_the_finalized_numeric_hypothesis(tmp_path: Path) ->
     assert rendered.peak.peak_end == finalized_integration.rt_right_min
     assert rendered.selected_hypothesis is None
     assert rendered.selection_decision is None
-    assert rendered.model_selection_result is None
 
 
 @pytest.mark.parametrize(
     ("nl_status", "not_counted_reason", "count_no_ms2_as_detected"),
     [
-        ("NL_FAIL", "analyte_nl_fail_requires_policy", False),
-        ("NO_MS2", "analyte_missing_ms2_requires_policy", False),
-        ("NO_MS2", "analyte_missing_ms2_requires_policy", True),
+        ("NL_FAIL", "cid_nl_method_not_supported", False),
+        ("NO_MS2", "cid_nl_method_not_supported", False),
+        ("NO_MS2", "cid_nl_method_not_supported", True),
     ],
 )
 def test_service_publishes_finalized_numeric_values_without_counting_detection(
@@ -259,7 +412,6 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
     )
     config = replace(
         config,
-        keep_intermediate_csv=True,
         count_no_ms2_as_detected=count_no_ms2_as_detected,
     )
     assert not target.is_istd and target.istd_pair == ""
@@ -304,7 +456,9 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
                 best_product_evidence=None,
             )
         policy_result = reproject_extraction_result(
-            replace(extraction, candidate_ms2_evidence=evidence),
+            with_method_universe(
+                replace(extraction, candidate_ms2_evidence=evidence), target
+            ),
             target=target,
             sample_name=file_result.sample_name,
         )
@@ -334,25 +488,33 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
     assert set(decisions) == {"SampleA", "SampleB"}
     assert all(decision.variant == "numeric" for decision in decisions.values())
     assert decisions["SampleB"].value == pytest.approx(decisions["SampleA"].value * 2.5)
-    with config.output_csv.open(newline="", encoding="utf-8-sig") as handle:
-        wide_rows = {row["SampleName"]: row for row in csv.DictReader(handle)}
-    with config.output_csv.with_name("xic_results_long.csv").open(
-        newline="", encoding="utf-8-sig"
-    ) as handle:
-        long_rows = {row["SampleName"]: row for row in csv.DictReader(handle)}
+    long_rows = {
+        row["SampleName"]: row
+        for row in _run_output_to_long_rows(execution.active_output, [target])
+    }
     workbook = load_workbook(excel_path, data_only=True)
     try:
         rows = workbook["XIC Results"].iter_rows(values_only=True)
         headers = next(rows)
         workbook_rows = {row[0]: dict(zip(headers, row)) for row in rows}
         sheet = workbook["XIC Results"]
-        for header in ("Reason", "NL Evidence", "PeakStart", "PeakEnd"):
+        for header in ("Area", "RT", "IntSmoothed", "Counted Detection"):
             index = headers.index(header) + 1
             assert not any(
                 dimension.hidden and dimension.min <= index <= dimension.max
                 for dimension in sheet.column_dimensions.values()
             )
-        for header in ("Product State", "Counted Detection", "Review State", "NL"):
+        for header in (
+            "Review",
+            "Review Reason",
+            "Reason",
+            "NL Evidence",
+            "PeakStart",
+            "PeakEnd",
+            "NL",
+            "Int",
+            "PeakWidth",
+        ):
             index = headers.index(header) + 1
             assert any(
                 dimension.hidden and dimension.min <= index <= dimension.max
@@ -360,7 +522,7 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
             )
     finally:
         workbook.close()
-    assert set(wide_rows) == set(long_rows) == set(workbook_rows) == set(decisions)
+    assert set(long_rows) == set(workbook_rows) == set(decisions)
     rendered = {
         item.sample_name: item.results[target.label]
         for item in execution.active_output.file_results
@@ -382,7 +544,6 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
         assert rendered[sample_name].reported_peak_area == decision.value
         for field, (value, digits) in expected_values.items():
             expected_text = f"{value:.{digits}f}"
-            assert wide_rows[sample_name][f"{target.label}_{field}"] == expected_text
             assert long_rows[sample_name][field] == expected_text
             assert workbook_rows[sample_name][field] == float(expected_text)
         for row in (long_rows[sample_name], workbook_rows[sample_name]):
@@ -393,18 +554,30 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
             )
             assert row["Reason"].startswith("MS1 peak measured; review:")
             assert "Not counted" not in row["Reason"]
-            assert row["Product State"] == "not_counted"
             assert row["Counted Detection"] == "FALSE"
-            assert row["Review State"] == "review_required"
-            assert row["Projection Not Counted Reasons"] == not_counted_reason
-            assert row["Projection Reason"] == projection.projection_reason
+        assert long_rows[sample_name]["Product State"] == "not_counted"
+        assert long_rows[sample_name]["Review State"] == "review_required"
+        assert (
+            long_rows[sample_name]["Projection Not Counted Reasons"]
+            == not_counted_reason
+        )
+        assert (
+            long_rows[sample_name]["Projection Reason"] == projection.projection_reason
+        )
+        assert workbook_rows[sample_name]["Review"] == (
+            "Review" if nl_status == "NL_FAIL" else "Check"
+        )
+        assert workbook_rows[sample_name]["Review Reason"]
+        for field in ("Int", "IntSmoothed"):
+            assert workbook_rows[sample_name][field] == float(
+                long_rows[sample_name][field]
+            )
 
 
 def test_service_publishes_no_numeric_for_finalized_no_observation(
     tmp_path: Path,
 ) -> None:
     config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
     target = replace(target, neutral_loss_da=None, nl_ppm_warn=None, nl_ppm_max=None)
     extraction = output.file_results[0].results[target.label]
     original_trace = extraction.acquisition_trace
@@ -423,18 +596,23 @@ def test_service_publishes_no_numeric_for_finalized_no_observation(
         signal_processing_method=config.signal_processing_method,
         signal_processing_window_points=config.signal_processing_window_points,
     )
-    output.file_results[0].results[target.label] = replace(
-        extraction,
-        peak_result=find_peak_and_area(rt, trace.intensity, config, preferred_rt=1.5),
-        selected_hypothesis=None,
-        acquisition_trace=trace,
-        physical_evaluation=evaluate_physical_peak(
-            prepare_physical_signal(rt, trace.intensity, profile=profile),
-            selection_subject_id=target.label,
-            query_rt_min=1.5,
-            request_context_rt_start_min=trace.rt_min,
-            request_context_rt_end_min=trace.rt_max,
+    output.file_results[0].results[target.label] = with_method_universe(
+        replace(
+            extraction,
+            peak_result=find_peak_and_area(
+                rt, trace.intensity, config, preferred_rt=1.5
+            ),
+            selected_hypothesis=None,
+            acquisition_trace=trace,
+            physical_evaluation=evaluate_physical_peak(
+                prepare_physical_signal(rt, trace.intensity, profile=profile),
+                selection_subject_id=target.label,
+                query_rt_min=1.5,
+                request_context_rt_start_min=trace.rt_min,
+                request_context_rt_end_min=trace.rt_max,
+            ),
         ),
+        target,
     )
     excel_path = config.output_csv.with_suffix(".xlsx")
     request = build_targeted_application_request(
@@ -452,12 +630,7 @@ def test_service_publishes_no_numeric_for_finalized_no_observation(
     rendered = execution.active_output.file_results[0].results[target.label]
     assert rendered.reported_peak_area is None
     assert rendered.peak is None
-    with config.output_csv.open(newline="", encoding="utf-8-sig") as handle:
-        wide_row = next(csv.DictReader(handle))
-    with config.output_csv.with_name("xic_results_long.csv").open(
-        newline="", encoding="utf-8-sig"
-    ) as handle:
-        long_row = next(csv.DictReader(handle))
+    long_row = _run_output_to_long_rows(execution.active_output, [target])[0]
     workbook = load_workbook(excel_path, read_only=True, data_only=True)
     try:
         rows = workbook["XIC Results"].iter_rows(values_only=True)
@@ -465,12 +638,16 @@ def test_service_publishes_no_numeric_for_finalized_no_observation(
     finally:
         workbook.close()
     for field in ("RT", "Area", "PeakStart", "PeakEnd", "PeakWidth"):
-        assert wide_row[f"{target.label}_{field}"] == "ND"
-        assert long_row[field] == workbook_row[field] == "ND"
+        assert long_row[field] == "ND"
+        if field != "PeakWidth":
+            assert workbook_row[field] == "ND"
     for row in (long_row, workbook_row):
         assert row["Counted Detection"] == "FALSE"
-        assert row["Review State"] == "review_required"
-        assert row["Projection Reason"] == "finalized_searched_no_observation"
+    assert long_row["Review State"] == "review_required"
+    assert long_row["Projection Reason"] == "finalized_searched_no_observation"
+    assert workbook_row["Review"] == "Review"
+    assert workbook_row["Review Reason"]
+    assert workbook_row["Reason"] == long_row["Reason"]
 
 
 def test_publication_retires_equal_area_legacy_selection_authority(
@@ -480,6 +657,7 @@ def test_publication_retires_equal_area_legacy_selection_authority(
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     finalized = execute_targeted_production_workflow(request, output)
@@ -489,53 +667,14 @@ def test_publication_retires_equal_area_legacy_selection_authority(
     rendered = published.output.file_results[0].results[target.label]
     assert rendered.selected_hypothesis is None
     assert rendered.selection_decision is None
-    assert rendered.model_selection_result is None
     assert rendered.peak_result.candidates == ()
     assert rendered.peak_result.candidate_scores == ()
-
-
-def test_manifest_does_not_claim_any_unstaged_stale_output(
-    tmp_path: Path,
-) -> None:
-    config, target, output = production_case(tmp_path)
-    config = replace(
-        config,
-        keep_intermediate_csv=False,
-        emit_score_breakdown=False,
-    )
-    stale_outputs = {
-        "output_csv": config.output_csv,
-        "long_csv": config.output_csv.with_name("xic_results_long.csv"),
-        "diagnostics_csv": config.diagnostics_csv,
-        "score_breakdown_csv": config.output_csv.with_name("xic_score_breakdown.csv"),
-    }
-    config.output_csv.parent.mkdir(parents=True)
-    for artifact_id, path in stale_outputs.items():
-        path.write_bytes(f"stale {artifact_id}".encode())
-    request = build_targeted_application_request(
-        config,
-        [target],
-        injection_order={"SampleA": 1},
-    )
-    finalized = execute_targeted_production_workflow(request, output)
-
-    publish_targeted_outputs(request, finalized, output)
-
-    manifest = json.loads(
-        config.output_csv.with_name("method_manifest.json").read_text(encoding="utf-8")
-    )
-    for artifact_id, path in stale_outputs.items():
-        artifact = manifest["output_artifacts"][artifact_id]
-        assert artifact["exists"] is False
-        assert artifact["sha256"] is None
-        assert path.read_bytes() == f"stale {artifact_id}".encode()
 
 
 def test_neutral_loss_disabled_target_publishes_ms1_backfill(
     tmp_path: Path,
 ) -> None:
     config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
     target = replace(
         target,
         neutral_loss_da=None,
@@ -545,63 +684,20 @@ def test_neutral_loss_disabled_target_publishes_ms1_backfill(
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
 
     finalized = execute_targeted_production_workflow(request, output)
     published = publish_targeted_outputs(request, finalized, output)
 
-    assert config.output_csv in published.paths
-    assert config.output_csv.is_file()
-    with config.output_csv.with_name("xic_results_long.csv").open(
-        newline="", encoding="utf-8-sig"
-    ) as handle:
-        row = next(csv.DictReader(handle))
+    assert published.paths == (request.excel_output_path,)
+    assert request.excel_output_path.is_file()
+    row = _run_output_to_long_rows(published.output, [target])[0]
     assert row["NL"] == ""
     assert row["NL Evidence"] == "Not requested"
     assert row["Area"] != "ND"
     assert row["Reason"].startswith("MS1 peak measured")
-
-
-
-
-def test_acquisition_baseline_projection_preserves_not_counted_cells(
-    tmp_path: Path,
-) -> None:
-    config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
-    extraction = output.file_results[0].results[target.label]
-    projection = extraction.targeted_product_projection
-    assert projection is not None
-    output.file_results[0].results[target.label] = replace(
-        extraction,
-        targeted_product_projection=replace(
-            projection,
-            product_state="not_counted",
-            counted_detection=False,
-            projection_reason="baseline_nl_fail",
-        ),
-    )
-    request = build_targeted_application_request(
-        config,
-        [target],
-        injection_order={"SampleA": 1},
-        output_projection="acquisition_baseline",
-    )
-    finalized = execute_targeted_production_workflow(request, output)
-
-    publication = publish_targeted_outputs(request, finalized, output)
-
-    with config.output_csv.with_name("xic_results_long.csv").open(
-        newline="",
-        encoding="utf-8-sig",
-    ) as handle:
-        row = next(csv.DictReader(handle))
-    assert row["Product State"] == "not_counted"
-    assert row["Counted Detection"] == "FALSE"
-    assert row["RT"] == f"{extraction.reported_rt:.4f}"
-    assert row["Area"] == f"{extraction.reported_peak_area:.2f}"
-    assert publication.output is not output
 
 
 def test_workbench_summary_consumes_the_finalized_publication_view(
@@ -610,7 +706,6 @@ def test_workbench_summary_consumes_the_finalized_publication_view(
     from xic_workbench.targeted import build_summary
 
     config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
     extraction = output.file_results[0].results[target.label]
     candidate_evidence = extraction.candidate_ms2_evidence
     assert candidate_evidence is not None
@@ -624,21 +719,24 @@ def test_workbench_summary_consumes_the_finalized_publication_view(
         * 1_000_000.0
     )
     policy_result = reproject_extraction_result(
-        replace(
-            extraction,
-            candidate_ms2_evidence=replace(
-                candidate_evidence,
-                nl_match=False,
-                nl_status="NL_FAIL",
-                strict_nl_scan_count=0,
-                best_loss_ppm=observed_loss_error_ppm,
-                best_product_evidence=replace(
-                    product_evidence,
-                    product_mz=product_evidence.precursor_mz - observed_loss_da,
-                    observed_loss_da=observed_loss_da,
-                    observed_loss_error_ppm=observed_loss_error_ppm,
+        with_method_universe(
+            replace(
+                extraction,
+                candidate_ms2_evidence=replace(
+                    candidate_evidence,
+                    nl_match=False,
+                    nl_status="NL_FAIL",
+                    strict_nl_scan_count=0,
+                    best_loss_ppm=observed_loss_error_ppm,
+                    best_product_evidence=replace(
+                        product_evidence,
+                        product_mz=product_evidence.precursor_mz - observed_loss_da,
+                        observed_loss_da=observed_loss_da,
+                        observed_loss_error_ppm=observed_loss_error_ppm,
+                    ),
                 ),
             ),
+            target,
         ),
         target=target,
         sample_name="SampleA",
@@ -646,13 +744,14 @@ def test_workbench_summary_consumes_the_finalized_publication_view(
     assert policy_result.targeted_product_projection is not None
     assert policy_result.targeted_product_projection.counted_detection is False
     assert (
-        "analyte_nl_fail_requires_policy"
+        "cid_nl_method_not_supported"
         in policy_result.targeted_product_projection.not_counted_reasons
     )
     output.file_results[0].results[target.label] = policy_result
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     service = TargetedApplicationService(
@@ -682,10 +781,7 @@ def test_workbench_summary_consumes_the_finalized_publication_view(
     assert final_output is not output
     assert summary["targets"][0]["detected"] == 0
     assert summary["targets"][0]["median_area"] == finalized_value
-    with config.output_csv.with_name("xic_results_long.csv").open(
-        newline="", encoding="utf-8-sig"
-    ) as handle:
-        row = next(csv.DictReader(handle))
+    row = _run_output_to_long_rows(final_output, [target])[0]
     assert row["Product State"] == "not_counted"
     assert row["Counted Detection"] == "FALSE"
     assert row["RT"] == f"{final_result.reported_rt:.4f}"
@@ -696,22 +792,22 @@ def test_collision_leaves_existing_output_and_publishes_nothing_else(
     tmp_path: Path,
 ) -> None:
     config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     finalized = execute_targeted_production_workflow(request, output)
     config.output_csv.parent.mkdir(parents=True, exist_ok=True)
-    config.output_csv.write_bytes(b"existing")
+    request.excel_output_path.write_bytes(b"existing")
 
     with pytest.raises(TargetedOutputBoundaryError, match="already exists"):
         publish_targeted_outputs(request, finalized, output)
 
-    assert config.output_csv.read_bytes() == b"existing"
+    assert request.excel_output_path.read_bytes() == b"existing"
     assert sorted(path.name for path in config.output_csv.parent.iterdir()) == [
-        config.output_csv.name
+        request.excel_output_path.name
     ]
 
 
@@ -723,6 +819,7 @@ def test_noncooperating_collision_after_precheck_is_not_replaced(
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     completed = execute_targeted_production_workflow(request, output)
@@ -756,10 +853,10 @@ def test_concurrent_non_replacing_publications_are_collision_atomic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     original_commit = targeted_output_boundary._commit_staged_outputs
@@ -809,15 +906,12 @@ def test_concurrent_non_replacing_publications_are_collision_atomic(
 
     winning = successes[0]
     assert isinstance(winning, targeted_output_boundary.TargetedPublication)
-    expected_paths = {
-        config.output_csv,
-        config.output_csv.with_name("xic_results_long.csv"),
-        config.diagnostics_csv,
-        config.output_csv.with_name("method_manifest.json"),
-    }
+    expected_paths = {request.excel_output_path}
     assert set(winning.paths) == expected_paths
     assert all(path.is_file() for path in winning.paths)
-    diagnostics_text = config.diagnostics_csv.read_text(encoding="utf-8-sig")
+    workbook = load_workbook(request.excel_output_path, read_only=True)
+    diagnostics_text = str(list(workbook["Diagnostics"].values))
+    workbook.close()
     assert (
         sum(marker in diagnostics_text for marker in ("concurrent-a", "concurrent-b"))
         == 1
@@ -929,10 +1023,10 @@ def test_commit_failure_rolls_back_all_final_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     finalized = execute_targeted_production_workflow(request, output)
@@ -940,10 +1034,10 @@ def test_commit_failure_rolls_back_all_final_paths(
     commit_count = 0
     failed = False
 
-    def fail_second_commit(source: Path, target_path: Path) -> None:
+    def fail_commit(source: Path, target_path: Path) -> None:
         nonlocal commit_count, failed
         commit_count += 1
-        if commit_count == 2 and not failed:
+        if commit_count == 1 and not failed:
             failed = True
             raise OSError("commit failed")
         original_publish(source, target_path)
@@ -951,7 +1045,7 @@ def test_commit_failure_rolls_back_all_final_paths(
     monkeypatch.setattr(
         targeted_output_boundary,
         "_publish_without_replace",
-        fail_second_commit,
+        fail_commit,
     )
 
     with pytest.raises(TargetedOutputBoundaryError, match="rolled back"):
@@ -965,11 +1059,11 @@ def test_commit_cancellation_after_first_move_rolls_back_all_final_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
     cancellation_requested = False
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
         should_stop=lambda: cancellation_requested,
     )
@@ -1044,10 +1138,10 @@ def test_callback_exception_after_move_restores_complete_previous_set(
 
 def test_replay_replaces_its_owned_output_set(tmp_path: Path) -> None:
     config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     finalized = execute_targeted_production_workflow(request, output)
@@ -1067,10 +1161,10 @@ def test_replay_commit_failure_restores_previous_output_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     finalized = execute_targeted_production_workflow(request, output)
@@ -1079,15 +1173,15 @@ def test_replay_commit_failure_restores_previous_output_set(
     original_replace = Path.replace
     commit_count = 0
 
-    def fail_second_new_output(source: Path, target_path: Path) -> Path:
+    def fail_new_output(source: Path, target_path: Path) -> Path:
         nonlocal commit_count
         if source.parent.name.startswith(".xic-targeted-publish-"):
             commit_count += 1
-            if commit_count == 2:
+            if commit_count == 1:
                 raise OSError("replacement failed")
         return original_replace(source, target_path)
 
-    monkeypatch.setattr(Path, "replace", fail_second_new_output)
+    monkeypatch.setattr(Path, "replace", fail_new_output)
 
     with pytest.raises(TargetedOutputBoundaryError, match="rolled back"):
         publish_targeted_outputs(
@@ -1104,10 +1198,10 @@ def test_failed_primary_restore_uses_fallback_to_restore_live_output_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config, target, output = production_case(tmp_path)
-    config = replace(config, keep_intermediate_csv=True)
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     finalized = execute_targeted_production_workflow(request, output)
@@ -1121,7 +1215,7 @@ def test_failed_primary_restore_uses_fallback_to_restore_live_output_set(
         nonlocal commit_count, restore_failed
         if source.parent.name.startswith(".xic-targeted-publish-"):
             commit_count += 1
-            if commit_count == 2:
+            if commit_count == 1:
                 raise OSError("replacement failed")
         if source.parent.name == ".existing" and not restore_failed:
             restore_failed = True
@@ -1217,19 +1311,23 @@ def test_publisher_rejects_finalized_results_from_another_acquisition(
     assert stale_candidate is not None
     stale_product = stale_candidate.best_product_evidence
     assert stale_product is not None
-    stale_output.file_results[0].results[stale_target.label] = replace(
-        stale_extraction,
-        candidate_ms2_evidence=replace(
-            stale_candidate,
-            best_product_evidence=replace(
-                stale_product,
-                acquisition_source_id=stale_source.acquisition_source_id,
+    stale_output.file_results[0].results[stale_target.label] = with_method_universe(
+        replace(
+            stale_extraction,
+            candidate_ms2_evidence=replace(
+                stale_candidate,
+                best_product_evidence=replace(
+                    stale_product,
+                    acquisition_source_id=stale_source.acquisition_source_id,
+                ),
             ),
         ),
+        stale_target,
     )
     stale_request = build_targeted_application_request(
         stale_config,
         [stale_target],
+        excel_output_path=stale_config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     stale_finalized = execute_targeted_production_workflow(
@@ -1239,6 +1337,7 @@ def test_publisher_rejects_finalized_results_from_another_acquisition(
     current_request = build_targeted_application_request(
         current_config,
         [current_target],
+        excel_output_path=current_config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     with pytest.raises(
@@ -1257,6 +1356,7 @@ def test_publisher_rejects_unsealed_finalized_result_tuple(tmp_path: Path) -> No
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     completed = execute_targeted_production_workflow(request, output)
@@ -1272,31 +1372,12 @@ def test_publisher_rejects_unsealed_finalized_result_tuple(tmp_path: Path) -> No
         )
 
 
-def test_publisher_rejects_invalid_method_manifest_context(tmp_path: Path) -> None:
-    config, target, output = production_case(tmp_path)
-    request = build_targeted_application_request(
-        config,
-        [target],
-        injection_order={"SampleA": 1},
-    )
-    completed = execute_targeted_production_workflow(request, output)
-
-    with pytest.raises(
-        TargetedOutputBoundaryError,
-        match="must be a MethodManifestContext",
-    ):
-        publish_targeted_outputs(
-            replace(request, method_manifest_context="invalid"),
-            completed,
-            output,
-        )
-
-
 def test_publisher_uses_frozen_acquisition_snapshot(tmp_path: Path) -> None:
     config, target, output = production_case(tmp_path)
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     completed = execute_targeted_production_workflow(request, output)
@@ -1324,6 +1405,7 @@ def test_publisher_rejects_mutated_owner_snapshot(tmp_path: Path) -> None:
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
     completed = execute_targeted_production_workflow(request, output)
@@ -1343,6 +1425,7 @@ def test_publisher_rejects_reordered_acquisition_after_completion(
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1, "SampleB": 2},
     )
     completed = execute_targeted_production_workflow(request, output)
@@ -1366,6 +1449,7 @@ def test_service_accepts_raw_order_that_differs_from_canonical_order(
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={
             sample_name: index
             for index, sample_name in enumerate(sample_names, start=1)
@@ -1391,6 +1475,7 @@ def test_service_rejects_inputs_mutated_during_acquisition(tmp_path: Path) -> No
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
     )
 
@@ -1418,6 +1503,7 @@ def test_service_fingerprints_each_raw_only_once(
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1, "SampleB": 2},
     )
     original_fingerprint = identity.fingerprint_file_content
@@ -1448,6 +1534,7 @@ def test_cancellation_after_typed_completion_never_invokes_publisher(
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
         should_stop=lambda: next(stop_results),
     )
@@ -1475,6 +1562,7 @@ def test_cancellation_during_input_fingerprint_skips_acquisition_and_finalizatio
     request = build_targeted_application_request(
         config,
         [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
         injection_order={"SampleA": 1},
         should_stop=lambda: True,
     )
@@ -1492,6 +1580,222 @@ def test_cancellation_during_input_fingerprint_skips_acquisition_and_finalizatio
     assert execution.active_output.diagnostics == []
     assert execution.finalized_results == ()
     assert execution.published_paths == ()
+
+
+@pytest.mark.parametrize(
+    "missing_pair, istd_backfill, hint_window",
+    [
+        (False, False, False),
+        (True, False, False),
+        (False, True, False),
+        (False, False, True),
+    ],
+)
+def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    missing_pair: bool,
+    istd_backfill: bool,
+    hint_window: bool,
+) -> None:
+    from contextlib import nullcontext
+
+    from xic_extractor.configuration.models import ExtractionConfig, Target
+    from xic_extractor.extraction import pipeline, target_extraction
+    from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
+
+    data = tmp_path / "raw"
+    data.mkdir()
+    shifts = {
+        "SampleA": 0.0,
+        "SampleB": 0.02,
+        "SampleC": 0.04 if istd_backfill else 0.45,
+    }
+    for name in shifts:
+        (data / f"{name}.raw").write_bytes(name.encode())
+    config = ExtractionConfig(
+        data_dir=data,
+        dll_dir=tmp_path,
+        output_csv=tmp_path / "result.csv",
+        diagnostics_csv=tmp_path / "diag.csv",
+        smooth_window=9,
+        smooth_polyorder=2,
+        peak_rel_height=0.02,
+        peak_min_prominence_ratio=0.01,
+        ms2_precursor_tol_da=0.5,
+        nl_min_intensity_ratio=0.01,
+        nl_rt_anchor_half_window_min=0.6,
+        nl_fallback_half_window_min=0.6,
+    )
+    analyte = Target(
+        label="Analyte",
+        mz=250.0,
+        rt_min=1.1,
+        rt_max=1.4 if hint_window else 2.5,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=40.0,
+        is_istd=istd_backfill,
+        istd_pair="" if istd_backfill else "ISTD",
+    )
+    istd = replace(
+        analyte,
+        label="ISTD",
+        mz=255.0,
+        rt_min=0.7,
+        rt_max=2.1,
+        is_istd=True,
+        istd_pair="",
+    )
+
+    class Raw:
+        def __init__(self, name):
+            self.name = name
+
+        def extract_xic(self, mz, rt_min, rt_max, _ppm):
+            rt = np.linspace(rt_min, rt_max, 1801)
+            center = (1.35 if mz == 255.0 else 1.45) + shifts[self.name]
+            scale = {"SampleA": 1000.0, "SampleB": 2000.0, "SampleC": 3000.0}[self.name]
+            signal = 10 + scale * np.exp(-(((rt - center) / 0.015) ** 2))
+            if self.name == "SampleC" and mz == 250.0:
+                signal += 8000.0 * np.exp(-(((rt - 2.2) / 0.015) ** 2))
+            if missing_pair and self.name == "SampleC" and mz == 255.0:
+                signal = np.full_like(rt, 10.0)
+            return rt, signal
+
+        def iter_ms2_scans(self, rt_min, rt_max):
+            for index, mz in enumerate((250.0, 255.0), 1):
+                if self.name == "SampleC" and mz == 250.0:
+                    continue
+                rt = (1.35 if mz == 255.0 else 1.45) + shifts[self.name]
+                if rt_min <= rt <= rt_max:
+                    yield Ms2ScanEvent(
+                        scan=Ms2Scan(
+                            scan_number=index,
+                            rt=rt,
+                            precursor_mz=mz,
+                            masses=np.array([mz - 116.0]),
+                            intensities=np.array([500.0]),
+                            base_peak=500.0,
+                        ),
+                        parse_error=None,
+                        scan_number=index,
+                    )
+
+    monkeypatch.setattr(pipeline, "preflight_raw_reader", lambda _path: [])
+    monkeypatch.setattr(
+        target_extraction,
+        "open_raw",
+        lambda path, *_a, **_k: nullcontext(Raw(path.stem)),
+    )
+    # RAW enumeration order is not canonical sample-identity order.
+    from xic_extractor.applications.targeted import production_workflow
+
+    original_execute = production_workflow._execute_target
+    initial_counts = []
+
+    def execute_reverse_identity(context, *args, **kwargs):
+        context = replace(
+            context,
+            results_by_sample=tuple(
+                sorted(
+                    context.results_by_sample,
+                    key=lambda item: item[0].identity.sample_identity_id,
+                    reverse=True,
+                )
+            ),
+        )
+        if istd_backfill:
+            initial_counts.extend(
+                file.results["Analyte"].targeted_product_projection.counted_detection
+                for sample, file in context.results_by_sample
+                if sample.metadata.raw_stem == "SampleC"
+            )
+        return original_execute(context, *args, **kwargs)
+
+    monkeypatch.setattr(
+        production_workflow, "_execute_target", execute_reverse_identity
+    )
+    workbook_path = tmp_path / "backfill.xlsx"
+    execution = TargetedApplicationService(pipeline.run_pipeline).execute_application(
+        build_targeted_application_request(
+            config,
+            [analyte, istd],
+            injection_order={"SampleA": 1, "SampleB": 2, "SampleC": 3},
+            excel_output_path=workbook_path,
+        )
+    )
+    finalized = next(
+        r
+        for r in execution.finalized_results
+        if r.completed_projection.row_binding.target.definition.target.label
+        == "Analyte"
+    )
+    decisions = finalized.scientific_core.targeted_backfill_decisions
+    accepted = [d for d in decisions if d.disposition == "candidate_mapped"]
+    assert len(accepted) == (0 if missing_pair else 1), (
+        [(d.reason_codes, d.group_facts.direct_support_count_s) for d in decisions],
+        [
+            (
+                f.sample_name,
+                [
+                    (
+                        label,
+                        r.targeted_product_projection.counted_detection,
+                        r.reported_rt,
+                    )
+                    for label, r in f.results.items()
+                ],
+            )
+            for f in execution.active_output.file_results
+        ],
+    )
+    if accepted:
+        decision = accepted[0]
+        assert decision.target_cell.content.method_result == "HOLD"
+        assert decision.group_facts.direct_support_count_s == 2
+        assert decision.candidate_universe.localization.location.basis.startswith(
+            "trajectory" if istd_backfill else "paired_istd"
+        )
+        assert all(
+            s.sample.metadata.raw_stem != "SampleC"
+            for s in decision.group_facts.group_context.supports
+        )
+        assert (
+            decision.matched_candidate.peak_observation.content.integration.rt_apex_min
+            == pytest.approx(1.49 if istd_backfill else 1.9, abs=0.005)
+        )
+    workbook = load_workbook(workbook_path, read_only=True, data_only=True)
+    values = iter(workbook["XIC Results"].values)
+    headers = next(values)
+    rows = [dict(zip(headers, row)) for row in values]
+    diagnostic_values = list(workbook["Diagnostics"].values)
+    workbook.close()
+    row = next(
+        r for r in rows if r["SampleName"] == "SampleC" and r["Target"] == "Analyte"
+    )
+    assert row["Counted Detection"] == ("TRUE" if istd_backfill else "FALSE")
+    if istd_backfill:
+        assert initial_counts and not any(initial_counts)
+    if not missing_pair:
+        assert row["RT"] == pytest.approx(1.49 if istd_backfill else 1.9, abs=0.005)
+        assert row["Area"] > 0
+        if istd_backfill:
+            assert row["Review"] is None
+            assert row["Review Reason"] is None
+            assert row["Review Evidence"] is None
+        else:
+            assert "backfill" in str(row["Review Evidence"]).lower()
+        assert any(
+            "SampleC" in cells and "Analyte" in cells and "BACKFILL_ACCEPTED" in cells
+            for cells in diagnostic_values
+        )
+        ref = next(
+            r for r in rows if r["SampleName"] == "SampleA" and r["Target"] == "Analyte"
+        )
+        assert row["Area"] / ref["Area"] == pytest.approx(3.0, rel=0.03)
+        assert ref["Counted Detection"] == "TRUE"
 
 
 def test_cli_and_workbench_route_through_acquisition_service_boundary() -> None:

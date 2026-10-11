@@ -202,6 +202,5 @@ def _hypothesis(
         audit=AuditTrail(
             proposal_sources=proposal_sources,
             selected=True,
-            selection_rank=1,
         ),
     )

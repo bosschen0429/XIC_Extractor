@@ -7,11 +7,9 @@ from typing import TYPE_CHECKING
 
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.extraction.istd_prepass import extract_istd_anchors_only
-from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
 from xic_extractor.extraction.target_extraction import extract_raw_file_result
 from xic_extractor.output.messages import DiagnosticRecord
-from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecords
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 
 if TYPE_CHECKING:
@@ -24,10 +22,8 @@ def run_serial(
     *,
     raw_paths: list[Path],
     injection_order: dict[str, int],
-    rt_prior_library: dict[tuple[str, str], LibraryEntry],
     progress_callback: Callable[[int, int, str], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
-    model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
     acquisition_sources_by_sample: Mapping[str, AcquisitionSourceExpectation]
     | None = None,
 ) -> RunOutput:
@@ -58,7 +54,6 @@ def run_serial(
         config=config,
         injection_order=injection_order,
         istd_rts_by_sample=istd_rts_by_sample,
-        rt_prior_library=rt_prior_library,
     )
 
     file_results: list[FileResult] = []
@@ -79,10 +74,6 @@ def run_serial(
             targets,
             raw_path,
             scoring_context_factory=scoring_context_factory,
-            rt_prior_library=rt_prior_library,
-            model_selection_expected_diff_approvals=(
-                model_selection_expected_diff_approvals
-            ),
             **extraction_kwargs,
         )
         file_results.append(raw_result.file_result)

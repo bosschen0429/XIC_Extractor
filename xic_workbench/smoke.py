@@ -6,6 +6,7 @@ import http.client
 import json
 import sys
 import threading
+import uuid
 from pathlib import Path
 
 from xic_extractor.alignment.quantitative_projection_authority import (
@@ -13,6 +14,7 @@ from xic_extractor.alignment.quantitative_projection_authority import (
 )
 from xic_extractor.discovery.blank_qualification import get_default_background_library
 from xic_extractor.presets import bind_cid_nl_recipe, load_preset
+from xic_extractor.settings_schema import METHOD_KEYS
 from xic_workbench.server import create_server
 from xic_workbench.workspace import ReviewWorkspace
 
@@ -91,12 +93,34 @@ def run_smoke(report_path: Path) -> int:
             "/api/method/save",
             {"draft": method["draft"], "path": str(destination), "apply": False},
         )
-        expected = bind_cid_nl_recipe(
-            load_preset("dna_dr"), "full", recipe_overrides={"rt_max": 60.0}
-        )
+        expected = bind_cid_nl_recipe(load_preset("dna_dr"), "full")
         actual = bind_cid_nl_recipe(load_preset(destination), "full")
         if expected.discovery_settings != actual.discovery_settings:
             raise RuntimeError("Saved HTML method changed its bound settings")
+        report["stage"] = "targeted_method_roundtrip"
+        saved = json.loads(
+            request(
+                "/api/targeted/method/save",
+                {
+                    "name": f"smoke-{uuid.uuid4().hex[:8]}",
+                    "settings": config["settings"],
+                    "targets": config["targets"],
+                },
+            )
+        )
+        method_path = next(
+            item["path"] for item in saved["methods"] if item["name"] == saved["name"]
+        )
+        restored = json.loads(
+            request(
+                "/api/targeted/method/load",
+                {"path": method_path, "settings": config["settings"]},
+            )
+        )
+        if any(
+            restored["settings"][key] != config["settings"][key] for key in METHOD_KEYS
+        ) or restored["targets"] != config["targets"]:
+            raise RuntimeError("Saved Targeted method changed settings or targets")
         if any(name == "PyQt6" or name.startswith("PyQt6.") for name in sys.modules):
             raise RuntimeError("HTML application imported Qt")
         report.update(
@@ -104,6 +128,7 @@ def run_smoke(report_path: Path) -> int:
             stage="complete",
             preset_roundtrip=True,
             preset_path=str(destination),
+            targeted_method_roundtrip=True,
         )
     except Exception as exc:
         report["reason"] = str(exc)

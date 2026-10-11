@@ -60,9 +60,59 @@ owner. CID-NL support, observation-only
 selections, and MS1-only targets retain their sample-local identities and values.
 Grouping does not reselect peaks or add a cohort RT review policy.
 
+### Candidate selection
+
+The existing CID-NL method-assessment owner attributes acquired events against
+the complete physical candidate universe within the Targeted search scope
+before selection. Strictly interior, uniquely attributable evidence supports
+an individual peak; boundary and overlapping relations remain set-level.
+Selection consumes this answer rather than treating a candidate-local best
+MS2 product as proof of unique support.
+
+`peak_detection.candidate_selection.select_candidate_by_evidence` chooses the
+candidate once from typed
+candidate evidence and physical eligibility. Chemical support precedes
+localization hints and trace quality; contextual RT and deterministic abundance
+break ties within the supported evidence ordering. Configured RT windows guide
+bounded acquisition, not a second hard apex veto within retained context.
+Strong method-supported, quantifiable peaks remain counted despite RT drift.
+RT-prior disagreement and legacy confidence labels alone do not create product
+review actions. Unresolved morphology or overlap concerns can require quality
+review independently of identity. Confidence and reason labels describe source
+evidence; they do not start a second candidate ranking.
+
+The Targeted handoff retains all candidate physical evaluations, acquired
+method products, the search receipt and the relation answer. Production binds
+that same answer to exact sample/event/peak provenance without another relation
+decision. Only the selected candidate enters the fixed Target row; the method
+assessment still records its complete candidate and event universe.
+Sample applicability
+controls inclusion, not permission to replace the selected candidate. A
+hypothesis is an evidence representation, not a competing selection owner.
+The physical owner may withdraw an unavailable measurement, but does not
+substitute another candidate.
+
+For an NL-required analyte, an observation-only MS1 value is quantitation, not
+confirmed detection. A finalized CID-NL-supported hypothesis is required for
+counting; a positive numeric cell, legacy confidence, pair/ratio label or
+acquisition-stage detection flag cannot supply that authority. The existing
+product projection renders the finalized method answer and retained review
+facts. ISTD expected-presence, MS1-only, RT and quality policies remain separate.
+
+Cohort Backfill is a distinct, owner-bound recovery after direct reference
+observations are available. The [shared Backfill route](backfill.md#targeted-route)
+can attribute a unique qualified retained MS1 peak using confirmed peers and
+paired ISTD RT. Its receipt may replace an observation-only capture; it does
+not rerank a directly supported selection or promote HOLD to confirmation.
+
+Regression coverage protects the selected candidate, contextual RT, chemical
+and morphology evidence, no-candidate behavior and rendered measurements.
+Tests passing alone do not establish scientific readiness; method-changing
+selection rules still need the method-appropriate oracle.
+
 ### Physical evaluation
 
-The Targeted selection module consumes an acquired TraceGroup, selected MS2
+The Targeted selection module consumes an acquired TraceGroup, candidate-local MS2
 evidence, and the shared prepared signal and segment universe. It completes the
 physical answer and synchronizes the final peak, hypothesis, and selection
 decision before returning them. RAW acquisition owns trace construction and
@@ -71,8 +121,9 @@ those facts itself.
 
 - Acquisition enumerates the shared physical segment universe for the
   configured signal profile.
-- Targeted scoring and identity evidence choose a component. The physical
-  evaluation of that component supplies the boundary and counts·seconds area.
+- Each candidate's physical evaluation supplies its boundary and counts·seconds
+  area. Targeted scoring and identity evidence choose a component from these
+  retained answers; the selected evaluation is reused by the handoff.
 - Profile-bound capture retains that evaluation through finalization.
   Profile-bound capture does not run a second boundary resolver or
   integration.
@@ -160,9 +211,12 @@ those facts itself.
 - A typed no-write clears the retained peak before rendering.
 - Missing NL alone is not another writer veto.
 - Accepted MS1-only cells in Untargeted output follow the same distinction.
-- The main workbook table shows measurements, integration boundaries,
-  `NL Evidence`, and a plain-language `Reason` for user interpretation.
-- Internal product/count/review codes remain available in advanced columns.
+- The main workbook table shows measurements, counted status and review
+  reasons. Secondary columns retain integration boundaries, `NL Evidence`
+  and the full plain-language `Reason`.
+- Internal projection codes remain in the internal long-row model, not the
+  delivered workbook. The workbook consumes the finished owner decisions;
+  its display layout does not change scientific or count policy.
 
 ### Detection and review policy
 
@@ -173,8 +227,8 @@ those facts itself.
   `matched_scan_count` is zero. The existing Targeted product projection owns
   counted detection; `count_no_ms2_as_detected` applies only to legacy outputs
   without that projection and cannot override it.
-- Region, boundary, and selected-envelope logic are candidate and
-  model-selection surfaces.
+- Region, boundary, and selected-envelope logic provide candidate-evaluation
+  evidence.
 - Before region, boundary, or selected-envelope logic changes any selected
   peak, area, confidence, reason, product state, counted detection, workbook
   value, or matrix value, the change requires expected-diff review.
@@ -189,44 +243,35 @@ those facts itself.
 - Sample exclusions, paired-anchor conflicts, hard quality blockers, and
   unresolved quantitative boundaries still apply to that peak.
 
-### Rescue and RT-pair scope
+### Current-sample paired RT reference
 
-- The bounded headless `5-hmdC + 5-medC` contract is the only MS1
-  shape-identity rescue scope with accepted `detected_flagged` expected-diff
-  evidence.
-- That contract grants no authority to broader targets, application wiring, or default
-  broad NL_FAIL rescue. These extensions require a new target-family evidence
-  gate.
-- Current lane readiness lives in the status index.
-- `target_pair_rt_calibration_path` supplies validated calibration rows to the
-  existing RT-prior library. It does not emit auto-reselection shadow tables
-  or grant selected-peak or writer authority.
+For an analyte with a credible paired ISTD in this sample, the RT reference is
+the analyte's configured window midpoint plus the observed ISTD shift from its
+own configured midpoint. NL and no-NL analytes use this same answer. The
+configured difference is retained, including nonzero isotope-labelled offsets;
+pairing does not force identical apex times.
 
-### Expected-diff inputs
+Candidate scoring uses this same reference as its paired-ISTD RT prior and
+centers the configured-width RT scoring window on it. Agreement can support
+ranking; shared sample drift does not incur an unshifted-window penalty.
+The RT prior is not an additional chemical identity or NL confirmation.
 
-- Targeted expected-diff approvals must reference runtime product
-  `PeakHypothesis` candidate IDs.
-- Overlay-only or audit-table candidate IDs can explain support. These IDs are
-  not valid product-switch inputs.
-- Product action or verdict tables are review/reason surfaces. These tables
-  must not hide the evidence chain or grant writer authority.
+Missing or untrusted paired ISTD observations do not become anchors. The
+fallback remains the configured analyte midpoint plus the available sample
+drift. Neither fallback nor RT agreement establishes chemical identity. Humans
+still provide target identities, pairings and method-appropriate search windows;
+these cannot be assumed portable across batches or methods.
 
-## Retained Validation Anchors
+The reference is computed directly in memory for the current sample. External
+RT-prior/pair calibration files are not analysis inputs. The retained rolling
+ISTD context assesses within-batch ISTD consistency; it is not a replacement for
+a missing current-sample paired observation or an independent identity oracle.
 
-- The 2026-06-04 `BenignfatBC1055_DNA / 8-oxodG` closeout is a row-specific
-  expected-diff activation. The closeout is not a general target-pair RT
-  auto-reselection rule.
-- The closeout changed one Targeted product row. The change happened after the
-  approved successor existed in runtime product hypotheses and had role-aware
-  RT, paired-area-ratio, MS1, and trace support.
-- The visible product decision surface for that slice is `Product State`,
-  `Counted Detection`, `Review State`, and projection-backed `Reason`. Legacy
-  `Confidence`, score, and cap evidence remain technical audit material while
-  this projection contract is active.
-- The observed 8RAW count change for that slice was `8-oxodG: 3/8 -> 4/8`,
-  with all other target labels unchanged. That count change is a validation
-  anchor for the activation gate. That count change is not broad target-pair
-  policy.
+### Counting and product selection
+
+- One extraction pass decides each row. Analyte `NL_FAIL` or `NO_MS2` rows
+  keep their measured RT, area and bounds; counting follows the NL evidence
+  rules. There is no MS1-shape rescue that re-counts such rows.
 
 ## Surfaces
 
@@ -237,8 +282,8 @@ those facts itself.
 | `NL Evidence` / `Reason` | Human-readable observations and review context |
 | `Product State` / `Counted Detection` / `Review State` | Advanced product-policy fields; do not veto a retained numeric value |
 | Confidence | Advanced review context rendered from typed projection decisions |
-| Region and selected-envelope candidates | Boundary and model-selection evidence |
-| Target-pair RT calibration artifacts | Validated RT-prior inputs; no shadow output or writer authority |
+| Region and selected-envelope candidates | Boundary and candidate-evaluation evidence |
+| Current-sample paired RT reference | Method offset transferred by a credible observed ISTD; no additional writer authority |
 | Expected-diff packets | Required gate for output-changing behavior |
 
 ## Boundaries
@@ -247,7 +292,7 @@ those facts itself.
 - **Owns:** fixed `TargetKey` row projection, pre-cell
   `TargetRowBinding`/`TargetCellSubject`, post-cell inclusion,
   typed confidence/reason/product-state/counting decisions, existing Review Queue
-  routing, MS1 rescue policy scope, and target-pair RT rules.
+  routing, and target-pair RT rules.
 - **Selected value:** `ProductionCellDecision` owns the selected numeric value.
   Targeted projection renders that decision and its retained physical
   evidence. Targeted projection does not rerun peak selection or integration.
@@ -287,7 +332,6 @@ those facts itself.
 
 - [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md) | [Evidence spine](evidence-spine.md)
 - [Quantitation context](quantitation-context.md) | [Review roundtrip](review-roundtrip.md)
-- [Peak model selection](peak-model-selection.md)
 - [Decision policy](decision-policy.md)
 
 ## Retired candidate audit outputs
@@ -298,5 +342,5 @@ existing settings CSVs; there is no compatibility alias. Candidate-sidecar
 verification and the dedicated shadow/pressure review commands are unavailable.
 Use [XIC Inspector](xic-inspector.md) for visual review of its supported retained
 evidence sources. Inspector does not apply candidate switches or generate RT
-reselection comparison tables. `target_pair_rt_calibration_path` remains an
-RT-prior input; formal peak selection and numerical output remain owner-controlled.
+reselection comparison tables. Formal peak selection and numerical output remain
+owner-controlled.

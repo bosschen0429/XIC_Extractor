@@ -1,4 +1,5 @@
 import csv
+import io
 from pathlib import Path
 
 from xic_extractor.configuration.models import ConfigError
@@ -16,11 +17,7 @@ TARGET_FIELDS = (
     "is_istd",
     "istd_pair",
 )
-OPTIONAL_TARGET_METADATA_FIELDS = (
-    "isotope_label_type",
-    "paired_rt_relation",
-    "sample_applicability",
-)
+OPTIONAL_TARGET_METADATA_FIELDS = ("sample_applicability",)
 TARGET_WRITE_FIELDS = (*TARGET_FIELDS, *OPTIONAL_TARGET_METADATA_FIELDS)
 _REQUIRED_SETTING_FIELDS = ("key", "value")
 _TARGET_DRAFT_IDENTITY_FIELDS = ("label", "mz")
@@ -39,14 +36,26 @@ def _config_input_path(config_dir: Path, name: str) -> Path:
 def _read_settings(path: Path) -> dict[str, str]:
     if not path.exists():
         raise ConfigError(f"{path}: file is missing")
-    with path.open(newline="", encoding="utf-8-sig") as handle:
+    return _parse_settings_csv_bytes(path.read_bytes(), path)
+
+
+def _parse_settings_csv_bytes(payload: bytes, path: Path) -> dict[str, str]:
+    """Decode captured settings bytes using the same intake rules as files."""
+    with io.StringIO(payload.decode("utf-8-sig"), newline="") as handle:
         rows = csv.DictReader(handle)
         _require_columns(path, rows.fieldnames, _REQUIRED_SETTING_FIELDS)
-        return {
-            str(row.get("key", "")).strip(): str(row.get("value", "")).strip()
-            for row in rows
-            if str(row.get("key", "")).strip()
-        }
+        settings: dict[str, str] = {}
+        for row_number, row in enumerate(rows, start=2):
+            key = str(row.get("key") or "").strip()
+            value = str(row.get("value") or "").strip()
+            if not key:
+                continue
+            if key in settings and settings[key] != value:
+                raise ConfigError(
+                    f"{path} row {row_number}: conflicting duplicate setting {key!r}"
+                )
+            settings[key] = value
+        return settings
 
 
 def _read_target_rows(path: Path) -> list[tuple[int, dict[str, str]]]:
@@ -101,9 +110,7 @@ def _read_target_file_rows(
         result: list[tuple[int, dict[str, str]]] = []
         for row_number, row in enumerate(rows, start=2):
             if None in row:
-                raise ConfigError(
-                    f"{path} row {row_number}: more values than columns"
-                )
+                raise ConfigError(f"{path} row {row_number}: more values than columns")
             missing_fields = [field for field, value in row.items() if value is None]
             if missing_fields:
                 raise ConfigError(

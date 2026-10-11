@@ -40,8 +40,8 @@ _NUMERIC_CONTROLS = (
     ("nl_min_intensity_ratio", "NL 最低強度比", 0.0001, 1.0, 0.01),
     ("seed_rt_gap_min", "Seed RT 間隔 (min)", 0.001, 60.0, 0.05),
     ("ms1_search_padding_min", "MS1 RT padding (min)", 0.001, 60.0, 0.05),
-    ("rt_min", "RT 下界 (min)", 0.0, 60.0, 0.5),
-    ("rt_max", "RT 上界 (min)", 0.0, 60.0, 0.5),
+    ("rt_min", "RT 下界 (min)", 0.0, None, 0.5),
+    ("rt_max", "RT 上界 (min)", 0.0, None, 0.5),
 )
 _OVERRIDE_KEYS = frozenset(key for key, *_ in _NUMERIC_CONTROLS) | {"resolver_mode"}
 
@@ -67,8 +67,6 @@ def list_methods() -> list[dict[str, Any]]:
 def method_details(preset: str | Path) -> dict[str, Any]:
     loaded = load_preset(preset)
     overrides: dict[str, object] = dict(loaded.discovery_overrides)
-    if loaded.source.startswith("builtin:"):
-        overrides["rt_max"] = 60.0
     _validate_gui_method(loaded, overrides)
     settings = apply_to_discovery(loaded, explicit_tuning_overrides=overrides or None)
     draft = preset_to_payload(loaded)
@@ -96,6 +94,11 @@ def method_details(preset: str | Path) -> dict[str, Any]:
             ],
             "rt_min": settings.rt_min,
             "rt_max": settings.rt_max,
+            "rt_range_mode": (
+                "acquisition"
+                if settings.rt_min is None and settings.rt_max is None
+                else "crop"
+            ),
             "nl_tolerance_ppm": settings.nl_tolerance_ppm,
             "precursor_mz_tolerance_ppm": settings.precursor_mz_tolerance_ppm,
         },
@@ -111,8 +114,9 @@ def tuning_controls() -> list[dict[str, Any]]:
             "label": label,
             "kind": "number",
             "minimum": minimum,
-            "maximum": maximum,
+            **({"maximum": maximum} if maximum is not None else {}),
             "step": step,
+            **({"optional": True} if key in {"rt_min", "rt_max"} else {}),
         }
         for key, label, minimum, maximum, step in _NUMERIC_CONTROLS
     ]
@@ -275,8 +279,6 @@ def _validate_gui_method(
         raise PresetError("GUI 僅支援純 CID-NL 方法；原方法未變更")
     settings = apply_to_discovery(preset, explicit_tuning_overrides=overrides)
     CidNlDiscoveryMethodSpec(settings=settings)
-    if not 0 <= settings.rt_min <= settings.rt_max <= 60:
-        raise PresetError("GUI 的 RT 範圍為 0–60 min；原方法未變更")
     serialize_preset(preset, discovery_overrides=overrides)
 
 

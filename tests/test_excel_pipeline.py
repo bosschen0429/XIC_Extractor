@@ -1,5 +1,7 @@
 from dataclasses import replace
 from pathlib import Path
+from xml.etree import ElementTree
+from zipfile import ZipFile
 
 from openpyxl import load_workbook
 
@@ -11,7 +13,6 @@ from xic_extractor.extraction.result_models import (
     RunOutput,
 )
 from xic_extractor.output.messages import DiagnosticRecord
-from xic_extractor.output.schema import TARGETED_PRODUCT_PROJECTION_HEADERS
 from xic_extractor.output.targeted_product_model import (
     TargetedProductProjection,
 )
@@ -20,6 +21,71 @@ from xic_extractor.peak_detection.models import (
     PeakDetectionResult,
     PeakResult,
 )
+
+
+def test_workbook_filters_belong_to_tables_not_overlapping_worksheet_ranges(tmp_path):
+    from xic_extractor.output.excel_pipeline import write_excel_from_run_output
+
+    config = _config(tmp_path)
+    path = write_excel_from_run_output(
+        config,
+        [_target("WithNL")],
+        _run_output(with_diagnostics=True),
+        output_path=config.output_csv.with_suffix(".xlsx"),
+    )
+    ns = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    with ZipFile(path) as archive:
+        assert (
+            len([name for name in archive.namelist() if name.startswith("xl/tables/")])
+            == 4
+        )
+        for name in archive.namelist():
+            if name.startswith("xl/worksheets/sheet"):
+                sheet = ElementTree.fromstring(archive.read(name))
+                if sheet.find("s:tableParts", ns) is not None:
+                    # Excel repairs/removes tables when a worksheet filter overlaps.
+                    assert sheet.find("s:autoFilter", ns) is None, name
+            elif name.startswith("xl/tables/"):
+                table = ElementTree.fromstring(archive.read(name))
+                table_filter = table.find("s:autoFilter", ns)
+                assert table_filter is not None
+                assert table_filter.attrib["ref"] == table.attrib["ref"]
+    book = load_workbook(path)
+    assert str(book["Run Metadata"].print_area) == "'Run Metadata'!$A$1:$C$19"
+    book.close()
+
+
+def test_workbook_retains_nonempty_decision_inputs_without_sidecars(tmp_path):
+    from xic_extractor.output.excel_pipeline import write_excel_from_run_output
+
+    context = tmp_path / "sample.csv"
+    context.write_text(
+        "sample_name,sample_role,injection_order\nSampleA,study_sample,2\nSampleB,qc,1\n",
+        encoding="utf-8",
+    )
+    config = replace(
+        _config(tmp_path),
+        injection_order_source=context,
+    )
+    path = config.output_csv.with_suffix(".xlsx")
+    write_excel_from_run_output(
+        config,
+        [replace(_target("WithNL"), sample_applicability="rna_containing")],
+        _run_output(with_diagnostics=False),
+        output_path=path,
+    )
+    context.unlink()
+    assert list(path.parent.iterdir()) == [path]
+    wb = load_workbook(path)
+    assert list(wb["Sample Context"].values) == [
+        ("sample_name", "sample_role", "injection_order"),
+        ("SampleA", "study_sample", "2"),
+        ("SampleB", "qc", "1"),
+    ]
+    assert wb["Sample Context"].sheet_state == "hidden"
+    assert wb["Targets"]["L1"].value == "Sample applicability"
+    assert wb["Targets"]["L2"].value == "rna_containing"
+    wb.close()
 
 
 def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
@@ -48,46 +114,64 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     wb = load_workbook(output_path)
     assert wb.sheetnames == [
         "Overview",
-        "Review Queue",
         "XIC Results",
-        "Summary",
         "Targets",
-        "Diagnostics",
         "Run Metadata",
+        "Diagnostics",
     ]
     assert wb.active.title == "Overview"
-    ws_overview = wb["Overview"]
-    assert ws_overview["A1"].value == "XIC Review Overview"
-    assert ws_overview["B3"].value == 1
-    assert ws_overview["B5"].value == 1
-    assert ws_overview["B6"].value == 1
     ws = wb["XIC Results"]
-    assert ws["A2"].value == "SampleA"
-    assert ws["C2"].value == "WithNL"
-    assert ws["F2"].value == 9.0
-    assert ws["G2"].value == 123.45
-    assert ws["H1"].value == "NL Evidence"
-    assert ws["H2"].value == "Observed with tolerance warning"
-    assert ws["I1"].value == "NL"
-    assert ws["I2"].value == "⚠ 12.3ppm"
-    assert ws["O1"].value == "Confidence"
-    assert ws["O2"].value == "LOW"
+    headers = [cell.value for cell in ws[1]]
+    assert headers == [
+        "SampleName",
+        "Target",
+        "Area",
+        "RT",
+        "IntSmoothed",
+        "Counted Detection",
+        "Review",
+        "Review Reason",
+        "PeakStart",
+        "PeakEnd",
+        "NL Evidence",
+        "Reason",
+        "Review Evidence",
+        "Role",
+        "Group",
+        "NL",
+        "Confidence",
+        "Int",
+        "PeakWidth",
+    ]
+    record = dict(
+        zip(
+            headers,
+            next(ws.iter_rows(min_row=2, max_row=2, values_only=True)),
+            strict=True,
+        )
+    )
+    assert record["SampleName"] == "SampleA"
+    assert record["Target"] == "WithNL"
+    assert record["RT"] == 9.0
+    assert record["Area"] == 123.45
+    assert record["IntSmoothed"] == 450.0
+    assert record["Int"] == 500.0
+    assert record["PeakWidth"] == 0.3
+    assert record["NL Evidence"] == "Observed with tolerance warning"
+    assert record["NL"] == "⚠ 12.3ppm"
+    assert record["Confidence"] == "LOW"
+    assert record["Review"] == "Check"
+    assert (
+        record["Review Reason"].replace("\n", "")
+        == "此筆結果帶有檢閱註記，請連同峰形及原始證據查看。"
+    )
+    assert not ws.merged_cells.ranges
+    assert ws.freeze_panes == "C2"
     result_columns = {cell.value: cell.column_letter for cell in ws[1]}
-    for header in ("NL", *TARGETED_PRODUCT_PROJECTION_HEADERS):
-        assert ws.column_dimensions[result_columns[header]].hidden is True
-    for header in ("RT", "Area", "NL Evidence", "PeakStart", "PeakEnd", "Reason"):
+    for header in headers[:6]:
         assert ws.column_dimensions[result_columns[header]].hidden is not True
-
-    ws_diagnostics = wb["Diagnostics"]
-    assert ws_diagnostics.sheet_state == "hidden"
-    assert ws_diagnostics["A2"].value == "SampleA"
-    assert ws_diagnostics["C2"].value == "NL_FAIL"
-    ws_review = wb["Review Queue"]
-    assert ws_review["B2"].value == "SampleA"
-    assert ws_review["C2"].value == "WithNL"
-    assert ws_review["E2"].value == "Review"
-    assert ws_review["F2"].value == "NL support failed"
-    assert ws_review["I2"].value == "Check MS2 / NL evidence near selected RT"
+    for header in headers[6:]:
+        assert ws.column_dimensions[result_columns[header]].hidden is True
 
     ws_metadata = wb["Run Metadata"]
     metadata_keys = {
@@ -101,173 +185,129 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
         "signal_processing_method",
         "signal_processing_window_points",
     } <= metadata_keys
+    wb.close()
+    from xic_inspector.api import SelectionRequest, prepare_report
 
-
-def test_write_excel_from_run_output_adds_score_breakdown_when_enabled(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.output.excel_pipeline import write_excel_from_run_output
-
-    config = _config(tmp_path, emit_score_breakdown=True)
-    output_path = tmp_path / "output" / "xic_results.xlsx"
-
-    write_excel_from_run_output(
-        config,
-        [_target("WithNL")],
-        _run_output(with_diagnostics=False),
-        output_path=output_path,
+    report = prepare_report(output_path, SelectionRequest(strategy="attention"))
+    saved = report.payload["items"][0]["details"]
+    assert saved["records"][0]["Area"] == 123.45
+    assert (
+        saved["review_queue"][0]["Why"].replace("\n", "")
+        == "此筆結果帶有檢閱註記，請連同峰形及原始證據查看。"
     )
 
-    wb = load_workbook(output_path)
-    assert wb.sheetnames == [
-        "Overview",
-        "Review Queue",
-        "XIC Results",
-        "Summary",
-        "Targets",
-        "Diagnostics",
-        "Run Metadata",
-        "Score Breakdown",
+
+def test_workbook_retains_complete_diagnostic_text_in_secondary_appendix(tmp_path):
+    from xic_extractor.output.excel_pipeline import write_excel_from_run_output
+
+    config = _config(tmp_path)
+    original = _run_output(with_diagnostics=False)
+    # An event without a matching result key must not disappear into the worklist.
+    diagnostic = DiagnosticRecord(
+        sample_name="Another sample",
+        target_label="Another target",
+        issue="FILE_ERROR",
+        reason="=original diagnostic text; acquisition detail remains attributable",
+    )
+    output = RunOutput(file_results=original.file_results, diagnostics=[diagnostic])
+    path = write_excel_from_run_output(
+        config, [_target("WithNL")], output, output_path=tmp_path / "results.xlsx"
+    )
+    book = load_workbook(path)
+    assert book.active.title == "Overview"
+    sheet = book["Diagnostics"]
+    raw_record = next(
+        row
+        for row in sheet
+        if tuple(cell.value for cell in row[:3])
+        == ("Another sample", "Another target", "FILE_ERROR")
+    )
+    assert raw_record[3].value.endswith(diagnostic.reason)
+    assert raw_record[3].data_type != "f"
+    assert any(
+        row[0] == "Another sample" and row[2] == "未記錄判定" for row in sheet.values
+    )
+    book.close()
+
+
+def test_workbook_explains_backfill_without_changing_saved_counts(tmp_path):
+    from xic_extractor.output.workbook_builder import write_workbook_from_rows
+    from xic_inspector.sources.targeted_workbook import TargetedWorkbookSource
+
+    rows = [
+        {
+            "SampleName": sample,
+            "Target": "ISTD",
+            "Role": "ISTD",
+            "RT": rt,
+            "Area": area,
+            "PeakStart": "8.5",
+            "PeakEnd": "9.5",
+            "NL": "NL_FAIL",
+            "NL Evidence": "Not observed within tolerance",
+            "Confidence": "LOW",
+            "Counted Detection": counted,
+            "Product State": state,
+            "Projection Support Reasons": support,
+        }
+        for sample, rt, area, counted, state, support in (
+            (
+                "Recovered",
+                "9.1",
+                "123.45",
+                "TRUE",
+                "detected_flagged",
+                "cross_sample_backfill_identity",
+            ),
+            ("Held", "9.2", "678.90", "FALSE", "not_counted", ""),
+        )
     ]
-    ws = wb["Score Breakdown"]
-    headers = [cell.value for cell in next(ws.iter_rows(max_row=1))]
-    values = next(ws.iter_rows(min_row=2, max_row=2, values_only=True))
-    row = dict(zip(headers, values, strict=False))
-    assert row["SampleName"] == "SampleA"
-    assert row["Target"] == "WithNL"
-    assert row["Base Score"] == 50
-    assert row["Positive Points"] == 40
-    assert row["Negative Points"] == 0
-    assert row["Raw Score"] == 90
-    assert row["Final Confidence"] == "HIGH"
-    assert row["Detection Counted"] == "TRUE"
-    assert row["Support"] == "strict_nl_ok; local_sn_strong"
-    assert row["Concerns"] is None
-    assert row["local_sn"] == 1
-    assert row["Quality Penalty"] == 1
-    assert row["Quality Flags"] == "too_broad"
-    assert row["Total Severity"] == 2
-    assert row["Confidence"] == "LOW"
-    assert row["Prior RT"] is None
-
-
-def test_write_excel_score_breakdown_keeps_schema_with_ms2_trace_labels(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.output.excel_pipeline import write_excel_from_run_output
-
-    config = _config(tmp_path, emit_score_breakdown=True)
-    output = _run_output(with_diagnostics=False)
-    result = output.file_results[0].results["WithNL"]
-    score_breakdown = (
-        ("Base Score", "50"),
-        ("Positive Points", "50"),
-        ("Negative Points", "8"),
-        ("Raw Score", "92"),
-        ("Caps", ""),
-        ("Final Confidence", "HIGH"),
-        ("Support", "strict_nl_ok; ms2_trace_strong; local_sn_strong"),
-        ("Concerns", "ms2_trace_weak"),
-    )
-    peak_result = replace(result.peak_result, score_breakdown=score_breakdown)
-    result = replace(
-        result,
-        peak_result=peak_result,
-        score_breakdown=score_breakdown,
-    )
-    file_result = replace(
-        output.file_results[0],
-        results={"WithNL": result},
-    )
-    output = replace(output, file_results=[file_result])
-    output_path = tmp_path / "output" / "xic_results.xlsx"
-
-    write_excel_from_run_output(
-        config,
-        [_target("WithNL")],
-        output,
-        output_path=output_path,
-    )
-
-    wb = load_workbook(output_path)
-    assert wb.sheetnames == [
-        "Overview",
-        "Review Queue",
-        "XIC Results",
-        "Summary",
-        "Targets",
-        "Diagnostics",
-        "Run Metadata",
-        "Score Breakdown",
+    diagnostics = [
+        {"SampleName": sample, "Target": "ISTD", "Issue": issue, "Reason": reason}
+        for sample, issue, reason in (
+            ("Recovered", "NL_FAIL", "Original failed NL observation"),
+            ("Recovered", "BACKFILL_ACCEPTED", "ordered_one_to_one_recovery_evidence"),
+            ("Held", "NL_FAIL", "Original failed NL observation"),
+            ("Held", "BACKFILL_HOLD", "no_unique_qualified_ms1_peak"),
+        )
     ]
-    ws = wb["Score Breakdown"]
-    headers = [cell.value for cell in next(ws.iter_rows(max_row=1))]
-    values = next(ws.iter_rows(min_row=2, max_row=2, values_only=True))
-    row = dict(zip(headers, values, strict=False))
-    assert row["Support"] == "strict_nl_ok; ms2_trace_strong; local_sn_strong"
-    assert row["Concerns"] == "ms2_trace_weak"
-
-
-def test_write_excel_from_run_output_emits_review_report_when_enabled(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.output.excel_pipeline import write_excel_from_run_output
-
-    config = _config(tmp_path, emit_review_report=True)
-    output_path = tmp_path / "output" / "xic_results_20260505_1200.xlsx"
-
-    write_excel_from_run_output(
-        config,
-        [_target("WithNL")],
-        _run_output(with_diagnostics=False),
-        output_path=output_path,
+    path = write_workbook_from_rows(
+        _config(tmp_path),
+        [replace(_target("ISTD"), is_istd=True)],
+        rows,
+        diagnostics=diagnostics,
+        output_path=tmp_path / "readable.xlsx",
     )
-
-    report_path = output_path.with_name("review_report_20260505_1200.html")
-    assert report_path.exists()
-    assert "XIC Review Report" in report_path.read_text(encoding="utf-8")
-
-
-def test_write_excel_from_run_output_passes_injection_order_to_review_report(
-    tmp_path: Path, monkeypatch
-) -> None:
-    from xic_extractor.output.excel_pipeline import write_excel_from_run_output
-
-    config = replace(
-        _config(tmp_path, emit_review_report=True),
-        injection_order_source=tmp_path / "SampleInfo.csv",
+    book = load_workbook(path)
+    assert len(book["Overview"]._charts) == 2
+    sheet = book["Diagnostics"]
+    values = list(sheet.values)
+    header_index = next(i for i, row in enumerate(values) if row[0] == "樣本")
+    records = {
+        row[0]: dict(zip(values[header_index], row))
+        for row in values[header_index + 1 : header_index + 2]
+    }
+    assert "Recovered" not in records
+    assert records["Held"]["結果"] == "未計入"
+    assert "未找到" in records["Held"]["原因說明"].replace("\n", "")
+    assert records["Held"]["Area (counts·s)"] == 678.90
+    assert any(
+        row[2:4] == ("BACKFILL_HOLD", "no_unique_qualified_ms1_peak") for row in values
     )
-    config.injection_order_source.write_text(
-        "Sample_Name,Injection_Order\nSampleA,1\n",
-        encoding="utf-8",
-    )
-    calls = {}
-
-    def _fake_write_review_report(path, rows, **kwargs):
-        calls["injection_order"] = kwargs["injection_order"]
-        path.write_text("<html></html>", encoding="utf-8")
-        return path
-
-    monkeypatch.setattr(
-        "xic_extractor.output.excel_pipeline.write_review_report",
-        _fake_write_review_report,
-    )
-
-    write_excel_from_run_output(
-        config,
-        [_target("WithNL")],
-        _run_output(with_diagnostics=False),
-        output_path=tmp_path / "output" / "xic_results_20260505_1200.xlsx",
-    )
-
-    assert calls["injection_order"] == {"SampleA": 1}
+    book.close()
+    source = TargetedWorkbookSource(path)
+    assert [
+        (row["SampleName"], row["Area"], row["RT"], row["Counted Detection"])
+        for row in source.records
+    ] == [
+        ("Recovered", 123.45, 9.1, "TRUE"),
+        ("Held", 678.90, 9.2, "FALSE"),
+    ]
+    assert source.records[0]["Review Reason"] is None
 
 
 def _config(
     tmp_path: Path,
-    *,
-    emit_score_breakdown: bool = False,
-    emit_review_report: bool = False,
 ) -> ExtractionConfig:
     return ExtractionConfig(
         data_dir=tmp_path / "raw",
@@ -280,8 +320,6 @@ def _config(
         peak_min_prominence_ratio=0.10,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
-        emit_score_breakdown=emit_score_breakdown,
-        emit_review_report=emit_review_report,
         config_hash="abc12345",
     )
 

@@ -24,6 +24,10 @@ def __getattr__(name):
 
 def open_source(path, *, query_only=False):
     """Select a source adapter without interpreting its schema here."""
+    if path.suffix.lower() == ".xlsx":
+        from xic_inspector.sources.targeted_workbook import TargetedWorkbookSource
+
+        return TargetedWorkbookSource(path)
     if path.suffix.lower() == ".json":
         return CurveBundleSource(path)
     from xic_inspector.sources.cid_nl import CidNlSource, read_summary

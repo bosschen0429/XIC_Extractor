@@ -66,3 +66,49 @@ def test_projection_blocks_when_ms1_peak_is_not_positive() -> None:
     assert projection.counted_detection is False
     assert projection.product_state == "not_counted"
     assert "missing_positive_ms1_peak" in projection.not_counted_reasons
+
+
+def test_expected_istd_without_required_nl_is_not_confirmed() -> None:
+    projection = build_targeted_product_projection(
+        TargetedProductContext(
+            role="ISTD", expected_present=True, neutral_loss_required=True
+        ),
+        rt=8.5,
+        area=1234.5,
+        confidence="HIGH",
+        nl_status="NO_MS2",
+        support_reasons=("ms1_peak_present",),
+        review_reasons=("plausible_dda_nl_dropout",),
+    )
+    assert projection.counted_detection is False
+    assert "cid_nl_method_not_supported" in projection.not_counted_reasons
+
+
+def test_backfill_label_alone_does_not_confirm_istd() -> None:
+    projection = build_targeted_product_projection(
+        TargetedProductContext(
+            role="ISTD", expected_present=True, neutral_loss_required=True
+        ),
+        rt=8.5,
+        area=1234.5,
+        confidence="HIGH",
+        nl_status="NO_MS2",
+        review_reasons=("BACKFILL_ACCEPTED",),
+    )
+    assert projection.counted_detection is False
+
+
+def test_backfill_does_not_override_unresolved_identity_or_missing_quantity() -> None:
+    for area, conflicts in ((0.0, ()), (1234.5, ("unresolved_identity",))):
+        projection = build_targeted_product_projection(
+            TargetedProductContext(
+                role="ISTD", expected_present=True, neutral_loss_required=True
+            ),
+            rt=8.5,
+            area=area,
+            confidence="HIGH",
+            nl_status="NO_MS2",
+            backfill_supported=True,
+            conflict_reasons=conflicts,
+        )
+        assert projection.counted_detection is False

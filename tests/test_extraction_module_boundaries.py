@@ -24,9 +24,7 @@ def test_extractor_delegates_backend_orchestration() -> None:
 def test_process_jobs_live_under_extraction_package() -> None:
     from xic_extractor.extraction import jobs
 
-    process_backend_path = (
-        ROOT / "xic_extractor" / "extraction" / "process_backend.py"
-    )
+    process_backend_path = ROOT / "xic_extractor" / "extraction" / "process_backend.py"
 
     assert inspect.getmodule(jobs.run_raw_file_jobs) is jobs
     assert inspect.getmodule(jobs.run_istd_prepass_jobs) is jobs
@@ -36,7 +34,6 @@ def test_process_jobs_live_under_extraction_package() -> None:
 
 
 def test_backends_delegate_output_dispatch() -> None:
-    assert importlib.util.find_spec("xic_extractor.extraction.output_dispatch")
 
     extraction_dir = ROOT / "xic_extractor" / "extraction"
     for module_name in ("serial_backend.py", "process_backend.py"):
@@ -66,7 +63,6 @@ def test_backends_do_not_depend_on_pipeline() -> None:
         source = (extraction_dir / module_name).read_text(encoding="utf-8")
         assert "xic_extractor.extraction.pipeline" not in source
         assert "resolve_injection_order" not in source
-        assert "resolve_rt_prior_library" not in source
 
 
 def test_target_extraction_uses_concrete_result_annotations() -> None:
@@ -100,7 +96,6 @@ def test_extractor_delegates_pipeline_flow() -> None:
     assert "write_outputs" not in source
     assert "preflight_raw_reader" not in source
     assert "_resolve_injection_order" not in function_names
-    assert "_resolve_rt_prior_library" not in function_names
     assert "_fallback_injection_order_from_mtime" not in function_names
 
 
@@ -139,8 +134,7 @@ def test_target_extraction_delegates_diagnostic_evidence_helpers() -> None:
     assert "build_extraction_result(" in source
 
 
-def test_targeted_product_projection_vocabulary_stays_out_of_untargeted_identity_paths(
-) -> None:
+def test_untargeted_identity_paths_exclude_targeted_product_projection() -> None:
     forbidden_terms = (
         "TargetedProductProjection",
         "detected_flagged",

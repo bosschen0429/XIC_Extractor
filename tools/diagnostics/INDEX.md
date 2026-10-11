@@ -350,50 +350,6 @@ within each RAW; each RAW opens once. Outputs are `reference_consistency.json`
 conflicts can be high. Single-group runs skip mapping. Retain while Targeted
 reference input review needs this oracle; no matrix or reference-writing authority.
 
-### `build_targeted_ms1_shape_identity_supports.py`
-
-**Purpose**: Build generic `targeted_ms1_shape_identity` evidence rows from
-a baseline `xic_results_long.csv` plus RAW MS1 traces. It selects all eligible
-analyte NL-fail policy-blocked rows with paired RT/area-ratio support, finds a
-Gaussian-smoothed local apex near the paired-ISTD reference mode, and compares
-that trace against a counted reference trace using own-max same-peak identity.
-**Topic group**: targeted NL dropout / MS1 shape identity; reuses
-`xic_extractor.diagnostics.targeted_ms1_shape_identity` and
-`xic_extractor.diagnostics.targeted_ms1_shape_identity_support_builder`; the
-reusable runner lives in
-`xic_extractor.diagnostics.targeted_ms1_shape_identity_support_producer` so the
-formal extraction CLI can reuse the same support-producing path.
-**Status note**: Diagnostic-only support producer when run directly. It opens
-RAW files to build the support TSV, but does not directly write product output.
-Normal extraction can consume a reviewed TSV through
-`targeted_ms1_shape_identity_support_tsv`. The headless CLI also wraps the same
-producer in a bounded auto workflow, either with
-`--targeted-ms1-shape-identity-auto-limited-default` or by default when the
-effective config policy is `limited_5hmdc_5medc` and no support TSV is
-configured. In both auto paths, product output is published only after the
-support-TSV expected-diff gate passes for the limited `5-hmdC + 5-medC` /
-`detected_flagged` behavior.
-
----
-
-### `targeted_ms1_shape_identity_expected_diff_gate.py`
-
-**Purpose**: Gate targeted MS1 shape identity expected-diff artifacts for the
-limited `5-hmdC` / `5-medC` activation policy.
-**Topic group**: targeted NL dropout / MS1 shape identity; reuses
-`xic_extractor.diagnostics.targeted_ms1_shape_identity_expected_diff`.
-**Status note**: Reads existing `expected_diff_summary.tsv`,
-`matrix_diff_summary.tsv`, and the required actual
-`targeted_ms1_shape_identity` `--support-tsv`. It fails closed unless every
-long-row mutation is an analyte `NL_FAIL` row moving from `not_counted/FALSE` to
-`detected_flagged/TRUE` with `own_max_same_peak_support`, every wide-matrix cell
-mutation is an allowed `5-hmdC` or `5-medC` measurement moving from `ND` to a
-populated value, and accepted support TSV sample/target keys exactly match the
-long-row diff keys. It does not open RAW, build
-support evidence, run extraction, or mutate product outputs.
-
----
-
 ## Instrument QC
 
 ### `build_injection_timeline.py`

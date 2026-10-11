@@ -57,6 +57,20 @@ class AnalysisJobs:
                 raise WorkspaceBusy("工作仍在執行；請等待完成或先停止。")
             self._cancel = threading.Event()
             self._runner = None
+            values = copy.deepcopy(values)
+            if kind == "targeted":
+                from xic_workbench.config_io import write_settings, write_targets
+                from xic_workbench.targeted import TargetedRun
+
+                write_settings(values["settings"], config_dir=self.config_dir)
+                write_targets(values["targets"], config_dir=self.config_dir)
+                self._runner = TargetedRun(
+                    self.config_dir,
+                    progress=self._progress,
+                    should_cancel=self._cancel.is_set,
+                )
+            elif kind == "untargeted":
+                self._runner = self._prepare_untargeted(values)
             self._current = {
                 "job_id": uuid.uuid4().hex,
                 "kind": kind,
@@ -69,7 +83,7 @@ class AnalysisJobs:
                 "available_outputs": [],
                 "cancellable": kind in {"targeted", "untargeted", "inspector"},
             }
-            self._executor.submit(self._execute, kind, copy.deepcopy(values))
+            self._executor.submit(self._execute, kind, values)
             return self.state()
 
     def cancel(self, job_id: str) -> dict[str, Any]:
@@ -114,65 +128,61 @@ class AnalysisJobs:
                     finished_at=time.time(),
                 )
 
+    def _prepare_untargeted(self, values: dict[str, Any]) -> Any:
+        from xic_extractor.configuration.execution_profile import (
+            load_execution_profile,
+        )
+        from xic_workbench.discovery_config_io import write_discovery_config
+        from xic_workbench.samples import complete_injection_orders, load_samples
+        from xic_workbench.untargeted import UntargetedRun, parse_request
+
+        if (
+            values.get("samples") is None
+            and values.get("raw_dir")
+            and values.get("dll_dir")
+            and values.get("mode", "full") in {"full", "align_only"}
+            and (values.get("sequence_source") or values.get("custom_roles"))
+        ):
+            sample_result = load_samples(
+                Path(values["raw_dir"]),
+                dll_dir=Path(values["dll_dir"]),
+                sequence_source=Path(values["sequence_source"])
+                if values.get("sequence_source")
+                else None,
+                custom_roles=values.get("custom_roles"),
+            )
+            values["samples"] = sample_result["samples"]
+        elif (
+            isinstance(values.get("samples"), list)
+            and values.get("raw_dir")
+            and values.get("dll_dir")
+            and values.get("mode", "full") in {"full", "align_only"}
+        ):
+            values["samples"] = complete_injection_orders(
+                values["samples"],
+                raw_dir=Path(values["raw_dir"]),
+                dll_dir=Path(values["dll_dir"]),
+            )
+        if values.get("execution_profile") is None:
+            profile = load_execution_profile(self.config_dir / "settings.csv")
+            values["execution_profile"] = {
+                "parallel_workers": profile.parallel_workers,
+                "alignment_workers": profile.alignment_workers,
+            }
+        request = parse_request(values)
+        from xic_workbench.config_io import write_dll_dir
+
+        runner = UntargetedRun(
+            request, progress=self._progress, should_cancel=self._cancel.is_set
+        )
+        write_dll_dir(values["dll_dir"], config_dir=self.config_dir)
+        write_discovery_config(values, config_dir=self.config_dir)
+        return runner
+
     def _run(self, kind: str, values: dict[str, Any]) -> dict[str, Any]:
         if kind == "targeted":
-            from xic_workbench.config_io import write_settings, write_targets
-            from xic_workbench.targeted import TargetedRun
-
-            write_settings(values["settings"], config_dir=self.config_dir)
-            write_targets(values["targets"], config_dir=self.config_dir)
-            self._runner = TargetedRun(
-                self.config_dir,
-                progress=self._progress,
-                should_cancel=self._cancel.is_set,
-            )
             return self._runner.execute()
         if kind == "untargeted":
-            from xic_extractor.configuration.execution_profile import (
-                load_execution_profile,
-            )
-            from xic_workbench.discovery_config_io import write_discovery_config
-            from xic_workbench.samples import complete_injection_orders, load_samples
-            from xic_workbench.untargeted import UntargetedRun, parse_request
-
-            if (
-                values.get("samples") is None
-                and values.get("raw_dir")
-                and values.get("dll_dir")
-                and values.get("mode", "full") in {"full", "align_only"}
-                and (values.get("sequence_source") or values.get("custom_roles"))
-            ):
-                sample_result = load_samples(
-                    Path(values["raw_dir"]),
-                    dll_dir=Path(values["dll_dir"]),
-                    sequence_source=Path(values["sequence_source"])
-                    if values.get("sequence_source")
-                    else None,
-                    custom_roles=values.get("custom_roles"),
-                )
-                values["samples"] = sample_result["samples"]
-            elif (
-                isinstance(values.get("samples"), list)
-                and values.get("raw_dir")
-                and values.get("dll_dir")
-                and values.get("mode", "full") in {"full", "align_only"}
-            ):
-                values["samples"] = complete_injection_orders(
-                    values["samples"],
-                    raw_dir=Path(values["raw_dir"]),
-                    dll_dir=Path(values["dll_dir"]),
-                )
-            if values.get("execution_profile") is None:
-                profile = load_execution_profile(self.config_dir / "settings.csv")
-                values["execution_profile"] = {
-                    "parallel_workers": profile.parallel_workers,
-                    "alignment_workers": profile.alignment_workers,
-                }
-            request = parse_request(values)
-            write_discovery_config(values, config_dir=self.config_dir)
-            self._runner = UntargetedRun(
-                request, progress=self._progress, should_cancel=self._cancel.is_set
-            )
             return self._runner.execute()
         if kind == "samples":
             from xic_workbench.samples import load_samples

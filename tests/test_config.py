@@ -6,17 +6,12 @@ import pytest
 from xic_extractor.configuration.hashing import compute_target_config_hash
 from xic_extractor.configuration.loader import load_config
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig
-from xic_extractor.configuration.settings import migrate_settings_dict
+from xic_extractor.configuration.settings import fill_setting_defaults
 from xic_extractor.settings_schema import (
     CANONICAL_RESOLVER_MODE,
     CANONICAL_SETTINGS_DEFAULTS,
     CANONICAL_SETTINGS_DESCRIPTIONS,
     default_parallel_workers,
-)
-from xic_extractor.target_pair_rt_calibration import (
-    TARGET_PAIR_RT_CALIBRATION_SCHEMA_VERSION,
-    TargetPairRTCalibrationRow,
-    write_target_pair_rt_calibration_tsv,
 )
 
 SETTINGS_FIELDS = ["key", "value", "description"]
@@ -130,14 +125,11 @@ def test_load_config_derives_output_paths_and_creates_output_dir(
     assert config.resolver_min_scans == 5
     assert config.parallel_mode == "process"
     assert config.parallel_workers == default_parallel_workers()
-    assert config.target_pair_rt_calibration_path is None
     assert config.target_config_hash == compute_target_config_hash(
         config_dir / "targets.csv"
     )
     assert targets[0].label == "Analyte"
     assert targets[0].neutral_loss_da == pytest.approx(116.0474)
-    assert targets[0].isotope_label_type == "unknown"
-    assert targets[0].paired_rt_relation == "none"
 
 
 def test_load_config_hash_reflects_settings_overrides(tmp_path: Path) -> None:
@@ -236,8 +228,8 @@ def test_load_config_rejects_empty_targets_file(tmp_path: Path) -> None:
     _assert_error(exc_info, "targets.csv", "label")
 
 
-def test_migrate_settings_dict_backfills_current_defaults_only() -> None:
-    migrated, warnings = migrate_settings_dict(
+def test_fill_setting_defaults_backfills_current_defaults_only() -> None:
+    migrated, warnings = fill_setting_defaults(
         {
             "data_dir": "C:/data",
             "dll_dir": "C:/dll",
@@ -307,20 +299,6 @@ def test_load_config_ignores_retired_targeted_resolver_setting(
     assert config.signal_processing_method == "gaussian"
 
 
-def test_load_config_migrates_ms1_morphology_smoothing_window_points(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(config_dir, {"ms1_morphology_smoothing_window_points": "21"})
-    _write_targets(config_dir)
-
-    config, _ = load_config(config_dir)
-
-    assert config.signal_processing_method == "gaussian"
-    assert config.signal_processing_window_points == 21
-    assert config.ms1_morphology_smoothing_window_points == 21
-
-
 def test_load_config_accepts_canonical_signal_processing_settings(
     tmp_path: Path,
 ) -> None:
@@ -340,55 +318,6 @@ def test_load_config_accepts_canonical_signal_processing_settings(
     assert config.signal_processing_window_points == 21
 
 
-def test_load_config_accepts_equal_canonical_and_legacy_signal_window(
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(
-        config_dir,
-        {
-            "signal_processing_window_points": "21",
-            "ms1_morphology_smoothing_window_points": "21",
-        },
-    )
-    _write_targets(config_dir)
-
-    config, _ = load_config(config_dir)
-
-    assert config.signal_processing_window_points == 21
-    assert "settings_migration" in caplog.text
-    assert "status=deprecated_alias_equal" in caplog.text
-    assert "legacy_key=ms1_morphology_smoothing_window_points" in caplog.text
-    assert "canonical_key=signal_processing_window_points" in caplog.text
-    assert "value=21" in caplog.text
-
-
-def test_load_config_rejects_conflicting_canonical_and_legacy_signal_window(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(
-        config_dir,
-        {
-            "signal_processing_window_points": "21",
-            "ms1_morphology_smoothing_window_points": "15",
-        },
-    )
-    _write_targets(config_dir)
-
-    with pytest.raises(ConfigError) as exc_info:
-        load_config(config_dir)
-
-    _assert_error(
-        exc_info,
-        "signal_processing_window_points",
-        "ms1_morphology_smoothing_window_points",
-        "21",
-        "15",
-    )
-
-
 def test_load_config_accepts_process_parallel_settings(tmp_path: Path) -> None:
     config_dir = tmp_path / "config"
     _write_settings(
@@ -404,111 +333,6 @@ def test_load_config_accepts_process_parallel_settings(tmp_path: Path) -> None:
 
     assert config.parallel_mode == "process"
     assert config.parallel_workers == 4
-
-
-def test_load_config_accepts_target_pair_rt_calibration_path(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    calibration = tmp_path / "target_pair_rt_calibration.tsv"
-    _write_settings(
-        config_dir,
-        {"target_pair_rt_calibration_path": str(calibration)},
-    )
-    _write_targets(config_dir)
-    _write_calibration(calibration, config_dir / "targets.csv")
-
-    config, _ = load_config(config_dir)
-
-    assert config.target_pair_rt_calibration_path == calibration
-
-
-def test_load_config_validates_pair_rt_calibration_when_shadow_output_off(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    calibration = tmp_path / "target_pair_rt_calibration.tsv"
-    _write_settings(
-        config_dir,
-        {
-            "target_pair_rt_calibration_path": str(calibration),
-        },
-    )
-    _write_targets(config_dir)
-    calibration.write_text(
-        "schema_version\ttarget_label\nv\tAnalyte\n",
-        encoding="utf-8-sig",
-    )
-
-    with pytest.raises(ConfigError) as exc_info:
-        load_config(config_dir)
-
-    _assert_error(exc_info, "missing required column target_config_hash")
-
-
-def test_load_config_rejects_missing_target_pair_rt_calibration_file(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    calibration = tmp_path / "missing_target_pair_rt_calibration.tsv"
-    _write_settings(
-        config_dir,
-        {"target_pair_rt_calibration_path": str(calibration)},
-    )
-    _write_targets(config_dir)
-
-    with pytest.raises(ConfigError) as exc_info:
-        load_config(config_dir)
-
-    _assert_error(exc_info, "file is missing")
-
-
-def test_load_config_rejects_duplicate_target_pair_rt_calibration_rows(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    calibration = tmp_path / "target_pair_rt_calibration.tsv"
-    _write_settings(
-        config_dir,
-        {"target_pair_rt_calibration_path": str(calibration)},
-    )
-    _write_targets(config_dir)
-    _write_calibration(calibration, config_dir / "targets.csv", duplicate=True)
-
-    with pytest.raises(ConfigError) as exc_info:
-        load_config(config_dir)
-
-    _assert_error(exc_info, "duplicate (target_label, paired_istd_label)")
-
-
-def test_load_config_parses_optional_target_pair_rt_metadata(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(config_dir)
-    _write_targets_with_optional_metadata(
-        config_dir,
-        [
-            _target_row(
-                label="Analyte",
-                istd_pair="ISTD",
-                paired_rt_relation="istd_not_later_than_pair",
-            ),
-            _target_row(
-                label="ISTD",
-                is_istd="true",
-                isotope_label_type="deuterated",
-            ),
-        ],
-    )
-
-    _, targets = load_config(config_dir)
-    by_label = {target.label: target for target in targets}
-
-    assert by_label["Analyte"].isotope_label_type == "unknown"
-    assert by_label["Analyte"].paired_rt_relation == "istd_not_later_than_pair"
-    assert by_label["ISTD"].isotope_label_type == "deuterated"
-    assert by_label["ISTD"].paired_rt_relation == "none"
 
 
 def test_load_config_parses_target_sample_applicability(tmp_path: Path) -> None:
@@ -533,22 +357,6 @@ def test_load_config_parses_target_sample_applicability(tmp_path: Path) -> None:
     assert by_label["ISTD"].sample_applicability == "all"
 
 
-def test_load_config_rejects_invalid_target_pair_rt_metadata_enum(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(config_dir)
-    _write_targets_with_optional_metadata(
-        config_dir,
-        [_target_row(isotope_label_type="regex_guess")],
-    )
-
-    with pytest.raises(ConfigError) as exc_info:
-        load_config(config_dir)
-
-    _assert_error(exc_info, "targets.csv", "isotope_label_type", "regex_guess")
-
-
 def test_load_config_rejects_invalid_target_sample_applicability(
     tmp_path: Path,
 ) -> None:
@@ -563,65 +371,6 @@ def test_load_config_rejects_invalid_target_sample_applicability(
         load_config(config_dir)
 
     _assert_error(exc_info, "targets.csv", "sample_applicability", "dna_and_rna_only")
-
-
-def test_load_config_rejects_istd_relation_on_non_deuterated_pair(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(config_dir)
-    _write_targets_with_optional_metadata(
-        config_dir,
-        [
-            _target_row(
-                label="Analyte",
-                istd_pair="ISTD",
-                paired_rt_relation="istd_not_later_than_pair",
-            ),
-            _target_row(
-                label="ISTD",
-                is_istd="true",
-                isotope_label_type="heavy_non_deuterium",
-            ),
-        ],
-    )
-
-    with pytest.raises(ConfigError) as exc_info:
-        load_config(config_dir)
-
-    _assert_error(
-        exc_info,
-        "targets.csv",
-        "paired_rt_relation",
-        "requires paired ISTD isotope_label_type=deuterated",
-    )
-
-
-def test_load_config_rejects_istd_owned_paired_rt_relation(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(config_dir)
-    _write_targets_with_optional_metadata(
-        config_dir,
-        [
-            _target_row(
-                label="ISTD",
-                is_istd="true",
-                paired_rt_relation="learned_delta_only",
-            )
-        ],
-    )
-
-    with pytest.raises(ConfigError) as exc_info:
-        load_config(config_dir)
-
-    _assert_error(
-        exc_info,
-        "targets.csv",
-        "paired_rt_relation",
-        "is_istd=true targets must leave paired_rt_relation blank",
-    )
 
 
 def test_load_config_defaults_baseline_integration_method_to_asls(
@@ -644,7 +393,7 @@ def test_canonical_settings_defaults_include_parallel_settings() -> None:
     assert "baseline_integration_method" not in CANONICAL_SETTINGS_DEFAULTS
     assert CANONICAL_SETTINGS_DEFAULTS["signal_processing_method"] == "gaussian"
     assert CANONICAL_SETTINGS_DEFAULTS["signal_processing_window_points"] == "15"
-    assert CANONICAL_SETTINGS_DEFAULTS["ms1_morphology_smoothing_window_points"] == "15"
+    assert "ms1_morphology_smoothing_window_points" not in CANONICAL_SETTINGS_DEFAULTS
 
 
 def test_canonical_settings_defaults_omit_obsolete_peak_controls() -> None:
@@ -719,15 +468,6 @@ def test_settings_example_omits_machine_specific_worker_count() -> None:
     assert "resolver_mode" not in rows
 
 
-def test_settings_example_includes_review_report_setting() -> None:
-    example_path = Path("config/settings.example.csv")
-
-    with example_path.open(newline="", encoding="utf-8-sig") as handle:
-        rows = {row["key"]: row["value"] for row in csv.DictReader(handle)}
-
-    assert rows["emit_review_report"] == "false"
-
-
 def test_retired_peak_candidate_setting_is_not_exposed() -> None:
     example_path = Path("config/settings.example.csv")
 
@@ -739,25 +479,14 @@ def test_retired_peak_candidate_setting_is_not_exposed() -> None:
     assert "emit_peak_candidates" not in CANONICAL_SETTINGS_DESCRIPTIONS
 
 
-def test_settings_example_includes_target_pair_rt_calibration_setting() -> None:
-    example_path = Path("config/settings.example.csv")
-
-    with example_path.open(newline="", encoding="utf-8-sig") as handle:
-        rows = {row["key"]: row["value"] for row in csv.DictReader(handle)}
-
-    assert rows["target_pair_rt_calibration_path"] == ""
-
-
-def test_targets_example_includes_optional_target_pair_rt_metadata() -> None:
+def test_targets_example_preserves_pairing_and_sample_applicability() -> None:
     example_path = Path("config/targets.example.csv")
 
     with example_path.open(newline="", encoding="utf-8-sig") as handle:
         rows = {row["label"]: row for row in csv.DictReader(handle)}
 
-    assert rows["d3-5-medC"]["isotope_label_type"] == "deuterated"
-    assert rows["5-medC"]["paired_rt_relation"] == "istd_not_later_than_pair"
-    assert rows["15N5-8-oxodG"]["isotope_label_type"] == "heavy_non_deuterium"
-    assert rows["8-oxodG"]["paired_rt_relation"] == "learned_delta_only"
+    assert rows["5-medC"]["istd_pair"] == "d3-5-medC"
+    assert rows["8-oxodG"]["istd_pair"] == "15N5-8-oxodG"
     assert rows["8-oxo-Guo"]["sample_applicability"] == "rna_containing"
 
 
@@ -782,8 +511,6 @@ def test_settings_example_omits_obsolete_peak_controls() -> None:
         ("signal_processing_window_points", "1"),
         ("signal_processing_window_points", "1001"),
         ("signal_processing_window_points", "true"),
-        ("ms1_morphology_smoothing_window_points", "14"),
-        ("ms1_morphology_smoothing_window_points", "1"),
         ("ms2_precursor_tol_da", "0"),
         ("nl_min_intensity_ratio", "0"),
         ("nl_min_intensity_ratio", "1.1"),
@@ -839,8 +566,6 @@ def _write_targets_with_optional_metadata(
 ) -> None:
     fieldnames = [
         *TARGET_FIELDS,
-        "isotope_label_type",
-        "paired_rt_relation",
         "sample_applicability",
     ]
     config_dir.mkdir(parents=True, exist_ok=True)
@@ -851,36 +576,6 @@ def _write_targets_with_optional_metadata(
         writer.writeheader()
         for row in rows:
             writer.writerow({field: row.get(field, "") for field in fieldnames})
-
-
-def _write_calibration(
-    path: Path,
-    targets_path: Path,
-    *,
-    duplicate: bool = False,
-) -> None:
-    row = TargetPairRTCalibrationRow(
-        schema_version=TARGET_PAIR_RT_CALIBRATION_SCHEMA_VERSION,
-        target_config_hash=compute_target_config_hash(targets_path),
-        source_artifact="mixstds.tsv",
-        source_hash="sourcehash",
-        source_hash_status="present",
-        target_label="Analyte",
-        paired_istd_label="ISTD",
-        pair_rt_delta_min=0.25,
-        delta_source="mixstds_clean_standard",
-        point_count=6,
-        rt_delta_median_min=0.25,
-        rt_delta_mad_min=0.02,
-        rt_delta_direction="target_later",
-        isotope_label_type="deuterated",
-        paired_rt_relation="istd_not_later_than_pair",
-        calibration_status="usable",
-        calibration_level="clean_standard_only",
-        product_transfer_status="not_assessed",
-    )
-    rows = [row, row] if duplicate else [row]
-    write_target_pair_rt_calibration_tsv(path, rows)
 
 
 def test_load_config_rejects_duplicate_target_labels(tmp_path: Path) -> None:
@@ -1009,12 +704,11 @@ def test_untargeted_list_with_no_istd_is_actionable(tmp_path):
 
 
 @pytest.mark.parametrize("resolver_mode", ["savgol", "legacy_savgol"])
-def test_resolver_setting_input_normalizes_to_savgol(
+def test_retired_resolver_csv_value_is_preserved_while_direct_config_normalizes(
     tmp_path: Path, resolver_mode: str
 ) -> None:
-    """Remove the alias case only after existing user settings have migrated."""
-    migrated, _ = migrate_settings_dict({"resolver_mode": resolver_mode})
-    assert migrated["resolver_mode"] == "savgol"
+    migrated, _ = fill_setting_defaults({"resolver_mode": resolver_mode})
+    assert migrated["resolver_mode"] == resolver_mode
     config = ExtractionConfig(
         data_dir=tmp_path,
         dll_dir=tmp_path,

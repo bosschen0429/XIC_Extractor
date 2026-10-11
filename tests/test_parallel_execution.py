@@ -10,7 +10,6 @@ import pytest
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.output.messages import DiagnosticRecord
-from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecord
 
 
 def test_worker_job_and_result_objects_are_pickleable(tmp_path: Path) -> None:
@@ -30,11 +29,7 @@ def test_worker_job_and_result_objects_are_pickleable(tmp_path: Path) -> None:
         scoring_inputs=ScoringInputs(
             injection_order={"SampleA": 1},
             istd_rts_by_sample={},
-            rt_prior_library={},
         ),
-        model_selection_expected_diff_approvals={
-            "SampleA|Analyte|expected-diff": _expected_diff_approval()
-        },
     )
     validate_job_payload(job)
     restored_job = pickle.loads(pickle.dumps(job))
@@ -42,13 +37,6 @@ def test_worker_job_and_result_objects_are_pickleable(tmp_path: Path) -> None:
     assert restored_job.raw_index == 3
     assert restored_job.scoring_inputs is not None
     assert restored_job.scoring_inputs.injection_order == {"SampleA": 1}
-    assert restored_job.model_selection_expected_diff_approvals is not None
-    assert (
-        restored_job.model_selection_expected_diff_approvals[
-            "SampleA|Analyte|expected-diff"
-        ].reviewer_verdict
-        == "approved"
-    )
 
     worker_error = WorkerError(raw_index=3, raw_name="SampleA.raw", message="boom")
     restored_error = pickle.loads(pickle.dumps(worker_error))
@@ -300,9 +288,7 @@ def test_parallel_full_extraction_submits_pickleable_scoring_jobs_and_sorts(
     scoring_inputs = ScoringInputs(
         injection_order={"A": 1, "B": 2},
         istd_rts_by_sample={"ISTD": {"A": 9.1}},
-        rt_prior_library={},
     )
-    approval = _expected_diff_approval()
     submitted = []
 
     def _runner(jobs, *, max_workers, **_kwargs):
@@ -311,9 +297,6 @@ def test_parallel_full_extraction_submits_pickleable_scoring_jobs_and_sorts(
             validate_job_payload(job)
             assert job.scoring_inputs == scoring_inputs
             assert not callable(job.scoring_inputs)
-            assert job.model_selection_expected_diff_approvals == {
-                approval.stable_row_id: approval
-            }
         return [
             RawFileExtractionResult(
                 raw_index=2,
@@ -334,7 +317,6 @@ def test_parallel_full_extraction_submits_pickleable_scoring_jobs_and_sorts(
         targets,
         raw_paths,
         scoring_inputs,
-        model_selection_expected_diff_approvals={approval.stable_row_id: approval},
         runner=_runner,
     )
 
@@ -373,7 +355,6 @@ def test_parallel_full_extraction_worker_error_fails_with_raw_name(
             ScoringInputs(
                 injection_order={"A": 1},
                 istd_rts_by_sample={},
-                rt_prior_library={},
             ),
             runner=_runner,
         )
@@ -409,12 +390,8 @@ def test_raw_worker_rebuilds_scoring_factory_inside_worker(
         raw_path_arg,
         *,
         scoring_context_factory,
-        rt_prior_library,
-        model_selection_expected_diff_approvals,
     ):
         rebuilt["worker_factory"] = scoring_context_factory
-        rebuilt["worker_rt_prior_library"] = rt_prior_library
-        rebuilt["approvals"] = model_selection_expected_diff_approvals
         from xic_extractor.extraction.result_models import (
             FileResult,
             RawFileExtractionResult,
@@ -445,81 +422,16 @@ def test_raw_worker_rebuilds_scoring_factory_inside_worker(
             scoring_inputs=ScoringInputs(
                 injection_order={"SampleA": 1},
                 istd_rts_by_sample={"ISTD": {"SampleA": 9.1}},
-                rt_prior_library={},
             ),
-            model_selection_expected_diff_approvals={
-                "SampleA|Analyte|expected-diff": _expected_diff_approval()
-            },
         )
     )
 
     assert result.raw_index == 7
     assert rebuilt["config"] == config
-    assert rebuilt["approvals"] is not None
-    assert "SampleA|Analyte|expected-diff" in rebuilt["approvals"]
     assert rebuilt["injection_order"] == {"SampleA": 1}
     assert rebuilt["istd_rts_by_sample"] == {"ISTD": {"SampleA": 9.1}}
-    assert rebuilt["rt_prior_library"] == {}
-    assert rebuilt["worker_rt_prior_library"] == {}
+
     assert rebuilt["worker_factory"] is not None
-
-
-def test_process_run_writes_output_only_after_collecting_worker_results(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from xic_extractor.extraction.pipeline import run_pipeline
-    from xic_extractor.extraction.result_models import (
-        FileResult,
-        RawFileExtractionResult,
-    )
-
-    config = replace(
-        _config(tmp_path),
-        keep_intermediate_csv=True,
-        parallel_mode="process",
-        parallel_workers=2,
-    )
-    (config.data_dir / "A.raw").write_text("", encoding="utf-8")
-    targets = [_target("Analyte")]
-    calls = []
-
-    monkeypatch.setattr(
-        "xic_extractor.extraction.pipeline.preflight_raw_reader",
-        lambda _dll_dir: [],
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.process_backend.collect_istd_prepass_process",
-        lambda *_args, **_kwargs: {},
-    )
-
-    def _fake_collect_raw_results(*_args, **_kwargs):
-        calls.append("collect")
-        return [
-            RawFileExtractionResult(
-                raw_index=1,
-                sample_name="A",
-                file_result=FileResult(sample_name="A", results={}),
-                diagnostics=[],
-            )
-        ]
-
-    def _fake_write_all(*_args, **_kwargs):
-        calls.append("write")
-
-    monkeypatch.setattr(
-        "xic_extractor.extraction.process_backend.collect_raw_file_results_process",
-        _fake_collect_raw_results,
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.pipeline.write_outputs",
-        _fake_write_all,
-    )
-
-    output = run_pipeline(config, targets)
-
-    assert [file_result.sample_name for file_result in output.file_results] == ["A"]
-    assert calls == ["collect", "write"]
 
 
 def _config(tmp_path: Path) -> ExtractionConfig:
@@ -555,22 +467,4 @@ def _target(label: str, *, is_istd: bool = False) -> Target:
         nl_ppm_max=None,
         is_istd=is_istd,
         istd_pair="",
-    )
-
-
-def _expected_diff_approval() -> ExpectedDiffApprovalRecord:
-    return ExpectedDiffApprovalRecord(
-        stable_row_id="SampleA|Analyte|expected-diff",
-        sample_name="SampleA",
-        target_label="Analyte",
-        legacy_selected_candidate_id="legacy",
-        successor_selected_candidate_id="successor",
-        public_outputs_touched=("selected rt", "area", "final matrix value"),
-        matrix_value_impact="area_value_changed",
-        evidence_sources=("ms1_trace",),
-        evidence_summary="approved expected-diff fixture",
-        validation_tier="targeted_benchmark",
-        reviewer_role="implementation-contract-reviewer",
-        reviewer_verdict="approved",
-        final_label="expected_diff",
     )

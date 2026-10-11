@@ -94,7 +94,7 @@
     <nav class="jump" aria-label="頁內導覽"><a href="#workflow">操作步驟</a><a href="#inputs">輸入與設定</a><a href="#outputs">輸出檔案</a><a href="#review">判讀與檢視</a><a href="#cli">CLI</a><a href="#troubleshooting">常見問題</a></nav>
     <main>
       <section id="workflow" aria-labelledby="workflow-heading">
-        <p class="eyebrow">01 · 跑一個批次</p><h2 id="workflow-heading">先設定，再執行</h2><p class="intro">下列流程適用 GUI。封裝版直接開啟 <code>XIC_Extractor.exe</code>；開發 checkout 可執行 <code>uv run python -m gui.main</code>。</p>
+        <p class="eyebrow">01 · 跑一個批次</p><h2 id="workflow-heading">先設定，再執行</h2><p class="intro">下列流程適用 GUI。封裝版直接開啟 <code>XIC_Extractor.exe</code>；開發 checkout 可執行 <code>uv run xic-workbench</code>。</p>
         <figure class="snapshot"><img src="../../assets/screenshots/targeted-workspace.png" alt="Targeted Extraction 工作區畫面"><figcaption>Targeted Extraction 工作區：設定批次、編輯目標、執行與檢視結果。</figcaption></figure>
         <ol class="steps">
           <li><h3>選擇 Targeted Extraction</h3><p>進入已知目標的工作區。</p></li>
@@ -103,6 +103,7 @@
           <li><h3>按「開始執行」</h3><p>按工作區下方的執行按鈕；完成後，到 <code>output/</code> 找本次 workbook。</p></li>
         </ol>
         <div class="note"><p><strong>接著跑新批次？</strong>「開始新批次」會清除 RAW 資料夾與畫面上的結果，保留目標、DLL 與分析參數。環境與進階設定可從可展開摘要再開啟。</p><p>已完成執行後若改設定，畫面會把現有結果標為「先前結果」；請用新執行的 workbook 判讀新設定。</p></div>
+        <div class="note"><p><strong>分析方法與設定</strong>：<code>settings.csv</code> 是唯一啟用的 Targeted 設定檔；<code>targets.csv</code> 是獨立目標表。「自訂參數」只計算 10 個 scalar 參數，不計 RAW/DLL、workers 或輸出。Gaussian 為固定處理資訊，不是選項。</p><p>「回到預設」保留批次、環境與輸出設定。詳見 <a href="targeted-config-reference.md">設定參考</a>。</p></div>
       </section>
       <section id="inputs" aria-labelledby="inputs-heading">
         <p class="eyebrow">02 · 輸入與設定</p><h2 id="inputs-heading">每個欄位在做什麼</h2><p class="intro">封裝版從 <code>config/settings.example.csv</code>、<code>config/targets.example.csv</code> 起步；按 Save 或 Run 後建立 <code>config/settings.csv</code>、<code>config/targets.csv</code> 工作副本。</p>
@@ -115,7 +116,8 @@
         <div class="note"><p><strong>目標標籤會出現在對外結果。</strong>Workbook 與 CSV 會用它當識別名稱；若改名，請確認下游 script 與檢視習慣能接受新的欄位前綴。機器上的 RAW、DLL 與實驗室路徑請放在本機工作副本。</p></div>
       </section>
       <section id="outputs" aria-labelledby="outputs-heading">
-        <p class="eyebrow">03 · 主輸出</p><h2 id="outputs-heading">先開 workbook</h2><p class="intro">日常檢視從 Excel workbook 開始；debug CSV 只在需要時使用。</p>
+        <p class="eyebrow">03 · 主輸出</p><h2 id="outputs-heading">先開 workbook</h2><p class="intro">完成後只交付一份 XLSX；從 Overview 與 Review Queue 開始檢視。</p>
+        <p>內部 gate 的暫存檔會在完成、失敗或取消後清理。非空的批次資料、身分支持與核准記錄保留為隱藏工作表，不另留 sidecar。Inspector 目前不直接讀取 Targeted XLSX。</p>
         <code class="output-path">output/xic_results_YYYYMMDD_HHMM.xlsx</code>
         <div class="table-wrap"><table><thead><tr><th scope="col">Sheet</th><th scope="col">用途</th></tr></thead><tbody>
           <tr><td><code>Overview</code></td><td>執行摘要、計數與檢視優先順序。</td></tr>
@@ -124,10 +126,8 @@
           <tr><td><code>Summary</code></td><td>各目標的偵測、area、NL、RT 與 confidence 摘要。</td></tr>
           <tr><td><code>Targets</code></td><td>本次執行所用目標表快照。</td></tr>
           <tr><td><code>Diagnostics</code></td><td>技術問題列。</td></tr>
-          <tr><td><code>Run Metadata</code></td><td>重現用 metadata 與 config hash。</td></tr>
-          <tr><td><code>Score Breakdown</code></td><td>按選項輸出的技術稽核 sheet。</td></tr>
+          <tr><td><code>Run Metadata</code></td><td>本次方法參數、config hash 與 gate 結果。</td></tr>
         </tbody></table></div>
-        <p class="intro">只有 <code>keep_intermediate_csv=true</code>，或 CLI 使用 <code>--skip-excel</code>，才保留中間 CSV。</p>
       </section>
       <section id="review" aria-labelledby="review-heading">
         <p class="eyebrow">04 · 判讀順序</p><h2 id="review-heading">從總覽找到要看的列</h2><p class="intro">完成後先看 <code>Overview</code> 的偵測率，再看 <code>Review Queue</code>。如果偵測率或 RT delta 異常，先查 <code>Diagnostics</code> 再考慮重跑。</p>
@@ -142,7 +142,6 @@
           <tr><td><code>--data-dir</code></td><td>本次執行的 RAW 資料夾覆寫值。</td></tr>
           <tr><td><code>--parallel-mode</code></td><td><code>serial</code> 或 <code>process</code>。</td></tr>
           <tr><td><code>--parallel-workers</code></td><td>process mode 的 worker 數。</td></tr>
-          <tr><td><code>--skip-excel</code></td><td>只留 CSV，略過 workbook 轉換。</td></tr>
         </tbody></table></div><p class="intro">目前追蹤的設定預設 <code>parallel_mode=process</code>；診斷或隔離環境問題時可用 serial mode。</p>
       </section>
       <section id="troubleshooting" aria-labelledby="troubleshooting-heading">
@@ -151,7 +150,6 @@
         <details class="faq"><summary><code>data_dir</code> 不存在</summary><p>把 Settings 指到真正包含 <code>.raw</code> 檔案的資料夾。</p></details>
         <details class="faq"><summary>DLL 載入失敗</summary><p>把 Settings 指到 Thermo RawFileReader DLL 所在資料夾。</p></details>
         <details class="faq"><summary>只有一個 RAW 檔案失敗</summary><p>讓批次繼續，完成後檢查 <code>Diagnostics</code> 中的 <code>FILE_ERROR</code> 列。</p></details>
-        <details class="faq"><summary>需要 debug CSV 或 scoring 細節</summary><p>CSV 可開啟 <code>keep_intermediate_csv</code> 或使用 <code>--skip-excel</code>；scoring 細節可開啟 <code>emit_score_breakdown</code>，再看 <code>Score Breakdown</code>。</p></details>
         <div class="next"><a href="untargeted-discovery.html"><strong>想探索未知特徵？→</strong><span>改看 Untargeted Discovery 操作指南。</span></a><a href="core-modules-explainer.html#modes"><strong>回核心模組導覽 →</strong><span>對照兩種工作模式與共用處理核心。</span></a></div>
       </section>
     </main>

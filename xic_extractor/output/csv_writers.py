@@ -1,19 +1,13 @@
-import csv
 from collections.abc import Mapping, Sequence
 from typing import Protocol
 
-from xic_extractor.configuration.models import ExtractionConfig, Target
+from xic_extractor.configuration.models import Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
-from xic_extractor.output.detection import is_accepted_result_detection
 from xic_extractor.output.reason_display import (
     display_measurement_reason,
     display_nl_evidence,
 )
 from xic_extractor.output.schema import (
-    DIAGNOSTIC_HEADERS,
-    LONG_HEADERS,
-    MS1_SUFFIXES,
-    SCORE_BREAKDOWN_HEADERS,
     TARGETED_PRODUCT_PROJECTION_HEADERS,
 )
 from xic_extractor.output.targeted_product_model import (
@@ -119,67 +113,6 @@ class FileResultLike(Protocol):
     def extraction_results(self) -> Sequence[ExtractionResultLike]: ...
 
 
-def write_all(
-    config: ExtractionConfig,
-    targets: Sequence[Target],
-    file_results: Sequence[FileResultLike],
-    diagnostics: Sequence[DiagnosticRecordLike],
-    *,
-    emit_score_breakdown: bool,
-) -> None:
-    write_wide_csv(config, targets, file_results)
-    write_long_csv(config, targets, file_results)
-    write_diagnostics_csv(config, diagnostics)
-    if emit_score_breakdown:
-        write_score_breakdown_csv(config, file_results)
-
-
-def write_wide_csv(
-    config: ExtractionConfig,
-    targets: Sequence[Target],
-    file_results: Sequence[FileResultLike],
-) -> None:
-    config.output_csv.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = _output_fieldnames(targets)
-    with config.output_csv.open("w", newline="", encoding="utf-8-sig") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        for file_result in file_results:
-            writer.writerow(_output_row(file_result, targets))
-
-
-def write_diagnostics_csv(
-    config: ExtractionConfig, diagnostics: Sequence[DiagnosticRecordLike]
-) -> None:
-    config.diagnostics_csv.parent.mkdir(parents=True, exist_ok=True)
-    with config.diagnostics_csv.open("w", newline="", encoding="utf-8-sig") as handle:
-        writer = csv.DictWriter(handle, fieldnames=DIAGNOSTIC_HEADERS)
-        writer.writeheader()
-        for record in diagnostics:
-            writer.writerow(
-                {
-                    "SampleName": record.sample_name,
-                    "Target": record.target_label,
-                    "Issue": record.issue,
-                    "Reason": record.reason,
-                }
-            )
-
-
-def write_long_csv(
-    config: ExtractionConfig,
-    targets: Sequence[Target],
-    file_results: Sequence[FileResultLike],
-) -> None:
-    path = config.output_csv.with_name("xic_results_long.csv")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8-sig") as handle:
-        writer = csv.DictWriter(handle, fieldnames=LONG_HEADERS)
-        writer.writeheader()
-        for file_result in file_results:
-            writer.writerows(_long_output_rows(file_result, targets))
-
-
 def _long_output_rows(
     file_result: FileResultLike, targets: Sequence[Target]
 ) -> list[dict[str, str]]:
@@ -225,91 +158,6 @@ def _long_output_rows(
             row["Reason"] = _display_reason(result)
             row.update(_projection_fields(result.targeted_product_projection))
         rows.append(row)
-    return rows
-
-
-def write_score_breakdown_csv(
-    config: ExtractionConfig, file_results: Sequence[FileResultLike]
-) -> None:
-    path = config.output_csv.with_name("xic_score_breakdown.csv")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8-sig") as handle:
-        writer = csv.DictWriter(handle, fieldnames=SCORE_BREAKDOWN_HEADERS)
-        writer.writeheader()
-        for file_result in file_results:
-            writer.writerows(
-                _score_breakdown_rows(
-                    file_result,
-                    count_no_ms2_as_detected=config.count_no_ms2_as_detected,
-                )
-            )
-
-
-def _score_breakdown_rows(
-    file_result: FileResultLike,
-    *,
-    count_no_ms2_as_detected: bool,
-) -> list[dict[str, str]]:
-    rows: list[dict[str, str]] = []
-    for result in file_result.extraction_results:
-        severities = {label: severity for severity, label in result.severities}
-        weighted_fields = dict(result.score_breakdown)
-        rows.append(
-            {
-                "SampleName": file_result.sample_name,
-                "Target": result.target_label,
-                "Final Confidence": weighted_fields.get(
-                    "Final Confidence", result.confidence
-                ),
-                "Detection Counted": (
-                    "TRUE"
-                    if is_accepted_result_detection(
-                        result,
-                        count_no_ms2_as_detected,
-                        require_projection=True,
-                    )
-                    else "FALSE"
-                ),
-                "Product State": _projection_text(
-                    result.targeted_product_projection,
-                    "product_state",
-                ),
-                "Review State": _projection_text(
-                    result.targeted_product_projection,
-                    "review_state",
-                ),
-                "Projection Reason": _projection_text(
-                    result.targeted_product_projection,
-                    "projection_reason",
-                ),
-                "Legacy Authority Status": _projection_text(
-                    result.targeted_product_projection,
-                    "legacy_authority_status",
-                ),
-                "Caps": weighted_fields.get("Caps", ""),
-                "Raw Score": weighted_fields.get("Raw Score", ""),
-                "Support": weighted_fields.get("Support", ""),
-                "Concerns": weighted_fields.get("Concerns", ""),
-                "Base Score": weighted_fields.get("Base Score", ""),
-                "Positive Points": weighted_fields.get("Positive Points", ""),
-                "Negative Points": weighted_fields.get("Negative Points", ""),
-                "symmetry": _format_optional_severity(severities.get("symmetry")),
-                "local_sn": _format_optional_severity(severities.get("local_sn")),
-                "nl_support": _format_optional_severity(severities.get("nl_support")),
-                "rt_prior": _format_optional_severity(severities.get("rt_prior")),
-                "rt_centrality": _format_optional_severity(
-                    severities.get("rt_centrality")
-                ),
-                "noise_shape": _format_optional_severity(severities.get("noise_shape")),
-                "peak_width": _format_optional_severity(severities.get("peak_width")),
-                "Quality Penalty": str(result.quality_penalty),
-                "Quality Flags": ",".join(result.quality_flags),
-                "Total Severity": str(result.total_severity),
-                "Confidence": result.confidence,
-                "Prior RT": _format_optional_number(result.prior_rt),
-                "Prior Source": result.prior_source,
-            }
-        )
     return rows
 
 
@@ -388,12 +236,6 @@ def _join_reasons(reasons: tuple[str, ...]) -> str:
     return "; ".join(reasons)
 
 
-def _format_optional_severity(value: int | None) -> str:
-    if value is None:
-        return ""
-    return str(value)
-
-
 def _format_optional_number(value: float | None) -> str:
     if value is None:
         return "NA"
@@ -423,80 +265,6 @@ def _set_long_peak_values(row: dict[str, str], result: ExtractionResultLike) -> 
     row["PeakStart"] = _format_peak_decimal(result.reported_peak_start, digits=4)
     row["PeakEnd"] = _format_peak_decimal(result.reported_peak_end, digits=4)
     row["PeakWidth"] = _format_peak_decimal(result.reported_peak_width, digits=4)
-
-
-def _output_fieldnames(targets: Sequence[Target]) -> list[str]:
-    fieldnames = ["SampleName"]
-    for target in targets:
-        fieldnames.extend(_target_fieldnames(target))
-    return fieldnames
-
-
-def _target_fieldnames(target: Target) -> list[str]:
-    fieldnames = [f"{target.label}_{suffix}" for suffix in MS1_SUFFIXES]
-    if target.neutral_loss_da is not None:
-        fieldnames.append(f"{target.label}_NL")
-    return fieldnames
-
-
-def _output_row(
-    file_result: FileResultLike, targets: Sequence[Target]
-) -> dict[str, str]:
-    row = {"SampleName": file_result.sample_name}
-    for target in targets:
-        if file_result.error is not None:
-            _set_target_values(row, target, "ERROR")
-            continue
-
-        result = file_result.results[target.label]
-        _set_peak_values(row, target, result)
-        if target.neutral_loss_da is not None:
-            row[f"{target.label}_NL"] = result.nl_token or "ND"
-    return row
-
-
-def _set_target_values(row: dict[str, str], target: Target, value: str) -> None:
-    for suffix in MS1_SUFFIXES:
-        row[f"{target.label}_{suffix}"] = value
-    if target.neutral_loss_da is not None:
-        row[f"{target.label}_NL"] = value
-
-
-def _set_peak_values(
-    row: dict[str, str],
-    target: Target,
-    result: ExtractionResultLike,
-) -> None:
-    if not _has_reported_peak(result):
-        for suffix in MS1_SUFFIXES:
-            row[f"{target.label}_{suffix}"] = "ND"
-        return
-
-    row[f"{target.label}_RT"] = _format_peak_decimal(result.reported_rt, digits=4)
-    row[f"{target.label}_Int"] = _format_peak_decimal(
-        result.reported_peak_intensity,
-        digits=0,
-    )
-    row[f"{target.label}_IntSmoothed"] = _format_peak_decimal(
-        result.reported_smoothed_peak_intensity,
-        digits=0,
-    )
-    row[f"{target.label}_Area"] = _format_peak_decimal(
-        result.reported_peak_area,
-        digits=2,
-    )
-    row[f"{target.label}_PeakStart"] = _format_peak_decimal(
-        result.reported_peak_start,
-        digits=4,
-    )
-    row[f"{target.label}_PeakEnd"] = _format_peak_decimal(
-        result.reported_peak_end,
-        digits=4,
-    )
-    row[f"{target.label}_PeakWidth"] = _format_peak_decimal(
-        result.reported_peak_width,
-        digits=4,
-    )
 
 
 def _has_reported_peak(result: ExtractionResultLike) -> bool:

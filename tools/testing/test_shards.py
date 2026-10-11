@@ -84,7 +84,6 @@ CI_BASE_MARKER_EXPRESSION = (
 SNAPSHOT_TESTS: dict[str, tuple[str, ...]] = {
     "tests/test_bounded_product_lanes_contract.py": (
         "test_bounded_product_lanes_accept_current_artifacts",
-        "test_limited_targeted_ms1_scope_and_effect_are_pinned",
     ),
     "tests/test_check_productization_authority.py": (
         "test_productization_authority_checker_accepts_repo_artifacts",
@@ -110,7 +109,6 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_config*.py",
             "tests/test_docs_*.py",
             "tests/test_multiprocessing_entrypoints.py",
-            "tests/test_peak_model_selection.py",
             "tests/test_productization_*.py",
             "tests/test_pyinstaller_spec.py",
             "tests/test_presets_*.py",
@@ -122,7 +120,6 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_workbench_*.py",
             "tests/test_discovery_worker.py",
             "tests/test_messages.py",
-            "tests/test_method_manifest.py",
             "tests/test_settings_*.py",
             "tests/test_xlsx_to_targets.py",
         ),
@@ -240,7 +237,6 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
         "product-gates-evidence": (
             "tests/test_evidence_*.py",
             "tests/test_matrix_*.py",
-            "tests/test_model_selection_approval_registry.py",
             "tests/test_ms1_*.py",
             "tests/test_ms2_trace_evidence.py",
             "tests/test_targeted_*.py",
@@ -255,7 +251,6 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
         "diagnostics-tools": (
             "tests/test_artifact_paths.py",
             "tests/test_benchmark_parallel.py",
-            "tests/test_build_targeted_ms1_shape_identity_supports.py",
             "tests/test_compare_alignment_workbooks.py",
             "tests/test_diagnostic_*.py",
             "tests/test_instrument_qc_*.py",
@@ -270,7 +265,6 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_explanation_review.py",
             "tests/test_schema_*.py",
             "tests/test_timing.py",
-            "tests/test_tissue_regression.py",
             "tests/test_validate_*.py",
             "tests/test_validation_harness.py",
         ),

@@ -1,223 +1,27 @@
-"""Targeted execution and form metadata for the local HTML workbench."""
+"""Targeted execution for the local HTML workbench."""
 
 from __future__ import annotations
 
 import statistics
 from collections.abc import Callable
 from datetime import datetime
-from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, TypedDict
 
 from xic_extractor import extractor
+from xic_extractor.analysis_set import discover_raw_files
 from xic_extractor.applications.targeted.application import (
     build_canonical_targeted_application_service,
     build_targeted_application_request,
 )
 from xic_extractor.configuration import loader as config_loader
-from xic_extractor.configuration.models import ExtractionConfig, Target
-from xic_extractor.configuration.settings import migrate_settings_dict
+from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
+from xic_extractor.configuration.settings import method_settings_differences
 from xic_extractor.extraction.result_models import ExtractionResult, RunOutput
-from xic_extractor.output.method_manifest import MethodManifestContext
-from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
-
-_VISIBLE_SETTINGS: tuple[dict[str, Any], ...] = (
-    {
-        "key": "data_dir",
-        "label": "資料目錄",
-        "kind": "folder",
-        "group": "資料與環境",
-    },
-    {
-        "key": "dll_dir",
-        "label": "DLL 目錄",
-        "kind": "folder",
-        "group": "資料與環境",
-    },
-    {
-        "key": "signal_processing_window_points",
-        "label": "Gaussian 平滑視窗（點）",
-        "kind": "number",
-        "group": "峰形平滑",
-        "min": 3,
-        "step": 2,
-        "help": "奇數 3–999。",
-    },
-    {
-        "key": "ms2_precursor_tol_da",
-        "label": "MS2 precursor 容差（Da）",
-        "kind": "number",
-        "group": "MS2 與 neutral loss 確認",
-        "min": 0.01,
-        "step": 0.1,
-        "help": "掃描 precursor 與推算 precursor 的最大差距。",
-    },
-    {
-        "key": "nl_min_intensity_ratio",
-        "label": "NL product 最低強度比",
-        "kind": "number",
-        "group": "MS2 與 neutral loss 確認",
-        "min": 0.01,
-        "step": 0.01,
-        "help": "相對於該 scan 的 base peak。",
-    },
-    {
-        "key": "nl_rt_anchor_search_margin_min",
-        "label": "NL 錨點搜尋半徑（min）",
-        "kind": "number",
-        "group": "MS2 與 neutral loss 確認",
-        "min": 0.0,
-        "help": "在目標 RT 中心 ± 此值內尋找 NL 確認的 MS2。",
-    },
-    {
-        "key": "nl_rt_anchor_half_window_min",
-        "label": "錨定後 XIC 半寬（min）",
-        "kind": "number",
-        "group": "MS2 與 neutral loss 確認",
-        "min": 0.0,
-        "help": "找到錨點時，XIC 視窗為錨點 RT ± 此值。",
-    },
-    {
-        "key": "nl_fallback_half_window_min",
-        "label": "未錨定時 XIC 半寬（min）",
-        "kind": "number",
-        "group": "MS2 與 neutral loss 確認",
-        "min": 0.0,
-        "help": "找不到錨點時，XIC 視窗為 RT 中心 ± 此值。",
-    },
-    {
-        "key": "count_no_ms2_as_detected",
-        "label": "將 NO_MS2 視為偵測到",
-        "kind": "checkbox",
-        "group": "MS2 與 neutral loss 確認",
-        "help": "補救 DDA 未觸發 MS2 造成的假陰性。",
-    },
-    {
-        "key": "rolling_window_size",
-        "label": "ISTD RT prior 滾動視窗（± 注射數）",
-        "kind": "number",
-        "group": "RT 與注射順序",
-        "min": 1,
-        "step": 1,
-    },
-    {
-        "key": "injection_order_source",
-        "label": "注射順序來源",
-        "kind": "file",
-        "group": "RT 與注射順序",
-        "help": (
-            "含 Sample_Name 與 Injection_Order 欄的 CSV／XLSX；"
-            "留空時使用 RAW 修改時間。"
-        ),
-    },
-    {
-        "key": "target_pair_rt_calibration_path",
-        "label": "Target pair RT 校正",
-        "kind": "file",
-        "group": "RT 與注射順序",
-        "help": "RT prior 使用的 TSV；留空停用。",
-    },
-    {
-        "key": "rt_prior_library_path",
-        "label": "RT prior library（開發／除錯）",
-        "kind": "file",
-        "group": "RT 與注射順序",
-        "help": "一般使用請留空。",
-    },
-    {
-        "key": "dirty_matrix_mode",
-        "label": "複雜基質模式",
-        "kind": "checkbox",
-        "group": "基質與輸出",
-        "help": "放寬 S/N、收緊峰形；用於尿液等複雜基質。",
-    },
-    {
-        "key": "emit_review_report",
-        "label": "輸出 Review Report HTML",
-        "kind": "checkbox",
-        "group": "基質與輸出",
-    },
-    {
-        "key": "emit_score_breakdown",
-        "label": "輸出 Score Breakdown 工作表",
-        "kind": "checkbox",
-        "group": "基質與輸出",
-    },
-    {
-        "key": "keep_intermediate_csv",
-        "label": "保留中間 CSV 檔",
-        "kind": "checkbox",
-        "group": "基質與輸出",
-        "help": "除錯用。",
-    },
-    {
-        "key": "parallel_mode",
-        "label": "執行方式",
-        "kind": "select",
-        "group": "執行效能",
-        "options": ["serial", "process"],
-        "help": "process 平行處理；serial 逐一處理，供除錯使用。",
-    },
-    {
-        "key": "parallel_workers",
-        "label": "平行 worker 數",
-        "kind": "number",
-        "group": "執行效能",
-        "min": 1,
-        "step": 1,
-        "help": "process 模式使用的行程數。",
-    },
+from xic_extractor.settings_schema import (
+    CANONICAL_SETTINGS_DEFAULTS,
+    METHOD_KEYS,
 )
-
-_PASSTHROUGH_SETTINGS = (
-    "signal_processing_method",
-    "model_selection_expected_diff_approval_registry",
-    "targeted_ms1_shape_identity_support_tsv",
-    "targeted_ms1_shape_identity_activation_policy",
-)
-
-
-def targeted_form() -> dict[str, Any]:
-    """Describe editable Targeted settings and their canonical defaults."""
-
-    keys = tuple(field["key"] for field in _VISIBLE_SETTINGS) + _PASSTHROUGH_SETTINGS
-    return {
-        "settings": [
-            {
-                key: list(value) if isinstance(value, list) else value
-                for key, value in field.items()
-            }
-            for field in _VISIBLE_SETTINGS
-        ],
-        "defaults": {key: str(CANONICAL_SETTINGS_DEFAULTS[key]) for key in keys},
-        "passthrough_settings": list(_PASSTHROUGH_SETTINGS),
-    }
-
-
-def method_summary(settings: dict[str, str]) -> dict[str, Any]:
-    """Describe whether persisted method settings differ from canonical defaults."""
-
-    migrated, _warnings = migrate_settings_dict(settings)
-    excluded = {"data_dir", "dll_dir", "ms1_morphology_smoothing_window_points"}
-    custom_keys = [
-        key
-        for key, default in CANONICAL_SETTINGS_DEFAULTS.items()
-        if key not in excluded
-        and not _setting_values_equal(migrated.get(key, ""), default)
-    ]
-    label = f"自訂方法 · {len(custom_keys)} 項調整" if custom_keys else "標準方法"
-    return {"label": label, "custom_keys": custom_keys}
-
-
-def _setting_values_equal(actual: str, expected: str) -> bool:
-    actual_text = str(actual).strip()
-    expected_text = str(expected).strip()
-    if expected_text.lower() in {"true", "false"}:
-        return actual_text.lower() == expected_text.lower()
-    try:
-        return Decimal(actual_text) == Decimal(expected_text)
-    except InvalidOperation:
-        return actual_text == expected_text
 
 
 class _TargetSummary(TypedDict):
@@ -241,36 +45,47 @@ class TargetedRun:
         progress: Callable[[int, int, str], None],
         should_cancel: Callable[[], bool],
     ) -> None:
-        self._config_dir = Path(config_dir)
+        config_dir = Path(config_dir)
+        prepared = config_loader.prepare_targeted_config(config_dir)
+        self._prepared = prepared
+        self._config, self._targets = prepared.config, list(prepared.targets)
+        # Admission fixes the discovered file set, not analysis roles or RAW bytes.
+        self._raw_paths = discover_raw_files(self._config.data_dir)
         self._progress = progress
         self._should_cancel = should_cancel
         self.stage = "讀取 Targeted 設定"
-        self.output_dir = self._config_dir.parent / "output"
+        self.output_dir = self._config.output_csv.parent
         self.available_outputs: tuple[tuple[str, Path], ...] = ()
         self.cancellation_reason = "使用者要求停止，本次 Targeted 執行已停止。"
 
     def execute(self) -> dict[str, Any]:
-        config, targets = config_loader.load_config(self._config_dir)
+        try:
+            return self._execute()
+        finally:
+            self._prepared.cleanup()
+
+    def _execute(self) -> dict[str, Any]:
+        if (
+            not self._config.data_dir.is_dir()
+            or discover_raw_files(self._config.data_dir) != self._raw_paths
+        ):
+            raise ConfigError("排隊後 RAW 檔案集合已變更；請確認本批次資料並重新提交。")
+        config, targets = self._config, self._targets
         self.output_dir = config.output_csv.parent
         excel_path = _excel_output_path(config)
         self.stage = "Targeted 分析與結果發布"
         try:
-            execution = build_canonical_targeted_application_service(
+            application = build_canonical_targeted_application_service(
                 extractor.acquire
-            ).execute_application(
-                build_targeted_application_request(
-                    config,
-                    targets,
-                    progress_callback=self._progress,
-                    should_stop=self._should_cancel,
-                    method_manifest_context=MethodManifestContext(
-                        entrypoint="xic-extractor-html",
-                        config_dir=self._config_dir,
-                        output_mode="excel",
-                    ),
-                    excel_output_path=excel_path,
-                )
             )
+            request = build_targeted_application_request(
+                config,
+                targets,
+                progress_callback=self._progress,
+                should_stop=self._should_cancel,
+                excel_output_path=excel_path,
+            )
+            execution = application.execute_application(request)
         except InterruptedError as exc:
             if str(exc):
                 self.cancellation_reason = str(exc)
@@ -377,3 +192,128 @@ def _is_detected(
     if result.nl.status in {"OK", "WARN"}:
         return True
     return config.count_no_ms2_as_detected and result.nl.status == "NO_MS2"
+
+
+# Labels and controls are presentation only; METHOD_KEYS owns method membership.
+_SETTING_FIELDS: tuple[tuple[str, str, str, dict[str, Any]], ...] = (
+    ("data_dir", "資料目錄", "folder", {}),
+    ("dll_dir", "DLL 目錄", "folder", {}),
+    ("signal_processing_method", "平滑方法", "readonly", {"options": ["gaussian"]}),
+    (
+        "signal_processing_window_points",
+        "Gaussian 平滑視窗（點）",
+        "number",
+        {"min": 3, "step": 2, "help": "奇數 3–999。"},
+    ),
+    (
+        "ms2_precursor_tol_da",
+        "MS2 precursor 容差（Da）",
+        "number",
+        {
+            "min": 0.01,
+            "help": "掃描 precursor 與推算 precursor 的最大差距。",
+        },
+    ),
+    (
+        "nl_min_intensity_ratio",
+        "NL product 最低強度比",
+        "number",
+        {"min": 0.01, "step": 0.01, "help": "相對於該 scan 的 base peak。"},
+    ),
+    (
+        "count_no_ms2_as_detected",
+        "將 NO_MS2 視為偵測到",
+        "readonly",
+        {
+            "help": "相容設定；正式 Targeted 結果不將 NO_MS2 算為偵測到。",
+            "compatibility_only": True,
+        },
+    ),
+    (
+        "injection_order_source",
+        "注射順序來源",
+        "file",
+        {"help": "CSV／XLSX 注射順序；留空時使用 RAW 修改時間。"},
+    ),
+    (
+        "rolling_window_size",
+        "ISTD RT prior 滾動視窗（± 注射數）",
+        "number",
+        {"min": 1, "step": 1},
+    ),
+    (
+        "dirty_matrix_mode",
+        "複雜基質模式",
+        "checkbox",
+        {"help": "放寬 S/N、收緊峰形；用於尿液等複雜基質。"},
+    ),
+    (
+        "nl_rt_anchor_search_margin_min",
+        "NL 錨點搜尋半徑（min）",
+        "number",
+        {"min": 0.0, "help": "在目標 RT 中心 ± 此值內尋找 NL 確認的 MS2。"},
+    ),
+    (
+        "nl_rt_anchor_half_window_min",
+        "錨定後 XIC 半寬（min）",
+        "number",
+        {"min": 0.0, "help": "找到錨點時，XIC 視窗為錨點 RT ± 此值。"},
+    ),
+    (
+        "nl_fallback_half_window_min",
+        "未錨定時 XIC 半寬（min）",
+        "number",
+        {"min": 0.0, "help": "找不到錨點時，XIC 視窗為 RT 中心 ± 此值。"},
+    ),
+    (
+        "parallel_mode",
+        "執行方式",
+        "select",
+        {
+            "options": ["serial", "process"],
+            "help": "process 平行處理；serial 逐一處理，供除錯使用。",
+        },
+    ),
+    (
+        "parallel_workers",
+        "平行 worker 數",
+        "number",
+        {"min": 1, "step": 1, "help": "process 模式使用的行程數。"},
+    ),
+)
+
+
+def setting_fields() -> list[dict[str, Any]]:
+    fields = []
+    for key, label, kind, options in _SETTING_FIELDS:
+        scope = (
+            "method"
+            if key in METHOD_KEYS
+            else "batch"
+            if key in {"data_dir", "injection_order_source"}
+            else "environment"
+            if key == "dll_dir"
+            else "runtime"
+            if key.startswith("parallel_")
+            else "output"
+        )
+        fields.append(
+            dict(
+                key=key,
+                label=label,
+                kind=kind,
+                scope=scope,
+                default=CANONICAL_SETTINGS_DEFAULTS[key],
+                **options,
+            )
+        )
+    return fields
+
+
+def method_summary(settings: dict[str, str]) -> dict[str, Any]:
+    differences = method_settings_differences(settings)
+    return {
+        "label": f"自訂參數 · {len(differences)} 項調整" if differences else "標準參數",
+        "custom_keys": [row["key"] for row in differences],
+        "differences": differences,
+    }

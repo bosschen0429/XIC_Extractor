@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import InitVar, dataclass, field
+from dataclasses import InitVar, asdict, dataclass, field
 from typing import Literal, cast, final
 
 from xic_extractor.alignment.cell_observations import (
@@ -26,6 +26,7 @@ from xic_extractor.alignment.cid_nl_evidence_spine import (
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
+from xic_extractor.alignment.peak_trajectories import BackfillPeakLocation
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
     _mint_artifact_semantic_contract_ref,
@@ -35,6 +36,14 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
 from xic_extractor.peak_detection.observations import PeakObservationRef
+from xic_extractor.peak_detection.physical_peak_evaluation import (
+    answer_physical_peak_question,
+    mint_physical_peak_question,
+)
+from xic_extractor.peak_detection.physical_peak_models import (
+    PHYSICAL_PEAK_BACKFILL_POLICY,
+    PreparedSignalResult,
+)
 from xic_extractor.processing_identity import (
     ProcessingAttemptIdentity,
     ProcessingOwnerReferences,
@@ -47,9 +56,7 @@ POLICY_VERSION = "conservative-backfill"
 VALIDATION_STATUS = "shadow_ready"
 PRODUCT_AUTHORITY = "none"
 BACKFILL_UNIVERSE_SCHEMA_VERSION = "conservative_backfill_candidate_universe"
-BACKFILL_UNIVERSE_ARTIFACT_SEMANTIC_ROLE = (
-    "conservative_backfill_candidate_universe"
-)
+BACKFILL_UNIVERSE_ARTIFACT_SEMANTIC_ROLE = "conservative_backfill_candidate_universe"
 _BACKFILL_UNIVERSE_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.alignment.conservative_backfill",
     semantic_role=BACKFILL_UNIVERSE_ARTIFACT_SEMANTIC_ROLE,
@@ -203,6 +210,8 @@ class ConservativeBackfillCandidateUniverse:
     candidate_assessment: CidNlMethodAssessmentRef
     artifact: EvidenceArtifactRef
     _mint_token: InitVar[object] = field(kw_only=True)
+    localization: BackfillPeakLocation | None = None
+    localization_sources: tuple[PeakObservationRef, ...] = ()
     validation_status: str = VALIDATION_STATUS
     product_authority: str = PRODUCT_AUTHORITY
 
@@ -414,6 +423,8 @@ def mint_conservative_backfill_candidate_universe(
     sample: ResolvedCanonicalSampleIdentity,
     group_facts: tuple[ConservativeBackfillGroupFacts, ...],
     candidate_assessment: CidNlMethodAssessmentRef,
+    localization: BackfillPeakLocation | None = None,
+    localization_sources: tuple[PeakObservationRef, ...] = (),
 ) -> ConservativeBackfillCandidateUniverse:
     """Mint the sole target↔peak pairing authority for one Backfill revisit."""
 
@@ -449,6 +460,8 @@ def mint_conservative_backfill_candidate_universe(
         group_facts=facts,
         candidate_assessment=candidate_assessment,
         request_sample_population=population,
+        localization=localization,
+        localization_sources=localization_sources,
     )
     artifact = _mint_evidence_artifact_ref(
         producer_processing_request_id=(
@@ -462,6 +475,7 @@ def mint_conservative_backfill_candidate_universe(
         upstream_artifacts=_backfill_universe_upstream_artifacts(
             facts,
             candidate_assessment,
+            localization_sources,
         ),
     )
     return ConservativeBackfillCandidateUniverse(
@@ -471,6 +485,8 @@ def mint_conservative_backfill_candidate_universe(
         group_facts=facts,
         candidate_assessment=candidate_assessment,
         artifact=artifact,
+        localization=localization,
+        localization_sources=localization_sources,
         _mint_token=_BACKFILL_UNIVERSE_MINT_TOKEN,
     )
 
@@ -481,6 +497,8 @@ def canonical_conservative_backfill_universe_bytes(
     sample: ResolvedCanonicalSampleIdentity,
     group_facts: tuple[ConservativeBackfillGroupFacts, ...],
     candidate_assessment: CidNlMethodAssessmentRef,
+    localization: BackfillPeakLocation | None = None,
+    localization_sources: tuple[PeakObservationRef, ...] = (),
 ) -> bytes:
     """Serialize the exact no-write backfill universe for artifact replay."""
 
@@ -504,6 +522,8 @@ def canonical_conservative_backfill_universe_bytes(
         group_facts=facts,
         candidate_assessment=candidate_assessment,
         request_sample_population=population,
+        localization=localization,
+        localization_sources=localization_sources,
     )
 
 
@@ -514,10 +534,12 @@ def _backfill_universe_bytes(
     group_facts: tuple[ConservativeBackfillGroupFacts, ...],
     candidate_assessment: CidNlMethodAssessmentRef,
     request_sample_population: tuple[ResolvedCanonicalSampleIdentity, ...],
+    localization: BackfillPeakLocation | None = None,
+    localization_sources: tuple[PeakObservationRef, ...] = (),
 ) -> bytes:
     peaks = candidate_assessment.candidate_peaks
     processing_attempt = processing_owners.attempt
-    payload = {
+    payload: dict[str, object] = {
         "schema_version": BACKFILL_UNIVERSE_SCHEMA_VERSION,
         "validation_status": VALIDATION_STATUS,
         "product_authority": PRODUCT_AUTHORITY,
@@ -550,6 +572,11 @@ def _backfill_universe_bytes(
             for peak in peaks
         ],
     }
+    if localization is not None:
+        payload["localization"] = asdict(localization)
+        payload["localization_source_artifact_ids"] = [
+            peak.artifact.evidence_artifact_id for peak in localization_sources
+        ]
     return (
         json.dumps(
             payload,
@@ -843,12 +870,20 @@ def map_conservative_backfill_candidates(
 
     for method_subject_id, indexes in active_by_subject.items():
         candidate_universe = universes_by_subject.get(method_subject_id)
-        target_candidates = _backfill_evidence_from_universe(candidate_universe)
+        all_candidates = _backfill_evidence_from_universe(candidate_universe)
+        target_candidates = _localized_backfill_candidates(
+            candidate_universe, all_candidates
+        )
         if len(target_candidates) != len(indexes):
             reason = (
                 "recovery_evidence_missing"
                 if candidate_universe is None
                 else "backfill_candidate_universe_empty"
+                if not all_candidates
+                else "sample_localization_unreliable"
+                if candidate_universe.localization is not None
+                and not candidate_universe.localization.reliable
+                else "no_unique_qualified_ms1_peak"
                 if not target_candidates
                 else "uncertain_candidate_cardinality"
             )
@@ -859,7 +894,7 @@ def map_conservative_backfill_candidates(
                     disposition="hold",
                     reasons=(reason,),
                     candidate_universe=candidate_universe,
-                    candidates=target_candidates,
+                    candidates=all_candidates,
                 )
             continue
 
@@ -874,7 +909,7 @@ def map_conservative_backfill_candidates(
                     disposition="hold",
                     reasons=("group_rt_unavailable",),
                     candidate_universe=candidate_universe,
-                    candidates=target_candidates,
+                    candidates=all_candidates,
                 )
             continue
         ordered_indexes = sorted(
@@ -904,7 +939,7 @@ def map_conservative_backfill_candidates(
                     disposition="hold",
                     reasons=("non_unique_elution_order",),
                     candidate_universe=candidate_universe,
-                    candidates=target_candidates,
+                    candidates=all_candidates,
                 )
             continue
         pairs = tuple(zip(ordered_indexes, ordered_candidates, strict=True))
@@ -932,7 +967,7 @@ def map_conservative_backfill_candidates(
                     disposition="hold",
                     reasons=mismatch_reasons,
                     candidate_universe=candidate_universe,
-                    candidates=target_candidates,
+                    candidates=all_candidates,
                 )
             continue
         for index, candidate in pairs:
@@ -942,7 +977,7 @@ def map_conservative_backfill_candidates(
                 disposition="candidate_mapped",
                 reasons=("ordered_one_to_one_recovery_evidence",),
                 candidate_universe=candidate_universe,
-                candidates=target_candidates,
+                candidates=all_candidates,
                 matched_candidate=candidate,
             )
 
@@ -951,6 +986,51 @@ def map_conservative_backfill_candidates(
             "conservative Backfill mapping did not close every group cell"
         )
     return tuple(item for item in decisions if item is not None)
+
+
+def _localized_backfill_candidates(
+    universe: ConservativeBackfillCandidateUniverse | None,
+    candidates: tuple[ConservativeBackfillEvidence, ...],
+) -> tuple[ConservativeBackfillEvidence, ...]:
+    """Qualify retained physical evidence without dropping its full provenance."""
+    if universe is None or universe.localization is None:
+        return candidates
+    location = universe.localization
+    if not location.reliable or not candidates:
+        return ()
+    # Set-level CID/NL is competing attribution, not missing chemical evidence.
+    if universe.candidate_assessment.set_relation_refs:
+        return ()
+    evaluation = candidates[0].peak_observation.physical_evaluation
+    if evaluation is None or evaluation.retained_prepared_signal is None:
+        return ()
+    assert location.apex_tolerance_sec is not None
+    query_rt = location.location.query_rt
+    half_window = location.apex_tolerance_sec / 60.0
+    question = mint_physical_peak_question(
+        evaluation.prepared,
+        evaluation.segment_universe,
+        selection_subject_id=universe.method_subject_id,
+        query_rt_min=query_rt,
+        selection_policy_version=PHYSICAL_PEAK_BACKFILL_POLICY,
+        search_rt_window=(max(0.0, query_rt - half_window), query_rt + half_window),
+    )
+    answer = answer_physical_peak_question(
+        PreparedSignalResult(
+            evaluation.prepared, evaluation.retained_prepared_signal, ()
+        ),
+        evaluation.segment_universe,
+        question,
+    )
+    if answer.state != "available":
+        return ()
+    return tuple(
+        candidate
+        for candidate in candidates
+        if candidate.peak_observation.physical_evaluation is not None
+        and candidate.peak_observation.physical_evaluation.answer.physical_segment_id
+        == answer.answer.physical_segment_id
+    )
 
 
 def _canonical_cells(
@@ -1072,10 +1152,12 @@ def _validate_backfill_group_populations(
 def _backfill_universe_upstream_artifacts(
     facts: tuple[ConservativeBackfillGroupFacts, ...],
     candidate_assessment: CidNlMethodAssessmentRef,
+    localization_sources: tuple[PeakObservationRef, ...] = (),
 ) -> tuple[EvidenceArtifactRef, ...]:
     artifacts = (
         *(cell.artifact for fact in facts for cell in fact.source_cells),
         candidate_assessment.artifact,
+        *(peak.artifact for peak in localization_sources),
     )
     by_id = {artifact.evidence_artifact_id: artifact for artifact in artifacts}
     return tuple(by_id[artifact_id] for artifact_id in sorted(by_id))
@@ -1285,7 +1367,9 @@ def _candidate_group_mismatch_reason(
         return "like_to_like_rt_mz_mismatch"
     observation = candidate.peak_observation
     provenance = observation.generation_provenance
-    if not provenance.query_rt_min <= group_rt <= provenance.query_rt_max:
+    location = candidate.candidate_universe.localization
+    query_rt = group_rt if location is None else location.location.query_rt
+    if not provenance.query_rt_min <= query_rt <= provenance.query_rt_max:
         return "like_to_like_rt_mz_mismatch"
     ppm_delta = abs(observation.content.mz - group_mz) / group_mz * 1_000_000.0
     if ppm_delta > provenance.query_ppm_tol:

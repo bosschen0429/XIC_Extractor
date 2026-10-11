@@ -9,16 +9,7 @@ from typing import Any
 from openpyxl import load_workbook
 
 DEFAULT_NUMERIC_TOLERANCE = 1e-9
-COMPARE_SHEETS = (
-    "Overview",
-    "Review Queue",
-    "XIC Results",
-    "Summary",
-    "Targets",
-    "Diagnostics",
-    "Run Metadata",
-)
-OPTIONAL_COMPARE_SHEETS = ("Score Breakdown",)
+COMPARE_SHEETS = ("XIC Results", "Targets", "Run Metadata")
 IGNORED_METADATA_KEYS = {
     "generated_at",
     "elapsed",
@@ -29,8 +20,6 @@ IGNORED_METADATA_KEYS = {
     "output_workbook",
     "workbook_path",
     "output_dir",
-    "method_manifest_path",
-    "method_manifest_sha256",
 }
 
 
@@ -74,12 +63,10 @@ def compare_workbooks(
 def _sheets_to_compare(
     left_sheetnames: Container[str], right_sheetnames: Container[str]
 ) -> tuple[str, ...]:
-    optional = tuple(
-        sheet
-        for sheet in OPTIONAL_COMPARE_SHEETS
-        if sheet in left_sheetnames or sheet in right_sheetnames
+    additional = sorted(
+        (set(left_sheetnames) | set(right_sheetnames)) - set(COMPARE_SHEETS)
     )
-    return (*COMPARE_SHEETS, *optional)
+    return (*COMPARE_SHEETS, *additional)
 
 
 def _sheet_rows(sheet, sheet_name: str) -> list[tuple[Any, ...]]:

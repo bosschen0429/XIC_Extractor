@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from xic_extractor.configuration.models import ConfigError, ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.scientific_settings import SCIENTIFIC_SETTING_FIELDS
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -16,18 +16,7 @@ from xic_extractor.configuration.target_identity import (
     target_list_snapshot_payload,
 )
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
-from xic_extractor.extraction.rt_prior_library import (
-    LibraryEntry,
-    load_library,
-    rt_prior_library_from_target_pair_calibration,
-)
 from xic_extractor.injection_rolling import read_injection_order
-from xic_extractor.peak_detection.model_selection import (
-    ExpectedDiffApprovalRecord,
-)
-from xic_extractor.peak_detection.model_selection_approval_registry import (
-    load_expected_diff_approval_registry,
-)
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.peak_detection.search_scope import (
     PHYSICAL_CAPTURE_INPUT_KEY,
@@ -39,7 +28,6 @@ from xic_extractor.processing_identity import (
     ProcessingRequestIdentity,
     build_acquisition_source_identity,
     build_processing_request_identity,
-    fingerprint_file_content,
 )
 from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,
@@ -47,12 +35,13 @@ from xic_extractor.raw_reader import (
     read_analysis_set,
 )
 from xic_extractor.sample_metadata import (
+    SampleMetadata,
     is_sample_metadata_source,
     load_sample_metadata,
+    match_sequence_to_raw_stems_report,
     sample_metadata_to_injection_order,
     sample_metadata_to_raw_stem_injection_order,
 )
-from xic_extractor.target_pair_rt_calibration import load_target_pair_rt_calibration
 
 TARGETED_PROCESSING_INPUT_SCHEMA_VERSION = "targeted_extraction_inputs"
 TARGETED_PROCESSING_ALGORITHM_VERSION = "targeted_extraction_algorithm"
@@ -74,11 +63,8 @@ TARGETED_REAL_DATA_DISCOVERY_SETTINGS_SCHEMA_VERSION = (
 @dataclass(frozen=True)
 class ResolvedTargetedInputs:
     injection_order: dict[str, int]
-    rt_prior_library: dict[tuple[str, str], LibraryEntry]
-    model_selection_expected_diff_approvals: (
-        Mapping[str, ExpectedDiffApprovalRecord] | None
-    )
     acquisition_injection_order: dict[str, int] | None = None
+    sample_metadata: tuple[SampleMetadata, ...] = ()
 
 
 def resolve_targeted_inputs(
@@ -86,10 +72,6 @@ def resolve_targeted_inputs(
     *,
     raw_paths: list[Path],
     injection_order: dict[str, int] | None,
-    rt_prior_library: dict[tuple[str, str], LibraryEntry] | None,
-    model_selection_expected_diff_approvals: (
-        Mapping[str, ExpectedDiffApprovalRecord] | None
-    ),
 ) -> ResolvedTargetedInputs:
     resolved_injection_order, acquisition_injection_order = _resolve_injection_orders(
         config,
@@ -98,11 +80,14 @@ def resolve_targeted_inputs(
     )
     return ResolvedTargetedInputs(
         injection_order=resolved_injection_order,
-        rt_prior_library=resolve_rt_prior_library(config, rt_prior_library),
-        model_selection_expected_diff_approvals=(
-            model_selection_expected_diff_approvals
-        ),
         acquisition_injection_order=acquisition_injection_order,
+        sample_metadata=match_sequence_to_raw_stems_report(
+            load_sample_metadata(config.injection_order_source)
+            if config.injection_order_source is not None
+            and is_sample_metadata_source(config.injection_order_source)
+            else (),
+            tuple(path.stem for path in raw_paths),
+        ).rows,
     )
 
 
@@ -168,18 +153,11 @@ def build_targeted_processing_request_identity(
         for stem, source in sources_by_stem.items()
     )
     scientific_inputs = {
+        "sample_metadata": [asdict(row) for row in resolved_inputs.sample_metadata],
         "settings": {
-            field: getattr(config, field)
-            for field in SCIENTIFIC_SETTING_FIELDS
+            field: getattr(config, field) for field in SCIENTIFIC_SETTING_FIELDS
         },
         "target_list_snapshot": target_list_snapshot_payload(target_snapshot),
-        "rt_prior_library": _rt_prior_snapshot(resolved_inputs.rt_prior_library),
-        "model_selection_expected_diff_approvals": _approval_snapshot(
-            resolved_inputs.model_selection_expected_diff_approvals
-        ),
-        "targeted_ms1_shape_identity_support": (
-            _targeted_ms1_shape_identity_support_snapshot(config)
-        ),
         TARGETED_REAL_DATA_CANDIDATE_UNIVERSE_INPUT_KEY: (
             targeted_real_data_candidate_universe_payload(
                 current_discovery_candidates_by_sample,
@@ -487,57 +465,6 @@ def targeted_real_data_discovery_settings_payload(
     return normalized
 
 
-def _rt_prior_snapshot(
-    library: Mapping[tuple[str, str], LibraryEntry],
-) -> list[dict[str, object]]:
-    snapshot: list[dict[str, object]] = []
-    for (target_label, role), entry in sorted(library.items()):
-        if (entry.target_label, entry.role) != (target_label, role):
-            raise IdentityContractError(
-                "RT-prior mapping key must match the bound LibraryEntry"
-            )
-        snapshot.append(
-            {
-                "target_label": target_label,
-                "role": role,
-                "istd_pair": entry.istd_pair,
-                "median_delta_rt": entry.median_delta_rt,
-                "sigma_delta_rt": entry.sigma_delta_rt,
-                "median_abs_rt": entry.median_abs_rt,
-                "sigma_abs_rt": entry.sigma_abs_rt,
-            }
-        )
-    return snapshot
-
-
-def _approval_snapshot(
-    approvals: Mapping[str, ExpectedDiffApprovalRecord] | None,
-) -> list[dict[str, object]]:
-    snapshot: list[dict[str, object]] = []
-    for stable_row_id, approval in sorted((approvals or {}).items()):
-        if approval.stable_row_id != stable_row_id:
-            raise IdentityContractError(
-                "approval mapping key must match the bound approval record"
-            )
-        snapshot.append(asdict(approval))
-    return snapshot
-
-
-def _targeted_ms1_shape_identity_support_snapshot(
-    config: ExtractionConfig,
-) -> dict[str, object] | None:
-    path = config.targeted_ms1_shape_identity_support_tsv
-    if path is None:
-        return None
-    fingerprint = fingerprint_file_content(path)
-    return {
-        "schema_version": "targeted_ms1_shape_identity_support_input",
-        "activation_policy": config.targeted_ms1_shape_identity_activation_policy,
-        "content_sha256": fingerprint.content_sha256,
-        "byte_size": fingerprint.byte_size,
-    }
-
-
 def resolve_injection_order(
     config: ExtractionConfig,
     raw_paths: list[Path],
@@ -575,38 +502,6 @@ def _read_injection_order_source(
         )
     injection_order = read_injection_order(path)
     return injection_order, injection_order
-
-
-def resolve_rt_prior_library(
-    config: ExtractionConfig,
-    rt_prior_library: dict[tuple[str, str], LibraryEntry] | None,
-) -> dict[tuple[str, str], LibraryEntry]:
-    if config.target_pair_rt_calibration_path is not None:
-        calibration_rows = load_target_pair_rt_calibration(
-            config.target_pair_rt_calibration_path,
-            expected_target_config_hash=config.target_config_hash or None,
-        )
-        return rt_prior_library_from_target_pair_calibration(calibration_rows)
-    if rt_prior_library is not None:
-        return rt_prior_library
-    if config.rt_prior_library_path is None:
-        return {}
-    return load_library(config.rt_prior_library_path, config.config_hash)
-
-
-def resolve_model_selection_expected_diff_approvals(
-    config: ExtractionConfig,
-    approvals: Mapping[str, ExpectedDiffApprovalRecord] | None,
-) -> Mapping[str, ExpectedDiffApprovalRecord] | None:
-    if approvals is not None:
-        return approvals
-    registry_path = config.model_selection_expected_diff_approval_registry
-    if registry_path is None:
-        return None
-    try:
-        return load_expected_diff_approval_registry(registry_path)
-    except ValueError as exc:
-        raise ConfigError(str(exc)) from exc
 
 
 def fallback_injection_order_from_mtime(raw_paths: list[Path]) -> dict[str, int]:

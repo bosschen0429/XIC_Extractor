@@ -3,7 +3,15 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
-from xic_extractor.output.workbook_values import _FORMULA_PREFIXES
+_INFORMATIONAL_EVENTS = {
+    "MULTI_PEAK",
+    "ANCHOR_RT_MISMATCH",
+    "ANCHOR_MISMATCH",
+    "NL_ANCHOR_FALLBACK",
+    "ISTD_ANCHOR_MISSING",
+    "ISTD_CONFIDENCE",
+    "BACKFILL_ACCEPTED",
+}
 
 
 def _review_queue_rows(
@@ -26,14 +34,14 @@ def _review_queue_rows(
                 "Target": row.get("Target", ""),
                 "Role": row.get("Role", ""),
                 "Status": _review_status(issue, row.get("Confidence", "")),
-                "Why": _review_why(
-                    issue,
-                    row.get("Projection Reason", "") or row.get("Reason", ""),
-                    evidence,
-                ),
+                "Outcome": {
+                    "TRUE": "已計入",
+                    "FALSE": "未計入",
+                }.get(row.get("Counted Detection", "").upper(), "未記錄判定"),
+                "Why": _review_why(issue, row, evidence),
                 "RT": row.get("RT", ""),
                 "Area": row.get("Area", ""),
-                "Action": _suggested_action(issue, row),
+                "Action": _suggested_action(issue, row, evidence),
                 "Issue Count": str(len(row_diagnostics) if row_diagnostics else 1),
                 "Evidence": evidence,
             }
@@ -87,7 +95,15 @@ def _primary_review_row(
 def _primary_review_issue(
     row: dict[str, str], diagnostics: list[dict[str, str]]
 ) -> str:
-    candidates = [diagnostic.get("Issue", "") for diagnostic in diagnostics]
+    if _has_product_projection(row):
+        # The completed projection owns current actions. Diagnostic events can
+        # explain an action, but cannot reopen a resolved/confirmed result.
+        return _row_review_issue(row)
+    candidates = [
+        diagnostic.get("Issue", "")
+        for diagnostic in diagnostics
+        if diagnostic.get("Issue", "") not in _INFORMATIONAL_EVENTS
+    ]
     row_issue = _row_review_issue(row)
     if row_issue:
         candidates.append(row_issue)
@@ -144,12 +160,6 @@ def _dedupe_text(values: Iterable[str]) -> list[str]:
 
 def _row_review_issue(row: dict[str, str]) -> str:
     nl = row.get("NL", "")
-    if nl == "NL_FAIL":
-        return "NL_FAIL"
-    if nl == "NO_MS2":
-        return "NO_MS2"
-    if nl.startswith("WARN_"):
-        return "NL_WARN"
     if _has_product_projection(row):
         if row.get("Projection Conflict Reasons", ""):
             return "PROJECTION_CONFLICT"
@@ -158,11 +168,19 @@ def _row_review_issue(row: dict[str, str]) -> str:
         product_state = row.get("Product State", "")
         if product_state == "ambiguous":
             return "PRODUCT_AMBIGUOUS"
-        if row.get("Projection Not Counted Reasons", ""):
+        if row.get("Counted Detection", "").upper() == "FALSE":
+            if nl in {"NL_FAIL", "NO_MS2"}:
+                return nl
             return "PRODUCT_NOT_COUNTED"
         if row.get("Review State", "") in {"flagged", "review_required"}:
             return "PROJECTION_FLAGGED"
         return ""
+    if nl == "NL_FAIL":
+        return "NL_FAIL"
+    if nl == "NO_MS2":
+        return "NO_MS2"
+    if nl.startswith("WARN_"):
+        return "NL_WARN"
     confidence = row.get("Confidence", "")
     if confidence in {"LOW", "VERY_LOW"}:
         return f"CONFIDENCE_{confidence}"
@@ -211,38 +229,50 @@ def _review_status(issue: str, confidence: str) -> str:
     return "Info"
 
 
-def _review_why(issue: str, reason: str, evidence: str) -> str:
+def _review_why(issue: str, row: dict[str, str], evidence: str) -> str:
+    """Explain saved facts; event labels never create a counting decision."""
+    counted = row.get("Counted Detection", "").upper()
+    state = row.get("Product State", "")
+    if state == "excluded":
+        return "此筆已被分析規則排除，未計入偵測。"
+    if state == "ambiguous" or row.get("Projection Conflict Reasons"):
+        return "此筆仍有未解決的證據衝突，尚未確認峰的身份。"
+    if counted == "TRUE" and "cross_sample_backfill_identity" in row.get(
+        "Projection Support Reasons", ""
+    ):
+        return "未取得符合條件的直接 NL 證據；跨樣本回填已確認此峰，已計入偵測。"
+    if "BACKFILL_HOLD" in evidence and counted == "FALSE":
+        return "跨樣本回填未找到可唯一確認的峰；保留原量測，但仍未計入偵測。"
+    if "BACKFILL_ACCEPTED" in evidence and counted == "FALSE":
+        return "已取得回填量測，但尚未滿足身份確認條件，仍未計入偵測。"
     if issue == "NL_FAIL":
-        return "NL support failed"
+        return "未取得符合條件的 NL 證據。量測是否計入，以已保存的判定為準。"
     if issue == "NO_MS2":
-        return "MS2 trigger missing"
+        return "此峰未取得可用的 MS2 掃描，無法由直接 NL 證據確認。"
     if issue == "NL_WARN":
-        return "NL support is borderline"
-    if issue == "PROJECTION_CONFLICT":
-        return (
-            _first_projection_reason(reason, "conflict") or "Product evidence conflicts"
-        )
-    if issue == "PRODUCT_EXCLUDED":
-        return _first_projection_reason(reason, "excluded") or "Product row excluded"
-    if issue == "PRODUCT_AMBIGUOUS":
-        return "Product evidence is ambiguous"
-    if issue == "PRODUCT_NOT_COUNTED":
-        return (
-            _first_projection_reason(reason, "not_counted") or "Product row not counted"
-        )
-    if issue == "PROJECTION_FLAGGED":
-        return (
-            _first_projection_reason(reason, "review") or "Product projection flagged"
-        )
+        return "已觀測到 NL，但質量誤差達到提醒範圍，需檢查 MS2 證據。"
     if issue in {"PEAK_NOT_FOUND", "NO_SIGNAL"}:
-        return "Peak not found"
-    if issue.startswith("CONFIDENCE_"):
-        parsed = _first_concern(reason)
-        if parsed and parsed != "all checks passed":
-            return parsed
-        return issue.removeprefix("CONFIDENCE_") + " confidence"
-    parsed = _first_concern(reason) or _first_concern(evidence)
-    return parsed if parsed and parsed != "all checks passed" else issue
+        return "搜尋範圍內未取得可報告的峰量測。"
+    if issue == "FILE_ERROR":
+        return "此檔案處理失敗，結果可能缺漏；請先檢查 RAW 與原始錯誤紀錄。"
+    if issue == "MULTI_PEAK":
+        return "搜尋範圍內有多個候選峰；本表保留正式流程已選定的峰。"
+    if issue == "ANCHOR_RT_MISMATCH":
+        return "所選峰與 RT 定位提示不同；這是檢閱註記，不會單獨推翻已保存的判定。"
+    if issue == "NL_ANCHOR_FALLBACK":
+        return "未取得可用的 NL 定位點，因此使用備用 RT 搜尋範圍。"
+    if issue in {"ISTD_CONFIDENCE", "CONFIDENCE_LOW", "CONFIDENCE_VERY_LOW"}:
+        return "信心分級偏低，需檢查峰形與證據；信心分級不等於是否計入偵測。"
+    if issue == "PRODUCT_NOT_COUNTED":
+        return "此筆未滿足計入條件；保留可用量測供檢閱，不視為已確認偵測。"
+    if issue == "PROJECTION_FLAGGED":
+        reasons = row.get("Projection Review Reasons", "")
+        if "trace_morphology_review" in reasons:
+            return "峰形或訊號品質有檢閱註記；量測與計數仍沿用正式結果。"
+        if "targeted_rt_review" in reasons:
+            return "所選峰的 RT 與定位提示不同，請檢查峰的位置與同批樣本。"
+        return "此筆結果帶有檢閱註記，請連同峰形及原始證據查看。"
+    return "此筆有補充診斷紀錄；完整內容保留在下方原始紀錄區。"
 
 
 def _has_product_projection(row: dict[str, str]) -> bool:
@@ -251,46 +281,28 @@ def _has_product_projection(row: dict[str, str]) -> bool:
     )
 
 
-def _first_projection_reason(reason: str, section: str) -> str:
-    marker = f"{section}:"
-    for part in reason.split(";"):
-        stripped = part.strip()
-        if not stripped.startswith(marker):
-            continue
-        return stripped.removeprefix(marker).strip().split(",", 1)[0].strip()
-    return ""
-
-
-def _first_concern(text: str) -> str:
-    if not text:
-        return ""
-    if text.startswith(_FORMULA_PREFIXES):
-        return ""
-    normalized = text.removeprefix("concerns:").strip()
-    first = normalized.split(";", 1)[0].strip()
-    if first.startswith("weak candidate:"):
-        first = first.removeprefix("weak candidate:").strip()
-    return first
-
-
-def _suggested_action(issue: str, row: dict[str, str]) -> str:
+def _suggested_action(issue: str, row: dict[str, str], evidence: str) -> str:
+    if "BACKFILL" in evidence:
+        return "在 Inspector 比較此峰與同批支持樣本，查看回填定位及峰形。"
     if issue in {"NL_FAIL", "NL_WARN"}:
-        return "Check MS2 / NL evidence near selected RT"
+        return "在 Inspector 檢查所選 RT 附近的 MS2／NL 證據。"
     if issue == "NO_MS2":
-        return "Check whether missing DDA trigger is acceptable"
+        return "檢查 DDA 掃描涵蓋範圍；不要將缺少 MS2 視為已確認。"
     if issue in {"PEAK_NOT_FOUND", "NO_SIGNAL"}:
-        return "Inspect XIC trace and target RT window"
+        return "檢查 XIC 訊號及 RT 搜尋範圍。"
     if issue == "FILE_ERROR":
-        return "Check RAW file readability"
+        return "查看原始錯誤，確認 RAW 可讀及來源路徑正確。"
     if issue in {
         "PROJECTION_CONFLICT",
         "PRODUCT_AMBIGUOUS",
         "PRODUCT_NOT_COUNTED",
         "PROJECTION_FLAGGED",
     }:
-        return "Review product projection evidence"
+        return "在 Inspector 檢查此峰的證據與已保存的判定原因。"
     if issue == "PRODUCT_EXCLUDED":
-        return "Review exclusion reason"
+        return "核對目標適用範圍及排除原因。"
     if row.get("Confidence") in {"LOW", "VERY_LOW"}:
-        return "Review peak shape, RT prior, and ISTD pairing"
-    return "Review diagnostic detail"
+        return "檢查峰形、RT 提示與 ISTD 配對。"
+    if issue == "MULTI_PEAK":
+        return "如需追查選峰，在 Inspector 比較候選峰與直接方法證據。"
+    return "如需追查細節，查看此筆原始紀錄。"

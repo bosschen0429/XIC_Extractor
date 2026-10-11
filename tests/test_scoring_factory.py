@@ -8,7 +8,6 @@ from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.extraction.scoring_factory import (
     allow_prepass_anchor,
     build_scoring_context_factory,
@@ -33,48 +32,41 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 from xic_extractor.peak_detection.scoring_metrics import local_sn_severity
 
 
-def test_factory_uses_delta_rt_library_and_exposes_prior_metadata() -> None:
+@pytest.mark.parametrize(
+    "sample,anchor,reference", [("S1", 11.8, 12.0), ("S2", 13.8, 14.0)]
+)
+def test_factory_scores_analyte_against_current_sample_reference(
+    sample, anchor, reference
+):
     factory = build_scoring_context_factory(
         config=_config(dirty_matrix_mode=True),
         injection_order={},
         istd_rts_by_sample={},
-        rt_prior_library={
-            ("Analyte-A", "analyte"): LibraryEntry(
-                config_hash="abcd1234",
-                target_label="Analyte-A",
-                role="analyte",
-                istd_pair="ISTD-A",
-                median_delta_rt=0.25,
-                sigma_delta_rt=0.05,
-                median_abs_rt=None,
-                sigma_abs_rt=None,
-                n_samples=10,
-                updated_at="2026-04-20T00:00:00",
-            )
-        },
     )
-
+    rt = np.linspace(reference - 0.3, reference + 0.3, 7)
+    intensity = np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0])
     builder = factory(
         target=_target(label="Analyte-A", is_istd=False, istd_pair="ISTD-A"),
-        sample_name="S2",
-        rt=np.linspace(9.9, 10.5, 7),
-        intensity=np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0]),
-        prepared_result=_prepared(
-            np.linspace(9.9, 10.5, 7), np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0])
-        ),
-        istd_rt_in_this_sample=10.0,
+        sample_name=sample,
+        rt=rt,
+        intensity=intensity,
+        prepared_result=_prepared(rt, intensity),
+        istd_rt_in_this_sample=anchor,
+        target_reference_rt=reference,
         paired_istd_fwhm=2.0,
         nl_result=None,
     )
-
-    ctx = builder(_candidate(apex_index=3))
-
-    assert ctx.rt_prior == pytest.approx(10.25)
-    assert ctx.rt_prior_sigma == pytest.approx(0.05)
-    assert ctx.dirty_matrix is True
-    assert ctx.prefer_rt_prior_tiebreak is True
-    assert getattr(builder, "rt_prior") == pytest.approx(10.25)
-    assert getattr(builder, "prior_source") == "delta_rt_library"
+    candidate = replace(_candidate(apex_index=3), selection_apex_rt=reference)
+    ctx = builder(candidate)
+    assert ctx.rt_prior == reference
+    assert (ctx.rt_min, ctx.rt_max) == (reference - 1.0, reference + 1.0)
+    assert ctx.rt_prior_sigma is None
+    assert getattr(builder, "prior_source") == "paired_istd"
+    facts = build_candidate_evidence_facts(candidate, ctx)
+    assert facts.rt.rt_prior_status == "close"
+    assert facts.rt.window_status != "outside"
+    far = replace(candidate, selection_apex_rt=reference - 1.5)
+    assert build_candidate_evidence_facts(far, builder(far)).rt.rt_prior_status == "far"
 
 
 def test_selected_candidate_and_prepass_anchor_reject_quality_flags() -> None:
@@ -153,7 +145,6 @@ def test_same_prepared_shape_is_shared_by_analyte_and_selected_istd(
         config=_config(signal_processing_window_points=window_points),
         injection_order={},
         istd_rts_by_sample={},
-        rt_prior_library={},
     )
     ctx = factory(
         target=target,
@@ -186,7 +177,6 @@ def test_missing_paired_width_retains_neutral_width_quality() -> None:
         config=_config(),
         injection_order={},
         istd_rts_by_sample={},
-        rt_prior_library={},
     )
     ctx = factory(
         target=target,
@@ -219,7 +209,7 @@ def test_missing_prepared_shape_keeps_legacy_active_sn(
     assert prepared_result.baseline_unclipped is None
     candidate = _candidate(apex_index=sample_count // 2)
     factory = build_scoring_context_factory(
-        config=_config(), injection_order={}, istd_rts_by_sample={}, rt_prior_library={}
+        config=_config(), injection_order={}, istd_rts_by_sample={}
     )
     ctx = factory(
         target=_target(label="Analyte-A", is_istd=False, istd_pair="ISTD-A"),
@@ -299,19 +289,26 @@ def test_rebuilt_factories_reuse_unclipped_rt_baseline_with_expected_sn(
     )
     assert prepared_result.prepared is not None
     np.testing.assert_allclose(
-        prepared_result.prepared.baseline, np.maximum(expected_baseline, 0.0),
-        rtol=2e-6, atol=1e-7,
+        prepared_result.prepared.baseline,
+        np.maximum(expected_baseline, 0.0),
+        rtol=2e-6,
+        atol=1e-7,
     )
     for _ in range(2):
         factory = build_scoring_context_factory(
             config=_config(dirty_matrix_mode=dirty_matrix),
-            injection_order={}, istd_rts_by_sample={}, rt_prior_library={},
+            injection_order={},
+            istd_rts_by_sample={},
         )
         builder = factory(
             target=_target(label="Analyte-A", is_istd=False, istd_pair=""),
-            sample_name="SampleA", rt=rt, intensity=intensity,
-            prepared_result=prepared_result, istd_rt_in_this_sample=None,
-            paired_istd_fwhm=None, nl_result=None,
+            sample_name="SampleA",
+            rt=rt,
+            intensity=intensity,
+            prepared_result=prepared_result,
+            istd_rt_in_this_sample=None,
+            paired_istd_fwhm=None,
+            nl_result=None,
         )
         for apex in (150, 151):
             candidate = _candidate(apex_index=apex)
@@ -329,11 +326,17 @@ def test_rebuilt_factories_reuse_unclipped_rt_baseline_with_expected_sn(
                 expected_active[apex] / expected_mad, rel=2e-6
             )
             assert local_sn_severity(
-                ctx.intensity_array, apex, dirty_matrix,
-                baseline=ctx.baseline_array, residual_mad=ctx.residual_mad,
+                ctx.intensity_array,
+                apex,
+                dirty_matrix,
+                baseline=ctx.baseline_array,
+                residual_mad=ctx.residual_mad,
             ) == local_sn_severity(
-                expected_active, apex, dirty_matrix,
-                baseline=np.zeros(len(rt)), residual_mad=expected_mad,
+                expected_active,
+                apex,
+                dirty_matrix,
+                baseline=np.zeros(len(rt)),
+                residual_mad=expected_mad,
             )
     np.testing.assert_allclose(
         prepared_result.baseline_unclipped, expected_baseline, rtol=2e-6, atol=1e-7
@@ -386,13 +389,17 @@ def test_missing_live_baseline_keeps_standalone_sn(
 
     monkeypatch.setattr(sn_owner, "asls_baseline", counted_sn)
     factory = build_scoring_context_factory(
-        config=_config(), injection_order={}, istd_rts_by_sample={}, rt_prior_library={}
+        config=_config(), injection_order={}, istd_rts_by_sample={}
     )
     ctx = factory(
         target=_target(label="Analyte-A", is_istd=False, istd_pair=""),
-        sample_name="SampleA", rt=rt, intensity=intensity,
-        prepared_result=prepared_result, istd_rt_in_this_sample=None,
-        paired_istd_fwhm=None, nl_result=None,
+        sample_name="SampleA",
+        rt=rt,
+        intensity=intensity,
+        prepared_result=prepared_result,
+        istd_rt_in_this_sample=None,
+        paired_istd_fwhm=None,
+        nl_result=None,
     )(_candidate(apex_index=15))
     np.testing.assert_array_equal(
         ctx.intensity_array,
@@ -409,13 +416,17 @@ def test_missing_live_baseline_keeps_standalone_sn(
 def test_missing_sn_cache_keeps_raw_context(intensity: np.ndarray) -> None:
     rt = np.arange(len(intensity), dtype=float)
     factory = build_scoring_context_factory(
-        config=_config(), injection_order={}, istd_rts_by_sample={}, rt_prior_library={}
+        config=_config(), injection_order={}, istd_rts_by_sample={}
     )
     ctx = factory(
         target=_target(label="Analyte-A", is_istd=False, istd_pair=""),
-        sample_name="SampleA", rt=rt, intensity=intensity,
-        prepared_result=_prepared(rt, intensity), istd_rt_in_this_sample=None,
-        paired_istd_fwhm=None, nl_result=None,
+        sample_name="SampleA",
+        rt=rt,
+        intensity=intensity,
+        prepared_result=_prepared(rt, intensity),
+        istd_rt_in_this_sample=None,
+        paired_istd_fwhm=None,
+        nl_result=None,
     )(_candidate(apex_index=1))
     np.testing.assert_array_equal(ctx.intensity_array, intensity)
     assert ctx.baseline_array is None
@@ -445,13 +456,17 @@ def test_scoring_smoothing_failure_retains_raw_sn_fallback(
         factory_owner, "gaussian15_positive_asls_residual_trace", fail_smoothing
     )
     factory = build_scoring_context_factory(
-        config=_config(), injection_order={}, istd_rts_by_sample={}, rt_prior_library={}
+        config=_config(), injection_order={}, istd_rts_by_sample={}
     )
     ctx = factory(
         target=_target(label="Analyte-A", is_istd=False, istd_pair=""),
-        sample_name="SampleA", rt=rt, intensity=intensity,
-        prepared_result=prepared_result, istd_rt_in_this_sample=None,
-        paired_istd_fwhm=None, nl_result=None,
+        sample_name="SampleA",
+        rt=rt,
+        intensity=intensity,
+        prepared_result=prepared_result,
+        istd_rt_in_this_sample=None,
+        paired_istd_fwhm=None,
+        nl_result=None,
     )(_candidate(apex_index=15))
     np.testing.assert_array_equal(ctx.intensity_array, intensity)
     np.testing.assert_allclose(
@@ -512,8 +527,6 @@ def _config(**overrides: object) -> ExtractionConfig:
         injection_order_source=None,
         rolling_window_size=1,
         dirty_matrix_mode=False,
-        rt_prior_library_path=None,
-        emit_score_breakdown=False,
         config_hash="abcd1234",
     )
     return ExtractionConfig(**{**config.__dict__, **overrides})

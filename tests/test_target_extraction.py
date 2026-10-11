@@ -12,7 +12,6 @@ from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.extraction.istd_prepass import extract_istd_anchors_only
 from xic_extractor.extraction.ms2_selection import selected_candidate_ms2_evidence
 from xic_extractor.extraction.result_models import ExtractionResult
-from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.extraction.rt_windows import get_rt_window
 from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
@@ -256,7 +255,6 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
                 config=config,
                 injection_order={},
                 istd_rts_by_sample={},
-                rt_prior_library={},
             )
             if with_scoring
             else None
@@ -265,15 +263,10 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
 
     selected = captured["selected_hypothesis"]
     decision = captured["selection_decision"]
-    model_selection_result = captured["model_selection_result"]
     assert isinstance(selected, PeakHypothesis)
     assert isinstance(decision, PeakHypothesisSelectionDecision)
     assert selected.audit.selected is True
     assert decision.selected_candidate_id == selected.hypothesis_id
-    assert model_selection_result is not None
-    assert model_selection_result.selection_status == "parity"
-    assert model_selection_result.product_switch_allowed is True
-    assert model_selection_result.selected_candidate_id == selected.hypothesis_id
     assert decision.legacy_projection_status == (
         "successor_owned" if with_scoring else "active_policy_remaining"
     )
@@ -312,7 +305,6 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
         target_extraction.selected_candidate(handoff_inputs["peak_result"])
         == selected_candidate_value
     )
-    assert handoff_inputs["paired_istd_anchor_rt"] == 8.55
     trace_group = handoff_inputs["trace_group"]
     assert trace_group.expected_rt_min == pytest.approx(8.5)
     np.testing.assert_array_equal(trace_group.primary_trace.rt, prepared.rt)
@@ -336,9 +328,7 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
         assert ctx.half_width_ratio == expected_shape[0]
 
 
-@pytest.mark.parametrize(
-    "route", ["paired", "nl_analyte", "nl_istd", "prepass_none"]
-)
+@pytest.mark.parametrize("route", ["paired", "nl_analyte", "nl_istd", "prepass_none"])
 @pytest.mark.parametrize("window_points", [7, 15])
 def test_targeted_shape_routes_use_cached_canonical_signal(
     tmp_path, monkeypatch, route: str, window_points: int
@@ -372,9 +362,7 @@ def test_targeted_shape_routes_use_cached_canonical_signal(
         istd_pair="",
     )
     rt = np.linspace(0.0, 2.0, 201)
-    center = (
-        0.9 if route == "nl_analyte" else 1.0
-    )
+    center = 0.9 if route == "nl_analyte" else 1.0
     sigma = 0.1 if route == "nl_analyte" else 0.04
     intensity = 1000.0 * np.exp(-0.5 * ((rt - center) / sigma) ** 2)
     if route == "nl_istd":
@@ -411,9 +399,7 @@ def test_targeted_shape_routes_use_cached_canonical_signal(
                 )
 
     raw = _Raw()
-    monkeypatch.setattr(
-        _OPEN_RAW_SEAM, lambda *_args, **_kwargs: raw
-    )
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args, **_kwargs: raw)
     monkeypatch.setattr(
         "xic_extractor.extraction.istd_prepass.open_raw", lambda *_args, **_kwargs: raw
     )
@@ -452,7 +438,7 @@ def test_targeted_shape_routes_use_cached_canonical_signal(
         target_extraction, "enumerate_physical_segment_universe", _enumerate
     )
     true_factory = build_scoring_context_factory(
-        config=config, injection_order={}, istd_rts_by_sample={}, rt_prior_library={}
+        config=config, injection_order={}, istd_rts_by_sample={}
     )
     builders = []
 
@@ -532,13 +518,15 @@ def test_targeted_shape_routes_use_cached_canonical_signal(
     assert expected != pytest.approx(raw_shape)
     assert expected != pytest.approx(legacy_shape)
     expected_standalone = [
-        tuple(kwargs["intensity"]) for kwargs, _ in builders
+        tuple(kwargs["intensity"])
+        for kwargs, _ in builders
         if kwargs["prepared_result"].baseline_unclipped is None
     ]
     assert solves["sn"] == expected_standalone
     assert solves["physical"] == [
         tuple(result.prepared.raw)
-        for result in prepared_results if result.prepared is not None
+        for result in prepared_results
+        if result.prepared is not None
     ]
     for kwargs, builder in builders:
         physical = kwargs["prepared_result"].prepared
@@ -554,7 +542,7 @@ def test_targeted_shape_routes_use_cached_canonical_signal(
         )
         for apex in (int(np.argmax(physical.positive_signal)), 0):
             bound_candidate = replace(candidate, selection_apex_index=apex)
-            ctx = builder(bound_candidate)
+            ctx = replace(builder(candidate), apex_index=apex)
             np.testing.assert_array_equal(ctx.intensity_array, oracle_active)
             assert ctx.residual_mad == oracle_mad
             facts = build_candidate_evidence_facts(bound_candidate, ctx).trace
@@ -742,12 +730,12 @@ def test_paired_analyte_fallback_window_uses_target_region_not_istd_rt(
         target,
         config,
         sample_key="fixture",
-        reference_rt=12.0,
+        target_reference_rt=17.0,
     )
 
     assert (rt_min, rt_max) == pytest.approx((16.6, 17.4))
     assert anchor_used is False
-    assert anchor_rt == pytest.approx(17.0)
+    assert anchor_rt is None
 
 
 @pytest.mark.parametrize("search_margin", [2.0, 0.05])
@@ -811,11 +799,13 @@ def test_istd_peak_survives_displaced_or_missing_nl_anchor(
 
     raw = _Raw()
     window = get_rt_window(
-        raw, target, config, sample_key="fixture", reference_rt=None
+        raw,
+        target,
+        config,
+        sample_key="fixture",
+        target_reference_rt=17.0,
     )
-    assert window[2:] == (
-        (True, 15.2) if search_margin == 2.0 else (False, None)
-    )
+    assert window[2:] == ((True, 15.2) if search_margin == 2.0 else (False, None))
     results = {}
     target_extraction.extract_one_target(
         raw,
@@ -829,7 +819,6 @@ def test_istd_peak_survives_displaced_or_missing_nl_anchor(
             config=config,
             injection_order={"fixture": 1},
             istd_rts_by_sample={},
-            rt_prior_library={},
         ),
     )
     result = results[target.label]
@@ -841,7 +830,7 @@ def test_istd_peak_survives_displaced_or_missing_nl_anchor(
     assert result.candidate_ms2_evidence.nl_status == "OK"
 
 
-def test_paired_analyte_fallback_window_uses_learned_target_reference(
+def test_paired_analyte_fallback_window_uses_completed_current_reference(
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -880,7 +869,7 @@ def test_paired_analyte_fallback_window_uses_learned_target_reference(
         target,
         config,
         sample_key="fixture",
-        reference_rt=16.40,
+        paired_istd_credible=True,
         target_reference_rt=16.45,
     )
 
@@ -928,7 +917,7 @@ def test_distant_target_nl_anchor_falls_back_to_target_reference_not_istd_rt(
         target,
         config,
         sample_key="fixture",
-        reference_rt=16.40,
+        paired_istd_credible=True,
         target_reference_rt=16.45,
     )
 
@@ -937,7 +926,7 @@ def test_distant_target_nl_anchor_falls_back_to_target_reference_not_istd_rt(
     assert anchor_rt == pytest.approx(16.45)
 
 
-def test_distant_target_nl_anchor_falls_back_to_paired_istd_inside_target_window(
+def test_unpaired_target_keeps_nl_anchor_without_pair_distance_guard(
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -976,50 +965,132 @@ def test_distant_target_nl_anchor_falls_back_to_paired_istd_inside_target_window
         target,
         config,
         sample_key="fixture",
-        reference_rt=16.40,
-        target_reference_rt=None,
+        paired_istd_credible=False,
+        target_reference_rt=17.0,
     )
 
-    assert (rt_min, rt_max) == pytest.approx((16.0, 16.8))
-    assert anchor_used is False
-    assert anchor_rt == pytest.approx(16.40)
+    assert (rt_min, rt_max) == pytest.approx((17.2, 19.2))
+    assert anchor_used is True
+    assert anchor_rt == pytest.approx(18.20)
 
 
-def test_paired_target_reference_rt_uses_active_pair_delta() -> None:
+@pytest.mark.parametrize("neutral_loss", [None, 116.0474])
+@pytest.mark.parametrize("offset", [0.2, -0.15, 0.0])
+@pytest.mark.parametrize("pair_label", ["ISTD", "d3-Analyte"])
+def test_current_pair_reference_preserves_method_offset_for_all_lanes(
+    neutral_loss,
+    offset,
+    pair_label,
+) -> None:
     target = Target(
         label="Analyte",
         mz=258.1085,
-        rt_min=16.0,
-        rt_max=18.0,
+        rt_min=10.0 + offset - 1.0,
+        rt_max=10.0 + offset + 1.0,
         ppm_tol=20.0,
-        neutral_loss_da=116.0474,
+        neutral_loss_da=neutral_loss,
         nl_ppm_warn=20.0,
         nl_ppm_max=50.0,
         is_istd=False,
+        istd_pair=pair_label,
+    )
+    paired = replace(
+        target, label=pair_label, rt_min=9.0, rt_max=11.0, is_istd=True, istd_pair=""
+    )
+    reference = target_extraction.current_target_reference_rt(
+        target,
+        reference_rt=10.5,
+        paired_target=paired,
+    )
+    assert reference == pytest.approx(10.5 + offset)
+    assert target_extraction.current_target_reference_rt(
+        target,
+        reference_rt=None,
+        paired_target=paired,
+        sample_drift=0.3,
+    ) == pytest.approx(10.3 + offset)
+    assert target_extraction.current_target_reference_rt(
+        target,
+        reference_rt=None,
+        paired_target=paired,
+    ) == pytest.approx(10.0 + offset)
+
+
+@pytest.mark.parametrize("neutral_loss_da", [None, 116.047344])
+def test_same_paired_method_selects_each_samples_current_shift(
+    tmp_path, neutral_loss_da: float | None
+) -> None:
+    config = ExtractionConfig(
+        data_dir=tmp_path,
+        dll_dir=tmp_path,
+        output_csv=tmp_path / "results.csv",
+        diagnostics_csv=tmp_path / "diagnostics.csv",
+        smooth_window=15,
+        smooth_polyorder=3,
+        peak_rel_height=0.95,
+        peak_min_prominence_ratio=0.1,
+        ms2_precursor_tol_da=0.5,
+        nl_min_intensity_ratio=0.01,
+        nl_fallback_half_window_min=0.25,
+    )
+    target = Target(
+        label="Analyte",
+        mz=258.1085,
+        rt_min=10.5,
+        rt_max=12.5,
+        ppm_tol=20.0,
+        neutral_loss_da=neutral_loss_da,
+        nl_ppm_warn=10.0 if neutral_loss_da is not None else None,
+        nl_ppm_max=20.0 if neutral_loss_da is not None else None,
+        is_istd=False,
         istd_pair="ISTD",
     )
-    library = {
-        ("Analyte", "analyte"): LibraryEntry(
-            config_hash="abc",
-            target_label="Analyte",
-            role="analyte",
-            istd_pair="ISTD",
-            median_delta_rt=0.05,
-            sigma_delta_rt=0.01,
-            median_abs_rt=None,
-            sigma_abs_rt=None,
-            n_samples=1,
-            updated_at="fixture",
-        )
-    }
-
-    expected = target_extraction.paired_target_reference_rt(
-        target,
-        reference_rt=16.40,
-        rt_prior_library=library,
+    paired = replace(
+        target, label="ISTD", is_istd=True, istd_pair="", rt_min=9.0, rt_max=11.0
+    )
+    rt = np.arange(7.0, 16.0001, 0.01)
+    # Identical competing physical peaks in both samples: neither trace height
+    # nor a cached previous sample can choose the answer. The independently
+    # specified apex follows observed ISTD drift plus the given 1.5-min offset.
+    intensity = 100.0 + sum(
+        10_000.0 * np.exp(-0.5 * ((rt - center) / 0.06) ** 2) for center in (11.2, 11.9)
     )
 
-    assert expected == pytest.approx(16.45)
+    class Raw:
+        def extract_xic(self, mz, rt_min, rt_max, ppm_tol):
+            mask = (rt >= rt_min - 1e-9) & (rt <= rt_max + 1e-9)
+            return rt[mask], intensity[mask]
+
+        def iter_ms2_scans(self, rt_min, rt_max):
+            return iter(())
+
+    for sample, observed_istd, expected in (
+        ("SampleA", 10.4, 11.9),
+        ("SampleB", 9.7, 11.2),
+    ):
+        istd = ExtractionResult(
+            peak_result=_peak_result(_candidate(rt=observed_istd)),
+            nl=None,
+            target_label="ISTD",
+            role="ISTD",
+        )
+        reference = target_extraction.credible_istd_anchor_rt(istd)
+        assert reference == observed_istd
+        results = {"ISTD": istd}
+        consumer_reference = target_extraction.extract_one_target(
+            Raw(),
+            config,
+            sample,
+            target,
+            reference_rt=reference,
+            paired_target=paired,
+            strict_preferred_rt=True,
+            istd_rt_in_this_sample=reference,
+            results=results,
+            diagnostics=[],
+        )
+        assert consumer_reference == pytest.approx(expected)
+        assert results["Analyte"].reported_rt == pytest.approx(expected, abs=0.01)
 
 
 @pytest.fixture
@@ -1236,6 +1307,7 @@ def test_target_reacquires_only_clipped_peak_inside_original_selection(
         "Sample",
         target,
         reference_rt=9.75,
+        paired_target=replace(target, label="ISTD", is_istd=True, istd_pair=""),
         strict_preferred_rt=True,
         istd_rt_in_this_sample=9.75,
         results=results,

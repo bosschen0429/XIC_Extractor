@@ -1,8 +1,9 @@
 import logging
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from xic_extractor.configuration.models import ConfigError, ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.parsing import (
     _config_error,
     _parse_bool,
@@ -18,27 +19,15 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,
-    normalize_resolver_mode,
-)
-from xic_extractor.targeted_ms1_shape_identity_policy import (
-    TARGETED_MS1_SHAPE_IDENTITY_ACTIVATION_POLICIES,
+    METHOD_KEYS,
 )
 
 LOGGER = logging.getLogger(__name__)
 
-_MIGRATION_DEFAULT_KEYS = tuple(
-    key
-    for key in CANONICAL_SETTINGS_DEFAULTS
-    if key
-    not in {
-        "data_dir",
-        "dll_dir",
-        "ms1_morphology_smoothing_window_points",
-    }
-)
-
 _CANONICAL_SIGNAL_WINDOW_KEY = "signal_processing_window_points"
-_LEGACY_SIGNAL_WINDOW_KEY = "ms1_morphology_smoothing_window_points"
+_DEFAULTED_KEYS = tuple(
+    key for key in CANONICAL_SETTINGS_DEFAULTS if key not in {"data_dir", "dll_dir"}
+)
 
 
 @dataclass(frozen=True)
@@ -56,90 +45,81 @@ class _ParsedSettings:
     injection_order_source: Path | None
     rolling_window_size: int
     dirty_matrix_mode: bool
-    rt_prior_library_path: Path | None
-    target_pair_rt_calibration_path: Path | None
-    model_selection_expected_diff_approval_registry: Path | None
-    targeted_ms1_shape_identity_support_tsv: Path | None
-    targeted_ms1_shape_identity_activation_policy: str
-    emit_score_breakdown: bool
-    emit_review_report: bool
-    keep_intermediate_csv: bool
     parallel_mode: str
     parallel_workers: int
 
 
-def migrate_settings_dict(raw: dict[str, str]) -> tuple[dict[str, str], list[str]]:
-    migrated = dict(raw)
+def fill_setting_defaults(raw: dict[str, str]) -> tuple[dict[str, str], list[str]]:
+    """Complete omitted values from the canonical defaults; never rename keys."""
+    values = dict(raw)
     warnings: list[str] = []
-    if "resolver_mode" in migrated:
-        migrated["resolver_mode"] = normalize_resolver_mode(migrated["resolver_mode"])
-
-    canonical_window = migrated.get(_CANONICAL_SIGNAL_WINDOW_KEY, "").strip()
-    legacy_window = migrated.get(_LEGACY_SIGNAL_WINDOW_KEY, "").strip()
-    if legacy_window:
-        if canonical_window:
-            try:
-                values_match = int(canonical_window) == int(legacy_window)
-            except ValueError:
-                values_match = canonical_window == legacy_window
-            if not values_match:
-                raise ConfigError(
-                    "conflicting settings keys "
-                    f"{_CANONICAL_SIGNAL_WINDOW_KEY}={canonical_window!r} and "
-                    f"{_LEGACY_SIGNAL_WINDOW_KEY}={legacy_window!r}"
-                )
-            warnings.append(
-                "settings_migration status=deprecated_alias_equal "
-                f"legacy_key={_LEGACY_SIGNAL_WINDOW_KEY} "
-                f"canonical_key={_CANONICAL_SIGNAL_WINDOW_KEY} "
-                f"value={canonical_window}"
-            )
-        else:
-            try:
-                legacy_points = int(legacy_window)
-                resolve_signal_processing_profile(
-                    signal_processing_window_points=legacy_points,
-                )
-            except (TypeError, ValueError) as exc:
-                raise ConfigError(
-                    f"legacy setting {_LEGACY_SIGNAL_WINDOW_KEY}="
-                    f"{legacy_window!r} cannot migrate to "
-                    f"{_CANONICAL_SIGNAL_WINDOW_KEY}: {exc}"
-                ) from exc
-            migrated[_CANONICAL_SIGNAL_WINDOW_KEY] = legacy_window
-            warnings.append(
-                "settings_migration status=deprecated_alias_migrated "
-                f"legacy_key={_LEGACY_SIGNAL_WINDOW_KEY} "
-                f"canonical_key={_CANONICAL_SIGNAL_WINDOW_KEY} "
-                f"value={legacy_window}"
-            )
-        migrated.pop(_LEGACY_SIGNAL_WINDOW_KEY, None)
-    elif _LEGACY_SIGNAL_WINDOW_KEY in migrated:
-        migrated.pop(_LEGACY_SIGNAL_WINDOW_KEY)
-        warnings.append(
-            "settings_migration status=deprecated_alias_empty "
-            f"legacy_key={_LEGACY_SIGNAL_WINDOW_KEY} "
-            f"canonical_key={_CANONICAL_SIGNAL_WINDOW_KEY}"
-        )
-
-    for key in _MIGRATION_DEFAULT_KEYS:
+    for key in _DEFAULTED_KEYS:
         default = CANONICAL_SETTINGS_DEFAULTS[key]
-        if key not in migrated or migrated[key] == "":
-            migrated[key] = default
+        if key not in values or (values[key] == "" and default != ""):
+            values[key] = default
             warnings.append(f"Filled missing {key} with default {default}.")
+    return values, warnings
 
-    return migrated, warnings
 
-
-def _validate_settings(
+def build_extraction_config(
+    parsed: _ParsedSettings,
     settings: dict[str, str],
     settings_path: Path,
     output_dir: Path,
     config_hash: str,
 ) -> ExtractionConfig:
+    # Filesystem admission belongs to starting a run, not editing a method.
+    for key in ("data_dir", "dll_dir"):
+        _parse_existing_dir(
+            settings_path, key, _setting_value(settings, settings_path, key)
+        )
+    return _build_config(parsed, output_dir, config_hash)
+
+
+def validate_settings_values(
+    settings: dict[str, str], settings_path: Path = Path("settings.csv")
+) -> _ParsedSettings:
+    """Validate scalar settings without admitting local inputs or reading files."""
     parsed = _parse_settings_values(settings, settings_path)
     _validate_settings_ranges(settings, settings_path, parsed)
-    return _build_config(parsed, output_dir, config_hash)
+    return parsed
+
+
+def resolve_settings(
+    raw: dict[str, str],
+    overrides: dict[str, str] | None = None,
+    *,
+    settings_path: Path = Path("settings.csv"),
+) -> tuple[dict[str, str], _ParsedSettings, list[str]]:
+    """Apply overrides and defaults, then parse effective values once."""
+    values, warnings = fill_setting_defaults({**raw, **(overrides or {})})
+    warnings.extend(
+        f"Unknown setting {key!r} is preserved, not consumed by Targeted."
+        for key in values
+        if key not in CANONICAL_SETTINGS_DEFAULTS
+    )
+    return values, validate_settings_values(values, settings_path), warnings
+
+
+def reset_method_settings(settings: dict[str, str]) -> dict[str, str]:
+    """Reset method parameters, preserving batch and execution values."""
+    values, _warnings = fill_setting_defaults(settings)
+    values.update({key: CANONICAL_SETTINGS_DEFAULTS[key] for key in METHOD_KEYS})
+    return values
+
+
+def method_settings_differences(settings: dict[str, str]) -> list[dict[str, str]]:
+    """Compare normalized method values without revalidating or reading inputs."""
+    differences = []
+    for key in METHOD_KEYS:
+        value, default = settings[key], CANONICAL_SETTINGS_DEFAULTS[key]
+        try:
+            equal = Decimal(value) == Decimal(default)
+        except InvalidOperation:
+            equal = value.strip().lower() == default.strip().lower()
+        if not equal:
+            differences.append({"key": key, "default": default, "value": value})
+    return differences
 
 
 def _parse_settings_values(
@@ -147,14 +127,8 @@ def _parse_settings_values(
 ) -> _ParsedSettings:
     signal_profile = _parse_signal_processing_profile(settings, settings_path)
     return _ParsedSettings(
-        data_dir=_parse_existing_dir(
-            settings_path,
-            "data_dir",
-            _setting_value(settings, settings_path, "data_dir"),
-        ),
-        dll_dir=_parse_existing_dir(
-            settings_path, "dll_dir", _setting_value(settings, settings_path, "dll_dir")
-        ),
+        data_dir=Path(settings.get("data_dir", "")).expanduser(),
+        dll_dir=Path(settings.get("dll_dir", "")).expanduser(),
         signal_processing_method=signal_profile.method,
         signal_processing_window_points=signal_profile.window_points,
         ms2_precursor_tol_da=_parse_float(
@@ -207,41 +181,6 @@ def _parse_settings_values(
             None,
             "dirty_matrix_mode",
             _setting_value(settings, settings_path, "dirty_matrix_mode"),
-        ),
-        rt_prior_library_path=_parse_optional_path(
-            settings.get("rt_prior_library_path", "")
-        ),
-        target_pair_rt_calibration_path=_parse_optional_path(
-            settings.get("target_pair_rt_calibration_path", "")
-        ),
-        model_selection_expected_diff_approval_registry=_parse_optional_path(
-            settings.get("model_selection_expected_diff_approval_registry", "")
-        ),
-        targeted_ms1_shape_identity_support_tsv=_parse_optional_path(
-            settings.get("targeted_ms1_shape_identity_support_tsv", "")
-        ),
-        targeted_ms1_shape_identity_activation_policy=_setting_value(
-            settings,
-            settings_path,
-            "targeted_ms1_shape_identity_activation_policy",
-        ),
-        emit_score_breakdown=_parse_bool(
-            settings_path,
-            None,
-            "emit_score_breakdown",
-            _setting_value(settings, settings_path, "emit_score_breakdown"),
-        ),
-        emit_review_report=_parse_bool(
-            settings_path,
-            None,
-            "emit_review_report",
-            _setting_value(settings, settings_path, "emit_review_report"),
-        ),
-        keep_intermediate_csv=_parse_bool(
-            settings_path,
-            None,
-            "keep_intermediate_csv",
-            _setting_value(settings, settings_path, "keep_intermediate_csv"),
         ),
         parallel_mode=_setting_value(settings, settings_path, "parallel_mode"),
         parallel_workers=_parse_int(
@@ -318,18 +257,6 @@ def _validate_settings_ranges(
             settings["parallel_workers"],
             "must be >= 1",
         )
-    if (
-        parsed.targeted_ms1_shape_identity_activation_policy
-        not in TARGETED_MS1_SHAPE_IDENTITY_ACTIVATION_POLICIES
-    ):
-        allowed = ", ".join(TARGETED_MS1_SHAPE_IDENTITY_ACTIVATION_POLICIES)
-        raise _config_error(
-            settings_path,
-            None,
-            "targeted_ms1_shape_identity_activation_policy",
-            settings["targeted_ms1_shape_identity_activation_policy"],
-            f"must be {allowed}",
-        )
 
 
 def _build_config(
@@ -358,20 +285,6 @@ def _build_config(
         injection_order_source=parsed.injection_order_source,
         rolling_window_size=parsed.rolling_window_size,
         dirty_matrix_mode=parsed.dirty_matrix_mode,
-        rt_prior_library_path=parsed.rt_prior_library_path,
-        target_pair_rt_calibration_path=parsed.target_pair_rt_calibration_path,
-        model_selection_expected_diff_approval_registry=(
-            parsed.model_selection_expected_diff_approval_registry
-        ),
-        targeted_ms1_shape_identity_support_tsv=(
-            parsed.targeted_ms1_shape_identity_support_tsv
-        ),
-        targeted_ms1_shape_identity_activation_policy=(
-            parsed.targeted_ms1_shape_identity_activation_policy
-        ),
-        emit_score_breakdown=parsed.emit_score_breakdown,
-        emit_review_report=parsed.emit_review_report,
-        keep_intermediate_csv=parsed.keep_intermediate_csv,
         baseline_integration_method="asls",
         parallel_mode=parsed.parallel_mode,
         parallel_workers=parsed.parallel_workers,

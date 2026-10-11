@@ -35,7 +35,7 @@ _ASSETS = {
 }
 _BROWSE_SUFFIXES = {
     "folder": (),
-    "report": (".sqlite", ".db"),
+    "report": (".sqlite", ".db", ".xlsx"),
     "raw": (".raw",),
     "csv": (".csv",),
     "targets": (".csv", ".tsv", ".xlsx", ".xls"),
@@ -298,6 +298,9 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
                 "preferences",
                 "targeted/save",
                 "targeted/method",
+                "targeted/method/reset",
+                "targeted/method/save",
+                "targeted/method/load",
                 "targets/import",
                 "untargeted/save",
                 "method",

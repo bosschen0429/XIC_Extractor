@@ -10,6 +10,7 @@ from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
 from types import MappingProxyType
+from typing import cast
 
 from xic_extractor.acquisition_contract import AcquiredTrace, TraceAcquisitionBatch
 from xic_extractor.alignment.backfill.completion_evidence import (
@@ -834,10 +835,11 @@ def _mint_sample_result_ref(
         backfill_query_predictions=tuple(
             (attempt.query_rt, attempt.query_rt_basis) for attempt in backfill_attempts
         ),
+        # Backfill receipts are bound to explicit numeric group query windows.
         backfill_query_bounds=tuple(
             (
-                ref.content.evaluation_receipt.query_rt_min,
-                ref.content.evaluation_receipt.query_rt_max,
+                cast(float, ref.content.evaluation_receipt.query_rt_min),
+                cast(float, ref.content.evaluation_receipt.query_rt_max),
             )
             for ref in backfill_assessments
         ),

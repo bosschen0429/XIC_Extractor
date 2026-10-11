@@ -286,5 +286,5 @@ def _hypothesis(
                 support_reasons=("ms1_coherent",),
             )
         ),
-        audit=AuditTrail(selected=True, selection_rank=1),
+        audit=AuditTrail(selected=True),
     )

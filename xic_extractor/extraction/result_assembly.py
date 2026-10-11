@@ -4,15 +4,22 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from xic_extractor.configuration.models import Target
-from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
+from xic_extractor.evidence.neutral_loss import (
+    CandidateMS2Evidence,
+    MS2ProductEvidence,
+    NLResult,
+)
 from xic_extractor.extraction.targeted_product_projection import (
     project_targeted_result,
+)
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlEvaluationReceipt,
+    CidNlMethodRelations,
 )
 from xic_extractor.peak_detection.hypotheses import (
     PeakHypothesis,
     validate_peak_hypothesis_selection_authority,
 )
-from xic_extractor.peak_detection.model_selection import PeakModelSelectionResult
 from xic_extractor.peak_detection.models import PeakCandidate, PeakDetectionResult
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.peak_detection.scoring_quality import (
@@ -38,9 +45,13 @@ def build_extraction_result(
     scoring_context_builder: Any | None,
     selected_hypothesis: PeakHypothesis | None = None,
     selection_decision: PeakHypothesisSelectionDecision | None = None,
-    model_selection_result: PeakModelSelectionResult | None = None,
     acquisition_trace: Trace | None = None,
     physical_evaluation: PhysicalPeakEvaluation | None = None,
+    candidate_physical_evaluations: tuple[PhysicalPeakEvaluation, ...] = (),
+    cid_nl_products: tuple[MS2ProductEvidence, ...] = (),
+    cid_nl_evaluation_receipt: CidNlEvaluationReceipt | None = None,
+    cid_nl_relations: CidNlMethodRelations | None = None,
+    selected_cid_nl_candidate_index: int | None = None,
     sample_name: str = "",
 ) -> ExtractionResult:
     if selected_hypothesis is not None:
@@ -80,9 +91,13 @@ def build_extraction_result(
         score_breakdown=peak_result.score_breakdown,
         selected_hypothesis=selected_hypothesis,
         selection_decision=resolved_selection_decision,
-        model_selection_result=model_selection_result,
         acquisition_trace=acquisition_trace,
         physical_evaluation=physical_evaluation,
+        candidate_physical_evaluations=candidate_physical_evaluations,
+        cid_nl_products=cid_nl_products,
+        cid_nl_evaluation_receipt=cid_nl_evaluation_receipt,
+        cid_nl_relations=cid_nl_relations,
+        selected_cid_nl_candidate_index=selected_cid_nl_candidate_index,
     )
     return replace(
         result,

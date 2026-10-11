@@ -7,7 +7,7 @@ align them across samples, and open reviewable outputs from the GUI.
 
 ## Workflow
 
-1. Open `XIC_Extractor.exe`, or run `uv run python -m gui.main` in a developer
+1. Open `XIC_Extractor.exe`, or run `uv run xic-workbench` in a developer
    checkout.
 2. Select **Untargeted Discovery**.
 3. Choose a run mode.
@@ -22,6 +22,12 @@ align them across samples, and open reviewable outputs from the GUI.
 
 The GUI stores local Untargeted settings in `config/discovery_gui.json`. This is
 machine-local state and should stay untracked.
+
+GUI and CLI default to each RAW file's full acquisition RT range, read from
+instrument metadata. Optional RT cropping accepts one or both finite,
+non-negative bounds; an unspecified end remains automatic. Explicit cropping
+is limited to the acquired span. Target-list RT windows remain compound search
+windows, not acquisition bounds.
 
 ## Modes
 

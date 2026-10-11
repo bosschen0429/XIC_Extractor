@@ -188,13 +188,128 @@ window.XicUi = (() => {
     $("inspector").src = "about:blank";
     $("job-progress").hidden = true;
   }
+  function showTargetedOverview() {
+    $("targeted-overview").hidden = false;
+    $("targeted-review-nav").hidden = true;
+    $("review").hidden = true;
+  }
+  async function openTargetedResults(target = "", attentionOnly = false) {
+    $("query-form").reset();
+    $("target-id").value = target;
+    $("target-attention").checked = attentionOnly;
+    await query(0, queryFields());
+    $("targeted-review-nav").scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+  function renderTargetedOverview(summary) {
+    const host = $("targeted-overview");
+    host.replaceChildren();
+    if (!summary) return;
+    const node = (tag, text, className = "") => {
+      const element = document.createElement(tag);
+      if (text !== undefined) element.textContent = text;
+      element.className = className;
+      return element;
+    };
+    const resultButton = (text, target = "", attentionOnly = false, className = "") => {
+      const button = node("button", text, className);
+      button.type = "button";
+      button.dataset.idle = "";
+      button.addEventListener("click", () => action(
+        () => openTargetedResults(target, attentionOnly), "正在開啟樣本結果…",
+      ));
+      return button;
+    };
+    const heading = node("div", undefined, "overview-heading");
+    heading.append(node("span", "整批結果總覽", "eyebrow"));
+    const conclusion = !summary.result_count ? "尚無已保存結果"
+      : summary.review_count ? `先看 ${count(summary.review_count)} 筆需檢閱結果`
+        : "沒有記錄到需檢閱條件";
+    heading.append(node("h2", conclusion));
+    const scope = `${count(summary.sample_count)} 個樣本 · ${count(summary.targets.length)} 個目標 · ${count(summary.result_count)} 筆樣本／目標結果`;
+    heading.append(node("p", scope, "subtle"));
+    host.append(heading);
+    const metrics = node("div", undefined, "overview-metrics");
+    for (const [value, label] of [
+      [`${count(summary.counted_count)} / ${count(summary.result_count)}`, "計入偵測"],
+      [count(summary.review_count), "需檢閱結果"],
+      [count(summary.review_sample_count), "涉及樣本"],
+    ]) {
+      const metric = node("div");
+      metric.append(node("strong", value), node("span", label));
+      metrics.append(metric);
+    }
+    host.append(metrics);
+    if (summary.count_unknown) host.append(node("p", `${count(summary.count_unknown)} 筆未記錄偵測判定，未推測為未偵測。`, "overview-unknown"));
+    const actions = node("div", undefined, "overview-actions");
+    if (summary.review_count) actions.append(resultButton("檢閱這些結果 →", "", true, "primary"));
+    actions.append(resultButton("查看所有樣本結果 →"));
+    host.append(actions);
+    host.append(node("h3", "各目標結果"), node("p", "需檢閱項目優先。選擇目標，再看各樣本的量值與原因。", "subtle"));
+    const table = node("table", undefined, "overview-table");
+    const head = node("thead");
+    const header = node("tr");
+    for (const text of ["目標", "計入偵測 / 結果數", "需檢閱", "主要原因"]) header.append(node("th", text));
+    head.append(header);
+    const body = node("tbody");
+    for (const target of summary.targets) {
+      const row = node("tr");
+      if (target.review) row.className = "has-review";
+      const name = node("td");
+      name.append(resultButton(target.label, target.label, false, "text-button"));
+      const counted = node("td", `${target.counted} / ${target.total}${target.count_unknown ? `（${target.count_unknown} 未記錄）` : ""}`);
+      const review = node("td");
+      if (target.review) review.append(resultButton(`${target.review} 筆 →`, target.label, true, "text-button"));
+      else review.textContent = "—";
+      const reason = target.reasons.slice(0, 2).join("；") || "未記錄需檢閱條件";
+      row.append(name, counted, review, node("td", `${reason}${target.reasons.length > 2 ? `；另 ${target.reasons.length - 2} 種` : ""}`));
+      body.append(row);
+    }
+    table.append(head, body);
+    const scroll = node("div", undefined, "overview-table-scroll");
+    scroll.append(table);
+    host.append(scroll);
+    const quantities = node("details", undefined, "overview-quantities");
+    quantities.append(node("summary", "量值摘要（僅計入偵測的結果）"));
+    const values = node("table", undefined, "overview-table");
+    const valueHeader = node("tr");
+    for (const text of ["目標", "Area 中位數", "RT 範圍 (min)"]) valueHeader.append(node("th", text));
+    const valueHead = node("thead");
+    valueHead.append(valueHeader);
+    const valueBody = node("tbody");
+    for (const target of summary.targets) {
+      const row = node("tr");
+      row.append(node("td", target.label), node("td", Number.isFinite(target.median_area) ? target.median_area.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"), node("td", target.rt_min === null ? "—" : `${fmt(target.rt_min, 4)}–${fmt(target.rt_max, 4)}`));
+      valueBody.append(row);
+    }
+    values.append(valueHead, valueBody);
+    quantities.append(values);
+    host.append(quantities, node("p", "計入偵測與需檢閱可重疊。此頁摘要已保存的判定，不代表整批通過科學或品質驗收。", "overview-footnote"));
+  }
   function renderPage(page) {
     state.page = page;
+    const targeted = page.source_kind === "targeted_workbook";
+    $("targeted-overview").hidden = true;
+    $("targeted-review-nav").hidden = !targeted;
+    renderTargetedOverview(page.overview);
+    $("targeted-filters").hidden = !targeted;
+    $("group-filter").hidden = targeted;
+    $("review-range-filters").open = !targeted;
+    const selectedTarget = $("target-id").value;
+    $("target-id").replaceChildren(new Option("全部目標", ""), ...(page.target_names || []).map(name => new Option(name, name)));
+    $("target-id").value = selectedTarget;
+    document.querySelector(".acquisition-panel").hidden = targeted;
+    $("tab-curves").hidden = targeted;
+    const selectedSample = $("target-sample").value;
+    $("target-sample").replaceChildren(new Option("全部樣本", ""), ...(page.all_samples || page.samples).map(s => new Option(s.label, s.id)));
+    $("target-sample").value = selectedSample;
     clearSelection();
     $("review").hidden = false;
     $("review-empty").hidden = true;
-    $("batch-title").textContent = "批次結果已開啟";
-    $("batch-description").textContent = page.source;
+    $("batch-title").textContent = targeted ? "Targeted 結果" : "批次結果已開啟";
+    $("batch-description").textContent = targeted ? page.source.split(/[\\/]/).pop() : page.source;
+    $("raw-dir").closest(".path-line").hidden = targeted;
+    $("dll-dir").closest(".path-line").hidden = targeted;
+    $("source-settings").querySelector("summary").textContent = targeted ? "切換結果來源" : "結果與 RAW 位置";
     $("batch-description").className = "mono";
     $("batch-description").title = page.source;
     $("batch-count").hidden = false;
@@ -224,15 +339,17 @@ window.XicUi = (() => {
       const top = document.createElement("span");
       top.className = "item-top";
       const title = document.createElement("strong");
-      title.textContent = `m/z ${fmt(item.precursor_mz, 4)}`;
+      title.textContent = targeted ? item.title : `m/z ${fmt(item.precursor_mz, 4)}`;
       const rt = document.createElement("span");
       rt.className = "item-rt";
-      rt.textContent = `RT ${fmt(item.rt_apex_min, 2)} min`;
+      rt.textContent = targeted ? `m/z ${fmt(item.precursor_mz, 4)}` : `RT ${fmt(item.rt_apex_min, 2)} min`;
       top.append(title, rt);
       const bottom = document.createElement("span");
       bottom.className = "item-bottom";
       const summary = document.createElement("span");
-      summary.textContent = `${item.title} · ${item.review_summary.observed_sample_count || 0} 個樣本`;
+      summary.textContent = targeted
+        ? `${item.review_summary.scope_sample_count} 個樣本的已保存結果`
+        : `${item.title} · ${item.review_summary.observed_sample_count || 0} 個樣本`;
       const badge = document.createElement("span");
       const label = item.badge_label || "已記錄";
       badge.className = `chip ${badgeTone[label] || ""}`;
@@ -273,9 +390,11 @@ window.XicUi = (() => {
     $("selection").hidden = false;
     $("selection-empty").hidden = true;
     $("job-progress").hidden = true;
-    $("item-kind").textContent = item.title;
-    $("item-title").textContent =
-      `m/z ${fmt(item.precursor_mz, 4)} · RT ${fmt(item.rt_apex_min, 2)} min`;
+    const targeted = state.page.source_kind === "targeted_workbook";
+    $("item-kind").textContent = targeted ? "Targeted 已保存結果" : item.title;
+    $("item-title").textContent = targeted
+      ? `${item.title} · m/z ${fmt(item.precursor_mz, 4)}`
+      : `m/z ${fmt(item.precursor_mz, 4)} · RT ${fmt(item.rt_apex_min, 2)} min`;
     $("item-identity").textContent =
       item.group_id || item.candidate_id || item.id;
     document
@@ -326,7 +445,7 @@ window.XicUi = (() => {
       list.append(label);
     }
     showTab("recorded");
-    status("可查看當次分析紀錄，或為勾選的樣本載入 XIC。");
+    status(state.page.source_kind === "targeted_workbook" ? "唯讀檢閱已保存的 Targeted 結果，不需要 RAW。" : "可查看當次分析紀錄，或為勾選的樣本載入 XIC。");
   }
   function showTab(tab) {
     const view = tab === "curves" ? state.curves : state.recorded;
@@ -338,10 +457,12 @@ window.XicUi = (() => {
     $("view-note").textContent =
       tab === "curves"
         ? `新取得的診斷曲線 · ${state.curveLabels.join("、")}。依報告樣本檔名取檔，已核對 RAW 內容屬於此批次；來源未保留獨立的樣本與 RAW 綁定。這些曲線不改寫當次定量值。`
-        : "這是當次分析保存的證據與量值。若未保留曲線，可在上方按需取得 XIC。";
+        : state.page.source_kind === "targeted_workbook"
+          ? "唯讀 XLSX · 只顯示已保存結果，不重新計算。"
+          : "這是當次分析保存的證據與量值。若未保留曲線，可在上方按需取得 XIC。";
     $("inspector").src = `/reports/${view}.html?embed=1`;
     $("download").href = `/reports/${view}.html?download=1`;
-    $("download").hidden = false;
+    $("download").hidden = state.page.source_kind === "targeted_workbook";
   }
   async function openBatch() {
     const page = await api("/api/open", { source: $("source").value });
@@ -350,10 +471,13 @@ window.XicUi = (() => {
     state.samples = new Set();
     renderPage(page);
     $("source-settings").open = false;
-    if (page.items.length) await selectItem(page.items[0]);
+    if (page.source_kind === "targeted_workbook") showTargetedOverview();
+    else if (page.items.length) await selectItem(page.items[0]);
   }
   function queryFields() {
-    const filters = { group_id: $("group-id").value.trim() };
+    const filters = state.page?.source_kind === "targeted_workbook"
+      ? { target_id: $("target-id").value.trim(), sample_id: $("target-sample").value, attention_only: $("target-attention").checked }
+      : { group_id: $("group-id").value.trim() };
     for (const [id, key] of [
       ["mz-min", "mz_min"],
       ["mz-max", "mz_max"],
@@ -549,6 +673,7 @@ window.XicUi = (() => {
     event.preventDefault();
     action(() => query(0, queryFields()), "正在搜尋全批結果…");
   });
+  $("back-to-overview").addEventListener("click", showTargetedOverview);
   $("reset-query").addEventListener("click", () =>
     action(async () => {
       $("query-form").reset();
@@ -645,7 +770,8 @@ window.XicUi = (() => {
       $("source").value = review.page.source;
       renderPage(review.page);
       if (review.job) state.samples = new Set(review.job.sample_ids);
-      if (review.detail) restoreDetail(review.detail);
+      if (review.page.source_kind === "targeted_workbook") showTargetedOverview();
+      else if (review.detail) restoreDetail(review.detail);
       if (review.job) {
         state.job = review.job;
         $("job-progress").hidden = false;

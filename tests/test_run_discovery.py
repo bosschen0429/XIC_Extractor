@@ -62,10 +62,15 @@ def test_run_discovery_cli_passes_single_raw_settings(
             "0.75",
             "--resolver-mode",
             "local_minimum",
-        ] + (
-            ["--enable-blank-qualification", "--blank-library",
-             str(get_default_background_library_path())]
-            if blank_override else []
+        ]
+        + (
+            [
+                "--enable-blank-qualification",
+                "--blank-library",
+                str(get_default_background_library_path()),
+            ]
+            if blank_override
+            else []
         )
     )
 
@@ -78,6 +83,7 @@ def test_run_discovery_cli_passes_single_raw_settings(
     assert len(settings.neutral_loss_profiles) == 1
     assert settings.ms2_precursor_tol_da == pytest.approx(0.75)
     assert settings.resolver_mode == "local_minimum"
+    assert settings.rt_min is None and settings.rt_max is None
     peak_config = captured["peak_config"]
     assert peak_config.data_dir == raw_path.parent.resolve()
     assert peak_config.dll_dir == dll_dir.resolve()
@@ -93,6 +99,7 @@ def test_run_discovery_cli_passes_single_raw_settings(
     assert "Discovery review CSV: " in stdout
     assert "discovery_candidates.csv" in stdout
     assert "discovery_review.csv" in stdout
+
 
 def test_run_discovery_rejects_retired_arbitrated_resolver_mode(
     tmp_path: Path,
@@ -117,6 +124,7 @@ def test_run_discovery_rejects_retired_arbitrated_resolver_mode(
 
     assert exc_info.value.code == 2
     assert "arbitrated resolver mode is retired" in capsys.readouterr().err
+
 
 def test_run_discovery_cli_passes_raw_dir_batch_settings(
     monkeypatch: pytest.MonkeyPatch,
@@ -193,6 +201,7 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
     assert "Discovery batch index: " in stdout
     assert "discovery_batch_index.csv" in stdout
 
+
 def test_run_discovery_accepts_feature_list_selected_tags_and_union_mode() -> None:
     args = run_discovery._parse_args(
         [
@@ -215,6 +224,7 @@ def test_run_discovery_accepts_feature_list_selected_tags_and_union_mode() -> No
     assert args.selected_tags == "dR,R,MeR"
     assert args.tag_combine_mode == "union"
 
+
 def test_run_discovery_rejects_invalid_tag_combine_mode(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -232,6 +242,7 @@ def test_run_discovery_rejects_invalid_tag_combine_mode(
 
     assert exc_info.value.code == 2
     assert "invalid choice" in capsys.readouterr().err
+
 
 def test_run_discovery_cli_writes_live_and_final_timing_json_for_batch(
     monkeypatch: pytest.MonkeyPatch,
@@ -314,6 +325,7 @@ def test_run_discovery_cli_writes_live_and_final_timing_json_for_batch(
     assert fingerprinted_paths == [raw_path.resolve()]
     assert "Timing JSON:" in capsys.readouterr().out
 
+
 def test_run_discovery_cli_rejects_missing_raw(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -332,6 +344,7 @@ def test_run_discovery_cli_rejects_missing_raw(
 
     assert code == 2
     assert "raw file does not exist" in capsys.readouterr().err
+
 
 def test_run_discovery_cli_rejects_raw_dir_without_raw_files(
     tmp_path: Path,
@@ -354,6 +367,7 @@ def test_run_discovery_cli_rejects_raw_dir_without_raw_files(
     assert code == 2
     assert "raw directory contains no .raw files" in capsys.readouterr().err
 
+
 def test_run_discovery_cli_rejects_missing_dll_dir(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -372,6 +386,7 @@ def test_run_discovery_cli_rejects_missing_dll_dir(
 
     assert code == 2
     assert "dll directory does not exist" in capsys.readouterr().err
+
 
 def test_run_discovery_cli_rejects_non_positive_float_args(
     tmp_path: Path,
@@ -396,6 +411,7 @@ def test_run_discovery_cli_rejects_non_positive_float_args(
 
     assert exc_info.value.code == 2
     assert "value must be > 0" in capsys.readouterr().err
+
 
 @pytest.mark.parametrize("value", ["nan", "inf"])
 def test_run_discovery_cli_rejects_non_finite_positive_float_args(
@@ -423,6 +439,7 @@ def test_run_discovery_cli_rejects_non_finite_positive_float_args(
     assert exc_info.value.code == 2
     assert "value must be > 0" in capsys.readouterr().err
 
+
 def test_run_discovery_cli_rejects_inverted_rt_window(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -448,6 +465,7 @@ def test_run_discovery_cli_rejects_inverted_rt_window(
 
     assert exc_info.value.code == 2
     assert "rt-min must be <= rt-max" in capsys.readouterr().err
+
 
 @pytest.mark.parametrize(
     ("option", "value"),
@@ -483,6 +501,7 @@ def test_run_discovery_cli_rejects_invalid_rt_bounds(
     assert exc_info.value.code == 2
     assert "RT bounds must be finite values >= 0" in capsys.readouterr().err
 
+
 def test_run_discovery_cli_returns_2_when_raw_reader_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -509,6 +528,7 @@ def test_run_discovery_cli_returns_2_when_raw_reader_fails(
 
     assert code == 2
     assert "boom" in capsys.readouterr().err
+
 
 def test_pyproject_registers_discovery_cli_script() -> None:
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))

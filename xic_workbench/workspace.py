@@ -98,7 +98,9 @@ class ReviewWorkspace:
             return self.analysis.action(action, values)
 
     def open(self, source: Any) -> dict[str, Any]:
-        path = resolve_source(Path(_text(source, "結果資料夾或 SQLite 檔案"))).resolve()
+        path = resolve_source(
+            Path(_text(source, "結果資料夾、Targeted XLSX 或 SQLite 檔案"))
+        ).resolve()
         with self._lock:
             self._require_idle()
             summary = read_evidence_summary(path)
@@ -119,6 +121,9 @@ class ReviewWorkspace:
     def query(self, values: dict[str, Any]) -> dict[str, Any]:
         allowed = {
             "group_id",
+            "target_id",
+            "sample_id",
+            "attention_only",
             "mz_min",
             "mz_max",
             "rt_min",
@@ -135,14 +140,25 @@ class ReviewWorkspace:
             group_id = values.get("group_id", "")
             if not isinstance(group_id, str):
                 raise ValueError("分組 ID 必須是文字。")
+            target_id = values.get("target_id", "")
+            sample_id = values.get("sample_id", "")
+            if not isinstance(target_id, str) or not isinstance(sample_id, str):
+                raise ValueError("目標與樣本名稱必須是文字。")
             request = SelectionRequest(
                 strategy="query",
-                sample_ids=tuple(
+                sample_ids=(sample_id,)
+                if sample_id
+                else tuple(
                     sample["canonical_sample_identity_id"]
                     for sample in self._page.payload["summary"]["samples"]
                 ),
                 group_ids=(group_id.strip(),) if group_id.strip() else (),
-                **{key: value for key, value in values.items() if key != "group_id"},
+                target_ids=(target_id.strip(),) if target_id.strip() else (),
+                **{
+                    key: value
+                    for key, value in values.items()
+                    if key not in {"group_id", "target_id", "sample_id"}
+                },
             )
             page = prepare_report(
                 self._report, request, expected_source=self._page.source
@@ -156,6 +172,18 @@ class ReviewWorkspace:
         page = self._page
         return {
             "source": str(self._report),
+            "source_kind": page.payload["summary"].get("source_kind", "evidence"),
+            "target_names": page.payload["summary"].get("target_names", []),
+            "overview": page.payload["summary"].get("overview"),
+            "all_samples": [
+                {
+                    "id": row["canonical_sample_identity_id"],
+                    "label": row.get(
+                        "sample_stem", row["canonical_sample_identity_id"]
+                    ),
+                }
+                for row in page.payload["summary"]["samples"]
+            ],
             "request_id": page.payload["summary"].get("processing_request_id", ""),
             "samples": page.payload["samples"],
             "run_total": page.run_total,

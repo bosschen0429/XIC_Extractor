@@ -1,11 +1,9 @@
-import csv
 from dataclasses import replace
-from pathlib import Path
 from typing import Literal
 
 import pytest
 
-from xic_extractor.configuration.models import ExtractionConfig, Target
+from xic_extractor.configuration.models import Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.extraction.result_assembly import build_extraction_result
 from xic_extractor.extraction.result_models import ExtractionResult, FileResult
@@ -15,14 +13,7 @@ from xic_extractor.extraction.targeted_peak_selection import (
 )
 from xic_extractor.output.csv_writers import (
     _long_output_rows,
-    _output_row,
-    write_all,
-    write_diagnostics_csv,
-    write_long_csv,
-    write_score_breakdown_csv,
-    write_wide_csv,
 )
-from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.output.schema import TARGETED_PRODUCT_PROJECTION_HEADERS
 from xic_extractor.output.targeted_product_model import (
     TargetedProductProjection,
@@ -38,22 +29,6 @@ from xic_extractor.peak_detection.models import (
     PeakDetectionResult,
     PeakResult,
 )
-
-
-def _config(tmp_path: Path) -> ExtractionConfig:
-    return ExtractionConfig(
-        data_dir=tmp_path / "raw",
-        dll_dir=tmp_path / "dll",
-        output_csv=tmp_path / "output" / "xic_results.csv",
-        diagnostics_csv=tmp_path / "output" / "xic_diagnostics.csv",
-        smooth_window=15,
-        smooth_polyorder=3,
-        peak_rel_height=0.95,
-        peak_min_prominence_ratio=0.10,
-        ms2_precursor_tol_da=0.5,
-        nl_min_intensity_ratio=0.01,
-        count_no_ms2_as_detected=True,
-    )
 
 
 def _target(label: str, *, neutral_loss_da: float | None = 116.0474) -> Target:
@@ -152,23 +127,12 @@ def _file_result() -> FileResult:
     )
 
 
-def _read_csv(path: Path) -> list[dict[str, str]]:
-    with path.open(newline="", encoding="utf-8-sig") as handle:
-        return list(csv.DictReader(handle))
-
-
 def test_row_builders_use_smoothed_rt_and_preserve_area() -> None:
     target = _target("WithNL")
     file_result = _file_result()
 
-    wide_row = _output_row(file_result, [target])
     long_row = _long_output_rows(file_result, [target])[0]
 
-    assert wide_row["WithNL_RT"] == "9.0000"
-    assert wide_row["WithNL_Area"] == "123.45"
-    assert wide_row["WithNL_Int"] == "500"
-    assert wide_row["WithNL_IntSmoothed"] == "450"
-    assert wide_row["WithNL_NL"] == "WARN_12.3ppm"
     assert long_row["RT"] == "9.0000"
     assert long_row["Area"] == "123.45"
     assert long_row["Int"] == "500"
@@ -185,10 +149,8 @@ def test_row_builders_report_selected_candidate_nl_before_target_window_nl() -> 
     )
     file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
 
-    wide_row = _output_row(file_result, [target])
     long_row = _long_output_rows(file_result, [target])[0]
 
-    assert wide_row["WithNL_NL"] == "NL_FAIL"
     assert long_row["NL"] == "NL_FAIL"
 
 
@@ -211,7 +173,6 @@ def test_not_counted_product_projection_preserves_matrix_peak_values() -> None:
     )
     file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
 
-    wide_row = _output_row(file_result, [target])
     long_row = _long_output_rows(file_result, [target])[0]
 
     expected_peak = {
@@ -224,218 +185,13 @@ def test_not_counted_product_projection_preserves_matrix_peak_values() -> None:
         "PeakWidth": "0.3000",
     }
     for suffix, value in expected_peak.items():
-        assert wide_row[f"WithNL_{suffix}"] == value
         assert long_row[suffix] == value
-    assert wide_row["WithNL_NL"] == "NL_FAIL"
     assert long_row["NL"] == "NL_FAIL"
     assert long_row["Product State"] == "not_counted"
     assert long_row["Counted Detection"] == "FALSE"
 
 
-def test_write_wide_and_long_csv(tmp_path: Path) -> None:
-    config = _config(tmp_path)
-    target = _target("WithNL")
-    file_results = [_file_result()]
-
-    write_wide_csv(config, [target], file_results)
-    write_long_csv(config, [target], file_results)
-
-    assert _read_csv(config.output_csv)[0]["WithNL_RT"] == "9.0000"
-    assert _read_csv(config.output_csv.with_name("xic_results_long.csv"))[0] == {
-        "SampleName": "SampleA",
-        "Group": "Other",
-        "Target": "WithNL",
-        "Role": "Analyte",
-        "ISTD Pair": "",
-        "RT": "9.0000",
-        "Area": "123.45",
-        "NL": "WARN_12.3ppm",
-        "NL Evidence": "Observed with tolerance warning",
-        "Int": "500",
-        "IntSmoothed": "450",
-        "PeakStart": "8.9000",
-        "PeakEnd": "9.2000",
-        "PeakWidth": "0.3000",
-        "Confidence": "LOW",
-        "Reason": "MS1 peak measured; review: weak local signal-to-noise.",
-        "Product State": "detected_flagged",
-        "Counted Detection": "TRUE",
-        "Review State": "flagged",
-        "Projection Reason": "decision: detected_flagged; review: local_sn_minor",
-        "Projection Support Reasons": "ms1_peak_present",
-        "Projection Review Reasons": "local_sn_minor",
-        "Projection Conflict Reasons": "",
-        "Projection Not Counted Reasons": "",
-        "Projection Exclusion Reasons": "",
-        "Legacy Authority Status": "evidence_only",
-        "Benchmark Eligibility State": "",
-    }
-
-
-def test_write_wide_csv_bytes_are_exact_and_deterministic(tmp_path: Path) -> None:
-    config = _config(tmp_path)
-    target = _target("WithNL")
-    file_results = [
-        _file_result(),
-        FileResult(sample_name="FailedSample", results={}, error="read failed"),
-    ]
-    expected = (
-        b"\xef\xbb\xbf"
-        b"SampleName,WithNL_RT,WithNL_Int,WithNL_IntSmoothed,WithNL_Area,WithNL_PeakStart,"
-        b"WithNL_PeakEnd,WithNL_PeakWidth,WithNL_NL\r\n"
-        b"SampleA,9.0000,500,450,123.45,8.9000,9.2000,0.3000,WARN_12.3ppm\r\n"
-        b"FailedSample,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR,ERROR\r\n"
-    )
-
-    write_wide_csv(config, [target], file_results)
-    first = config.output_csv.read_bytes()
-    write_wide_csv(config, [target], file_results)
-
-    assert config.output_csv.name == "xic_results.csv"
-    assert first == expected
-    assert config.output_csv.read_bytes() == expected
-
-
-def test_write_wide_csv_preserves_zero_nd_and_duplicate_sample_rows(
-    tmp_path: Path,
-) -> None:
-    config = _config(tmp_path)
-    target = _target("WithNL")
-    zero_result = replace(
-        _result(nl=NLResult("WARN", 12.34, None, 3, 0, 2)),
-        selected_hypothesis=_selected_hypothesis_with_integration(
-            IntegrationResult(
-                rt_left_min=0.0,
-                rt_apex_min=0.0,
-                rt_right_min=0.0,
-                raw_apex_rt_min=0.0,
-                rt_width_min=0.0,
-                height_raw=0.0,
-                height_smoothed=0.0,
-                area_raw_counts_seconds=0.0,
-            )
-        ),
-    )
-    partial_result = replace(
-        zero_result,
-        selected_hypothesis=_selected_hypothesis_with_integration(
-            IntegrationResult(
-                rt_left_min=8.9,
-                rt_apex_min=9.0,
-                rt_right_min=9.2,
-                raw_apex_rt_min=9.03,
-                rt_width_min=0.3,
-                height_raw=500.0,
-                height_smoothed=450.0,
-                area_raw_counts_seconds=None,
-            )
-        ),
-    )
-    file_results = [
-        FileResult(sample_name="DuplicateSample", results={"WithNL": zero_result}),
-        FileResult(
-            sample_name="DuplicateSample",
-            results={"WithNL": partial_result},
-        ),
-    ]
-
-    write_wide_csv(config, [target], file_results)
-    rows = _read_csv(config.output_csv)
-
-    assert [row["SampleName"] for row in rows] == [
-        "DuplicateSample",
-        "DuplicateSample",
-    ]
-    assert rows[0] == {
-        "SampleName": "DuplicateSample",
-        "WithNL_RT": "0.0000",
-        "WithNL_Int": "0",
-        "WithNL_IntSmoothed": "0",
-        "WithNL_Area": "0.00",
-        "WithNL_PeakStart": "0.0000",
-        "WithNL_PeakEnd": "0.0000",
-        "WithNL_PeakWidth": "0.0000",
-        "WithNL_NL": "WARN_12.3ppm",
-    }
-    assert rows[1] == {
-        "SampleName": "DuplicateSample",
-        "WithNL_RT": "ND",
-        "WithNL_Int": "ND",
-        "WithNL_IntSmoothed": "ND",
-        "WithNL_Area": "ND",
-        "WithNL_PeakStart": "ND",
-        "WithNL_PeakEnd": "ND",
-        "WithNL_PeakWidth": "ND",
-        "WithNL_NL": "WARN_12.3ppm",
-    }
-
-
-def test_write_diagnostics_and_score_breakdown_csv(tmp_path: Path) -> None:
-    config = _config(tmp_path)
-    file_result = _file_result()
-    diagnostics = [
-        DiagnosticRecord(
-            sample_name="SampleA",
-            target_label="WithNL",
-            issue="NL_FAIL",
-            reason="best match 80 ppm",
-        )
-    ]
-
-    write_diagnostics_csv(config, diagnostics)
-    write_score_breakdown_csv(config, [file_result])
-
-    assert _read_csv(config.diagnostics_csv) == [
-        {
-            "SampleName": "SampleA",
-            "Target": "WithNL",
-            "Issue": "NL_FAIL",
-            "Reason": "best match 80 ppm",
-        }
-    ]
-    breakdown = _read_csv(config.output_csv.with_name("xic_score_breakdown.csv"))[0]
-    assert breakdown["local_sn"] == "1"
-    assert breakdown["Quality Penalty"] == "1"
-    assert breakdown["Quality Flags"] == "too_broad"
-    assert breakdown["Total Severity"] == "2"
-    assert breakdown["Prior RT"] == "NA"
-
-
-def test_score_breakdown_csv_includes_weighted_evidence_fields(tmp_path: Path) -> None:
-    config = _config(tmp_path)
-    result = replace(
-        _result(),
-        score_breakdown=(
-            ("Base Score", "50"),
-            ("Positive Points", "40"),
-            ("Negative Points", "0"),
-            ("Raw Score", "90"),
-            ("Caps", ""),
-            ("Final Confidence", "HIGH"),
-            ("Support", "strict_nl_ok; local_sn_strong"),
-            ("Concerns", ""),
-        ),
-    )
-    file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
-
-    write_score_breakdown_csv(config, [file_result])
-
-    breakdown = _read_csv(config.output_csv.with_name("xic_score_breakdown.csv"))[0]
-    assert breakdown["Base Score"] == "50"
-    assert breakdown["Positive Points"] == "40"
-    assert breakdown["Negative Points"] == "0"
-    assert breakdown["Raw Score"] == "90"
-    assert breakdown["Caps"] == ""
-    assert breakdown["Final Confidence"] == "HIGH"
-    assert breakdown["Detection Counted"] == "TRUE"
-    assert breakdown["Support"] == "strict_nl_ok; local_sn_strong"
-    assert breakdown["Concerns"] == ""
-
-
-def test_long_and_score_breakdown_rows_use_targeted_product_projection(
-    tmp_path: Path,
-) -> None:
-    config = _config(tmp_path)
+def test_long_rows_use_targeted_product_projection() -> None:
     target = _target("WithNL")
     result = replace(
         _result(nl=NLResult("NL_FAIL", 125.0, None, 1, 0, 1)),
@@ -456,7 +212,6 @@ def test_long_and_score_breakdown_rows_use_targeted_product_projection(
     file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
 
     long_row = _long_output_rows(file_result, [target])[0]
-    write_score_breakdown_csv(config, [file_result])
 
     assert long_row["NL"] == "NL_FAIL"
     assert long_row["Confidence"] == "VERY_LOW"
@@ -467,10 +222,6 @@ def test_long_and_score_breakdown_rows_use_targeted_product_projection(
     assert long_row["Product State"] == "detected_flagged"
     assert long_row["Counted Detection"] == "TRUE"
     assert long_row["Projection Review Reasons"] == "plausible_dda_nl_dropout"
-    breakdown = _read_csv(config.output_csv.with_name("xic_score_breakdown.csv"))[0]
-    assert breakdown["Detection Counted"] == "TRUE"
-    assert breakdown["Product State"] == "detected_flagged"
-    assert breakdown["Projection Reason"].startswith("decision: detected_flagged")
 
 
 def test_long_row_reason_prefers_projection_over_legacy_not_counted_text() -> None:
@@ -599,39 +350,6 @@ def test_long_reason_prioritizes_unresolved_boundaries_over_review_flags() -> No
     )
 
 
-def test_score_breakdown_csv_can_emit_ms2_trace_labels_without_schema_change(
-    tmp_path: Path,
-) -> None:
-    config = _config(tmp_path)
-    result = replace(
-        _result(),
-        score_breakdown=(
-            ("Base Score", "50"),
-            ("Positive Points", "50"),
-            ("Negative Points", "8"),
-            ("Raw Score", "92"),
-            ("Caps", ""),
-            ("Final Confidence", "HIGH"),
-            ("Support", "strict_nl_ok; ms2_trace_strong; local_sn_strong"),
-            ("Concerns", "ms2_trace_weak"),
-        ),
-    )
-    file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
-
-    write_score_breakdown_csv(config, [file_result])
-
-    breakdown = _read_csv(config.output_csv.with_name("xic_score_breakdown.csv"))[0]
-    assert set(breakdown) >= {
-        "Support",
-        "Concerns",
-        "Positive Points",
-        "Negative Points",
-        "Raw Score",
-    }
-    assert breakdown["Support"] == ("strict_nl_ok; ms2_trace_strong; local_sn_strong")
-    assert breakdown["Concerns"] == "ms2_trace_weak"
-
-
 def test_csv_rows_preserve_values_with_runtime_selected_hypothesis() -> None:
     target = _target("WithNL")
     legacy = _result(nl=NLResult("WARN", 12.34, None, 3, 0, 2))
@@ -660,16 +378,21 @@ def test_csv_rows_preserve_values_with_runtime_selected_hypothesis() -> None:
         results={"WithNL": with_selected},
     )
 
-    assert _output_row(selected_file, [target]) == _output_row(
-        fallback_file,
-        [target],
-    )
     selected_long = _long_output_rows(selected_file, [target])[0]
     fallback_long = _long_output_rows(fallback_file, [target])[0]
     for header, fallback_value in fallback_long.items():
-        if header in {*TARGETED_PRODUCT_PROJECTION_HEADERS, "Reason"}:
+        if header in {*TARGETED_PRODUCT_PROJECTION_HEADERS, "Reason", "Confidence"}:
             continue
         assert selected_long[header] == fallback_value
+    assert fallback_long["Confidence"] == "LOW"
+    # The two fixtures have different finalized identity decisions. Legacy
+    # display confidence follows that decision; measured values do not change.
+    assert fallback_long["Counted Detection"] == "TRUE"
+    assert selected_long["Counted Detection"] == "FALSE"
+    assert (
+        selected_long["Projection Not Counted Reasons"] == "cid_nl_method_not_supported"
+    )
+    assert selected_long["Confidence"] == "VERY_LOW"
     assert selected_long["Reason"].startswith("MS1 peak measured; review:")
     assert selected_long["Product State"]
     assert selected_long["Counted Detection"] in {"TRUE", "FALSE"}
@@ -694,30 +417,10 @@ def test_csv_rows_project_selected_integration_values_when_present() -> None:
     )
     file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
 
-    wide_row = _output_row(file_result, [target])
     long_rows = _long_output_rows(file_result, [target])
 
     assert len(long_rows) == 1
     long_row = long_rows[0]
-    assert list(wide_row) == [
-        "SampleName",
-        "WithNL_RT",
-        "WithNL_Int",
-        "WithNL_IntSmoothed",
-        "WithNL_Area",
-        "WithNL_PeakStart",
-        "WithNL_PeakEnd",
-        "WithNL_PeakWidth",
-        "WithNL_NL",
-    ]
-    assert wide_row["WithNL_RT"] == "8.9500"
-    assert wide_row["WithNL_Area"] == "4567.89"
-    assert wide_row["WithNL_Int"] == "765"
-    assert wide_row["WithNL_IntSmoothed"] == "700"
-    assert wide_row["WithNL_PeakStart"] == "8.7000"
-    assert wide_row["WithNL_PeakEnd"] == "9.3000"
-    assert wide_row["WithNL_PeakWidth"] == "0.4200"
-    assert wide_row["WithNL_NL"] == "WARN_12.3ppm"
     assert long_row["RT"] == "8.9500"
     assert long_row["Area"] == "4567.89"
     assert long_row["Int"] == "765"
@@ -753,12 +456,8 @@ def test_csv_rows_preserve_no_peak_nd_projection() -> None:
     )
     file_result = FileResult(sample_name="SampleA", results={"WithNL": result})
 
-    wide_row = _output_row(file_result, [target])
     long_row = _long_output_rows(file_result, [target])[0]
 
-    for suffix in ("RT", "Int", "Area", "PeakStart", "PeakEnd", "PeakWidth"):
-        assert wide_row[f"WithNL_{suffix}"] == "ND"
-    assert wide_row["WithNL_NL"] == "NO_MS2"
     assert long_row["RT"] == "ND"
     assert long_row["Area"] == "ND"
     assert long_row["Int"] == "ND"
@@ -767,31 +466,6 @@ def test_csv_rows_preserve_no_peak_nd_projection() -> None:
     assert long_row["PeakEnd"] == "ND"
     assert long_row["PeakWidth"] == "ND"
     assert long_row["NL"] == "NO_MS2"
-
-
-def test_write_all_gates_score_breakdown(tmp_path: Path) -> None:
-    config = _config(tmp_path)
-    target = _target("WithNL")
-    file_results = [_file_result()]
-
-    write_all(
-        config,
-        [target],
-        file_results,
-        diagnostics=[],
-        emit_score_breakdown=False,
-    )
-    assert config.output_csv.exists()
-    assert not config.output_csv.with_name("xic_score_breakdown.csv").exists()
-
-    write_all(
-        config,
-        [target],
-        file_results,
-        diagnostics=[],
-        emit_score_breakdown=True,
-    )
-    assert config.output_csv.with_name("xic_score_breakdown.csv").exists()
 
 
 class _Config:
@@ -811,7 +485,7 @@ def _selected_hypothesis_with_integration(
         resolver_mode="local_minimum",
         integration=integration,
         evidence=EvidenceVector(confidence="LOW", reason="selected spine"),
-        audit=AuditTrail(selected=True, selection_rank=1),
+        audit=AuditTrail(selected=True),
     )
 
 
@@ -830,24 +504,20 @@ def _selected_hypothesis_with_integration(
     ],
 )
 def test_long_csv_reports_configured_nl_observation(
-    tmp_path: Path, nl: NLResult | None, configured: bool, expected: str
+    nl: NLResult | None, configured: bool, expected: str
 ) -> None:
-    config = _config(tmp_path)
     target = _target("WithNL", neutral_loss_da=116.0474 if configured else None)
-    write_long_csv(
-        config, [target], [FileResult("SampleA", {target.label: _result(nl=nl)})]
-    )
-    row = _read_csv(config.output_csv.with_name("xic_results_long.csv"))[0]
+    row = _long_output_rows(
+        FileResult("SampleA", {target.label: _result(nl=nl)}), [target]
+    )[0]
     assert row["NL Evidence"] == expected
     assert row["Area"] == "123.45"
 
 
-def test_long_csv_reports_file_processing_error(tmp_path: Path) -> None:
-    config = _config(tmp_path)
-    write_long_csv(
-        config, [_target("WithNL")], [FileResult("Bad", {}, error="read failed")]
-    )
-    row = _read_csv(config.output_csv.with_name("xic_results_long.csv"))[0]
+def test_long_csv_reports_file_processing_error() -> None:
+    row = _long_output_rows(
+        FileResult("Bad", {}, error="read failed"), [_target("WithNL")]
+    )[0]
     assert row["NL Evidence"] == "Processing error"
     assert row["Reason"] == "RAW file could not be processed."
     assert row["Area"] == "ERROR"

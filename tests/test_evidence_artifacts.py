@@ -5,20 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from xic_extractor.diagnostics.targeted_ms1_shape_identity import (
-    ARTIFACT_SEMANTIC_ROLE,
-    TargetedMs1ShapeCandidate,
-    build_targeted_ms1_shape_identity_rows,
-    canonical_targeted_ms1_shape_identity_bytes,
-    mint_targeted_ms1_shape_identity_artifact_ref,
-    write_targeted_ms1_shape_identity_tsv,
-)
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactContractError,
+    _mint_artifact_semantic_contract_ref,
+    _mint_evidence_artifact_ref,
     verify_evidence_artifact_payload,
-)
-from xic_extractor.extraction.targeted_ms1_shape_identity_projection import (
-    SCHEMA_VERSION,
 )
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
@@ -35,29 +26,24 @@ from xic_extractor.sample_metadata import (
 )
 
 
-def test_targeted_owner_mints_exact_bytes_and_attempt_scoped_artifact(
+def test_artifact_binds_exact_bytes_and_processing_attempt(
     tmp_path: Path,
 ) -> None:
     request, sample_snapshot, sample = _request_and_sample(tmp_path)
     first_attempt = issue_processing_attempt(request)
     second_attempt = issue_processing_attempt(request, retry_of=first_attempt)
-    rows = _targeted_rows("Sample A")
-    payload_bytes = canonical_targeted_ms1_shape_identity_bytes(rows)
-    output_path = tmp_path / "targeted_ms1_shape_identity.tsv"
-
-    write_targeted_ms1_shape_identity_tsv(output_path, rows)
-    first = mint_targeted_ms1_shape_identity_artifact_ref(
+    payload_bytes = b"Sample A"
+    first = _artifact(
         processing_attempt=first_attempt,
-        rows=rows,
+        payload_bytes=payload_bytes,
     )
-    retry = mint_targeted_ms1_shape_identity_artifact_ref(
+    retry = _artifact(
         processing_attempt=second_attempt,
-        rows=rows,
+        payload_bytes=payload_bytes,
     )
 
-    assert output_path.read_bytes() == payload_bytes
-    assert first.semantic_contract.semantic_role == ARTIFACT_SEMANTIC_ROLE
-    assert first.semantic_contract.schema_version == SCHEMA_VERSION
+    assert first.semantic_contract.semantic_role == "synthetic_observation"
+    assert first.semantic_contract.schema_version == "synthetic_observation"
     assert first.semantic_contract.validation_status == "diagnostic_only"
     assert first.content_identity == retry.content_identity
     assert first.evidence_artifact_id != retry.evidence_artifact_id
@@ -77,9 +63,9 @@ def test_targeted_owner_mints_exact_bytes_and_attempt_scoped_artifact(
 
 def test_artifact_role_and_schema_substitution_fail_closed(tmp_path: Path) -> None:
     request, _, _ = _request_and_sample(tmp_path)
-    artifact = mint_targeted_ms1_shape_identity_artifact_ref(
+    artifact = _artifact(
         processing_attempt=issue_processing_attempt(request),
-        rows=_targeted_rows("Sample A"),
+        payload_bytes=_payload("Sample A"),
     )
 
     with pytest.raises(EvidenceArtifactContractError, match="role/schema"):
@@ -110,40 +96,6 @@ def test_artifact_role_and_schema_substitution_fail_closed(tmp_path: Path) -> No
         with pytest.raises(EvidenceArtifactContractError, match=message):
             type(original)(**(values | mutation))
         type(original)(**values).__post_init__()
-    with pytest.raises(ValueError, match="owner-issued"):
-        mint_targeted_ms1_shape_identity_artifact_ref(
-            processing_attempt="attempt-id",
-            rows=_targeted_rows("Sample A"),
-        )
-
-
-def test_targeted_artifact_rejects_missing_evidence_column(tmp_path: Path) -> None:
-    request, _, _ = _request_and_sample(tmp_path)
-    row = dict(_targeted_rows("Sample A")[0])
-    del row["reason"]
-
-    with pytest.raises(ValueError, match="exact columns.*missing.*reason"):
-        mint_targeted_ms1_shape_identity_artifact_ref(
-            processing_attempt=issue_processing_attempt(request),
-            rows=(row,),
-        )
-
-
-def test_targeted_artifact_rejects_unexpected_evidence_column(
-    tmp_path: Path,
-) -> None:
-    request, _, _ = _request_and_sample(tmp_path)
-    row = dict(_targeted_rows("Sample A")[0])
-    row["unexpected_evidence"] = "must-not-disappear"
-
-    with pytest.raises(
-        ValueError,
-        match="exact columns.*unexpected.*unexpected_evidence",
-    ):
-        mint_targeted_ms1_shape_identity_artifact_ref(
-            processing_attempt=issue_processing_attempt(request),
-            rows=(row,),
-        )
 
 
 def test_lineage_closure_is_order_neutral_and_rejects_missing_or_other_attempt(
@@ -152,22 +104,22 @@ def test_lineage_closure_is_order_neutral_and_rejects_missing_or_other_attempt(
     request, sample_snapshot, sample = _request_and_sample(tmp_path)
     attempt = issue_processing_attempt(request)
     retry = issue_processing_attempt(request, retry_of=attempt)
-    upstream_a = mint_targeted_ms1_shape_identity_artifact_ref(
+    upstream_a = _artifact(
         processing_attempt=attempt,
-        rows=_targeted_rows("Sample A"),
+        payload_bytes=_payload("Sample A"),
     )
-    upstream_b = mint_targeted_ms1_shape_identity_artifact_ref(
+    upstream_b = _artifact(
         processing_attempt=attempt,
-        rows=_targeted_rows("Sample B"),
+        payload_bytes=_payload("Sample B"),
     )
-    child_forward = mint_targeted_ms1_shape_identity_artifact_ref(
+    child_forward = _artifact(
         processing_attempt=attempt,
-        rows=_targeted_rows("Sample C"),
+        payload_bytes=_payload("Sample C"),
         upstream_artifacts=(upstream_a, upstream_b),
     )
-    child_reordered = mint_targeted_ms1_shape_identity_artifact_ref(
+    child_reordered = _artifact(
         processing_attempt=attempt,
-        rows=_targeted_rows("Sample C"),
+        payload_bytes=_payload("Sample C"),
         upstream_artifacts=(upstream_b, upstream_a),
     )
 
@@ -189,14 +141,14 @@ def test_lineage_closure_is_order_neutral_and_rejects_missing_or_other_attempt(
             evidence_artifacts=(child_forward, upstream_a),
         )
 
-    retry_artifact = mint_targeted_ms1_shape_identity_artifact_ref(
+    retry_artifact = _artifact(
         processing_attempt=retry,
-        rows=_targeted_rows("Sample A"),
+        payload_bytes=_payload("Sample A"),
     )
     assert retry_artifact.content_identity == upstream_a.content_identity
-    retry_child = mint_targeted_ms1_shape_identity_artifact_ref(
+    retry_child = _artifact(
         processing_attempt=retry,
-        rows=_targeted_rows("Sample C"),
+        payload_bytes=_payload("Sample C"),
         upstream_artifacts=(upstream_a,),
     )
     retry_references = compose_processing_owner_references(
@@ -213,9 +165,9 @@ def test_lineage_closure_is_order_neutral_and_rejects_missing_or_other_attempt(
         )
     )
 
-    ancestor_with_future_dependency = mint_targeted_ms1_shape_identity_artifact_ref(
+    ancestor_with_future_dependency = _artifact(
         processing_attempt=attempt,
-        rows=_targeted_rows("Sample D"),
+        payload_bytes=_payload("Sample D"),
         upstream_artifacts=(retry_artifact,),
     )
     with pytest.raises(IdentityContractError, match="later processing attempt"):
@@ -237,9 +189,9 @@ def test_lineage_closure_is_order_neutral_and_rejects_missing_or_other_attempt(
         )
 
     sibling_retry = issue_processing_attempt(request, retry_of=attempt)
-    sibling_artifact = mint_targeted_ms1_shape_identity_artifact_ref(
+    sibling_artifact = _artifact(
         processing_attempt=sibling_retry,
-        rows=_targeted_rows("Sample A"),
+        payload_bytes=_payload("Sample A"),
     )
     with pytest.raises(IdentityContractError, match="different processing attempt"):
         compose_processing_owner_references(
@@ -281,18 +233,23 @@ def _request_and_sample(tmp_path: Path):
     return request, sample_snapshot, sample
 
 
-def _targeted_rows(sample_name: str):
-    return build_targeted_ms1_shape_identity_rows(
-        (
-            TargetedMs1ShapeCandidate(
-                sample_name=sample_name,
-                target_name="5-mdC",
-                candidate_rt_min=None,
-                candidate_rt=(),
-                candidate_intensity=(),
-                reference_rt_min=None,
-                reference_rt=(),
-                reference_intensity=(),
-            ),
-        )
+def _payload(sample):
+    return sample.encode("utf-8")
+
+
+def _artifact(*, processing_attempt, payload_bytes, upstream_artifacts=()):
+    contract = _mint_artifact_semantic_contract_ref(
+        owner_namespace="tests.synthetic_observation",
+        semantic_role="synthetic_observation",
+        schema_version="synthetic_observation",
+        validation_status="diagnostic_only",
+        media_type="application/octet-stream",
+        serialization_format="bytes",
+    )
+    return _mint_evidence_artifact_ref(
+        producer_processing_request_id=processing_attempt.processing_request_id,
+        producer_processing_attempt_id=processing_attempt.processing_attempt_id,
+        semantic_contract=contract,
+        payload_bytes=payload_bytes,
+        upstream_artifacts=upstream_artifacts,
     )

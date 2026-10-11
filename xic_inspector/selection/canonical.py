@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-ItemKind = Literal["row", "group", "candidate"]
+ItemKind = Literal["row", "group", "candidate", "target"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,8 +59,8 @@ def build_canonical_ref(
     """Construct and serialize a canonical presentation ref."""
     if kind == "row":
         ref = ["row", request_id, attempt_id, identifier]
-    elif kind == "group":
-        ref = ["group", request_id, attempt_id, identifier]
+    elif kind in ("group", "target"):
+        ref = [kind, request_id, attempt_id, identifier]
     elif kind == "candidate":
         if not sample_id:
             raise ValueError("Candidate item ref requires sample_id")

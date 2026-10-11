@@ -226,9 +226,14 @@ def test_method_adapter_exposes_effective_controls_and_saves_owner_toml(
     assert {"dna_dr", "rna_ribose", "rna_mer"} <= names
     details = method_details("dna_dr")
     controls = {item["key"]: item for item in details["tuning_controls"]}
-    assert controls["rt_max"]["maximum"] == 60.0
+    assert "maximum" not in controls["rt_max"]
+    assert "maximum" not in controls["rt_min"]
     assert controls["resolver_mode"]["choices"]
-    assert details["effective_values"]["rt_max"] == 60.0
+    assert details["effective_values"]["rt_min"] is None
+    assert details["effective_values"]["rt_max"] is None
+    assert details["preview"]["rt_range_mode"] == "acquisition"
+    assert controls["rt_min"]["optional"] is True
+    assert controls["rt_max"]["optional"] is True
 
     draft = details["draft"]
     draft["name"] = "Browser dR"
@@ -243,6 +248,9 @@ def test_method_adapter_exposes_effective_controls_and_saves_owner_toml(
     assert saved.name == "Browser dR"
     assert [tag.name for tag in saved.tags] == ["DNA_dR", "custom"]
     assert saved.combine_mode == "union"
+    assert "rt_min" not in saved.discovery_overrides
+    assert "rt_max" not in saved.discovery_overrides
+    assert method_details(destination)["preview"]["rt_range_mode"] == "acquisition"
     assert method_details(destination)["effective_values"]["nl_tolerance_ppm"] == 12.5
 
 
@@ -258,11 +266,74 @@ def test_method_adapter_rejects_unknown_override_without_writing(tmp_path) -> No
     assert not destination.exists()
 
 
+def test_method_adapter_preserves_long_rt_windows(tmp_path) -> None:
+    draft = method_details("dna_dr")["draft"]
+    draft["overrides"].update(rt_min=65.0, rt_max=120.0)
+    destination = tmp_path / "long-method.toml"
+    save_method(draft, destination)
+    restored = method_details(destination)
+    assert restored["effective_values"]["rt_min"] == 65.0
+    assert restored["effective_values"]["rt_max"] == 120.0
+    assert restored["preview"]["rt_range_mode"] == "crop"
+    request = _request_values(tmp_path, "full")
+    request["preset"] = str(destination)
+    request["overrides"] = {}
+    parse_request(request)
+
+
+def test_method_adapter_clears_explicit_rt_crop_to_automatic(tmp_path) -> None:
+    draft = method_details("dna_dr")["draft"]
+    draft["overrides"].update(rt_min=65.0, rt_max=120.0)
+    cropped = tmp_path / "cropped.toml"
+    save_method(draft, cropped)
+    imported = method_details(cropped)["draft"]
+    imported["overrides"].update(rt_min=None, rt_max=None)
+    automatic = tmp_path / "automatic.toml"
+    save_method(imported, automatic)
+    restored = method_details(automatic)
+    assert restored["preview"]["rt_range_mode"] == "acquisition"
+    assert "rt_min" not in load_preset(automatic).discovery_overrides
+    assert "rt_max" not in load_preset(automatic).discovery_overrides
+
+
+@pytest.mark.parametrize("bound", ["rt_min", "rt_max"])
+def test_method_adapter_preserves_one_sided_rt_crop(tmp_path, bound) -> None:
+    draft = method_details("dna_dr")["draft"]
+    draft["overrides"][bound] = 75.0
+    destination = tmp_path / "one-sided.toml"
+    save_method(draft, destination)
+    restored = method_details(destination)
+    other = "rt_max" if bound == "rt_min" else "rt_min"
+    assert restored["effective_values"][bound] == 75.0
+    assert restored["effective_values"][other] is None
+    assert other not in load_preset(destination).discovery_overrides
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"rt_min": -1.0},
+        {"rt_min": 121.0, "rt_max": 120.0},
+        {"rt_max": float("inf")},
+        {"rt_min": float("nan")},
+    ],
+)
+def test_method_adapter_rejects_invalid_owner_rt_without_writing(
+    tmp_path, overrides
+) -> None:
+    draft = method_details("dna_dr")["draft"]
+    draft["overrides"].update(overrides)
+    destination = tmp_path / "invalid-rt.toml"
+    with pytest.raises(ValueError):
+        save_method(draft, destination)
+    assert not destination.exists()
+
+
 def _request_values(tmp_path, mode: str) -> dict:
     return {
         "mode": mode,
         "preset": "dna_dr",
-        "overrides": {"rt_max": 60.0},
+        "overrides": {},
         "raw_dir": str(tmp_path / "raws"),
         "raw_file": str(tmp_path / "one.raw"),
         "dll_dir": str(tmp_path / "dll"),
@@ -493,3 +564,71 @@ def test_raw_sample_refresh_preserves_filename_and_method_roles(tmp_path, monkey
         "Sample001": "solvent",
         "Sample002": "study_sample",
     }
+
+
+def test_untargeted_dispatch_freezes_recipe_profile_and_targets(tmp_path, monkeypatch):
+    from xic_workbench.config_io import write_settings
+    from xic_workbench.jobs import AnalysisJobs
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    write_settings({"parallel_workers": "3"}, config_dir=config_dir)
+    draft = method_details("dna_dr")["draft"]
+    draft["overrides"]["nl_tolerance_ppm"] = 12.5
+    preset_path = tmp_path / "method.toml"
+    save_method(draft, preset_path)
+    targets_path = tmp_path / "targets.csv"
+    targets_path.write_text("label,mz\nISTD,100\n")
+    values = _request_values(tmp_path, "discovery_only")
+    values.update(preset=str(preset_path), targets_csv=str(targets_path))
+    values.pop("execution_profile", None)
+    submitted = []
+    jobs = AnalysisJobs(config_dir)
+    monkeypatch.setattr(jobs._executor, "submit", lambda *args: submitted.append(args))
+    try:
+        jobs.start("untargeted", values)
+        runner = jobs._runner
+        draft["overrides"]["nl_tolerance_ppm"] = 25
+        save_method(draft, preset_path)
+        write_settings({"parallel_workers": "7"}, config_dir=config_dir)
+        targets_path.write_text("label,mz\nCHANGED,200\n")
+        assert runner._build_settings().nl_tolerance_ppm == 12.5
+        assert runner.request.execution_profile.parallel_workers == 3
+        assert runner.request.execution_profile.alignment_workers == 4
+        assert runner.request.targets_csv.read_text() == "label,mz\nISTD,100\n"
+        # Exercise the dispatched runner; only RAW computation is substituted.
+        monkeypatch.setattr(
+            runner,
+            "execute",
+            lambda: {"method_ppm": runner._build_settings().nl_tolerance_ppm},
+        )
+        callback, *args = submitted[0]
+        callback(*args)
+        assert jobs.state()["results"]["untargeted"] == {"method_ppm": 12.5}
+    finally:
+        jobs.close()
+
+
+def test_untargeted_missing_targets_rejects_before_queue_or_active_save(
+    tmp_path, monkeypatch
+):
+    from xic_workbench.config_io import write_settings
+    from xic_workbench.jobs import AnalysisJobs
+
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    write_settings({"dll_dir": "original"}, config_dir=config_dir)
+    original = (config_dir / "settings.csv").read_bytes()
+    values = _request_values(tmp_path, "discovery_only")
+    values["targets_csv"] = str(tmp_path / "missing.csv")
+    submitted = []
+    jobs = AnalysisJobs(config_dir)
+    monkeypatch.setattr(jobs._executor, "submit", lambda *args: submitted.append(args))
+    try:
+        with pytest.raises(FileNotFoundError):
+            jobs.start("untargeted", values)
+        assert not submitted
+        assert (config_dir / "settings.csv").read_bytes() == original
+        assert jobs.state()["job"] is None
+    finally:
+        jobs.close()

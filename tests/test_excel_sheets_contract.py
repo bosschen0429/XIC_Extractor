@@ -6,7 +6,6 @@ from openpyxl import load_workbook
 
 from xic_extractor import extractor
 from xic_extractor.configuration.models import ExtractionConfig, Target
-from xic_extractor.extraction.output_dispatch import write_outputs
 from xic_extractor.extraction.result_models import RunOutput
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 from xic_extractor.output.messages import DiagnosticRecord
@@ -24,56 +23,25 @@ def _disable_reader_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_default_output_only_has_one_xlsx(tmp_path: Path, monkeypatch) -> None:
-    xlsx_path = _run_pipeline(tmp_path, monkeypatch, keep_intermediate_csv=False)
+    xlsx_path = _run_pipeline(tmp_path, monkeypatch)
     output_dir = tmp_path / "output"
 
     assert list(output_dir.glob("*.csv")) == []
     assert list(output_dir.glob("*.xlsx")) == [xlsx_path]
-    assert [path.name for path in output_dir.glob("*.json")] == [
-        "method_manifest.json"
-    ]
-
-
-def test_keep_intermediate_csv_emits_csvs(tmp_path: Path, monkeypatch) -> None:
-    _run_pipeline(tmp_path, monkeypatch, keep_intermediate_csv=True)
-
-    output_dir = tmp_path / "output"
-    actual = {path.name for path in output_dir.glob("*.csv")}
-    assert {"xic_results.csv", "xic_results_long.csv", "xic_diagnostics.csv"} <= actual
+    assert list(output_dir.glob("*.json")) == []
 
 
 def test_default_xlsx_has_overview_landing_sheet(tmp_path: Path, monkeypatch) -> None:
-    xlsx_path = _run_pipeline(tmp_path, monkeypatch, emit_score_breakdown=False)
+    xlsx_path = _run_pipeline(tmp_path, monkeypatch)
 
     wb = load_workbook(xlsx_path)
     assert wb.sheetnames == [
         "Overview",
-        "Review Queue",
         "XIC Results",
-        "Summary",
         "Targets",
-        "Diagnostics",
         "Run Metadata",
     ]
     assert wb.active.title == "Overview"
-    assert wb["Diagnostics"].sheet_state == "hidden"
-
-
-def test_score_breakdown_appears_when_enabled(tmp_path: Path, monkeypatch) -> None:
-    xlsx_path = _run_pipeline(tmp_path, monkeypatch, emit_score_breakdown=True)
-
-    wb = load_workbook(xlsx_path)
-    assert wb.sheetnames == [
-        "Overview",
-        "Review Queue",
-        "XIC Results",
-        "Summary",
-        "Targets",
-        "Diagnostics",
-        "Run Metadata",
-        "Score Breakdown",
-    ]
-    assert wb["Diagnostics"].sheet_state == "hidden"
 
 
 def test_landing_sheet_when_diagnostics_empty(tmp_path: Path, monkeypatch) -> None:
@@ -109,14 +77,10 @@ def _run_pipeline(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     *,
-    keep_intermediate_csv: bool = False,
-    emit_score_breakdown: bool = False,
     with_diagnostics: bool = False,
 ) -> Path:
     config = _config(
         tmp_path,
-        keep_intermediate_csv=keep_intermediate_csv,
-        emit_score_breakdown=emit_score_breakdown,
     )
     config.data_dir.mkdir(parents=True)
     config.dll_dir.mkdir(parents=True)
@@ -126,7 +90,6 @@ def _run_pipeline(
     monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
 
     run_output = extractor.acquire(config, [target])
-    write_outputs(config, [target], run_output)
     if with_diagnostics:
         run_output = RunOutput(
             file_results=run_output.file_results,
@@ -148,12 +111,7 @@ def _run_pipeline(
     )
 
 
-def _config(
-    tmp_path: Path,
-    *,
-    keep_intermediate_csv: bool,
-    emit_score_breakdown: bool,
-) -> ExtractionConfig:
+def _config(tmp_path: Path) -> ExtractionConfig:
     return ExtractionConfig(
         data_dir=tmp_path / "raw",
         dll_dir=tmp_path / "dll",
@@ -165,8 +123,6 @@ def _config(
         peak_min_prominence_ratio=0.10,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
-        keep_intermediate_csv=keep_intermediate_csv,
-        emit_score_breakdown=emit_score_breakdown,
         config_hash="abc12345",
     )
 

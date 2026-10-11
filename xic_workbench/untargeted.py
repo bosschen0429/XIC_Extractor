@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import csv
+import uuid
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -144,7 +145,7 @@ def parse_request(values: dict[str, Any]) -> DiscoveryRequest:
         discovery_batch_index=_optional_path(values.get("discovery_batch_index")),
         targets_csv=_optional_path(values.get("targets_csv")),
         sample_metadata=samples_from_payload(values.get("samples")),
-        preset_snapshot=snapshot,
+        preset_snapshot=bound_preset,
         execution_profile=profile,
     )
 
@@ -159,6 +160,15 @@ class UntargetedRun:
         progress: Callable[[int, int, str], None],
         should_cancel: Callable[[], bool],
     ) -> None:
+        # Persisted scientific inputs must not be re-read from an active locator
+        # after dispatch. RAW acquisition remains live and is not a byte snapshot.
+        if request.targets_csv is not None:
+            receipt_dir = request.output_dir / ".run_inputs" / uuid.uuid4().hex
+            contents = request.targets_csv.read_bytes()
+            receipt_dir.mkdir(parents=True)
+            targets_path = receipt_dir / request.targets_csv.name
+            targets_path.write_bytes(contents)
+            request = replace(request, targets_csv=targets_path)
         self.request = request
         self.progress = progress
         self.should_cancel = should_cancel
@@ -376,7 +386,7 @@ class UntargetedRun:
             smooth_window=15,
             smooth_polyorder=3,
             ms1_morphology_smoothing_window_points=int(
-                defaults["ms1_morphology_smoothing_window_points"]
+                defaults["signal_processing_window_points"]
             ),
             peak_rel_height=0.95,
             peak_min_prominence_ratio=0.10,

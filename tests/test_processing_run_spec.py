@@ -87,6 +87,31 @@ def test_run_spec_roundtrip_closes_content_hash_profile_and_order(
     assert reversed_spec.run_spec_id != spec.run_spec_id
 
 
+@pytest.mark.parametrize(
+    "rt_min,rt_max", [(None, None), (None, 75.0), (1.5, None), (0.0, 999.0)]
+)
+def test_run_spec_preserves_auto_or_explicit_crop_intent(
+    tmp_path: Path, rt_min, rt_max
+) -> None:
+    paths = _raws(tmp_path)
+    settings = replace(_settings(), rt_min=rt_min, rt_max=rt_max)
+    spec = _compile_paths(paths, settings=settings)
+    payload = serialize_processing_run_spec(spec)
+    saved_settings = json.loads(payload)["content"]["discovery_method"]["content"][
+        "settings"
+    ]
+    for field, value in (("rt_min", rt_min), ("rt_max", rt_max)):
+        assert saved_settings[field] == (None if value is None else value.hex())
+    assert (
+        deserialize_processing_run_spec(payload).discovery_method.settings == settings
+    )
+    if rt_min is not None or rt_max is not None:
+        assert (
+            spec.discovery_method.method_hash
+            != _compile_paths(paths).discovery_method.method_hash
+        )
+
+
 def test_parallel_fingerprints_preserve_identity_order_and_overlap(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -478,10 +503,10 @@ def test_valid_canonical_hash_snapshots_match_current_profile(tmp_path: Path) ->
 
     assert spec.discovery_method.settings.ms2_precursor_tol_da == 0.8
     assert spec.discovery_method.method_hash == (
-        "6eb49f0b94414e61eea43c8a17df3065ce5327f0984f73938991542c2f3ecac2"
+        "bf4ead9a642a24b163ec108c9ca1005ef58339855af2af09ca0b853b5e8f26f0"
     )
     assert spec.run_spec_hash == (
-        "0e93f1080f6efd47edf6c8dbfb3f65779416dc167789fc7c6f06613e1087ffd1"
+        "6206b6b886b64d985881f97189b8b46bcc2a9ed596cb38c59c7b63ccd365c038"
     )
 
 
@@ -516,8 +541,6 @@ def test_processing_run_spec_preserves_custom_blank_settings_roundtrip(
     assert deserialized_settings.blank_ppm_tol == 12.5
     assert deserialized_settings.blank_fold_change_threshold == 4.5
     assert deserialized == spec
-
-
 
 
 def _write_bound_library(path: Path, intensity: float) -> None:
@@ -578,9 +601,7 @@ def test_run_identity_does_not_inherit_packaged_blank_library(
     _write_bound_library(packaged_path, 1.0)
     monkeypatch.setattr(blank, "_CACHED_DEFAULT_LIBRARY", None)
     second = _compile_paths(raw_paths, settings=settings)
-    assert all(
-        item.blank_library_sha256 is None for item in first.acquisition_inputs
-    )
+    assert all(item.blank_library_sha256 is None for item in first.acquisition_inputs)
     assert first.run_spec_id == second.run_spec_id
 
 

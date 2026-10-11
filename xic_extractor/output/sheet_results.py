@@ -1,108 +1,109 @@
 from __future__ import annotations
 
+from openpyxl.comments import Comment
+from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 
-from xic_extractor.output.reason_display import (
-    display_conflicts_and_concerns,
-    display_supporting_evidence,
-)
-from xic_extractor.output.schema import LONG_ADVANCED_HEADERS as _ADVANCED_HEADERS
-from xic_extractor.output.schema import LONG_HEADERS as _LONG_HEADERS
+from xic_extractor.output.schema import WORKBOOK_DETAIL_HEADERS, WORKBOOK_RESULT_HEADERS
 from xic_extractor.output.workbook_styles import (
     _MS2_HEADER,
     _SAMPLE_HEADER,
     BORDER,
     CENTER,
-    CENTER_WRAP,
+    _add_table,
     _apply,
     _header_style,
     _long_cell_fill,
     _long_cell_value,
     _long_column_width,
     _long_number_format,
-)
-
-_REASON_END = _LONG_HEADERS.index("Reason") + 1
-_EVIDENCE_HEADERS = ("Supporting Evidence", "Conflicts / Concerns")
-_SHEET_HEADERS = (
-    *_LONG_HEADERS[:_REASON_END],
-    *_EVIDENCE_HEADERS,
-    *_LONG_HEADERS[_REASON_END:],
+    _prepare_print_view,
 )
 
 
-def _build_data_sheet(ws, rows: list[dict[str, str]]) -> None:
-    for col_idx, header in enumerate(_SHEET_HEADERS, start=1):
-        color = _MS2_HEADER if header in _ADVANCED_HEADERS else _SAMPLE_HEADER
-        _apply(ws.cell(row=1, column=col_idx, value=header), **_header_style(color))
-    ws.row_dimensions[1].height = 30
-
-    for row_idx, row in enumerate(rows, start=2):
-        alt = row_idx % 2 == 0
-        display_fields = {
-            "Supporting Evidence": display_supporting_evidence(row),
-            "Conflicts / Concerns": display_conflicts_and_concerns(row),
+def _build_data_sheet(
+    ws, rows: list[dict[str, str]], *, review_rows: list[dict[str, str]]
+) -> None:
+    """Present the finished measurements and review routing once, per sample."""
+    review_by_key = {(r["Sample"], r["Target"]): r for r in review_rows}
+    for column, header in enumerate(WORKBOOK_RESULT_HEADERS, start=1):
+        color = _MS2_HEADER if header in WORKBOOK_DETAIL_HEADERS else _SAMPLE_HEADER
+        _apply(ws.cell(row=1, column=column, value=header), **_header_style(color))
+    descriptions = {
+        "SampleName": "樣本名稱。此欄與 Target 共同識別每一筆結果。",
+        "Target": "目標名稱。用篩選器查看單一目標的所有樣本。",
+        "Area": "峰面積（counts·s）。保留正式積分值；有數值不代表已計入偵測。",
+        "RT": "所選峰的頂點保留時間（min）。",
+        "IntSmoothed": "平滑後的峰頂強度（counts），沿用正式量測值；不是峰面積。",
+        "Int": "原始峰頂強度（counts），沿用正式量測值。",
+        "PeakWidth": "所選峰的寬度（min）。",
+        "Counted Detection": (
+            "是否計入偵測：TRUE＝已計入；FALSE＝未計入。與檢閱註記分開判讀。"
+        ),
+        "Review": ("Review／Check＝尚待處理的結果。空白表示沒有待處理事項。"),
+        "Review Reason": (
+            "白話檢閱說明。完整原因、下一步與原始事件可在 Diagnostics 查看。"
+        ),
+    }
+    for column, header in enumerate(WORKBOOK_RESULT_HEADERS, start=1):
+        if header in descriptions:
+            ws.cell(1, column).comment = Comment(descriptions[header], "XIC Extractor")
+    ws.row_dimensions[1].height = 32
+    for row_index, row in enumerate(rows, start=2):
+        review = review_by_key.get(
+            (row.get("SampleName", ""), row.get("Target", "")), {}
+        )
+        values = row | {
+            "Review": review.get("Status", ""),
+            "Review Reason": review.get("Why", ""),
+            "Review Evidence": review.get("Evidence", ""),
         }
-        for col_idx, header in enumerate(_SHEET_HEADERS, start=1):
-            raw_val = display_fields.get(header, row.get(header, ""))
-            cell = ws.cell(row=row_idx, column=col_idx)
-            value = _long_cell_value(header, raw_val)
-            cell.value = value
+        for column, header in enumerate(WORKBOOK_RESULT_HEADERS, start=1):
+            raw = values.get(header, "")
+            cell = ws.cell(row=row_index, column=column)
+            cell.value = _long_cell_value(header, raw)
             _apply(
                 cell,
-                fill=_long_cell_fill(header, raw_val, alt),
+                fill=_long_cell_fill(header, raw, row_index % 2 == 0),
                 alignment=(
-                    CENTER_WRAP
-                    if header in {"Reason", "NL Evidence", *_EVIDENCE_HEADERS}
-                    else CENTER
+                    Alignment(horizontal="left", vertical="center", wrap_text=True)
+                    if header
+                    in {
+                        "SampleName",
+                        "Target",
+                        "Review Reason",
+                        "Reason",
+                        "NL Evidence",
+                    }
+                    else (
+                        Alignment(horizontal="right", vertical="center")
+                        if header
+                        in {
+                            "Area",
+                            "RT",
+                            "IntSmoothed",
+                            "Int",
+                            "PeakWidth",
+                            "PeakStart",
+                            "PeakEnd",
+                        }
+                        else CENTER
+                    )
                 ),
                 border=BORDER,
             )
-            if isinstance(value, float):
+            if isinstance(cell.value, float):
                 cell.number_format = _long_number_format(header)
-
+        ws.row_dimensions[row_index].height = 26
     ws.auto_filter.ref = (
-        f"A1:{get_column_letter(len(_SHEET_HEADERS))}{max(1, len(rows) + 1)}"
+        f"A1:{get_column_letter(len(WORKBOOK_RESULT_HEADERS))}{max(1, len(rows) + 1)}"
     )
-    ws.freeze_panes = "A2"
-    for col_idx, header in enumerate(_SHEET_HEADERS, start=1):
-        letter = get_column_letter(col_idx)
-        ws.column_dimensions[letter].width = (
-            48 if header in _EVIDENCE_HEADERS else _long_column_width(header)
-        )
-        if header in _ADVANCED_HEADERS:
-            ws.column_dimensions[letter].hidden = True
-            ws.column_dimensions[letter].outlineLevel = 1
-    _merge_repeated_identity_cells(ws, rows)
-
-
-def _merge_repeated_identity_cells(ws, rows: list[dict[str, str]]) -> None:
-    if not rows:
-        return
-    block_start = 2
-    previous = _identity_key(rows[0])
-    for offset, row in enumerate(rows[1:], start=3):
-        current = _identity_key(row)
-        if current == previous:
-            continue
-        _merge_identity_block(ws, block_start, offset - 1)
-        block_start = offset
-        previous = current
-    _merge_identity_block(ws, block_start, len(rows) + 1)
-
-
-def _identity_key(row: dict[str, str]) -> tuple[str, str]:
-    return row.get("SampleName", ""), row.get("Group", "")
-
-
-def _merge_identity_block(ws, start_row: int, end_row: int) -> None:
-    if end_row <= start_row:
-        return
-    for column in (1, 2):
-        ws.merge_cells(
-            start_row=start_row,
-            start_column=column,
-            end_row=end_row,
-            end_column=column,
-        )
-        ws.cell(row=start_row, column=column).alignment = CENTER_WRAP
+    ws.freeze_panes = "C2"
+    _add_table(ws, "TargetedResults", ws.auto_filter.ref)
+    _prepare_print_view(ws, area=f"A1:F{max(2, len(rows) + 1)}")
+    for column, header in enumerate(WORKBOOK_RESULT_HEADERS, start=1):
+        dimension = ws.column_dimensions[get_column_letter(column)]
+        dimension.width = _long_column_width(header)
+        if header in WORKBOOK_DETAIL_HEADERS:
+            dimension.hidden = True
+            dimension.outlineLevel = 1

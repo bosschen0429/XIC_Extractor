@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
+from xic_extractor.evidence.neutral_loss import (
+    CandidateMS2Evidence,
+    MS2ProductEvidence,
+    NLResult,
+)
 from xic_extractor.extraction.scoring_factory import selected_candidate
 from xic_extractor.output.messages import (
     DiagnosticRecord,
@@ -12,13 +16,14 @@ from xic_extractor.output.messages import (
 from xic_extractor.output.targeted_product_model import (
     TargetedProductProjection,
 )
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlEvaluationReceipt,
+    CidNlMethodRelations,
+)
 from xic_extractor.peak_detection.hypotheses import (
     IntegrationResult,
     PeakHypothesis,
     validate_peak_hypothesis_selection_authority,
-)
-from xic_extractor.peak_detection.model_selection import (
-    PeakModelSelectionResult,
 )
 from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
@@ -46,9 +51,13 @@ class ExtractionResult:
     score_breakdown: tuple[tuple[str, str], ...] = ()
     selected_hypothesis: PeakHypothesis | None = None
     selection_decision: PeakHypothesisSelectionDecision | None = None
-    model_selection_result: PeakModelSelectionResult | None = None
     acquisition_trace: Trace | None = None
     physical_evaluation: PhysicalPeakEvaluation | None = None
+    candidate_physical_evaluations: tuple[PhysicalPeakEvaluation, ...] = ()
+    cid_nl_products: tuple[MS2ProductEvidence, ...] = ()
+    cid_nl_evaluation_receipt: CidNlEvaluationReceipt | None = None
+    cid_nl_relations: CidNlMethodRelations | None = None
+    selected_cid_nl_candidate_index: int | None = None
     targeted_product_projection: TargetedProductProjection | None = None
 
     def __post_init__(self) -> None:
@@ -61,6 +70,14 @@ class ExtractionResult:
     @property
     def peak(self) -> PeakResult | None:
         return self.peak_result.peak
+
+    @property
+    def selected_cid_nl_supported(self) -> bool:
+        return (
+            self.cid_nl_relations is not None
+            and self.selected_cid_nl_candidate_index
+            in self.cid_nl_relations.supported_candidate_indexes
+        )
 
     @property
     def nl_result(self) -> NLResult | None:

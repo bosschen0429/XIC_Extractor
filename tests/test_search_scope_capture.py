@@ -262,9 +262,14 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
     assert rebound.scope is child_scope
     assert rebound.trace is untargeted_capture.trace
     assert rebound.selected_hypothesis is untargeted_capture.selected_hypothesis
-    assert capture_owner.mint_captured_peak_observation(
-        rebound, processing_owners=untargeted_fixture.owners, sample=untargeted_sample
-    ) == untargeted_observation
+    assert (
+        capture_owner.mint_captured_peak_observation(
+            rebound,
+            processing_owners=untargeted_fixture.owners,
+            sample=untargeted_sample,
+        )
+        == untargeted_observation
+    )
     for changed in (
         replace(
             child_scope,
@@ -377,31 +382,28 @@ def test_capture_binds_trace_coordinates_to_both_scope_variants(
         declared_candidate_ids=("candidate-a",),
         capture_bindings=(untargeted_binding,),
     )
-    with pytest.raises(
-        SearchScopeContractError,
-        match="outside configured Target RT interval",
-    ):
-        TargetSearchScope(
-            schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-            request=targeted_fixture.request,
-            samples=targeted_fixture.samples,
-            method_constraints=CaptureMethodConstraints(
-                boundary_policy="resolver_interval",
-                peak_config=peak_config,
+    outside_hint_scope = TargetSearchScope(
+        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
+        request=targeted_fixture.request,
+        samples=targeted_fixture.samples,
+        method_constraints=CaptureMethodConstraints(
+            boundary_policy="resolver_interval",
+            peak_config=peak_config,
+        ),
+        evidence_providers=targeted_scope.evidence_providers,
+        declared_candidate_ids=("candidate-a",),
+        capture_bindings=(
+            replace(
+                targeted_binding,
+                query_rt_min=7.0,
+                query_rt_max=9.5,
+                preferred_rt=9.0,
             ),
-            evidence_providers=targeted_scope.evidence_providers,
-            declared_candidate_ids=("candidate-a",),
-            capture_bindings=(
-                replace(
-                    targeted_binding,
-                    query_rt_min=7.0,
-                    query_rt_max=9.5,
-                    preferred_rt=9.0,
-                ),
-            ),
-            target_snapshot=targeted_fixture.target.snapshot,
-            target=targeted_fixture.target,
-        )
+        ),
+        target_snapshot=targeted_fixture.target.snapshot,
+        target=targeted_fixture.target,
+    )
+    assert outside_hint_scope.capture_bindings[0].preferred_rt == 9.0
     targeted_trace = Trace.from_arrays(
         sample_name=targeted_sample.metadata.sample_name,
         mz=targeted_subject.precursor_mz,
@@ -818,8 +820,7 @@ def test_untargeted_batch_scope_accepts_known_comparison_bridged_workset(
         )
     )
     subject_by_mz_loss = {
-        (subject.precursor_mz, subject.neutral_loss_da): subject
-        for subject in subjects
+        (subject.precursor_mz, subject.neutral_loss_da): subject for subject in subjects
     }
     memberships = tuple(
         (

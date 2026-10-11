@@ -208,11 +208,11 @@ def test_review_owner_mints_digest_and_typed_id_from_immutable_content() -> None
     )
     assert first.review_record_id == (
         "xic.review-record:"
-        "a6649c89264524e9a20ddce778db6e5cc17a0b77357b8799c920c373ce5ff3dc"
+        "2640212250057d863b7668e549be6b2a2914e63b71f9cb7218a94212bcdc0046"
     )
     assert _review_snapshot(first).snapshot_id == (
         "xic.review-record-snapshot:"
-        "443171dbc764cca1b29e8bdcd6b9cef0f342f1593e17dbd576673d053c66b16f"
+        "8fd9ef39ee3da6bdfb754ddc685d525cd689c995c993f049fefaf4c054e09fe4"
     )
     assert changed.review_record_id != first.review_record_id
     assert changed.content_sha256 != first.content_sha256

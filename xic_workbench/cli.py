@@ -19,7 +19,9 @@ def main(argv: list[str] | None = None) -> int:
         description="Local HTML workspace for XIC analysis and result review"
     )
     parser.add_argument(
-        "source", nargs="?", help="Batch output folder or cid_nl_explanation.sqlite"
+        "source",
+        nargs="?",
+        help="Batch output folder, Targeted XLSX, or cid_nl_explanation.sqlite",
     )
     parser.add_argument("--raw-dir", default=os.environ.get("XIC_RAW_ROOT", ""))
     parser.add_argument(

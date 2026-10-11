@@ -26,12 +26,7 @@ _ALLOWED_SHARD_OVERLAPS: dict[Path, tuple[str, ...]] = {
         "product-gates-evidence",
     ),
     Path("tests/test_ms1_scan_index.py"): ("alignment-core", "product-gates-evidence"),
-    Path("tests/test_peak_model_selection.py"): ("docs-config", "targeted-core"),
     Path("tests/test_pt_pattern_presets.py"): ("docs-config", "alignment-core"),
-    Path("tests/test_target_pair_rt_calibration.py"): (
-        "targeted-core",
-        "product-gates-evidence",
-    ),
     Path("tests/test_targeted_manual_validation.py"): (
         "targeted-core",
         "product-gates-evidence",
@@ -69,8 +64,7 @@ def test_test_shard_coverage_hook_routes_staged_tests_to_owner(
 
     hook = hooks["test-shard-coverage"]
     assert hook["entry"] == (
-        "uv run --cache-dir .uv-cache python -m "
-        "tools.testing.test_shards --check"
+        "uv run --cache-dir .uv-cache python -m tools.testing.test_shards --check"
     )
     assert hook["files"] == r"^(tests/.*\.py|tools/testing/test_shards\.py)$"
     assert hook["pass_filenames"] is False
@@ -103,7 +97,6 @@ def test_test_shards_keep_changed_shard_contracts() -> None:
         (
             Path("tests/test_discovery_worker.py"),
             Path("tests/test_pyinstaller_spec.py"),
-            Path("tests/test_peak_model_selection.py"),
             Path("tests/test_alignment_pipeline_outputs.py"),
             Path("tests/test_processing_run_spec.py"),
             Path("tests/test_processing_run_spec_architecture.py"),
@@ -111,16 +104,13 @@ def test_test_shards_keep_changed_shard_contracts() -> None:
             Path("tests/test_physical_peak_evaluation_persistence.py"),
             Path("tests/test_run_discovery_run_spec_cli.py"),
             Path("tests/test_process_job_execution.py"),
-            Path("tests/test_targeted_ms1_shape_identity.py"),
+            Path("tests/test_evidence_artifacts.py"),
         )
     )
 
-    assert assigned["workbench"] == (
-        Path("tests/test_discovery_worker.py"),
-    )
+    assert assigned["workbench"] == (Path("tests/test_discovery_worker.py"),)
     assert assigned["docs-config"] == (
         Path("tests/test_pyinstaller_spec.py"),
-        Path("tests/test_peak_model_selection.py"),
     )
     assert assigned["alignment-core"] == (
         Path("tests/test_alignment_pipeline_outputs.py"),
@@ -142,7 +132,7 @@ def test_test_shards_keep_changed_shard_contracts() -> None:
         assert _matching_shards(path) == ("alignment-core",)
         assert shard_for_path(path) == "alignment-core"
     assert assigned["product-gates-evidence"] == (
-        Path("tests/test_targeted_ms1_shape_identity.py"),
+        Path("tests/test_evidence_artifacts.py"),
     )
 
 
@@ -321,10 +311,13 @@ def test_marker_intersection_handles_every_pytest_option_shape(
     pytest_args: tuple[str, ...],
     expected: tuple[str, ...],
 ) -> None:
-    assert test_shards._intersect_marker_selection(
-        pytest_args,
-        required="owned",
-    ) == expected
+    assert (
+        test_shards._intersect_marker_selection(
+            pytest_args,
+            required="owned",
+        )
+        == expected
+    )
 
 
 @pytest.mark.parametrize(
@@ -424,9 +417,7 @@ def test_local_shard_skips_markers_unrelated_to_the_change(
 
     expression = _capture_shard_marker(monkeypatch)
 
-    assert expression == (
-        "not ledger_snapshot and not packaging_build"
-    )
+    assert expression == ("not ledger_snapshot and not packaging_build")
     assert _capture_shard_marker(monkeypatch, all_markers=True) == "not ledger_snapshot"
 
 
