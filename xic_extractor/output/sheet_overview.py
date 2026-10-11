@@ -7,12 +7,18 @@ from collections.abc import Mapping, Sequence
 from math import ceil, floor
 
 from openpyxl.chart import BarChart, Reference, ScatterChart, Series
+from openpyxl.chart.axis import ChartLines
+from openpyxl.chart.layout import Layout, ManualLayout
 from openpyxl.chart.marker import Marker
 from openpyxl.chart.series import SeriesLabel
+from openpyxl.chart.shapes import GraphicalProperties
 from openpyxl.chart.text import RichText
+from openpyxl.drawing.spreadsheet_drawing import AnchorMarker, TwoCellAnchor
 from openpyxl.drawing.text import CharacterProperties, Paragraph, ParagraphProperties
+from openpyxl.drawing.text import Font as DrawingFont
 from openpyxl.styles import Alignment, Font
 from openpyxl.utils import get_column_letter
+from openpyxl.utils.units import pixels_to_EMU
 
 from xic_extractor.output.targeted_overview import (
     TargetedOverview,
@@ -23,12 +29,10 @@ from xic_extractor.output.targeted_overview import (
 from xic_extractor.output.workbook_styles import (
     ACCENT,
     BORDER,
-    CAUTION,
     GREY,
     INK,
     MUTED,
     REPORT_FONT,
-    SUCCESS,
     WHITE,
     _apply,
     _fill,
@@ -47,10 +51,12 @@ def build_overview_sheet(
 ) -> None:
     overview = summarize_targeted_results(rows, review_rows)
     for column in range(1, 13):
-        ws.column_dimensions[get_column_letter(column)].width = 12
+        ws.column_dimensions[get_column_letter(column)].width = 10.5
     for row in range(1, 34):
-        ws.row_dimensions[row].height = 22
-    _line(ws, 2, "Targeted 結果總覽", size=22, bold=True)
+        ws.row_dimensions[row].height = 14
+    for row in (1, 5, 9, 11, 23, 24, 26):
+        ws.row_dimensions[row].height = 6
+    _line(ws, 2, "Targeted 結果總覽", size=20, bold=True)
     _line(
         ws,
         3,
@@ -66,19 +72,18 @@ def build_overview_sheet(
     if has_diagnostics:
         _link(ws, 4, 4, "檢閱原因與下一步", "'Diagnostics'!A1", span=3)
     cards = (
-        (1, "計入偵測", f"{overview.counted_count} / {overview.result_count}", SUCCESS),
+        (1, "計入偵測", f"{overview.counted_count} / {overview.result_count}"),
         (
             5,
             "未計入偵測",
             overview.result_count - overview.counted_count - overview.count_unknown,
-            CAUTION,
         ),
-        (9, "有檢閱註記", overview.review_count, GREY),
+        (9, "有檢閱註記", overview.review_count),
     )
-    for column, label, value, color in cards:
+    for column, label, value in cards:
         for row in (6, 7, 8):
             for offset in range(4):
-                ws.cell(row, column + offset).fill = _fill(color)
+                ws.cell(row, column + offset).fill = _fill(WHITE)
         ws.merge_cells(
             start_row=6, start_column=column, end_row=6, end_column=column + 3
         )
@@ -87,13 +92,17 @@ def build_overview_sheet(
         )
         _apply(
             ws.cell(6, column, label),
-            alignment=Alignment(horizontal="left", vertical="center", indent=1),
+            font=Font(name=REPORT_FONT, size=10, color=MUTED),
+            alignment=Alignment(horizontal="left", vertical="center"),
         )
         _apply(
             ws.cell(7, column, value),
-            font=Font(name=REPORT_FONT, size=23, bold=True, color=INK),
-            alignment=Alignment(horizontal="left", vertical="center", indent=1),
+            font=Font(name=REPORT_FONT, size=22, bold=True, color=INK),
+            alignment=Alignment(horizontal="left", vertical="center"),
         )
+    ws.row_dimensions[6].height = 20
+    ws.row_dimensions[7].height = 18
+    ws.row_dimensions[8].height = 16
     note = "計入偵測與檢閱註記是兩件事；例如回填確認的 ISTD 仍會保留 NL 未支持的註記。"
     if overview.count_unknown:
         note = (
@@ -101,6 +110,17 @@ def build_overview_sheet(
             + note
         )
     _line(ws, 10, note)
+    for column, title in (
+        (1, "各目標的計數結果（筆）"),
+        (7, "已計入結果的 RT 分布（min）"),
+    ):
+        ws.merge_cells(
+            start_row=11, start_column=column, end_row=11, end_column=column + 5
+        )
+        ws.cell(11, column, title).font = Font(
+            name=REPORT_FONT, size=11, bold=True, color=INK
+        )
+    ws.row_dimensions[11].height = 26
     if overview.targets:
         _add_count_chart(ws, overview)
     if not _add_rt_chart(ws, rows, overview):
@@ -163,7 +183,7 @@ def build_overview_sheet(
                 wrap_text=True,
             )
         _link(ws, index, 11, "查看量測", f"'XIC Results'!A{first_row[target.label]}")
-        ws.row_dimensions[index].height = 34
+        ws.row_dimensions[index].height = 26
     end = 30 + len(overview.targets)
     _line(
         ws,
@@ -181,6 +201,12 @@ def build_overview_sheet(
     )
     ws.freeze_panes = "A5"
     _prepare_print_view(ws, area=f"A1:L{end + 1}", repeat_rows="2:4")
+    # The landing report is one printed page for a small target list; larger
+    # batches continue naturally rather than shrinking their text to fit.
+    if len(overview.targets) <= 6:
+        ws.page_setup.fitToHeight = 1
+    ws.row_dimensions[4].height = 22
+    ws.row_dimensions[28].height = 28
 
 
 def _line(ws, row: int, text: str, *, size: int = 11, bold: bool = False) -> None:
@@ -190,7 +216,7 @@ def _line(ws, row: int, text: str, *, size: int = 11, bold: bool = False) -> Non
         name=REPORT_FONT, size=size, bold=bold, color=INK if size > 10 else MUTED
     )
     cell.alignment = Alignment(vertical="center", wrap_text=True)
-    ws.row_dimensions[row].height = 36 if size > 18 else 28
+    ws.row_dimensions[row].height = 32 if size > 18 else 24 if bold else 22
 
 
 def _link(
@@ -211,8 +237,73 @@ def _link(
 
 def _chart_text() -> RichText:
     return RichText(
-        p=[Paragraph(pPr=ParagraphProperties(defRPr=CharacterProperties(sz=1000)))]
+        p=[
+            Paragraph(
+                pPr=ParagraphProperties(
+                    defRPr=CharacterProperties(
+                        sz=900,
+                        solidFill=MUTED,
+                        latin=DrawingFont(typeface=REPORT_FONT),
+                        ea=DrawingFont(typeface=REPORT_FONT),
+                    )
+                )
+            )
+        ]
     )
+
+
+def _style_chart(chart, *, left: float) -> None:
+    """Specify native Excel layout instead of relying on renderer defaults."""
+    chart.style = 2
+    chart.graphical_properties = GraphicalProperties(solidFill=WHITE)
+    chart.graphical_properties.line.noFill = True
+    chart.plot_area.spPr = GraphicalProperties(solidFill=WHITE)
+    chart.plot_area.spPr.line.noFill = True
+    chart.layout = Layout(
+        manualLayout=ManualLayout(
+            x=left,
+            y=0.04,
+            w=0.95 - left,
+            h=0.64,
+            layoutTarget="inner",
+            xMode="factor",
+            yMode="factor",
+            wMode="factor",
+            hMode="factor",
+        )
+    )
+    chart.legend.position = "b"
+    chart.legend.overlay = False
+    chart.legend.layout = Layout(
+        manualLayout=ManualLayout(
+            x=0.06,
+            y=0.88,
+            w=0.88,
+            h=0.10,
+            xMode="factor",
+            yMode="factor",
+            wMode="factor",
+            hMode="factor",
+        )
+    )
+    chart.legend.txPr = _chart_text()
+    chart.txPr = _chart_text()
+    # Captions and units are worksheet text, keeping chart labels away from
+    # legends in Excel's native layout (which differs from preview renderers).
+    chart.title = None
+    for axis in (chart.x_axis, chart.y_axis):
+        axis.title = None
+        axis.delete = False
+        axis.tickLblPos = "nextTo"
+        axis.txPr = _chart_text()
+        axis.majorTickMark = "none"
+        axis.majorGridlines = None
+        axis.spPr = GraphicalProperties()
+        axis.spPr.line.solidFill = "D6DEE7"
+    grid = GraphicalProperties()
+    grid.line.solidFill = "E7ECF1"
+    grid.line.width = 6350
+    chart.y_axis.majorGridlines = ChartLines(spPr=grid)
 
 
 def _add_count_chart(ws, overview: TargetedOverview) -> None:
@@ -241,10 +332,9 @@ def _add_count_chart(ws, overview: TargetedOverview) -> None:
     chart.y_axis.axPos = "b"
     chart.y_axis.scaling.min = 0
     chart.y_axis.scaling.max = max(target.total for target in overview.targets)
+    chart.y_axis.majorUnit = max(1, ceil(chart.y_axis.scaling.max / 5))
     chart.y_axis.numFmt = "0"
-    chart.height, chart.width = 8.5, 13.5
-    chart.legend.position = "b"
-    chart.txPr = _chart_text()
+    _style_chart(chart, left=0.24)
     chart.visible_cells_only = False
     chart.add_data(
         Reference(
@@ -264,7 +354,13 @@ def _add_count_chart(ws, overview: TargetedOverview) -> None:
         series.tx = SeriesLabel(v=title)
         series.graphicalProperties.solidFill = color
         series.graphicalProperties.line.noFill = True
-    ws.add_chart(chart, "A12")
+    ws.add_chart(
+        chart,
+        TwoCellAnchor(
+            _from=AnchorMarker(col=0, row=11),
+            to=AnchorMarker(col=6, row=23, colOff=-pixels_to_EMU(10)),
+        ),
+    )
     ws.column_dimensions.group("N", "Q", hidden=True)
 
 
@@ -287,9 +383,8 @@ def _add_rt_chart(
     chart.y_axis.numFmt = "0.0"
     chart.x_axis.scaling.min = 0
     chart.x_axis.scaling.max = max(2, len(samples) + 1)
-    chart.height, chart.width = 8.5, 13.5
-    chart.legend.position = "b"
-    chart.txPr = _chart_text()
+    chart.x_axis.majorUnit = max(1, ceil((len(samples) + 1) / 6))
+    _style_chart(chart, left=0.14)
     chart.scatterStyle = "marker"
     chart.visible_cells_only = False
     palette = ("356D95", "8E678F", "497F6B", "BA844C", "737EB1", "7A8572")
@@ -326,6 +421,12 @@ def _add_rt_chart(
         return False
     chart.y_axis.scaling.min = floor(min(rt_values) - 0.1)
     chart.y_axis.scaling.max = ceil(max(rt_values) + 0.1)
-    ws.add_chart(chart, "G12")
+    ws.add_chart(
+        chart,
+        TwoCellAnchor(
+            _from=AnchorMarker(col=6, row=11),
+            to=AnchorMarker(col=12, row=23, colOff=-pixels_to_EMU(10)),
+        ),
+    )
     ws.column_dimensions.group("S", get_column_letter(column - 1), hidden=True)
     return True

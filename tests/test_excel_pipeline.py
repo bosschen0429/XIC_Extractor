@@ -35,6 +35,10 @@ def test_workbook_filters_belong_to_tables_not_overlapping_worksheet_ranges(tmp_
     )
     ns = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
     with ZipFile(path) as archive:
+        assert (
+            len([name for name in archive.namelist() if name.startswith("xl/tables/")])
+            == 4
+        )
         for name in archive.namelist():
             if name.startswith("xl/worksheets/sheet"):
                 sheet = ElementTree.fromstring(archive.read(name))
@@ -46,6 +50,9 @@ def test_workbook_filters_belong_to_tables_not_overlapping_worksheet_ranges(tmp_
                 table_filter = table.find("s:autoFilter", ns)
                 assert table_filter is not None
                 assert table_filter.attrib["ref"] == table.attrib["ref"]
+    book = load_workbook(path)
+    assert str(book["Run Metadata"].print_area) == "'Run Metadata'!$A$1:$C$19"
+    book.close()
 
 
 def test_workbook_retains_nonempty_decision_inputs_without_sidecars(tmp_path):

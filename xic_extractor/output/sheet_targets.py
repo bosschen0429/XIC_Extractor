@@ -46,7 +46,7 @@ def _build_targets_sheet(ws, targets: list[Target]) -> None:
     }
     for address, note in notes.items():
         ws[address].comment = Comment(note, "XIC Extractor")
-    ws.row_dimensions[1].height = 38
+    ws.row_dimensions[1].height = 32
 
     for row_idx, target in enumerate(targets, start=2):
         fill_hex = GREY if row_idx % 2 == 0 else WHITE
@@ -87,7 +87,7 @@ def _build_targets_sheet(ws, targets: list[Target]) -> None:
                     cell.number_format = "0.0000"
                 elif header in {"RT min", "RT max"}:
                     cell.number_format = "0.00"
-        ws.row_dimensions[row_idx].height = 34
+        ws.row_dimensions[row_idx].height = 28
 
     widths = [24, 12, 24, 14, 10, 10, 10, 12, 22, 14, 14, 24]
     for col_idx, width in enumerate(widths, start=1):

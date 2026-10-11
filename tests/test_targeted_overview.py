@@ -98,6 +98,16 @@ def test_overview_workbook_charts_saved_counts_and_links_to_result_rows(
     assert sheet["A29"].value == "Analyte"
     assert sheet["K29"].hyperlink.target == "#'XIC Results'!A4"
     assert len(sheet._charts) == 2
+    left_chart, right_chart = sheet._charts
+    assert left_chart.anchor.to.col == right_chart.anchor._from.col == 6
+    assert left_chart.anchor.to.colOff < 0
+    assert right_chart.anchor.to.col == 12
+    assert all(
+        not axis.delete and axis.tickLblPos == "nextTo"
+        for chart in sheet._charts
+        for axis in (chart.x_axis, chart.y_axis)
+    )
+    assert sheet.page_setup.fitToHeight == 1
     assert [sheet.cell(row, 15).value for row in (2, 3)] == [0, 2]
     assert [sheet.cell(row, 16).value for row in (2, 3)] == [2, 0]
     assert [sheet.cell(row, 17).value for row in (2, 3)] == [0, 0]

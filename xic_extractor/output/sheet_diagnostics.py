@@ -18,7 +18,6 @@ from xic_extractor.output.workbook_styles import (
     INK,
     MUTED,
     REPORT_FONT,
-    SUCCESS,
     WHITE,
     _add_table,
     _apply,
@@ -26,7 +25,7 @@ from xic_extractor.output.workbook_styles import (
     _header_style,
     _long_cell_value,
     _prepare_print_view,
-    _wrap_prose,
+    _prose_line_count,
 )
 from xic_extractor.output.workbook_values import _excel_text
 
@@ -56,24 +55,24 @@ def build_diagnostics_sheet(
     ]
     worklist = [*review_rows, *_review_queue_rows(orphan_rows, rows)]
     worklist.sort(key=lambda row: (int(row["Priority"]), row["Sample"], row["Target"]))
-    widths = (38, 17, 11, 48, 39, 12, 19, 11, 12)
+    widths = (35, 15, 10, 48, 38, 12, 19, 11, 11)
     for index, width in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(index)].width = width
     for row, text, size in (
-        (2, "結果檢閱與原因說明", 21),
-        (3, "每個樣本／目標只列一次。已計入與需檢閱可以同時成立。", 11),
+        (2, "結果檢閱與原因說明", 20),
+        (3, "每個樣本／目標只列一次。已計入與需檢閱可以同時成立。", 10),
         (
             5,
             f"{len(worklist)} 筆結果有註記；"
             f"原始 {len(rows)} 筆事件保留在下方，可展開查看。",
-            11,
+            10,
         ),
     ):
         ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=9)
         cell = ws.cell(row, 1, text)
         cell.font = Font(name=REPORT_FONT, size=size, bold=size > 12, color=INK)
         cell.alignment = Alignment(vertical="center", wrap_text=True)
-        ws.row_dimensions[row].height = 34 if size > 12 else 26
+        ws.row_dimensions[row].height = 32 if size > 12 else 22
     ws["A4"] = "返回總覽"
     ws["A4"].hyperlink = "#'Overview'!A1"
     ws["B4"] = "全部結果"
@@ -94,7 +93,10 @@ def build_diagnostics_sheet(
     )
     for column, header in enumerate(headers, 1):
         _apply(ws.cell(7, column, header), **_header_style(INK))
-    ws.row_dimensions[7].height = 34
+    ws.row_dimensions[1].height = 8
+    ws.row_dimensions[4].height = 22
+    ws.row_dimensions[6].height = 8
+    ws.row_dimensions[7].height = 30
     raw_heading = 10 + len(worklist)
     for index, record in enumerate(worklist, 8):
         key = (record["Sample"], record["Target"])
@@ -103,8 +105,8 @@ def build_diagnostics_sheet(
             record["Sample"],
             record["Target"],
             record["Outcome"],
-            _wrap_prose(record["Why"], 44),
-            _wrap_prose(record["Action"], 36),
+            record["Why"],
+            record["Action"],
             _long_cell_value("RT", record["RT"]),
             _long_cell_value("Area", record["Area"]),
             "查看結果"
@@ -115,8 +117,8 @@ def build_diagnostics_sheet(
         for column, value in enumerate(values, 1):
             cell = ws.cell(index, column, _excel_text(value))
             color = GREY if index % 2 == 0 else WHITE
-            if column == 3:
-                color = SUCCESS if record["Outcome"] == "已計入" else CAUTION
+            if column == 3 and record["Outcome"] != "已計入":
+                color = CAUTION
             _apply(
                 cell,
                 fill=_fill(color),
@@ -142,8 +144,11 @@ def build_diagnostics_sheet(
         ws.cell(index, 9).font = Font(
             name=REPORT_FONT, color=ACCENT, underline="single"
         )
-        lines = max(str(values[3]).count("\n") + 1, str(values[4]).count("\n") + 1)
-        ws.row_dimensions[index].height = max(52, lines * 19 + 14)
+        lines = max(
+            _prose_line_count(record["Why"], 54),
+            _prose_line_count(record["Action"], 42),
+        )
+        ws.row_dimensions[index].height = max(44, lines * 15 + 12)
     if worklist:
         ws.auto_filter.ref = f"A7:I{7 + len(worklist)}"
         _add_table(ws, "TargetedReview", ws.auto_filter.ref)

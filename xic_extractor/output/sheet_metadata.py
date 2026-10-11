@@ -74,13 +74,13 @@ def _build_metadata_sheet(
             border=BORDER,
             alignment=Alignment(horizontal="left", vertical="center", wrap_text=True),
         )
-        ws.row_dimensions[row_idx].height = 38
+        ws.row_dimensions[row_idx].height = 28
 
     ws.column_dimensions["A"].width = 39
     ws.column_dimensions["B"].width = 29
     ws.column_dimensions["C"].width = 67
-    ws.row_dimensions[1].height = 34
+    ws.row_dimensions[1].height = 32
     ws.freeze_panes = "A2"
-    ws.auto_filter.ref = f"A1:C{ws.max_row}"
-    _add_table(ws, "TargetedRunMetadata", ws.auto_filter.ref)
-    _prepare_print_view(ws, area=ws.auto_filter.ref)
+    reference = f"A1:C{ws.max_row}"
+    _add_table(ws, "TargetedRunMetadata", reference)
+    _prepare_print_view(ws, area=reference)

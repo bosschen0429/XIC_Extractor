@@ -18,7 +18,7 @@ from xic_extractor.output.workbook_styles import (
     _long_column_width,
     _long_number_format,
     _prepare_print_view,
-    _wrap_prose,
+    _prose_line_count,
 )
 
 
@@ -48,7 +48,7 @@ def _build_data_sheet(
     for column, header in enumerate(WORKBOOK_RESULT_HEADERS, start=1):
         if header in descriptions:
             ws.cell(1, column).comment = Comment(descriptions[header], "XIC Extractor")
-    ws.row_dimensions[1].height = 38
+    ws.row_dimensions[1].height = 32
     for row_index, row in enumerate(rows, start=2):
         review = review_by_key.get(
             (row.get("SampleName", ""), row.get("Target", "")), {}
@@ -61,9 +61,7 @@ def _build_data_sheet(
         for column, header in enumerate(WORKBOOK_RESULT_HEADERS, start=1):
             raw = values.get(header, "")
             cell = ws.cell(row=row_index, column=column)
-            cell.value = _long_cell_value(
-                header, _wrap_prose(raw, 46) if header == "Review Reason" else raw
-            )
+            cell.value = _long_cell_value(header, raw)
             _apply(
                 cell,
                 fill=_long_cell_fill(header, raw, row_index % 2 == 0),
@@ -89,7 +87,7 @@ def _build_data_sheet(
                 cell.number_format = _long_number_format(header)
         why = review.get("Why", "")
         ws.row_dimensions[row_index].height = max(
-            34, 18 * (_wrap_prose(why, 46).count("\n") + 1) + 12
+            26, 14 * _prose_line_count(why, 52) + 10
         )
     ws.auto_filter.ref = (
         f"A1:{get_column_letter(len(WORKBOOK_RESULT_HEADERS))}{max(1, len(rows) + 1)}"

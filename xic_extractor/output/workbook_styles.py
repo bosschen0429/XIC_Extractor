@@ -5,6 +5,7 @@ from unicodedata import east_asian_width
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.worksheet.page import PageMargins
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
 from xic_extractor.output.schema import WORKBOOK_DETAIL_HEADERS as _ADVANCED_HEADERS
@@ -30,8 +31,8 @@ _SAMPLE_HEADER = INK
 _RESULT_TAB = ACCENT
 _TECHNICAL_TAB = "A6B3C2"
 WHITE = "FFFFFF"
-GREY = "F3F6FA"
-_THIN = Side(style="hair", color="DCE3EC")
+GREY = "F7F9FB"
+_THIN = Side(style="thin", color="E3E8EE")
 BORDER = Border(bottom=_THIN)
 CENTER = Alignment(horizontal="center", vertical="center")
 CENTER_WRAP = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -57,15 +58,15 @@ def _fill(hex6: str) -> PatternFill:
 
 def _apply(cell, **kw: object) -> None:
     if "font" not in kw:
-        cell.font = Font(name=REPORT_FONT, size=11, color=INK)
+        cell.font = Font(name=REPORT_FONT, size=10, color=INK)
     for key, value in kw.items():
         setattr(cell, key, value)
 
 
 def _header_style(hex6: str) -> dict[str, object]:
     return {
-        "font": Font(name=REPORT_FONT, bold=True, color="FFFFFF", size=11),
-        "fill": _fill(hex6),
+        "font": Font(name=REPORT_FONT, bold=True, color=hex6, size=10),
+        "fill": _fill("EDF1F5"),
         "alignment": CENTER_WRAP,
         "border": BORDER,
     }
@@ -120,8 +121,6 @@ def _long_cell_fill(header: str, raw_val: str, alt: bool) -> PatternFill:
     if header == "NL" and raw_val:
         return _nl_cell_fill(raw_val)
     if header == "Counted Detection":
-        if raw_val.upper() == "TRUE":
-            return _fill(SUCCESS)
         if raw_val.upper() == "FALSE":
             return _fill(CAUTION)
     if header == "Review" and raw_val in {"Review", "Check"}:
@@ -145,13 +144,13 @@ def _long_number_format(header: str) -> str:
 
 def _long_column_width(header: str) -> int:
     widths = {
-        "SampleName": 38,
-        "Target": 18,
+        "SampleName": 35,
+        "Target": 16,
         "Area": 18,
-        "RT": 11,
-        "Counted Detection": 16,
-        "Review": 11,
-        "Review Reason": 50,
+        "RT": 10,
+        "Counted Detection": 14,
+        "Review": 10,
+        "Review Reason": 48,
         "Review Evidence": 42,
         "PeakStart": 14,
         "PeakEnd": 14,
@@ -165,28 +164,27 @@ def _long_column_width(header: str) -> int:
     return widths.get(header, 24)
 
 
-def _wrap_prose(text: str, width: int) -> str:
-    """Give free-text explanations stable line breaks in Excel and previews."""
-    parts: list[str] = []
+def _prose_line_count(text: str, width: int) -> int:
+    """Reserve row height without inserting line breaks into saved prose."""
+    lines = 1
     used = 0
     for token in re.findall(r"[A-Za-z0-9_./-]+|.", text, re.DOTALL):
         if token == "\n":
-            parts.append(token)
+            lines += 1
             used = 0
             continue
         size = sum(2 if east_asian_width(char) in {"W", "F"} else 1 for char in token)
         if used and used + size > width and token not in "，。；：、？！）】」》":
-            parts.append("\n")
+            lines += 1
             used = 0
-        parts.append(token)
         used += size
-    return "".join(parts)
+    return lines
 
 
 def _add_table(ws, name: str, reference: str) -> None:
     table = Table(displayName=name, ref=reference)
     table.tableStyleInfo = TableStyleInfo(
-        name="TableStyleLight9", showRowStripes=True, showColumnStripes=False
+        showRowStripes=False, showColumnStripes=False
     )
     ws.add_table(table)
     # A Table owns its filter. A second worksheet filter on the same range
@@ -197,17 +195,26 @@ def _add_table(ws, name: str, reference: str) -> None:
 def _prepare_print_view(ws, *, area: str, repeat_rows: str = "1:1") -> None:
     ws.sheet_view.showGridLines = False
     ws.sheet_view.zoomScale = 90
+    ws.sheet_format.defaultRowHeight = 24
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.orientation = "landscape"
     ws.page_setup.paperSize = ws.PAPERSIZE_A4
     ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
+    ws.print_options.horizontalCentered = True
+    ws.page_margins = PageMargins(
+        left=0.3, right=0.3, top=0.35, bottom=0.35, header=0.15, footer=0.15
+    )
     ws.print_area = area
     ws.print_title_rows = repeat_rows
     ws.sheet_properties.outlinePr.summaryRight = False
     ws.sheet_properties.outlinePr.summaryBelow = False
     ws.oddFooter.left.text = "XIC Extractor"
     ws.oddFooter.right.text = "&A  |  &P / &N"
+    for part in (ws.oddFooter.left, ws.oddFooter.right):
+        part.font = "Calibri,Regular"
+        part.size = 8
+        part.color = MUTED
 
 
 def _apply_sheet_role_styles(wb: Workbook) -> None:
