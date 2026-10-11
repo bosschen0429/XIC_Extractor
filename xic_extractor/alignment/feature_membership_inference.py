@@ -17,10 +17,14 @@ from xic_extractor.alignment.edge_scoring import (
     DriftLookupProtocol,
     OwnerEdgeEvidence,
     RTEvidenceBasis,
-    _compatible_composite_owners,
     _drift_corrected_delta_sec,
-    _seed_support_level,
     evaluate_owner_edge,
+)
+from xic_extractor.alignment.grouping_evidence import (
+    compatible_composite_owners,
+    grouping_chemistry_key,
+    owner_composite_subject_id,
+    owner_uncertainty_reason,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import PeakTrajectories
@@ -396,17 +400,12 @@ class _FeatureTrack:
             loss_min=0.0 if event is None else event.observed_neutral_loss_da,
             loss_max=0.0 if event is None else event.observed_neutral_loss_da,
             neutral_loss_tag=owner.neutral_loss_tag,
-            composite_subject_id=(
-                owner.cid_nl_composite_assessment.content.method_subject.method_subject_id
-                if owner.cid_nl_composite_assessment is not None
-                and _compatible_composite_owners(owner, owner)
-                else None
-            ),
+            composite_subject_id=owner_composite_subject_id(owner),
         )
 
     def add(self, owner: SampleLocalMS1Owner) -> None:
         event = owner.primary_identity_event
-        if self.composite_subject_id is not None and not _compatible_composite_owners(
+        if self.composite_subject_id is not None and not compatible_composite_owners(
             owner, self.seed
         ):
             self.composite_subject_id = None
@@ -678,16 +677,6 @@ def infer_feature_memberships(
     )
 
 
-def _owner_chemistry(owner: SampleLocalMS1Owner) -> tuple[str, str]:
-    assessment = owner.cid_nl_composite_assessment
-    if assessment is not None and _compatible_composite_owners(owner, owner):
-        return "composition", assessment.content.method_subject.method_subject_id
-    return (
-        owner.neutral_loss_tag,
-        "cid" if owner.primary_identity_event is not None else "ms1",
-    )
-
-
 def _trajectory_seeds(
     owners: Sequence[SampleLocalMS1Owner],
     correspondence: PeakTrajectories | None,
@@ -704,7 +693,7 @@ def _trajectory_seeds(
         if not members:
             continue
         if (
-            len({_owner_chemistry(member) for member in members}) != 1
+            len({grouping_chemistry_key(member) for member in members}) != 1
             or len({member.sample_stem for member in members}) != len(members)
             or not within_ppm(
                 max(member.precursor_mz for member in members),
@@ -715,7 +704,7 @@ def _trajectory_seeds(
             continue
         owner_ids = tuple(member.owner_id for member in members)
         assigned = len(members) >= 2 and not any(
-            _owner_uncertainty_reason(member, config) for member in members
+            owner_uncertainty_reason(member, config) for member in members
         )
         reason = (
             "ordered_ms1_pattern_links_existing_owners"
@@ -919,7 +908,7 @@ def _directional_inference(
         for owner in sample_owners:
             if owner.owner_id in owner_feature:
                 continue
-            weak_reason = _owner_uncertainty_reason(owner, config)
+            weak_reason = owner_uncertainty_reason(owner, config)
             if weak_reason:
                 feature_key = f"{direction}:{owner.owner_id}"
                 place(owner.owner_id, feature_key)
@@ -1100,12 +1089,12 @@ def _window_inference(
     weak = {
         owner.owner_id: reason
         for owner in owners
-        if (reason := _owner_uncertainty_reason(owner, config))
+        if (reason := owner_uncertainty_reason(owner, config))
     }
     eligible = tuple(owner for owner in owners if owner.owner_id not in weak)
     by_chemistry: dict[tuple[str, str], list[SampleLocalMS1Owner]] = defaultdict(list)
     for owner in eligible:
-        by_chemistry[_owner_chemistry(owner)].append(owner)
+        by_chemistry[grouping_chemistry_key(owner)].append(owner)
 
     final_components: list[tuple[str, ...]] = [(owner_id,) for owner_id in sorted(weak)]
     for chemistry in sorted(by_chemistry):
@@ -1909,7 +1898,7 @@ def _feature_hard_reason(
         return "identity_evidence_type_mismatch", math.inf
     composite_compatible = (
         track.composite_subject_id is not None
-        and _compatible_composite_owners(owner, track.seed)
+        and compatible_composite_owners(owner, track.seed)
     )
     if not composite_compatible and owner.neutral_loss_tag != track.neutral_loss_tag:
         return "neutral_loss_tag_mismatch", math.inf
@@ -2192,23 +2181,6 @@ def _partition_by_owner(
     groups: Sequence[tuple[str, ...]],
 ) -> dict[str, int]:
     return {owner_id: index for index, group in enumerate(groups) for owner_id in group}
-
-
-def _owner_uncertainty_reason(
-    owner: SampleLocalMS1Owner,
-    config: AlignmentConfig,
-) -> str:
-    if owner.identity_conflict:
-        return "owner_identity_conflict"
-    if owner.is_provisional:
-        return "provisional_owner"
-    if owner.owner_area <= 0.0:
-        return "nonpositive_owner_area"
-    if "ambiguous" in owner.assignment_reason:
-        return "ambiguous_owner_assignment"
-    if _seed_support_level(owner, owner, config) == "weak":
-        return "weak_identity_evidence"
-    return ""
 
 
 def _sample_sort_key(
