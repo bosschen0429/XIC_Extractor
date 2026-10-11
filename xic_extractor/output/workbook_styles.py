@@ -189,6 +189,9 @@ def _add_table(ws, name: str, reference: str) -> None:
         name="TableStyleLight9", showRowStripes=True, showColumnStripes=False
     )
     ws.add_table(table)
+    # A Table owns its filter. A second worksheet filter on the same range
+    # makes desktop Excel repair the workbook and remove the Table.
+    ws.auto_filter.ref = None
 
 
 def _prepare_print_view(ws, *, area: str, repeat_rows: str = "1:1") -> None:

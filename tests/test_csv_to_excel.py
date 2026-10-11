@@ -44,7 +44,8 @@ def test_data_sheet_preserves_measurements_and_compact_review_fields() -> None:
     assert ws["C2"].number_format == "#,##0.00"
     assert ws["D2"].number_format == "0.0000"
     assert ws.freeze_panes == "C2"
-    assert ws.auto_filter.ref == "A1:P4"
+    assert ws.tables["TargetedResults"].ref == "A1:P4"
+    assert ws.auto_filter.ref is None
     wb.close()
 
 

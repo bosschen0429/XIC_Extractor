@@ -1,5 +1,7 @@
 from dataclasses import replace
 from pathlib import Path
+from xml.etree import ElementTree
+from zipfile import ZipFile
 
 from openpyxl import load_workbook
 
@@ -19,6 +21,31 @@ from xic_extractor.peak_detection.models import (
     PeakDetectionResult,
     PeakResult,
 )
+
+
+def test_workbook_filters_belong_to_tables_not_overlapping_worksheet_ranges(tmp_path):
+    from xic_extractor.output.excel_pipeline import write_excel_from_run_output
+
+    config = _config(tmp_path)
+    path = write_excel_from_run_output(
+        config,
+        [_target("WithNL")],
+        _run_output(with_diagnostics=True),
+        output_path=config.output_csv.with_suffix(".xlsx"),
+    )
+    ns = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    with ZipFile(path) as archive:
+        for name in archive.namelist():
+            if name.startswith("xl/worksheets/sheet"):
+                sheet = ElementTree.fromstring(archive.read(name))
+                if sheet.find("s:tableParts", ns) is not None:
+                    # Excel repairs/removes tables when a worksheet filter overlaps.
+                    assert sheet.find("s:autoFilter", ns) is None, name
+            elif name.startswith("xl/tables/"):
+                table = ElementTree.fromstring(archive.read(name))
+                table_filter = table.find("s:autoFilter", ns)
+                assert table_filter is not None
+                assert table_filter.attrib["ref"] == table.attrib["ref"]
 
 
 def test_workbook_retains_nonempty_decision_inputs_without_sidecars(tmp_path):
