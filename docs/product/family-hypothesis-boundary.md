@@ -164,6 +164,6 @@ PeakHypothesis behavior, require the relevant subset of:
 - [Evidence spine](evidence-spine.md)
 - [Alignment](alignment.md)
 - [Backfill](backfill.md)
-- [Peak model selection](peak-model-selection.md)
+- [Targeted candidate selection](targeted-selection.md#candidate-selection)
 - [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md)
 - [Architecture contract](../architecture-contract.md)

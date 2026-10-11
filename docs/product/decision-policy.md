@@ -330,7 +330,6 @@ contract.
 - [Targeted selection](targeted-selection.md)
 - [Backfill](backfill.md)
 - [Alignment](alignment.md)
-- [Peak model selection](peak-model-selection.md)
 - [Peak anchor and group boundary](family-hypothesis-boundary.md)
 - [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md)
 - [Architecture contract](../architecture-contract.md)

@@ -32,10 +32,6 @@ from xic_extractor.peak_detection.hypotheses import (
     PeakHypothesis,
     PeakHypothesisAuthorityError,
 )
-from xic_extractor.peak_detection.model_selection import (
-    PeakModelSelectionResult,
-    model_select_peak_hypothesis,
-)
 from xic_extractor.peak_detection.models import PeakDetectionResult
 from xic_extractor.peak_detection.observations import (
     PeakObservationRef,
@@ -1049,32 +1045,12 @@ def test_owner_backed_hypothesis_cannot_enter_selection_or_targeted_product(
     with pytest.raises(PeakHypothesisAuthorityError, match="diagnostic-only"):
         selection_decision_from_hypothesis(hypothesis)
     with pytest.raises(PeakHypothesisAuthorityError, match="diagnostic-only"):
-        model_select_peak_hypothesis((hypothesis,))
-    with pytest.raises(PeakHypothesisAuthorityError, match="diagnostic-only"):
         PeakHypothesisSelectionDecision(
             selected_candidate_id=hypothesis.hypothesis_id,
             trace_group_id="",
             decision_class="accepted",
             projected_confidence="HIGH",
             projected_reason="direct-constructor-bypass",
-        )
-    with pytest.raises(PeakHypothesisAuthorityError, match="diagnostic-only"):
-        PeakModelSelectionResult(
-            selected_candidate_id=hypothesis.hypothesis_id,
-            legacy_selected_candidate_id="legacy-candidate",
-            stable_row_id="direct-constructor-bypass",
-            trace_group_id="",
-            decision_class="accepted",
-            selection_status="expected_diff",
-            selection_reasons=(),
-            legacy_reasons=(),
-            diff_reasons=(),
-            public_projection={},
-            evidence_sources=(),
-            compatibility_oracle="legacy_peak_scoring_current_oracle",
-            policy_source="selected_hypothesis_model_selection",
-            product_switch_allowed=True,
-            evidence_comparison_policy="complete_candidate_evidence",
         )
     with pytest.raises(PeakHypothesisAuthorityError, match="diagnostic-only"):
         build_extraction_result(

@@ -70,4 +70,3 @@ integration bounds. The entire search window does not supply them.
 
 - [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md)
 - [Targeted selection](targeted-selection.md) | [Evidence spine](evidence-spine.md) | [Quant matrix](quant-matrix.md)
-- [Peak model selection](peak-model-selection.md)

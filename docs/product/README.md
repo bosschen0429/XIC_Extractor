@@ -24,7 +24,6 @@ owner for product documentation.
 | Alignment | [`alignment.md`](alignment.md) | Current coupling problem and frozen CrossSample/ObservationRevisit/final-result owner contract |
 | Targeted Selection | [`targeted-selection.md`](targeted-selection.md) | Targeted behavior, selected hypotheses, region/boundary gates, reasons |
 | Decision Policy | [`decision-policy.md`](decision-policy.md) | Typed evidence, workflow gates, score boundaries, and projection authority |
-| Peak Model Selection | [`peak-model-selection.md`](peak-model-selection.md) | Model-selection invariants, parity requirements, expected-diff gates |
 | Quantitation Context | [`quantitation-context.md`](quantitation-context.md) | Bounded trace context, morphology evidence, area-impacting gates |
 | Signal Processing Rationale | [`signal-processing-rationale.md`](signal-processing-rationale.md) | Why smoothed-everywhere: noise regime, stability vs precision trade-off, design exceptions |
 

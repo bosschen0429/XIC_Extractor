@@ -60,9 +60,30 @@ owner. CID-NL support, observation-only
 selections, and MS1-only targets retain their sample-local identities and values.
 Grouping does not reselect peaks or add a cohort RT review policy.
 
+### Candidate selection
+
+`peak_detection.candidate_selection.select_candidate_by_evidence` chooses the
+candidate once from typed
+candidate evidence, role-aware eligibility and RT constraints. Its ordering
+preserves chemical support, trace quality, contextual RT and deterministic
+abundance tie-breaks. Confidence and reason labels describe evidence; they do
+not start a second candidate ranking.
+
+The Targeted handoff carries that selected candidate into its hypothesis,
+candidate-local MS2 evidence and physical evaluation. Sample applicability
+controls inclusion, not permission to replace the selected candidate. A
+hypothesis is an evidence representation, not a competing selection owner.
+The physical owner may withdraw an unavailable measurement, but does not
+substitute another candidate.
+
+Regression coverage protects the selected candidate, contextual RT, chemical
+and morphology evidence, no-candidate behavior and rendered measurements.
+Tests passing alone do not establish scientific readiness; method-changing
+selection rules still need the method-appropriate oracle.
+
 ### Physical evaluation
 
-The Targeted selection module consumes an acquired TraceGroup, selected MS2
+The Targeted selection module consumes an acquired TraceGroup, candidate-local MS2
 evidence, and the shared prepared signal and segment universe. It completes the
 physical answer and synchronizes the final peak, hypothesis, and selection
 decision before returning them. RAW acquisition owns trace construction and
@@ -176,8 +197,8 @@ those facts itself.
   `matched_scan_count` is zero. The existing Targeted product projection owns
   counted detection; `count_no_ms2_as_detected` applies only to legacy outputs
   without that projection and cannot override it.
-- Region, boundary, and selected-envelope logic are candidate and
-  model-selection surfaces.
+- Region, boundary, and selected-envelope logic provide candidate-evaluation
+  evidence.
 - Before region, boundary, or selected-envelope logic changes any selected
   peak, area, confidence, reason, product state, counted detection, workbook
   value, or matrix value, the change requires expected-diff review.
@@ -221,10 +242,6 @@ a missing current-sample paired observation or an independent identity oracle.
 - One extraction pass decides each row. Analyte `NL_FAIL` or `NO_MS2` rows
   keep their measured RT, area and bounds; counting follows the NL evidence
   rules. There is no MS1-shape rescue that re-counts such rows.
-- The successor model selection is recorded for comparison. It replaces the
-  product selection only through the target-applicable strict-NL successor
-  rule for `rna_containing` targets; no approval registry or per-row switch
-  input exists.
 
 ## Surfaces
 
@@ -235,7 +252,7 @@ a missing current-sample paired observation or an independent identity oracle.
 | `NL Evidence` / `Reason` | Human-readable observations and review context |
 | `Product State` / `Counted Detection` / `Review State` | Advanced product-policy fields; do not veto a retained numeric value |
 | Confidence | Advanced review context rendered from typed projection decisions |
-| Region and selected-envelope candidates | Boundary and model-selection evidence |
+| Region and selected-envelope candidates | Boundary and candidate-evaluation evidence |
 | Current-sample paired RT reference | Method offset transferred by a credible observed ISTD; no additional writer authority |
 | Expected-diff packets | Required gate for output-changing behavior |
 
@@ -285,7 +302,6 @@ a missing current-sample paired observation or an independent identity oracle.
 
 - [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md) | [Evidence spine](evidence-spine.md)
 - [Quantitation context](quantitation-context.md) | [Review roundtrip](review-roundtrip.md)
-- [Peak model selection](peak-model-selection.md)
 - [Decision policy](decision-policy.md)
 
 ## Retired candidate audit outputs

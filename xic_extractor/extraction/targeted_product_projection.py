@@ -163,46 +163,10 @@ def _projection_support_context(
     reasons: list[str] = []
     if semantics is not None:
         reasons.extend(semantics.support_reasons)
-    reasons.extend(_approved_expected_diff_support_reasons(result, target=target))
     if _paired_analyte_has_anchor_supported_peak(result, target):
         reasons.append("role_aware_rt_support")
         reasons.append("paired_istd_anchor_support")
     return _unique(reasons)
-
-
-def _approved_expected_diff_support_reasons(
-    result: ExtractionResult,
-    *,
-    target: Target,
-) -> tuple[str, ...]:
-    model = result.model_selection_result
-    if (
-        model is None
-        or model.selection_status != "expected_diff"
-        or not model.product_switch_allowed
-        or not _positive(result.reported_rt)
-        or not _positive(result.reported_peak_area)
-        or not _rt_inside_target_window(result.reported_rt, target)
-        or result.quality_flags
-    ):
-        return ()
-    evidence_sources = {source.strip().lower() for source in model.evidence_sources}
-    reasons: list[str] = []
-    if "role_aware_rt" in evidence_sources:
-        reasons.append("role_aware_rt_support")
-    if (
-        result.role.upper() == "ANALYTE"
-        and target.istd_pair
-        and "paired_area_ratio" in evidence_sources
-    ):
-        reasons.append("paired_area_ratio_support")
-    if (
-        result.role.upper() == "ANALYTE"
-        and target.istd_pair
-        and "own_max_same_peak" in evidence_sources
-    ):
-        reasons.append(OWN_MAX_SAME_PEAK_SUPPORT_REASON)
-    return tuple(reasons)
 
 
 def _projection_conflict_reasons(

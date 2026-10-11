@@ -26,7 +26,6 @@ _ALLOWED_SHARD_OVERLAPS: dict[Path, tuple[str, ...]] = {
         "product-gates-evidence",
     ),
     Path("tests/test_ms1_scan_index.py"): ("alignment-core", "product-gates-evidence"),
-    Path("tests/test_peak_model_selection.py"): ("docs-config", "targeted-core"),
     Path("tests/test_pt_pattern_presets.py"): ("docs-config", "alignment-core"),
     Path("tests/test_targeted_manual_validation.py"): (
         "targeted-core",
@@ -98,7 +97,6 @@ def test_test_shards_keep_changed_shard_contracts() -> None:
         (
             Path("tests/test_discovery_worker.py"),
             Path("tests/test_pyinstaller_spec.py"),
-            Path("tests/test_peak_model_selection.py"),
             Path("tests/test_alignment_pipeline_outputs.py"),
             Path("tests/test_processing_run_spec.py"),
             Path("tests/test_processing_run_spec_architecture.py"),
@@ -113,7 +111,6 @@ def test_test_shards_keep_changed_shard_contracts() -> None:
     assert assigned["workbench"] == (Path("tests/test_discovery_worker.py"),)
     assert assigned["docs-config"] == (
         Path("tests/test_pyinstaller_spec.py"),
-        Path("tests/test_peak_model_selection.py"),
     )
     assert assigned["alignment-core"] == (
         Path("tests/test_alignment_pipeline_outputs.py"),

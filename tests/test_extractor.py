@@ -304,7 +304,6 @@ def test_formal_target_drops_selection_when_final_physical_owner_is_unavailable(
     assert result.peak is None
     assert result.selected_hypothesis is None
     assert result.selection_decision is None
-    assert result.model_selection_result is None
     assert result.targeted_product_projection is not None
     assert result.targeted_product_projection.counted_detection is False
     row = _run_output_to_long_rows(output, [target])[0]

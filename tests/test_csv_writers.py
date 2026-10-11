@@ -476,7 +476,7 @@ def _selected_hypothesis_with_integration(
         resolver_mode="local_minimum",
         integration=integration,
         evidence=EvidenceVector(confidence="LOW", reason="selected spine"),
-        audit=AuditTrail(selected=True, selection_rank=1),
+        audit=AuditTrail(selected=True),
     )
 
 

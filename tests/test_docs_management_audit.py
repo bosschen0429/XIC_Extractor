@@ -1311,7 +1311,7 @@ def test_productization_routing_index_wins_over_backfill_body_mentions(
         ("repo_active_stub", "docs/agent/obsidian-handoff-contract.md"),
         ("branch_closeout_summary", "docs/agent/obsidian-handoff-contract.md"),
         ("repo_stub_plus_obsidian", "docs/agent/obsidian-handoff-contract.md"),
-        ("repo_stub_plus_formal_doc", "docs/product/peak-model-selection.md"),
+        ("repo_stub_plus_formal_doc", "docs/product/targeted-selection.md"),
     ],
 )
 def test_retired_stub_placements_are_routed_as_invalid_candidates(

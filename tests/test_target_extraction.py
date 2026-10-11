@@ -263,15 +263,10 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
 
     selected = captured["selected_hypothesis"]
     decision = captured["selection_decision"]
-    model_selection_result = captured["model_selection_result"]
     assert isinstance(selected, PeakHypothesis)
     assert isinstance(decision, PeakHypothesisSelectionDecision)
     assert selected.audit.selected is True
     assert decision.selected_candidate_id == selected.hypothesis_id
-    assert model_selection_result is not None
-    assert model_selection_result.selection_status == "parity"
-    assert model_selection_result.product_switch_allowed is True
-    assert model_selection_result.selected_candidate_id == selected.hypothesis_id
     assert decision.legacy_projection_status == (
         "successor_owned" if with_scoring else "active_policy_remaining"
     )

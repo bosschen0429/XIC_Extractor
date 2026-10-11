@@ -75,7 +75,6 @@ def test_build_peak_hypotheses_marks_selected_and_rejected_candidates() -> None:
     )
 
     assert [hypothesis.audit.selected for hypothesis in hypotheses] == [True, False]
-    assert hypotheses[0].audit.selection_rank == 1
     assert hypotheses[0].audit.proposal_sources == ("legacy_savgol",)
     assert hypotheses[0].evidence.ms2_present is True
     assert hypotheses[0].evidence.nl_match is True

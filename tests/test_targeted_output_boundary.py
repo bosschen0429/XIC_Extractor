@@ -184,7 +184,6 @@ def test_publication_renders_the_finalized_numeric_hypothesis(tmp_path: Path) ->
     assert rendered.peak.peak_end == finalized_integration.rt_right_min
     assert rendered.selected_hypothesis is None
     assert rendered.selection_decision is None
-    assert rendered.model_selection_result is None
 
 
 @pytest.mark.parametrize(
@@ -444,7 +443,6 @@ def test_publication_retires_equal_area_legacy_selection_authority(
     rendered = published.output.file_results[0].results[target.label]
     assert rendered.selected_hypothesis is None
     assert rendered.selection_decision is None
-    assert rendered.model_selection_result is None
     assert rendered.peak_result.candidates == ()
     assert rendered.peak_result.candidate_scores == ()
 

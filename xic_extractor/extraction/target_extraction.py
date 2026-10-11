@@ -500,7 +500,6 @@ def extract_one_target(
         scoring_context_builder=scoring_context_builder,
         selected_hypothesis=handoff_peak.selected_hypothesis,
         selection_decision=handoff_peak.selection_decision,
-        model_selection_result=handoff_peak.model_selection_result,
         acquisition_trace=handoff_peak.trace_group.primary_trace,
         physical_evaluation=handoff_peak.physical_evaluation,
         sample_name=sample_name,

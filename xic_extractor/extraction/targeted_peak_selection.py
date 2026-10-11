@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, replace
 from typing import cast
 
@@ -11,10 +10,6 @@ import numpy as np
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.extraction.scoring_factory import selected_candidate
-from xic_extractor.extraction.target_sample_applicability import (
-    TARGET_SAMPLE_APPLICABILITY_RNA_CONTAINING,
-    target_sample_is_applicable,
-)
 from xic_extractor.extraction.targeted_peak_hypotheses import (
     build_targeted_peak_hypotheses as build_peak_hypotheses,
 )
@@ -23,11 +18,7 @@ from xic_extractor.peak_detection.hypotheses import (
     CandidateMS2EvidenceMap,
     PeakHypothesis,
 )
-from xic_extractor.peak_detection.model_selection import (
-    PeakModelSelectionResult,
-    model_select_peak_hypothesis,
-)
-from xic_extractor.peak_detection.models import PeakCandidate, PeakDetectionResult
+from xic_extractor.peak_detection.models import PeakDetectionResult
 from xic_extractor.peak_detection.ms1_morphology import (
     configured_morphology_window_points,
 )
@@ -63,15 +54,6 @@ class TargetedPeakSelection:
     selected_hypothesis: PeakHypothesis | None
     selection_decision: PeakHypothesisSelectionDecision | None
     trace_group: TraceGroup
-    model_selection_result: PeakModelSelectionResult | None = None
-
-
-@dataclass(frozen=True)
-class _TargetedHypothesisSelection:
-    candidate: PeakCandidate | None
-    selected_hypothesis: PeakHypothesis | None
-    selection_decision: PeakHypothesisSelectionDecision | None
-    model_selection_result: PeakModelSelectionResult | None
 
 
 def build_production_peak_hypotheses(
@@ -134,39 +116,24 @@ def select_targeted_peak(
     selection_rt_max: float,
 ) -> TargetedPeakSelection:
     """Return selection facts synced with physical availability and integration."""
-    hypothesis_selection = _select_targeted_hypothesis(
+    trace = trace_group.primary_trace
+    hypotheses = build_production_peak_hypotheses(
         config=config,
+        sample_name=trace_group.sample_name,
         target=target,
         peak_result=peak_result,
-        trace_group=trace_group,
         candidate_ms2_evidence=candidate_ms2_evidence,
+        rt=np.asarray(trace.rt, dtype=float),
+        intensity=np.asarray(trace.intensity, dtype=float),
+        trace_group=trace_group,
     )
-    candidate = hypothesis_selection.candidate
+    selected_hypothesis = selected_peak_hypothesis(hypotheses)
+    candidate = selected_candidate(peak_result)
     selected_ms2_evidence = (
         candidate_ms2_evidence.get(candidate)
         if candidate is not None and candidate_ms2_evidence is not None
         else None
     )
-    if candidate is not None and candidate != selected_candidate(peak_result):
-        hypothesis = hypothesis_selection.selected_hypothesis
-        assert hypothesis is not None
-        score = next(
-            (
-                score
-                for score in peak_result.candidate_scores
-                if score.candidate == candidate
-            ),
-            None,
-        )
-        peak_result = replace(
-            peak_result,
-            peak=candidate.peak,
-            confidence=hypothesis.evidence.confidence,
-            reason=hypothesis.evidence.reason,
-            severities=score.severities if score is not None else (),
-            # The predecessor's formatted score cannot describe the successor.
-            score_breakdown=(),
-        )
     selected_segment = selected_physical_segment(candidate, universe)
     if selected_segment is not None:
         query_rt_min = selected_segment.apex_rt_min
@@ -209,84 +176,18 @@ def select_targeted_peak(
             candidate_scores=(),
         )
         selected_ms2_evidence = None
-        hypothesis_selection = _TargetedHypothesisSelection(None, None, None, None)
+        selected_hypothesis = None
     elif (
-        hypothesis_selection.selected_hypothesis is not None
-        and physical_evaluation.integration is not None
+        selected_hypothesis is not None and physical_evaluation.integration is not None
     ):
-        physical_hypothesis = replace(
-            hypothesis_selection.selected_hypothesis,
+        selected_hypothesis = replace(
+            selected_hypothesis,
             integration=physical_peak_observation_integration(physical_evaluation),
-        )
-        hypothesis_selection = replace(
-            hypothesis_selection,
-            selected_hypothesis=physical_hypothesis,
-            selection_decision=selection_decision_from_hypothesis(
-                physical_hypothesis,
-                peak_result=peak_result,
-            ),
         )
     return TargetedPeakSelection(
         peak_result=peak_result,
         physical_evaluation=physical_evaluation,
         candidate_ms2_evidence=selected_ms2_evidence,
-        selected_hypothesis=hypothesis_selection.selected_hypothesis,
-        selection_decision=hypothesis_selection.selection_decision,
-        trace_group=trace_group,
-        model_selection_result=hypothesis_selection.model_selection_result,
-    )
-
-
-def _select_targeted_hypothesis(
-    *,
-    config: ExtractionConfig,
-    target: Target,
-    peak_result: PeakDetectionResult,
-    trace_group: TraceGroup,
-    candidate_ms2_evidence: CandidateMS2EvidenceMap | None,
-) -> _TargetedHypothesisSelection:
-    """Apply the Targeted role policy to the ranked peak hypotheses."""
-    sample_name = trace_group.sample_name
-    trace = trace_group.primary_trace
-    hypotheses = build_production_peak_hypotheses(
-        config=config,
-        sample_name=sample_name,
-        target=target,
-        peak_result=peak_result,
-        candidate_ms2_evidence=candidate_ms2_evidence,
-        rt=np.asarray(trace.rt, dtype=float),
-        intensity=np.asarray(trace.intensity, dtype=float),
-        trace_group=trace_group,
-    )
-    model_selection_result = (
-        model_select_peak_hypothesis(hypotheses) if hypotheses else None
-    )
-    model_selection_result = _targeted_product_switch_policy(
-        model_selection_result,
-        hypotheses=hypotheses,
-        sample_name=sample_name,
-        target=target,
-    )
-    legacy_selected_hypothesis = selected_peak_hypothesis(hypotheses)
-    selected_hypothesis = _product_selected_hypothesis(
-        hypotheses,
-        model_selection_result,
-        legacy_selected_hypothesis,
-    )
-    # Hypothesis construction preserves candidate order; bind identity here rather
-    # than recovering a candidate from a rounded RT or a serialized ID.
-    candidate = next(
-        (
-            candidate
-            for hypothesis, candidate in zip(
-                hypotheses, peak_result.candidates, strict=True
-            )
-            if hypothesis is selected_hypothesis
-        ),
-        None,
-    )
-    return _TargetedHypothesisSelection(
-        candidate=candidate,
         selected_hypothesis=selected_hypothesis,
         selection_decision=(
             selection_decision_from_hypothesis(
@@ -296,123 +197,8 @@ def _select_targeted_hypothesis(
             if selected_hypothesis is not None
             else None
         ),
-        model_selection_result=model_selection_result,
+        trace_group=trace_group,
     )
-
-
-def _targeted_product_switch_policy(
-    model_selection_result: PeakModelSelectionResult | None,
-    *,
-    hypotheses: tuple[PeakHypothesis, ...],
-    sample_name: str,
-    target: Target,
-) -> PeakModelSelectionResult | None:
-    if _target_applicable_strict_nl_successor_switch(
-        model_selection_result,
-        hypotheses=hypotheses,
-        sample_name=sample_name,
-        target=target,
-    ):
-        assert model_selection_result is not None
-        return replace(
-            model_selection_result,
-            product_switch_allowed=True,
-            diff_reasons=tuple(
-                reason
-                for reason in model_selection_result.diff_reasons
-                if reason != "successor_selection_not_adopted"
-            ),
-            evidence_sources=tuple(
-                dict.fromkeys(
-                    (
-                        *model_selection_result.evidence_sources,
-                        "target_applicable_strict_nl_successor",
-                    )
-                )
-            ),
-        )
-    return model_selection_result
-
-
-def _target_applicable_strict_nl_successor_switch(
-    model_selection_result: PeakModelSelectionResult | None,
-    *,
-    hypotheses: tuple[PeakHypothesis, ...],
-    sample_name: str,
-    target: Target,
-) -> bool:
-    if (
-        model_selection_result is None
-        or model_selection_result.product_switch_allowed
-        or model_selection_result.selection_status != "expected_diff"
-        or target.is_istd
-        or getattr(target, "sample_applicability", "all")
-        != TARGET_SAMPLE_APPLICABILITY_RNA_CONTAINING
-        or not target_sample_is_applicable(target, sample_name)
-    ):
-        return False
-    selected = _hypothesis_by_id(
-        hypotheses,
-        model_selection_result.selected_candidate_id,
-    )
-    if selected is None:
-        return False
-    if (
-        not math.isfinite(selected.integration.rt_apex_min)
-        or _active_integration_area(selected.integration) <= 0
-    ):
-        return False
-    reasons = _hypothesis_reason_set(selected)
-    return "strict_nl_ok" in reasons or "candidate_aligned_ms2_nl" in reasons
-
-
-def _active_integration_area(integration: object) -> float:
-    morphology_area = getattr(integration, "area_ms1_morphology", None)
-    if morphology_area is not None:
-        return float(morphology_area)
-    return float(getattr(integration, "area_raw_counts_seconds", 0.0))
-
-
-def _hypothesis_by_id(
-    hypotheses: tuple[PeakHypothesis, ...],
-    hypothesis_id: str,
-) -> PeakHypothesis | None:
-    for hypothesis in hypotheses:
-        if hypothesis.hypothesis_id == hypothesis_id:
-            return hypothesis
-    return None
-
-
-def _hypothesis_reason_set(hypothesis: PeakHypothesis) -> frozenset[str]:
-    semantics = hypothesis.evidence.decision_semantics
-    reasons: list[str] = [
-        *hypothesis.evidence.support_labels,
-        *hypothesis.evidence.concern_labels,
-        *hypothesis.evidence.cap_labels,
-    ]
-    if semantics is not None:
-        reasons.extend(semantics.support_reasons)
-        reasons.extend(semantics.review_reasons)
-        reasons.extend(semantics.conflict_reasons)
-        reasons.extend(semantics.not_counted_reasons)
-        reasons.extend(semantics.exclusion_reasons)
-    return frozenset(reason for reason in reasons if reason)
-
-
-def _product_selected_hypothesis(
-    hypotheses: tuple[PeakHypothesis, ...],
-    model_selection_result: PeakModelSelectionResult | None,
-    legacy_selected_hypothesis: PeakHypothesis | None,
-) -> PeakHypothesis | None:
-    if (
-        model_selection_result is None
-        or not model_selection_result.product_switch_allowed
-    ):
-        return legacy_selected_hypothesis
-    for hypothesis in hypotheses:
-        if hypothesis.hypothesis_id == model_selection_result.selected_candidate_id:
-            return hypothesis
-    return legacy_selected_hypothesis
 
 
 def _with_final_selected_result_evidence(

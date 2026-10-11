@@ -122,7 +122,6 @@ class AuditTrail:
     source_apex_rank: int | None = None
     merge_note: str = ""
     selected: bool = False
-    selection_rank: int | None = None
     selection_reference_rt_min: float | None = None
     rejection_reason: str = ""
 
@@ -243,10 +242,6 @@ def build_peak_hypotheses(
     score_by_candidate = {
         score.candidate: score for score in peak_result.candidate_scores
     }
-    rank_by_candidate = _rank_candidates(
-        peak_result.candidate_scores,
-        selected=selected,
-    )
     selected_score = score_by_candidate.get(selected) if selected is not None else None
     evidence_by_candidate = candidate_ms2_evidence or {}
     trace_rt = rt
@@ -302,7 +297,6 @@ def build_peak_hypotheses(
                     source_apex_rank=candidate.source_apex_rank,
                     merge_note=candidate.merge_note,
                     selected=is_selected,
-                    selection_rank=rank_by_candidate.get(candidate),
                     selection_reference_rt_min=peak_result.selection_reference_rt,
                     rejection_reason=""
                     if is_selected
@@ -646,22 +640,6 @@ def _selected_candidate(peak_result: PeakDetectionResult) -> PeakCandidate | Non
         if candidate.peak == peak_result.peak:
             return candidate
     return None
-
-
-def _rank_candidates(
-    scores: tuple[PeakCandidateScore, ...],
-    *,
-    selected: PeakCandidate | None,
-) -> dict[PeakCandidate, int]:
-    ranked = sorted(
-        scores,
-        key=lambda score: (
-            0 if selected is not None and score.candidate == selected else 1,
-            _CONFIDENCE_RANK.get(score.confidence, 4),
-            -(score.raw_score if score.raw_score is not None else -10_000),
-        ),
-    )
-    return {score.candidate: index + 1 for index, score in enumerate(ranked)}
 
 
 def _rejection_reason(

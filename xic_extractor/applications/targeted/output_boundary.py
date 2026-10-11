@@ -285,7 +285,6 @@ def _finalized_extraction_result(
             ),
             selected_hypothesis=None,
             selection_decision=None,
-            model_selection_result=None,
             targeted_product_projection=projection,
         )
         if rendered.reported_peak_area != value:
@@ -305,7 +304,6 @@ def _finalized_extraction_result(
         ),
         selected_hypothesis=None,
         selection_decision=None,
-        model_selection_result=None,
         targeted_product_projection=projection,
     )
 

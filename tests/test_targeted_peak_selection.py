@@ -179,159 +179,12 @@ def test_selected_hypothesis_uses_final_peak_result_confidence_when_score_is_sta
     )
 
 
-def test_hypothesis_policy_uses_model_selection_gate_for_selected_hypothesis(
-    tmp_path,
-) -> None:
-    candidate = _candidate(8.50)
-    peak_result = PeakDetectionResult(
-        status="OK",
-        peak=candidate.peak,
-        n_points=11,
-        max_smoothed=1200.0,
-        n_prominent_peaks=1,
-        candidates=(candidate,),
-        confidence="HIGH",
-        reason="decision: accepted",
-        candidate_scores=(_score(candidate, confidence="HIGH"),),
-    )
-
-    handoff = targeted_peak_selection._select_targeted_hypothesis(
-        config=_config(tmp_path),
-        target=_target(),
-        peak_result=peak_result,
-        candidate_ms2_evidence=None,
-        trace_group=targeted_extraction_trace_group(
-            config=_config(tmp_path),
-            sample_name="SampleA",
-            target=_target(),
-            rt=np.asarray([8.3, 8.5, 8.7]),
-            intensity=np.asarray([10.0, 100.0, 20.0]),
-            rt_min=8.0,
-            rt_max=9.0,
-            expected_rt_min=8.5,
-        ),
-    )
-
-    assert handoff.model_selection_result is not None
-    assert handoff.selected_hypothesis is not None
-    assert handoff.selection_decision is not None
-    assert handoff.model_selection_result.selection_status == "parity"
-    assert handoff.model_selection_result.product_switch_allowed is True
-    assert (
-        "successor_selection_not_adopted"
-        not in handoff.model_selection_result.diff_reasons
-    )
-    assert (
-        handoff.selected_hypothesis.hypothesis_id
-        == handoff.model_selection_result.selected_candidate_id
-    )
-    assert (
-        handoff.selection_decision.selected_candidate_id
-        == handoff.model_selection_result.selected_candidate_id
-    )
-
-
-def test_hypothesis_policy_keeps_trace_group_without_candidate_table_output(
-    tmp_path,
-) -> None:
-    candidate = _candidate(8.50)
-    peak_result = PeakDetectionResult(
-        status="OK",
-        peak=candidate.peak,
-        n_points=11,
-        max_smoothed=1200.0,
-        n_prominent_peaks=1,
-        candidates=(candidate,),
-        confidence="HIGH",
-        reason="decision: accepted",
-        candidate_scores=(_score(candidate, confidence="HIGH"),),
-    )
-    rt = np.asarray([8.3, 8.5, 8.7, 9.2])
-    trace_group = targeted_extraction_trace_group(
-        config=_config(tmp_path),
-        sample_name="SampleA",
-        target=_target(),
-        rt=rt,
-        intensity=np.asarray([10.0, 100.0, 20.0, 15.0]),
-        rt_min=8.0,
-        rt_max=9.0,
-        expected_rt_min=8.5,
-    )
-    handoff = targeted_peak_selection._select_targeted_hypothesis(
-        config=_config(tmp_path),
-        target=_target(),
-        peak_result=peak_result,
-        candidate_ms2_evidence=None,
-        trace_group=trace_group,
-    )
-
-    assert trace_group.primary_trace.rt[-1] == pytest.approx(9.2)
-    assert handoff.selected_hypothesis is not None
-    assert handoff.selected_hypothesis.trace_group_id == trace_group.trace_group_id
-
-
-def test_hypothesis_policy_falls_back_on_unapproved_successor_diff(
-    tmp_path,
-) -> None:
-    legacy_selected = _candidate(8.50)
-    successor_candidate = _candidate(8.55, area=1400.0)
-    peak_result = PeakDetectionResult(
-        status="OK",
-        peak=legacy_selected.peak,
-        n_points=11,
-        max_smoothed=1200.0,
-        n_prominent_peaks=2,
-        candidates=(legacy_selected, successor_candidate),
-        confidence="LOW",
-        reason="decision: review",
-        candidate_scores=(
-            _score(legacy_selected, confidence="LOW"),
-            _score(successor_candidate, confidence="HIGH"),
-        ),
-    )
-
-    handoff = targeted_peak_selection._select_targeted_hypothesis(
-        config=_config(tmp_path),
-        target=_target(),
-        peak_result=peak_result,
-        candidate_ms2_evidence=None,
-        trace_group=targeted_extraction_trace_group(
-            config=_config(tmp_path),
-            sample_name="SampleA",
-            target=_target(),
-            rt=np.asarray([8.3, 8.5, 8.55, 8.7]),
-            intensity=np.asarray([10.0, 80.0, 100.0, 20.0]),
-            rt_min=8.0,
-            rt_max=9.0,
-            expected_rt_min=8.5,
-        ),
-    )
-
-    assert handoff.model_selection_result is not None
-    assert handoff.selected_hypothesis is not None
-    assert handoff.selection_decision is not None
-    assert handoff.model_selection_result.selection_status == "expected_diff"
-    assert handoff.model_selection_result.product_switch_allowed is False
-    assert handoff.selected_hypothesis.audit.selected is True
-    assert (
-        handoff.selected_hypothesis.hypothesis_id
-        == handoff.model_selection_result.legacy_selected_candidate_id
-    )
-    assert (
-        handoff.model_selection_result.selected_candidate_id
-        != handoff.selected_hypothesis.hypothesis_id
-    )
-    assert (
-        handoff.selection_decision.selected_candidate_id
-        == handoff.selected_hypothesis.hypothesis_id
-    )
-
-
 @pytest.mark.parametrize(
-    "sample_name,shift,scale", [("SampleA_RNA", 0.0, 1.0), ("SampleB_RNA", 0.2, 1.7)]
+    "sample_name,shift,scale,selected_index",
+    [("SampleA_RNA", 0.0, 1.0, 0), ("SampleB_RNA", 0.2, 1.7, 1)],
 )
-def test_successor_handoff_keeps_identity_and_physical_measurement_together(
-    tmp_path, sample_name, shift, scale
+def test_handoff_preserves_the_selected_candidate_through_workbook(
+    tmp_path, sample_name, shift, scale, selected_index
 ) -> None:
     from xic_extractor.configuration.signal_processing_profile import (
         resolve_signal_processing_profile,
@@ -362,28 +215,31 @@ def test_successor_handoff_keeps_identity_and_physical_measurement_together(
     )
     candidates = physical_candidates_result(prepared, universe).candidates
     assert len(candidates) == 2
-    predecessor, successor = candidates
-    predecessor_ms2 = replace(_ms2_evidence(), best_scan_rt=predecessor.peak.rt)
-    successor_ms2 = replace(_ms2_evidence(), best_scan_rt=successor.peak.rt)
+    first, second = candidates
+    selected = candidates[selected_index]
+    first_ms2 = replace(_ms2_evidence(), best_scan_rt=first.peak.rt)
+    second_ms2 = replace(_ms2_evidence(), best_scan_rt=second.peak.rt)
+    # The handoff consumes the first-stage choice, even when another candidate
+    # has stronger confidence and more strict-NL support labels.
     peak_result = PeakDetectionResult(
         status="OK",
-        peak=predecessor.peak,
+        peak=selected.peak,
         n_points=len(rt),
         max_smoothed=float(intensity.max()),
         n_prominent_peaks=2,
         candidates=candidates,
-        confidence="VERY_LOW",
-        reason="decision: predecessor selected",
+        confidence="VERY_LOW" if selected_index == 0 else "HIGH",
+        reason="decision: candidate selected",
         candidate_scores=(
             _score(
-                predecessor,
+                first,
                 confidence="VERY_LOW",
                 raw_score=20,
                 support_labels=("strict_nl_ok",),
                 concern_labels=("rt_centrality_poor", "shape_poor"),
             ),
             _score(
-                successor,
+                second,
                 confidence="HIGH",
                 raw_score=120,
                 support_labels=("strict_nl_ok", "candidate_aligned_ms2_nl"),
@@ -399,57 +255,62 @@ def test_successor_handoff_keeps_identity_and_physical_measurement_together(
         intensity=intensity,
         rt_min=7.0,
         rt_max=10.5,
-        expected_rt_min=successor.peak.rt,
+        expected_rt_min=selected.peak.rt,
     )
     handoff = targeted_peak_selection.select_targeted_peak(
         config=config,
         target=target,
         peak_result=peak_result,
         trace_group=trace_group,
-        candidate_ms2_evidence={predecessor: predecessor_ms2, successor: successor_ms2},
+        candidate_ms2_evidence={first: first_ms2, second: second_ms2},
         prepared_result=prepared,
         universe=universe,
         selection_rt_min=7.0,
         selection_rt_max=10.5,
     )
-    assert handoff.model_selection_result is not None
     assert handoff.selected_hypothesis is not None
-    assert handoff.candidate_ms2_evidence == successor_ms2
-    assert handoff.peak_result.confidence == "HIGH"
-    assert handoff.model_selection_result.product_switch_allowed is True
-    assert f"{successor.peak.rt:.5f}" in handoff.selected_hypothesis.hypothesis_id
-    assert handoff.selected_hypothesis.integration.rt_apex_min == pytest.approx(
-        9.0 + shift
+    assert handoff.selected_hypothesis.audit.selected is True
+    assert handoff.selected_hypothesis.trace_group_id == trace_group.trace_group_id
+    assert handoff.trace_group == trace_group
+    assert handoff.selection_decision is not None
+    assert (
+        handoff.selection_decision.selected_candidate_id
+        == handoff.selected_hypothesis.hypothesis_id
     )
-    assert handoff.peak_result.peak == successor.peak
+    assert handoff.candidate_ms2_evidence == (first_ms2, second_ms2)[selected_index]
+    assert handoff.peak_result.confidence == peak_result.confidence
+    assert f"{selected.peak.rt:.5f}" in handoff.selected_hypothesis.hypothesis_id
+    assert handoff.selected_hypothesis.integration.rt_apex_min == pytest.approx(
+        selected.peak.rt
+    )
+    assert handoff.peak_result.peak == selected.peak
     assert handoff.selected_hypothesis.integration.area_ms1_morphology == pytest.approx(
-        successor.peak.area
+        selected.peak.area
     )
     result = build_extraction_result(
         peak_result=handoff.peak_result,
         nl_result=None,
         candidate_ms2_evidence=handoff.candidate_ms2_evidence,
         target=target,
-        candidate=successor,
+        candidate=selected,
         scoring_context_builder=None,
         selected_hypothesis=handoff.selected_hypothesis,
         selection_decision=handoff.selection_decision,
-        model_selection_result=handoff.model_selection_result,
         physical_evaluation=handoff.physical_evaluation,
         acquisition_trace=trace_group.primary_trace,
         sample_name=sample_name,
     )
-    assert result.reported_rt == pytest.approx(9.0 + shift)
-    assert result.reported_peak_area == pytest.approx(successor.peak.area)
-    assert result.reported_peak_start == pytest.approx(successor.peak.peak_start)
-    assert result.reported_peak_end == pytest.approx(successor.peak.peak_end)
+    assert result.reported_rt == pytest.approx(selected.peak.rt)
+    assert result.reported_peak_area == pytest.approx(selected.peak.area)
+    assert result.reported_peak_start == pytest.approx(selected.peak.peak_start)
+    assert result.reported_peak_end == pytest.approx(selected.peak.peak_end)
 
     from openpyxl import load_workbook
 
     from xic_extractor.extraction.result_models import FileResult, RunOutput
     from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 
-    output_path = tmp_path / "successor.xlsx"
+    output_path = tmp_path / "second.xlsx"
     write_excel_from_run_output(
         config,
         [target],
@@ -463,95 +324,12 @@ def test_successor_handoff_keeps_identity_and_physical_measurement_together(
     finally:
         workbook.close()
     for field, value, digits in (
-        ("RT", successor.peak.rt, 4),
-        ("Area", successor.peak.area, 2),
-        ("PeakStart", successor.peak.peak_start, 4),
-        ("PeakEnd", successor.peak.peak_end, 4),
+        ("RT", selected.peak.rt, 4),
+        ("Area", selected.peak.area, 2),
+        ("PeakStart", selected.peak.peak_start, 4),
+        ("PeakEnd", selected.peak.peak_end, 4),
     ):
         assert row[field] == float(f"{value:.{digits}f}")
-
-
-def test_hypothesis_policy_promotes_rna_containing_strict_nl_successor(
-    tmp_path,
-) -> None:
-    legacy_selected = _candidate(12.76, area=49_350.0)
-    successor_candidate = _candidate(13.08, area=5_589_246.0)
-    peak_result = PeakDetectionResult(
-        status="OK",
-        peak=legacy_selected.peak,
-        n_points=31,
-        max_smoothed=5_600_000.0,
-        n_prominent_peaks=2,
-        candidates=(legacy_selected, successor_candidate),
-        confidence="VERY_LOW",
-        reason="decision: legacy picked small local artifact",
-        candidate_scores=(
-            _score(
-                legacy_selected,
-                confidence="VERY_LOW",
-                raw_score=20,
-                support_labels=("strict_nl_ok",),
-                concern_labels=("rt_centrality_poor", "shape_poor"),
-            ),
-            _score(
-                successor_candidate,
-                confidence="HIGH",
-                raw_score=120,
-                support_labels=(
-                    "strict_nl_ok",
-                    "candidate_aligned_ms2_nl",
-                    "local_sn_strong",
-                    "trace_clean",
-                ),
-                concern_labels=(),
-            ),
-        ),
-    )
-
-    handoff = targeted_peak_selection._select_targeted_hypothesis(
-        config=_config(tmp_path),
-        target=_target(sample_applicability="rna_containing"),
-        peak_result=peak_result,
-        candidate_ms2_evidence={
-            legacy_selected: CandidateMS2Evidence(
-                ms2_present=True,
-                nl_match=True,
-                nl_status="OK",
-                trigger_scan_count=3,
-                strict_nl_scan_count=3,
-                best_loss_ppm=2.5,
-                best_scan_rt=12.76,
-                best_product_base_ratio=0.8,
-                alignment_source="region",
-            )
-        },
-        trace_group=targeted_extraction_trace_group(
-            config=_config(tmp_path),
-            sample_name="TumorBC2304_DNAandRNA",
-            target=_target(sample_applicability="rna_containing"),
-            rt=np.asarray([12.6, 12.76, 12.9, 13.08, 13.2]),
-            intensity=np.asarray([10.0, 49_000.0, 2_000.0, 5_500_000.0, 3_000_000.0]),
-            rt_min=12.5,
-            rt_max=13.3,
-            expected_rt_min=13.0,
-        ),
-    )
-
-    assert handoff.model_selection_result is not None
-    assert handoff.selected_hypothesis is not None
-    assert handoff.model_selection_result.selection_status == "expected_diff"
-    assert handoff.model_selection_result.product_switch_allowed is True
-    assert (
-        "successor_selection_not_adopted"
-        not in handoff.model_selection_result.diff_reasons
-    )
-    assert "target_applicable_strict_nl_successor" in (
-        handoff.model_selection_result.evidence_sources
-    )
-    assert handoff.selected_hypothesis.hypothesis_id == (
-        handoff.model_selection_result.selected_candidate_id
-    )
-    assert "13.08000" in handoff.selected_hypothesis.hypothesis_id
 
 
 def test_build_production_peak_hypotheses_uses_config_baseline_method(

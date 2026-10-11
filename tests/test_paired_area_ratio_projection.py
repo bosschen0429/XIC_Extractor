@@ -388,7 +388,7 @@ def _hypothesis(
                 conflict_reasons=conflicts,
             ),
         ),
-        audit=AuditTrail(selected=True, selection_rank=1),
+        audit=AuditTrail(selected=True),
     )
 
 
