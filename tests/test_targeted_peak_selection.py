@@ -183,14 +183,16 @@ def test_selected_hypothesis_uses_final_peak_result_confidence_when_score_is_sta
     "sample_name,shift,scale,selected_index",
     [("SampleA_RNA", 0.0, 1.0, 0), ("SampleB_RNA", 0.2, 1.7, 1)],
 )
+@pytest.mark.parametrize("reuse_evaluation", [False, True])
 def test_handoff_preserves_the_selected_candidate_through_workbook(
-    tmp_path, sample_name, shift, scale, selected_index
+    tmp_path, monkeypatch, sample_name, shift, scale, selected_index, reuse_evaluation
 ) -> None:
     from xic_extractor.configuration.signal_processing_profile import (
         resolve_signal_processing_profile,
     )
     from xic_extractor.extraction.result_assembly import build_extraction_result
     from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
+        answer_selected_physical_candidate,
         physical_candidates_result,
     )
     from xic_extractor.peak_detection.physical_peak_evaluation import (
@@ -217,6 +219,31 @@ def test_handoff_preserves_the_selected_candidate_through_workbook(
     assert len(candidates) == 2
     first, second = candidates
     selected = candidates[selected_index]
+    evaluations = None
+    if reuse_evaluation:
+        evaluation = answer_selected_physical_candidate(
+            prepared,
+            universe,
+            selected,
+            selection_subject_id=target.label,
+            acquisition_rt_window=(7.0, 10.5),
+            selection_rt_window=(7.0, 10.5),
+        )
+        evaluations = {selected: evaluation}
+
+        def unexpected_question(*args, **kwargs):
+            pytest.fail("selection must reuse its completed candidate answer")
+
+        monkeypatch.setattr(
+            "xic_extractor.peak_detection.physical_peak_candidate_adapter."
+            "mint_physical_peak_question",
+            unexpected_question,
+        )
+        monkeypatch.setattr(
+            "xic_extractor.peak_detection.physical_peak_candidate_adapter."
+            "answer_physical_peak_question",
+            unexpected_question,
+        )
     first_ms2 = replace(_ms2_evidence(), best_scan_rt=first.peak.rt)
     second_ms2 = replace(_ms2_evidence(), best_scan_rt=second.peak.rt)
     # The handoff consumes the first-stage choice, even when another candidate
@@ -267,7 +294,10 @@ def test_handoff_preserves_the_selected_candidate_through_workbook(
         universe=universe,
         selection_rt_min=7.0,
         selection_rt_max=10.5,
+        candidate_evaluations=evaluations,
     )
+    if reuse_evaluation:
+        assert handoff.physical_evaluation == evaluation
     assert handoff.selected_hypothesis is not None
     assert handoff.selected_hypothesis.audit.selected is True
     assert handoff.selected_hypothesis.trace_group_id == trace_group.trace_group_id
@@ -330,6 +360,43 @@ def test_handoff_preserves_the_selected_candidate_through_workbook(
         ("PeakEnd", selected.peak.peak_end, 4),
     ):
         assert row[field] == float(f"{value:.{digits}f}")
+
+
+@pytest.mark.parametrize("has_signal", [False, True])
+def test_no_selected_candidate_preserves_window_and_unavailability(has_signal) -> None:
+    from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
+        answer_selected_physical_candidate,
+    )
+    from xic_extractor.peak_detection.physical_peak_evaluation import (
+        enumerate_physical_segment_universe,
+        prepare_physical_signal,
+    )
+
+    rt = np.linspace(7.0, 10.5, 701)
+    intensity = (
+        30.0 + 1000.0 * np.exp(-0.5 * ((rt - 8.0) / 0.08) ** 2)
+        if has_signal
+        else np.zeros_like(rt)
+    )
+    prepared = prepare_physical_signal(rt, intensity)
+    universe = enumerate_physical_segment_universe(prepared)
+    evaluation = answer_selected_physical_candidate(
+        prepared,
+        universe,
+        None,
+        selection_subject_id="Analyte",
+        acquisition_rt_window=(7.0, 10.5),
+        selection_rt_window=(9.5, 10.5),
+    )
+
+    assert evaluation.question.query_rt_min == (10.0 if has_signal else 8.75)
+    assert evaluation.question.admissible_segment_ids == ()
+    assert evaluation.state == "unavailable"
+    assert evaluation.reason == (
+        "no_selection" if has_signal else "no_signal_above_baseline"
+    )
+    assert evaluation.integration is None
+    assert evaluation.answer.physical_segment_id is None
 
 
 def test_build_production_peak_hypotheses_uses_config_baseline_method(

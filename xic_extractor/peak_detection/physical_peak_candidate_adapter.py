@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from xic_extractor.peak_detection.models import (
     PeakCandidate,
     PeakCandidatesResult,
@@ -9,13 +11,62 @@ from xic_extractor.peak_detection.models import (
     PeakStatus,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
+    answer_physical_peak_question,
+    mint_physical_peak_question,
     qualified_physical_segments,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
+    PHYSICAL_PEAK_NO_SELECTION_POLICY,
+    PHYSICAL_PEAK_POINT_POLICY,
+    PhysicalPeakEvaluation,
     PhysicalSegment,
     PhysicalSegmentUniverse,
     PreparedSignalResult,
 )
+
+
+def answer_selected_physical_candidate(
+    prepared_result: PreparedSignalResult,
+    universe: PhysicalSegmentUniverse,
+    candidate: PeakCandidate | None,
+    *,
+    selection_subject_id: str,
+    acquisition_rt_window: tuple[float, float],
+    selection_rt_window: tuple[float, float],
+    candidate_evaluations: Mapping[PeakCandidate, PhysicalPeakEvaluation] | None = None,
+) -> PhysicalPeakEvaluation:
+    """Bind a selected candidate and return its completed physical answer.
+
+    A supplied evaluation map belongs to these candidates, signal and universe;
+    selection reuses that answer without minting or evaluating another question.
+    With no candidate, unavailable acquisition uses the acquired window's centre;
+    an available universe uses the selection window's centre and no-selection
+    policy, so segments outside that window cannot acquire selection authority.
+    """
+    segment = selected_physical_segment(candidate, universe)
+    if candidate is not None and candidate_evaluations is not None:
+        return candidate_evaluations[candidate]
+    if segment is not None:
+        query_rt_min = segment.apex_rt_min
+    else:
+        window = (
+            acquisition_rt_window
+            if universe.state != "available"
+            else selection_rt_window
+        )
+        query_rt_min = (window[0] + window[1]) / 2
+    question = mint_physical_peak_question(
+        prepared_result.projection,
+        universe,
+        selection_subject_id=selection_subject_id,
+        query_rt_min=query_rt_min,
+        selection_policy_version=(
+            PHYSICAL_PEAK_POINT_POLICY
+            if segment is not None
+            else PHYSICAL_PEAK_NO_SELECTION_POLICY
+        ),
+    )
+    return answer_physical_peak_question(prepared_result, universe, question)
 
 
 def physical_candidates_result(

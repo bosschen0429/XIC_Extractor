@@ -260,7 +260,9 @@ def test_formal_target_ranks_only_physically_supported_signal(
 def test_formal_target_drops_selection_when_final_physical_owner_is_unavailable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import xic_extractor.extraction.target_extraction as extraction_owner
+    from xic_extractor.peak_detection import (
+        physical_peak_candidate_adapter as physical_owner,
+    )
     from xic_extractor.peak_detection.physical_peak_evaluation import (
         answer_physical_peak_question,
         mint_physical_peak_question,
@@ -287,7 +289,7 @@ def test_formal_target_drops_selection_when_final_physical_owner_is_unavailable(
         return answer_physical_peak_question(prepared, universe, rejected_question)
 
     monkeypatch.setattr(
-        extraction_owner, "answer_physical_peak_question", unavailable_answer
+        physical_owner, "answer_physical_peak_question", unavailable_answer
     )
     output = _run(config, [target])
     result = output.file_results[0].results[target.label]
