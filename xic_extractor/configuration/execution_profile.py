@@ -85,3 +85,20 @@ def _validate_workers(value: int, *, field: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         raise ValueError(f"{field} must be an integer >= 1")
     return value
+
+
+@dataclass(frozen=True, slots=True)
+class UntargetedExecutionPolicy:
+    """Resources for retained Alignment, independent of scientific settings."""
+
+    retain_acquisition_cache: bool = False
+    acquisition_cache_dir: Path | None = None
+    raw_workers: int = DEFAULT_ALIGNMENT_WORKERS
+    raw_worker_backend: str = DEFAULT_ALIGNMENT_WORKER_BACKEND
+    max_partition_jobs: int = 100_000
+
+    def __post_init__(self) -> None:
+        if type(self.raw_workers) is not int or self.raw_workers < 1:
+            raise ValueError("raw_workers must be a positive integer")
+        if self.raw_worker_backend not in {"process", "thread"}:
+            raise ValueError("raw_worker_backend must be 'process' or 'thread'")

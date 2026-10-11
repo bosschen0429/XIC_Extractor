@@ -11,6 +11,12 @@ from dataclasses import asdict
 import pytest
 
 from tests.test_cid_nl_explanation import _owner_run
+from xic_extractor.applications.untargeted.publication import (
+    UntargetedPublicationPolicy,
+)
+from xic_extractor.applications.untargeted.request import (
+    UntargetedRequest,
+)
 from xic_extractor.diagnostics.alignment_explanation import read_cid_nl_explanation
 from xic_extractor.diagnostics.alignment_explanation_projection import (
     write_cid_nl_explanation,
@@ -267,14 +273,16 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
         lambda **kwargs: completed,
     )
     outputs = application.run_untargeted_application(
-        discovery_batch_index=batch_index,
-        raw_dir=tmp_path,
-        dll_dir=tmp_path,
-        output_dir=tmp_path / "published",
-        alignment_config=config,
-        peak_config=peak_config(),
-        discovery_settings=_settings(),
-        emit_cid_nl_explanation=True,
+        UntargetedRequest(
+            discovery_batch_index=batch_index,
+            raw_dir=tmp_path,
+            dll_dir=tmp_path,
+            output_dir=tmp_path / "published",
+            alignment_config=config,
+            peak_config=peak_config(),
+            discovery_settings=_settings(),
+            publication=UntargetedPublicationPolicy(emit_cid_nl_explanation=True),
+        )
     )
     locator = outputs.evidence
     assert isinstance(locator, EvidenceLocator)

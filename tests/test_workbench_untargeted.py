@@ -436,8 +436,8 @@ def test_alignment_mode_emits_review_evidence_without_full_audit(
     locator = SimpleNamespace(report_path=evidence)
     captured = {}
 
-    def align(**kwargs):
-        captured.update(kwargs)
+    def align(request, context=None):
+        captured.update(request=request, context=context)
         return SimpleNamespace(
             review_tsv=review,
             matrix_tsv=matrix,
@@ -453,8 +453,8 @@ def test_alignment_mode_emits_review_evidence_without_full_audit(
         parse_request(values), progress=lambda *_args: None, should_cancel=lambda: False
     ).execute()
 
-    assert captured["emit_cid_nl_explanation"] is True
-    assert captured["explanation_full_audit"] is False
+    assert captured["request"].publication.emit_cid_nl_explanation is True
+    assert captured["request"].publication.explanation_full_audit is False
     assert summary["evidence"] is locator
     assert summary["published_paths"] == [
         str(review),
@@ -494,7 +494,7 @@ def test_full_mode_dispatches_discovery_then_alignment_and_honors_cancel(
     monkeypatch.setattr(
         module,
         "run_untargeted_application",
-        lambda **_kwargs: SimpleNamespace(
+        lambda request, context=None, **_kwargs: SimpleNamespace(
             review_tsv=None,
             matrix_tsv=None,
             matrix_identity_tsv=None,

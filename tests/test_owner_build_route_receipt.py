@@ -11,6 +11,10 @@ from xic_extractor.alignment.owner_build_route_receipt import (
     _mint_owner_build_route_receipt,
     _mint_retained_untargeted_cid_nl_route_receipt,
 )
+from xic_extractor.applications.untargeted.request import (
+    RetainedAlignmentOptions,
+    UntargetedRequest,
+)
 
 
 def test_receipt_requires_alignment_owner_mint() -> None:
@@ -59,12 +63,14 @@ def test_pipeline_rejects_invalid_backend_before_input_io(
 
     with pytest.raises(ValueError, match="unsupported owner build XIC backend"):
         application_module.run_untargeted_application(
-            discovery_batch_index=tmp_path / "discovery_batch_index.csv",
-            raw_dir=tmp_path / "raw",
-            dll_dir=tmp_path / "dll",
-            output_dir=tmp_path / "out",
-            alignment_config=AlignmentConfig(),
-            peak_config=_peak_config(),
-            owner_build_xic_backend="invalid",  # type: ignore[arg-type]
-            discovery_settings=_settings(),
+            UntargetedRequest(
+                discovery_batch_index=tmp_path / "discovery_batch_index.csv",
+                raw_dir=tmp_path / "raw",
+                dll_dir=tmp_path / "dll",
+                output_dir=tmp_path / "out",
+                alignment_config=AlignmentConfig(),
+                peak_config=_peak_config(),
+                discovery_settings=_settings(),
+                legacy=RetainedAlignmentOptions(owner_build_xic_backend="invalid"),
+            )
         )

@@ -60,7 +60,7 @@ def test_run_alignment_cli_rejects_nondefault_profile_before_acquisition_or_outp
     dll_dir.mkdir()
     output_dir = tmp_path / "alignment"
 
-    def fail_alignment(**_kwargs):
+    def fail_alignment(request, context=None):
         pytest.fail("unsupported signal profile reached acquisition")
 
     monkeypatch.setattr(run_alignment, "run_untargeted_application", fail_alignment)
@@ -140,8 +140,8 @@ def test_run_alignment_accepts_asls_baseline_integration_method_override(
     output_dir = tmp_path / "alignment"
     captured = {}
 
-    def fake_run_alignment(**kwargs):
-        captured.update(kwargs)
+    def fake_run_alignment(request, context=None):
+        captured.update(request=request, context=context)
         output_dir.mkdir(parents=True, exist_ok=True)
         review = output_dir / "alignment_review.tsv"
         matrix = output_dir / "alignment_matrix.tsv"
@@ -175,7 +175,7 @@ def test_run_alignment_accepts_asls_baseline_integration_method_override(
     )
 
     assert code == 0
-    assert captured["peak_config"].baseline_integration_method == "asls"
+    assert captured["request"].peak_config.baseline_integration_method == "asls"
 
 
 def test_run_alignment_rejects_retired_linear_edge_baseline_override(
@@ -191,7 +191,7 @@ def test_run_alignment_rejects_retired_linear_edge_baseline_override(
     dll_dir.mkdir()
     output_dir = tmp_path / "alignment"
 
-    def fake_run_alignment(**_kwargs):
+    def fake_run_alignment(request, context=None):
         raise AssertionError("run_alignment should not be called")
 
     monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
@@ -232,7 +232,7 @@ def test_run_alignment_rejects_retired_linear_edge_baseline_env(
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
 
-    def fake_run_alignment(**_kwargs):
+    def fake_run_alignment(request, context=None):
         raise AssertionError("run_alignment should not be called")
 
     monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
@@ -274,8 +274,8 @@ def test_run_alignment_cli_accepts_output_level_debug(
     dll_dir.mkdir()
     captured = {}
 
-    def fake_run_alignment(**kwargs):
-        captured.update(kwargs)
+    def fake_run_alignment(request, context=None):
+        captured.update(request=request, context=context)
         return AlignmentRunOutputs()
 
     monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
@@ -298,9 +298,9 @@ def test_run_alignment_cli_accepts_output_level_debug(
     )
 
     assert code == 0
-    assert captured["output_level"] == "debug"
-    assert captured["raw_workers"] == raw_workers
-    assert captured["raw_worker_backend"] == "process"
+    assert captured["request"].publication.output_level == "debug"
+    assert captured["request"].execution.raw_workers == raw_workers
+    assert captured["request"].execution.raw_worker_backend == "process"
 
 
 def test_run_alignment_cli_accepts_raw_worker_backend(
@@ -315,8 +315,8 @@ def test_run_alignment_cli_accepts_raw_worker_backend(
     dll_dir.mkdir()
     captured = {}
 
-    def fake_run_alignment(**kwargs):
-        captured.update(kwargs)
+    def fake_run_alignment(request, context=None):
+        captured.update(request=request, context=context)
         return AlignmentRunOutputs()
 
     monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
@@ -339,8 +339,8 @@ def test_run_alignment_cli_accepts_raw_worker_backend(
     )
 
     assert code == 0
-    assert captured["raw_workers"] == 2
-    assert captured["raw_worker_backend"] == "process"
+    assert captured["request"].execution.raw_workers == 2
+    assert captured["request"].execution.raw_worker_backend == "process"
 
 
 def test_run_alignment_cli_accepts_validation_minimal_output_level(
@@ -355,8 +355,8 @@ def test_run_alignment_cli_accepts_validation_minimal_output_level(
     dll_dir.mkdir()
     captured = {}
 
-    def fake_run_alignment(**kwargs):
-        captured.update(kwargs)
+    def fake_run_alignment(request, context=None):
+        captured.update(request=request, context=context)
         return AlignmentRunOutputs()
 
     monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
@@ -377,7 +377,7 @@ def test_run_alignment_cli_accepts_validation_minimal_output_level(
     )
 
     assert code == 0
-    assert captured["output_level"] == "validation-minimal"
+    assert captured["request"].publication.output_level == "validation-minimal"
 
 
 def test_run_alignment_cli_dna_dr_preset_binds_retained_recipe(
@@ -400,8 +400,8 @@ def test_run_alignment_cli_dna_dr_preset_binds_retained_recipe(
         bound_recipes.append(recipe)
         return recipe
 
-    def fake_run_alignment(**kwargs):
-        captured_alignment.update(kwargs)
+    def fake_run_alignment(request, context=None):
+        captured_alignment.update(request=request, context=context)
         output_dir.mkdir(parents=True, exist_ok=True)
         review = output_dir / "alignment_review.tsv"
         matrix = output_dir / "alignment_matrix.tsv"
@@ -437,12 +437,15 @@ def test_run_alignment_cli_dna_dr_preset_binds_retained_recipe(
     )
 
     assert code == 0
-    assert captured_alignment["emit_alignment_backfill_seed_audit"] is False
-    assert captured_alignment["emit_alignment_cells"] is False
-    assert captured_alignment["require_discovery_owner_closure"] is True
+    assert (
+        captured_alignment["request"].publication.emit_alignment_backfill_seed_audit
+        is False
+    )
+    assert captured_alignment["request"].publication.emit_alignment_cells is False
+    assert captured_alignment["request"].legacy.require_discovery_owner_closure is True
     assert len(bound_recipes) == 1
     recipe = bound_recipes[0]
-    assert captured_alignment["discovery_settings"] is recipe.discovery_settings
+    assert captured_alignment["request"].discovery_settings is recipe.discovery_settings
 
 
 def test_run_alignment_cli_binds_pure_preset_peak_settings(
@@ -475,8 +478,8 @@ nl_min_intensity_ratio = 0.37
     dll_dir.mkdir()
     captured: dict[str, object] = {}
 
-    def fake_run_alignment(**kwargs):
-        captured.update(kwargs)
+    def fake_run_alignment(request, context=None):
+        captured.update(request=request, context=context)
         return AlignmentRunOutputs()
 
     monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
@@ -497,8 +500,8 @@ nl_min_intensity_ratio = 0.37
     )
 
     assert code == 0
-    settings = captured["discovery_settings"]
-    peak_config = captured["peak_config"]
+    settings = captured["request"].discovery_settings
+    peak_config = captured["request"].peak_config
     assert peak_config.resolver_mode == settings.resolver_mode == "savgol"
     assert (
         peak_config.nl_min_intensity_ratio
@@ -522,9 +525,9 @@ def test_run_alignment_cli_compat_preset_reports_retained_route(
     captured_alignment: dict[str, object] = {}
     call_order: list[str] = []
 
-    def fake_run_alignment(**kwargs):
+    def fake_run_alignment(request, context=None):
         call_order.append("alignment")
-        captured_alignment.update(kwargs)
+        captured_alignment.update(request=request, context=context)
         output_dir.mkdir(parents=True, exist_ok=True)
         paths = {
             "review_tsv": output_dir / "alignment_review.tsv",
@@ -541,7 +544,7 @@ def test_run_alignment_cli_compat_preset_reports_retained_route(
             path.write_text("x\n", encoding="utf-8")
         return AlignmentRunOutputs(
             **paths,
-            _owner_build_xic_backend=kwargs["owner_build_xic_backend"],
+            _owner_build_xic_backend=request.legacy.owner_build_xic_backend,
         )
 
     monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
@@ -565,9 +568,15 @@ def test_run_alignment_cli_compat_preset_reports_retained_route(
 
     assert code == 0
     assert call_order == ["alignment"]
-    assert captured_alignment["emit_alignment_backfill_seed_audit"] is False
-    assert captured_alignment["emit_alignment_cells"] is False
-    assert captured_alignment["owner_build_xic_backend"] == "raw_superwindow"
+    assert (
+        captured_alignment["request"].publication.emit_alignment_backfill_seed_audit
+        is False
+    )
+    assert captured_alignment["request"].publication.emit_alignment_cells is False
+    assert (
+        captured_alignment["request"].legacy.owner_build_xic_backend
+        == "raw_superwindow"
+    )
     stdout = capsys.readouterr().out
     assert "Backfill expansion productization summary JSON:" not in stdout
     assert "Product-ready preset publication summary JSON:" not in stdout
@@ -591,8 +600,8 @@ def test_run_alignment_cli_can_override_product_ready_owner_build_backend(
     output_dir = tmp_path / "alignment"
     captured_alignment = {}
 
-    def fake_run_alignment(**kwargs):
-        captured_alignment.update(kwargs)
+    def fake_run_alignment(request, context=None):
+        captured_alignment.update(request=request, context=context)
         output_dir.mkdir(parents=True, exist_ok=True)
         return AlignmentRunOutputs(
             review_tsv=output_dir / "alignment_review.tsv",
@@ -626,7 +635,7 @@ def test_run_alignment_cli_can_override_product_ready_owner_build_backend(
     )
 
     assert code == 0
-    assert captured_alignment["owner_build_xic_backend"] == "raw"
+    assert captured_alignment["request"].legacy.owner_build_xic_backend == "raw"
 
 
 def test_run_alignment_cli_rejects_explicit_retired_backfill_replay_preset(
@@ -663,7 +672,7 @@ backfill_expansion_productization = "clean-target-selective"
     captured_backfill_expansion: dict[str, object] = {}
     call_order: list[str] = []
 
-    def fake_run_alignment(**_kwargs):
+    def fake_run_alignment(request, context=None):
         call_order.append("alignment")
         output_dir.mkdir(parents=True, exist_ok=True)
         paths = {
@@ -746,8 +755,8 @@ def test_run_alignment_cli_dna_dr_preset_uses_light_cells_for_validation_minimal
     output_dir = tmp_path / "alignment"
     captured_alignment: dict[str, object] = {}
 
-    def fake_run_alignment(**kwargs):
-        captured_alignment.update(kwargs)
+    def fake_run_alignment(request, context=None):
+        captured_alignment.update(request=request, context=context)
         output_dir.mkdir(parents=True, exist_ok=True)
         review = output_dir / "alignment_review.tsv"
         matrix = output_dir / "alignment_matrix.tsv"
@@ -784,8 +793,11 @@ def test_run_alignment_cli_dna_dr_preset_uses_light_cells_for_validation_minimal
     )
 
     assert code == 0
-    assert captured_alignment["emit_alignment_backfill_seed_audit"] is False
-    assert captured_alignment["emit_alignment_cells"] is False
+    assert (
+        captured_alignment["request"].publication.emit_alignment_backfill_seed_audit
+        is False
+    )
+    assert captured_alignment["request"].publication.emit_alignment_cells is False
 
 
 def test_run_alignment_cli_passes_owner_build_xic_backend(
@@ -800,8 +812,8 @@ def test_run_alignment_cli_passes_owner_build_xic_backend(
     dll_dir.mkdir()
     captured = {}
 
-    def fake_run_alignment(**kwargs):
-        captured.update(kwargs)
+    def fake_run_alignment(request, context=None):
+        captured.update(request=request, context=context)
         return AlignmentRunOutputs()
 
     monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
@@ -822,7 +834,7 @@ def test_run_alignment_cli_passes_owner_build_xic_backend(
     )
 
     assert code == 0
-    assert captured["owner_build_xic_backend"] == "ms1_index"
+    assert captured["request"].legacy.owner_build_xic_backend == "ms1_index"
 
 
 def test_run_alignment_cli_passes_raw_superwindow_owner_build_xic_backend(
@@ -837,8 +849,8 @@ def test_run_alignment_cli_passes_raw_superwindow_owner_build_xic_backend(
     dll_dir.mkdir()
     captured = {}
 
-    def fake_run_alignment(**kwargs):
-        captured.update(kwargs)
+    def fake_run_alignment(request, context=None):
+        captured.update(request=request, context=context)
         return AlignmentRunOutputs()
 
     monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
@@ -859,7 +871,7 @@ def test_run_alignment_cli_passes_raw_superwindow_owner_build_xic_backend(
     )
 
     assert code == 0
-    assert captured["owner_build_xic_backend"] == "raw_superwindow"
+    assert captured["request"].legacy.owner_build_xic_backend == "raw_superwindow"
 
 
 def test_run_alignment_cli_writes_timing_json(
@@ -875,8 +887,8 @@ def test_run_alignment_cli_writes_timing_json(
     dll_dir.mkdir()
     timing_path = tmp_path / "diagnostics" / "alignment_timing.json"
 
-    def fake_run_alignment(**kwargs):
-        timing_recorder = kwargs["timing_recorder"]
+    def fake_run_alignment(request, context=None):
+        timing_recorder = context.timing_recorder
         with timing_recorder.stage(
             "alignment.read_candidates",
             metrics={"candidate_count": 0},
@@ -923,7 +935,7 @@ def test_run_alignment_cli_records_foreground_memory_and_stops_sampler(
     sampler = _FakeCliMemorySampler()
     monkeypatch.setattr(run_alignment, "ProcessTreeMemorySampler", lambda: sampler)
 
-    def fake_run_alignment(**_kwargs):
+    def fake_run_alignment(request, context=None):
         assert sampler.running
         sampler.peak = (321, 123)
         return AlignmentRunOutputs()
@@ -971,9 +983,9 @@ def test_run_alignment_cli_stops_memory_sampler_on_failure(
     sampler = _FakeCliMemorySampler()
     monkeypatch.setattr(run_alignment, "ProcessTreeMemorySampler", lambda: sampler)
 
-    def fail_run_alignment(**kwargs):
+    def fail_run_alignment(request, context=None):
         assert sampler.running
-        with kwargs["timing_recorder"].stage(
+        with context.timing_recorder.stage(
             "alignment.failed_runtime", metrics={"completed_partitions": 33}
         ):
             raise ValueError("failed in foreground")
@@ -1043,8 +1055,8 @@ def test_run_alignment_cli_writes_live_timing_json(
     dll_dir.mkdir()
     live_path = tmp_path / "diagnostics" / "alignment_live_timing.json"
 
-    def fake_run_alignment(**kwargs):
-        timing_recorder = kwargs["timing_recorder"]
+    def fake_run_alignment(request, context=None):
+        timing_recorder = context.timing_recorder
         timing_recorder.record("alignment.run_config", elapsed_sec=0.0)
         return AlignmentRunOutputs()
 
@@ -1088,7 +1100,7 @@ def test_run_alignment_cli_writes_cprofile_outputs(
     monkeypatch.setattr(
         run_alignment,
         "run_untargeted_application",
-        lambda **kwargs: AlignmentRunOutputs(),
+        lambda request, context=None, **kwargs: AlignmentRunOutputs(),
     )
 
     code = run_alignment.main(
@@ -1276,7 +1288,7 @@ def test_run_alignment_cli_normal_run_does_not_require_all_raw_paths(
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
 
-    def fake_run_alignment(**kwargs):
+    def fake_run_alignment(request, context=None):
         return AlignmentRunOutputs()
 
     monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_run_alignment)
@@ -1363,7 +1375,7 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
     dll_dir.mkdir()
     output_dir = tmp_path / "alignment"
 
-    def fail_run_alignment(**kwargs):
+    def fail_run_alignment(request, context=None):
         raise AssertionError("preflight-only should not run alignment")
 
     monkeypatch.setattr(run_alignment, "run_untargeted_application", fail_run_alignment)
@@ -1701,7 +1713,7 @@ def test_run_alignment_cli_returns_2_for_user_visible_errors(
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
 
-    def fail_run_alignment(**kwargs):
+    def fail_run_alignment(request, context=None):
         raise exc
 
     monkeypatch.setattr(run_alignment, "run_untargeted_application", fail_run_alignment)
@@ -1801,8 +1813,15 @@ def test_run_alignment_cli_targets_csv_and_workbook_mutually_exclusive(
 
 
 @pytest.mark.parametrize(
-    "mode", ["uncorrected", "conflict_target", "conflict_workbook", "missing",
-             "invalid", "explicit"],
+    "mode",
+    [
+        "uncorrected",
+        "conflict_target",
+        "conflict_workbook",
+        "missing",
+        "invalid",
+        "explicit",
+    ],
 )
 def test_run_alignment_cli_istd_input_is_explicit_or_validated_before_raw(
     tmp_path: Path,
@@ -1816,7 +1835,7 @@ def test_run_alignment_cli_istd_input_is_explicit_or_validated_before_raw(
     template = run_alignment._repo_root() / "config" / "targets.example.csv"
     monkeypatch.setattr(run_alignment, "_repo_root", lambda: tmp_path)
 
-    def no_raw(**kwargs):
+    def no_raw(request, context=None):
         pytest.fail("preflight or invalid ISTD input reached RAW execution")
 
     monkeypatch.setattr(run_alignment, "run_untargeted_application", no_raw)
@@ -1831,15 +1850,25 @@ def test_run_alignment_cli_istd_input_is_explicit_or_validated_before_raw(
         config = tmp_path / "config"
         config.mkdir()
         (config / "targets.example.csv").write_text(
-            "not,a,target,list\n", encoding="utf-8",
+            "not,a,target,list\n",
+            encoding="utf-8",
         )
     elif mode == "explicit":
         extras = ["--targets-csv", str(template)]
-    code = run_alignment.main([
-        "--preset", "dna_dr", "--discovery-batch-index", str(batch_index),
-        "--raw-dir", str(raw_dir), "--dll-dir", str(dll_dir), "--preflight-only",
-        *extras,
-    ])
+    code = run_alignment.main(
+        [
+            "--preset",
+            "dna_dr",
+            "--discovery-batch-index",
+            str(batch_index),
+            "--raw-dir",
+            str(raw_dir),
+            "--dll-dir",
+            str(dll_dir),
+            "--preflight-only",
+            *extras,
+        ]
+    )
     captured = capsys.readouterr()
     if mode == "uncorrected":
         assert code == 0
@@ -1887,6 +1916,7 @@ def test_run_alignment_cli_targets_csv_must_exist(
     assert code == 2
     assert "targets CSV file does not exist" in capsys.readouterr().err
 
+
 @pytest.mark.parametrize("explicit_metadata", [True, False])
 def test_run_alignment_cli_routes_sample_metadata_without_losing_cohorts(
     monkeypatch: pytest.MonkeyPatch,
@@ -1898,8 +1928,7 @@ def test_run_alignment_cli_routes_sample_metadata_without_losing_cohorts(
 
     batch_index = tmp_path / "discovery_batch_index.csv"
     batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\n"
-        "S1,S1.raw,S1.csv\nS2,S2.raw,S2.csv\n",
+        "sample_stem,raw_file,candidate_csv\nS1,S1.raw,S1.csv\nS2,S2.raw,S2.csv\n",
         encoding="utf-8",
     )
     for stem in ("S1", "S2"):
@@ -1920,8 +1949,8 @@ def test_run_alignment_cli_routes_sample_metadata_without_losing_cohorts(
     )
     captured: dict[str, Any] = {}
 
-    def fake_application(**kwargs: Any) -> _AlignmentRunOutputs:
-        captured.update(kwargs)
+    def fake_application(request, context=None) -> _AlignmentRunOutputs:
+        captured.update(request=request, context=context)
         return AlignmentRunOutputs(
             review_tsv=None,
             matrix_tsv=None,
@@ -1932,9 +1961,16 @@ def test_run_alignment_cli_routes_sample_metadata_without_losing_cohorts(
 
     monkeypatch.setattr(run_alignment, "run_untargeted_application", fake_application)
     argv = [
-        "--preset", "dna_dr", "--discovery-batch-index", str(batch_index),
-        "--raw-dir", str(raw_dir), "--dll-dir", str(dll_dir),
-        "--output-dir", str(tmp_path / "alignment"),
+        "--preset",
+        "dna_dr",
+        "--discovery-batch-index",
+        str(batch_index),
+        "--raw-dir",
+        str(raw_dir),
+        "--dll-dir",
+        str(dll_dir),
+        "--output-dir",
+        str(tmp_path / "alignment"),
     ]
     if explicit_metadata:
         argv.extend(["--sample-metadata", str(metadata)])
@@ -1942,16 +1978,26 @@ def test_run_alignment_cli_routes_sample_metadata_without_losing_cohorts(
     assert run_alignment.main(argv) == 0
     stdout = capsys.readouterr().out
     if explicit_metadata:
-        assert captured["sample_metadata"] == (
+        assert captured["request"].sample_metadata == (
             SampleMetadata(
-                sample_name="QC one", raw_stem="S1", injection_order=12,
-                sample_role="pooled_qc", batch_id="batch_A", prep_batch_id="prep_A",
-                matrix_type="tissue", group="A",
+                sample_name="QC one",
+                raw_stem="S1",
+                injection_order=12,
+                sample_role="pooled_qc",
+                batch_id="batch_A",
+                prep_batch_id="prep_A",
+                matrix_type="tissue",
+                group="A",
             ),
             SampleMetadata(
-                sample_name="Study two", raw_stem="S2", injection_order=3,
-                sample_role="study_sample", batch_id="batch_B", prep_batch_id="prep_B",
-                matrix_type="plasma", group="B",
+                sample_name="Study two",
+                raw_stem="S2",
+                injection_order=3,
+                sample_role="study_sample",
+                batch_id="batch_B",
+                prep_batch_id="prep_B",
+                matrix_type="plasma",
+                group="B",
             ),
         )
         assert str(metadata.resolve()) in stdout
@@ -1984,17 +2030,30 @@ def test_run_alignment_cli_rejects_invalid_sample_metadata_before_application(
         metadata.write_text(
             "schema_version\tsample_name\traw_stem\tinjection_order\tsample_role\t"
             "batch_id\tprep_batch_id\tmatrix_type\tgroup\texcluded\texclusion_reason\n"
-            + row + (row if invalid_kind == "duplicate" else ""),
+            + row
+            + (row if invalid_kind == "duplicate" else ""),
             encoding="utf-8",
         )
 
-    def fail_application(**_kwargs: Any) -> None:
+    def fail_application(request, context=None) -> None:
         pytest.fail("invalid metadata reached RAW application")
 
     monkeypatch.setattr(run_alignment, "run_untargeted_application", fail_application)
-    assert run_alignment.main([
-        "--preset", "dna_dr", "--discovery-batch-index", str(batch_index),
-        "--raw-dir", str(raw_dir), "--dll-dir", str(dll_dir),
-        "--sample-metadata", str(metadata),
-    ]) == 2
+    assert (
+        run_alignment.main(
+            [
+                "--preset",
+                "dna_dr",
+                "--discovery-batch-index",
+                str(batch_index),
+                "--raw-dir",
+                str(raw_dir),
+                "--dll-dir",
+                str(dll_dir),
+                "--sample-metadata",
+                str(metadata),
+            ]
+        )
+        == 2
+    )
     assert capsys.readouterr().err

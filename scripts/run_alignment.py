@@ -24,10 +24,19 @@ from xic_extractor.alignment.quantitative_projection_authority import (
 from xic_extractor.applications.untargeted.application import (
     AlignmentProcessExecutionError,
     run_untargeted_application,
-    validate_untargeted_application_options,
+)
+from xic_extractor.applications.untargeted.publication import (
+    UntargetedPublicationPolicy,
+)
+from xic_extractor.applications.untargeted.request import (
+    RetainedAlignmentOptions,
+    UntargetedExecutionContext,
+    UntargetedRequest,
+    validate_retained_processing_profile,
 )
 from xic_extractor.configuration.execution_profile import (
     DEFAULT_ALIGNMENT_WORKER_BACKEND,
+    UntargetedExecutionPolicy,
     load_execution_profile,
 )
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig
@@ -108,11 +117,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             "(historical compatibility name only)"
         )
     try:
-        validate_untargeted_application_options(
-            signal_processing_profile=signal_processing_profile,
+        execution = UntargetedExecutionPolicy(
             raw_workers=args.raw_workers,
             raw_worker_backend=args.raw_worker_backend,
+            retain_acquisition_cache=args.retain_acquisition_cache,
+            acquisition_cache_dir=args.acquisition_cache_dir,
+            max_partition_jobs=args.max_partition_jobs,
         )
+        legacy = RetainedAlignmentOptions(
+            owner_build_xic_backend=owner_build_xic_backend,
+            require_discovery_owner_closure=True,
+        )
+        validate_retained_processing_profile(signal_processing_profile)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -205,22 +221,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.timing_output is not None or args.timing_live_output is not None
         else None
     )
-    timing_kwargs = (
-        {"timing_recorder": timing_recorder} if timing_recorder is not None else {}
-    )
     if timing_recorder is not None:
         timing_recorder.start_process_memory()
     try:
-        run_kwargs = {
-            "discovery_batch_index": discovery_batch_index,
-            "sample_metadata": sample_metadata,
-            "raw_dir": raw_dir,
-            "dll_dir": dll_dir,
-            "output_dir": output_dir,
-            "raw_workers": args.raw_workers,
-            "raw_worker_backend": args.raw_worker_backend,
-            "alignment_config": recipe.alignment_config,
-            "peak_config": _peak_config(
+        request = UntargetedRequest(
+            discovery_batch_index=discovery_batch_index,
+            raw_dir=raw_dir,
+            dll_dir=dll_dir,
+            output_dir=output_dir,
+            alignment_config=recipe.alignment_config,
+            peak_config=_peak_config(
                 raw_dir,
                 dll_dir,
                 output_dir,
@@ -229,35 +239,32 @@ def main(argv: Sequence[str] | None = None) -> int:
                 signal_processing_profile=signal_processing_profile,
                 nl_min_intensity_ratio=peak_config_nl_min_intensity_ratio,
             ),
-            "known_istd_reference_workbook": args.known_istd_reference_workbook,
-            "targets_csv": args.targets_csv,
-            "discovery_settings": recipe.discovery_settings,
-            "signal_processing_profile": signal_processing_profile,
-            "output_level": args.output_level,
-            "emit_alignment_cells": args.emit_alignment_cells,
-            "emit_cid_nl_explanation": args.emit_cid_nl_explanation,
-            "explanation_full_audit": args.explanation_full_audit,
-            "explanation_curve_mz_ranges": tuple(args.explanation_curve_mz_range),
-            "retain_acquisition_cache": args.retain_acquisition_cache,
-            "acquisition_cache_dir": args.acquisition_cache_dir,
-            "emit_alignment_status_matrix": args.emit_alignment_status_matrix,
-            "emit_alignment_backfill_seed_audit": (
-                args.emit_alignment_backfill_seed_audit
+            discovery_settings=recipe.discovery_settings,
+            signal_processing_profile=signal_processing_profile,
+            sample_metadata=sample_metadata,
+            known_istd_reference_workbook=args.known_istd_reference_workbook,
+            targets_csv=args.targets_csv,
+            known_istd_reference=known_istd_reference,
+            execution=execution,
+            legacy=legacy,
+            publication=UntargetedPublicationPolicy(
+                output_level=args.output_level,
+                emit_alignment_cells=args.emit_alignment_cells,
+                emit_cid_nl_explanation=args.emit_cid_nl_explanation,
+                explanation_full_audit=args.explanation_full_audit,
+                explanation_curve_mz_ranges=tuple(args.explanation_curve_mz_range),
+                emit_alignment_status_matrix=args.emit_alignment_status_matrix,
+                emit_alignment_backfill_seed_audit=args.emit_alignment_backfill_seed_audit,
             ),
-            "owner_build_xic_backend": owner_build_xic_backend,
-            "require_discovery_owner_closure": True,
-            "max_partition_jobs": args.max_partition_jobs,
-            **timing_kwargs,
-        }
-        if known_istd_reference is not None:
-            run_kwargs["known_istd_reference"] = known_istd_reference
+        )
+        context = UntargetedExecutionContext(timing_recorder=timing_recorder)
         profiler = cProfile.Profile() if args.profile == "cprofile" else None
         authority_hold = False
         try:
             if profiler is None:
-                outputs = run_untargeted_application(**run_kwargs)
+                outputs = run_untargeted_application(request, context)
             else:
-                outputs = profiler.runcall(run_untargeted_application, **run_kwargs)
+                outputs = profiler.runcall(run_untargeted_application, request, context)
         except QuantitativeProjectionAuthorityHoldError:
             authority_hold = True
             raise
