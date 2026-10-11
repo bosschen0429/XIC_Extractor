@@ -77,7 +77,7 @@ def test_align_only_summary_uses_existing_batch_index_counts(
     monkeypatch.setattr(
         module,
         "run_untargeted_application",
-        lambda **_kwargs: _alignment_outputs(
+        lambda request, context=None, **_kwargs: _alignment_outputs(
             matrix_tsv=output_dir / "alignment_matrix.tsv"
         ),
     )
@@ -191,10 +191,10 @@ def test_alignment_modes_apply_product_ready_runtime(
         lambda *_args: SimpleNamespace(raw_paths=(raw_path,)),
     )
 
-    def fake_run_alignment(**kwargs: Any) -> _AlignmentRunOutputs:
-        captured_alignment.update(kwargs)
+    def fake_run_alignment(request, context=None) -> _AlignmentRunOutputs:
+        captured_alignment.update(request=request, context=context)
         return _alignment_outputs(
-            configured_backend=kwargs["owner_build_xic_backend"],
+            configured_backend=request.legacy.owner_build_xic_backend,
             matrix_tsv=output_dir / "alignment_matrix.tsv",
             matrix_identity_tsv=output_dir / "alignment_matrix_identity.tsv",
         )
@@ -223,24 +223,32 @@ def test_alignment_modes_apply_product_ready_runtime(
 
     summary = _execute(request, progress=progress)
 
-    settings = captured_alignment["discovery_settings"]
+    settings = captured_alignment["request"].discovery_settings
     assert settings.nl_tolerance_ppm == 15.0
-    peak_config = captured_alignment["peak_config"]
+    peak_config = captured_alignment["request"].peak_config
     assert isinstance(peak_config, ExtractionConfig)
     assert peak_config.nl_min_intensity_ratio == 0.02
     assert peak_config.resolver_mode == "savgol"
-    assert captured_alignment["alignment_config"] == AlignmentConfig()
-    assert captured_alignment["raw_workers"] == DEFAULT_ALIGNMENT_WORKERS
-    assert captured_alignment["raw_worker_backend"] == "process"
-    assert captured_alignment["owner_build_xic_backend"] == "raw_superwindow"
-    assert captured_alignment["output_level"] == "machine"
-    assert captured_alignment["emit_alignment_cells"] is False
-    assert captured_alignment["emit_alignment_backfill_seed_audit"] is False
-    assert captured_alignment["audit_evidence_mode"] == "none"
-    assert captured_alignment["emit_cid_nl_explanation"] is True
-    assert captured_alignment["explanation_full_audit"] is False
-    assert captured_alignment["explanation_curve_mz_ranges"] == ()
-    should_cancel = captured_alignment["should_cancel"]
+    assert captured_alignment["request"].alignment_config == AlignmentConfig()
+    assert (
+        captured_alignment["request"].execution.raw_workers == DEFAULT_ALIGNMENT_WORKERS
+    )
+    assert captured_alignment["request"].execution.raw_worker_backend == "process"
+    assert (
+        captured_alignment["request"].legacy.owner_build_xic_backend
+        == "raw_superwindow"
+    )
+    assert captured_alignment["request"].publication.output_level == "machine"
+    assert captured_alignment["request"].publication.emit_alignment_cells is False
+    assert (
+        captured_alignment["request"].publication.emit_alignment_backfill_seed_audit
+        is False
+    )
+    assert captured_alignment["request"].legacy.audit_evidence_mode == "none"
+    assert captured_alignment["request"].publication.emit_cid_nl_explanation is True
+    assert captured_alignment["request"].publication.explanation_full_audit is False
+    assert captured_alignment["request"].publication.explanation_curve_mz_ranges == ()
+    should_cancel = captured_alignment["context"].should_cancel
     assert callable(should_cancel) and should_cancel() is False
     assert summary["alignment_outputs"] == {
         "matrix_tsv": str(output_dir / "alignment_matrix.tsv"),
@@ -287,7 +295,7 @@ def test_alignment_interruption_propagates_from_execute(
     monkeypatch.setattr(
         module,
         "run_untargeted_application",
-        lambda **_kwargs: (_ for _ in ()).throw(
+        lambda request, context=None, **_kwargs: (_ for _ in ()).throw(
             InterruptedError("Alignment cancelled before output publication")
         ),
     )
@@ -318,8 +326,8 @@ def test_full_uses_preset_snapshot_after_source_is_deleted(
     monkeypatch.setattr(
         module,
         "run_untargeted_application",
-        lambda **kwargs: (
-            captured.update(kwargs)
+        lambda request, context=None, **kwargs: (
+            captured.update(request=request, context=context)
             or _alignment_outputs(configured_backend="ms1_index")
         ),
     )
@@ -338,7 +346,7 @@ def test_full_uses_preset_snapshot_after_source_is_deleted(
 
     _execute(request)
 
-    assert captured["owner_build_xic_backend"] == "ms1_index"
+    assert captured["request"].legacy.owner_build_xic_backend == "ms1_index"
 
 
 def test_request_rejects_retired_standard_peak_route_before_discovery(
@@ -398,8 +406,8 @@ def test_execute_forwards_sample_metadata_and_targets_csv(
     )
     captured: dict[str, Any] = {}
 
-    def fake_run_alignment(**kwargs: Any) -> _AlignmentRunOutputs:
-        captured.update(kwargs)
+    def fake_run_alignment(request, context=None) -> _AlignmentRunOutputs:
+        captured.update(request=request, context=context)
         return _alignment_outputs(matrix_tsv=tmp_path / "out" / "alignment_matrix.tsv")
 
     monkeypatch.setattr(module, "run_untargeted_application", fake_run_alignment)
@@ -418,6 +426,6 @@ def test_execute_forwards_sample_metadata_and_targets_csv(
         )
     )
 
-    assert captured["targets_csv"] != targets_csv
-    assert captured["targets_csv"].read_bytes() == targets_csv.read_bytes()
-    assert captured["sample_metadata"] == sample_metadata
+    assert captured["request"].targets_csv != targets_csv
+    assert captured["request"].targets_csv.read_bytes() == targets_csv.read_bytes()
+    assert captured["request"].sample_metadata == sample_metadata
