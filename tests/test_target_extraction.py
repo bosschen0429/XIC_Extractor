@@ -32,8 +32,8 @@ from xic_extractor.peak_detection.ms1_morphology import (
     gaussian15_positive_asls_residual_trace,
 )
 from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
+    answer_selected_physical_candidate,
     physical_candidates_result,
-    selected_physical_segment,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalSegment,
@@ -587,6 +587,7 @@ def test_physical_candidate_projection_preserves_owner_values_and_segment_order(
                 region_edge_ratio=3.0 / 65.0,
                 region_trace_continuity=1.0,
                 proposal_sources=("physical_segment:segment:later",),
+                physical_segment=universe.segments[0],
             ),
             PeakCandidate(
                 peak=PeakResult(1.0, 60.0, 45.0, 600.0, 0.0, 2.0),
@@ -602,6 +603,7 @@ def test_physical_candidate_projection_preserves_owner_values_and_segment_order(
                 region_edge_ratio=3.0 / 35.0,
                 region_trace_continuity=1.0,
                 proposal_sources=("physical_segment:segment:earlier",),
+                physical_segment=universe.segments[1],
             ),
         ),
         n_points=7,
@@ -646,48 +648,30 @@ def test_physical_candidate_projection_preserves_empty_universe(
     assert result == PeakCandidatesResult("PEAK_NOT_FOUND", (), 7, 75.0, 0)
 
 
-def test_physical_candidate_selection_binds_unique_owner_segment(
+@pytest.mark.parametrize("missing", [True, False])
+def test_selected_physical_answer_rejects_unbound_candidate(
     physical_candidate_input,
-) -> None:
-    prepared, universe = physical_candidate_input
-    candidates = physical_candidates_result(prepared, universe).candidates
-
-    assert selected_physical_segment(None, universe) is None
-    for candidate, segment in zip(candidates, universe.segments, strict=True):
-        assert selected_physical_segment(candidate, universe) == segment
-    repeated_source = replace(
-        candidates[0],
-        proposal_sources=(
-            "other_proposal",
-            "physical_segment:segment:later",
-            "physical_segment:segment:later",
-        ),
-    )
-    assert selected_physical_segment(repeated_source, universe) == universe.segments[0]
-
-
-@pytest.mark.parametrize(
-    "sources",
-    [
-        (),
-        ("other_proposal",),
-        ("physical_segment:missing",),
-        ("physical_segment:segment:later", "physical_segment:segment:earlier"),
-    ],
-)
-def test_physical_candidate_selection_rejects_nonunique_binding(
-    physical_candidate_input,
-    sources,
+    missing,
 ) -> None:
     prepared, universe = physical_candidate_input
     candidate = physical_candidates_result(prepared, universe).candidates[0]
+    segment = (
+        None
+        if missing
+        else replace(universe.segments[0], physical_segment_id="another_universe")
+    )
 
     with pytest.raises(
         ValueError,
-        match="^selected Targeted candidate must identify one physical segment$",
+        match="^selected Targeted candidate must carry its physical segment$",
     ):
-        selected_physical_segment(
-            replace(candidate, proposal_sources=sources), universe
+        answer_selected_physical_candidate(
+            prepared,
+            universe,
+            replace(candidate, physical_segment=segment),
+            selection_subject_id="target",
+            acquisition_rt_window=(0.0, 4.0),
+            selection_rt_window=(0.0, 4.0),
         )
 
 

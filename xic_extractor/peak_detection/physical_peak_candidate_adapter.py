@@ -43,9 +43,11 @@ def answer_selected_physical_candidate(
     an available universe uses the selection window's centre and no-selection
     policy, so segments outside that window cannot acquire selection authority.
     """
-    segment = selected_physical_segment(candidate, universe)
     if candidate is not None and candidate_evaluations is not None:
         return candidate_evaluations[candidate]
+    segment = candidate.physical_segment if candidate is not None else None
+    if candidate is not None and (segment is None or segment not in universe.segments):
+        raise ValueError("selected Targeted candidate must carry its physical segment")
     if segment is not None:
         query_rt_min = segment.apex_rt_min
     else:
@@ -143,27 +145,5 @@ def _physical_segment_candidate(
         region_edge_ratio=edge_ratio,
         region_trace_continuity=1.0,
         proposal_sources=(f"physical_segment:{segment.physical_segment_id}",),
+        physical_segment=segment,
     )
-
-
-def selected_physical_segment(
-    candidate: PeakCandidate | None,
-    universe: PhysicalSegmentUniverse,
-) -> PhysicalSegment | None:
-    if candidate is None:
-        return None
-    segment_ids = {
-        source.removeprefix("physical_segment:")
-        for source in candidate.proposal_sources
-        if source.startswith("physical_segment:")
-    }
-    matches = tuple(
-        segment
-        for segment in universe.segments
-        if segment.physical_segment_id in segment_ids
-    )
-    if len(matches) != 1:
-        raise ValueError(
-            "selected Targeted candidate must identify one physical segment"
-        )
-    return matches[0]
