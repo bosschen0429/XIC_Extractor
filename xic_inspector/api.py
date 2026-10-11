@@ -416,7 +416,9 @@ def prepare_report(
                 matched_count,
                 missing_rt_count,
             ) = source.select_items(normalized_set, selection)
-        except (sqlite3.Error, ExplanationError) as exc:
+        except sqlite3.Error as exc:
+            raise InspectorError(4, f"Invalid query index: {exc}", cause=exc) from exc
+        except ExplanationError as exc:
             raise InspectorError(
                 4, f"Invalid source selection: {exc}", cause=exc
             ) from exc
