@@ -64,6 +64,18 @@ The current workbook has an `Overview` landing sheet and `XIC Results`, with
 The `targeted_output` schema marker and workbook layout version 2 bind the saved
 records; other layouts are rejected rather than reinterpreted.
 
+In Excel, `Overview` presents saved counted/not-counted totals, per-target
+counts and a counted-result RT scatter plot. Its sample index is not injection
+time, and the charts do not recalculate scientific decisions. `Diagnostics`
+is a Traditional Chinese reading guide with one row per annotated sample/target,
+the saved count outcome, a contextual explanation and links to the measurement.
+Original diagnostic events remain intact in an expandable appendix; event text
+alone does not override the final count outcome. The result and target tables
+retain their canonical first-row headers and numeric values, with advanced
+columns grouped away. `Run Metadata` adds explanations alongside its unchanged
+key/value records. These presentation changes retain layout version 2 and the
+Inspector reader contract.
+
 Opening Targeted results first shows a full-batch overview: sample/target/result
 counts, saved counted detections, review workload and the main reasons by target.
 It combines overview and summary rather than opening a detail table immediately.

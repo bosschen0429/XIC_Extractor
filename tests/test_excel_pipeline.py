@@ -121,7 +121,10 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     assert record["NL"] == "⚠ 12.3ppm"
     assert record["Confidence"] == "LOW"
     assert record["Review"] == "Review"
-    assert record["Review Reason"] == "NL support failed"
+    assert (
+        record["Review Reason"].replace("\n", "")
+        == "未取得符合條件的 NL 證據。量測是否計入，以已保存的判定為準。"
+    )
     assert not ws.merged_cells.ranges
     assert ws.freeze_panes == "C2"
     result_columns = {cell.value: cell.column_letter for cell in ws[1]}
@@ -148,7 +151,10 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     report = prepare_report(output_path, SelectionRequest(strategy="attention"))
     saved = report.payload["items"][0]["details"]
     assert saved["records"][0]["Area"] == 123.45
-    assert saved["review_queue"][0]["Why"] == "NL support failed"
+    assert (
+        saved["review_queue"][0]["Why"].replace("\n", "")
+        == "未取得符合條件的 NL 證據。量測是否計入，以已保存的判定為準。"
+    )
 
 
 def test_workbook_retains_complete_diagnostic_text_in_secondary_appendix(tmp_path):
@@ -170,11 +176,96 @@ def test_workbook_retains_complete_diagnostic_text_in_secondary_appendix(tmp_pat
     book = load_workbook(path)
     assert book.active.title == "Overview"
     sheet = book["Diagnostics"]
-    assert sheet["A2"].value == "Another sample"
-    assert sheet["B2"].value == "Another target"
-    assert sheet["D2"].value.endswith(diagnostic.reason)
-    assert sheet["D2"].data_type != "f"
+    raw_record = next(
+        row
+        for row in sheet
+        if tuple(cell.value for cell in row[:3])
+        == ("Another sample", "Another target", "FILE_ERROR")
+    )
+    assert raw_record[3].value.endswith(diagnostic.reason)
+    assert raw_record[3].data_type != "f"
+    assert any(
+        row[0] == "Another sample" and row[2] == "未記錄判定" for row in sheet.values
+    )
     book.close()
+
+
+def test_workbook_explains_backfill_without_changing_saved_counts(tmp_path):
+    from xic_extractor.output.workbook_builder import write_workbook_from_rows
+    from xic_inspector.sources.targeted_workbook import TargetedWorkbookSource
+
+    rows = [
+        {
+            "SampleName": sample,
+            "Target": "ISTD",
+            "Role": "ISTD",
+            "RT": rt,
+            "Area": area,
+            "PeakStart": "8.5",
+            "PeakEnd": "9.5",
+            "NL": "NL_FAIL",
+            "NL Evidence": "Not observed within tolerance",
+            "Confidence": "LOW",
+            "Counted Detection": counted,
+            "Product State": state,
+            "Projection Support Reasons": support,
+        }
+        for sample, rt, area, counted, state, support in (
+            (
+                "Recovered",
+                "9.1",
+                "123.45",
+                "TRUE",
+                "detected_flagged",
+                "cross_sample_backfill_identity",
+            ),
+            ("Held", "9.2", "678.90", "FALSE", "not_counted", ""),
+        )
+    ]
+    diagnostics = [
+        {"SampleName": sample, "Target": "ISTD", "Issue": issue, "Reason": reason}
+        for sample, issue, reason in (
+            ("Recovered", "NL_FAIL", "Original failed NL observation"),
+            ("Recovered", "BACKFILL_ACCEPTED", "ordered_one_to_one_recovery_evidence"),
+            ("Held", "NL_FAIL", "Original failed NL observation"),
+            ("Held", "BACKFILL_HOLD", "no_unique_qualified_ms1_peak"),
+        )
+    ]
+    path = write_workbook_from_rows(
+        _config(tmp_path),
+        [replace(_target("ISTD"), is_istd=True)],
+        rows,
+        diagnostics=diagnostics,
+        output_path=tmp_path / "readable.xlsx",
+    )
+    book = load_workbook(path)
+    assert len(book["Overview"]._charts) == 2
+    sheet = book["Diagnostics"]
+    values = list(sheet.values)
+    header_index = next(i for i, row in enumerate(values) if row[0] == "樣本")
+    records = {
+        row[0]: dict(zip(values[header_index], row))
+        for row in values[header_index + 1 : header_index + 3]
+    }
+    assert records["Recovered"]["結果"] == "已計入"
+    assert "跨樣本回填已確認" in records["Recovered"]["原因說明"].replace("\n", "")
+    assert records["Held"]["結果"] == "未計入"
+    assert "未找到" in records["Held"]["原因說明"].replace("\n", "")
+    assert records["Recovered"]["Area (counts·s)"] == 123.45
+    assert records["Held"]["Area (counts·s)"] == 678.90
+    assert any(
+        row[2:4] == ("BACKFILL_HOLD", "no_unique_qualified_ms1_peak") for row in values
+    )
+    book.close()
+    source = TargetedWorkbookSource(path)
+    assert [
+        (row["SampleName"], row["Area"], row["RT"], row["Counted Detection"])
+        for row in source.records
+    ] == [
+        ("Recovered", 123.45, 9.1, "TRUE"),
+        ("Held", 678.90, 9.2, "FALSE"),
+    ]
+    assert "跨樣本回填已確認" in source.records[0]["Review Reason"].replace("\n", "")
 
 
 def _config(

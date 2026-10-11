@@ -46,7 +46,7 @@ def write_workbook_from_rows(
     ws_overview = wb.active
     ws_overview.title = "Overview"
     build_overview_sheet(
-        ws_overview, rows, review_rows, has_diagnostics=bool(diagnostics)
+        ws_overview, rows, review_rows, has_diagnostics=bool(diagnostics or review_rows)
     )
     ws_data = wb.create_sheet("XIC Results")
     _build_data_sheet(ws_data, rows, review_rows=review_rows)
@@ -59,8 +59,13 @@ def write_workbook_from_rows(
         ),
     )
 
-    if diagnostics:
-        build_diagnostics_sheet(wb.create_sheet("Diagnostics"), diagnostics)
+    if diagnostics or review_rows:
+        build_diagnostics_sheet(
+            wb.create_sheet("Diagnostics"),
+            diagnostics,
+            result_rows=rows,
+            review_rows=review_rows,
+        )
 
     if config.injection_order_source is not None:
         _embed_input_table(wb, "Sample Context", config.injection_order_source)

@@ -80,7 +80,7 @@ def test_overview_does_not_infer_missing_legacy_decisions():
     assert empty.targets == ()
 
 
-def test_overview_workbook_links_to_results_and_collapses_secondary_quantities(
+def test_overview_workbook_charts_saved_counts_and_links_to_result_rows(
     tmp_path,
 ):
     book = Workbook()
@@ -92,10 +92,16 @@ def test_overview_workbook_links_to_results_and_collapses_secondary_quantities(
     book.close()
     with_book = load_workbook(path)
     sheet = with_book["Overview"]
-    assert "先看 3 筆" in sheet["A4"].value
-    assert sheet["A10"].value == "Analyte"
-    assert sheet["E10"].hyperlink.target == "#'XIC Results'!A4"
-    assert any(dimension.hidden for dimension in sheet.row_dimensions.values())
+    assert sheet["A7"].value == "2 / 4"
+    assert sheet["E7"].value == 2
+    assert sheet["I7"].value == 3
+    assert sheet["A29"].value == "Analyte"
+    assert sheet["K29"].hyperlink.target == "#'XIC Results'!A4"
+    assert len(sheet._charts) == 2
+    assert [sheet.cell(row, 15).value for row in (2, 3)] == [0, 2]
+    assert [sheet.cell(row, 16).value for row in (2, 3)] == [2, 0]
+    assert [sheet.cell(row, 17).value for row in (2, 3)] == [0, 0]
+    assert any(dimension.hidden for dimension in sheet.column_dimensions.values())
     links = [cell.hyperlink.target for row in sheet for cell in row if cell.hyperlink]
     assert "#'Targets'!A1" in links and "#'Run Metadata'!A1" in links
     with_book.close()

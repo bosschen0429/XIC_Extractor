@@ -37,8 +37,11 @@ def test_data_sheet_preserves_measurements_and_compact_review_fields() -> None:
     ]
     assert records[0]["NL Evidence"] == "Observed"
     assert records[1]["NL"] == "⚠ 12.3ppm"
-    assert records[1]["Review Reason"] == "NL support is borderline"
-    assert ws["C2"].number_format == "0.00E+00"
+    assert (
+        records[1]["Review Reason"].replace("\n", "")
+        == "已觀測到 NL，但質量誤差達到提醒範圍，需檢查 MS2 證據。"
+    )
+    assert ws["C2"].number_format == "#,##0.00"
     assert ws["D2"].number_format == "0.0000"
     assert ws.freeze_panes == "C2"
     assert ws.auto_filter.ref == "A1:P4"
@@ -85,7 +88,10 @@ def test_data_sheet_preserves_reason_without_dumping_projection_codes() -> None:
     assert record["Area"] == 123
     assert record["Counted Detection"] == "FALSE"
     assert record["Review"] == "Review"
-    assert record["Review Reason"] == "targeted_rt_conflict"
+    assert (
+        record["Review Reason"].replace("\n", "")
+        == "此筆仍有未解決的證據衝突，尚未確認峰的身份。"
+    )
     assert not any(header.startswith("Projection ") for header in record)
     assert "Legacy Authority Status" not in record
     wb.close()
@@ -147,8 +153,11 @@ def test_review_queue_aggregates_diagnostics_by_sample_target() -> None:
     assert review_rows[0]["Sample"] == "Tumor_1"
     assert review_rows[0]["Target"] == "Analyte"
     assert review_rows[0]["Status"] == "Review"
-    assert review_rows[0]["Why"] == "NL support failed"
-    assert review_rows[0]["Action"] == "Check MS2 / NL evidence near selected RT"
+    assert (
+        review_rows[0]["Why"]
+        == "未取得符合條件的 NL 證據。量測是否計入，以已保存的判定為準。"
+    )
+    assert review_rows[0]["Action"] == "在 Inspector 檢查所選 RT 附近的 MS2／NL 證據。"
     assert review_rows[0]["Issue Count"] == "2"
     assert review_rows[0]["Evidence"] == "NL_FAIL; ANCHOR_MISMATCH"
 
@@ -181,8 +190,8 @@ def test_targets_sheet_marks_expected_product_as_nominal_reference() -> None:
 
     assert ws["I1"].value == "Expected product m/z"
     assert ws["I1"].comment is not None
-    assert "Nominal target product" in ws["I1"].comment.text
-    assert "strict observed-loss" in ws["I1"].comment.text.lower()
+    assert "設定參考值，不是實測產物" in ws["I1"].comment.text
+    assert "實測中性丟失與所選峰" in ws["I1"].comment.text
 
 
 def test_wide_to_long_rows_classifies_qc_from_sample_name_token() -> None:
@@ -243,15 +252,29 @@ def test_run_writes_one_review_table_and_method_context(tmp_path: Path) -> None:
     _write_csv(config.output_csv.with_name("xic_results_long.csv"), rows)
     _write_empty_diagnostics_csv(config.diagnostics_csv)
     wb = load_workbook(run(config, [_target("Analyte")]))
-    assert wb.sheetnames == ["Overview", "XIC Results", "Targets", "Run Metadata"]
+    assert wb.sheetnames == [
+        "Overview",
+        "XIC Results",
+        "Targets",
+        "Run Metadata",
+        "Diagnostics",
+    ]
     assert wb.active.title == "Overview"
     records = _sheet_records(wb["XIC Results"])
     assert [(r["SampleName"], r["Area"], r["Counted Detection"]) for r in records] == [
         ("Sample A", 123, "TRUE"),
         ("Sample B", 456, "FALSE"),
     ]
-    assert records[1]["Review Reason"] == "MS2 trigger missing"
-    assert dict(wb["Run Metadata"].values)["targeted_workbook_layout_version"] == 2
+    assert (
+        records[1]["Review Reason"].replace("\n", "")
+        == "此峰未取得可用的 MS2 掃描，無法由直接 NL 證據確認。"
+    )
+    assert (
+        dict(row[:2] for row in wb["Run Metadata"].values)[
+            "targeted_workbook_layout_version"
+        ]
+        == 2
+    )
     wb.close()
 
 
@@ -332,9 +355,10 @@ def test_workbook_sheet_tabs_separate_results_from_method_context(
     wb.create_sheet("Targets")
     wb.create_sheet("Run Metadata")
     csv_to_excel._apply_sheet_role_styles(wb)
-    assert wb["XIC Results"].sheet_properties.tabColor.rgb.endswith("5B7C99")
+    result_color = wb["XIC Results"].sheet_properties.tabColor.rgb
+    assert result_color
     for title in ("Targets", "Run Metadata"):
-        assert wb[title].sheet_properties.tabColor.rgb.endswith("B0BEC5")
+        assert wb[title].sheet_properties.tabColor.rgb != result_color
     wb.close()
 
 

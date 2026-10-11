@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from openpyxl.comments import Comment
 from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 
@@ -9,12 +10,15 @@ from xic_extractor.output.workbook_styles import (
     _SAMPLE_HEADER,
     BORDER,
     CENTER,
+    _add_table,
     _apply,
     _header_style,
     _long_cell_fill,
     _long_cell_value,
     _long_column_width,
     _long_number_format,
+    _prepare_print_view,
+    _wrap_prose,
 )
 
 
@@ -26,7 +30,25 @@ def _build_data_sheet(
     for column, header in enumerate(WORKBOOK_RESULT_HEADERS, start=1):
         color = _MS2_HEADER if header in WORKBOOK_DETAIL_HEADERS else _SAMPLE_HEADER
         _apply(ws.cell(row=1, column=column, value=header), **_header_style(color))
-    ws.row_dimensions[1].height = 30
+    descriptions = {
+        "SampleName": "樣本名稱。此欄與 Target 共同識別每一筆結果。",
+        "Target": "目標名稱。用篩選器查看單一目標的所有樣本。",
+        "Area": "峰面積（counts·s）。保留正式積分值；有數值不代表已計入偵測。",
+        "RT": "所選峰的頂點保留時間（min）。",
+        "Counted Detection": (
+            "是否計入偵測：TRUE＝已計入；FALSE＝未計入。與檢閱註記分開判讀。"
+        ),
+        "Review": (
+            "Review／Check＝有待檢查的註記；Info＝補充資訊。空白表示沒有檢閱註記。"
+        ),
+        "Review Reason": (
+            "白話檢閱說明。完整原因、下一步與原始事件可在 Diagnostics 查看。"
+        ),
+    }
+    for column, header in enumerate(WORKBOOK_RESULT_HEADERS, start=1):
+        if header in descriptions:
+            ws.cell(1, column).comment = Comment(descriptions[header], "XIC Extractor")
+    ws.row_dimensions[1].height = 38
     for row_index, row in enumerate(rows, start=2):
         review = review_by_key.get(
             (row.get("SampleName", ""), row.get("Target", "")), {}
@@ -39,7 +61,9 @@ def _build_data_sheet(
         for column, header in enumerate(WORKBOOK_RESULT_HEADERS, start=1):
             raw = values.get(header, "")
             cell = ws.cell(row=row_index, column=column)
-            cell.value = _long_cell_value(header, raw)
+            cell.value = _long_cell_value(
+                header, _wrap_prose(raw, 46) if header == "Review Reason" else raw
+            )
             _apply(
                 cell,
                 fill=_long_cell_fill(header, raw, row_index % 2 == 0),
@@ -53,18 +77,26 @@ def _build_data_sheet(
                         "Reason",
                         "NL Evidence",
                     }
-                    else CENTER
+                    else (
+                        Alignment(horizontal="right", vertical="center")
+                        if header in {"Area", "RT", "PeakStart", "PeakEnd"}
+                        else CENTER
+                    )
                 ),
                 border=BORDER,
             )
             if isinstance(cell.value, float):
                 cell.number_format = _long_number_format(header)
-        ws.row_dimensions[row_index].height = 32
+        why = review.get("Why", "")
+        ws.row_dimensions[row_index].height = max(
+            34, 18 * (_wrap_prose(why, 46).count("\n") + 1) + 12
+        )
     ws.auto_filter.ref = (
         f"A1:{get_column_letter(len(WORKBOOK_RESULT_HEADERS))}{max(1, len(rows) + 1)}"
     )
     ws.freeze_panes = "C2"
-    ws.sheet_view.showGridLines = False
+    _add_table(ws, "TargetedResults", ws.auto_filter.ref)
+    _prepare_print_view(ws, area=f"A1:G{max(2, len(rows) + 1)}")
     for column, header in enumerate(WORKBOOK_RESULT_HEADERS, start=1):
         dimension = ws.column_dimensions[get_column_letter(column)]
         dimension.width = _long_column_width(header)

@@ -302,7 +302,9 @@ def test_workbook_only_delivery_embeds_method_settings(
     publish_targeted_outputs(request, finalized, output)
 
     workbook = load_workbook(excel_path, read_only=True, data_only=True)
-    metadata = dict(workbook["Run Metadata"].iter_rows(values_only=True))
+    metadata = dict(
+        row[:2] for row in workbook["Run Metadata"].iter_rows(values_only=True)
+    )
     workbook.close()
     assert metadata["signal_processing_method"] == config.signal_processing_method
     assert (
