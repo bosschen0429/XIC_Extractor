@@ -1,5 +1,65 @@
 (() => {
   const data=JSON.parse(document.getElementById('inspector-data').textContent);
+  if (data.summary?.source_kind === 'targeted_workbook') {
+    renderTargetedWorkbook(data);
+    return;
+  }
+
+  function renderTargetedWorkbook(payload) {
+    const node = (tag, text) => {
+      const element = document.createElement(tag);
+      if (text !== undefined) element.textContent = text === null ? '未提供' : String(text);
+      return element;
+    };
+    const table = (rows, columns) => {
+      const wrap = node('div');
+      wrap.style.overflowX = 'auto';
+      const result = node('table'), head = node('tr'), body = node('tbody');
+      for (const column of columns) head.append(node('th', column));
+      const thead = node('thead');
+      thead.append(head);
+      for (const row of rows) {
+        const tr = node('tr');
+        for (const column of columns) tr.append(node('td', row[column] ?? null));
+        body.append(tr);
+      }
+      result.append(thead, body);
+      wrap.append(result);
+      return wrap;
+    };
+    const facts = record => table(Object.entries(record).map(([field, value]) => ({欄位: field, 已保存值: value})), ['欄位', '已保存值']);
+    const root = node('main');
+    root.className = 'panel detail-panel';
+    root.append(node('h1', 'Targeted 結果檢閱'), node('p', '唯讀 XLSX · 保留原始量值與判定。ND 不等於 0；未提供不等於未偵測。工作簿未保存逐點曲線，不顯示推測的色譜圖。'));
+    for (const item of payload.items) {
+      const section = node('section');
+      section.append(node('h2', item.title));
+      const target = node('details'), targetSummary = node('summary', '目標設定：角色、ISTD 配對、m/z、RT 範圍與容差');
+      target.append(targetSummary, facts(item.details.target));
+      section.append(target);
+      section.append(node('h3', '樣本量值與已保存判定'));
+      section.append(table(item.details.records, ['SampleName', 'Group', 'RT', 'Area', 'PeakStart', 'PeakEnd', 'Review State', 'Reason', 'Product State', 'Counted Detection']));
+      section.append(node('h3', 'ReviewQueue'));
+      if (item.details.review_queue.length) section.append(table(item.details.review_queue, Object.keys(item.details.review_queue[0])));
+      else section.append(node('p', '目前樣本範圍未列入 ReviewQueue；這不是額外的科學通過判定。'));
+      const label = node('label', '樣本完整紀錄 '), select = node('select');
+      select.setAttribute('aria-label', '樣本完整紀錄');
+      for (const record of item.details.records) select.append(new Option(record.SampleName, record.SampleName));
+      label.append(select);
+      const detail = node('div');
+      const showRecord = () => detail.replaceChildren(facts(item.details.records.find(record => record.SampleName === select.value)));
+      select.addEventListener('change', showRecord);
+      section.append(label, detail);
+      showRecord();
+      root.append(section);
+    }
+    if (!payload.items.length) root.append(node('p', '沒有符合條件的目標。'));
+    const metadata = node('details');
+    metadata.append(node('summary', '工作簿方法與執行資訊（Metadata 原值）'));
+    metadata.append(table(payload.summary.method_context.map(row => ({欄位: row[0], 已保存值: row[1]})), ['欄位', '已保存值']));
+    root.append(metadata);
+    document.body.replaceChildren(root);
+  }
   const items=Array.isArray(data.items)?data.items:[], samples=Array.isArray(data.samples)?data.samples:[];
   const colors=Array.from({length:8},(_,index)=>`var(--curve-${index+1})`);
   const $=id=>document.getElementById(id), has=(o,k)=>Object.prototype.hasOwnProperty.call(o||{},k);

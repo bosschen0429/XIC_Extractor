@@ -247,7 +247,7 @@
         <details id="source-settings" open>
           <summary>結果與 RAW 位置</summary>
           <form id="open-form" class="path-line">
-            <label for="source">結果資料夾或 SQLite</label
+            <label for="source">結果資料夾、Targeted XLSX 或 SQLite</label
             ><input
               id="source"
               type="text"
@@ -387,7 +387,12 @@
                 data-idle
               />
             </div>
-            <details class="query-advanced">
+            <div id="targeted-filters" hidden>
+              <label class="field">目標名稱（完整名稱）<input id="target-id" type="text" data-idle /></label>
+              <label class="field">樣本<select id="target-sample" data-idle></select></label>
+              <label><input id="target-attention" type="checkbox" data-idle />僅顯示 ReviewQueue 項目</label>
+            </div>
+            <details class="query-advanced" id="group-filter">
               <summary>以分組 ID 定位</summary>
               <label class="field"
                 >完整分組 ID<input

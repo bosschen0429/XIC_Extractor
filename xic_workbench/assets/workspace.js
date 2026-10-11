@@ -190,6 +190,14 @@ window.XicUi = (() => {
   }
   function renderPage(page) {
     state.page = page;
+    const targeted = page.source_kind === "targeted_workbook";
+    $("targeted-filters").hidden = !targeted;
+    $("group-filter").hidden = targeted;
+    document.querySelector(".acquisition-panel").hidden = targeted;
+    $("tab-curves").hidden = targeted;
+    const selectedSample = $("target-sample").value;
+    $("target-sample").replaceChildren(new Option("全部樣本", ""), ...(page.all_samples || page.samples).map(s => new Option(s.label, s.id)));
+    $("target-sample").value = selectedSample;
     clearSelection();
     $("review").hidden = false;
     $("review-empty").hidden = true;
@@ -224,15 +232,17 @@ window.XicUi = (() => {
       const top = document.createElement("span");
       top.className = "item-top";
       const title = document.createElement("strong");
-      title.textContent = `m/z ${fmt(item.precursor_mz, 4)}`;
+      title.textContent = targeted ? item.title : `m/z ${fmt(item.precursor_mz, 4)}`;
       const rt = document.createElement("span");
       rt.className = "item-rt";
-      rt.textContent = `RT ${fmt(item.rt_apex_min, 2)} min`;
+      rt.textContent = targeted ? `m/z ${fmt(item.precursor_mz, 4)}` : `RT ${fmt(item.rt_apex_min, 2)} min`;
       top.append(title, rt);
       const bottom = document.createElement("span");
       bottom.className = "item-bottom";
       const summary = document.createElement("span");
-      summary.textContent = `${item.title} · ${item.review_summary.observed_sample_count || 0} 個樣本`;
+      summary.textContent = targeted
+        ? `${item.review_summary.scope_sample_count} 個樣本的已保存結果`
+        : `${item.title} · ${item.review_summary.observed_sample_count || 0} 個樣本`;
       const badge = document.createElement("span");
       const label = item.badge_label || "已記錄";
       badge.className = `chip ${badgeTone[label] || ""}`;
@@ -273,9 +283,11 @@ window.XicUi = (() => {
     $("selection").hidden = false;
     $("selection-empty").hidden = true;
     $("job-progress").hidden = true;
-    $("item-kind").textContent = item.title;
-    $("item-title").textContent =
-      `m/z ${fmt(item.precursor_mz, 4)} · RT ${fmt(item.rt_apex_min, 2)} min`;
+    const targeted = state.page.source_kind === "targeted_workbook";
+    $("item-kind").textContent = targeted ? "Targeted 已保存結果" : item.title;
+    $("item-title").textContent = targeted
+      ? `${item.title} · m/z ${fmt(item.precursor_mz, 4)}`
+      : `m/z ${fmt(item.precursor_mz, 4)} · RT ${fmt(item.rt_apex_min, 2)} min`;
     $("item-identity").textContent =
       item.group_id || item.candidate_id || item.id;
     document
@@ -326,7 +338,7 @@ window.XicUi = (() => {
       list.append(label);
     }
     showTab("recorded");
-    status("可查看當次分析紀錄，或為勾選的樣本載入 XIC。");
+    status(state.page.source_kind === "targeted_workbook" ? "唯讀檢閱已保存的 Targeted 結果，不需要 RAW。" : "可查看當次分析紀錄，或為勾選的樣本載入 XIC。");
   }
   function showTab(tab) {
     const view = tab === "curves" ? state.curves : state.recorded;
@@ -338,10 +350,12 @@ window.XicUi = (() => {
     $("view-note").textContent =
       tab === "curves"
         ? `新取得的診斷曲線 · ${state.curveLabels.join("、")}。依報告樣本檔名取檔，已核對 RAW 內容屬於此批次；來源未保留獨立的樣本與 RAW 綁定。這些曲線不改寫當次定量值。`
-        : "這是當次分析保存的證據與量值。若未保留曲線，可在上方按需取得 XIC。";
+        : state.page.source_kind === "targeted_workbook"
+          ? "Targeted XLSX 唯讀結果；未保存逐點曲線或可驗證的 RAW 綁定，因此不提供曲線擷取，不改寫量值或判定。"
+          : "這是當次分析保存的證據與量值。若未保留曲線，可在上方按需取得 XIC。";
     $("inspector").src = `/reports/${view}.html?embed=1`;
     $("download").href = `/reports/${view}.html?download=1`;
-    $("download").hidden = false;
+    $("download").hidden = state.page.source_kind === "targeted_workbook";
   }
   async function openBatch() {
     const page = await api("/api/open", { source: $("source").value });
@@ -353,7 +367,9 @@ window.XicUi = (() => {
     if (page.items.length) await selectItem(page.items[0]);
   }
   function queryFields() {
-    const filters = { group_id: $("group-id").value.trim() };
+    const filters = state.page?.source_kind === "targeted_workbook"
+      ? { target_id: $("target-id").value.trim(), sample_id: $("target-sample").value, attention_only: $("target-attention").checked }
+      : { group_id: $("group-id").value.trim() };
     for (const [id, key] of [
       ["mz-min", "mz_min"],
       ["mz-max", "mz_max"],

@@ -11,7 +11,8 @@ scientific decisions, or write Matrix values.
 `xic-extractor`, `xic-workbench <result-folder>`, or
 `python -m xic_workbench <result-folder>` starts the unified local HTML
 workspace and opens its browser URL. The source argument
-is optional; the page can choose a folder or completed CID-NL SQLite report.
+is optional; the page can choose a folder, Targeted XLSX, or completed CID-NL
+SQLite report.
 `--raw-dir` and `--dll-dir` initialize the local source locations; the process
 environment's `XIC_RAW_ROOT` and `THERMO_RAWFILE_READER_DLL_DIR` supply defaults.
 `--no-open` prints the URL without opening a browser. `--port` selects its
@@ -50,6 +51,35 @@ HTML/JavaScript package assets and embeds them into the exported file.
 The transport binds only to `127.0.0.1` and serves packaged assets and this
 session's reports. It is one local analysis and review session.
 
+### Targeted XLSX review
+
+After a Targeted run, **在結果檢閱開啟** opens its delivered workbook directly.
+Alternatively, choose the XLSX in the review source picker or enter its path.
+A folder containing exactly one XLSX can also be opened; multiple workbooks
+require an explicit file choice. Normal Targeted delivery remains one XLSX:
+review creates no report or sidecar beside it and exposes no new export option.
+
+The supported workbook contains `Targets`, `XIC Results`, `Review Queue`, and
+`Run Metadata`, with the `targeted_output` schema marker. Inspector reads the
+saved target settings, sample values, peak bounds, decision/review reasons and
+method context. Merged sample/group labels are restored only within their
+actual merged ranges. Literal `ND`, zero and blank values remain distinct.
+The workbook is not modified, and its SHA-256 binds subsequent queries to the
+opened version; reopen the file after an external edit.
+
+Filter by full target name, sample, saved Review Queue membership, target m/z
+or saved sample RT. RT filtering matches a recorded numeric RT in the selected
+sample scope, not the target's configured search window. The full sample record
+includes the original projection reasons and supporting/conflicting evidence;
+Inspector does not reclassify these facts or treat absence from Review Queue as
+scientific acceptance.
+
+Saved-result review does not require RAW or DLL access. The workbook does not
+retain point-by-point chromatograms or a verified sample-to-RAW binding, so this
+view offers neither reconstructed plots nor on-demand acquisition. Sample names
+are workbook labels, not verified acquisition identities. Its review pages are
+temporary session views, not additional normal-run outputs.
+
 ## Public entry points
 
 The package installs the `xic-inspector` command and provides the equivalent
@@ -61,9 +91,11 @@ xic-inspector cid_nl_explanation.sqlite --strategy attention
 python -m xic_inspector diagnostic_curves.json --output review.html --no-open
 ```
 
-- The source is a completed feature-evidence SQLite report, a versioned
-  curve-bundle JSON file, or an alignment output folder. A folder resolves to
+- The source is a completed feature-evidence SQLite report, a Targeted workbook,
+  a versioned curve-bundle JSON file, or an output folder. A folder resolves to
   its `cid_nl_explanation.sqlite`, or to the one in its `alignment` subfolder.
+  Without SQLite evidence, a single XLSX is accepted; multiple XLSX files
+  require an explicit path.
   `--report` is an equivalent named form.
 - Without `--output`, the report is written as `xic_inspector.html` beside the
   resolved source, the same default as the workbench export.

@@ -35,7 +35,7 @@ _ASSETS = {
 }
 _BROWSE_SUFFIXES = {
     "folder": (),
-    "report": (".sqlite", ".db"),
+    "report": (".sqlite", ".db", ".xlsx"),
     "raw": (".raw",),
     "csv": (".csv",),
     "targets": (".csv", ".tsv", ".xlsx", ".xls"),

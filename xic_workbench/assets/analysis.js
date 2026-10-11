@@ -1132,7 +1132,9 @@
       metric(metrics, targeted.total_files, "RAW 檔案");
       metric(metrics, targeted.targets?.length, "目標");
       metric(metrics, targeted.diagnostics_count, "診斷紀錄");
-      container.append(metrics, artifacts);
+      container.append(metrics);
+      if (targeted.excel_path) container.append(button("在結果檢閱開啟", () => openReview(targeted.excel_path), "primary", "review"));
+      container.append(artifacts);
       const warnings = el("div");
       for (const warning of targeted.istd_warnings || []) {
         const line = el("p", undefined, "result-warning");
