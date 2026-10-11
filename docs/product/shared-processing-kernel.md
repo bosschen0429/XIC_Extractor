@@ -55,9 +55,8 @@ but callers cannot bypass the semantic owner.
 | Search scope | Target-list or Discovery/provider owner -> closed provider/capture request | Constrains what may be searched; does not claim what was observed |
 | Discovery provider | exact SearchScope + canonical sample + provider inputs -> owner-backed observations and `PeakHypothesis` values | Owns provider-specific evidence interpretation behind the shared contract; never rows, groups, values, or artifacts |
 | CrossSample | owner-backed hypotheses/observations -> canonical groups, dispositions, membership, lineage | Sole group/membership authority; does not integrate traces or select values |
-| ObservationRevisit receipt | one bounded revisit decision -> typed result or no-result receipt | Retained receipt contract; no group identity, implicit membership, selected-value, or writer authority |
 | Backfill | one missing cell plus established Target/group context -> bounded revisit result | May produce the first usable observation for that cell; cannot originate the Target/group, mint membership, or select a value |
-| Scientific alignment closure | closed request/group/membership/refinement/revisit receipts -> `FinalizedScientificAlignment` | Validates shared scientific closure; does not construct workflow rows or render outputs |
+| Scientific alignment closure | closed request/group/membership/refinement and completed cell evidence -> `FinalizedScientificAlignment` | Validates shared scientific closure; does not construct workflow rows or render outputs |
 | Projection binding/subjects | finalized core + typed Target/Untarget scope -> row identity/binding + explicit cell subjects | Constructs subjects only; no value, count, or inclusion decision |
 | ProductionCellDecision | explicit subject + closed observations/receipts -> typed write or no-write | Sole selected-value owner; cannot create row or group identity |
 | Projection completion | same projection owner + cell decisions -> inclusion, counts/reasons, review/archive routing | Does not recompute evidence or selected values |
@@ -138,12 +137,11 @@ assumed.
 
 ### ObservationRevisit
 
-`ObservationRevisitReceipt` is a retained typed Backfill receipt. Final cell
-composition accepts a sequence of these receipts. No code creates a receipt:
-the receipt mint token in `alignment/backfill/observation_revisit.py` is never
-passed to the receipt constructor, so production receipt sequences are
-empty. The receipt type grants no
-membership, selected value, or writer authority.
+ObservationRevisit describes the bounded local revisit performed by Backfill,
+not a separate receipt interface. Final cell composition consumes completed
+cell evidence and the CrossSample coverage handoff. The Backfill owner below
+defines what may be revisited; CrossSample and ProductionCellDecision retain
+membership and selected-value authority respectively.
 
 ### Backfill
 

@@ -6,16 +6,6 @@ import json
 from dataclasses import InitVar, asdict, dataclass, field, fields
 from typing import Literal
 
-from xic_extractor.alignment.backfill.observation_revisit import (
-    ObservationRevisitReceipt,
-)
-from xic_extractor.alignment.backfill_peak_fact import (
-    BackfillPeakFactObservation,
-    validate_backfill_peak_fact_observation,
-)
-from xic_extractor.alignment.backfill_peak_fact_projection import (
-    selected_integration_authority_projection,
-)
 from xic_extractor.alignment.cell_group_context import (
     _ARTIFACT_CONTENT_ID_PREFIX,
     _ARTIFACT_SEMANTIC_CONTRACT,
@@ -37,7 +27,6 @@ from xic_extractor.alignment.cell_group_context import (
     _validate_typed_digest_id,
 )
 from xic_extractor.alignment.cross_sample_peak_groups import (
-    CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
@@ -537,77 +526,6 @@ def _direct_member_integration(
             "direct observation does not mint the exact final member"
         )
     return None
-
-
-def _repaired_member_integration(
-    *,
-    member: CrossSampleGroupMemberSubject | None,
-    group: CrossSampleGroupIdentity,
-    canonical_sample: ResolvedCanonicalSampleIdentity,
-    repair_receipt: ObservationRevisitReceipt | None,
-    repaired_observation: BackfillPeakFactObservation | None,
-) -> IntegrationResult | None:
-    if repair_receipt is None and repaired_observation is None:
-        return None
-    if repair_receipt is None or repaired_observation is None:
-        raise CellObservationContractError(
-            "repaired member requires both receipt and live owner observation"
-        )
-    if type(repair_receipt) is not ObservationRevisitReceipt:
-        raise CellObservationContractError("repair receipt is not owner-minted")
-    if member is None:
-        return None
-    subject = repair_receipt.subject
-    evidence = repair_receipt.evidence
-    if (
-        repair_receipt.outcome != "repaired"
-        or evidence is None
-        or subject.member_subject != member
-        or member not in group.member_subjects
-        or subject.sample_identity != canonical_sample
-        or evidence.member_subject_id != member.member_subject_id
-        or evidence.group_hypothesis_id != subject.predecessor_group.group_hypothesis_id
-    ):
-        raise CellObservationContractError(
-            "repair receipt does not authorize the exact final member"
-        )
-    try:
-        validate_backfill_peak_fact_observation(repaired_observation)
-    except (AttributeError, TypeError, ValueError) as exc:
-        raise CellObservationContractError(str(exc)) from exc
-    facts = repaired_observation.facts
-    evaluation_facts = (
-        None
-        if repaired_observation.physical_evaluation is None
-        else repaired_observation.physical_evaluation.facts
-    )
-    if (
-        facts is None
-        or evaluation_facts is None
-        or not repaired_observation.selected_for_output
-        or repaired_observation.request_identity != subject.request_identity
-        or repaired_observation.logical_request != subject.logical_request
-        or repaired_observation.cell.sample_stem != subject.request_identity.sample_stem
-        or repaired_observation.cell.group_hypothesis_id
-        != subject.predecessor_group.group_hypothesis_id
-        or evidence.fact_content_id != evaluation_facts.fact_content_id
-    ):
-        raise CellObservationContractError(
-            "repaired observation crossed receipt provenance"
-        )
-    try:
-        authority_id = selected_integration_authority_projection(
-            facts.integration
-        ).selected_integration_authority_content_id
-    except (AttributeError, TypeError, ValueError) as exc:
-        raise CellObservationContractError(
-            "repair integration is not revalidatable"
-        ) from exc
-    if authority_id != evidence.selected_integration_authority_content_id:
-        raise CellObservationContractError(
-            "repair integration authority content ID was substituted"
-        )
-    return facts.integration
 
 
 def _outside_group_relation(
