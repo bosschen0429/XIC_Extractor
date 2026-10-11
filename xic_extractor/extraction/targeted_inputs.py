@@ -35,8 +35,10 @@ from xic_extractor.raw_reader import (
     read_analysis_set,
 )
 from xic_extractor.sample_metadata import (
+    SampleMetadata,
     is_sample_metadata_source,
     load_sample_metadata,
+    match_sequence_to_raw_stems_report,
     sample_metadata_to_injection_order,
     sample_metadata_to_raw_stem_injection_order,
 )
@@ -62,6 +64,7 @@ TARGETED_REAL_DATA_DISCOVERY_SETTINGS_SCHEMA_VERSION = (
 class ResolvedTargetedInputs:
     injection_order: dict[str, int]
     acquisition_injection_order: dict[str, int] | None = None
+    sample_metadata: tuple[SampleMetadata, ...] = ()
 
 
 def resolve_targeted_inputs(
@@ -78,6 +81,13 @@ def resolve_targeted_inputs(
     return ResolvedTargetedInputs(
         injection_order=resolved_injection_order,
         acquisition_injection_order=acquisition_injection_order,
+        sample_metadata=match_sequence_to_raw_stems_report(
+            load_sample_metadata(config.injection_order_source)
+            if config.injection_order_source is not None
+            and is_sample_metadata_source(config.injection_order_source)
+            else (),
+            tuple(path.stem for path in raw_paths),
+        ).rows,
     )
 
 
@@ -143,6 +153,7 @@ def build_targeted_processing_request_identity(
         for stem, source in sources_by_stem.items()
     )
     scientific_inputs = {
+        "sample_metadata": [asdict(row) for row in resolved_inputs.sample_metadata],
         "settings": {
             field: getattr(config, field) for field in SCIENTIFIC_SETTING_FIELDS
         },

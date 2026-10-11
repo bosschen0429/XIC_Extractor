@@ -25,9 +25,50 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 )
 
 
+@pytest.mark.parametrize("offset_scatter", [0.04, 2.0])
+def test_paired_istd_localization_uses_only_confirmed_same_batch_offsets(
+    offset_scatter,
+):
+    trajectory = PeakTrajectory(
+        (),
+        (
+            ("ref1", 10.0),
+            ("ref2", 11.0 + offset_scatter),
+            ("unconfirmed", 30.0),
+            ("other_batch", 40.0),
+        ),
+    )
+    result = trajectory.backfill_locations(
+        ("missing",),
+        reference_samples=frozenset({"ref1", "ref2", "other_batch"}),
+        injection_order={"ref1": 1, "ref2": 2, "missing": 3},
+        sample_cohorts={
+            "ref1": "batch",
+            "ref2": "batch",
+            "missing": "batch",
+            "unconfirmed": "batch",
+            "other_batch": "different",
+        },
+        rt_warp=None,
+        backfill_half_window_min=0.5,
+        paired_istd_rts={
+            "ref1": 8.0,
+            "ref2": 9.0,
+            "missing": 15.0,
+            "unconfirmed": 10.0,
+            "other_batch": 10.0,
+        },
+    )["missing"]
+    assert result.location.basis == "paired_istd"
+    assert result.location.query_rt == pytest.approx(17.0 + offset_scatter / 2.0)
+    assert result.reliable is (offset_scatter < 0.5)
+    assert result.apex_tolerance_sec == (12.0 if offset_scatter < 0.5 else None)
+
+
 @pytest.mark.parametrize("half_window_min", [0.15, 1.0])
 def test_backfill_location_prepares_held_out_residuals_once_per_group(
-    monkeypatch, half_window_min,
+    monkeypatch,
+    half_window_min,
 ):
     references = tuple((f"s{i}", 10.0 + i * 0.1) for i in range(6))
     targets = tuple(f"t{i}" for i in range(20))
@@ -145,14 +186,18 @@ def test_equal_pattern_paths_do_not_authorize_observed_backfill_location(reverse
     model = resolve_peak_trajectories(
         owners, contexts, config=AlignmentConfig(), injection_order=orders
     )
-    location = model.trajectory_for(owners).backfill_locations(
-        ("c",),
-        reference_samples=frozenset(("a", "b")),
-        injection_order=orders,
-        sample_cohorts=dict.fromkeys(orders, "batch"),
-        rt_warp=None,
-        backfill_half_window_min=1.0,
-    )["c"].location
+    location = (
+        model.trajectory_for(owners)
+        .backfill_locations(
+            ("c",),
+            reference_samples=frozenset(("a", "b")),
+            injection_order=orders,
+            sample_cohorts=dict.fromkeys(orders, "batch"),
+            rt_warp=None,
+            backfill_half_window_min=1.0,
+        )["c"]
+        .location
+    )
     # Both ordered two-peak paths have equal height error and a best normalized
     # RT residual of 2/3. Neither may become an observed Backfill coordinate;
     # choosing 11.0 would exclude the equally supported 10.5 from its 12s gate.

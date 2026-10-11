@@ -1568,6 +1568,159 @@ def test_cancellation_during_input_fingerprint_skips_acquisition_and_finalizatio
     assert execution.published_paths == ()
 
 
+@pytest.mark.parametrize("missing_pair", [False, True])
+def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing_pair: bool
+) -> None:
+    from contextlib import nullcontext
+
+    from xic_extractor.configuration.models import ExtractionConfig, Target
+    from xic_extractor.extraction import pipeline, target_extraction
+    from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
+
+    data = tmp_path / "raw"
+    data.mkdir()
+    shifts = {"SampleA": 0.0, "SampleB": 0.02, "SampleC": 0.45}
+    for name in shifts:
+        (data / f"{name}.raw").write_bytes(name.encode())
+    config = ExtractionConfig(
+        data_dir=data,
+        dll_dir=tmp_path,
+        output_csv=tmp_path / "result.csv",
+        diagnostics_csv=tmp_path / "diag.csv",
+        smooth_window=9,
+        smooth_polyorder=2,
+        peak_rel_height=0.02,
+        peak_min_prominence_ratio=0.01,
+        ms2_precursor_tol_da=0.5,
+        nl_min_intensity_ratio=0.01,
+        nl_rt_anchor_half_window_min=0.6,
+        nl_fallback_half_window_min=0.6,
+    )
+    analyte = Target(
+        label="Analyte",
+        mz=250.0,
+        rt_min=1.1,
+        rt_max=2.5,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=40.0,
+        is_istd=False,
+        istd_pair="ISTD",
+    )
+    istd = replace(
+        analyte,
+        label="ISTD",
+        mz=255.0,
+        rt_min=0.7,
+        rt_max=2.1,
+        is_istd=True,
+        istd_pair="",
+    )
+
+    class Raw:
+        def __init__(self, name):
+            self.name = name
+
+        def extract_xic(self, mz, rt_min, rt_max, _ppm):
+            rt = np.linspace(rt_min, rt_max, 1801)
+            center = (1.35 if mz == 255.0 else 1.45) + shifts[self.name]
+            scale = {"SampleA": 1000.0, "SampleB": 2000.0, "SampleC": 3000.0}[self.name]
+            signal = 10 + scale * np.exp(-(((rt - center) / 0.015) ** 2))
+            if self.name == "SampleC" and mz == 250.0:
+                signal += 8000.0 * np.exp(-(((rt - 2.2) / 0.015) ** 2))
+            if missing_pair and self.name == "SampleC" and mz == 255.0:
+                signal = np.full_like(rt, 10.0)
+            return rt, signal
+
+        def iter_ms2_scans(self, rt_min, rt_max):
+            for index, mz in enumerate((250.0, 255.0), 1):
+                if self.name == "SampleC" and mz == 250.0:
+                    continue
+                rt = (1.35 if mz == 255.0 else 1.45) + shifts[self.name]
+                if rt_min <= rt <= rt_max:
+                    yield Ms2ScanEvent(
+                        scan=Ms2Scan(
+                            scan_number=index,
+                            rt=rt,
+                            precursor_mz=mz,
+                            masses=np.array([mz - 116.0]),
+                            intensities=np.array([500.0]),
+                            base_peak=500.0,
+                        ),
+                        parse_error=None,
+                        scan_number=index,
+                    )
+
+    monkeypatch.setattr(pipeline, "preflight_raw_reader", lambda _path: [])
+    monkeypatch.setattr(
+        target_extraction,
+        "open_raw",
+        lambda path, *_a, **_k: nullcontext(Raw(path.stem)),
+    )
+    workbook_path = tmp_path / "backfill.xlsx"
+    execution = TargetedApplicationService(pipeline.run_pipeline).execute_application(
+        build_targeted_application_request(
+            config,
+            [analyte, istd],
+            injection_order={"SampleA": 1, "SampleB": 2, "SampleC": 3},
+            excel_output_path=workbook_path,
+        )
+    )
+    finalized = next(
+        r
+        for r in execution.finalized_results
+        if r.completed_projection.row_binding.target.definition.target.label
+        == "Analyte"
+    )
+    decisions = finalized.scientific_core.targeted_backfill_decisions
+    accepted = [d for d in decisions if d.disposition == "candidate_mapped"]
+    assert len(accepted) == (0 if missing_pair else 1), (
+        [(d.reason_codes, d.group_facts.direct_support_count_s) for d in decisions],
+        [
+            (
+                f.sample_name,
+                [
+                    (
+                        label,
+                        r.targeted_product_projection.counted_detection,
+                        r.reported_rt,
+                    )
+                    for label, r in f.results.items()
+                ],
+            )
+            for f in execution.active_output.file_results
+        ],
+    )
+    if accepted:
+        decision = accepted[0]
+        assert decision.target_cell.content.method_result == "HOLD"
+        assert decision.group_facts.direct_support_count_s == 2
+        assert decision.candidate_universe.localization.location.basis == "paired_istd"
+        assert (
+            decision.matched_candidate.peak_observation.content.integration.rt_apex_min
+            == pytest.approx(1.9, abs=0.005)
+        )
+    workbook = load_workbook(workbook_path, read_only=True, data_only=True)
+    values = iter(workbook["XIC Results"].values)
+    headers = next(values)
+    rows = [dict(zip(headers, row)) for row in values]
+    workbook.close()
+    row = next(
+        r for r in rows if r["SampleName"] == "SampleC" and r["Target"] == "Analyte"
+    )
+    assert row["Counted Detection"] == "FALSE"
+    if not missing_pair:
+        assert row["RT"] == pytest.approx(1.9, abs=0.005)
+        assert row["Area"] > 0
+        assert "backfill" in str(row["Review Evidence"]).lower()
+        ref = next(
+            r for r in rows if r["SampleName"] == "SampleA" and r["Target"] == "Analyte"
+        )
+        assert row["Area"] / ref["Area"] == pytest.approx(3.0, rel=0.03)
+
+
 def test_cli_and_workbench_route_through_acquisition_service_boundary() -> None:
     import scripts.run_extraction as cli_module
     import xic_workbench.targeted as workbench_module

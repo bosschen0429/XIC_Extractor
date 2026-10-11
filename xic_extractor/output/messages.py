@@ -6,6 +6,8 @@ from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 
 DiagnosticIssue = Literal[
+    "BACKFILL_ACCEPTED",
+    "BACKFILL_HOLD",
     "PEAK_NOT_FOUND",
     "NO_SIGNAL",
     "WINDOW_TOO_SHORT",

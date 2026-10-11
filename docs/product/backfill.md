@@ -9,6 +9,34 @@ conservative decision in `xic_extractor.alignment.conservative_backfill`.
 
 ## Contract
 
+### Targeted route
+
+The Targeted production workflow freezes a reference group from its selected
+direct CID-NL-supported observations, then calls the same conservative support
+gate and candidate mapper. Sample roles and batch metadata come from the
+existing sample-metadata owner; ISTDs do not add analyte SUPPORT votes.
+
+For a paired Target, confirmed same-batch peers establish the measured
+analyte-to-ISTD RT offset. `PeakTrajectory.backfill_locations` transfers that
+offset to the current sample's credible paired ISTD, with the existing bounded
+residual tolerance. Missing paired evidence, excessive offset scatter, or
+competing confirmed groups does not authorize a Targeted recovery.
+
+The mapper consumes the complete retained candidate assessment and applies the
+shared background-qualified physical Backfill question within the localized
+window. It does not discard non-qualifying MS2 events to manufacture an empty
+evidence set; set-level CID-NL attribution remains competing evidence. An
+accepted observation may replace the initial observation-only capture, but
+neither reranks direct SUPPORT peaks nor changes the original HOLD assessment.
+The original physical integration is reused, not re-estimated by the writer.
+
+The finalized scientific result retains the mapping receipt. Excel reports
+`BACKFILL_ACCEPTED` or `BACKFILL_HOLD` through its existing diagnostics/review
+surface; an accepted HOLD analyte retains `Counted Detection=False`. Without an
+accepted Backfill, existing initial Targeted quantitation is unchanged and is
+not represented as a Backfill result. This retained-evidence route does not
+expand the acquired trace or silently search another RAW window.
+
 ### Untargeted route
 
 1. Normal Untargeted HTML runs, Alignment CLI runs, and preset runs enter the

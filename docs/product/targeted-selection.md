@@ -94,6 +94,12 @@ acquisition-stage detection flag cannot supply that authority. The existing
 product projection renders the finalized method answer and retained review
 facts. ISTD expected-presence, MS1-only, RT and quality policies remain separate.
 
+Cohort Backfill is a distinct, owner-bound recovery after direct reference
+observations are available. The [shared Backfill route](backfill.md#targeted-route)
+can attribute a unique qualified retained MS1 peak using confirmed peers and
+paired ISTD RT. Its receipt may replace an observation-only capture; it does
+not rerank a directly supported selection or promote HOLD to confirmation.
+
 Regression coverage protects the selected candidate, contextual RT, chemical
 and morphology evidence, no-candidate behavior and rendered measurements.
 Tests passing alone do not establish scientific readiness; method-changing

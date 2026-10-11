@@ -32,6 +32,7 @@ from xic_extractor.extraction.targeted_product_projection import (
     build_targeted_product_projection,
 )
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
+from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.output.targeted_product_model import (
     TargetedProductContext,
     TargetedProductProjection,
@@ -161,6 +162,8 @@ def _build_render_view(
     decisions: dict[tuple[str, str], Any] = {}
     target_ids_by_label: dict[str, str] = {}
     targets_by_label: dict[str, Target] = {}
+    backfills = {}
+    backfill_diagnostics = []
     for result in finalized_results:
         if (
             result.processing_request != expected_request
@@ -182,6 +185,9 @@ def _build_render_view(
             )
         target_ids_by_label[target_label] = target_id
         targets_by_label[target_label] = target.target
+        for backfill in result.scientific_core.targeted_backfill_decisions:
+            sample_id = backfill.target_cell.content.canonical_sample_identity_id
+            backfills[(sample_id, target_id)] = backfill
         for projection_decision in result.completed_projection.decisions:
             subject = cast(Any, projection_decision.subject)
             sample_id = subject.sample.identity.sample_identity_id
@@ -231,6 +237,20 @@ def _build_render_view(
                     "finalized Targeted decisions do not cover acquisition evidence"
                 )
             consumed.add(key)
+            backfill_decision = backfills.get(key)
+            if backfill_decision is not None:
+                backfill_diagnostics.append(
+                    DiagnosticRecord(
+                        file_result.sample_name,
+                        target_label,
+                        "BACKFILL_ACCEPTED"
+                        if backfill_decision.matched_candidate is not None
+                        else "BACKFILL_HOLD",
+                        "Cross-sample confirmed peaks and paired ISTD: "
+                        + "; ".join(backfill_decision.reason_codes)
+                        + "; direct CID/NL remains HOLD; confirmed=False.",
+                    )
+                )
             no_write_reason = (
                 ""
                 if render_decision.variant == "numeric"
@@ -254,7 +274,7 @@ def _build_render_view(
         )
     return RunOutput(
         file_results=files,
-        diagnostics=list(acquisition_evidence.diagnostics),
+        diagnostics=[*acquisition_evidence.diagnostics, *backfill_diagnostics],
     )
 
 
@@ -283,6 +303,9 @@ def _finalized_extraction_result(
                 "finalized Targeted value does not match its public result model"
             )
         integration = evidence.hypothesis.integration
+        physical_evaluation = evidence.hypothesis.peak_observation_refs[
+            0
+        ].physical_evaluation
         rendered = replace(
             extraction,
             peak_result=replace(
@@ -300,6 +323,17 @@ def _finalized_extraction_result(
             ),
             selected_hypothesis=None,
             selection_decision=None,
+            physical_evaluation=physical_evaluation,
+            selected_cid_nl_candidate_index=next(
+                (
+                    index
+                    for index, evaluation in enumerate(
+                        extraction.candidate_physical_evaluations
+                    )
+                    if evaluation is physical_evaluation
+                ),
+                None,
+            ),
             targeted_product_projection=projection,
         )
         if rendered.reported_peak_area != value:

@@ -19,6 +19,9 @@ from xic_extractor.alignment.cell_observations import (
     compose_final_group_cell_observation_population,
     validate_final_group_cell_observation_population,
 )
+from xic_extractor.alignment.conservative_backfill import (
+    ConservativeBackfillCellDecision,
+)
 from xic_extractor.alignment.cross_sample.association import (
     CrossSampleAssociationLineageHandoff,
     validate_cross_sample_association_lineage_handoff,
@@ -112,6 +115,7 @@ class FinalizedScientificAlignment:
     grouping_result: CrossSampleGroupingResult
     _completion_seal: tuple[int, ...] = field(init=False, repr=False, compare=False)
     _mint_token: InitVar[object] = field(kw_only=True, repr=False)
+    targeted_backfill_decisions: tuple[ConservativeBackfillCellDecision, ...] = ()
 
     def __post_init__(self, _mint_token: object) -> None:
         fresh_cells = _mint_token is _FRESH_CELL_POPULATION_MINT_TOKEN
@@ -195,6 +199,7 @@ def finalize_scientific_alignment(
     backfill_cell_observations: Sequence[CellObservationRef] = (),
     repair_receipts: Sequence[ObservationRevisitReceipt] = (),
     repaired_observations: Sequence[BackfillPeakFactObservation] = (),
+    targeted_backfill_decisions: tuple[ConservativeBackfillCellDecision, ...] = (),
 ) -> FinalizedScientificAlignment:
     """Validate one complete capture population and seal its shared core."""
 
@@ -271,6 +276,7 @@ def finalize_scientific_alignment(
         cell_observation_handoff=cell_observation_handoff,
         cell_observations=canonical_cells,
         grouping_result=grouping_result,
+        targeted_backfill_decisions=targeted_backfill_decisions,
         # The composer just closed these cells; no callback precedes this mint.
         _mint_token=_FRESH_CELL_POPULATION_MINT_TOKEN,
     )
@@ -312,6 +318,7 @@ def _scientific_completion_state(
         id(result.cell_observation_handoff),
         id(result.cell_observations),
         id(result.grouping_result),
+        id(result.targeted_backfill_decisions),
     )
 
 
@@ -365,6 +372,53 @@ def _validate_finalized_alignment(
     *,
     _reuse_fresh_cells: bool = False,
 ) -> None:
+    if not isinstance(result.targeted_backfill_decisions, tuple):
+        raise FinalizedScientificAlignmentContractError(
+            "Backfill decisions must be immutable"
+        )
+    terminal_by_sample = (
+        {item.canonical_sample_identity_id: item for item in result.terminal_subjects}
+        if result.targeted_backfill_decisions
+        else {}
+    )
+    seen_backfills = set()
+    for decision in result.targeted_backfill_decisions:
+        if (
+            type(result.scope) is not TargetSearchScope
+            or type(decision) is not ConservativeBackfillCellDecision
+        ):
+            raise FinalizedScientificAlignmentContractError(
+                "Targeted Backfill crossed its owner"
+            )
+        sample_id = decision.target_cell.content.canonical_sample_identity_id
+        if sample_id in seen_backfills or sample_id not in terminal_by_sample:
+            raise FinalizedScientificAlignmentContractError(
+                "Backfill crossed the terminal sample population"
+            )
+        seen_backfills.add(sample_id)
+        assessment = decision.target_cell.method_assessment
+        if (
+            assessment.artifact.producer_processing_request_id
+            != result.processing_request.processing_request_id
+            or assessment.artifact.producer_processing_attempt_id
+            != result.grouping_result.processing_owners.attempt.processing_attempt_id
+            or assessment.content.method_subject.target_definition_id
+            != result.scope.target.definition.target_definition_id
+        ):
+            raise FinalizedScientificAlignmentContractError(
+                "Backfill crossed its processing request, attempt, or Target"
+            )
+        if decision.matched_candidate is not None:
+            terminal = terminal_by_sample[sample_id]
+            if (
+                decision.target_cell.content.method_result != "HOLD"
+                or type(terminal) is not ObservedSearchSubject
+                or decision.matched_candidate.peak_observation
+                not in terminal.hypothesis.peak_observation_refs
+            ):
+                raise FinalizedScientificAlignmentContractError(
+                    "Backfill lost its HOLD observation"
+                )
     if not _reuse_fresh_cells:
         _validate_scope(result.scope)
     if result.processing_request is not result.scope.request:

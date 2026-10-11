@@ -92,6 +92,7 @@ class PeakTrajectory:
         sample_cohorts: Mapping[str, str],
         rt_warp: RtCalibration | None,
         backfill_half_window_min: float,
+        paired_istd_rts: Mapping[str, float] | None = None,
     ) -> Mapping[str, BackfillPeakLocation]:
         """Prepare row residuals once, not once per missing sample.
 
@@ -122,7 +123,8 @@ class PeakTrajectory:
             if sample not in reference_samples or cohort not in needed_cohorts:
                 continue
             peers = tuple(
-                point for point in self.sample_apices
+                point
+                for point in self.sample_apices
                 if point[0] != sample and sample_cohorts.get(point[0]) == cohort
             )
             if not peers:
@@ -144,9 +146,10 @@ class PeakTrajectory:
             half_window_sec = backfill_half_window_min * 60.0
             if residual_p90 <= half_window_sec:
                 tolerance_by_cohort[cohort] = min(
-                    max(12.0, residual_p90), half_window_sec,
+                    max(12.0, residual_p90),
+                    half_window_sec,
                 )
-        return {
+        result = {
             sample: BackfillPeakLocation(
                 location,
                 min(12.0, backfill_half_window_min * 60.0)
@@ -155,6 +158,37 @@ class PeakTrajectory:
             )
             for sample, location in locations.items()
         }
+        if paired_istd_rts is not None:
+            # Confirmed peers establish the analyte-to-ISTD offset. The missing
+            # sample contributes only its independently measured paired ISTD.
+            for sample in sample_stems:
+                if sample not in paired_istd_rts or sample in self._positions:
+                    continue
+                offsets = [
+                    rt - paired_istd_rts[peer]
+                    for peer, rt in self.sample_apices
+                    if peer in reference_samples
+                    and peer in paired_istd_rts
+                    and sample_cohorts.get(peer) == sample_cohorts.get(sample)
+                ]
+                if len(offsets) < 2:
+                    continue
+                residuals_sec = [
+                    abs(value - float(np.median(offsets[:i] + offsets[i + 1 :]))) * 60.0
+                    for i, value in enumerate(offsets)
+                ]
+                residual_p90 = float(np.quantile(residuals_sec, 0.9))
+                half_window_sec = backfill_half_window_min * 60.0
+                result[sample] = BackfillPeakLocation(
+                    PeakLocation(
+                        max(0.0, paired_istd_rts[sample] + float(np.median(offsets))),
+                        "paired_istd",
+                    ),
+                    min(max(12.0, residual_p90), half_window_sec)
+                    if residual_p90 <= half_window_sec
+                    else None,
+                )
+        return result
 
     def locate(
         self,
