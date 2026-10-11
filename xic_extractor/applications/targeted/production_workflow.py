@@ -863,7 +863,12 @@ def _execute_target(
         for group, missing_ids in plans:
             group_context = CidNlCellGroupContext(
                 group=group,
-                supports=direct,
+                supports=tuple(
+                    sorted(
+                        direct,
+                        key=lambda support: support.sample.identity.sample_identity_id,
+                    )
+                ),
                 config=alignment_config,
                 processing_attempt=context.owners.attempt,
             )

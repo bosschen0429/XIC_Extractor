@@ -1659,6 +1659,27 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         "open_raw",
         lambda path, *_a, **_k: nullcontext(Raw(path.stem)),
     )
+    # RAW enumeration order is not canonical sample-identity order.
+    from xic_extractor.applications.targeted import production_workflow
+
+    original_execute = production_workflow._execute_target
+
+    def execute_reverse_identity(context, *args, **kwargs):
+        context = replace(
+            context,
+            results_by_sample=tuple(
+                sorted(
+                    context.results_by_sample,
+                    key=lambda item: item[0].identity.sample_identity_id,
+                    reverse=True,
+                )
+            ),
+        )
+        return original_execute(context, *args, **kwargs)
+
+    monkeypatch.setattr(
+        production_workflow, "_execute_target", execute_reverse_identity
+    )
     workbook_path = tmp_path / "backfill.xlsx"
     execution = TargetedApplicationService(pipeline.run_pipeline).execute_application(
         build_targeted_application_request(
