@@ -415,9 +415,9 @@ def test_build_extraction_result_adds_targeted_product_projection() -> None:
     assert projection is not None
     assert result.confidence == "VERY_LOW"
     assert result.nl_token == "NL_FAIL"
-    assert projection.product_state == "detected_flagged"
-    assert projection.counted_detection is True
-    assert "plausible_dda_nl_dropout" in projection.review_reasons
+    assert projection.product_state == "not_counted"
+    assert projection.counted_detection is False
+    assert "cid_nl_method_not_supported" in projection.not_counted_reasons
 
 
 def test_istd_rt_conflict_inside_target_window_stays_counted() -> None:
@@ -492,6 +492,8 @@ def test_istd_rt_conflict_inside_target_window_stays_counted() -> None:
         candidate=candidate,
         scoring_context_builder=None,
         selected_hypothesis=selected,
+        cid_nl_relations=_method_relations(target, candidate),
+        selected_cid_nl_candidate_index=0,
     )
 
     projection = result.targeted_product_projection
@@ -553,7 +555,7 @@ def test_istd_combined_reviews_preserve_unresolved_conflicts(
     assert result.reported_peak_area == 1234.5
 
 
-def test_istd_rt_conflict_with_nl_dropout_stays_counted_when_ms1_coherent() -> None:
+def test_istd_nl_dropout_waits_for_backfill_even_when_ms1_coherent() -> None:
     result = _result_with_targeted_projection_semantics(
         target=_target(is_istd=True),
         support_reasons=("ms1_coherent",),
@@ -566,16 +568,16 @@ def test_istd_rt_conflict_with_nl_dropout_stays_counted_when_ms1_coherent() -> N
 
     projection = result.targeted_product_projection
     assert projection is not None
-    assert projection.product_state == "detected_flagged"
-    assert projection.counted_detection is True
+    assert projection.product_state == "not_counted"
+    assert projection.counted_detection is False
     assert "targeted_rt_conflict" not in projection.conflict_reasons
     assert "targeted_rt_review" in projection.review_reasons
-    assert "plausible_dda_nl_dropout" in projection.review_reasons
+    assert "cid_nl_method_not_supported" in projection.not_counted_reasons
     assert "istd_nl_fail_without_dropout_support" not in projection.not_counted_reasons
-    assert "role_aware_istd_expected_present" in projection.support_reasons
+    assert "role_aware_istd_expected_present" not in projection.support_reasons
 
 
-def test_analyte_trace_conflict_does_not_use_istd_projection_escape() -> None:
+def test_analyte_trace_quality_is_review_not_identity() -> None:
     result = _result_with_targeted_projection_semantics(
         target=_target(is_istd=False),
         support_reasons=("ms1_coherent", "candidate_aligned_ms2_nl"),
@@ -584,9 +586,9 @@ def test_analyte_trace_conflict_does_not_use_istd_projection_escape() -> None:
 
     projection = result.targeted_product_projection
     assert projection is not None
-    assert projection.product_state == "ambiguous"
-    assert projection.counted_detection is False
-    assert "trace_morphology_conflict" in projection.conflict_reasons
+    assert projection.product_state == "detected_flagged"
+    assert projection.counted_detection is True
+    assert "trace_morphology_review" in projection.review_reasons
 
 
 def test_paired_analyte_anchor_selected_trace_conflict_stays_counted() -> None:
@@ -605,7 +607,7 @@ def test_paired_analyte_anchor_selected_trace_conflict_stays_counted() -> None:
     assert "trace_morphology_review" in projection.review_reasons
 
 
-def test_paired_analyte_anchor_conflict_blocks_trace_downgrade() -> None:
+def test_paired_analyte_anchor_and_trace_quality_are_review() -> None:
     result = _result_with_targeted_projection_semantics(
         target=_target(is_istd=False),
         support_reasons=("candidate_aligned_ms2_nl",),
@@ -616,9 +618,9 @@ def test_paired_analyte_anchor_conflict_blocks_trace_downgrade() -> None:
 
     projection = result.targeted_product_projection
     assert projection is not None
-    assert projection.product_state == "ambiguous"
-    assert projection.counted_detection is False
-    assert "anchor_conflict" in projection.conflict_reasons
+    assert projection.product_state == "detected_flagged"
+    assert projection.counted_detection is True
+    assert "targeted_rt_review" in projection.review_reasons
     assert "trace_morphology_review" in projection.review_reasons
 
 
@@ -633,10 +635,10 @@ def test_paired_analyte_anchor_does_not_confirm_nl_fail() -> None:
 
     projection = result.targeted_product_projection
     assert projection is not None
-    assert projection.product_state == "ambiguous"
+    assert projection.product_state == "not_counted"
     assert projection.counted_detection is False
-    assert "candidate_aligned_ms2_nl_conflict" in projection.conflict_reasons
-    assert "analyte_nl_fail_requires_policy" in projection.not_counted_reasons
+    assert "missing_nl_support_review" in projection.review_reasons
+    assert "cid_nl_method_not_supported" in projection.not_counted_reasons
     assert "paired_istd_anchor_support" in projection.support_reasons
 
 
@@ -651,11 +653,11 @@ def test_paired_analyte_anchor_ratio_keeps_nl_fail_not_counted() -> None:
 
     projection = result.targeted_product_projection
     assert projection is not None
-    assert projection.product_state == "ambiguous"
+    assert projection.product_state == "not_counted"
     assert projection.counted_detection is False
-    assert "candidate_aligned_ms2_nl_conflict" in projection.conflict_reasons
-    assert "analyte_nl_fail_requires_policy" in projection.not_counted_reasons
-    assert "paired_analyte_nl_review" in projection.review_reasons
+    assert "missing_nl_support_review" in projection.review_reasons
+    assert "cid_nl_method_not_supported" in projection.not_counted_reasons
+    assert "missing_nl_support_review" in projection.review_reasons
     assert "paired_istd_anchor_support" in projection.support_reasons
     assert "paired_area_ratio_support" in projection.support_reasons
 
@@ -671,10 +673,10 @@ def test_paired_analyte_nl_fail_requires_anchor_inside_selected_interval() -> No
 
     projection = result.targeted_product_projection
     assert projection is not None
-    assert projection.product_state == "ambiguous"
+    assert projection.product_state == "not_counted"
     assert projection.counted_detection is False
-    assert "candidate_aligned_ms2_nl_conflict" in projection.conflict_reasons
-    assert "analyte_nl_fail_requires_policy" in projection.not_counted_reasons
+    assert "missing_nl_support_review" in projection.review_reasons
+    assert "cid_nl_method_not_supported" in projection.not_counted_reasons
 
 
 def test_paired_analyte_role_support_keeps_nl_fail_not_counted() -> None:
@@ -692,11 +694,11 @@ def test_paired_analyte_role_support_keeps_nl_fail_not_counted() -> None:
 
     projection = result.targeted_product_projection
     assert projection is not None
-    assert projection.product_state == "ambiguous"
+    assert projection.product_state == "not_counted"
     assert projection.counted_detection is False
-    assert "candidate_aligned_ms2_nl_conflict" in projection.conflict_reasons
-    assert "analyte_nl_fail_requires_policy" in projection.not_counted_reasons
-    assert "paired_analyte_nl_review" in projection.review_reasons
+    assert "missing_nl_support_review" in projection.review_reasons
+    assert "cid_nl_method_not_supported" in projection.not_counted_reasons
+    assert "missing_nl_support_review" in projection.review_reasons
     assert "role_aware_rt_support" in projection.support_reasons
     assert "paired_area_ratio_support" in projection.support_reasons
     assert "paired_istd_anchor_support" not in projection.support_reasons
@@ -715,10 +717,10 @@ def test_paired_analyte_role_support_without_area_ratio_keeps_nl_fail_not_counte
 
     projection = result.targeted_product_projection
     assert projection is not None
-    assert projection.product_state == "ambiguous"
+    assert projection.product_state == "not_counted"
     assert projection.counted_detection is False
-    assert "candidate_aligned_ms2_nl_conflict" in projection.conflict_reasons
-    assert "analyte_nl_fail_requires_policy" in projection.not_counted_reasons
+    assert "missing_nl_support_review" in projection.review_reasons
+    assert "cid_nl_method_not_supported" in projection.not_counted_reasons
     assert "role_aware_rt_support" in projection.support_reasons
     assert "paired_area_ratio_support" not in projection.support_reasons
     assert "paired_istd_anchor_support" not in projection.support_reasons
@@ -736,10 +738,10 @@ def test_paired_analyte_nl_fail_with_quality_flags_stays_not_counted() -> None:
 
     projection = result.targeted_product_projection
     assert projection is not None
-    assert projection.product_state == "ambiguous"
+    assert projection.product_state == "not_counted"
     assert projection.counted_detection is False
-    assert "candidate_aligned_ms2_nl_conflict" in projection.conflict_reasons
-    assert "analyte_nl_fail_requires_policy" in projection.not_counted_reasons
+    assert "missing_nl_support_review" in projection.review_reasons
+    assert "cid_nl_method_not_supported" in projection.not_counted_reasons
 
 
 def test_paired_analyte_reference_rt_without_istd_anchor_is_not_counted() -> None:
@@ -754,11 +756,11 @@ def test_paired_analyte_reference_rt_without_istd_anchor_is_not_counted() -> Non
 
     projection = result.targeted_product_projection
     assert projection is not None
-    assert projection.product_state == "ambiguous"
+    assert projection.product_state == "not_counted"
     assert projection.counted_detection is False
-    assert "candidate_aligned_ms2_nl_conflict" in projection.conflict_reasons
+    assert "missing_nl_support_review" in projection.review_reasons
     assert "paired_istd_anchor_support" not in projection.support_reasons
-    assert "analyte_nl_fail_requires_policy" in projection.not_counted_reasons
+    assert "cid_nl_method_not_supported" in projection.not_counted_reasons
 
 
 def test_legacy_very_low_does_not_decide_product_not_counted() -> None:
@@ -791,7 +793,7 @@ def test_analyte_no_ms2_still_requires_policy() -> None:
     assert projection is not None
     assert projection.product_state == "not_counted"
     assert projection.counted_detection is False
-    assert "analyte_missing_ms2_requires_policy" in projection.not_counted_reasons
+    assert "cid_nl_method_not_supported" in projection.not_counted_reasons
 
 
 def test_istd_raw_hard_quality_flag_with_product_support_stays_counted() -> None:
@@ -1172,3 +1174,28 @@ def _ms2_evidence() -> CandidateMS2Evidence:
         best_product_base_ratio=0.4,
         alignment_source="region",
     )
+
+
+@pytest.mark.parametrize("is_istd", [False, True])
+def test_method_supported_quantifiable_peak_keeps_rt_and_shape_as_review(
+    is_istd: bool,
+) -> None:
+    result = _result_with_targeted_projection_semantics(
+        target=_target(is_istd=is_istd),
+        support_reasons=("candidate_aligned_ms2_nl",),
+        conflict_reasons=(
+            "targeted_rt_conflict",
+            "anchor_conflict",
+            "hard_local_quality_conflict",
+            "trace_morphology_conflict",
+        ),
+        quality_flags=("too_broad",),
+        confidence="VERY_LOW",
+    )
+    projection = result.targeted_product_projection
+    assert projection is not None
+    assert projection.counted_detection is True
+    assert projection.conflict_reasons == ()
+    assert "targeted_rt_review" in projection.review_reasons
+    assert "trace_morphology_review" in projection.review_reasons
+    assert result.reported_peak_area == 1234.5

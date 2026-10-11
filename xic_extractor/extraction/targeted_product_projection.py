@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 from xic_extractor.configuration.models import Target
 from xic_extractor.extraction.target_sample_applicability import (
     target_sample_exclusion_reasons,
-    target_sample_is_applicable,
 )
 from xic_extractor.output.targeted_product_model import (
     ProductState,
@@ -46,61 +45,33 @@ def project_targeted_result(
                 "support_reasons",
             ),
         )
-    conflicts, conflict_reviews = _projection_conflicts_and_reviews(
-        result,
-        semantics,
-        target=target,
-        sample_name=sample_name,
-        support_reasons=support,
+    conflicts = _merge_reasons(
+        () if semantics is None else semantics.conflict_reasons,
+        () if semantics is None else semantics.ambiguity_reasons,
+        () if selection_decision is None else selection_decision.conflict_reasons,
+        () if selection_decision is None else selection_decision.ambiguity_reasons,
     )
-    if selection_decision is not None:
-        conflicts = _merge_reasons(
-            conflicts,
-            _selection_reason_overlay(
-                selection_decision,
-                semantics,
-                "conflict_reasons",
-            ),
-            _selection_reason_overlay(
-                selection_decision,
-                semantics,
-                "ambiguity_reasons",
-            ),
-        )
-    review = _projection_review_reasons(
-        result,
-        semantics,
-        conflicts,
-        conflict_reviews=conflict_reviews,
-        target=target,
-        support_reasons=support,
+    review = _merge_reasons(
+        () if semantics is None else semantics.review_reasons,
+        () if selection_decision is None else selection_decision.review_reasons,
     )
-    if selection_decision is not None:
-        review = _merge_reasons(
-            review,
-            _selection_reason_overlay(
-                selection_decision,
-                semantics,
-                "review_reasons",
-            ),
+    if hard_quality_flags(result.quality_flags):
+        review = _merge_reasons(review, ("trace_morphology_review",))
+    if result.confidence.upper() == "VERY_LOW":
+        review = _merge_reasons(review, ("legacy_confidence_review",))
+    if (
+        result.physical_evaluation is not None
+        and result.physical_evaluation.requires_overlap_review
+    ):
+        review = _merge_reasons(review, ("physical_shoulder_overlap",))
+    not_counted = _typed_not_counted_reasons(
+        _merge_reasons(
+            () if semantics is None else semantics.not_counted_reasons,
+            ()
+            if selection_decision is None
+            else selection_decision.not_counted_reasons,
         )
-    not_counted = _projection_not_counted_reasons(
-        result,
-        semantics,
-        review,
-        conflicts,
     )
-    if selection_decision is not None:
-        not_counted = _merge_reasons(
-            not_counted,
-            _typed_not_counted_reasons(
-                _selection_reason_overlay(
-                    selection_decision,
-                    semantics,
-                    "not_counted_reasons",
-                )
-            ),
-        )
     exclusions = target_sample_exclusion_reasons(target, sample_name)
     if selection_decision is not None:
         exclusions = _merge_reasons(
@@ -168,196 +139,6 @@ def _projection_support_context(
     return _unique(reasons)
 
 
-def _projection_conflicts_and_reviews(
-    result: ExtractionResult,
-    semantics: EvidenceDecisionSemantics | None,
-    *,
-    target: Target,
-    support_reasons: tuple[str, ...],
-    sample_name: str = "",
-) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Classify each conflict once; review rendering consumes that same answer."""
-    conflicts: list[str] = []
-    trace_review = False
-    rt_review = False
-    if semantics is not None:
-        for reason in semantics.conflict_reasons:
-            if _downgrade_nl_conflict_to_istd_review(result, reason):
-                continue
-            if _downgrade_rt_conflict_to_istd_review(
-                result, target, reason, support_reasons
-            ) or _downgrade_rt_conflict_to_nl_supported_analyte_review(
-                result, target, reason, support_reasons, sample_name
-            ):
-                rt_review = True
-            elif _downgrade_trace_conflict_to_istd_review(
-                result, target, reason, support_reasons
-            ) or _downgrade_trace_conflict_to_paired_analyte_review(
-                result, target, reason, support_reasons
-            ):
-                trace_review = True
-            else:
-                conflicts.append(reason)
-        conflicts.extend(semantics.ambiguity_reasons)
-    hard_flags = hard_quality_flags(result.quality_flags)
-    quality_review = bool(hard_flags) and _downgrade_quality_flag_to_review(
-        result, target, support_reasons
-    )
-    if not quality_review:
-        conflicts.extend(f"hard_quality_flag:{flag}" for flag in hard_flags)
-    reviews = []
-    if trace_review:
-        reviews.append("trace_morphology_review")
-    if rt_review:
-        reviews.append("targeted_rt_review")
-    if semantics is not None and quality_review:
-        reviews.append("trace_morphology_review")
-    return _unique(conflicts), _unique(reviews)
-
-
-def _downgrade_nl_conflict_to_istd_review(
-    result: ExtractionResult,
-    reason: str,
-) -> bool:
-    return (
-        reason == "candidate_aligned_ms2_nl_conflict"
-        and result.role.upper() == "ISTD"
-        and result.nl_token == "NL_FAIL"
-        and result.candidate_ms2_evidence is not None
-        and result.candidate_ms2_evidence.strict_nl_scan_count == 0
-        and _positive(result.reported_rt)
-        and _positive(result.reported_peak_area)
-    )
-
-
-def _downgrade_rt_conflict_to_istd_review(
-    result: ExtractionResult,
-    target: Target,
-    reason: str,
-    support_reasons: tuple[str, ...],
-) -> bool:
-    return (
-        reason == "targeted_rt_conflict"
-        and result.role.upper() == "ISTD"
-        and _positive(result.reported_rt)
-        and _positive(result.reported_peak_area)
-        and _rt_inside_target_window(result.reported_rt, target)
-        and (
-            "candidate_aligned_ms2_nl" in support_reasons
-            or (
-                result.nl_token in {"NL_FAIL", "NO_MS2"}
-                and "ms1_coherent" in support_reasons
-                and not hard_quality_flags(result.quality_flags)
-            )
-        )
-    )
-
-
-def _downgrade_rt_conflict_to_nl_supported_analyte_review(
-    result: ExtractionResult,
-    target: Target,
-    reason: str,
-    support_reasons: tuple[str, ...],
-    sample_name: str,
-) -> bool:
-    support = set(support_reasons)
-    return (
-        reason == "targeted_rt_conflict"
-        and result.role.upper() == "ANALYTE"
-        and target_sample_is_applicable(target, sample_name)
-        and _positive(result.reported_rt)
-        and _positive(result.reported_peak_area)
-        and _rt_inside_target_window(result.reported_rt, target)
-        and "candidate_aligned_ms2_nl" in support
-        and "ms1_coherent" in support
-    )
-
-
-def _downgrade_trace_conflict_to_istd_review(
-    result: ExtractionResult,
-    target: Target,
-    reason: str,
-    support_reasons: tuple[str, ...],
-) -> bool:
-    return reason in {
-        "trace_morphology_conflict",
-        "hard_local_quality_conflict",
-    } and _istd_has_product_supported_peak(result, target, support_reasons)
-
-
-def _downgrade_trace_conflict_to_paired_analyte_review(
-    result: ExtractionResult,
-    target: Target,
-    reason: str,
-    support_reasons: tuple[str, ...],
-) -> bool:
-    return reason in {
-        "trace_morphology_conflict",
-        "hard_local_quality_conflict",
-        "hard_quality_flag_conflict",
-    } and (
-        _paired_analyte_has_product_supported_peak(
-            result,
-            target,
-            support_reasons,
-        )
-        or (
-            reason == "trace_morphology_conflict"
-            and _paired_analyte_has_anchor_supported_peak(result, target)
-        )
-    )
-
-
-def _downgrade_quality_flag_to_review(
-    result: ExtractionResult,
-    target: Target,
-    support_reasons: tuple[str, ...],
-) -> bool:
-    return _istd_has_product_supported_peak(
-        result,
-        target,
-        support_reasons,
-    ) or _paired_analyte_has_product_supported_peak(
-        result,
-        target,
-        support_reasons,
-    )
-
-
-def _istd_has_product_supported_peak(
-    result: ExtractionResult,
-    target: Target,
-    support_reasons: tuple[str, ...],
-) -> bool:
-    return (
-        result.role.upper() == "ISTD"
-        and _positive(result.reported_rt)
-        and _positive(result.reported_peak_area)
-        and "candidate_aligned_ms2_nl" in support_reasons
-        and (
-            "role_aware_rt_support" in support_reasons
-            or _rt_inside_target_window(result.reported_rt, target)
-        )
-    )
-
-
-def _paired_analyte_has_product_supported_peak(
-    result: ExtractionResult,
-    target: Target,
-    support_reasons: tuple[str, ...],
-) -> bool:
-    return (
-        result.role.upper() == "ANALYTE"
-        and bool(target.istd_pair)
-        and result.confidence.upper() != "VERY_LOW"
-        and _positive(result.reported_rt)
-        and _positive(result.reported_peak_area)
-        and _rt_inside_target_window(result.reported_rt, target)
-        and result.peak_result.selection_reference_rt is not None
-        and "candidate_aligned_ms2_nl" in support_reasons
-    )
-
-
 def _paired_analyte_has_anchor_supported_peak(
     result: ExtractionResult,
     target: Target,
@@ -367,53 +148,12 @@ def _paired_analyte_has_anchor_supported_peak(
         or not target.istd_pair
         or not _positive(result.reported_rt)
         or not _positive(result.reported_peak_area)
-        or not _rt_inside_target_window(result.reported_rt, target)
-        or result.quality_flags
     ):
         return False
     reference_rt = result.peak_result.paired_istd_anchor_rt
     if reference_rt is None or not math.isfinite(reference_rt):
         return False
     return _reported_interval_contains_rt(result, reference_rt)
-
-
-def _paired_analyte_has_pair_supported_peak(
-    result: ExtractionResult,
-    target: Target,
-    support_reasons: tuple[str, ...],
-) -> bool:
-    return _paired_analyte_has_anchor_supported_peak(
-        result,
-        target,
-    ) or _paired_analyte_has_role_or_ratio_supported_peak(
-        result,
-        target,
-        support_reasons,
-    )
-
-
-def _paired_analyte_has_role_or_ratio_supported_peak(
-    result: ExtractionResult,
-    target: Target,
-    support_reasons: tuple[str, ...],
-) -> bool:
-    support = set(support_reasons)
-    return (
-        result.role.upper() == "ANALYTE"
-        and bool(target.istd_pair)
-        and _positive(result.reported_rt)
-        and _positive(result.reported_peak_area)
-        and _rt_inside_target_window(result.reported_rt, target)
-        and not result.quality_flags
-        and "ms1_coherent" in support
-        and bool(
-            support
-            & {
-                "role_aware_rt_support",
-                "paired_area_ratio_support",
-            }
-        )
-    )
 
 
 def _reported_interval_contains_rt(
@@ -427,86 +167,15 @@ def _reported_interval_contains_rt(
     return start <= reference_rt <= end
 
 
-def _projection_review_reasons(
-    result: ExtractionResult,
-    semantics: EvidenceDecisionSemantics | None,
-    conflict_reasons: tuple[str, ...],
-    *,
-    conflict_reviews: tuple[str, ...],
-    target: Target,
-    support_reasons: tuple[str, ...],
-) -> tuple[str, ...]:
-    reasons: list[str] = []
-    if semantics is not None:
-        reasons.extend(semantics.review_reasons)
-        if "plausible_nl_dropout_review" in semantics.review_reasons:
-            reasons.append("plausible_dda_nl_dropout")
-        if (
-            "candidate_aligned_ms2_nl_conflict" in semantics.conflict_reasons
-            and _paired_analyte_has_pair_supported_peak(
-                result,
-                target,
-                support_reasons,
-            )
-        ):
-            reasons.append("paired_analyte_nl_review")
-        reasons.extend(conflict_reviews)
-    if (
-        result.role.upper() == "ISTD"
-        and result.nl_token == "NL_FAIL"
-        and not conflict_reasons
-        and result.candidate_ms2_evidence is not None
-        and result.candidate_ms2_evidence.strict_nl_scan_count == 0
-    ):
-        reasons.append("plausible_dda_nl_dropout")
-    if result.confidence.upper() == "VERY_LOW" and not conflict_reasons:
-        reasons.append("legacy_confidence_review")
-    if (
-        result.physical_evaluation is not None
-        and result.physical_evaluation.requires_overlap_review
-    ):
-        reasons.append("physical_shoulder_overlap")
-    return _unique(reasons)
-
-
-def _projection_not_counted_reasons(
-    result: ExtractionResult,
-    semantics: EvidenceDecisionSemantics | None,
-    review_reasons: tuple[str, ...],
-    conflict_reasons: tuple[str, ...],
-) -> tuple[str, ...]:
-    reasons: list[str] = []
-    if semantics is not None:
-        reasons.extend(_typed_not_counted_reasons(semantics.not_counted_reasons))
-    nl_failed = result.nl_token == "NL_FAIL"
-    no_ms2 = result.nl_token == "NO_MS2"
-    if (
-        nl_failed
-        and result.role.upper() != "ISTD"
-        and not result.selected_cid_nl_supported
-    ):
-        reasons.append("analyte_nl_fail_requires_policy")
-    if (
-        no_ms2
-        and result.role.upper() != "ISTD"
-        and not result.selected_cid_nl_supported
-    ):
-        reasons.append("analyte_missing_ms2_requires_policy")
-    if (
-        nl_failed
-        and result.role.upper() == "ISTD"
-        and not ("plausible_dda_nl_dropout" in review_reasons and not conflict_reasons)
-    ):
-        reasons.append("istd_nl_fail_without_dropout_support")
-    return _unique(reasons)
-
-
 def _typed_not_counted_reasons(reasons: tuple[str, ...]) -> tuple[str, ...]:
     legacy_compatibility_reasons = {
         "legacy_review_only_projection",
         "missing_ms2_compatibility_cap",
         "zero_area_compatibility_cap",
         "hard_quality_flag_compatibility_cap",
+        "paired_istd_rt_mismatch_policy",
+        "paired_istd_rt_mismatch_cap",
+        "anchor_mismatch_compatibility_cap",
     }
     return tuple(
         reason for reason in reasons if reason not in legacy_compatibility_reasons
@@ -515,10 +184,6 @@ def _typed_not_counted_reasons(reasons: tuple[str, ...]) -> tuple[str, ...]:
 
 def _positive(value: float | None) -> bool:
     return value is not None and math.isfinite(value) and value > 0
-
-
-def _rt_inside_target_window(rt: float | None, target: Target) -> bool:
-    return rt is not None and target.rt_min <= rt <= target.rt_max
 
 
 def _unique(reasons: list[str]) -> tuple[str, ...]:
@@ -553,6 +218,7 @@ def build_targeted_product_projection(
     confidence: str,
     nl_status: str,
     cid_nl_supported: bool = False,
+    backfill_supported: bool = False,
     support_reasons: tuple[str, ...] = (),
     review_reasons: tuple[str, ...] = (),
     conflict_reasons: tuple[str, ...] = (),
@@ -567,12 +233,30 @@ def build_targeted_product_projection(
     }
     support = _stable_reasons(support_reasons)
     review = _stable_reasons(review_reasons)
-    conflicts = _stable_reasons(conflict_reasons)
+    # RT and morphology describe localization/measurement quality, not identity.
+    review_categories = {
+        "targeted_rt_conflict": "targeted_rt_review",
+        "anchor_conflict": "targeted_rt_review",
+        "trace_morphology_conflict": "trace_morphology_review",
+        "hard_local_quality_conflict": "trace_morphology_review",
+        "hard_quality_flag_conflict": "trace_morphology_review",
+        "candidate_aligned_ms2_nl_conflict": "missing_nl_support_review",
+    }
+    review = _merge_reasons(
+        review,
+        tuple(
+            review_categories[reason]
+            for reason in conflict_reasons
+            if reason in review_categories
+        ),
+    )
+    conflicts = _stable_reasons(
+        tuple(reason for reason in conflict_reasons if reason not in review_categories)
+    )
     not_counted = _stable_reasons(not_counted_reasons)
     if (
         context.neutral_loss_required
-        and not context.is_istd
-        and not cid_nl_supported
+        and not (cid_nl_supported or (context.is_istd and backfill_supported))
         and not not_counted
     ):
         not_counted = _merge_reasons(not_counted, ("cid_nl_method_not_supported",))
@@ -616,18 +300,18 @@ def build_targeted_product_projection(
             legacy,
         )
 
-    plausible_dropout = "plausible_dda_nl_dropout" in review
-    if context.is_istd and context.expected_present and plausible_dropout:
-        return _projection(
-            "detected_flagged",
-            True,
-            "flagged",
-            _stable_reasons((*support, "role_aware_istd_expected_present")),
-            review,
-            conflicts,
-            (),
-            exclusions,
-            legacy,
+    if context.is_istd and backfill_supported:
+        support = _merge_reasons(support, ("cross_sample_backfill_identity",))
+        review = _merge_reasons(review, ("backfill_identity_confirmed",))
+        not_counted = tuple(
+            reason
+            for reason in not_counted
+            if reason
+            not in {
+                "cid_nl_method_not_supported",
+                "missing_ms2_policy_not_counted",
+                "istd_nl_fail_without_dropout_support",
+            }
         )
 
     if not_counted:

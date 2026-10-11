@@ -71,9 +71,12 @@ MS2 product as proof of unique support.
 
 `peak_detection.candidate_selection.select_candidate_by_evidence` chooses the
 candidate once from typed
-candidate evidence, role-aware eligibility and RT constraints. Its ordering
-preserves chemical support, trace quality, contextual RT and deterministic
-abundance tie-breaks. Confidence and reason labels describe evidence; they do
+candidate evidence and physical eligibility. Chemical support precedes
+localization hints and trace quality; contextual RT and deterministic abundance
+break ties within the supported evidence ordering. Configured RT windows guide
+bounded acquisition, not a second hard apex veto within retained context.
+Strong method-supported, quantifiable peaks remain counted despite RT or
+morphology review flags; quality review remains separate from identity. Confidence and reason labels describe evidence; they do
 not start a second candidate ranking.
 
 The Targeted handoff retains all candidate physical evaluations, acquired

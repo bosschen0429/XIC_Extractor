@@ -3,7 +3,8 @@
 Backfill（回填）revisits a missing cell after Discovery and Alignment have
 established an owner-backed Target or cross-sample group.
 A revisit can produce a local observation. Backfill does not create a group,
-decide membership, or count a detection. Backfill does not grant Matrix writer
+decide membership, or itself count a detection. Product policy consumes the
+accepted receipt as described below. Backfill does not grant Matrix writer
 authority on its own. The current Untargeted CID-NL path uses the bounded
 conservative decision in `xic_extractor.alignment.conservative_backfill`.
 
@@ -22,6 +23,10 @@ offset to the current sample's credible paired ISTD, with the existing bounded
 residual tolerance. Missing paired evidence, excessive offset scatter, or
 competing confirmed groups does not authorize a Targeted recovery.
 
+For an ISTD, the same frozen direct-support group and `PeakTrajectory` locate
+the missing sample without requiring a paired ISTD. The same support gate and
+conservative mapper apply; recovered samples never become direct SUPPORT votes.
+
 The mapper consumes the complete retained candidate assessment and applies the
 shared background-qualified physical Backfill question within the localized
 window. It does not discard non-qualifying MS2 events to manufacture an empty
@@ -32,7 +37,12 @@ The original physical integration is reused, not re-estimated by the writer.
 
 The finalized scientific result retains the mapping receipt. Excel reports
 `BACKFILL_ACCEPTED` or `BACKFILL_HOLD` through its existing diagnostics/review
-surface; an accepted HOLD analyte retains `Counted Detection=False`. Without an
+surface. An accepted HOLD analyte retains `Counted Detection=False`. For an
+ISTD, product projection treats the validated accepted Backfill receipt as
+identity confirmation and sets `Counted Detection=True` when quantitation is
+available and no exclusion or unresolved identity conflict blocks publication.
+Missing required NL alone initially leaves an ISTD unconfirmed; expected
+presence and MS1 coherence do not substitute for this receipt. Without an
 accepted Backfill, existing initial Targeted quantitation is unchanged and is
 not represented as a Backfill result. This retained-evidence route does not
 expand the acquired trace or silently search another RAW window.

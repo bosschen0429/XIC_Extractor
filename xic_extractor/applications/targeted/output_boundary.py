@@ -246,9 +246,15 @@ def _build_render_view(
                         "BACKFILL_ACCEPTED"
                         if backfill_decision.matched_candidate is not None
                         else "BACKFILL_HOLD",
-                        "Cross-sample confirmed peaks and paired ISTD: "
+                        "Cross-sample confirmed peak localization: "
                         + "; ".join(backfill_decision.reason_codes)
-                        + "; direct CID/NL remains HOLD; confirmed=False.",
+                        + "; direct CID/NL remains HOLD; "
+                        + (
+                            "ISTD identity confirmed by Backfill."
+                            if targets_by_label[target_label].is_istd
+                            and backfill_decision.matched_candidate is not None
+                            else "confirmed=False."
+                        ),
                     )
                 )
             no_write_reason = (
@@ -266,6 +272,10 @@ def _build_render_view(
                 value=render_decision.value,
                 no_write_reason=no_write_reason,
                 evidence=getattr(render_decision, "evidence", None),
+                backfill_supported=(
+                    backfill_decision is not None
+                    and backfill_decision.matched_candidate is not None
+                ),
             )
         files.append(replace(file_result, results=rendered))
     if consumed != set(decisions):
@@ -285,6 +295,7 @@ def _finalized_extraction_result(
     value: float | None,
     no_write_reason: str,
     evidence: object,
+    backfill_supported: bool = False,
 ) -> ExtractionResult:
     projection = _finalized_product_projection(
         extraction.targeted_product_projection,
@@ -292,6 +303,7 @@ def _finalized_extraction_result(
         evidence=evidence,
         value=value,
         no_write_reason=no_write_reason,
+        backfill_supported=backfill_supported,
     )
     if not no_write_reason:
         if (
@@ -371,6 +383,7 @@ def _finalized_product_projection(
     evidence: object,
     value: float | None,
     no_write_reason: str,
+    backfill_supported: bool = False,
 ) -> TargetedProductProjection | None:
     if projection is None:
         return None
@@ -401,6 +414,7 @@ def _finalized_product_projection(
         cid_nl_supported=(
             evidence.hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
         ),
+        backfill_supported=backfill_supported,
         support_reasons=projection.support_reasons,
         review_reasons=projection.review_reasons,
         conflict_reasons=projection.conflict_reasons,

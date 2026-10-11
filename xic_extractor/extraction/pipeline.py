@@ -5,9 +5,6 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
-from xic_extractor.extraction.paired_area_ratio_projection import (
-    apply_paired_area_ratio_projection,
-)
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.raw_reader import RawReaderError, preflight_raw_reader
 
@@ -70,7 +67,6 @@ def run_pipeline(
 
     if acquisition_sources_by_sample is not None:
         output = _bind_acquisition_sources(output, acquisition_sources_by_sample)
-    output = apply_paired_area_ratio_projection(output, targets=targets)
     return output
 
 

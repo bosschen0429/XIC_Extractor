@@ -189,7 +189,7 @@ def test_istd_selector_preserves_nl_identity_over_rolling_rt_review(
     dropout_score = _scored_with_facts(dropout, dropout_facts)
     selected = select_candidate_by_evidence([dropout_score, supported_score])
 
-    assert selected.candidate is (dropout if hard_quality_conflict else supported)
+    assert selected.candidate is supported
     if not hard_quality_conflict:
         decision = candidate_selection_decision_record(
             selected, [dropout_score, supported_score]
@@ -198,7 +198,7 @@ def test_istd_selector_preserves_nl_identity_over_rolling_rt_review(
         assert "targeted_rt_review" in decision.blockers
 
 
-def test_strict_selector_prefers_paired_rt_chrom_segment_over_weak_ms2_nl() -> None:
+def test_strict_selector_keeps_direct_nl_over_paired_rt_hint() -> None:
     paired_rt_segment = _candidate(
         10.02,
         area=900.0,
@@ -242,11 +242,12 @@ def test_strict_selector_prefers_paired_rt_chrom_segment_over_weak_ms2_nl() -> N
         strict_selection_rt=True,
     )
 
-    assert selected.candidate is paired_rt_segment
+    assert selected.candidate is weak_ms2_decoy
 
 
-def test_strict_selector_demotes_late_small_peak_when_anchor_aligned_area_exists(
-) -> None:
+def test_strict_selector_demotes_late_small_peak_when_anchor_aligned_area_exists() -> (
+    None
+):
     anchor_aligned_area = _candidate(
         10.02,
         area=475_000.0,
@@ -333,12 +334,12 @@ def test_typed_selection_decision_record_exposes_gate_support_and_projection() -
     assert "candidate_aligned_ms2_nl" in record.support
     assert record.projection_authority == "select_candidate_by_evidence"
     assert [name for name, _value in record.gate] == [
+        "chemical_evidence_rank",
         "decision_class_rank",
         "blocker_count",
     ]
     assert [name for name, _value in record.tie_break] == [
         "abundance_demotion_rank",
-        "chemical_evidence_rank",
         "trace_strength_rank",
         "selection_quality_penalty",
         "selection_rt_distance",
@@ -347,12 +348,12 @@ def test_typed_selection_decision_record_exposes_gate_support_and_projection() -
     ]
     assert not hasattr(record, "key")
     assert record.gate == (
+        ("chemical_evidence_rank", 0.0),
         ("decision_class_rank", 0.0),
         ("blocker_count", 0.0),
     )
     assert record.tie_break == (
         ("abundance_demotion_rank", 0.0),
-        ("chemical_evidence_rank", 0.0),
         ("trace_strength_rank", 0.0),
         ("selection_quality_penalty", 0.0),
         ("selection_rt_distance", 0.0),
@@ -431,25 +432,26 @@ def test_strict_decision_record_places_anchor_gate_before_tie_breaks() -> None:
     )
 
     assert [name for name, _value in record.gate] == [
+        "chemical_evidence_rank",
         "anchor_selection_completeness_rank",
         "decision_class_rank",
         "blocker_count",
     ]
     assert record.tie_break[0][0] == "strict_anchor_area_demotion_rank"
     assert record.gate == (
+        ("chemical_evidence_rank", 3.0),
         ("anchor_selection_completeness_rank", 0.0),
         ("decision_class_rank", 1.0),
         ("blocker_count", 1.0),
     )
-    assert record.tie_break[:4] == (
+    assert record.tie_break[:3] == (
         ("strict_anchor_area_demotion_rank", 0.0),
         ("selection_quality_penalty", 0.0),
-        ("chemical_evidence_rank", 3.0),
         ("trace_strength_rank", 3.0),
     )
-    assert record.tie_break[4][0] == "selection_rt_distance"
-    assert record.tie_break[4][1] == pytest.approx(0.02)
-    assert record.tie_break[5] == ("negative_abundance", -900.0)
+    assert record.tie_break[3][0] == "selection_rt_distance"
+    assert record.tie_break[3][1] == pytest.approx(0.02)
+    assert record.tie_break[4] == ("negative_abundance", -900.0)
 
 
 def _scored_with_facts(
@@ -606,3 +608,39 @@ def _candidate(
         region_trace_continuity=0.9,
         proposal_sources=proposal_sources,
     )
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_direct_method_support_precedes_rt_hint_and_shape_review(strict: bool) -> None:
+    supported = _candidate(11.0, area=100.0)
+    nearby = _candidate(10.0, area=10000.0)
+    supported_facts = _facts(
+        supported,
+        rt=11.0,
+        abundance=100.0,
+        ms2_trace_strength="strong",
+        shape_quality="poor",
+    )
+    supported_facts = replace(
+        supported_facts,
+        trace=replace(supported_facts.trace, hard_quality_flags=("too_broad",)),
+    )
+    selected = select_candidate_by_evidence(
+        [
+            _scored_with_facts(
+                nearby,
+                _facts(
+                    nearby,
+                    rt=10.0,
+                    abundance=10000.0,
+                    ms2_trace_strength="none",
+                    shape_quality="clean",
+                    nl_match=False,
+                ),
+            ),
+            _scored_with_facts(supported, supported_facts),
+        ],
+        selection_rt=10.0,
+        strict_selection_rt=strict,
+    )
+    assert selected.candidate is supported

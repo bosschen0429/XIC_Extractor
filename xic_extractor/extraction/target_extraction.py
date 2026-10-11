@@ -20,7 +20,6 @@ from xic_extractor.evidence.neutral_loss import (
     check_nl,
 )
 from xic_extractor.extraction.anchors import (
-    apply_anchor_mismatch_penalty,
     paired_anchor_mismatch_diagnostic,
 )
 from xic_extractor.extraction.diagnostics import (
@@ -328,18 +327,6 @@ def extract_one_target(
         candidates_result = physical_candidates_result(
             prepared_result, segment_universe
         )
-        if candidates_result.status == "OK":
-            selected_candidates = tuple(
-                candidate
-                for candidate in candidates_result.candidates
-                if selection_rt_min <= candidate.selection_apex_rt <= selection_rt_max
-            )
-            candidates_result = replace(
-                candidates_result,
-                status="OK" if selected_candidates else "PEAK_NOT_FOUND",
-                candidates=selected_candidates,
-                n_prominent_peaks=len(selected_candidates),
-            )
         cached = (prepared_result, segment_universe, candidates_result)
         physical_trace_cache[cache_key] = cached
         return cached
@@ -547,11 +534,6 @@ def extract_one_target(
         anchor_used=anchor_used,
         strict_preferred_rt=strict_preferred_rt,
     )
-    if paired_rejection is not None:
-        peak_result = apply_anchor_mismatch_penalty(
-            peak_result,
-            paired_rejection.reason,
-        )
     if istd_rt_in_this_sample is not None:
         peak_result = replace(
             peak_result,

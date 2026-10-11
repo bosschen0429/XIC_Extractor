@@ -586,18 +586,12 @@ def _validate_targeted_capture_bindings(
             "capture_default"
             if binding.physical_evaluation is not None
             else (
-                "retained_only"
-                if value.neutral_loss_da is None
-                else "capture_default"
+                "retained_only" if value.neutral_loss_da is None else "capture_default"
             )
         )
         if binding.selection_policy != expected_selection_policy:
             raise SearchScopeContractError(
                 "Target capture selection policy mismatches its evidence method"
-            )
-        if not value.rt_min <= binding.preferred_rt <= value.rt_max:
-            raise SearchScopeContractError(
-                "Target capture preferred_rt is outside configured Target RT interval"
             )
 
 

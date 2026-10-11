@@ -306,80 +306,40 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
 
 ## ISTD Evidence
 
-- For ISTDs, when a coherent evidence chain exists, such as aligned MS1 peak
-  shape/area plus candidate-aligned NL/product/MS2/trace evidence, do not
-  downgrade only because of RT prior, RT window, or centrality concerns.
-- Legacy morphology, shape, or trace-quality labels must not become hard
-  product vetoes for ISTDs when finite positive RT/area, candidate-aligned
-  product/NL/MS2 support, and role-aware RT context support the same selected
-  peak. Keep the label visible as review evidence instead.
-- If this changes, add an explicit contract doc and regression tests.
-- When biological samples receive ISTDs, those ISTDs are the primary transfer
-  evidence for real-matrix RT/response behavior because they share the sample
-  matrix, ion suppression/enhancement, RT drift, and sample-prep context.
-- RT prior support and paired ISTD RT support are one role-aware RT evidence
-  group when they describe the same selected candidate. They may remain visible
-  as separate typed facts, but product projection must not count
-  `rt_prior_close` and `paired_istd_rt_close` as two
-  independent physical observations.
+- ISTDs with candidate-aligned required CID-NL support and finite positive
+  quantitation remain confirmed despite RT or morphology review flags.
+- Missing required NL initially leaves an ISTD unconfirmed, even when expected
+  present and MS1-coherent. The existing cross-sample Backfill route can confirm
+  its identity using a validated accepted receipt. Exclusions, unresolved
+  identity conflicts, and unavailable quantitation still block counting.
+- Only direct confirmed observations seed the frozen support group. Recovered
+  ISTDs do not become direct SUPPORT votes.
+- Paired ISTD RT remains matrix-specific localization evidence. RT prior and
+  paired ISTD agreement are not two independent identity observations.
 
 ## Targeted Analyte / STD Pair Evidence
 
-- For targeted analytes or STDs with an ISTD pair, anchor-guided selection must
-  prefer a complete candidate peak near the ISTD-informed or product/NL-informed
-  reference over a random small nearest peak.
-- In paired targeted mode, the paired ISTD RT is the primary biological-matrix
-  transfer anchor. A target-specific NL/product anchor may support the paired
-  analyte/STD candidate only when it is close to the paired ISTD RT. A distant
-  target-specific NL/product anchor must not move the extraction window away
-  from the ISTD-supported RT region by itself, because that silently converts a
-  random DDA/NL event into peak identity authority.
-- When no learned analyte-vs-ISTD delta RT is available, a paired ISTD RT that
-  falls inside the target's configured RT window is the fallback target reference
-  for candidate search. This keeps Gaussian15/ChromPeakSegment MS1 candidates in
-  scope before any MS2/NL-triggered window narrowing is allowed to influence
-  selection.
-- ISTD-centered fallback opens the candidate search/review window only. It must
-  not hard-backfill a missing paired STD/analyte into a counted detection; the
-  selected row still needs the analyte/STD product policy to project as counted.
-- Legacy morphology, shape, trace-quality, or `VERY_LOW` labels are review
-  evidence, not direct product authority, when the selected analyte peak has
-  finite positive RT/area, candidate-aligned product/NL/MS2 support, targeted
-  anchor selection context, and no anchor, RT, or NL/product conflict.
-- Analyte `NL_FAIL` and `NO_MS2` remain not-counted unless the active paired
-  analyte rescue policy has all required support. Pair evidence must not
-  silently convert missing or failed product evidence into a counted detection.
-- Targeted rows with missing or failed NL retain physically measured quantities
-  without a counted-detection rescue. The single-pass application owns the
-  completed result; external MS1-shape support and approval files do not
-  authorize a different selection or counting decision.
-- DDA MS2 trigger without the key target NL/product tag is acquisition
-  opportunity evidence, not analyte identity support. When the key NL/product
-  tag is missing or failed, analyte rescue must rely on coherent MS1 peak
-  evidence plus paired ISTD RT and paired area-ratio support. Paired RT alone is
-  review evidence, not counted-detection authority.
-- When a Gaussian15/ChromPeakSegment MS1 peak group is available, targeted
-  MS2/NL evidence must be scoped to that selected MS1 peak group before it can
-  support the candidate. Strict NL scans outside the selected Gaussian15 MS1
-  group are diagnostic/conflict context for another chromatographic event, not
-  active support for the current candidate.
-- Active paired area-ratio support is a run-level typed projection from
-  `xic_extractor.extraction.paired_area_ratio_projection`. Its active reference
-  range is leave-one-sample-out median +/- 3 scaled MAD target area / paired
-  ISTD area from counted target detections only, using the Gaussian15 morphology
-  area when available. The old leave-one-out min/max range is retained as a
-  reference/debug projection only. Reported but not-counted target rows do not
-  seed the active range.
-- In paired biological-matrix analyte review, candidates more than 1.0 min from
-  the paired ISTD RT are treated as paired-RT mismatches unless strict
-  candidate-aligned NL/product evidence justifies review. Without strict
-  NL/product support, that mismatch is a not-counted policy cap.
-- Avoid adding more fixed RT-delta constants as product truth without current
-  biological-matrix validation. If another distance threshold becomes production
-  policy, it needs its own contract, artifact, and regression tests.
-- Treat legacy scoring thresholds as calibration-sensitive heuristics. They may
-  rank or annotate candidates, but they must not by themselves create a hard
-  targeted detection or absence decision.
+- Candidate-aligned CID-NL support takes precedence over RT hints and trace
+  quality. A configured RT window bounds acquisition context but does not veto
+  an otherwise eligible retained peak solely because its apex lies outside the
+  hint. This does not authorize unbounded RAW acquisition.
+- Paired ISTD RT guides candidate localization; RT distance and legacy quality
+  or confidence labels remain review evidence, not identity vetoes. A supported
+  and quantifiable peak can remain counted while requiring quality review.
+- Analyte `NL_FAIL` and `NO_MS2` retain measured quantities but remain
+  not-counted. Paired RT, area ratio, and an accepted observation-only Backfill
+  do not confer analyte identity confirmation.
+- DDA triggering without the required product/NL tag is acquisition opportunity,
+  not identity support. Method evidence is attributed against the full retained
+  physical candidate universe; overlapping or boundary evidence remains
+  set-level rather than supporting an individual peak.
+- `xic_extractor.extraction.paired_area_ratio` provides read-only batch research
+  observations. Its leave-one-out median +/- 3 scaled MAD range uses counted
+  target/paired ISTD area references; min/max remains descriptive. Neither the
+  ratio nor its reference range changes peak selection, quantities, product
+  projection, or counted-detection decisions. It is not a production stage.
+- The single-pass application owns the completed result. External MS1-shape
+  support and approval files do not authorize a different selection or count.
 
 ## Missing MS2 / Product / Neutral-Loss Evidence
 

@@ -780,10 +780,8 @@ def _execute_target(
     alignment_config = AlignmentConfig()
     backfill_decisions: list[ConservativeBackfillCellDecision] = []
     if (
-        not target.definition.target.is_istd
-        and target.definition.target.istd_pair
-        and assessments
-    ):
+        target.definition.target.is_istd or target.definition.target.istd_pair
+    ) and assessments:
         assessment_by_sample = {
             s.identity.sample_identity_id: a for s, a in assessments
         }
@@ -940,7 +938,10 @@ def _execute_target(
                 if assessment_by_sample[sample_id].content.method_result != "HOLD":
                     continue
                 location = locations[sample.metadata.raw_stem]
-                if location.location.basis != "paired_istd":
+                if (
+                    not target.definition.target.is_istd
+                    and location.location.basis != "paired_istd"
+                ):
                     continue
                 universe = mint_conservative_backfill_candidate_universe(
                     processing_owners=context.owners,

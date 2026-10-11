@@ -2,20 +2,12 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
 
 from xic_extractor.configuration.models import Target
-from xic_extractor.extraction.result_assembly import reproject_extraction_result
 from xic_extractor.extraction.target_sample_applicability import (
     target_sample_exclusion_reasons,
 )
-from xic_extractor.peak_detection.selection_decision import (
-    PeakHypothesisSelectionDecision,
-)
-
-if TYPE_CHECKING:
-    from xic_extractor.extraction.result_models import ExtractionResult, RunOutput
 
 MIN_PAIRED_AREA_RATIO_REFERENCE_POINTS = 3
 PAIRED_AREA_RATIO_REFERENCE_BASIS = "leave_one_sample_out_counted_area_over_istd_area"
@@ -23,9 +15,6 @@ PAIRED_AREA_RATIO_BASIS = (
     "leave_one_sample_out_median_plus_minus_3_scaled_mad_area_over_istd_area"
 )
 PAIRED_AREA_RATIO_ROBUST_BASIS = PAIRED_AREA_RATIO_BASIS
-PAIRED_ISTD_RT_SUPPORT_MAX_DELTA_MIN = 1.0
-PAIRED_AREA_RATIO_SUPPORT_REASON = "paired_area_ratio_support"
-PAIRED_ISTD_RT_SUPPORT_REASON = "paired_istd_rt_within_1min_support"
 _SCALED_MAD_FACTOR = 1.4826
 _ROBUST_MAD_WINDOW_MULTIPLIER = 3.0
 
@@ -57,38 +46,13 @@ class PairedAreaRatioAssessment:
         return self.status == "within_robust_range"
 
 
-def apply_paired_area_ratio_projection(
-    output: RunOutput,
-    *,
-    targets: Sequence[Target],
-) -> RunOutput:
-    targets_by_label = {target.label: target for target in targets}
-    references = paired_area_ratio_references(output.file_results, targets=targets)
-    for file_result in output.file_results:
-        updated_results: dict[str, ExtractionResult] = {}
-        for label, result in file_result.results.items():
-            target = targets_by_label.get(label)
-            if target is None:
-                updated_results[label] = result
-                continue
-            updated_results[label] = result_with_paired_area_ratio_projection(
-                result,
-                target=target,
-                sample_name=file_result.sample_name,
-                file_results=file_result.results,
-                references=references,
-            )
-        file_result.results = updated_results
-    return output
-
-
 def paired_area_ratio_references(
     file_results: Sequence[object],
     *,
     targets: Sequence[Target],
 ) -> dict[tuple[str, str], tuple[PairedAreaRatioReferencePoint, ...]]:
     references: dict[tuple[str, str], list[PairedAreaRatioReferencePoint]] = {}
-    projection_targets = _paired_area_ratio_projection_targets(targets)
+    projection_targets = _paired_targets(targets)
     for file_result in file_results:
         sample_name = str(getattr(file_result, "sample_name", ""))
         results = getattr(file_result, "results", {})
@@ -119,46 +83,11 @@ def paired_area_ratio_references(
     return {key: tuple(value) for key, value in references.items()}
 
 
-def _paired_area_ratio_projection_targets(
+def _paired_targets(
     targets: Sequence[Target],
 ) -> tuple[Target, ...]:
     return tuple(
-        target
-        for target in targets
-        if not target.is_istd and target.istd_pair
-    )
-
-
-def result_with_paired_area_ratio_projection(
-    result: ExtractionResult,
-    *,
-    target: Target,
-    sample_name: str,
-    file_results: Mapping[str, ExtractionResult],
-    references: Mapping[tuple[str, str], tuple[PairedAreaRatioReferencePoint, ...]],
-) -> ExtractionResult:
-    if not _needs_paired_area_ratio_support(result, target, sample_name):
-        return result
-    paired_istd_result = file_results.get(target.istd_pair)
-    if not _paired_istd_rt_within_delta(result, paired_istd_result):
-        return result
-    assessment = assess_paired_area_ratio(
-        result,
-        target=target,
-        sample_name=sample_name,
-        paired_istd_result=paired_istd_result,
-        references=references,
-    )
-    if not assessment.within_reference:
-        return result
-    selection_decision = _selection_decision_with_run_level_pair_support(result)
-    if selection_decision is None:
-        return result
-    return reproject_extraction_result(
-        result,
-        target=target,
-        sample_name=sample_name,
-        selection_decision=selection_decision,
+        target for target in targets if not target.is_istd and target.istd_pair
     )
 
 
@@ -231,107 +160,6 @@ def assess_paired_area_ratio_values(
         robust_reference_mad=robust_mad,
         robust_basis=PAIRED_AREA_RATIO_ROBUST_BASIS,
     )
-
-
-def _needs_paired_area_ratio_support(
-    result: ExtractionResult,
-    target: Target,
-    sample_name: str,
-) -> bool:
-    rt = _positive_float(result.reported_rt)
-    area = _positive_float(result.reported_peak_area)
-    if (
-        target.is_istd
-        or not target.istd_pair
-        or target_sample_exclusion_reasons(target, sample_name)
-        or _counted_detection(result)
-        or _has_selected_envelope_not_counted_guard(result)
-        or getattr(result, "role", "").upper() != "ANALYTE"
-        or rt is None
-        or area is None
-        or not (target.rt_min <= rt <= target.rt_max)
-        or getattr(result, "quality_flags", ())
-    ):
-        return False
-    if getattr(result, "nl_token", None) not in {"NL_FAIL", "NO_MS2"}:
-        return False
-    support = _support_reasons(result)
-    return "ms1_coherent" in support
-
-
-def _selection_decision_with_run_level_pair_support(
-    result: ExtractionResult,
-) -> PeakHypothesisSelectionDecision | None:
-    decision = result.selection_decision
-    if decision is None:
-        return None
-    support = tuple(
-        dict.fromkeys(
-            (
-                *decision.support_reasons,
-                PAIRED_ISTD_RT_SUPPORT_REASON,
-                PAIRED_AREA_RATIO_SUPPORT_REASON,
-            )
-        )
-    )
-    evidence_sources = tuple(
-        dict.fromkeys(
-            (
-                *decision.evidence_sources,
-                "run_level_paired_istd_rt",
-                "run_level_paired_area_ratio",
-            )
-        )
-    )
-    return replace(
-        decision,
-        support_reasons=support,
-        evidence_sources=evidence_sources,
-        legacy_projection_status="successor_owned",
-        compatibility_oracle="successor_evidence_decision_semantics",
-    )
-
-
-def _support_reasons(result: ExtractionResult) -> set[str]:
-    reasons: set[str] = set()
-    decision = result.selection_decision
-    if decision is not None:
-        reasons.update(decision.support_reasons)
-    projection = result.targeted_product_projection
-    if projection is not None:
-        reasons.update(projection.support_reasons)
-    selected = result.selected_hypothesis
-    semantics = (
-        selected.evidence.decision_semantics if selected is not None else None
-    )
-    if semantics is not None:
-        reasons.update(semantics.support_reasons)
-    return reasons
-
-
-def _has_selected_envelope_not_counted_guard(result: ExtractionResult) -> bool:
-    decision = result.selection_decision
-    if decision is None:
-        return False
-    return any(
-        reason.startswith("selected_envelope_boundary_")
-        for reason in decision.not_counted_reasons
-    )
-
-
-def _paired_istd_rt_within_delta(
-    result: ExtractionResult,
-    paired_istd_result: object | None,
-) -> bool:
-    rt = _positive_float(getattr(result, "reported_rt", None))
-    paired_rt = _positive_float(getattr(paired_istd_result, "reported_rt", None))
-    if paired_rt is None:
-        paired_rt = _positive_float(
-            getattr(result.peak_result, "paired_istd_anchor_rt", None)
-        )
-    if rt is None or paired_rt is None:
-        return False
-    return abs(rt - paired_rt) <= PAIRED_ISTD_RT_SUPPORT_MAX_DELTA_MIN
 
 
 def _counted_detection(result: object | None) -> bool:

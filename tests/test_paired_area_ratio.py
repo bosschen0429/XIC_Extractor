@@ -6,13 +6,13 @@ import pytest
 from tests.test_result_assembly import _method_relations
 from xic_extractor.configuration.models import Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
-from xic_extractor.extraction.paired_area_ratio_projection import (
+from xic_extractor.extraction.paired_area_ratio import (
     PAIRED_AREA_RATIO_BASIS,
     PAIRED_AREA_RATIO_REFERENCE_BASIS,
     PAIRED_AREA_RATIO_ROBUST_BASIS,
     PairedAreaRatioReferencePoint,
-    apply_paired_area_ratio_projection,
     assess_paired_area_ratio,
+    paired_area_ratio_references,
 )
 from xic_extractor.extraction.result_assembly import build_extraction_result
 from xic_extractor.extraction.result_models import FileResult, RunOutput
@@ -33,154 +33,6 @@ from xic_extractor.peak_detection.selection_decision import (
 )
 
 _NLStatus = Literal["OK", "WARN", "NL_FAIL", "NO_MS2"]
-
-
-def test_run_level_area_ratio_support_keeps_method_mismatch_not_counted() -> None:
-    output = RunOutput(
-        file_results=[
-            _file_result("SampleA", target_area=50_000.0, nl_status="NL_FAIL"),
-            _file_result("RefA", target_area=40_000.0, nl_status="OK"),
-            _file_result("RefB", target_area=50_000.0, nl_status="OK"),
-            _file_result("RefC", target_area=60_000.0, nl_status="OK"),
-        ],
-        diagnostics=[],
-    )
-
-    result = output.file_results[0].results["Analyte"]
-    assert result.targeted_product_projection is not None
-    assert result.targeted_product_projection.counted_detection is False
-    assert "analyte_nl_fail_requires_policy" in (
-        result.targeted_product_projection.not_counted_reasons
-    )
-
-    apply_paired_area_ratio_projection(output, targets=[_target(), _istd()])
-
-    projected = output.file_results[0].results["Analyte"].targeted_product_projection
-    decision = output.file_results[0].results["Analyte"].selection_decision
-    assert projected is not None
-    assert decision is not None
-    assert projected.product_state == "ambiguous"
-    assert projected.counted_detection is False
-    assert "paired_area_ratio_support" in projected.support_reasons
-    assert "paired_istd_rt_within_1min_support" in projected.support_reasons
-    assert "own_max_same_peak_support" not in projected.support_reasons
-    assert "analyte_nl_fail_requires_policy" in projected.not_counted_reasons
-    assert "run_level_paired_area_ratio" in decision.evidence_sources
-    assert "run_level_paired_istd_rt" in decision.evidence_sources
-
-
-def test_area_ratio_cannot_promote_method_mismatch_from_support_label() -> None:
-    output = RunOutput(
-        file_results=[
-            _file_result(
-                "SampleA",
-                target_area=50_000.0,
-                nl_status="NL_FAIL",
-                support_reasons=("own_max_same_peak_support",),
-            ),
-            _file_result("RefA", target_area=40_000.0, nl_status="OK"),
-            _file_result("RefB", target_area=50_000.0, nl_status="OK"),
-            _file_result("RefC", target_area=60_000.0, nl_status="OK"),
-        ],
-        diagnostics=[],
-    )
-
-    apply_paired_area_ratio_projection(output, targets=[_target(), _istd()])
-
-    projected = output.file_results[0].results["Analyte"].targeted_product_projection
-    decision = output.file_results[0].results["Analyte"].selection_decision
-    assert projected is not None
-    assert decision is not None
-    assert projected.product_state == "ambiguous"
-    assert projected.counted_detection is False
-    assert "paired_area_ratio_support" in projected.support_reasons
-    assert "paired_istd_rt_within_1min_support" in projected.support_reasons
-    assert "own_max_same_peak_support" in projected.support_reasons
-    assert "analyte_nl_fail_requires_policy" in projected.not_counted_reasons
-
-
-def test_run_level_area_ratio_outside_reference_stays_not_counted() -> None:
-    output = RunOutput(
-        file_results=[
-            _file_result("SampleA", target_area=2_000.0, nl_status="NL_FAIL"),
-            _file_result("RefA", target_area=40_000.0, nl_status="OK"),
-            _file_result("RefB", target_area=50_000.0, nl_status="OK"),
-            _file_result("RefC", target_area=60_000.0, nl_status="OK"),
-        ],
-        diagnostics=[],
-    )
-
-    apply_paired_area_ratio_projection(output, targets=[_target(), _istd()])
-
-    projected = output.file_results[0].results["Analyte"].targeted_product_projection
-    assert projected is not None
-    assert projected.counted_detection is False
-    assert "paired_area_ratio_support" not in projected.support_reasons
-    assert "analyte_nl_fail_requires_policy" in projected.not_counted_reasons
-
-
-def test_area_ratio_inside_minmax_outside_robust_stays_not_counted() -> None:
-    output = RunOutput(
-        file_results=[
-            _file_result("SampleA", target_area=600_000.0, nl_status="NL_FAIL"),
-            _file_result("RefA", target_area=40_000.0, nl_status="OK"),
-            _file_result("RefB", target_area=50_000.0, nl_status="OK"),
-            _file_result("RefC", target_area=1_000_000.0, nl_status="OK"),
-        ],
-        diagnostics=[],
-    )
-
-    apply_paired_area_ratio_projection(output, targets=[_target(), _istd()])
-
-    projected = output.file_results[0].results["Analyte"].targeted_product_projection
-    assert projected is not None
-    assert projected.counted_detection is False
-    assert "paired_area_ratio_support" not in projected.support_reasons
-    assert "analyte_nl_fail_requires_policy" in projected.not_counted_reasons
-
-
-def test_run_level_area_ratio_reference_requires_three_other_samples() -> None:
-    output = RunOutput(
-        file_results=[
-            _file_result("SampleA", target_area=50_000.0, nl_status="NL_FAIL"),
-            _file_result("RefA", target_area=40_000.0, nl_status="OK"),
-            _file_result("RefB", target_area=50_000.0, nl_status="OK"),
-        ],
-        diagnostics=[],
-    )
-
-    apply_paired_area_ratio_projection(output, targets=[_target(), _istd()])
-
-    projected = output.file_results[0].results["Analyte"].targeted_product_projection
-    assert projected is not None
-    assert projected.counted_detection is False
-    assert "paired_area_ratio_support" not in projected.support_reasons
-    assert "analyte_nl_fail_requires_policy" in projected.not_counted_reasons
-
-
-def test_run_level_area_ratio_does_not_override_selected_envelope_guard() -> None:
-    output = RunOutput(
-        file_results=[
-            _file_result(
-                "SampleA",
-                target_area=50_000.0,
-                nl_status="NL_FAIL",
-                selected_envelope_not_counted=True,
-            ),
-            _file_result("RefA", target_area=40_000.0, nl_status="OK"),
-            _file_result("RefB", target_area=50_000.0, nl_status="OK"),
-            _file_result("RefC", target_area=60_000.0, nl_status="OK"),
-        ],
-        diagnostics=[],
-    )
-
-    apply_paired_area_ratio_projection(output, targets=[_target(), _istd()])
-
-    projected = output.file_results[0].results["Analyte"].targeted_product_projection
-    assert projected is not None
-    assert projected.counted_detection is False
-    assert "selected_envelope_boundary_defer" in projected.not_counted_reasons
-    assert "paired_area_ratio_support" not in projected.support_reasons
 
 
 def test_area_ratio_basis_documents_counted_leave_one_out_robust_gate() -> None:
@@ -425,3 +277,36 @@ def _ms2(nl_status: _NLStatus) -> CandidateMS2Evidence:
         best_product_base_ratio=0.8 if nl_status == "OK" else None,
         alignment_source="region" if nl_status != "NO_MS2" else "none",
     )
+
+
+@pytest.mark.parametrize("area", [50000.0, 600000.0])
+def test_ratio_observation_does_not_change_scientific_results(area: float) -> None:
+    output = RunOutput(
+        file_results=[
+            _file_result("SampleA", target_area=area, nl_status="NL_FAIL"),
+            _file_result("RefA", target_area=40000.0, nl_status="OK"),
+            _file_result("RefB", target_area=50000.0, nl_status="OK"),
+            _file_result("RefC", target_area=60000.0, nl_status="OK"),
+        ],
+        diagnostics=[],
+    )
+    result = output.file_results[0].results["Analyte"]
+    projection = result.targeted_product_projection
+    decision = result.selection_decision
+    references = paired_area_ratio_references(
+        output.file_results, targets=[_target(), _istd()]
+    )
+    observation = assess_paired_area_ratio(
+        result,
+        target=_target(),
+        sample_name="SampleA",
+        paired_istd_result=output.file_results[0].results["ISTD"],
+        references=references,
+    )
+    assert observation.observed_ratio == area / 100000.0
+    assert observation.within_reference is (area == 50000.0)
+    assert result.targeted_product_projection is projection
+    assert result.selection_decision is decision
+    assert projection is not None and not projection.counted_detection
+    assert "paired_area_ratio_support" not in projection.support_reasons
+    assert result.reported_peak_area == area

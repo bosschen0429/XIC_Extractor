@@ -140,22 +140,9 @@ def candidate_selection_decision_record(
             ("rt_prior_distance", _rt_prior_distance(facts)),
             ("negative_abundance", -facts.abundance),
         )
-        if facts.rt.role == "ISTD":
-            # Within one eligibility class, direct chemical support precedes
-            # the number of review notes, including rolling-RT disagreement.
-            chemical_term = next(
-                term for term in tie_break if term[0] == "chemical_evidence_rank"
-            )
-            gate = (
-                gate_terms[0],
-                (
-                    "hard_quality_conflict_rank",
-                    float(bool(facts.trace.hard_quality_flags)),
-                ),
-                chemical_term,
-                gate_terms[1],
-            )
-            tie_break = tuple(term for term in tie_break if term != chemical_term)
+    # Direct method support precedes RT hints and measurement-quality review.
+    gate = (("chemical_evidence_rank", float(_chemical_rank(facts))), *gate)
+    tie_break = tuple(term for term in tie_break if term[0] != "chemical_evidence_rank")
     return DecisionRecord(
         workflow="targeted_candidate_selection",
         unit_id=facts.candidate_id,

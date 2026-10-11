@@ -392,9 +392,9 @@ def test_publication_renders_the_finalized_numeric_hypothesis(tmp_path: Path) ->
 @pytest.mark.parametrize(
     ("nl_status", "not_counted_reason", "count_no_ms2_as_detected"),
     [
-        ("NL_FAIL", "analyte_nl_fail_requires_policy", False),
-        ("NO_MS2", "analyte_missing_ms2_requires_policy", False),
-        ("NO_MS2", "analyte_missing_ms2_requires_policy", True),
+        ("NL_FAIL", "cid_nl_method_not_supported", False),
+        ("NO_MS2", "cid_nl_method_not_supported", False),
+        ("NO_MS2", "cid_nl_method_not_supported", True),
     ],
 )
 def test_service_publishes_finalized_numeric_values_without_counting_detection(
@@ -730,7 +730,7 @@ def test_workbench_summary_consumes_the_finalized_publication_view(
     assert policy_result.targeted_product_projection is not None
     assert policy_result.targeted_product_projection.counted_detection is False
     assert (
-        "analyte_nl_fail_requires_policy"
+        "cid_nl_method_not_supported"
         in policy_result.targeted_product_projection.not_counted_reasons
     )
     output.file_results[0].results[target.label] = policy_result
@@ -1568,9 +1568,21 @@ def test_cancellation_during_input_fingerprint_skips_acquisition_and_finalizatio
     assert execution.published_paths == ()
 
 
-@pytest.mark.parametrize("missing_pair", [False, True])
+@pytest.mark.parametrize(
+    "missing_pair, istd_backfill, hint_window",
+    [
+        (False, False, False),
+        (True, False, False),
+        (False, True, False),
+        (False, False, True),
+    ],
+)
 def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing_pair: bool
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    missing_pair: bool,
+    istd_backfill: bool,
+    hint_window: bool,
 ) -> None:
     from contextlib import nullcontext
 
@@ -1580,7 +1592,11 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
 
     data = tmp_path / "raw"
     data.mkdir()
-    shifts = {"SampleA": 0.0, "SampleB": 0.02, "SampleC": 0.45}
+    shifts = {
+        "SampleA": 0.0,
+        "SampleB": 0.02,
+        "SampleC": 0.04 if istd_backfill else 0.45,
+    }
     for name in shifts:
         (data / f"{name}.raw").write_bytes(name.encode())
     config = ExtractionConfig(
@@ -1601,13 +1617,13 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         label="Analyte",
         mz=250.0,
         rt_min=1.1,
-        rt_max=2.5,
+        rt_max=1.4 if hint_window else 2.5,
         ppm_tol=20.0,
         neutral_loss_da=116.0,
         nl_ppm_warn=20.0,
         nl_ppm_max=40.0,
-        is_istd=False,
-        istd_pair="ISTD",
+        is_istd=istd_backfill,
+        istd_pair="" if istd_backfill else "ISTD",
     )
     istd = replace(
         analyte,
@@ -1663,6 +1679,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
     from xic_extractor.applications.targeted import production_workflow
 
     original_execute = production_workflow._execute_target
+    initial_counts = []
 
     def execute_reverse_identity(context, *args, **kwargs):
         context = replace(
@@ -1675,6 +1692,12 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
                 )
             ),
         )
+        if istd_backfill:
+            initial_counts.extend(
+                file.results["Analyte"].targeted_product_projection.counted_detection
+                for sample, file in context.results_by_sample
+                if sample.metadata.raw_stem == "SampleC"
+            )
         return original_execute(context, *args, **kwargs)
 
     monkeypatch.setattr(
@@ -1718,10 +1741,16 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         decision = accepted[0]
         assert decision.target_cell.content.method_result == "HOLD"
         assert decision.group_facts.direct_support_count_s == 2
-        assert decision.candidate_universe.localization.location.basis == "paired_istd"
+        assert decision.candidate_universe.localization.location.basis.startswith(
+            "trajectory" if istd_backfill else "paired_istd"
+        )
+        assert all(
+            s.sample.metadata.raw_stem != "SampleC"
+            for s in decision.group_facts.group_context.supports
+        )
         assert (
             decision.matched_candidate.peak_observation.content.integration.rt_apex_min
-            == pytest.approx(1.9, abs=0.005)
+            == pytest.approx(1.49 if istd_backfill else 1.9, abs=0.005)
         )
     workbook = load_workbook(workbook_path, read_only=True, data_only=True)
     values = iter(workbook["XIC Results"].values)
@@ -1731,15 +1760,18 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
     row = next(
         r for r in rows if r["SampleName"] == "SampleC" and r["Target"] == "Analyte"
     )
-    assert row["Counted Detection"] == "FALSE"
+    assert row["Counted Detection"] == ("TRUE" if istd_backfill else "FALSE")
+    if istd_backfill:
+        assert initial_counts and not any(initial_counts)
     if not missing_pair:
-        assert row["RT"] == pytest.approx(1.9, abs=0.005)
+        assert row["RT"] == pytest.approx(1.49 if istd_backfill else 1.9, abs=0.005)
         assert row["Area"] > 0
         assert "backfill" in str(row["Review Evidence"]).lower()
         ref = next(
             r for r in rows if r["SampleName"] == "SampleA" and r["Target"] == "Analyte"
         )
         assert row["Area"] / ref["Area"] == pytest.approx(3.0, rel=0.03)
+        assert ref["Counted Detection"] == "TRUE"
 
 
 def test_cli_and_workbench_route_through_acquisition_service_boundary() -> None:
