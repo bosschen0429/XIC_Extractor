@@ -1369,10 +1369,30 @@ def test_acquired_target_inputs_complete_without_runtime(tmp_path, monkeypatch):
         lambda *_args, **_kwargs: pytest.fail("pure completion entered runtime"),
     )
     request, adapter = acquired_inputs[0]
+    # Completed selection/integration facts are snapshots, not a claim that
+    # the frozen Trace's ndarray payload is deeply immutable.
+    for item in adapter.capture_inputs:
+        item.trace.intensity.fill(0.0)
+    for value_type in (
+        type(request),
+        type(adapter),
+        production_workflow.CaptureWorkflowArguments,
+        capture_owner.SampleLocalCapture,
+    ):
+        monkeypatch.setattr(
+            value_type,
+            "__post_init__",
+            lambda *_args, **_kwargs: pytest.fail(
+                "completion revalidated an unchanged owner-issued input"
+            ),
+        )
     result = complete(request, adapter)
-    assert tuple(
-        decision.value for decision in result.completed_projection.decisions
-    ) == tuple(
+    expected_values = tuple(
         file_result.results[target.label].reported_peak_area
         for file_result in output.file_results
+    )
+    assert len(set(expected_values)) == 2
+    assert (
+        tuple(decision.value for decision in result.completed_projection.decisions)
+        == expected_values
     )
