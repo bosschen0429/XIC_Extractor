@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import csv
 import shutil
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from openpyxl import load_workbook
 
 from xic_extractor.applications.targeted import limited_identity_workflow as workflow
 from xic_extractor.applications.targeted.application import (
     TargetedApplicationExecution,
     build_targeted_application_request,
 )
-from xic_extractor.configuration.models import ConfigError, ExtractionConfig
+from xic_extractor.applications.targeted.output_boundary import (
+    TargetedOutputBoundaryError,
+)
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.diagnostics.targeted_ms1_shape_identity_auto_diff import (
     write_targeted_ms1_shape_identity_auto_diff_artifacts,
 )
@@ -25,8 +28,6 @@ from xic_extractor.extraction.targeted_ms1_shape_identity_projection import (
 )
 from xic_extractor.output.method_manifest import (
     MethodManifestContext,
-    load_method_manifest_for_replay,
-    write_method_manifest,
 )
 
 
@@ -71,7 +72,7 @@ def test_limited_workflow_publishes_only_gated_completed_outputs(
     monkeypatch,
     mode: str,
 ) -> None:
-    """Use the real expected-diff gate and manifest reader; replace only RAW science."""
+    """Use the real expected-diff gate and workbook writer; replace only RAW science."""
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     (config_dir / "settings.csv").write_text(
@@ -133,14 +134,9 @@ def test_limited_workflow_publishes_only_gated_completed_outputs(
                             "Other_Area": "1",
                         },
                     )
-            manifest = write_method_manifest(
-                admitted.config,
-                list(admitted.targets),
-                context=admitted.method_manifest_context,
-            )
             return TargetedApplicationExecution(
                 active_output=RunOutput(file_results=[], diagnostics=[]),
-                published_paths=(admitted.config.output_csv, manifest),
+                published_paths=(admitted.config.output_csv,),
             )
 
     def support(**kwargs):
@@ -156,26 +152,29 @@ def test_limited_workflow_publishes_only_gated_completed_outputs(
     request = build_targeted_application_request(
         config,
         [],
+        excel_output_path=tmp_path / "output" / "xic_results.xlsx",
         progress_callback=progress,
         should_stop=lambda: cancelled,
         method_manifest_context=MethodManifestContext(
             entrypoint="consumer",
             base_dir=tmp_path,
             config_dir=config_dir,
-            output_mode="csv_only",
+            output_mode="xlsx",
         ),
     )
     root = tmp_path / "run"
     if mode == "collision":
-        prior_result = root / "final" / "output" / "xic_results.csv"
+        prior_result = root / "xic_results.xlsx"
         prior_result.parent.mkdir(parents=True)
         prior_result.write_text("previous valid result", encoding="utf-8")
-        with pytest.raises(ConfigError, match="output already exists"):
+        with pytest.raises(
+            TargetedOutputBoundaryError, match="output path already exists"
+        ):
             workflow.execute_limited_identity_workflow(
                 request, application=Application(), output_root=root
             )
         assert prior_result.read_text(encoding="utf-8") == "previous valid result"
-        assert not calls
+        assert not list(tmp_path.glob(".xic-limited-*"))
         return
     if mode != "pass":
         with pytest.raises(
@@ -184,36 +183,36 @@ def test_limited_workflow_publishes_only_gated_completed_outputs(
             workflow.execute_limited_identity_workflow(
                 request, application=Application(), output_root=root
             )
-        assert not (root / "final" / "output").exists()
+        assert not root.exists()
+        assert not list(tmp_path.glob(".xic-limited-*"))
         return
     result = workflow.execute_limited_identity_workflow(
         request, application=Application(), output_root=root
     )
-    assert result.diff_outputs.gate_status == "pass"
-    assert result.diff_outputs.expected_diff_row_count == 1
-    assert result.diff_outputs.matrix_diff_cell_count == 2
+    assert result.gate_status == "pass"
+    assert result.expected_diff_row_count == 1
+    assert result.matrix_diff_cell_count == 2
     assert len(calls) == 2
     assert (
         calls[0].model_selection_expected_diff_approvals
         is calls[1].model_selection_expected_diff_approvals
     )
-    assert (
-        result.final_config.output_csv == root / "final" / "output" / "xic_results.csv"
-    )
-    assert all(path.is_file() for path in result.final_execution.published_paths)
-    assert not (root / "final_unverified" / "output").exists()
-    replay = load_method_manifest_for_replay(
-        result.final_config.output_csv.with_name("method_manifest.json")
-    )
-    assert replay.settings_overrides["targeted_ms1_shape_identity_support_tsv"] == str(
-        result.support_outputs.evidence_tsv.resolve()
-    )
-    assert not workflow.requires_limited_identity_workflow(
-        replace(
-            config,
-            targeted_ms1_shape_identity_support_tsv=result.support_outputs.evidence_tsv,
-        )
-    )
+    workbook_path = root / "xic_results.xlsx"
+    assert result.final_execution.published_paths == (workbook_path,)
+    assert list(root.iterdir()) == [workbook_path]
+    assert not list(tmp_path.glob(".xic-limited-*"))
+    workbook = load_workbook(workbook_path, read_only=True, data_only=True)
+    try:
+        metadata = dict(workbook["Run Metadata"].iter_rows(values_only=True))
+        assert metadata["limited_identity_gate"] == "pass"
+        assert metadata["identity_support_rows"] == 1
+        assert metadata["expected_diff_rows"] == 1
+        assert metadata["matrix_diff_cells"] == 2
+        assert workbook["Identity Support"].sheet_state == "hidden"
+        assert workbook["Identity Support"].max_row == 2
+    finally:
+        workbook.close()
+
 
 
 def _write_method_gate_inputs(
