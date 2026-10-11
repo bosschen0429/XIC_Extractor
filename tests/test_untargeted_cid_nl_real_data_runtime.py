@@ -1993,6 +1993,20 @@ def _install_runtime_raws(
 ) -> dict[Path, list[_FakeThermoRaw]]:
     # Callers importing this helper do not inherit this module's autouse fixture.
     monkeypatch.setattr(runtime_module, "_ensure_assemblies_loaded", lambda *_: None)
+
+    def _forbid_vendor_api(_import_module):
+        pytest.fail("Synthetic RAW fixtures must not reach the real Thermo API")
+
+    monkeypatch.setattr("xic_extractor.raw_reader._load_thermo_api", _forbid_vendor_api)
+
+    def _unavailable_sample_header(path, dll_dir):
+        # This fixture supplies spectra, not vendor headers. Exercise the real
+        # metadata fallback without asking a native reader to open fake bytes.
+        raise RawReaderError(f"Synthetic RAW fixture has no sample header: {path}")
+
+    monkeypatch.setattr(
+        "xic_extractor.raw_reader.read_raw_sample_header", _unavailable_sample_header
+    )
     reset_reader_state()
     for filename in EXPECTED_THERMO_DLLS:
         (tmp_path / filename).write_bytes(b"dll")
