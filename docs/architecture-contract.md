@@ -317,6 +317,14 @@ set. Discovery, capture, QC, Alignment Backfill, CID-NL acquisition and ISTD
 reference use the full integration entry. The public
 `xic_extractor.signal_processing.find_peak_and_area` remains the integration entry.
 
+Targeted selection retains target policy and consumes the completed selected
+physical answer from `physical_peak_candidate_adapter.answer_selected_physical_candidate`.
+The adapter owns candidate-to-segment binding, no-selection questions and reuse
+of prepared candidate evaluations; callers do not mint another question for an
+answer already computed. `candidate_scoring` owns CWT support and score-summary
+projection; selection calls the configured scorer directly and preserves its
+override and context RT prior.
+
 ## Module Naming
 
 Name new or renamed modules and commands for the capability they provide and

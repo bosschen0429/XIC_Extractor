@@ -69,12 +69,11 @@ from xic_extractor.peak_detection.peak_selection import (
     select_peak_and_area,
 )
 from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
+    answer_selected_physical_candidate,
     physical_candidates_result,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
-    answer_physical_peak_question,
     enumerate_physical_segment_universe,
-    mint_physical_peak_question,
     physical_segment_has_incomplete_context,
     prepare_physical_signal,
 )
@@ -352,15 +351,13 @@ def extract_one_target(
 
     prepared, universe, physical_candidates = _physical_trace_owners(rt, intensity)
     candidate_evaluations = {
-        candidate: answer_physical_peak_question(
+        candidate: answer_selected_physical_candidate(
             prepared,
             universe,
-            mint_physical_peak_question(
-                prepared.projection,
-                universe,
-                selection_subject_id=target.label,
-                query_rt_min=candidate.selection_apex_rt,
-            ),
+            candidate,
+            selection_subject_id=target.label,
+            acquisition_rt_window=(context_rt_min, context_rt_max),
+            selection_rt_window=(selection_rt_min, selection_rt_max),
         )
         for candidate in physical_candidates.candidates
     }
