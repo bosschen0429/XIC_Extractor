@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -40,6 +41,10 @@ _MIGRATION_DEFAULT_KEYS = tuple(
 
 _CANONICAL_SIGNAL_WINDOW_KEY = "signal_processing_window_points"
 _LEGACY_SIGNAL_WINDOW_KEY = "ms1_morphology_smoothing_window_points"
+_RETIRED_RT_REFERENCE_INPUT_KEYS = (
+    "rt_prior_library_path",
+    "target_pair_rt_calibration_path",
+)
 
 
 @dataclass(frozen=True)
@@ -57,8 +62,6 @@ class _ParsedSettings:
     injection_order_source: Path | None
     rolling_window_size: int
     dirty_matrix_mode: bool
-    rt_prior_library_path: Path | None
-    target_pair_rt_calibration_path: Path | None
     model_selection_expected_diff_approval_registry: Path | None
     targeted_ms1_shape_identity_support_tsv: Path | None
     targeted_ms1_shape_identity_activation_policy: str
@@ -70,8 +73,13 @@ class _ParsedSettings:
 
 
 def migrate_settings_dict(raw: dict[str, str]) -> tuple[dict[str, str], list[str]]:
+    reject_retired_rt_reference_inputs(raw)
     migrated = dict(raw)
     warnings: list[str] = []
+    for key in _RETIRED_RT_REFERENCE_INPUT_KEYS:
+        if key in migrated:
+            migrated.pop(key)
+            warnings.append(f"Removed retired empty setting {key}.")
     canonical_window = migrated.get(_CANONICAL_SIGNAL_WINDOW_KEY, "").strip()
     legacy_window = migrated.get(_LEGACY_SIGNAL_WINDOW_KEY, "").strip()
     if legacy_window:
@@ -148,9 +156,24 @@ def validate_settings_values(
     settings: dict[str, str], settings_path: Path = Path("settings.csv")
 ) -> _ParsedSettings:
     """Validate scalar settings without admitting local inputs or reading files."""
+    reject_retired_rt_reference_inputs(settings)
     parsed = _parse_settings_values(settings, settings_path)
     _validate_settings_ranges(settings, settings_path, parsed)
     return parsed
+
+
+def reject_retired_rt_reference_inputs(settings: Mapping[str, str]) -> None:
+    """Reject retired file feedback rather than silently changing its effect."""
+    retired = [
+        key for key in _RETIRED_RT_REFERENCE_INPUT_KEYS if settings.get(key, "").strip()
+    ]
+    if retired:
+        raise ConfigError(
+            "已退休的 RT 回灌設定："
+            + ", ".join(retired)
+            + "。請移除檔案路徑，保留 targets／ISTD 配對與 RT 搜尋範圍；"
+            "目前只使用當次可信 ISTD 的 RT reference，請以當前方法重新分析。"
+        )
 
 
 def resolve_settings(
@@ -254,12 +277,6 @@ def _parse_settings_values(
             None,
             "dirty_matrix_mode",
             _setting_value(settings, settings_path, "dirty_matrix_mode"),
-        ),
-        rt_prior_library_path=_parse_optional_path(
-            settings.get("rt_prior_library_path", "")
-        ),
-        target_pair_rt_calibration_path=_parse_optional_path(
-            settings.get("target_pair_rt_calibration_path", "")
         ),
         model_selection_expected_diff_approval_registry=_parse_optional_path(
             settings.get("model_selection_expected_diff_approval_registry", "")
@@ -405,8 +422,6 @@ def _build_config(
         injection_order_source=parsed.injection_order_source,
         rolling_window_size=parsed.rolling_window_size,
         dirty_matrix_mode=parsed.dirty_matrix_mode,
-        rt_prior_library_path=parsed.rt_prior_library_path,
-        target_pair_rt_calibration_path=parsed.target_pair_rt_calibration_path,
         model_selection_expected_diff_approval_registry=(
             parsed.model_selection_expected_diff_approval_registry
         ),

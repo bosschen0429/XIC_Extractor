@@ -409,7 +409,6 @@ def test_pipeline_input_resolution_keeps_approvals_explicit(
         config,
         raw_paths=[],
         injection_order={},
-        rt_prior_library={},
         model_selection_expected_diff_approvals=None,
     )
 

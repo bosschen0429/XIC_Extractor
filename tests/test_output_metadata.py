@@ -66,7 +66,7 @@ def test_build_metadata_rows_returns_contract_keys_in_order() -> None:
     assert values["nl_min_intensity_ratio"] == 0.02
     assert values["ms2_precursor_tol_da"] == 0.4
     assert values["targeted_output_schema_version"] == "targeted_output"
-    assert values["method_manifest_schema"] == "method_manifest"
+    assert values["method_manifest_schema"] == "current_sample_rt_method_manifest"
     assert values["method_manifest_path"] == "method_manifest.json"
     assert values["method_manifest_sha256"] == ""
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", values["generated_at"])

@@ -30,7 +30,6 @@ def test_worker_job_and_result_objects_are_pickleable(tmp_path: Path) -> None:
         scoring_inputs=ScoringInputs(
             injection_order={"SampleA": 1},
             istd_rts_by_sample={},
-            rt_prior_library={},
         ),
         model_selection_expected_diff_approvals={
             "SampleA|Analyte|expected-diff": _expected_diff_approval()
@@ -300,7 +299,6 @@ def test_parallel_full_extraction_submits_pickleable_scoring_jobs_and_sorts(
     scoring_inputs = ScoringInputs(
         injection_order={"A": 1, "B": 2},
         istd_rts_by_sample={"ISTD": {"A": 9.1}},
-        rt_prior_library={},
     )
     approval = _expected_diff_approval()
     submitted = []
@@ -373,7 +371,6 @@ def test_parallel_full_extraction_worker_error_fails_with_raw_name(
             ScoringInputs(
                 injection_order={"A": 1},
                 istd_rts_by_sample={},
-                rt_prior_library={},
             ),
             runner=_runner,
         )
@@ -409,11 +406,10 @@ def test_raw_worker_rebuilds_scoring_factory_inside_worker(
         raw_path_arg,
         *,
         scoring_context_factory,
-        rt_prior_library,
         model_selection_expected_diff_approvals,
     ):
         rebuilt["worker_factory"] = scoring_context_factory
-        rebuilt["worker_rt_prior_library"] = rt_prior_library
+
         rebuilt["approvals"] = model_selection_expected_diff_approvals
         from xic_extractor.extraction.result_models import (
             FileResult,
@@ -445,7 +441,6 @@ def test_raw_worker_rebuilds_scoring_factory_inside_worker(
             scoring_inputs=ScoringInputs(
                 injection_order={"SampleA": 1},
                 istd_rts_by_sample={"ISTD": {"SampleA": 9.1}},
-                rt_prior_library={},
             ),
             model_selection_expected_diff_approvals={
                 "SampleA|Analyte|expected-diff": _expected_diff_approval()
@@ -459,8 +454,7 @@ def test_raw_worker_rebuilds_scoring_factory_inside_worker(
     assert "SampleA|Analyte|expected-diff" in rebuilt["approvals"]
     assert rebuilt["injection_order"] == {"SampleA": 1}
     assert rebuilt["istd_rts_by_sample"] == {"ISTD": {"SampleA": 9.1}}
-    assert rebuilt["rt_prior_library"] == {}
-    assert rebuilt["worker_rt_prior_library"] == {}
+
     assert rebuilt["worker_factory"] is not None
 
 

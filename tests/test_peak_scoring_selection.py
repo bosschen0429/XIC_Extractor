@@ -27,7 +27,6 @@ def _sc(
     *,
     quality_penalty: int = 0,
     selection_quality_penalty: float | None = None,
-    prefer_rt_prior_tiebreak: bool = False,
     quality_flags: tuple[str, ...] = (),
     area: float | None = None,
 ) -> ScoredCandidate:
@@ -44,7 +43,6 @@ def _sc(
         prior_rt=prior,
         quality_penalty=quality_penalty,
         selection_quality_penalty=selection_quality_penalty,
-        prefer_rt_prior_tiebreak=prefer_rt_prior_tiebreak,
     )
 
 
@@ -84,23 +82,21 @@ def test_selector_prefers_higher_confidence() -> None:
     assert select_candidate_with_confidence([a, b]) is b
 
 
-def test_selector_tiebreak_by_prior_distance() -> None:
+def test_selector_tiebreak_by_explicit_reference_distance() -> None:
     a = _sc(
         Confidence.HIGH,
         10.3,
         1000,
         prior=10.0,
-        prefer_rt_prior_tiebreak=True,
     )
     b = _sc(
         Confidence.HIGH,
         10.05,
         500,
         prior=10.0,
-        prefer_rt_prior_tiebreak=True,
     )
 
-    assert select_candidate_with_confidence([a, b]) is b
+    assert select_candidate_with_confidence([a, b], selection_rt=10.0) is b
 
 
 def test_selector_final_tiebreak_by_intensity() -> None:
@@ -109,14 +105,12 @@ def test_selector_final_tiebreak_by_intensity() -> None:
         10.1,
         1000,
         prior=10.0,
-        prefer_rt_prior_tiebreak=True,
     )
     b = _sc(
         Confidence.HIGH,
         10.1,
         500,
         prior=10.0,
-        prefer_rt_prior_tiebreak=True,
     )
 
     assert select_candidate_with_confidence([a, b]) is a
@@ -633,15 +627,13 @@ def test_strict_selector_does_not_product_switch_on_paired_ratio_label() -> None
     )
 
 
-def test_selector_with_paired_prior_evidence_prefers_prior_distance_before_quality(
-) -> None:
+def test_selector_with_explicit_reference_prefers_distance_before_quality() -> None:
     clean_far = _sc(
         Confidence.LOW,
         10.35,
         1000.0,
         10.0,
         quality_penalty=0,
-        prefer_rt_prior_tiebreak=True,
     )
     weak_near = _sc(
         Confidence.LOW,
@@ -649,13 +641,15 @@ def test_selector_with_paired_prior_evidence_prefers_prior_distance_before_quali
         700.0,
         10.0,
         quality_penalty=1,
-        prefer_rt_prior_tiebreak=True,
     )
 
-    assert select_candidate_with_confidence([clean_far, weak_near]) is weak_near
+    assert (
+        select_candidate_with_confidence([clean_far, weak_near], selection_rt=10.0)
+        is weak_near
+    )
 
 
-def test_selector_with_paired_prior_evidence_uses_effective_score() -> None:
+def test_selector_with_rt_review_evidence_uses_effective_score() -> None:
     near_weaker = _sc(
         Confidence.HIGH,
         10.02,
@@ -663,7 +657,6 @@ def test_selector_with_paired_prior_evidence_uses_effective_score() -> None:
         10.0,
         quality_penalty=0,
         selection_quality_penalty=0.0,
-        prefer_rt_prior_tiebreak=True,
     )
     farther_stronger = _sc(
         Confidence.HIGH,
@@ -672,7 +665,6 @@ def test_selector_with_paired_prior_evidence_uses_effective_score() -> None:
         10.0,
         quality_penalty=0,
         selection_quality_penalty=0.0,
-        prefer_rt_prior_tiebreak=True,
     )
     near_weaker = replace(near_weaker, evidence_score=_score_for_selector(82))
     farther_stronger = replace(

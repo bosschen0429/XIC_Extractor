@@ -28,10 +28,6 @@ _ALLOWED_SHARD_OVERLAPS: dict[Path, tuple[str, ...]] = {
     Path("tests/test_ms1_scan_index.py"): ("alignment-core", "product-gates-evidence"),
     Path("tests/test_peak_model_selection.py"): ("docs-config", "targeted-core"),
     Path("tests/test_pt_pattern_presets.py"): ("docs-config", "alignment-core"),
-    Path("tests/test_target_pair_rt_calibration.py"): (
-        "targeted-core",
-        "product-gates-evidence",
-    ),
     Path("tests/test_targeted_manual_validation.py"): (
         "targeted-core",
         "product-gates-evidence",
@@ -69,8 +65,7 @@ def test_test_shard_coverage_hook_routes_staged_tests_to_owner(
 
     hook = hooks["test-shard-coverage"]
     assert hook["entry"] == (
-        "uv run --cache-dir .uv-cache python -m "
-        "tools.testing.test_shards --check"
+        "uv run --cache-dir .uv-cache python -m tools.testing.test_shards --check"
     )
     assert hook["files"] == r"^(tests/.*\.py|tools/testing/test_shards\.py)$"
     assert hook["pass_filenames"] is False
@@ -115,9 +110,7 @@ def test_test_shards_keep_changed_shard_contracts() -> None:
         )
     )
 
-    assert assigned["workbench"] == (
-        Path("tests/test_discovery_worker.py"),
-    )
+    assert assigned["workbench"] == (Path("tests/test_discovery_worker.py"),)
     assert assigned["docs-config"] == (
         Path("tests/test_pyinstaller_spec.py"),
         Path("tests/test_peak_model_selection.py"),
@@ -321,10 +314,13 @@ def test_marker_intersection_handles_every_pytest_option_shape(
     pytest_args: tuple[str, ...],
     expected: tuple[str, ...],
 ) -> None:
-    assert test_shards._intersect_marker_selection(
-        pytest_args,
-        required="owned",
-    ) == expected
+    assert (
+        test_shards._intersect_marker_selection(
+            pytest_args,
+            required="owned",
+        )
+        == expected
+    )
 
 
 @pytest.mark.parametrize(
@@ -424,9 +420,7 @@ def test_local_shard_skips_markers_unrelated_to_the_change(
 
     expression = _capture_shard_marker(monkeypatch)
 
-    assert expression == (
-        "not ledger_snapshot and not packaging_build"
-    )
+    assert expression == ("not ledger_snapshot and not packaging_build")
     assert _capture_shard_marker(monkeypatch, all_markers=True) == "not ledger_snapshot"
 
 

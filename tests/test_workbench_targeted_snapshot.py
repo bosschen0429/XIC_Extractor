@@ -182,7 +182,6 @@ def test_queued_targeted_metadata_membership_and_order_are_frozen(
                 request.config,
                 raw_paths=selected,
                 injection_order=None,
-                rt_prior_library=None,
                 model_selection_expected_diff_approvals=None,
             )
             captured.append((request, selected, inputs))

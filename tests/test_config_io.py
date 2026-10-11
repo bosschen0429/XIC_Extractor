@@ -289,7 +289,7 @@ def test_save_merges_partial_values_and_preserves_existing_runtime_and_resources
         {
             "data_dir": "local",
             "parallel_workers": "1",
-            "rt_prior_library_path": "prior.csv",
+            "targeted_ms1_shape_identity_support_tsv": "prior.csv",
         },
         config_dir=tmp_path,
     )
@@ -297,7 +297,7 @@ def test_save_merges_partial_values_and_preserves_existing_runtime_and_resources
     values = read_settings(config_dir=tmp_path)
     assert values["data_dir"] == "local"
     assert values["parallel_workers"] == "1"
-    assert values["rt_prior_library_path"] == "prior.csv"
+    assert values["targeted_ms1_shape_identity_support_tsv"] == "prior.csv"
     assert values["dirty_matrix_mode"] == "true"
 
 

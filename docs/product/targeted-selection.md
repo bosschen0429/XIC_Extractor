@@ -189,7 +189,26 @@ those facts itself.
 - Sample exclusions, paired-anchor conflicts, hard quality blockers, and
   unresolved quantitative boundaries still apply to that peak.
 
-### Rescue and RT-pair scope
+### Current-sample paired RT reference
+
+For an analyte with a credible paired ISTD in this sample, the RT reference is
+the analyte's configured window midpoint plus the observed ISTD shift from its
+own configured midpoint. NL and no-NL analytes use this same answer. The
+configured difference is retained, including nonzero isotope-labelled offsets;
+pairing does not force identical apex times.
+
+Missing or untrusted paired ISTD observations do not become anchors. The
+fallback remains the configured analyte midpoint plus the available sample
+drift. Neither fallback nor RT agreement establishes chemical identity. Humans
+still provide target identities, pairings and method-appropriate search windows;
+these cannot be assumed portable across batches or methods.
+
+The reference is computed directly in memory for the current sample. External
+RT-prior/pair calibration files are not analysis inputs. The retained rolling
+ISTD context assesses within-batch ISTD consistency; it is not a replacement for
+a missing current-sample paired observation or an independent identity oracle.
+
+### Rescue scope
 
 - The bounded headless `5-hmdC + 5-medC` contract is the only MS1
   shape-identity rescue scope with accepted `detected_flagged` expected-diff
@@ -198,9 +217,6 @@ those facts itself.
   broad NL_FAIL rescue. These extensions require a new target-family evidence
   gate.
 - Current lane readiness lives in the status index.
-- `target_pair_rt_calibration_path` supplies validated calibration rows to the
-  existing RT-prior library. It does not emit auto-reselection shadow tables
-  or grant selected-peak or writer authority.
 
 ### Expected-diff inputs
 
@@ -238,7 +254,7 @@ those facts itself.
 | `Product State` / `Counted Detection` / `Review State` | Advanced product-policy fields; do not veto a retained numeric value |
 | Confidence | Advanced review context rendered from typed projection decisions |
 | Region and selected-envelope candidates | Boundary and model-selection evidence |
-| Target-pair RT calibration artifacts | Validated RT-prior inputs; no shadow output or writer authority |
+| Current-sample paired RT reference | Method offset transferred by a credible observed ISTD; no additional writer authority |
 | Expected-diff packets | Required gate for output-changing behavior |
 
 ## Boundaries
@@ -298,5 +314,5 @@ existing settings CSVs; there is no compatibility alias. Candidate-sidecar
 verification and the dedicated shadow/pressure review commands are unavailable.
 Use [XIC Inspector](xic-inspector.md) for visual review of its supported retained
 evidence sources. Inspector does not apply candidate switches or generate RT
-reselection comparison tables. `target_pair_rt_calibration_path` remains an
-RT-prior input; formal peak selection and numerical output remain owner-controlled.
+reselection comparison tables. Formal peak selection and numerical output remain
+owner-controlled.

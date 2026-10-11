@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
-from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecords
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
@@ -24,7 +23,6 @@ def run_process(
     *,
     raw_paths: list[Path],
     injection_order: dict[str, int],
-    rt_prior_library: dict[tuple[str, str], LibraryEntry],
     progress_callback: Callable[[int, int, str], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
     model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
@@ -45,7 +43,6 @@ def run_process(
     scoring_inputs = ScoringInputs(
         injection_order=injection_order,
         istd_rts_by_sample=istd_rts_by_sample,
-        rt_prior_library=rt_prior_library,
     )
     raw_results = collect_raw_file_results_process(
         config,

@@ -18,7 +18,6 @@ from xic_extractor.execution.attempt import (
     RuntimeTelemetryProvider,
 )
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
-from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.extraction.targeted_inputs import (
     resolve_model_selection_expected_diff_approvals,
 )
@@ -52,7 +51,6 @@ class TargetedRunner(Protocol):
         progress_callback: Callable[[int, int, str], None] | None = None,
         should_stop: Callable[[], bool] | None = None,
         injection_order: dict[str, int] | None = None,
-        rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
         model_selection_expected_diff_approvals: (
             Mapping[str, ExpectedDiffApprovalRecord] | None
         ) = None,
@@ -91,7 +89,7 @@ class TargetedApplicationRequest:
     progress_callback: Callable[[int, int, str], None] | None = None
     should_stop: Callable[[], bool] | None = None
     injection_order: dict[str, int] | None = None
-    rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None
+
     model_selection_expected_diff_approvals: (
         Mapping[str, ExpectedDiffApprovalRecord] | None
     ) = None
@@ -161,7 +159,6 @@ class TargetedApplicationService:
             progress_callback=runner_request.progress_callback,
             should_stop=runner_request.should_stop,
             injection_order=runner_request.injection_order,
-            rt_prior_library=runner_request.rt_prior_library,
             model_selection_expected_diff_approvals=(
                 runner_request.model_selection_expected_diff_approvals
             ),
@@ -354,7 +351,6 @@ def build_targeted_application_request(
     progress_callback: Callable[[int, int, str], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
     injection_order: dict[str, int] | None = None,
-    rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
     model_selection_expected_diff_approvals: (
         Mapping[str, ExpectedDiffApprovalRecord] | None
     ) = None,
@@ -369,7 +365,6 @@ def build_targeted_application_request(
         progress_callback=progress_callback,
         should_stop=should_stop,
         injection_order=injection_order,
-        rt_prior_library=rt_prior_library,
         model_selection_expected_diff_approvals=(
             model_selection_expected_diff_approvals
         ),
@@ -409,7 +404,6 @@ def _isolate_application_request(
         config=deepcopy(request.config),
         targets=deepcopy(request.targets),
         injection_order=deepcopy(request.injection_order),
-        rt_prior_library=deepcopy(request.rt_prior_library),
         model_selection_expected_diff_approvals=deepcopy(
             request.model_selection_expected_diff_approvals
         ),

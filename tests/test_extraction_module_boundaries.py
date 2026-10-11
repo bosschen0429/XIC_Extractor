@@ -66,7 +66,6 @@ def test_backends_do_not_depend_on_pipeline() -> None:
         source = (extraction_dir / module_name).read_text(encoding="utf-8")
         assert "xic_extractor.extraction.pipeline" not in source
         assert "resolve_injection_order" not in source
-        assert "resolve_rt_prior_library" not in source
 
 
 def test_target_extraction_uses_concrete_result_annotations() -> None:
@@ -100,7 +99,6 @@ def test_extractor_delegates_pipeline_flow() -> None:
     assert "write_outputs" not in source
     assert "preflight_raw_reader" not in source
     assert "_resolve_injection_order" not in function_names
-    assert "_resolve_rt_prior_library" not in function_names
     assert "_fallback_injection_order_from_mtime" not in function_names
 
 

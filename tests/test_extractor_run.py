@@ -8,7 +8,6 @@ import pytest
 
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.extraction.result_models import RunOutput
-from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.extraction.targeted_inputs import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
@@ -17,9 +16,6 @@ from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRec
 from xic_extractor.processing_identity import (
     AcquisitionSourceExpectation,
     build_acquisition_source_identity,
-)
-from xic_extractor.target_pair_rt_calibration import (
-    TARGET_PAIR_RT_CALIBRATION_FIELDS,
 )
 
 _OPEN_RAW_SEAM = "xic_extractor.extraction.target_extraction.open_raw"
@@ -57,14 +53,13 @@ def test_acquire_uses_serial_backend_by_default(
         progress_callback=None,
         should_stop=None,
         injection_order=None,
-        rt_prior_library=None,
         model_selection_expected_diff_approvals=None,
     ) -> RunOutput:
         calls.append((config_arg, targets_arg, [path.name for path in raw_paths]))
         assert progress_callback is _progress
         assert should_stop is _should_stop
         assert injection_order == {"SampleA": 1}
-        assert rt_prior_library == {}
+
         assert model_selection_expected_diff_approvals == {
             approval.stable_row_id: approval
         }
@@ -84,7 +79,6 @@ def test_acquire_uses_serial_backend_by_default(
         progress_callback=_progress,
         should_stop=_should_stop,
         injection_order={"SampleA": 1},
-        rt_prior_library={},
         model_selection_expected_diff_approvals={approval.stable_row_id: approval},
     )
 
@@ -95,8 +89,12 @@ def test_acquire_uses_serial_backend_by_default(
 @pytest.mark.parametrize(
     "pair_state",
     [
-        "unpaired", "no_signal", "untrusted", "credible", "reference_impulse",
-        "credible_library", "shape_review",
+        "unpaired",
+        "no_signal",
+        "untrusted",
+        "credible",
+        "reference_impulse",
+        "shape_review",
         "same_reference",
     ],
 )
@@ -114,16 +112,21 @@ def test_run_no_nl_reference_selects_each_samples_component(
         targets = [target]
     if pair_state == "same_reference":
         targets.append(replace(target, label="SameReference"))
-    if pair_state in {"no_signal", "untrusted", "credible", "credible_library"}:
+    if pair_state in {"no_signal", "untrusted", "credible"}:
         target = replace(target, istd_pair="ISTD")
         targets = [target]
         targets.append(
             replace(
-                target, label="ISTD", mz=261.1, rt_min=6.5, rt_max=9.5,
-                is_istd=True, istd_pair="",
+                target,
+                label="ISTD",
+                mz=261.1,
+                rt_min=6.5,
+                rt_max=9.5,
+                is_istd=True,
+                istd_pair="",
             )
         )
-    if pair_state in {"credible", "credible_library"}:
+    if pair_state in {"credible"}:
         expected = {"SampleA": (9.3, 1000.0), "SampleB": (9.4, 2500.0)}
     for sample in expected:
         (config.data_dir / f"{sample}.raw").write_bytes(sample.encode())
@@ -154,41 +157,26 @@ def test_run_no_nl_reference_selects_each_samples_component(
                 istd_peak = height * np.exp(-0.5 * ((rt - (apex - 1.0)) / 0.06) ** 2)
                 return rt, 1.0 + istd_peak
             width = (
-                np.where(rt < apex, 0.04, 0.2)
-                if pair_state == "shape_review" else 0.06
+                np.where(rt < apex, 0.04, 0.2) if pair_state == "shape_review" else 0.06
             )
             signal = height * np.exp(-0.5 * ((rt - apex) / width) ** 2)
             if pair_state == "reference_impulse":
                 signal[np.abs(rt - apex) > 0.2] = 0.0
                 signal[np.argmin(np.abs(rt - (apex + 0.4)))] = height * 10
                 return rt, signal
-            other_apex = (
-                apex - 0.3
-                if pair_state in {"credible", "credible_library"}
-                else apex + 1.0
-            )
+            other_apex = apex - 0.3 if pair_state in {"credible"} else apex + 1.0
             interferent = height * 4 * np.exp(-0.5 * ((rt - other_apex) / 0.06) ** 2)
             return rt, 1.0 + signal + interferent
 
         def iter_ms2_scans(self, rt_min, rt_max):
             pytest.fail("no-NL must not query MS2")
 
-    monkeypatch.setattr(
-        _OPEN_RAW_SEAM, lambda path, _dll, **_kwargs: Raw(path.stem)
-    )
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda path, _dll, **_kwargs: Raw(path.stem))
     monkeypatch.setattr(
         "xic_extractor.extraction.istd_prepass.open_raw",
         lambda path, _dll, **_kwargs: Raw(path.stem),
     )
-    library = {}
-    if pair_state == "credible_library":
-        library[(target.label, "analyte")] = LibraryEntry(
-            config_hash="fixture", target_label=target.label, role="analyte",
-            istd_pair="ISTD", median_delta_rt=0.7, sigma_delta_rt=0.01,
-            median_abs_rt=None, sigma_abs_rt=None, n_samples=10,
-            updated_at="fixture",
-        )
-    output = extractor.run(config, targets, rt_prior_library=library)
+    output = extractor.run(config, targets)
 
     assert {file.sample_name for file in output.file_results} == set(expected)
     assert all(file.error is None for file in output.file_results)
@@ -340,7 +328,6 @@ def test_acquire_passes_expected_sources_to_serial_backend(
         config,
         [_target("Analyte")],
         injection_order={"SampleA": 1},
-        rt_prior_library={},
         acquisition_sources_by_sample={"SampleA": expectation},
     )
 
@@ -376,7 +363,6 @@ def test_acquire_applies_targeted_ms1_shape_identity_support_tsv(
         progress_callback=None,
         should_stop=None,
         injection_order=None,
-        rt_prior_library=None,
         model_selection_expected_diff_approvals=None,
     ) -> RunOutput:
         calls["serial_output_written"] = False
@@ -447,7 +433,6 @@ def test_acquire_limited_shape_identity_policy_without_support_tsv_keeps_output(
         progress_callback=None,
         should_stop=None,
         injection_order=None,
-        rt_prior_library=None,
         model_selection_expected_diff_approvals=None,
     ) -> RunOutput:
         return returned
@@ -534,7 +519,6 @@ def test_acquire_reports_invalid_targeted_ms1_shape_identity_support_as_config_e
         progress_callback=None,
         should_stop=None,
         injection_order=None,
-        rt_prior_library=None,
         model_selection_expected_diff_approvals=None,
     ) -> RunOutput:
         return returned
@@ -563,34 +547,15 @@ def test_acquire_resolves_scoring_inputs_before_backend(
         **{
             **config.__dict__,
             "injection_order_source": tmp_path / "sample_info.csv",
-            "rt_prior_library_path": tmp_path / "rt_prior_library.csv",
             "config_hash": "abcd1234",
         }
     )
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [_target("Analyte")]
-    library = {
-        ("Analyte", "Analyte"): LibraryEntry(
-            config_hash="abcd1234",
-            target_label="Analyte",
-            role="Analyte",
-            istd_pair="",
-            median_delta_rt=None,
-            sigma_delta_rt=None,
-            median_abs_rt=8.5,
-            sigma_abs_rt=0.1,
-            n_samples=3,
-            updated_at="2026-05-07",
-        )
-    }
 
     monkeypatch.setattr(
         "xic_extractor.extraction.targeted_inputs.read_injection_order",
         lambda path: {"SampleA": 1},
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_inputs.load_library",
-        lambda path, config_hash: library,
     )
 
     def _fake_run_serial(
@@ -601,14 +566,13 @@ def test_acquire_resolves_scoring_inputs_before_backend(
         progress_callback=None,
         should_stop=None,
         injection_order=None,
-        rt_prior_library=None,
         model_selection_expected_diff_approvals=None,
     ) -> RunOutput:
         assert config_arg is config
         assert targets_arg is targets
         assert [path.name for path in raw_paths] == ["SampleA.raw"]
         assert injection_order == {"SampleA": 1}
-        assert rt_prior_library == library
+
         assert model_selection_expected_diff_approvals is None
         return RunOutput(file_results=[], diagnostics=[])
 
@@ -667,14 +631,13 @@ def test_acquire_resolves_sample_metadata_source_as_injection_order(
         progress_callback=None,
         should_stop=None,
         injection_order=None,
-        rt_prior_library=None,
         model_selection_expected_diff_approvals=None,
     ) -> RunOutput:
         assert config_arg is config
         assert targets_arg is targets
         assert [path.name for path in raw_paths] == ["RawA.raw"]
         assert injection_order == {"SampleA": 7, "RawA": 7}
-        assert rt_prior_library == {}
+
         return RunOutput(file_results=[], diagnostics=[])
 
     monkeypatch.setattr(serial_backend, "run_serial", _fake_run_serial)
@@ -682,69 +645,6 @@ def test_acquire_resolves_sample_metadata_source_as_injection_order(
     output = extractor.acquire(config, targets)
 
     assert output.file_results == []
-
-
-def test_target_pair_rt_calibration_fences_legacy_rt_prior_library(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from xic_extractor import extractor
-    from xic_extractor.extraction import serial_backend
-
-    config = _config(tmp_path, keep_intermediate_csv=False)
-    config = ExtractionConfig(
-        **{
-            **config.__dict__,
-            "rt_prior_library_path": tmp_path / "rt_prior_library.csv",
-            "target_pair_rt_calibration_path": (
-                tmp_path / "target_pair_rt_calibration.tsv"
-            ),
-            "config_hash": "abcd1234",
-        }
-    )
-    (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
-    assert config.target_pair_rt_calibration_path is not None
-    config.target_pair_rt_calibration_path.write_text(
-        "\t".join(TARGET_PAIR_RT_CALIBRATION_FIELDS) + "\n",
-        encoding="utf-8",
-    )
-    targets = [_target("Analyte")]
-    injected_library = {
-        ("Analyte", "analyte"): LibraryEntry(
-            config_hash="abcd1234",
-            target_label="Analyte",
-            role="analyte",
-            istd_pair="ISTD",
-            median_delta_rt=0.25,
-            sigma_delta_rt=0.05,
-            median_abs_rt=None,
-            sigma_abs_rt=None,
-            n_samples=8,
-            updated_at="2026-06-03",
-        )
-    }
-    monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_inputs.load_library",
-        lambda path, config_hash: injected_library,
-    )
-
-    def _fake_run_serial(
-        config_arg: ExtractionConfig,
-        targets_arg: list[Target],
-        *,
-        raw_paths: list[Path],
-        progress_callback=None,
-        should_stop=None,
-        injection_order=None,
-        rt_prior_library=None,
-        model_selection_expected_diff_approvals=None,
-    ) -> RunOutput:
-        assert rt_prior_library == {}
-        return RunOutput(file_results=[], diagnostics=[])
-
-    monkeypatch.setattr(serial_backend, "run_serial", _fake_run_serial)
-
-    extractor.acquire(config, targets, rt_prior_library=injected_library)
 
 
 def test_resolve_injection_order_returns_empty_dict_without_raw_files(

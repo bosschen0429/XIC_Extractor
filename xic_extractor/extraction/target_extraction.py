@@ -26,7 +26,6 @@ from xic_extractor.extraction.diagnostics import (
 from xic_extractor.extraction.drift import estimate_sample_drift
 from xic_extractor.extraction.ms2_selection import selected_candidate_ms2_evidence
 from xic_extractor.extraction.result_assembly import build_extraction_result
-from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.extraction.rt_windows import get_rt_window
 from xic_extractor.extraction.scoring_factory import (
     allow_prepass_anchor,
@@ -89,7 +88,6 @@ def extract_raw_file_result(
     raw_path: Path,
     *,
     scoring_context_factory: Callable[..., Any] | None = None,
-    rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
     model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
     expected_acquisition_source: AcquisitionSourceExpectation | None = None,
 ) -> RawFileExtractionResult:
@@ -100,7 +98,6 @@ def extract_raw_file_result(
         targets,
         raw_path,
         scoring_context_factory=scoring_context_factory,
-        rt_prior_library=rt_prior_library,
         model_selection_expected_diff_approvals=model_selection_expected_diff_approvals,
         expected_acquisition_source=expected_acquisition_source,
     )
@@ -122,7 +119,6 @@ def process_file(
     precomputed_istd_diagnostics: list[DiagnosticRecord] | None = None,
     precomputed_istd_anchor_rts: dict[str, float] | None = None,
     precomputed_istd_shape_metrics: dict[str, tuple[float, float | None]] | None = None,
-    rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
     model_selection_expected_diff_approvals: ExpectedDiffApprovalRecords | None = None,
     expected_acquisition_source: AcquisitionSourceExpectation | None = None,
 ) -> tuple[FileResult, list[DiagnosticRecord]]:
@@ -154,7 +150,6 @@ def process_file(
                 for label, result in results.items()
                 if result.peak_result.confidence is not None
             }
-            active_rt_prior_library = dict(rt_prior_library or {})
             if precomputed_istd_anchor_rts is None:
                 istd_anchor_rts: dict[str, float] = {}
                 for target in targets:
@@ -204,7 +199,6 @@ def process_file(
                     target,
                     reference_rt=reference_rt,
                     paired_target=istd_targets.get(target.istd_pair),
-                    rt_prior_library=active_rt_prior_library,
                     sample_drift=sample_drift,
                     strict_preferred_rt=reference_rt is not None,
                     results=results,
@@ -240,7 +234,6 @@ def extract_one_target(
     *,
     reference_rt: float | None,
     paired_target: Target | None = None,
-    rt_prior_library: dict[tuple[str, str], LibraryEntry] | None = None,
     sample_drift: float = 0.0,
     strict_preferred_rt: bool = False,
     results: dict[str, ExtractionResult],
@@ -257,20 +250,19 @@ def extract_one_target(
         resolver_mode="local_minimum",
         baseline_integration_method="asls",
     )
-    target_reference_rt = paired_target_reference_rt(
+    target_reference_rt = current_target_reference_rt(
         target,
         reference_rt=reference_rt,
-        rt_prior_library=rt_prior_library,
         paired_target=paired_target,
+        sample_drift=sample_drift,
     )
     selection_rt_min, selection_rt_max, anchor_used, anchor_rt = get_rt_window(
         raw,
         target,
         config,
         sample_key=sample_name,
-        reference_rt=reference_rt,
         target_reference_rt=target_reference_rt,
-        sample_drift=sample_drift,
+        paired_istd_credible=(reference_rt is not None and paired_target is not None),
     )
     if target.neutral_loss_da is None:
         strict_preferred_rt = True
@@ -582,31 +574,29 @@ def _select_no_nl_candidate_by_reference(
     )
 
 
-def paired_target_reference_rt(
+def current_target_reference_rt(
     target: Target,
     *,
     reference_rt: float | None,
-    rt_prior_library: dict[tuple[str, str], LibraryEntry] | None,
     paired_target: Target | None = None,
-) -> float | None:
-    if target.is_istd or not target.istd_pair or reference_rt is None:
-        return None
-    if target.neutral_loss_da is None:
-        if paired_target is None:
-            return None
-        # Transfer observed drift, preserving the configured analyte/ISTD offset.
-        target_center = (target.rt_min + target.rt_max) / 2.0
-        paired_center = (paired_target.rt_min + paired_target.rt_max) / 2.0
-        return target_center + reference_rt - paired_center
-    library = rt_prior_library or {}
-    entry = library.get((target.label, "analyte"))
+    sample_drift: float = 0.0,
+) -> float:
+    """Transfer credible current-sample ISTD drift, retaining the method offset.
+
+    Targets and isotope relationships remain method knowledge. This reference
+    neither learns chemistry from another batch nor authorizes a peak identity.
+    Missing pairs use the existing sample drift, not another sample's prediction.
+    """
+    center = (target.rt_min + target.rt_max) / 2.0
     if (
-        entry is None
-        or entry.istd_pair != target.istd_pair
-        or entry.median_delta_rt is None
+        not target.is_istd
+        and target.istd_pair
+        and paired_target is not None
+        and reference_rt is not None
     ):
-        return None
-    return reference_rt + entry.median_delta_rt
+        paired_center = (paired_target.rt_min + paired_target.rt_max) / 2.0
+        return center + reference_rt - paired_center
+    return center + sample_drift
 
 
 def credible_istd_anchor_rt(result: ExtractionResult | None) -> float | None:

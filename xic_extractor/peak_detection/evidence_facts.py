@@ -57,6 +57,7 @@ AcquisitionOpportunity = Literal["observed", "not_observed", "not_required"]
 FACTS_VERSION = "candidate_evidence_facts"
 PAIRED_ISTD_MAX_DELTA_MIN = 1.0
 
+
 @dataclass(frozen=True)
 class TraceEvidenceFacts:
     local_sn_ratio: float | None = None
@@ -143,7 +144,6 @@ class RtEvidenceFacts:
     paired_istd_status: RtEvidenceStatus = "missing"
     role: str = ""
     istd_pair: str = ""
-    prefer_rt_prior_tiebreak: bool = False
 
 
 @dataclass(frozen=True)
@@ -831,7 +831,6 @@ def _rt_facts(
         ),
         role=role,
         istd_pair=istd_pair,
-        prefer_rt_prior_tiebreak=bool(getattr(ctx, "prefer_rt_prior_tiebreak", False)),
     )
 
 

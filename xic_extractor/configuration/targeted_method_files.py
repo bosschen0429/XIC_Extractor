@@ -18,7 +18,11 @@ from xic_extractor.configuration.csv_io import (
     _read_target_rows,
 )
 from xic_extractor.configuration.models import ConfigError, Target
-from xic_extractor.configuration.settings import migrate_settings_dict, resolve_settings
+from xic_extractor.configuration.settings import (
+    migrate_settings_dict,
+    reject_retired_rt_reference_inputs,
+    resolve_settings,
+)
 from xic_extractor.configuration.targets import parse_target_rows
 from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,
@@ -42,13 +46,14 @@ def create_targeted_method(
     settings: Mapping[str, str], target_rows: Sequence[Mapping[str, str]]
 ) -> TargetedMethod:
     """Admit an editable method without files or discarded resource knowledge."""
-    _reject_portable_resources(settings)
-    unknown = sorted(set(settings) - CANONICAL_SETTINGS_DEFAULTS.keys())
+    normalized, _warnings = migrate_settings_dict(dict(settings))
+    _reject_portable_resources(normalized)
+    unknown = sorted(set(normalized) - CANONICAL_SETTINGS_DEFAULTS.keys())
     if unknown:
         raise ConfigError(f"方法包含尚未支援的設定：{', '.join(unknown)}；原設定保留。")
     # Batch and machine settings are not method values and must not affect admission.
     values, _parsed, _warnings = resolve_settings(
-        {key: settings[key] for key in METHOD_KEYS if key in settings}
+        {key: normalized[key] for key in METHOD_KEYS}
     )
     rows = tuple(MappingProxyType(dict(row)) for row in target_rows)
     targets = parse_target_rows(rows)
@@ -78,6 +83,7 @@ def apply_targeted_method(
 
 
 def _reject_portable_resources(settings: Mapping[str, str]) -> None:
+    reject_retired_rt_reference_inputs(settings)
     resources = [key for key in RESOURCE_KEYS if settings.get(key, "").strip()]
     if resources:
         raise ConfigError(

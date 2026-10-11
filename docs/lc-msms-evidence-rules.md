@@ -320,7 +320,7 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
 - RT prior support and paired ISTD RT support are one role-aware RT evidence
   group when they describe the same selected candidate. They may remain visible
   as separate typed facts, but product projection must not count
-  `rt_prior_close`, `paired_istd_aligned`, and `paired_istd_rt_close` as three
+  `rt_prior_close` and `paired_istd_rt_close` as two
   independent physical observations.
 
 ## Targeted Analyte / STD Pair Evidence

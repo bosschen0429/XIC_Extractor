@@ -11,7 +11,9 @@ from importlib import metadata
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.configuration.models import ExtractionConfig, Target
+from xic_extractor.configuration.csv_io import _read_settings
+from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
+from xic_extractor.configuration.settings import reject_retired_rt_reference_inputs
 from xic_extractor.output.schema import (
     DIAGNOSTIC_HEADERS,
     LONG_HEADERS,
@@ -22,7 +24,7 @@ from xic_extractor.output.schema import (
     TARGETED_SCORE_BREAKDOWN_CSV_SCHEMA_VERSION,
 )
 
-METHOD_MANIFEST_SCHEMA_VERSION = "method_manifest"
+METHOD_MANIFEST_SCHEMA_VERSION = "current_sample_rt_method_manifest"
 METHOD_MANIFEST_FILENAME = "method_manifest.json"
 ARTIFACT_REPLAY_POLICY_SCHEMA_VERSION = "artifact_replay_policy"
 WORKBOOK_NORMALIZED_METADATA_KEYS: tuple[str, ...] = (
@@ -129,16 +131,6 @@ def build_method_manifest(
                 "sample_metadata",
                 output_dir,
             ),
-            "rt_prior_library": _artifact(
-                config.rt_prior_library_path,
-                "rt_prior",
-                output_dir,
-            ),
-            "target_pair_rt_calibration": _artifact(
-                config.target_pair_rt_calibration_path,
-                "target_pair_rt_calibration",
-                output_dir,
-            ),
             "expected_diff_approval_registry": _artifact(
                 config.model_selection_expected_diff_approval_registry,
                 "expected_diff",
@@ -242,6 +234,7 @@ def load_method_manifest_for_replay(path: Path) -> MethodManifestReplayRequest:
             f"{manifest_path}: invocation.output_mode must be 'excel' or 'csv_only'"
         )
     settings_overrides = _settings_overrides(invocation, manifest_path)
+    _reject_retired_replay_settings(settings_overrides, manifest_path)
     method_settings = _required_mapping(payload, "method_settings", manifest_path)
     parallel_mode = _required_text(method_settings, "parallel_mode", manifest_path)
     parallel_workers = _required_int(method_settings, "parallel_workers", manifest_path)
@@ -255,6 +248,17 @@ def load_method_manifest_for_replay(path: Path) -> MethodManifestReplayRequest:
         )
 
     input_artifacts = _required_mapping(payload, "input_artifacts", manifest_path)
+    for artifact_id in ("rt_prior_library", "target_pair_rt_calibration"):
+        artifact = input_artifacts.get(artifact_id)
+        if artifact is not None and (
+            not isinstance(artifact, Mapping)
+            or artifact.get("path") not in (None, "")
+            or artifact.get("exists") is True
+        ):
+            raise MethodManifestError(
+                f"{manifest_path}: retired {artifact_id} cannot be replayed; "
+                "re-run using the current method"
+            )
     settings_artifact_path = _validate_required_file_artifact(
         input_artifacts,
         "settings_csv",
@@ -277,12 +281,13 @@ def load_method_manifest_for_replay(path: Path) -> MethodManifestReplayRequest:
         "targets_csv",
         manifest_path,
     )
+    _reject_retired_replay_settings(
+        _read_settings(settings_artifact_path), manifest_path
+    )
     _validate_required_directory_artifact(input_artifacts, "raw_dir", manifest_path)
     _validate_required_directory_artifact(input_artifacts, "dll_dir", manifest_path)
     for artifact_id in (
         "injection_order_source",
-        "rt_prior_library",
-        "target_pair_rt_calibration",
         "expected_diff_approval_registry",
         "targeted_ms1_shape_identity_support_tsv",
     ):
@@ -299,6 +304,15 @@ def load_method_manifest_for_replay(path: Path) -> MethodManifestReplayRequest:
     )
 
 
+def _reject_retired_replay_settings(
+    settings: Mapping[str, str], manifest_path: Path
+) -> None:
+    try:
+        reject_retired_rt_reference_inputs(settings)
+    except ConfigError as exc:
+        raise MethodManifestError(f"{manifest_path}: {exc}") from exc
+
+
 def _app_version() -> str:
     try:
         return metadata.version("xic-extractor")
@@ -312,7 +326,9 @@ def _validate_replay_header(
 ) -> None:
     if payload.get("schema_version") != METHOD_MANIFEST_SCHEMA_VERSION:
         raise MethodManifestError(
-            f"{manifest_path}: unsupported method manifest schema_version"
+            f"{manifest_path}: unsupported method manifest schema_version; "
+            "old RT-reference semantics cannot be replayed equivalently; "
+            "re-run using the current method"
         )
     if payload.get("run_kind") != "targeted_extraction":
         raise MethodManifestError(

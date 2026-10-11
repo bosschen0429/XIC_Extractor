@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Any
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extraction.result_models import RawFileExtractionResult
-from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
 from xic_extractor.peak_detection.model_selection import ExpectedDiffApprovalRecord
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
@@ -26,7 +25,6 @@ if TYPE_CHECKING:
 class ScoringInputs:
     injection_order: dict[str, int]
     istd_rts_by_sample: dict[str, dict[str, float]]
-    rt_prior_library: dict[tuple[str, str], LibraryEntry]
 
 
 @dataclass(frozen=True)
@@ -241,7 +239,6 @@ def extract_raw_file_job(job: RawFileJob) -> WorkerResult:
                 config=job.config,
                 injection_order=job.scoring_inputs.injection_order,
                 istd_rts_by_sample=job.scoring_inputs.istd_rts_by_sample,
-                rt_prior_library=job.scoring_inputs.rt_prior_library,
             )
         extraction_kwargs = {}
         if job.expected_acquisition_source is not None:
@@ -254,11 +251,6 @@ def extract_raw_file_job(job: RawFileJob) -> WorkerResult:
             list(job.targets),
             job.raw_path,
             scoring_context_factory=scoring_context_factory,
-            rt_prior_library=(
-                None
-                if job.scoring_inputs is None
-                else job.scoring_inputs.rt_prior_library
-            ),
             model_selection_expected_diff_approvals=(
                 job.model_selection_expected_diff_approvals
             ),

@@ -603,7 +603,6 @@ def test_run_loads_scoring_inputs_from_config_paths(
         **{
             **config.__dict__,
             "injection_order_source": tmp_path / "sample_info.csv",
-            "rt_prior_library_path": tmp_path / "rt_prior_library.csv",
             "config_hash": "abcd1234",
         }
     )
@@ -620,26 +619,13 @@ def test_run_loads_scoring_inputs_from_config_paths(
         calls["injection_order_path"] = path
         return {"SampleA": 1}
 
-    def _load_library(path: Path, config_hash: str) -> dict[tuple[str, str], object]:
-        calls["library_args"] = (path, config_hash)
-        return {}
-
     monkeypatch.setattr(
         "xic_extractor.extraction.targeted_inputs.read_injection_order",
         _read_injection_order,
     )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_inputs.load_library",
-        _load_library,
-    )
-
     _run(config, targets)
 
     assert calls["injection_order_path"] == config.injection_order_source
-    assert calls["library_args"] == (
-        config.rt_prior_library_path,
-        config.config_hash,
-    )
 
 
 def test_run_falls_back_to_main_pass_when_prepass_returns_none(
@@ -1159,7 +1145,7 @@ def test_paired_analyte_uses_strict_anchor_peak_selection(
     config = _config(tmp_path)
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [
-        _target("Analyte", istd_pair="ISTD"),
+        _target("Analyte", istd_pair="ISTD", rt_min=12.7, rt_max=14.7),
         _target("ISTD", is_istd=True, rt_min=12.7, rt_max=14.7),
     ]
     strict_flags: list[bool] = []
@@ -1503,7 +1489,7 @@ def test_paired_analyte_preserves_mismatched_target_anchor_peak_as_ambiguous(
     config = _config(tmp_path)
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [
-        _target("Analyte", istd_pair="ISTD"),
+        _target("Analyte", istd_pair="ISTD", rt_min=13.4, rt_max=13.8),
         _target("ISTD", is_istd=True, rt_min=12.7, rt_max=14.7),
     ]
 
@@ -1575,7 +1561,7 @@ def test_paired_analyte_accepts_peak_close_to_target_anchor_even_if_farther_from
     config = _config(tmp_path)
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [
-        _target("Analyte", istd_pair="ISTD"),
+        _target("Analyte", istd_pair="ISTD", rt_min=12.7, rt_max=14.7),
         _target("ISTD", is_istd=True, rt_min=12.7, rt_max=14.7),
     ]
 
@@ -1628,7 +1614,7 @@ def test_paired_analyte_keeps_target_nl_anchor_far_from_istd_anchor(
     config = _config(tmp_path)
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [
-        _target("Analyte", istd_pair="ISTD"),
+        _target("Analyte", istd_pair="ISTD", rt_min=14.1, rt_max=16.1),
         _target("ISTD", is_istd=True, rt_min=12.7, rt_max=14.7),
     ]
     raw = _RecordingRaw(peak_centers=[13.70, 15.12])
@@ -1684,7 +1670,7 @@ def test_paired_analyte_keeps_target_nl_anchor_far_from_istd_anchor(
     _run(config, targets)
 
     assert _dedupe_consecutive(preferred_rts) == [13.70, 15.10]
-    assert raw.windows[1] == pytest.approx((6.0, 18.10))
+    assert raw.windows[1] == pytest.approx((12.10, 18.10))
 
 
 def test_paired_analyte_istd_rt_fallback_does_not_force_counted_detection(

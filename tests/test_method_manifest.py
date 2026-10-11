@@ -12,6 +12,7 @@ from xic_extractor.output.method_manifest import (
     METHOD_MANIFEST_SCHEMA_VERSION,
     MethodManifestContext,
     MethodManifestError,
+    artifact_sha256,
     build_method_manifest,
     load_method_manifest_for_replay,
     write_method_manifest,
@@ -52,8 +53,6 @@ def test_build_method_manifest_labels_hashes_as_fragments(tmp_path: Path) -> Non
         "raw_dir",
         "dll_dir",
         "injection_order_source",
-        "rt_prior_library",
-        "target_pair_rt_calibration",
         "expected_diff_approval_registry",
         "targeted_ms1_shape_identity_support_tsv",
     }
@@ -474,3 +473,41 @@ def _write_config_inputs(tmp_path: Path) -> None:
         "label,mz\nAnalyte,284.0989\n",
         encoding="utf-8",
     )
+
+
+@pytest.mark.parametrize("location", ["schema", "artifact", "override", "settings"])
+def test_replay_rejects_retired_feedback_even_if_manifest_is_relabelled(
+    tmp_path, location
+):
+    config = _config(tmp_path)
+    _write_config_inputs(tmp_path)
+    path = write_method_manifest(
+        config,
+        [_target("Analyte")],
+        context=MethodManifestContext(
+            entrypoint="xic-extractor-cli",
+            base_dir=tmp_path,
+            config_dir=tmp_path / "config",
+            output_mode="csv_only",
+        ),
+    )
+    payload = json.loads(path.read_text())
+    if location == "schema":
+        payload["schema_version"] = "method_manifest"
+    elif location == "artifact":
+        payload["input_artifacts"]["rt_prior_library"] = {
+            "path": "prior.csv",
+            "exists": True,
+        }
+    elif location == "override":
+        payload["invocation"]["settings_overrides"] = {
+            "target_pair_rt_calibration_path": "pair.tsv"
+        }
+    else:
+        settings = tmp_path / "config" / "settings.csv"
+        with settings.open("a", encoding="utf-8") as stream:
+            stream.write("rt_prior_library_path,prior.csv\n")
+        payload["input_artifacts"]["settings_csv"]["sha256"] = artifact_sha256(settings)
+    path.write_text(json.dumps(payload))
+    with pytest.raises(MethodManifestError, match="current method|當前方法"):
+        load_method_manifest_for_replay(path)

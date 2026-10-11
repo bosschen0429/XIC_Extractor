@@ -604,15 +604,18 @@ def test_http_method_reset_preserves_batch_resources_and_execution(tmp_path):
         status, config, _ = request("/api/config")
         assert status == 200
         local = {
-            "data_dir": "different-batch", "dll_dir": "different-dll",
-            "injection_order_source": "order.csv", "rt_prior_library_path": "prior.csv",
-            "parallel_workers": "1", "emit_review_report": "true",
+            "data_dir": "different-batch",
+            "dll_dir": "different-dll",
+            "injection_order_source": "order.csv",
+            "targeted_ms1_shape_identity_support_tsv": "support.tsv",
+            "parallel_workers": "1",
+            "emit_review_report": "true",
         }
         settings = {**config["settings"], **local, "ms2_precursor_tol_da": "1.2"}
         status, summary, _ = request("/api/targeted/method", {"settings": settings})
         assert status == 200
         assert summary["custom_keys"] == ["ms2_precursor_tol_da"]
-        assert summary["resource_keys"] == ["rt_prior_library_path"]
+        assert summary["resource_keys"] == ["targeted_ms1_shape_identity_support_tsv"]
         status, reset, _ = request("/api/targeted/method/reset", {"settings": settings})
         assert status == 200
         assert reset["settings"]["ms2_precursor_tol_da"] == "0.8"

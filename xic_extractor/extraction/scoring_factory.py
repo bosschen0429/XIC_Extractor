@@ -5,7 +5,6 @@ import numpy as np
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
-from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.injection_rolling import rolling_median_rt
 from xic_extractor.peak_detection import ms1_morphology
 from xic_extractor.peak_detection.models import PeakCandidate, PeakDetectionResult
@@ -26,7 +25,6 @@ def build_scoring_context_factory(
     config: ExtractionConfig,
     injection_order: dict[str, int],
     istd_rts_by_sample: dict[str, dict[str, float]],
-    rt_prior_library: dict[tuple[str, str], LibraryEntry],
 ) -> Callable[..., Callable[[PeakCandidate], ScoringContext]]:
     def _factory(
         *,
@@ -58,25 +56,6 @@ def build_scoring_context_factory(
             )
             if rt_prior is not None:
                 prior_source = "rolling_median"
-            elif target.neutral_loss_da is not None:
-                library_entry = rt_prior_library.get((target.label, "ISTD"))
-                if (
-                    library_entry is not None
-                    and library_entry.median_abs_rt is not None
-                ):
-                    rt_prior = library_entry.median_abs_rt
-                    rt_prior_sigma = library_entry.sigma_abs_rt
-                    prior_source = "library_abs"
-        elif target.neutral_loss_da is not None:
-            library_entry = rt_prior_library.get((target.label, "analyte"))
-            if (
-                library_entry is not None
-                and istd_rt_in_this_sample is not None
-                and library_entry.median_delta_rt is not None
-            ):
-                rt_prior = istd_rt_in_this_sample + library_entry.median_delta_rt
-                rt_prior_sigma = library_entry.sigma_delta_rt
-                prior_source = "delta_rt_library"
 
         rt_values = np.asarray(rt, dtype=float)
         intensity_values = np.asarray(intensity, dtype=float)
@@ -111,16 +90,10 @@ def build_scoring_context_factory(
         target_window_ms2_present = (
             nl_result is not None and nl_result.matched_scan_count > 0
         )
-        target_window_nl_match = (
-            nl_result is not None and nl_result.status in {"OK", "WARN"}
-        )
-        prefer_rt_prior_tiebreak = (
-            not target.is_istd
-            and bool(target.istd_pair)
-            and istd_rt_in_this_sample is not None
-            and rt_prior is not None
-            and prior_source == "delta_rt_library"
-        )
+        target_window_nl_match = nl_result is not None and nl_result.status in {
+            "OK",
+            "WARN",
+        }
 
         def builder(candidate: PeakCandidate) -> ScoringContext:
             candidate_ms2 = (
@@ -153,9 +126,7 @@ def build_scoring_context_factory(
                 else None
             )
             ms1_peak_group_source = (
-                candidate_ms2.ms1_peak_group_source
-                if candidate_ms2 is not None
-                else ""
+                candidate_ms2.ms1_peak_group_source if candidate_ms2 is not None else ""
             )
             ms1_peak_group_rt_min = (
                 candidate_ms2.ms1_peak_group_rt_min
@@ -229,9 +200,7 @@ def build_scoring_context_factory(
                 ms1_peak_group_source=ms1_peak_group_source,
                 ms1_peak_group_rt_min=ms1_peak_group_rt_min,
                 ms1_peak_group_rt_max=ms1_peak_group_rt_max,
-                ms1_peak_group_trigger_scan_count=(
-                    ms1_peak_group_trigger_scan_count
-                ),
+                ms1_peak_group_trigger_scan_count=(ms1_peak_group_trigger_scan_count),
                 ms1_peak_group_strict_nl_scan_count=(
                     ms1_peak_group_strict_nl_scan_count
                 ),
@@ -246,7 +215,6 @@ def build_scoring_context_factory(
                 ),
                 baseline_array=active_baseline_array,
                 residual_mad=residual_mad,
-                prefer_rt_prior_tiebreak=prefer_rt_prior_tiebreak,
                 active_trace_source=active_trace_source,
                 morphology_trace_method=morphology_trace_method,
                 morphology_trace_window_points=morphology_trace_window_points,
@@ -264,13 +232,11 @@ def make_scoring_context_factory(
     config: ExtractionConfig,
     injection_order: dict[str, int],
     istd_rts_by_sample: dict[str, dict[str, float]],
-    rt_prior_library: dict[tuple[str, str], Any],
 ) -> Callable[..., Any]:
     return build_scoring_context_factory(
         config=config,
         injection_order=injection_order,
         istd_rts_by_sample=istd_rts_by_sample,
-        rt_prior_library=rt_prior_library,
     )
 
 

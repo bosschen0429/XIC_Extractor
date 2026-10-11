@@ -82,7 +82,7 @@ def _make_flagged_candidate(
 def test_score_candidate_returns_base_and_trace_quality_severities() -> None:
     cand = _make_candidate(apex_rt=10.0, apex_intensity=1000)
     x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-((x - 10) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
@@ -96,7 +96,6 @@ def test_score_candidate_returns_base_and_trace_quality_severities() -> None:
         rt_min=9.0,
         rt_max=11.0,
         dirty_matrix=False,
-        prefer_rt_prior_tiebreak=True,
     )
     scored = score_candidate(cand, ctx, prior_rt=10.0)
     assert len(scored.severities) == 10
@@ -105,13 +104,13 @@ def test_score_candidate_returns_base_and_trace_quality_severities() -> None:
     assert "candidate_aligned_ms2_nl" in scored.reason
     assert "role_aware_rt_support" in scored.reason
     assert "strict_nl_ok" in scored.evidence_score.support_labels
-    assert "paired_istd_aligned" in scored.evidence_score.support_labels
+    assert "rt_prior_close" in scored.evidence_score.support_labels
 
 
 def test_score_candidate_records_positive_and_negative_evidence() -> None:
     cand = _make_candidate(apex_rt=10.0, apex_intensity=1000)
     x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-((x - 10) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
@@ -136,10 +135,10 @@ def test_score_candidate_records_positive_and_negative_evidence() -> None:
     assert scored.evidence_score.concern_labels == ()
 
 
-def test_score_candidate_records_paired_istd_alignment_support() -> None:
+def test_score_candidate_records_rt_review_support_without_pair_bonus() -> None:
     cand = _make_candidate(apex_rt=10.0, apex_intensity=1000)
     x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-((x - 10) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
@@ -153,19 +152,18 @@ def test_score_candidate_records_paired_istd_alignment_support() -> None:
         rt_min=9.0,
         rt_max=11.0,
         dirty_matrix=False,
-        prefer_rt_prior_tiebreak=True,
     )
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)
 
-    assert "paired_istd_aligned" in scored.evidence_score.support_labels
+    assert "rt_prior_close" in scored.evidence_score.support_labels
     assert "role_aware_rt_support" in scored.reason
 
 
 def test_score_candidate_records_strong_ms2_trace_support() -> None:
     cand = _make_candidate(apex_rt=10.0, apex_intensity=1000)
     x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-((x - 10) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
@@ -197,7 +195,7 @@ def test_sparse_apex_fallback_ms2_does_not_count_as_strong_trace_support() -> No
         quality_flags=("low_scan_support",),
     )
     x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-((x - 10) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
@@ -230,7 +228,7 @@ def test_sparse_apex_fallback_ms2_does_not_count_as_strong_trace_support() -> No
 def test_score_candidate_records_moderate_ms2_trace_support() -> None:
     cand = _make_candidate(apex_rt=10.0, apex_intensity=1000)
     x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-((x - 10) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
@@ -262,7 +260,7 @@ def test_score_candidate_records_same_apex_cwt_support() -> None:
         cwt_ridge_persistence=0.5,
     )
     x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-((x - 10) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
@@ -303,7 +301,7 @@ def test_cwt_only_candidate_does_not_receive_same_apex_support_bonus() -> None:
         cwt_ridge_persistence=0.5,
     )
     x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-((x - 10) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
@@ -333,7 +331,7 @@ def test_cwt_support_requires_chemical_evidence_when_nl_is_required() -> None:
         cwt_ridge_persistence=0.5,
     )
     x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-((x - 10) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
@@ -358,7 +356,7 @@ def test_cwt_support_requires_chemical_evidence_when_nl_is_required() -> None:
 def test_weak_ms2_trace_concern_keeps_strict_nl_support() -> None:
     cand = _make_candidate(apex_rt=10.0, apex_intensity=1000)
     x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-((x - 10) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
@@ -385,7 +383,7 @@ def test_weak_ms2_trace_concern_keeps_strict_nl_support() -> None:
 
 def test_strong_ms2_trace_breaks_same_confidence_tie_by_score() -> None:
     x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-((x - 10) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
     base_ctx = dict(
         rt_array=x,
         intensity_array=y,
@@ -560,7 +558,7 @@ def test_strict_selection_rt_does_not_escape_to_far_complete_peak() -> None:
 def test_score_candidate_nl_fail_caps_confidence_to_very_low() -> None:
     cand = _make_candidate(apex_rt=10.0, apex_intensity=1000)
     x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-((x - 10) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
@@ -587,7 +585,7 @@ def test_score_candidate_nl_fail_caps_confidence_to_very_low() -> None:
 def test_reason_text_leads_with_decision_then_support_concerns_and_caps() -> None:
     cand = _make_candidate(apex_rt=10.8, apex_intensity=1000)
     x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-((x - 10.8) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 10.8) / 0.1) ** 2)) + 5
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
@@ -615,7 +613,7 @@ def test_reason_text_leads_with_decision_then_support_concerns_and_caps() -> Non
 def test_score_candidate_no_nl_target_records_no_nl_support() -> None:
     cand = _make_candidate(apex_rt=10.0, apex_intensity=1000)
     x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-((x - 10) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
@@ -646,7 +644,7 @@ def test_score_candidate_no_nl_target_records_no_nl_support() -> None:
 def test_score_candidate_no_ms2_default_reason_is_not_counted() -> None:
     cand = _make_candidate(apex_rt=10.0, apex_intensity=1000)
     x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-((x - 10) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
@@ -675,7 +673,7 @@ def test_score_candidate_no_ms2_default_reason_is_not_counted() -> None:
 def test_score_candidate_no_ms2_allowed_reason_is_accepted() -> None:
     cand = _make_candidate(apex_rt=10.0, apex_intensity=1000)
     x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-((x - 10) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
@@ -729,7 +727,7 @@ def test_score_candidate_maps_rt_centrality_and_noise_shape_concerns() -> None:
 def test_score_candidate_caps_out_of_window_peak_without_rt_prior() -> None:
     cand = _make_candidate(apex_rt=15.166, apex_intensity=1000)
     x = np.linspace(14.5, 15.8, 131)
-    y = 1000 * np.exp(-((x - 15.166) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 15.166) / 0.1) ** 2)) + 5
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
@@ -757,7 +755,7 @@ def test_score_candidate_caps_out_of_window_peak_without_rt_prior() -> None:
 def test_score_candidate_allows_out_of_window_peak_with_close_rt_prior() -> None:
     cand = _make_candidate(apex_rt=15.166, apex_intensity=1000)
     x = np.linspace(14.5, 15.8, 131)
-    y = 1000 * np.exp(-((x - 15.166) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 15.166) / 0.1) ** 2)) + 5
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
@@ -785,7 +783,7 @@ def test_score_candidate_allows_out_of_window_peak_with_close_rt_prior() -> None
 def test_score_candidate_keeps_in_window_edge_peak_as_rt_centrality_concern() -> None:
     cand = _make_candidate(apex_rt=16.005, apex_intensity=1000)
     x = np.linspace(15.8, 16.3, 101)
-    y = 1000 * np.exp(-((x - 16.005) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 16.005) / 0.1) ** 2)) + 5
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
@@ -829,7 +827,7 @@ def test_score_candidate_penalizes_flagged_candidate_quality(
         quality_flags=("too_broad",),
     )
     x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-((x - 10) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
@@ -843,7 +841,6 @@ def test_score_candidate_penalizes_flagged_candidate_quality(
         rt_min=9.0,
         rt_max=11.0,
         dirty_matrix=False,
-        prefer_rt_prior_tiebreak=False,
     )
 
     note = "paired ISTD confirmed"
@@ -878,7 +875,7 @@ def test_score_candidate_formats_adap_like_quality_flags_as_minor_concerns() -> 
         quality_flags=("low_trace_continuity", "poor_edge_recovery"),
     )
     x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-((x - 10) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
@@ -892,7 +889,6 @@ def test_score_candidate_formats_adap_like_quality_flags_as_minor_concerns() -> 
         rt_min=9.0,
         rt_max=11.0,
         dirty_matrix=False,
-        prefer_rt_prior_tiebreak=False,
     )
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)
@@ -914,7 +910,7 @@ def test_single_trace_continuity_warning_does_not_cap_supported_peak() -> None:
         quality_flags=("low_trace_continuity",),
     )
     x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-((x - 10) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
@@ -928,7 +924,6 @@ def test_single_trace_continuity_warning_does_not_cap_supported_peak() -> None:
         rt_min=9.0,
         rt_max=11.0,
         dirty_matrix=False,
-        prefer_rt_prior_tiebreak=False,
     )
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)
@@ -952,7 +947,7 @@ def test_cwt_same_apex_support_prevents_trace_boundary_double_cap() -> None:
         cwt_ridge_persistence=0.5,
     )
     x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-((x - 10) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
@@ -966,7 +961,6 @@ def test_cwt_same_apex_support_prevents_trace_boundary_double_cap() -> None:
         rt_min=9.0,
         rt_max=11.0,
         dirty_matrix=False,
-        prefer_rt_prior_tiebreak=False,
     )
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)
@@ -980,8 +974,9 @@ def test_cwt_same_apex_support_prevents_trace_boundary_double_cap() -> None:
     assert "cwt_boundary_morphology_context" in scored.reason
 
 
-def test_score_candidate_does_not_double_penalize_adap_equivalent_legacy_flags(
-) -> None:
+def test_score_candidate_does_not_double_penalize_adap_equivalent_legacy_flags() -> (
+    None
+):
     cand = _make_flagged_candidate(
         apex_rt=10.0,
         apex_intensity=1000.0,
@@ -993,7 +988,7 @@ def test_score_candidate_does_not_double_penalize_adap_equivalent_legacy_flags(
         ),
     )
     x = np.linspace(9, 11, 201)
-    y = 1000 * np.exp(-((x - 10) / 0.1) ** 2) + 5
+    y = 1000 * np.exp(-(((x - 10) / 0.1) ** 2)) + 5
     ctx = ScoringContext(
         rt_array=x,
         intensity_array=y,
@@ -1007,7 +1002,6 @@ def test_score_candidate_does_not_double_penalize_adap_equivalent_legacy_flags(
         rt_min=9.0,
         rt_max=11.0,
         dirty_matrix=False,
-        prefer_rt_prior_tiebreak=False,
     )
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)

@@ -13,11 +13,6 @@ from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DESCRIPTIONS,
     default_parallel_workers,
 )
-from xic_extractor.target_pair_rt_calibration import (
-    TARGET_PAIR_RT_CALIBRATION_SCHEMA_VERSION,
-    TargetPairRTCalibrationRow,
-    write_target_pair_rt_calibration_tsv,
-)
 
 SETTINGS_FIELDS = ["key", "value", "description"]
 TARGET_FIELDS = [
@@ -130,7 +125,6 @@ def test_load_config_derives_output_paths_and_creates_output_dir(
     assert config.resolver_min_scans == 5
     assert config.parallel_mode == "process"
     assert config.parallel_workers == default_parallel_workers()
-    assert config.target_pair_rt_calibration_path is None
     assert config.target_config_hash == compute_target_config_hash(
         config_dir / "targets.csv"
     )
@@ -406,81 +400,6 @@ def test_load_config_accepts_process_parallel_settings(tmp_path: Path) -> None:
     assert config.parallel_workers == 4
 
 
-def test_load_config_accepts_target_pair_rt_calibration_path(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    calibration = tmp_path / "target_pair_rt_calibration.tsv"
-    _write_settings(
-        config_dir,
-        {"target_pair_rt_calibration_path": str(calibration)},
-    )
-    _write_targets(config_dir)
-    _write_calibration(calibration, config_dir / "targets.csv")
-
-    config, _ = load_config(config_dir)
-
-    assert config.target_pair_rt_calibration_path == calibration
-
-
-def test_load_config_validates_pair_rt_calibration_when_shadow_output_off(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    calibration = tmp_path / "target_pair_rt_calibration.tsv"
-    _write_settings(
-        config_dir,
-        {
-            "target_pair_rt_calibration_path": str(calibration),
-        },
-    )
-    _write_targets(config_dir)
-    calibration.write_text(
-        "schema_version\ttarget_label\nv\tAnalyte\n",
-        encoding="utf-8-sig",
-    )
-
-    with pytest.raises(ConfigError) as exc_info:
-        load_config(config_dir)
-
-    _assert_error(exc_info, "missing required column target_config_hash")
-
-
-def test_load_config_rejects_missing_target_pair_rt_calibration_file(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    calibration = tmp_path / "missing_target_pair_rt_calibration.tsv"
-    _write_settings(
-        config_dir,
-        {"target_pair_rt_calibration_path": str(calibration)},
-    )
-    _write_targets(config_dir)
-
-    with pytest.raises(ConfigError) as exc_info:
-        load_config(config_dir)
-
-    _assert_error(exc_info, "file is missing")
-
-
-def test_load_config_rejects_duplicate_target_pair_rt_calibration_rows(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    calibration = tmp_path / "target_pair_rt_calibration.tsv"
-    _write_settings(
-        config_dir,
-        {"target_pair_rt_calibration_path": str(calibration)},
-    )
-    _write_targets(config_dir)
-    _write_calibration(calibration, config_dir / "targets.csv", duplicate=True)
-
-    with pytest.raises(ConfigError) as exc_info:
-        load_config(config_dir)
-
-    _assert_error(exc_info, "duplicate (target_label, paired_istd_label)")
-
-
 def test_load_config_parses_optional_target_pair_rt_metadata(
     tmp_path: Path,
 ) -> None:
@@ -608,7 +527,7 @@ def test_load_config_rejects_istd_owned_paired_rt_relation(
             _target_row(
                 label="ISTD",
                 is_istd="true",
-                paired_rt_relation="learned_delta_only",
+                paired_rt_relation="istd_not_later_than_pair",
             )
         ],
     )
@@ -739,15 +658,6 @@ def test_retired_peak_candidate_setting_is_not_exposed() -> None:
     assert "emit_peak_candidates" not in CANONICAL_SETTINGS_DESCRIPTIONS
 
 
-def test_settings_example_includes_target_pair_rt_calibration_setting() -> None:
-    example_path = Path("config/settings.example.csv")
-
-    with example_path.open(newline="", encoding="utf-8-sig") as handle:
-        rows = {row["key"]: row["value"] for row in csv.DictReader(handle)}
-
-    assert rows["target_pair_rt_calibration_path"] == ""
-
-
 def test_targets_example_includes_optional_target_pair_rt_metadata() -> None:
     example_path = Path("config/targets.example.csv")
 
@@ -757,7 +667,7 @@ def test_targets_example_includes_optional_target_pair_rt_metadata() -> None:
     assert rows["d3-5-medC"]["isotope_label_type"] == "deuterated"
     assert rows["5-medC"]["paired_rt_relation"] == "istd_not_later_than_pair"
     assert rows["15N5-8-oxodG"]["isotope_label_type"] == "heavy_non_deuterium"
-    assert rows["8-oxodG"]["paired_rt_relation"] == "learned_delta_only"
+    assert rows["8-oxodG"]["paired_rt_relation"] == "none"
     assert rows["8-oxo-Guo"]["sample_applicability"] == "rna_containing"
 
 
@@ -851,36 +761,6 @@ def _write_targets_with_optional_metadata(
         writer.writeheader()
         for row in rows:
             writer.writerow({field: row.get(field, "") for field in fieldnames})
-
-
-def _write_calibration(
-    path: Path,
-    targets_path: Path,
-    *,
-    duplicate: bool = False,
-) -> None:
-    row = TargetPairRTCalibrationRow(
-        schema_version=TARGET_PAIR_RT_CALIBRATION_SCHEMA_VERSION,
-        target_config_hash=compute_target_config_hash(targets_path),
-        source_artifact="mixstds.tsv",
-        source_hash="sourcehash",
-        source_hash_status="present",
-        target_label="Analyte",
-        paired_istd_label="ISTD",
-        pair_rt_delta_min=0.25,
-        delta_source="mixstds_clean_standard",
-        point_count=6,
-        rt_delta_median_min=0.25,
-        rt_delta_mad_min=0.02,
-        rt_delta_direction="target_later",
-        isotope_label_type="deuterated",
-        paired_rt_relation="istd_not_later_than_pair",
-        calibration_status="usable",
-        calibration_level="clean_standard_only",
-        product_transfer_status="not_assessed",
-    )
-    rows = [row, row] if duplicate else [row]
-    write_target_pair_rt_calibration_tsv(path, rows)
 
 
 def test_load_config_rejects_duplicate_target_labels(tmp_path: Path) -> None:
@@ -1028,3 +908,24 @@ def test_retired_resolver_csv_value_is_preserved_while_direct_config_normalizes(
         resolver_mode=resolver_mode,
     )
     assert config.resolver_mode == "savgol"
+
+
+@pytest.mark.parametrize(
+    "key", ["rt_prior_library_path", "target_pair_rt_calibration_path"]
+)
+def test_retired_rt_feedback_requires_explicit_migration(key):
+    with pytest.raises(ConfigError, match=key):
+        migrate_settings_dict({key: "reference.csv"})
+    values, warnings = migrate_settings_dict({key: ""})
+    assert key not in values
+    assert any(key in warning for warning in warnings)
+
+
+def test_learned_delta_relation_requires_explicit_migration(tmp_path):
+    config_dir = tmp_path / "config"
+    _write_settings(config_dir)
+    _write_targets_with_optional_metadata(
+        config_dir, [_target_row(paired_rt_relation="learned_delta_only")]
+    )
+    with pytest.raises(ConfigError, match="learned_delta_only is retired"):
+        load_config(config_dir)

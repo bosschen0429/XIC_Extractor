@@ -43,8 +43,6 @@ CANONICAL_SETTINGS_DEFAULTS: dict[str, str] = {
     "injection_order_source": "",
     "rolling_window_size": "5",
     "dirty_matrix_mode": "false",
-    "rt_prior_library_path": "",
-    "target_pair_rt_calibration_path": "",
     "model_selection_expected_diff_approval_registry": "",
     "targeted_ms1_shape_identity_support_tsv": "",
     "targeted_ms1_shape_identity_activation_policy": LIMITED_HMDC_MEDC_POLICY,
@@ -88,13 +86,6 @@ CANONICAL_SETTINGS_DESCRIPTIONS: dict[str, str] = {
     ),
     "rolling_window_size": "ISTD RT prior 的滾動視窗半徑（±N 個注射）",
     "dirty_matrix_mode": "髒基質模式（放寬 S/N、收緊峰形；尿液等複雜基質用）",
-    "rt_prior_library_path": (
-        "Optional RT prior library CSV resource; preserved separately from method "
-        "parameters. Leave empty to disable."
-    ),
-    "target_pair_rt_calibration_path": (
-        "target pair RT calibration TSV path for RT priors; leave empty to disable"
-    ),
     "model_selection_expected_diff_approval_registry": (
         "Durable expected-diff approval registry TSV for selected-hypothesis "
         "model selection; leave empty unless approved real-data evidence exists"
@@ -143,8 +134,6 @@ METHOD_KEYS = (
 )
 
 RESOURCE_KEYS = (
-    "rt_prior_library_path",
-    "target_pair_rt_calibration_path",
     "model_selection_expected_diff_approval_registry",
     "targeted_ms1_shape_identity_support_tsv",
 )

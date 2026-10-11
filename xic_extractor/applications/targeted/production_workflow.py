@@ -374,7 +374,6 @@ def snapshot_targeted_production_inputs(
         request.config,
         raw_paths=raw_paths,
         injection_order=request.injection_order,
-        rt_prior_library=request.rt_prior_library,
         model_selection_expected_diff_approvals=(
             request.model_selection_expected_diff_approvals
         ),
@@ -412,7 +411,6 @@ def _validate_targeted_production_input_snapshot(
         request.config,
         raw_paths=raw_paths,
         injection_order=request.injection_order,
-        rt_prior_library=request.rt_prior_library,
         model_selection_expected_diff_approvals=(
             request.model_selection_expected_diff_approvals
         ),

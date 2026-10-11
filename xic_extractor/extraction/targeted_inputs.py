@@ -16,11 +16,6 @@ from xic_extractor.configuration.target_identity import (
     target_list_snapshot_payload,
 )
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
-from xic_extractor.extraction.rt_prior_library import (
-    LibraryEntry,
-    load_library,
-    rt_prior_library_from_target_pair_calibration,
-)
 from xic_extractor.injection_rolling import read_injection_order
 from xic_extractor.peak_detection.model_selection import (
     ExpectedDiffApprovalRecord,
@@ -52,7 +47,6 @@ from xic_extractor.sample_metadata import (
     sample_metadata_to_injection_order,
     sample_metadata_to_raw_stem_injection_order,
 )
-from xic_extractor.target_pair_rt_calibration import load_target_pair_rt_calibration
 
 TARGETED_PROCESSING_INPUT_SCHEMA_VERSION = "targeted_extraction_inputs"
 TARGETED_PROCESSING_ALGORITHM_VERSION = "targeted_extraction_algorithm"
@@ -74,7 +68,7 @@ TARGETED_REAL_DATA_DISCOVERY_SETTINGS_SCHEMA_VERSION = (
 @dataclass(frozen=True)
 class ResolvedTargetedInputs:
     injection_order: dict[str, int]
-    rt_prior_library: dict[tuple[str, str], LibraryEntry]
+
     model_selection_expected_diff_approvals: (
         Mapping[str, ExpectedDiffApprovalRecord] | None
     )
@@ -86,7 +80,6 @@ def resolve_targeted_inputs(
     *,
     raw_paths: list[Path],
     injection_order: dict[str, int] | None,
-    rt_prior_library: dict[tuple[str, str], LibraryEntry] | None,
     model_selection_expected_diff_approvals: (
         Mapping[str, ExpectedDiffApprovalRecord] | None
     ),
@@ -98,7 +91,6 @@ def resolve_targeted_inputs(
     )
     return ResolvedTargetedInputs(
         injection_order=resolved_injection_order,
-        rt_prior_library=resolve_rt_prior_library(config, rt_prior_library),
         model_selection_expected_diff_approvals=(
             model_selection_expected_diff_approvals
         ),
@@ -169,11 +161,9 @@ def build_targeted_processing_request_identity(
     )
     scientific_inputs = {
         "settings": {
-            field: getattr(config, field)
-            for field in SCIENTIFIC_SETTING_FIELDS
+            field: getattr(config, field) for field in SCIENTIFIC_SETTING_FIELDS
         },
         "target_list_snapshot": target_list_snapshot_payload(target_snapshot),
-        "rt_prior_library": _rt_prior_snapshot(resolved_inputs.rt_prior_library),
         "model_selection_expected_diff_approvals": _approval_snapshot(
             resolved_inputs.model_selection_expected_diff_approvals
         ),
@@ -487,29 +477,6 @@ def targeted_real_data_discovery_settings_payload(
     return normalized
 
 
-def _rt_prior_snapshot(
-    library: Mapping[tuple[str, str], LibraryEntry],
-) -> list[dict[str, object]]:
-    snapshot: list[dict[str, object]] = []
-    for (target_label, role), entry in sorted(library.items()):
-        if (entry.target_label, entry.role) != (target_label, role):
-            raise IdentityContractError(
-                "RT-prior mapping key must match the bound LibraryEntry"
-            )
-        snapshot.append(
-            {
-                "target_label": target_label,
-                "role": role,
-                "istd_pair": entry.istd_pair,
-                "median_delta_rt": entry.median_delta_rt,
-                "sigma_delta_rt": entry.sigma_delta_rt,
-                "median_abs_rt": entry.median_abs_rt,
-                "sigma_abs_rt": entry.sigma_abs_rt,
-            }
-        )
-    return snapshot
-
-
 def _approval_snapshot(
     approvals: Mapping[str, ExpectedDiffApprovalRecord] | None,
 ) -> list[dict[str, object]]:
@@ -575,23 +542,6 @@ def _read_injection_order_source(
         )
     injection_order = read_injection_order(path)
     return injection_order, injection_order
-
-
-def resolve_rt_prior_library(
-    config: ExtractionConfig,
-    rt_prior_library: dict[tuple[str, str], LibraryEntry] | None,
-) -> dict[tuple[str, str], LibraryEntry]:
-    if config.target_pair_rt_calibration_path is not None:
-        calibration_rows = load_target_pair_rt_calibration(
-            config.target_pair_rt_calibration_path,
-            expected_target_config_hash=config.target_config_hash or None,
-        )
-        return rt_prior_library_from_target_pair_calibration(calibration_rows)
-    if rt_prior_library is not None:
-        return rt_prior_library
-    if config.rt_prior_library_path is None:
-        return {}
-    return load_library(config.rt_prior_library_path, config.config_hash)
 
 
 def resolve_model_selection_expected_diff_approvals(

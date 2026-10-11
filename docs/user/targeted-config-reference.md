@@ -63,11 +63,16 @@ choosing one silently.
 | `count_no_ms2_as_detected` | bool | `false` | Legacy fallback for rows without formal projection fields; does not override the Targeted projection's `Counted Detection` (see [Decision Policy](../product/decision-policy.md)) |
 | `dirty_matrix_mode` | bool | `false` | Relax S/N and tighten peak shape criteria for complex matrices (e.g., urine) |
 
-### ISTD RT Prior
+### Within-batch ISTD Context
 
 | Field | Type | Default | Description |
 | --- | --- | --- | --- |
 | `rolling_window_size` | int | 5 | Rolling window radius for ISTD RT prior (±N injections) |
+
+This reviews ISTD consistency within the batch. An analyte instead uses its
+credible paired ISTD from the current sample, transferring the observed shift
+while retaining the configured target/ISTD midpoint difference. Missing or
+untrusted pairs do not borrow an anchor from another sample.
 
 ### Debug and Audit
 
@@ -91,8 +96,6 @@ preserves their selected values; they are not counted as scalar method changes.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `rt_prior_library_path` | path | Debug RT prior library CSV |
-| `target_pair_rt_calibration_path` | path | Target-pair RT calibration TSV for RT priors |
 | `model_selection_expected_diff_approval_registry` | path | Expected-diff approval registry TSV |
 | `targeted_ms1_shape_identity_support_tsv` | path | Reviewed MS1 shape-identity support TSV |
 | `targeted_ms1_shape_identity_activation_policy` | enum | `limited_5hmdc_5medc` or `explicit_support_tsv` |
@@ -129,7 +132,7 @@ identifier in workbook output and downstream CSV files.
 | `is_istd` | bool | `false` | Whether this target is an internal standard |
 | `istd_pair` | string | *(empty)* | Label of the paired ISTD. Must reference a row with `is_istd=true`. Empty if this row is itself an ISTD |
 | `isotope_label_type` | enum | `unknown` | `unknown`, `deuterated`, or `heavy_non_deuterium` |
-| `paired_rt_relation` | enum | `none` | `none`, `istd_not_later_than_pair`, or `learned_delta_only` |
+| `paired_rt_relation` | enum | `none` | `none` or `istd_not_later_than_pair` |
 | `sample_applicability` | enum | `all` | `all` or `rna_containing` |
 
 ### ISTD Pairing Rules
@@ -148,5 +151,15 @@ existing settings CSVs; there is no compatibility alias. Candidate-sidecar
 verification and the dedicated shadow/pressure review commands are unavailable.
 Use [XIC Inspector](../product/xic-inspector.md) for visual review of its supported retained
 evidence sources. Inspector does not apply candidate switches or generate RT
-reselection comparison tables. `target_pair_rt_calibration_path` remains an
-RT-prior input; formal peak selection and numerical output remain owner-controlled.
+reselection comparison tables. Formal peak selection and numerical output remain
+owner-controlled.
+
+## Retired RT feedback inputs
+
+Remove `rt_prior_library_path` and `target_pair_rt_calibration_path` from existing
+settings. Nonempty values are rejected: the current sample's paired ISTD now
+provides its reference directly, without CSV feedback. Historical method
+manifests from the earlier RT policy cannot be replayed as equivalent current
+runs; start a new run with the current method instead.
+The unused `paired_rt_relation=learned_delta_only` value is also rejected;
+use `none`, or the applicable deuterated relation declaration.

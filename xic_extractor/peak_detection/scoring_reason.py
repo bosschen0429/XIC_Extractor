@@ -7,7 +7,6 @@ _EVIDENCE_REASON_LABELS = {
     "strict_nl_ok": "strict NL OK",
     "no_nl_required": "no NL required",
     "rt_prior_close": "RT prior close",
-    "paired_istd_aligned": "paired ISTD aligned",
     "ms2_trace_strong": "MS2 trace strong",
     "ms2_trace_moderate": "MS2 trace moderate",
     "cwt_same_apex_support": "CWT same-apex support",

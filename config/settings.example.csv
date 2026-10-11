@@ -9,8 +9,6 @@ count_no_ms2_as_detected,FALSE,相容性 evidence 設定；正式 Targeted produ
 keep_intermediate_csv,false,是否保留中間 CSV 檔（除錯用，預設關閉）
 emit_review_report,false,是否輸出 Review Report HTML（預設關閉）
 parallel_mode,process,執行後端（serial 或 process；預設 process）
-rt_prior_library_path,,Optional RT prior library CSV resource; leave empty to disable
-target_pair_rt_calibration_path,,target pair RT calibration TSV path for RT priors; leave empty to disable
 model_selection_expected_diff_approval_registry,,Durable expected-diff approval registry TSV for selected-hypothesis model selection; leave empty unless approved real-data evidence exists
 targeted_ms1_shape_identity_support_tsv,,Reviewed targeted_ms1_shape_identity support TSV for explicit own-max same-peak NL_FAIL support; leave empty to let the limited default auto workflow decide eligible support rows
 targeted_ms1_shape_identity_activation_policy,limited_5hmdc_5medc,Targeted MS1 shape identity activation policy: limited_5hmdc_5medc default auto workflow or explicit_support_tsv explicit-only mode

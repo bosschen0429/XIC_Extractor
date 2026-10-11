@@ -5,9 +5,9 @@ d3-5-hmdC,261.127276,8,10,20,116.0474,20,50,TRUE,,deuterated,,
 d3-5-medC,245.132362,11,13,20,116.0474,20,50,TRUE,,deuterated,,
 N6-HE-dA,296.1354,22,25,20,116.0474,20,50,FALSE,d4-N6-2HE-dA,,istd_not_later_than_pair,
 d4-N6-2HE-dA,300.1605,22,25,20,116.0474,20,50,TRUE,,deuterated,,
-8-oxodG,284.0989,16,18,20,116.0474,20,50,FALSE,15N5-8-oxodG,,learned_delta_only,
+8-oxodG,284.0989,16,18,20,116.0474,20,50,FALSE,15N5-8-oxodG,,none,
 15N5-8-oxodG,289.0841,16,18,20,116.0474,20,50,TRUE,,heavy_non_deuterium,,
-8-oxo-Guo,300.0939,13,15,20,132.0423,20,50,FALSE,"[13C,15N2]-8-oxo-Guo",,learned_delta_only,rna_containing
+8-oxo-Guo,300.0939,13,15,20,132.0423,20,50,FALSE,"[13C,15N2]-8-oxo-Guo",,none,rna_containing
 "[13C,15N2]-8-oxo-Guo",303.0913,13,15,20,132.0423,20,50,TRUE,,heavy_non_deuterium,,
 N6-medA,266.1248,24,27,20,116.0474,20,50,FALSE,d3-N6-medA,,istd_not_later_than_pair,
 d3-N6-medA,269.1436,24,27,20,116.0474,20,50,TRUE,,deuterated,,

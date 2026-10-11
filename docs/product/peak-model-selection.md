@@ -28,7 +28,7 @@ through parity or explicit expected-diff approval.
 | --- | --- | --- | --- | --- |
 | clean single peak | `score_candidate`, `select_candidate_with_confidence` | One selected hypothesis, accepted decision, same confidence/reason | future_policy | parity |
 | confidence rank | confidence ordering | Stronger confidence wins unless stricter RT/evidence gate overrides | future_policy | parity first |
-| role-aware RT prior / ISTD | `ScoringContext.rt_prior`, `prefer_rt_prior_tiebreak` | RT is contextual support for paired ISTD/STD, not standalone veto | future_policy | parity first, expected-diff with approved record |
+| role-aware RT context / ISTD | Current-sample paired reference and `ScoringContext.rt_prior` for rolling ISTD context | RT is contextual support, not standalone veto or a second analyte prior bonus | future_policy | parity first, expected-diff with approved record |
 | strict selection RT | `strict_selection_rt` key path | Strict RT request preserves selected RT behavior | future_policy | parity |
 | final intensity tie-break | selection key fallback | Deterministic tie-break when evidence and RT are equal | compat_projection | parity while public |
 | local S/N with AsLS | `local_sn_severity`, `baseline_array`, `residual_mad` | Local S/N is baseline-aware evidence, not linear-edge truth | future_policy | parity first |

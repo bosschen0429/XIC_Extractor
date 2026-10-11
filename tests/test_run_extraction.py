@@ -44,7 +44,6 @@ def _isolate_cli_shell_from_production_workflow(monkeypatch):
                 progress_callback=request.progress_callback,
                 should_stop=request.should_stop,
                 injection_order=request.injection_order,
-                rt_prior_library=request.rt_prior_library,
                 model_selection_expected_diff_approvals=approvals,
             )
             module.write_method_manifest(
@@ -1062,7 +1061,6 @@ def _fake_run(calls: dict[str, object]):
         progress_callback=None,
         should_stop=None,
         injection_order=None,
-        rt_prior_library=None,
         model_selection_expected_diff_approvals=None,
     ):
         calls["run_config"] = config
@@ -1072,7 +1070,7 @@ def _fake_run(calls: dict[str, object]):
         )
         calls["should_stop"] = should_stop
         calls["injection_order"] = injection_order
-        calls["rt_prior_library"] = rt_prior_library
+
         if progress_callback is not None:
             progress_callback(1, 2, "SampleA.raw")
         output = RunOutput(

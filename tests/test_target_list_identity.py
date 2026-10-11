@@ -50,7 +50,7 @@ def test_target_reorder_invalidates_ordered_snapshot_not_definition_identity() -
     analyte = replace(
         _target(),
         istd_pair="ISTD",
-        paired_rt_relation="learned_delta_only",
+        paired_rt_relation="none",
     )
     istd = replace(
         analyte,

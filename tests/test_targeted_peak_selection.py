@@ -521,7 +521,7 @@ def test_hypothesis_policy_can_switch_to_paired_ratio_supported_nl_dropout(
                     "local_sn_strong",
                     "shape_clean",
                     "trace_clean",
-                    "paired_istd_aligned",
+                    "paired_istd_rt_close",
                     "paired_area_ratio_plausible",
                 ),
                 concern_labels=("nl_fail",),
@@ -1050,21 +1050,21 @@ def _score(
         confidence=confidence,
         reason=f"decision: {confidence.lower()}",
         raw_score=(
-            raw_score
-            if raw_score is not None
-            else 90
-            if confidence == "HIGH"
-            else 40
+            raw_score if raw_score is not None else 90 if confidence == "HIGH" else 40
         ),
         support_labels=(
             support_labels
             if support_labels is not None
-            else ("strict_nl_ok",) if confidence == "HIGH" else ()
+            else ("strict_nl_ok",)
+            if confidence == "HIGH"
+            else ()
         ),
         concern_labels=(
             concern_labels
             if concern_labels is not None
-            else () if confidence == "HIGH" else ("low_score",)
+            else ()
+            if confidence == "HIGH"
+            else ("low_score",)
         ),
         cap_labels=cap_labels,
     )

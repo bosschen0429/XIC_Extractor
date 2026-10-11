@@ -18,9 +18,7 @@ from xic_extractor.configuration.parsing import (
 LOGGER = logging.getLogger(__name__)
 
 ISOTOPE_LABEL_TYPES = frozenset({"deuterated", "heavy_non_deuterium", "unknown"})
-PAIRED_RT_RELATIONS = frozenset(
-    {"istd_not_later_than_pair", "learned_delta_only", "none"}
-)
+PAIRED_RT_RELATIONS = frozenset({"istd_not_later_than_pair", "none"})
 SAMPLE_APPLICABILITIES = frozenset({"all", "rna_containing"})
 
 
@@ -242,6 +240,15 @@ def _parse_target_metadata_enum(
     normalized = value.strip().lower()
     if normalized == "":
         return default
+    if field == "paired_rt_relation" and normalized == "learned_delta_only":
+        raise _config_error(
+            path,
+            row_number,
+            field,
+            value,
+            "learned_delta_only is retired; use none and current-run paired ISTD "
+            "RT reference, then re-run using the current method",
+        )
     if normalized not in allowed:
         raise _config_error(
             path,

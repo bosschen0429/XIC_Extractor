@@ -13,7 +13,6 @@ import xic_extractor.processing_identity as processing_identity_module
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.target_identity import mint_target_list_snapshot
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
-from xic_extractor.extraction.rt_prior_library import LibraryEntry
 from xic_extractor.extraction.targeted_inputs import (
     TARGETED_PROCESSING_ALGORITHM_VERSION,
     TARGETED_PROCESSING_CONTRACT_VERSION,
@@ -454,7 +453,6 @@ def test_real_data_discovery_settings_change_processing_request_identity(
     path = _raw(tmp_path / "sample_a.raw", b"source-a")
     resolved = ResolvedTargetedInputs(
         injection_order={"sample_a": 1},
-        rt_prior_library={},
         model_selection_expected_diff_approvals=None,
     )
     settings = DiscoverySettings(
@@ -499,7 +497,6 @@ def test_adapter_input_key_change_invalidates_request_not_source_content(
         [original_path],
         resolved=ResolvedTargetedInputs(
             injection_order={"sample_a": 1},
-            rt_prior_library={},
             model_selection_expected_diff_approvals=None,
         ),
     )
@@ -508,7 +505,6 @@ def test_adapter_input_key_change_invalidates_request_not_source_content(
         [renamed_path],
         resolved=ResolvedTargetedInputs(
             injection_order={"renamed_sample": 1},
-            rt_prior_library={},
             model_selection_expected_diff_approvals=None,
         ),
     )
@@ -517,7 +513,7 @@ def test_adapter_input_key_change_invalidates_request_not_source_content(
     assert original.processing_request_id != renamed.processing_request_id
 
 
-def test_request_invalidates_changed_source_target_rt_prior_or_approval(
+def test_request_invalidates_changed_source_target_window_or_approval(
     tmp_path: Path,
 ) -> None:
     first = _raw(tmp_path / "sample_a.raw", b"source-a")
@@ -535,16 +531,11 @@ def test_request_invalidates_changed_source_target_rt_prior_or_approval(
         resolved=inputs,
         targets=(replace(_target(), mz=251.0),),
     )
-    prior = inputs.rt_prior_library[("Analyte", "analyte")]
     rt_changed = _request(
         config,
         paths,
-        resolved=replace(
-            inputs,
-            rt_prior_library={
-                ("Analyte", "analyte"): replace(prior, median_abs_rt=2.5)
-            },
-        ),
+        resolved=inputs,
+        targets=(replace(_target(), rt_max=2.5),),
     )
     approval = inputs.model_selection_expected_diff_approvals["approval-1"]
     approval_changed = _request(
@@ -575,7 +566,6 @@ def test_request_pins_owner_target_snapshot_order(tmp_path: Path) -> None:
     raw_path = _raw(tmp_path / "sample_a.raw", b"source-a")
     resolved = ResolvedTargetedInputs(
         injection_order={"sample_a": 1},
-        rt_prior_library={},
         model_selection_expected_diff_approvals=None,
     )
 
@@ -608,7 +598,6 @@ def test_request_invalidates_ms1_shape_support_content_or_policy(
     )
     resolved = ResolvedTargetedInputs(
         injection_order={"sample_a": 1},
-        rt_prior_library={},
         model_selection_expected_diff_approvals=None,
     )
     baseline = _request(config, [raw_path], resolved=resolved)
@@ -668,7 +657,6 @@ def test_none_and_empty_approval_snapshots_are_same_effective_input(
     config = _config(tmp_path)
     base = ResolvedTargetedInputs(
         injection_order={"sample_a": 1},
-        rt_prior_library={},
         model_selection_expected_diff_approvals=None,
     )
 
@@ -697,10 +685,7 @@ def test_request_snapshot_is_immutable_after_caller_mapping_mutation(
     request = _request(config, paths, resolved=inputs)
     original_id = request.processing_request_id
 
-    inputs.rt_prior_library[("Analyte", "analyte")] = replace(
-        inputs.rt_prior_library[("Analyte", "analyte")],
-        median_abs_rt=9.0,
-    )
+    inputs.injection_order["sample_a"] = 9
     inputs.model_selection_expected_diff_approvals.clear()
 
     assert request.processing_request_id == original_id
@@ -748,7 +733,6 @@ def test_missing_ambiguous_or_rebound_inputs_fail_closed(tmp_path: Path) -> None
             [first],
             resolved=ResolvedTargetedInputs(
                 injection_order={"sample_a": 1},
-                rt_prior_library={},
                 model_selection_expected_diff_approvals={"wrong-key": approval},
             ),
         )
@@ -762,7 +746,6 @@ def test_missing_ambiguous_or_rebound_inputs_fail_closed(tmp_path: Path) -> None
         [first],
         resolved=ResolvedTargetedInputs(
             injection_order={"sample_a": 1},
-            rt_prior_library={},
             model_selection_expected_diff_approvals=None,
         ),
     )
@@ -881,7 +864,6 @@ def test_sample_metadata_alias_projection_builds_targeted_request(
         config,
         raw_paths=[raw_path],
         injection_order=None,
-        rt_prior_library={},
         model_selection_expected_diff_approvals=None,
     )
 
@@ -901,7 +883,6 @@ def test_retry_issues_new_attempt_without_mutating_request_or_predecessor(
         [path],
         resolved=ResolvedTargetedInputs(
             injection_order={"sample_a": 1},
-            rt_prior_library={},
             model_selection_expected_diff_approvals=None,
         ),
     )
@@ -925,7 +906,6 @@ def test_retry_issues_new_attempt_without_mutating_request_or_predecessor(
         [path],
         resolved=ResolvedTargetedInputs(
             injection_order={"sample_a": 1},
-            rt_prior_library={},
             model_selection_expected_diff_approvals=None,
         ),
     )
@@ -1000,20 +980,6 @@ def _raw(path: Path, content: bytes) -> Path:
 def _resolved_inputs() -> ResolvedTargetedInputs:
     return ResolvedTargetedInputs(
         injection_order={"sample_a": 1, "sample_b": 2},
-        rt_prior_library={
-            ("Analyte", "analyte"): LibraryEntry(
-                config_hash="legacy-fragment",
-                target_label="Analyte",
-                role="analyte",
-                istd_pair="",
-                median_delta_rt=None,
-                sigma_delta_rt=None,
-                median_abs_rt=1.5,
-                sigma_abs_rt=0.2,
-                n_samples=8,
-                updated_at="2026-07-25T00:00:00Z",
-            )
-        },
         model_selection_expected_diff_approvals={"approval-1": _approval()},
     )
 

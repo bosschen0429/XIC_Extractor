@@ -99,14 +99,18 @@ def _write_temp_settings(
     with source.open(newline="", encoding="utf-8-sig") as handle:
         rows = list(csv.DictReader(handle))
 
+    rows = [
+        row
+        for row in rows
+        if row["key"]
+        not in {"rt_prior_library_path", "target_pair_rt_calibration_path"}
+    ]
     for row in rows:
         key = row["key"]
         if key == "data_dir":
             row["value"] = str(data_dir)
         elif key == "injection_order_source":
             row["value"] = str(injection_order_source)
-        elif key == "rt_prior_library_path":
-            row["value"] = ""
 
     with destination.open("w", newline="", encoding="utf-8-sig") as handle:
         writer = csv.DictWriter(handle, fieldnames=["key", "value", "description"])
@@ -185,7 +189,4 @@ print(json.dumps(payload))
         text=True,
     )
     payload = json.loads(completed.stdout)
-    return {
-        tuple(key.split("\t", maxsplit=1)): value
-        for key, value in payload.items()
-    }
+    return {tuple(key.split("\t", maxsplit=1)): value for key, value in payload.items()}

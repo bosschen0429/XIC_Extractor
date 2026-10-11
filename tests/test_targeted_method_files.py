@@ -293,7 +293,7 @@ def test_preparation_rejects_workspace_and_explicit_resource_bindings(tmp_path):
         files.apply_targeted_method(current, files.create_targeted_method({}, rows()))
 
 
-def test_freezing_order_cannot_silently_invalidate_config_hash_bound_legacy_prior(
+def test_preparation_rejects_retired_prior_before_freezing_inputs(
     tmp_path,
 ):
     from xic_extractor.configuration.loader import prepare_targeted_config
@@ -308,7 +308,7 @@ def test_freezing_order_cannot_silently_invalidate_config_hash_bound_legacy_prio
         },
     )
     original = (config_dir / "settings.csv").read_bytes()
-    with pytest.raises(ConfigError, match="config_hash 綁定"):
+    with pytest.raises(ConfigError, match="rt_prior_library_path"):
         prepare_targeted_config(config_dir)
     assert (config_dir / "settings.csv").read_bytes() == original
     assert not (tmp_path / "output").exists()

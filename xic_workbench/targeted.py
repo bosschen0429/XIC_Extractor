@@ -279,18 +279,6 @@ _SETTING_FIELDS: tuple[tuple[str, str, str, dict[str, Any]], ...] = (
         {"help": "放寬 S/N、收緊峰形；用於尿液等複雜基質。"},
     ),
     (
-        "rt_prior_library_path",
-        "RT prior 參考資料庫",
-        "file",
-        {"help": "一般使用請留空。"},
-    ),
-    (
-        "target_pair_rt_calibration_path",
-        "Target pair RT 校正",
-        "file",
-        {"help": "RT prior 使用的 TSV；留空停用。"},
-    ),
-    (
         "model_selection_expected_diff_approval_registry",
         "預期差異核准紀錄",
         "file",

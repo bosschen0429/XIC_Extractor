@@ -16,6 +16,7 @@ from xic_extractor.configuration.hashing import (
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.configuration.settings import (
     build_extraction_config,
+    reject_retired_rt_reference_inputs,
     resolve_settings,
 )
 from xic_extractor.configuration.target_identity import (
@@ -29,7 +30,6 @@ from xic_extractor.configuration.targeted_method_files import (
     load_targeted_method,
 )
 from xic_extractor.configuration.targets import _read_targets
-from xic_extractor.target_pair_rt_calibration import load_target_pair_rt_calibration
 
 LOGGER = logging.getLogger(__name__)
 
@@ -63,6 +63,7 @@ def prepare_targeted_config(
     settings_bytes = settings_path.read_bytes()
     raw = _parse_settings_csv_bytes(settings_bytes, settings_path)
     overrides = dict(settings_overrides or {})
+    reject_retired_rt_reference_inputs({**raw, **overrides})
     if (
         method_dir is not None
         and overrides.get("data_dir")
@@ -82,12 +83,6 @@ def prepare_targeted_config(
         else {**raw, **overrides}
     )
     order_source = values.get("injection_order_source", "").strip()
-    if order_source and values.get("rt_prior_library_path", "").strip():
-        raise ConfigError(
-            "此設定同時使用 injection_order_source 與 config_hash 綁定的 "
-            "rt_prior_library_path；目前無法安全凍結順序資料而保留舊 RT prior。"
-            "原設定保留，請使用現有完整設定 CLI 執行，或明確提供可轉移的參考資料。"
-        )
     targets_bytes = (
         None
         if method is not None
@@ -177,9 +172,4 @@ def load_config(
             "target_config_hash": target_config_hash,
         }
     )
-    if config.target_pair_rt_calibration_path is not None:
-        load_target_pair_rt_calibration(
-            config.target_pair_rt_calibration_path,
-            expected_target_config_hash=target_config_hash,
-        )
     return config, targets

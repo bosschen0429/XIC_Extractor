@@ -133,24 +133,10 @@ def select_candidate_with_confidence(
                 -_ms2_trace_selection_tiebreak(scored_candidate),
                 -candidate.selection_apex_intensity,
             )
-        if (
-            scored_candidate.prefer_rt_prior_tiebreak
-            and scored_candidate.prior_rt is not None
-            and selection_rt is None
-            and scored_candidate.evidence_score is None
-        ):
-            return (
-                float(confidence_rank),
-                distance,
-                selection_quality_penalty,
-                0.0,
-                -candidate.selection_apex_intensity,
-            )
         if selection_reference is not None:
             if scored_candidate.evidence_score is None:
                 adjusted_distance = distance + (
-                    selection_quality_penalty
-                    * _SELECTION_QUALITY_DISTANCE_WEIGHT_MIN
+                    selection_quality_penalty * _SELECTION_QUALITY_DISTANCE_WEIGHT_MIN
                 )
                 return (
                     float(confidence_rank),
@@ -373,10 +359,7 @@ def _strong_paired_istd_chrom_segment_anchor(facts: CandidateEvidenceFacts) -> b
         return False
     if facts.rt.paired_istd_delta_min is None:
         return False
-    if (
-        facts.rt.paired_istd_delta_min
-        > _PAIRED_ISTD_STRONG_CHROM_SEGMENT_DELTA_MAX_MIN
-    ):
+    if facts.rt.paired_istd_delta_min > _PAIRED_ISTD_STRONG_CHROM_SEGMENT_DELTA_MAX_MIN:
         return False
     if facts.trace.hard_quality_flags:
         return False
@@ -441,10 +424,7 @@ def _typed_strict_anchor_area_demotion_rank(
         other_distance = abs(other_facts.rt.selected_apex_rt_min - selection_rt)
         if other_distance > _LOW_SCAN_STRONGER_CANDIDATE_MAX_SELECTION_DISTANCE_MIN:
             continue
-        if (
-            distance - other_distance
-            < _STRICT_ANCHOR_AREA_MIN_DISTANCE_ADVANTAGE_MIN
-        ):
+        if distance - other_distance < _STRICT_ANCHOR_AREA_MIN_DISTANCE_ADVANTAGE_MIN:
             continue
         if _chemical_rank(other_facts) > _chemical_rank(facts):
             continue
@@ -555,8 +535,7 @@ def _has_much_stronger_supported_alternative(
         )
         extended_area_support = (
             reference is None
-            or candidate_distance
-            <= _LOW_SCAN_STRONGER_CANDIDATE_EXTENDED_DISTANCE_MIN
+            or candidate_distance <= _LOW_SCAN_STRONGER_CANDIDATE_EXTENDED_DISTANCE_MIN
         ) and _candidate_abundance(candidate) >= (
             chosen_abundance * _LOW_SCAN_STRONGER_CANDIDATE_AREA_RATIO
         )

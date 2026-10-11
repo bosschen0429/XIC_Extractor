@@ -47,8 +47,6 @@ class ExtractionConfig:
     injection_order_source: Path | None = None
     rolling_window_size: int = 5
     dirty_matrix_mode: bool = False
-    rt_prior_library_path: Path | None = None
-    target_pair_rt_calibration_path: Path | None = None
     model_selection_expected_diff_approval_registry: Path | None = None
     targeted_ms1_shape_identity_support_tsv: Path | None = None
     targeted_ms1_shape_identity_activation_policy: str = EXPLICIT_SUPPORT_TSV_POLICY

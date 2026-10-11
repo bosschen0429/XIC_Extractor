@@ -43,7 +43,7 @@ private lab paths.
 | DLL directory | Folder containing Thermo RawFileReader DLLs |
 | Target table | Labels, m/z, RT windows, ppm tolerance, NL mass, and ISTD pairing |
 | Reusable analysis method | Eleven method parameters plus the complete targets/ISTD table; Gaussian smoothing is fixed |
-| Resources | Optional RT prior/calibration, registry, and reviewed support inputs |
+| Resources | Optional expected-diff registry and reviewed support inputs |
 | Environment and output | DLL, workers, and output controls; not method customization |
 
 Target labels become public workbook and CSV identifiers. Rename them only when
@@ -63,12 +63,14 @@ save a new version under a new name.
 
 Portable methods currently do not support external scientific resource bindings.
 Saving or switching a resource-bound configuration is rejected rather than
-silently discarding or inheriting priors, calibration, approvals or support.
+silently discarding or inheriting approvals or support.
 Continue using the complete workspace configuration for those methods.
-Workbench also rejects the legacy combination of an injection-order file and
-a config-hash-bound RT prior library: freezing the order changes its path and
-therefore the config hash. Use the existing full-configuration CLI for that
-combination; the GUI must not silently lose the prior during input freezing.
+
+The current sample's credible paired ISTD supplies the RT shift directly;
+the configured analyte/ISTD midpoint difference is preserved. You do not create
+or reload an RT-prior/pair calibration CSV. Keep the target identities, pairing
+and RT windows appropriate for the method and batch: a detected ISTD does not
+automatically establish every analyte's identity.
 
 The CLI accepts `--method-dir <folder>` with the same method format, plus
 `--data-dir <new-batch>` and the existing workspace/local settings. Its run
