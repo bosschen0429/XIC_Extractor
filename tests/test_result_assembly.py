@@ -523,6 +523,36 @@ def test_istd_trace_conflict_with_product_support_stays_counted(
     assert "trace_morphology_review" in projection.review_reasons
 
 
+@pytest.mark.parametrize("unresolved", [(), ("identity_conflict",)])
+def test_istd_combined_reviews_preserve_unresolved_conflicts(
+    unresolved: tuple[str, ...],
+) -> None:
+    result = _result_with_targeted_projection_semantics(
+        target=_target(is_istd=True),
+        support_reasons=("ms1_coherent", "candidate_aligned_ms2_nl"),
+        conflict_reasons=(
+            "targeted_rt_conflict",
+            "trace_morphology_conflict",
+            *unresolved,
+        ),
+        quality_flags=("too_broad",),
+    )
+
+    projection = result.targeted_product_projection
+    assert projection is not None
+    assert projection.conflict_reasons == unresolved
+    assert projection.review_reasons == (
+        "trace_morphology_review",
+        "targeted_rt_review",
+    )
+    assert projection.counted_detection is (not unresolved)
+    assert projection.product_state == (
+        "ambiguous" if unresolved else "detected_flagged"
+    )
+    assert result.reported_rt == 8.5
+    assert result.reported_peak_area == 1234.5
+
+
 def test_istd_rt_conflict_with_nl_dropout_stays_counted_when_ms1_coherent() -> None:
     result = _result_with_targeted_projection_semantics(
         target=_target(is_istd=True),

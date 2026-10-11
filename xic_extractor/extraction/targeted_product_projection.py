@@ -46,7 +46,7 @@ def project_targeted_result(
                 "support_reasons",
             ),
         )
-    conflicts = _projection_conflict_reasons(
+    conflicts, conflict_reviews = _projection_conflicts_and_reviews(
         result,
         semantics,
         target=target,
@@ -71,8 +71,8 @@ def project_targeted_result(
         result,
         semantics,
         conflicts,
+        conflict_reviews=conflict_reviews,
         target=target,
-        sample_name=sample_name,
         support_reasons=support,
     )
     if selection_decision is not None:
@@ -89,8 +89,6 @@ def project_targeted_result(
         semantics,
         review,
         conflicts,
-        target=target,
-        support_reasons=support,
     )
     if selection_decision is not None:
         not_counted = _merge_reasons(
@@ -170,55 +168,51 @@ def _projection_support_context(
     return _unique(reasons)
 
 
-def _projection_conflict_reasons(
+def _projection_conflicts_and_reviews(
     result: ExtractionResult,
     semantics: EvidenceDecisionSemantics | None,
     *,
     target: Target,
     support_reasons: tuple[str, ...],
     sample_name: str = "",
-) -> tuple[str, ...]:
-    reasons: list[str] = []
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Classify each conflict once; review rendering consumes that same answer."""
+    conflicts: list[str] = []
+    trace_review = False
+    rt_review = False
     if semantics is not None:
-        reasons.extend(
-            reason
-            for reason in semantics.conflict_reasons
-            if not _downgrade_nl_conflict_to_istd_review(result, reason)
-            and not _downgrade_rt_conflict_to_istd_review(
-                result,
-                target,
-                reason,
-                support_reasons,
-            )
-            and not _downgrade_rt_conflict_to_nl_supported_analyte_review(
-                result,
-                target,
-                reason,
-                support_reasons,
-                sample_name,
-            )
-            and not _downgrade_trace_conflict_to_istd_review(
-                result,
-                target,
-                reason,
-                support_reasons,
-            )
-            and not _downgrade_trace_conflict_to_paired_analyte_review(
-                result,
-                target,
-                reason,
-                support_reasons,
-            )
-        )
-        reasons.extend(semantics.ambiguity_reasons)
-    for flag in hard_quality_flags(result.quality_flags):
-        if not _downgrade_quality_flag_to_review(
-            result,
-            target,
-            support_reasons,
-        ):
-            reasons.append(f"hard_quality_flag:{flag}")
-    return _unique(reasons)
+        for reason in semantics.conflict_reasons:
+            if _downgrade_nl_conflict_to_istd_review(result, reason):
+                continue
+            if _downgrade_rt_conflict_to_istd_review(
+                result, target, reason, support_reasons
+            ) or _downgrade_rt_conflict_to_nl_supported_analyte_review(
+                result, target, reason, support_reasons, sample_name
+            ):
+                rt_review = True
+            elif _downgrade_trace_conflict_to_istd_review(
+                result, target, reason, support_reasons
+            ) or _downgrade_trace_conflict_to_paired_analyte_review(
+                result, target, reason, support_reasons
+            ):
+                trace_review = True
+            else:
+                conflicts.append(reason)
+        conflicts.extend(semantics.ambiguity_reasons)
+    hard_flags = hard_quality_flags(result.quality_flags)
+    quality_review = bool(hard_flags) and _downgrade_quality_flag_to_review(
+        result, target, support_reasons
+    )
+    if not quality_review:
+        conflicts.extend(f"hard_quality_flag:{flag}" for flag in hard_flags)
+    reviews = []
+    if trace_review:
+        reviews.append("trace_morphology_review")
+    if rt_review:
+        reviews.append("targeted_rt_review")
+    if semantics is not None and quality_review:
+        reviews.append("trace_morphology_review")
+    return _unique(conflicts), _unique(reviews)
 
 
 def _downgrade_nl_conflict_to_istd_review(
@@ -285,17 +279,10 @@ def _downgrade_trace_conflict_to_istd_review(
     reason: str,
     support_reasons: tuple[str, ...],
 ) -> bool:
-    return (
-        reason in {"trace_morphology_conflict", "hard_local_quality_conflict"}
-        and result.role.upper() == "ISTD"
-        and _positive(result.reported_rt)
-        and _positive(result.reported_peak_area)
-        and "candidate_aligned_ms2_nl" in support_reasons
-        and (
-            "role_aware_rt_support" in support_reasons
-            or _rt_inside_target_window(result.reported_rt, target)
-        )
-    )
+    return reason in {
+        "trace_morphology_conflict",
+        "hard_local_quality_conflict",
+    } and _istd_has_product_supported_peak(result, target, support_reasons)
 
 
 def _downgrade_trace_conflict_to_paired_analyte_review(
@@ -445,9 +432,9 @@ def _projection_review_reasons(
     semantics: EvidenceDecisionSemantics | None,
     conflict_reasons: tuple[str, ...],
     *,
+    conflict_reviews: tuple[str, ...],
     target: Target,
     support_reasons: tuple[str, ...],
-    sample_name: str = "",
 ) -> tuple[str, ...]:
     reasons: list[str] = []
     if semantics is not None:
@@ -463,44 +450,7 @@ def _projection_review_reasons(
             )
         ):
             reasons.append("paired_analyte_nl_review")
-        if any(
-            _downgrade_trace_conflict_to_istd_review(
-                result,
-                target,
-                reason,
-                support_reasons,
-            )
-            or _downgrade_trace_conflict_to_paired_analyte_review(
-                result,
-                target,
-                reason,
-                support_reasons,
-            )
-            for reason in semantics.conflict_reasons
-        ):
-            reasons.append("trace_morphology_review")
-        if any(
-            _downgrade_rt_conflict_to_istd_review(
-                result,
-                target,
-                reason,
-                support_reasons,
-            )
-            or _downgrade_rt_conflict_to_nl_supported_analyte_review(
-                result,
-                target,
-                reason,
-                support_reasons,
-                sample_name,
-            )
-            for reason in semantics.conflict_reasons
-        ):
-            reasons.append("targeted_rt_review")
-        has_raw_hard_flags = hard_quality_flags(result.quality_flags)
-        if has_raw_hard_flags and _downgrade_quality_flag_to_review(
-            result, target, support_reasons
-        ):
-            reasons.append("trace_morphology_review")
+        reasons.extend(conflict_reviews)
     if (
         result.role.upper() == "ISTD"
         and result.nl_token == "NL_FAIL"
@@ -524,9 +474,6 @@ def _projection_not_counted_reasons(
     semantics: EvidenceDecisionSemantics | None,
     review_reasons: tuple[str, ...],
     conflict_reasons: tuple[str, ...],
-    *,
-    target: Target,
-    support_reasons: tuple[str, ...],
 ) -> tuple[str, ...]:
     reasons: list[str] = []
     if semantics is not None:
