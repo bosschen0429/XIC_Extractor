@@ -297,8 +297,6 @@ contract says otherwise.
 - `review_action`: typed action-import schema for converting human review
   decisions into machine-checkable plans without silently editing product
   values.
-- `method_manifest.json`: machine-readable run envelope for effective input
-  hashes, settings, runtime, invocation context, and output pointers.
 - `validation-minimal`: lightweight Alignment validation output profile. It is
   an artifact surface, not production-readiness evidence by itself.
 

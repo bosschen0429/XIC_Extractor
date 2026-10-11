@@ -37,10 +37,10 @@ historical filename as the stable topic locator.
 - `settings.csv` is the sole active Targeted settings file. Reset preserves
   batch, resource and execution settings. GUI and CLI use the existing settings
   parser; the Workbench only presents its method values and differences.
-  Full replay remains manifest/input-bound.
-- Legacy DLL preferences are converted with backups when the workspace opens.
-  Ordinary configuration reads do not migrate or write files. The workspace
-  supplies the shared DLL value to both workflows.
+- Ordinary configuration reads do not write files. The workspace supplies the
+  shared DLL value to both workflows; saving it does not validate Targeted
+  method values, and invalid Targeted values are shown as warnings so they can
+  be corrected in the workspace.
 - `count_no_ms2_as_detected` affects legacy fallback rows without formal
   projection fields, not formal Detection %. New saves use only the canonical
   smoothing-window key; legacy aliases load, but conflicting values fail.

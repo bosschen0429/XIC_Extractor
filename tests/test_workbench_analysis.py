@@ -553,11 +553,11 @@ def test_inspector_job_rejects_source_not_bound_to_published_untargeted_result(
 
 
 
-def test_http_targeted_bootstrap_explains_active_source_and_migration(tmp_path):
+def test_http_targeted_bootstrap_explains_active_source(tmp_path):
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     (config_dir / "settings.csv").write_text(
-        "key,value,description\nms1_morphology_smoothing_window_points,21,legacy\n",
+        "key,value,description\nsignal_processing_window_points,21,saved\n",
         encoding="utf-8",
     )
     workspace = ReviewWorkspace(config_dir=config_dir)
@@ -568,23 +568,20 @@ def test_http_targeted_bootstrap_explains_active_source_and_migration(tmp_path):
         summary = config["targeted_method"]
         assert summary["warnings"]
         assert config["settings_source"] == "settings.csv"
-        assert any("deprecated_alias_migrated" in w for w in summary["warnings"])
 
 
-
-def test_targeted_bootstrap_combines_migrated_settings_and_launch_values(
+def test_targeted_bootstrap_combines_saved_settings_and_launch_values(
     tmp_path,
 ):
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     (config_dir / "settings.csv").write_text(
-        "key,value,description\nms1_morphology_smoothing_window_points,21,legacy\n",
+        "key,value,description\nsignal_processing_window_points,21,saved\n",
         encoding="utf-8",
     )
-    (config_dir / "workbench.json").write_text(
-        json.dumps({"dll_dir": "C:/preferred-dll"}), encoding="utf-8"
+    workspace = AnalysisWorkspace(
+        config_dir, {"raw_dir": "C:/launch-batch", "dll_dir": "C:/preferred-dll"}
     )
-    workspace = AnalysisWorkspace(config_dir, {"raw_dir": "C:/launch-batch"})
     try:
         config = workspace.bootstrap()
         assert config["settings"]["data_dir"] == "C:/launch-batch"

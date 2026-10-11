@@ -29,7 +29,7 @@ def test_default_output_only_has_one_xlsx(tmp_path: Path, monkeypatch) -> None:
 
     assert list(output_dir.glob("*.csv")) == []
     assert list(output_dir.glob("*.xlsx")) == [xlsx_path]
-    assert [path.name for path in output_dir.glob("*.json")] == ["method_manifest.json"]
+    assert list(output_dir.glob("*.json")) == []
 
 
 def test_keep_intermediate_csv_emits_csvs(tmp_path: Path, monkeypatch) -> None:

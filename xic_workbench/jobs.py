@@ -170,12 +170,12 @@ class AnalysisJobs:
                 "alignment_workers": profile.alignment_workers,
             }
         request = parse_request(values)
-        from xic_workbench.config_io import write_settings
+        from xic_workbench.config_io import write_dll_dir
 
         runner = UntargetedRun(
             request, progress=self._progress, should_cancel=self._cancel.is_set
         )
-        write_settings({"dll_dir": values["dll_dir"]}, config_dir=self.config_dir)
+        write_dll_dir(values["dll_dir"], config_dir=self.config_dir)
         write_discovery_config(values, config_dir=self.config_dir)
         return runner
 

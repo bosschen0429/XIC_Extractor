@@ -6,7 +6,7 @@ import pytest
 from xic_extractor.configuration.hashing import compute_target_config_hash
 from xic_extractor.configuration.loader import load_config
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig
-from xic_extractor.configuration.settings import migrate_settings_dict
+from xic_extractor.configuration.settings import fill_setting_defaults
 from xic_extractor.settings_schema import (
     CANONICAL_RESOLVER_MODE,
     CANONICAL_SETTINGS_DEFAULTS,
@@ -228,8 +228,8 @@ def test_load_config_rejects_empty_targets_file(tmp_path: Path) -> None:
     _assert_error(exc_info, "targets.csv", "label")
 
 
-def test_migrate_settings_dict_backfills_current_defaults_only() -> None:
-    migrated, warnings = migrate_settings_dict(
+def test_fill_setting_defaults_backfills_current_defaults_only() -> None:
+    migrated, warnings = fill_setting_defaults(
         {
             "data_dir": "C:/data",
             "dll_dir": "C:/dll",
@@ -299,20 +299,6 @@ def test_load_config_ignores_retired_targeted_resolver_setting(
     assert config.signal_processing_method == "gaussian"
 
 
-def test_load_config_migrates_ms1_morphology_smoothing_window_points(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(config_dir, {"ms1_morphology_smoothing_window_points": "21"})
-    _write_targets(config_dir)
-
-    config, _ = load_config(config_dir)
-
-    assert config.signal_processing_method == "gaussian"
-    assert config.signal_processing_window_points == 21
-    assert config.ms1_morphology_smoothing_window_points == 21
-
-
 def test_load_config_accepts_canonical_signal_processing_settings(
     tmp_path: Path,
 ) -> None:
@@ -330,55 +316,6 @@ def test_load_config_accepts_canonical_signal_processing_settings(
 
     assert config.signal_processing_method == "gaussian"
     assert config.signal_processing_window_points == 21
-
-
-def test_load_config_accepts_equal_canonical_and_legacy_signal_window(
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(
-        config_dir,
-        {
-            "signal_processing_window_points": "21",
-            "ms1_morphology_smoothing_window_points": "21",
-        },
-    )
-    _write_targets(config_dir)
-
-    config, _ = load_config(config_dir)
-
-    assert config.signal_processing_window_points == 21
-    assert "settings_migration" in caplog.text
-    assert "status=deprecated_alias_equal" in caplog.text
-    assert "legacy_key=ms1_morphology_smoothing_window_points" in caplog.text
-    assert "canonical_key=signal_processing_window_points" in caplog.text
-    assert "value=21" in caplog.text
-
-
-def test_load_config_rejects_conflicting_canonical_and_legacy_signal_window(
-    tmp_path: Path,
-) -> None:
-    config_dir = tmp_path / "config"
-    _write_settings(
-        config_dir,
-        {
-            "signal_processing_window_points": "21",
-            "ms1_morphology_smoothing_window_points": "15",
-        },
-    )
-    _write_targets(config_dir)
-
-    with pytest.raises(ConfigError) as exc_info:
-        load_config(config_dir)
-
-    _assert_error(
-        exc_info,
-        "signal_processing_window_points",
-        "ms1_morphology_smoothing_window_points",
-        "21",
-        "15",
-    )
 
 
 def test_load_config_accepts_process_parallel_settings(tmp_path: Path) -> None:
@@ -456,7 +393,7 @@ def test_canonical_settings_defaults_include_parallel_settings() -> None:
     assert "baseline_integration_method" not in CANONICAL_SETTINGS_DEFAULTS
     assert CANONICAL_SETTINGS_DEFAULTS["signal_processing_method"] == "gaussian"
     assert CANONICAL_SETTINGS_DEFAULTS["signal_processing_window_points"] == "15"
-    assert CANONICAL_SETTINGS_DEFAULTS["ms1_morphology_smoothing_window_points"] == "15"
+    assert "ms1_morphology_smoothing_window_points" not in CANONICAL_SETTINGS_DEFAULTS
 
 
 def test_canonical_settings_defaults_omit_obsolete_peak_controls() -> None:
@@ -574,8 +511,6 @@ def test_settings_example_omits_obsolete_peak_controls() -> None:
         ("signal_processing_window_points", "1"),
         ("signal_processing_window_points", "1001"),
         ("signal_processing_window_points", "true"),
-        ("ms1_morphology_smoothing_window_points", "14"),
-        ("ms1_morphology_smoothing_window_points", "1"),
         ("ms2_precursor_tol_da", "0"),
         ("nl_min_intensity_ratio", "0"),
         ("nl_min_intensity_ratio", "1.1"),
@@ -631,8 +566,6 @@ def _write_targets_with_optional_metadata(
 ) -> None:
     fieldnames = [
         *TARGET_FIELDS,
-        "isotope_label_type",
-        "paired_rt_relation",
         "sample_applicability",
     ]
     config_dir.mkdir(parents=True, exist_ok=True)
@@ -774,7 +707,7 @@ def test_untargeted_list_with_no_istd_is_actionable(tmp_path):
 def test_retired_resolver_csv_value_is_preserved_while_direct_config_normalizes(
     tmp_path: Path, resolver_mode: str
 ) -> None:
-    migrated, _ = migrate_settings_dict({"resolver_mode": resolver_mode})
+    migrated, _ = fill_setting_defaults({"resolver_mode": resolver_mode})
     assert migrated["resolver_mode"] == resolver_mode
     config = ExtractionConfig(
         data_dir=tmp_path,
@@ -790,14 +723,3 @@ def test_retired_resolver_csv_value_is_preserved_while_direct_config_normalizes(
         resolver_mode=resolver_mode,
     )
     assert config.resolver_mode == "savgol"
-
-
-@pytest.mark.parametrize(
-    "key", ["rt_prior_library_path", "target_pair_rt_calibration_path"]
-)
-def test_retired_rt_feedback_requires_explicit_migration(key):
-    with pytest.raises(ConfigError, match=key):
-        migrate_settings_dict({key: "reference.csv"})
-    values, warnings = migrate_settings_dict({key: ""})
-    assert key not in values
-    assert any(key in warning for warning in warnings)

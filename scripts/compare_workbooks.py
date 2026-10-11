@@ -20,8 +20,6 @@ IGNORED_METADATA_KEYS = {
     "output_workbook",
     "workbook_path",
     "output_dir",
-    "method_manifest_path",
-    "method_manifest_sha256",
 }
 
 

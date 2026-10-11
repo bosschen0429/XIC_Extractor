@@ -60,28 +60,6 @@ def test_settings_round_trip_preserves_hidden_canonical_values(tmp_path: Path) -
     assert restored["signal_processing_window_points"] == "15"
 
 
-def test_bootstrap_migrates_legacy_keys_at_the_workbench_boundary(
-    tmp_path: Path,
-) -> None:
-    from xic_workbench.analysis_workspace import AnalysisWorkspace
-
-    (tmp_path / "settings.csv").write_text(
-        "key,value,description\ndata_dir,C:/RAW,\ndll_dir,C:/Thermo,\n"
-        "ms1_morphology_smoothing_window_points,21,legacy\n",
-        encoding="utf-8",
-    )
-
-    workspace = AnalysisWorkspace(tmp_path, {})
-    try:
-        restored = workspace.bootstrap()["settings"]
-    finally:
-        workspace.jobs.close()
-
-    assert restored["signal_processing_window_points"] == "21"
-    assert "ms1_morphology_smoothing_window_points" not in restored
-    assert restored["parallel_mode"] == "process"
-
-
 def test_method_summary_normalizes_canonical_numeric_boolean_and_legacy_values() -> (
     None
 ):
@@ -289,7 +267,6 @@ def test_targeted_run_uses_canonical_service_and_returns_published_two_sample_su
     summary = run.execute()
 
     request = captured["request"]
-    assert request.method_manifest_context.entrypoint == "xic-extractor-html"
     assert request.excel_output_path.parent == output_dir
     assert progress_events == [(1, 2, "Sample_A.raw")]
     assert summary["published_paths"] == [str(excel_path), str(report_path)]

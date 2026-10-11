@@ -40,16 +40,6 @@ def _table(book, name: str, required: set[str]) -> list[dict[str, Any]]:
         set(headers)
     ) != len(headers):
         raise ExplanationError(f"Targeted XLSX {name} 欄位名稱必須非空且不重複。")
-    merged_values = {}
-    if name == "XIC Results":
-        for merged in sheet.merged_cells.ranges:
-            if merged.min_col == merged.max_col and headers[merged.min_col - 1] in {
-                "SampleName",
-                "Group",
-            }:
-                value = sheet.cell(merged.min_row, merged.min_col).value
-                for row_index in range(merged.min_row, merged.max_row + 1):
-                    merged_values[row_index, merged.min_col - 1] = value
     records = []
     for row_index, row in enumerate(rows, start=2):
         if any(
@@ -60,14 +50,7 @@ def _table(book, name: str, required: set[str]) -> list[dict[str, Any]]:
                 f"Targeted XLSX {name} 第 {row_index} 列含不支援的儲存格類型。"
             )
         if any(value is not None for value in row):
-            records.append(
-                {
-                    header: merged_values.get((row_index, column), value)
-                    for column, (header, value) in enumerate(
-                        zip(headers, row, strict=True)
-                    )
-                }
-            )
+            records.append(dict(zip(headers, row, strict=True)))
     return records
 
 
@@ -80,9 +63,8 @@ class TargetedWorkbookSource:
             digest = hashlib.file_digest(handle, "sha256").hexdigest()
         self.locator = TargetedWorkbookLocator(path, digest)
         try:
-            # Load merged-cell layout to restore sample labels exactly, never
-            # forward-fill unrelated missing cells. This adapter never saves.
-            book = load_workbook(path, data_only=True)
+            # This adapter never saves the workbook.
+            book = load_workbook(path, read_only=True, data_only=True)
         except (
             BadZipFile,
             InvalidFileException,
@@ -96,8 +78,8 @@ class TargetedWorkbookSource:
                 [row["Key"], row["Value"]]
                 for row in _table(book, "Run Metadata", {"Key", "Value"})
             ]
-            layout = dict(metadata).get("targeted_workbook_layout_version", 1)
-            if layout not in (1, TARGETED_WORKBOOK_LAYOUT_VERSION):
+            layout = dict(metadata).get("targeted_workbook_layout_version")
+            if layout != TARGETED_WORKBOOK_LAYOUT_VERSION:
                 raise ExplanationError(f"不支援的 Targeted XLSX layout：{layout}")
             self.targets = _table(
                 book, "Targets", {"Label", "Role", "m/z", "RT min", "RT max"}
@@ -113,30 +95,22 @@ class TargetedWorkbookSource:
                     "PeakStart",
                     "PeakEnd",
                     "Reason",
-                    *(
-                        ("Review", "Review Reason", "Counted Detection")
-                        if layout == 2
-                        else ("Review State",)
-                    ),
+                    "Review",
+                    "Review Reason",
+                    "Counted Detection",
                 },
             )
-            if layout == 2:
-                self.queue = [
-                    {
-                        "Sample": row["SampleName"],
-                        "Target": row["Target"],
-                        "Status": row["Review"],
-                        "Why": row["Review Reason"],
-                        "Evidence": row.get("Review Evidence"),
-                    }
-                    for row in self.records
-                    if row["Review"]
-                ]
-            else:
-                # Previously delivered workbooks keep review routing separately.
-                self.queue = _table(
-                    book, "Review Queue", {"Sample", "Target", "Status", "Why"}
-                )
+            self.queue = [
+                {
+                    "Sample": row["SampleName"],
+                    "Target": row["Target"],
+                    "Status": row["Review"],
+                    "Why": row["Review Reason"],
+                    "Evidence": row.get("Review Evidence"),
+                }
+                for row in self.records
+                if row["Review"]
+            ]
         finally:
             book.close()
         labels = [row["Label"] for row in self.targets]

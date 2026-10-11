@@ -62,7 +62,7 @@ review creates no report or sidecar beside it and exposes no new export option.
 The current workbook has an `Overview` landing sheet and `XIC Results`, with
 `Targets`, `Run Metadata` and nonempty `Diagnostics` as supporting references.
 The `targeted_output` schema marker and workbook layout version 2 bind the saved
-records. Legacy workbooks with a separate `Review Queue` remain readable.
+records; other layouts are rejected rather than reinterpreted.
 
 Opening Targeted results first shows a full-batch overview: sample/target/result
 counts, saved counted detections, review workload and the main reasons by target.
@@ -70,7 +70,7 @@ It combines overview and summary rather than opening a detail table immediately.
 Review targets appear first. Buttons open all results or only the review rows;
 click a target to narrow the next level. **整批結果總覽** returns to the full batch,
 independent of the current filters or page. A collapsed quantity summary shows
-per-target median Area and RT range for counted results only. Missing legacy
+per-target median Area and RT range for counted results only. Missing
 count decisions are reported as unknown, never inferred from numeric values.
 
 Choose a target to see one compact sample table: saved Area, RT, counted
@@ -80,8 +80,7 @@ are separate expandable details. The attention filter retains only rows
 carrying saved review conditions, rather than showing every sample of a
 flagged target. Inspector does not reclassify results.
 
-Merged legacy sample/group labels are restored only within their actual
-merged ranges. Literal `ND`, zero and blank values remain distinct.
+Literal `ND`, zero and blank values remain distinct.
 The workbook is not modified, and its SHA-256 binds subsequent queries to the
 opened version; reopen the file after an external edit.
 

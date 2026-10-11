@@ -28,16 +28,17 @@ def json_value(value: Any) -> Any:
 
 class AnalysisWorkspace:
     def __init__(self, config_dir: Path, defaults: dict[str, str]) -> None:
-        from xic_workbench.config_io import migrate_legacy_dll_settings
-
-        self._startup_warnings = migrate_legacy_dll_settings(config_dir=config_dir)
         self.config_dir = config_dir
         self.defaults = defaults
         self.jobs = AnalysisJobs(config_dir)
         self._files: dict[str, Path] = {}
 
     def bootstrap(self) -> dict[str, Any]:
-        from xic_extractor.configuration.settings import resolve_settings
+        from xic_extractor.configuration.models import ConfigError
+        from xic_extractor.configuration.settings import (
+            fill_setting_defaults,
+            resolve_settings,
+        )
         from xic_workbench.config_io import (
             read_settings,
             read_targets,
@@ -55,7 +56,12 @@ class AnalysisWorkspace:
             not raw.get("data_dir") or raw["data_dir"] == "C:/your/data/folder"
         ):
             overrides["data_dir"] = self.defaults["raw_dir"]
-        settings, _parsed, warnings = resolve_settings(raw, overrides)
+        try:
+            settings, _parsed, warnings = resolve_settings(raw, overrides)
+        except ConfigError as exc:
+            # Opening the workspace must stay possible so the value can be fixed.
+            settings, warnings = fill_setting_defaults({**raw, **overrides})
+            warnings.append(f"settings.csv 有無效值，修正後才能執行 Targeted：{exc}")
         if overrides:
             warnings.append("啟動選項覆寫：" + ", ".join(overrides))
         discovery = read_discovery_config(config_dir=self.config_dir)
@@ -78,7 +84,7 @@ class AnalysisWorkspace:
             "targeted_form": {"settings": setting_fields()},
             "targeted_method": {
                 **method_summary(settings),
-                "warnings": [*self._startup_warnings, *warnings],
+                "warnings": warnings,
             },
             "settings_source": source,
             "untargeted": discovery,
@@ -231,13 +237,11 @@ class AnalysisWorkspace:
                 )
             }
         if action == "untargeted/save":
-            from xic_workbench.config_io import write_settings
+            from xic_workbench.config_io import write_dll_dir
             from xic_workbench.discovery_config_io import write_discovery_config
 
             if "dll_dir" in values:
-                write_settings(
-                    {"dll_dir": values["dll_dir"]}, config_dir=self.config_dir
-                )
+                write_dll_dir(values["dll_dir"], config_dir=self.config_dir)
             write_discovery_config(values, config_dir=self.config_dir)
             return {"message": "批次與方法設定已儲存。"}
         if action == "method":

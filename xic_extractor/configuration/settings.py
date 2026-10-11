@@ -1,10 +1,9 @@
 import logging
-from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from xic_extractor.configuration.models import ConfigError, ExtractionConfig
+from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.parsing import (
     _config_error,
     _parse_bool,
@@ -28,22 +27,9 @@ from xic_extractor.targeted_ms1_shape_identity_policy import (
 
 LOGGER = logging.getLogger(__name__)
 
-_MIGRATION_DEFAULT_KEYS = tuple(
-    key
-    for key in CANONICAL_SETTINGS_DEFAULTS
-    if key
-    not in {
-        "data_dir",
-        "dll_dir",
-        "ms1_morphology_smoothing_window_points",
-    }
-)
-
 _CANONICAL_SIGNAL_WINDOW_KEY = "signal_processing_window_points"
-_LEGACY_SIGNAL_WINDOW_KEY = "ms1_morphology_smoothing_window_points"
-_RETIRED_RT_REFERENCE_INPUT_KEYS = (
-    "rt_prior_library_path",
-    "target_pair_rt_calibration_path",
+_DEFAULTED_KEYS = tuple(
+    key for key in CANONICAL_SETTINGS_DEFAULTS if key not in {"data_dir", "dll_dir"}
 )
 
 
@@ -69,75 +55,16 @@ class _ParsedSettings:
     parallel_workers: int
 
 
-def migrate_settings_dict(raw: dict[str, str]) -> tuple[dict[str, str], list[str]]:
-    reject_retired_rt_reference_inputs(raw)
-    migrated = dict(raw)
+def fill_setting_defaults(raw: dict[str, str]) -> tuple[dict[str, str], list[str]]:
+    """Complete omitted values from the canonical defaults; never rename keys."""
+    values = dict(raw)
     warnings: list[str] = []
-    for key in ("emit_review_report", "keep_intermediate_csv", "emit_score_breakdown"):
-        if key in migrated:
-            migrated.pop(key)
-            warnings.append(
-                f"Removed retired output setting {key}; Targeted delivers XLSX."
-            )
-    for key in _RETIRED_RT_REFERENCE_INPUT_KEYS:
-        if key in migrated:
-            migrated.pop(key)
-            warnings.append(f"Removed retired empty setting {key}.")
-    canonical_window = migrated.get(_CANONICAL_SIGNAL_WINDOW_KEY, "").strip()
-    legacy_window = migrated.get(_LEGACY_SIGNAL_WINDOW_KEY, "").strip()
-    if legacy_window:
-        if canonical_window:
-            try:
-                values_match = int(canonical_window) == int(legacy_window)
-            except ValueError:
-                values_match = canonical_window == legacy_window
-            if not values_match:
-                raise ConfigError(
-                    "conflicting settings keys "
-                    f"{_CANONICAL_SIGNAL_WINDOW_KEY}={canonical_window!r} and "
-                    f"{_LEGACY_SIGNAL_WINDOW_KEY}={legacy_window!r}"
-                )
-            warnings.append(
-                "settings_migration status=deprecated_alias_equal "
-                f"legacy_key={_LEGACY_SIGNAL_WINDOW_KEY} "
-                f"canonical_key={_CANONICAL_SIGNAL_WINDOW_KEY} "
-                f"value={canonical_window}"
-            )
-        else:
-            try:
-                legacy_points = int(legacy_window)
-                resolve_signal_processing_profile(
-                    signal_processing_window_points=legacy_points,
-                )
-            except (TypeError, ValueError) as exc:
-                raise ConfigError(
-                    f"legacy setting {_LEGACY_SIGNAL_WINDOW_KEY}="
-                    f"{legacy_window!r} cannot migrate to "
-                    f"{_CANONICAL_SIGNAL_WINDOW_KEY}: {exc}"
-                ) from exc
-            migrated[_CANONICAL_SIGNAL_WINDOW_KEY] = legacy_window
-            warnings.append(
-                "settings_migration status=deprecated_alias_migrated "
-                f"legacy_key={_LEGACY_SIGNAL_WINDOW_KEY} "
-                f"canonical_key={_CANONICAL_SIGNAL_WINDOW_KEY} "
-                f"value={legacy_window}"
-            )
-        migrated.pop(_LEGACY_SIGNAL_WINDOW_KEY, None)
-    elif _LEGACY_SIGNAL_WINDOW_KEY in migrated:
-        migrated.pop(_LEGACY_SIGNAL_WINDOW_KEY)
-        warnings.append(
-            "settings_migration status=deprecated_alias_empty "
-            f"legacy_key={_LEGACY_SIGNAL_WINDOW_KEY} "
-            f"canonical_key={_CANONICAL_SIGNAL_WINDOW_KEY}"
-        )
-
-    for key in _MIGRATION_DEFAULT_KEYS:
+    for key in _DEFAULTED_KEYS:
         default = CANONICAL_SETTINGS_DEFAULTS[key]
-        if key not in migrated or (migrated[key] == "" and default != ""):
-            migrated[key] = default
+        if key not in values or (values[key] == "" and default != ""):
+            values[key] = default
             warnings.append(f"Filled missing {key} with default {default}.")
-
-    return migrated, warnings
+    return values, warnings
 
 
 def build_extraction_config(
@@ -159,24 +86,9 @@ def validate_settings_values(
     settings: dict[str, str], settings_path: Path = Path("settings.csv")
 ) -> _ParsedSettings:
     """Validate scalar settings without admitting local inputs or reading files."""
-    reject_retired_rt_reference_inputs(settings)
     parsed = _parse_settings_values(settings, settings_path)
     _validate_settings_ranges(settings, settings_path, parsed)
     return parsed
-
-
-def reject_retired_rt_reference_inputs(settings: Mapping[str, str]) -> None:
-    """Reject retired file feedback rather than silently changing its effect."""
-    retired = [
-        key for key in _RETIRED_RT_REFERENCE_INPUT_KEYS if settings.get(key, "").strip()
-    ]
-    if retired:
-        raise ConfigError(
-            "已退休的 RT 回灌設定："
-            + ", ".join(retired)
-            + "。請移除檔案路徑，保留 targets／ISTD 配對與 RT 搜尋範圍；"
-            "目前只使用當次可信 ISTD 的 RT reference，請以當前方法重新分析。"
-        )
 
 
 def resolve_settings(
@@ -185,15 +97,10 @@ def resolve_settings(
     *,
     settings_path: Path = Path("settings.csv"),
 ) -> tuple[dict[str, str], _ParsedSettings, list[str]]:
-    """Normalize input spellings, apply overrides, then parse effective values once."""
-    values, warnings = migrate_settings_dict(raw)
-    if overrides:
-        if overrides.get(_LEGACY_SIGNAL_WINDOW_KEY, "").strip():
-            values.pop(_CANONICAL_SIGNAL_WINDOW_KEY, None)
-        values, override_warnings = migrate_settings_dict({**values, **overrides})
-        warnings.extend(override_warnings)
+    """Apply overrides and defaults, then parse effective values once."""
+    values, warnings = fill_setting_defaults({**raw, **(overrides or {})})
     warnings.extend(
-        f"Unknown or retired setting {key!r} is preserved, not consumed by Targeted."
+        f"Unknown setting {key!r} is preserved, not consumed by Targeted."
         for key in values
         if key not in CANONICAL_SETTINGS_DEFAULTS
     )
@@ -202,7 +109,7 @@ def resolve_settings(
 
 def reset_method_settings(settings: dict[str, str]) -> dict[str, str]:
     """Reset method parameters, preserving batch, resource and execution values."""
-    values, _warnings = migrate_settings_dict(settings)
+    values, _warnings = fill_setting_defaults(settings)
     values.update({key: CANONICAL_SETTINGS_DEFAULTS[key] for key in METHOD_KEYS})
     return values
 

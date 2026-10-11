@@ -12,7 +12,6 @@ import tempfile
 from pathlib import Path
 
 from xic_extractor.configuration.csv_io import (
-    RETIRED_TARGET_FIELDS,
     TARGET_WRITE_FIELDS,
     _read_settings,
 )
@@ -81,18 +80,40 @@ def read_settings(*, config_dir: Path | None = None) -> dict[str, str]:
 def write_settings(
     settings: dict[str, str], *, config_dir: Path | None = None
 ) -> dict[str, str]:
-    path = _runtime_dir(config_dir) / "settings.csv"
-    source = path if path.exists() else _read_path("settings", config_dir)
-    persisted = _read_settings(source) if source.exists() else {}
-    descriptions = {}
-    if source.exists():
-        with source.open(newline="", encoding="utf-8-sig") as handle:
-            descriptions = {
-                row["key"]: row.get("description", "") for row in csv.DictReader(handle)
-            }
+    """Persist Targeted settings only after the effective values pass validation."""
+    persisted, source, descriptions = _persisted_settings(config_dir)
     values, _parsed, _warnings = resolve_settings(
         persisted, settings, settings_path=source
     )
+    _write_settings_rows(config_dir, values, descriptions)
+    return values
+
+
+def write_dll_dir(dll_dir: str, *, config_dir: Path | None = None) -> None:
+    """Persist the shared machine DLL location without admitting Targeted values."""
+    persisted, _source, descriptions = _persisted_settings(config_dir)
+    _write_settings_rows(config_dir, {**persisted, "dll_dir": dll_dir}, descriptions)
+
+
+def _persisted_settings(
+    config_dir: Path | None,
+) -> tuple[dict[str, str], Path, dict[str, str]]:
+    path = _runtime_dir(config_dir) / "settings.csv"
+    source = path if path.exists() else _read_path("settings", config_dir)
+    if not source.exists():
+        return {}, source, {}
+    with source.open(newline="", encoding="utf-8-sig") as handle:
+        descriptions = {
+            row["key"]: row.get("description", "") for row in csv.DictReader(handle)
+        }
+    return _read_settings(source), source, descriptions
+
+
+def _write_settings_rows(
+    config_dir: Path | None,
+    values: dict[str, str],
+    descriptions: dict[str, str],
+) -> None:
     buffer = io.StringIO(newline="")
     writer = csv.DictWriter(buffer, fieldnames=_SETTINGS_FIELDS)
     writer.writeheader()
@@ -107,8 +128,9 @@ def write_settings(
                 ),
             )
         )
-    _atomic_write(path, "\ufeff" + buffer.getvalue())
-    return values
+    _atomic_write(
+        _runtime_dir(config_dir) / "settings.csv", "\ufeff" + buffer.getvalue()
+    )
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -149,39 +171,6 @@ def _write_json_object(path: Path, payload: dict) -> None:
     _atomic_write(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
 
 
-def migrate_legacy_dll_settings(*, config_dir: Path | None = None) -> tuple[str, ...]:
-    """Move the former effective DLL to settings.csv once, then retire old keys.
-
-    Legacy preferences formerly overrode Targeted settings. Discovery's DLL is
-    only a fallback when the canonical active setting is absent or a placeholder.
-    Launch overrides are intentionally not persisted by this boundary.
-    """
-    directory = _runtime_dir(config_dir)
-    preference_path = directory / "workbench.json"
-    discovery_path = directory / "discovery_gui.json"
-    preferences = _read_json_object(preference_path)
-    discovery = _read_json_object(discovery_path)
-    if "dll_dir" not in preferences and "dll_dir" not in discovery:
-        return ()
-    canonical_path = directory / "settings.csv"
-    canonical = _read_settings(canonical_path) if canonical_path.exists() else {}
-    dll = str(canonical.get("dll_dir") or "").strip()
-    preferred = str(preferences.get("dll_dir") or "").strip()
-    discovered = str(discovery.get("dll_dir") or "").strip()
-    missing = not dll or dll.startswith("<") or "/your/" in dll.replace("\\", "/")
-    receipts: list[str] = []
-    if preferred or (missing and discovered):
-        origin = "workbench.json" if preferred else "discovery_gui.json"
-        write_settings({"dll_dir": preferred or discovered}, config_dir=directory)
-        receipts.append(f"dll_migration={origin} -> settings.csv")
-    for path, payload in ((preference_path, preferences), (discovery_path, discovery)):
-        if "dll_dir" in payload:
-            del payload["dll_dir"]
-            _write_json_object(path, payload)
-            receipts.append(f"retired_dll_source={path.name} backup={path.name}.bak")
-    return tuple(receipts)
-
-
 def read_preferences(*, config_dir: Path | None = None) -> dict:
     return _read_json_object(_runtime_dir(config_dir) / "workbench.json")
 
@@ -218,7 +207,7 @@ def write_targets(
 
 def _target_write_fieldnames(targets: list[dict[str, str]]) -> list[str]:
     fieldnames = list(_TARGETS_FIELDS)
-    seen = set(fieldnames) | RETIRED_TARGET_FIELDS
+    seen = set(fieldnames)
     for target in targets:
         for field in target:
             if field not in seen:

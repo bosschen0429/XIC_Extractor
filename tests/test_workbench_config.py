@@ -75,83 +75,24 @@ def test_discovery_defaults_use_bundled_shared_targets(monkeypatch, tmp_path):
     assert discovery_config_io.read_discovery_config()["targets_csv"] == ""
 
 
-def test_legacy_preference_dll_migrates_once_preserving_effective_value_and_json(
-    tmp_path,
-):
-    config_io.write_settings({"dll_dir": "canonical-old"}, config_dir=tmp_path)
-    preference = {
-        "dll_dir": "formerly-effective",
-        "theme": "dark",
-        "view": "targeted",
-        "future_key": [1, 2],
-    }
-    discovery = {
-        "dll_dir": "discovery-old",
-        "preset": "dna_dr",
-        "custom_roles": {"A": "istd"},
-        "overrides": {"ppm": 12},
-        "future_discovery": 3,
-    }
-    preference_path = tmp_path / "workbench.json"
-    discovery_path = tmp_path / "discovery_gui.json"
-    preference_path.write_text(json.dumps(preference), encoding="utf-8")
-    discovery_path.write_text(json.dumps(discovery), encoding="utf-8")
-
+def test_invalid_targeted_values_do_not_block_workspace_or_untargeted_dll(tmp_path):
+    settings_path = tmp_path / "settings.csv"
+    settings_path.write_text(
+        "key,value\nsignal_processing_window_points,14\n", encoding="utf-8"
+    )
     workspace = AnalysisWorkspace(tmp_path, {})
     try:
         config = workspace.bootstrap()
+        workspace.action("untargeted/save", {"dll_dir": "shared-dll"})
     finally:
         workspace.jobs.close()
-    assert config["settings"]["dll_dir"] == "formerly-effective"
     assert any(
-        "dll_migration=workbench.json" in warning
+        "signal_processing_window_points" in warning
         for warning in config["targeted_method"]["warnings"]
     )
-    assert json.loads(preference_path.read_text()) == {
-        key: value for key, value in preference.items() if key != "dll_dir"
-    }
-    assert json.loads(discovery_path.read_text()) == {
-        key: value for key, value in discovery.items() if key != "dll_dir"
-    }
-    assert (
-        json.loads(preference_path.with_suffix(".json.bak").read_text()) == preference
-    )
-    assert json.loads(discovery_path.with_suffix(".json.bak").read_text()) == discovery
-    assert config_io.migrate_legacy_dll_settings(config_dir=tmp_path) == ()
-
-    config_io.write_settings({"dll_dir": "canonical-new"}, config_dir=tmp_path)
-    assert config_io.read_settings(config_dir=tmp_path)["dll_dir"] == "canonical-new"
-    assert config_io.read_settings(config_dir=tmp_path)["dll_dir"] == "canonical-new"
-    assert "dll_dir" not in config_io.read_preferences(config_dir=tmp_path)
-
-
-@pytest.mark.parametrize(
-    "canonical,expected",
-    [
-        (None, "discovery-dll"),
-        ("", "discovery-dll"),
-        ("<thermo-dll-dir>", "discovery-dll"),
-        ("real-canonical", "real-canonical"),
-    ],
-)
-def test_legacy_discovery_dll_is_only_fallback_for_missing_canonical(
-    tmp_path, canonical, expected
-):
-    if canonical is not None:
-        config_io.write_settings({"dll_dir": canonical}, config_dir=tmp_path)
-    path = tmp_path / "discovery_gui.json"
-    path.write_text(
-        json.dumps({"dll_dir": "discovery-dll", "custom_roles": {"B": "sample"}}),
-        encoding="utf-8",
-    )
-    workspace = AnalysisWorkspace(tmp_path, {})
-    try:
-        discovery = workspace.bootstrap()["untargeted"]
-    finally:
-        workspace.jobs.close()
-    assert discovery["dll_dir"] == expected
-    assert discovery["custom_roles"] == {"B": "sample"}
-    assert "dll_dir" not in json.loads(path.read_text())
+    saved = config_io.read_settings(config_dir=tmp_path)
+    assert saved["dll_dir"] == "shared-dll"
+    assert saved["signal_processing_window_points"] == "14"
 
 
 def test_untargeted_save_routes_dll_to_canonical_and_preserves_unrelated_controls(
@@ -180,7 +121,6 @@ def test_untargeted_save_routes_dll_to_canonical_and_preserves_unrelated_control
     assert "dll_dir" not in payload
     assert payload["custom_roles"] == {"A": "istd"}
     assert payload["sequence_source"] == "sequence.csv"
-    assert payload["future_key"] == "keep"
     assert payload["raw_dir"] == "new-batch"
 
 

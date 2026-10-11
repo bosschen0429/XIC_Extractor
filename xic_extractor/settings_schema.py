@@ -32,11 +32,6 @@ CANONICAL_SETTINGS_DEFAULTS: dict[str, str] = {
     "signal_processing_window_points": str(
         DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points
     ),
-    # Direct lookup compatibility for excluded callers that have not migrated.
-    # The settings loader maps this spelling one-way into the canonical key.
-    "ms1_morphology_smoothing_window_points": str(
-        DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points
-    ),
     "ms2_precursor_tol_da": "0.8",
     "nl_min_intensity_ratio": "0.01",
     "count_no_ms2_as_detected": "false",
@@ -62,9 +57,6 @@ CANONICAL_SETTINGS_DESCRIPTIONS: dict[str, str] = {
     ),
     "signal_processing_window_points": (
         "Canonical Gaussian smoothing window points (odd integer 3-999; default 15)"
-    ),
-    "ms1_morphology_smoothing_window_points": (
-        "Legacy alias for signal_processing_window_points; do not use in new settings"
     ),
     "ms2_precursor_tol_da": (
         "MS2 precursor m/z 半徑（Da，|scan precursor − 推算 precursor| 上限；"

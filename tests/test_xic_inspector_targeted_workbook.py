@@ -38,7 +38,8 @@ def workbook(tmp_path):
             "Area",
             "PeakStart",
             "PeakEnd",
-            "Review State",
+            "Review",
+            "Review Reason",
             "Reason",
             "Counted Detection",
         ]
@@ -52,12 +53,15 @@ def workbook(tmp_path):
             "ND",
             "ND",
             "ND",
-            "review_required",
+            "Review",
+            "Peak not found",
             "No positive peak",
             "FALSE",
         ]
     )
-    results.append([None, None, "ISTD", 8.8, 0, 8.7, 8.9, "recorded", None, "FALSE"])
+    results.append(
+        ["Sample A", "A", "ISTD", 8.8, 0, 8.7, 8.9, None, None, None, "FALSE"]
+    )
     results.append(
         [
             "Sample B",
@@ -67,22 +71,20 @@ def workbook(tmp_path):
             123.456,
             9.0,
             9.2,
-            "review_required",
+            "Check",
+            "MS2 trigger missing",
             '<script>alert("unsafe")</script>',
             "TRUE",
         ]
     )
-    results.append([None, None, "ISTD", 9.0, None, 8.9, 9.1, "recorded", None, "FALSE"])
-    for cell_range in ("A2:A3", "B2:B3", "A4:A5", "B4:B5"):
-        results.merge_cells(cell_range)
-    queue = book.create_sheet("Review Queue")
-    queue.append(["Sample", "Target", "Status", "Why"])
-    queue.append(["Sample A", "Analyte", "Review", "Peak not found"])
-    queue.append(["Sample B", "Analyte", "Check", "MS2 trigger missing"])
+    results.append(
+        ["Sample B", None, "ISTD", 9.0, None, 8.9, 9.1, None, None, None, "FALSE"]
+    )
     metadata = book.create_sheet("Run Metadata")
     metadata.append(["Key", "Value"])
     metadata.append(["targeted_output_schema_version", "targeted_output"])
     metadata.append(["signal_processing_method", "gaussian"])
+    metadata.append(["targeted_workbook_layout_version", 2])
     book.save(path)
     book.close()
     return path
@@ -146,6 +148,7 @@ def test_targeted_http_review_preserves_values_scope_and_source(workbook):
                 "Target": "Analyte",
                 "Status": "Check",
                 "Why": "MS2 trigger missing",
+                "Evidence": None,
             }
         ]
         _, zero, _ = request("/api/query", {"target_id": "ISTD"})
@@ -178,21 +181,19 @@ def test_targeted_http_review_preserves_values_scope_and_source(workbook):
     assert set(workbook.parent.iterdir()) == files
 
 
-@pytest.mark.parametrize(
-    "damage", ["sheet", "header", "unmerged_sample", "schema", "queue"]
-)
+@pytest.mark.parametrize("damage", ["sheet", "header", "schema", "layout", "duplicate"])
 def test_malformed_targeted_workbook_is_actionable(workbook, damage):
     book = load_workbook(workbook)
     if damage == "sheet":
         del book["Targets"]
     elif damage == "header":
         book["XIC Results"]["E1"] = "unrecognized area"
-    elif damage == "unmerged_sample":
-        book["XIC Results"].unmerge_cells("A2:A3")
     elif damage == "schema":
         book["Run Metadata"]["B2"] = "unsupported"
+    elif damage == "layout":
+        book["Run Metadata"]["B4"] = 1
     else:
-        book["Review Queue"]["A2"] = "unknown sample"
+        book["XIC Results"]["C3"] = "Analyte"
     book.save(workbook)
     book.close()
     with pytest.raises(InspectorError, match="Targeted XLSX"):
@@ -202,6 +203,9 @@ def test_malformed_targeted_workbook_is_actionable(workbook, damage):
 def test_workbook_binding_and_ambiguous_directory(workbook):
     report = prepare_report(workbook, SelectionRequest(strategy="attention"))
     assert [item["title"] for item in report.payload["items"]] == ["Analyte"]
+    # Excel's lock file beside an open workbook is not a second result.
+    workbook.with_name(f"~${workbook.name}").write_bytes(b"lock")
+    assert resolve_source(workbook.parent) == workbook
     other = workbook.with_name("another.xlsx")
     other.write_bytes(workbook.read_bytes())
     with pytest.raises(ValueError, match="多份 XLSX"):
@@ -218,7 +222,7 @@ def test_workbook_binding_and_ambiguous_directory(workbook):
 
 def test_review_filter_scopes_sample_records_not_just_targets(workbook):
     book = load_workbook(workbook)
-    book["Review Queue"].delete_rows(3)
+    book["XIC Results"]["H4"] = None
     book.save(workbook)
     book.close()
     report = prepare_report(

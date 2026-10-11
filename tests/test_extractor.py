@@ -586,7 +586,7 @@ def test_run_does_not_write_intermediate_csv_by_default(
     assert not config.output_csv.exists()
     assert not config.output_csv.with_name("xic_results_long.csv").exists()
     assert not config.diagnostics_csv.exists()
-    assert config.output_csv.with_name("method_manifest.json").exists()
+    assert not config.output_csv.with_name("method_manifest.json").exists()
     assert not config.output_csv.with_name("peak_candidates.tsv").exists()
     assert not config.output_csv.with_name("peak_candidate_boundaries.tsv").exists()
     assert not config.output_csv.with_name("selected_envelope_diagnostics.tsv").exists()

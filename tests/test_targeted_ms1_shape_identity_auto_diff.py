@@ -26,9 +26,6 @@ from xic_extractor.extraction.result_models import RunOutput
 from xic_extractor.extraction.targeted_ms1_shape_identity_projection import (
     TARGETED_MS1_SHAPE_IDENTITY_COLUMNS,
 )
-from xic_extractor.output.method_manifest import (
-    MethodManifestContext,
-)
 
 
 def test_auto_diff_artifacts_pass_limited_expected_diff_gate(tmp_path: Path) -> None:
@@ -155,12 +152,6 @@ def test_limited_workflow_publishes_only_gated_completed_outputs(
         excel_output_path=tmp_path / "output" / "xic_results.xlsx",
         progress_callback=progress,
         should_stop=lambda: cancelled,
-        method_manifest_context=MethodManifestContext(
-            entrypoint="consumer",
-            base_dir=tmp_path,
-            config_dir=config_dir,
-            output_mode="xlsx",
-        ),
     )
     root = tmp_path / "run"
     if mode == "collision":

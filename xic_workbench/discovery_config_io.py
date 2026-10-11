@@ -21,7 +21,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "preset": "dna_dr",
     "raw_dir": "",
     "raw_file": "",
-    "dll_dir": "",
     "output_dir": "",
     "discovery_batch_index": "",
     "targets_csv": "",
@@ -68,6 +67,4 @@ def write_discovery_config(
     destination = _runtime_dir(config_dir)
     path = destination / CONFIG_NAME
     existing = _read_json_object(path)
-    payload = {**existing, **_merge_known_keys({**existing, **config})}
-    payload.pop("dll_dir", None)
-    _write_json_object(path, payload)
+    _write_json_object(path, _merge_known_keys({**existing, **config}))

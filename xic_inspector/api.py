@@ -52,7 +52,8 @@ def resolve_source(path: Path) -> Path:
     for candidate in (path / REPORT_FILENAME, path / "alignment" / REPORT_FILENAME):
         if candidate.is_file():
             return candidate
-    workbooks = sorted(path.glob("*.xlsx"))
+    # Excel keeps "~$name.xlsx" lock files beside workbooks that are open.
+    workbooks = sorted(p for p in path.glob("*.xlsx") if not p.name.startswith("~$"))
     if len(workbooks) == 1:
         return workbooks[0]
     if len(workbooks) > 1:

@@ -116,7 +116,6 @@ def test_limited_workflow_delivers_only_workbook_and_cleans_internal_files(tmp_p
     from xic_extractor.applications.targeted.limited_identity_workflow import (
         execute_limited_identity_workflow,
     )
-    from xic_extractor.output.method_manifest import MethodManifestContext
 
     config, target, output = production_case(
         tmp_path,
@@ -128,7 +127,6 @@ def test_limited_workflow_delivers_only_workbook_and_cleans_internal_files(tmp_p
         [target],
         injection_order={"SampleA": 1, "SampleB": 2},
         excel_output_path=tmp_path / "results.xlsx",
-        method_manifest_context=MethodManifestContext(config_dir=tmp_path),
     )
     destination = tmp_path / "delivery"
     result = execute_limited_identity_workflow(
@@ -157,7 +155,6 @@ def test_cancelled_limited_workflow_removes_internal_files(tmp_path, stop_stage)
     from xic_extractor.applications.targeted.limited_identity_workflow import (
         execute_limited_identity_workflow,
     )
-    from xic_extractor.output.method_manifest import MethodManifestContext
 
     config, target, output = production_case(tmp_path)
     cancelled = False
@@ -171,7 +168,6 @@ def test_cancelled_limited_workflow_removes_internal_files(tmp_path, stop_stage)
         [target],
         injection_order={"SampleA": 1},
         excel_output_path=tmp_path / "results.xlsx",
-        method_manifest_context=MethodManifestContext(config_dir=tmp_path),
         progress_callback=progress,
         should_stop=lambda: cancelled,
     )
@@ -1295,26 +1291,6 @@ def test_publisher_rejects_unsealed_finalized_result_tuple(tmp_path: Path) -> No
         publish_targeted_outputs(
             request,
             completed.finalized_results,  # type: ignore[arg-type]
-            output,
-        )
-
-
-def test_publisher_rejects_invalid_method_manifest_context(tmp_path: Path) -> None:
-    config, target, output = production_case(tmp_path)
-    request = build_targeted_application_request(
-        config,
-        [target],
-        injection_order={"SampleA": 1},
-    )
-    completed = execute_targeted_production_workflow(request, output)
-
-    with pytest.raises(
-        TargetedOutputBoundaryError,
-        match="must be a MethodManifestContext",
-    ):
-        publish_targeted_outputs(
-            replace(request, method_manifest_context="invalid"),
-            completed,
             output,
         )
 

@@ -82,8 +82,6 @@ def test_new_method_replaces_every_method_value_and_targets(tmp_path):
 @pytest.mark.parametrize(
     "resource",
     [
-        "rt_prior_library_path",
-        "target_pair_rt_calibration_path",
         "model_selection_expected_diff_approval_registry",
         "targeted_ms1_shape_identity_support_tsv",
     ],
@@ -197,11 +195,6 @@ def test_prepared_method_receipt_binds_hash_and_survives_source_edits(tmp_path):
         load_config,
         prepare_targeted_config,
     )
-    from xic_extractor.output.method_manifest import (
-        MethodManifestContext,
-        load_method_manifest_for_replay,
-        write_method_manifest,
-    )
 
     config_dir = _workspace(tmp_path, settings={"dirty_matrix_mode": "true"})
     method_dir = tmp_path / "method"
@@ -215,24 +208,14 @@ def test_prepared_method_receipt_binds_hash_and_survives_source_edits(tmp_path):
     assert prepared.config.config_hash == compute_config_hash(
         receipt / "targets.csv", receipt / "settings.csv"
     )
-    manifest = write_method_manifest(
-        prepared.config,
-        prepared.targets,
-        context=MethodManifestContext(
-            entrypoint="xic-extractor-cli",
-            base_dir=tmp_path,
-            config_dir=receipt,
-            settings_overrides={},
-            output_mode="csv_only",
-        ),
-    )
     (method_dir / "targets.csv").write_text("changed", encoding="utf-8")
     (config_dir / "settings.csv").write_text("changed", encoding="utf-8")
-    replay = load_method_manifest_for_replay(manifest)
-    reloaded, targets = load_config(replay.config_dir, output_dir=manifest.parent)
+    output_dir = prepared.config.output_csv.parent
+    reloaded, targets = load_config(receipt, output_dir=output_dir)
     assert reloaded.config_hash == prepared.config.config_hash
     assert tuple(targets) == prepared.targets
-    assert reloaded.output_csv == prepared.config.output_csv
+    prepared.cleanup()
+    assert not receipt.exists()
 
 
 def test_new_batch_does_not_inherit_injection_order_and_explicit_order_is_frozen(
@@ -287,28 +270,4 @@ def test_preparation_rejects_workspace_and_explicit_resource_bindings(tmp_path):
                 "targeted_ms1_shape_identity_support_tsv": "support.tsv"
             },
         )
-    assert not (tmp_path / "output").exists()
-    current = {**CANONICAL_SETTINGS_DEFAULTS, "rt_prior_library_path": "prior.csv"}
-    with pytest.raises(ConfigError, match="rt_prior_library_path"):
-        files.apply_targeted_method(current, files.create_targeted_method({}, rows()))
-
-
-def test_preparation_rejects_retired_prior_before_freezing_inputs(
-    tmp_path,
-):
-    from xic_extractor.configuration.loader import prepare_targeted_config
-
-    order = tmp_path / "order.csv"
-    order.write_text("Sample_Name,Injection_Order\nA,1\n", encoding="utf-8")
-    config_dir = _workspace(
-        tmp_path,
-        settings={
-            "injection_order_source": str(order),
-            "rt_prior_library_path": "prior.csv",
-        },
-    )
-    original = (config_dir / "settings.csv").read_bytes()
-    with pytest.raises(ConfigError, match="rt_prior_library_path"):
-        prepare_targeted_config(config_dir)
-    assert (config_dir / "settings.csv").read_bytes() == original
     assert not (tmp_path / "output").exists()

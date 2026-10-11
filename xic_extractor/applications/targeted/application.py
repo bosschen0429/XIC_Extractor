@@ -93,7 +93,6 @@ class TargetedApplicationRequest:
     model_selection_expected_diff_approvals: (
         Mapping[str, ExpectedDiffApprovalRecord] | None
     ) = None
-    method_manifest_context: object | None = None
     excel_output_path: Path | None = None
     replace_existing_outputs: bool = False
     output_projection: Literal["finalized", "acquisition_baseline"] = "finalized"
@@ -354,7 +353,6 @@ def build_targeted_application_request(
     model_selection_expected_diff_approvals: (
         Mapping[str, ExpectedDiffApprovalRecord] | None
     ) = None,
-    method_manifest_context: object | None = None,
     excel_output_path: Path | None = None,
     replace_existing_outputs: bool = False,
     output_projection: Literal["finalized", "acquisition_baseline"] = "finalized",
@@ -368,7 +366,6 @@ def build_targeted_application_request(
         model_selection_expected_diff_approvals=(
             model_selection_expected_diff_approvals
         ),
-        method_manifest_context=method_manifest_context,
         excel_output_path=excel_output_path,
         replace_existing_outputs=replace_existing_outputs,
         output_projection=output_projection,
@@ -407,7 +404,6 @@ def _isolate_application_request(
         model_selection_expected_diff_approvals=deepcopy(
             request.model_selection_expected_diff_approvals
         ),
-        method_manifest_context=deepcopy(request.method_manifest_context),
     )
 
 

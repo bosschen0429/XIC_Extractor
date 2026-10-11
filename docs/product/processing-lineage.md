@@ -101,8 +101,7 @@ This page owns:
 
 Other owners remain:
 
-- [`run-provenance.md`](run-provenance.md): the current Targeted
-  `method_manifest.json`, run metadata, and replay projection;
+- [`run-provenance.md`](run-provenance.md): Targeted workbook run metadata;
 - [`sample-metadata-qc.md`](sample-metadata-qc.md): canonical sample identity
   schema and lookup projection;
 - [`review-roundtrip.md`](review-roundtrip.md): typed review actions, review
@@ -566,8 +565,8 @@ The model fails and must be narrowed or redrawn if:
 
 ## Current Implementation Gaps And Reuse
 
-- `method_manifest.json` and current output metadata retain useful settings,
-  paths, hashes, and replay context, but do not provide a product delivery seal.
+- Current output metadata retains useful settings, paths, and hashes, but does
+  not provide a product delivery seal.
   Diagnostic `run_id` / `source_run_id` labels are not processing identities.
 - `processing_identity.py` implements request, attempt, retry-predecessor, and
   artifact-closure identities. Its full-file source fingerprint and diagnostic
@@ -598,7 +597,7 @@ manifest rewrite, new persistence framework, or change to either writer.
 
 | Option | Decision | Reason |
 | --- | --- | --- |
-| Treat `method_manifest.json` or diagnostic `run_id` as the universal lineage owner | Rejected | They are current workflow/run projections and do not close attempt, decision, artifact, delivery-cell, or seal identity |
+| Treat run metadata or diagnostic `run_id` as the universal lineage owner | Rejected | They are current workflow/run projections and do not close attempt, decision, artifact, delivery-cell, or seal identity |
 | Choose a database, cache format, or archive layout first | Rejected | Physical fidelity, cost, and rebuild capability remain unanswered by #124 |
 | Retain every intermediate artifact forever | Rejected | It hides dependency semantics and commits storage cost before evidence; unreferenced, unreviewed artifacts may be evictable |
 | Define the minimum logical contract and test it through one no-write/no-RAW dual-projection tracer | Selected | It can falsify the shared model before persistence or writer integration |

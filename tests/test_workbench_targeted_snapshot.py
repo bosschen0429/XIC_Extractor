@@ -7,6 +7,22 @@ from xic_workbench.config_io import write_settings, write_targets
 from xic_workbench.jobs import AnalysisJobs
 
 
+def _record_receipts(monkeypatch) -> list[Path]:
+    """Expose each run's private frozen-input directory to the assertions."""
+    from xic_extractor.configuration import loader
+
+    receipts: list[Path] = []
+    prepare = loader.prepare_targeted_config
+
+    def record(*args, **kwargs):
+        prepared = prepare(*args, **kwargs)
+        receipts.append(prepared.input_config_dir)
+        return prepared
+
+    monkeypatch.setattr(loader, "prepare_targeted_config", record)
+    return receipts
+
+
 def test_targeted_dispatch_freezes_inputs_until_completion(tmp_path, monkeypatch):
     """A queued run must not read a later batch/method edit or publish its receipt."""
     from xic_workbench import targeted
@@ -40,14 +56,15 @@ def test_targeted_dispatch_freezes_inputs_until_completion(tmp_path, monkeypatch
     ]
     submitted = []
     captured = []
+    receipts = _record_receipts(monkeypatch)
 
     class Service:
         def execute_application(self, request):
             captured.append(request)
-            receipt = request.method_manifest_context.config_dir
+            receipt = receipts[0]
             assert (receipt / "settings.csv").read_bytes() == original_settings
             assert (receipt / "targets.csv").read_bytes() == original_targets
-            assert request.method_manifest_context.config_dir.is_dir()
+            assert receipts[0].is_dir()
             return SimpleNamespace(
                 active_output=SimpleNamespace(file_results=[], diagnostics=[]),
                 published_paths=(),
@@ -79,7 +96,7 @@ def test_targeted_dispatch_freezes_inputs_until_completion(tmp_path, monkeypatch
         assert request.config.ms2_precursor_tol_da == 0.37
         assert request.config.signal_processing_window_points == 17
         assert [(t.label, t.rt_max) for t in request.targets] == [("A", 3), ("B", 3)]
-        receipt_dir = Path(request.method_manifest_context.config_dir)
+        receipt_dir = Path(receipts[0])
         assert not receipt_dir.exists()
         assert request.config.output_csv.parent == tmp_path / "output"
     finally:
@@ -172,6 +189,7 @@ def test_queued_targeted_metadata_membership_and_order_are_frozen(
         ),
     )
     captured = []
+    receipts = _record_receipts(monkeypatch)
     submitted = []
 
     class Service:
@@ -208,7 +226,7 @@ def test_queued_targeted_metadata_membership_and_order_are_frozen(
         assert not request.config.injection_order_source.exists()
         assert request.config.injection_order_source != order_source
         assert order_source.read_bytes() != original_order
-        assert not request.method_manifest_context.config_dir.exists()
+        assert not receipts[0].exists()
     finally:
         jobs.close()
 
@@ -256,11 +274,12 @@ def test_relative_workbench_config_uses_absolute_temporary_inputs(
     _snapshot_workspace(tmp_path)
     monkeypatch.chdir(tmp_path)
     captured = []
+    receipts = _record_receipts(monkeypatch)
 
     class Service:
         def execute_application(self, request):
             captured.append(request)
-            assert request.method_manifest_context.config_dir.is_dir()
+            assert receipts[0].is_dir()
             return SimpleNamespace(
                 active_output=SimpleNamespace(file_results=[], diagnostics=[]),
                 published_paths=(),
@@ -276,8 +295,7 @@ def test_relative_workbench_config_uses_absolute_temporary_inputs(
     )
     run.execute()
     request = captured[0]
-    receipt = request.method_manifest_context.config_dir
+    receipt = receipts[0]
     assert receipt.is_absolute()
     assert not receipt.exists()
     assert request.config.output_csv.parent == tmp_path / "output"
-    assert request.method_manifest_context.base_dir == tmp_path

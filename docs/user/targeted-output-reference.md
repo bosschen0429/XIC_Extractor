@@ -4,8 +4,7 @@ The normal completed Targeted run delivers one `xic_results_YYYYMMDD_HHMM.xlsx`
 inside its run directory. Workbook layout 2 opens on `Overview`, followed by
 `XIC Results`. `Targets`, `Run Metadata` and the nonempty `Diagnostics` appendix
 are supporting references, not the first reading layer.
-Inspector can read this layout and legacy workbooks with a separate Review Queue.
-Opening a workbook for review does not modify it or create sidecar files.
+Inspector reads this layout. Opening a workbook for review does not modify it or create sidecar files.
 
 ## Overview: start here
 
@@ -17,7 +16,7 @@ The combined overview/summary answers three questions before showing row details
 
 Targets with review conditions appear first. Links lead to their sample rows in
 `XIC Results`; filter that table by Target or Review. Counted detections and review
-conditions may overlap. Missing legacy detection decisions remain unknown, not
+conditions may overlap. Missing detection decisions remain unknown, not
 inferred from Area, NL or review status. No review condition is not a batch pass.
 
 A collapsed row group contains per-target median Area and RT range for counted

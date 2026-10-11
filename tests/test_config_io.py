@@ -240,31 +240,26 @@ def test_write_targets_creates_runtime_copy_only_on_save(tmp_path, monkeypatch):
     assert read_targets()[0]["label"] == "ExA"
 
 
-@pytest.mark.parametrize(
-    "body",
-    [
-        "signal_processing_window_points,15\nsignal_processing_window_points,21\n",
-        "signal_processing_window_points,15\nms1_morphology_smoothing_window_points,21\n",
-    ],
-)
-def test_csv_conflicts_are_rejected_in_ui_and_runtime_reader(tmp_path, body):
+def test_csv_conflicts_are_rejected_in_ui_and_runtime_reader(tmp_path):
     path = tmp_path / "settings.csv"
-    path.write_text("key,value\n" + body, encoding="utf-8")
+    path.write_text(
+        "key,value\n"
+        "signal_processing_window_points,15\n"
+        "signal_processing_window_points,21\n",
+        encoding="utf-8",
+    )
     with pytest.raises(ConfigError, match="conflict"):
         resolve_settings(read_settings(config_dir=tmp_path))
-    if "ms1_morphology" not in body:
-        with pytest.raises(ConfigError, match="conflict"):
-            _read_settings(path)
+    with pytest.raises(ConfigError, match="conflict"):
+        _read_settings(path)
 
 
-
-def test_equal_csv_aliases_and_duplicates_have_one_canonical_written_row(tmp_path):
+def test_equal_csv_duplicates_have_one_written_row(tmp_path):
     path = tmp_path / "settings.csv"
     path.write_text(
         "key,value,description\n"
         "signal_processing_window_points,15,canonical\n"
         "signal_processing_window_points,15,duplicate\n"
-        "ms1_morphology_smoothing_window_points,015,legacy\n"
         "retired_setting,keep,old description\n",
         encoding="utf-8",
     )
@@ -272,7 +267,6 @@ def test_equal_csv_aliases_and_duplicates_have_one_canonical_written_row(tmp_pat
     write_settings({"dirty_matrix_mode": "true"}, config_dir=tmp_path)
     rows = list(csv.DictReader(path.open(encoding="utf-8-sig")))
     assert sum(row["key"] == "signal_processing_window_points" for row in rows) == 1
-    assert all(row["key"] != "ms1_morphology_smoothing_window_points" for row in rows)
     assert next(row for row in rows if row["key"] == "retired_setting") == {
         "key": "retired_setting",
         "value": "keep",

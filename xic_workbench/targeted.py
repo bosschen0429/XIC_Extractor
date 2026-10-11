@@ -23,7 +23,6 @@ from xic_extractor.configuration import loader as config_loader
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.configuration.settings import method_settings_differences
 from xic_extractor.extraction.result_models import ExtractionResult, RunOutput
-from xic_extractor.output.method_manifest import MethodManifestContext
 from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,
     METHOD_KEYS,
@@ -56,10 +55,8 @@ class TargetedRun:
         should_cancel: Callable[[], bool],
     ) -> None:
         config_dir = Path(config_dir)
-        self._base_dir = config_dir.parent.resolve()
         prepared = config_loader.prepare_targeted_config(config_dir)
         self._prepared = prepared
-        self._config_dir = prepared.input_config_dir
         self._config, self._targets = prepared.config, list(prepared.targets)
         # Admission fixes the discovered file set, not analysis roles or RAW bytes.
         self._raw_paths = discover_raw_files(self._config.data_dir)
@@ -95,12 +92,6 @@ class TargetedRun:
                 targets,
                 progress_callback=self._progress,
                 should_stop=self._should_cancel,
-                method_manifest_context=MethodManifestContext(
-                    entrypoint="xic-extractor-html",
-                    base_dir=self._base_dir,
-                    config_dir=self._config_dir,
-                    output_mode="excel",
-                ),
                 excel_output_path=excel_path,
             )
             if requires_limited_identity_workflow(config):

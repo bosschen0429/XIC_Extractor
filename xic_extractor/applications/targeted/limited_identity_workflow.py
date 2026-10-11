@@ -22,7 +22,6 @@ from xic_extractor.extraction.targeted_inputs import (
     resolve_model_selection_expected_diff_approvals,
 )
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
-from xic_extractor.output.method_manifest import MethodManifestContext
 from xic_extractor.targeted_ms1_shape_identity_policy import (
     LIMITED_HMDC_MEDC_POLICY,
     LIMITED_HMDC_MEDC_TARGETS,
@@ -104,11 +103,6 @@ def _execute_limited_identity_stages(
     output_root: Path,
 ) -> LimitedIdentityWorkflowExecution:
     """Run the unchanged scientific gate in a private working directory."""
-    context = request.method_manifest_context
-    if not isinstance(context, MethodManifestContext):
-        raise ConfigError(
-            "Limited identity workflow requires a method manifest context"
-        )
     output_root = Path(output_root)
     baseline_dir = output_root / "baseline" / "output"
     staging_dir = output_root / "final_unverified" / "output"
@@ -124,10 +118,6 @@ def _execute_limited_identity_stages(
         targeted_ms1_shape_identity_support_tsv=None,
         targeted_ms1_shape_identity_activation_policy=LIMITED_HMDC_MEDC_POLICY,
     )
-    baseline_overrides = {
-        **(context.settings_overrides or {}),
-        "targeted_ms1_shape_identity_activation_policy": LIMITED_HMDC_MEDC_POLICY,
-    }
     _stage(request, "Auto limited baseline")
     application.execute_application(
         replace(
@@ -137,12 +127,6 @@ def _execute_limited_identity_stages(
             excel_output_path=None,
             replace_existing_outputs=False,
             output_projection="acquisition_baseline",
-            method_manifest_context=replace(
-                context,
-                entrypoint=f"{context.entrypoint}-targeted-ms1-auto-baseline",
-                settings_overrides=baseline_overrides,
-                output_mode="csv_only",
-            ),
         )
     )
     _check_cancel(request)
@@ -152,7 +136,7 @@ def _execute_limited_identity_stages(
         long_csv=baseline_config.output_csv.with_name("xic_results_long.csv"),
         raw_dir=baseline_config.data_dir,
         dll_dir=baseline_config.dll_dir,
-        config_dir=context.config_dir,
+        config_dir=None,
         targets=request.targets,
         output_tsv=support_tsv,
         target_names=tuple(sorted(LIMITED_HMDC_MEDC_TARGETS)),
@@ -167,10 +151,6 @@ def _execute_limited_identity_stages(
         targeted_ms1_shape_identity_support_tsv=support_tsv,
         targeted_ms1_shape_identity_activation_policy=LIMITED_HMDC_MEDC_POLICY,
     )
-    final_overrides = {
-        **baseline_overrides,
-        "targeted_ms1_shape_identity_support_tsv": str(support_tsv.resolve()),
-    }
     _stage(request, "Auto limited final")
     final_execution = application.execute_application(
         replace(
@@ -180,11 +160,6 @@ def _execute_limited_identity_stages(
             excel_output_path=None,
             replace_existing_outputs=False,
             output_projection="finalized",
-            method_manifest_context=replace(
-                context,
-                entrypoint=f"{context.entrypoint}-targeted-ms1-auto-limited-default",
-                settings_overrides=final_overrides,
-            ),
         )
     )
     _check_cancel(request)

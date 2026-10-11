@@ -73,8 +73,8 @@ and RT windows appropriate for the method and batch: a detected ISTD does not
 automatically establish every analyte's identity.
 
 The CLI accepts `--method-dir <folder>` with the same method format, plus
-`--data-dir <new-batch>` and the existing workspace/local settings. Its run
-manifest binds frozen input CSVs, not a later mutable saved-method folder.
+`--data-dir <new-batch>` and the existing workspace/local settings. The run
+uses input CSVs frozen at start, not a later mutable saved-method folder.
 GUI and CLI use the same limited-identity workflow when selected by the method;
 only a successful existing expected-diff gate publishes its verified final result.
 
@@ -87,8 +87,7 @@ count. Gaussian smoothing is fixed information, not a selectable method.
 
 **還原方法參數** restores those parameters while preserving targets, batch, environment,
 output settings and resource selections. Resources remain separately visible;
-changing a resource is not hidden inside the custom-method count. Use the
-existing run manifest and its bound inputs for full replay provenance.
+changing a resource is not hidden inside the custom-method count.
 
 `count_no_ms2_as_detected` is a compatibility fallback for legacy rows without
 formal projection fields, not a global switch for formal Detection %. See the

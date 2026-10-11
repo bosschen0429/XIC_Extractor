@@ -29,9 +29,6 @@ from xic_extractor.extraction.result_models import (
     RunOutput,
 )
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
-from xic_extractor.output.method_manifest import (
-    MethodManifestContext,
-)
 from xic_extractor.output.targeted_product_model import (
     TargetedProductProjection,
 )
@@ -76,13 +73,6 @@ def publish_targeted_outputs(
         raise TargetedOutputBoundaryError(
             "publication requires an exact attempt-bound completed workflow"
         )
-    if request.method_manifest_context is not None and not isinstance(
-        request.method_manifest_context,
-        MethodManifestContext,
-    ):
-        raise TargetedOutputBoundaryError(
-            "method_manifest_context must be a MethodManifestContext"
-        )
     prepared = completed_workflow.prepared
     finalized_results = completed_workflow.finalized_results
     acquisition_file_ids = tuple(
@@ -122,12 +112,7 @@ def publish_targeted_outputs(
             and not request.config.keep_intermediate_csv
         )
         if not workbook_only:
-            write_outputs(
-                stage_config,
-                list(request.targets),
-                render_view,
-                write_manifest=False,
-            )
+            write_outputs(stage_config, list(request.targets), render_view)
         stage_excel: Path | None = None
         if request.excel_output_path is not None:
             stage_excel = stage_root / _STAGE_EXCEL_OUTPUT

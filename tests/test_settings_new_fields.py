@@ -34,7 +34,6 @@ def test_new_keys_present() -> None:
         "model_selection_expected_diff_approval_registry": "",
         "targeted_ms1_shape_identity_support_tsv": "",
         "targeted_ms1_shape_identity_activation_policy": "limited_5hmdc_5medc",
-        "ms1_morphology_smoothing_window_points": "15",
     }.items():
         assert CANONICAL_SETTINGS_DEFAULTS[key] == default
 
@@ -47,7 +46,6 @@ def test_new_settings_are_in_canonical_defaults_and_descriptions() -> None:
         "model_selection_expected_diff_approval_registry",
         "targeted_ms1_shape_identity_support_tsv",
         "targeted_ms1_shape_identity_activation_policy",
-        "ms1_morphology_smoothing_window_points",
     ):
         assert CANONICAL_SETTINGS_DESCRIPTIONS[key]
     assert "fallback" in CANONICAL_SETTINGS_DESCRIPTIONS["injection_order_source"]
@@ -68,10 +66,6 @@ def test_new_settings_are_in_canonical_defaults_and_descriptions() -> None:
             "targeted_ms1_shape_identity_activation_policy"
         ]
     )
-    assert (
-        "Legacy alias"
-        in CANONICAL_SETTINGS_DESCRIPTIONS["ms1_morphology_smoothing_window_points"]
-    )
 
 
 def test_load_config_parses_scoring_settings(tmp_path: Path) -> None:
@@ -88,7 +82,7 @@ def test_load_config_parses_scoring_settings(tmp_path: Path) -> None:
         "dll_dir": str(dll_dir),
         "smooth_window": "15",
         "smooth_polyorder": "3",
-        "ms1_morphology_smoothing_window_points": "21",
+        "signal_processing_window_points": "21",
         "peak_rel_height": "0.95",
         "peak_min_prominence_ratio": "0.10",
         "ms2_precursor_tol_da": "0.5",
@@ -100,8 +94,6 @@ def test_load_config_parses_scoring_settings(tmp_path: Path) -> None:
         "model_selection_expected_diff_approval_registry": str(approval_registry),
         "targeted_ms1_shape_identity_support_tsv": str(shape_identity_support),
         "targeted_ms1_shape_identity_activation_policy": "limited_5hmdc_5medc",
-        "emit_review_report": "true",
-        "keep_intermediate_csv": "true",
     }
 
     config_dir.mkdir()
@@ -141,8 +133,7 @@ def test_load_config_parses_scoring_settings(tmp_path: Path) -> None:
     assert config.targeted_ms1_shape_identity_activation_policy == (
         "limited_5hmdc_5medc"
     )
-    assert config.keep_intermediate_csv is False
-    assert config.ms1_morphology_smoothing_window_points == 21
+    assert config.signal_processing_window_points == 21
     assert config.config_hash == compute_config_hash(targets_path, settings_path)
     assert config.target_config_hash == compute_target_config_hash(targets_path)
 
@@ -267,9 +258,4 @@ def test_disabled_optional_resources_are_not_reported_as_missing_settings():
     from xic_extractor.configuration.settings import resolve_settings
     from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 
-    values = {
-        key: value
-        for key, value in CANONICAL_SETTINGS_DEFAULTS.items()
-        if key != "ms1_morphology_smoothing_window_points"
-    }
-    assert resolve_settings(values)[2] == []
+    assert resolve_settings(dict(CANONICAL_SETTINGS_DEFAULTS))[2] == []

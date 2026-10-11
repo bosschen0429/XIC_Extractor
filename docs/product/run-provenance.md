@@ -1,23 +1,18 @@
 # Run Provenance
 
 Run provenance records method and artifact context so a product run can be
-reviewed, replayed, or compared without relying on branch-local command
+reviewed or compared without relying on branch-local command
 diaries.
 
 [`processing-lineage.md`](processing-lineage.md) owns the workflow-neutral
 request/attempt/artifact/delivery identity and retention contract. This page
-owns Targeted workbook run metadata and diagnostic method-manifest projection.
-Neither a workbook config hash nor a diagnostic manifest is a complete lineage seal.
+owns Targeted workbook run metadata. A workbook config hash is not a complete
+lineage seal.
 
 ## Contract
 
 - `config_hash` and `target_config_hash` are configuration fragments. The two
-  hashes are not a complete method manifest and do not provide full method
-  replay.
-- A method manifest is an additive run envelope. The envelope holds input
-  artifact hashes,
-  settings fragments, runtime/backend, CLI invocation when available, output
-  pointers, and schema versions.
+  hashes are not a complete method record and do not reproduce a run.
 - A generated timestamp, config hash, output path, or successful process exit
   is not a canonical processing-attempt or delivery identity.
 - A point-in-time validation packet must distinguish the evaluated revision
@@ -32,7 +27,8 @@ Neither a workbook config hash nor a diagnostic manifest is a complete lineage s
 - Normal Targeted delivery is one XLSX. `Run Metadata` records actual method
   settings, runtime configuration, config fragments, and the limited-identity
   gate receipt. `Targets` records target identity, ranges, pairing, and sample
-  applicability. No automatic HTML, CSV/TSV, or manifest sidecar is published.
+  applicability. No HTML, CSV/TSV, or manifest sidecar is published, and
+  Targeted runs have no replay entrypoint.
 - A saved Targeted method is reusable intent, not a run receipt. Admission freezes
   settings, targets, and supplied injection-order input in a private temporary
   workspace. The caller retains it while queued/running and cleans it on completion
@@ -53,37 +49,31 @@ Neither a workbook config hash nor a diagnostic manifest is a complete lineage s
 | --- | --- |
 | `Run Metadata` workbook sheet | Human-readable run metadata |
 | `config_hash` / `target_config_hash` | Configuration and target fragments |
-| `method_manifest.json` | Explicit diagnostic/replay envelope, not normal delivery |
-| CLI arguments and runner config | Replay inputs and behavior surface |
+| CLI arguments and runner config | Run inputs and behavior surface |
 | Output schema versions | Contract for produced CSV/TSV/workbook sidecars |
 
 ## Boundaries
 
-- Owns: method manifest structure, run metadata keys, config hashes, output
-  schema version tracking, and replay artifact validation.
+- Owns: run metadata keys, config hashes, and output schema version tracking.
 - Does not own: workflow-neutral processing identity, evidence retention,
   delivery-cell lineage, or delivery sealing. The processing-lineage contract
   owns these four concerns.
-- Does not own: exact replay CLI semantics for every workflow, sample metadata
-  role behavior, review action import, matrix activation authority, or
+- Does not own: sample metadata role behavior, review action import, matrix activation authority, or
   productization tier decisions.
-- Expanding a Targeted method-manifest slice into sample metadata, review
-  roundtrip, or matrix activation requires a separate contract.
 
 ## Verification
 
-- Manifest serialization and validation tests.
-- Replay smoke for documented runner paths.
+- `Run Metadata` key tests.
 - Output-schema tests when schema metadata changes.
 - Expected-diff framing if product values, selected peaks, areas, counted
   detections, or workbook sheets can change.
 
 ## Pitfalls
 
-- Treating a config hash as full method replay.
-- Treating a path, timestamp, diagnostic `run_id`, or method manifest as a
-  sealed delivery lineage.
-- Hiding replay-critical command shape only in a branch diary.
+- Treating a config hash as a complete method record.
+- Treating a path, timestamp, or diagnostic `run_id` as a sealed delivery
+  lineage.
+- Hiding run-critical command shape only in a branch diary.
 - Letting provenance sidecars recompute evidence or decisions.
 
 ## See Also

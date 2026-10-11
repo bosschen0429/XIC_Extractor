@@ -24,11 +24,6 @@ from xic_extractor.configuration.loader import (
     prepare_targeted_config,
 )
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig
-from xic_extractor.output.method_manifest import (
-    MethodManifestContext,
-    MethodManifestError,
-    load_method_manifest_for_replay,
-)
 from xic_extractor.raw_reader import RawReaderError
 from xic_extractor.targeted_ms1_shape_identity_policy import (
     EXPLICIT_SUPPORT_TSV_POLICY,
@@ -38,58 +33,14 @@ from xic_extractor.targeted_ms1_shape_identity_policy import (
 
 def main(argv: Sequence[str] | None = None) -> int:
     multiprocessing.freeze_support()
-    cli_argv = tuple(sys.argv[1:] if argv is None else argv)
     args = _parse_args(argv)
     prepared = None
     try:
-        if args.replay_manifest is None:
-            _validate_targeted_ms1_shape_identity_auto_args(args)
-        replay_request = None
-        if args.replay_manifest is not None:
-            _reject_replay_overrides(args)
-            replay_request = load_method_manifest_for_replay(args.replay_manifest)
-            base_dir = replay_request.base_dir
-            config_dir = replay_request.config_dir
-            settings_overrides = replay_request.settings_overrides
-            output_mode = "excel"
-        else:
-            base_dir = (args.base_dir or Path.cwd()).resolve()
-            config_dir = base_dir / "config"
-            settings_overrides = {}
-            output_mode = "excel"
-            if args.data_dir is not None:
-                data_dir = args.data_dir.resolve()
-                if not data_dir.is_dir():
-                    raise ConfigError(
-                        f"{data_dir}: data_dir override must be a directory"
-                    )
-                settings_overrides["data_dir"] = str(data_dir)
-            if args.injection_order_source is not None:
-                settings_overrides["injection_order_source"] = str(
-                    args.injection_order_source.resolve()
-                )
-            if args.model_selection_expected_diff_approvals is not None:
-                settings_overrides[
-                    "model_selection_expected_diff_approval_registry"
-                ] = str(args.model_selection_expected_diff_approvals.resolve())
-            if args.targeted_ms1_shape_identity_support_tsv is not None:
-                settings_overrides["targeted_ms1_shape_identity_support_tsv"] = str(
-                    args.targeted_ms1_shape_identity_support_tsv.resolve()
-                )
-                if args.targeted_ms1_shape_identity_activation_policy is None:
-                    settings_overrides[
-                        "targeted_ms1_shape_identity_activation_policy"
-                    ] = EXPLICIT_SUPPORT_TSV_POLICY
-            if args.targeted_ms1_shape_identity_activation_policy is not None:
-                settings_overrides["targeted_ms1_shape_identity_activation_policy"] = (
-                    args.targeted_ms1_shape_identity_activation_policy
-                )
-
-        if replay_request is None and args.method_dir is not None:
-            if args.parallel_mode is not None:
-                settings_overrides["parallel_mode"] = args.parallel_mode
-            if args.parallel_workers is not None:
-                settings_overrides["parallel_workers"] = str(args.parallel_workers)
+        _validate_targeted_ms1_shape_identity_auto_args(args)
+        base_dir = (args.base_dir or Path.cwd()).resolve()
+        config_dir = base_dir / "config"
+        settings_overrides = _settings_overrides(args)
+        if args.method_dir is not None:
             prepared = prepare_targeted_config(
                 config_dir,
                 method_dir=args.method_dir.resolve(),
@@ -97,46 +48,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                 output_dir=base_dir / "output",
             )
             config, targets = prepared.config, list(prepared.targets)
-            config_dir = prepared.input_config_dir
-            settings_overrides = {}
-        elif replay_request is not None:
-            config, targets = load_config(
-                config_dir,
-                settings_overrides=settings_overrides or None,
-                output_dir=replay_request.manifest_path.parent,
-            )
         elif settings_overrides:
             config, targets = load_config(
-                config_dir,
-                settings_overrides=settings_overrides,
+                config_dir, settings_overrides=settings_overrides
             )
         else:
             config, targets = load_config(config_dir)
-        if replay_request is None and args.parallel_mode is not None:
+        # Execution resources are runtime choices, not part of the method hash.
+        if args.parallel_mode is not None:
             config = replace(config, parallel_mode=args.parallel_mode)
-        if replay_request is None and args.parallel_workers is not None:
+        if args.parallel_workers is not None:
             config = replace(config, parallel_workers=args.parallel_workers)
-        if replay_request is not None:
-            config = replace(
-                config,
-                parallel_mode=replay_request.parallel_mode,
-                parallel_workers=replay_request.parallel_workers,
-            )
-        run_config = config
-        if _should_run_targeted_ms1_shape_identity_auto_limited_default(
-            args,
-            config,
-            replay_request=replay_request,
+        if (
+            args.targeted_ms1_shape_identity_auto_limited_default
+            or requires_limited_identity_workflow(config)
         ):
             try:
-                auto_result = _run_targeted_ms1_shape_identity_auto_limited_default(
-                    run_config,
+                output = _run_targeted_ms1_shape_identity_auto_limited_default(
+                    config,
                     targets,
-                    cli_argv=cli_argv,
                     base_dir=base_dir,
-                    config_dir=config_dir,
-                    settings_overrides=settings_overrides,
-                    output_mode=output_mode,
                     auto_output_dir=(
                         None
                         if args.targeted_ms1_shape_identity_auto_output_dir is None
@@ -148,37 +79,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "targeted MS1 shape identity auto-limited workflow failed; "
                     f"verified final output was not published: {exc}"
                 ) from exc
-            output, _ = auto_result
         else:
-            excel_output_path = _excel_output_path(config)
             output = (
                 build_canonical_targeted_application_service(extractor.acquire)
                 .execute_application(
                     build_targeted_application_request(
-                        run_config,
+                        config,
                         targets,
                         progress_callback=_print_progress,
-                        method_manifest_context=MethodManifestContext(
-                            entrypoint=(
-                                "xic-extractor-cli-replay"
-                                if replay_request is not None
-                                else "xic-extractor-cli"
-                            ),
-                            argv=cli_argv,
-                            base_dir=base_dir,
-                            config_dir=config_dir,
-                            settings_overrides=settings_overrides,
-                            output_mode=output_mode,
-                        ),
-                        excel_output_path=excel_output_path,
-                        replace_existing_outputs=replay_request is not None,
+                        excel_output_path=_excel_output_path(config),
                     )
                 )
                 .active_output
             )
     except (
         ConfigError,
-        MethodManifestError,
         RawReaderError,
         TargetedOutputBoundaryError,
     ) as exc:
@@ -193,6 +108,34 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Diagnostics: {len(output.diagnostics)}")
 
     return 0
+
+
+def _settings_overrides(args: argparse.Namespace) -> dict[str, str]:
+    overrides: dict[str, str] = {}
+    if args.data_dir is not None:
+        data_dir = args.data_dir.resolve()
+        if not data_dir.is_dir():
+            raise ConfigError(f"{data_dir}: data_dir override must be a directory")
+        overrides["data_dir"] = str(data_dir)
+    if args.injection_order_source is not None:
+        overrides["injection_order_source"] = str(args.injection_order_source.resolve())
+    if args.model_selection_expected_diff_approvals is not None:
+        overrides["model_selection_expected_diff_approval_registry"] = str(
+            args.model_selection_expected_diff_approvals.resolve()
+        )
+    if args.targeted_ms1_shape_identity_support_tsv is not None:
+        overrides["targeted_ms1_shape_identity_support_tsv"] = str(
+            args.targeted_ms1_shape_identity_support_tsv.resolve()
+        )
+        if args.targeted_ms1_shape_identity_activation_policy is None:
+            overrides["targeted_ms1_shape_identity_activation_policy"] = (
+                EXPLICIT_SUPPORT_TSV_POLICY
+            )
+    if args.targeted_ms1_shape_identity_activation_policy is not None:
+        overrides["targeted_ms1_shape_identity_activation_policy"] = (
+            args.targeted_ms1_shape_identity_activation_policy
+        )
+    return overrides
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
@@ -213,15 +156,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "Select a complete reusable Targeted method directory (settings.csv "
             "and targets.csv). Batch/machine settings come from --base-dir; "
             "resource-bound portable methods are not yet supported."
-        ),
-    )
-    parser.add_argument(
-        "--replay-manifest",
-        type=Path,
-        default=None,
-        help=(
-            "Replay a previous xic-extractor-cli run from method_manifest.json. "
-            "Replay mode does not accept runtime override flags."
         ),
     )
     parser.add_argument(
@@ -298,35 +232,6 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _reject_replay_overrides(args: argparse.Namespace) -> None:
-    conflicts = []
-    if args.base_dir is not None:
-        conflicts.append("--base-dir")
-    if args.data_dir is not None:
-        conflicts.append("--data-dir")
-    if args.method_dir is not None:
-        conflicts.append("--method-dir")
-    if args.injection_order_source is not None:
-        conflicts.append("--injection-order-source")
-    if args.parallel_mode is not None:
-        conflicts.append("--parallel-mode")
-    if args.parallel_workers is not None:
-        conflicts.append("--parallel-workers")
-    if args.model_selection_expected_diff_approvals is not None:
-        conflicts.append("--model-selection-expected-diff-approvals")
-    if args.targeted_ms1_shape_identity_support_tsv is not None:
-        conflicts.append("--targeted-ms1-shape-identity-support-tsv")
-    if args.targeted_ms1_shape_identity_activation_policy is not None:
-        conflicts.append("--targeted-ms1-shape-identity-activation-policy")
-    if args.targeted_ms1_shape_identity_auto_limited_default:
-        conflicts.append("--targeted-ms1-shape-identity-auto-limited-default")
-    if args.targeted_ms1_shape_identity_auto_output_dir is not None:
-        conflicts.append("--targeted-ms1-shape-identity-auto-output-dir")
-    if conflicts:
-        joined = ", ".join(conflicts)
-        raise ConfigError(f"--replay-manifest cannot be combined with {joined}")
-
-
 def _validate_targeted_ms1_shape_identity_auto_args(
     args: argparse.Namespace,
 ) -> None:
@@ -353,28 +258,11 @@ def _validate_targeted_ms1_shape_identity_auto_args(
         )
 
 
-def _should_run_targeted_ms1_shape_identity_auto_limited_default(
-    args: argparse.Namespace,
-    config: ExtractionConfig,
-    *,
-    replay_request,
-) -> bool:
-    if replay_request is not None:
-        return False
-    if args.targeted_ms1_shape_identity_auto_limited_default:
-        return True
-    return requires_limited_identity_workflow(config)
-
-
 def _run_targeted_ms1_shape_identity_auto_limited_default(
     config: ExtractionConfig,
     targets,
     *,
-    cli_argv: Sequence[str],
     base_dir: Path,
-    config_dir: Path,
-    settings_overrides: dict[str, str],
-    output_mode: str,
     auto_output_dir: Path | None,
 ):
     output_root = auto_output_dir or (
@@ -387,14 +275,6 @@ def _run_targeted_ms1_shape_identity_auto_limited_default(
             config,
             targets,
             progress_callback=_print_progress,
-            method_manifest_context=MethodManifestContext(
-                entrypoint="xic-extractor-cli",
-                argv=tuple(cli_argv),
-                base_dir=base_dir,
-                config_dir=config_dir,
-                settings_overrides=settings_overrides,
-                output_mode=output_mode,
-            ),
             excel_output_path=_excel_output_path(config),
         ),
         application=build_canonical_targeted_application_service(extractor.acquire),
@@ -409,7 +289,7 @@ def _run_targeted_ms1_shape_identity_auto_limited_default(
     print(
         f"Auto limited verified final output: {result.final_config.output_csv.parent}"
     )
-    return result.final_execution.active_output, result.final_config
+    return result.final_execution.active_output
 
 
 def _positive_int(value: str) -> int:

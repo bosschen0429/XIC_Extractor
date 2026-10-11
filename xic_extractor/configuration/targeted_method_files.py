@@ -19,8 +19,7 @@ from xic_extractor.configuration.csv_io import (
 )
 from xic_extractor.configuration.models import ConfigError, Target
 from xic_extractor.configuration.settings import (
-    migrate_settings_dict,
-    reject_retired_rt_reference_inputs,
+    fill_setting_defaults,
     resolve_settings,
 )
 from xic_extractor.configuration.targets import parse_target_rows
@@ -46,7 +45,7 @@ def create_targeted_method(
     settings: Mapping[str, str], target_rows: Sequence[Mapping[str, str]]
 ) -> TargetedMethod:
     """Admit an editable method without files or discarded resource knowledge."""
-    normalized, _warnings = migrate_settings_dict(dict(settings))
+    normalized, _warnings = fill_setting_defaults(dict(settings))
     _reject_portable_resources(normalized)
     unknown = sorted(set(normalized) - CANONICAL_SETTINGS_DEFAULTS.keys())
     if unknown:
@@ -75,7 +74,7 @@ def apply_targeted_method(
     silently turn a selected method into a differently supported calculation.
     """
     _reject_portable_resources(settings)
-    values, _warnings = migrate_settings_dict(dict(settings))
+    values, _warnings = fill_setting_defaults(dict(settings))
     values.update(method.settings)
     values.update(overrides or {})
     _reject_portable_resources(values)
@@ -83,7 +82,6 @@ def apply_targeted_method(
 
 
 def _reject_portable_resources(settings: Mapping[str, str]) -> None:
-    reject_retired_rt_reference_inputs(settings)
     resources = [key for key in RESOURCE_KEYS if settings.get(key, "").strip()]
     if resources:
         raise ConfigError(

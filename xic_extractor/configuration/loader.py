@@ -16,7 +16,6 @@ from xic_extractor.configuration.hashing import (
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.configuration.settings import (
     build_extraction_config,
-    reject_retired_rt_reference_inputs,
     resolve_settings,
 )
 from xic_extractor.configuration.target_identity import (
@@ -69,7 +68,6 @@ def prepare_targeted_config(
     settings_bytes = settings_path.read_bytes()
     raw = _parse_settings_csv_bytes(settings_bytes, settings_path)
     overrides = dict(settings_overrides or {})
-    reject_retired_rt_reference_inputs({**raw, **overrides})
     if (
         method_dir is not None
         and overrides.get("data_dir")

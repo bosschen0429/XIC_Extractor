@@ -10,12 +10,10 @@ contain local machine paths.
 `settings.csv` is the only active Targeted settings file; `targets.csv` is a
 separate target list. Reset restores the 11 method parameters declared in
 `xic_extractor.settings_schema.METHOD_KEYS`, preserving batch, environment,
-output and resource settings. Full replay uses the existing run manifest and
-its bound inputs.
+output and resource settings.
 
 The shared DLL location is persisted only in `settings.csv`, for both Targeted
-and Untargeted. Legacy DLL preferences are migrated with backups when the workspace opens; UI preferences
-and Discovery batch files no longer override this value. An explicit launch
+and Untargeted. UI preferences and Discovery batch files do not override this value. An explicit launch
 override remains session-local until saved.
 
 The custom-method label compares only those 11 parameters with platform-owned
@@ -40,11 +38,6 @@ reference and ISTD evidence select a component without recomputing its area.
 | --- | --- | --- | --- | --- |
 | `signal_processing_method` | enum | `gaussian` | `gaussian` | Fixed shared physical signal smoothing; informational, not a GUI choice |
 | `signal_processing_window_points` | int | 15 | odd, 3–999 | Gaussian smoothing window (points) |
-
-New saves write only `signal_processing_window_points`. Legacy
-`ms1_morphology_smoothing_window_points` is accepted on load and normalizes to
-the canonical key; conflicting canonical and legacy values fail rather than
-choosing one silently.
 
 ### Neutral Loss Confirmation
 
@@ -77,7 +70,8 @@ untrusted pairs do not borrow an anchor from another sample.
 ### Output
 
 Normal Targeted runs deliver one XLSX. There are no report/CSV/score-export
-switches. Retired output keys are removed when settings are saved.
+switches. Settings keys outside this reference are reported as unknown and
+have no effect.
 
 ### Parallelization
 
@@ -140,8 +134,6 @@ identifier in workbook output and downstream CSV files.
   counterparts (for example `d3-5-medC` / `5-medC`); existing roles and nonempty
   pairs win. Ambiguous names remain unpaired and editable. Name guesses are not
   chemical evidence or a hard RT-order rule.
-- Unused isotope-category and RT-relation declarations are not required and are
-  dropped on save; meaningful `sample_applicability` remains in force.
 
 ## Retired candidate audit outputs
 
@@ -153,11 +145,3 @@ Use [XIC Inspector](../product/xic-inspector.md) for visual review of its suppor
 evidence sources. Inspector does not apply candidate switches or generate RT
 reselection comparison tables. Formal peak selection and numerical output remain
 owner-controlled.
-
-## Retired RT feedback inputs
-
-Remove `rt_prior_library_path` and `target_pair_rt_calibration_path` from existing
-settings. Nonempty values are rejected: the current sample's paired ISTD now
-provides its reference directly, without CSV feedback. Historical method
-manifests from the earlier RT policy cannot be replayed as equivalent current
-runs; start a new run with the current method instead.
