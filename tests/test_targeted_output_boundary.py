@@ -12,7 +12,10 @@ import numpy as np
 import pytest
 from openpyxl import load_workbook
 
-from tests.test_targeted_production_workflow import production_case
+from tests.test_targeted_production_workflow import (
+    production_case,
+    with_method_universe,
+)
 from xic_extractor.applications.targeted import (
     output_boundary as targeted_output_boundary,
 )
@@ -59,6 +62,206 @@ def _commit_staged_output_in_process(
     except TargetedOutputBoundaryError as exc:
         return ("error", str(exc))
     return ("success", str(paths[0]))
+
+
+@pytest.mark.parametrize(
+    "with_nl,with_signal", [(True, True), (False, True), (True, False)]
+)
+def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
+    tmp_path: Path, monkeypatch, with_nl: bool, with_signal: bool
+) -> None:
+    from contextlib import nullcontext
+
+    from xic_extractor.applications.targeted import production_workflow
+    from xic_extractor.configuration.models import ExtractionConfig, Target
+    from xic_extractor.extraction import pipeline, target_extraction
+    from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
+    from xic_extractor.peak_detection import cid_nl_method_assessment
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    scales = {"SampleA": 1.0, "SampleB": 2.0}
+    for name in scales:
+        (data_dir / f"{name}.raw").write_bytes(name.encode())
+    config = ExtractionConfig(
+        data_dir=data_dir,
+        dll_dir=tmp_path,
+        output_csv=tmp_path / "xic_results.csv",
+        diagnostics_csv=tmp_path / "diagnostics.csv",
+        smooth_window=9,
+        smooth_polyorder=2,
+        peak_rel_height=0.02,
+        peak_min_prominence_ratio=0.01,
+        ms2_precursor_tol_da=0.5,
+        nl_min_intensity_ratio=0.01,
+        nl_rt_anchor_half_window_min=0.5,
+        nl_fallback_half_window_min=0.5,
+        count_no_ms2_as_detected=True,
+    )
+    target = Target(
+        label="Analyte",
+        mz=250.0,
+        rt_min=1.0,
+        rt_max=2.0,
+        ppm_tol=20.0,
+        neutral_loss_da=116.0,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=40.0,
+        is_istd=False,
+        istd_pair="",
+    )
+
+    class Raw:
+        def __init__(self, scale: float) -> None:
+            self.scale = scale
+
+        def extract_xic(self, _mz, rt_min, rt_max, _ppm):
+            rt = np.linspace(rt_min, rt_max, 1201)
+            intensity = 10.0 + (self.scale if with_signal else 0.0) * (
+                1000.0 * np.exp(-(((rt - 1.4) / 0.025) ** 2))
+                + 700.0 * np.exp(-(((rt - 1.7) / 0.025) ** 2))
+            )
+            return rt, intensity
+
+        def iter_ms2_scans(self, rt_min, rt_max):
+            for index, rt in enumerate((1.39, 1.4, 1.41, 1.69, 1.7, 1.71), 1):
+                if rt_min <= rt <= rt_max:
+                    yield Ms2ScanEvent(
+                        scan=Ms2Scan(
+                            scan_number=index,
+                            rt=rt,
+                            precursor_mz=250.0,
+                            masses=np.array([134.0 if with_nl else 135.0]),
+                            intensities=np.array([500.0]),
+                            base_peak=500.0,
+                        ),
+                        parse_error=None,
+                        scan_number=index,
+                    )
+
+    monkeypatch.setattr(pipeline, "preflight_raw_reader", lambda _path: [])
+    monkeypatch.setattr(
+        target_extraction,
+        "open_raw",
+        lambda path, *_args, **_kwargs: nullcontext(Raw(scales[path.stem])),
+    )
+    assessments = []
+    relation_answers = []
+    evaluate_relations = cid_nl_method_assessment.evaluate_cid_nl_method_relations
+
+    def record_relations(**kwargs):
+        answer = evaluate_relations(**kwargs)
+        relation_answers.append(answer)
+        return answer
+
+    monkeypatch.setattr(
+        target_extraction, "evaluate_cid_nl_method_relations", record_relations
+    )
+    monkeypatch.setattr(
+        cid_nl_method_assessment, "evaluate_cid_nl_method_relations", record_relations
+    )
+    mint_assessment = production_workflow.mint_cid_nl_method_assessment_ref
+
+    def record_assessment(**kwargs):
+        result = mint_assessment(**kwargs)
+        assessments.append(result)
+        return result
+
+    monkeypatch.setattr(
+        production_workflow, "mint_cid_nl_method_assessment_ref", record_assessment
+    )
+    workbook_path = tmp_path / "xic_results.xlsx"
+    execution = TargetedApplicationService(
+        runner=pipeline.run_pipeline
+    ).execute_application(
+        build_targeted_application_request(
+            config,
+            [target],
+            injection_order={"SampleA": 1, "SampleB": 2},
+            excel_output_path=workbook_path,
+        )
+    )
+
+    assert len(assessments) == 2
+    assert len(relation_answers) == 2
+    assert all(
+        len(item.candidate_peaks) == (2 if with_signal else 0) for item in assessments
+    )
+    assert all(
+        item.content.evaluation_receipt.scanned_event_count == 6 for item in assessments
+    )
+    assert all(len(item.evidence_refs) == (6 if with_nl else 0) for item in assessments)
+    assert all(
+        item.content.method_result
+        == (
+            "SUPPORT"
+            if with_signal and with_nl
+            else "HOLD"
+            if with_signal
+            else "REJECT"
+        )
+        for item in assessments
+    )
+    rendered = {
+        file.sample_name: file.results[target.label]
+        for file in execution.active_output.file_results
+    }
+    if with_signal:
+        assert rendered["SampleA"].reported_peak_area > 0
+        assert rendered["SampleB"].reported_peak_area == pytest.approx(
+            rendered["SampleA"].reported_peak_area * 2.0, rel=0.01
+        )
+    for result in rendered.values():
+        assert result.targeted_product_projection.counted_detection is (
+            with_nl and with_signal
+        )
+        if with_signal:
+            assert result.reported_rt == pytest.approx(1.4, abs=0.01)
+        else:
+            assert result.reported_peak_area is None
+            assert result.reported_rt is None
+    workbook = load_workbook(workbook_path, read_only=True, data_only=True)
+    rows = list(workbook["XIC Results"].values)
+    workbook.close()
+    headers = rows[0]
+    workbook_rows = {row[0]: dict(zip(headers, row, strict=True)) for row in rows[1:]}
+    assert set(workbook_rows) == set(scales)
+    for sample_name, result in rendered.items():
+        row = workbook_rows[sample_name]
+        assert row["Area"] == (
+            round(result.reported_peak_area, 2) if with_signal else "ND"
+        )
+        assert row["RT"] == (round(result.reported_rt, 4) if with_signal else "ND")
+        assert row["Counted Detection"] == (
+            "TRUE" if with_nl and with_signal else "FALSE"
+        )
+
+
+def test_finalized_method_hold_cannot_inherit_an_acquisition_detection_claim(tmp_path):
+    config, target, output = production_case(tmp_path)
+    source = output.file_results[0].results[target.label]
+    expected_area = source.reported_peak_area
+    output.file_results[0].results[target.label] = with_method_universe(
+        replace(source, candidate_ms2_evidence=None), target
+    )
+    # The acquisition projection still says detected_clean. It is not a
+    # replacement for the completed method's observation-only hypothesis.
+    assert source.targeted_product_projection.counted_detection is True
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1},
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
+    )
+    completed = execute_targeted_production_workflow(request, output)
+    published = publish_targeted_outputs(request, completed, output)
+    result = published.output.file_results[0].results[target.label]
+    assert result.reported_peak_area == expected_area
+    assert result.targeted_product_projection.counted_detection is False
+    assert (
+        "cid_nl_method_not_supported"
+        in result.targeted_product_projection.not_counted_reasons
+    )
 
 
 def test_complete_finalized_population_publishes_only_workbook(
@@ -251,7 +454,9 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
                 best_product_evidence=None,
             )
         policy_result = reproject_extraction_result(
-            replace(extraction, candidate_ms2_evidence=evidence),
+            with_method_universe(
+                replace(extraction, candidate_ms2_evidence=evidence), target
+            ),
             target=target,
             sample_name=file_result.sample_name,
         )
@@ -377,18 +582,23 @@ def test_service_publishes_no_numeric_for_finalized_no_observation(
         signal_processing_method=config.signal_processing_method,
         signal_processing_window_points=config.signal_processing_window_points,
     )
-    output.file_results[0].results[target.label] = replace(
-        extraction,
-        peak_result=find_peak_and_area(rt, trace.intensity, config, preferred_rt=1.5),
-        selected_hypothesis=None,
-        acquisition_trace=trace,
-        physical_evaluation=evaluate_physical_peak(
-            prepare_physical_signal(rt, trace.intensity, profile=profile),
-            selection_subject_id=target.label,
-            query_rt_min=1.5,
-            request_context_rt_start_min=trace.rt_min,
-            request_context_rt_end_min=trace.rt_max,
+    output.file_results[0].results[target.label] = with_method_universe(
+        replace(
+            extraction,
+            peak_result=find_peak_and_area(
+                rt, trace.intensity, config, preferred_rt=1.5
+            ),
+            selected_hypothesis=None,
+            acquisition_trace=trace,
+            physical_evaluation=evaluate_physical_peak(
+                prepare_physical_signal(rt, trace.intensity, profile=profile),
+                selection_subject_id=target.label,
+                query_rt_min=1.5,
+                request_context_rt_start_min=trace.rt_min,
+                request_context_rt_end_min=trace.rt_max,
+            ),
         ),
+        target,
     )
     excel_path = config.output_csv.with_suffix(".xlsx")
     request = build_targeted_application_request(
@@ -495,21 +705,24 @@ def test_workbench_summary_consumes_the_finalized_publication_view(
         * 1_000_000.0
     )
     policy_result = reproject_extraction_result(
-        replace(
-            extraction,
-            candidate_ms2_evidence=replace(
-                candidate_evidence,
-                nl_match=False,
-                nl_status="NL_FAIL",
-                strict_nl_scan_count=0,
-                best_loss_ppm=observed_loss_error_ppm,
-                best_product_evidence=replace(
-                    product_evidence,
-                    product_mz=product_evidence.precursor_mz - observed_loss_da,
-                    observed_loss_da=observed_loss_da,
-                    observed_loss_error_ppm=observed_loss_error_ppm,
+        with_method_universe(
+            replace(
+                extraction,
+                candidate_ms2_evidence=replace(
+                    candidate_evidence,
+                    nl_match=False,
+                    nl_status="NL_FAIL",
+                    strict_nl_scan_count=0,
+                    best_loss_ppm=observed_loss_error_ppm,
+                    best_product_evidence=replace(
+                        product_evidence,
+                        product_mz=product_evidence.precursor_mz - observed_loss_da,
+                        observed_loss_da=observed_loss_da,
+                        observed_loss_error_ppm=observed_loss_error_ppm,
+                    ),
                 ),
             ),
+            target,
         ),
         target=target,
         sample_name="SampleA",
@@ -1084,15 +1297,18 @@ def test_publisher_rejects_finalized_results_from_another_acquisition(
     assert stale_candidate is not None
     stale_product = stale_candidate.best_product_evidence
     assert stale_product is not None
-    stale_output.file_results[0].results[stale_target.label] = replace(
-        stale_extraction,
-        candidate_ms2_evidence=replace(
-            stale_candidate,
-            best_product_evidence=replace(
-                stale_product,
-                acquisition_source_id=stale_source.acquisition_source_id,
+    stale_output.file_results[0].results[stale_target.label] = with_method_universe(
+        replace(
+            stale_extraction,
+            candidate_ms2_evidence=replace(
+                stale_candidate,
+                best_product_evidence=replace(
+                    stale_product,
+                    acquisition_source_id=stale_source.acquisition_source_id,
+                ),
             ),
         ),
+        stale_target,
     )
     stale_request = build_targeted_application_request(
         stale_config,

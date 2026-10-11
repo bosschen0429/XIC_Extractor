@@ -17,6 +17,7 @@ from xic_extractor.evidence.neutral_loss import (
     collect_candidate_ms2_evidence as evaluate_candidate_ms2_evidence,
 )
 from xic_extractor.extraction.anchors import ANCHOR_PEAK_DELTA_WARN_MIN
+from xic_extractor.ms2_scan_models import Ms2Window
 from xic_extractor.output.messages import DiagnosticRecord
 from xic_extractor.peak_detection.models import PeakCandidate, PeakDetectionResult
 
@@ -103,6 +104,7 @@ def candidate_ms2_evidence_builder(
     config: ExtractionConfig,
     *,
     sample_key: str,
+    window: Ms2Window | None = None,
 ) -> Callable[[PeakCandidate], Any] | None:
     if target.neutral_loss_da is None:
         return None
@@ -114,6 +116,22 @@ def candidate_ms2_evidence_builder(
 
     def _builder(candidate: PeakCandidate) -> Any:
         peak_group_scope = _candidate_ms1_peak_group_scope(candidate)
+        if window is not None:
+            return evaluate_candidate_ms2_evidence(
+                window,
+                geometry=candidate_ms2_geometry(
+                    candidate,
+                    ms1_peak_group_rt_min=peak_group_scope[0],
+                    ms1_peak_group_rt_max=peak_group_scope[1],
+                ),
+                precursor_mz=target.mz,
+                neutral_loss_da=neutral_loss_da,
+                nl_ppm_warn=nl_ppm_warn,
+                nl_ppm_max=nl_ppm_max,
+                ms2_precursor_tol_da=config.ms2_precursor_tol_da,
+                nl_min_intensity_ratio=config.nl_min_intensity_ratio,
+                ms1_peak_group_source=peak_group_scope[2],
+            )
         return collect_candidate_ms2_evidence(
             raw,
             sample_key=sample_key,
@@ -154,11 +172,7 @@ def anchor_rt_mismatch_diagnostic(
     anchor_rt: float | None,
     paired_rejection: DiagnosticRecord | None,
 ) -> DiagnosticRecord | None:
-    if (
-        paired_rejection is not None
-        or anchor_rt is None
-        or peak_result.peak is None
-    ):
+    if paired_rejection is not None or anchor_rt is None or peak_result.peak is None:
         return None
     delta = abs(peak_result.peak.rt - anchor_rt)
     if delta <= ANCHOR_PEAK_DELTA_WARN_MIN:

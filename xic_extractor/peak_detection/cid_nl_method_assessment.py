@@ -53,6 +53,7 @@ from xic_extractor.peak_detection.observations import (
     PeakObservationRef,
     validate_peak_observation_binding,
 )
+from xic_extractor.precursor_evidence import PrecursorLossAssessment
 from xic_extractor.processing_identity import (
     IdentityContractError,
     ProcessingOwnerReferences,
@@ -94,6 +95,94 @@ _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
 
 class CidNlMethodAssessmentContractError(ValueError):
     """Raised when one complete CID-NL method attempt cannot be closed."""
+
+
+@dataclass(frozen=True, slots=True)
+class CidNlCandidateInterval:
+    """Physical geometry needed for event attribution, before artifact binding."""
+
+    mz: float
+    rt_left_min: float
+    rt_right_min: float
+
+
+@dataclass(frozen=True, slots=True)
+class CidNlEventQuery:
+    """Measured precursor answer and support interval for one acquired event."""
+
+    precursor: PrecursorLossAssessment
+    scan_rt_min: float
+    support_rt_min: float
+
+
+@dataclass(frozen=True, slots=True)
+class CidNlMethodRelations:
+    """One relation answer reused by selection and later provenance binding."""
+
+    candidate_intervals: tuple[CidNlCandidateInterval, ...]
+    event_queries: tuple[CidNlEventQuery, ...]
+    policy: DdaCidNlPeakSupportPolicy
+    individual_relations: tuple[tuple[int, int], ...]
+    set_relation_event_indexes: tuple[int, ...]
+
+    @property
+    def supported_candidate_indexes(self) -> frozenset[int]:
+        return frozenset(candidate for _event, candidate in self.individual_relations)
+
+
+def evaluate_cid_nl_method_relations(
+    *,
+    candidate_intervals: tuple[CidNlCandidateInterval, ...],
+    event_queries: tuple[CidNlEventQuery, ...],
+    policy: DdaCidNlPeakSupportPolicy,
+) -> CidNlMethodRelations:
+    """Attribute the complete in-memory universe without request/attempt IDs.
+
+    Only a strictly interior event in a non-overlapping compatible interval
+    supports an individual peak. Boundary and overlap evidence stays set-level.
+    """
+    individual: list[tuple[int, int]] = []
+    set_events: list[int] = []
+    for event_index, event in enumerate(event_queries):
+        precursor = event.precursor
+        if not precursor.supports_nl or precursor.reference_mz is None:
+            continue
+        compatible = tuple(
+            index
+            for index, peak in enumerate(candidate_intervals)
+            if abs(precursor.reference_mz - peak.mz) <= policy.precursor_tolerance_da
+        )
+        containing = tuple(
+            index
+            for index in compatible
+            if candidate_intervals[index].rt_left_min <= event.support_rt_min
+            and event.scan_rt_min <= candidate_intervals[index].rt_right_min
+        )
+        if not containing:
+            continue
+        selected_index = containing[0]
+        selected = candidate_intervals[selected_index]
+        strictly_unique = (
+            len(containing) == 1
+            and selected.rt_left_min < event.scan_rt_min < selected.rt_right_min
+            and not any(
+                index != selected_index
+                and selected.rt_left_min < candidate_intervals[index].rt_right_min
+                and candidate_intervals[index].rt_left_min < selected.rt_right_min
+                for index in compatible
+            )
+        )
+        if strictly_unique:
+            individual.append((event_index, selected_index))
+        else:
+            set_events.append(event_index)
+    return CidNlMethodRelations(
+        candidate_intervals=candidate_intervals,
+        event_queries=event_queries,
+        policy=policy,
+        individual_relations=tuple(individual),
+        set_relation_event_indexes=tuple(set_events),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -423,71 +512,63 @@ def resolve_cid_nl_method_relations(
     evidence_refs: tuple[CidNlEvidenceRef, ...],
     candidate_peaks: tuple[PeakObservationRef, ...],
     policy: DdaCidNlPeakSupportPolicy,
+    relations: CidNlMethodRelations | None = None,
 ) -> tuple[
     tuple[DdaCidNlPeakSupportRef, ...],
     tuple[DdaCidNlCandidateSetRelationRef, ...],
 ]:
-    """Resolve measured events to individual or set-level candidate relations.
-
-    An unrelated event retains no relation. Individual support requires a scan
-    strictly inside one peak whose interval has no positive-width overlap with
-    another mass-compatible candidate; boundary and overlapping cases remain
-    set-level evidence.
-    """
-    individual_refs: list[DdaCidNlPeakSupportRef] = []
-    set_refs: list[DdaCidNlCandidateSetRelationRef] = []
-    for evidence in evidence_refs:
-        observation = evidence.observation
-        precursor = observation.assess_precursor_loss(policy.neutral_loss_tolerance_ppm)
-        if not precursor.supports_nl or precursor.reference_mz is None:
-            continue
-        mz_compatible = tuple(
-            peak
-            for peak in candidate_peaks
-            if abs(precursor.reference_mz - peak.content.mz)
-            <= policy.precursor_tolerance_da
+    """Bind the shared relation answer to exact evidence and physical artifacts."""
+    intervals = tuple(
+        CidNlCandidateInterval(
+            peak.content.mz,
+            peak.content.integration.rt_left_min,
+            peak.content.integration.rt_right_min,
         )
-        containing = tuple(
-            peak
-            for peak in mz_compatible
-            if peak.content.integration.rt_left_min <= observation.support_rt_min
-            and observation.scan_rt_min <= peak.content.integration.rt_right_min
+        for peak in candidate_peaks
+    )
+    queries = tuple(
+        CidNlEventQuery(
+            evidence.observation.assess_precursor_loss(
+                policy.neutral_loss_tolerance_ppm
+            ),
+            evidence.observation.scan_rt_min,
+            evidence.observation.support_rt_min,
         )
-        if not containing:
-            continue
-        selected = containing[0]
-        interval = selected.content.integration
-        strictly_unique = (
-            len(containing) == 1
-            and interval.rt_left_min < observation.scan_rt_min < interval.rt_right_min
-            and not any(
-                peak is not selected
-                and interval.rt_left_min < peak.content.integration.rt_right_min
-                and peak.content.integration.rt_left_min < interval.rt_right_min
-                for peak in mz_compatible
-            )
+        for evidence in evidence_refs
+    )
+    if relations is None:
+        relations = evaluate_cid_nl_method_relations(
+            candidate_intervals=intervals, event_queries=queries, policy=policy
         )
-        if strictly_unique:
-            individual_refs.append(
-                resolve_dda_cid_nl_peak_support_ref(
-                    processing_owners=processing_owners,
-                    sample=sample,
-                    canonical_evidence=evidence,
-                    candidate_peaks=candidate_peaks,
-                    policy=policy,
-                )
-            )
-        else:
-            set_refs.append(
-                resolve_dda_cid_nl_candidate_set_relation_ref(
-                    processing_owners=processing_owners,
-                    sample=sample,
-                    canonical_evidence=evidence,
-                    candidate_peaks=candidate_peaks,
-                    policy=policy,
-                )
-            )
-    return tuple(individual_refs), tuple(set_refs)
+    elif (
+        relations.candidate_intervals != intervals
+        or relations.event_queries != queries
+        or relations.policy != policy
+    ):
+        raise CidNlMethodAssessmentContractError(
+            "retained relation answer does not bind the exact candidate/event universe"
+        )
+    individual_refs = tuple(
+        resolve_dda_cid_nl_peak_support_ref(
+            processing_owners=processing_owners,
+            sample=sample,
+            canonical_evidence=evidence_refs[event_index],
+            candidate_peaks=candidate_peaks,
+            policy=policy,
+        )
+        for event_index, _candidate_index in relations.individual_relations
+    )
+    set_refs = tuple(
+        resolve_dda_cid_nl_candidate_set_relation_ref(
+            processing_owners=processing_owners,
+            sample=sample,
+            canonical_evidence=evidence_refs[event_index],
+            candidate_peaks=candidate_peaks,
+            policy=policy,
+        )
+        for event_index in relations.set_relation_event_indexes
+    )
+    return individual_refs, set_refs
 
 
 def mint_cid_nl_method_assessment_ref(
@@ -1336,14 +1417,18 @@ __all__ = [
     "CID_NL_METHOD_ID",
     "CID_NL_METHOD_VERSION",
     "CID_NL_PROVIDER_ID",
+    "CidNlCandidateInterval",
     "CidNlEvaluationReceipt",
+    "CidNlEventQuery",
     "CidNlMethodAssessmentContent",
     "CidNlMethodAssessmentContractError",
     "CidNlMethodAssessmentRef",
     "CidNlMethodResult",
+    "CidNlMethodRelations",
     "CidNlTechnicalState",
     "SCHEMA_VERSION",
     "canonical_cid_nl_method_assessment_bytes",
+    "evaluate_cid_nl_method_relations",
     "mint_cid_nl_method_assessment_ref",
     "resolve_cid_nl_method_relations",
     "validate_cid_nl_method_assessment_binding",

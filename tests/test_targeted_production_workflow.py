@@ -42,6 +42,13 @@ from xic_extractor.output.targeted_product_model import (
     TargetedProductContext,
 )
 from xic_extractor.peak_detection import capture as capture_owner
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlCandidateInterval,
+    CidNlEvaluationReceipt,
+    CidNlEventQuery,
+    evaluate_cid_nl_method_relations,
+)
+from xic_extractor.peak_detection.cid_nl_peak_support import DdaCidNlPeakSupportPolicy
 from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses
 from xic_extractor.peak_detection.observations import (
     physical_peak_observation_integration,
@@ -194,32 +201,38 @@ def test_nl_event_outside_exact_target_precursor_is_not_target_evidence(
     product = evidence.best_product_evidence
     assert product is not None
     shifted_precursor = target.mz + 0.4
-    output.file_results[0].results[target.label] = replace(
-        original,
-        candidate_ms2_evidence=replace(
-            evidence,
-            best_product_evidence=replace(
-                product,
-                precursor_mz=shifted_precursor,
-                product_mz=shifted_precursor - product.observed_loss_da,
+    output.file_results[0].results[target.label] = with_method_universe(
+        replace(
+            original,
+            candidate_ms2_evidence=replace(
+                evidence,
+                best_product_evidence=replace(
+                    product,
+                    precursor_mz=shifted_precursor,
+                    product_mz=shifted_precursor - product.observed_loss_da,
+                ),
             ),
         ),
+        target,
     )
     second = output.file_results[1].results[target.label]
     second_evidence = second.candidate_ms2_evidence
     assert second_evidence is not None
     second_product = second_evidence.best_product_evidence
     assert second_product is not None
-    output.file_results[1].results[target.label] = replace(
-        second,
-        candidate_ms2_evidence=replace(
-            second_evidence,
-            best_product_evidence=replace(
-                second_product,
-                precursor_mz=shifted_precursor,
-                product_mz=shifted_precursor - second_product.observed_loss_da,
+    output.file_results[1].results[target.label] = with_method_universe(
+        replace(
+            second,
+            candidate_ms2_evidence=replace(
+                second_evidence,
+                best_product_evidence=replace(
+                    second_product,
+                    precursor_mz=shifted_precursor,
+                    product_mz=shifted_precursor - second_product.observed_loss_da,
+                ),
             ),
         ),
+        target,
     )
 
     finalized = execute_targeted_production_workflow(
@@ -249,13 +262,16 @@ def test_nl_event_outside_retained_peak_finalizes_without_direct_support(
     assert product is not None
     outside_rt = selected.integration.rt_right_min + 0.01
     assert outside_rt < target.rt_max
-    output.file_results[0].results[target.label] = replace(
-        original,
-        candidate_ms2_evidence=replace(
-            evidence,
-            best_scan_rt=outside_rt,
-            best_product_evidence=replace(product, scan_rt=outside_rt),
+    output.file_results[0].results[target.label] = with_method_universe(
+        replace(
+            original,
+            candidate_ms2_evidence=replace(
+                evidence,
+                best_scan_rt=outside_rt,
+                best_product_evidence=replace(product, scan_rt=outside_rt),
+            ),
         ),
+        target,
     )
     assessments = []
     original_assessment = production_workflow.mint_cid_nl_method_assessment_ref
@@ -493,21 +509,24 @@ def test_diagnostic_nl_evidence_finalizes_without_strict_support(
         / target.neutral_loss_da
         * 1_000_000.0
     )
-    output.file_results[0].results[target.label] = replace(
-        original,
-        candidate_ms2_evidence=replace(
-            candidate_evidence,
-            nl_match=False,
-            nl_status="NL_FAIL",
-            strict_nl_scan_count=0,
-            best_loss_ppm=loss_error_ppm,
-            best_product_evidence=replace(
-                product_evidence,
-                product_mz=product_evidence.precursor_mz - observed_loss_da,
-                observed_loss_da=observed_loss_da,
-                observed_loss_error_ppm=loss_error_ppm,
+    output.file_results[0].results[target.label] = with_method_universe(
+        replace(
+            original,
+            candidate_ms2_evidence=replace(
+                candidate_evidence,
+                nl_match=False,
+                nl_status="NL_FAIL",
+                strict_nl_scan_count=0,
+                best_loss_ppm=loss_error_ppm,
+                best_product_evidence=replace(
+                    product_evidence,
+                    product_mz=product_evidence.precursor_mz - observed_loss_da,
+                    observed_loss_da=observed_loss_da,
+                    observed_loss_error_ppm=loss_error_ppm,
+                ),
             ),
         ),
+        target,
     )
     finalized = execute_targeted_production_workflow(
         build_targeted_application_request(
@@ -541,21 +560,24 @@ def test_targeted_relation_uses_quadrature_for_retained_product(
         * 1_000_000.0
     )
     assert observed_loss_error_ppm > target.nl_ppm_max
-    output.file_results[0].results[target.label] = replace(
-        original,
-        candidate_ms2_evidence=replace(
-            candidate_evidence,
-            nl_match=False,
-            nl_status="NL_FAIL",
-            strict_nl_scan_count=0,
-            best_loss_ppm=observed_loss_error_ppm,
-            best_product_evidence=replace(
-                product,
-                product_mz=product.precursor_mz - observed_loss_da,
-                observed_loss_da=observed_loss_da,
-                observed_loss_error_ppm=observed_loss_error_ppm,
+    output.file_results[0].results[target.label] = with_method_universe(
+        replace(
+            original,
+            candidate_ms2_evidence=replace(
+                candidate_evidence,
+                nl_match=False,
+                nl_status="NL_FAIL",
+                strict_nl_scan_count=0,
+                best_loss_ppm=observed_loss_error_ppm,
+                best_product_evidence=replace(
+                    product,
+                    product_mz=product.precursor_mz - observed_loss_da,
+                    observed_loss_da=observed_loss_da,
+                    observed_loss_error_ppm=observed_loss_error_ppm,
+                ),
             ),
         ),
+        target,
     )
     assessments = []
     original_assessment = production_workflow.mint_cid_nl_method_assessment_ref
@@ -604,17 +626,20 @@ def test_missing_selected_peak_finalizes_as_searched_no_observation(
         rt_max=target.rt_max,
         ppm_tol=target.ppm_tol,
     )
-    output.file_results[0].results[target.label] = replace(
-        original,
-        peak_result=find_peak_and_area(
-            rt,
-            flat_intensity,
-            config,
-            preferred_rt=1.5,
+    output.file_results[0].results[target.label] = with_method_universe(
+        replace(
+            original,
+            peak_result=find_peak_and_area(
+                rt,
+                flat_intensity,
+                config,
+                preferred_rt=1.5,
+            ),
+            selected_hypothesis=None,
+            acquisition_trace=trace,
+            physical_evaluation=_physical_evaluation(trace, config, query_rt_min=1.5),
         ),
-        selected_hypothesis=None,
-        acquisition_trace=trace,
-        physical_evaluation=_physical_evaluation(trace, config, query_rt_min=1.5),
+        target,
     )
 
     finalized = execute_targeted_production_workflow(
@@ -716,21 +741,24 @@ def test_neutral_loss_disabled_target_without_selected_ms1_is_no_write(
             rt_max=target.rt_max,
             ppm_tol=target.ppm_tol,
         )
-        file_result.results[target.label] = replace(
-            original,
-            peak_result=find_peak_and_area(
-                rt,
-                trace.intensity,
-                config,
-                preferred_rt=1.5,
+        file_result.results[target.label] = with_method_universe(
+            replace(
+                original,
+                peak_result=find_peak_and_area(
+                    rt,
+                    trace.intensity,
+                    config,
+                    preferred_rt=1.5,
+                ),
+                selected_hypothesis=None,
+                acquisition_trace=trace,
+                physical_evaluation=_physical_evaluation(
+                    trace,
+                    config,
+                    query_rt_min=1.5,
+                ),
             ),
-            selected_hypothesis=None,
-            acquisition_trace=trace,
-            physical_evaluation=_physical_evaluation(
-                trace,
-                config,
-                query_rt_min=1.5,
-            ),
+            target,
         )
 
     finalized = execute_targeted_production_workflow(
@@ -837,12 +865,15 @@ def test_acquisition_boundary_stamps_ms2_source_identity(tmp_path: Path) -> None
     assert candidate is not None
     product = candidate.best_product_evidence
     assert product is not None
-    output.file_results[0].results[target.label] = replace(
-        extraction,
-        candidate_ms2_evidence=replace(
-            candidate,
-            best_product_evidence=replace(product, acquisition_source_id=""),
+    output.file_results[0].results[target.label] = with_method_universe(
+        replace(
+            extraction,
+            candidate_ms2_evidence=replace(
+                candidate,
+                best_product_evidence=replace(product, acquisition_source_id=""),
+            ),
         ),
+        target,
     )
     source = build_acquisition_source_identity(
         config.data_dir / "SampleA.raw",
@@ -880,12 +911,15 @@ def test_unstamped_ms2_acquisition_source_fails_closed(tmp_path: Path) -> None:
     assert candidate is not None
     product = candidate.best_product_evidence
     assert product is not None
-    output.file_results[0].results[target.label] = replace(
-        extraction,
-        candidate_ms2_evidence=replace(
-            candidate,
-            best_product_evidence=replace(product, acquisition_source_id=""),
+    output.file_results[0].results[target.label] = with_method_universe(
+        replace(
+            extraction,
+            candidate_ms2_evidence=replace(
+                candidate,
+                best_product_evidence=replace(product, acquisition_source_id=""),
+            ),
         ),
+        target,
     )
 
     with pytest.raises(RuntimeError, match="MS2 evidence crossed"):
@@ -912,12 +946,15 @@ def test_crossed_ms2_acquisition_source_fails_closed(tmp_path: Path) -> None:
     assert first_candidate is not None
     assert second_candidate is not None
     assert second_candidate.best_product_evidence is not None
-    output.file_results[0].results[target.label] = replace(
-        first,
-        candidate_ms2_evidence=replace(
-            first_candidate,
-            best_product_evidence=second_candidate.best_product_evidence,
+    output.file_results[0].results[target.label] = with_method_universe(
+        replace(
+            first,
+            candidate_ms2_evidence=replace(
+                first_candidate,
+                best_product_evidence=second_candidate.best_product_evidence,
+            ),
         ),
+        target,
     )
 
     with pytest.raises(RuntimeError, match="MS2 evidence crossed"):
@@ -1065,8 +1102,72 @@ def production_case(
         file_results=file_results,
         diagnostics=[],
     )
+    for file_result in output.file_results:
+        file_result.results[target.label] = with_method_universe(
+            file_result.results[target.label], target
+        )
 
     return config, target, output
+
+
+def with_method_universe(result: ExtractionResult, target: Target) -> ExtractionResult:
+    """Complete the one-peak/one-event acquisition fixture before finalization."""
+    evaluation = result.physical_evaluation
+    evaluations = (
+        (evaluation,)
+        if evaluation is not None and evaluation.integration is not None
+        else ()
+    )
+    policy = DdaCidNlPeakSupportPolicy(
+        precursor_tolerance_da=target.mz * target.ppm_tol / 1e6,
+        neutral_loss_tolerance_ppm=target.nl_ppm_max or 20.0,
+    )
+    candidate_evidence = result.candidate_ms2_evidence
+    product = (
+        None if candidate_evidence is None else candidate_evidence.best_product_evidence
+    )
+    products = (
+        (product,)
+        if product is not None
+        and abs(product.precursor_mz - target.mz) <= policy.precursor_tolerance_da
+        else ()
+    )
+    intervals = tuple(
+        CidNlCandidateInterval(
+            target.mz, item.integration.rt_left_min, item.integration.rt_right_min
+        )
+        for item in evaluations
+    )
+    relations = evaluate_cid_nl_method_relations(
+        candidate_intervals=intervals,
+        event_queries=tuple(
+            CidNlEventQuery(
+                item.assess_precursor_loss(
+                    target.neutral_loss_da or 116.0, policy.neutral_loss_tolerance_ppm
+                ),
+                item.scan_rt,
+                item.scan_rt,
+            )
+            for item in products
+        ),
+        policy=policy,
+    )
+    return replace(
+        result,
+        candidate_physical_evaluations=evaluations,
+        cid_nl_products=products,
+        cid_nl_evaluation_receipt=CidNlEvaluationReceipt(
+            query_rt_min=target.rt_min,
+            query_rt_max=target.rt_max,
+            support_policy=policy,
+            acquisition_supported=True,
+            search_completed=True,
+            scanned_event_count=len(products),
+            reason_code=None,
+        ),
+        cid_nl_relations=relations,
+        selected_cid_nl_candidate_index=0 if evaluations else None,
+    )
 
 
 def _config(tmp_path: Path) -> ExtractionConfig:
@@ -1157,7 +1258,6 @@ def _retained_completion_boundary(monkeypatch):
 @pytest.mark.parametrize("outcome", ["cancelled", "failed"])
 def test_retained_runtime_terminal_never_enters_science(monkeypatch, outcome):
     from types import SimpleNamespace
-
 
     run, _ = _retained_completion_boundary(monkeypatch)
     monkeypatch.setattr(

@@ -270,8 +270,9 @@ Names that contain `score` need extra care:
 - `raw_score`, `EvidenceScore.confidence`, support labels, concern labels, and
   cap labels are compatibility or audit projections unless wrapped by typed
   evidence semantics and an approved product policy.
-- `select_candidate_with_confidence` is a legacy compatibility selector while
-  public behavior still exposes legacy confidence and reason fields.
+- Targeted selection consumes typed candidate facts through
+  `select_candidate_by_evidence`; public confidence and reason fields do not
+  authorize a parallel selector.
 - Alignment `evidence_score` is a seed-quality score feature, not same-peak
   identity proof and not ProductWriter authority.
 - `legacy_peak_scoring_current_oracle` is a parity baseline, not a product

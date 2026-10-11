@@ -62,6 +62,13 @@ Grouping does not reselect peaks or add a cohort RT review policy.
 
 ### Candidate selection
 
+The existing CID-NL method-assessment owner attributes acquired events against
+the complete physical candidate universe within the Targeted search scope
+before selection. Strictly interior, uniquely attributable evidence supports
+an individual peak; boundary and overlapping relations remain set-level.
+Selection consumes this answer rather than treating a candidate-local best
+MS2 product as proof of unique support.
+
 `peak_detection.candidate_selection.select_candidate_by_evidence` chooses the
 candidate once from typed
 candidate evidence, role-aware eligibility and RT constraints. Its ordering
@@ -69,12 +76,23 @@ preserves chemical support, trace quality, contextual RT and deterministic
 abundance tie-breaks. Confidence and reason labels describe evidence; they do
 not start a second candidate ranking.
 
-The Targeted handoff carries that selected candidate into its hypothesis,
-candidate-local MS2 evidence and physical evaluation. Sample applicability
+The Targeted handoff retains all candidate physical evaluations, acquired
+method products, the search receipt and the relation answer. Production binds
+that same answer to exact sample/event/peak provenance without another relation
+decision. Only the selected candidate enters the fixed Target row; the method
+assessment still records its complete candidate and event universe.
+Sample applicability
 controls inclusion, not permission to replace the selected candidate. A
 hypothesis is an evidence representation, not a competing selection owner.
 The physical owner may withdraw an unavailable measurement, but does not
 substitute another candidate.
+
+For an NL-required analyte, an observation-only MS1 value is quantitation, not
+confirmed detection. A finalized CID-NL-supported hypothesis is required for
+counting; a positive numeric cell, legacy confidence, pair/ratio label or
+acquisition-stage detection flag cannot supply that authority. The existing
+product projection renders the finalized method answer and retained review
+facts. ISTD expected-presence, MS1-only, RT and quality policies remain separate.
 
 Regression coverage protects the selected candidate, contextual RT, chemical
 and morphology evidence, no-candidate behavior and rendered measurements.
@@ -92,8 +110,9 @@ those facts itself.
 
 - Acquisition enumerates the shared physical segment universe for the
   configured signal profile.
-- Targeted scoring and identity evidence choose a component. The physical
-  evaluation of that component supplies the boundary and counts·seconds area.
+- Each candidate's physical evaluation supplies its boundary and counts·seconds
+  area. Targeted scoring and identity evidence choose a component from these
+  retained answers; the selected evaluation is reused by the handoff.
 - Profile-bound capture retains that evaluation through finalization.
   Profile-bound capture does not run a second boundary resolver or
   integration.

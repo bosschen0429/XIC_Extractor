@@ -8,11 +8,17 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from xic_extractor.acquisition.ms2_windows import acquire_ms2_window
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
-from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
+from xic_extractor.evidence.neutral_loss import (
+    CandidateMS2Evidence,
+    MS2ProductEvidence,
+    candidate_ms2_geometry,
+    check_nl,
+)
 from xic_extractor.extraction.anchors import (
     apply_anchor_mismatch_penalty,
     paired_anchor_mismatch_diagnostic,
@@ -45,6 +51,13 @@ from xic_extractor.output.messages import (
 from xic_extractor.peak_detection.candidate_selection import (
     select_candidate_by_evidence,
 )
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlCandidateInterval,
+    CidNlEvaluationReceipt,
+    CidNlEventQuery,
+    evaluate_cid_nl_method_relations,
+)
+from xic_extractor.peak_detection.cid_nl_peak_support import DdaCidNlPeakSupportPolicy
 from xic_extractor.peak_detection.evidence_facts import (
     decision_semantics_from_candidate_facts,
 )
@@ -60,7 +73,9 @@ from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
     physical_candidates_result,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
+    answer_physical_peak_question,
     enumerate_physical_segment_universe,
+    mint_physical_peak_question,
     physical_segment_has_incomplete_context,
     prepare_physical_signal,
 )
@@ -348,6 +363,90 @@ def extract_one_target(
             target.ppm_tol,
         )
 
+    prepared, universe, physical_candidates = _physical_trace_owners(rt, intensity)
+    candidate_evaluations = {
+        candidate: answer_physical_peak_question(
+            prepared,
+            universe,
+            mint_physical_peak_question(
+                prepared.projection,
+                universe,
+                selection_subject_id=target.label,
+                query_rt_min=candidate.selection_apex_rt,
+            ),
+        )
+        for candidate in physical_candidates.candidates
+    }
+    method_window = None
+    method_receipt = None
+    method_relations = None
+    method_products: tuple[MS2ProductEvidence, ...] = ()
+    candidate_nl_support = None
+    if target.neutral_loss_da is not None:
+        geometries = tuple(
+            candidate_ms2_geometry(candidate)
+            for candidate in physical_candidates.candidates
+        )
+        method_window = acquire_ms2_window(
+            raw,
+            sample_key=sample_name,
+            rt_min=min((target.rt_min, *(item.rt_min for item in geometries))),
+            rt_max=max((target.rt_max, *(item.rt_max for item in geometries))),
+        )
+        method_products = check_nl(
+            method_window,
+            precursor_mz=target.mz,
+            neutral_loss_da=target.neutral_loss_da,
+            nl_ppm_warn=target.nl_ppm_warn or 20.0,
+            nl_ppm_max=target.nl_ppm_max or 20.0,
+            ms2_precursor_tol_da=config.ms2_precursor_tol_da,
+            nl_min_intensity_ratio=config.nl_min_intensity_ratio,
+        ).product_evidence
+        policy = DdaCidNlPeakSupportPolicy(
+            precursor_tolerance_da=max(target.mz * target.ppm_tol / 1_000_000, 1e-9),
+            neutral_loss_tolerance_ppm=target.nl_ppm_max or 20.0,
+        )
+        # The broad acquisition probe can include neighbouring precursor ions.
+        # Only the declared exact-mass method population enters its assessment.
+        method_products = tuple(
+            product
+            for product in method_products
+            if abs(product.precursor_mz - target.mz) <= policy.precursor_tolerance_da
+        )
+        method_receipt = CidNlEvaluationReceipt(
+            query_rt_min=min(method_window.rt_min, selection_rt_min),
+            query_rt_max=max(method_window.rt_max, selection_rt_max),
+            support_policy=policy,
+            acquisition_supported=True,
+            search_completed=True,
+            scanned_event_count=len(method_window.events),
+            reason_code=None,
+        )
+        method_relations = evaluate_cid_nl_method_relations(
+            candidate_intervals=tuple(
+                CidNlCandidateInterval(
+                    target.mz, candidate.peak.peak_start, candidate.peak.peak_end
+                )
+                for candidate in physical_candidates.candidates
+            ),
+            event_queries=tuple(
+                CidNlEventQuery(
+                    product.assess_precursor_loss(
+                        target.neutral_loss_da, policy.neutral_loss_tolerance_ppm
+                    ),
+                    product.scan_rt,
+                    product.scan_rt,
+                )
+                for product in method_products
+            ),
+            policy=policy,
+        )
+        supported = method_relations.supported_candidate_indexes
+        candidate_nl_support = {
+            candidate: index in supported
+            for index, candidate in enumerate(physical_candidates.candidates)
+        }
+
     trace_scoring_context_factory: Callable[..., Any] | None = None
     if scoring_context_factory is not None:
         source_factory = scoring_context_factory
@@ -398,7 +497,7 @@ def extract_one_target(
 
     scoring_context_builder = None
     candidate_ms2_builder = candidate_ms2_evidence_builder(
-        raw, target, config, sample_key=sample_name
+        raw, target, config, sample_key=sample_name, window=method_window
     )
     candidate_ms2_cache: dict[PeakCandidate, CandidateMS2Evidence] = {}
 
@@ -424,6 +523,7 @@ def extract_one_target(
             paired_istd_fwhm=paired_istd_fwhm,
             nl_result=nl_result,
             candidate_ms2_evidence_builder=_cached_candidate_ms2_builder,
+            candidate_nl_support=candidate_nl_support,
         )
     peak_result = _find_physical_peak(
         rt,
@@ -483,6 +583,7 @@ def extract_one_target(
         universe=universe,
         selection_rt_min=selection_rt_min,
         selection_rt_max=selection_rt_max,
+        candidate_evaluations=candidate_evaluations,
     )
     peak_result = handoff_peak.peak_result
     candidate = selected_candidate(peak_result)
@@ -502,6 +603,15 @@ def extract_one_target(
         selection_decision=handoff_peak.selection_decision,
         acquisition_trace=handoff_peak.trace_group.primary_trace,
         physical_evaluation=handoff_peak.physical_evaluation,
+        candidate_physical_evaluations=tuple(candidate_evaluations.values()),
+        cid_nl_products=method_products,
+        cid_nl_evaluation_receipt=method_receipt,
+        cid_nl_relations=method_relations,
+        selected_cid_nl_candidate_index=(
+            tuple(candidate_evaluations).index(candidate)
+            if candidate is not None and method_relations is not None
+            else None
+        ),
         sample_name=sample_name,
     )
     results[target.label] = result

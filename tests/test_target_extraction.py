@@ -542,7 +542,7 @@ def test_targeted_shape_routes_use_cached_canonical_signal(
         )
         for apex in (int(np.argmax(physical.positive_signal)), 0):
             bound_candidate = replace(candidate, selection_apex_index=apex)
-            ctx = builder(bound_candidate)
+            ctx = replace(builder(candidate), apex_index=apex)
             np.testing.assert_array_equal(ctx.intensity_array, oracle_active)
             assert ctx.residual_mad == oracle_mad
             facts = build_candidate_evidence_facts(bound_candidate, ctx).trace

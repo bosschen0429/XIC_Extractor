@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -12,7 +14,9 @@ from xic_extractor.ms2_trace_evidence import (
     summarize_ms2_trace,
 )
 from xic_extractor.precursor_evidence import (
+    PrecursorLossAssessment,
     RecordedPrecursorMzBasis,
+    assess_precursor_loss,
     recorded_precursor_references,
     scan_has_precursor_candidate,
     supports_direct_nl,
@@ -37,6 +41,7 @@ class NLResult:
     valid_ms2_scan_count: int
     parse_error_count: int
     matched_scan_count: int
+    product_evidence: tuple[MS2ProductEvidence, ...] = ()
 
     def to_token(self) -> str:
         if self.status == "WARN" and self.best_ppm is not None:
@@ -59,6 +64,25 @@ class MS2ProductEvidence:
     precursor_mz_basis: RecordedPrecursorMzBasis = "scan_precursor"
     scan_precursor_mz: float | None = None
     precursor_metadata: Ms2PrecursorMetadata | None = None
+
+    def assess_precursor_loss(
+        self, neutral_loss_da: float, tolerance_ppm: float
+    ) -> PrecursorLossAssessment:
+        return assess_precursor_loss(
+            basis=self.precursor_mz_basis,
+            precursor_mz=self.precursor_mz,
+            product_mz=self.product_mz,
+            neutral_loss_da=neutral_loss_da,
+            observed_loss_da=self.observed_loss_da,
+            observed_loss_error_ppm=self.observed_loss_error_ppm,
+            tolerance_ppm=tolerance_ppm,
+            selected_mz=(
+                self.precursor_mz
+                if self.scan_precursor_mz is None
+                else self.scan_precursor_mz
+            ),
+            metadata=self.precursor_metadata,
+        )
 
 
 def _matches_loss(
@@ -265,6 +289,7 @@ def check_nl(
     best_ppm: float | None = None
     best_scan_rt: float | None = None
     best_strict_match = False
+    products: list[MS2ProductEvidence] = []
 
     for event in window.events:
         if event.parse_error is not None:
@@ -288,6 +313,8 @@ def check_nl(
             min_intensity_ratio=nl_min_intensity_ratio,
             diagnostic_ppm=diagnostic_ppm,
         )
+        if evidence is not None:
+            products.append(evidence)
         strict_match = evidence is not None and _matches_loss(
             evidence, neutral_loss_da, nl_ppm_max
         )
@@ -316,6 +343,7 @@ def check_nl(
         valid_ms2_scan_count=valid_count,
         parse_error_count=parse_error_count,
         matched_scan_count=matched_count,
+        product_evidence=tuple(products),
     )
 
 

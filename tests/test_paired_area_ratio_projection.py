@@ -3,6 +3,7 @@ from typing import Literal
 
 import pytest
 
+from tests.test_result_assembly import _method_relations
 from xic_extractor.configuration.models import Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.extraction.paired_area_ratio_projection import (
@@ -15,9 +16,6 @@ from xic_extractor.extraction.paired_area_ratio_projection import (
 )
 from xic_extractor.extraction.result_assembly import build_extraction_result
 from xic_extractor.extraction.result_models import FileResult, RunOutput
-from xic_extractor.output.targeted_product_model import (
-    OWN_MAX_SAME_PEAK_SUPPORT_REASON,
-)
 from xic_extractor.peak_detection.evidence_semantics import EvidenceDecisionSemantics
 from xic_extractor.peak_detection.hypotheses import (
     AuditTrail,
@@ -37,9 +35,7 @@ from xic_extractor.peak_detection.selection_decision import (
 _NLStatus = Literal["OK", "WARN", "NL_FAIL", "NO_MS2"]
 
 
-def test_run_level_area_ratio_support_without_own_max_keeps_nl_fail_not_counted() -> (
-    None
-):
+def test_run_level_area_ratio_support_keeps_method_mismatch_not_counted() -> None:
     output = RunOutput(
         file_results=[
             _file_result("SampleA", target_area=50_000.0, nl_status="NL_FAIL"),
@@ -67,20 +63,20 @@ def test_run_level_area_ratio_support_without_own_max_keeps_nl_fail_not_counted(
     assert projected.counted_detection is False
     assert "paired_area_ratio_support" in projected.support_reasons
     assert "paired_istd_rt_within_1min_support" in projected.support_reasons
-    assert OWN_MAX_SAME_PEAK_SUPPORT_REASON not in projected.support_reasons
+    assert "own_max_same_peak_support" not in projected.support_reasons
     assert "analyte_nl_fail_requires_policy" in projected.not_counted_reasons
     assert "run_level_paired_area_ratio" in decision.evidence_sources
     assert "run_level_paired_istd_rt" in decision.evidence_sources
 
 
-def test_run_level_area_ratio_support_can_count_own_max_supported_nl_fail() -> None:
+def test_area_ratio_cannot_promote_method_mismatch_from_support_label() -> None:
     output = RunOutput(
         file_results=[
             _file_result(
                 "SampleA",
                 target_area=50_000.0,
                 nl_status="NL_FAIL",
-                support_reasons=(OWN_MAX_SAME_PEAK_SUPPORT_REASON,),
+                support_reasons=("own_max_same_peak_support",),
             ),
             _file_result("RefA", target_area=40_000.0, nl_status="OK"),
             _file_result("RefB", target_area=50_000.0, nl_status="OK"),
@@ -95,12 +91,12 @@ def test_run_level_area_ratio_support_can_count_own_max_supported_nl_fail() -> N
     decision = output.file_results[0].results["Analyte"].selection_decision
     assert projected is not None
     assert decision is not None
-    assert projected.product_state == "detected_flagged"
-    assert projected.counted_detection is True
+    assert projected.product_state == "ambiguous"
+    assert projected.counted_detection is False
     assert "paired_area_ratio_support" in projected.support_reasons
     assert "paired_istd_rt_within_1min_support" in projected.support_reasons
-    assert OWN_MAX_SAME_PEAK_SUPPORT_REASON in projected.support_reasons
-    assert "analyte_nl_fail_requires_policy" not in projected.not_counted_reasons
+    assert "own_max_same_peak_support" in projected.support_reasons
+    assert "analyte_nl_fail_requires_policy" in projected.not_counted_reasons
 
 
 def test_run_level_area_ratio_outside_reference_stays_not_counted() -> None:
@@ -340,6 +336,8 @@ def _result(
         scoring_context_builder=None,
         selected_hypothesis=selected,
         selection_decision=selection_decision,
+        cid_nl_relations=_method_relations(target, candidate, nl_status),
+        selected_cid_nl_candidate_index=0,
         sample_name=sample_name,
     )
 

@@ -95,6 +95,23 @@ def _bind_acquisition_sources(
         source = expectation.source
         results = {}
         for target_label, result in file_result.results.items():
+            products = []
+            for method_product in result.cid_nl_products:
+                if method_product.acquisition_source_id not in (
+                    "",
+                    source.acquisition_source_id,
+                ):
+                    raise ConfigError(
+                        "Acquisition output contains MS2 evidence from a different "
+                        f"RAW source for {sample_name!r}/{target_label!r}."
+                    )
+                products.append(
+                    replace(
+                        method_product,
+                        acquisition_source_id=source.acquisition_source_id,
+                    )
+                )
+            result = replace(result, cid_nl_products=tuple(products))
             candidate = result.candidate_ms2_evidence
             product = None if candidate is None else candidate.best_product_evidence
             if product is not None:

@@ -14,9 +14,12 @@ from xic_extractor.extraction.targeted_peak_selection import (
     build_production_peak_hypotheses,
     selected_peak_hypothesis,
 )
-from xic_extractor.output.targeted_product_model import (
-    OWN_MAX_SAME_PEAK_SUPPORT_REASON,
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlCandidateInterval,
+    CidNlEventQuery,
+    evaluate_cid_nl_method_relations,
 )
+from xic_extractor.peak_detection.cid_nl_peak_support import DdaCidNlPeakSupportPolicy
 from xic_extractor.peak_detection.evidence_facts import (
     CandidateEvidenceFacts,
     build_candidate_evidence_facts,
@@ -43,6 +46,7 @@ from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
 )
+from xic_extractor.precursor_evidence import PrecursorLossAssessment
 
 
 def test_build_extraction_result_keeps_high_fallback_without_scoring_confidence() -> (
@@ -588,7 +592,7 @@ def test_paired_analyte_anchor_conflict_blocks_trace_downgrade() -> None:
     assert "trace_morphology_review" in projection.review_reasons
 
 
-def test_paired_analyte_anchor_selected_nl_fail_requires_area_ratio_support() -> None:
+def test_paired_analyte_anchor_does_not_confirm_nl_fail() -> None:
     result = _result_with_targeted_projection_semantics(
         target=_target(is_istd=False),
         support_reasons=(),
@@ -606,7 +610,7 @@ def test_paired_analyte_anchor_selected_nl_fail_requires_area_ratio_support() ->
     assert "paired_istd_anchor_support" in projection.support_reasons
 
 
-def test_paired_analyte_anchor_ratio_no_own_max_keeps_nl_fail_not_counted() -> None:
+def test_paired_analyte_anchor_ratio_keeps_nl_fail_not_counted() -> None:
     result = _result_with_targeted_projection_semantics(
         target=_target(is_istd=False),
         support_reasons=("ms1_coherent", "paired_area_ratio_support"),
@@ -624,32 +628,6 @@ def test_paired_analyte_anchor_ratio_no_own_max_keeps_nl_fail_not_counted() -> N
     assert "paired_analyte_nl_review" in projection.review_reasons
     assert "paired_istd_anchor_support" in projection.support_reasons
     assert "paired_area_ratio_support" in projection.support_reasons
-    assert OWN_MAX_SAME_PEAK_SUPPORT_REASON not in projection.support_reasons
-
-
-def test_paired_analyte_anchor_ratio_own_max_downgrades_nl_fail_to_review() -> None:
-    result = _result_with_targeted_projection_semantics(
-        target=_target(is_istd=False),
-        support_reasons=(
-            "ms1_coherent",
-            "paired_area_ratio_support",
-            OWN_MAX_SAME_PEAK_SUPPORT_REASON,
-        ),
-        conflict_reasons=("candidate_aligned_ms2_nl_conflict",),
-        nl_status="NL_FAIL",
-        paired_istd_anchor_rt=8.5,
-    )
-
-    projection = result.targeted_product_projection
-    assert projection is not None
-    assert projection.product_state == "detected_flagged"
-    assert projection.counted_detection is True
-    assert "candidate_aligned_ms2_nl_conflict" not in projection.conflict_reasons
-    assert "analyte_nl_fail_requires_policy" not in projection.not_counted_reasons
-    assert "paired_analyte_nl_review" in projection.review_reasons
-    assert "paired_istd_anchor_support" in projection.support_reasons
-    assert "paired_area_ratio_support" in projection.support_reasons
-    assert OWN_MAX_SAME_PEAK_SUPPORT_REASON in projection.support_reasons
 
 
 def test_paired_analyte_nl_fail_requires_anchor_inside_selected_interval() -> None:
@@ -669,9 +647,7 @@ def test_paired_analyte_nl_fail_requires_anchor_inside_selected_interval() -> No
     assert "analyte_nl_fail_requires_policy" in projection.not_counted_reasons
 
 
-def test_paired_analyte_role_support_without_own_max_keeps_nl_fail_not_counted() -> (
-    None
-):
+def test_paired_analyte_role_support_keeps_nl_fail_not_counted() -> None:
     result = _result_with_targeted_projection_semantics(
         target=_target(is_istd=False),
         support_reasons=(
@@ -693,34 +669,6 @@ def test_paired_analyte_role_support_without_own_max_keeps_nl_fail_not_counted()
     assert "paired_analyte_nl_review" in projection.review_reasons
     assert "role_aware_rt_support" in projection.support_reasons
     assert "paired_area_ratio_support" in projection.support_reasons
-    assert "paired_istd_anchor_support" not in projection.support_reasons
-    assert OWN_MAX_SAME_PEAK_SUPPORT_REASON not in projection.support_reasons
-
-
-def test_paired_analyte_role_support_with_own_max_downgrades_nl_fail() -> None:
-    result = _result_with_targeted_projection_semantics(
-        target=_target(is_istd=False),
-        support_reasons=(
-            "ms1_coherent",
-            "role_aware_rt_support",
-            "paired_area_ratio_support",
-            OWN_MAX_SAME_PEAK_SUPPORT_REASON,
-        ),
-        conflict_reasons=("candidate_aligned_ms2_nl_conflict",),
-        nl_status="NL_FAIL",
-        paired_istd_anchor_rt=8.9,
-    )
-
-    projection = result.targeted_product_projection
-    assert projection is not None
-    assert projection.product_state == "detected_flagged"
-    assert projection.counted_detection is True
-    assert "candidate_aligned_ms2_nl_conflict" not in projection.conflict_reasons
-    assert "analyte_nl_fail_requires_policy" not in projection.not_counted_reasons
-    assert "paired_analyte_nl_review" in projection.review_reasons
-    assert "role_aware_rt_support" in projection.support_reasons
-    assert "paired_area_ratio_support" in projection.support_reasons
-    assert OWN_MAX_SAME_PEAK_SUPPORT_REASON in projection.support_reasons
     assert "paired_istd_anchor_support" not in projection.support_reasons
 
 
@@ -1090,6 +1038,36 @@ def _result_with_targeted_projection_semantics(
         selected_hypothesis=selected,
         physical_evaluation=physical_evaluation,
         sample_name=sample_name,
+        cid_nl_relations=_method_relations(target, candidate, nl_status),
+        selected_cid_nl_candidate_index=0,
+    )
+
+
+def _method_relations(target: Target, candidate: PeakCandidate, nl_status: str = "OK"):
+    return evaluate_cid_nl_method_relations(
+        candidate_intervals=(
+            CidNlCandidateInterval(
+                target.mz, candidate.peak.peak_start, candidate.peak.peak_end
+            ),
+        ),
+        event_queries=(
+            CidNlEventQuery(
+                PrecursorLossAssessment(
+                    "compatible" if nl_status == "OK" else "neutral_loss_mismatch",
+                    "scan_precursor",
+                    target.mz,
+                    target.neutral_loss_da,
+                    0.0,
+                    "unknown",
+                ),
+                candidate.selection_apex_rt,
+                candidate.selection_apex_rt,
+            ),
+        ),
+        policy=DdaCidNlPeakSupportPolicy(
+            precursor_tolerance_da=target.mz * target.ppm_tol / 1e6,
+            neutral_loss_tolerance_ppm=target.nl_ppm_max,
+        ),
     )
 
 

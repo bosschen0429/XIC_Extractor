@@ -22,16 +22,24 @@ from xic_extractor.applications.targeted.application import (
 from xic_extractor.applications.targeted.production_workflow import (
     acquisition_snapshot_for_publication,
 )
+from xic_extractor.configuration.models import Target
 from xic_extractor.extraction.result_models import (
     ExtractionResult,
     FileResult,
     RunOutput,
 )
+from xic_extractor.extraction.targeted_product_projection import (
+    build_targeted_product_projection,
+)
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 from xic_extractor.output.targeted_product_model import (
+    TargetedProductContext,
     TargetedProductProjection,
 )
 from xic_extractor.peak_detection.models import PeakResult
+from xic_extractor.peak_detection.peak_hypothesis_identity import (
+    HYPOTHESIS_METHOD_DDA_CID_NL,
+)
 
 if TYPE_CHECKING:
     from xic_extractor.applications.targeted.production_workflow import (
@@ -152,6 +160,7 @@ def _build_render_view(
 
     decisions: dict[tuple[str, str], Any] = {}
     target_ids_by_label: dict[str, str] = {}
+    targets_by_label: dict[str, Target] = {}
     for result in finalized_results:
         if (
             result.processing_request != expected_request
@@ -172,6 +181,7 @@ def _build_render_view(
                 "finalized Targeted result population contains duplicate Targets"
             )
         target_ids_by_label[target_label] = target_id
+        targets_by_label[target_label] = target.target
         for projection_decision in result.completed_projection.decisions:
             subject = cast(Any, projection_decision.subject)
             sample_id = subject.sample.identity.sample_identity_id
@@ -232,6 +242,7 @@ def _build_render_view(
             )
             rendered[target_label] = _finalized_extraction_result(
                 extraction,
+                target=targets_by_label[target_label],
                 value=render_decision.value,
                 no_write_reason=no_write_reason,
                 evidence=getattr(render_decision, "evidence", None),
@@ -250,12 +261,16 @@ def _build_render_view(
 def _finalized_extraction_result(
     extraction: ExtractionResult,
     *,
+    target: Target,
     value: float | None,
     no_write_reason: str,
     evidence: object,
 ) -> ExtractionResult:
     projection = _finalized_product_projection(
         extraction.targeted_product_projection,
+        target=target,
+        evidence=evidence,
+        value=value,
         no_write_reason=no_write_reason,
     )
     if not no_write_reason:
@@ -318,6 +333,9 @@ def _hypothesis_area(hypothesis: Any) -> float:
 def _finalized_product_projection(
     projection: TargetedProductProjection | None,
     *,
+    target: Target,
+    evidence: object,
+    value: float | None,
     no_write_reason: str,
 ) -> TargetedProductProjection | None:
     if projection is None:
@@ -330,7 +348,32 @@ def _finalized_product_projection(
             review_state="review_required",
             projection_reason=no_write_reason,
         )
-    return projection
+    if type(evidence) is not ObservedSearchSubject:
+        raise TargetedOutputBoundaryError(
+            "numeric projection lost its finalized evidence"
+        )
+    return build_targeted_product_projection(
+        TargetedProductContext(
+            role="ISTD" if target.is_istd else "Analyte",
+            expected_present=target.is_istd,
+            target_label=target.label,
+            istd_pair=target.istd_pair,
+            neutral_loss_required=target.neutral_loss_da is not None,
+        ),
+        rt=evidence.hypothesis.integration.rt_apex_min,
+        area=value,
+        confidence=projection.legacy_evidence.get("confidence", ""),
+        nl_status=projection.legacy_evidence.get("nl_status", ""),
+        cid_nl_supported=(
+            evidence.hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
+        ),
+        support_reasons=projection.support_reasons,
+        review_reasons=projection.review_reasons,
+        conflict_reasons=projection.conflict_reasons,
+        not_counted_reasons=projection.not_counted_reasons,
+        exclusion_reasons=projection.exclusion_reasons,
+        legacy_evidence=projection.legacy_evidence,
+    )
 
 
 def _reject_collisions(paths: Any) -> None:

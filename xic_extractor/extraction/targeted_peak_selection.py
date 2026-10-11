@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import cast
 
@@ -18,7 +19,7 @@ from xic_extractor.peak_detection.hypotheses import (
     CandidateMS2EvidenceMap,
     PeakHypothesis,
 )
-from xic_extractor.peak_detection.models import PeakDetectionResult
+from xic_extractor.peak_detection.models import PeakCandidate, PeakDetectionResult
 from xic_extractor.peak_detection.ms1_morphology import (
     configured_morphology_window_points,
 )
@@ -114,6 +115,7 @@ def select_targeted_peak(
     universe: PhysicalSegmentUniverse,
     selection_rt_min: float,
     selection_rt_max: float,
+    candidate_evaluations: Mapping[PeakCandidate, PhysicalPeakEvaluation] | None = None,
 ) -> TargetedPeakSelection:
     """Return selection facts synced with physical availability and integration."""
     trace = trace_group.primary_trace
@@ -154,8 +156,10 @@ def select_targeted_peak(
             else PHYSICAL_PEAK_NO_SELECTION_POLICY
         ),
     )
-    physical_evaluation = answer_physical_peak_question(
-        prepared_result, universe, question
+    physical_evaluation = (
+        candidate_evaluations[candidate]
+        if candidate is not None and candidate_evaluations is not None
+        else answer_physical_peak_question(prepared_result, universe, question)
     )
     if physical_evaluation.state != "available":
         # The final physical owner withdraws the ranked value and selection authority.

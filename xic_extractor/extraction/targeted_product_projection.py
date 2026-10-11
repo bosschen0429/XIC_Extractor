@@ -9,7 +9,6 @@ from xic_extractor.extraction.target_sample_applicability import (
     target_sample_is_applicable,
 )
 from xic_extractor.output.targeted_product_model import (
-    OWN_MAX_SAME_PEAK_SUPPORT_REASON,
     ProductState,
     ReviewState,
     TargetedProductContext,
@@ -121,11 +120,13 @@ def project_targeted_result(
             expected_present=target.is_istd,
             target_label=result.target_label or target.label,
             istd_pair=result.istd_pair or target.istd_pair,
+            neutral_loss_required=target.neutral_loss_da is not None,
         ),
         rt=result.reported_rt,
         area=result.reported_peak_area,
         confidence=result.confidence,
         nl_status=nl_status,
+        cid_nl_supported=result.selected_cid_nl_supported,
         support_reasons=support,
         review_reasons=review,
         conflict_reasons=conflicts,
@@ -183,12 +184,6 @@ def _projection_conflict_reasons(
             reason
             for reason in semantics.conflict_reasons
             if not _downgrade_nl_conflict_to_istd_review(result, reason)
-            and not _downgrade_nl_conflict_to_paired_analyte_review(
-                result,
-                target,
-                reason,
-                support_reasons,
-            )
             and not _downgrade_rt_conflict_to_istd_review(
                 result,
                 target,
@@ -238,23 +233,6 @@ def _downgrade_nl_conflict_to_istd_review(
         and result.candidate_ms2_evidence.strict_nl_scan_count == 0
         and _positive(result.reported_rt)
         and _positive(result.reported_peak_area)
-    )
-
-
-def _downgrade_nl_conflict_to_paired_analyte_review(
-    result: ExtractionResult,
-    target: Target,
-    reason: str,
-    support_reasons: tuple[str, ...],
-) -> bool:
-    return (
-        reason == "candidate_aligned_ms2_nl_conflict"
-        and result.role.upper() == "ANALYTE"
-        and _paired_analyte_has_nl_dropout_supported_peak(
-            result,
-            target,
-            support_reasons,
-        )
     )
 
 
@@ -427,31 +405,6 @@ def _paired_analyte_has_pair_supported_peak(
     )
 
 
-def _paired_analyte_has_nl_dropout_supported_peak(
-    result: ExtractionResult,
-    target: Target,
-    support_reasons: tuple[str, ...],
-) -> bool:
-    support = set(support_reasons)
-    return (
-        _paired_analyte_has_role_or_ratio_supported_peak(
-            result,
-            target,
-            support_reasons,
-        )
-        and "paired_area_ratio_support" in support
-        and OWN_MAX_SAME_PEAK_SUPPORT_REASON in support
-        and bool(
-            support
-            & {
-                "role_aware_rt_support",
-                "paired_istd_anchor_support",
-                "paired_istd_rt_within_1min_support",
-            }
-        )
-    )
-
-
 def _paired_analyte_has_role_or_ratio_supported_peak(
     result: ExtractionResult,
     target: Target,
@@ -580,14 +533,17 @@ def _projection_not_counted_reasons(
         reasons.extend(_typed_not_counted_reasons(semantics.not_counted_reasons))
     nl_failed = result.nl_token == "NL_FAIL"
     no_ms2 = result.nl_token == "NO_MS2"
-    paired_supported = _paired_analyte_has_nl_dropout_supported_peak(
-        result,
-        target,
-        support_reasons,
-    )
-    if nl_failed and result.role.upper() != "ISTD" and not paired_supported:
+    if (
+        nl_failed
+        and result.role.upper() != "ISTD"
+        and not result.selected_cid_nl_supported
+    ):
         reasons.append("analyte_nl_fail_requires_policy")
-    if no_ms2 and result.role.upper() != "ISTD" and not paired_supported:
+    if (
+        no_ms2
+        and result.role.upper() != "ISTD"
+        and not result.selected_cid_nl_supported
+    ):
         reasons.append("analyte_missing_ms2_requires_policy")
     if (
         nl_failed
@@ -649,6 +605,7 @@ def build_targeted_product_projection(
     area: float | None,
     confidence: str,
     nl_status: str,
+    cid_nl_supported: bool = False,
     support_reasons: tuple[str, ...] = (),
     review_reasons: tuple[str, ...] = (),
     conflict_reasons: tuple[str, ...] = (),
@@ -665,6 +622,13 @@ def build_targeted_product_projection(
     review = _stable_reasons(review_reasons)
     conflicts = _stable_reasons(conflict_reasons)
     not_counted = _stable_reasons(not_counted_reasons)
+    if (
+        context.neutral_loss_required
+        and not context.is_istd
+        and not cid_nl_supported
+        and not not_counted
+    ):
+        not_counted = _merge_reasons(not_counted, ("cid_nl_method_not_supported",))
     exclusions = _stable_reasons(exclusion_reasons)
 
     missing_ms1 = _missing_positive_ms1_peak(rt, area)

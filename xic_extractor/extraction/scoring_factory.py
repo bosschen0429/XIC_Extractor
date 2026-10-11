@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 import numpy as np
@@ -41,6 +41,7 @@ def build_scoring_context_factory(
             [PeakCandidate], CandidateMS2Evidence | None
         ]
         | None = None,
+        candidate_nl_support: Mapping[PeakCandidate, bool] | None = None,
     ) -> Callable[[PeakCandidate], ScoringContext]:
         rt_prior: float | None = None
         rt_prior_sigma: float | None = None
@@ -123,6 +124,8 @@ def build_scoring_context_factory(
                 if candidate_ms2 is not None
                 else target_window_nl_match
             )
+            if candidate_nl_support is not None:
+                nl_match = candidate_nl_support[candidate]
             ms2_trace_strength = (
                 candidate_ms2.trace.strength if candidate_ms2 is not None else None
             )

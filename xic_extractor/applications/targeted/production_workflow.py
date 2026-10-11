@@ -73,7 +73,6 @@ from xic_extractor.extraction.targeted_inputs import (
     resolve_targeted_inputs,
     resolve_targeted_raw_paths,
 )
-from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.peak_detection.capture import (
     SampleLocalCapture,
     bind_owner_backed_capture_hypothesis,
@@ -85,20 +84,22 @@ from xic_extractor.peak_detection.cid_nl_evidence import (
     mint_cid_nl_evidence_ref,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlEvaluationReceipt,
     CidNlMethodAssessmentRef,
     mint_cid_nl_method_assessment_ref,
+    resolve_cid_nl_method_relations,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     cid_nl_method_subject_from_target,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support import (
-    DdaCidNlPeakSupportPolicy,
     DdaCidNlPeakSupportRef,
-    resolve_dda_cid_nl_peak_support_ref,
 )
-from xic_extractor.peak_detection.observations import PeakObservationRef
+from xic_extractor.peak_detection.observations import (
+    PeakObservationRef,
+    mint_peak_observation_ref,
+    physical_peak_observation_integration,
+)
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     compose_ms1_observation_peak_hypothesis,
 )
@@ -309,6 +310,12 @@ def prepare_targeted_production_workflow(
                 physical_evaluations[_candidate_id(target, sample)] = (
                     result.physical_evaluation
                 )
+                for index, evaluation in enumerate(
+                    result.candidate_physical_evaluations
+                ):
+                    physical_evaluations[
+                        f"{_candidate_id(target, sample)}:universe:{index}"
+                    ] = evaluation
     if any(
         evaluation.prepared.profile_id != profile.profile_id
         for evaluation in physical_evaluations.values()
@@ -567,10 +574,12 @@ def _execute_target(
         sample.identity.sample_identity_id: (result, candidate_id)
         for sample, result, candidate_id in candidates
     }
-    for sample in context.samples:
+    for sample, file_result in context.results_by_sample:
+        result = file_result.results[target.definition.target.label]
         candidate = candidate_by_sample.get(sample.identity.sample_identity_id)
         observations: tuple[PeakObservationRef, ...] = ()
         captured = None
+        selected_observation = None
         evidence_refs: tuple[CidNlEvidenceRef, ...] = ()
         support_refs: tuple[DdaCidNlPeakSupportRef, ...] = ()
         if candidate is not None:
@@ -621,33 +630,59 @@ def _execute_target(
                     )
                 )
                 continue
-            candidate_ms2_evidence = result.candidate_ms2_evidence
-            product = (
-                None
-                if candidate_ms2_evidence is None
-                else candidate_ms2_evidence.best_product_evidence
-            )
-            if product is not None:
-                acquisition_source = resolve_request_acquisition_source(
-                    processing_owners=context.owners,
-                    sample=sample,
-                )
+            selected_observation = observations[0] if observations else None
+            all_observations = []
+            for evaluation in result.candidate_physical_evaluations:
                 if (
-                    product.acquisition_source_id
-                    != acquisition_source.acquisition_source_id
+                    evaluation is result.physical_evaluation
+                    and selected_observation is not None
                 ):
-                    raise RuntimeError(
-                        "Targeted MS2 evidence crossed the resolved acquisition source"
+                    all_observations.append(selected_observation)
+                else:
+                    all_observations.append(
+                        mint_peak_observation_ref(
+                            processing_owners=context.owners,
+                            sample=sample,
+                            trace=trace,
+                            integration=physical_peak_observation_integration(
+                                evaluation
+                            ),
+                            selection_intensity=(
+                                evaluation.retained_prepared_signal.positive_signal
+                                if evaluation.retained_prepared_signal is not None
+                                else None
+                            ),
+                            resolver_mode=request.config.resolver_mode,
+                            proposal_sources=("physical_peak_evaluation",),
+                            physical_evaluation=evaluation,
+                            signal_processing_profile=scope.method_constraints.signal_processing_profile,
+                        )
                     )
+            observations = tuple(all_observations)
+        if ms1_only:
+            raise RuntimeError(
+                "MS1-only Target lost its retained acquisition candidate"
+            )
+        if result.cid_nl_evaluation_receipt is None or result.cid_nl_relations is None:
+            raise RuntimeError("Targeted acquisition lost its complete CID-NL universe")
+        acquisition_source = resolve_request_acquisition_source(
+            processing_owners=context.owners, sample=sample
+        )
+        evidence = []
+        for product in result.cid_nl_products:
             if (
-                product is not None
-                and product.scan_number is not None
-                and _matches_target_precursor(
-                    product.precursor_mz,
-                    target.definition.target,
-                )
+                product.acquisition_source_id
+                != acquisition_source.acquisition_source_id
             ):
-                evidence = mint_cid_nl_evidence_ref(
+                raise RuntimeError(
+                    "Targeted MS2 evidence crossed the resolved acquisition source"
+                )
+            if product.scan_number is None:
+                raise RuntimeError(
+                    "Targeted MS2 evidence lost its acquired scan identity"
+                )
+            evidence.append(
+                mint_cid_nl_evidence_ref(
                     processing_owners=context.owners,
                     sample=sample,
                     scan_number=product.scan_number,
@@ -662,55 +697,30 @@ def _execute_target(
                     scan_precursor_mz=product.scan_precursor_mz,
                     precursor_metadata=product.precursor_metadata,
                 )
-                evidence_refs = (evidence,)
-                if (
-                    observations
-                    and neutral_loss_match(
-                        product.precursor_mz,
-                        product.product_mz,
-                        _neutral_loss(target.definition.target),
-                        _support_policy(
-                            target.definition.target
-                        ).neutral_loss_tolerance_ppm,
-                        observed_loss_da=product.observed_loss_da,
-                    )[2]
-                    and observations[0].content.integration.rt_left_min
-                    <= product.scan_rt
-                    <= observations[0].content.integration.rt_right_min
-                ):
-                    support = resolve_dda_cid_nl_peak_support_ref(
-                        processing_owners=context.owners,
-                        sample=sample,
-                        canonical_evidence=evidence,
-                        candidate_peaks=observations,
-                        policy=_support_policy(target.definition.target),
-                    )
-                    support_refs = (support,)
-        if ms1_only:
-            raise RuntimeError(
-                "MS1-only Target lost its retained acquisition candidate"
             )
+        evidence_refs = tuple(evidence)
+        support_refs, set_refs = resolve_cid_nl_method_relations(
+            processing_owners=context.owners,
+            sample=sample,
+            evidence_refs=evidence_refs,
+            candidate_peaks=observations,
+            policy=result.cid_nl_evaluation_receipt.support_policy,
+            relations=result.cid_nl_relations,
+        )
         assessment = mint_cid_nl_method_assessment_ref(
             processing_owners=context.owners,
             sample=sample,
             target=target,
             detector_invocation_id="targeted-production-retained-trace",
-            evaluation_receipt=CidNlEvaluationReceipt(
-                query_rt_min=target.definition.target.rt_min,
-                query_rt_max=target.definition.target.rt_max,
-                support_policy=_support_policy(target.definition.target),
-                acquisition_supported=True,
-                search_completed=True,
-                scanned_event_count=len(evidence_refs),
-                reason_code=None,
-            ),
+            evaluation_receipt=result.cid_nl_evaluation_receipt,
             candidate_peaks=observations,
             evidence_refs=evidence_refs,
             individual_support_refs=support_refs,
+            set_relation_refs=set_refs,
         )
         assessments.append((sample, assessment))
         if captured is not None:
-            if not observations:
+            if selected_observation is None:
                 completed_captures.append(captured)
                 capture_inputs.append(
                     CaptureWorkflowArguments(
@@ -727,13 +737,13 @@ def _execute_target(
             matches = tuple(
                 hypothesis
                 for hypothesis in hypotheses
-                if observations[0] in hypothesis.peak_observation_refs
+                if selected_observation in hypothesis.peak_observation_refs
             )
             if len(matches) != 1:
                 raise RuntimeError("Targeted assessment lost its captured observation")
             bound = bind_owner_backed_capture_hypothesis(
                 captured,
-                observation=observations[0],
+                observation=selected_observation,
                 hypothesis=matches[0],
             )
             completed_captures.append(bound)
@@ -741,7 +751,7 @@ def _execute_target(
                 CaptureWorkflowArguments(
                     candidate_id=bound.candidate_id,
                     trace=bound.trace,
-                    owner_observation=observations[0],
+                    owner_observation=selected_observation,
                     owner_hypothesis=matches[0],
                 )
             )
@@ -1003,20 +1013,6 @@ def _candidate_id(
             target.definition.target_definition_id,
             sample.identity.sample_identity_id,
         )
-    )
-
-
-def _support_policy(target: Target) -> DdaCidNlPeakSupportPolicy:
-    return DdaCidNlPeakSupportPolicy(
-        precursor_tolerance_da=max(target.mz * target.ppm_tol / 1_000_000, 1e-9),
-        neutral_loss_tolerance_ppm=target.nl_ppm_max or 20.0,
-    )
-
-
-def _matches_target_precursor(observed_mz: float, target: Target) -> bool:
-    return abs(observed_mz - target.mz) <= max(
-        target.mz * target.ppm_tol / 1_000_000,
-        1e-9,
     )
 
 

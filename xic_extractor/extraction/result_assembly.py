@@ -4,9 +4,17 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from xic_extractor.configuration.models import Target
-from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
+from xic_extractor.evidence.neutral_loss import (
+    CandidateMS2Evidence,
+    MS2ProductEvidence,
+    NLResult,
+)
 from xic_extractor.extraction.targeted_product_projection import (
     project_targeted_result,
+)
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlEvaluationReceipt,
+    CidNlMethodRelations,
 )
 from xic_extractor.peak_detection.hypotheses import (
     PeakHypothesis,
@@ -39,6 +47,11 @@ def build_extraction_result(
     selection_decision: PeakHypothesisSelectionDecision | None = None,
     acquisition_trace: Trace | None = None,
     physical_evaluation: PhysicalPeakEvaluation | None = None,
+    candidate_physical_evaluations: tuple[PhysicalPeakEvaluation, ...] = (),
+    cid_nl_products: tuple[MS2ProductEvidence, ...] = (),
+    cid_nl_evaluation_receipt: CidNlEvaluationReceipt | None = None,
+    cid_nl_relations: CidNlMethodRelations | None = None,
+    selected_cid_nl_candidate_index: int | None = None,
     sample_name: str = "",
 ) -> ExtractionResult:
     if selected_hypothesis is not None:
@@ -80,6 +93,11 @@ def build_extraction_result(
         selection_decision=resolved_selection_decision,
         acquisition_trace=acquisition_trace,
         physical_evaluation=physical_evaluation,
+        candidate_physical_evaluations=candidate_physical_evaluations,
+        cid_nl_products=cid_nl_products,
+        cid_nl_evaluation_receipt=cid_nl_evaluation_receipt,
+        cid_nl_relations=cid_nl_relations,
+        selected_cid_nl_candidate_index=selected_cid_nl_candidate_index,
     )
     return replace(
         result,
