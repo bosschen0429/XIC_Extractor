@@ -19,6 +19,7 @@ dependencies = [
 dev = [
     "grimp>=3.15,<4",
     "import-linter>=2.13,<3",
+    "playwright>=1.56,<2",
     "pyarrow>=25.0.0,<26",
     "pyinstaller>=6.22,<7",
     "pytest>=8",
@@ -61,6 +62,7 @@ testpaths = ["tests"]
 addopts = "-p no:cacheprovider --tb=short"
 tmp_path_retention_policy = "failed"
 markers = [
+    "browser_e2e: runs the shipped HTML workbench in locked Playwright Chromium without RAW/DLL analysis. CI selects this on workbench/review and browser-test infrastructure changes and on master.",
     "ledger_snapshot: pins a recorded value from docs/superpowers/validation/, so a legitimate re-analysis turns it red. Excluded from CI shards; run with `python -m tools.testing.test_shards --snapshots`. Only direct decorators on top-level synchronous test functions are supported; the inventory rejects class, method, async, and module-level placement. A test whose subject is checker behaviour must stay unmarked and run in CI: rejection paths, monkeypatched dependencies, and invariants that survive a consistent re-run are not snapshots even when they read a register.",
     "current_repository_census: validates the current checkout's complete architecture census. CI runs this once in the lint job; the main pytest sessions exclude it to avoid rebuilding the same repository-wide graph.",
     "packaging_build: builds installable wheel or PyInstaller outputs. Run for packaging-authority changes and on the primary main-branch test job; ordinary PRs and compatibility runs keep the cheaper packaging contract tests.",

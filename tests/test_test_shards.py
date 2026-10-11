@@ -350,19 +350,26 @@ def test_snapshot_runner_rejects_malformed_marker_before_pytest(
 @pytest.mark.parametrize(
     ("path", "kept"),
     (
-        ("pyproject.toml", {"packaging_build"}),
-        ("uv.lock", {"packaging_build"}),
+        ("pyproject.toml", {"packaging_build", "browser_e2e"}),
+        ("uv.lock", {"packaging_build", "browser_e2e"}),
         ("xic_extractor.spec", {"packaging_build"}),
         (".github/workflows/build.yml", {"packaging_build"}),
-        (".github/workflows/ci.yml", {"packaging_build"}),
-        ("tests/test_test_shards.py", {"packaging_build"}),
+        (".github/workflows/ci.yml", {"packaging_build", "browser_e2e"}),
+        ("tests/test_test_shards.py", {"packaging_build", "browser_e2e"}),
         ("tests/test_pyinstaller_spec.py", {"packaging_build"}),
         (
             "xic_extractor/discovery/data/default_background_library_15min.json.gz",
             {"packaging_build"},
         ),
-        ("xic_inspector/api.py", {"packaging_build"}),
-        ("xic_workbench/targeted.py", {"packaging_build"}),
+        ("xic_inspector/api.py", {"packaging_build", "browser_e2e"}),
+        ("xic_workbench/targeted.py", {"packaging_build", "browser_e2e"}),
+        ("xic_workbench/assets/analysis.js", {"packaging_build", "browser_e2e"}),
+        ("xic_workbench/server.py", {"packaging_build", "browser_e2e"}),
+        ("xic_workbench/workspace.py", {"packaging_build", "browser_e2e"}),
+        ("xic_workbench/jobs.py", {"packaging_build", "browser_e2e"}),
+        ("tests/test_workbench_browser.py", {"browser_e2e"}),
+        ("tests/test_xic_inspector_api.py", {"browser_e2e"}),
+        ("tools/testing/test_shards.py", {"packaging_build", "browser_e2e"}),
         ("tools/diagnostics/targeted_istd_benchmark_loaders.py", {"packaging_build"}),
         ("xic_extractor/presets/data/dna_dr.toml", {"packaging_build"}),
         ("docs/product/backfill.md", {"product_governance"}),
@@ -417,7 +424,9 @@ def test_local_shard_skips_markers_unrelated_to_the_change(
 
     expression = _capture_shard_marker(monkeypatch)
 
-    assert expression == ("not ledger_snapshot and not packaging_build")
+    assert expression == (
+        "not ledger_snapshot and not browser_e2e and not packaging_build"
+    )
     assert _capture_shard_marker(monkeypatch, all_markers=True) == "not ledger_snapshot"
 
 

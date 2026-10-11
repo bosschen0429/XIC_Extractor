@@ -33,15 +33,17 @@ _STARTING_TAGS = (
     ("RNA_MeR", 146.0579),
 )
 _NUMERIC_CONTROLS = (
-    ("nl_tolerance_ppm", "NL 容差 (ppm)", 0.01, 1000.0, 1.0),
-    ("precursor_mz_tolerance_ppm", "Precursor 容差 (ppm)", 0.01, 1000.0, 1.0),
-    ("product_mz_tolerance_ppm", "Product 容差 (ppm)", 0.01, 1000.0, 1.0),
-    ("product_search_ppm", "Product 搜尋 (ppm)", 0.01, 1000.0, 1.0),
-    ("nl_min_intensity_ratio", "NL 最低強度比", 0.0001, 1.0, 0.01),
-    ("seed_rt_gap_min", "Seed RT 間隔 (min)", 0.001, 60.0, 0.05),
-    ("ms1_search_padding_min", "MS1 RT padding (min)", 0.001, 60.0, 0.05),
-    ("rt_min", "RT 下界 (min)", 0.0, None, 0.5),
-    ("rt_max", "RT 上界 (min)", 0.0, None, 0.5),
+    # These controls accept continuous values. HTML step is anchored at min,
+    # so a fixed increment rejects valid defaults (for example 20 from 0.01).
+    ("nl_tolerance_ppm", "NL 容差 (ppm)", 0.01, 1000.0, "any"),
+    ("precursor_mz_tolerance_ppm", "Precursor 容差 (ppm)", 0.01, 1000.0, "any"),
+    ("product_mz_tolerance_ppm", "Product 容差 (ppm)", 0.01, 1000.0, "any"),
+    ("product_search_ppm", "Product 搜尋 (ppm)", 0.01, 1000.0, "any"),
+    ("nl_min_intensity_ratio", "NL 最低強度比", 0.0001, 1.0, "any"),
+    ("seed_rt_gap_min", "Seed RT 間隔 (min)", 0.001, 60.0, "any"),
+    ("ms1_search_padding_min", "MS1 RT padding (min)", 0.001, 60.0, "any"),
+    ("rt_min", "RT 下界 (min)", 0.0, None, "any"),
+    ("rt_max", "RT 上界 (min)", 0.0, None, "any"),
 )
 _OVERRIDE_KEYS = frozenset(key for key, *_ in _NUMERIC_CONTROLS) | {"resolver_mode"}
 

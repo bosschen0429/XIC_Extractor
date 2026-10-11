@@ -91,6 +91,8 @@ jobs:
       - name: Test
         shell: pwsh
         working-directory: repo-3.12-tests
+        env:
+          XIC_PLAYWRIGHT_CHANNEL: ""
         run: |
           $venvScripts = (Resolve-Path .\.venv\Scripts).Path
           $env:PATH = "$venvScripts;$env:PATH"
@@ -105,9 +107,17 @@ jobs:
             $runPackagingBuild = $markerExpression -notmatch 'not packaging_build'
           }
           $started = Get-Date
+          if ($markerExpression -notmatch 'not browser_e2e') {
+            $browserStarted = Get-Date
+            & .\.venv\Scripts\python.exe -m playwright install chromium
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $browserElapsed = [math]::Round(((Get-Date) - $browserStarted).TotalSeconds, 1)
+            "- browser_install_seconds=$browserElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          }
+          $parallelStarted = Get-Date
           & .\.venv\Scripts\python.exe -m pytest -m $markerExpression -n 4 --dist loadfile -v --tb=short --durations=10
           $parallelExitCode = $LASTEXITCODE
-          $parallelElapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
+          $parallelElapsed = [math]::Round(((Get-Date) - $parallelStarted).TotalSeconds, 1)
           "- marker_expression=$markerExpression" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           "- parallel_test_seconds=$parallelElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
 
@@ -129,3 +139,11 @@ jobs:
           "- test_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           if ($parallelExitCode -ne 0) { exit $parallelExitCode }
           exit $serialExitCode
+      - name: Browser failure traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-browser-traces
+          path: repo-3.12-tests/tmp_runtime/**/browser-trace.zip
+          if-no-files-found: ignore
+          retention-days: 7

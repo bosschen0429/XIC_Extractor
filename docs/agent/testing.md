@@ -88,6 +88,21 @@ individually from default CI. Run that lane with:
 A legitimate re-analysis may change a snapshot. Keep rejection behavior and
 dependency-failure checks in ordinary CI when their oracle is still current.
 
+## Browser Workbench Checks
+
+`browser_e2e` uses Python Playwright's sync API against an ephemeral loopback
+server and isolated config, with fake application runners instead of RAW/DLL
+analysis. After bootstrap, install the locked Chromium once and run the lane:
+
+    .venv\Scripts\python.exe -m playwright install chromium
+    .venv\Scripts\python.exe -m pytest tests/test_workbench_browser.py -q
+
+CI uses bundled Chromium; `XIC_PLAYWRIGHT_CHANNEL=chrome` (or `msedge`) is an
+explicit local opt-in. Failed tests retain `browser-trace.zip` under their
+`tmp_runtime/` test directory; CI uploads those traces. Successful traces are
+cleaned with pytest's temporary files. `tools.testing.test_shards` owns change
+relevance; master runs the lane.
+
 ## RAW And Scientific Validation
 
 Default pytest must not depend on local RAW paths. Synthetic/unit tests prove
