@@ -33,6 +33,15 @@ from xic_extractor.alignment import AlignmentConfig
 from xic_extractor.applications.untargeted.application import (
     AlignmentProcessExecutionError,
 )
+from xic_extractor.applications.untargeted.publication import (
+    UntargetedPublicationPolicy,
+)
+from xic_extractor.applications.untargeted.request import (
+    RetainedAlignmentOptions,
+    UntargetedExecutionContext,
+    UntargetedRequest,
+)
+from xic_extractor.configuration.execution_profile import UntargetedExecutionPolicy
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
@@ -161,35 +170,41 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
     if writer_fails:
         with pytest.raises(OSError, match="Matrix publication failed"):
             application_module.run_untargeted_application(
-                discovery_batch_index=batch_index,
-                raw_dir=tmp_path / "raw",
-                dll_dir=tmp_path / "dll",
-                output_dir=tmp_path / "out",
-                alignment_config=AlignmentConfig(),
-                peak_config=_peak_config(),
-                discovery_settings=_settings(),
-                emit_cid_nl_explanation=True,
-                raw_workers=raw_workers,
+                UntargetedRequest(
+                    discovery_batch_index=batch_index,
+                    raw_dir=tmp_path / "raw",
+                    dll_dir=tmp_path / "dll",
+                    output_dir=tmp_path / "out",
+                    alignment_config=AlignmentConfig(),
+                    peak_config=_peak_config(),
+                    discovery_settings=_settings(),
+                    execution=UntargetedExecutionPolicy(raw_workers=raw_workers),
+                    publication=UntargetedPublicationPolicy(
+                        emit_cid_nl_explanation=True
+                    ),
+                )
             )
         assert not report.exists()
         assert closed == [True]
         return
 
     result = application_module.run_untargeted_application(
-        discovery_batch_index=batch_index,
-        raw_dir=tmp_path / "raw",
-        dll_dir=tmp_path / "dll",
-        output_dir=tmp_path / "out",
-        alignment_config=AlignmentConfig(),
-        peak_config=_peak_config(),
-        discovery_settings=_settings(),
-        emit_cid_nl_explanation=True,
-        owner_build_xic_backend="raw_superwindow",
-        raw_workers=raw_workers,
-        sample_metadata=retained_sample_metadata,
-        known_istd_reference_workbook=(
-            tmp_path / "reference.xlsx" if with_reference else None
-        ),
+        UntargetedRequest(
+            discovery_batch_index=batch_index,
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            discovery_settings=_settings(),
+            sample_metadata=retained_sample_metadata,
+            known_istd_reference_workbook=tmp_path / "reference.xlsx"
+            if with_reference
+            else None,
+            execution=UntargetedExecutionPolicy(raw_workers=raw_workers),
+            publication=UntargetedPublicationPolicy(emit_cid_nl_explanation=True),
+            legacy=RetainedAlignmentOptions(owner_build_xic_backend="raw_superwindow"),
+        )
     )
 
     assert report.read_text(encoding="utf-8") == "published"
@@ -249,14 +264,16 @@ def test_pure_cid_nl_cancellation_after_completion_skips_publication(
 
     with pytest.raises(InterruptedError, match="before output publication"):
         application_module.run_untargeted_application(
-            discovery_batch_index=batch_index,
-            raw_dir=tmp_path / "raw",
-            dll_dir=tmp_path / "dll",
-            output_dir=tmp_path / "out",
-            alignment_config=AlignmentConfig(),
-            peak_config=_peak_config(),
-            discovery_settings=_settings(),
-            should_cancel=lambda: next(cancellation_checks),
+            UntargetedRequest(
+                discovery_batch_index=batch_index,
+                raw_dir=tmp_path / "raw",
+                dll_dir=tmp_path / "dll",
+                output_dir=tmp_path / "out",
+                alignment_config=AlignmentConfig(),
+                peak_config=_peak_config(),
+                discovery_settings=_settings(),
+            ),
+            UntargetedExecutionContext(should_cancel=lambda: next(cancellation_checks)),
         )
     assert closed == [True]
     assert not (tmp_path / "out" / "alignment_matrix.tsv").exists()
@@ -304,14 +321,16 @@ def test_pure_cid_nl_cancellation_during_projection_skips_publication(
 
     with pytest.raises(InterruptedError, match="before output publication"):
         application_module.run_untargeted_application(
-            discovery_batch_index=batch_index,
-            raw_dir=tmp_path / "raw",
-            dll_dir=tmp_path / "dll",
-            output_dir=tmp_path / "out",
-            alignment_config=AlignmentConfig(),
-            peak_config=_peak_config(),
-            discovery_settings=_settings(),
-            should_cancel=lambda: next(cancellation_checks),
+            UntargetedRequest(
+                discovery_batch_index=batch_index,
+                raw_dir=tmp_path / "raw",
+                dll_dir=tmp_path / "dll",
+                output_dir=tmp_path / "out",
+                alignment_config=AlignmentConfig(),
+                peak_config=_peak_config(),
+                discovery_settings=_settings(),
+            ),
+            UntargetedExecutionContext(should_cancel=lambda: next(cancellation_checks)),
         )
     assert closed == [True]
     assert not (tmp_path / "out" / "alignment_matrix.tsv").exists()
@@ -334,13 +353,15 @@ def test_pure_cid_nl_runtime_failure_uses_alignment_error_boundary(
 
     with pytest.raises(AlignmentProcessExecutionError, match="retained runtime failed"):
         application_module.run_untargeted_application(
-            discovery_batch_index=batch_index,
-            raw_dir=tmp_path / "raw",
-            dll_dir=tmp_path / "dll",
-            output_dir=tmp_path / "out",
-            alignment_config=AlignmentConfig(),
-            peak_config=_peak_config(),
-            discovery_settings=_settings(),
+            UntargetedRequest(
+                discovery_batch_index=batch_index,
+                raw_dir=tmp_path / "raw",
+                dll_dir=tmp_path / "dll",
+                output_dir=tmp_path / "out",
+                alignment_config=AlignmentConfig(),
+                peak_config=_peak_config(),
+                discovery_settings=_settings(),
+            )
         )
 
 
@@ -360,14 +381,16 @@ def test_pure_cid_nl_collision_rejects_before_retained_runtime(
 
     with pytest.raises(FileExistsError, match="owned artifact collisions"):
         application_module.run_untargeted_application(
-            discovery_batch_index=batch_index,
-            raw_dir=tmp_path / "raw",
-            dll_dir=tmp_path / "dll",
-            output_dir=output_dir,
-            alignment_config=AlignmentConfig(),
-            peak_config=_peak_config(),
-            discovery_settings=_settings(),
-            raw_workers=2,
+            UntargetedRequest(
+                discovery_batch_index=batch_index,
+                raw_dir=tmp_path / "raw",
+                dll_dir=tmp_path / "dll",
+                output_dir=output_dir,
+                alignment_config=AlignmentConfig(),
+                peak_config=_peak_config(),
+                discovery_settings=_settings(),
+                execution=UntargetedExecutionPolicy(raw_workers=2),
+            )
         )
 
 
@@ -384,14 +407,16 @@ def test_pure_cid_nl_rejects_invalid_worker_budget_before_acquisition(
 
     with pytest.raises(ValueError, match="raw_workers"):
         application_module.run_untargeted_application(
-            discovery_batch_index=batch_index,
-            raw_dir=tmp_path / "raw",
-            dll_dir=tmp_path / "dll",
-            output_dir=tmp_path / "out",
-            alignment_config=AlignmentConfig(),
-            peak_config=_peak_config(),
-            discovery_settings=_settings(),
-            raw_workers=0,
+            UntargetedRequest(
+                discovery_batch_index=batch_index,
+                raw_dir=tmp_path / "raw",
+                dll_dir=tmp_path / "dll",
+                output_dir=tmp_path / "out",
+                alignment_config=AlignmentConfig(),
+                peak_config=_peak_config(),
+                discovery_settings=_settings(),
+                execution=UntargetedExecutionPolicy(raw_workers=0),
+            )
         )
 
 
@@ -408,14 +433,18 @@ def test_pure_cid_nl_rejects_invalid_worker_backend_before_acquisition(
 
     with pytest.raises(ValueError, match="raw_worker_backend"):
         application_module.run_untargeted_application(
-            discovery_batch_index=batch_index,
-            raw_dir=tmp_path / "raw",
-            dll_dir=tmp_path / "dll",
-            output_dir=tmp_path / "out",
-            alignment_config=AlignmentConfig(),
-            peak_config=_peak_config(),
-            discovery_settings=_settings(),
-            raw_worker_backend="invalid_backend",
+            UntargetedRequest(
+                discovery_batch_index=batch_index,
+                raw_dir=tmp_path / "raw",
+                dll_dir=tmp_path / "dll",
+                output_dir=tmp_path / "out",
+                alignment_config=AlignmentConfig(),
+                peak_config=_peak_config(),
+                discovery_settings=_settings(),
+                execution=UntargetedExecutionPolicy(
+                    raw_worker_backend="invalid_backend"
+                ),
+            )
         )
 
 
@@ -457,13 +486,15 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
 
     with pytest.raises(ValueError, match="invalid finalized projection"):
         application_module.run_untargeted_application(
-            discovery_batch_index=batch_index,
-            raw_dir=tmp_path / "raw",
-            dll_dir=tmp_path / "dll",
-            output_dir=output_dir,
-            alignment_config=AlignmentConfig(),
-            peak_config=_peak_config(),
-            discovery_settings=_settings(),
+            UntargetedRequest(
+                discovery_batch_index=batch_index,
+                raw_dir=tmp_path / "raw",
+                dll_dir=tmp_path / "dll",
+                output_dir=output_dir,
+                alignment_config=AlignmentConfig(),
+                peak_config=_peak_config(),
+                discovery_settings=_settings(),
+            )
         )
 
     assert not (output_dir / "alignment_matrix.tsv").exists()
@@ -621,14 +652,18 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
 
     def run():
         return application_module.run_untargeted_application(
-            discovery_batch_index=batch_index,
-            raw_dir=tmp_path,
-            dll_dir=tmp_path,
-            output_dir=output_dir,
-            alignment_config=config,
-            peak_config=_peak_config(),
-            discovery_settings=_settings(),
-            emit_cid_nl_explanation=emit_explanation,
+            UntargetedRequest(
+                discovery_batch_index=batch_index,
+                raw_dir=tmp_path,
+                dll_dir=tmp_path,
+                output_dir=output_dir,
+                alignment_config=config,
+                peak_config=_peak_config(),
+                discovery_settings=_settings(),
+                publication=UntargetedPublicationPolicy(
+                    emit_cid_nl_explanation=emit_explanation
+                ),
+            )
         )
 
     try:
@@ -683,19 +718,23 @@ def test_pipeline_rejects_profile_config_conflict_before_read_or_raw(
 
     with pytest.raises(ValueError, match="conflicts with peak_config"):
         application_module.run_untargeted_application(
-            discovery_batch_index=tmp_path / "batch.csv",
-            raw_dir=tmp_path / "raw",
-            dll_dir=tmp_path / "dll",
-            output_dir=tmp_path / "out",
-            alignment_config=AlignmentConfig(),
-            peak_config=replace(
-                _peak_config(),
-                signal_processing_window_points=21,
-            ),
-            discovery_settings=_settings(),
-            signal_processing_profile=resolve_signal_processing_profile(
-                signal_processing_window_points=15,
-            ),
+            UntargetedRequest(
+                discovery_batch_index=tmp_path / "batch.csv",
+                raw_dir=tmp_path / "raw",
+                dll_dir=tmp_path / "dll",
+                output_dir=tmp_path / "out",
+                alignment_config=AlignmentConfig(),
+                peak_config=replace(
+                    _peak_config(),
+                    signal_processing_window_points=21,
+                ),
+                discovery_settings=_settings(),
+                legacy=RetainedAlignmentOptions(
+                    signal_processing_profile=resolve_signal_processing_profile(
+                        signal_processing_window_points=15,
+                    )
+                ),
+            )
         )
 
     assert touched is False
@@ -728,13 +767,15 @@ def test_pipeline_rejects_owned_output_collision_before_raw(
 
     with pytest.raises(FileExistsError, match="owned artifact collisions"):
         application_module.run_untargeted_application(
-            discovery_batch_index=batch_index,
-            raw_dir=raw_dir,
-            dll_dir=tmp_path / "dll",
-            output_dir=output_dir,
-            alignment_config=AlignmentConfig(),
-            peak_config=_peak_config(),
-            discovery_settings=_settings(),
+            UntargetedRequest(
+                discovery_batch_index=batch_index,
+                raw_dir=raw_dir,
+                dll_dir=tmp_path / "dll",
+                output_dir=output_dir,
+                alignment_config=AlignmentConfig(),
+                peak_config=_peak_config(),
+                discovery_settings=_settings(),
+            )
         )
 
     assert opened is False
@@ -757,17 +798,19 @@ def test_pipeline_rejects_unsupported_discovery_before_acquisition_or_output(
     monkeypatch.setattr(
         application_module, "complete_untargeted_alignment", fail_if_touched
     )
-    monkeypatch.setattr(application_module, "output_paths", fail_if_touched)
+    monkeypatch.setattr(publication_module, "output_paths", fail_if_touched)
 
     with pytest.raises(ValueError, match="pure single-provider CID-NL"):
         application_module.run_untargeted_application(
-            discovery_batch_index=tmp_path / "missing-batch.csv",
-            raw_dir=tmp_path / "missing-raw",
-            dll_dir=tmp_path / "missing-dll",
-            output_dir=output_dir,
-            alignment_config=AlignmentConfig(),
-            peak_config=_peak_config(),
-            discovery_settings=settings,
+            UntargetedRequest(
+                discovery_batch_index=tmp_path / "missing-batch.csv",
+                raw_dir=tmp_path / "missing-raw",
+                dll_dir=tmp_path / "missing-dll",
+                output_dir=output_dir,
+                alignment_config=AlignmentConfig(),
+                peak_config=_peak_config(),
+                discovery_settings=settings,
+            )
         )
 
     assert not output_dir.exists()
@@ -886,14 +929,16 @@ def test_pure_cid_nl_targets_csv_integration(
     (tmp_path / "out").mkdir(parents=True, exist_ok=True)
 
     application_module.run_untargeted_application(
-        discovery_batch_index=batch_index,
-        raw_dir=raw_dir,
-        dll_dir=tmp_path / "dll",
-        output_dir=tmp_path / "out",
-        alignment_config=AlignmentConfig(),
-        peak_config=_peak_config(),
-        discovery_settings=_settings(),
-        targets_csv=targets_csv,
+        UntargetedRequest(
+            discovery_batch_index=batch_index,
+            raw_dir=raw_dir,
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            discovery_settings=_settings(),
+            targets_csv=targets_csv,
+        )
     )
 
     assert captured["known_istd_reference"] is fake_ref
@@ -991,18 +1036,21 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
         tmp_path=tmp_path,
     )
     alignment = application_module.run_untargeted_application(
-        discovery_batch_index=discovery.batch_index_csv,
-        raw_dir=tmp_path,
-        dll_dir=tmp_path,
-        output_dir=tmp_path / "alignment",
-        alignment_config=AlignmentConfig(),
-        peak_config=_discovery_peak_config(tmp_path),
-        discovery_settings=settings,
-        output_level="machine",
-        emit_alignment_cells=True,
-        raw_workers=1,
-        # The fake RAWs above are patched into this process only.
-        raw_worker_backend="thread",
+        UntargetedRequest(
+            discovery_batch_index=discovery.batch_index_csv,
+            raw_dir=tmp_path,
+            dll_dir=tmp_path,
+            output_dir=tmp_path / "alignment",
+            alignment_config=AlignmentConfig(),
+            peak_config=_discovery_peak_config(tmp_path),
+            discovery_settings=settings,
+            execution=UntargetedExecutionPolicy(
+                raw_workers=1, raw_worker_backend="thread"
+            ),
+            publication=UntargetedPublicationPolicy(
+                output_level="machine", emit_alignment_cells=True
+            ),
+        )
     )
 
     # Exercise the declared CLI's real application and publication path with
@@ -1087,8 +1135,7 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
     assert [row["Mz"] for row in matrix] == ["701.0000"]
     by_candidate = {row["source_candidate_id"]: row for row in cells}
     assert set(by_candidate) == {
-        f"{stem}#13@mz701_p584.9526"
-        for stem in ("sample-a", "sample-b")
+        f"{stem}#13@mz701_p584.9526" for stem in ("sample-a", "sample-b")
     }
     assert {row["status"] for row in cells} == {"detected"}
     # Fixture apex = 100 baseline + (sample index + 1) * 500.
@@ -1136,7 +1183,8 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
         )
         with output.candidates_csv.open(encoding="utf-8-sig", newline="") as handle:
             inferred = [
-                row for row in csv.DictReader(handle)
+                row
+                for row in csv.DictReader(handle)
                 if float(row["precursor_mz"]) == 700.0
             ]
         assert len(inferred) == 1
@@ -1182,14 +1230,16 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
         application_module, "publish_untargeted_outputs", lambda *args, **kwargs: None
     )
     application_module.run_untargeted_application(
-        discovery_batch_index=batch_index,
-        raw_dir=tmp_path / "raw",
-        dll_dir=tmp_path / "dll",
-        output_dir=tmp_path / "out",
-        alignment_config=AlignmentConfig(),
-        peak_config=_peak_config(),
-        discovery_settings=_settings(),
-        targets_csv=source,
+        UntargetedRequest(
+            discovery_batch_index=batch_index,
+            raw_dir=tmp_path / "raw",
+            dll_dir=tmp_path / "dll",
+            output_dir=tmp_path / "out",
+            alignment_config=AlignmentConfig(),
+            peak_config=_peak_config(),
+            discovery_settings=_settings(),
+            targets_csv=source,
+        )
     )
     assert captured["targets"] == tuple(t for t in all_targets if t.is_istd)
     assert len(captured["targets"]) < len(all_targets)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable, Mapping
 from contextlib import ExitStack
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -28,6 +28,7 @@ from xic_extractor.output.alignment.output_levels import (
 )
 from xic_extractor.output.alignment.pipeline_outputs import (
     AlignmentRunOutputs,
+    output_paths,
     write_completed_untargeted_outputs_atomic,
 )
 
@@ -37,6 +38,31 @@ if TYPE_CHECKING:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class UntargetedPublicationPolicy:
+    """Public Matrix artifacts and optional explanation/fingerprint projections."""
+
+    output_level: AlignmentOutputLevel = "production"
+    emit_alignment_cells: bool = False
+    emit_alignment_status_matrix: bool = False
+    emit_cid_nl_explanation: bool = False
+    explanation_full_audit: bool = False
+    explanation_curve_mz_ranges: tuple[tuple[float, float], ...] = ()
+    emit_alignment_backfill_seed_audit: bool = False
+    capture_artifact_fingerprints: bool = False
+    emit_provisional_matrix: bool = False
+
+    def output_paths(self, output_dir: Path) -> AlignmentRunOutputs:
+        return output_paths(
+            output_dir,
+            output_level=self.output_level,
+            emit_alignment_cells=self.emit_alignment_cells,
+            emit_alignment_status_matrix=self.emit_alignment_status_matrix,
+            emit_alignment_backfill_seed_audit=self.emit_alignment_backfill_seed_audit,
+            emit_provisional_matrix=self.emit_provisional_matrix,
+        )
+
+
 def publish_untargeted_outputs(
     completed: CompletedUntargetBatchWorkflowResult,
     *,
@@ -44,14 +70,10 @@ def publish_untargeted_outputs(
     outputs: AlignmentRunOutputs,
     candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
     alignment_config: AlignmentConfig,
-    output_level: AlignmentOutputLevel,
-    emit_cid_nl_explanation: bool,
-    explanation_full_audit: bool = False,
-    explanation_curve_mz_ranges: tuple[tuple[float, float], ...] = (),
+    policy: UntargetedPublicationPolicy,
     known_istd_reference: KnownIstdReference | None,
     metadata: dict[str, str],
     timing_recorder: TimingRecorder,
-    capture_artifact_fingerprints: bool,
     should_cancel: Callable[[], bool] | None,
     owner_build_route_receipt: OwnerBuildRouteReceipt,
 ) -> AlignmentRunOutputs:
@@ -62,11 +84,11 @@ def publish_untargeted_outputs(
         _ensure_output_publication_not_cancelled(should_cancel)
         matrix_path = outputs.matrix_tsv
         write_explanation = (
-            emit_cid_nl_explanation
-            or explanation_full_audit
-            or bool(explanation_curve_mz_ranges)
+            policy.emit_cid_nl_explanation
+            or policy.explanation_full_audit
+            or bool(policy.explanation_curve_mz_ranges)
             or EXPLANATION_ARTIFACT_NAME
-            in (artifact_names_for_output_level(output_level))
+            in (artifact_names_for_output_level(policy.output_level))
         )
         if write_explanation and matrix_path is None:
             raise RuntimeError("CID-NL explanation requires the published Matrix")
@@ -90,8 +112,8 @@ def publish_untargeted_outputs(
                             else known_istd_reference.explanation_provenance
                         ),
                         progress_callback=timing_recorder.heartbeat_event,
-                        full_audit=explanation_full_audit,
-                        curve_mz_ranges=explanation_curve_mz_ranges,
+                        full_audit=policy.explanation_full_audit,
+                        curve_mz_ranges=policy.explanation_curve_mz_ranges,
                     )
                 )
         ms1_apex_mz_by_candidate = (
@@ -116,10 +138,10 @@ def publish_untargeted_outputs(
                 before_write=lambda: _ensure_output_publication_not_cancelled(
                     should_cancel
                 ),
-                capture_artifact_fingerprints=capture_artifact_fingerprints,
+                capture_artifact_fingerprints=policy.capture_artifact_fingerprints,
             )
         )
-        if capture_artifact_fingerprints:
+        if policy.capture_artifact_fingerprints:
             if not isinstance(
                 artifact_fingerprint_batch, AlignmentArtifactFingerprintBatch
             ):
@@ -153,7 +175,7 @@ def publish_untargeted_outputs(
                 processing_request_id=getattr(req, "processing_request_id", ""),
                 processing_attempt_id=getattr(att, "processing_attempt_id", ""),
                 schema_version="alignment_explanation"
-                if explanation_full_audit
+                if policy.explanation_full_audit
                 else "alignment_explanation_review",
             )
 

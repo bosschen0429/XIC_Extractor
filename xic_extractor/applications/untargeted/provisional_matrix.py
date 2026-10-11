@@ -14,9 +14,19 @@ from xic_extractor.alignment.config import (
 )
 from xic_extractor.applications.untargeted.application import (
     run_untargeted_application,
-    validate_untargeted_application_options,
 )
-from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
+from xic_extractor.applications.untargeted.publication import (
+    UntargetedPublicationPolicy,
+)
+from xic_extractor.applications.untargeted.request import (
+    RetainedAlignmentOptions,
+    UntargetedExecutionContext,
+    UntargetedRequest,
+)
+from xic_extractor.configuration.execution_profile import (
+    DEFAULT_ALIGNMENT_WORKERS,
+    UntargetedExecutionPolicy,
+)
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.pipeline import run_discovery_batch
@@ -61,8 +71,11 @@ def run_untargeted_provisional_matrix_workflow(
             "provisional review supports only pure single-provider CID-NL; "
             "use the dna_dr preset"
         )
-    validate_untargeted_application_options(
-        raw_workers=raw_workers,
+    execution = UntargetedExecutionPolicy(raw_workers=raw_workers)
+    legacy = RetainedAlignmentOptions(
+        owner_build_xic_backend=owner_build_xic_backend,
+        audit_evidence_mode="none",
+        require_discovery_owner_closure=True,
         raw_xic_batch_size=raw_xic_batch_size,
         owner_backfill_xic_backend=owner_backfill_xic_backend,
         owner_backfill_window_strategy=owner_backfill_window_strategy,
@@ -81,8 +94,6 @@ def run_untargeted_provisional_matrix_workflow(
         raise ValueError("full-universe workflow Thermo DLL directory does not exist")
     if output_dir.exists():
         raise ValueError("full-universe workflow output already exists")
-    if raw_workers < 1 or raw_xic_batch_size < 1:
-        raise ValueError("RAW worker and XIC batch counts must be positive")
 
     output_dir.mkdir(parents=True)
     discovery_dir = output_dir / "discovery"
@@ -111,30 +122,24 @@ def run_untargeted_provisional_matrix_workflow(
     _progress(progress_callback, "discovery_complete")
 
     outputs = run_untargeted_application(
-        discovery_batch_index=discovery.batch_index_csv,
-        raw_dir=raw_dir,
-        dll_dir=dll_dir,
-        output_dir=alignment_dir,
-        alignment_config=alignment_config,
-        peak_config=peak_config,
-        discovery_settings=discovery_settings,
-        output_level="validation-minimal",
-        raw_workers=raw_workers,
-        raw_xic_batch_size=raw_xic_batch_size,
-        owner_build_xic_backend=owner_build_xic_backend,
-        owner_backfill_xic_backend=owner_backfill_xic_backend,
-        owner_backfill_window_strategy=owner_backfill_window_strategy,
-        owner_backfill_superwindow_span_factor=(owner_backfill_superwindow_span_factor),
-        sample_column_injection_order=sample_column_injection_order,
-        sample_metadata=sample_metadata,
-        timing_recorder=timing_recorder,
-        capture_artifact_fingerprints=capture_alignment_artifact_fingerprints,
-        backfill_scope="full-audit",
-        audit_evidence_mode="none",
-        selected_family_ids=frozenset(),
-        selected_family_source="",
-        require_discovery_owner_closure=True,
-        emit_provisional_matrix=True,
+        UntargetedRequest(
+            discovery_batch_index=discovery.batch_index_csv,
+            raw_dir=raw_dir,
+            dll_dir=dll_dir,
+            output_dir=alignment_dir,
+            alignment_config=alignment_config,
+            peak_config=peak_config,
+            discovery_settings=discovery_settings,
+            sample_metadata=sample_metadata,
+            execution=execution,
+            publication=UntargetedPublicationPolicy(
+                output_level="validation-minimal",
+                capture_artifact_fingerprints=capture_alignment_artifact_fingerprints,
+                emit_provisional_matrix=True,
+            ),
+            legacy=legacy,
+        ),
+        UntargetedExecutionContext(timing_recorder=timing_recorder),
     )
     if (
         outputs.provisional_matrix_tsv is None

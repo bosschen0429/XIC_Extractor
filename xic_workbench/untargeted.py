@@ -10,9 +10,18 @@ from pathlib import Path
 from typing import Any, Literal
 
 from xic_extractor.applications.untargeted.application import run_untargeted_application
+from xic_extractor.applications.untargeted.publication import (
+    UntargetedPublicationPolicy,
+)
+from xic_extractor.applications.untargeted.request import (
+    RetainedAlignmentOptions,
+    UntargetedExecutionContext,
+    UntargetedRequest,
+)
 from xic_extractor.configuration.execution_profile import (
     DEFAULT_ALIGNMENT_WORKER_BACKEND,
     ExecutionProfile,
+    UntargetedExecutionPolicy,
 )
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery.models import DiscoverySettings
@@ -309,26 +318,30 @@ class UntargetedRun:
         self._raise_if_cancelled("Untargeted run cancelled before Alignment")
         self.stage = "Alignment 分析與 Matrix 發布"
         outputs = run_untargeted_application(
-            discovery_batch_index=index_path,
-            raw_dir=raw_dir,
-            dll_dir=request.dll_dir,
-            output_dir=request.output_dir,
-            alignment_config=recipe.alignment_config,
-            peak_config=self._alignment_peak_config(recipe.discovery_settings),
-            discovery_settings=recipe.discovery_settings,
-            owner_build_xic_backend=recipe.owner_build_xic_backend,
-            sample_metadata=request.sample_metadata,
-            targets_csv=request.targets_csv,
-            raw_workers=request.execution_profile.alignment_workers,
-            raw_worker_backend=DEFAULT_ALIGNMENT_WORKER_BACKEND,
-            output_level="machine",
-            emit_alignment_cells=False,
-            emit_alignment_backfill_seed_audit=False,
-            audit_evidence_mode="none",
-            emit_cid_nl_explanation=True,
-            explanation_full_audit=False,
-            explanation_curve_mz_ranges=(),
-            should_cancel=self.should_cancel,
+            UntargetedRequest(
+                discovery_batch_index=index_path,
+                raw_dir=raw_dir,
+                dll_dir=request.dll_dir,
+                output_dir=request.output_dir,
+                alignment_config=recipe.alignment_config,
+                peak_config=self._alignment_peak_config(recipe.discovery_settings),
+                discovery_settings=recipe.discovery_settings,
+                sample_metadata=request.sample_metadata,
+                targets_csv=request.targets_csv,
+                execution=UntargetedExecutionPolicy(
+                    raw_workers=request.execution_profile.alignment_workers,
+                    raw_worker_backend=DEFAULT_ALIGNMENT_WORKER_BACKEND,
+                ),
+                publication=UntargetedPublicationPolicy(
+                    output_level="machine",
+                    emit_cid_nl_explanation=True,
+                ),
+                legacy=RetainedAlignmentOptions(
+                    owner_build_xic_backend=recipe.owner_build_xic_backend,
+                    audit_evidence_mode="none",
+                ),
+            ),
+            UntargetedExecutionContext(should_cancel=self.should_cancel),
         )
         self.available_outputs += _alignment_available_outputs(outputs)
         self.stage = "Alignment 結果摘要"

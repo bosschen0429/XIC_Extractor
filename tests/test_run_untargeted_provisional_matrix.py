@@ -10,12 +10,11 @@ import scripts.run_untargeted_provisional_matrix as runner
 import xic_extractor.output.alignment.artifact_write_receipts as alignment_receipt_owner
 import xic_extractor.untargeted_execution.provisional_run_manifest as manifest_owner
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.applications.untargeted.application import (
-    validate_untargeted_application_options,
-)
 from xic_extractor.applications.untargeted.provisional_matrix import (
     UntargetedProvisionalMatrixRun,
 )
+from xic_extractor.applications.untargeted.request import RetainedAlignmentOptions
+from xic_extractor.configuration.execution_profile import UntargetedExecutionPolicy
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.processing_identity import fingerprint_file_content
@@ -66,13 +65,11 @@ def test_runner_publishes_full_universe_outputs_atomically(
         captured.update(kwargs)
         # Exercise the retained route's actual option gate so this test catches
         # forwarding metadata that the pure owner must mint itself.
-        validate_untargeted_application_options(
-            raw_workers=kwargs["raw_workers"],
+        UntargetedExecutionPolicy(raw_workers=kwargs["raw_workers"])
+        RetainedAlignmentOptions(
             raw_xic_batch_size=kwargs["raw_xic_batch_size"],
             owner_backfill_xic_backend=kwargs["owner_backfill_xic_backend"],
-            owner_backfill_window_strategy=kwargs[
-                "owner_backfill_window_strategy"
-            ],
+            owner_backfill_window_strategy=kwargs["owner_backfill_window_strategy"],
             owner_backfill_superwindow_span_factor=kwargs[
                 "owner_backfill_superwindow_span_factor"
             ],
