@@ -1022,6 +1022,83 @@ def test_current_pair_reference_preserves_method_offset_for_all_lanes(
     ) == pytest.approx(10.0 + offset)
 
 
+@pytest.mark.parametrize("neutral_loss_da", [None, 116.047344])
+def test_same_paired_method_selects_each_samples_current_shift(
+    tmp_path, neutral_loss_da: float | None
+) -> None:
+    config = ExtractionConfig(
+        data_dir=tmp_path,
+        dll_dir=tmp_path,
+        output_csv=tmp_path / "results.csv",
+        diagnostics_csv=tmp_path / "diagnostics.csv",
+        smooth_window=15,
+        smooth_polyorder=3,
+        peak_rel_height=0.95,
+        peak_min_prominence_ratio=0.1,
+        ms2_precursor_tol_da=0.5,
+        nl_min_intensity_ratio=0.01,
+        nl_fallback_half_window_min=0.25,
+    )
+    target = Target(
+        label="Analyte",
+        mz=258.1085,
+        rt_min=10.5,
+        rt_max=12.5,
+        ppm_tol=20.0,
+        neutral_loss_da=neutral_loss_da,
+        nl_ppm_warn=10.0 if neutral_loss_da is not None else None,
+        nl_ppm_max=20.0 if neutral_loss_da is not None else None,
+        is_istd=False,
+        istd_pair="ISTD",
+    )
+    paired = replace(
+        target, label="ISTD", is_istd=True, istd_pair="", rt_min=9.0, rt_max=11.0
+    )
+    rt = np.arange(7.0, 16.0001, 0.01)
+    # Identical competing physical peaks in both samples: neither trace height
+    # nor a cached previous sample can choose the answer. The independently
+    # specified apex follows observed ISTD drift plus the given 1.5-min offset.
+    intensity = 100.0 + sum(
+        10_000.0 * np.exp(-0.5 * ((rt - center) / 0.06) ** 2) for center in (11.2, 11.9)
+    )
+
+    class Raw:
+        def extract_xic(self, mz, rt_min, rt_max, ppm_tol):
+            mask = (rt >= rt_min - 1e-9) & (rt <= rt_max + 1e-9)
+            return rt[mask], intensity[mask]
+
+        def iter_ms2_scans(self, rt_min, rt_max):
+            return iter(())
+
+    for sample, observed_istd, expected in (
+        ("SampleA", 10.4, 11.9),
+        ("SampleB", 9.7, 11.2),
+    ):
+        istd = ExtractionResult(
+            peak_result=_peak_result(_candidate(rt=observed_istd)),
+            nl=None,
+            target_label="ISTD",
+            role="ISTD",
+        )
+        reference = target_extraction.credible_istd_anchor_rt(istd)
+        assert reference == observed_istd
+        results = {"ISTD": istd}
+        consumer_reference = target_extraction.extract_one_target(
+            Raw(),
+            config,
+            sample,
+            target,
+            reference_rt=reference,
+            paired_target=paired,
+            strict_preferred_rt=True,
+            istd_rt_in_this_sample=reference,
+            results=results,
+            diagnostics=[],
+        )
+        assert consumer_reference == pytest.approx(expected)
+        assert results["Analyte"].reported_rt == pytest.approx(expected, abs=0.01)
+
+
 @pytest.fixture
 def physical_candidate_input() -> tuple[PreparedSignalResult, PhysicalSegmentUniverse]:
     profile = DEFAULT_SIGNAL_PROCESSING_PROFILE
