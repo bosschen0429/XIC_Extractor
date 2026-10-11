@@ -6,10 +6,10 @@ import pytest
 
 from xic_extractor.raw_reader import (
     RawFileHandle,
-    RawReaderError,
     RawSampleHeader,
     _ThermoApi,
     _to_python_datetime,
+    preflight_raw_reader,
     read_raw_sample_header,
 )
 
@@ -80,10 +80,11 @@ def test_real_raw_sample_header_if_available() -> None:
     if not raw_path.is_file() or not dll_dir.is_dir():
         pytest.skip("Local Thermo RAW and DLL environment not available")
 
-    try:
-        header = read_raw_sample_header(raw_path, dll_dir)
-    except RawReaderError as exc:
-        pytest.skip(f"Thermo DLL runtime not operational in this environment: {exc}")
+    environment_errors = preflight_raw_reader(dll_dir)
+    if environment_errors:
+        pytest.skip("Thermo environment unavailable: " + "; ".join(environment_errors))
+
+    header = read_raw_sample_header(raw_path, dll_dir)
 
     assert header.raw_stem == "BenignfatBC0979_DNA"
     assert header.row_number == 42
