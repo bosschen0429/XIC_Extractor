@@ -381,9 +381,18 @@ def test_csv_rows_preserve_values_with_runtime_selected_hypothesis() -> None:
     selected_long = _long_output_rows(selected_file, [target])[0]
     fallback_long = _long_output_rows(fallback_file, [target])[0]
     for header, fallback_value in fallback_long.items():
-        if header in {*TARGETED_PRODUCT_PROJECTION_HEADERS, "Reason"}:
+        if header in {*TARGETED_PRODUCT_PROJECTION_HEADERS, "Reason", "Confidence"}:
             continue
         assert selected_long[header] == fallback_value
+    assert fallback_long["Confidence"] == "LOW"
+    # The two fixtures have different finalized identity decisions. Legacy
+    # display confidence follows that decision; measured values do not change.
+    assert fallback_long["Counted Detection"] == "TRUE"
+    assert selected_long["Counted Detection"] == "FALSE"
+    assert (
+        selected_long["Projection Not Counted Reasons"] == "cid_nl_method_not_supported"
+    )
+    assert selected_long["Confidence"] == "VERY_LOW"
     assert selected_long["Reason"].startswith("MS1 peak measured; review:")
     assert selected_long["Product State"]
     assert selected_long["Counted Detection"] in {"TRUE", "FALSE"}

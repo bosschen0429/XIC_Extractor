@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
-from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
+from xic_extractor.evidence.neutral_loss import NLResult
 from xic_extractor.extraction.result_models import ExtractionResult
 from xic_extractor.output.excel_pipeline import (
     _diagnostics_to_rows,
@@ -23,7 +23,7 @@ from xic_extractor.peak_detection.models import (
     PeakResult,
 )
 from xic_extractor.peak_detection.scoring_models import ScoringContext
-from xic_extractor.raw_reader import RawReaderError
+from xic_extractor.raw_reader import Ms2Scan, Ms2ScanEvent, RawReaderError
 
 _OPEN_RAW_SEAM = "xic_extractor.extraction.target_extraction.open_raw"
 
@@ -38,10 +38,6 @@ def _disable_reader_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
         "xic_extractor.extraction.pipeline.preflight_raw_reader",
         lambda _dll_dir: [],
         raising=False,
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.diagnostics.collect_candidate_ms2_evidence",
-        _candidate_evidence_for_active_nl_fixture,
     )
 
 
@@ -95,7 +91,7 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
     )
     monkeypatch.setattr(
         "xic_extractor.extraction.diagnostics.check_nl",
-        _nl_sequence([NLResult("WARN", 12.34, None, 3, 0, 2)]),
+        _nl_sequence([NLResult("WARN", 80.0, None, 3, 0, 2)]),
     )
 
     output = _run(config, targets, progress_callback=lambda *_args: None)
@@ -111,30 +107,22 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
     long_rows = _run_output_to_long_rows(output, targets)
     no_nl_projection = results["NoNL"].targeted_product_projection
     assert no_nl_projection is not None
-    assert no_nl_projection.conflict_reasons == ("targeted_rt_conflict",)
+    assert no_nl_projection.conflict_reasons == ()
     assert [_core_long_row(row) for row in long_rows] == [
         {
             **_formatted_long_success_row("NoNL", results["NoNL"], nl=""),
-            "Confidence": "VERY_LOW",
-            "Reason": "MS1 peak measured; review: peak position conflicts with "
-            "the RT reference/window.",
+            "Confidence": "LOW",
         },
         _formatted_long_success_row(
             "WithNL",
             results["WithNL"],
-            nl="WARN_12.3ppm",
+            nl="WARN_80.0ppm",
         ),
     ]
-    assert [row["Projection Reason"] for row in long_rows] == [
-        "decision: ambiguous; support: ms1_peak_present, "
-        "ms1_coherent, trace_coherent; review: targeted_rt_review; "
-        "conflict: targeted_rt_conflict",
-        "decision: detected_clean; support: ms1_peak_present, "
-        "ms1_coherent, candidate_aligned_ms2_nl, "
-        "role_aware_rt_support, trace_coherent",
-    ]
-    assert [row["Counted Detection"] for row in long_rows] == ["FALSE", "TRUE"]
-    assert all(row["Product State"] for row in long_rows)
+    assert [row["Counted Detection"] for row in long_rows] == ["TRUE", "TRUE"]
+    assert [row["Product State"] for row in long_rows] == ["detected_clean"] * 2
+    assert all(not row["Projection Conflict Reasons"] for row in long_rows)
+    assert "candidate_aligned_ms2_nl" in long_rows[1]["Projection Support Reasons"]
 
 
 @pytest.mark.parametrize("outside_height", [0.0, 50000.0])
@@ -181,13 +169,15 @@ def test_peak_only_outside_selection_still_answers_physical_question(
     output = _run(config, [target])
     result = output.file_results[0].results["Empty"]
 
-    assert result.reported_rt is None
+    assert result.reported_rt == pytest.approx(6.0, abs=0.002)
     evaluation = result.physical_evaluation
     assert evaluation is not None
     assert evaluation.segment_universe.state == "available"
-    assert evaluation.state == "unavailable"
-    assert evaluation.reason == "no_selection"
-    assert evaluation.question.query_rt_min == pytest.approx(5.0)
+    assert evaluation.state == "available"
+    assert evaluation.question.query_rt_min == pytest.approx(6.0)
+    known_area = 5000.0 * 0.04 * np.sqrt(2 * np.pi) * 60
+    assert result.reported_peak_area == pytest.approx(known_area, rel=0.04)
+    assert result.targeted_product_projection.counted_detection is True
 
 
 @pytest.mark.parametrize("with_supported_main", [True, False])
@@ -240,13 +230,14 @@ def test_formal_target_ranks_only_physically_supported_signal(
         assert result.reported_peak_area == evaluation.facts.area_counts_seconds
         # Both analytic components have acquired support and local contrast.
         # Keep them available without changing ranking or shape review.
-        assert projection.product_state == "ambiguous"
-        assert projection.counted_detection is False
-        assert "trace_morphology_conflict" in projection.conflict_reasons
+        assert projection.product_state == "detected_flagged"
+        assert projection.counted_detection is True
+        assert "trace_morphology_review" in projection.review_reasons
+        assert projection.conflict_reasons == ()
         assert sorted(
             candidate.selection_apex_rt for candidate in result.peak_result.candidates
         ) == pytest.approx([4.7, 6.0], abs=0.04)
-        assert long_rows[0]["Counted Detection"] == "FALSE"
+        assert long_rows[0]["Counted Detection"] == "TRUE"
     else:
         # A dense hit cluster with empty flanks is acquired censored support.
         # Its intensity interruptions do not justify an unavailable answer.
@@ -269,10 +260,13 @@ def test_formal_target_ranks_only_physically_supported_signal(
 def test_formal_target_drops_selection_when_final_physical_owner_is_unavailable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import xic_extractor.extraction.targeted_peak_selection as selection_owner
+    import xic_extractor.extraction.target_extraction as extraction_owner
     from xic_extractor.peak_detection.physical_peak_evaluation import (
         answer_physical_peak_question,
         mint_physical_peak_question,
+    )
+    from xic_extractor.peak_detection.physical_peak_models import (
+        PHYSICAL_PEAK_NO_SELECTION_POLICY,
     )
 
     config = _config(tmp_path)
@@ -288,11 +282,12 @@ def test_formal_target_drops_selection_when_final_physical_owner_is_unavailable(
             universe,
             selection_subject_id=question.selection_subject_id,
             query_rt_min=universe.context_rt_start_min,
+            selection_policy_version=PHYSICAL_PEAK_NO_SELECTION_POLICY,
         )
         return answer_physical_peak_question(prepared, universe, rejected_question)
 
     monkeypatch.setattr(
-        selection_owner, "answer_physical_peak_question", unavailable_answer
+        extraction_owner, "answer_physical_peak_question", unavailable_answer
     )
     output = _run(config, [target])
     result = output.file_results[0].results[target.label]
@@ -311,7 +306,7 @@ def test_formal_target_drops_selection_when_final_physical_owner_is_unavailable(
 
 
 @pytest.mark.parametrize("neutral_loss_da", [None, 116.0474])
-def test_no_selected_apex_does_not_capture_a_broad_tail(
+def test_retained_apex_outside_rt_hint_is_measured_without_inventing_nl_support(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     neutral_loss_da: float | None,
@@ -353,18 +348,21 @@ def test_no_selected_apex_does_not_capture_a_broad_tail(
         segment.left_rt_min < 10.8 < segment.right_rt_min
         for segment in evaluation.segment_universe.segments
     )
-    assert evaluation.state == "unavailable"
-    assert evaluation.reason == "no_selection"
-    assert evaluation.facts is None
-    assert evaluation.integration is None
-    assert result.peak is None
-    assert result.selected_hypothesis is None
-    assert result.reported_rt is None
-    assert result.reported_peak_area is None
+    assert evaluation.state == "available"
+    assert evaluation.facts is not None
+    assert evaluation.integration is not None
+    assert result.peak is not None
+    assert result.selected_hypothesis is not None
+    assert result.reported_rt == pytest.approx(12.6, abs=0.02)
+    assert result.reported_peak_area == evaluation.facts.area_counts_seconds
+    assert result.reported_peak_area > 0
     assert result.targeted_product_projection is not None
-    assert result.targeted_product_projection.counted_detection is False
+    assert result.targeted_product_projection.counted_detection is (
+        neutral_loss_da is None
+    )
     row = _run_output_to_long_rows(output, [target])[0]
-    assert row["RT"] == row["Area"] == "ND"
+    assert float(row["RT"]) == pytest.approx(12.6, abs=0.02)
+    assert float(row["Area"]) > 0
 
     from xic_extractor.applications.targeted.application import (
         build_targeted_application_request,
@@ -381,7 +379,9 @@ def test_no_selected_apex_does_not_capture_a_broad_tail(
     )
     assert len(finalized) == 1
     assert finalized[0].scientific_core.cell_observations == ()
-    assert finalized[0].completed_projection.no_write_count == 1
+    # A retained measurement can be saved without establishing CID-NL identity.
+    assert finalized[0].completed_projection.accepted_cell_count == 1
+    assert finalized[0].completed_projection.no_write_count == 0
 
 
 def test_target_selection_window_uses_one_wide_physical_context(
@@ -476,74 +476,77 @@ def test_run_multi_sample_preserves_sample_attribution_and_ordering(
 def test_run_wires_candidate_ms2_evidence_into_scoring_context(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from xic_extractor.extraction import diagnostics
+
     config = _config(tmp_path)
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     evidence_calls: list[object] = []
+    evaluate = diagnostics.evaluate_candidate_ms2_evidence
 
-    def _fake_collect_candidate_ms2_evidence(*_args, candidate: object, **_kwargs):
-        evidence_calls.append(candidate)
-        return CandidateMS2Evidence(
-            ms2_present=True,
-            nl_match=True,
-            nl_status="OK",
-            trigger_scan_count=1,
-            strict_nl_scan_count=1,
-            best_loss_ppm=1.0,
-            best_scan_rt=8.5,
-            best_product_base_ratio=0.5,
-            alignment_source="region",
-        )
-
-    def _fake_select_peak_and_area(
-        _candidates_result: PeakCandidatesResult,
-        _config: ExtractionConfig,
-        **kwargs: object,
-    ) -> PeakDetectionResult:
-        builder = kwargs.get("scoring_context_builder")
-        assert builder is not None
-        builder(
-            PeakCandidate(
-                peak=PeakResult(
-                    rt=8.5,
-                    intensity=1200.0,
-                    intensity_smoothed=1200.0,
-                    area=3400.25,
-                    peak_start=8.0,
-                    peak_end=9.0,
-                ),
-                selection_apex_rt=8.5,
-                selection_apex_intensity=1200.0,
-                selection_apex_index=1,
-                raw_apex_rt=8.5,
-                raw_apex_intensity=1200.0,
-                raw_apex_index=1,
-                prominence=1200.0,
-            )
-        )
-        return _ok_peak(8.5, 1200.0, 3400.25)
+    def observe_evidence(window, *, geometry, **kwargs):
+        evidence_calls.append(geometry)
+        return evaluate(window, geometry=geometry, **kwargs)
 
     monkeypatch.setattr(
         _OPEN_RAW_SEAM,
-        _open_raw_factory(),
+        _open_raw_factory(peak_centers=[8.5]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.diagnostics.collect_candidate_ms2_evidence",
-        _fake_collect_candidate_ms2_evidence,
-        raising=False,
+        diagnostics, "evaluate_candidate_ms2_evidence", observe_evidence
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.select_peak_and_area",
-        _fake_select_peak_and_area,
+        diagnostics, "check_nl", _nl_sequence([NLResult("OK", 1.0, 8.5, 1, 0, 1)])
     )
 
-    _run(config, [_target("WithNL")])
+    output = _run(config, [_target("WithNL")])
 
-    assert len(evidence_calls) == 2
-    assert all(
-        candidate.selection_apex_rt == pytest.approx(8.5)
-        for candidate in evidence_calls
-    )
-    assert evidence_calls[0] is not evidence_calls[1]
+    assert output.file_results[0].error is None
+    result = output.file_results[0].results["WithNL"]
+    assert len(evidence_calls) == 1
+    assert evidence_calls[0].apex_rt == pytest.approx(8.5, abs=0.02)
+    assert result.candidate_ms2_evidence.nl_match is True
+    assert result.selected_cid_nl_supported is True
+    assert result.targeted_product_projection.counted_detection is True
+
+
+def test_rt_recovery_keeps_supported_physical_candidate_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _config(tmp_path)
+    (config.data_dir / "SampleA.raw").write_bytes(b"")
+    target = _target("WeakSupported")
+    weak_height = 1000.0
+
+    class Raw(_FakeRaw):
+        def extract_xic(self, mz, rt_min, rt_max, ppm_tol):
+            rt = np.linspace(rt_min, rt_max, round((rt_max - rt_min) * 300) + 1)
+            strong = 10000 * np.exp(-0.5 * ((rt - 8.0) / 0.08) ** 2)
+            supported = weak_height * np.exp(-0.5 * ((rt - 9.0) / 0.08) ** 2)
+            return rt, 10 + strong + supported
+
+        def iter_ms2_scans(self, rt_min, rt_max):
+            if rt_min <= 9.0 <= rt_max:
+                scan = Ms2Scan(
+                    scan_number=1,
+                    rt=9.0,
+                    precursor_mz=target.mz,
+                    masses=np.array([target.mz - target.neutral_loss_da]),
+                    intensities=np.array([1000.0]),
+                    base_peak=1000.0,
+                )
+                yield Ms2ScanEvent(scan=scan, parse_error=None, scan_number=1)
+
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args, **_kwargs: Raw())
+    output = _run(config, [target])
+
+    file_result = output.file_results[0]
+    assert file_result.error is None
+    result = file_result.results[target.label]
+    assert result.reported_rt == pytest.approx(9.0, abs=0.02)
+    known_area = weak_height * 0.08 * np.sqrt(2 * np.pi) * 60
+    assert result.reported_peak_area == pytest.approx(known_area, rel=0.04)
+    assert result.selected_cid_nl_supported is True
+    assert result.targeted_product_projection.counted_detection is True
 
 
 def test_run_does_not_write_intermediate_csv_by_default(
@@ -838,7 +841,7 @@ def test_run_projects_very_low_for_nd_rows_with_failed_nl(
     )
     monkeypatch.setattr(
         "xic_extractor.extraction.diagnostics.check_nl",
-        _nl_sequence([NLResult("NL_FAIL", 78.4, None, 10, 1, 3)]),
+        _nl_sequence([NLResult("NL_FAIL", 200.0, None, 10, 1, 3)]),
     )
 
     output = _run(config, targets)
@@ -981,9 +984,9 @@ def test_peak_diagnostic_owner_preserves_status_and_reason(
     ("nl_result", "issue", "reason_part"),
     [
         (
-            NLResult("NL_FAIL", 78.4, None, 10, 1, 3),
+            NLResult("NL_FAIL", 200.0, None, 10, 1, 3),
             "NL_FAIL",
-            "best observed-loss error 78.4 ppm (quadrature window at 50 ppm per ion)",
+            "best observed-loss error 200.0 ppm (quadrature window at 50 ppm per ion)",
         ),
         (
             NLResult("NL_FAIL", None, None, 10, 1, 3),
@@ -1350,7 +1353,7 @@ def test_istd_weak_peak_keeps_single_complete_context(
     config = _config(tmp_path)
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [_target("ISTD", is_istd=True)]
-    raw = _RecordingRaw()
+    raw = _RecordingRaw(peak_centers=[9.05], intensity_scale=0.02)
 
     monkeypatch.setattr(
         _OPEN_RAW_SEAM,
@@ -1387,8 +1390,9 @@ def test_istd_weak_peak_keeps_single_complete_context(
     result = output.file_results[0].results["ISTD"]
     assert result.peak_result.status == "OK"
     assert result.peak is not None
-    assert result.peak.rt == pytest.approx(9.05, abs=0.001)
-    assert result.peak.area == pytest.approx(200.0)
+    assert result.peak.rt == pytest.approx(9.05, abs=0.02)
+    known_area = 100.0 * 0.08 * np.sqrt(2 * np.pi) * 60
+    assert result.reported_peak_area == pytest.approx(known_area, rel=0.04)
     assert raw.windows == [(6.0, 12.0)]
 
 
@@ -1398,7 +1402,7 @@ def test_istd_low_confidence_peak_keeps_single_complete_context(
     config = _config(tmp_path)
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [_target("ISTD", is_istd=True)]
-    raw = _RecordingRaw()
+    raw = _RecordingRaw(peak_centers=[9.05], intensity_scale=0.02)
 
     monkeypatch.setattr(
         _OPEN_RAW_SEAM,
@@ -1436,12 +1440,13 @@ def test_istd_low_confidence_peak_keeps_single_complete_context(
     result = output.file_results[0].results["ISTD"]
     assert result.peak_result.status == "OK"
     assert result.peak is not None
-    assert result.peak.rt == pytest.approx(9.05, abs=0.001)
-    assert result.peak.area == pytest.approx(200.0)
+    assert result.peak.rt == pytest.approx(9.05, abs=0.02)
+    known_area = 100.0 * 0.08 * np.sqrt(2 * np.pi) * 60
+    assert result.reported_peak_area == pytest.approx(known_area, rel=0.04)
     assert raw.windows == [(6.0, 12.0)]
 
 
-def test_paired_analyte_preserves_mismatched_target_anchor_peak_as_ambiguous(
+def test_paired_analyte_with_nl_remains_counted_despite_target_anchor_mismatch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = _config(tmp_path)
@@ -1502,16 +1507,16 @@ def test_paired_analyte_preserves_mismatched_target_anchor_peak_as_ambiguous(
     )
     long_rows = _run_output_to_long_rows(output, targets)
     analyte_row = next(row for row in long_rows if row["Target"] == "Analyte")
-    assert analyte_row["Confidence"] == "VERY_LOW"
-    assert analyte_row["Product State"] == "ambiguous"
-    assert analyte_row["Counted Detection"] == "FALSE"
-    assert "targeted_rt_conflict" in analyte_row["Projection Conflict Reasons"]
+    assert analyte_row["Confidence"] == "LOW"
+    assert analyte_row["Product State"] == "detected_clean"
+    assert analyte_row["Counted Detection"] == "TRUE"
+    assert analyte_row["Projection Conflict Reasons"] == ""
     assert output.file_results[0].results["Analyte"].confidence == "LOW"
     diagnostics = _diagnostics_to_rows(output.diagnostics)
     assert any(
         record["Target"] == "Analyte"
         and record["Issue"] == "ANCHOR_RT_MISMATCH"
-        and "Paired analyte peak RT 13.060" in record["Reason"]
+        and f"Paired analyte peak RT {expected_apex_rt:.3f}" in record["Reason"]
         and "target NL anchor at 13.750" in record["Reason"]
         and "allowed ±0.25 min" in record["Reason"]
         for record in diagnostics
@@ -1697,8 +1702,7 @@ def test_paired_analyte_istd_rt_fallback_does_not_force_counted_detection(
     assert analyte_row["Product State"] == "not_counted"
     assert analyte_row["Counted Detection"] == "FALSE"
     assert (
-        "analyte_nl_fail_requires_policy"
-        in analyte_row["Projection Not Counted Reasons"]
+        "cid_nl_method_not_supported" in analyte_row["Projection Not Counted Reasons"]
     )
 
 
@@ -1762,11 +1766,10 @@ def test_paired_analyte_fallback_preserves_not_counted_peak_in_matrix(
     assert analyte_row["RT"] == expected_peak["Analyte_RT"]
     assert analyte_row["Area"] == expected_peak["Analyte_Area"]
     assert analyte_row["Confidence"] == "VERY_LOW"
-    assert analyte_row["Product State"] == "ambiguous"
+    assert analyte_row["Product State"] == "not_counted"
     assert analyte_row["Counted Detection"] == "FALSE"
     assert (
-        "analyte_nl_fail_requires_policy"
-        in analyte_row["Projection Not Counted Reasons"]
+        "cid_nl_method_not_supported" in analyte_row["Projection Not Counted Reasons"]
     )
     assert output.file_results[0].results["Analyte"].confidence == "LOW"
     selected_peak = output.file_results[0].results["Analyte"].peak_result.peak
@@ -2086,38 +2089,6 @@ def _nl_sequence(results: list[NLResult]):
     return _fake_check_nl
 
 
-def _candidate_evidence_for_active_nl_fixture(
-    *_args: object,
-    **_kwargs: object,
-) -> CandidateMS2Evidence:
-    result = _active_nl_fixture_result
-    if result is None:
-        return CandidateMS2Evidence(
-            ms2_present=False,
-            nl_match=False,
-            nl_status="NO_MS2",
-            trigger_scan_count=0,
-            strict_nl_scan_count=0,
-            best_loss_ppm=None,
-            best_scan_rt=None,
-            best_product_base_ratio=None,
-            alignment_source="none",
-        )
-    ms2_present = result.status != "NO_MS2"
-    nl_match = result.status in {"OK", "WARN"}
-    return CandidateMS2Evidence(
-        ms2_present=ms2_present,
-        nl_match=nl_match,
-        nl_status=result.status,
-        trigger_scan_count=result.matched_scan_count if ms2_present else 0,
-        strict_nl_scan_count=result.matched_scan_count if nl_match else 0,
-        best_loss_ppm=result.best_ppm,
-        best_scan_rt=result.best_scan_rt,
-        best_product_base_ratio=0.5 if ms2_present else None,
-        alignment_source="region" if ms2_present else "none",
-    )
-
-
 def _typed_kwarg(kwargs: dict[str, object], name: str) -> str | None:
     value = kwargs.get(name)
     return value if isinstance(value, str) else None
@@ -2151,6 +2122,7 @@ def _open_raw_factory(
 class _FakeRaw:
     def __init__(self, *, peak_centers: list[float] | None = None) -> None:
         self._peak_centers = list(peak_centers or [])
+        self._scan_rt: float | None = None
 
     def __enter__(self):
         return self
@@ -2164,28 +2136,58 @@ class _FakeRaw:
         center = (
             self._peak_centers.pop(0) if self._peak_centers else (rt_min + rt_max) / 2
         )
+        self._scan_rt = center
         rt = np.linspace(rt_min, rt_max, 201)
         intensity = 10.0 + 5000.0 * np.exp(-0.5 * ((rt - center) / 0.08) ** 2)
         return rt, intensity
 
     def iter_ms2_scans(self, rt_min: float, rt_max: float):
-        return iter([])
+        result = _active_nl_fixture_result
+        scan_rt = self._scan_rt
+        if (
+            result is None
+            or result.status == "NO_MS2"
+            or scan_rt is None
+            or not rt_min <= scan_rt <= rt_max
+        ):
+            return
+        precursor_mz, loss_da = 258.1085, 116.0474
+        product_mz = (
+            precursor_mz - loss_da * (1 + result.best_ppm / 1_000_000)
+            if result.best_ppm is not None
+            else 300.0
+        )
+        scan = Ms2Scan(
+            scan_number=1,
+            rt=scan_rt,
+            precursor_mz=precursor_mz,
+            masses=np.array([product_mz]),
+            intensities=np.array([1000.0]),
+            base_peak=1000.0,
+        )
+        yield Ms2ScanEvent(scan=scan, parse_error=None, scan_number=1)
 
 
 class _RecordingRaw(_FakeRaw):
-    def __init__(self, *, peak_centers: list[float] | None = None) -> None:
+    def __init__(
+        self, *, peak_centers: list[float] | None = None, intensity_scale: float = 1.0
+    ) -> None:
         super().__init__(peak_centers=peak_centers)
         self.windows: list[tuple[float, float]] = []
+        self.intensity_scale = intensity_scale
 
     def extract_xic(
         self, mz: float, rt_min: float, rt_max: float, ppm_tol: float
     ) -> tuple[np.ndarray, np.ndarray]:
         self.windows.append((rt_min, rt_max))
-        return super().extract_xic(mz, rt_min, rt_max, ppm_tol)
+        rt, intensity = super().extract_xic(mz, rt_min, rt_max, ppm_tol)
+        return rt, intensity * self.intensity_scale
 
 
 class _WidePhysicalContextRaw(_FakeRaw):
     def __init__(self) -> None:
+        super().__init__()
+        self._scan_rt = 9.6
         self.windows: list[tuple[float, float]] = []
 
     def extract_xic(
@@ -2376,14 +2378,15 @@ def _bind_fixture_candidates_to_physical_segments(
             physical_candidates,
             key=lambda item: abs(item.selection_apex_rt - candidate.selection_apex_rt),
         )
-        replacements[candidate] = replace(
-            candidate,
-            proposal_sources=tuple(
-                dict.fromkeys((*candidate.proposal_sources, *physical.proposal_sources))
-            ),
-        )
+        # Selection can choose an existing physical candidate, not invent new
+        # measurements while copying its segment label.
+        replacements[candidate] = physical
+    selected = next(
+        candidate for candidate in result.candidates if candidate.peak == result.peak
+    )
     return replace(
         result,
+        peak=replacements[selected].peak,
         candidates=tuple(replacements[candidate] for candidate in result.candidates),
         candidate_scores=tuple(
             replace(score, candidate=replacements.get(score.candidate, score.candidate))
