@@ -17,20 +17,6 @@ from xic_extractor.peak_detection.models import PeakDetectionResult
 from xic_extractor.sample_groups import classify_sample_group
 
 
-class DiagnosticRecordLike(Protocol):
-    @property
-    def sample_name(self) -> str: ...
-
-    @property
-    def target_label(self) -> str: ...
-
-    @property
-    def issue(self) -> str: ...
-
-    @property
-    def reason(self) -> str: ...
-
-
 class ExtractionResultLike(Protocol):
     @property
     def peak_result(self) -> PeakDetectionResult: ...
@@ -222,24 +208,8 @@ def _error_projection_fields() -> dict[str, str]:
     }
 
 
-def _projection_text(
-    projection: TargetedProductProjection | None,
-    field_name: str,
-) -> str:
-    if projection is None:
-        return ""
-    value = getattr(projection, field_name)
-    return str(value)
-
-
 def _join_reasons(reasons: tuple[str, ...]) -> str:
     return "; ".join(reasons)
-
-
-def _format_optional_number(value: float | None) -> str:
-    if value is None:
-        return "NA"
-    return f"{value:g}"
 
 
 def _set_long_ms1_values(row: dict[str, str], value: str) -> None:

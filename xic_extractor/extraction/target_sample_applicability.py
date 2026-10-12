@@ -19,10 +19,6 @@ def target_sample_exclusion_reasons(
     return (f"target_sample_applicability:{applicability}",)
 
 
-def target_sample_is_applicable(target: Target, sample_name: str) -> bool:
-    return not target_sample_exclusion_reasons(target, sample_name)
-
-
 def _is_rna_containing_sample(sample_name: str) -> bool:
     normalized = "".join(ch for ch in sample_name.lower() if ch.isalnum())
     return "rna" in normalized

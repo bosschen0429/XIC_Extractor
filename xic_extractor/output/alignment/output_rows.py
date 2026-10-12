@@ -11,10 +11,6 @@ if TYPE_CHECKING:
     from xic_extractor.alignment.production_decisions import ProductionCellDecision
 
 
-def count_status(cells: tuple[AlignedCell, ...], status: str) -> int:
-    return sum(1 for cell in cells if cell.status == status)
-
-
 def safe_rate(numerator: int, denominator: int) -> float:
     if denominator <= 0:
         return 0.0

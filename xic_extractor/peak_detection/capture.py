@@ -799,42 +799,6 @@ def _captured_selection_intensity(capture: SampleLocalCapture) -> object | None:
     )
 
 
-def _normalize_promoted_capture_hypothesis(
-    hypothesis: PeakHypothesis,
-    *,
-    detection: Ms1TracePeakDetection,
-    morphology_window_points: int,
-) -> PeakHypothesis:
-    integration = hypothesis.integration
-    if integration.integration_method not in {
-        "selected_envelope_gaussian15",
-        "chrom_peak_segment_gaussian15",
-    }:
-        return hypothesis
-    indices = integration.raw_scan_indices
-    if not indices:
-        return hypothesis
-    left = min(indices)
-    right = max(indices) + 1
-    raw_apex_index = left + int(np.argmax(detection.intensity[left:right]))
-    selection_trace = gaussian15_positive_asls_residual_trace(
-        detection.intensity,
-        asls_baseline(detection.intensity),
-        window_points=morphology_window_points,
-    )
-    selection_apex_index = left + int(np.argmax(selection_trace[left:right]))
-    return replace(
-        hypothesis,
-        integration=replace(
-            integration,
-            rt_apex_min=float(detection.rt[selection_apex_index]),
-            raw_apex_rt_min=float(detection.rt[raw_apex_index]),
-            height_raw=float(detection.intensity[raw_apex_index]),
-            height_smoothed=float(selection_trace[selection_apex_index]),
-        ),
-    )
-
-
 def _hypothesis_context(
     scope: SearchScope,
     *,

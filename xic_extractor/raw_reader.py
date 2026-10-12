@@ -1043,12 +1043,6 @@ def _load_thermo_api(import_module_func: Callable[[str], Any]) -> _ThermoApi:
     )
 
 
-def _first_or_empty(values: Any) -> Any:
-    if values is None or len(values) == 0:
-        return []
-    return values[0]
-
-
 def _item_or_empty(values: Any, index: int) -> Any:
     if values is None or len(values) <= index:
         return []

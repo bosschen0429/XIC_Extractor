@@ -77,38 +77,6 @@ class EvidenceSignalSet:
     count_no_ms2_as_detected: bool = False
 
 
-def canonical_support_labels(evidence: CommonEvidence) -> tuple[str, ...]:
-    labels: list[str] = []
-    if evidence.ms1_peak_found:
-        labels.append("ms1_peak")
-    if _positive(evidence.ms1_area):
-        labels.append("positive_area")
-    if evidence.ms2_present:
-        labels.append("ms2_present")
-    if evidence.nl_match:
-        labels.append("nl_match")
-    if evidence.seed_event_count is not None and evidence.seed_event_count >= 2:
-        labels.append("multi_seed")
-    if evidence.scan_support_score is not None:
-        labels.append("scan_support")
-    return tuple(labels)
-
-
-def canonical_concern_labels(evidence: CommonEvidence) -> tuple[str, ...]:
-    labels: list[str] = []
-    if evidence.ms1_peak_found is False:
-        labels.append("missing_ms1_peak")
-    if evidence.ms1_peak_found and not _positive(evidence.ms1_area):
-        labels.append("non_positive_area")
-    if evidence.nl_match is False:
-        labels.append("nl_fail")
-    if evidence.trace_quality and evidence.trace_quality != "clean":
-        labels.append("trace_quality_review")
-    if evidence.provenance in {"backfilled", "owner_backfill"}:
-        labels.append("backfill_provenance")
-    return tuple(labels)
-
-
 def classify_evidence_consistency(signals: EvidenceSignalSet) -> tuple[str, ...]:
     support = _label_set(signals.support_labels)
     concerns = _label_set(signals.concern_labels)
@@ -392,10 +360,6 @@ def _append_unique(values: tuple[str, ...], value: str) -> tuple[str, ...]:
     if value in values:
         return values
     return (*values, value)
-
-
-def _positive(value: float | None) -> bool:
-    return value is not None and value > 0.0
 
 
 def _label_set(values: tuple[str, ...]) -> frozenset[str]:

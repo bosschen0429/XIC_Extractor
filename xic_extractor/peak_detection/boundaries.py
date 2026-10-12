@@ -300,11 +300,6 @@ def _build_boundary_hypothesis(
     )
 
 
-def _candidate_boundary_base_id(candidate: PeakCandidate) -> str:
-    context = boundary_candidate_from_peak_candidate(candidate)
-    return _candidate_context_boundary_base_id(context)
-
-
 def _candidate_context_boundary_base_id(
     candidate: BoundaryCandidateContext,
 ) -> str:

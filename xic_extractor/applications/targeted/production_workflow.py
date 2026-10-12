@@ -232,18 +232,6 @@ def complete_targeted_production_workflow(
     return complete_prepared_targeted_production_workflow(request, prepared)
 
 
-def execute_prepared_targeted_production_workflow(
-    request: TargetedApplicationRequest,
-    prepared: PreparedTargetedProductionWorkflow,
-) -> tuple[FinalizedTargetProductionResult, ...]:
-    """Execute an already owner-bound production population."""
-
-    return complete_prepared_targeted_production_workflow(
-        request,
-        prepared,
-    ).finalized_results
-
-
 def complete_prepared_targeted_production_workflow(
     request: TargetedApplicationRequest,
     prepared: PreparedTargetedProductionWorkflow,

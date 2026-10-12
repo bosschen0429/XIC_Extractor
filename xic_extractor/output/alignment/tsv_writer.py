@@ -781,10 +781,6 @@ def _family_evidence(row: Any) -> str:
     return str(row.fold_evidence)
 
 
-def _optional_attr(row: Any, name: str) -> object:
-    return getattr(row, name, "")
-
-
 def _has_detected_owner_evidence(row: Any) -> bool:
     evidence = _family_evidence(row)
     return evidence == "single_sample_local_owner" or evidence.startswith(
