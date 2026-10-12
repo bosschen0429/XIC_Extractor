@@ -876,6 +876,161 @@ def _context_for_target(
     )
 
 
+class _TargetedCapturePopulation:
+    """Keep capture bindings and retained recovery as one coherent population.
+
+    The explicit observation is retained because a hypothesis may contain more
+    than one observation. Completion arguments are a projection, not a second
+    mutable capture population.
+    """
+
+    def __init__(
+        self, owners: ProcessingOwnerReferences, scope: TargetSearchScope
+    ) -> None:
+        self._owners = owners
+        self._scope = scope
+        self._captures: list[tuple[SampleLocalCapture, PeakObservationRef | None]] = []
+
+    @property
+    def scope(self) -> TargetSearchScope:
+        return self._scope
+
+    def record(
+        self, capture: SampleLocalCapture, observation: PeakObservationRef | None
+    ) -> None:
+        self._captures.append((capture, observation))
+
+    def direct_supports(
+        self,
+        assessments: list[
+            tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef]
+        ],
+    ) -> tuple[CidNlCellGroupSupport, ...]:
+        sample_by_id = {
+            sample.identity.sample_identity_id: sample for sample in self._scope.samples
+        }
+        assessment_by_sample = {
+            sample.identity.sample_identity_id: assessment
+            for sample, assessment in assessments
+        }
+        return tuple(
+            CidNlCellGroupSupport(
+                sample=sample_by_id[observation.content.canonical_sample_identity_id],
+                assessment=assessment_by_sample[
+                    observation.content.canonical_sample_identity_id
+                ],
+                hypothesis=capture.selected_hypothesis,
+            )
+            for capture, observation in self._captures
+            if observation is not None
+            and capture.selected_hypothesis is not None
+            and capture.selected_hypothesis.hypothesis_method
+            == HYPOTHESIS_METHOD_DDA_CID_NL
+        )
+
+    def apply_backfill_decisions(
+        self,
+        decisions: list[ConservativeBackfillCellDecision],
+        candidates: list[tuple[ResolvedCanonicalSampleIdentity, ExtractionResult, str]],
+        *,
+        method_subject_id: str,
+    ) -> None:
+        mapped = {
+            decision.target_cell.content.canonical_sample_identity_id: (
+                decision.matched_candidate.peak_observation
+            )
+            for decision in decisions
+            if decision.matched_candidate is not None
+        }
+        replacements = {}
+        for sample, result, candidate_id in candidates:
+            recovery_observation = mapped.get(sample.identity.sample_identity_id)
+            if (
+                recovery_observation is None
+                or recovery_observation.physical_evaluation
+                is result.physical_evaluation
+            ):
+                continue
+            index = next(
+                i
+                for i, evaluation in enumerate(result.candidate_physical_evaluations)
+                if evaluation is recovery_observation.physical_evaluation
+            )
+            replacements[candidate_id] = _capture_binding(
+                self._owners,
+                self._scope.target,
+                sample,
+                replace(
+                    result, physical_evaluation=recovery_observation.physical_evaluation
+                ),
+                f"{candidate_id}:universe:{index}",
+                method_subject_id=method_subject_id,
+            )
+        if not replacements:
+            return
+        bindings = tuple(
+            replacements.get(binding.candidate_id, binding)
+            for binding in self._scope.capture_bindings
+        )
+        scope = replace(
+            self._scope,
+            capture_bindings=bindings,
+            declared_candidate_ids=tuple(binding.candidate_id for binding in bindings),
+        )
+        sample_by_id = {
+            sample.identity.sample_identity_id: sample for sample in scope.samples
+        }
+        captures = []
+        for old, observation in self._captures:
+            binding = replacements.get(old.candidate_id)
+            candidate_id = old.candidate_id if binding is None else binding.candidate_id
+            captured = capture_peak_hypotheses(
+                scope=scope, candidate_id=candidate_id, trace=old.trace
+            )
+            hypothesis = old.selected_hypothesis
+            if binding is not None:
+                observation = mapped[binding.sample_identity_id]
+                hypothesis = compose_ms1_observation_peak_hypothesis(
+                    processing_owners=self._owners,
+                    sample=sample_by_id[binding.sample_identity_id],
+                    peak_observation=observation,
+                )
+            if observation is not None and hypothesis is not None:
+                captured = bind_owner_backed_capture_hypothesis(
+                    captured, observation=observation, hypothesis=hypothesis
+                )
+            captures.append((captured, observation))
+        self._scope, self._captures = scope, captures
+
+    def workflow_adapter(
+        self,
+        *,
+        sample_assessments: tuple[
+            tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
+        ],
+        alignment_config: AlignmentConfig,
+        backfill_decisions: tuple[ConservativeBackfillCellDecision, ...],
+    ) -> TargetWorkflowAdapter:
+        return TargetWorkflowAdapter(
+            capture_inputs=tuple(
+                CaptureWorkflowArguments(
+                    candidate_id=capture.candidate_id,
+                    trace=capture.trace,
+                    owner_observation=observation,
+                    owner_hypothesis=(
+                        capture.selected_hypothesis if observation is not None else None
+                    ),
+                )
+                for capture, observation in self._captures
+            ),
+            sample_assessments=sample_assessments,
+            alignment_config=alignment_config,
+            predecessor_cell_observations=(),
+            completed_capture_handoff=tuple(capture for capture, _ in self._captures),
+            targeted_backfill_decisions=backfill_decisions,
+        )
+
+
 def _execute_target(
     context: _PreparedTargetedProductionWorkflow,
     request: TargetedApplicationRequest,
@@ -951,8 +1106,7 @@ def _execute_target(
     assessments: list[
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef]
     ] = []
-    capture_inputs: list[CaptureWorkflowArguments] = []
-    completed_captures: list[SampleLocalCapture] = []
+    captures = _TargetedCapturePopulation(context.owners, scope)
     candidate_by_sample = {
         sample.identity.sample_identity_id: (result, candidate_id)
         for sample, result, candidate_id in candidates
@@ -1001,17 +1155,7 @@ def _execute_target(
                         observation=observations[0],
                         hypothesis=owner_hypothesis,
                     )
-                completed_captures.append(captured)
-                capture_inputs.append(
-                    CaptureWorkflowArguments(
-                        candidate_id=captured.candidate_id,
-                        trace=captured.trace,
-                        owner_observation=(
-                            None if not observations else observations[0]
-                        ),
-                        owner_hypothesis=owner_hypothesis,
-                    )
-                )
+                captures.record(captured, None if not observations else observations[0])
                 continue
             selected_observation = observations[0] if observations else None
             all_observations = []
@@ -1104,13 +1248,7 @@ def _execute_target(
         assessments.append((sample, assessment))
         if captured is not None:
             if selected_observation is None:
-                completed_captures.append(captured)
-                capture_inputs.append(
-                    CaptureWorkflowArguments(
-                        candidate_id=captured.candidate_id,
-                        trace=captured.trace,
-                    )
-                )
+                captures.record(captured, None)
                 continue
             hypotheses = compose_peak_hypotheses_from_assessment_universe(
                 processing_owners=context.owners,
@@ -1129,15 +1267,7 @@ def _execute_target(
                 observation=selected_observation,
                 hypothesis=matches[0],
             )
-            completed_captures.append(bound)
-            capture_inputs.append(
-                CaptureWorkflowArguments(
-                    candidate_id=bound.candidate_id,
-                    trace=bound.trace,
-                    owner_observation=selected_observation,
-                    owner_hypothesis=matches[0],
-                )
-            )
+            captures.record(bound, selected_observation)
     # Direct CID/NL observations freeze the reference group. Missing-sample
     # observations never vote for their own Backfill eligibility.
     alignment_config = AlignmentConfig()
@@ -1149,21 +1279,7 @@ def _execute_target(
             s.identity.sample_identity_id: a for s, a in assessments
         }
         sample_by_id = {s.identity.sample_identity_id: s for s in context.samples}
-        direct = tuple(
-            CidNlCellGroupSupport(
-                sample=sample_by_id[
-                    item.owner_observation.content.canonical_sample_identity_id
-                ],
-                assessment=assessment_by_sample[
-                    item.owner_observation.content.canonical_sample_identity_id
-                ],
-                hypothesis=item.owner_hypothesis,
-            )
-            for item in capture_inputs
-            if item.owner_hypothesis is not None
-            and item.owner_observation is not None
-            and item.owner_hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
-        )
+        direct = captures.direct_supports(assessments)
         groups = (
             construct_cross_sample_peak_group_hypotheses(
                 tuple(
@@ -1321,88 +1437,19 @@ def _execute_target(
                         candidate_universes=(universe,),
                     )
                 )
-        mapped = {
-            decision.target_cell.content.canonical_sample_identity_id: (
-                decision.matched_candidate.peak_observation
-            )
-            for decision in backfill_decisions
-            if decision.matched_candidate is not None
-        }
-        replacements = {}
-        for sample, result, candidate_id in candidates:
-            recovery_observation = mapped.get(sample.identity.sample_identity_id)
-            if (
-                recovery_observation is None
-                or recovery_observation.physical_evaluation
-                is result.physical_evaluation
-            ):
-                continue
-            index = next(
-                i
-                for i, evaluation in enumerate(result.candidate_physical_evaluations)
-                if evaluation is recovery_observation.physical_evaluation
-            )
-            replacements[candidate_id] = _capture_binding(
-                context.owners,
-                target,
-                sample,
-                replace(
-                    result, physical_evaluation=recovery_observation.physical_evaluation
-                ),
-                f"{candidate_id}:universe:{index}",
-                method_subject_id=method_subject_id,
-            )
-        if replacements:
-            bindings = tuple(
-                replacements.get(binding.candidate_id, binding) for binding in bindings
-            )
-            scope = replace(
-                scope,
-                capture_bindings=bindings,
-                declared_candidate_ids=tuple(
-                    binding.candidate_id for binding in bindings
-                ),
-            )
-            new_inputs = []
-            new_captures = []
-            for old in capture_inputs:
-                binding = replacements.get(old.candidate_id)
-                candidate_id = (
-                    old.candidate_id if binding is None else binding.candidate_id
-                )
-                captured = capture_peak_hypotheses(
-                    scope=scope, candidate_id=candidate_id, trace=old.trace
-                )
-                recovery_observation = old.owner_observation
-                hypothesis = old.owner_hypothesis
-                if binding is not None:
-                    recovery_observation = mapped[binding.sample_identity_id]
-                    hypothesis = compose_ms1_observation_peak_hypothesis(
-                        processing_owners=context.owners,
-                        sample=sample_by_id[binding.sample_identity_id],
-                        peak_observation=recovery_observation,
-                    )
-                if recovery_observation is not None and hypothesis is not None:
-                    captured = bind_owner_backed_capture_hypothesis(
-                        captured,
-                        observation=recovery_observation,
-                        hypothesis=hypothesis,
-                    )
-                new_inputs.append(
-                    CaptureWorkflowArguments(
-                        candidate_id=candidate_id,
-                        trace=old.trace,
-                        owner_observation=recovery_observation,
-                        owner_hypothesis=hypothesis,
-                    )
-                )
-                new_captures.append(captured)
-            capture_inputs, completed_captures = new_inputs, new_captures
+        captures.apply_backfill_decisions(
+            backfill_decisions, candidates, method_subject_id=method_subject_id
+        )
     assessment_tuple = tuple(
         sorted(
             assessments,
             key=lambda item: item[0].identity.sample_identity_id,
         )
+    )
+    adapter = captures.workflow_adapter(
+        sample_assessments=assessment_tuple,
+        alignment_config=alignment_config,
+        backfill_decisions=tuple(backfill_decisions),
     )
     workflow_artifact: EvidenceArtifactRef
     if assessment_tuple:
@@ -1411,7 +1458,7 @@ def _execute_target(
         captured_artifact = next(
             (
                 item.owner_observation.artifact
-                for item in capture_inputs
+                for item in adapter.capture_inputs
                 if item.owner_observation is not None
             ),
             None,
@@ -1422,7 +1469,7 @@ def _execute_target(
             else _mint_no_observation_capture_artifact(
                 context.owners,
                 target,
-                tuple(capture_inputs),
+                adapter.capture_inputs,
             )
         )
     work_unit_key = f"targeted-workflow:{target.definition.target_definition_id}"
@@ -1435,18 +1482,11 @@ def _execute_target(
     )
     return _complete_retained_target(
         TargetWorkflowRequest(
-            scope=scope,
+            scope=captures.scope,
             processing_request=context.owners.request,
             processing_attempt=context.owners.attempt,
         ),
-        TargetWorkflowAdapter(
-            capture_inputs=tuple(capture_inputs),
-            sample_assessments=assessment_tuple,
-            alignment_config=alignment_config,
-            predecessor_cell_observations=(),
-            completed_capture_handoff=tuple(completed_captures),
-            targeted_backfill_decisions=tuple(backfill_decisions),
-        ),
+        adapter,
         runtime=runtime,
         workflow_artifact=workflow_artifact,
         work_unit_key=work_unit_key,
