@@ -63,7 +63,7 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     mint_cross_sample_group_identity,
     validate_cross_sample_peak_group_identity,
 )
-from xic_extractor.alignment.projection.target import project_target_pre_cell
+from xic_extractor.alignment.projection.target.pre_cell import project_target_pre_cell
 from xic_extractor.alignment.projection.untarget import (
     GroupCellSubject,
     project_untarget_pre_cell,

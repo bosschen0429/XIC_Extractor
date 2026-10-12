@@ -40,7 +40,7 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     mint_cross_sample_group_identity,
     validate_cross_sample_peak_group_identity,
 )
-from xic_extractor.alignment.projection.target import (
+from xic_extractor.alignment.projection.target.pre_cell import (
     TargetProjectionContractError,
     project_target_pre_cell,
 )
