@@ -222,7 +222,7 @@ def _support_content(
         peak_mz=peak_content.mz,
         precursor_delta_da=precursor.reference_mz - peak_content.mz,
         observed_loss_error_ppm=precursor.observed_loss_error_ppm,
-        observed_product_mz=observation.product_mz,
+        observed_product_mz=observation.reference_product_mz,
         configured_neutral_loss_da=observation.configured_neutral_loss_da,
         policy=policy,
         relationship=RELATIONSHIP,

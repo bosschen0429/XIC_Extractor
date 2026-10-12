@@ -1949,3 +1949,41 @@ def test_monoisotopic_canonical_evidence_binds_vendor_metadata(tmp_path):
             precursor_mz_basis="product_plus_neutral_loss",
             precursor_inference_tolerance_da=1.2,
         )
+
+
+def test_isotopologue_evidence_measures_its_loss_from_the_isolated_m_plus_1(tmp_path):
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+    from xic_extractor.precursor_evidence import C13_ISOTOPE_SHIFT_DA
+
+    fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("s1",))
+    observed = cid_nl_evidence(
+        fixture, "s1", scan_number=42, scan_rt_min=8.0
+    ).observation
+    m_plus_1 = observed.precursor_mz + C13_ISOTOPE_SHIFT_DA
+    # DDA isolated only the ¹³C M+1; its ¹³C stayed on the product.
+    arguments = dict(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("s1"),
+        scan_number=42,
+        precursor_mz=observed.precursor_mz,
+        product_mz=observed.product_mz + C13_ISOTOPE_SHIFT_DA,
+        configured_neutral_loss_da=observed.configured_neutral_loss_da,
+        observed_neutral_loss_da=observed.observed_neutral_loss_da,
+        observed_loss_error_ppm=observed.observed_loss_error_ppm,
+        scan_rt_min=8.0,
+        product_intensity=observed.product_intensity,
+        precursor_mz_basis="scan_isotopologue",
+        scan_precursor_mz=m_plus_1,
+        precursor_metadata=Ms2PrecursorMetadata(
+            isolation_width_da=1.6, isolation_offset_da=0.0
+        ),
+    )
+    evidence = mint_cid_nl_evidence_ref(**arguments).observation
+    payload = json.loads(canonical_cid_nl_evidence_bytes(evidence))
+    assert payload["precursor_isolation_membership"] == "inside_nominal"
+    assert payload["supports_direct_nl"] is True
+    precursor = evidence.assess_precursor_loss(20.0)
+    assert precursor.supports_nl
+    assert precursor.reference_mz == observed.precursor_mz
+    with pytest.raises(CidNlEvidenceContractError, match="recorded selection"):
+        mint_cid_nl_evidence_ref(**(arguments | {"scan_precursor_mz": m_plus_1 + 0.5}))
