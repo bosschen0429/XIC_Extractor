@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Any
+
 from xic_extractor.execution._finalization import CoordinatorTerminalRecord
 from xic_extractor.execution._observability import RuntimeMetricAvailability
 from xic_extractor.execution.attempt import (
@@ -51,3 +54,40 @@ def build_runtime_telemetry_samples_from_coordinator(
             for worker_key in worker_keys
         ),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class TestProcessResultRef:
+    artifact: Any
+
+
+def mint_test_process_result_ref(
+    *,
+    processing_attempt: Any,
+    work_unit_key: str,
+    owner_result_payload: bytes,
+    upstream_artifacts: tuple[Any, ...] = (),
+) -> TestProcessResultRef:
+    import hashlib
+
+    from xic_extractor.evidence_artifacts import (
+        mint_artifact_semantic_contract_ref,
+        mint_evidence_artifact_ref,
+    )
+
+    contract = mint_artifact_semantic_contract_ref(
+        owner_namespace="xic_extractor.test_execution_runtime",
+        semantic_role="test_process_result",
+        schema_version="test",
+        validation_status="diagnostic_only",
+        media_type="application/octet-stream",
+        serialization_format="raw-bytes",
+    )
+    artifact = mint_evidence_artifact_ref(
+        producer_processing_request_id=processing_attempt.processing_request_id,
+        producer_processing_attempt_id=processing_attempt.processing_attempt_id,
+        semantic_contract=contract,
+        payload_bytes=f"{work_unit_key}:{hashlib.sha256(owner_result_payload).hexdigest()}".encode("utf-8"),
+        upstream_artifacts=upstream_artifacts,
+    )
+    return TestProcessResultRef(artifact=artifact)

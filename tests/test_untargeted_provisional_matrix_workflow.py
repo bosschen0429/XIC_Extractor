@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -86,12 +87,9 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
     assert isinstance(alignment, workflow.UntargetedRequest)
     assert alignment.discovery_batch_index == discovery_index
     assert alignment.discovery_settings is discovery_settings
-    assert alignment.legacy.backfill_scope == "full-audit"
-    assert alignment.legacy.selected_family_ids == frozenset()
     assert alignment.publication.emit_provisional_matrix is True
     assert alignment.legacy.require_discovery_owner_closure is True
     assert alignment.execution.raw_workers == raw_workers
-    assert alignment.legacy.raw_xic_batch_size == 1
     assert alignment.publication.capture_artifact_fingerprints is True
     peak_config = alignment.peak_config
     resolved_profile = resolve_signal_processing_profile(
@@ -148,10 +146,12 @@ def test_pure_cid_nl_rejects_legacy_knobs_before_write_or_discovery(
     )
     with pytest.raises(
         ValueError,
-        match=(
+        match=re.escape(
             "pure CID-NL retained route does not support legacy Alignment options: "
-            "raw_xic_batch_size"
-        ),
+            "raw_xic_batch_size, owner_backfill_window_strategy, "
+            "sample_column_injection_order"
+        )
+        + "$",
     ):
         workflow.run_untargeted_provisional_matrix_workflow(
             raw_files=(raw_file,),
@@ -161,6 +161,8 @@ def test_pure_cid_nl_rejects_legacy_knobs_before_write_or_discovery(
             alignment_config=AlignmentConfig(),
             raw_workers=3,
             raw_xic_batch_size=16,
+            owner_backfill_window_strategy="super-window",
+            sample_column_injection_order=tmp_path / "injection_order.tsv",
         )
 
     assert discovery_called is False

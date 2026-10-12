@@ -6,8 +6,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from tests.alignment_pipeline_helpers import _owner
 from tests.test_alignment_owner_backfill import _feature, _peak_config
-from tests.test_alignment_owner_clustering import _owner
 from tests.test_owner_backfill_request_equivalence import _OwnerBoundBatchSource
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BACKFILL_CANDIDATE_PHASES,

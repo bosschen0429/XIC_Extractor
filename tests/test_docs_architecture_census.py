@@ -163,7 +163,7 @@ def test_runtime_compaction_is_a_public_fact_projection_not_a_private_entry(
 def test_runtime_boundary_authority_rejects_projection_and_reducer_bypasses(
     tmp_path: Path,
 ) -> None:
-    adapter = Path("xic_extractor/extraction/targeted_runtime_adapter.py")
+    adapter = Path("xic_extractor/extraction/runtime_consumer.py")
     source = tmp_path / adapter
     source.parent.mkdir(parents=True)
     source.write_text(
@@ -210,7 +210,7 @@ def renamed_partial_path(
 def test_runtime_boundary_authority_is_origin_aware_for_same_name_methods(
     tmp_path: Path,
 ) -> None:
-    adapter = Path("xic_extractor/extraction/targeted_runtime_adapter.py")
+    adapter = Path("xic_extractor/extraction/runtime_consumer.py")
     source = tmp_path / adapter
     source.parent.mkdir(parents=True)
     source.write_text(
@@ -233,7 +233,7 @@ def inspect_local(helper: LocalHelper) -> str:
 def test_runtime_boundary_allows_owner_bound_cancellation_start_fact(
     tmp_path: Path,
 ) -> None:
-    adapter = Path("xic_extractor/extraction/targeted_runtime_adapter.py")
+    adapter = Path("xic_extractor/extraction/runtime_consumer.py")
     source = tmp_path / adapter
     source.parent.mkdir(parents=True)
     source.write_text(
@@ -260,7 +260,7 @@ def start_cancelled(attempt):
 def test_runtime_boundary_authority_rejects_nested_and_branched_partial_paths(
     tmp_path: Path,
 ) -> None:
-    adapter = Path("xic_extractor/extraction/targeted_runtime_adapter.py")
+    adapter = Path("xic_extractor/extraction/runtime_consumer.py")
     source = tmp_path / adapter
     source.parent.mkdir(parents=True)
     source.write_text(
@@ -325,7 +325,7 @@ def bypass(state):
 def test_runtime_receipt_internal_allowlist_is_path_scoped(
     tmp_path: Path,
 ) -> None:
-    adapter = Path("xic_extractor/extraction/targeted_runtime_adapter.py")
+    adapter = Path("xic_extractor/extraction/runtime_consumer.py")
     source = tmp_path / adapter
     source.parent.mkdir(parents=True)
     source.write_text(
@@ -432,7 +432,7 @@ def test_runtime_boundary_authority_requires_literal_immutable_all(
 def test_runtime_boundary_authority_resolves_relative_higher_order_bypasses(
     tmp_path: Path,
 ) -> None:
-    adapter = Path("xic_extractor/extraction/targeted_runtime_adapter.py")
+    adapter = Path("xic_extractor/extraction/runtime_consumer.py")
     source = tmp_path / adapter
     source.parent.mkdir(parents=True)
     source.write_text(

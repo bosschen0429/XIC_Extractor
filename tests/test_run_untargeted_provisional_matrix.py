@@ -67,13 +67,7 @@ def test_runner_publishes_full_universe_outputs_atomically(
         # forwarding metadata that the pure owner must mint itself.
         UntargetedExecutionPolicy(raw_workers=kwargs["raw_workers"])
         RetainedAlignmentOptions(
-            raw_xic_batch_size=kwargs["raw_xic_batch_size"],
-            owner_backfill_xic_backend=kwargs["owner_backfill_xic_backend"],
-            owner_backfill_window_strategy=kwargs["owner_backfill_window_strategy"],
-            owner_backfill_superwindow_span_factor=kwargs[
-                "owner_backfill_superwindow_span_factor"
-            ],
-            sample_column_injection_order=kwargs.get("sample_column_injection_order"),
+            owner_build_xic_backend=kwargs["owner_build_xic_backend"],
         )
         workflow_dir = kwargs["output_dir"]
         alignment_dir = workflow_dir / "alignment"
