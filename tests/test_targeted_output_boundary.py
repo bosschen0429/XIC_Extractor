@@ -1970,3 +1970,103 @@ def test_m_plus_1_triggered_istd_is_counted_from_its_fragment_pair(
         # With the pair, the apex scans carry the NL; alone, the shifted product
         # need not be the ISTD's and only the distant tail scan remains.
         assert row["Counted Detection"] == ("TRUE" if fragment_pair else "FALSE")
+
+
+def test_istd_backfill_keeps_a_drifting_target_as_one_group(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fixed Target is one identity however far its RT drifts over the run."""
+    from contextlib import nullcontext
+
+    from xic_extractor.configuration.models import ExtractionConfig, Target
+    from xic_extractor.extraction import pipeline, target_extraction
+    from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
+
+    mz, loss = 255.0, 116.0
+    # Steady drift along injection order spans more than the grouping RT limit.
+    apex = {"S1": 1.0, "S2": 1.8, "S3": 2.6, "S4": 3.4, "S5": 4.2}
+    data = tmp_path / "raw"
+    data.mkdir()
+    for name in apex:
+        (data / f"{name}.raw").write_bytes(name.encode())
+    config = ExtractionConfig(
+        data_dir=data,
+        dll_dir=tmp_path,
+        output_csv=tmp_path / "result.csv",
+        diagnostics_csv=tmp_path / "diag.csv",
+        smooth_window=9,
+        smooth_polyorder=2,
+        peak_rel_height=0.02,
+        peak_min_prominence_ratio=0.01,
+        ms2_precursor_tol_da=0.5,
+        nl_min_intensity_ratio=0.01,
+        nl_rt_anchor_half_window_min=0.6,
+        nl_fallback_half_window_min=0.6,
+    )
+    istd = Target(
+        label="ISTD",
+        mz=mz,
+        rt_min=0.5,
+        rt_max=4.7,
+        ppm_tol=20.0,
+        neutral_loss_da=loss,
+        nl_ppm_warn=20.0,
+        nl_ppm_max=40.0,
+        is_istd=True,
+        istd_pair="",
+    )
+
+    class Raw:
+        def __init__(self, name):
+            self.name = name
+
+        def extract_xic(self, _mz, rt_min, rt_max, _ppm):
+            rt = np.linspace(rt_min, rt_max, 2401)
+            return rt, 10 + 5000.0 * np.exp(-(((rt - apex[self.name]) / 0.02) ** 2))
+
+        def iter_ms2_scans(self, rt_min, rt_max):
+            # S3 acquired no MS2 on its peak: its direct method answer is HOLD.
+            rt = apex[self.name]
+            if self.name != "S3" and rt_min <= rt <= rt_max:
+                yield Ms2ScanEvent(
+                    scan=Ms2Scan(
+                        scan_number=1,
+                        rt=rt,
+                        precursor_mz=mz,
+                        masses=np.array([mz - loss]),
+                        intensities=np.array([500.0]),
+                        base_peak=500.0,
+                    ),
+                    parse_error=None,
+                    scan_number=1,
+                )
+
+    monkeypatch.setattr(pipeline, "preflight_raw_reader", lambda _path: [])
+    monkeypatch.setattr(
+        target_extraction,
+        "open_raw",
+        lambda path, *_a, **_k: nullcontext(Raw(path.stem)),
+    )
+    workbook_path = tmp_path / "drift.xlsx"
+    execution = TargetedApplicationService(pipeline.run_pipeline).execute_application(
+        build_targeted_application_request(
+            config,
+            [istd],
+            injection_order={name: order for order, name in enumerate(apex, 1)},
+            excel_output_path=workbook_path,
+        )
+    )
+    [finalized] = execution.finalized_results
+    accepted = [
+        decision
+        for decision in finalized.scientific_core.targeted_backfill_decisions
+        if decision.disposition == "candidate_mapped"
+    ]
+    assert len(accepted) == 1
+    workbook = load_workbook(workbook_path, read_only=True, data_only=True)
+    values = iter(workbook["XIC Results"].values)
+    headers = next(values)
+    rows = {row[0]: dict(zip(headers, row)) for row in values}
+    workbook.close()
+    assert rows["S3"]["Counted Detection"] == "TRUE"
+    assert rows["S3"]["RT"] == pytest.approx(2.6, abs=0.01)
