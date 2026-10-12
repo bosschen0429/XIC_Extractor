@@ -1819,3 +1819,26 @@ def test_cli_and_workbench_route_through_acquisition_service_boundary() -> None:
     assert "extractor.acquire" in workbench_source
     assert "write_excel_from_run_output" not in cli_source
     assert "write_excel_from_run_output" not in workbench_source
+
+
+def test_publication_lists_samples_in_injection_order(tmp_path: Path) -> None:
+    config, target, output = production_case(
+        tmp_path,
+        sample_names=("SampleA", "SampleB"),
+        sample_peak_scales={"SampleA": 1.0, "SampleB": 2.5},
+    )
+    request = build_targeted_application_request(
+        config,
+        [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
+        injection_order={"SampleA": 2, "SampleB": 1},
+    )
+    finalized = execute_targeted_production_workflow(request, output)
+
+    published = publish_targeted_outputs(request, finalized, output)
+
+    # Readers follow the run as acquired, not the RAW file names.
+    files = published.output.file_results
+    assert [fr.sample_name for fr in files] == ["SampleB", "SampleA"]
+    areas = [fr.results[target.label].reported_peak_area for fr in files]
+    assert areas[0] == pytest.approx(areas[1] * 2.5, rel=1e-2)

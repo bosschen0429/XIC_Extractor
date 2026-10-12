@@ -130,7 +130,7 @@ def build_overview_sheet(
     _line(
         ws,
         25,
-        "RT 圖只顯示已計入且有 RT 的結果。橫軸採結果表的樣本順序，不代表進樣時間。",
+        "RT 圖只顯示已計入且有 RT 的結果。橫軸是本次執行採用的進樣順序。",
         size=10,
     )
     _line(ws, 27, "各目標結果", size=14, bold=True)
@@ -375,7 +375,7 @@ def _add_rt_chart(
     }
     chart = ScatterChart()
     chart.title = "已計入結果的 RT 分布"
-    chart.x_axis.title = "結果表樣本順序"
+    chart.x_axis.title = "進樣順序"
     chart.y_axis.title = "RT (min)"
     chart.x_axis.axPos = "b"
     chart.y_axis.axPos = "l"
@@ -400,7 +400,7 @@ def _add_rt_chart(
         points = by_target[target.label]
         if not points:
             continue
-        ws.cell(1, column, "樣本順序")
+        ws.cell(1, column, "進樣順序")
         ws.cell(1, column + 1, _excel_text(target.label))
         for row_index, (sample_index, rt) in enumerate(points, 2):
             ws.cell(row_index, column, sample_index)

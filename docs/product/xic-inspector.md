@@ -65,8 +65,10 @@ The `targeted_output` schema marker and workbook layout version 2 bind the saved
 records; other layouts are rejected rather than reinterpreted.
 
 In Excel, `Overview` presents saved counted/not-counted totals, per-target
-counts and a counted-result RT scatter plot. Its sample index is not injection
-time, and the charts do not recalculate scientific decisions. `Diagnostics`
+counts and a counted-result RT scatter plot. Result rows, and that plot's
+sample axis, follow the run's resolved injection order: the supplied order or
+sample metadata, otherwise RAW modification time. The charts do not
+recalculate scientific decisions. `Diagnostics`
 is a Traditional Chinese action list with one row per unresolved sample/target,
 the saved count outcome, a contextual explanation and links to the measurement.
 Original diagnostic events remain intact in an expandable appendix; event text

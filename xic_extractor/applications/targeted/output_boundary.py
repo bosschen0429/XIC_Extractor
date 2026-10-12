@@ -196,7 +196,7 @@ def _build_render_view(
                 )
             decisions[key] = projection_decision
 
-    files: list[FileResult] = []
+    files: list[tuple[int | None, FileResult]] = []
     consumed: set[tuple[str, str]] = set()
     consumed_sample_ids: set[str] = set()
     for file_result in acquisition_evidence.file_results:
@@ -270,13 +270,17 @@ def _build_render_view(
                     and backfill_decision.matched_candidate is not None
                 ),
             )
-        files.append(replace(file_result, results=rendered))
+        files.append(
+            (sample.metadata.injection_order, replace(file_result, results=rendered))
+        )
     if consumed != set(decisions):
         raise TargetedOutputBoundaryError(
             "finalized Targeted decisions crossed the acquisition sample population"
         )
+    # Every published reader follows the run as acquired, not RAW file names.
+    files.sort(key=lambda item: (item[0] is None, item[0] or 0, item[1].sample_name))
     return RunOutput(
-        file_results=files,
+        file_results=[file_result for _, file_result in files],
         diagnostics=[*acquisition_evidence.diagnostics, *backfill_diagnostics],
     )
 
