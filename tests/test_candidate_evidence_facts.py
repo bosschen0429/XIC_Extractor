@@ -307,16 +307,19 @@ def test_seed_485_separates_required_residual_first_and_legacy_formulas() -> Non
     )
     required_facts = _twenty_percent_characterization(rt, required)
     residual_first_facts = _twenty_percent_characterization(rt, residual_first)
+    # Frozen AsLS-derived areas need a cross-runner numerical tolerance.
+    # Use the baseline solver's 1e-9 relative equivalence bound, not bitwise
+    # precision; the formulas differ by >1000 and their indices remain exact.
     assert required_facts[:3] == (48, 41, 56)
     assert required_facts[3] == pytest.approx(
         1062.1744946180106,
-        rel=0.0,
+        rel=1e-9,
         abs=1e-12,
     )
     assert residual_first_facts[:3] == (4, 0, 33)
     assert residual_first_facts[3] == pytest.approx(
         2245.7044316702472,
-        rel=0.0,
+        rel=1e-9,
         abs=1e-12,
     )
 
@@ -339,7 +342,7 @@ def test_seed_485_separates_required_residual_first_and_legacy_formulas() -> Non
     )
     assert legacy.peak.area == pytest.approx(
         7410.08344021538,
-        rel=0.0,
+        rel=1e-9,
         abs=1e-12,
     )
 
