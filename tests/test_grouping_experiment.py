@@ -2,7 +2,7 @@
 
 from dataclasses import replace
 
-from tests.test_alignment_owner_clustering import _owner
+from tests.alignment_pipeline_helpers import _owner
 from tests.test_untargeted_cid_nl_bounded_runtime import _plan
 from tools.diagnostics.grouping_experiment import main
 from xic_extractor.alignment.config import AlignmentConfig

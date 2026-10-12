@@ -17,7 +17,6 @@ from xic_extractor.applications.targeted.application import (
     FinalizedTargetProductionResult,
     TargetedApplicationRequest,
     TargetedPublication,
-    validate_finalized_result_population,
 )
 from xic_extractor.applications.targeted.production_workflow import (
     acquisition_snapshot_for_publication,
@@ -92,12 +91,6 @@ def publish_targeted_outputs(
         acquisition_snapshot = acquisition_snapshot_for_publication(prepared)
     except RuntimeError as exc:
         raise TargetedOutputBoundaryError(str(exc)) from exc
-    validate_finalized_result_population(
-        request,
-        finalized_results,
-        expected_processing_request=prepared.owners.request,
-        expected_samples=prepared.samples,
-    )
     render_view = _build_render_view(finalized_results, acquisition_snapshot)
     output_dir = request.config.output_csv.parent
     output_dir.mkdir(parents=True, exist_ok=True)

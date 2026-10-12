@@ -1,55 +1,17 @@
 from __future__ import annotations
 
 import hashlib
-import inspect
-import time
-from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, replace
-from multiprocessing import get_context
 from pathlib import Path
 
 import pytest
 
 import xic_extractor.acquisition_contract as acquisition_contract_module
-from tests.runtime_telemetry_fixtures import (
-    build_runtime_telemetry_samples_from_coordinator,
-)
 from xic_extractor.acquisition_contract import (
     AcquisitionContractError,
     TraceCoordinate,
     TraceCoordinateKind,
     mint_trace_acquisition_capability,
-)
-from xic_extractor.applications.targeted.application import (
-    TargetedApplicationService,
-    TargetedRuntimeLifecycleRunner,
-    build_targeted_application_request,
-)
-from xic_extractor.configuration.models import ExtractionConfig, Target
-from xic_extractor.execution._finalization import (
-    RuntimeArtifactDisposition,
-    RuntimeResourceCleanupOutcome,
-    RuntimeResourceKind,
-    RuntimeResourceOpenOutcome,
-    RuntimeResourceReservation,
-    canonical_coordinator_terminal_record_bytes,
-)
-from xic_extractor.execution._lifecycle import (
-    AttemptRuntime,
-    WorkUnitFailureCategory,
-    WorkUnitFailureDetail,
-    WorkUnitTerminalOutcome,
-)
-from xic_extractor.execution.attempt import start_runtime_attempt
-from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
-from xic_extractor.extraction.targeted_runtime_adapter import (
-    TargetedProcessResourceReport,
-    TargetedProcessWorkerResultEnvelope,
-    TargetedRuntimeAdapterError,
-    TargetedRuntimeLifecycleApplicationResult,
-    TargetedRuntimeWorkerBatch,
-    execute_targeted_runtime_lifecycle,
-    mint_targeted_process_result_ref,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.peak_detection.observation_batch import (
@@ -61,7 +23,6 @@ from xic_extractor.peak_detection.observation_batch import (
 )
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
-    ProcessingAttemptIdentity,
     ProcessingOwnerReferences,
     build_acquisition_source_identity,
     build_processing_request_identity,
@@ -124,8 +85,6 @@ class _RecordingNoRawBatchAdapter:
 
 
 def _produce_batch(job: _ObservationJob) -> PeakObservationBatch:
-    if job.delay_sec:
-        time.sleep(job.delay_sec)
     source = job.owners.request.acquisition_sources[0]
     capability = mint_trace_acquisition_capability(
         source,
@@ -139,123 +98,6 @@ def _produce_batch(job: _ObservationJob) -> PeakObservationBatch:
         plans=job.plans,
         adapter=_NoRawBatchAdapter(),
     )
-
-
-def _run_targeted_job(
-    job: _ObservationJob,
-) -> tuple[
-    TargetedProcessWorkerResultEnvelope,
-    TargetedProcessResourceReport,
-]:
-    batch = _produce_batch(job)
-    payload = canonical_peak_observation_batch_bytes(batch)
-    reference = mint_targeted_process_result_ref(
-        processing_attempt=job.owners.attempt,
-        work_unit_key=job.work_unit_key,
-        owner_result_payload=payload,
-        upstream_artifacts=batch.observation_artifacts,
-    )
-    return (
-        TargetedProcessWorkerResultEnvelope(
-            attempt=job.owners.attempt,
-            work_unit_key=job.work_unit_key,
-            outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-            owner_result_ref=reference,
-            peak_observation_batch=batch,
-        ),
-        TargetedProcessResourceReport(
-            attempt=job.owners.attempt,
-            resource_key=job.resource_key,
-            open_outcome=RuntimeResourceOpenOutcome.OPENED,
-            cleanup_outcome=RuntimeResourceCleanupOutcome.SUCCEEDED,
-        ),
-    )
-
-
-def test_targeted_runtime_preserves_spawned_observation_batches_under_reordering(
-    tmp_path: Path,
-) -> None:
-    owners, sample = _identity_fixture(tmp_path)
-    jobs = _jobs(owners, sample)
-    runtime = _runtime(owners.attempt, tuple(job.work_unit_key for job in jobs))
-    reservations = _reservations(owners.attempt, jobs)
-
-    targeted_serial = _run_targeted_service(
-        runtime,
-        jobs,
-        reservations,
-        max_workers=1,
-        marker_path=tmp_path / "targeted-serial.runtime.json",
-    )
-    targeted_reordered = _run_targeted_service(
-        runtime,
-        tuple(reversed(jobs)),
-        reservations,
-        max_workers=2,
-        marker_path=tmp_path / "targeted-reordered.runtime.json",
-    )
-
-    with pytest.raises(TargetedRuntimeAdapterError, match="acquisition metrics"):
-        TargetedRuntimeLifecycleApplicationResult(
-            settlement=replace(
-                targeted_serial.settlement,
-                successful_observation_batches=(),
-            ),
-            finalization=targeted_serial.finalization,
-        )
-
-    targeted_batches = targeted_serial.settlement.successful_observation_batches
-    reordered_targeted_batches = (
-        targeted_reordered.settlement.successful_observation_batches
-    )
-    assert _canonical_batches(targeted_batches) == _canonical_batches(
-        reordered_targeted_batches
-    )
-    assert tuple(key for key, _batch in targeted_batches) == (
-        "sample:native",
-        "sample:rt-only",
-    )
-    native = targeted_batches[0][1]
-    rt_only = targeted_batches[1][1]
-    assert native.acquisition.logical_xic_request_count == 2
-    assert native.acquisition.xic_batch_count == 1
-    assert native.acquisition.adapter_chromatogram_call_count == 0
-    assert native.acquisition.trace_point_count == 10
-    assert all(
-        item.coordinate.first_scan is not None for item in native.acquisition.traces
-    )
-    assert all(
-        item.coordinate.first_scan is None for item in rt_only.acquisition.traces
-    )
-    assert canonical_coordinator_terminal_record_bytes(
-        targeted_serial.coordinator_record
-    ) == canonical_coordinator_terminal_record_bytes(
-        targeted_reordered.coordinator_record
-    )
-    assert _offered_count(targeted_serial.finalization_record) == 5
-
-
-def test_targeted_runtime_carrier_rejects_unclosed_observation_lineage(
-    tmp_path: Path,
-) -> None:
-    owners, sample = _identity_fixture(tmp_path)
-    job = _jobs(owners, sample)[0]
-    batch = _produce_batch(job)
-    payload = canonical_peak_observation_batch_bytes(batch)
-    unclosed_targeted = mint_targeted_process_result_ref(
-        processing_attempt=owners.attempt,
-        work_unit_key=job.work_unit_key,
-        owner_result_payload=payload,
-    )
-    with pytest.raises(TargetedRuntimeAdapterError, match="exact observation"):
-        TargetedProcessWorkerResultEnvelope(
-            attempt=owners.attempt,
-            work_unit_key=job.work_unit_key,
-            outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-            owner_result_ref=unclosed_targeted,
-            peak_observation_batch=batch,
-        )
-
 
 
 def test_batch_receipt_is_stable_and_coordinate_truth_changes_identity(
@@ -297,90 +139,6 @@ def test_batch_production_rejects_selection_trace_length_mismatch(
             )
         )
 
-
-def test_targeted_runtime_coalesces_identical_completed_result_replay(
-    tmp_path: Path,
-) -> None:
-    owners, sample = _identity_fixture(tmp_path)
-    job = _jobs(owners, sample)[0]
-    runtime = _runtime(owners.attempt, (job.work_unit_key,))
-    reservations = _reservations(owners.attempt, (job,))
-
-    targeted_envelope, targeted_report = _run_targeted_job(job)
-    targeted_ref = targeted_envelope.owner_result_ref
-    assert targeted_ref is not None
-    targeted_batch = TargetedRuntimeWorkerBatch(
-        result_envelopes=(targeted_envelope, targeted_envelope),
-        resource_reports=(targeted_report, targeted_report),
-        runtime_artifact_refs=(targeted_ref, targeted_ref),
-    )
-    service = TargetedApplicationService(
-        lambda *_args, **_kwargs: pytest.fail("runtime must not call the writer"),
-        runtime_lifecycle_runner=lambda _request, _state: targeted_batch,
-        runtime_recovery_marker=OwnerPathRuntimeMarker(
-            tmp_path / "targeted-replay.runtime.json",
-            "targeted-observation-runtime:test",
-        ),
-    )
-    targeted = service.execute_runtime_lifecycle(
-        build_targeted_application_request(_config(), [_target()]),
-        runtime,
-        resource_reservations=reservations,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-    )
-    assert len(targeted.settlement.successful_observation_batches) == 1
-    assert _offered_count(targeted.finalization_record) == 3
-
-
-def test_replay_coalescing_keeps_late_carrier_and_hides_conflicting_success(
-    tmp_path: Path,
-) -> None:
-    owners, sample = _identity_fixture(tmp_path)
-    job = _jobs(owners, sample)[0]
-    batch = _produce_batch(job)
-    payload = canonical_peak_observation_batch_bytes(batch)
-    reference = mint_targeted_process_result_ref(
-        processing_attempt=owners.attempt,
-        work_unit_key=job.work_unit_key,
-        owner_result_payload=payload,
-        upstream_artifacts=batch.observation_artifacts,
-    )
-    without_carrier = TargetedProcessWorkerResultEnvelope(
-        attempt=owners.attempt,
-        work_unit_key=job.work_unit_key,
-        outcome=WorkUnitTerminalOutcome.SUCCEEDED,
-        owner_result_ref=reference,
-    )
-    with_carrier = replace(without_carrier, peak_observation_batch=batch)
-    for envelopes in (
-        (without_carrier, with_carrier),
-        (with_carrier, without_carrier),
-    ):
-        settled = _execute_targeted_envelopes(
-            _runtime(owners.attempt, (job.work_unit_key,)),
-            envelopes,
-        ).settlement
-        assert settled.successful_observation_batches == ((job.work_unit_key, batch),)
-
-    targeted_conflict = _execute_targeted_envelopes(
-        _runtime(owners.attempt, (job.work_unit_key,)),
-        (
-            with_carrier,
-            TargetedProcessWorkerResultEnvelope(
-                attempt=owners.attempt,
-                work_unit_key=job.work_unit_key,
-                outcome=WorkUnitTerminalOutcome.FAILED,
-                failure_detail=WorkUnitFailureDetail(
-                    category=WorkUnitFailureCategory.EXECUTION_ERROR,
-                    stage="targeted-process-worker",
-                    source_reference=f"no-raw:{job.work_unit_key}",
-                    message="late conflicting failure",
-                ),
-            ),
-        ),
-    ).settlement
-    assert targeted_conflict.runtime.integrity_failure is not None
-    assert targeted_conflict.successful_observation_batches == ()
 
 def test_batch_freezes_signal_and_detects_post_mint_mutation(tmp_path: Path) -> None:
     owners, sample = _identity_fixture(tmp_path)
@@ -430,47 +188,6 @@ def test_observation_batch_rejects_cross_sample_capability_before_acquisition(
     assert adapter.extract_many_call_count == 0
 
 
-def test_targeted_runtime_derives_acquisition_counts_without_scalar_override(
-    tmp_path: Path,
-) -> None:
-    owners, sample = _identity_fixture(tmp_path)
-    job = replace(_jobs(owners, sample)[0], delay_sec=0.0)
-    runtime = _runtime(owners.attempt, (job.work_unit_key,))
-    reservations = _reservations(owners.attempt, (job,))
-    targeted = _run_targeted_service(
-        runtime,
-        (job,),
-        reservations,
-        max_workers=1,
-        marker_path=tmp_path / "targeted-derived-counts.runtime.json",
-    )
-    expected = _produce_batch(job).acquisition
-    values = {
-        metric.name: metric.value
-        for metric in targeted.finalization.observability_ledger.metrics
-    }
-    for metric_name in (
-        "logical_xic_request_count",
-        "xic_batch_count",
-        "adapter_chromatogram_call_count",
-        "trace_point_count",
-    ):
-        assert values[metric_name] == getattr(expected, metric_name)
-
-    forbidden_parameters = {
-        "observability_ledger",
-        "logical_xic_request_count",
-        "xic_batch_count",
-        "adapter_chromatogram_call_count",
-        "trace_point_count",
-    }
-    assert not forbidden_parameters & set(
-        inspect.signature(
-            TargetedApplicationService.execute_runtime_lifecycle
-        ).parameters
-    )
-
-
 def test_acquisition_batch_rejects_coordinate_source_or_kind_substitution(
     tmp_path: Path,
 ) -> None:
@@ -508,64 +225,6 @@ def test_acquisition_batch_rejects_coordinate_source_or_kind_substitution(
             logical_xic_request_count=1,
             trace_point_count=len(acquired.trace.rt),
         )
-
-
-def _run_targeted_service(
-    runtime: AttemptRuntime,
-    jobs: tuple[_ObservationJob, ...],
-    reservations: tuple[RuntimeResourceReservation, ...],
-    *,
-    max_workers: int,
-    marker_path: Path,
-):
-    def disallowed_sync_runner(*_args, **_kwargs):
-        raise AssertionError(
-            "observation runtime must not invoke the synchronous writer path"
-        )
-
-    service = TargetedApplicationService(
-        disallowed_sync_runner,
-        runtime_lifecycle_runner=_targeted_lifecycle_runner(
-            jobs,
-            max_workers=max_workers,
-        ),
-        runtime_recovery_marker=OwnerPathRuntimeMarker(
-            marker_path,
-            "targeted-observation-runtime:test",
-        ),
-    )
-    return service.execute_runtime_lifecycle(
-        build_targeted_application_request(_config(), [_target()]),
-        runtime,
-        resource_reservations=reservations,
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-    )
-
-
-def _targeted_lifecycle_runner(
-    jobs: tuple[_ObservationJob, ...],
-    *,
-    max_workers: int,
-) -> TargetedRuntimeLifecycleRunner:
-    def lifecycle_runner(_request, _state):
-        with ProcessPoolExecutor(
-            max_workers=max_workers,
-            mp_context=get_context("spawn"),
-        ) as executor:
-            futures = tuple(executor.submit(_run_targeted_job, job) for job in jobs)
-            results = tuple(future.result(timeout=15) for future in futures)
-        envelopes = tuple(envelope for envelope, _report in results)
-        return TargetedRuntimeWorkerBatch(
-            result_envelopes=envelopes,
-            resource_reports=tuple(report for _envelope, report in results),
-            runtime_artifact_refs=tuple(
-                envelope.owner_result_ref
-                for envelope in envelopes
-                if envelope.owner_result_ref is not None
-            ),
-        )
-
-    return lifecycle_runner
 
 
 def _identity_fixture(
@@ -695,30 +354,6 @@ def _two_sample_identity_fixture(
     return owners, first, second
 
 
-def _execute_targeted_envelopes(
-    runtime: AttemptRuntime,
-    envelopes: tuple[TargetedProcessWorkerResultEnvelope, ...],
-) -> TargetedRuntimeLifecycleApplicationResult:
-    references = {
-        envelope.owner_result_ref.artifact.evidence_artifact_id: (
-            envelope.owner_result_ref
-        )
-        for envelope in envelopes
-        if envelope.owner_result_ref is not None
-    }
-    return execute_targeted_runtime_lifecycle(
-        runtime,
-        (),
-        worker_batch_provider=lambda _aggregate: TargetedRuntimeWorkerBatch(
-            result_envelopes=envelopes,
-            resource_reports=(),
-            runtime_artifact_refs=tuple(references.values()),
-        ),
-        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
-        finalization_persister=lambda proposed: proposed,
-    )
-
-
 def _jobs(
     owners: ProcessingOwnerReferences,
     sample: ResolvedCanonicalSampleIdentity,
@@ -736,7 +371,6 @@ def _jobs(
             resource_key="process:sample:native",
             coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
             plans=native_plans,
-            delay_sec=0.03,
         ),
         _ObservationJob(
             owners=owners,
@@ -778,42 +412,6 @@ def _trace_for_request(request: XICRequest) -> XICTrace:
     )
 
 
-def _runtime(
-    attempt: ProcessingAttemptIdentity,
-    work_unit_keys: tuple[str, ...],
-) -> AttemptRuntime:
-    return start_runtime_attempt(
-        attempt=attempt,
-        work_unit_keys=work_unit_keys,
-        owner_completeness_attestation="observation-runtime-observation-runtime",
-    )
-
-
-def _reservations(
-    attempt: ProcessingAttemptIdentity,
-    jobs: tuple[_ObservationJob, ...],
-) -> tuple[RuntimeResourceReservation, ...]:
-    return tuple(
-        RuntimeResourceReservation(
-            attempt=attempt,
-            kind=RuntimeResourceKind.PROCESS_WORKER,
-            resource_key=job.resource_key,
-            worker_key=f"worker:{index}",
-            source_reference=f"no-raw:{job.work_unit_key}",
-            compatibility_token="observation-runtime-observation-runtime",
-        )
-        for index, job in enumerate(jobs)
-    )
-
-
-def _canonical_batches(
-    batches: tuple[tuple[str, PeakObservationBatch], ...],
-) -> tuple[tuple[str, bytes], ...]:
-    return tuple(
-        (key, canonical_peak_observation_batch_bytes(batch)) for key, batch in batches
-    )
-
-
 def _replace_coordinate(
     coordinate: TraceCoordinate,
     *,
@@ -843,43 +441,4 @@ def _replace_coordinate(
         first_scan=coordinate.first_scan,
         last_scan=coordinate.last_scan,
         trace_point_count=coordinate.trace_point_count,
-    )
-
-
-def _offered_count(finalization_record) -> int:
-    dispositions = tuple(
-        disposition
-        for _artifact_id, disposition in finalization_record.artifact_dispositions
-    )
-    assert set(dispositions) == {RuntimeArtifactDisposition.OFFERED_TO_OWNER}
-    return len(dispositions)
-
-
-def _config(output_root: Path = Path("output")) -> ExtractionConfig:
-    return ExtractionConfig(
-        data_dir=Path("data"),
-        dll_dir=Path("dll"),
-        output_csv=output_root / "xic_results.csv",
-        diagnostics_csv=output_root / "xic_diagnostics.csv",
-        smooth_window=9,
-        smooth_polyorder=2,
-        peak_rel_height=0.02,
-        peak_min_prominence_ratio=0.01,
-        ms2_precursor_tol_da=0.5,
-        nl_min_intensity_ratio=0.01,
-    )
-
-
-def _target() -> Target:
-    return Target(
-        label="Analyte",
-        mz=250.0,
-        rt_min=1.0,
-        rt_max=2.0,
-        ppm_tol=20.0,
-        neutral_loss_da=116.0,
-        nl_ppm_warn=20.0,
-        nl_ppm_max=40.0,
-        is_istd=False,
-        istd_pair="",
     )

@@ -12,8 +12,8 @@ import pytest
 import xic_extractor.alignment.cross_sample_peak_groups as cross_sample_owner
 import xic_extractor.peak_detection.integration as integration_runtime
 import xic_extractor.peak_detection.ms1_shape_identity as smoothing_runtime
+from tests.alignment_pipeline_helpers import _owner
 from tests.test_alignment_owner_backfill import _feature
-from tests.test_alignment_owner_clustering import _owner
 from tests.test_backfill_evaluation_coverage import _coverage_fixture
 from xic_extractor.alignment import (
     backfill_acquisition as owner_backfill_acquisition_runtime,

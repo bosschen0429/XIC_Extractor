@@ -255,7 +255,7 @@ def test_known_reference_grouping_preserves_main_peak_against_closer_competitor(
     tmp_path: Path,
     use_reference: bool,
 ) -> None:
-    from tests.test_alignment_owner_clustering import _owner
+    from tests.alignment_pipeline_helpers import _owner
     from xic_extractor.acquisition.istd_reference import read_known_istd_reference
     from xic_extractor.alignment.config import AlignmentConfig
     from xic_extractor.alignment.cross_sample_peak_groups import (
@@ -317,7 +317,7 @@ def test_batch_reference_corrects_bootstrap_unknowns_without_merging_distinct_pe
     early_knots,
     late_knots,
 ) -> None:
-    from tests.test_alignment_owner_clustering import _owner
+    from tests.alignment_pipeline_helpers import _owner
     from xic_extractor.alignment.config import AlignmentConfig
     from xic_extractor.alignment.cross_sample_peak_groups import (
         construct_cross_sample_peak_group_hypotheses,
@@ -421,7 +421,7 @@ def test_prepared_calibration_receipt_preserves_owner_map_without_refitting(
 def test_batch_reference_interpolates_missing_landmark_in_canonical_order(
     tmp_path: Path,
 ) -> None:
-    from tests.test_alignment_owner_clustering import _owner
+    from tests.alignment_pipeline_helpers import _owner
 
     reference = _batch_reference(
         tmp_path,
@@ -463,7 +463,7 @@ def test_batch_reference_declines_extrapolation_or_nonmonotone_knots(
     early_rt,
     late_rt,
 ) -> None:
-    from tests.test_alignment_owner_clustering import _owner
+    from tests.alignment_pipeline_helpers import _owner
 
     reference = _batch_reference(tmp_path, observations)
     early = _owner("early", "unknown", apex_rt=early_rt, precursor_mz=600)
@@ -480,7 +480,7 @@ def test_batch_reference_preparation_is_shared_across_method_bindings(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from tests.test_alignment_owner_clustering import _owner
+    from tests.alignment_pipeline_helpers import _owner
     from xic_extractor.alignment import drift_evidence
 
     reference = _batch_reference(
@@ -528,7 +528,7 @@ def test_batch_reference_preparation_is_shared_across_method_bindings(
 def test_batch_reference_changed_universe_does_not_reuse_stale_medians(
     tmp_path: Path,
 ) -> None:
-    from tests.test_alignment_owner_clustering import _owner
+    from tests.alignment_pipeline_helpers import _owner
 
     reference = _batch_reference(
         tmp_path,

@@ -7,11 +7,7 @@ from typing import Literal, cast, final, get_args
 
 from xic_extractor.alignment.config import OwnerBuildXicBackend
 
-EffectiveOwnerBuildRoute = Literal[
-    "configured_backend",
-    "discovery_physical_bindings",
-    "retained_untargeted_cid_nl_batch",
-]
+EffectiveOwnerBuildRoute = Literal["retained_untargeted_cid_nl_batch"]
 
 _OWNER_BUILD_ROUTE_RECEIPT_MINT_TOKEN = object()
 _OWNER_BUILD_XIC_BACKENDS = frozenset(get_args(OwnerBuildXicBackend))
@@ -46,26 +42,7 @@ class OwnerBuildRouteReceipt:
         _validate_owner_build_xic_backend(
             self.configured_owner_build_xic_backend,
         )
-        if self.effective_owner_build_route == "configured_backend":
-            if (
-                self.effective_owner_build_xic_backend
-                != self.configured_owner_build_xic_backend
-            ):
-                raise ValueError("configured route must report its configured backend")
-            if self.processing_run_spec_id is not None:
-                raise ValueError("configured route cannot claim a ProcessingRunSpec")
-            if self.processing_run_spec_hash is not None:
-                raise ValueError(
-                    "configured route cannot claim a ProcessingRunSpec hash"
-                )
-        elif self.effective_owner_build_route == "discovery_physical_bindings":
-            if self.effective_owner_build_xic_backend is not None:
-                raise ValueError("Discovery physical bindings do not execute a backend")
-            if not self.processing_run_spec_id or not self.processing_run_spec_hash:
-                raise ValueError(
-                    "Discovery physical bindings require ProcessingRunSpec identity"
-                )
-        elif self.effective_owner_build_route == "retained_untargeted_cid_nl_batch":
+        if self.effective_owner_build_route == "retained_untargeted_cid_nl_batch":
             if self.effective_owner_build_xic_backend is not None:
                 raise ValueError(
                     "retained CID-NL batch does not execute a legacy backend"
@@ -93,32 +70,6 @@ class OwnerBuildRouteReceipt:
             "processing_run_spec_id": self.processing_run_spec_id,
             "processing_run_spec_hash": self.processing_run_spec_hash,
         }
-
-
-def _mint_owner_build_route_receipt(
-    *,
-    configured_backend: OwnerBuildXicBackend,
-    processing_run_spec_id: str | None = None,
-    processing_run_spec_hash: str | None = None,
-) -> OwnerBuildRouteReceipt:
-    configured_backend = _validate_owner_build_xic_backend(configured_backend)
-    uses_discovery_bindings = processing_run_spec_id is not None
-    if uses_discovery_bindings != (processing_run_spec_hash is not None):
-        raise ValueError("ProcessingRunSpec id and hash must be provided together")
-    return OwnerBuildRouteReceipt(
-        configured_owner_build_xic_backend=configured_backend,
-        effective_owner_build_route=(
-            "discovery_physical_bindings"
-            if uses_discovery_bindings
-            else "configured_backend"
-        ),
-        effective_owner_build_xic_backend=(
-            None if uses_discovery_bindings else configured_backend
-        ),
-        processing_run_spec_id=processing_run_spec_id,
-        processing_run_spec_hash=processing_run_spec_hash,
-        _mint_token=_OWNER_BUILD_ROUTE_RECEIPT_MINT_TOKEN,
-    )
 
 
 def _mint_retained_untargeted_cid_nl_route_receipt(

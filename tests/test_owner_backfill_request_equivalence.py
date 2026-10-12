@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import pytest
 
 import xic_extractor.alignment.backfill_request_plan as request_plan_module
+from tests.alignment_pipeline_helpers import _owner
 from tests.test_alignment_owner_backfill import _feature, _peak_config
-from tests.test_alignment_owner_clustering import _owner
 from xic_extractor.alignment import (
     backfill_evaluation as owner_backfill_evaluation_module,
 )

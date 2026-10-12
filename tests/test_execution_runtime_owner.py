@@ -13,6 +13,9 @@ from tests.runtime_observability_fixtures import build_runtime_observability_led
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
+from tests.runtime_telemetry_fixtures import (
+    mint_test_process_result_ref as mint_targeted_process_result_ref,
+)
 from tests.test_acquisition_contract import _NoRawBatchAdapter, _source
 from xic_extractor.acquisition_contract import (
     TraceCoordinateKind,
@@ -80,9 +83,6 @@ from xic_extractor.execution.attempt import (
     start_runtime_attempt,
 )
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
-from xic_extractor.extraction.targeted_runtime_adapter import (
-    mint_targeted_process_result_ref,
-)
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
     ProcessingAttemptIdentity,

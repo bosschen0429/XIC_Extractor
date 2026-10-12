@@ -597,22 +597,7 @@ Foreground acquisition and the handoff receipt remain separate lifecycles, so
 this path does not provide a single full-run supervisor acknowledgement or
 claim bounded terminalization of an in-flight RAW call.
 
-The bounded Targeted process adapter in
-`xic_extractor.extraction.targeted_runtime_adapter` owns one canonical
-process-result identity payload over the closed work key and exact digest/size
-of owner-supplied result bytes. It does not serialize or hash legacy
-`RawFileExtractionResult` / `RunOutput`. `TargetedProcessResultRef` binds that
-work key and owner-payload identity to the underlying `EvidenceArtifactRef`, so
-an artifact minted for one work key cannot settle another. A pickleable
-worker-result envelope carries that producer-owned reference across a true
-spawned process. `TargetedApplicationService.execute_runtime_lifecycle` consumes
-reordered envelopes through the shared runtime aggregate and settles the
-existing runtime in manifest order.
-There is no public settlement-only service or adapter bypass. This boundary is
-`wired_no_raw` and remains `diagnostic_only`; default legacy execution and all
-product outputs are unchanged.
-
-The next bounded Targeted lifecycle seam is also executable no-RAW.
+The next bounded lifecycle seam is also executable no-RAW.
 `execution.attempt.RuntimeAttemptAggregate` belongs to the sole attempt
 construction and execution entry. Its private lifecycle, receipt and observability
 companions support separate state transitions, typed facts and ledger validation.
@@ -623,17 +608,12 @@ closes worker loss conservatively, registers current-attempt immutable artifacts
 and freezes a content-bound `CoordinatorTerminalRecord`. The owner then mints
 one atomic acknowledgement batch containing `terminal_acknowledged`, one
 committed disposition per registered artifact, and `terminal_outcome`.
-`TargetedApplicationService.execute_runtime_lifecycle` supplies the first real
-consumer: a true spawned process returns typed work/resource/artifact/acquisition
+A true spawned process returns typed work/resource/artifact/acquisition
 facts, and an owner-supplied persister must return the exact proposed
-`RuntimeFinalizationReceipt` before the application result exists. Success
+`RuntimeFinalizationReceipt` before the attempt result exists. Success
 offers every registered artifact only to its owner; failure, cancellation, or
 worker-loss cleanup unknown quarantines the whole registered current-attempt
 set. Conflicting or missing cleanup and acknowledgement fail closed.
-Targeted runtime configuration must provide exactly one finalization authority:
-either `runtime_finalization_persister` or `runtime_recovery_marker`. The marker
-is itself the sole persister when selected; simultaneous independent surfaces
-are rejected before request resolution, launch recording, or work dispatch.
 
 This remains `diagnostic_only`. `OwnerPathRuntimeMarker` is the bounded physical
 persistence seam: the owner supplies its path, namespace, retention, and later

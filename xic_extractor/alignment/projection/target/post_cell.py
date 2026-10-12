@@ -51,7 +51,7 @@ class TargetReviewQueueReference:
 
 @dataclass(frozen=True, slots=True)
 class TargetPostCellProjection:
-    """Closed Target row policy and exact cell-decision population for #311."""
+    """Closed Target row policy and exact cell-decision population."""
 
     pre_cell_projection: TargetPreCellProjection
     decisions: tuple[ProductionCellDecision, ...]

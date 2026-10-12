@@ -86,12 +86,9 @@ def test_workflow_routes_complete_discovery_universe_to_full_alignment(
     assert isinstance(alignment, workflow.UntargetedRequest)
     assert alignment.discovery_batch_index == discovery_index
     assert alignment.discovery_settings is discovery_settings
-    assert alignment.legacy.backfill_scope == "full-audit"
-    assert alignment.legacy.selected_family_ids == frozenset()
     assert alignment.publication.emit_provisional_matrix is True
     assert alignment.legacy.require_discovery_owner_closure is True
     assert alignment.execution.raw_workers == raw_workers
-    assert alignment.legacy.raw_xic_batch_size == 1
     assert alignment.publication.capture_artifact_fingerprints is True
     peak_config = alignment.peak_config
     resolved_profile = resolve_signal_processing_profile(

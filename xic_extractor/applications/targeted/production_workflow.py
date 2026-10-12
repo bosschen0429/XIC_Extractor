@@ -1,4 +1,6 @@
-"""Production Targeted adapter from retained acquisition evidence to #312."""
+"""Production Targeted adapter from retained acquisition evidence to
+finalized Target application results.
+"""
 
 from __future__ import annotations
 
@@ -217,7 +219,9 @@ def execute_targeted_production_workflow(
     request: TargetedApplicationRequest,
     acquisition_evidence: RunOutput,
 ) -> CompletedTargetedProductionWorkflow:
-    """Produce one finalized #312 result per declared Target, in row order."""
+    """Produce one finalized Target application result per declared Target,
+    in row order.
+    """
 
     return complete_targeted_production_workflow(request, acquisition_evidence)
 

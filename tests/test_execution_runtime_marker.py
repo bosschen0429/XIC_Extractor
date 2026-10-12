@@ -14,6 +14,9 @@ import xic_extractor.execution.recovery as runtime_marker_module
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
+from tests.runtime_telemetry_fixtures import (
+    mint_test_process_result_ref as mint_targeted_process_result_ref,
+)
 from xic_extractor.execution._finalization import (
     CoordinatorTerminalRecord,
     RuntimeArtifactDisposition,
@@ -54,9 +57,6 @@ from xic_extractor.execution.attempt import (
 from xic_extractor.execution.recovery import (
     OwnerPathRuntimeMarker,
     RuntimeMarkerState,
-)
-from xic_extractor.extraction.targeted_runtime_adapter import (
-    mint_targeted_process_result_ref,
 )
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,

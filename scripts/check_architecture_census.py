@@ -89,12 +89,7 @@ RUNTIME_CONSTRUCTION_OWNER_PATHS = frozenset(
     }
 )
 RUNTIME_RECEIPT_CONTRACT_PATH = "xic_extractor/execution/_receipts.py"
-RUNTIME_CONSUMER_PATHS = frozenset(
-    {
-        "xic_extractor/extraction/targeted_runtime_adapter.py",
-        "xic_extractor/applications/targeted/application.py",
-    }
-)
+RUNTIME_CONSUMER_PATHS: frozenset[str] = frozenset()
 RUNTIME_AUTHORITY_MODULES = frozenset(
     {
         "xic_extractor.execution._lifecycle",
