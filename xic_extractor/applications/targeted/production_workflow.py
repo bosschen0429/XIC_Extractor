@@ -96,6 +96,7 @@ from xic_extractor.peak_detection.models import PeakResult
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     HYPOTHESIS_METHOD_DDA_CID_NL,
 )
+from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.processing_identity import (
     AcquisitionSourceExpectation,
     ProcessingOwnerReferences,
@@ -571,6 +572,7 @@ def _finalized_extraction_result(
         no_write_reason=no_write_reason,
         backfill_supported=backfill_supported,
         paired_istd_identity=paired_istd_identity,
+        captured_physical_evaluation=extraction.physical_evaluation,
     )
     if not no_write_reason:
         if (
@@ -603,6 +605,14 @@ def _finalized_extraction_result(
             selected_hypothesis=None,
             selection_decision=None,
             physical_evaluation=physical_evaluation,
+            quality_flags=(
+                extraction.quality_flags
+                if not backfill_supported
+                and _same_physical_peak(
+                    extraction.physical_evaluation, physical_evaluation
+                )
+                else evidence.hypothesis.evidence.quality_flags
+            ),
             selected_cid_nl_candidate_index=next(
                 (
                     index
@@ -643,6 +653,54 @@ def _hypothesis_area(hypothesis: Any) -> float:
     return integration.area_raw_counts_seconds
 
 
+def _same_physical_peak(
+    captured: PhysicalPeakEvaluation | None, reported: PhysicalPeakEvaluation | None
+) -> bool:
+    """Question/provenance may change without replacing the selected segment."""
+    return (
+        captured is not None
+        and reported is not None
+        and captured.facts is not None
+        and reported.facts is not None
+        and captured.facts.prepared_signal_id == reported.facts.prepared_signal_id
+        and captured.facts.physical_segment_id == reported.facts.physical_segment_id
+    )
+
+
+def _projection_with_reported_peak_quality(
+    projection: TargetedProductProjection,
+    *,
+    captured: PhysicalPeakEvaluation | None,
+    reported: PhysicalPeakEvaluation | None,
+    backfill_supported: bool,
+) -> TargetedProductProjection:
+    """Keep sample reasons, replacing only the reported peak's quality facts."""
+    review_reasons = projection.review_reasons
+    conflict_reasons = projection.conflict_reasons
+    if backfill_supported or not _same_physical_peak(captured, reported):
+        # These reasons are issued by selected-candidate morphology/quality
+        # facts (or its selected shoulder), not by the sample. A new physical
+        # answer cannot inherit them from the replaced capture. Unknown and
+        # sample-level reasons remain intact; Backfill acceptance is not clean.
+        peak_local_review = {"trace_morphology_review", "physical_shoulder_overlap"}
+        peak_local_conflicts = {
+            "trace_morphology_conflict",
+            "hard_local_quality_conflict",
+            "hard_quality_flag_conflict",
+        }
+        review_reasons = tuple(r for r in review_reasons if r not in peak_local_review)
+        conflict_reasons = tuple(
+            r for r in conflict_reasons if r not in peak_local_conflicts
+        )
+    if reported is not None and reported.requires_overlap_review:
+        review_reasons = tuple(
+            dict.fromkeys((*review_reasons, "physical_shoulder_overlap"))
+        )
+    return replace(
+        projection, review_reasons=review_reasons, conflict_reasons=conflict_reasons
+    )
+
+
 def _finalized_product_projection(
     projection: TargetedProductProjection | None,
     *,
@@ -652,6 +710,7 @@ def _finalized_product_projection(
     no_write_reason: str,
     backfill_supported: bool = False,
     paired_istd_identity: bool = False,
+    captured_physical_evaluation: PhysicalPeakEvaluation | None = None,
 ) -> TargetedProductProjection | None:
     if projection is None:
         return None
@@ -667,6 +726,15 @@ def _finalized_product_projection(
         raise TargetedOutputBoundaryError(
             "numeric projection lost its finalized evidence"
         )
+    physical_evaluation = evidence.hypothesis.peak_observation_refs[
+        0
+    ].physical_evaluation
+    projection = _projection_with_reported_peak_quality(
+        projection,
+        captured=captured_physical_evaluation,
+        reported=physical_evaluation,
+        backfill_supported=backfill_supported,
+    )
     return build_targeted_product_projection(
         TargetedProductContext(
             role="ISTD" if target.is_istd else "Analyte",

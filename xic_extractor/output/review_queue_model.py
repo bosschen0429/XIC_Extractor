@@ -237,10 +237,6 @@ def _review_why(issue: str, row: dict[str, str], evidence: str) -> str:
         return "已被規則排除"
     if state == "ambiguous" or row.get("Projection Conflict Reasons"):
         return "證據衝突，身分未定"
-    if counted == "TRUE" and "cross_sample_backfill_identity" in row.get(
-        "Projection Support Reasons", ""
-    ):
-        return "無直接 NL，回填確認身分"
     if "analyte_peak_off_paired_istd_position" in row.get("Projection Reason", ""):
         return "峰不在內標位置，報 ND"
     if "BACKFILL_HOLD" in evidence and counted == "FALSE":
@@ -269,6 +265,8 @@ def _review_why(issue: str, row: dict[str, str], evidence: str) -> str:
         return "未滿足計入條件"
     if issue == "PROJECTION_FLAGGED":
         reasons = row.get("Projection Review Reasons", "")
+        if "physical_shoulder_overlap" in reasons:
+            return "肩峰重疊需檢查"
         if "trace_morphology_review" in reasons:
             return "峰形需檢查"
         if "targeted_rt_review" in reasons:
