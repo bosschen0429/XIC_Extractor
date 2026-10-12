@@ -1,68 +1,67 @@
-# CI runner capacity and post-merge validation proposal
+# Hybrid CI runner capacity
 
-Status: **evaluation only**. This document intentionally does not change workflow behavior.
+`.github/workflows/ci.yml` owns execution; this document explains runner selection
+and the retained validation boundary.
 
-## Current baseline (reviewed 2026-10-12)
+## Routing
 
-- `.github/workflows/ci.yml` runs on pushes to `master`/`main` and PRs targeting `master`/`main`/`integration/**`.
-- `lint` and `typecheck` use `ubuntu-latest`; `test (Python 3.12)` uses a single `self-hosted` label and a 30-minute timeout.
-- The test job installs with `uv`, runs pytest with `-n 4 --dist loadfile`, and executes three packaging-related serial test node IDs when required.
-- `tools/testing/test_shards.py` excludes ledger snapshots and the separately executed architecture census, and conditionally excludes `browser_e2e`, `packaging_build`, and `product_governance` on PRs based on changed paths. Master runs the broader marker selection.
-- Workflow concurrency is already scoped by `github.workflow` and `github.ref`, with `cancel-in-progress: true`. This cancels superseded runs on the same ref, **not** competing master and PR runs.
-- `build.yml` already uses `windows-latest` for release packaging and verifies a successful same-SHA CI run for tagged releases.
+| Work | Runner |
+| --- | --- |
+| Lint, static contracts, architecture census, typecheck | GitHub-hosted Ubuntu |
+| `master` / `main` push tests | GitHub-hosted Windows |
+| PR tests, by default | Self-hosted |
+| PR tests with `ci:hosted-windows` label | GitHub-hosted Windows |
+| Release packaging | GitHub-hosted Windows (unchanged) |
 
-## Problem and objective
+To run two independent PRs concurrently, put `ci:hosted-windows` on one and leave
+it off the other. Labels select capacity, not test scope. Adding/removing a label
+starts a new CI run; the existing per-ref concurrency rule cancels the older run.
+All label events restart CI, including unrelated label changes. Avoid label churn.
+The selected capacity still depends on runner availability and hosted quota; there
+is no automatic busy-runner fallback or reservation service. Re-running an old
+workflow run retains its original event payload; use a fresh label event or push
+to change routing.
 
-A master push and independent PRs each require the self-hosted test runner; the job queue is serial even when hosted Windows capacity exists. Reduce PR completion latency without weakening required scientific/packaging evidence, silently dropping tests, or increasing unbounded paid hosted minutes.
+The required check name `test (Python 3.12)`, Python 3.12 lockfile install, four
+pytest workers, serial packaging tests and 30-minute job timeout are unchanged.
+Master no longer consumes self-hosted PR capacity. Hosted PRs and master can still
+compete for organization-hosted concurrency and billable minutes. No billing,
+runner registration, permissions or branch-protection settings are changed.
 
-## Options
+## What needs self-hosted infrastructure?
 
-| Option | Mechanism | Advantages | Risks / limitations |
-|---|---|---|---|
-| A. Master on hosted Windows | Route post-merge test job to `windows-latest`; PR test remains self-hosted | Removes master/PR contention with minimal routing logic | Master-only packaging/governance/browser tests must pass on ephemeral Windows; hosted minutes billed to org |
-| B. Deterministic PR distribution | Assign a PR to hosted or self-hosted by stable PR-number parity, master to hosted | Both runner pools can work concurrently, no race in selection | Not work-conserving: hosted could be idle while self-hosted queues; PR changes must not flip assignment |
-| C. Dynamic availability routing | Pre-job checks runner busy/online state, then chooses runs-on | Better opportunistic use of resources | Check/dispatch race; runner status isn't a reservation; requires API permissions and explicit fallback, not reliable balancing by itself |
-| D. Separate portable and environment-specific tests | Run portable pytest on hosted, only DLL/RAW-dependent tests on self-hosted | Best long-term capacity utilization | Requires audited test ownership and a no-omission coverage contract |
-| E. Reduce post-merge duplication | Replace redundant master tests with master-only gates, optionally merge queue | Saves capacity | PR tests may not cover final integrated SHA; release same-SHA CI gate must be preserved |
+The normal CI test job does not provision private RAW data or Thermo DLLs.
+Browser tests use installed Playwright Chromium; packaging already has a hosted
+Windows consumer in `build.yml`. Moving CI does not move or certify scientific
+RAW/DLL validation: runs requiring those private inputs remain on their configured
+Windows environment. Keep those separate from engineering regression claims.
 
-**Recommended sequence:** start with A as a non-required, non-disruptive hosted parity probe; if parity is proven, route master to hosted. Then test B if PR contention persists. Prefer D if portability is demonstrably broad. Do not implement C before demonstrating the need for work-conserving scheduling.
+## Duplicate work assessment
 
-## Evaluation gates before production changes
+- Architecture census runs once in lint and is excluded from the main test pass.
+- Serial packaging tests are excluded from the parallel pass and run afterward.
+- PR relevance selection already skips unrelated browser, packaging-build and
+  product-governance tests. `tools/testing/test_shards.py` remains the sole owner.
+- Per-ref concurrency already cancels superseded runs. It must not be made global:
+  one PR must not cancel another PR's required checks.
+- Keep main-branch CI. PRs may omit relevance-gated tests, and the merged commit
+  is not necessarily the PR-tested commit. Tagged releases require successful CI
+  on exactly the release SHA through `build.yml`.
 
-1. **Baseline measurements:** collect at least 20 recent CI runs across master and PRs: queue wait (`started_at-created_at` at job level), run duration, overlap, cancellations, hosted billed minutes, and self-hosted availability. Record runner labels/count, org Actions budget, spending cap and existing required check names. Current connector access has not supplied this telemetry.
-2. **Same-SHA hosted parity:** run a manually selected, non-required `windows-latest` test probe at the same SHA and marker selection as self-hosted. Compare collection count, selected/deselected node IDs, pass/fail/skip, dependencies, Python version, Playwright, PyInstaller outputs, and elapsed time. Preserve Windows PowerShell semantics. Do not mark unavailable native integrations as passing.
-3. **Test inventory:** identify which tests require actual RAW files, Thermo DLLs, .NET, local paths, hardware, or external data; mocks alone do not imply an entire shard is portable. Explicitly audit `serial_ci`, `packaging_build`, `product_governance`, and `browser_e2e` paths.
-4. **Merge correctness:** determine merge strategy, branch protection and whether required checks validate latest base / merge commit. If removing post-merge ordinary tests, document exactly what verifies the integrated state. Investigate merge queue availability under the organization plan before proposing it as a dependency.
-5. **Release invariant:** tagged release `build.yml` currently requires successful `ci.yml` for exactly `GITHUB_SHA`. Never eliminate all same-SHA master CI without replacing this gate with an equally explicit verified contract.
-6. **No missing checks:** retain stable required check identity `test (Python 3.12)` during transition, or coordinate branch protection change. No success-shaped skipped checks. Use explicit failing result for missing mandatory tests.
-7. **Security:** PR-triggered code is untrusted; do not grant broad repository/admin tokens to arbitrary PR code for runner selection. Avoid dynamic scheduling APIs until permissions and race handling are reviewed.
-8. **Cost/benefit:** compare p50/p95 PR queue and completion times, master queue impact, paid hosted minutes, and pass/skip parity. Establish rollback criteria.
+No additional tests are deleted. Eliminating the post-merge run would remove a
+current release gate and broader coverage, not merely duplicate an identical
+assertion on an identical SHA. Cross-run result reuse needs its own proven input
+identity and release contract; it is not part of capacity routing.
 
-## Proposed staged implementation (future PRs, not in this PR)
+## Validation and rollback
 
-**Phase 1 — hosted parity probe:** optional `workflow_dispatch` or separately named, non-required Windows hosted job. Reuse existing marker-selection logic and `uv.lock`. Capture a machine-readable node ID inventory, test outcomes and timings; cap runtime and artifact retention. Keep existing CI unchanged.
+PR #764 carries the measured baseline, exact validated SHA and hosted-run receipts.
+Use its labeled hosted run to inspect clean-image installation, test counts/skips,
+packaging and browser results. Required hosted checks on the final remote SHA
+remain merge authority; a routing change alone is not a portability proof.
 
-**Phase 2 — master isolation:** after parity, route master test to hosted Windows, PR tests to self-hosted, retaining the same check name and full master marker/serial coverage. If hosted parity fails, do not deploy; investigate isolated environment dependencies or instead split test ownership.
+If hosted capacity or compatibility fails, remove the PR label for a fresh
+self-hosted PR run. To restore all previous routing, revert the workflow routing
+change (including label event triggers); keep the test commands and check names.
 
-**Phase 3 — parallel PRs:** evaluate deterministic PR parity routing on a subset, with a stable PR identifier and no dependence on runner busy state. Measure queue reduction and org minutes. If unsuitable, split portable/RAW suites; use a dedicated runner label for native integration.
-
-**Phase 4 — master test reduction:** only after mapping master-only marker coverage and verifying merge SHA integrity, remove provably redundant master tests; preserve governance, release, and integration evidence. A merge queue is an optional alternative, not an assumed feature.
-
-## Acceptance criteria
-
-- No regression in required scientific tests, test collection, skip reporting, or release same-SHA gate.
-- Master no longer queues ahead of PR work on the only self-hosted runner, after Phase 2.
-- At least two independent PR test jobs can execute concurrently on different runner pools, after Phase 3.
-- p95 PR completion time and hosted minute cost are measured against baseline; rollback if either exceeds agreed budget.
-- A documented rollback requires only restoring previous `runs-on` routing / workflow commit.
-
-## Open decisions
-
-- Does Chao-hu-Lab organization have sufficient private-repo hosted Actions minutes and billing allowance?
-- Are all master-only tests portable to clean Windows hosted environments?
-- Is the self-hosted runner a single Windows machine, and which labels/runner groups are actually registered?
-- Are merges squash, merge commit, or rebase, and which checks are branch-protection required?
-
-## Non-goals
-
-No workflow behavior changes, no runner installation, no billing-setting changes, no branch-protection edits, and no removal of tests in this proposal PR.
+GitHub reference: [runner labels select matching capacity](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/use-in-a-workflow).

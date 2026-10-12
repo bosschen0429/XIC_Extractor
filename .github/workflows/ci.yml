@@ -5,6 +5,7 @@ on:
     branches: ["master", "main"]
   pull_request:
     branches: ["master", "main", "integration/**"]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -65,7 +66,9 @@ jobs:
 
   test:
     name: test (Python 3.12)
-    runs-on: self-hosted
+    # Keep post-merge work off the PR runner. Label an independent PR to use
+    # hosted capacity too; this is explicit routing, not an idle-runner probe.
+    runs-on: ${{ (github.event_name == 'push' || contains(github.event.pull_request.labels.*.name, 'ci:hosted-windows')) && 'windows-latest' || 'self-hosted' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
@@ -86,6 +89,7 @@ jobs:
           $exitCode = $LASTEXITCODE
           $elapsed = [math]::Round(((Get-Date) - $started).TotalSeconds, 1)
           "### Python 3.12 timing" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          "- runner_environment=$env:RUNNER_ENVIRONMENT" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           "- install_seconds=$elapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           exit $exitCode
       - name: Test
