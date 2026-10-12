@@ -697,6 +697,12 @@ window.XicUi = (() => {
     event.preventDefault();
     action(() => query(0, queryFields()), "正在搜尋全批結果…");
   });
+  // Targeted filters are single choices, so each change applies immediately.
+  for (const id of ["target-id", "target-sample", "target-attention"]) {
+    $(id).addEventListener("change", () =>
+      action(() => query(0, queryFields()), "正在更新結果…"),
+    );
+  }
   $("back-to-overview").addEventListener("click", showTargetedOverview);
   $("reset-query").addEventListener("click", () =>
     action(async () => {

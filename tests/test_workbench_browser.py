@@ -429,3 +429,21 @@ def test_targeted_review_puts_the_rare_detection_first_and_opens_it_in_place(
     detail = frame.locator(".tgt-table tbody tr:nth-child(2)")
     expect(detail).to_have_class("tgt-detail-row")
     expect(detail).to_contain_text("配對 ISTD（ISTD）")
+
+
+def test_clearing_the_minority_filter_reloads_every_sample(workbench, tmp_path):
+    from tests.test_xic_inspector_targeted_workbook import (
+        write_rare_detection_workbook,
+    )
+
+    page = workbench
+    workbook = write_rare_detection_workbook(tmp_path / "rare.xlsx")
+    _view(page, "review")
+    page.locator("#source").fill(str(workbook))
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#targeted-overview .overview-actions .primary").click()
+    rows = page.frame_locator("#inspector").locator(".tgt-table tbody tr")
+    expect(rows).to_have_count(1)
+    # A filter change applies at once; no separate search press is needed.
+    page.locator("#target-attention").uncheck()
+    expect(rows).to_have_count(5)
