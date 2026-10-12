@@ -174,6 +174,11 @@ def test_navigation_and_theme_survive_reload(workbench):
 
 def test_targeted_exposes_intent_only_and_editor_round_trips(workbench, config_dir):
     page = workbench
+    expect(page.locator("#targeted-form .step-head h2")).to_have_text(
+        ["批次與注射順序", "目標清單", "執行與輸出"]
+    )
+    expect(page.locator("#targeted-form .step-no")).to_have_text(["1", "2", "3"])
+    expect(page.locator("#target-method-state")).not_to_be_visible()
     expect(page.locator("#targeted-advanced")).to_have_count(0)
     expect(page.locator("#t-ms2_precursor_tol_da")).to_have_count(0)
     page.locator("#target-edit").click()
@@ -197,6 +202,26 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(workbench, config_d
         )
     ).to_have_value("R")
     assert set(read_settings(config_dir=config_dir)) == set(CANONICAL_SETTINGS_DEFAULTS)
+
+
+def test_target_list_save_and_load_preserves_batch(workbench):
+    page = workbench
+    original_batch = page.locator("#t-data_dir").input_value()
+    page.get_by_role("button", name="另存清單", exact=True).click()
+    page.get_by_label("清單名稱", exact=True).fill("Browser saved list")
+    page.locator("#path-dialog").get_by_role("button", name="確定").click()
+    expect(page.locator("#target-method-select option:checked")).to_have_text(
+        "Browser saved list"
+    )
+    page.locator("#target-edit").click()
+    page.get_by_role("textbox", name="預期 RT（min）（第 1 列）", exact=True).fill("4")
+    page.locator("#target-editor-save").click()
+    page.get_by_role("button", name="載入清單", exact=True).click()
+    expect(page.locator("#t-data_dir")).to_have_value(original_batch)
+    page.locator("#target-edit").click()
+    expect(
+        page.get_by_role("textbox", name="預期 RT（min）（第 1 列）", exact=True)
+    ).to_have_value("1.5")
 
 
 def test_saved_intent_submits_without_advanced_settings(fake_runs, workbench):

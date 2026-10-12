@@ -47,7 +47,7 @@
           <div class="step-head">
             <span class="step-no">2</span>
             <div>
-              <h2>目標與 ISTD</h2>
+              <h2>目標清單</h2>
               <p class="subtle" id="target-count"></p>
             </div>
             <button
@@ -80,32 +80,18 @@
                 <svg class="icon"><use href="#i-download" /></svg>匯入並取代
               </button>
             </div>
-          </div>
-        </section>
-        <section class="card step">
-          <div class="step-head">
-            <span class="step-no">3</span>
-            <div>
-              <h2>分析方法</h2>
-              <p class="subtle">
-                目標知識由清單指定；科學策略由平台管理。
-              </p>
-            </div>
-            <span id="target-method-state" class="chip ok">targeted-cid-nl-v2</span>
-          </div>
-          <div class="step-body">
-            <label class="field">已儲存的方法<select id="target-method-select" data-analysis-idle><option value="">目前工作區設定</option></select></label>
+            <label class="field">已儲存的清單<select id="target-method-select" data-analysis-idle><option value="">目前工作區設定</option></select></label>
             <div class="actions">
-              <button id="target-method-load" type="button" data-analysis-idle>載入方法與目標</button>
-              <button id="target-method-save" type="button" data-analysis-idle>另存為方法</button>
-              <button id="target-method-import" type="button" data-analysis-idle>從方法資料夾載入</button>
+              <button id="target-method-load" type="button" data-analysis-idle>載入清單</button>
+              <button id="target-method-save" type="button" data-analysis-idle>另存清單</button>
+              <button id="target-method-import" type="button" data-analysis-idle>從資料夾載入</button>
             </div>
-            <p class="subtle">方法包含策略版本、targets 與 ISTD；換批次只需更換 RAW。載入會取代目前方法與目標，保留本次批次及本機設定。</p>
+            <p class="subtle">清單包含目標、ISTD 配對與策略版本。載入會取代目前清單，保留 RAW 資料夾、注射順序及本機設定。</p>
           </div>
-          <div id="targeted-settings" class="step-body"></div>
+          <details class="step-body subtle"><summary>處理策略與設定來源</summary><p>平台統一管理處理策略；版本：<span id="target-method-state">targeted-cid-nl-v2</span></p><div id="targeted-settings"></div></details>
         </section>
         <section class="card step">
-          <div class="step-head"><span class="step-no">4</span><div><h2>執行與輸出</h2><p class="subtle">完成後交付一份 XLSX；可直接開啟結果檢閱。</p></div></div>
+          <div class="step-head"><span class="step-no">3</span><div><h2>執行與輸出</h2><p class="subtle">完成後交付一份 XLSX；可直接開啟結果檢閱。</p></div></div>
           <div id="targeted-execution" class="step-body"></div>
         </section>
       </form>

@@ -149,7 +149,7 @@
     const custom = new Set(summary?.custom_keys || []);
     const chip = $("target-method-state");
     chip.textContent = label;
-    chip.className = `chip ${custom.size ? "warn" : "ok"}`;
+    chip.className = custom.size ? "settings-warning" : "";
     const notes = $("target-method-note");
     notes.replaceChildren();
     notes.append(el("p", `設定檔：${state.config.settings_source || "settings.csv"}`, "settings-source"));
@@ -291,15 +291,6 @@
         ),
       );
       items.push(pathItem("RawFileReader DLL", "t-dll_dir", "尚未設定 DLL 資料夾"));
-      const method = $("target-method-state").textContent;
-      items.push(
-        checkItem(
-          method.startsWith("自訂") ? "info" : "ok",
-          "分析方法",
-          method,
-          "target-table",
-        ),
-      );
     } else {
       const mode = currentMode();
       if (mode === "discovery_only")
@@ -422,12 +413,12 @@
     select.value = selected;
   }
   async function loadTargetedMethod(path) {
-    if (!path) throw new Error("請先選擇方法。");
+    if (!path) throw new Error("請先選擇清單。");
     const result = await api("/api/targeted/method/load", { path, settings: settingsValues() });
     state.targets = result.targets;
     applyTargetedDraft(result);
     targetCount();
-    done("已載入完整方法與目標；批次及本機設定保持不變。儲存或開始分析後套用。");
+    done("已載入目標清單；批次及本機設定保持不變。儲存或開始分析後套用。");
   }
   async function saveTargeted(quiet = false) {
     const settings = settingsValues();
@@ -1350,18 +1341,18 @@
     $("target-save").onclick = () => act(() => saveTargeted());
     $("target-method-load").onclick = () => act(() => loadTargetedMethod($("target-method-select").value));
     $("target-method-import").onclick = () => act(async () => {
-      const path = await requestPath("載入方法資料夾（settings.csv 與 targets.csv）");
+      const path = await requestPath("載入清單資料夾（settings.csv 與 targets.csv）");
       if (!path) return;
       await loadTargetedMethod(path);
       $("target-method-select").value = "";
     });
     $("target-method-save").onclick = () => act(async () => {
-      const name = await requestPath("另存為可重複使用的方法", "", "方法名稱");
+      const name = await requestPath("另存目標清單", "", "清單名稱");
       if (!name) return;
       const result = await api("/api/targeted/method/save", { name, settings: settingsValues(), targets: state.targets });
       state.config.targeted_methods = result.methods;
       renderTargetedMethods(result.methods, result.methods.find((method) => method.name === result.name)?.path);
-      done(result.message);
+      done(`已另存目標清單：${result.name}`);
     });
     $("untargeted-save").onclick = () => act(() => saveUntargeted());
     $("target-new").onclick = () => {
