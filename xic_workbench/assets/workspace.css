@@ -1590,3 +1590,15 @@ kbd {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Keep the target/sample controls, but do not dedicate a column to the
+   single target already selected in the dropdown. */
+.review-grid.single-target { grid-template-columns: minmax(0, 1fr); }
+.single-target .list-panel { position: static; max-height: none; }
+.single-target .list-panel form { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.single-target .list-panel h2,
+.single-target #list-summary,
+.single-target #item-list,
+.single-target .pagination { display: none; }
+.single-target #targeted-filters { display: flex; flex-wrap: wrap; gap: 12px; }
+.single-target #review-range-filters { display: none; }

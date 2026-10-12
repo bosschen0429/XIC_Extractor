@@ -38,6 +38,7 @@ def test_default_xlsx_has_overview_landing_sheet(tmp_path: Path, monkeypatch) ->
     assert wb.sheetnames == [
         "Overview",
         "XIC Results",
+        "Area Matrix",
         "Targets",
         "Run Metadata",
     ]

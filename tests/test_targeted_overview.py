@@ -92,16 +92,18 @@ def test_overview_workbook_charts_saved_counts_and_links_to_result_rows(
     book.close()
     with_book = load_workbook(path)
     sheet = with_book["Overview"]
-    assert sheet["A7"].value == "2 / 4"
-    assert sheet["E7"].value == 2
-    assert sheet["I7"].value == 3
+    assert sheet["A7"].value == 0
+    assert sheet["A2"].value == "各目標結果一致，沒有需要先看的少數結果"
+    assert sheet["E7"].value == "2 / 4"
+    assert sheet["I7"].value == "0 / 0"
     assert sheet["A29"].value == "ISTD"
     assert sheet["K29"].hyperlink.target == "#'XIC Results'!A2"
-    assert len(sheet._charts) == 2
-    left_chart, right_chart = sheet._charts
-    assert left_chart.anchor.to.col == right_chart.anchor._from.col == 6
-    assert left_chart.anchor.to.colOff < 0
-    assert right_chart.anchor.to.col == 12
+    assert len(sheet._charts) == 1
+    chart = sheet._charts[0]
+    assert chart.anchor.to.col == 12
+    assert chart.x_axis.tickLblSkip == 1
+    assert chart.x_axis.scaling.orientation == "maxMin"
+    assert [sheet.cell(row, 14).value for row in (2, 3)] == ["ISTD", "Analyte"]
     assert all(
         not axis.delete and axis.tickLblPos == "nextTo"
         for chart in sheet._charts

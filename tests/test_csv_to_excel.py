@@ -278,6 +278,7 @@ def test_run_writes_one_review_table_and_method_context(tmp_path: Path) -> None:
     assert wb.sheetnames == [
         "Overview",
         "XIC Results",
+        "Area Matrix",
         "Targets",
         "Run Metadata",
         "Diagnostics",

@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from math import ceil, floor
+from math import ceil
 
-from openpyxl.chart import BarChart, Reference, ScatterChart, Series
+from openpyxl.chart import BarChart, Reference
 from openpyxl.chart.axis import ChartLines
 from openpyxl.chart.layout import Layout, ManualLayout
-from openpyxl.chart.marker import Marker
 from openpyxl.chart.series import SeriesLabel
 from openpyxl.chart.shapes import GraphicalProperties
 from openpyxl.chart.text import RichText
@@ -22,8 +20,6 @@ from openpyxl.utils.units import pixels_to_EMU
 
 from xic_extractor.output.targeted_overview import (
     TargetedOverview,
-    _counted,
-    _number,
     summarize_targeted_results,
 )
 from xic_extractor.output.workbook_styles import (
@@ -56,7 +52,14 @@ def build_overview_sheet(
         ws.row_dimensions[row].height = 14
     for row in (1, 5, 9, 11, 23, 24, 26):
         ws.row_dimensions[row].height = 6
-    _line(ws, 2, "Targeted 結果總覽", size=20, bold=True)
+    conclusion = (
+        "尚無已保存結果"
+        if not overview.result_count
+        else f"先看 {overview.focus_count:,} 筆與多數不同的結果"
+        if overview.focus_count
+        else "各目標結果一致，沒有需要先看的少數結果"
+    )
+    _line(ws, 2, conclusion, size=20, bold=True)
     _line(
         ws,
         3,
@@ -72,13 +75,9 @@ def build_overview_sheet(
     if has_diagnostics:
         _link(ws, 4, 4, "檢閱原因與下一步", "'Diagnostics'!A1", span=3)
     cards = (
-        (1, "計入偵測", f"{overview.counted_count} / {overview.result_count}"),
-        (
-            5,
-            "未計入偵測",
-            overview.result_count - overview.counted_count - overview.count_unknown,
-        ),
-        (9, "待處理結果", overview.review_count),
+        (1, "需先看", overview.focus_count),
+        (5, "Analyte 計入", f"{overview.analyte_counted} / {overview.analyte_total}"),
+        (9, "ISTD 計入", f"{overview.istd_counted} / {overview.istd_total}"),
     )
     for column, label, value in cards:
         for row in (6, 7, 8):
@@ -103,41 +102,24 @@ def build_overview_sheet(
     ws.row_dimensions[6].height = 20
     ws.row_dimensions[7].height = 18
     ws.row_dimensions[8].height = 16
-    note = "僅列未確認、證據衝突或品質問題；一般 RT 漂移及已確認的回填不列為待處理。"
+    note = "需先看是各目標中占 20% 以下的一方；只決定閱讀順序，不改變已保存判定。"
     if overview.count_unknown:
         note = (
             f"另有 {overview.count_unknown} 筆未記錄計數判定，未併入已計入或未計入。"
             + note
         )
     _line(ws, 10, note)
-    for column, title in (
-        (1, "各目標的計數結果（筆）"),
-        (7, "已計入結果的 RT 分布（min）"),
-    ):
-        ws.merge_cells(
-            start_row=11, start_column=column, end_row=11, end_column=column + 5
-        )
-        ws.cell(11, column, title).font = Font(
-            name=REPORT_FONT, size=11, bold=True, color=INK
-        )
+    ws.merge_cells("A11:L11")
+    ws["A11"] = "各目標的計數結果（筆）；順序與下表一致"
+    ws["A11"].font = Font(name=REPORT_FONT, size=11, bold=True, color=INK)
     ws.row_dimensions[11].height = 26
     if overview.targets:
         _add_count_chart(ws, overview)
-    if not _add_rt_chart(ws, rows, overview):
-        ws.merge_cells("G16:L18")
-        ws["G16"] = "沒有可繪圖的已計入 RT 量測。"
-        ws["G16"].font = Font(name=REPORT_FONT, color=MUTED)
-    _line(
-        ws,
-        25,
-        "RT 圖只顯示已計入且有 RT 的結果。橫軸是本次執行採用的進樣順序。",
-        size=10,
-    )
     _line(ws, 27, "各目標結果", size=14, bold=True)
-    groups = ((1, 3), (4, 2), (6, 2), (8, 3), (11, 2))
+    groups = ((1, 2), (3, 1), (4, 2), (6, 3), (9, 2), (11, 2))
     for (column, span), title in zip(
         groups,
-        ("目標", "計入 / 全部", "待處理", "已計入 RT 範圍 (min)", "查看結果"),
+        ("目標", "角色", "計入 / 全部", "要確認", "已計入 RT 範圍 (min)", "查看結果"),
         strict=True,
     ):
         ws.merge_cells(
@@ -161,7 +143,14 @@ def build_overview_sheet(
         )
         for (column, span), table_value in zip(
             groups,
-            (target.label, counted, target.review, rt_range, "開啟"),
+            (
+                target.label,
+                target.role,
+                counted,
+                _focus_label(target),
+                rt_range,
+                "開啟",
+            ),
             strict=True,
         ):
             ws.merge_cells(
@@ -183,13 +172,13 @@ def build_overview_sheet(
                 wrap_text=True,
             )
         _link(ws, index, 11, "查看量測", f"'XIC Results'!A{first_row[target.label]}")
-        ws.row_dimensions[index].height = 26
+        ws.row_dimensions[index].height = 38
     end = 30 + len(overview.targets)
     _line(
         ws,
         end,
         "閱讀結果表：TRUE＝已計入；FALSE＝未計入。"
-        "待處理原因集中在 Diagnostics；完整證據可展開查看。",
+        "要確認的少數結果集中在 Diagnostics；已保存檢閱條件可展開查看。",
         size=10,
     )
     _line(
@@ -207,6 +196,20 @@ def build_overview_sheet(
         ws.page_setup.fitToHeight = 1
     ws.row_dimensions[4].height = 22
     ws.row_dimensions[28].height = 28
+
+
+def _focus_label(target) -> str:
+    count = len(target.focus_samples)
+    return {
+        "minority_counted": f"{count} 筆少數計入：確認是否抓錯峰",
+        "minority_not_counted": f"{count} 筆少數未計入：確認是否漏抓",
+        "review_conditions": f"{count} 筆已保存檢閱條件",
+    }.get(
+        target.focus_kind,
+        f"{target.review} 筆檢閱註記（次要）"
+        if target.review
+        else "結果一致；無少數結果",
+    )
 
 
 def _line(ws, row: int, text: str, *, size: int = 11, bold: bool = False) -> None:
@@ -328,13 +331,17 @@ def _add_count_chart(ws, overview: TargetedOverview) -> None:
     chart.title = "各目標的計數結果"
     chart.x_axis.title = None
     chart.x_axis.axPos = "l"
+    chart.x_axis.tickLblSkip = 1
+    chart.x_axis.tickMarkSkip = 1
+    chart.x_axis.scaling.orientation = "maxMin"
+    chart.y_axis.crosses = "max"
     chart.y_axis.title = "結果筆數"
     chart.y_axis.axPos = "b"
     chart.y_axis.scaling.min = 0
     chart.y_axis.scaling.max = max(target.total for target in overview.targets)
     chart.y_axis.majorUnit = max(1, ceil(chart.y_axis.scaling.max / 5))
     chart.y_axis.numFmt = "0"
-    _style_chart(chart, left=0.24)
+    _style_chart(chart, left=0.22)
     chart.visible_cells_only = False
     chart.add_data(
         Reference(
@@ -358,75 +365,7 @@ def _add_count_chart(ws, overview: TargetedOverview) -> None:
         chart,
         TwoCellAnchor(
             _from=AnchorMarker(col=0, row=11),
-            to=AnchorMarker(col=6, row=23, colOff=-pixels_to_EMU(10)),
+            to=AnchorMarker(col=12, row=25, colOff=-pixels_to_EMU(10)),
         ),
     )
     ws.column_dimensions.group("N", "Q", hidden=True)
-
-
-def _add_rt_chart(
-    ws, rows: Sequence[Mapping[str, object]], overview: TargetedOverview
-) -> bool:
-    samples = {
-        name: index
-        for index, name in enumerate(
-            dict.fromkeys(str(row["SampleName"]) for row in rows), 1
-        )
-    }
-    chart = ScatterChart()
-    chart.title = "已計入結果的 RT 分布"
-    chart.x_axis.title = "進樣順序"
-    chart.y_axis.title = "RT (min)"
-    chart.x_axis.axPos = "b"
-    chart.y_axis.axPos = "l"
-    chart.x_axis.numFmt = "0"
-    chart.y_axis.numFmt = "0.0"
-    chart.x_axis.scaling.min = 0
-    chart.x_axis.scaling.max = max(2, len(samples) + 1)
-    chart.x_axis.majorUnit = max(1, ceil((len(samples) + 1) / 6))
-    _style_chart(chart, left=0.14)
-    chart.scatterStyle = "marker"
-    chart.visible_cells_only = False
-    palette = ("356D95", "8E678F", "497F6B", "BA844C", "737EB1", "7A8572")
-    column = 19
-    rt_values: list[float] = []
-    by_target: dict[str, list[tuple[int, float]]] = defaultdict(list)
-    for row in rows:
-        rt = _number(row.get("RT"))
-        if _counted(row) == "TRUE" and rt is not None:
-            by_target[str(row["Target"])].append((samples[str(row["SampleName"])], rt))
-            rt_values.append(rt)
-    for index, target in enumerate(overview.targets):
-        points = by_target[target.label]
-        if not points:
-            continue
-        ws.cell(1, column, "進樣順序")
-        ws.cell(1, column + 1, _excel_text(target.label))
-        for row_index, (sample_index, rt) in enumerate(points, 2):
-            ws.cell(row_index, column, sample_index)
-            ws.cell(row_index, column + 1, rt)
-        series = Series(
-            Reference(ws, min_col=column + 1, min_row=2, max_row=len(points) + 1),
-            Reference(ws, min_col=column, min_row=2, max_row=len(points) + 1),
-            title=target.label,
-        )
-        color = palette[index % len(palette)]
-        series.marker = Marker(symbol="circle", size=5)
-        series.marker.graphicalProperties.solidFill = color
-        series.marker.graphicalProperties.line.noFill = True
-        series.graphicalProperties.line.noFill = True
-        chart.series.append(series)
-        column += 2
-    if not chart.series:
-        return False
-    chart.y_axis.scaling.min = floor(min(rt_values) - 0.1)
-    chart.y_axis.scaling.max = ceil(max(rt_values) + 0.1)
-    ws.add_chart(
-        chart,
-        TwoCellAnchor(
-            _from=AnchorMarker(col=6, row=11),
-            to=AnchorMarker(col=12, row=23, colOff=-pixels_to_EMU(10)),
-        ),
-    )
-    ws.column_dimensions.group("S", get_column_letter(column - 1), hidden=True)
-    return True

@@ -14,6 +14,7 @@ from xic_extractor.output.detection import (
 )
 from xic_extractor.output.review_queue_model import _review_queue_rows
 from xic_extractor.output.schema import TARGETED_WORKBOOK_LAYOUT_VERSION
+from xic_extractor.output.sheet_area_matrix import build_area_matrix_sheet
 from xic_extractor.output.sheet_diagnostics import build_diagnostics_sheet
 from xic_extractor.output.sheet_metadata import _build_metadata_sheet
 from xic_extractor.output.sheet_overview import build_overview_sheet
@@ -50,6 +51,7 @@ def write_workbook_from_rows(
     )
     ws_data = wb.create_sheet("XIC Results")
     _build_data_sheet(ws_data, rows, review_rows=review_rows)
+    build_area_matrix_sheet(wb.create_sheet("Area Matrix"), rows)
     _build_targets_sheet(wb.create_sheet("Targets"), targets)
     _build_metadata_sheet(
         wb.create_sheet("Run Metadata"),
