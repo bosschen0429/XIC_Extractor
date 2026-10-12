@@ -185,20 +185,6 @@ def _iter_exact_request_traces(
         yield tuple(item.item for item in chunk), traces
 
 
-def _scan_window_aware_chunks(
-    source: BackfillSource,
-    items: tuple[_RequestItem, ...],
-    chunk_size: int,
-) -> tuple[tuple[_RequestItem, ...], ...]:
-    """Preserve the diagnostics-facing raw request-item chunking contract."""
-    extraction_chunks = _scan_window_aware_extraction_chunks(
-        source,
-        tuple(_ExtractionRequestItem(item) for item in items),
-        chunk_size,
-    )
-    return tuple(tuple(item.item for item in chunk) for chunk in extraction_chunks)
-
-
 def _scan_window_aware_extraction_chunks(
     source: BackfillSource,
     items: tuple[_ExtractionRequestItem, ...],

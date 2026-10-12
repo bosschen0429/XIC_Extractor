@@ -76,9 +76,9 @@ from xic_extractor.untargeted_execution.partition.workers import (
     _backfill_support_context,
     _BatchSamplePhaseState,
     _execute_backfill,
-    _execute_backfill_batch,
+    _execute_backfill_sample_phase,
     _execute_initial_assessment,
-    _execute_initial_assessment_batch,
+    _execute_initial_sample_phase,
     _execute_sample_backfill_worker,
     _execute_sample_initial_worker,
     _prepare_group_authorized_backfills,
@@ -161,28 +161,20 @@ def execute_attempt(
     if not isinstance(runtime, AttemptRuntime):
         raise UntargetedPartitionError("runtime must be an AttemptRuntime")
     if not isinstance(alignment_config, AlignmentConfig):
-        raise UntargetedPartitionError(
-            "alignment_config must be an AlignmentConfig"
-        )
-    if not jobs or any(
-        not isinstance(job, UntargetedPartitionJob) for job in jobs
-    ):
+        raise UntargetedPartitionError("alignment_config must be an AlignmentConfig")
+    if not jobs or any(not isinstance(job, UntargetedPartitionJob) for job in jobs):
         raise UntargetedPartitionError(
             "jobs must contain Untargeted CID-NL runtime jobs"
         )
     if not isinstance(recovery_marker, OwnerPathRuntimeMarker):
-        raise UntargetedPartitionError(
-            "recovery_marker must be OwnerPathRuntimeMarker"
-        )
+        raise UntargetedPartitionError("recovery_marker must be OwnerPathRuntimeMarker")
     attempt = jobs[0].processing_owners.attempt
     if any(job.processing_owners.attempt != attempt for job in jobs):
         raise UntargetedPartitionError(
             "all runtime jobs must share one processing attempt"
         )
     if runtime.manifest.attempt != attempt:
-        raise UntargetedPartitionError(
-            "jobs must match the runtime manifest attempt"
-        )
+        raise UntargetedPartitionError("jobs must match the runtime manifest attempt")
     keys = tuple(job.work_unit_key for job in jobs)
     if len(keys) != len(set(keys)) or (
         not runtime.manifest_preflight_failed
@@ -273,9 +265,7 @@ def execute_partition(
             "all runtime jobs must share one processing attempt"
         )
     if len({job.work_unit_key for job in jobs}) != len(jobs):
-        raise UntargetedPartitionError(
-            "partition work unit keys must be unique"
-        )
+        raise UntargetedPartitionError("partition work unit keys must be unique")
     work = _prepare_runtime_work(
         jobs,
         alignment_config=alignment_config,
@@ -572,11 +562,13 @@ def _prepare_runtime_work(
             for phase in batch_phases
         }
 
-        def initial(sample_states: tuple[_RuntimeJobState, ...]) -> None:
+        def initial(
+            sample_states: tuple[_RuntimeJobState, ...],
+        ) -> _SampleInitialWorkerResponse | None:
             if partition_key is not None or _request_uses_subject_batch(
                 sample_states[0].job
             ):
-                _execute_initial_assessment_batch(
+                return _execute_initial_sample_phase(
                     phases_by_sample[
                         sample_states[0].job.sample.identity.sample_identity_id
                     ],
@@ -585,8 +577,11 @@ def _prepare_runtime_work(
             else:
                 for state in sample_states:
                     _execute_initial_assessment(state)
+            return None
 
-        def backfill(sample_states: tuple[_RuntimeJobState, ...]) -> None:
+        def backfill(
+            sample_states: tuple[_RuntimeJobState, ...],
+        ) -> _SampleBackfillWorkerResponse | None:
             for state in sample_states:
                 if (
                     partition_key is None
@@ -598,7 +593,8 @@ def _prepare_runtime_work(
                 sample_states[0].job.sample.identity.sample_identity_id
             )
             if phase is not None:
-                _execute_backfill_batch(phase)
+                return _execute_backfill_sample_phase(phase)
+            return None
 
         def on_sample_error(
             sample_states: tuple[_RuntimeJobState, ...], exc: Exception
@@ -609,12 +605,11 @@ def _prepare_runtime_work(
             if partition_key is not None:
                 worker_pool.stop(exc)
 
-        def on_sample_thread_completed(
+        def on_sample_completed(
             stage: str,
             comp: int,
             tot: int,
             sample_states: tuple[_RuntimeJobState, ...],
-            _res: object,
         ) -> None:
             if partition_key is not None:
                 err = next(
@@ -636,45 +631,16 @@ def _prepare_runtime_work(
                 partition_candidates=partition_key is not None,
             )
 
-        def handle_process_initial_resp(
+        def handle_initial_response(
             comp: int,
             tot: int,
             sample_states: tuple[_RuntimeJobState, ...],
-            resp: _SampleInitialWorkerResponse,
+            resp: _SampleInitialWorkerResponse | None,
         ) -> None:
-            sample_id = sample_states[0].job.sample.identity.sample_identity_id
-            phase = phases_by_sample[sample_id]
-            phase.initial_open_attempted = resp.initial_open_attempted
-            phase.initial_opened = resp.initial_opened
-            phase.initial_cleanup_outcome = resp.initial_cleanup_outcome
-            phase.initial_acquisition = resp.initial_acquisition
-            for state, adapter_res, obs_artifacts, has_acq, err in zip(
-                sample_states,
-                resp.adapter_results,
-                resp.observer_artifacts,
-                resp.observer_has_acquisitions,
-                resp.errors,
-                strict=True,
-            ):
-                state.adapter_result = adapter_res
-                for art in obs_artifacts:
-                    state.observer.record_artifact(art)
-                if (
-                    has_acq
-                    and resp.initial_acquisition is not None
-                    and state.observer.initial_acquisition is None
-                ):
-                    state.observer.record_acquisition(resp.initial_acquisition)
-                if err is not None and state.error is None:
-                    state.error = err
-            if partition_key is not None:
-                err = next(
-                    (s.error for s in sample_states if s.error is not None),
-                    None,
-                )
-                if err is not None:
-                    worker_pool.stop(err)
-            report_phase("partition_initial", comp, tot)
+            if resp is not None:
+                sample_id = sample_states[0].job.sample.identity.sample_identity_id
+                resp.apply_to(phases_by_sample[sample_id])
+            on_sample_completed("partition_initial", comp, tot, sample_states)
 
         def skip_backfill(sample_states: tuple[_RuntimeJobState, ...]) -> bool:
             return not any(
@@ -707,7 +673,7 @@ def _prepare_runtime_work(
                 backfill_resource_key=phase.backfill_resource_key,
             )
 
-        def handle_process_backfill_resp(
+        def handle_backfill_response(
             comp: int,
             tot: int,
             sample_states: tuple[_RuntimeJobState, ...],
@@ -715,46 +681,8 @@ def _prepare_runtime_work(
         ) -> None:
             if resp is not None:
                 sample_id = sample_states[0].job.sample.identity.sample_identity_id
-                phase = phases_by_sample[sample_id]
-                phase.backfill_open_attempted = resp.backfill_open_attempted
-                phase.backfill_opened = resp.backfill_opened
-                phase.backfill_cleanup_outcome = resp.backfill_cleanup_outcome
-                phase.backfill_acquisition = resp.backfill_acquisition
-                states_by_key = {
-                    state.job.work_unit_key: state for state in sample_states
-                }
-                for state, obs_artifacts, has_acq, err in zip(
-                    (states_by_key[key] for key in resp.work_unit_keys),
-                    resp.observer_artifacts,
-                    resp.observer_has_acquisitions,
-                    resp.errors,
-                    strict=True,
-                ):
-                    key = state.job.work_unit_key
-                    if key in resp.backfill_attempts_by_key:
-                        state.backfill_attempts = resp.backfill_attempts_by_key[key]
-                    if key in resp.backfill_inputs_by_key:
-                        state.backfill_input = resp.backfill_inputs_by_key[key]
-                    for art in obs_artifacts:
-                        state.observer.record_artifact(art)
-                    if (
-                        has_acq
-                        and resp.backfill_acquisition is not None
-                        and state.observer.backfill_acquisition is None
-                    ):
-                        state.observer.record_acquisition(
-                            resp.backfill_acquisition, backfill=True
-                        )
-                    if err is not None and state.error is None:
-                        state.error = err
-                if partition_key is not None:
-                    err = next(
-                        (s.error for s in sample_states if s.error is not None),
-                        None,
-                    )
-                    if err is not None:
-                        worker_pool.stop(err)
-            report_phase("partition_backfill", comp, tot)
+                resp.apply_to(phases_by_sample[sample_id])
+            on_sample_completed("partition_backfill", comp, tot, sample_states)
 
         try:
             if not observe_cancellation() and initial_results is None:
@@ -763,7 +691,7 @@ def _prepare_runtime_work(
                         sample_groups,
                         _execute_sample_initial_worker,
                         task_arg_fn=make_process_initial_req,
-                        on_completed=handle_process_initial_resp,
+                        on_completed=handle_initial_response,
                         on_error=on_sample_error,
                         should_cancel=should_cancel,
                         stop_on_error=partition_key is not None,
@@ -772,9 +700,7 @@ def _prepare_runtime_work(
                     worker_pool.run_windowed(
                         sample_groups,
                         initial,
-                        on_completed=lambda c, t, s, r: on_sample_thread_completed(
-                            "partition_initial", c, t, s, r
-                        ),
+                        on_completed=handle_initial_response,
                         on_error=on_sample_error,
                         should_cancel=should_cancel,
                         stop_on_error=partition_key is not None,
@@ -820,7 +746,7 @@ def _prepare_runtime_work(
                             _execute_sample_backfill_worker,
                             task_arg_fn=make_process_backfill_req,
                             skip_fn=skip_backfill,
-                            on_completed=handle_process_backfill_resp,
+                            on_completed=handle_backfill_response,
                             on_error=on_sample_error,
                             should_cancel=should_cancel,
                             stop_on_error=partition_key is not None,
@@ -829,9 +755,7 @@ def _prepare_runtime_work(
                         worker_pool.run_windowed(
                             backfill_groups,
                             backfill,
-                            on_completed=lambda c, t, s, r: on_sample_thread_completed(
-                                "partition_backfill", c, t, s, r
-                            ),
+                            on_completed=handle_backfill_response,
                             on_error=on_sample_error,
                             should_cancel=should_cancel,
                             stop_on_error=partition_key is not None,

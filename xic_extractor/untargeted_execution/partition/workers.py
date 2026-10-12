@@ -4,34 +4,24 @@ from __future__ import annotations
 
 import importlib
 from copy import copy
-from dataclasses import dataclass
-from typing import Literal
+from dataclasses import dataclass, replace
 
 from xic_extractor.acquisition_contract import TraceAcquisitionBatch
-from xic_extractor.alignment.backfill.conservative import (
-    plan_conservative_backfill_targets,
-)
-from xic_extractor.alignment.cell_observation.group_context import (
-    select_cid_nl_group_backfill_subject,
+from xic_extractor.alignment.backfill.cid_nl_planning import (
+    CidNlBackfillDecision,
+    CidNlBackfillQuestion,
+    plan_grouped_cid_nl_backfills,
+    plan_subject_cid_nl_backfills,
 )
 from xic_extractor.alignment.cid_nl_inputs import (
     UntargetedCidNlBackfillInput,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.cross_sample.peak_groups import (
-    construct_cross_sample_peak_group_hypotheses,
-)
-from xic_extractor.alignment.hypothesis_owner_adapter import (
-    compose_cid_nl_peak_hypotheses_from_assessment,
-    owner_from_cid_nl_assessment_support,
-)
-from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution._finalization import RuntimeResourceCleanupOutcome
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
     is_cid_nl_missing_ms1_rejection,
-    is_unsearched_cid_nl_discovery_assessment,
 )
 from xic_extractor.peak_detection.cid_nl_peak_support_models import (
     DdaCidNlPeakSupportPolicy,
@@ -86,28 +76,45 @@ class _RuntimeJobState:
         RuntimeResourceCleanupOutcome.SUCCEEDED
     )
 
-    def reuse_initial_hold(self, assessment: CidNlMethodAssessmentRef) -> None:
-        """Answer one group with the initial HOLD candidates.
+    def apply_backfill_decision(self, decision: CidNlBackfillDecision) -> None:
+        """Translate a resolved scientific decision into runtime work only.
 
-        Every sample result keeps its initial assessment, so a reused group
-        needs no carrier of its own. The scalar backfill input names the reuse
-        only while no group searches; once one does, each searched group is
-        answered by its own attempt.
+        Initial assessments already carry reused HOLD candidates. Once any group
+        searches, the scalar reuse carrier yields to the per-group attempts.
         """
-        if not self.backfill_targets:
+        if decision.action == "reuse" and not self.backfill_targets:
             self.backfill_input = UntargetedCidNlBackfillInput(
-                sample=self.job.sample,
-                candidate_assessment=assessment,
+                sample=self.job.sample, candidate_assessment=decision.assessment
+            )
+        elif decision.action == "search":
+            self.backfill_input = None
+            target = UntargetedCidNlBackfillTarget.from_question(decision.question)
+            self.backfill_targets = tuple(
+                sorted(
+                    (*self.backfill_targets, target),
+                    key=lambda item: (item.center_rt, item.group_hypothesis_id),
+                )
             )
 
-    def schedule_search(self, target: UntargetedCidNlBackfillTarget) -> None:
-        self.backfill_input = None
-        self.backfill_targets = tuple(
-            sorted(
-                (*self.backfill_targets, target),
-                key=lambda item: (item.center_rt, item.group_hypothesis_id),
-            )
+    def accept_observations(
+        self,
+        artifacts: tuple[EvidenceArtifactRef, ...],
+        acquisition: TraceAcquisitionBatch | None,
+        error: Exception | None,
+        *,
+        backfill: bool = False,
+    ) -> None:
+        for artifact in artifacts:
+            self.observer.record_artifact(artifact)
+        observed = (
+            self.observer.backfill_acquisition
+            if backfill
+            else self.observer.initial_acquisition
         )
+        if acquisition is not None and observed is None:
+            self.observer.record_acquisition(acquisition, backfill=backfill)
+        if self.error is None:
+            self.error = error
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,6 +173,23 @@ class _BatchSamplePhaseState:
         if self.sample_template is not None:
             return self.sample_template
         return self.states[0].job
+
+    def isolated_worker_state(self) -> _BatchSamplePhaseState:
+        """Keep in-process work behind the same outcome boundary as a process.
+
+        Domain inputs stay shared; only mutable phase/job state and observation
+        collectors are local to this phase's execution.
+        """
+        return replace(
+            self,
+            states=tuple(
+                replace(
+                    state,
+                    observer=_PartitionWorkObserver(state.job.processing_owners),
+                )
+                for state in self.states
+            ),
+        )
 
 
 def _open_job_raw(
@@ -349,17 +373,11 @@ def _execute_initial_assessment_batch(
                         state.error = exc
 
 
-def _prepare_group_authorized_backfills(
+def _apply_backfill_questions(
     states: list[_RuntimeJobState],
-    *,
-    prepared: UntargetedPreparedGrouping,
-    sample_templates: tuple[UntargetedPartitionJob, ...] = (),
+    templates: dict[str, UntargetedPartitionJob],
+    questions: tuple[CidNlBackfillQuestion, ...],
 ) -> None:
-    """Schedule searches from frozen workset membership, without regrouping."""
-    templates = {
-        job.sample.identity.sample_identity_id: job
-        for job in sample_templates or tuple(state.job for state in states)
-    }
     by_key = {
         (
             state.job.sample.identity.sample_identity_id,
@@ -367,138 +385,55 @@ def _prepare_group_authorized_backfills(
         ): state
         for state in states
     }
-    population = tuple(job.sample for job in templates.values())
-    injection_order = {
-        sample.metadata.raw_stem: sample.metadata.injection_order
-        for sample in population
-        if sample.metadata.injection_order is not None
-    }
-    sample_cohorts = {
-        sample.metadata.raw_stem: sample.metadata.batch_id for sample in population
-    }
-    for workset in prepared.worksets:
-        direct = {
-            candidate.peak_hypothesis_id: candidate.direct_support_assessment
-            for candidate in workset.retained_candidates
-            if candidate.direct_support_assessment is not None
-        }
-        groups = tuple(
-            group
-            for group in workset.grouping_scope.groups
-            if all(owner_id in direct for owner_id in group.owner_ids)
+    for question in questions:
+        key = (question.sample_identity_id, question.method_subject.method_subject_id)
+        if key not in by_key:
+            job = copy(templates[question.sample_identity_id])
+            object.__setattr__(job, "method_subject", question.method_subject)
+            object.__setattr__(
+                job,
+                "work_unit_key",
+                f"untargeted-cid-nl:{job.sample.metadata.raw_stem}:"
+                f"{question.method_subject.method_subject_id}",
+            )
+            state = _RuntimeJobState(
+                job=job,
+                resource_key=None,
+                initial_requires_raw=False,
+                observer=_PartitionWorkObserver(job.processing_owners),
+            )
+            _execute_initial_assessment(state)
+            states.append(state)
+            by_key[key] = state
+        state = by_key[key]
+        if state.error is not None or state.adapter_result is None:
+            continue
+        state.apply_backfill_decision(
+            question.resolve(state.adapter_result.assessment_input.assessment)
         )
-        for group, target_ids in plan_conservative_backfill_targets(
-            groups, sample_population=population
-        ):
-            if not target_ids:
-                continue
-            subject = select_cid_nl_group_backfill_subject(
-                group,
-                tuple(
-                    {
-                        direct[owner_id].content.method_subject
-                        for owner_id in group.owner_ids
-                    }
-                ),
-            )
-            assert group.group_center_rt is not None
-            trajectory = workset.grouping_scope.peak_trajectories.trajectory_for(
-                group.owners
-            )
-            locations = trajectory.backfill_locations(
-                tuple(templates[sample_id].sample.metadata.raw_stem
-                      for sample_id in sorted(target_ids)),
-                reference_samples=frozenset(
-                    owner.sample_stem for owner in group.owners
-                    if not owner.is_provisional
-                ),
-                injection_order=injection_order,
-                sample_cohorts=sample_cohorts,
-                rt_warp=prepared.rt_warp,
-                backfill_half_window_min=(
-                    templates[min(target_ids)].peak_config.nl_rt_anchor_half_window_min
-                ),
-            )
-            for sample_id in sorted(target_ids):
-                key = (sample_id, subject.method_subject_id)
-                if key not in by_key:
-                    job = copy(templates[sample_id])
-                    object.__setattr__(job, "method_subject", subject)
-                    object.__setattr__(
-                        job,
-                        "work_unit_key",
-                        f"untargeted-cid-nl:{job.sample.metadata.raw_stem}:"
-                        f"{subject.method_subject_id}",
-                    )
-                    state = _RuntimeJobState(
-                        job=job,
-                        resource_key=None,
-                        initial_requires_raw=False,
-                        observer=_PartitionWorkObserver(job.processing_owners),
-                    )
-                    _execute_initial_assessment(state)
-                    states.append(state)
-                    by_key[key] = state
-                state = by_key[key]
-                if state.error is not None or state.adapter_result is None:
-                    continue
-                assessment = state.adapter_result.assessment_input.assessment
-                sample_stem = state.job.sample.metadata.raw_stem
-                localized = locations[sample_stem]
-                location = localized.location
-                revisit = _group_revisit(
-                    assessment,
-                    observed_rt=location.observed_rt,
-                    apex_tolerance_sec=prepared.alignment_config.owner_apex_close_sec,
-                )
-                if revisit is None:
-                    continue
-                if revisit == "reuse":
-                    state.reuse_initial_hold(assessment)
-                else:
-                    state.schedule_search(
-                        UntargetedCidNlBackfillTarget(
-                            group_hypothesis_id=group.group_hypothesis_id,
-                            method_subject=subject,
-                            physical_mz=group.family_center_mz,
-                            center_rt=group.group_center_rt,
-                            query_rt=location.query_rt,
-                            query_rt_basis=location.basis,
-                            query_rt_tolerance_sec=localized.apex_tolerance_sec,
-                            query_rt_reliable=localized.reliable,
-                        )
-                    )
 
 
-def _group_revisit(
-    assessment: CidNlMethodAssessmentRef,
+def _prepare_group_authorized_backfills(
+    states: list[_RuntimeJobState],
     *,
-    observed_rt: float | None = None,
-    apex_tolerance_sec: float = 0.0,
-) -> Literal["reuse", "search"] | None:
-    """How a sample outside one group revisits that group's window.
-
-    A HOLD is reused unless an available pattern locates a different peak.
-    A SUPPORT belongs to another peak of the sample and does not answer the
-    group's window.
-    """
-    if assessment.content.method_result == "SUPPORT":
-        return "search"
-    if not (
-        assessment.content.method_result == "HOLD"
-        or is_unsearched_cid_nl_discovery_assessment(assessment)
-        or is_cid_nl_missing_ms1_rejection(assessment)
-    ):
-        return None
-    if not assessment.candidate_peaks:
-        return "search"
-    if observed_rt is not None and not any(
-        abs(peak.content.integration.rt_apex_min - observed_rt) * 60.0
-        <= apex_tolerance_sec
-        for peak in assessment.candidate_peaks
-    ):
-        return "search"
-    return "reuse"
+    prepared: UntargetedPreparedGrouping,
+    sample_templates: tuple[UntargetedPartitionJob, ...] = (),
+) -> None:
+    templates = {
+        job.sample.identity.sample_identity_id: job
+        for job in sample_templates or tuple(state.job for state in states)
+    }
+    questions = plan_grouped_cid_nl_backfills(
+        prepared.worksets,
+        sample_population=tuple(job.sample for job in templates.values()),
+        alignment_config=prepared.alignment_config,
+        rt_warp=prepared.rt_warp,
+        half_windows_by_sample={
+            sample_id: job.peak_config.nl_rt_anchor_half_window_min
+            for sample_id, job in templates.items()
+        },
+    )
+    _apply_backfill_questions(states, templates, questions)
 
 
 def _prepare_owner_authorized_backfills(
@@ -529,100 +464,28 @@ def _prepare_subject_authorized_backfills(
     alignment_config: AlignmentConfig,
     sample_templates: tuple[UntargetedPartitionJob, ...] = (),
 ) -> tuple[_RuntimeJobState, ...]:
-    if any(state.error is not None or state.adapter_result is None for state in states):
-        return ()
-    adapter_results = tuple(
-        state.adapter_result for state in states if state.adapter_result is not None
-    )
-    if not any(
-        result.assessment_input.assessment.content.method_result == "SUPPORT"
-        for result in adapter_results
+    if not states or any(
+        state.error is not None or state.adapter_result is None for state in states
     ):
         return ()
-    support_owners: list[SampleLocalMS1Owner] = []
-    for state in states:
-        result = state.adapter_result
-        if result is None:
-            continue
-        assessment = result.assessment_input.assessment
-        if assessment.content.method_result != "SUPPORT":
-            continue
-        hypotheses = compose_cid_nl_peak_hypotheses_from_assessment(
-            processing_owners=state.job.processing_owners,
-            sample=state.job.sample,
-            assessment=assessment,
-        )
-        support_owners.extend(
-            owner_from_cid_nl_assessment_support(
-                sample=state.job.sample, assessment=assessment, hypothesis=hypothesis
-            )
-            for hypothesis in hypotheses
-        )
-    groups = construct_cross_sample_peak_group_hypotheses(
-        tuple(support_owners),
-        config=alignment_config,
-    )
-    states_by_sample = {
-        state.job.sample.identity.sample_identity_id: state for state in states
+    templates = {
+        job.sample.identity.sample_identity_id: job
+        for job in sample_templates or tuple(state.job for state in states)
     }
-    templates_by_sample = {
-        job.sample.identity.sample_identity_id: job for job in sample_templates
-    }
-    population = (
-        tuple(job.sample for job in sample_templates)
-        if sample_templates
-        else tuple(state.job.sample for state in states)
+    questions = plan_subject_cid_nl_backfills(
+        tuple(
+            (state.job.sample, state.adapter_result.assessment_input.assessment)
+            for state in states
+            if state.adapter_result is not None
+        ),
+        method_subject=states[0].job.method_subject,
+        processing_owners=states[0].job.processing_owners,
+        sample_population=tuple(job.sample for job in templates.values()),
+        alignment_config=alignment_config,
     )
-    added_states: list[_RuntimeJobState] = []
-    for group, target_sample_ids in plan_conservative_backfill_targets(
-        groups, sample_population=population
-    ):
-        center = group.group_center_rt
-        if center is None:
-            raise UntargetedPartitionError(
-                "authorized backfill requires a frozen RT group"
-            )
-        for sample_id in sorted(target_sample_ids):
-            if sample_id not in states_by_sample:
-                job = copy(templates_by_sample[sample_id])
-                subject = states[0].job.method_subject
-                object.__setattr__(job, "method_subject", subject)
-                object.__setattr__(
-                    job,
-                    "work_unit_key",
-                    f"untargeted-cid-nl:{job.sample.metadata.raw_stem}:"
-                    f"{subject.method_subject_id}",
-                )
-                state = _RuntimeJobState(
-                    job=job,
-                    resource_key=None,
-                    initial_requires_raw=False,
-                    observer=_PartitionWorkObserver(job.processing_owners),
-                )
-                _execute_initial_assessment(state)
-                states_by_sample[sample_id] = state
-                added_states.append(state)
-            state = states_by_sample[sample_id]
-            if state.error is not None:
-                continue
-            result = state.adapter_result
-            assert result is not None
-            assessment = result.assessment_input.assessment
-            revisit = _group_revisit(assessment)
-            if revisit is None:
-                continue
-            if revisit == "reuse":
-                state.reuse_initial_hold(assessment)
-            else:
-                state.schedule_search(
-                    UntargetedCidNlBackfillTarget(
-                        group_hypothesis_id=group.group_hypothesis_id,
-                        method_subject=state.job.method_subject,
-                        physical_mz=group.family_center_mz,
-                        center_rt=center,
-                    )
-                )
-    return tuple(added_states)
+    prepared_states = list(states)
+    _apply_backfill_questions(prepared_states, templates, questions)
+    return tuple(prepared_states[len(states) :])
 
 
 def _execute_backfill(
@@ -808,16 +671,91 @@ class _SampleInitialWorkerRequest:
     partition_candidates: bool
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
+class _InitialJobOutcome:
+    work_unit_key: str
+    adapter_result: CidNlAcquisitionResult | None
+    observed_artifacts: tuple[EvidenceArtifactRef, ...]
+    observed_acquisition: bool
+    error: Exception | None
+
+
+@dataclass(frozen=True, slots=True)
 class _SampleInitialWorkerResponse:
-    adapter_results: tuple[CidNlAcquisitionResult | None, ...]
-    observer_artifacts: tuple[tuple[EvidenceArtifactRef, ...], ...]
-    observer_has_acquisitions: tuple[bool, ...]
+    job_outcomes: tuple[_InitialJobOutcome, ...]
     initial_open_attempted: bool
     initial_opened: bool
     initial_cleanup_outcome: RuntimeResourceCleanupOutcome
     initial_acquisition: TraceAcquisitionBatch | None
-    errors: tuple[Exception | None, ...]
+
+    def _outcomes_by_key(
+        self, work_unit_keys: tuple[str, ...]
+    ) -> dict[str, _InitialJobOutcome]:
+        _require_outcome_keys(
+            work_unit_keys, tuple(item.work_unit_key for item in self.job_outcomes)
+        )
+        return {item.work_unit_key: item for item in self.job_outcomes}
+
+    def apply_to(self, phase: _BatchSamplePhaseState) -> None:
+        outcomes = self._outcomes_by_key(
+            tuple(state.job.work_unit_key for state in phase.states)
+        )
+        phase.initial_open_attempted = self.initial_open_attempted
+        phase.initial_opened = self.initial_opened
+        phase.initial_cleanup_outcome = self.initial_cleanup_outcome
+        phase.initial_acquisition = self.initial_acquisition
+        for state in phase.states:
+            outcome = outcomes[state.job.work_unit_key]
+            state.adapter_result = outcome.adapter_result
+            state.accept_observations(
+                outcome.observed_artifacts,
+                self.initial_acquisition if outcome.observed_acquisition else None,
+                outcome.error,
+            )
+
+    def results_for(
+        self, jobs: tuple[UntargetedPartitionJob, ...]
+    ) -> tuple[CidNlAcquisitionResult, ...]:
+        outcomes = self._outcomes_by_key(tuple(job.work_unit_key for job in jobs))
+        results = []
+        for job in jobs:
+            outcome = outcomes[job.work_unit_key]
+            if outcome.error is not None:
+                raise outcome.error
+            if outcome.adapter_result is None:
+                raise UntargetedPartitionError("initial assessment returned no result")
+            results.append(outcome.adapter_result)
+        return tuple(results)
+
+
+def _require_outcome_keys(expected: tuple[str, ...], actual: tuple[str, ...]) -> None:
+    if len(actual) != len(expected) or set(actual) != set(expected):
+        raise UntargetedPartitionError(
+            "worker outcome must cover its exact work-unit population"
+        )
+
+
+def _execute_initial_sample_phase(
+    phase: _BatchSamplePhaseState, *, partition_candidates: bool = False
+) -> _SampleInitialWorkerResponse:
+    local = phase.isolated_worker_state()
+    _execute_initial_assessment_batch(local, partition_candidates=partition_candidates)
+    return _SampleInitialWorkerResponse(
+        job_outcomes=tuple(
+            _InitialJobOutcome(
+                work_unit_key=state.job.work_unit_key,
+                adapter_result=state.adapter_result,
+                observed_artifacts=state.observer.observed_artifacts(),
+                observed_acquisition=state.observer.initial_acquisition is not None,
+                error=state.error,
+            )
+            for state in local.states
+        ),
+        initial_open_attempted=local.initial_open_attempted,
+        initial_opened=local.initial_opened,
+        initial_cleanup_outcome=local.initial_cleanup_outcome,
+        initial_acquisition=local.initial_acquisition,
+    )
 
 
 def _execute_sample_initial_worker(
@@ -839,21 +777,9 @@ def _execute_sample_initial_worker(
         initial_resource_key=request.initial_resource_key,
         backfill_resource_key=None,
     )
-    _execute_initial_assessment_batch(
+    return _execute_initial_sample_phase(
         phase,
         partition_candidates=request.partition_candidates,
-    )
-    return _SampleInitialWorkerResponse(
-        adapter_results=tuple(s.adapter_result for s in states),
-        observer_artifacts=tuple(s.observer.observed_artifacts() for s in states),
-        observer_has_acquisitions=tuple(
-            s.observer.acquisition is not None for s in states
-        ),
-        initial_open_attempted=phase.initial_open_attempted,
-        initial_opened=phase.initial_opened,
-        initial_cleanup_outcome=phase.initial_cleanup_outcome,
-        initial_acquisition=phase.initial_acquisition,
-        errors=tuple(s.error for s in states),
     )
 
 
@@ -870,14 +796,7 @@ def assess_initial_sample_jobs(
             partition_candidates=True,
         )
     )
-    results = []
-    for result, error in zip(response.adapter_results, response.errors, strict=True):
-        if error is not None:
-            raise error
-        if result is None:
-            raise UntargetedPartitionError("initial assessment returned no result")
-        results.append(result)
-    return tuple(results)
+    return response.results_for(jobs)
 
 
 @dataclass(slots=True)
@@ -888,20 +807,78 @@ class _SampleBackfillWorkerRequest:
     backfill_resource_key: str | None
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
+class _BackfillJobOutcome:
+    work_unit_key: str
+    backfill_attempts: tuple[UntargetedCidNlBackfillAttemptResult, ...]
+    backfill_input: UntargetedCidNlBackfillInput | None
+    observed_artifacts: tuple[EvidenceArtifactRef, ...]
+    observed_acquisition: bool
+    error: Exception | None
+
+
+@dataclass(frozen=True, slots=True)
 class _SampleBackfillWorkerResponse:
-    work_unit_keys: tuple[str, ...]
-    backfill_attempts_by_key: dict[
-        str, tuple[UntargetedCidNlBackfillAttemptResult, ...]
-    ]
-    backfill_inputs_by_key: dict[str, UntargetedCidNlBackfillInput | None]
-    observer_artifacts: tuple[tuple[EvidenceArtifactRef, ...], ...]
-    observer_has_acquisitions: tuple[bool, ...]
+    job_outcomes: tuple[_BackfillJobOutcome, ...]
     backfill_open_attempted: bool
     backfill_opened: bool
     backfill_cleanup_outcome: RuntimeResourceCleanupOutcome
     backfill_acquisition: TraceAcquisitionBatch | None
-    errors: tuple[Exception | None, ...]
+
+    def apply_to(self, phase: _BatchSamplePhaseState) -> None:
+        states = {
+            state.job.work_unit_key: state
+            for state in phase.states
+            if state.error is None and state.backfill_targets
+        }
+        _require_outcome_keys(
+            tuple(states), tuple(item.work_unit_key for item in self.job_outcomes)
+        )
+        phase.backfill_open_attempted = self.backfill_open_attempted
+        phase.backfill_opened = self.backfill_opened
+        phase.backfill_cleanup_outcome = self.backfill_cleanup_outcome
+        phase.backfill_acquisition = self.backfill_acquisition
+        for outcome in self.job_outcomes:
+            state = states[outcome.work_unit_key]
+            if outcome.backfill_attempts:
+                state.backfill_attempts = outcome.backfill_attempts
+            if outcome.backfill_input is not None:
+                state.backfill_input = outcome.backfill_input
+            state.accept_observations(
+                outcome.observed_artifacts,
+                self.backfill_acquisition if outcome.observed_acquisition else None,
+                outcome.error,
+                backfill=True,
+            )
+
+
+def _execute_backfill_sample_phase(
+    phase: _BatchSamplePhaseState,
+) -> _SampleBackfillWorkerResponse:
+    local = phase.isolated_worker_state()
+    pending = tuple(
+        state
+        for state in local.states
+        if state.error is None and state.backfill_targets
+    )
+    _execute_backfill_batch(local)
+    return _SampleBackfillWorkerResponse(
+        job_outcomes=tuple(
+            _BackfillJobOutcome(
+                work_unit_key=state.job.work_unit_key,
+                backfill_attempts=state.backfill_attempts,
+                backfill_input=state.backfill_input,
+                observed_artifacts=state.observer.observed_artifacts(),
+                observed_acquisition=state.observer.backfill_acquisition is not None,
+                error=state.error,
+            )
+            for state in pending
+        ),
+        backfill_open_attempted=local.backfill_open_attempted,
+        backfill_opened=local.backfill_opened,
+        backfill_cleanup_outcome=local.backfill_cleanup_outcome,
+        backfill_acquisition=local.backfill_acquisition,
+    )
 
 
 def _execute_sample_backfill_worker(
@@ -925,29 +902,7 @@ def _execute_sample_backfill_worker(
         initial_resource_key=None,
         backfill_resource_key=request.backfill_resource_key,
     )
-    _execute_backfill_batch(phase)
-    return _SampleBackfillWorkerResponse(
-        work_unit_keys=tuple(state.job.work_unit_key for state in states),
-        backfill_attempts_by_key={
-            s.job.work_unit_key: s.backfill_attempts
-            for s in states
-            if s.backfill_attempts
-        },
-        backfill_inputs_by_key={
-            s.job.work_unit_key: s.backfill_input
-            for s in states
-            if s.backfill_input is not None
-        },
-        observer_artifacts=tuple(s.observer.observed_artifacts() for s in states),
-        observer_has_acquisitions=tuple(
-            s.observer.acquisition is not None for s in states
-        ),
-        backfill_open_attempted=phase.backfill_open_attempted,
-        backfill_opened=phase.backfill_opened,
-        backfill_cleanup_outcome=phase.backfill_cleanup_outcome,
-        backfill_acquisition=phase.backfill_acquisition,
-        errors=tuple(s.error for s in states),
-    )
+    return _execute_backfill_sample_phase(phase)
 
 
 __all__ = [
@@ -959,8 +914,10 @@ __all__ = [
     "_SampleBackfillWorkerResponse",
     "_execute_initial_assessment",
     "_execute_initial_assessment_batch",
+    "_execute_initial_sample_phase",
     "_execute_backfill",
     "_execute_backfill_batch",
+    "_execute_backfill_sample_phase",
     "_execute_sample_initial_worker",
     "_execute_sample_backfill_worker",
     "_open_job_raw",

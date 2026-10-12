@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-
 _REASON_TEXT = {
     "ms1_peak_present": "MS1 peak present",
     "ms1_coherent": "Coherent MS1 peak",
@@ -91,32 +89,6 @@ def display_nl_evidence(token: str | None, *, configured: bool) -> str:
         "NO_MS2": "No MS2 spectrum",
         "ERROR": "Processing error",
     }.get(token or "", "Unavailable")
-
-
-def display_supporting_evidence(row: Mapping[str, str]) -> str:
-    reasons = _row_reasons(row, "Projection Support Reasons")
-    # Peak presence is redundant once the owner reports a coherent MS1 peak.
-    if "ms1_coherent" in reasons:
-        reasons = tuple(reason for reason in reasons if reason != "ms1_peak_present")
-    return "; ".join(dict.fromkeys(_reason_text(reason) for reason in reasons))
-
-
-def display_conflicts_and_concerns(row: Mapping[str, str]) -> str:
-    reasons = (
-        _reason_text(reason)
-        for field in (
-            "Projection Conflict Reasons",
-            "Projection Not Counted Reasons",
-            "Projection Exclusion Reasons",
-            "Projection Review Reasons",
-        )
-        for reason in _row_reasons(row, field)
-    )
-    return "; ".join(dict.fromkeys(reasons))
-
-
-def _row_reasons(row: Mapping[str, str], field: str) -> tuple[str, ...]:
-    return tuple(part.strip() for part in row.get(field, "").split(";") if part.strip())
 
 
 def _reason_text(reason: str) -> str:

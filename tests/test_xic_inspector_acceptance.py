@@ -270,7 +270,11 @@ def test_acceptance_a9_pipeline_shared_callable_handoff(tmp_path, monkeypatch) -
     monkeypatch.setattr(
         application,
         "complete_untargeted_alignment",
-        lambda **kwargs: completed,
+        lambda **kwargs: completed.bind_publication_inputs(
+            candidates_by_sample=kwargs["candidates_by_sample"],
+            alignment_config=kwargs["alignment_config"],
+            known_istd_reference=kwargs["known_istd_reference"],
+        ),
     )
     outputs = application.run_untargeted_application(
         UntargetedRequest(

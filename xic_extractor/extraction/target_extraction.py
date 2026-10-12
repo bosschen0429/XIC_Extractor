@@ -15,9 +15,7 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.evidence.neutral_loss import (
     CandidateMS2Evidence,
-    MS2ProductEvidence,
     candidate_ms2_geometry,
-    check_nl,
 )
 from xic_extractor.extraction.anchors import (
     paired_anchor_mismatch_diagnostic,
@@ -30,7 +28,6 @@ from xic_extractor.extraction.diagnostics import (
 )
 from xic_extractor.extraction.drift import estimate_sample_drift
 from xic_extractor.extraction.ms2_selection import selected_candidate_ms2_evidence
-from xic_extractor.extraction.result_assembly import build_extraction_result
 from xic_extractor.extraction.rt_windows import get_rt_window
 from xic_extractor.extraction.scoring_factory import (
     allow_prepass_anchor,
@@ -39,7 +36,7 @@ from xic_extractor.extraction.scoring_factory import (
     selected_shape_metrics,
 )
 from xic_extractor.extraction.targeted_peak_selection import (
-    select_targeted_peak,
+    assess_targeted_candidate_population,
 )
 from xic_extractor.extraction.trace_context import targeted_extraction_trace_group
 from xic_extractor.output.messages import (
@@ -47,29 +44,11 @@ from xic_extractor.output.messages import (
     build_diagnostic_records,
     istd_confidence_note,
 )
-from xic_extractor.peak_detection.candidate_selection import (
-    select_candidate_by_evidence,
-)
-from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlCandidateInterval,
-    CidNlEvaluationReceipt,
-    CidNlEventQuery,
-    evaluate_cid_nl_method_relations,
-)
-from xic_extractor.peak_detection.cid_nl_peak_support import DdaCidNlPeakSupportPolicy
-from xic_extractor.peak_detection.evidence_facts import (
-    decision_semantics_from_candidate_facts,
-)
 from xic_extractor.peak_detection.models import (
     PeakCandidate,
     PeakCandidatesResult,
-    PeakDetectionResult,
-)
-from xic_extractor.peak_detection.peak_selection import (
-    select_peak_and_area,
 )
 from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
-    answer_selected_physical_candidate,
     physical_candidates_result,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
@@ -81,7 +60,6 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalSegmentUniverse,
     PreparedSignalResult,
 )
-from xic_extractor.peak_detection.scoring_models import ScoredCandidate, ScoringContext
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.raw_reader import open_raw
 
@@ -269,8 +247,6 @@ def extract_one_target(
         target_reference_rt=target_reference_rt,
         paired_istd_credible=(reference_rt is not None and paired_target is not None),
     )
-    if target.neutral_loss_da is None:
-        strict_preferred_rt = True
     configured_width = target.rt_max - target.rt_min
     context_rt_min = max(
         0.0,
@@ -350,22 +326,7 @@ def extract_one_target(
         )
 
     prepared, universe, physical_candidates = _physical_trace_owners(rt, intensity)
-    candidate_evaluations = {
-        candidate: answer_selected_physical_candidate(
-            prepared,
-            universe,
-            candidate,
-            selection_subject_id=target.label,
-            acquisition_rt_window=(context_rt_min, context_rt_max),
-            selection_rt_window=(selection_rt_min, selection_rt_max),
-        )
-        for candidate in physical_candidates.candidates
-    }
     method_window = None
-    method_receipt = None
-    method_relations = None
-    method_products: tuple[MS2ProductEvidence, ...] = ()
-    candidate_nl_support = None
     if target.neutral_loss_da is not None:
         geometries = tuple(
             candidate_ms2_geometry(candidate)
@@ -377,107 +338,28 @@ def extract_one_target(
             rt_min=min((target.rt_min, *(item.rt_min for item in geometries))),
             rt_max=max((target.rt_max, *(item.rt_max for item in geometries))),
         )
-        method_products = check_nl(
-            method_window,
-            precursor_mz=target.mz,
-            neutral_loss_da=target.neutral_loss_da,
-            nl_ppm_warn=target.nl_ppm_warn or 20.0,
-            nl_ppm_max=target.nl_ppm_max or 20.0,
-            ms2_precursor_tol_da=config.ms2_precursor_tol_da,
-            nl_min_intensity_ratio=config.nl_min_intensity_ratio,
-        ).product_evidence
-        policy = DdaCidNlPeakSupportPolicy(
-            precursor_tolerance_da=max(target.mz * target.ppm_tol / 1_000_000, 1e-9),
-            neutral_loss_tolerance_ppm=target.nl_ppm_max or 20.0,
-        )
-        # The broad acquisition probe can include neighbouring precursor ions.
-        # Only the declared exact-mass method population enters its assessment.
-        method_products = tuple(
-            product
-            for product in method_products
-            if abs(product.precursor_mz - target.mz) <= policy.precursor_tolerance_da
-        )
-        method_receipt = CidNlEvaluationReceipt(
-            query_rt_min=min(method_window.rt_min, selection_rt_min),
-            query_rt_max=max(method_window.rt_max, selection_rt_max),
-            support_policy=policy,
-            acquisition_supported=True,
-            search_completed=True,
-            scanned_event_count=len(method_window.events),
-            reason_code=None,
-        )
-        method_relations = evaluate_cid_nl_method_relations(
-            candidate_intervals=tuple(
-                CidNlCandidateInterval(
-                    target.mz, candidate.peak.peak_start, candidate.peak.peak_end
-                )
-                for candidate in physical_candidates.candidates
-            ),
-            event_queries=tuple(
-                CidNlEventQuery(
-                    product.assess_precursor_loss(
-                        target.neutral_loss_da, policy.neutral_loss_tolerance_ppm
-                    ),
-                    product.scan_rt,
-                    product.scan_rt,
-                )
-                for product in method_products
-            ),
-            policy=policy,
-        )
-        supported = method_relations.supported_candidate_indexes
-        candidate_nl_support = {
-            candidate: index in supported
-            for index, candidate in enumerate(physical_candidates.candidates)
-        }
-
-    trace_scoring_context_factory: Callable[..., Any] | None = None
-    if scoring_context_factory is not None:
-        source_factory = scoring_context_factory
-
-        def _trace_scoring_context_factory(
-            *, rt: object, intensity: object, **kwargs: Any
-        ) -> Any:
-            prepared_result, _, _ = _physical_trace_owners(rt, intensity)
-            return source_factory(
-                rt=rt, intensity=intensity, prepared_result=prepared_result, **kwargs
-            )
-
-        trace_scoring_context_factory = _trace_scoring_context_factory
-
-    def _find_physical_peak(
-        rt_values: object,
-        intensity_values: object,
-        _config: ExtractionConfig,
-        *,
-        preferred_rt: float | None = None,
-        strict_preferred_rt: bool = False,
-        scoring_context_builder: (
-            Callable[[PeakCandidate], ScoringContext] | None
-        ) = None,
-        istd_confidence_note: str | None = None,
-        evidence_role: str = "",
-        istd_pair: str = "",
-        paired_istd_anchor_rt: float | None = None,
-    ) -> PeakDetectionResult:
-        _, _, candidates_result = _physical_trace_owners(rt_values, intensity_values)
-
-        return select_peak_and_area(
-            candidates_result,
-            selection_config,
-            preferred_rt=preferred_rt,
-            strict_preferred_rt=strict_preferred_rt,
-            scoring_context_builder=scoring_context_builder,
-            istd_confidence_note=istd_confidence_note,
-            evidence_role=evidence_role,
-            istd_pair=istd_pair,
-            paired_istd_anchor_rt=paired_istd_anchor_rt,
-            evidence_selector=(
-                _select_no_nl_candidate_by_reference
-                if target.neutral_loss_da is None
-                else select_candidate_by_evidence
-            ),
-        )
+    trace_group = targeted_extraction_trace_group(
+        sample_name=sample_name,
+        target=target,
+        config=selection_config,
+        rt=rt,
+        intensity=intensity,
+        rt_min=context_rt_min,
+        rt_max=context_rt_max,
+        expected_rt_min=anchor_rt,
+    )
+    candidate_assessment = assess_targeted_candidate_population(
+        target=target,
+        config=selection_config,
+        trace_group=trace_group,
+        prepared_result=prepared,
+        universe=universe,
+        candidates=physical_candidates,
+        selection_window=(selection_rt_min, selection_rt_max),
+        preferred_rt=anchor_rt,
+        strict_preferred_rt=strict_preferred_rt,
+        method_window=method_window,
+    )
 
     scoring_context_builder = None
     candidate_ms2_builder = candidate_ms2_evidence_builder(
@@ -496,8 +378,8 @@ def extract_one_target(
             candidate_ms2_cache[candidate] = evidence
         return evidence
 
-    if trace_scoring_context_factory is not None:
-        scoring_context_builder = trace_scoring_context_factory(
+    if scoring_context_factory is not None:
+        scoring_context_builder = scoring_context_factory(
             target=target,
             sample_name=sample_name,
             rt=rt,
@@ -507,21 +389,14 @@ def extract_one_target(
             paired_istd_fwhm=paired_istd_fwhm,
             nl_result=nl_result,
             candidate_ms2_evidence_builder=_cached_candidate_ms2_builder,
-            candidate_nl_support=candidate_nl_support,
+            candidate_nl_support=candidate_assessment.candidate_nl_support,
+            prepared_result=prepared,
         )
-    peak_result = _find_physical_peak(
-        rt,
-        intensity,
-        selection_config,
-        preferred_rt=anchor_rt,
-        strict_preferred_rt=strict_preferred_rt,
+    peak_result = candidate_assessment.rank_candidates(
         scoring_context_builder=scoring_context_builder,
         istd_confidence_note=istd_confidence_note,
-        evidence_role="ISTD" if target.is_istd else "Analyte",
-        istd_pair=target.istd_pair,
         paired_istd_anchor_rt=istd_rt_in_this_sample,
     )
-    prepared, universe, _ = _physical_trace_owners(rt, intensity)
     paired_rejection = paired_anchor_mismatch_diagnostic(
         sample_name,
         target,
@@ -529,7 +404,7 @@ def extract_one_target(
         reference_rt=reference_rt,
         anchor_rt=anchor_rt,
         anchor_used=anchor_used,
-        strict_preferred_rt=strict_preferred_rt,
+        strict_preferred_rt=candidate_assessment.strict_preferred_rt,
     )
     if istd_rt_in_this_sample is not None:
         peak_result = replace(
@@ -537,62 +412,22 @@ def extract_one_target(
             paired_istd_anchor_rt=istd_rt_in_this_sample,
         )
     candidate = selected_candidate(peak_result)
-    trace_group = targeted_extraction_trace_group(
-        sample_name=sample_name,
-        target=target,
-        config=selection_config,
-        rt=rt,
-        intensity=intensity,
-        rt_min=context_rt_min,
-        rt_max=context_rt_max,
-        expected_rt_min=anchor_rt,
-    )
     selected_candidate_ms2_evidence(
         candidate,
         candidate_ms2_cache,
         _cached_candidate_ms2_builder,
     )
-    handoff_peak = select_targeted_peak(
-        config=selection_config,
-        target=target,
-        peak_result=peak_result,
-        trace_group=trace_group,
+    result = candidate_assessment.complete_result(
+        peak_result,
         candidate_ms2_evidence=candidate_ms2_cache,
-        prepared_result=prepared,
-        universe=universe,
-        selection_rt_min=selection_rt_min,
-        selection_rt_max=selection_rt_max,
-        candidate_evaluations=candidate_evaluations,
+        nl_result=nl_result,
+        scoring_context_builder=scoring_context_builder,
     )
-    peak_result = handoff_peak.peak_result
-    candidate = selected_candidate(peak_result)
-
+    peak_result = result.peak_result
     shape_metrics = selected_shape_metrics(prepared, peak_result)
     if shape_metrics_by_label is not None and shape_metrics is not None:
         shape_metrics_by_label[target.label] = shape_metrics
 
-    result = build_extraction_result(
-        peak_result=peak_result,
-        nl_result=nl_result,
-        candidate_ms2_evidence=handoff_peak.candidate_ms2_evidence,
-        target=target,
-        candidate=candidate,
-        scoring_context_builder=scoring_context_builder,
-        selected_hypothesis=handoff_peak.selected_hypothesis,
-        selection_decision=handoff_peak.selection_decision,
-        acquisition_trace=handoff_peak.trace_group.primary_trace,
-        physical_evaluation=handoff_peak.physical_evaluation,
-        candidate_physical_evaluations=tuple(candidate_evaluations.values()),
-        cid_nl_products=method_products,
-        cid_nl_evaluation_receipt=method_receipt,
-        cid_nl_relations=method_relations,
-        selected_cid_nl_candidate_index=(
-            tuple(candidate_evaluations).index(candidate)
-            if candidate is not None and method_relations is not None
-            else None
-        ),
-        sample_name=sample_name,
-    )
     results[target.label] = result
     diagnostics.extend(build_diagnostic_records(sample_name, target, result, config))
     if paired_rejection is not None:
@@ -611,46 +446,6 @@ def extract_one_target(
         paired_rejection=paired_rejection,
     )
     return anchor_rt
-
-
-def _select_no_nl_candidate_by_reference(
-    scored: list[ScoredCandidate],
-    *,
-    selection_rt: float | None = None,
-    strict_selection_rt: bool = False,
-) -> ScoredCandidate:
-    """Rank supported physical components by reference without changing facts."""
-    supported = []
-    for item in scored:
-        facts = item.evidence_facts
-        evidence = item.evidence_score
-        if (
-            facts is not None
-            and not facts.chemical.neutral_loss_required
-            and not facts.trace.quality_flags
-            and not facts.trace.hard_quality_flags
-            and evidence is not None
-            and "local_sn_strong" in evidence.support_labels
-            and set(evidence.concern_labels) <= {"shape_poor", "shape_borderline"}
-            and not decision_semantics_from_candidate_facts(
-                facts, count_no_ms2_as_detected=False
-            ).ambiguity_reasons
-        ):
-            supported.append(item)
-    if supported and selection_rt is not None:
-
-        def reference_key(item: ScoredCandidate) -> tuple[bool, float]:
-            peak = item.candidate.peak
-            return (
-                not peak.peak_start <= selection_rt <= peak.peak_end,
-                abs(item.candidate.selection_apex_rt - selection_rt),
-            )
-
-        nearest = min(reference_key(item) for item in supported)
-        scored = [item for item in supported if reference_key(item) == nearest]
-    return select_candidate_by_evidence(
-        scored, selection_rt=selection_rt, strict_selection_rt=strict_selection_rt
-    )
 
 
 def current_target_reference_rt(

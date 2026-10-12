@@ -351,17 +351,6 @@ def _str_setting(
     return cast(str, tuning.get(field, default))
 
 
-def _bool_setting(
-    overrides: Mapping[str, object],
-    field: str,
-    default: bool,
-) -> bool:
-    value = overrides.get(field, default)
-    if type(value) is not bool:
-        raise PresetError(f"{field} must be true or false")
-    return value
-
-
 def _enum_str_setting(
     overrides: Mapping[str, object],
     field: str,

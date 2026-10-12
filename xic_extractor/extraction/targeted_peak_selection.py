@@ -1,31 +1,58 @@
-"""Complete Targeted selection against the shared physical peak owner."""
+"""Assess one Targeted candidate population and complete its selected result."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
-from typing import cast
+from types import MappingProxyType
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
-from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
+from xic_extractor.evidence.neutral_loss import (
+    CandidateMS2Evidence,
+    MS2ProductEvidence,
+    NLResult,
+    check_nl,
+)
+from xic_extractor.extraction.result_assembly import build_extraction_result
 from xic_extractor.extraction.scoring_factory import selected_candidate
 from xic_extractor.extraction.targeted_peak_hypotheses import (
     build_targeted_peak_hypotheses as build_peak_hypotheses,
 )
+from xic_extractor.ms2_scan_models import Ms2Window
 from xic_extractor.peak_detection.baseline import BaselineMethod
+from xic_extractor.peak_detection.candidate_selection import (
+    select_candidate_by_evidence,
+)
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlCandidateInterval,
+    CidNlEvaluationReceipt,
+    CidNlEventQuery,
+    CidNlMethodRelations,
+    evaluate_cid_nl_method_relations,
+)
+from xic_extractor.peak_detection.cid_nl_peak_support import DdaCidNlPeakSupportPolicy
+from xic_extractor.peak_detection.evidence_facts import (
+    decision_semantics_from_candidate_facts,
+)
 from xic_extractor.peak_detection.hypotheses import (
     CandidateMS2EvidenceMap,
     PeakHypothesis,
 )
-from xic_extractor.peak_detection.models import PeakCandidate, PeakDetectionResult
+from xic_extractor.peak_detection.models import (
+    PeakCandidate,
+    PeakCandidatesResult,
+    PeakDetectionResult,
+)
 from xic_extractor.peak_detection.ms1_morphology import (
     configured_morphology_window_points,
 )
 from xic_extractor.peak_detection.observations import (
     physical_peak_observation_integration,
 )
+from xic_extractor.peak_detection.peak_selection import select_peak_and_area
 from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
     answer_selected_physical_candidate,
 )
@@ -34,11 +61,253 @@ from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalSegmentUniverse,
     PreparedSignalResult,
 )
+from xic_extractor.peak_detection.scoring_models import ScoredCandidate, ScoringContext
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
     selection_decision_from_hypothesis,
 )
 from xic_extractor.peak_detection.traces import TraceGroup
+
+if TYPE_CHECKING:
+    from xic_extractor.extraction.result_models import ExtractionResult
+
+
+@dataclass(frozen=True, slots=True)
+class TargetedCandidateAssessment:
+    """Keep physical candidates, method evidence and selected membership aligned.
+
+    Acquisition supplies a retained trace and MS2 window. This owner decides the
+    exact method population and carries that same ordering through scoring and
+    the completed result; consumers never reconstruct a selected method index.
+    """
+
+    target: Target
+    config: ExtractionConfig
+    trace_group: TraceGroup
+    prepared_result: PreparedSignalResult
+    universe: PhysicalSegmentUniverse
+    candidates: PeakCandidatesResult
+    selection_window: tuple[float, float]
+    preferred_rt: float | None
+    strict_preferred_rt: bool
+    candidate_evaluations: Mapping[PeakCandidate, PhysicalPeakEvaluation]
+    candidate_nl_support: Mapping[PeakCandidate, bool] | None
+    method_products: tuple[MS2ProductEvidence, ...]
+    method_receipt: CidNlEvaluationReceipt | None
+    method_relations: CidNlMethodRelations | None
+
+    def rank_candidates(
+        self,
+        *,
+        scoring_context_builder: Callable[[PeakCandidate], ScoringContext] | None,
+        istd_confidence_note: str | None,
+        paired_istd_anchor_rt: float | None,
+    ) -> PeakDetectionResult:
+        return select_peak_and_area(
+            self.candidates,
+            self.config,
+            preferred_rt=self.preferred_rt,
+            strict_preferred_rt=self.strict_preferred_rt,
+            scoring_context_builder=scoring_context_builder,
+            istd_confidence_note=istd_confidence_note,
+            evidence_role="ISTD" if self.target.is_istd else "Analyte",
+            istd_pair=self.target.istd_pair,
+            paired_istd_anchor_rt=paired_istd_anchor_rt,
+            evidence_selector=(
+                _select_no_nl_candidate_by_reference
+                if self.target.neutral_loss_da is None
+                else select_candidate_by_evidence
+            ),
+        )
+
+    def complete_result(
+        self,
+        peak_result: PeakDetectionResult,
+        *,
+        candidate_ms2_evidence: CandidateMS2EvidenceMap,
+        nl_result: NLResult | None,
+        scoring_context_builder: Callable[[PeakCandidate], ScoringContext] | None,
+    ) -> ExtractionResult:
+        selection = select_targeted_peak(
+            config=self.config,
+            target=self.target,
+            peak_result=peak_result,
+            trace_group=self.trace_group,
+            candidate_ms2_evidence=candidate_ms2_evidence,
+            prepared_result=self.prepared_result,
+            universe=self.universe,
+            selection_rt_min=self.selection_window[0],
+            selection_rt_max=self.selection_window[1],
+            candidate_evaluations=self.candidate_evaluations,
+        )
+        candidate = selected_candidate(selection.peak_result)
+        return build_extraction_result(
+            peak_result=selection.peak_result,
+            nl_result=nl_result,
+            candidate_ms2_evidence=selection.candidate_ms2_evidence,
+            target=self.target,
+            candidate=candidate,
+            scoring_context_builder=scoring_context_builder,
+            selected_hypothesis=selection.selected_hypothesis,
+            selection_decision=selection.selection_decision,
+            acquisition_trace=selection.trace_group.primary_trace,
+            physical_evaluation=selection.physical_evaluation,
+            candidate_physical_evaluations=tuple(self.candidate_evaluations.values()),
+            cid_nl_products=self.method_products,
+            cid_nl_evaluation_receipt=self.method_receipt,
+            cid_nl_relations=self.method_relations,
+            selected_cid_nl_candidate_index=(
+                tuple(self.candidate_evaluations).index(candidate)
+                if candidate is not None and self.method_relations is not None
+                else None
+            ),
+            sample_name=self.trace_group.sample_name,
+        )
+
+
+def assess_targeted_candidate_population(
+    *,
+    target: Target,
+    config: ExtractionConfig,
+    trace_group: TraceGroup,
+    prepared_result: PreparedSignalResult,
+    universe: PhysicalSegmentUniverse,
+    candidates: PeakCandidatesResult,
+    selection_window: tuple[float, float],
+    preferred_rt: float | None,
+    strict_preferred_rt: bool,
+    method_window: Ms2Window | None,
+) -> TargetedCandidateAssessment:
+    trace = trace_group.primary_trace
+    evaluations = {
+        candidate: answer_selected_physical_candidate(
+            prepared_result,
+            universe,
+            candidate,
+            selection_subject_id=target.label,
+            acquisition_rt_window=(trace.rt_min, trace.rt_max),
+            selection_rt_window=selection_window,
+        )
+        for candidate in candidates.candidates
+    }
+    receipt = None
+    relations = None
+    products: tuple[MS2ProductEvidence, ...] = ()
+    support = None
+    if target.neutral_loss_da is not None:
+        if method_window is None:
+            raise ValueError("CID-NL candidate assessment requires its acquired window")
+        products = check_nl(
+            method_window,
+            precursor_mz=target.mz,
+            neutral_loss_da=target.neutral_loss_da,
+            nl_ppm_warn=target.nl_ppm_warn or 20.0,
+            nl_ppm_max=target.nl_ppm_max or 20.0,
+            ms2_precursor_tol_da=config.ms2_precursor_tol_da,
+            nl_min_intensity_ratio=config.nl_min_intensity_ratio,
+        ).product_evidence
+        policy = DdaCidNlPeakSupportPolicy(
+            precursor_tolerance_da=max(target.mz * target.ppm_tol / 1_000_000, 1e-9),
+            neutral_loss_tolerance_ppm=target.nl_ppm_max or 20.0,
+        )
+        # The broad acquisition probe may include neighbouring precursor ions;
+        # only the declared exact-mass method population enters this assessment.
+        products = tuple(
+            product
+            for product in products
+            if abs(product.precursor_mz - target.mz) <= policy.precursor_tolerance_da
+        )
+        receipt = CidNlEvaluationReceipt(
+            query_rt_min=min(method_window.rt_min, selection_window[0]),
+            query_rt_max=max(method_window.rt_max, selection_window[1]),
+            support_policy=policy,
+            acquisition_supported=True,
+            search_completed=True,
+            scanned_event_count=len(method_window.events),
+            reason_code=None,
+        )
+        relations = evaluate_cid_nl_method_relations(
+            candidate_intervals=tuple(
+                CidNlCandidateInterval(
+                    target.mz, candidate.peak.peak_start, candidate.peak.peak_end
+                )
+                for candidate in candidates.candidates
+            ),
+            event_queries=tuple(
+                CidNlEventQuery(
+                    product.assess_precursor_loss(
+                        target.neutral_loss_da, policy.neutral_loss_tolerance_ppm
+                    ),
+                    product.scan_rt,
+                    product.scan_rt,
+                )
+                for product in products
+            ),
+            policy=policy,
+        )
+        supported = relations.supported_candidate_indexes
+        support = MappingProxyType(
+            {
+                candidate: index in supported
+                for index, candidate in enumerate(candidates.candidates)
+            }
+        )
+    return TargetedCandidateAssessment(
+        target=target,
+        config=config,
+        trace_group=trace_group,
+        prepared_result=prepared_result,
+        universe=universe,
+        candidates=candidates,
+        selection_window=selection_window,
+        preferred_rt=preferred_rt,
+        strict_preferred_rt=strict_preferred_rt or target.neutral_loss_da is None,
+        candidate_evaluations=MappingProxyType(evaluations),
+        candidate_nl_support=support,
+        method_products=products,
+        method_receipt=receipt,
+        method_relations=relations,
+    )
+
+
+def _select_no_nl_candidate_by_reference(
+    scored: list[ScoredCandidate],
+    *,
+    selection_rt: float | None = None,
+    strict_selection_rt: bool = False,
+) -> ScoredCandidate:
+    """Rank supported physical components by reference without changing facts."""
+    supported = []
+    for item in scored:
+        facts = item.evidence_facts
+        evidence = item.evidence_score
+        if (
+            facts is not None
+            and not facts.chemical.neutral_loss_required
+            and not facts.trace.quality_flags
+            and not facts.trace.hard_quality_flags
+            and evidence is not None
+            and "local_sn_strong" in evidence.support_labels
+            and set(evidence.concern_labels) <= {"shape_poor", "shape_borderline"}
+            and not decision_semantics_from_candidate_facts(
+                facts, count_no_ms2_as_detected=False
+            ).ambiguity_reasons
+        ):
+            supported.append(item)
+    if supported and selection_rt is not None:
+
+        def reference_key(item: ScoredCandidate) -> tuple[bool, float]:
+            peak = item.candidate.peak
+            return (
+                not peak.peak_start <= selection_rt <= peak.peak_end,
+                abs(item.candidate.selection_apex_rt - selection_rt),
+            )
+
+        nearest = min(reference_key(item) for item in supported)
+        scored = [item for item in supported if reference_key(item) == nearest]
+    return select_candidate_by_evidence(
+        scored, selection_rt=selection_rt, strict_selection_rt=strict_selection_rt
+    )
 
 
 @dataclass(frozen=True)

@@ -366,4 +366,3 @@ def _owner(
         ),
         is_provisional=is_provisional,
     )
-

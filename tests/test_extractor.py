@@ -76,7 +76,7 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
         _open_raw_factory(peak_centers=[8.5, 9.5]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.select_peak_and_area",
+        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence(
             [
                 _ok_peak(
@@ -562,7 +562,7 @@ def test_run_does_not_write_intermediate_csv_by_default(
         _open_raw_factory(),
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.select_peak_and_area",
+        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence([_ok_peak(8.5, 1200.0, 3400.25)]),
     )
 
@@ -597,7 +597,7 @@ def test_run_loads_scoring_inputs_from_config_paths(
     calls: dict[str, object] = {}
     monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.select_peak_and_area",
+        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence([_ok_peak(8.5, 1200.0, 3400.25)]),
     )
 
@@ -626,7 +626,7 @@ def test_run_falls_back_to_main_pass_when_prepass_returns_none(
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.select_peak_and_area",
+        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence(
             [
                 _ok_peak(9.05, 1500.0, 2000.0),
@@ -769,7 +769,7 @@ def test_run_reextracts_istd_in_main_pass_to_keep_scoring_metadata(
         ),
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.select_peak_and_area",
+        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence(
             [
                 _ok_peak(
@@ -836,7 +836,7 @@ def test_run_projects_very_low_for_nd_rows_with_failed_nl(
     targets = [_target("WithNL")]
     monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.select_peak_and_area",
+        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence(
             [_failed_peak("PEAK_NOT_FOUND", n_points=15, max_smoothed=1234.0)]
         ),
@@ -929,7 +929,7 @@ def test_run_writes_file_error_row_and_continues(
         _open_raw_factory(errors={"Bad.raw": RuntimeError("file locked")}),
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.select_peak_and_area",
+        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence([_ok_peak(8.5, 1000.0, 2000.0), _ok_peak(9.5, 1100.0, 2100.0)]),
     )
     monkeypatch.setattr(
@@ -1014,7 +1014,7 @@ def test_run_writes_neutral_loss_diagnostics(
     targets = [_target("WithNL")]
     monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.select_peak_and_area",
+        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence([_ok_peak(8.5, 1000.0, 2000.0)]),
     )
     monkeypatch.setattr(
@@ -1045,7 +1045,7 @@ def test_istd_no_ms2_keeps_ms1_peak_and_writes_confidence_flags(
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.select_peak_and_area",
+        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence([_ok_peak(9.05, 1200.0, 3400.25)]),
     )
     monkeypatch.setattr(
@@ -1085,7 +1085,7 @@ def test_run_reports_progress_and_stops_between_files(
     progress_calls: list[tuple[int, int, str]] = []
     monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.select_peak_and_area",
+        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence([_ok_peak(8.5, 1000.0, 2000.0)]),
     )
 
@@ -1126,7 +1126,7 @@ def test_paired_analyte_uses_strict_anchor_peak_selection(
         _anchor_sequence([13.70, 13.75]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.select_peak_and_area",
+        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _capturing_peak_sequence(
             [_ok_peak(13.70, 2000.0, 3000.0), _ok_peak(13.75, 500.0, 800.0)],
             strict_flags,
@@ -1193,7 +1193,7 @@ def test_istd_anchor_keeps_strongest_anchor_when_far_from_target_center(
         _fake_find_nl_anchor_rt,
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.select_peak_and_area",
+        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _fake_select_peak_and_area,
     )
     monkeypatch.setattr(
@@ -1253,7 +1253,7 @@ def test_istd_anchor_keeps_strongest_anchor_when_it_is_near_target_center(
         _fake_find_nl_anchor_rt,
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.select_peak_and_area",
+        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _fake_select_peak_and_area,
     )
     monkeypatch.setattr(
@@ -1288,7 +1288,7 @@ def test_istd_peak_not_found_does_not_reacquire_context(
         _anchor_sequence([9.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.select_peak_and_area",
+        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence(
             [_failed_peak("PEAK_NOT_FOUND", n_points=15, max_smoothed=1234.0)]
         ),
@@ -1333,7 +1333,7 @@ def test_istd_no_signal_does_not_reacquire_context(
         _anchor_sequence([9.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.select_peak_and_area",
+        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence([_failed_peak("NO_SIGNAL", n_points=0, max_smoothed=None)]),
     )
     monkeypatch.setattr(
@@ -1370,7 +1370,7 @@ def test_istd_weak_peak_keeps_single_complete_context(
         _anchor_sequence([9.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.select_peak_and_area",
+        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence(
             [
                 _ok_peak(
@@ -1419,7 +1419,7 @@ def test_istd_low_confidence_peak_keeps_single_complete_context(
         _anchor_sequence([9.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.select_peak_and_area",
+        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence(
             [
                 _ok_peak(
@@ -1472,7 +1472,7 @@ def test_paired_analyte_with_nl_remains_counted_despite_target_anchor_mismatch(
         _anchor_sequence([13.70, 13.75]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.select_peak_and_area",
+        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence(
             [_ok_peak(13.70, 2000.0, 3000.0), _ok_peak(13.06, 5000.0, 8000.0)]
         ),
@@ -1548,7 +1548,7 @@ def test_paired_analyte_accepts_peak_close_to_target_anchor_even_if_farther_from
         _anchor_sequence([13.70, 13.95]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.select_peak_and_area",
+        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence(
             [_ok_peak(13.70, 2000.0, 3000.0), _ok_peak(13.95, 5000.0, 8000.0)]
         ),
@@ -1627,7 +1627,7 @@ def test_paired_analyte_keeps_target_nl_anchor_far_from_istd_anchor(
         _anchor_sequence([13.70, 15.10]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.select_peak_and_area",
+        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _fake_select_peak_and_area,
     )
     monkeypatch.setattr(
@@ -1670,7 +1670,7 @@ def test_paired_analyte_istd_rt_fallback_does_not_force_counted_detection(
         _anchor_sequence([13.70, None]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.select_peak_and_area",
+        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence(
             [
                 _ok_peak(13.70, 2000.0, 3000.0),
@@ -1732,7 +1732,7 @@ def test_paired_analyte_fallback_preserves_not_counted_peak_in_matrix(
         _anchor_sequence([13.70, None]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.select_peak_and_area",
+        "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence(
             [
                 _ok_peak(13.70, 2000.0, 3000.0),

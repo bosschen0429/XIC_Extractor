@@ -58,15 +58,6 @@ def _parse_optional_path(value: str) -> Path | None:
     return Path(normalized).expanduser()
 
 
-def _require_range(
-    path: Path, column: str, value: str, parsed: float, minimum: float, maximum: float
-) -> None:
-    if not minimum <= parsed <= maximum:
-        raise _config_error(
-            path, None, column, value, f"must be between {minimum} and {maximum}"
-        )
-
-
 def _config_error(
     path: Path, row_number: int | None, column: str, value: str, message: str
 ) -> ConfigError:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from time import perf_counter
 from typing import TypeAlias
 
@@ -24,17 +23,11 @@ from xic_extractor.alignment.backfill.result import (
 from xic_extractor.alignment.backfill.runtime_projection import (
     BackfillRuntimeFeature,
 )
-from xic_extractor.alignment.backfill.scope import (
-    any_detected_owner_can_be_superseded,
-    backfill_seed_centers,
-)
 from xic_extractor.alignment.matrix import AlignedCell
 from xic_extractor.alignment.matrix_handoff import integration_from_peak
-from xic_extractor.alignment.owner_area import median_owner_area, positive_finite
 from xic_extractor.alignment.owner_group_delivery import (
     delivery_cell_projection,
 )
-from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -426,32 +419,6 @@ def _backfill_unchecked_cell(
             missing_observation_state="missing_unchecked",
         ),
     )
-
-
-def _backfill_seed_centers(
-    feature: BackfillRuntimeFeature,
-) -> tuple[tuple[float, float], ...]:
-    return backfill_seed_centers(feature)
-
-
-def _any_detected_owner_can_be_superseded(
-    feature: BackfillRuntimeFeature,
-    owners: Sequence[SampleLocalMS1Owner] | None,
-) -> bool:
-    return any_detected_owner_can_be_superseded(feature, owners)
-
-
-def _detected_owner_can_be_superseded(
-    feature: BackfillRuntimeFeature,
-    owner: SampleLocalMS1Owner,
-) -> bool:
-    detected_area = positive_finite(owner.owner_area)
-    if detected_area is None:
-        return False
-    family_area = median_owner_area(feature)
-    if family_area is None:
-        return False
-    return detected_area <= family_area * 0.25
 
 
 def _keep_best_backfill_outcome_cell(

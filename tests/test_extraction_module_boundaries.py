@@ -130,8 +130,13 @@ def test_target_extraction_delegates_diagnostic_evidence_helpers() -> None:
 
     assert "_check_target_nl" not in function_names
     assert "_candidate_ms2_evidence_builder" not in function_names
-    assert "select_targeted_peak(" in source
-    assert "build_extraction_result(" in source
+    assert "assess_targeted_candidate_population(" in source
+    assert ".complete_result(" in source
+    selection_source = (
+        ROOT / "xic_extractor" / "extraction" / "targeted_peak_selection.py"
+    ).read_text(encoding="utf-8")
+    assert "select_targeted_peak(" in selection_source
+    assert "build_extraction_result(" in selection_source
 
 
 def test_untargeted_identity_paths_exclude_targeted_product_projection() -> None:

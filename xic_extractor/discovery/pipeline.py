@@ -20,10 +20,6 @@ from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
 from xic_extractor.discovery import candidate_merge, output_publication
-from xic_extractor.discovery.batch_contract import (
-    DiscoveryCandidateUniverseReceipt,
-    mint_discovery_candidate_universe_receipt,
-)
 from xic_extractor.discovery.blank_qualification import (
     BlankBackgroundLibrary,
     apply_blank_qualification_to_candidates,
@@ -123,9 +119,7 @@ class DiscoverySampleProcessJob:
 class DiscoverySampleProcessResult:
     sample_index: int
     sample_stem: str
-    outputs: DiscoveryRunOutputs
-    receipt: DiscoveryCandidateUniverseReceipt
-    index_row: dict[str, str]
+    publication: output_publication.PublishedDiscoverySample
     timing_records: tuple[TimingRecord, ...]
     measurement_observations: tuple[dict[str, object], ...]
     ms1_measurements: _DiscoveryMs1Measurements | None = None
@@ -372,36 +366,20 @@ def run_discovery_batch(
             run_spec=run_spec,
             acquisition_input=acquisition_input,
         )
-        candidates = discovery_result.candidates
-        sample_output_dir = output_dir / sample_stem
-        outputs = output_publication.write_dual_csvs(
-            sample_output_dir,
-            candidates,
+        publication = output_publication.publish_discovery_batch_sample(
+            raw_path,
+            discovery_result.candidates,
+            output_dir=output_dir,
+            acquisition_source=acquisition_source,
             timing_recorder=recorder,
-            sample_stem=sample_stem,
             run_spec=run_spec,
             acquisition_input=acquisition_input,
             physical_work_manifest=discovery_result.physical_work_manifest,
             physical_evaluations=discovery_result.physical_evaluations,
             physical_bindings=discovery_result.physical_bindings,
         )
-        per_sample.append(outputs)
-        candidates = output_publication.persisted_discovery_candidates(candidates)
-        receipt = mint_discovery_candidate_universe_receipt(
-            sample_stem=sample_stem,
-            acquisition_source=acquisition_source,
-            candidate_csv=outputs.candidates_csv,
-            candidates=candidates,
-        )
-        index_rows.append(
-            output_publication.batch_index_row(
-                raw_path=raw_path,
-                outputs=outputs,
-                candidates=candidates,
-                receipt=receipt,
-                index_parent=output_dir,
-            )
-        )
+        per_sample.append(publication.outputs)
+        index_rows.append(publication.index_row)
         if progress_callback is not None:
             progress_callback(sample_index + 1, len(raw_paths), sample_stem)
 
@@ -603,10 +581,10 @@ def _run_discovery_batch_process(
     return DiscoveryBatchOutputs(
         batch_index_csv=output_publication.write_batch_index(
             output_dir / "discovery_batch_index.csv",
-            [result.index_row for result in results],
+            [result.publication.index_row for result in results],
             timing_recorder=timing_recorder,
         ),
-        per_sample=tuple(result.outputs for result in results),
+        per_sample=tuple(result.publication.outputs for result in results),
     )
 
 
@@ -691,37 +669,22 @@ def _run_discovery_sample_process_job(
             acquisition_input=job.acquisition_input,
         )
         sample_stem = job.raw_path.stem
-        candidates = discovery_result.candidates
-        outputs = output_publication.write_dual_csvs(
-            job.output_dir / sample_stem,
-            candidates,
+        publication = output_publication.publish_discovery_batch_sample(
+            job.raw_path,
+            discovery_result.candidates,
+            output_dir=job.output_dir,
+            acquisition_source=job.acquisition_source,
             timing_recorder=recorder,
-            sample_stem=sample_stem,
             run_spec=job.run_spec,
             acquisition_input=job.acquisition_input,
             physical_work_manifest=discovery_result.physical_work_manifest,
             physical_evaluations=discovery_result.physical_evaluations,
             physical_bindings=discovery_result.physical_bindings,
         )
-        candidates = output_publication.persisted_discovery_candidates(candidates)
-        receipt = mint_discovery_candidate_universe_receipt(
-            sample_stem=sample_stem,
-            acquisition_source=job.acquisition_source,
-            candidate_csv=outputs.candidates_csv,
-            candidates=candidates,
-        )
         return DiscoverySampleProcessResult(
             sample_index=job.sample_index,
             sample_stem=sample_stem,
-            outputs=outputs,
-            receipt=receipt,
-            index_row=output_publication.batch_index_row(
-                raw_path=job.raw_path,
-                outputs=outputs,
-                candidates=candidates,
-                receipt=receipt,
-                index_parent=job.output_dir,
-            ),
+            publication=publication,
             timing_records=recorder.records,
             measurement_observations=_portable_worker_observations(recorder),
             ms1_measurements=discovery_result.ms1_measurements,
