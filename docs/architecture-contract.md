@@ -56,6 +56,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | Packaged quantitative-effect promotion authority | `alignment/quantitative_projection_authority.py` | 封住 packaged resource、strict manifest rehydration 與 canonical rendering；是 promotion contract boundary，不是數值算法或 active application guard |
 | 缺格補證及格值 | `alignment/backfill/`、`alignment/cell_decision/` | 新觀察、科學決策與檔案 writer 各自有 owner |
 | RAW 讀取或 DLL | `raw_reader.py` 及使用它的 acquisition adapter | 讀入量測資料；不因此取得群組、格值或發布決定權 |
+| Discovery sample 發布與 batch 交付 | `discovery/output_publication.py` | 統一 persisted candidates、CSV 發布及 receipt／index 綁定；serial／worker 只交出完整 publication，receipt 合法性仍由 `batch_contract.py` 負責 |
 | Discovery 已保存輸入 | `discovery/csv_reader.py`、`discovery/input_source.py` | 依 Discovery receipt 讀取 batch/candidate CSV，提供整批或有界 row loading；Alignment 只消費候選 |
 | 樣本 RAW 檔案定位 | `acquisition/raw_paths.py` | 依宣告的 sample/raw 路徑與既有 fallback 規則定位檔案；不做科學判定 |
 | Targeted／Alignment RT-window MS2 擷取與 NL 解讀 | `acquisition/ms2_windows.py` 擷取單一樣本的有界視窗；`evidence/neutral_loss.py` 解讀已擷取事件 | 前者持有 reader 呼叫，後者只處理 `Ms2Window` 與候選幾何；Discovery 宣告 scan 的 strict receipt 保留原 owner |

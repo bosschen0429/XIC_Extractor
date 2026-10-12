@@ -89,13 +89,15 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
         for index, path in enumerate(paths)
     }
     captured = {}
-    write_outputs = output_publication.write_dual_csvs
+    publish_sample = output_publication.publish_discovery_batch_sample
 
-    def capture_outputs(output_dir, candidates, **kwargs):
-        captured[kwargs["sample_stem"]] = (candidates, kwargs)
-        return write_outputs(output_dir, candidates, **kwargs)
+    def capture_publication(raw_path, candidates, **kwargs):
+        captured[raw_path.stem] = (candidates, kwargs)
+        return publish_sample(raw_path, candidates, **kwargs)
 
-    monkeypatch.setattr(output_publication, "write_dual_csvs", capture_outputs)
+    monkeypatch.setattr(
+        output_publication, "publish_discovery_batch_sample", capture_publication
+    )
     monkeypatch.setattr(
         pipeline, "_owner_bound_raw_opener",
         lambda *_args: lambda path, _dll: handles[path],
@@ -286,6 +288,7 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
     )
 
     submitted_jobs: list[DiscoverySampleProcessJob] = []
+    completed_worker_results = []
 
     class _SynchronousExecutor:
         def __init__(self, *args, **kwargs) -> None:
@@ -294,7 +297,9 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
         def submit(self, worker, job):
             submitted_jobs.append(job)
             future = Future()
-            future.set_result(worker(job))
+            result = worker(job)
+            completed_worker_results.append(result)
+            future.set_result(result)
             return future
 
         def shutdown(self, *, wait, cancel_futures=False) -> None:
@@ -335,13 +340,18 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
         max_workers=1,
         mp_context=context,
     ) as executor:
-        restored_output = executor.submit(
+        restored_result = executor.submit(
             pickle.loads,
-            pickle.dumps(process.per_sample[0]),
+            pickle.dumps(completed_worker_results[0]),
         ).result(timeout=30)
-    assert restored_output.physical_bindings == (
-        process.per_sample[0].physical_bindings
+    assert restored_result.sample_index == completed_worker_results[0].sample_index
+    assert restored_result.publication.receipt == (
+        completed_worker_results[0].publication.receipt
     )
+    assert restored_result.publication.index_row == (
+        completed_worker_results[0].publication.index_row
+    )
+    assert restored_result.publication.outputs == process.per_sample[0]
 
     first_bindings = serial.per_sample[0].physical_bindings
     assert first_bindings[0].run_spec_id == spec.run_spec_id
