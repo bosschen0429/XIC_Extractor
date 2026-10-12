@@ -27,7 +27,7 @@ from xic_extractor.alignment.backfill.scope import (
     select_backfill_features,
 )
 from xic_extractor.alignment.config import AlignmentConfig, BackfillXicBackend
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupDisposition,
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,

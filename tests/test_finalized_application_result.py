@@ -14,7 +14,7 @@ import pytest
 
 from tests.test_target_pre_cell_projection import _finalized_case
 from tests.test_untargeted_post_cell_projection import _completed_projection
-from xic_extractor.alignment.cell_decision import decide_target_cell_population
+from xic_extractor.alignment.cell_decision.owner import decide_target_cell_population
 from xic_extractor.alignment.projection.target import (
     TargetPostCellProjection,
     project_target_post_cell,

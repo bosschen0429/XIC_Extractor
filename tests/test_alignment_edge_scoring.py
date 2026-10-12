@@ -263,7 +263,7 @@ def test_sufficient_raw_edge_is_preserved_before_applying_drift() -> None:
 def test_degraded_drift_falls_back_without_keeping_prior_bonus(
     corrected_sec: float,
 ) -> None:
-    from xic_extractor.alignment.cross_sample_peak_groups import (
+    from xic_extractor.alignment.cross_sample.peak_groups import (
         classify_cross_sample_initial_edge,
     )
 
@@ -342,7 +342,7 @@ def test_drift_is_not_queried_when_it_cannot_admit_the_pair(
 
 @pytest.mark.parametrize("failure", ["product", "loss"])
 def test_targeted_istd_hard_gate_exception_retains_its_rt_query(failure: str) -> None:
-    from xic_extractor.alignment.cross_sample_peak_groups import (
+    from xic_extractor.alignment.cross_sample.peak_groups import (
         classify_cross_sample_initial_edge,
     )
 

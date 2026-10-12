@@ -8,7 +8,7 @@ from dataclasses import InitVar, dataclass, field
 from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingResult,
 )
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     CrossSampleLineageEdge,

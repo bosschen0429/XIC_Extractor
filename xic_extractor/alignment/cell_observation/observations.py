@@ -32,7 +32,7 @@ from xic_extractor.alignment.cross_sample.association import (
     CrossSampleCoveragePositionAssociation,
     validate_cross_sample_association_lineage_handoff,
 )
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
 )

@@ -7,7 +7,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import InitVar, dataclass, field, fields
 from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupDisposition,
     CrossSampleLineageEdge,
 )

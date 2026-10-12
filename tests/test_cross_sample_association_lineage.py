@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-import xic_extractor.alignment.cross_sample_peak_groups as cross_sample_owner
+import xic_extractor.alignment.cross_sample.peak_groups as cross_sample_owner
 import xic_extractor.peak_detection.integration as integration_runtime
 import xic_extractor.peak_detection.ms1_shape_identity as smoothing_runtime
 from tests.alignment_pipeline_helpers import _owner
@@ -29,7 +29,7 @@ from xic_extractor.alignment.backfill.request_plan import (
     BackfillRequestEquivalenceContext,
     build_backfill_request_plan,
 )
-from xic_extractor.alignment.cross_sample import (
+from xic_extractor.alignment.cross_sample.association import (
     CrossSampleAssociationContractError,
     CrossSamplePredecessorAssociation,
     build_cross_sample_association_lineage_handoff,
@@ -39,7 +39,7 @@ from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingContractError,
     CrossSampleGroupingResult,
 )
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     CrossSamplePartitionTransition,

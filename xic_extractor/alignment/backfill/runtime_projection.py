@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from statistics import median
 from typing import Protocol, TypeAlias, cast
 
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupDisposition,
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,

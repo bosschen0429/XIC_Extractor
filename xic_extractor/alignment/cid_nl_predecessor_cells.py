@@ -14,7 +14,7 @@ from xic_extractor.alignment.cell_observation.records import (
     mint_cell_observation_ref,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.edge_scoring import DriftLookupProtocol

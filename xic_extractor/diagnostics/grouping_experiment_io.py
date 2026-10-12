@@ -12,10 +12,10 @@ from pathlib import Path
 from typing import Any
 
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.cross_sample_identity_models import (
+from xic_extractor.alignment.cross_sample.identity_models import (
     CrossSampleGroupMemberSubject,
 )
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.feature_membership_inference import (

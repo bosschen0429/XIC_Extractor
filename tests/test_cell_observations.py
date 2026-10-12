@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 import xic_extractor.alignment.cell_observation.observations as cell_owner
-import xic_extractor.alignment.cross_sample_peak_groups as group_owner
+import xic_extractor.alignment.cross_sample.peak_groups as group_owner
 from tests.cid_nl_peak_support_no_raw_fixture import (
     cid_nl_evidence,
     cid_nl_peak,
@@ -55,10 +55,10 @@ from xic_extractor.alignment.cid_nl_predecessor_cells import (
     compose_cid_nl_predecessor_cells,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.cross_sample import (
+from xic_extractor.alignment.cross_sample.association import (
     build_cross_sample_association_lineage_handoff,
 )
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     construct_cross_sample_peak_group_hypotheses,
     mint_cross_sample_group_identity,
     validate_cross_sample_peak_group_identity,

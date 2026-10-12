@@ -23,7 +23,7 @@ from xic_extractor.alignment.cid_nl_evidence_spine import (
     TargetedCellObservationReferenceProjection,
     UntargetedCellObservationReferenceProjection,
 )
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.peak_trajectories import BackfillPeakLocation

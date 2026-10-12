@@ -26,7 +26,7 @@ from xic_extractor.alignment.cell_observation.group_context import (
     _validate_group_support_attempts,
     _validate_typed_digest_id,
 )
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupMemberSubject,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (

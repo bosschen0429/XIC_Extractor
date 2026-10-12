@@ -13,7 +13,7 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
 from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingResult,
 )
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleContractError,
     CrossSampleGroupIdentity,
     validate_cross_sample_group_population,

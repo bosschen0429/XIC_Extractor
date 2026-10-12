@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from typing import Literal, TypeAlias
 
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupIdentity,
     CrossSamplePeakGroupHypothesis,
     validate_cross_sample_peak_group_identity,

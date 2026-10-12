@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
 from xic_extractor.acquisition_contract import TraceCoordinate
-from xic_extractor.alignment.cross_sample_peak_groups import CrossSampleGroupIdentity
+from xic_extractor.alignment.cross_sample.peak_groups import CrossSampleGroupIdentity
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
     mint_artifact_semantic_contract_ref,

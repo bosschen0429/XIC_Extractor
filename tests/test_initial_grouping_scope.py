@@ -4,7 +4,7 @@ from dataclasses import FrozenInstanceError, fields
 
 import pytest
 
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.grouping_bootstrap import InitialGroupingScope

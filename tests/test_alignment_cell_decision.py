@@ -36,7 +36,8 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     mint_backfill_attempt_terminal,
     mint_backfill_selection_subject_id,
 )
-from xic_extractor.alignment.cell_decision import (
+from xic_extractor.alignment.cell_decision import owner as decision_owner
+from xic_extractor.alignment.cell_decision.owner import (
     CellDecisionContractError,
     NoWriteCellDecision,
     NumericCellDecision,
@@ -46,7 +47,6 @@ from xic_extractor.alignment.cell_decision import (
     decide_target_cell_population,
     validate_production_cell_decision,
 )
-from xic_extractor.alignment.cell_decision import owner as decision_owner
 from xic_extractor.alignment.cell_observation.observations import (
     CellObservationContractError,
     FinalGroupCellObservation,
@@ -56,10 +56,10 @@ from xic_extractor.alignment.cell_observation.observations import (
 from xic_extractor.alignment.cid_nl_evidence_spine import (
     build_cid_nl_reference_spine,
 )
-from xic_extractor.alignment.cross_sample import (
+from xic_extractor.alignment.cross_sample.association import (
     build_cross_sample_association_lineage_handoff,
 )
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     mint_cross_sample_group_identity,
     validate_cross_sample_peak_group_identity,
 )
