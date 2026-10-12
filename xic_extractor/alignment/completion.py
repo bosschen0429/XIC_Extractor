@@ -86,7 +86,9 @@ class AlignmentWorkflowContractError(ValueError):
     """Raised when the shared workflow cannot preserve exact owner truth."""
 
 
-class _WorkflowStageFailure(Exception):
+class WorkflowStageFailure(Exception):
+    """A completion stage failed; ``stage`` names it and ``error`` is the cause."""
+
     def __init__(self, stage: WorkflowStage, error: Exception) -> None:
         super().__init__(str(error))
         self.stage = stage
@@ -340,7 +342,7 @@ def compose_untarget_subject(
             processing_owners=owners,
             completed_captures=completed_captures,
         )
-    except _WorkflowStageFailure as failure:
+    except WorkflowStageFailure as failure:
         raise AlignmentWorkflowContractError(
             f"Untarget subject composition failed at {failure.stage.value}: "
             f"{failure.error}"
@@ -460,10 +462,10 @@ def _compose_application_result(
             scientific=scientific,
         )
 
-    except _WorkflowStageFailure:
+    except WorkflowStageFailure:
         raise
     except Exception as exc:
-        raise _WorkflowStageFailure(stage, exc) from exc
+        raise WorkflowStageFailure(stage, exc) from exc
 
 
 def _capture_workflow_input(
@@ -872,7 +874,7 @@ def _finish_variant(
             )
         return result
     except Exception as exc:
-        raise _WorkflowStageFailure(stage, exc) from exc
+        raise WorkflowStageFailure(stage, exc) from exc
 
 
 def complete_analysis(
@@ -934,10 +936,10 @@ def complete_untarget_batch(
                 "application_result returned a crossed Untarget batch result"
             )
         return application_result
-    except _WorkflowStageFailure:
+    except WorkflowStageFailure:
         raise
     except Exception as exc:
-        raise _WorkflowStageFailure(WorkflowStage.APPLICATION_RESULT, exc) from exc
+        raise WorkflowStageFailure(WorkflowStage.APPLICATION_RESULT, exc) from exc
 
 
 __all__ = (
@@ -951,6 +953,7 @@ __all__ = (
     "WorkflowAdapter",
     "WorkflowRequest",
     "WorkflowStage",
+    "WorkflowStageFailure",
     "complete_analysis",
     "complete_untarget_batch",
     "compose_untarget_subject",
