@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
+from statistics import median, quantiles
 from typing import TYPE_CHECKING
 
 from xic_extractor.configuration.models import Target
@@ -180,6 +182,87 @@ def _typed_not_counted_reasons(reasons: tuple[str, ...]) -> tuple[str, ...]:
     )
 
 
+_MISSING_DIRECT_NL_REVIEW = frozenset(
+    {
+        "plausible_nl_dropout_review",
+        "missing_ms2_not_observed",
+        "missing_nl_support_review",
+    }
+)
+_MISSING_DIRECT_NL_NOT_COUNTED = frozenset(
+    {
+        "cid_nl_method_not_supported",
+        "missing_ms2_policy_not_counted",
+        "istd_nl_fail_without_dropout_support",
+    }
+)
+_COHERENT_MS1_PEAK = frozenset({"ms1_peak_present", "ms1_coherent", "trace_coherent"})
+# The Backfill apex floor: closer RT agreement is not resolvable (12 s).
+_PAIRED_OFFSET_FLOOR_MIN = 0.2
+
+
+def paired_istd_identity_samples(
+    analyte: Mapping[str, ExtractionResult],
+    istd: Mapping[str, ExtractionResult],
+) -> frozenset[str]:
+    """Return samples whose analyte peak takes its identity from the paired ISTD.
+
+    An isotope-labelled ISTD co-elutes with its analyte, so once the ISTD is
+    counted in a sample (directly or by accepted Backfill), the analyte's
+    coherent MS1 peak at this batch's confirmed analyte-to-ISTD RT offset has
+    its chemical identity whether or not its own neutral loss was observed.
+    The offset is learned from samples where both are counted; with fewer than
+    two such samples there is no offset to agree with.
+    """
+    counted_istd = {
+        sample: rt
+        for sample, result in istd.items()
+        if _counted(result) and (rt := _finite(result.reported_rt)) is not None
+    }
+    offsets = [
+        rt - counted_istd[sample]
+        for sample, result in analyte.items()
+        if sample in counted_istd
+        and _counted(result)
+        and (rt := _finite(result.reported_rt)) is not None
+    ]
+    if len(offsets) < 2:
+        return frozenset()
+    center = median(offsets)
+    residuals = [abs(offset - center) for offset in offsets]
+    tolerance = max(
+        _PAIRED_OFFSET_FLOOR_MIN,
+        quantiles(residuals, n=10, method="inclusive")[-1],
+    )
+    identified = set()
+    for sample, result in analyte.items():
+        projection = result.targeted_product_projection
+        rt = _finite(result.reported_rt)
+        if (
+            projection is None
+            or projection.counted_detection
+            or sample not in counted_istd
+            or rt is None
+            or projection.conflict_reasons
+            or projection.exclusion_reasons
+            or not _COHERENT_MS1_PEAK <= set(projection.support_reasons)
+            or not set(projection.not_counted_reasons) <= _MISSING_DIRECT_NL_NOT_COUNTED
+        ):
+            continue
+        if abs(rt - counted_istd[sample] - center) <= tolerance:
+            identified.add(sample)
+    return frozenset(identified)
+
+
+def _counted(result: ExtractionResult) -> bool:
+    projection = result.targeted_product_projection
+    return projection is not None and projection.counted_detection
+
+
+def _finite(value: float | None) -> float | None:
+    return value if value is not None and math.isfinite(value) else None
+
+
 def _positive(value: float | None) -> bool:
     return value is not None and math.isfinite(value) and value > 0
 
@@ -217,6 +300,7 @@ def build_targeted_product_projection(
     nl_status: str,
     cid_nl_supported: bool = False,
     backfill_supported: bool = False,
+    paired_istd_identity: bool = False,
     support_reasons: tuple[str, ...] = (),
     review_reasons: tuple[str, ...] = (),
     conflict_reasons: tuple[str, ...] = (),
@@ -308,29 +392,20 @@ def build_targeted_product_projection(
             legacy,
         )
 
-    if context.is_istd and backfill_supported:
-        support = _merge_reasons(support, ("cross_sample_backfill_identity",))
-        # Accepted recovery resolves missing-direct-NL context; independent
-        # morphology or overlap concerns remain actionable.
-        review = tuple(
-            reason
-            for reason in review
-            if reason
-            not in {
-                "plausible_nl_dropout_review",
-                "missing_ms2_not_observed",
-                "missing_nl_support_review",
-            }
-        )
+    identity = (
+        "cross_sample_backfill_identity"
+        if context.is_istd and backfill_supported
+        else "paired_istd_identity"
+        if not context.is_istd and paired_istd_identity
+        else None
+    )
+    if identity is not None:
+        support = _merge_reasons(support, (identity,))
+        # Identity from Backfill or the paired ISTD resolves missing direct
+        # NL/MS2; independent morphology or overlap concerns remain actionable.
+        review = tuple(r for r in review if r not in _MISSING_DIRECT_NL_REVIEW)
         not_counted = tuple(
-            reason
-            for reason in not_counted
-            if reason
-            not in {
-                "cid_nl_method_not_supported",
-                "missing_ms2_policy_not_counted",
-                "istd_nl_fail_without_dropout_support",
-            }
+            r for r in not_counted if r not in _MISSING_DIRECT_NL_NOT_COUNTED
         )
 
     if not_counted:

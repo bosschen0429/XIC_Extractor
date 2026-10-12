@@ -92,12 +92,36 @@ hypothesis is an evidence representation, not a competing selection owner.
 The physical owner may withdraw an unavailable measurement, but does not
 substitute another candidate.
 
-For an NL-required analyte, an observation-only MS1 value is quantitation, not
-confirmed detection. A finalized CID-NL-supported hypothesis is required for
-counting; a positive numeric cell, legacy confidence, pair/ratio label or
-acquisition-stage detection flag cannot supply that authority. The existing
-product projection renders the finalized method answer and retained review
-facts. ISTD expected-presence, MS1-only, RT and quality policies remain separate.
+For an NL-required analyte, counting needs a chemical identity: its own
+finalized CID-NL-supported hypothesis, or the identity of its paired
+isotope-labelled ISTD. A positive numeric cell, legacy confidence, pair/ratio
+label or acquisition-stage detection flag cannot supply that authority. The
+existing product projection renders the finalized method answer and retained
+review facts. ISTD expected-presence, MS1-only, RT and quality policies remain
+separate.
+
+#### Paired-ISTD identity
+
+An isotope-labelled ISTD co-elutes with its analyte, so a counted ISTD confers
+chemical identity on the analyte's MS1 peak at the expected position. The
+analyte's own neutral loss is then not required, whether its MS2 was missing or
+was acquired without the configured loss. `paired_istd_identity_samples` in the
+Targeted projection owner applies the rule, and the publication boundary
+composes it once every Target of the batch has rendered. All of these must hold:
+
+1. The paired ISTD is counted in the same sample, by its own CID-NL support or
+   by accepted ISTD Backfill.
+2. The analyte has a positive, coherent MS1 peak (`ms1_peak_present`,
+   `ms1_coherent`, `trace_coherent`) without conflict or exclusion, and its
+   only not-counted reasons are missing direct NL/MS2.
+3. Its apex RT minus the ISTD's agrees with this batch's confirmed offset: the
+   median over samples where both are counted, within the larger of 12 s and
+   the p90 of those samples' residuals. Fewer than two confirmed samples give no
+   offset, and the rule does not apply.
+
+The result records `paired_istd_identity` among its support reasons, so it
+remains distinguishable from NL-confirmed detection. Morphology, overlap and
+other review reasons still flag it.
 
 Cohort Backfill is a distinct, owner-bound recovery after direct reference
 observations are available. The [shared Backfill route](backfill.md#targeted-route)
@@ -270,8 +294,9 @@ a missing current-sample paired observation or an independent identity oracle.
 ### Counting and product selection
 
 - One extraction pass decides each row. Analyte `NL_FAIL` or `NO_MS2` rows
-  keep their measured RT, area and bounds; counting follows the NL evidence
-  rules. There is no MS1-shape rescue that re-counts such rows.
+  keep their measured RT, area and bounds; they are counted only through
+  [paired-ISTD identity](#paired-istd-identity). There is no MS1-shape rescue
+  that re-counts such rows.
 
 ## Surfaces
 

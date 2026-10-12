@@ -1784,13 +1784,17 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
     row = next(
         r for r in rows if r["SampleName"] == "SampleC" and r["Target"] == "Analyte"
     )
-    assert row["Counted Detection"] == ("TRUE" if istd_backfill else "FALSE")
+    # A recovered analyte peak takes its identity from the counted paired ISTD
+    # at the confirmed offset; a truncated (incoherent) peak does not.
+    paired_identity = not (istd_backfill or missing_pair or hint_window)
+    counted = istd_backfill or paired_identity
+    assert row["Counted Detection"] == ("TRUE" if counted else "FALSE")
     if istd_backfill:
         assert initial_counts and not any(initial_counts)
     if not missing_pair:
         assert row["RT"] == pytest.approx(1.49 if istd_backfill else 1.9, abs=0.005)
         assert row["Area"] > 0
-        if istd_backfill:
+        if counted:
             assert row["Review"] is None
             assert row["Review Reason"] is None
             assert row["Review Evidence"] is None

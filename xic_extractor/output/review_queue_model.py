@@ -241,6 +241,10 @@ def _review_why(issue: str, row: dict[str, str], evidence: str) -> str:
         "Projection Support Reasons", ""
     ):
         return "未取得符合條件的直接 NL 證據；跨樣本回填已確認此峰，已計入偵測。"
+    if counted == "TRUE" and "paired_istd_identity" in row.get(
+        "Projection Support Reasons", ""
+    ):
+        return "未取得直接 NL 證據；配對同位素內標已確認此峰身分，已計入偵測。"
     if "BACKFILL_HOLD" in evidence and counted == "FALSE":
         return "跨樣本回填未找到可唯一確認的峰；保留原量測，但仍未計入偵測。"
     if "BACKFILL_ACCEPTED" in evidence and counted == "FALSE":

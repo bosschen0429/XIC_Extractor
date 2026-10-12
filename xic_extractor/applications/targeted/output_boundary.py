@@ -8,7 +8,7 @@ import shutil
 import tempfile
 from collections.abc import Callable, Mapping
 from contextlib import ExitStack, contextmanager
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator, cast
 
@@ -29,6 +29,7 @@ from xic_extractor.extraction.result_models import (
 )
 from xic_extractor.extraction.targeted_product_projection import (
     build_targeted_product_projection,
+    paired_istd_identity_samples,
 )
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 from xic_extractor.output.messages import DiagnosticRecord
@@ -196,7 +197,8 @@ def _build_render_view(
                 )
             decisions[key] = projection_decision
 
-    files: list[tuple[int | None, FileResult]] = []
+    files: list[tuple[int | None, FileResult, dict[str, ExtractionResult]]] = []
+    cells: dict[tuple[str, str], _RenderCell] = {}
     consumed: set[tuple[str, str]] = set()
     consumed_sample_ids: set[str] = set()
     for file_result in acquisition_evidence.file_results:
@@ -259,8 +261,8 @@ def _build_render_view(
                     f"finalized_{render_decision.variant}",
                 )
             )
-            rendered[target_label] = _finalized_extraction_result(
-                extraction,
+            cell = _RenderCell(
+                extraction=extraction,
                 target=targets_by_label[target_label],
                 value=render_decision.value,
                 no_write_reason=no_write_reason,
@@ -270,19 +272,79 @@ def _build_render_view(
                     and backfill_decision.matched_candidate is not None
                 ),
             )
-        files.append(
-            (sample.metadata.injection_order, replace(file_result, results=rendered))
-        )
+            cells[(file_result.sample_name, target_label)] = cell
+            rendered[target_label] = cell.render()
+        files.append((sample.metadata.injection_order, file_result, rendered))
     if consumed != set(decisions):
         raise TargetedOutputBoundaryError(
             "finalized Targeted decisions crossed the acquisition sample population"
         )
+    _apply_paired_istd_identity(
+        {file_result.sample_name: rendered for _, file_result, rendered in files},
+        cells,
+        targets_by_label,
+    )
     # Every published reader follows the run as acquired, not RAW file names.
     files.sort(key=lambda item: (item[0] is None, item[0] or 0, item[1].sample_name))
     return RunOutput(
-        file_results=[file_result for _, file_result in files],
+        file_results=[
+            replace(file_result, results=rendered) for _, file_result, rendered in files
+        ],
         diagnostics=[*acquisition_evidence.diagnostics, *backfill_diagnostics],
     )
+
+
+@dataclass(frozen=True)
+class _RenderCell:
+    """One finalized sample/target decision and the evidence that renders it."""
+
+    extraction: ExtractionResult
+    target: Target
+    value: float | None
+    no_write_reason: str
+    evidence: object
+    backfill_supported: bool
+
+    def render(self, *, paired_istd_identity: bool = False) -> ExtractionResult:
+        return _finalized_extraction_result(
+            self.extraction,
+            target=self.target,
+            value=self.value,
+            no_write_reason=self.no_write_reason,
+            evidence=self.evidence,
+            backfill_supported=self.backfill_supported,
+            paired_istd_identity=paired_istd_identity,
+        )
+
+
+def _apply_paired_istd_identity(
+    rendered_by_sample: Mapping[str, dict[str, ExtractionResult]],
+    cells: Mapping[tuple[str, str], _RenderCell],
+    targets_by_label: Mapping[str, Target],
+) -> None:
+    """Re-render analytes whose identity comes from their counted paired ISTD.
+
+    The ISTD's final count, including accepted Backfill, is known only once
+    every Target of the batch has rendered.
+    """
+    for label, target in targets_by_label.items():
+        pair = target.istd_pair
+        if target.is_istd or not pair or target.neutral_loss_da is None:
+            continue
+        analyte = {
+            sample: results[label]
+            for sample, results in rendered_by_sample.items()
+            if label in results
+        }
+        istd = {
+            sample: results[pair]
+            for sample, results in rendered_by_sample.items()
+            if pair in results
+        }
+        for sample in paired_istd_identity_samples(analyte, istd):
+            rendered_by_sample[sample][label] = cells[(sample, label)].render(
+                paired_istd_identity=True
+            )
 
 
 def _finalized_extraction_result(
@@ -293,6 +355,7 @@ def _finalized_extraction_result(
     no_write_reason: str,
     evidence: object,
     backfill_supported: bool = False,
+    paired_istd_identity: bool = False,
 ) -> ExtractionResult:
     projection = _finalized_product_projection(
         extraction.targeted_product_projection,
@@ -301,6 +364,7 @@ def _finalized_extraction_result(
         value=value,
         no_write_reason=no_write_reason,
         backfill_supported=backfill_supported,
+        paired_istd_identity=paired_istd_identity,
     )
     if not no_write_reason:
         if (
@@ -381,6 +445,7 @@ def _finalized_product_projection(
     value: float | None,
     no_write_reason: str,
     backfill_supported: bool = False,
+    paired_istd_identity: bool = False,
 ) -> TargetedProductProjection | None:
     if projection is None:
         return None
@@ -412,6 +477,7 @@ def _finalized_product_projection(
             evidence.hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
         ),
         backfill_supported=backfill_supported,
+        paired_istd_identity=paired_istd_identity,
         support_reasons=projection.support_reasons,
         review_reasons=projection.review_reasons,
         conflict_reasons=projection.conflict_reasons,

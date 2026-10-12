@@ -11,6 +11,7 @@ _REASON_TEXT = {
     "candidate_aligned_ms2_nl": "MS2/NL support associated with the candidate",
     "role_aware_rt_support": "RT supported by reference/ISTD",
     "paired_istd_anchor_support": "RT agrees with paired ISTD",
+    "paired_istd_identity": "Identity from the counted paired isotope ISTD",
     "paired_area_ratio_support": "Plausible area ratio to paired ISTD",
     "chrom_peak_segment_context": "Chromatographic peak-segment support",
     "cwt_boundary_morphology_context": "Peak-shape support for boundaries",
