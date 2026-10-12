@@ -197,6 +197,9 @@ _MISSING_DIRECT_NL_NOT_COUNTED = frozenset(
     }
 )
 _COHERENT_MS1_PEAK = frozenset({"ms1_peak_present", "ms1_coherent", "trace_coherent"})
+# Backfill acceptance qualified the recovered peak's shape; the first capture's
+# coherence facts may describe the peak it replaced.
+_BACKFILL_LOCALIZATION = "cross_sample_backfill_localization"
 # The Backfill apex floor: closer RT agreement is not resolvable (12 s).
 _PAIRED_OFFSET_FLOOR_MIN = 0.2
 
@@ -245,7 +248,10 @@ def paired_istd_identity_samples(
             or rt is None
             or projection.conflict_reasons
             or projection.exclusion_reasons
-            or not _COHERENT_MS1_PEAK <= set(projection.support_reasons)
+            or not (
+                _COHERENT_MS1_PEAK <= set(projection.support_reasons)
+                or _BACKFILL_LOCALIZATION in projection.support_reasons
+            )
             or not set(projection.not_counted_reasons) <= _MISSING_DIRECT_NL_NOT_COUNTED
         ):
             continue
@@ -392,6 +398,10 @@ def build_targeted_product_projection(
             legacy,
         )
 
+    if backfill_supported and not context.is_istd:
+        # Accepted Backfill located a physically qualified peak; it localizes
+        # but does not identify an analyte by itself.
+        support = _merge_reasons(support, (_BACKFILL_LOCALIZATION,))
     identity = (
         "cross_sample_backfill_identity"
         if context.is_istd and backfill_supported

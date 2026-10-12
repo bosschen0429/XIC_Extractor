@@ -112,8 +112,11 @@ composes it once every Target of the batch has rendered. All of these must hold:
 1. The paired ISTD is counted in the same sample, by its own CID-NL support or
    by accepted ISTD Backfill.
 2. The analyte has a positive, coherent MS1 peak (`ms1_peak_present`,
-   `ms1_coherent`, `trace_coherent`) without conflict or exclusion, and its
-   only not-counted reasons are missing direct NL/MS2.
+   `ms1_coherent`, `trace_coherent`), or accepted Backfill located it
+   (`cross_sample_backfill_localization`; acceptance already qualified the
+   recovered peak, whose first capture may describe another peak). It has no
+   conflict or exclusion, and its only not-counted reasons are missing direct
+   NL/MS2.
 3. Its apex RT minus the ISTD's agrees with this batch's confirmed offset: the
    median over samples where both are counted, within the larger of 12 s and
    the p90 of those samples' residuals. Fewer than two confirmed samples give no

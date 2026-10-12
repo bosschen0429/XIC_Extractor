@@ -12,6 +12,7 @@ _REASON_TEXT = {
     "role_aware_rt_support": "RT supported by reference/ISTD",
     "paired_istd_anchor_support": "RT agrees with paired ISTD",
     "paired_istd_identity": "Identity from the counted paired isotope ISTD",
+    "cross_sample_backfill_localization": "Peak located by cross-sample Backfill",
     "paired_area_ratio_support": "Plausible area ratio to paired ISTD",
     "chrom_peak_segment_context": "Chromatographic peak-segment support",
     "cwt_boundary_morphology_context": "Peak-shape support for boundaries",

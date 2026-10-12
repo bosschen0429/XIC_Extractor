@@ -253,27 +253,22 @@ window.XicUi = (() => {
     if (summary.focus_count) actions.append(resultButton(`先看這 ${count(summary.focus_count)} 筆 →`, "", true, "primary"));
     actions.append(resultButton("查看所有樣本結果 →"));
     host.append(actions);
-    host.append(node("h3", "各目標結果"), node("p", "每個目標先看與多數不同的樣本：多數未計入時看計入的那幾筆是否抓錯，多數計入時看未計入的那幾筆是否漏抓。", "subtle"));
+    host.append(node("h3", "各目標結果"));
     const table = node("table", undefined, "overview-table");
     const head = node("thead");
     const header = node("tr");
-    for (const text of ["目標", "類型", "計入 / 全部", "需先看", "說明"]) header.append(node("th", text));
+    for (const text of ["目標", "類型", "計入 / 全部", "需先看", "要確認"]) header.append(node("th", text));
     head.append(header);
     const body = node("tbody");
+    // Counts sit in their own columns; this column says only what to check.
     const focusText = target => {
-      const focus = target.focus_samples.length;
-      const decided = target.total - target.count_unknown;
       switch (target.focus_kind) {
-        case "minority_counted": return `只有 ${focus} 筆計入，其餘 ${decided - focus} 筆未計入：確認這 ${focus} 筆是否抓錯峰`;
-        case "minority_not_counted": return `${focus} 筆未計入，其餘 ${decided - focus} 筆計入：確認這 ${focus} 筆是否漏抓`;
-        case "mixed": return focus
-          ? `計入與未計入沒有明顯多數：看 ${focus} 筆有檢閱註記的結果`
-          : "計入與未計入沒有明顯多數；未記錄檢閱註記";
+        case "minority_counted": return "是否抓錯峰";
+        case "minority_not_counted": return "是否漏抓";
+        case "mixed": return target.focus_samples.length ? "沒有明顯多數，看檢閱註記" : "";
         default:
-          if (!decided) return "未記錄計數判定";
-          if (!target.counted) return "全部未計入";
           // Quality notes on counted peaks affect quantitation; they stay one level down.
-          return target.review ? `全部計入；${target.review} 筆有檢閱註記，可在目標頁查看` : "全部計入";
+          return target.counted && target.review ? `${target.review} 筆檢閱註記` : "";
       }
     };
     for (const target of summary.targets) {
@@ -306,7 +301,7 @@ window.XicUi = (() => {
     }
     values.append(valueHead, valueBody);
     quantities.append(values);
-    host.append(quantities, node("p", `「需先看」是依各目標多數結果排出的閱讀順序（少數一方占 ${Math.round(summary.minority_share * 100)}% 以下），不改變已保存的判定，也不代表其餘結果已通過科學或品質驗收。保存的檢閱註記可在各目標頁查看。`, "overview-footnote"));
+    host.append(quantities, node("p", `需先看：各目標中占 ${Math.round(summary.minority_share * 100)}% 以下的一方；只決定閱讀順序，不改變已保存的判定。`, "overview-footnote"));
   }
   function renderPage(page) {
     state.page = page;

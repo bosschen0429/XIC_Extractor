@@ -37,9 +37,9 @@
     const focusBanner = focus => {
       const n = focus.samples.length, rest = focus.decided - n;
       const text = n && {
-        minority_counted: `此目標 ${rest} / ${focus.decided} 筆未計入。標記「少數」的 ${n} 筆計入結果最需要確認：是否抓錯峰。`,
-        minority_not_counted: `此目標 ${rest} / ${focus.decided} 筆計入。標記「少數」的 ${n} 筆未計入結果最需要確認：是否漏抓。`,
-        mixed: `此目標計入與未計入沒有明顯多數，先看 ${n} 筆有檢閱註記的結果。`,
+        minority_counted: `${rest} / ${focus.decided} 筆未計入；標「少數」的 ${n} 筆計入，確認是否抓錯峰。`,
+        minority_not_counted: `${rest} / ${focus.decided} 筆計入；標「少數」的 ${n} 筆未計入，確認是否漏抓。`,
+        mixed: `沒有明顯多數；先看 ${n} 筆有檢閱註記的結果。`,
       }[focus.kind];
       return text ? element('p', text, 'tgt-focus-banner') : null;
     };
@@ -68,7 +68,10 @@
       bar.setAttribute('aria-label', '篩選樣本');
       const table = element('table', undefined, 'tgt-table');
       const head = element('tr');
-      for (const title of ['樣本', 'RT (min)', '面積', '計入偵測', '檢閱註記']) head.append(element('th', title));
+      // A paired analyte reads beside its ISTD in the same sample row.
+      const paired = Object.keys(istdRecords).length > 0;
+      const titles = ['樣本', 'RT (min)', '面積', '計入偵測', ...(paired ? ['ISTD RT (min)', 'ISTD 面積'] : []), '檢閱註記'];
+      for (const title of titles) head.append(element('th', title));
       const thead = element('thead');thead.append(head);
       const body = element('tbody');
       let openRow = null;
@@ -108,14 +111,21 @@
           row.classList.add('focus');
           sampleCell.append(element('span', '少數', 'tgt-badge attention'));
         }
-        row.append(sampleCell, element('td', value(record.RT), 'tgt-number'), element('td', scientific(record.Area), 'tgt-number'), element('td', counted(record['Counted Detection']), 'tgt-counted'), element('td', review?.Why || '—', 'tgt-reason'));
+        row.append(sampleCell, element('td', value(record.RT), 'tgt-number'), element('td', scientific(record.Area), 'tgt-number'), element('td', counted(record['Counted Detection']), 'tgt-counted'));
+        if (paired) {
+          const istd = istdRecords[record.SampleName];
+          const istdArea = element('td', istd ? scientific(istd.Area) : '—', 'tgt-number tgt-istd');
+          if (istd && counted(istd['Counted Detection']) !== '是') istdArea.append(element('span', 'ISTD 未計入', 'tgt-badge'));
+          row.append(element('td', istd ? value(istd.RT) : '—', 'tgt-number tgt-istd'), istdArea);
+        }
+        row.append(element('td', review?.Why || '—', 'tgt-reason'));
         button.addEventListener('click', () => {
           const same = openRow?.row === row;
           closeDetail();
           if (same) return;
           // Evidence opens under its row, so choosing a sample never moves the reader away.
           const detail = element('tr', undefined, 'tgt-detail-row'), cell = element('td');
-          cell.colSpan = 5;cell.append(detailFor(record));detail.append(cell);
+          cell.colSpan = titles.length;cell.append(detailFor(record));detail.append(cell);
           row.after(detail);row.classList.add('selected');button.setAttribute('aria-expanded', 'true');
           openRow = {row, detail, button};
         });
@@ -138,7 +148,7 @@
       applyFilter(filters[0]);
       table.append(thead, body);
       const scroll = element('div', undefined, 'tgt-table-scroll');scroll.append(table);
-      section.append(scroll, element('p', '點選樣本可在該列下方展開峰界、配對 ISTD 與註記。', 'tgt-note'));
+      section.append(scroll, element('p', '點樣本名稱展開細節。', 'tgt-note'));
       const method = element('details', undefined, 'tgt-method');
       method.append(element('summary', '方法設定'));
       method.append(facts([

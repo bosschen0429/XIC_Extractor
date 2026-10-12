@@ -230,53 +230,49 @@ def _review_status(issue: str, confidence: str) -> str:
 
 
 def _review_why(issue: str, row: dict[str, str], evidence: str) -> str:
-    """Explain saved facts; event labels never create a counting decision."""
+    """Name the saved fact briefly; counting is its own column, never restated."""
     counted = row.get("Counted Detection", "").upper()
     state = row.get("Product State", "")
     if state == "excluded":
-        return "此筆已被分析規則排除，未計入偵測。"
+        return "已被規則排除"
     if state == "ambiguous" or row.get("Projection Conflict Reasons"):
-        return "此筆仍有未解決的證據衝突，尚未確認峰的身份。"
+        return "證據衝突，身分未定"
     if counted == "TRUE" and "cross_sample_backfill_identity" in row.get(
         "Projection Support Reasons", ""
     ):
-        return "未取得符合條件的直接 NL 證據；跨樣本回填已確認此峰，已計入偵測。"
-    if counted == "TRUE" and "paired_istd_identity" in row.get(
-        "Projection Support Reasons", ""
-    ):
-        return "未取得直接 NL 證據；配對同位素內標已確認此峰身分，已計入偵測。"
+        return "無直接 NL，回填確認身分"
     if "BACKFILL_HOLD" in evidence and counted == "FALSE":
-        return "跨樣本回填未找到可唯一確認的峰；保留原量測，但仍未計入偵測。"
+        return "回填找不到唯一的峰"
     if "BACKFILL_ACCEPTED" in evidence and counted == "FALSE":
-        return "已取得回填量測，但尚未滿足身份確認條件，仍未計入偵測。"
+        return "已回填定位，身分未確認"
     if issue == "NL_FAIL":
-        return "未取得符合條件的 NL 證據。量測是否計入，以已保存的判定為準。"
+        return "MS2 未見 NL"
     if issue == "NO_MS2":
-        return "此峰未取得可用的 MS2 掃描，無法由直接 NL 證據確認。"
+        return "沒有 MS2"
     if issue == "NL_WARN":
-        return "已觀測到 NL，但質量誤差達到提醒範圍，需檢查 MS2 證據。"
+        return "NL 質量誤差偏大"
     if issue in {"PEAK_NOT_FOUND", "NO_SIGNAL"}:
-        return "搜尋範圍內未取得可報告的峰量測。"
+        return "找不到峰"
     if issue == "FILE_ERROR":
-        return "此檔案處理失敗，結果可能缺漏；請先檢查 RAW 與原始錯誤紀錄。"
+        return "RAW 處理失敗"
     if issue == "MULTI_PEAK":
-        return "搜尋範圍內有多個候選峰；本表保留正式流程已選定的峰。"
+        return "有多個候選峰"
     if issue == "ANCHOR_RT_MISMATCH":
-        return "所選峰與 RT 定位提示不同；這是檢閱註記，不會單獨推翻已保存的判定。"
+        return "RT 偏離定位提示"
     if issue == "NL_ANCHOR_FALLBACK":
-        return "未取得可用的 NL 定位點，因此使用備用 RT 搜尋範圍。"
+        return "無 NL 定位點，用備用範圍"
     if issue in {"ISTD_CONFIDENCE", "CONFIDENCE_LOW", "CONFIDENCE_VERY_LOW"}:
-        return "信心分級偏低，需檢查峰形與證據；信心分級不等於是否計入偵測。"
+        return "信心分級偏低"
     if issue == "PRODUCT_NOT_COUNTED":
-        return "此筆未滿足計入條件；保留可用量測供檢閱，不視為已確認偵測。"
+        return "未滿足計入條件"
     if issue == "PROJECTION_FLAGGED":
         reasons = row.get("Projection Review Reasons", "")
         if "trace_morphology_review" in reasons:
-            return "峰形或訊號品質有檢閱註記；量測與計數仍沿用正式結果。"
+            return "峰形需檢查"
         if "targeted_rt_review" in reasons:
-            return "所選峰的 RT 與定位提示不同，請檢查峰的位置與同批樣本。"
-        return "此筆結果帶有檢閱註記，請連同峰形及原始證據查看。"
-    return "此筆有補充診斷紀錄；完整內容保留在下方原始紀錄區。"
+            return "RT 位置需檢查"
+        return "證據需檢查"
+    return "有補充診斷紀錄"
 
 
 def _has_product_projection(row: dict[str, str]) -> bool:
@@ -287,26 +283,26 @@ def _has_product_projection(row: dict[str, str]) -> bool:
 
 def _suggested_action(issue: str, row: dict[str, str], evidence: str) -> str:
     if "BACKFILL" in evidence:
-        return "在 Inspector 比較此峰與同批支持樣本，查看回填定位及峰形。"
+        return "比較同批樣本的回填位置與峰形"
     if issue in {"NL_FAIL", "NL_WARN"}:
-        return "在 Inspector 檢查所選 RT 附近的 MS2／NL 證據。"
+        return "看所選 RT 附近的 MS2"
     if issue == "NO_MS2":
-        return "檢查 DDA 掃描涵蓋範圍；不要將缺少 MS2 視為已確認。"
+        return "看 DDA 掃描涵蓋範圍"
     if issue in {"PEAK_NOT_FOUND", "NO_SIGNAL"}:
-        return "檢查 XIC 訊號及 RT 搜尋範圍。"
+        return "看 XIC 與 RT 範圍"
     if issue == "FILE_ERROR":
-        return "查看原始錯誤，確認 RAW 可讀及來源路徑正確。"
+        return "看原始錯誤與 RAW 路徑"
     if issue in {
         "PROJECTION_CONFLICT",
         "PRODUCT_AMBIGUOUS",
         "PRODUCT_NOT_COUNTED",
         "PROJECTION_FLAGGED",
     }:
-        return "在 Inspector 檢查此峰的證據與已保存的判定原因。"
+        return "看此峰的證據"
     if issue == "PRODUCT_EXCLUDED":
-        return "核對目標適用範圍及排除原因。"
+        return "核對適用範圍"
     if row.get("Confidence") in {"LOW", "VERY_LOW"}:
-        return "檢查峰形、RT 提示與 ISTD 配對。"
+        return "看峰形、RT 與 ISTD"
     if issue == "MULTI_PEAK":
-        return "如需追查選峰，在 Inspector 比較候選峰與直接方法證據。"
-    return "如需追查細節，查看此筆原始紀錄。"
+        return "比較候選峰"
+    return "看原始紀錄"

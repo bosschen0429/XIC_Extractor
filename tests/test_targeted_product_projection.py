@@ -120,7 +120,14 @@ def test_backfill_does_not_override_unresolved_identity_or_missing_quantity() ->
 _COHERENT = ("ms1_peak_present", "ms1_coherent", "trace_coherent")
 
 
-def _analyte(*, cid_nl: bool, identity: bool = False, review=()) -> object:
+def _analyte(
+    *,
+    cid_nl: bool,
+    identity: bool = False,
+    review=(),
+    support=_COHERENT,
+    backfill=False,
+) -> object:
     return build_targeted_product_projection(
         TargetedProductContext(role="Analyte", neutral_loss_required=True),
         rt=9.1,
@@ -129,7 +136,8 @@ def _analyte(*, cid_nl: bool, identity: bool = False, review=()) -> object:
         nl_status="OK" if cid_nl else "NL_FAIL",
         cid_nl_supported=cid_nl,
         paired_istd_identity=identity,
-        support_reasons=_COHERENT,
+        backfill_supported=backfill,
+        support_reasons=support,
         review_reasons=("plausible_nl_dropout_review", *review),
     )
 
@@ -183,8 +191,19 @@ def test_identity_needs_a_counted_istd_at_the_batch_offset() -> None:
     ):
         analyte[sample] = _Result(9.0 + offset, _analyte(cid_nl=False))
         istd[sample] = _Result(9.0, pair)
+    # Backfill relocated this peak after the first capture missed it; its
+    # acceptance already qualified the recovered peak's shape.
+    analyte["relocated"] = _Result(
+        9.11, _analyte(cid_nl=False, support=("ms1_peak_present",), backfill=True)
+    )
+    analyte["incoherent"] = _Result(9.11, _analyte(cid_nl=False, support=()))
+    istd["relocated"] = istd["incoherent"] = _Result(9.0, _istd())
 
-    assert paired_istd_identity_samples(analyte, istd) == {"near", "backfilled_istd"}
+    assert paired_istd_identity_samples(analyte, istd) == {
+        "near",
+        "backfilled_istd",
+        "relocated",
+    }
     # One confirmed sample gives no offset to agree with.
     lone = {s: r for s, r in analyte.items() if s in {"C1", "near"}}
     assert paired_istd_identity_samples(lone, istd) == frozenset()

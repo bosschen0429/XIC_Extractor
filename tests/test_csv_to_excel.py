@@ -35,10 +35,7 @@ def test_data_sheet_preserves_measurements_and_compact_review_fields() -> None:
     ]
     assert records[0]["NL Evidence"] == "Observed"
     assert records[1]["NL"] == "⚠ 12.3ppm"
-    assert (
-        records[1]["Review Reason"].replace("\n", "")
-        == "已觀測到 NL，但質量誤差達到提醒範圍，需檢查 MS2 證據。"
-    )
+    assert records[1]["Review Reason"].replace("\n", "") == "NL 質量誤差偏大"
     # RT precedes Area; intensities read as scientific notation, values centered.
     assert ws["C2"].number_format == "0.0000"
     assert ws["D2"].number_format == "0.00E+00"
@@ -93,10 +90,7 @@ def test_data_sheet_preserves_reason_without_dumping_projection_codes() -> None:
     assert record["Area"] == 123
     assert record["Counted Detection"] == "FALSE"
     assert record["Review"] == "Review"
-    assert (
-        record["Review Reason"].replace("\n", "")
-        == "此筆仍有未解決的證據衝突，尚未確認峰的身份。"
-    )
+    assert record["Review Reason"].replace("\n", "") == "證據衝突，身分未定"
     assert not any(header.startswith("Projection ") for header in record)
     assert "Legacy Authority Status" not in record
     wb.close()
@@ -158,11 +152,8 @@ def test_review_queue_aggregates_diagnostics_by_sample_target() -> None:
     assert review_rows[0]["Sample"] == "Tumor_1"
     assert review_rows[0]["Target"] == "Analyte"
     assert review_rows[0]["Status"] == "Review"
-    assert (
-        review_rows[0]["Why"]
-        == "未取得符合條件的 NL 證據。量測是否計入，以已保存的判定為準。"
-    )
-    assert review_rows[0]["Action"] == "在 Inspector 檢查所選 RT 附近的 MS2／NL 證據。"
+    assert review_rows[0]["Why"] == "MS2 未見 NL"
+    assert review_rows[0]["Action"] == "看所選 RT 附近的 MS2"
     assert review_rows[0]["Issue Count"] == "2"
     assert review_rows[0]["Evidence"] == "NL_FAIL; ANCHOR_MISMATCH"
 
@@ -297,10 +288,7 @@ def test_run_writes_one_review_table_and_method_context(tmp_path: Path) -> None:
         ("Sample A", 123, "TRUE"),
         ("Sample B", 456, "FALSE"),
     ]
-    assert (
-        records[1]["Review Reason"].replace("\n", "")
-        == "此峰未取得可用的 MS2 掃描，無法由直接 NL 證據確認。"
-    )
+    assert records[1]["Review Reason"].replace("\n", "") == "沒有 MS2"
     assert (
         dict(row[:2] for row in wb["Run Metadata"].values)[
             "targeted_workbook_layout_version"

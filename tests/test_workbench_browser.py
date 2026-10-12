@@ -426,6 +426,8 @@ def test_targeted_review_marks_the_rare_detection_and_opens_it_in_place(
     # Rows stay in run order; the rare detection is marked where it ran.
     expect(rows.nth(2).locator(".tgt-sample")).to_have_text("S3")
     expect(rows.nth(2).locator(".tgt-badge")).to_have_text("少數")
+    # The same sample's paired ISTD reads in the same row.
+    expect(rows.nth(2).locator(".tgt-istd").first).to_have_text("9.2")
     rows.nth(2).locator(".tgt-sample").click()
     # The evidence is the next row, not a panel after every other sample.
     detail = frame.locator(".tgt-table tbody tr:nth-child(4)")

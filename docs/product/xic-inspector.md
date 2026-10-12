@@ -97,8 +97,8 @@ reading order for every consumer; it does not reclassify results.
 Opening Targeted results first shows a full-batch overview in three levels.
 The heading states how many minority results to read first, beside Analyte and
 ISTD counted totals. A target table follows, minority targets first, with each
-target's role, counted total and a one-line explanation; a fully counted target
-with saved review conditions mentions their number there. Expandable details
+target's role, counted total, minority count and what to check there; a fully
+counted target with saved review conditions shows their number instead. Expandable details
 and the target page hold the rest. Buttons open all results or only the
 minority rows; click a target to narrow the next level. **整批結果總覽** returns
 to the full batch, independent of the current filters or page. A collapsed

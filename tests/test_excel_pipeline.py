@@ -161,10 +161,7 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     assert record["NL"] == "⚠ 12.3ppm"
     assert record["Confidence"] == "LOW"
     assert record["Review"] == "Check"
-    assert (
-        record["Review Reason"].replace("\n", "")
-        == "此筆結果帶有檢閱註記，請連同峰形及原始證據查看。"
-    )
+    assert record["Review Reason"].replace("\n", "") == "證據需檢查"
     assert not ws.merged_cells.ranges
     assert ws.freeze_panes == "C2"
     result_columns = {cell.value: cell.column_letter for cell in ws[1]}
@@ -193,10 +190,7 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     )
     saved = report.payload["items"][0]["details"]
     assert saved["records"][0]["Area"] == 123.45
-    assert (
-        saved["review_queue"][0]["Why"].replace("\n", "")
-        == "此筆結果帶有檢閱註記，請連同峰形及原始證據查看。"
-    )
+    assert saved["review_queue"][0]["Why"].replace("\n", "") == "證據需檢查"
 
 
 def test_workbook_retains_complete_diagnostic_text_in_secondary_appendix(tmp_path):
@@ -291,7 +285,7 @@ def test_workbook_explains_backfill_without_changing_saved_counts(tmp_path):
     }
     assert "Recovered" not in records
     assert records["Held"]["結果"] == "未計入"
-    assert "未找到" in records["Held"]["原因說明"].replace("\n", "")
+    assert "找不到" in records["Held"]["原因說明"].replace("\n", "")
     assert records["Held"]["Area (counts·s)"] == 678.90
     assert any(
         row[2:4] == ("BACKFILL_HOLD", "no_unique_qualified_ms1_peak") for row in values
