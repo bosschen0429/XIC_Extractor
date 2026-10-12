@@ -9,7 +9,7 @@ class EvidenceArtifactClosureError(ValueError):
     """Raised when a supplied artifact dependency closure is not complete."""
 
 
-def _canonical_evidence_artifact_closure(
+def canonical_evidence_artifact_closure(
     *,
     processing_request_id: str,
     processing_attempt_id: str,
@@ -107,4 +107,5 @@ def _canonical_evidence_artifact_closure(
 
 __all__ = [
     "EvidenceArtifactClosureError",
+    "canonical_evidence_artifact_closure",
 ]

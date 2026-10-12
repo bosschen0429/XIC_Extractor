@@ -78,11 +78,12 @@ def test_build_metadata_rows_returns_contract_keys_in_order() -> None:
 
 
 def test_build_metadata_sheet_writes_headers_values_layout_and_styles() -> None:
-    csv_to_excel = importlib.import_module("scripts.csv_to_excel")
+    from xic_extractor.output.sheet_metadata import _build_metadata_sheet
+
     wb = Workbook()
     ws = wb.active
 
-    csv_to_excel._build_metadata_sheet(ws, _config(Path("output")))
+    _build_metadata_sheet(ws, _config(Path("output")))
 
     assert ws["A1"].value == "Key"
     assert ws["B1"].value == "Value"

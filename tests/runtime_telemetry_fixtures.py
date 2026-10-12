@@ -71,11 +71,11 @@ def mint_test_process_result_ref(
     import hashlib
 
     from xic_extractor.evidence_artifacts import (
-        _mint_artifact_semantic_contract_ref,
-        _mint_evidence_artifact_ref,
+        mint_artifact_semantic_contract_ref,
+        mint_evidence_artifact_ref,
     )
 
-    contract = _mint_artifact_semantic_contract_ref(
+    contract = mint_artifact_semantic_contract_ref(
         owner_namespace="xic_extractor.test_execution_runtime",
         semantic_role="test_process_result",
         schema_version="test",
@@ -83,7 +83,7 @@ def mint_test_process_result_ref(
         media_type="application/octet-stream",
         serialization_format="raw-bytes",
     )
-    artifact = _mint_evidence_artifact_ref(
+    artifact = mint_evidence_artifact_ref(
         producer_processing_request_id=processing_attempt.processing_request_id,
         producer_processing_attempt_id=processing_attempt.processing_attempt_id,
         semantic_contract=contract,

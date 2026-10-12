@@ -51,7 +51,7 @@ from xic_extractor.processing_identity import (
 from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
-    _stat_identity,
+    stat_identity,
 )
 from xic_extractor.sample_metadata import (
     ResolvedCanonicalSampleIdentity,
@@ -198,7 +198,7 @@ def build_partition_context(
                 raise IdentityContractError(
                     "source expectation uses the wrong acquisition contract"
                 )
-            if _stat_identity(path.stat()) != expectation.path_identity:
+            if stat_identity(path.stat()) != expectation.path_identity:
                 raise IdentityContractError(
                     "CID-NL RAW source changed after run-spec verification"
                 )
@@ -206,13 +206,13 @@ def build_partition_context(
             source_expectations[stem] = expectation
     else:
         for stem, path in paths_by_stem.items():
-            before = _stat_identity(path.stat())
+            before = stat_identity(path.stat())
             source = build_acquisition_source_identity(
                 path,
                 acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
                 observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
             )
-            if _stat_identity(path.stat()) != before:
+            if stat_identity(path.stat()) != before:
                 raise IdentityContractError(
                     "CID-NL RAW source changed during fingerprinting"
                 )

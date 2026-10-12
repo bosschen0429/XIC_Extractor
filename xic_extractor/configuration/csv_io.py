@@ -33,7 +33,7 @@ def _config_input_path(config_dir: Path, name: str) -> Path:
     return runtime_path
 
 
-def _read_settings(path: Path) -> dict[str, str]:
+def read_settings(path: Path) -> dict[str, str]:
     if not path.exists():
         raise ConfigError(f"{path}: file is missing")
     return _parse_settings_csv_bytes(path.read_bytes(), path)

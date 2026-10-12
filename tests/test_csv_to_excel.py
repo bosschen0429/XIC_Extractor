@@ -4,19 +4,17 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook, load_workbook
 
-import scripts.csv_to_excel as csv_to_excel
-from scripts.csv_to_excel import (
-    _build_data_sheet,
-    _build_targets_sheet,
-    _review_queue_rows,
-    _wide_to_long_rows,
-    run,
-)
+from scripts.csv_to_excel import run
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import NLResult
 from xic_extractor.extraction.result_models import ExtractionResult
 from xic_extractor.output.detection import MissingTargetedProductProjectionError
 from xic_extractor.output.messages import build_diagnostic_records
+from xic_extractor.output.review_queue_model import _review_queue_rows
+from xic_extractor.output.sheet_results import _build_data_sheet
+from xic_extractor.output.sheet_targets import _build_targets_sheet
+from xic_extractor.output.workbook_inputs import _wide_to_long_rows
+from xic_extractor.output.workbook_styles import _apply_sheet_role_styles
 from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 
 
@@ -386,7 +384,7 @@ def test_workbook_sheet_tabs_separate_results_from_method_context(
     wb.active.title = "XIC Results"
     wb.create_sheet("Targets")
     wb.create_sheet("Run Metadata")
-    csv_to_excel._apply_sheet_role_styles(wb)
+    _apply_sheet_role_styles(wb)
     result_color = wb["XIC Results"].sheet_properties.tabColor.rgb
     assert result_color
     for title in ("Targets", "Run Metadata"):

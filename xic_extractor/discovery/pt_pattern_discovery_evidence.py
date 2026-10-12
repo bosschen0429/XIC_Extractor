@@ -36,8 +36,8 @@ from xic_extractor.discovery.pt_pattern_trace_bundle_reader import (
 )
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
-    _mint_artifact_semantic_contract_ref,
-    _mint_evidence_artifact_ref,
+    mint_artifact_semantic_contract_ref,
+    mint_evidence_artifact_ref,
 )
 from xic_extractor.tabular_io import (
     escape_excel_formula,
@@ -57,7 +57,7 @@ ARTIFACT_SERIALIZATION_FORMAT = "pt_pattern_discovery_evidence_csv"
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 _ARTIFACT_ESCAPED_FIELDS = frozenset({"trace_rule_reason"})
 
-_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
+_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace=ARTIFACT_OWNER_NAMESPACE,
     semantic_role=ARTIFACT_SEMANTIC_ROLE,
     schema_version=SCHEMA_VERSION,
@@ -185,7 +185,7 @@ def mint_pt_pattern_discovery_evidence_artifact_ref(
         raise ValueError(
             "processing_attempt must be an owner-issued ProcessingAttemptIdentity"
         )
-    return _mint_evidence_artifact_ref(
+    return mint_evidence_artifact_ref(
         producer_processing_request_id=processing_attempt.processing_request_id,
         producer_processing_attempt_id=processing_attempt.processing_attempt_id,
         semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,

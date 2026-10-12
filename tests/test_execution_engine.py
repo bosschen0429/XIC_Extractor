@@ -22,8 +22,8 @@ from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
 from xic_extractor.evidence_artifacts import (
-    _mint_artifact_semantic_contract_ref,
-    _mint_evidence_artifact_ref,
+    mint_artifact_semantic_contract_ref,
+    mint_evidence_artifact_ref,
 )
 from xic_extractor.execution._finalization import (
     RuntimeResourceCleanupOutcome,
@@ -61,7 +61,7 @@ from xic_extractor.execution.recovery import OwnerPathRuntimeMarker, RuntimeMark
 from xic_extractor.execution.result_store import StreamedResultStore, _OwnerUnpickler
 from xic_extractor.execution.workers import WorkerAdmissionPool
 
-_TEST_CONTRACT = _mint_artifact_semantic_contract_ref(
+_TEST_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.test_execution_engine",
     semantic_role="test_partition_artifact",
     schema_version="test",
@@ -455,7 +455,7 @@ class MockAdapter:
                     "sha256": composition_output.sealed.sha256,
                 }
             ).encode("utf-8")
-            artifact = _mint_evidence_artifact_ref(
+            artifact = mint_evidence_artifact_ref(
                 producer_processing_request_id=self._owners.request.processing_request_id,
                 producer_processing_attempt_id=self._owners.attempt.processing_attempt_id,
                 semantic_contract=_TEST_CONTRACT,
@@ -489,7 +489,7 @@ class MockAdapter:
                 "total_children": application_result.get("total_children", 0),
             }
         ).encode("utf-8")
-        artifact = _mint_evidence_artifact_ref(
+        artifact = mint_evidence_artifact_ref(
             producer_processing_request_id=self._owners.request.processing_request_id,
             producer_processing_attempt_id=self._owners.attempt.processing_attempt_id,
             semantic_contract=_TEST_CONTRACT,
@@ -1199,7 +1199,7 @@ def test_r386_01_cancellation_cutoff_atomic(tmp_path: Path) -> None:
     marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-cutoff")
     marker.record_launch(runtime)
 
-    artifact = _mint_evidence_artifact_ref(
+    artifact = mint_evidence_artifact_ref(
         producer_processing_request_id=fixture.owners.request.processing_request_id,
         producer_processing_attempt_id=attempt.processing_attempt_id,
         semantic_contract=_TEST_CONTRACT,

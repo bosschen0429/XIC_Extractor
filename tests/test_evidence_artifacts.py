@@ -7,8 +7,8 @@ import pytest
 
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactContractError,
-    _mint_artifact_semantic_contract_ref,
-    _mint_evidence_artifact_ref,
+    mint_artifact_semantic_contract_ref,
+    mint_evidence_artifact_ref,
     verify_evidence_artifact_payload,
 )
 from xic_extractor.processing_identity import (
@@ -238,7 +238,7 @@ def _payload(sample):
 
 
 def _artifact(*, processing_attempt, payload_bytes, upstream_artifacts=()):
-    contract = _mint_artifact_semantic_contract_ref(
+    contract = mint_artifact_semantic_contract_ref(
         owner_namespace="tests.synthetic_observation",
         semantic_role="synthetic_observation",
         schema_version="synthetic_observation",
@@ -246,7 +246,7 @@ def _artifact(*, processing_attempt, payload_bytes, upstream_artifacts=()):
         media_type="application/octet-stream",
         serialization_format="bytes",
     )
-    return _mint_evidence_artifact_ref(
+    return mint_evidence_artifact_ref(
         producer_processing_request_id=processing_attempt.processing_request_id,
         producer_processing_attempt_id=processing_attempt.processing_attempt_id,
         semantic_contract=contract,

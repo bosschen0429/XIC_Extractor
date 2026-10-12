@@ -60,8 +60,8 @@ from xic_extractor.configuration.target_identity import (
 )
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
-    _mint_artifact_semantic_contract_ref,
-    _mint_evidence_artifact_ref,
+    mint_artifact_semantic_contract_ref,
+    mint_evidence_artifact_ref,
 )
 from xic_extractor.execution._lifecycle import (
     AttemptRuntime,
@@ -149,7 +149,7 @@ from xic_extractor.sample_metadata import (
 
 _IDENTITY_NAMESPACE = "targeted-production"
 _TRACE_SOURCE = "xic_extractor.targeted_production_workflow:retained-acquisition"
-_NO_OBSERVATION_ARTIFACT_CONTRACT = _mint_artifact_semantic_contract_ref(
+_NO_OBSERVATION_ARTIFACT_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.applications.targeted.production_workflow",
     semantic_role="retained_no_observation_capture_population",
     schema_version="targeted_no_observation_capture",
@@ -1182,7 +1182,7 @@ def _mint_no_observation_capture_artifact(
             ],
         }
     )
-    return _mint_evidence_artifact_ref(
+    return mint_evidence_artifact_ref(
         producer_processing_request_id=owners.request.processing_request_id,
         producer_processing_attempt_id=owners.attempt.processing_attempt_id,
         semantic_contract=_NO_OBSERVATION_ARTIFACT_CONTRACT,

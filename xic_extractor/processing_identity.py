@@ -17,7 +17,9 @@ from typing import Any, cast
 
 from xic_extractor.artifact_lineage import (
     EvidenceArtifactClosureError,
-    _canonical_evidence_artifact_closure,
+)
+from xic_extractor.artifact_lineage import (
+    canonical_evidence_artifact_closure as _validate_artifact_closure,
 )
 from xic_extractor.configuration.target_identity import (
     ResolvedTargetDefinition,
@@ -576,7 +578,7 @@ def canonical_evidence_artifact_closure(
         raise IdentityContractError(
             "producer_attempt must be an owner-issued ProcessingAttemptIdentity"
         )
-    return _canonical_evidence_artifact_closure(
+    return _validate_artifact_closure(
         processing_request_id=producer_attempt.processing_request_id,
         processing_attempt_id=producer_attempt.processing_attempt_id,
         dependency_processing_attempt_ids=retry_predecessor_attempt_ids(
@@ -597,7 +599,7 @@ def canonical_current_attempt_artifact_closure(
         raise IdentityContractError(
             "producer_attempt must be an owner-issued ProcessingAttemptIdentity"
         )
-    return _canonical_evidence_artifact_closure(
+    return _validate_artifact_closure(
         processing_request_id=producer_attempt.processing_request_id,
         processing_attempt_id=producer_attempt.processing_attempt_id,
         dependency_processing_attempt_ids=(),
