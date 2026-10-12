@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections import defaultdict
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 from xml.etree.ElementTree import ParseError
@@ -239,8 +239,9 @@ class TargetedWorkbookSource:
                 0,
             )
         if selection.strategy == "attention" or selection.attention_only:
+            # Lists the targets to read first; each keeps every sample, so the
+            # minority rows are read against the majority they depart from.
             items = [item for item in items if item.is_attention]
-            items = [self._review_scope(item) for item in items]
         if selection.target_ids:
             items = [item for item in items if item.identifier in selection.target_ids]
         if selection.group_ids or selection.candidate_ids:
@@ -280,24 +281,6 @@ class TargetedWorkbookSource:
             eligible,
             len(items),
             missing,
-        )
-
-    @staticmethod
-    def _review_scope(item: CanonicalItem) -> CanonicalItem:
-        """The review filter selects a target's unusual outcomes, not its peers."""
-        sample_ids = set(item.details["focus"]["samples"])
-        records = [
-            row for row in item.details["records"] if row["SampleName"] in sample_ids
-        ]
-        return replace(
-            item,
-            sample_ids=tuple(row["SampleName"] for row in records),
-            details=item.details
-            | {
-                "records": records,
-                "review_summary": item.details["review_summary"]
-                | {"scope_sample_count": len(records)},
-            },
         )
 
     def load_render_items(self, items, *, capability, check_cancel):

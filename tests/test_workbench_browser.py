@@ -435,7 +435,7 @@ def test_targeted_review_marks_the_rare_detection_and_opens_it_in_place(
     expect(detail).to_contain_text("配對 ISTD（ISTD）")
 
 
-def test_clearing_the_minority_filter_reloads_every_sample(workbench, tmp_path):
+def test_read_first_opens_on_minority_rows_and_clearing_lists_all(workbench, tmp_path):
     from tests.test_xic_inspector_targeted_workbook import (
         write_rare_detection_workbook,
     )
@@ -446,8 +446,13 @@ def test_clearing_the_minority_filter_reloads_every_sample(workbench, tmp_path):
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview .overview-actions .primary").click()
-    rows = page.frame_locator("#inspector").locator(".tgt-table tbody tr")
+    frame = page.frame_locator("#inspector")
+    rows = frame.locator(".tgt-table tbody tr:not([hidden])")
+    # Reading first starts on the minority row; every sample is one click away.
     expect(rows).to_have_count(1)
+    expect(frame.locator(".tgt-filter button")).to_have_text(
+        ["全部（5）", "需先看（1）"]
+    )
     # A filter change applies at once; no separate search press is needed.
     page.locator("#target-attention").uncheck()
     expect(rows).to_have_count(5)

@@ -99,19 +99,21 @@ The heading states how many minority results to read first, beside Analyte and
 ISTD counted totals. A target table follows, minority targets first, with each
 target's role, counted total, minority count and what to check there; a fully
 counted target with saved review conditions shows their number instead. Expandable details
-and the target page hold the rest. Buttons open all results or only the
-minority rows; click a target to narrow the next level. **整批結果總覽** returns
+and the target page hold the rest. Buttons open every target or only the
+targets with minority rows; click a target to narrow the next level. **整批結果總覽** returns
 to the full batch, independent of the current filters or page. A collapsed
 quantity summary shows per-target median Area and RT range for counted results
 only. Missing count decisions are reported as unknown, never inferred from
 numeric values.
 
-Choose a target to see one compact sample table: saved Area, RT, counted status
-and saved review condition. Rows keep injection order with minority rows marked; filters
-show all rows, the minority rows, or the rows with saved review conditions.
-Selecting a sample opens its peak bounds, NL evidence, the same sample's paired
-ISTD RT, Area and counted status, review conditions and the original selection
-text directly under that row. Target and method settings are separate
+Choose a target to see one compact sample table: saved RT, Area, counted
+status, the same sample's paired ISTD RT and Area, and saved review condition.
+The table always holds every sample in injection order, with minority rows
+marked. The read-first filter only lists targets; on the target page one
+toggle shows all rows or the minority rows, starting on the minority rows when
+opened to read first. Selecting a sample opens its peak bounds, NL evidence,
+paired ISTD offset, review conditions and the original selection text directly
+under that row. Target and method settings are separate
 expandable details.
 
 Literal `ND`, zero and blank values remain distinct.

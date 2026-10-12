@@ -61,7 +61,6 @@
       const filters = [
         ['all', '全部', () => true],
         ['focus', '需先看', record => focusSet.has(record.SampleName)],
-        ['notes', '有檢閱註記', record => reviews.has(record.SampleName)],
       ].map(([key, label, keep]) => ({key, label, keep, count: records.filter(keep).length}));
       const bar = element('div', undefined, 'tgt-filter');
       bar.setAttribute('role', 'group');
@@ -145,7 +144,9 @@
         bar.append(button);
       }
       if (bar.children.length > 1) section.append(bar);
-      applyFilter(filters[0]);
+      // Opened to read first: start on the minority rows, one click from all.
+      const readFirst = payload.selection?.attention_only || payload.selection?.strategy === 'attention';
+      applyFilter(readFirst && filters[1].count ? filters[1] : filters[0]);
       table.append(thead, body);
       const scroll = element('div', undefined, 'tgt-table-scroll');scroll.append(table);
       section.append(scroll, element('p', '點樣本名稱展開細節。', 'tgt-note'));

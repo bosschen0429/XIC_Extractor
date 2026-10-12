@@ -220,7 +220,7 @@ def test_workbook_binding_and_ambiguous_directory(workbook):
         )
 
 
-def test_review_filter_scopes_sample_records_not_just_targets(workbook):
+def test_review_filter_lists_targets_and_keeps_every_sample(workbook):
     book = load_workbook(workbook)
     book["XIC Results"]["H4"] = None
     book.save(workbook)
@@ -228,13 +228,18 @@ def test_review_filter_scopes_sample_records_not_just_targets(workbook):
     report = prepare_report(
         workbook, SelectionRequest(strategy="query", attention_only=True)
     )
-    records = report.payload["items"][0]["details"]["records"]
-    assert [(row["SampleName"], row["Area"]) for row in records] == [("Sample A", "ND")]
-    # Sample B's RT cannot match after the saved-review filter excluded its row.
+    [item] = report.payload["items"]
+    # The filter picks the target to read first; its rows are read against
+    # the samples they depart from, so none are dropped.
+    assert [(r["SampleName"], r["Area"]) for r in item["details"]["records"]] == [
+        ("Sample A", "ND"),
+        ("Sample B", 123.456),
+    ]
+    assert item["details"]["focus"]["samples"] == ["Sample A"]
     report = prepare_report(
         workbook, SelectionRequest(strategy="query", attention_only=True, rt_min=9)
     )
-    assert report.matched_count == 0
+    assert report.matched_count == 1
 
 
 def write_rare_detection_workbook(path):
@@ -305,7 +310,13 @@ def test_review_filter_opens_the_rare_detection_not_the_shared_absence(tmp_path)
     [item] = report.payload["items"]
     details = item["details"]
     assert item["title"] == "Analyte"
-    assert [(r["SampleName"], r["Area"]) for r in details["records"]] == [("S3", 55.5)]
+    assert [r["SampleName"] for r in details["records"]] == [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5",
+    ]
     assert details["focus"] == {
         "kind": "minority_counted",
         "samples": ["S3"],
