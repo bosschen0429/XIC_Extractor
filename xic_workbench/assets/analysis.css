@@ -234,6 +234,15 @@
 .target-preview table {
   font-size: 13px;
 }
+#target-preview th,
+#target-preview td,
+#target-editor table th,
+#target-editor table td,
+#target-editor table input,
+#target-editor table select {
+  text-align: center;
+  vertical-align: middle;
+}
 .target-preview .table-scroll {
   margin: 0;
   max-height: none;

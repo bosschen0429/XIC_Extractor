@@ -179,10 +179,19 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(workbench, config_d
     )
     expect(page.locator("#targeted-form .step-no")).to_have_text(["1", "2", "3"])
     expect(page.locator("#target-method-state")).not_to_be_visible()
+    for cell in page.locator("#target-preview th, #target-preview td").all():
+        expect(cell).to_have_css("text-align", "center")
     expect(page.locator("#targeted-advanced")).to_have_count(0)
     expect(page.locator("#t-ms2_precursor_tol_da")).to_have_count(0)
     page.locator("#target-edit").click()
     expect(page.locator("#target-editor")).to_be_visible()
+    editor_cells = page.locator(
+        "#target-editor table th, #target-editor table td, "
+        "#target-editor table input, #target-editor table select"
+    )
+    assert editor_cells.count() > 0
+    for cell in editor_cells.all():
+        expect(cell).to_have_css("text-align", "center")
     page.get_by_role("textbox", name="預期 RT（min）（第 1 列）", exact=True).fill(
         "2.75"
     )
