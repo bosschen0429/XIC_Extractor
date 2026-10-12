@@ -250,60 +250,14 @@ def test_cli_accepts_example_defaults_when_runtime_config_is_missing(
     assert capsys.readouterr().err == ""
 
 
-def test_cli_accepts_parallel_execution_overrides(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
-    module = _module()
-    config = _config(tmp_path)
-    targets = [_target("Analyte")]
-    calls: dict[str, object] = {}
-
-    monkeypatch.setattr(module, "load_config", lambda _config_dir: (config, targets))
-    monkeypatch.setattr(module.extractor, "run", _fake_run(calls))
-    monkeypatch.setattr(
-        module,
-        "write_excel_from_run_output",
-        lambda *_args, **_kwargs: calls.setdefault("excel", True),
-        raising=False,
-    )
-
-    exit_code = module.main(
-        [
-            "--base-dir",
-            str(tmp_path),
-            "--parallel-mode",
-            "process",
-            "--parallel-workers",
-            "4",
-        ]
-    )
-
-    assert exit_code == 0
-    assert calls["run_config"].parallel_mode == "process"
-    assert calls["run_config"].parallel_workers == 4
-    assert calls["excel"] is True
-    assert "Processed files: 2" in capsys.readouterr().out
-
-
-def test_cli_rejects_invalid_parallel_mode(capsys) -> None:
-    module = _module()
-
-    with pytest.raises(SystemExit) as exc_info:
-        module.main(["--parallel-mode", "thread"])
-
-    assert exc_info.value.code == 2
-    assert "invalid choice: 'thread'" in capsys.readouterr().err
-
-
-@pytest.mark.parametrize("workers", ["0", "-1"])
-def test_cli_rejects_invalid_parallel_workers(workers: str, capsys) -> None:
-    module = _module()
-
-    with pytest.raises(SystemExit) as exc_info:
-        module.main(["--parallel-workers", workers])
-
-    assert exc_info.value.code == 2
-    assert "parallel-workers must be >= 1" in capsys.readouterr().err
+@pytest.mark.parametrize(
+    "args", [["--parallel-mode", "process"], ["--parallel-workers", "2"]]
+)
+def test_cli_rejects_retired_execution_overrides(args, capsys):
+    with pytest.raises(SystemExit) as exc:
+        _module().main(args)
+    assert exc.value.code == 2
+    assert "unrecognized arguments" in capsys.readouterr().err
 
 
 def test_cli_preserves_loaded_parallel_settings_when_overrides_are_omitted(
@@ -474,13 +428,7 @@ def _write_cli_config(config_dir: Path, *, data_dir: Path, dll_dir: Path) -> Non
     settings = {
         "data_dir": str(data_dir),
         "dll_dir": str(dll_dir),
-        "smooth_window": "15",
-        "smooth_polyorder": "3",
-        "peak_rel_height": "0.95",
-        "peak_min_prominence_ratio": "0.10",
-        "ms2_precursor_tol_da": "0.5",
-        "nl_min_intensity_ratio": "0.01",
-        "count_no_ms2_as_detected": "false",
+        "injection_order_source": "",
     }
     with (config_dir / "settings.csv").open(
         "w", newline="", encoding="utf-8-sig"
@@ -490,44 +438,27 @@ def _write_cli_config(config_dir: Path, *, data_dir: Path, dll_dir: Path) -> Non
         for key, value in settings.items():
             writer.writerow({"key": key, "value": value, "description": key})
 
-    fields = [
-        "label",
-        "mz",
-        "rt_min",
-        "rt_max",
-        "ppm_tol",
-        "neutral_loss_da",
-        "nl_ppm_warn",
-        "nl_ppm_max",
-        "is_istd",
-        "istd_pair",
-    ]
+    fields = ["label", "mz", "expected_rt_min", "cid_nl_tag", "role", "istd_pair"]
     with (config_dir / "targets.csv").open(
         "w", newline="", encoding="utf-8-sig"
     ) as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         writer.writerow(
-            {
-                "label": "Analyte",
-                "mz": "258.1085",
-                "rt_min": "8.0",
-                "rt_max": "10.0",
-                "ppm_tol": "20",
-                "neutral_loss_da": "116.0474",
-                "nl_ppm_warn": "20",
-                "nl_ppm_max": "50",
-                "is_istd": "false",
-                "istd_pair": "",
-            }
+            dict(
+                label="Analyte",
+                mz="258.1085",
+                expected_rt_min="9.0",
+                cid_nl_tag="dR",
+                role="istd",
+                istd_pair="",
+            )
         )
 
 
 def test_cli_reusable_method_freezes_inputs_only_until_run_finishes(
     tmp_path, monkeypatch
 ):
-    from dataclasses import asdict
-
     from xic_extractor.configuration.hashing import compute_config_hash
     from xic_extractor.configuration.targeted_method_files import (
         create_targeted_method,
@@ -543,17 +474,16 @@ def test_cli_reusable_method_freezes_inputs_only_until_run_finishes(
     _write_cli_config(tmp_path / "config", data_dir=raw_dir, dll_dir=dll_dir)
     method_dir = tmp_path / "method"
     target_rows = [
-        {key: str(value) for key, value in asdict(_target("MethodTarget")).items()}
+        dict(
+            label="MethodTarget",
+            mz="258.1085",
+            expected_rt_min="9.0",
+            cid_nl_tag="dR",
+            role="istd",
+            istd_pair="",
+        )
     ]
-    save_targeted_method(
-        create_targeted_method(
-            {
-                "nl_min_intensity_ratio": "0.07",
-            },
-            target_rows,
-        ),
-        method_dir,
-    )
+    save_targeted_method(create_targeted_method({}, target_rows), method_dir)
     calls = {}
     fake_run = _fake_run(calls)
 
@@ -586,10 +516,6 @@ def test_cli_reusable_method_freezes_inputs_only_until_run_finishes(
                 str(method_dir),
                 "--data-dir",
                 str(new_batch),
-                "--parallel-mode",
-                "serial",
-                "--parallel-workers",
-                "2",
             ]
         )
         == 0
@@ -597,8 +523,8 @@ def test_cli_reusable_method_freezes_inputs_only_until_run_finishes(
     config = calls["run_config"]
     assert config.data_dir == new_batch
     assert config.dll_dir == dll_dir
-    assert config.nl_min_intensity_ratio == 0.07
-    assert config.parallel_workers == 2
+    assert config.nl_min_intensity_ratio == 0.01
+    assert config.parallel_workers >= 1
     assert [target.label for target in calls["run_targets"]] == ["MethodTarget"]
     assert not calls["frozen_inputs"].exists()
     assert not (tmp_path / "output" / ".run_inputs").exists()

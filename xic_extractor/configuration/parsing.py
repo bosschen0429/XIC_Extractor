@@ -63,4 +63,3 @@ def _config_error(
 ) -> ConfigError:
     row = f" row {row_number}" if row_number is not None else ""
     return ConfigError(f"{path}{row} column {column} value {value!r}: {message}")
-

@@ -14,7 +14,6 @@ from xic_extractor.alignment.quantitative_projection_authority import (
 )
 from xic_extractor.discovery.blank_qualification import get_default_background_library
 from xic_extractor.presets import bind_cid_nl_recipe, load_preset
-from xic_extractor.settings_schema import METHOD_KEYS
 from xic_workbench.server import create_server
 from xic_workbench.workspace import ReviewWorkspace
 
@@ -117,9 +116,10 @@ def run_smoke(report_path: Path) -> int:
                 {"path": method_path, "settings": config["settings"]},
             )
         )
-        if any(
-            restored["settings"][key] != config["settings"][key] for key in METHOD_KEYS
-        ) or restored["targets"] != config["targets"]:
+        if (
+            restored["settings"] != config["settings"]
+            or restored["targets"] != config["targets"]
+        ):
             raise RuntimeError("Saved Targeted method changed settings or targets")
         if any(name == "PyQt6" or name.startswith("PyQt6.") for name in sys.modules):
             raise RuntimeError("HTML application imported Qt")

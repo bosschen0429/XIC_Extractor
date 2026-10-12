@@ -4,7 +4,6 @@ import numpy as np
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
-from xic_extractor.injection_rolling import rolling_median_rt
 from xic_extractor.peak_detection import ms1_morphology
 from xic_extractor.peak_detection.models import PeakCandidate, PeakDetectionResult
 from xic_extractor.peak_detection.ms1_morphology import (
@@ -22,8 +21,6 @@ from xic_extractor.peak_detection.scoring_quality import hard_quality_flags
 def build_scoring_context_factory(
     *,
     config: ExtractionConfig,
-    injection_order: dict[str, int],
-    istd_rts_by_sample: dict[str, dict[str, float]],
 ) -> Callable[..., Callable[[PeakCandidate], ScoringContext]]:
     def _factory(
         *,
@@ -42,32 +39,23 @@ def build_scoring_context_factory(
         | None = None,
         candidate_nl_support: Mapping[PeakCandidate, bool] | None = None,
     ) -> Callable[[PeakCandidate], ScoringContext]:
-        rt_prior: float | None = None
+        # Expected RT is an identity prior, not a peak-generation or confidence window.
+        rt_prior = (
+            target_reference_rt
+            if target_reference_rt is not None
+            else target.expected_rt_min
+            if target.expected_rt_min is not None
+            else (target.rt_min + target.rt_max) / 2
+        )
         rt_prior_sigma: float | None = None
-        prior_source = ""
-
-        if target.is_istd:
-            rt_map = istd_rts_by_sample.get(target.label, {})
-            rt_prior = rolling_median_rt(
-                target.label,
-                sample_name,
-                rt_map,
-                injection_order,
-                window=config.rolling_window_size,
-            )
-            if rt_prior is not None:
-                prior_source = "rolling_median"
-
-        scoring_rt_min, scoring_rt_max = target.rt_min, target.rt_max
-        if not target.is_istd and target_reference_rt is not None:
-            # The extraction owner transfers the method offset and sample drift.
-            # Score in that same frame, not the unshifted method window.
-            half_width = (target.rt_max - target.rt_min) / 2.0
-            scoring_rt_min = target_reference_rt - half_width
-            scoring_rt_max = target_reference_rt + half_width
-            if target.istd_pair and istd_rt_in_this_sample is not None:
-                rt_prior = target_reference_rt
-                prior_source = "paired_istd"
+        prior_source = (
+            "paired_istd"
+            if target.istd_pair and istd_rt_in_this_sample is not None
+            else "expected_rt"
+        )
+        scoring_rt_min, scoring_rt_max = (
+            (float(rt[0]), float(rt[-1])) if len(rt) else (0.0, 0.0)
+        )
 
         rt_values = np.asarray(rt, dtype=float)
         intensity_values = np.asarray(intensity, dtype=float)
@@ -204,9 +192,8 @@ def build_scoring_context_factory(
                 rt_prior_sigma=rt_prior_sigma,
                 rt_min=scoring_rt_min,
                 rt_max=scoring_rt_max,
-                dirty_matrix=config.dirty_matrix_mode,
                 neutral_loss_required=target.neutral_loss_da is not None,
-                count_no_ms2_as_detected=config.count_no_ms2_as_detected,
+                count_no_ms2_as_detected=False,
                 ms2_trace_strength=ms2_trace_strength,
                 ms2_alignment_source=ms2_alignment_source,
                 trigger_scan_count=trigger_scan_count,
@@ -266,7 +253,7 @@ def selected_candidate(peak_result: PeakDetectionResult) -> PeakCandidate | None
     return None
 
 
-def allow_prepass_anchor(peak_result: PeakDetectionResult) -> bool:
+def is_credible_istd_peak(peak_result: PeakDetectionResult) -> bool:
     candidate = selected_candidate(peak_result)
     if candidate is None:
         return False

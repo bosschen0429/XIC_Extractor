@@ -88,6 +88,8 @@ def _assess_sample(
                 precursor_mz_basis=product.precursor_mz_basis,
                 scan_precursor_mz=product.scan_precursor_mz,
                 precursor_metadata=product.precursor_metadata,
+                precursor_inference_tolerance_da=product.precursor_inference_tolerance_da,
+                ms1_precursor_observation=product.ms1_precursor_observation,
             )
         )
     evidence_refs = tuple(evidence)

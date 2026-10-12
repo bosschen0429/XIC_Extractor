@@ -16,6 +16,7 @@ from xic_extractor.alignment.grouping_experiment import (
     replay_grouping,
 )
 from xic_extractor.alignment.sample_rt_calibration import RtCalibrationPolicy
+from xic_extractor.configuration.cid_nl_profile import DEFAULT_CID_NL_MASS_POLICY
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
@@ -35,7 +36,6 @@ from xic_extractor.discovery.csv_reader import read_discovery_batch_index
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.presets import bind_cid_nl_recipe, load_preset
 from xic_extractor.sample_metadata import load_sample_metadata
-from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 from xic_extractor.untargeted_execution.alignment import (
     prepare_untargeted_alignment_inputs,
 )
@@ -113,7 +113,7 @@ def _prepare(args: argparse.Namespace) -> dict:
         smooth_polyorder=3,
         peak_rel_height=0.95,
         peak_min_prominence_ratio=0.10,
-        ms2_precursor_tol_da=float(CANONICAL_SETTINGS_DEFAULTS["ms2_precursor_tol_da"]),
+        ms2_precursor_tol_da=DEFAULT_CID_NL_MASS_POLICY.ms2_precursor_tol_da,
         nl_min_intensity_ratio=recipe.discovery_settings.nl_min_intensity_ratio,
         resolver_mode=recipe.discovery_settings.resolver_mode,
         signal_processing_method=profile.method,

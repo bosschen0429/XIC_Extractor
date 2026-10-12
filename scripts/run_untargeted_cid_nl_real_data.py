@@ -11,7 +11,11 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from xic_extractor.acquisition.raw_paths import existing_raw_paths
+from xic_extractor.configuration.cid_nl_profile import DEFAULT_CID_NL_MASS_POLICY
 from xic_extractor.configuration.models import ExtractionConfig
+from xic_extractor.configuration.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+)
 from xic_extractor.diagnostics.quant_matrix.acceptance import REQUIRED_COLUMNS
 from xic_extractor.diagnostics.quant_matrix.golden_path import (
     build_untargeted_cid_nl_golden_path,
@@ -43,7 +47,6 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 )
 from xic_extractor.sample_metadata import load_sample_metadata
 from xic_extractor.settings_schema import (
-    CANONICAL_SETTINGS_DEFAULTS,
     RESOLVER_MODES,
 )
 from xic_extractor.tabular_io import write_delimited_rows
@@ -541,7 +544,6 @@ def _write_json(path: Path, payload: Mapping[str, object]) -> None:
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
-    defaults = CANONICAL_SETTINGS_DEFAULTS
     parser = argparse.ArgumentParser(
         description=(
             "Replay current Discovery receipts through one real Untargeted "
@@ -582,7 +584,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--ms2-precursor-tol-da",
         type=_positive_float,
-        default=float(defaults["ms2_precursor_tol_da"]),
+        default=DEFAULT_CID_NL_MASS_POLICY.ms2_precursor_tol_da,
     )
     parser.add_argument("--nl-min-intensity-ratio", type=_positive_float, default=0.01)
     parser.add_argument("--seed-rt-gap-min", type=_positive_float, default=0.20)
@@ -607,7 +609,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--ms1-morphology-smoothing-window-points",
         type=_positive_int,
-        default=int(defaults["signal_processing_window_points"]),
+        default=DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points,
     )
     parser.add_argument(
         "--peak-rel-height",

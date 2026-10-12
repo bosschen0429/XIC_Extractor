@@ -42,13 +42,20 @@ def config_dir(tmp_path):
             **CANONICAL_SETTINGS_DEFAULTS,
             "data_dir": str(tmp_path / "raw"),
             "dll_dir": str(tmp_path / "dll"),
-            "ms2_precursor_tol_da": "0.45",
-            "count_no_ms2_as_detected": "true",
         },
         config_dir=config,
     )
     write_targets(
-        [{"label": "Browser target", "mz": "500", "rt_min": "1", "rt_max": "2"}],
+        [
+            {
+                "label": "Browser target",
+                "mz": "500",
+                "expected_rt_min": "1.5",
+                "cid_nl_tag": "dR",
+                "role": "istd",
+                "istd_pair": "",
+            }
+        ],
         config_dir=config,
     )
     return config
@@ -165,63 +172,40 @@ def test_navigation_and_theme_survive_reload(workbench):
     expect(page.locator("#workspace-untargeted")).to_be_visible()
 
 
-def test_saved_override_restores_per_field_and_reset_clears_hidden_overrides(
-    workbench, config_dir
-):
+def test_targeted_exposes_intent_only_and_editor_round_trips(workbench, config_dir):
     page = workbench
-    page.locator("#targeted-advanced > summary").click()
-    field = page.locator("#t-ms2_precursor_tol_da").locator("..")
-    expect(field).to_have_class("field is-custom")
-    expect(page.locator("#t-ms2_precursor_tol_da")).to_have_value("0.45")
-    field.locator(".default-hint").click()
-    expect(page.locator("#t-ms2_precursor_tol_da")).to_have_value(
-        CANONICAL_SETTINGS_DEFAULTS["ms2_precursor_tol_da"]
+    expect(page.locator("#targeted-advanced")).to_have_count(0)
+    expect(page.locator("#t-ms2_precursor_tol_da")).to_have_count(0)
+    page.locator("#target-edit").click()
+    expect(page.locator("#target-editor")).to_be_visible()
+    page.get_by_role("textbox", name="預期 RT（min）（第 1 列）", exact=True).fill(
+        "2.75"
     )
-    expect(field).not_to_have_class("field is-custom")
-    page.locator("#t-ms2_precursor_tol_da").fill("0.45")
-    raw = page.locator("#t-data_dir").input_value()
-    dll = page.locator("#t-dll_dir").input_value()
-    targets = page.locator("#target-preview").inner_text()
-    page.locator("#target-reset").click()
-    expect(page.locator("#target-method-state")).to_have_text("標準參數")
-    expect(page.locator("#t-data_dir")).to_have_value(raw)
-    expect(page.locator("#t-dll_dir")).to_have_value(dll)
-    expect(page.locator("#target-preview")).to_have_text(targets, use_inner_text=True)
-    page.locator("#target-save").click()
-    expect(page.locator("#target-dirty")).to_be_empty()
-    saved = read_settings(config_dir=config_dir)
-    assert saved["count_no_ms2_as_detected"] == "false"
-    assert (
-        saved["ms2_precursor_tol_da"]
-        == CANONICAL_SETTINGS_DEFAULTS["ms2_precursor_tol_da"]
-    )
+    page.get_by_role(
+        "textbox", name="CID-NL tag（dR / R / MeR）（第 1 列）", exact=True
+    ).fill("R")
+    page.locator("#target-editor-save").click()
+    expect(page.locator("#target-editor")).not_to_be_visible()
+    page.reload()
+    page.locator("#target-edit").click()
+    expect(
+        page.get_by_role("textbox", name="預期 RT（min）（第 1 列）", exact=True)
+    ).to_have_value("2.75")
+    expect(
+        page.get_by_role(
+            "textbox", name="CID-NL tag（dR / R / MeR）（第 1 列）", exact=True
+        )
+    ).to_have_value("R")
+    assert set(read_settings(config_dir=config_dir)) == set(CANONICAL_SETTINGS_DEFAULTS)
 
 
-def test_valid_fractional_saved_value_submits_from_collapsed_section(
-    fake_runs, workbench
-):
+def test_saved_intent_submits_without_advanced_settings(fake_runs, workbench):
     page = workbench
-    expect(page.locator("#t-ms2_precursor_tol_da")).to_be_hidden()
     _start(page, "targeted")
     expect(page.locator("#analysis-job-title")).to_contain_text("執行中")
     expect(page.locator("#analysis-job-message")).to_contain_text(
         "Browser fake progress"
     )
-
-
-def test_invalid_collapsed_field_is_revealed_and_named(workbench):
-    page = workbench
-    page.locator("#targeted-advanced > summary").click()
-    # Below the HTML minimum; still positive, so the live method-summary API
-    # does not produce an unrelated failed-resource console message.
-    page.locator("#t-ms2_precursor_tol_da").fill("0.005")
-    page.locator("#targeted-advanced > summary").click()
-    expect(page.locator("#t-ms2_precursor_tol_da")).to_be_hidden()
-    _start(page, "targeted")
-    expect(page.locator("#t-ms2_precursor_tol_da")).to_be_visible()
-    expect(page.locator("#toasts")).to_contain_text("MS2 precursor 容差（Da）")
-    expect(page.locator("#toasts")).to_contain_text("值無效")
-    expect(page.locator("#analysis-job")).to_be_hidden()
 
 
 @pytest.mark.parametrize(

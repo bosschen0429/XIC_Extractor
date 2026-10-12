@@ -69,7 +69,7 @@ def resolve_targeted_istd_backfill(
         direct_supports=direct_supports,
         sample_assessments=assessments,
         paired_istd_observations=lambda: _paired_istd_observations(population, config),
-        rt_half_window_min=config.nl_rt_anchor_half_window_min,
+        rt_half_window_min=alignment_config.preferred_rt_sec / 60.0,
         alignment_config=alignment_config,
     )
 

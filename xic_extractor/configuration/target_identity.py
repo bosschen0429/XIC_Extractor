@@ -349,17 +349,32 @@ def _validate_target(target: Target) -> None:
         raise TargetIdentityError(
             "target-list identity must be minted from owner-typed Target values"
         )
+    if target.expected_rt_min is None:
+        # Shared domain callers construct geometric targets directly;
+        # CSV intake is a separate admission boundary.
+        import math
+
+        if (
+            not target.label.strip()
+            or not all(
+                math.isfinite(v)
+                for v in (target.mz, target.rt_min, target.rt_max, target.ppm_tol)
+            )
+            or target.mz <= 0
+            or target.ppm_tol <= 0
+            or target.rt_min < 0
+            or target.rt_min >= target.rt_max
+        ):
+            raise TargetIdentityError("invalid geometric target definition")
+        return
     row = {
-        field: (
-            ""
-            if value is None
-            else "true"
-            if value is True
-            else "false"
-            if value is False
-            else str(value)
-        )
-        for field, value in asdict(target).items()
+        "label": target.label,
+        "mz": str(target.mz),
+        "expected_rt_min": str(target.expected_rt_min),
+        "cid_nl_tag": target.cid_nl_tag,
+        "role": "istd" if target.is_istd else "analyte",
+        "istd_pair": target.istd_pair,
+        "sample_applicability": target.sample_applicability,
     }
     try:
         parsed = _parse_target_row(

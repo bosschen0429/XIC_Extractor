@@ -8,16 +8,8 @@ from pathlib import Path
 
 import openpyxl
 
+from xic_extractor.configuration.csv_io import TARGET_FIELDS as _FIELDNAMES
 from xic_extractor.tabular_io import write_delimited_rows
-
-NL_DR = 116.0474
-NL_R = 132.0423
-NL_MER = 146.0579
-
-DEFAULT_PPM_TOL = 20
-DEFAULT_NL_PPM_WARN = 20
-DEFAULT_NL_PPM_MAX = 50
-DEFAULT_RT_WINDOW = 1.5
 
 _ISTD_PREFIXES = (
     "d2-",
@@ -82,18 +74,18 @@ def assign_istd_pairs(targets: list[TargetRow]) -> None:
     evidence for guessing a label relationship during table editing.
     """
     for target in targets:
-        if not str(target.get("is_istd", "")).strip():
-            target["is_istd"] = str(_is_istd(str(target["label"]))).lower()
+        if not str(target.get("role", "")).strip():
+            target["role"] = "istd" if _is_istd(str(target["label"])) else "analyte"
     istds: dict[str, list[str]] = {}
     for target in targets:
-        if str(target.get("is_istd", "")).lower() == "true":
+        if target.get("role") == "istd":
             label = str(target["label"])
             core = _strip_istd_prefix(label).casefold()
             if core != label.casefold():
                 istds.setdefault(core, []).append(label)
     analytes: dict[str, list[TargetRow]] = {}
     for target in targets:
-        if str(target.get("is_istd", "")).lower() != "true":
+        if target.get("role") != "istd":
             analytes.setdefault(str(target["label"]).casefold(), []).append(target)
     for name, rows in analytes.items():
         matches = istds.get(name, [])
@@ -103,7 +95,6 @@ def assign_istd_pairs(targets: list[TargetRow]) -> None:
 
 def parse_dna_sheet(
     worksheet: openpyxl.worksheet.worksheet.Worksheet,
-    rt_window: float,
 ) -> list[TargetRow]:
     """Parse DNA workbook blocks into editable Targeted rows."""
 
@@ -151,13 +142,9 @@ def parse_dna_sheet(
                 {
                     "label": label,
                     "mz": round(float(mz_raw), 6),
-                    "rt_min": round(retention_time - rt_window, 2),
-                    "rt_max": round(retention_time + rt_window, 2),
-                    "ppm_tol": DEFAULT_PPM_TOL,
-                    "neutral_loss_da": NL_DR,
-                    "nl_ppm_warn": DEFAULT_NL_PPM_WARN,
-                    "nl_ppm_max": DEFAULT_NL_PPM_MAX,
-                    "is_istd": "true" if _is_istd(label) else "false",
+                    "expected_rt_min": retention_time,
+                    "cid_nl_tag": "dR",
+                    "role": "istd" if _is_istd(label) else "analyte",
                     "istd_pair": "",
                 }
             )
@@ -166,7 +153,6 @@ def parse_dna_sheet(
 
 def parse_rna_sheet(
     worksheet: openpyxl.worksheet.worksheet.Worksheet,
-    rt_window: float,
 ) -> list[TargetRow]:
     """Parse an RNA workbook sheet into editable Targeted rows."""
 
@@ -214,12 +200,12 @@ def parse_rna_sheet(
         if not label_raw or not _is_number(mz_raw) or not _is_number(rt_raw):
             continue
 
-        neutral_loss: float | None = None
+        cid_nl_tag: str | None = None
         if mhr_column is not None and _is_number(row[mhr_column]):
-            neutral_loss = NL_R
+            cid_nl_tag = "R"
         elif methyl_column is not None and _is_number(row[methyl_column]):
-            neutral_loss = NL_MER
-        if neutral_loss is None:
+            cid_nl_tag = "MeR"
+        if cid_nl_tag is None:
             continue
 
         label = str(label_raw).strip()
@@ -228,31 +214,13 @@ def parse_rna_sheet(
             {
                 "label": label,
                 "mz": round(float(mz_raw), 6),
-                "rt_min": round(retention_time - rt_window, 2),
-                "rt_max": round(retention_time + rt_window, 2),
-                "ppm_tol": DEFAULT_PPM_TOL,
-                "neutral_loss_da": neutral_loss,
-                "nl_ppm_warn": DEFAULT_NL_PPM_WARN,
-                "nl_ppm_max": DEFAULT_NL_PPM_MAX,
-                "is_istd": "true" if _is_istd(label) else "false",
+                "expected_rt_min": retention_time,
+                "cid_nl_tag": cid_nl_tag,
+                "role": "istd" if _is_istd(label) else "analyte",
                 "istd_pair": "",
             }
         )
     return targets
-
-
-_FIELDNAMES = (
-    "label",
-    "mz",
-    "rt_min",
-    "rt_max",
-    "ppm_tol",
-    "neutral_loss_da",
-    "nl_ppm_warn",
-    "nl_ppm_max",
-    "is_istd",
-    "istd_pair",
-)
 
 
 def write_targets_csv(targets: list[TargetRow], output_path: Path) -> None:

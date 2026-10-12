@@ -8,91 +8,73 @@ import pytest
 from xic_extractor.configuration.models import ConfigError, Target
 
 
-def test_config_round_trip_preserves_target_precision_and_hidden_metadata(
-    tmp_path: Path,
-) -> None:
+def test_config_round_trip_preserves_target_precision_and_hidden_metadata(tmp_path):
     from xic_workbench.config_io import read_targets, write_targets
 
     rows = [
-        {
-            "label": "Analyte",
-            "mz": "258.108500",
-            "rt_min": "8.000",
-            "rt_max": "10.000",
-            "ppm_tol": "20",
-            "neutral_loss_da": "116.047400",
-            "nl_ppm_warn": "20",
-            "nl_ppm_max": "50",
-            "is_istd": "false",
-            "istd_pair": "d3-Analyte",
-            "source_note": "preserve me",
-        }
+        dict(
+            label="standard",
+            mz="258.108500",
+            expected_rt_min="8.000",
+            cid_nl_tag="dR",
+            role="istd",
+            istd_pair="",
+            source_note="preserve me",
+        )
     ]
-
     write_targets(rows, config_dir=tmp_path)
-
     restored = read_targets(config_dir=tmp_path)
-    assert len(restored) == 1
     assert restored[0]["mz"] == "258.108500"
-    assert restored[0]["neutral_loss_da"] == "116.047400"
-    assert restored[0]["istd_pair"] == "d3-Analyte"
+    assert restored[0]["expected_rt_min"] == "8.000"
     assert restored[0]["source_note"] == "preserve me"
 
 
-def test_settings_round_trip_preserves_hidden_canonical_values(tmp_path: Path) -> None:
+def test_settings_round_trip_rejects_hidden_science_without_migrating(tmp_path):
     from xic_workbench.config_io import read_settings, write_settings
 
     settings = {
-        "data_dir": "C:\\RAW",
-        "dll_dir": "C:\\Thermo",
-        "signal_processing_method": "gaussian",
-        "model_selection_expected_diff_approval_registry": "C:\\approval.tsv",
-        "targeted_ms1_shape_identity_activation_policy": "explicit_support_tsv",
-        "parallel_mode": "serial",
-        "parallel_workers": "2",
+        "data_dir": "C:/RAW",
+        "dll_dir": "C:/Thermo",
+        "injection_order_source": "",
     }
-
     write_settings(settings, config_dir=tmp_path)
+    with pytest.raises(ConfigError, match="dirty_matrix_mode"):
+        write_settings({**settings, "dirty_matrix_mode": "true"}, config_dir=tmp_path)
+    assert read_settings(config_dir=tmp_path) == settings
+    (tmp_path / "settings.csv").write_text(
+        "key,value\nold_unknown,keep-not-effective\n", encoding="utf-8"
+    )
+    with pytest.raises(ConfigError, match="old_unknown"):
+        write_settings(settings, config_dir=tmp_path)
+    assert "old_unknown" in (tmp_path / "settings.csv").read_text()
 
-    restored = read_settings(config_dir=tmp_path)
-    assert {key: restored[key] for key in settings} == settings
-    assert restored["signal_processing_window_points"] == "15"
 
-
-def test_method_summary_normalizes_canonical_numeric_boolean_and_legacy_values() -> (
-    None
-):
-    from xic_extractor.configuration.settings import resolve_settings
-    from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
+def test_method_summary_shows_version_not_knob_differences():
     from xic_workbench.targeted import method_summary
 
-    settings = dict(CANONICAL_SETTINGS_DEFAULTS)
-    settings.pop("signal_processing_window_points")
-    settings["ms1_morphology_smoothing_window_points"] = "015"
-    settings["ms2_precursor_tol_da"] = "0.80"
-    settings["nl_min_intensity_ratio"] = ".01"
-    settings["count_no_ms2_as_detected"] = "FALSE"
-    settings["data_dir"] = "C:\\another-batch"
-    settings["dll_dir"] = "C:\\another-install"
-
-    summary = method_summary(resolve_settings(settings)[0])
-    assert summary["label"] == "標準參數"
-    assert summary["custom_keys"] == []
-
-
-def test_method_summary_labels_visible_and_hidden_nondefaults_as_custom() -> None:
-    from xic_extractor.configuration.settings import resolve_settings
-    from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
-    from xic_workbench.targeted import method_summary
-
-    settings = {
-        **CANONICAL_SETTINGS_DEFAULTS,
-        "ms2_precursor_tol_da": "0.7",
+    assert method_summary({}) == {
+        "label": "targeted-cid-nl-v2",
+        "custom_keys": [],
+        "differences": [],
     }
 
-    summary = method_summary(resolve_settings(settings)[0])
-    assert summary["label"] == "自訂參數 · 1 項調整"
-    assert summary["custom_keys"] == ["ms2_precursor_tol_da"]
+
+def test_invalid_targets_leave_saved_input_unchanged(tmp_path):
+    from xic_workbench.config_io import write_targets
+
+    row = dict(
+        label="standard",
+        mz="258",
+        expected_rt_min="8",
+        cid_nl_tag="dR",
+        role="istd",
+        istd_pair="",
+    )
+    write_targets([row], config_dir=tmp_path)
+    before = (tmp_path / "targets.csv").read_bytes()
+    with pytest.raises(ConfigError):
+        write_targets([{**row, "rt_min": "1"}], config_dir=tmp_path)
+    assert (tmp_path / "targets.csv").read_bytes() == before
 
 
 def test_failed_target_import_leaves_the_callers_rows_unchanged(tmp_path: Path) -> None:
@@ -123,7 +105,7 @@ def test_target_import_entrypoint_preserves_draft_precision_and_hidden_metadata(
         {
             "label": "Target A",
             "mz": "250.100000",
-            "is_istd": "false",
+            "role": "analyte",
             "source_note": "keep me",
         }
     ]
@@ -151,17 +133,13 @@ def test_target_import_entrypoint_uses_the_existing_dna_workbook_contract(
     assert rows[0] == {
         "label": "5-hmdC",
         "mz": "258.1085",
-        "rt_min": "6.5",
-        "rt_max": "9.5",
-        "ppm_tol": "20",
-        "neutral_loss_da": "116.0474",
-        "nl_ppm_warn": "20",
-        "nl_ppm_max": "50",
-        "is_istd": "false",
+        "expected_rt_min": "8.0",
+        "cid_nl_tag": "dR",
+        "role": "analyte",
         "istd_pair": "d3-5-hmdC",
     }
     assert rows[1]["label"] == "d3-5-hmdC"
-    assert rows[1]["is_istd"] == "true"
+    assert rows[1]["role"] == "istd"
     assert rows[1]["istd_pair"] == ""
 
 
@@ -180,16 +158,13 @@ def test_excel_target_import_without_target_rows_is_rejected(tmp_path: Path) -> 
         import_targets(source)
 
 
-def test_targeted_fields_are_owned_scoped_and_do_not_hide_resources() -> None:
+def test_targeted_fields_are_batch_and_machine_only():
     from xic_workbench.targeted import setting_fields
 
     fields = {field["key"]: field for field in setting_fields()}
+    assert set(fields) == {"data_dir", "dll_dir", "injection_order_source"}
     assert fields["data_dir"]["scope"] == "batch"
-    assert fields["parallel_mode"]["scope"] == "runtime"
-    assert fields["parallel_mode"]["options"] == ["serial", "process"]
-    assert fields["signal_processing_window_points"]["step"] == 2
-    assert fields["count_no_ms2_as_detected"]["compatibility_only"]
-    assert "ms1_morphology_smoothing_window_points" not in fields
+    assert fields["dll_dir"]["scope"] == "environment"
 
 
 def test_targeted_run_uses_canonical_service_and_returns_published_two_sample_summary(

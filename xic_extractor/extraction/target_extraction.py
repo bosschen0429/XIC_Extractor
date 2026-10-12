@@ -15,30 +15,30 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.evidence.neutral_loss import (
     CandidateMS2Evidence,
-    candidate_ms2_geometry,
 )
 from xic_extractor.extraction.anchors import (
     paired_anchor_mismatch_diagnostic,
 )
 from xic_extractor.extraction.diagnostics import (
-    append_anchor_window_diagnostics,
     candidate_ms2_evidence_builder,
     check_target_nl,
     istd_anchor_missing_diagnostic,
 )
 from xic_extractor.extraction.drift import estimate_sample_drift
 from xic_extractor.extraction.ms2_selection import selected_candidate_ms2_evidence
-from xic_extractor.extraction.rt_windows import get_rt_window
 from xic_extractor.extraction.scoring_factory import (
-    allow_prepass_anchor,
+    is_credible_istd_peak,
     paired_istd_fwhm,
     selected_candidate,
     selected_shape_metrics,
 )
 from xic_extractor.extraction.targeted_peak_selection import (
     assess_targeted_candidate_population,
+    discovery_settings_for_tag,
+    prepare_targeted_method_seeds,
 )
 from xic_extractor.extraction.trace_context import targeted_extraction_trace_group
+from xic_extractor.ms2_scan_models import Ms2Window
 from xic_extractor.output.messages import (
     DiagnosticRecord,
     build_diagnostic_records,
@@ -46,19 +46,13 @@ from xic_extractor.output.messages import (
 )
 from xic_extractor.peak_detection.models import (
     PeakCandidate,
-    PeakCandidatesResult,
 )
 from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
     physical_candidates_result,
 )
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     enumerate_physical_segment_universe,
-    physical_segment_has_incomplete_context,
     prepare_physical_signal,
-)
-from xic_extractor.peak_detection.physical_peak_models import (
-    PhysicalSegmentUniverse,
-    PreparedSignalResult,
 )
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
 from xic_extractor.raw_reader import open_raw
@@ -103,10 +97,6 @@ def process_file(
     raw_path: Path,
     *,
     scoring_context_factory: Callable[..., Any] | None = None,
-    precomputed_istd_results: dict[str, ExtractionResult] | None = None,
-    precomputed_istd_diagnostics: list[DiagnosticRecord] | None = None,
-    precomputed_istd_anchor_rts: dict[str, float] | None = None,
-    precomputed_istd_shape_metrics: dict[str, tuple[float, float | None]] | None = None,
     expected_acquisition_source: AcquisitionSourceExpectation | None = None,
 ) -> tuple[FileResult, list[DiagnosticRecord]]:
     from xic_extractor.extraction import result_models
@@ -124,43 +114,47 @@ def process_file(
             )
         )
         with raw_context as raw:
-            results = dict(precomputed_istd_results or {})
-            diagnostics: list[DiagnosticRecord] = list(
-                precomputed_istd_diagnostics or []
+            if not targets:
+                return result_models.FileResult(sample_name=sample_name, results={}), []
+            start, end = raw.acquisition_rt_bounds()
+            sample_window = (
+                acquire_ms2_window(
+                    raw, sample_key=sample_name, rt_min=start, rt_max=end
+                )
+                if any(target.neutral_loss_da is not None for target in targets)
+                else Ms2Window(
+                    sample_key=sample_name, rt_min=start, rt_max=end, events=()
+                )
             )
-            istd_shape_metrics_by_label: dict[str, tuple[float, float | None]] = dict(
-                precomputed_istd_shape_metrics or {}
-            )
-            istd_confidence_by_label = {
-                label: result.peak_result.confidence
-                for label, result in results.items()
-                if result.peak_result.confidence is not None
-            }
-            if precomputed_istd_anchor_rts is None:
-                istd_anchor_rts: dict[str, float] = {}
-                for target in targets:
-                    if not target.is_istd:
-                        continue
-                    extract_one_target(
-                        raw,
-                        config,
-                        sample_name,
-                        target,
-                        reference_rt=None,
-                        strict_preferred_rt=False,
-                        results=results,
-                        diagnostics=diagnostics,
-                        scoring_context_factory=scoring_context_factory,
-                        shape_metrics_by_label=istd_shape_metrics_by_label,
-                    )
-                    confidence = results[target.label].peak_result.confidence
-                    if confidence is not None:
-                        istd_confidence_by_label[target.label] = confidence
-                    anchor_rt = credible_istd_anchor_rt(results.get(target.label))
-                    if anchor_rt is not None:
-                        istd_anchor_rts[target.label] = anchor_rt
-            else:
-                istd_anchor_rts = dict(precomputed_istd_anchor_rts)
+            seeds_by_tag = prepare_sample_method_seeds(raw, sample_window, targets)
+            results: dict[str, ExtractionResult] = {}
+            diagnostics: list[DiagnosticRecord] = []
+            istd_shape_metrics_by_label: dict[str, tuple[float, float | None]] = {}
+            istd_confidence_by_label = {}
+            istd_anchor_rts: dict[str, float] = {}
+            for target in targets:
+                if not target.is_istd:
+                    continue
+                extract_one_target(
+                    raw,
+                    config,
+                    sample_name,
+                    target,
+                    reference_rt=None,
+                    sample_window=sample_window,
+                    method_seeds=seeds_by_tag.get(target.cid_nl_tag),
+                    strict_preferred_rt=False,
+                    results=results,
+                    diagnostics=diagnostics,
+                    scoring_context_factory=scoring_context_factory,
+                    shape_metrics_by_label=istd_shape_metrics_by_label,
+                )
+                confidence = results[target.label].peak_result.confidence
+                if confidence is not None:
+                    istd_confidence_by_label[target.label] = confidence
+                anchor_rt = credible_istd_anchor_rt(results.get(target.label))
+                if anchor_rt is not None:
+                    istd_anchor_rts[target.label] = anchor_rt
             sample_drift = estimate_sample_drift(targets, istd_anchor_rts)
             istd_targets = {
                 target.label: target for target in targets if target.is_istd
@@ -183,6 +177,8 @@ def process_file(
                     sample_name,
                     target,
                     reference_rt=reference_rt,
+                    sample_window=sample_window,
+                    method_seeds=seeds_by_tag.get(target.cid_nl_tag),
                     paired_target=istd_targets.get(target.istd_pair),
                     sample_drift=sample_drift,
                     strict_preferred_rt=reference_rt is not None,
@@ -217,6 +213,8 @@ def extract_one_target(
     target: Target,
     *,
     reference_rt: float | None,
+    sample_window: Ms2Window | None = None,
+    method_seeds: tuple | None = None,
     paired_target: Target | None = None,
     sample_drift: float = 0.0,
     strict_preferred_rt: bool = False,
@@ -239,105 +237,61 @@ def extract_one_target(
         paired_target=paired_target,
         sample_drift=sample_drift,
     )
-    selection_rt_min, selection_rt_max, anchor_used, anchor_rt = get_rt_window(
-        raw,
-        target,
-        config,
-        sample_key=sample_name,
-        target_reference_rt=target_reference_rt,
-        paired_istd_credible=(reference_rt is not None and paired_target is not None),
-    )
-    configured_width = target.rt_max - target.rt_min
-    context_rt_min = max(
-        0.0,
-        min(target.rt_min, selection_rt_min) - configured_width,
-    )
-    context_rt_max = max(target.rt_max, selection_rt_max) + configured_width
+    # Coverage comes from the acquired sample, never a method RT window or NL anchor.
+    # Missing MS2 still receives the same exact-mass MS1 candidate enumeration.
+    selection_rt_min, selection_rt_max = raw.acquisition_rt_bounds()
+    context_rt_min, context_rt_max = selection_rt_min, selection_rt_max
+    anchor_rt = target_reference_rt
     rt, intensity = raw.extract_xic(
         target.mz,
         context_rt_min,
         context_rt_max,
         target.ppm_tol,
     )
-    nl_result = check_target_nl(raw, target, config, sample_key=sample_name)
+    if sample_window is None:
+        sample_window = (
+            acquire_ms2_window(
+                raw,
+                sample_key=sample_name,
+                rt_min=context_rt_min,
+                rt_max=context_rt_max,
+            )
+            if target.neutral_loss_da is not None
+            else Ms2Window(
+                sample_key=sample_name,
+                rt_min=context_rt_min,
+                rt_max=context_rt_max,
+                events=(),
+            )
+        )
+    if method_seeds is None and target.neutral_loss_da is not None:
+        method_seeds = prepare_sample_method_seeds(raw, sample_window, [target])[
+            target.cid_nl_tag
+        ]
+    nl_result = check_target_nl(
+        raw, target, config, sample_key=sample_name, window=sample_window
+    )
     profile = resolve_signal_processing_profile(
         signal_processing_method=config.signal_processing_method,
         signal_processing_window_points=config.signal_processing_window_points,
     )
-    physical_trace_cache: dict[
-        tuple[bytes, bytes],
-        tuple[PreparedSignalResult, PhysicalSegmentUniverse, PeakCandidatesResult],
-    ] = {}
-
-    def _physical_trace_owners(
-        rt_values: object,
-        intensity_values: object,
-    ) -> tuple[PreparedSignalResult, PhysicalSegmentUniverse, PeakCandidatesResult]:
-        rt_array = np.asarray(rt_values, dtype=float)
-        intensity_array = np.asarray(intensity_values, dtype=float)
-        cache_key = (rt_array.tobytes(), intensity_array.tobytes())
-        cached = physical_trace_cache.get(cache_key)
-        if cached is not None:
-            return cached
-        prepared_result = prepare_physical_signal(
-            rt_array,
-            intensity_array,
-            profile=profile,
-        )
-        acquired_context_rt_start = (
+    rt_array = np.asarray(rt, dtype=float)
+    prepared = prepare_physical_signal(rt_array, intensity, profile=profile)
+    universe = enumerate_physical_segment_universe(
+        prepared,
+        request_context_rt_start_min=(
             float(rt_array[0])
             if rt_array.ndim == 1 and rt_array.size
             else context_rt_min
-        )
-        acquired_context_rt_end = (
+        ),
+        request_context_rt_end_min=(
             float(rt_array[-1])
             if rt_array.ndim == 1 and rt_array.size
             else context_rt_max
-        )
-        segment_universe = enumerate_physical_segment_universe(
-            prepared_result,
-            request_context_rt_start_min=acquired_context_rt_start,
-            request_context_rt_end_min=acquired_context_rt_end,
-        )
-        candidates_result = physical_candidates_result(
-            prepared_result, segment_universe
-        )
-        cached = (prepared_result, segment_universe, candidates_result)
-        physical_trace_cache[cache_key] = cached
-        return cached
-
-    initial_prepared, initial_universe, initial_candidates = _physical_trace_owners(
-        rt, intensity
+        ),
     )
-    if not initial_candidates.candidates and any(
-        selection_rt_min <= segment.apex_rt_min <= selection_rt_max
-        and physical_segment_has_incomplete_context(
-            initial_prepared.projection, segment
-        )
-        for segment in initial_universe.segments
-    ):
-        context_rt_min = max(0.0, context_rt_min - configured_width)
-        context_rt_max += configured_width
-        rt, intensity = raw.extract_xic(
-            target.mz,
-            context_rt_min,
-            context_rt_max,
-            target.ppm_tol,
-        )
-
-    prepared, universe, physical_candidates = _physical_trace_owners(rt, intensity)
-    method_window = None
-    if target.neutral_loss_da is not None:
-        geometries = tuple(
-            candidate_ms2_geometry(candidate)
-            for candidate in physical_candidates.candidates
-        )
-        method_window = acquire_ms2_window(
-            raw,
-            sample_key=sample_name,
-            rt_min=min((target.rt_min, *(item.rt_min for item in geometries))),
-            rt_max=max((target.rt_max, *(item.rt_max for item in geometries))),
-        )
+    physical_candidates = physical_candidates_result(prepared, universe)
+    method_window = sample_window
     trace_group = targeted_extraction_trace_group(
         sample_name=sample_name,
         target=target,
@@ -359,6 +313,7 @@ def extract_one_target(
         preferred_rt=anchor_rt,
         strict_preferred_rt=strict_preferred_rt,
         method_window=method_window,
+        method_seeds=method_seeds,
     )
 
     scoring_context_builder = None
@@ -403,7 +358,6 @@ def extract_one_target(
         peak_result,
         reference_rt=reference_rt,
         anchor_rt=anchor_rt,
-        anchor_used=anchor_used,
         strict_preferred_rt=candidate_assessment.strict_preferred_rt,
     )
     if istd_rt_in_this_sample is not None:
@@ -432,19 +386,6 @@ def extract_one_target(
     diagnostics.extend(build_diagnostic_records(sample_name, target, result, config))
     if paired_rejection is not None:
         diagnostics.append(paired_rejection)
-    append_anchor_window_diagnostics(
-        diagnostics,
-        sample_name,
-        target,
-        config,
-        peak_result,
-        anchor_used=anchor_used,
-        anchor_rt=anchor_rt if anchor_used else None,
-        rt_min=selection_rt_min,
-        rt_max=selection_rt_max,
-        nl_result=result.nl,
-        paired_rejection=paired_rejection,
-    )
     return anchor_rt
 
 
@@ -461,14 +402,22 @@ def current_target_reference_rt(
     neither learns chemistry from another batch nor authorizes a peak identity.
     Missing pairs use the existing sample drift, not another sample's prediction.
     """
-    center = (target.rt_min + target.rt_max) / 2.0
+    center = (
+        target.expected_rt_min
+        if target.expected_rt_min is not None
+        else (target.rt_min + target.rt_max) / 2.0
+    )
     if (
         not target.is_istd
         and target.istd_pair
         and paired_target is not None
         and reference_rt is not None
     ):
-        paired_center = (paired_target.rt_min + paired_target.rt_max) / 2.0
+        paired_center = (
+            paired_target.expected_rt_min
+            if paired_target.expected_rt_min is not None
+            else (paired_target.rt_min + paired_target.rt_max) / 2.0
+        )
         return center + reference_rt - paired_center
     return center + sample_drift
 
@@ -480,7 +429,7 @@ def credible_istd_anchor_rt(result: ExtractionResult | None) -> float | None:
     projection = result.targeted_product_projection
     if projection is not None and not projection.counted_detection:
         return None
-    if not allow_prepass_anchor(result.peak_result):
+    if not is_credible_istd_peak(result.peak_result):
         return None
     rt = result.reported_rt
     area = result.reported_peak_area
@@ -492,3 +441,28 @@ def credible_istd_anchor_rt(result: ExtractionResult | None) -> float | None:
 
 def _finite_positive(value: float | None) -> bool:
     return value is not None and math.isfinite(value) and value > 0
+
+
+def prepare_sample_method_seeds(
+    raw: Any, window: Ms2Window, targets: list[Target]
+) -> dict[str, tuple]:
+    """Acquire shared parent-MS1 verification once, then resolve shared scan events."""
+    from xic_extractor.discovery.strict_seed_receipts import (
+        read_parent_ms1_observations,
+        resolve_discovery_scan_events,
+    )
+
+    prepared = prepare_targeted_method_seeds(window, targets)
+    return {
+        tag: resolve_discovery_scan_events(
+            read_parent_ms1_observations(
+                raw,
+                seeds,
+                tolerance_ppm=discovery_settings_for_tag(
+                    tag
+                ).precursor_mz_tolerance_ppm,
+            ),
+            settings=discovery_settings_for_tag(tag),
+        )
+        for tag, seeds in prepared.items()
+    }

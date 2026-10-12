@@ -73,8 +73,11 @@ MS2 product as proof of unique support.
 candidate once from typed
 candidate evidence and physical eligibility. Chemical support precedes
 localization hints and trace quality; contextual RT and deterministic abundance
-break ties within the supported evidence ordering. Configured RT windows guide
-bounded acquisition, not a second hard apex veto within retained context.
+break ties within the supported evidence ordering. Expected RT and paired-ISTD shifts guide identity, not acquisition. Exact-mass
+MS1 candidate coverage spans the sample acquisition interval, including targets
+without MS2. The complete scan population is read once per sample; each tag is
+parsed once by Discovery, with shared parent-MS1 verification and scan-event
+resolution before candidate-local CID-NL assessment.
 Strong method-supported, quantifiable peaks remain counted despite RT drift.
 RT-prior disagreement and legacy confidence labels alone do not create product
 review actions. Unresolved morphology or overlap concerns can require quality
@@ -172,34 +175,21 @@ those facts itself.
 - When identity selection chooses no component, the physical question retains
   the acquired context and full segment universe with no admissible selection;
   capture preserves the unavailable answer instead of selecting a broad tail.
-- If the selection window has no qualified physical candidate but contains a
-  clipped segment's apex, acquisition expands its context once by the configured
-  target-window width on each side, with a zero lower RT limit. Selection bounds
-  and reference RT stay unchanged. An existing qualified in-window candidate
-  keeps its original acquisition and quantitation.
+- Exact-mass MS1 acquisition covers the complete acquisition RT bounds. No
+  expected-RT window, DDA anchor crop, or reacquisition expands or truncates the
+  physical candidate population.
 
 ### Target identity and search scope
 
-- ISTD selection retains the complete configured RT window. A DDA NL anchor
-  remains a selection reference; a displaced or absent anchor does not exclude
-  an otherwise qualified ISTD MS1 component inside that window.
-- Among non-strict ISTD candidates in the same eligibility class, local chemical
-  support precedes the number of review reasons. Rolling-RT disagreement remains
-  reported review evidence; exclusion, ambiguity, and hard-quality classes keep
-  their precedence.
-- For no-NL inputs, the configured RT-window center participates in component
-  identity while the complete acquisition context remains available to the
-  shared physical owner. The supplied group reference is encoded in that
-  center; missing reference rows remain excluded by the input owner.
-- A credible paired ISTD transfers observed drift while preserving the
-  configured analyte/ISTD RT offset. Missing or untrusted pairs fall back to the
-  analyte reference and existing sample drift. No-NL selection does not use
-  learned RT-library priors.
-- Among strongly supported no-NL physical candidates without other identity
-  blockers, selection first prefers an interval containing the reference, then
-  the closest apex. Shape concerns remain evidence for the existing product
-  policy; identity selection does not alter counted detection or physical
-  bounds and area. Equal references for different target rows are permitted.
+- `expected_rt_min` is a method identity reference, not an acquisition window.
+- A credible current-sample paired ISTD transfers observed drift while preserving
+  the analyte/ISTD expected-RT offset. Missing or untrusted pairs use the analyte
+  reference plus available current-sample drift.
+- CID-NL evidence comes from the shared Discovery chemistry and mass policy for
+  the row's `dR`, `R`, or `MeR` tag. Recorded-precursor and product-plus-neutral-loss
+  inference retain their evidence basis and parent-MS1 support requirements.
+- Identity ranking does not alter physical bounds or area. Full-trace shared
+  baseline estimation can change quantitation relative to a cropped trace.
 - Product Targeted output is a workflow-owned projection from evidence and
   selection decisions.
 - Shared evidence providers inform Targeted product state. Shared evidence
@@ -288,26 +278,24 @@ those facts itself.
 ### Current-sample paired RT reference
 
 For an analyte with a credible paired ISTD in this sample, the RT reference is
-the analyte's configured window midpoint plus the observed ISTD shift from its
-own configured midpoint. NL and no-NL analytes use this same answer. The
+the analyte's expected RT plus the observed ISTD shift from its own expected RT. The
 configured difference is retained, including nonzero isotope-labelled offsets;
 pairing does not force identical apex times.
 
 Candidate scoring uses this same reference as its paired-ISTD RT prior and
-centers the configured-width RT scoring window on it. Agreement can support
+uses the complete acquisition span for the window-position evidence. Agreement can support
 ranking; shared sample drift does not incur an unshifted-window penalty.
 The RT prior is not an additional chemical identity or NL confirmation.
 
 Missing or untrusted paired ISTD observations do not become anchors. The
-fallback remains the configured analyte midpoint plus the available sample
+fallback remains the analyte expected RT plus the available sample
 drift. Neither fallback nor RT agreement establishes chemical identity. Humans
-still provide target identities, pairings and method-appropriate search windows;
+still provide target identities, pairings and method-appropriate expected RT;
 these cannot be assumed portable across batches or methods.
 
 The reference is computed directly in memory for the current sample. External
-RT-prior/pair calibration files are not analysis inputs. The retained rolling
-ISTD context assesses within-batch ISTD consistency; it is not a replacement for
-a missing current-sample paired observation or an independent identity oracle.
+RT-prior/pair calibration files and rolling ISTD prepasses are not analysis
+inputs. A different sample cannot replace missing current-sample identity support.
 
 ### Counting and product selection
 

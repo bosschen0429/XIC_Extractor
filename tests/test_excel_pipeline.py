@@ -52,7 +52,9 @@ def test_workbook_filters_belong_to_tables_not_overlapping_worksheet_ranges(tmp_
                 assert table_filter is not None
                 assert table_filter.attrib["ref"] == table.attrib["ref"]
     book = load_workbook(path)
-    assert str(book["Run Metadata"].print_area) == "'Run Metadata'!$A$1:$C$19"
+    assert str(book["Run Metadata"].print_area) == (
+        f"'Run Metadata'!$A$1:$C${book['Run Metadata'].max_row}"
+    )
     book.close()
 
 
@@ -181,6 +183,7 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
         "config_hash",
         "app_version",
         "generated_at",
+        "targeted_strategy",
         "signal_processing_method",
         "signal_processing_window_points",
     } <= metadata_keys

@@ -92,34 +92,27 @@ def test_standalone_sn_cache_preserves_solver_exception_policy(
 
 def test_local_sn_pass_high_peak() -> None:
     y = _make_trace(peak_height=10.0, noise_std=0.05)
-    sev, label = local_sn_severity(y, apex_index=200, dirty_matrix=False)
+    sev, label = local_sn_severity(y, apex_index=200)
     assert sev == 0
     assert label == "local_sn"
 
 
 def test_local_sn_minor_low_peak() -> None:
     y = _make_trace(peak_height=0.03, noise_std=0.05)
-    sev, _ = local_sn_severity(y, apex_index=200, dirty_matrix=False)
+    sev, _ = local_sn_severity(y, apex_index=200)
     assert sev == 1
 
 
 def test_local_sn_major_no_peak() -> None:
     y = _make_trace(peak_height=0.0, noise_std=0.05)
-    sev, _ = local_sn_severity(y, apex_index=200, dirty_matrix=False)
+    sev, _ = local_sn_severity(y, apex_index=200)
     assert sev == 2
-
-
-def test_dirty_matrix_relaxes_threshold() -> None:
-    y = _make_trace(peak_height=0.3, noise_std=0.05)
-    sev_default, _ = local_sn_severity(y, apex_index=200, dirty_matrix=False)
-    sev_dirty, _ = local_sn_severity(y, apex_index=200, dirty_matrix=True)
-    assert sev_dirty <= sev_default
 
 
 def test_local_sn_invalid_trace_is_major() -> None:
     y = _make_trace(peak_height=10.0)
     y[200] = np.nan
-    sev, label = local_sn_severity(y, apex_index=200, dirty_matrix=False)
+    sev, label = local_sn_severity(y, apex_index=200)
     assert sev == 2
     assert label == "local_sn"
 
@@ -250,9 +243,7 @@ def test_rt_centrality_exactly_1pct_is_minor() -> None:
 def test_rt_centrality_non_finite_or_invalid_window_is_major(
     observed: float, rt_min: float, rt_max: float
 ) -> None:
-    sev, label = rt_centrality_severity(
-        observed=observed, rt_min=rt_min, rt_max=rt_max
-    )
+    sev, label = rt_centrality_severity(observed=observed, rt_min=rt_min, rt_max=rt_max)
     assert sev == 2
     assert label == "rt_centrality"
 

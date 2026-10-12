@@ -27,7 +27,6 @@ def test_process_jobs_live_under_extraction_package() -> None:
     process_backend_path = ROOT / "xic_extractor" / "extraction" / "process_backend.py"
 
     assert inspect.getmodule(jobs.run_raw_file_jobs) is jobs
-    assert inspect.getmodule(jobs.run_istd_prepass_jobs) is jobs
     assert "xic_extractor.execution" not in process_backend_path.read_text(
         encoding="utf-8"
     )
@@ -99,8 +98,8 @@ def test_extractor_delegates_pipeline_flow() -> None:
     assert "_fallback_injection_order_from_mtime" not in function_names
 
 
-def test_extractor_delegates_istd_prepass() -> None:
-    assert importlib.util.find_spec("xic_extractor.extraction.istd_prepass")
+def test_extractor_has_no_separate_istd_prepass() -> None:
+    assert importlib.util.find_spec("xic_extractor.extraction.istd_prepass") is None
 
     extractor_path = ROOT / "xic_extractor" / "extractor.py"
     function_names = _function_names(extractor_path)
@@ -163,7 +162,7 @@ def test_untargeted_identity_paths_exclude_targeted_product_projection() -> None
 
 
 def test_extractor_delegates_rt_anchor_and_drift_helpers() -> None:
-    assert importlib.util.find_spec("xic_extractor.extraction.rt_windows")
+    assert importlib.util.find_spec("xic_extractor.extraction.rt_windows") is None
     assert importlib.util.find_spec("xic_extractor.extraction.anchors")
     assert importlib.util.find_spec("xic_extractor.extraction.drift")
 

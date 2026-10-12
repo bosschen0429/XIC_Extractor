@@ -16,7 +16,6 @@ from xic_extractor.applications.targeted.application import (
 )
 from xic_extractor.configuration import loader as config_loader
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
-from xic_extractor.configuration.settings import method_settings_differences
 from xic_extractor.extraction.result_models import ExtractionResult, RunOutput
 from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,
@@ -198,87 +197,11 @@ def _is_detected(
 _SETTING_FIELDS: tuple[tuple[str, str, str, dict[str, Any]], ...] = (
     ("data_dir", "資料目錄", "folder", {}),
     ("dll_dir", "DLL 目錄", "folder", {}),
-    ("signal_processing_method", "平滑方法", "readonly", {"options": ["gaussian"]}),
-    (
-        "signal_processing_window_points",
-        "Gaussian 平滑視窗（點）",
-        "number",
-        {"min": 3, "step": 2, "help": "奇數 3–999。"},
-    ),
-    (
-        "ms2_precursor_tol_da",
-        "MS2 precursor 容差（Da）",
-        "number",
-        {
-            "min": 0.01,
-            "help": "掃描 precursor 與推算 precursor 的最大差距。",
-        },
-    ),
-    (
-        "nl_min_intensity_ratio",
-        "NL product 最低強度比",
-        "number",
-        {"min": 0.01, "step": 0.01, "help": "相對於該 scan 的 base peak。"},
-    ),
-    (
-        "count_no_ms2_as_detected",
-        "將 NO_MS2 視為偵測到",
-        "readonly",
-        {
-            "help": "相容設定；正式 Targeted 結果不將 NO_MS2 算為偵測到。",
-            "compatibility_only": True,
-        },
-    ),
     (
         "injection_order_source",
         "注射順序來源",
         "file",
-        {"help": "CSV／XLSX 注射順序；留空時使用 RAW 修改時間。"},
-    ),
-    (
-        "rolling_window_size",
-        "ISTD RT prior 滾動視窗（± 注射數）",
-        "number",
-        {"min": 1, "step": 1},
-    ),
-    (
-        "dirty_matrix_mode",
-        "複雜基質模式",
-        "checkbox",
-        {"help": "放寬 S/N、收緊峰形；用於尿液等複雜基質。"},
-    ),
-    (
-        "nl_rt_anchor_search_margin_min",
-        "NL 錨點搜尋半徑（min）",
-        "number",
-        {"min": 0.0, "help": "在目標 RT 中心 ± 此值內尋找 NL 確認的 MS2。"},
-    ),
-    (
-        "nl_rt_anchor_half_window_min",
-        "錨定後 XIC 半寬（min）",
-        "number",
-        {"min": 0.0, "help": "找到錨點時，XIC 視窗為錨點 RT ± 此值。"},
-    ),
-    (
-        "nl_fallback_half_window_min",
-        "未錨定時 XIC 半寬（min）",
-        "number",
-        {"min": 0.0, "help": "找不到錨點時，XIC 視窗為 RT 中心 ± 此值。"},
-    ),
-    (
-        "parallel_mode",
-        "執行方式",
-        "select",
-        {
-            "options": ["serial", "process"],
-            "help": "process 平行處理；serial 逐一處理，供除錯使用。",
-        },
-    ),
-    (
-        "parallel_workers",
-        "平行 worker 數",
-        "number",
-        {"min": 1, "step": 1, "help": "process 模式使用的行程數。"},
+        {"help": "CSV／XLSX；留空使用 RAW 修改時間。"},
     ),
 )
 
@@ -311,9 +234,6 @@ def setting_fields() -> list[dict[str, Any]]:
 
 
 def method_summary(settings: dict[str, str]) -> dict[str, Any]:
-    differences = method_settings_differences(settings)
-    return {
-        "label": f"自訂參數 · {len(differences)} 項調整" if differences else "標準參數",
-        "custom_keys": [row["key"] for row in differences],
-        "differences": differences,
-    }
+    from xic_extractor.settings_schema import TARGETED_STRATEGY_VERSION
+
+    return {"label": TARGETED_STRATEGY_VERSION, "custom_keys": [], "differences": []}

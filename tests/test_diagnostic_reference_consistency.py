@@ -91,9 +91,9 @@ def test_half_prominence_extents_from_trace_protect_broad_peak() -> None:
         tuple(apex for apex, _, _ in clusters),
         tuple((left, right) for _, left, right in clusters),
     )
-    row = check_reference_consistency(
-        {"one": [target("m5C", 10.70)]}, [observation]
-    )["rows"][0]
+    row = check_reference_consistency({"one": [target("m5C", 10.70)]}, [observation])[
+        "rows"
+    ][0]
     assert row["warnings"] == []
 
 
@@ -111,8 +111,7 @@ def test_wrong_anchor_does_not_distort_neighbor_mapping() -> None:
     excluded = report["summary"]["mapping_excluded_anchors"]
     assert isinstance(excluded, list)
     assert {
-        (item["source_group"], item["group"], item["label"])
-        for item in excluded
+        (item["source_group"], item["group"], item["label"]) for item in excluded
     } >= {("a", "b", "4")}
 
 
@@ -231,10 +230,9 @@ def test_cli_writes_review_rows_and_distribution_without_mutating_inputs(
     for group, refs in (("a", [2, 3, 5]), ("b", [4, 9, 10])):
         path = tmp_path / f"{group}.csv"
         path.write_text(
-            "label,mz,rt_min,rt_max,ppm_tol,neutral_loss_da,nl_ppm_warn,"
-            "nl_ppm_max,is_istd,istd_pair\n"
+            "label,mz,expected_rt_min,cid_nl_tag,role,istd_pair\n"
             + "".join(
-                f"{label},300.119,{rt - 1},{rt + 1},20,,,,false,\n"
+                f"{label},300.119,{rt},dR,istd,\n"
                 for label, rt in zip(("left", "held", "right"), refs, strict=True)
             ),
             encoding="utf-8",

@@ -68,7 +68,6 @@ def score_candidate(
         local_sn_severity(
             ctx.intensity_array,
             ctx.apex_index,
-            ctx.dirty_matrix,
             baseline=ctx.baseline_array,
             residual_mad=ctx.residual_mad,
         ),

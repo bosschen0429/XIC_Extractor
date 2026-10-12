@@ -573,7 +573,6 @@ def _ctx(
         rt_prior_sigma=0.1,
         rt_min=8.0,
         rt_max=9.0,
-        dirty_matrix=False,
         ms2_trace_strength="strong" if ms2_present and nl_match else None,
     )
 

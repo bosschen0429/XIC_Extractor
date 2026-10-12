@@ -1,136 +1,49 @@
 # Targeted Config Reference
 
-Field reference for Targeted settings and the separate target list.
-Runtime copies (`config/settings.csv`, `config/targets.csv`) are created from
-the example files after Save or Run. Do not commit runtime copies — they
-contain local machine paths.
+Targeted has two input tables. Local `config/settings.csv` and `config/targets.csv`
+are not tracked; the example files show the current format. Unsupported columns
+or settings produce an error rather than becoming hidden scientific overrides.
 
-## Settings (`settings.csv`)
+## Batch and machine settings (`settings.csv`)
 
-`settings.csv` is the only active Targeted settings file; `targets.csv` is a
-separate target list. Reset restores the 10 method parameters declared in
-`xic_extractor.settings_schema.METHOD_KEYS`, preserving batch, environment
-and output settings.
+| Key | Meaning |
+| --- | --- |
+| `data_dir` | Thermo RAW batch directory |
+| `dll_dir` | Thermo RawFileReader DLL directory, shared with Untargeted |
+| `injection_order_source` | Optional CSV/XLSX sample injection order; blank uses RAW mtime |
 
-The shared DLL location is persisted only in `settings.csv`, for both Targeted
-and Untargeted. UI preferences and Discovery batch files do not override this value. An explicit launch
-override remains session-local until saved.
+Scientific policy and process scheduling are platform-owned. The normal GUI and
+Targeted CLI do not offer smoothing, tolerance, anchor-window, Dirty Matrix,
+serial/process or worker controls. The run metadata records the effective
+versioned policy and actual resource allocation.
 
-The custom-method label compares only those 10 parameters with platform-owned
-defaults.
+## Target intent (`targets.csv`)
 
-### Paths
+| Column | Meaning |
+| --- | --- |
+| `label` | Unique target name; becomes a public output identifier |
+| `mz` | Positive precursor m/z |
+| `expected_rt_min` | Expected retention time **in minutes**, not a lower RT bound |
+| `cid_nl_tag` | `dR`, `R`, or `MeR`; chemistry and tolerances resolve from the corresponding shared built-in Discovery recipe |
+| `role` | `analyte` or `istd` |
+| `istd_pair` | Required ISTD label for an analyte; blank for an ISTD |
+| `sample_applicability` | Optional `all` (default) or `rna_containing` |
 
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `data_dir` | path | *(none)* | Directory containing `.raw` files to process |
-| `dll_dir` | path | machine-specific DLL directory | Directory containing Thermo RawFileReader DLLs |
-| `injection_order_source` | path | *(empty)* | Optional CSV/XLSX with `Sample_Name` and `Injection_Order` columns |
+Additional descriptive metadata is retained. Retired scientific fields such as
+`rt_min`, `rt_max`, `ppm_tol`, `neutral_loss_da`, `nl_ppm_warn`, `nl_ppm_max`, and
+`is_istd` are not metadata and are rejected. There is no automatic conversion.
+Expected RT guides identity, including the declared analyte–ISTD offset; it does
+not crop the acquired candidate universe.
 
-### Peak Detection
+## Portable method
 
-Targeted and Untargeted use the same physical signal and peak-boundary owner.
-The same trace, context, profile and physical question produce the same facts.
-Gaussian smoothing and the fixed AsLS baseline define the signal; Targeted
-reference and ISTD evidence select a component without recomputing its area.
+A method folder contains `targets.csv` and `settings.csv`. The latter contains
+only `strategy_version,targeted-cid-nl-v2` under the `key,value` header.
+Batch and machine paths do not travel with the method. Loading replaces the
+whole target intent; unsupported strategy versions are rejected.
 
-| Field | Type | Default | Valid range | Description |
-| --- | --- | --- | --- | --- |
-| `signal_processing_method` | enum | `gaussian` | `gaussian` | Fixed shared physical signal smoothing; informational, not a GUI choice |
-| `signal_processing_window_points` | int | 15 | odd, 3–999 | Gaussian smoothing window (points) |
+## Evidence and outputs
 
-### Neutral Loss Confirmation
-
-| Field | Type | Default | Valid range | Description |
-| --- | --- | --- | --- | --- |
-| `ms2_precursor_tol_da` | float | 0.8 | > 0 | Maximum precursor inference radius (Da), capped by the recorded isolation half-width. Explicit saved values are preserved. |
-| `nl_min_intensity_ratio` | float | 0.01 | 0 – 1 | NL product must reach this fraction of the scan's base peak |
-| `nl_rt_anchor_search_margin_min` | float | 2.0 | > 0 | Search radius around `rt_center` for NL anchor MS2 (minutes) |
-| `nl_rt_anchor_half_window_min` | float | 1.0 | > 0 | XIC half-width when NL anchor is found (minutes) |
-| `nl_fallback_half_window_min` | float | 2.0 | > 0 | XIC half-width when no NL anchor is found (minutes) |
-
-### Detection Rules
-
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `count_no_ms2_as_detected` | bool | `false` | Legacy fallback for rows without formal projection fields; does not override the Targeted projection's `Counted Detection` (see [Decision Policy](../product/decision-policy.md)) |
-| `dirty_matrix_mode` | bool | `false` | Relax S/N and tighten peak shape criteria for complex matrices (e.g., urine) |
-
-### Within-batch ISTD Context
-
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `rolling_window_size` | int | 5 | Rolling window radius for ISTD RT prior (±N injections) |
-
-This reviews ISTD consistency within the batch. An analyte instead uses its
-credible paired ISTD from the current sample, transferring the observed shift
-while retaining the configured target/ISTD midpoint difference. Missing or
-untrusted pairs do not borrow an anchor from another sample.
-
-### Output
-
-Normal Targeted runs deliver one XLSX. There are no report/CSV/score-export
-switches. Settings keys outside this reference are reported as unknown and
-have no effect.
-
-### Parallelization
-
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `parallel_mode` | enum | `process` | Execution backend: `serial` or `process` |
-| `parallel_workers` | int | CPU count - 1 | Worker count for process mode |
-
----
-
-## Targets (`targets.csv`)
-
-Each row defines one compound to extract. The `label` column becomes the
-identifier in workbook output and downstream CSV files.
-
-### Required Columns
-
-| Column | Type | Constraints | Description |
-| --- | --- | --- | --- |
-| `label` | string | unique, non-empty | Compound name or identifier |
-| `mz` | float | > 0 | Target mass-to-charge ratio |
-| `rt_min` | float | >= 0, < `rt_max` | RT window start (minutes) |
-| `rt_max` | float | > `rt_min` | RT window end (minutes) |
-| `ppm_tol` | float | > 0 | m/z matching tolerance (ppm) |
-
-### Neutral Loss Columns
-
-| Column | Type | Constraints | Description |
-| --- | --- | --- | --- |
-| `neutral_loss_da` | float | > 0, < `mz`; empty to disable | Expected neutral-loss mass (Da) |
-| `nl_ppm_warn` | float | > 0; required if `neutral_loss_da` set | Warning threshold on descriptive ppm-of-loss error; does not determine NL acceptance |
-| `nl_ppm_max` | float | >= `nl_ppm_warn`; required if `neutral_loss_da` set | Per-ion precursor/product m/z tolerance (ppm) for the quadrature NL match window |
-
-### ISTD Pairing Columns
-
-| Column | Type | Default | Description |
-| --- | --- | --- | --- |
-| `is_istd` | bool | `false` | Whether this target is an internal standard |
-| `istd_pair` | string | *(empty)* | Label of the paired ISTD. Must reference a row with `is_istd=true`. Empty if this row is itself an ISTD |
-| `sample_applicability` | enum | `all` | `all` or `rna_containing` |
-
-### ISTD Pairing Rules
-
-- If `is_istd=true`: do not set `istd_pair`.
-- If `istd_pair` is set: `is_istd` must be `false`, and the referenced label
-  must have `is_istd=true`.
-- The editor combines role and pairing in one dropdown: unpaired, this row is
-  an ISTD, or a specific ISTD label. Import prefills only unique exact isotope-name
-  counterparts (for example `d3-5-medC` / `5-medC`); existing roles and nonempty
-  pairs win. Ambiguous names remain unpaired and editable. Name guesses are not
-  chemical evidence or a hard RT-order rule.
-
-## Retired candidate audit outputs
-
-`emit_peak_candidates` and its candidate, boundary, region shadow, selected-envelope,
-and target-pair RT auto-reselection TSV outputs are removed. Remove this key from
-existing settings CSVs; there is no compatibility alias. Candidate-sidecar
-verification and the dedicated shadow/pressure review commands are unavailable.
-Use [XIC Inspector](../product/xic-inspector.md) for visual review of its supported retained
-evidence sources. Inspector does not apply candidate switches or generate RT
-reselection comparison tables. Formal peak selection and numerical output remain
-owner-controlled.
+A missing MS2 event does not suppress exact-mass MS1 search and does not create
+CID-NL support. Reported value, counted detection and review are separate outputs.
+Read [Targeted extraction](targeted-extraction.md) for the workbook workflow.

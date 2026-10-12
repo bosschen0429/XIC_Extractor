@@ -14,8 +14,9 @@ from xic_extractor.ms2_trace_evidence import (
     summarize_ms2_trace,
 )
 from xic_extractor.precursor_evidence import (
+    Ms1PrecursorObservation,
     PrecursorLossAssessment,
-    RecordedPrecursorMzBasis,
+    PrecursorMzBasis,
     assess_precursor_loss,
     recorded_precursor_references,
     scan_has_precursor_candidate,
@@ -58,12 +59,14 @@ class MS2ProductEvidence:
     product_base_ratio: float
     target_product_ppm: float
     observed_loss_da: float
-    observed_loss_error_ppm: float
+    observed_loss_error_ppm: float | None
     scan_number: int | None = None
     acquisition_source_id: str = ""
-    precursor_mz_basis: RecordedPrecursorMzBasis = "scan_precursor"
+    precursor_mz_basis: PrecursorMzBasis = "scan_precursor"
     scan_precursor_mz: float | None = None
     precursor_metadata: Ms2PrecursorMetadata | None = None
+    precursor_inference_tolerance_da: float | None = None
+    ms1_precursor_observation: Ms1PrecursorObservation | None = None
 
     def assess_precursor_loss(
         self, neutral_loss_da: float, tolerance_ppm: float
@@ -82,6 +85,7 @@ class MS2ProductEvidence:
                 else self.scan_precursor_mz
             ),
             metadata=self.precursor_metadata,
+            ms1_observation=self.ms1_precursor_observation,
         )
 
 
@@ -323,7 +327,7 @@ def check_nl(
             or (strict_match and not best_strict_match)
             or (
                 strict_match == best_strict_match
-                and evidence.observed_loss_error_ppm < best_ppm
+                and _loss_error_rank(evidence) < best_ppm
             )
         ):
             best_ppm = evidence.observed_loss_error_ppm
@@ -452,6 +456,7 @@ def collect_candidate_ms2_evidence(
         if not primary_aligned:
             trigger_scan_count += 1
         if strict_nl_match:
+            assert evidence.observed_loss_error_ppm is not None
             strict_nl_scan_count += 1
             product_trace_points.append(
                 MS2TracePoint(
@@ -470,8 +475,7 @@ def collect_candidate_ms2_evidence(
             or (
                 strict_nl_match
                 == _matches_loss(best_evidence, neutral_loss_da, nl_ppm_max)
-                and evidence.observed_loss_error_ppm
-                < best_evidence.observed_loss_error_ppm
+                and _loss_error_rank(evidence) < _loss_error_rank(best_evidence)
             )
         ):
             best_evidence = evidence
@@ -756,7 +760,7 @@ def _best_product_probe(
             nearest_product_loss_ppm=nearest_product_loss_ppm,
             nearest_product_base_ratio=nearest_product_base_ratio,
         )
-    evidence = min(candidates, key=lambda item: item.observed_loss_error_ppm)
+    evidence = min(candidates, key=_loss_error_rank)
     return MS2ProductProbe(
         evidence=evidence,
         absence_reason="",
@@ -811,3 +815,9 @@ def _classify_nl_result(
     if best_ppm > nl_ppm_warn:
         return "WARN"
     return "OK"
+
+
+def _loss_error_rank(evidence: MS2ProductEvidence) -> float:
+    """Inferred precursor support has no independent observed-loss error."""
+    error = evidence.observed_loss_error_ppm
+    return float("inf") if error is None else error

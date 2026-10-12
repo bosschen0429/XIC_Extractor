@@ -27,9 +27,7 @@
     <div class="button-row">
       <button id="target-new" type="button" class="ghost" data-analysis-idle>
         <svg class="icon"><use href="#i-plus" /></svg>開始新批次</button
-      ><button id="target-reset" type="button" class="ghost" data-analysis-idle>
-        <svg class="icon"><use href="#i-refresh" /></svg>還原方法參數
-      </button>
+      >
     </div>
   </header>
   <div class="analysis-layout">
@@ -90,10 +88,10 @@
             <div>
               <h2>分析方法</h2>
               <p class="subtle">
-                預設使用平台標準參數；需調整時才展開參數。
+                目標知識由清單指定；科學策略由平台管理。
               </p>
             </div>
-            <span id="target-method-state" class="chip ok">標準參數</span>
+            <span id="target-method-state" class="chip ok">targeted-cid-nl-v2</span>
           </div>
           <div class="step-body">
             <label class="field">已儲存的方法<select id="target-method-select" data-analysis-idle><option value="">目前工作區設定</option></select></label>
@@ -102,12 +100,12 @@
               <button id="target-method-save" type="button" data-analysis-idle>另存為方法</button>
               <button id="target-method-import" type="button" data-analysis-idle>從方法資料夾載入</button>
             </div>
-            <p class="subtle">方法包含完整參數、targets 與 ISTD；換批次只需更換 RAW。載入會取代目前方法與目標，保留本次批次及本機設定。</p>
+            <p class="subtle">方法包含策略版本、targets 與 ISTD；換批次只需更換 RAW。載入會取代目前方法與目標，保留本次批次及本機設定。</p>
           </div>
           <div id="targeted-settings" class="step-body"></div>
         </section>
         <section class="card step">
-          <div class="step-head"><span class="step-no">4</span><div><h2>執行與輸出</h2><p class="subtle">完成後只交付一份 XLSX；本機環境與 worker 不屬於方法參數。</p></div></div>
+          <div class="step-head"><span class="step-no">4</span><div><h2>執行與輸出</h2><p class="subtle">完成後交付一份 XLSX；可直接開啟結果檢閱。</p></div></div>
           <div id="targeted-execution" class="step-body"></div>
         </section>
       </form>
@@ -451,7 +449,7 @@
           <tr>
             <th>啟用</th>
             <th>標籤名稱</th>
-            <th>Neutral loss (Da)</th>
+            <th>CID-NL tag</th>
             <th></th>
           </tr>
         </thead>

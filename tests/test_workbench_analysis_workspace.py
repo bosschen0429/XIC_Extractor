@@ -4,7 +4,7 @@ import pytest
 
 from tests.test_targeted_method_files import rows
 from tests.test_xic_workbench import _client
-from xic_extractor.settings_schema import METHOD_KEYS
+from xic_extractor.settings_schema import TARGETED_STRATEGY_VERSION
 from xic_workbench.workspace import ReviewWorkspace
 
 
@@ -13,7 +13,7 @@ def test_http_method_save_load_replaces_intent_preserves_batch_and_metadata(tmp_
     workspace = ReviewWorkspace(config_dir=config_dir)
     with _client(workspace) as request:
         _, original, _ = request("/api/config")
-        settings = {**original["settings"], "dirty_matrix_mode": "true"}
+        settings = original["settings"]
         targets = rows()
         targets[1]["future_annotation"] = "keep this exact metadata"
         status, saved, _ = request(
@@ -27,20 +27,17 @@ def test_http_method_save_load_replaces_intent_preserves_batch_and_metadata(tmp_
         local = {
             "data_dir": "new batch",
             "dll_dir": "machine dll",
-            "parallel_workers": "3",
             "injection_order_source": "batch order.csv",
         }
-        current = {**settings, **local, "ms2_precursor_tol_da": "1.2"}
+        current = {**settings, **local}
         status, loaded, _ = request(
             "/api/targeted/method/load", {"path": path, "settings": current}
         )
         assert status == 200
-        assert {key: loaded["settings"][key] for key in METHOD_KEYS} == {
-            key: settings[key] for key in METHOD_KEYS
-        }
+        assert loaded["summary"]["label"] == TARGETED_STRATEGY_VERSION
         assert {key: loaded["settings"][key] for key in local} == local
         assert loaded["targets"][1]["istd_pair"] == "standard"
-        assert loaded["targets"][0]["is_istd"] == "true"
+        assert loaded["targets"][0]["role"] == "istd"
         assert (
             loaded["targets"][1]["future_annotation"] == targets[1]["future_annotation"]
         )
@@ -60,10 +57,7 @@ def test_http_method_save_load_replaces_intent_preserves_batch_and_metadata(tmp_
             {"path": b_path, "settings": loaded["settings"]},
         )
         assert status == 200
-        assert loaded_b["settings"]["dirty_matrix_mode"] == "false"
-        assert {key: loaded_b["settings"][key] for key in METHOD_KEYS} == {
-            key: original["settings"][key] for key in METHOD_KEYS
-        }
+        assert loaded_b["summary"]["label"] == TARGETED_STRATEGY_VERSION
         assert {key: loaded_b["settings"][key] for key in local} == local
         assert len(loaded_b["targets"]) == 1
         # Both actions edit/save methods, not active batch state.

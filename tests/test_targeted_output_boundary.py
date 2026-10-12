@@ -109,8 +109,6 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
         peak_min_prominence_ratio=0.01,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
-        nl_rt_anchor_half_window_min=0.5,
-        nl_fallback_half_window_min=0.5,
         count_no_ms2_as_detected=True,
     )
     target = Target(
@@ -119,7 +117,8 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
         rt_min=1.0,
         rt_max=2.0,
         ppm_tol=20.0,
-        neutral_loss_da=116.0,
+        neutral_loss_da=116.0474,
+        cid_nl_tag="dR",
         nl_ppm_warn=20.0,
         nl_ppm_max=40.0,
         is_istd=False,
@@ -129,6 +128,9 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
     class Raw:
         def __init__(self, scale: float) -> None:
             self.scale = scale
+
+        def acquisition_rt_bounds(self):
+            return 1.0, 2.0
 
         def extract_xic(self, _mz, rt_min, rt_max, _ppm):
             rt = np.linspace(rt_min, rt_max, 1201)
@@ -146,7 +148,7 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
                             scan_number=index,
                             rt=rt,
                             precursor_mz=250.0,
-                            masses=np.array([134.0 if with_nl else 135.0]),
+                            masses=np.array([133.9526 if with_nl else 135.0]),
                             intensities=np.array([500.0]),
                             base_peak=500.0,
                         ),
@@ -347,9 +349,7 @@ def test_workbook_only_delivery_embeds_method_settings(
     )
     workbook.close()
     assert metadata["signal_processing_method"] == config.signal_processing_method
-    assert (
-        metadata["nl_rt_anchor_half_window_min"] == config.nl_rt_anchor_half_window_min
-    )
+    assert "targeted_strategy" in metadata
     assert set(config.output_csv.parent.iterdir()) == {excel_path}
 
 
@@ -1707,8 +1707,6 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         peak_min_prominence_ratio=0.01,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
-        nl_rt_anchor_half_window_min=0.6,
-        nl_fallback_half_window_min=0.6,
     )
     analyte = Target(
         label="Analyte",
@@ -1716,7 +1714,8 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         rt_min=1.1,
         rt_max=1.4 if hint_window else 2.5,
         ppm_tol=20.0,
-        neutral_loss_da=116.0,
+        neutral_loss_da=116.0474,
+        cid_nl_tag="dR",
         nl_ppm_warn=20.0,
         nl_ppm_max=40.0,
         is_istd=istd_backfill,
@@ -1735,6 +1734,9 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
     class Raw:
         def __init__(self, name):
             self.name = name
+
+        def acquisition_rt_bounds(self):
+            return 0.7, 2.5
 
         def extract_xic(self, mz, rt_min, rt_max, _ppm):
             rt = np.linspace(rt_min, rt_max, 1801)
@@ -1758,7 +1760,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
                             scan_number=index,
                             rt=rt,
                             precursor_mz=mz,
-                            masses=np.array([mz - 116.0]),
+                            masses=np.array([mz - 116.0474]),
                             intensities=np.array([500.0]),
                             base_peak=500.0,
                         ),
@@ -1976,7 +1978,7 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
     from xic_extractor.extraction import pipeline, target_extraction
     from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 
-    mz, loss = 255.0, 116.0
+    mz, loss = 255.0, 116.0474
     # Steady drift along injection order spans more than the grouping RT limit.
     apex = {"S1": 1.0, "S2": 1.8, "S3": 2.6, "S4": 3.4, "S5": 4.2}
     data = tmp_path / "raw"
@@ -1994,8 +1996,6 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
         peak_min_prominence_ratio=0.01,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
-        nl_rt_anchor_half_window_min=0.6,
-        nl_fallback_half_window_min=0.6,
     )
     istd = Target(
         label="ISTD",
@@ -2004,6 +2004,7 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
         rt_max=4.7,
         ppm_tol=20.0,
         neutral_loss_da=loss,
+        cid_nl_tag="dR",
         nl_ppm_warn=20.0,
         nl_ppm_max=40.0,
         is_istd=True,
@@ -2013,6 +2014,9 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
     class Raw:
         def __init__(self, name):
             self.name = name
+
+        def acquisition_rt_bounds(self):
+            return 0.5, 4.7
 
         def extract_xic(self, _mz, rt_min, rt_max, _ppm):
             rt = np.linspace(rt_min, rt_max, 2401)

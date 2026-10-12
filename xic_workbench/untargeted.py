@@ -18,12 +18,16 @@ from xic_extractor.applications.untargeted.request import (
     UntargetedExecutionContext,
     UntargetedRequest,
 )
+from xic_extractor.configuration.cid_nl_profile import DEFAULT_CID_NL_MASS_POLICY
 from xic_extractor.configuration.execution_profile import (
     DEFAULT_ALIGNMENT_WORKER_BACKEND,
     ExecutionProfile,
     UntargetedExecutionPolicy,
 )
 from xic_extractor.configuration.models import ExtractionConfig
+from xic_extractor.configuration.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+)
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.pipeline import run_discovery, run_discovery_batch
 from xic_extractor.discovery.processing_run_spec_adapter import (
@@ -38,7 +42,6 @@ from xic_extractor.presets import (
 )
 from xic_extractor.raw_reader import read_analysis_set
 from xic_extractor.sample_metadata import SampleMetadata
-from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 from xic_workbench.methods import preset_from_payload
 from xic_workbench.samples import from_payload as samples_from_payload
 
@@ -390,7 +393,6 @@ class UntargetedRun:
     def _peak_config(
         self, data_dir: Path, settings: DiscoverySettings
     ) -> ExtractionConfig:
-        defaults = CANONICAL_SETTINGS_DEFAULTS
         return ExtractionConfig(
             data_dir=data_dir,
             dll_dir=self.request.dll_dir,
@@ -398,12 +400,12 @@ class UntargetedRun:
             diagnostics_csv=self.request.output_dir / "xic_diagnostics.csv",
             smooth_window=15,
             smooth_polyorder=3,
-            ms1_morphology_smoothing_window_points=int(
-                defaults["signal_processing_window_points"]
+            ms1_morphology_smoothing_window_points=(
+                DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points
             ),
             peak_rel_height=0.95,
             peak_min_prominence_ratio=0.10,
-            ms2_precursor_tol_da=float(defaults["ms2_precursor_tol_da"]),
+            ms2_precursor_tol_da=DEFAULT_CID_NL_MASS_POLICY.ms2_precursor_tol_da,
             nl_min_intensity_ratio=settings.nl_min_intensity_ratio,
             resolver_mode=settings.resolver_mode,
         )

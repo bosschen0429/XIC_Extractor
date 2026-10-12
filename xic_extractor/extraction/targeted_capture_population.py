@@ -586,31 +586,8 @@ def _target_capture_trace(
     result: ExtractionResult,
     target: Target,
 ) -> Trace:
-    trace = bound_acquisition_trace(owners, sample, result)
-    if result.physical_evaluation is not None:
-        return trace
-    retained = result.selected_hypothesis
-    if retained is not None and _matches_target_rt(
-        retained.integration.rt_apex_min,
-        target,
-    ):
-        return trace
-    mask = (trace.rt >= target.rt_min) & (trace.rt <= target.rt_max)
-    return Trace.from_arrays(
-        sample_name=trace.sample_name,
-        mz=trace.mz,
-        rt=trace.rt[mask],
-        intensity=trace.intensity[mask],
-        rt_min=target.rt_min,
-        rt_max=target.rt_max,
-        ppm_tol=trace.ppm_tol,
-        source=trace.source,
-        acquisition_source_id=trace.acquisition_source_id,
-    )
-
-
-def _matches_target_rt(observed_rt: float, target: Target) -> bool:
-    return target.rt_min <= observed_rt <= target.rt_max
+    # Expected RT identifies the target; retained acquisition coverage is authoritative.
+    return bound_acquisition_trace(owners, sample, result)
 
 
 def _target_snapshot(owners: ProcessingOwnerReferences) -> TargetListSnapshot:

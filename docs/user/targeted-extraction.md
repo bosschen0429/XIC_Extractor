@@ -1,7 +1,7 @@
 # Targeted Extraction
 
-Use this workflow when you already know the compounds, m/z values, RT windows,
-and optional internal-standard pairs you want to review.
+Use this workflow when you already know the compounds, m/z values, expected RT, CID-NL tags,
+and internal-standard relationships you want to review.
 
 ![Targeted Extraction workspace](../../assets/screenshots/targeted-workspace.png)
 
@@ -18,8 +18,8 @@ and optional internal-standard pairs you want to review.
 6. Start review from the generated workbook in `output/`.
 
 **開始新批次** clears the RAW directory, injection-order source and displayed results while retaining
-targets, DLL, and analysis parameters. The environment and advanced settings
-remain available through their expandable summaries. Editing settings after a
+targets, DLL, and the selected strategy. The environment section remains available
+for machine-path corrections. Editing settings after a
 completed run labels the displayed results as previous results.
 
 The GUI and CLI use the same targeted pipeline. Packaged builds start from:
@@ -41,9 +41,9 @@ private lab paths.
 | --- | --- |
 | RAW directory | Batch of Thermo `.raw` files to process |
 | DLL directory | Folder containing Thermo RawFileReader DLLs |
-| Target table | Labels, m/z, RT windows, ppm tolerance, NL mass, and ISTD pairing |
-| Reusable analysis method | Ten method parameters plus the complete targets/ISTD table; Gaussian smoothing is fixed |
-| Environment and output | DLL, workers, and output controls; not method customization |
+| Target table | Names, m/z, expected RT, CID-NL tag, role, and ISTD pairing |
+| Reusable analysis method | Strategy version plus the complete targets/ISTD table |
+| Environment and output | DLL and output location; resource scheduling is automatic |
 
 Target labels become public workbook and CSV identifiers. Rename them only when
 downstream scripts and review expectations can tolerate the changed column
@@ -51,39 +51,27 @@ prefixes.
 
 ## Analysis Method And Saved Settings
 
-Use **另存為方法** to save a named method once. The folder under
-`config/methods/<name>/` contains `settings.csv` (all method parameters) and
-`targets.csv` (including ISTD relations and additional target metadata).
-Choose it from **已儲存的方法** for another batch. **從方法資料夾載入** accepts
-the same two-file format from another location. Loading replaces the complete
-method and target table in the draft, retaining the current batch and machine
-settings; Save or Run applies that draft. Existing names are not overwritten:
-save a new version under a new name.
+The normal flow is **select samples → choose method/targets → run → review**.
+The target table specifies name, m/z, expected RT in minutes, CID-NL tag
+(`dR`, `R`, `MeR`), role and ISTD relationship. An analyte references an ISTD row;
+an ISTD does not reference another row. The tag is the single chemistry input.
 
-The current sample's credible paired ISTD supplies the RT shift directly;
-the configured analyte/ISTD midpoint difference is preserved. You do not create
-or reload an RT-prior/pair calibration CSV. Keep the target identities, pairing
-and RT windows appropriate for the method and batch: a detected ISTD does not
-automatically establish every analyte's identity.
+Use **另存為方法** to save the complete target table plus the scientific strategy
+version. Load it for another batch without changing that batch's RAW/DLL paths
+or injection order. There is no advanced method panel or method reset: scientific
+processing and resource scheduling belong to the platform, not hidden settings.
 
-The CLI accepts `--method-dir <folder>` with the same method format, plus
-`--data-dir <new-batch>` and the existing workspace/local settings. The run
-uses input CSVs frozen at start, not a later mutable saved-method folder.
-GUI and CLI run the same single extraction pass and publish one workbook.
+The current sample's credible paired ISTD supplies the RT shift while preserving
+the declared expected analyte–ISTD offset. Expected RT is an identity hint, not an
+acquisition crop. Targeted enumerates exact-mass MS1 physical candidates across
+the sample acquisition span, even without MS2, and uses the shared Discovery
+CID-NL event and physical-peak owners. Missing NL does not count as direct support.
+Conservative, confirmed-peer ISTD Backfill keeps its separate provenance.
 
-`settings.csv` is the active Targeted configuration; `targets.csv` remains the
-separate target table. Platform defaults are owned by the application, not by
-one custom config file per concern. **自訂參數 · N 項調整** compares only the
-10 scalar parameters owned by `xic_extractor.settings_schema.METHOD_KEYS`. RAW/DLL paths,
-workers, output options and targets do not increase this count. Gaussian smoothing is fixed information, not a selectable method.
-
-**還原方法參數** restores those parameters while preserving targets, batch, environment
-and output settings.
-
-`count_no_ms2_as_detected` is a compatibility fallback for legacy rows without
-formal projection fields, not a global switch for formal Detection %. See the
-[field reference](targeted-config-reference.md) for its precise semantics and
-canonical smoothing-window compatibility.
+The CLI accepts `--method-dir <folder>` and `--data-dir <new-batch>`; execution
+inputs are frozen at start. Settings contain only RAW/DLL paths and injection
+order. The [field reference](targeted-config-reference.md) is the input contract.
+Old target/scientific-settings formats are rejected, not silently converted.
 
 ## Main Output
 
@@ -122,9 +110,8 @@ a target or review action, then a sample for its details. The workbook does not 
   Inspector's attention filter, then inspect the recorded explanation.
 
 For missing MS2, the formal projection applies the ISTD/analyte role and
-support policy. `count_no_ms2_as_detected` controls only the legacy fallback
-when formal projection fields are absent; it does not override the formal
-result. The [Decision Policy](../product/decision-policy.md) owns these rules.
+support policy. Missing MS2 is not direct CID-NL support; there is no detection
+override. The [Decision Policy](../product/decision-policy.md) owns these rules.
 
 ## CLI
 
@@ -146,11 +133,10 @@ Useful overrides:
 | --- | --- |
 | `--base-dir` | Directory containing `config/` and `output/` |
 | `--data-dir` | One-run RAW directory override |
-| `--parallel-mode` | `serial` or `process` |
-| `--parallel-workers` | Worker count for process mode |
+| `--method-dir` | Saved target-intent method folder |
+| `--injection-order-source` | Explicit injection order for this batch |
 
-Tracked settings currently default to `parallel_mode=process`. Use serial mode
-for diagnosis or environment isolation.
+Execution scheduling is automatic; actual workers are recorded in run metadata.
 
 ## Validation
 

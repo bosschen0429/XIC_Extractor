@@ -16,10 +16,9 @@ from xic_extractor.evidence.neutral_loss import (
 from xic_extractor.evidence.neutral_loss import (
     collect_candidate_ms2_evidence as evaluate_candidate_ms2_evidence,
 )
-from xic_extractor.extraction.anchors import ANCHOR_PEAK_DELTA_WARN_MIN
 from xic_extractor.ms2_scan_models import Ms2Window
 from xic_extractor.output.messages import DiagnosticRecord
-from xic_extractor.peak_detection.models import PeakCandidate, PeakDetectionResult
+from xic_extractor.peak_detection.models import PeakCandidate
 
 
 def check_nl(
@@ -78,18 +77,18 @@ def check_target_nl(
     config: ExtractionConfig,
     *,
     sample_key: str,
+    window: Ms2Window | None = None,
 ) -> NLResult | None:
-    """NL quality uses the original target window for full matched scan counts."""
+    """Diagnostic summary; candidate-local shared method evidence owns support."""
     if target.neutral_loss_da is None:
         return None
-    if target.nl_ppm_warn is None or target.nl_ppm_max is None:
-        return None
-    return check_nl(
-        raw,
-        sample_key=sample_key,
+    assert target.nl_ppm_warn is not None and target.nl_ppm_max is not None
+    if window is None:
+        low, high = raw.acquisition_rt_bounds()
+        window = acquire_ms2_window(raw, sample_key=sample_key, rt_min=low, rt_max=high)
+    return evaluate_nl(
+        window,
         precursor_mz=target.mz,
-        rt_min=target.rt_min,
-        rt_max=target.rt_max,
         neutral_loss_da=target.neutral_loss_da,
         nl_ppm_warn=target.nl_ppm_warn,
         nl_ppm_max=target.nl_ppm_max,
@@ -108,6 +107,7 @@ def candidate_ms2_evidence_builder(
 ) -> Callable[[PeakCandidate], Any] | None:
     if target.neutral_loss_da is None:
         return None
+    assert target.nl_ppm_warn is not None and target.nl_ppm_max is not None
     if target.nl_ppm_warn is None or target.nl_ppm_max is None:
         return None
     neutral_loss_da = target.neutral_loss_da
@@ -164,97 +164,6 @@ def _candidate_ms1_peak_group_scope(
     )
 
 
-def anchor_rt_mismatch_diagnostic(
-    sample_name: str,
-    target: Target,
-    peak_result: PeakDetectionResult,
-    *,
-    anchor_rt: float | None,
-    paired_rejection: DiagnosticRecord | None,
-) -> DiagnosticRecord | None:
-    if paired_rejection is not None or anchor_rt is None or peak_result.peak is None:
-        return None
-    delta = abs(peak_result.peak.rt - anchor_rt)
-    if delta <= ANCHOR_PEAK_DELTA_WARN_MIN:
-        return None
-    return DiagnosticRecord(
-        sample_name=sample_name,
-        target_label=target.label,
-        issue="ANCHOR_RT_MISMATCH",
-        reason=(
-            f"Peak RT {peak_result.peak.rt:.3f} min deviates "
-            f"{delta:.2f} min "
-            f"from NL anchor at {anchor_rt:.3f} min "
-            f"(threshold {ANCHOR_PEAK_DELTA_WARN_MIN} min); "
-            f"anchor scan may be noise — verify manually"
-        ),
-    )
-
-
-def nl_anchor_fallback_diagnostic(
-    sample_name: str,
-    target: Target,
-    config: ExtractionConfig,
-    *,
-    anchor_used: bool,
-    rt_min: float,
-    rt_max: float,
-    nl_result: NLResult | None,
-) -> DiagnosticRecord | None:
-    if anchor_used or target.neutral_loss_da is None:
-        return None
-    rt_center = (target.rt_min + target.rt_max) / 2.0
-    nl_note = ""
-    if nl_result is not None and nl_result.status in {"NL_FAIL", "NO_MS2"}:
-        nl_note = f"; NL check also {nl_result.status} within fallback window"
-    return DiagnosticRecord(
-        sample_name=sample_name,
-        target_label=target.label,
-        issue="NL_ANCHOR_FALLBACK",
-        reason=(
-            f"No NL-confirmed MS2 within RT center "
-            f"{rt_center:.2f} ± {config.nl_rt_anchor_search_margin_min} min; "
-            f"fallback window [{rt_min:.2f}, {rt_max:.2f}]{nl_note}"
-        ),
-    )
-
-
-def append_anchor_window_diagnostics(
-    diagnostics: list[DiagnosticRecord],
-    sample_name: str,
-    target: Target,
-    config: ExtractionConfig,
-    peak_result: PeakDetectionResult,
-    *,
-    anchor_used: bool,
-    anchor_rt: float | None,
-    rt_min: float,
-    rt_max: float,
-    nl_result: NLResult | None,
-    paired_rejection: DiagnosticRecord | None,
-) -> None:
-    anchor_diagnostic = anchor_rt_mismatch_diagnostic(
-        sample_name,
-        target,
-        peak_result,
-        anchor_rt=anchor_rt,
-        paired_rejection=paired_rejection,
-    )
-    if anchor_diagnostic is not None:
-        diagnostics.append(anchor_diagnostic)
-    fallback_diagnostic = nl_anchor_fallback_diagnostic(
-        sample_name,
-        target,
-        config,
-        anchor_used=anchor_used,
-        rt_min=rt_min,
-        rt_max=rt_max,
-        nl_result=nl_result,
-    )
-    if fallback_diagnostic is not None:
-        diagnostics.append(fallback_diagnostic)
-
-
 def istd_anchor_missing_diagnostic(
     sample_name: str, target: Target
 ) -> DiagnosticRecord:
@@ -263,8 +172,8 @@ def istd_anchor_missing_diagnostic(
         target_label=target.label,
         issue="ISTD_ANCHOR_MISSING",
         reason=(
-            f"ISTD '{target.istd_pair}' yielded no NL-confirmed anchor in this "
-            "sample; falling back to highest base_peak — isobar discrimination "
-            "disabled"
+            f"ISTD '{target.istd_pair}' yielded no credible current-sample anchor; "
+            "use the target expected RT with available sample drift as identity "
+            "reference while retaining complete acquisition coverage"
         ),
     )

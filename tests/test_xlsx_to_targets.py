@@ -45,11 +45,11 @@ def test_name_prefill_preserves_explicit_choices_and_ambiguous_names() -> None:
 def test_name_prefill_fills_missing_roles_without_overriding_explicit_roles() -> None:
     analyte = _target("5-medC", rt=8.0)
     standard = _target("d3-5-medC", rt=8.0)
-    del standard["is_istd"]
+    del standard["role"]
     explicitly_analyte = _target("d4-5-medC", rt=8.0)
     assign_istd_pairs([analyte, standard, explicitly_analyte])
-    assert standard["is_istd"] == "true"
-    assert explicitly_analyte["is_istd"] == "false"
+    assert standard["role"] == "istd"
+    assert explicitly_analyte["role"] == "analyte"
     assert analyte["istd_pair"] == "d3-5-medC"
 
 
@@ -70,13 +70,9 @@ def test_write_targets_csv_preserves_public_csv_contract(
         assert reader.fieldnames == [
             "label",
             "mz",
-            "rt_min",
-            "rt_max",
-            "ppm_tol",
-            "neutral_loss_da",
-            "nl_ppm_warn",
-            "nl_ppm_max",
-            "is_istd",
+            "expected_rt_min",
+            "cid_nl_tag",
+            "role",
             "istd_pair",
         ]
         rows = list(reader)
@@ -84,13 +80,9 @@ def test_write_targets_csv_preserves_public_csv_contract(
         {
             "label": "5-hmdC",
             "mz": "100.0",
-            "rt_min": "7.9",
-            "rt_max": "8.1",
-            "ppm_tol": "20",
-            "neutral_loss_da": "116.0474",
-            "nl_ppm_warn": "20",
-            "nl_ppm_max": "50",
-            "is_istd": "false",
+            "expected_rt_min": "8.0",
+            "cid_nl_tag": "dR",
+            "role": "analyte",
             "istd_pair": "",
         }
     ]
@@ -101,12 +93,8 @@ def _target(label: str, *, rt: float, is_istd: bool = False) -> TargetRow:
     return {
         "label": label,
         "mz": 100.0,
-        "rt_min": rt - 0.1,
-        "rt_max": rt + 0.1,
-        "ppm_tol": 20,
-        "neutral_loss_da": 116.0474,
-        "nl_ppm_warn": 20,
-        "nl_ppm_max": 50,
-        "is_istd": "true" if is_istd else "false",
+        "expected_rt_min": rt,
+        "cid_nl_tag": "dR",
+        "role": "istd" if is_istd else "analyte",
         "istd_pair": "",
     }

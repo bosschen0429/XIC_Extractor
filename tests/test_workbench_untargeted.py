@@ -572,7 +572,7 @@ def test_untargeted_dispatch_freezes_recipe_profile_and_targets(tmp_path, monkey
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    write_settings({"parallel_workers": "3"}, config_dir=config_dir)
+    write_settings({"dll_dir": "original"}, config_dir=config_dir)
     draft = method_details("dna_dr")["draft"]
     draft["overrides"]["nl_tolerance_ppm"] = 12.5
     preset_path = tmp_path / "method.toml"
@@ -581,7 +581,7 @@ def test_untargeted_dispatch_freezes_recipe_profile_and_targets(tmp_path, monkey
     targets_path.write_text("label,mz\nISTD,100\n")
     values = _request_values(tmp_path, "discovery_only")
     values.update(preset=str(preset_path), targets_csv=str(targets_path))
-    values.pop("execution_profile", None)
+    values["execution_profile"] = {"parallel_workers": 3, "alignment_workers": 4}
     submitted = []
     jobs = AnalysisJobs(config_dir)
     monkeypatch.setattr(jobs._executor, "submit", lambda *args: submitted.append(args))
@@ -590,7 +590,7 @@ def test_untargeted_dispatch_freezes_recipe_profile_and_targets(tmp_path, monkey
         runner = jobs._runner
         draft["overrides"]["nl_tolerance_ppm"] = 25
         save_method(draft, preset_path)
-        write_settings({"parallel_workers": "7"}, config_dir=config_dir)
+        values["execution_profile"]["parallel_workers"] = 7
         targets_path.write_text("label,mz\nCHANGED,200\n")
         assert runner._build_settings().nl_tolerance_ppm == 12.5
         assert runner.request.execution_profile.parallel_workers == 3

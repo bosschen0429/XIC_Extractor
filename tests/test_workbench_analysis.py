@@ -176,7 +176,13 @@ def test_http_analysis_configuration_roundtrip_without_qt(tmp_path):
         }
         targets = [
             config["targets"][0]
-            | {"label": "precise", "mz": "501.1234567890123", "extra": "keep-me"}
+            | {
+                "label": "precise",
+                "mz": "501.1234567890123",
+                "extra": "keep-me",
+                "role": "istd",
+                "istd_pair": "",
+            }
         ]
         assert (
             request("/api/targeted/save", {"settings": settings, "targets": targets})[0]
@@ -292,14 +298,14 @@ def test_untargeted_job_loads_saved_sequence_metadata_when_samples_are_absent(
         jobs.close()
 
 
-def test_untargeted_job_uses_saved_global_execution_profile_when_omitted(
+def test_untargeted_job_uses_shared_execution_profile_when_omitted(
     tmp_path, monkeypatch
 ):
     from xic_workbench import untargeted
     from xic_workbench.config_io import write_settings
 
     config_dir = tmp_path / "config"
-    write_settings({"parallel_workers": "3"}, config_dir=config_dir)
+    write_settings({}, config_dir=config_dir)
     captured = {}
 
     class Run:
@@ -336,7 +342,14 @@ def test_untargeted_job_uses_saved_global_execution_profile_when_omitted(
         state = _terminal(jobs)
 
         assert state["job"]["status"] == "succeeded"
-        assert captured["request"].execution_profile.parallel_workers == 3
+        from xic_extractor.configuration.execution_profile import (
+            default_parallel_workers,
+        )
+
+        assert (
+            captured["request"].execution_profile.parallel_workers
+            == default_parallel_workers()
+        )
     finally:
         jobs.close()
 
@@ -591,28 +604,18 @@ def test_targeted_bootstrap_combines_saved_settings_and_launch_values(
         workspace.jobs.close()
 
 
-def test_http_method_reset_preserves_batch_resources_and_execution(tmp_path):
+def test_http_retired_method_overrides_and_reset_are_not_accepted(tmp_path):
+    from tests.test_xic_workbench import _client
+    from xic_workbench.workspace import ReviewWorkspace
+
     workspace = ReviewWorkspace(config_dir=tmp_path / "config")
     with _client(workspace) as request:
-        status, config, _ = request("/api/config")
-        assert status == 200
-        local = {
-            "data_dir": "different-batch",
-            "dll_dir": "different-dll",
-            "injection_order_source": "order.csv",
-            "parallel_workers": "1",
-        }
-        settings = {**config["settings"], **local, "ms2_precursor_tol_da": "1.2"}
-        status, summary, _ = request("/api/targeted/method", {"settings": settings})
-        assert status == 200
-        assert summary["custom_keys"] == ["ms2_precursor_tol_da"]
-        status, reset, _ = request("/api/targeted/method/reset", {"settings": settings})
-        assert status == 200
-        assert reset["settings"]["ms2_precursor_tol_da"] == "0.8"
-        assert {key: reset["settings"][key] for key in local} == local
-        assert reset["summary"]["custom_keys"] == []
-        # Draft operations do not persist settings or alter the target input.
+        _, config, _ = request("/api/config")
+        settings = {**config["settings"], "ms2_precursor_tol_da": "1.2"}
+        assert request("/api/targeted/method", {"settings": settings})[0] == 400
+        assert (
+            request("/api/targeted/method/reset", {"settings": config["settings"]})[0]
+            == 404
+        )
+        assert request("/api/config")[1]["settings"] == config["settings"]
         assert not (tmp_path / "config" / "settings.csv").exists()
-        _, unchanged, _ = request("/api/config")
-        assert unchanged["targets"] == config["targets"]
-        assert unchanged["settings"] == config["settings"]

@@ -14,7 +14,6 @@ from xic_extractor.evidence.neutral_loss import (
     CandidateMS2Evidence,
     MS2ProductEvidence,
     NLResult,
-    check_nl,
 )
 from xic_extractor.extraction.result_assembly import build_extraction_result
 from xic_extractor.extraction.scoring_factory import selected_candidate
@@ -177,6 +176,7 @@ def assess_targeted_candidate_population(
     preferred_rt: float | None,
     strict_preferred_rt: bool,
     method_window: Ms2Window | None,
+    method_seeds: tuple | None = None,
 ) -> TargetedCandidateAssessment:
     trace = trace_group.primary_trace
     evaluations = {
@@ -197,15 +197,7 @@ def assess_targeted_candidate_population(
     if target.neutral_loss_da is not None:
         if method_window is None:
             raise ValueError("CID-NL candidate assessment requires its acquired window")
-        products = check_nl(
-            method_window,
-            precursor_mz=target.mz,
-            neutral_loss_da=target.neutral_loss_da,
-            nl_ppm_warn=target.nl_ppm_warn or 20.0,
-            nl_ppm_max=target.nl_ppm_max or 20.0,
-            ms2_precursor_tol_da=config.ms2_precursor_tol_da,
-            nl_min_intensity_ratio=config.nl_min_intensity_ratio,
-        ).product_evidence
+        products = _discovery_method_products(method_window, target, method_seeds)
         policy = DdaCidNlPeakSupportPolicy(
             precursor_tolerance_da=max(target.mz * target.ppm_tol / 1_000_000, 1e-9),
             neutral_loss_tolerance_ppm=target.nl_ppm_max or 20.0,
@@ -239,7 +231,9 @@ def assess_targeted_candidate_population(
                         target.neutral_loss_da, policy.neutral_loss_tolerance_ppm
                     ),
                     product.scan_rt,
-                    product.scan_rt,
+                    product.scan_rt
+                    if product.ms1_precursor_observation is None
+                    else product.ms1_precursor_observation.rt_min,
                 )
                 for product in products
             ),
@@ -474,3 +468,85 @@ def _with_final_selected_result_evidence(
             )
         )
     return tuple(updated)
+
+
+def prepare_targeted_method_seeds(
+    window: Ms2Window, targets: list[Target]
+) -> dict[str, tuple]:
+    """Parse each chemistry once for the sample, independent of target count."""
+    from pathlib import Path
+
+    from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
+
+    prepared = {}
+    for tag in dict.fromkeys(
+        target.cid_nl_tag for target in targets if target.neutral_loss_da is not None
+    ):
+        settings = discovery_settings_for_tag(tag)
+        prepared[tag] = tuple(
+            seed
+            for event in window.events
+            if event.parse_error is None and event.scan is not None
+            for seed in discovery_seeds_from_scan(
+                event.scan, raw_file=Path(window.sample_key), settings=settings
+            )
+        )
+    return prepared
+
+
+def _discovery_method_products(
+    window: Ms2Window, target: Target, seeds: tuple | None
+) -> tuple[MS2ProductEvidence, ...]:
+    """Adapt shared Discovery events, preserving their recorded/inferred basis."""
+    if seeds is None:
+        seeds = prepare_targeted_method_seeds(window, [target])[target.cid_nl_tag]
+    base_by_scan = {
+        event.scan_number: event.scan.base_peak
+        for event in window.events
+        if event.scan is not None
+    }
+    tolerance_da = target.mz * target.ppm_tol / 1e6
+    assert target.neutral_loss_da is not None
+    expected_product = target.mz - target.neutral_loss_da
+    inference_tolerance = discovery_settings_for_tag(
+        target.cid_nl_tag
+    ).ms2_precursor_tol_da
+    return tuple(
+        MS2ProductEvidence(
+            scan_rt=seed.rt,
+            precursor_mz=seed.precursor_mz,
+            product_mz=seed.product_mz,
+            product_intensity=seed.product_intensity,
+            product_base_ratio=seed.product_intensity / base_by_scan[seed.scan_number],
+            target_product_ppm=abs(seed.product_mz - expected_product)
+            / expected_product
+            * 1e6,
+            observed_loss_da=seed.observed_neutral_loss_da,
+            observed_loss_error_ppm=seed.observed_loss_error_ppm,
+            scan_number=seed.scan_number,
+            acquisition_source_id=seed.acquisition_source_id,
+            precursor_mz_basis=seed.precursor_mz_basis,
+            scan_precursor_mz=seed.scan_precursor_mz,
+            precursor_metadata=seed.precursor_metadata,
+            ms1_precursor_observation=seed.ms1_precursor_observation,
+            precursor_inference_tolerance_da=(
+                inference_tolerance
+                if seed.precursor_mz_basis == "product_plus_neutral_loss"
+                else None
+            ),
+        )
+        for seed in seeds
+        if abs(seed.precursor_mz - target.mz) <= tolerance_da
+    )
+
+
+def discovery_settings_for_tag(tag: str):
+    from dataclasses import asdict
+
+    from xic_extractor.configuration.targeted_strategy import targeted_tag_profile
+    from xic_extractor.discovery.models import DiscoverySettings
+
+    profile = targeted_tag_profile(tag)
+    values = asdict(profile)
+    values["neutral_loss_profiles"] = profile.neutral_loss_profiles
+    return DiscoverySettings(**values)

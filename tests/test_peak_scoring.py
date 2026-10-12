@@ -86,7 +86,6 @@ def test_score_candidate_returns_base_and_trace_quality_severities() -> None:
         rt_prior_sigma=0.1,
         rt_min=9.0,
         rt_max=11.0,
-        dirty_matrix=False,
     )
     scored = score_candidate(cand, ctx, prior_rt=10.0)
     assert len(scored.severities) == 10
@@ -114,7 +113,6 @@ def test_score_candidate_records_positive_and_negative_evidence() -> None:
         rt_prior_sigma=0.1,
         rt_min=9.0,
         rt_max=11.0,
-        dirty_matrix=False,
     )
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)
@@ -142,7 +140,6 @@ def test_score_candidate_records_rt_review_support_without_pair_bonus() -> None:
         rt_prior_sigma=0.1,
         rt_min=9.0,
         rt_max=11.0,
-        dirty_matrix=False,
     )
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)
@@ -167,7 +164,6 @@ def test_score_candidate_records_strong_ms2_trace_support() -> None:
         rt_prior_sigma=0.1,
         rt_min=9.0,
         rt_max=11.0,
-        dirty_matrix=False,
         ms2_trace_strength="strong",
     )
 
@@ -199,7 +195,6 @@ def test_sparse_apex_fallback_ms2_does_not_count_as_strong_trace_support() -> No
         rt_prior_sigma=0.1,
         rt_min=9.0,
         rt_max=11.0,
-        dirty_matrix=False,
         ms2_trace_strength="strong",
         ms2_alignment_source="apex_fallback",
         trigger_scan_count=2,
@@ -232,7 +227,6 @@ def test_score_candidate_records_moderate_ms2_trace_support() -> None:
         rt_prior_sigma=0.1,
         rt_min=9.0,
         rt_max=11.0,
-        dirty_matrix=False,
         ms2_trace_strength="moderate",
     )
 
@@ -264,7 +258,6 @@ def test_score_candidate_records_same_apex_cwt_support() -> None:
         rt_prior_sigma=0.1,
         rt_min=9.0,
         rt_max=11.0,
-        dirty_matrix=False,
     )
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)
@@ -305,7 +298,6 @@ def test_cwt_only_candidate_does_not_receive_same_apex_support_bonus() -> None:
         rt_prior_sigma=0.1,
         rt_min=9.0,
         rt_max=11.0,
-        dirty_matrix=False,
     )
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)
@@ -335,7 +327,6 @@ def test_cwt_support_requires_chemical_evidence_when_nl_is_required() -> None:
         rt_prior_sigma=0.1,
         rt_min=9.0,
         rt_max=11.0,
-        dirty_matrix=False,
     )
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)
@@ -360,7 +351,6 @@ def test_weak_ms2_trace_concern_keeps_strict_nl_support() -> None:
         rt_prior_sigma=0.1,
         rt_min=9.0,
         rt_max=11.0,
-        dirty_matrix=False,
         ms2_trace_strength="weak",
     )
 
@@ -388,7 +378,6 @@ def test_score_candidate_nl_fail_caps_confidence_to_very_low() -> None:
         rt_prior_sigma=0.1,
         rt_min=9.0,
         rt_max=11.0,
-        dirty_matrix=False,
     )
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)
@@ -415,7 +404,6 @@ def test_reason_text_leads_with_decision_then_support_concerns_and_caps() -> Non
         rt_prior_sigma=0.1,
         rt_min=9.0,
         rt_max=11.0,
-        dirty_matrix=False,
     )
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)
@@ -443,7 +431,6 @@ def test_score_candidate_no_nl_target_records_no_nl_support() -> None:
         rt_prior_sigma=0.1,
         rt_min=9.0,
         rt_max=11.0,
-        dirty_matrix=False,
         neutral_loss_required=False,
     )
 
@@ -474,7 +461,6 @@ def test_score_candidate_no_ms2_default_reason_is_not_counted() -> None:
         rt_prior_sigma=0.1,
         rt_min=9.0,
         rt_max=11.0,
-        dirty_matrix=False,
         neutral_loss_required=True,
     )
 
@@ -503,7 +489,6 @@ def test_score_candidate_no_ms2_allowed_reason_is_accepted() -> None:
         rt_prior_sigma=0.1,
         rt_min=9.0,
         rt_max=11.0,
-        dirty_matrix=False,
         neutral_loss_required=True,
         count_no_ms2_as_detected=True,
     )
@@ -532,7 +517,6 @@ def test_score_candidate_maps_rt_centrality_and_noise_shape_concerns() -> None:
         rt_prior_sigma=0.1,
         rt_min=9.0,
         rt_max=11.0,
-        dirty_matrix=False,
     )
 
     scored = score_candidate(cand, ctx, prior_rt=9.0)
@@ -557,7 +541,6 @@ def test_score_candidate_caps_out_of_window_peak_without_rt_prior() -> None:
         rt_prior_sigma=None,
         rt_min=16.0,
         rt_max=18.0,
-        dirty_matrix=False,
     )
 
     scored = score_candidate(cand, ctx, prior_rt=None)
@@ -585,7 +568,6 @@ def test_score_candidate_allows_out_of_window_peak_with_close_rt_prior() -> None
         rt_prior_sigma=0.1,
         rt_min=16.0,
         rt_max=18.0,
-        dirty_matrix=False,
     )
 
     scored = score_candidate(cand, ctx, prior_rt=15.166)
@@ -613,7 +595,6 @@ def test_score_candidate_keeps_in_window_edge_peak_as_rt_centrality_concern() ->
         rt_prior_sigma=None,
         rt_min=16.0,
         rt_max=18.0,
-        dirty_matrix=False,
     )
 
     scored = score_candidate(cand, ctx, prior_rt=None)
@@ -657,7 +638,6 @@ def test_score_candidate_penalizes_flagged_candidate_quality(
         rt_prior_sigma=0.1,
         rt_min=9.0,
         rt_max=11.0,
-        dirty_matrix=False,
     )
 
     note = "paired ISTD confirmed"
@@ -706,7 +686,6 @@ def test_score_candidate_formats_adap_like_quality_flags_as_minor_concerns() -> 
         rt_prior_sigma=0.1,
         rt_min=9.0,
         rt_max=11.0,
-        dirty_matrix=False,
     )
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)
@@ -741,7 +720,6 @@ def test_single_trace_continuity_warning_does_not_cap_supported_peak() -> None:
         rt_prior_sigma=0.1,
         rt_min=9.0,
         rt_max=11.0,
-        dirty_matrix=False,
     )
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)
@@ -778,7 +756,6 @@ def test_cwt_same_apex_support_prevents_trace_boundary_double_cap() -> None:
         rt_prior_sigma=0.1,
         rt_min=9.0,
         rt_max=11.0,
-        dirty_matrix=False,
     )
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)
@@ -819,7 +796,6 @@ def test_score_candidate_does_not_double_penalize_adap_equivalent_legacy_flags()
         rt_prior_sigma=0.1,
         rt_min=9.0,
         rt_max=11.0,
-        dirty_matrix=False,
     )
 
     scored = score_candidate(cand, ctx, prior_rt=10.0)

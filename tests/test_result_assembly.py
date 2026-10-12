@@ -543,9 +543,7 @@ def test_istd_combined_reviews_preserve_unresolved_conflicts(
     projection = result.targeted_product_projection
     assert projection is not None
     assert projection.conflict_reasons == unresolved
-    assert projection.review_reasons == (
-        "trace_morphology_review",
-    )
+    assert projection.review_reasons == ("trace_morphology_review",)
     assert projection.counted_detection is (not unresolved)
     assert projection.product_state == (
         "ambiguous" if unresolved else "detected_flagged"
@@ -999,7 +997,6 @@ def _clean_typed_facts(candidate: PeakCandidate) -> CandidateEvidenceFacts:
             rt_prior_sigma=0.1,
             rt_min=8.0,
             rt_max=9.0,
-            dirty_matrix=False,
         ),
     )
 

@@ -36,7 +36,6 @@ class AnalysisWorkspace:
     def bootstrap(self) -> dict[str, Any]:
         from xic_extractor.configuration.models import ConfigError
         from xic_extractor.configuration.settings import (
-            fill_setting_defaults,
             resolve_settings,
         )
         from xic_workbench.config_io import (
@@ -60,7 +59,7 @@ class AnalysisWorkspace:
             settings, _parsed, warnings = resolve_settings(raw, overrides)
         except ConfigError as exc:
             # Opening the workspace must stay possible so the value can be fixed.
-            settings, warnings = fill_setting_defaults({**raw, **overrides})
+            settings, warnings = {**raw, **overrides}, []
             warnings.append(f"settings.csv 有無效值，修正後才能執行 Targeted：{exc}")
         if overrides:
             warnings.append("啟動選項覆寫：" + ", ".join(overrides))
@@ -197,6 +196,11 @@ class AnalysisWorkspace:
 
             return write_preferences(values, config_dir=self.config_dir)
         if action == "targeted/save":
+            from xic_extractor.configuration.targeted_method_files import (
+                create_targeted_method,
+            )
+
+            create_targeted_method(values["settings"], values["targets"])
             from xic_workbench.config_io import write_settings, write_targets
             from xic_workbench.targeted import method_summary
 
@@ -206,9 +210,8 @@ class AnalysisWorkspace:
                 "message": "設定與目標已儲存。",
                 "summary": method_summary(settings),
             }
-        if action in {"targeted/method", "targeted/method/reset"}:
+        if action == "targeted/method":
             from xic_extractor.configuration.settings import (
-                reset_method_settings,
                 resolve_settings,
             )
             from xic_workbench.config_io import read_settings
@@ -219,15 +222,9 @@ class AnalysisWorkspace:
                 if "settings" in values
                 else read_settings(config_dir=self.config_dir)
             )
-            if action == "targeted/method/reset":
-                raw = reset_method_settings(raw)
             settings, _parsed, warnings = resolve_settings(raw)
             summary = {**method_summary(settings), "warnings": warnings}
-            return (
-                {"settings": settings, "summary": summary}
-                if action.endswith("/reset")
-                else summary
-            )
+            return summary
         if action == "targets/import":
             from xic_workbench.target_import import import_targets
 

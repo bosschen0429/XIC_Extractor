@@ -1,2 +1,1 @@
 """Configuration loading internals."""
-

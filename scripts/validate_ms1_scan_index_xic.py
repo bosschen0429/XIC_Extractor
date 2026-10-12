@@ -11,10 +11,13 @@ from typing import Any
 
 import numpy as np
 
+from xic_extractor.configuration.cid_nl_profile import DEFAULT_CID_NL_MASS_POLICY
 from xic_extractor.configuration.models import ExtractionConfig
+from xic_extractor.configuration.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+)
 from xic_extractor.peak_detection.peak_integration import find_peak_and_area
 from xic_extractor.raw_reader import open_raw
-from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 from xic_extractor.xic_models import XICRequest, XICTrace
 
 
@@ -72,12 +75,14 @@ def validate_sample(
     with open_raw(raw_path, dll_dir) as raw:
         vendor_started = time.perf_counter()
         vendor_traces = tuple(
-            XICTrace.from_arrays(*raw.extract_xic(
-                request.mz,
-                request.rt_min,
-                request.rt_max,
-                request.ppm_tol,
-            ))
+            XICTrace.from_arrays(
+                *raw.extract_xic(
+                    request.mz,
+                    request.rt_min,
+                    request.rt_max,
+                    request.ppm_tol,
+                )
+            )
             for request in requests
         )
         vendor_sec = time.perf_counter() - vendor_started
@@ -154,9 +159,7 @@ def extract_index_xic(
             continue
         left = int(np.searchsorted(scan.masses, request.mz - tolerance, side="left"))
         right = int(np.searchsorted(scan.masses, request.mz + tolerance, side="right"))
-        intensity = (
-            float(np.max(scan.intensities[left:right])) if right > left else 0.0
-        )
+        intensity = float(np.max(scan.intensities[left:right])) if right > left else 0.0
         rt_values.append(scan.rt)
         intensity_values.append(intensity)
     return XICTrace.from_arrays(rt_values, intensity_values)
@@ -276,9 +279,7 @@ def _summarize_trace_metrics(metrics: tuple[dict[str, Any], ...]) -> dict[str, A
         if item["intensity_sum_ratio"] is not None
     ]
     correlations = [
-        item["correlation"]
-        for item in metrics
-        if item["correlation"] is not None
+        item["correlation"] for item in metrics if item["correlation"] is not None
     ]
     max_deltas = [
         item["max_abs_intensity_delta"]
@@ -296,9 +297,7 @@ def _summarize_trace_metrics(metrics: tuple[dict[str, Any], ...]) -> dict[str, A
 
 def _summarize_peak_metrics(metrics: tuple[dict[str, Any], ...]) -> dict[str, Any]:
     apex_deltas = [
-        item["apex_delta_min"]
-        for item in metrics
-        if item["apex_delta_min"] is not None
+        item["apex_delta_min"] for item in metrics if item["apex_delta_min"] is not None
     ]
     area_deltas = [
         item["area_relative_delta"]
@@ -308,12 +307,8 @@ def _summarize_peak_metrics(metrics: tuple[dict[str, Any], ...]) -> dict[str, An
     return {
         "peak_status_match_count": sum(1 for item in metrics if item["status_match"]),
         "peak_both_ok_count": sum(1 for item in metrics if item["both_ok"]),
-        "apex_close_0_01_min_count": sum(
-            1 for value in apex_deltas if value <= 0.01
-        ),
-        "apex_close_0_05_min_count": sum(
-            1 for value in apex_deltas if value <= 0.05
-        ),
+        "apex_close_0_01_min_count": sum(1 for value in apex_deltas if value <= 0.01),
+        "apex_close_0_05_min_count": sum(1 for value in apex_deltas if value <= 0.05),
         "apex_delta_min_max": max(apex_deltas) if apex_deltas else None,
         "area_relative_delta_median": _percentile(area_deltas, 50),
         "area_relative_delta_p95": _percentile(area_deltas, 95),
@@ -370,7 +365,6 @@ def _finalize_aggregate(aggregate: dict[str, list[Any]]) -> dict[str, Any]:
 
 
 def _peak_config(raw_dir: Path, dll_dir: Path) -> ExtractionConfig:
-    defaults = CANONICAL_SETTINGS_DEFAULTS
     return ExtractionConfig(
         data_dir=raw_dir,
         dll_dir=dll_dir,
@@ -378,13 +372,11 @@ def _peak_config(raw_dir: Path, dll_dir: Path) -> ExtractionConfig:
         diagnostics_csv=Path("xic_diagnostics.csv"),
         smooth_window=15,
         smooth_polyorder=3,
-        ms1_morphology_smoothing_window_points=int(
-            defaults["signal_processing_window_points"]
-        ),
+        ms1_morphology_smoothing_window_points=DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points,
         peak_rel_height=0.95,
         peak_min_prominence_ratio=0.10,
-        ms2_precursor_tol_da=float(defaults["ms2_precursor_tol_da"]),
-        nl_min_intensity_ratio=float(defaults["nl_min_intensity_ratio"]),
+        ms2_precursor_tol_da=DEFAULT_CID_NL_MASS_POLICY.ms2_precursor_tol_da,
+        nl_min_intensity_ratio=DEFAULT_CID_NL_MASS_POLICY.nl_min_intensity_ratio,
         resolver_mode="local_minimum",
     )
 

@@ -124,6 +124,9 @@ def test_run_no_nl_reference_selects_each_samples_component(
         (config.data_dir / f"{sample}.raw").write_bytes(sample.encode())
 
     class Raw:
+        def acquisition_rt_bounds(self):
+            return 0.0, 18.0
+
         def __init__(self, sample: str) -> None:
             self.sample = sample
 
@@ -164,10 +167,6 @@ def test_run_no_nl_reference_selects_each_samples_component(
             pytest.fail("no-NL must not query MS2")
 
     monkeypatch.setattr(_OPEN_RAW_SEAM, lambda path, _dll, **_kwargs: Raw(path.stem))
-    monkeypatch.setattr(
-        "xic_extractor.extraction.istd_prepass.open_raw",
-        lambda path, _dll, **_kwargs: Raw(path.stem),
-    )
     output = extractor.run(config, targets)
 
     assert {file.sample_name for file in output.file_results} == set(expected)
@@ -564,6 +563,9 @@ def _open_raw_factory(*, errors: dict[str, Exception] | None = None):
 
 
 class _FakeRaw:
+    def acquisition_rt_bounds(self):
+        return 0.0, 20.0
+
     def __enter__(self):
         return self
 

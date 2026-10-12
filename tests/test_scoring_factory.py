@@ -9,8 +9,8 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.extraction.scoring_factory import (
-    allow_prepass_anchor,
     build_scoring_context_factory,
+    is_credible_istd_peak,
     paired_istd_fwhm,
     selected_candidate,
     selected_shape_metrics,
@@ -39,9 +39,7 @@ def test_factory_scores_analyte_against_current_sample_reference(
     sample, anchor, reference
 ):
     factory = build_scoring_context_factory(
-        config=_config(dirty_matrix_mode=True),
-        injection_order={},
-        istd_rts_by_sample={},
+        config=_config(),
     )
     rt = np.linspace(reference - 0.3, reference + 0.3, 7)
     intensity = np.array([0.0, 1.0, 4.0, 8.0, 4.0, 1.0, 0.0])
@@ -59,7 +57,7 @@ def test_factory_scores_analyte_against_current_sample_reference(
     candidate = replace(_candidate(apex_index=3), selection_apex_rt=reference)
     ctx = builder(candidate)
     assert ctx.rt_prior == reference
-    assert (ctx.rt_min, ctx.rt_max) == (reference - 1.0, reference + 1.0)
+    assert (ctx.rt_min, ctx.rt_max) == (rt[0], rt[-1])
     assert ctx.rt_prior_sigma is None
     assert getattr(builder, "prior_source") == "paired_istd"
     facts = build_candidate_evidence_facts(candidate, ctx)
@@ -69,7 +67,7 @@ def test_factory_scores_analyte_against_current_sample_reference(
     assert build_candidate_evidence_facts(far, builder(far)).rt.rt_prior_status == "far"
 
 
-def test_selected_candidate_and_prepass_anchor_reject_quality_flags() -> None:
+def test_selected_candidate_and_credible_istd_peak_reject_quality_flags() -> None:
     candidate = _candidate(apex_index=1, quality_flags=("too_broad",))
     peak_result = PeakDetectionResult(
         status="OK",
@@ -81,10 +79,10 @@ def test_selected_candidate_and_prepass_anchor_reject_quality_flags() -> None:
     )
 
     assert selected_candidate(peak_result) is candidate
-    assert allow_prepass_anchor(peak_result) is False
+    assert is_credible_istd_peak(peak_result) is False
 
 
-def test_prepass_anchor_allows_soft_adap_like_quality_flags() -> None:
+def test_credible_istd_peak_allows_soft_adap_like_quality_flags() -> None:
     candidate = _candidate(
         apex_index=1,
         quality_flags=("low_trace_continuity", "poor_edge_recovery"),
@@ -99,10 +97,10 @@ def test_prepass_anchor_allows_soft_adap_like_quality_flags() -> None:
     )
 
     assert selected_candidate(peak_result) is candidate
-    assert allow_prepass_anchor(peak_result) is True
+    assert is_credible_istd_peak(peak_result) is True
 
 
-def test_prepass_anchor_allows_adap_equivalent_legacy_flags() -> None:
+def test_credible_istd_peak_allows_adap_equivalent_legacy_flags() -> None:
     candidate = _candidate(
         apex_index=1,
         quality_flags=(
@@ -122,7 +120,7 @@ def test_prepass_anchor_allows_adap_equivalent_legacy_flags() -> None:
     )
 
     assert selected_candidate(peak_result) is candidate
-    assert allow_prepass_anchor(peak_result) is True
+    assert is_credible_istd_peak(peak_result) is True
 
 
 @pytest.mark.parametrize("window_points", [7, 15])
@@ -143,8 +141,6 @@ def test_same_prepared_shape_is_shared_by_analyte_and_selected_istd(
     assert metrics is not None
     factory = build_scoring_context_factory(
         config=_config(signal_processing_window_points=window_points),
-        injection_order={},
-        istd_rts_by_sample={},
     )
     ctx = factory(
         target=target,
@@ -175,8 +171,6 @@ def test_missing_paired_width_retains_neutral_width_quality() -> None:
     candidate = _candidate(apex_index=150)
     factory = build_scoring_context_factory(
         config=_config(),
-        injection_order={},
-        istd_rts_by_sample={},
     )
     ctx = factory(
         target=target,
@@ -208,9 +202,7 @@ def test_missing_prepared_shape_keeps_legacy_active_sn(
     assert prepared_result.prepared is None
     assert prepared_result.baseline_unclipped is None
     candidate = _candidate(apex_index=sample_count // 2)
-    factory = build_scoring_context_factory(
-        config=_config(), injection_order={}, istd_rts_by_sample={}
-    )
+    factory = build_scoring_context_factory(config=_config())
     ctx = factory(
         target=_target(label="Analyte-A", is_istd=False, istd_pair="ISTD-A"),
         sample_name="SampleA",
@@ -250,9 +242,8 @@ def test_missing_prepared_shape_keeps_legacy_active_sn(
 
 
 @pytest.mark.parametrize("window_points", [7, 15])
-@pytest.mark.parametrize("dirty_matrix", [False, True])
 def test_rebuilt_factories_reuse_unclipped_rt_baseline_with_expected_sn(
-    monkeypatch: pytest.MonkeyPatch, window_points: int, dirty_matrix: bool
+    monkeypatch: pytest.MonkeyPatch, window_points: int
 ) -> None:
     import xic_extractor.peak_detection.physical_peak_evaluation as physical_owner
     import xic_extractor.peak_detection.scoring_metrics as sn_owner
@@ -296,9 +287,7 @@ def test_rebuilt_factories_reuse_unclipped_rt_baseline_with_expected_sn(
     )
     for _ in range(2):
         factory = build_scoring_context_factory(
-            config=_config(dirty_matrix_mode=dirty_matrix),
-            injection_order={},
-            istd_rts_by_sample={},
+            config=_config(),
         )
         builder = factory(
             target=_target(label="Analyte-A", is_istd=False, istd_pair=""),
@@ -328,13 +317,11 @@ def test_rebuilt_factories_reuse_unclipped_rt_baseline_with_expected_sn(
             assert local_sn_severity(
                 ctx.intensity_array,
                 apex,
-                dirty_matrix,
                 baseline=ctx.baseline_array,
                 residual_mad=ctx.residual_mad,
             ) == local_sn_severity(
                 expected_active,
                 apex,
-                dirty_matrix,
                 baseline=np.zeros(len(rt)),
                 residual_mad=expected_mad,
             )
@@ -388,9 +375,7 @@ def test_missing_live_baseline_keeps_standalone_sn(
         return asls_baseline(*args, **kwargs)
 
     monkeypatch.setattr(sn_owner, "asls_baseline", counted_sn)
-    factory = build_scoring_context_factory(
-        config=_config(), injection_order={}, istd_rts_by_sample={}
-    )
+    factory = build_scoring_context_factory(config=_config())
     ctx = factory(
         target=_target(label="Analyte-A", is_istd=False, istd_pair=""),
         sample_name="SampleA",
@@ -415,9 +400,7 @@ def test_missing_live_baseline_keeps_standalone_sn(
 )
 def test_missing_sn_cache_keeps_raw_context(intensity: np.ndarray) -> None:
     rt = np.arange(len(intensity), dtype=float)
-    factory = build_scoring_context_factory(
-        config=_config(), injection_order={}, istd_rts_by_sample={}
-    )
+    factory = build_scoring_context_factory(config=_config())
     ctx = factory(
         target=_target(label="Analyte-A", is_istd=False, istd_pair=""),
         sample_name="SampleA",
@@ -455,9 +438,7 @@ def test_scoring_smoothing_failure_retains_raw_sn_fallback(
     monkeypatch.setattr(
         factory_owner, "gaussian15_positive_asls_residual_trace", fail_smoothing
     )
-    factory = build_scoring_context_factory(
-        config=_config(), injection_order={}, istd_rts_by_sample={}
-    )
+    factory = build_scoring_context_factory(config=_config())
     ctx = factory(
         target=_target(label="Analyte-A", is_istd=False, istd_pair=""),
         sample_name="SampleA",
@@ -525,8 +506,6 @@ def _config(**overrides: object) -> ExtractionConfig:
         ms2_precursor_tol_da=1.6,
         nl_min_intensity_ratio=0.01,
         injection_order_source=None,
-        rolling_window_size=1,
-        dirty_matrix_mode=False,
         config_hash="abcd1234",
     )
     return ExtractionConfig(**{**config.__dict__, **overrides})

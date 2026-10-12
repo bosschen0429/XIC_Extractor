@@ -69,6 +69,7 @@ def test_run_metadata_sheet_has_required_keys(tmp_path: Path, monkeypatch) -> No
         "config_hash",
         "app_version",
         "generated_at",
+        "targeted_strategy",
         "signal_processing_method",
         "signal_processing_window_points",
     } <= keys
@@ -91,6 +92,7 @@ def _run_pipeline(
     monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
 
     run_output = extractor.acquire(config, [target])
+    assert not any(result.error for result in run_output.file_results)
     if with_diagnostics:
         run_output = RunOutput(
             file_results=run_output.file_results,
@@ -150,6 +152,9 @@ def _open_raw_factory():
 
         def __exit__(self, *_args: object) -> None:
             return None
+
+        def acquisition_rt_bounds(self):
+            return 8.0, 10.0
 
         def extract_xic(
             self, mz: float, rt_min: float, rt_max: float, ppm_tol: float

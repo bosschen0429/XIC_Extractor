@@ -25,33 +25,22 @@ historical filename as the stable topic locator.
 
 ### Targeted
 
-- The primary Targeted path is RAW folder, target list, then Run.
-- The standard method is the default. Advanced method settings stay collapsed
-  until the operator opens them. The separate DLL section expands when its
-  value needs attention.
-- A persisted setting that differs from the canonical method is labelled
-  `自訂參數 · N 項調整`. Only the 10 scalar parameters owned by
-  `xic_extractor.settings_schema.METHOD_KEYS` contribute to the count; batch, environment,
-  workers, output, and targets do not. **回到預設** restores those
-  scalar parameters. Gaussian is fixed information, not a method choice.
-- `settings.csv` is the sole active Targeted settings file. Reset preserves
-  batch and execution settings. GUI and CLI use the existing settings
-  parser; the Workbench only presents its method values and differences.
-- Ordinary configuration reads do not write files. The workspace supplies the
-  shared DLL value to both workflows; saving it does not validate Targeted
-  method values, and invalid Targeted values are shown as warnings so they can
-  be corrected in the workspace.
-- `count_no_ms2_as_detected` affects legacy fallback rows without formal
-  projection fields, not formal Detection %. New saves use only the canonical
-  smoothing-window key; legacy aliases load, but conflicting values fail.
-- The target table supports CSV, TSV, and Excel import plus in-workspace edit.
-  Unknown source columns and numeric text survive edits where the target owner
-  permits them.
-- Save writes `settings.csv` and `targets.csv` in the selected config
-  directory. Run calls the canonical Targeted application and publishes its
-  workbook and result summary.
-- **開始新批次** changes the output paths for another run and keeps the current
-  method and target list. It does not silently reset a custom method.
+- The primary path is samples, method/target intent, Run, then result review.
+- Target rows contain name, m/z, expected RT in minutes, CID-NL tag, role and
+  ISTD pairing. Tags use the same built-in chemistry recipes as Discovery.
+- A portable method saves the target intent and strategy version. There is no
+  advanced Targeted method panel, parameter reset, Dirty Matrix branch or user
+  worker/backend selector. Scientific policy is recorded in run metadata.
+- `settings.csv` contains only RAW/DLL paths and optional injection order.
+  Reading configuration never writes it; unsupported settings are reported,
+  not preserved as hidden effective overrides. No schema conversion is offered.
+- CSV/TSV and workbook import produce editable target intent. Numeric text and
+  descriptive metadata survive a validated save. Scientific legacy fields do not.
+- Save validates settings and targets before writing. Run invokes the canonical
+  Targeted application and publishes one finalized workbook; value, count and
+  review stay distinct.
+- **開始新批次** clears the RAW directory, injection order and displayed results,
+  preserving the method, targets and machine DLL path.
 
 ### Untargeted modes
 

@@ -5,9 +5,8 @@ from pathlib import Path
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.parsing import _require_columns
 
-TARGET_FIELDS = (
-    "label",
-    "mz",
+TARGET_FIELDS = ("label", "mz", "expected_rt_min", "cid_nl_tag", "role", "istd_pair")
+LEGACY_TARGET_FIELDS = (
     "rt_min",
     "rt_max",
     "ppm_tol",
@@ -15,7 +14,6 @@ TARGET_FIELDS = (
     "nl_ppm_warn",
     "nl_ppm_max",
     "is_istd",
-    "istd_pair",
 )
 OPTIONAL_TARGET_METADATA_FIELDS = ("sample_applicability",)
 TARGET_WRITE_FIELDS = (*TARGET_FIELDS, *OPTIONAL_TARGET_METADATA_FIELDS)

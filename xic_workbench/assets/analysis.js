@@ -145,42 +145,13 @@
     checklist(kind);
   }
   function setMethodState(summary) {
-    const label = summary?.label || "標準參數";
+    const label = summary?.label || "targeted-cid-nl-v2";
     const custom = new Set(summary?.custom_keys || []);
     const chip = $("target-method-state");
     chip.textContent = label;
     chip.className = `chip ${custom.size ? "warn" : "ok"}`;
-    for (const spec of state.config.targeted_form.settings) {
-      const input = $(`t-${spec.key}`);
-      const fieldNode = input?.closest(".field");
-      if (!fieldNode) continue;
-      fieldNode.classList.toggle("is-custom", custom.has(spec.key));
-      fieldNode.querySelector(".default-hint")?.remove();
-      if (custom.has(spec.key)) {
-        const value = spec.default;
-        const hint = el(
-          "button",
-          `標準值 ${value === "" ? "（空白）" : value === "true" ? "開" : value === "false" ? "關" : value} · 還原`,
-          "default-hint",
-        );
-        hint.type = "button";
-        hint.title = "把這一欄改回標準參數的值";
-        hint.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          if (input.type === "checkbox") input.checked = value === "true";
-          else input.value = value;
-          input.dispatchEvent(new Event("input", { bubbles: true }));
-        });
-        (fieldNode.querySelector(":scope > span") || fieldNode).append(hint);
-      }
-    }
     const notes = $("target-method-note");
     notes.replaceChildren();
-    for (const difference of summary?.differences || []) {
-      const spec = state.config.targeted_form.settings.find((item) => item.key === difference.key);
-      notes.append(el("p", `${spec?.label || difference.key}：${difference.default || "（空白）"} → ${difference.value || "（空白）"}`, "method-difference"));
-    }
     notes.append(el("p", `設定檔：${state.config.settings_source || "settings.csv"}`, "settings-source"));
     for (const warning of summary?.warnings || []) {
       notes.append(el("p", warning, "settings-warning"));
@@ -307,7 +278,7 @@
     if (kind === "targeted") {
       items.push(pathItem("RAW 資料夾", "t-data_dir", "尚未選擇資料夾"));
       const istd = state.targets.filter(
-        (row) => String(row.is_istd).toLowerCase() === "true",
+        (row) => row.role === "istd",
       ).length;
       items.push(
         checkItem(
@@ -326,7 +297,7 @@
           method.startsWith("自訂") ? "info" : "ok",
           "分析方法",
           method,
-          "targeted-advanced",
+          "target-table",
         ),
       );
     } else {
@@ -414,15 +385,10 @@
     const method = $("targeted-settings");
     const execution = $("targeted-execution");
     for (const panel of [data, method, execution]) panel.replaceChildren();
-    const advanced = el("details");
-    advanced.id = "targeted-advanced";
-    advanced.append(el("summary", "調整方法參數"));
-    const methodPanel = el("div", undefined, "advanced-panel");
-    advanced.append(methodPanel);
     const note = el("div", undefined, "method-note");
     note.id = "target-method-note";
-    method.append(el("p", "訊號處理固定使用 Gaussian；正式 Targeted 結果不將 NO_MS2 算為偵測到。", "settings-notice"), advanced, note);
-    const panels = { batch: data, method: methodPanel, environment: execution, runtime: execution, output: execution };
+    method.append(el("p", "目標清單決定名稱、m/z、預期 RT、CID-NL tag 與 ISTD 配對。平台共用候選與證據策略。", "settings-notice"), note);
+    const panels = { batch: data, environment: execution };
     const groups = new Map();
     for (const spec of state.config.targeted_form.settings) {
       const panel = panels[spec.scope];
@@ -430,7 +396,7 @@
       const groupKey = spec.scope;
       if (!groups.has(groupKey)) {
         const section = el("section", undefined, "settings-group");
-        const scopeHeading = { method: "進階方法參數", batch: "批次輸入", environment: "本機環境", runtime: "執行方式", output: "輸出選項" };
+        const scopeHeading = { batch: "批次輸入", environment: "本機環境" };
         section.append(el("h3", scopeHeading[spec.scope] || spec.group));
         const grid = el("div", undefined, "settings-grid");
         section.append(grid);
@@ -473,7 +439,7 @@
     dirty("targeted", false);
     if (!quiet) done("Targeted 設定與目標已儲存。");
   }
-  const isIstd = (row) => String(row.is_istd).toLowerCase() === "true";
+  const isIstd = (row) => row.role === "istd";
   function targetCount() {
     const istd = state.targets.filter(isIstd).length;
     $("target-count").textContent = state.targets.length
@@ -499,8 +465,8 @@
     for (const [label, cls] of [
       ["名稱", ""],
       ["m/z", "num"],
-      ["RT 範圍 (min)", "num"],
-      ["Neutral loss (Da)", "num"],
+      ["預期 RT (min)", "num"],
+      ["CID-NL tag", "num"],
       ["ISTD 配對", ""],
     ])
       head.append(el("th", label, cls));
@@ -517,12 +483,10 @@
         el("td", row.mz || "—", "num"),
         el(
           "td",
-          row.rt_min || row.rt_max
-            ? `${row.rt_min || "—"} – ${row.rt_max || "—"}`
-            : "—",
+          row.expected_rt_min || "—",
           "num",
         ),
-        el("td", row.neutral_loss_da || "—", "num"),
+        el("td", row.cid_nl_tag || "—", "num"),
         el("td", row.istd_pair || "—"),
       );
       body.append(tr);
@@ -545,10 +509,8 @@
     ["label", "名稱"],
     ["pairing", "角色／ISTD 配對"],
     ["mz", "m/z"],
-    ["rt_min", "RT min"],
-    ["rt_max", "RT max"],
-    ["ppm_tol", "ppm"],
-    ["neutral_loss_da", "Neutral loss (Da)"],
+    ["expected_rt_min", "預期 RT（min）"],
+    ["cid_nl_tag", "CID-NL tag（dR / R / MeR）"],
   ];
   function renderTargets() {
     const head = el("tr");
@@ -580,7 +542,7 @@
         } else {
           input.value = row[key] || "";
           if (
-            ["mz", "rt_min", "rt_max", "ppm_tol", "neutral_loss_da"].includes(
+            ["mz", "expected_rt_min"].includes(
               key,
             )
           )
@@ -588,7 +550,7 @@
         }
         input.addEventListener("input", () => {
           if (key === "pairing") {
-            row.is_istd = String(input.value === "role:istd");
+            row.role = input.value === "role:istd" ? "istd" : "analyte";
             row.istd_pair = input.value.startsWith("pair:") ? input.value.slice(5) : "";
             renderTargets();
           } else row[key] = input.value;
@@ -1417,10 +1379,6 @@
         event.target.dataset.batchPath = event.target.value;
       }
     });
-    $("target-reset").onclick = () => act(async () => {
-      applyTargetedDraft(await api("/api/targeted/method/reset", { settings: settingsValues() }));
-      done("已還原方法參數；批次、目標、外部資源與執行設定保持不變。");
-    });
     $("target-edit").onclick = () => {
       renderTargets();
       $("target-editor").showModal();
@@ -1429,13 +1387,9 @@
       state.targets.push({
         label: "",
         mz: "",
-        rt_min: "",
-        rt_max: "",
-        ppm_tol: "20",
-        neutral_loss_da: "",
-        nl_ppm_warn: "20",
-        nl_ppm_max: "50",
-        is_istd: "false",
+        expected_rt_min: "",
+        cid_nl_tag: "dR",
+        role: "analyte",
         istd_pair: "",
       });
       dirty("targeted");

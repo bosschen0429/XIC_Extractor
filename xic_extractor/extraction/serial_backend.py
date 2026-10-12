@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
-from xic_extractor.extraction.istd_prepass import extract_istd_anchors_only
 from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
 from xic_extractor.extraction.target_extraction import extract_raw_file_result
 from xic_extractor.output.messages import DiagnosticRecord
@@ -29,32 +28,7 @@ def run_serial(
 ) -> RunOutput:
     from xic_extractor.extraction import result_models
 
-    istd_targets = [target for target in targets if target.is_istd]
-    istd_rts_by_sample: dict[str, dict[str, float]] = {}
-    for raw_path in raw_paths:
-        if should_stop is not None and should_stop():
-            break
-        expected_source = _expected_source(raw_path, acquisition_sources_by_sample)
-        if expected_source is None:
-            prepass = extract_istd_anchors_only(config, istd_targets, raw_path)
-        else:
-            prepass = extract_istd_anchors_only(
-                config,
-                istd_targets,
-                raw_path,
-                expected_acquisition_source=expected_source,
-            )
-        if prepass is None:
-            continue
-        anchors, _, _, _ = prepass
-        for istd_label, anchor_rt in anchors.items():
-            istd_rts_by_sample.setdefault(istd_label, {})[raw_path.stem] = anchor_rt
-
-    scoring_context_factory = build_scoring_context_factory(
-        config=config,
-        injection_order=injection_order,
-        istd_rts_by_sample=istd_rts_by_sample,
-    )
+    scoring_context_factory = build_scoring_context_factory(config=config)
 
     file_results: list[FileResult] = []
     diagnostics: list[DiagnosticRecord] = []

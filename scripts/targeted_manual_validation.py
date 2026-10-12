@@ -6,7 +6,7 @@ import os
 import shutil
 import sys
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from statistics import median
 from typing import Callable, Iterable
@@ -246,6 +246,13 @@ def _run_case(
         execution_overrides=execution_overrides,
     )
     config, targets = load_config(config_dir)
+    config = replace(
+        config,
+        **{
+            key: int(value) if key == "parallel_workers" else value
+            for key, value in execution_overrides.items()
+        },
+    )
     run_output = extractor.acquire(config, targets)
     return _collect_program_rows(run_output, targets)
 
@@ -278,7 +285,6 @@ def _write_case_config(
     settings = {
         **CANONICAL_SETTINGS_DEFAULTS,
         "data_dir": str(data_dir),
-        **execution_overrides,
     }
     _write_settings_csv(config_dir / "settings.csv", settings)
 

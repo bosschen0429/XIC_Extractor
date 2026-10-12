@@ -29,11 +29,9 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 )
 
 
-def test_istd_context_uses_rolling_median_prior() -> None:
+def test_istd_context_uses_expected_rt_prior() -> None:
     factory = build_scoring_context_factory(
         config=_config(),
-        injection_order={"S1": 1, "S2": 2, "S3": 3},
-        istd_rts_by_sample={"ISTD-A": {"S1": 9.8, "S2": 10.0, "S3": 10.2}},
     )
 
     builder = factory(
@@ -53,7 +51,6 @@ def test_istd_context_uses_rolling_median_prior() -> None:
 
     assert ctx.rt_prior == pytest.approx(10.0)
     assert ctx.rt_prior_sigma is None
-    assert ctx.dirty_matrix is False
 
     assert ctx.active_trace_source == MS1_MORPHOLOGY_AREA_SOURCE
     assert ctx.morphology_trace_method == MS1_MORPHOLOGY_TRACE_METHOD
@@ -65,8 +62,6 @@ def test_istd_context_uses_rolling_median_prior() -> None:
 def test_scoring_context_uses_configured_ms1_morphology_smoothing_window() -> None:
     factory = build_scoring_context_factory(
         config=_config(ms1_morphology_smoothing_window_points=7),
-        injection_order={},
-        istd_rts_by_sample={},
     )
 
     builder = factory(
@@ -89,11 +84,9 @@ def test_scoring_context_uses_configured_ms1_morphology_smoothing_window() -> No
     assert ctx.morphology_trace_window_points == 7
 
 
-def test_analyte_context_keeps_shape_ratio_without_prior_bonus() -> None:
+def test_analyte_context_keeps_shape_ratio_with_expected_rt() -> None:
     factory = build_scoring_context_factory(
-        config=_config(dirty_matrix_mode=True),
-        injection_order={},
-        istd_rts_by_sample={},
+        config=_config(),
     )
 
     builder = factory(
@@ -118,20 +111,17 @@ def test_analyte_context_keeps_shape_ratio_without_prior_bonus() -> None:
 
     ctx = builder(SimpleNamespace(selection_apex_index=3))
 
-    assert ctx.rt_prior is None
+    assert ctx.rt_prior == 10.0
     assert ctx.rt_prior_sigma is None
     assert ctx.ms2_present is True
     assert ctx.nl_match is True
     assert ctx.fwhm_ratio is not None
     assert ctx.fwhm_ratio > 0
-    assert ctx.dirty_matrix is True
 
 
-def test_context_without_injection_order_or_library_has_no_prior() -> None:
+def test_context_without_other_sample_data_uses_expected_rt() -> None:
     factory = build_scoring_context_factory(
         config=_config(),
-        injection_order={},
-        istd_rts_by_sample={},
     )
 
     builder = factory(
@@ -156,7 +146,7 @@ def test_context_without_injection_order_or_library_has_no_prior() -> None:
 
     ctx = builder(SimpleNamespace(selection_apex_index=3))
 
-    assert ctx.rt_prior is None
+    assert ctx.rt_prior == 10.0
     assert ctx.rt_prior_sigma is None
     assert ctx.ms2_present is False
     assert ctx.nl_match is False
@@ -165,8 +155,6 @@ def test_context_without_injection_order_or_library_has_no_prior() -> None:
 def test_scoring_context_uses_candidate_ms2_evidence_not_target_window_nl() -> None:
     factory = build_scoring_context_factory(
         config=_config(),
-        injection_order={},
-        istd_rts_by_sample={},
     )
     candidate = SimpleNamespace(selection_apex_index=3)
     builder = factory(
@@ -209,8 +197,6 @@ def test_scoring_context_uses_candidate_ms2_evidence_not_target_window_nl() -> N
 def test_scoring_context_keeps_trigger_without_strict_nl_match() -> None:
     factory = build_scoring_context_factory(
         config=_config(),
-        injection_order={},
-        istd_rts_by_sample={},
     )
     builder = factory(
         target=_target(label="Analyte-A", is_istd=False, istd_pair=""),
@@ -245,8 +231,6 @@ def test_scoring_context_keeps_trigger_without_strict_nl_match() -> None:
 def test_scoring_context_copies_candidate_ms2_trace_strength() -> None:
     factory = build_scoring_context_factory(
         config=_config(),
-        injection_order={},
-        istd_rts_by_sample={},
     )
     builder = factory(
         target=_target(label="Analyte-A", is_istd=False, istd_pair=""),
@@ -308,8 +292,6 @@ def test_scoring_context_copies_candidate_ms2_trace_strength() -> None:
 def test_strict_nl_candidate_beats_candidate_with_trigger_but_failed_nl() -> None:
     factory = build_scoring_context_factory(
         config=_config(),
-        injection_order={},
-        istd_rts_by_sample={},
     )
     candidate_with_nl = _candidate(apex_index=3, apex_rt=10.1, intensity=70.0)
     candidate_without_nl = _candidate(apex_index=4, apex_rt=10.2, intensity=100.0)
@@ -383,8 +365,6 @@ def test_scoring_context_caches_asls_without_retained_intermediate(
 
     factory = build_scoring_context_factory(
         config=_config(),
-        injection_order={},
-        istd_rts_by_sample={},
     )
     builder = factory(
         target=_target(label="Analyte-A", is_istd=False, istd_pair="ISTD-A"),
@@ -421,8 +401,6 @@ def _config(**overrides: object) -> ExtractionConfig:
         ms2_precursor_tol_da=1.6,
         nl_min_intensity_ratio=0.01,
         injection_order_source=None,
-        rolling_window_size=1,
-        dirty_matrix_mode=False,
         config_hash="abcd1234",
     )
     return ExtractionConfig(**{**config.__dict__, **overrides})

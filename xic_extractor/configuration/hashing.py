@@ -73,4 +73,3 @@ def _format_hash_csv_value(value: object) -> str:
     if value is None:
         return ""
     return str(value)
-

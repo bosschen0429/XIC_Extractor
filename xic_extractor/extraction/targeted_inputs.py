@@ -15,6 +15,7 @@ from xic_extractor.configuration.target_identity import (
     TargetListSnapshot,
     target_list_snapshot_payload,
 )
+from xic_extractor.configuration.targeted_strategy import strategy_receipt
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
 from xic_extractor.injection_rolling import read_injection_order
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
@@ -154,6 +155,7 @@ def build_targeted_processing_request_identity(
     )
     scientific_inputs = {
         "sample_metadata": [asdict(row) for row in resolved_inputs.sample_metadata],
+        "strategy": strategy_receipt(),
         "settings": {
             field: getattr(config, field) for field in SCIENTIFIC_SETTING_FIELDS
         },

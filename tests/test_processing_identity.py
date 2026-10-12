@@ -922,3 +922,33 @@ def _imports(tree: ast.AST) -> tuple[str, ...]:
         elif isinstance(node, ast.ImportFrom) and node.module:
             modules.append(node.module)
     return tuple(modules)
+
+
+def test_targeted_formal_request_binds_strategy_and_shared_mass_policy(
+    tmp_path, monkeypatch
+):
+    from xic_extractor.configuration import targeted_strategy
+
+    paths = [
+        _raw(tmp_path / "sample_a.raw", b"a"),
+        _raw(tmp_path / "sample_b.raw", b"b"),
+    ]
+    config = _config(tmp_path)
+    baseline = _request(config, paths)
+    receipt = json.loads(baseline.normalized_scientific_inputs_json)["strategy"]
+    assert receipt["candidate_coverage"] == "complete_acquisition_exact_mass"
+    assert set(receipt["cid_nl_recipes"]) == {"dR", "R", "MeR"}
+    monkeypatch.setattr(targeted_strategy, "TARGETED_STRATEGY_VERSION", "next-strategy")
+    assert (
+        _request(config, paths).processing_request_id != baseline.processing_request_id
+    )
+    monkeypatch.undo()
+    original = targeted_strategy.targeted_tag_profile
+    monkeypatch.setattr(
+        targeted_strategy,
+        "targeted_tag_profile",
+        lambda tag: replace(original(tag), product_search_ppm=51.0),
+    )
+    assert (
+        _request(config, paths).processing_request_id != baseline.processing_request_id
+    )

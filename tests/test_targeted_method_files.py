@@ -5,26 +5,22 @@ import pytest
 from xic_extractor.configuration import targeted_method_files as files
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.targets import read_targets
-from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS, METHOD_KEYS
+from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 
 
 def rows():
     common = {
         "mz": "250",
-        "rt_min": "1",
-        "rt_max": "3",
-        "ppm_tol": "5",
-        "neutral_loss_da": "",
-        "nl_ppm_warn": "",
-        "nl_ppm_max": "",
-        "is_istd": "false",
+        "expected_rt_min": "2",
+        "cid_nl_tag": "dR",
+        "role": "analyte",
         "istd_pair": "",
     }
     return [
         {
             **common,
             "label": "standard",
-            "is_istd": "true",
+            "role": "istd",
             "isotope_label_type": "deuterated",
             "note": "標準品",
         },
@@ -44,7 +40,6 @@ def test_complete_method_roundtrip_without_batch_machine_or_resource_state(tmp_p
         **CANONICAL_SETTINGS_DEFAULTS,
         "data_dir": "missing-batch",
         "dll_dir": "missing-dll",
-        "nl_min_intensity_ratio": "0.07",
     }
     method = files.create_targeted_method(settings, rows())
     folder = tmp_path / "method-a"
@@ -53,7 +48,7 @@ def test_complete_method_roundtrip_without_batch_machine_or_resource_state(tmp_p
     assert (
         dict(loaded.settings)
         == dict(saved.settings)
-        == {key: settings[key] for key in METHOD_KEYS}
+        == {"strategy_version": "targeted-cid-nl-v2"}
     )
     assert loaded.targets == method.targets == read_targets(folder / "targets.csv")
     assert loaded.targets[1].istd_pair == "standard"
@@ -66,16 +61,13 @@ def test_complete_method_roundtrip_without_batch_machine_or_resource_state(tmp_p
 
 def test_new_method_replaces_every_method_value_and_targets(tmp_path):
     folder = tmp_path / "method"
-    a = files.create_targeted_method({"dirty_matrix_mode": "true"}, rows())
+    a = files.create_targeted_method({}, rows())
     files.save_targeted_method(a, folder)
     b_rows = [dict(rows()[0], label="other-standard")]
     b = files.create_targeted_method({}, b_rows)
     files.save_targeted_method(b, folder)
     loaded = files.load_targeted_method(folder)
-    assert (
-        loaded.settings["dirty_matrix_mode"]
-        == CANONICAL_SETTINGS_DEFAULTS["dirty_matrix_mode"]
-    )
+    assert loaded.settings["strategy_version"] == "targeted-cid-nl-v2"
     assert [target.label for target in loaded.targets] == ["other-standard"]
 
 
@@ -107,7 +99,7 @@ def test_incomplete_or_non_method_settings_are_not_accepted(tmp_path):
     settings_file.write_text("key,value\ndirty_matrix_mode,true\n", encoding="utf-8")
     with pytest.raises(ConfigError, match="缺少"):
         files.load_targeted_method(folder)
-    with pytest.raises(ConfigError, match="尚未支援"):
+    with pytest.raises(ConfigError, match="unknown"):
         files.create_targeted_method({"new_science_policy": "on"}, rows())
 
 
@@ -118,7 +110,7 @@ def test_failed_whole_method_replacement_restores_original(tmp_path, monkeypatch
     before = {
         name: (folder / name).read_bytes() for name in ("settings.csv", "targets.csv")
     }
-    replacement = files.create_targeted_method({"dirty_matrix_mode": "true"}, rows())
+    replacement = files.create_targeted_method({}, rows())
     real_replace = files.os.replace
 
     def fail_publish(source, destination):
@@ -196,13 +188,13 @@ def test_prepared_method_receipt_binds_hash_and_survives_source_edits(tmp_path):
         prepare_targeted_config,
     )
 
-    config_dir = _workspace(tmp_path, settings={"dirty_matrix_mode": "true"})
+    config_dir = _workspace(tmp_path)
     method_dir = tmp_path / "method"
-    method = files.create_targeted_method({"dirty_matrix_mode": "false"}, rows())
+    method = files.create_targeted_method({}, rows())
     files.save_targeted_method(method, method_dir)
     prepared = prepare_targeted_config(config_dir, method_dir=method_dir)
     receipt = prepared.input_config_dir
-    assert prepared.config.dirty_matrix_mode is False
+    assert prepared.config.signal_processing_method == "gaussian"
     assert prepared.config.data_dir == tmp_path / "raw"
     assert prepared.config.dll_dir == tmp_path / "dll"
     assert prepared.config.config_hash == compute_config_hash(
