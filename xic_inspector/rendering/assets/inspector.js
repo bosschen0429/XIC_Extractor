@@ -56,8 +56,8 @@
       section.append(element('p', context.join(' · '), 'tgt-context'));
       const banner = focusBanner(focus);
       if (banner) section.append(banner);
-      // Unusual outcomes first; the saved order is otherwise kept.
-      const records = [...item.details.records].sort((a, b) => focusSet.has(b.SampleName) - focusSet.has(a.SampleName));
+      // Rows keep the saved injection order; minority rows are highlighted, not moved.
+      const records = item.details.records;
       const filters = [
         ['all', '全部', () => true],
         ['focus', '需先看', record => focusSet.has(record.SampleName)],

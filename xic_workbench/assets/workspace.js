@@ -278,12 +278,11 @@ window.XicUi = (() => {
     };
     for (const target of summary.targets) {
       const row = node("tr");
-      if (target.focus_samples.length) row.className = "has-focus";
       const name = node("td");
       name.append(resultButton(target.label, target.label, false, "text-button"));
       const counted = node("td", `${target.counted} / ${target.total}${target.count_unknown ? `（${target.count_unknown} 未記錄）` : ""}`);
       const focus = node("td");
-      if (target.focus_samples.length) focus.append(resultButton(`${target.focus_samples.length} 筆 →`, target.label, true, "text-button"));
+      if (target.focus_samples.length) focus.append(resultButton(`${target.focus_samples.length} 筆 →`, target.label, true, "text-button focus-link"));
       else focus.textContent = "—";
       row.append(name, node("td", target.role || "—"), counted, focus, node("td", focusText(target)));
       body.append(row);

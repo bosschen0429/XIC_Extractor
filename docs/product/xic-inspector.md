@@ -107,7 +107,7 @@ only. Missing count decisions are reported as unknown, never inferred from
 numeric values.
 
 Choose a target to see one compact sample table: saved Area, RT, counted status
-and saved review condition. Minority rows come first and are marked; filters
+and saved review condition. Rows keep injection order with minority rows marked; filters
 show all rows, the minority rows, or the rows with saved review conditions.
 Selecting a sample opens its peak bounds, NL evidence, the same sample's paired
 ISTD RT, Area and counted status, review conditions and the original selection

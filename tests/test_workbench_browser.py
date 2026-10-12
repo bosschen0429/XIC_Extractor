@@ -406,7 +406,7 @@ def test_review_search_and_inspector_use_one_scroll_and_visible_zoom(
     expect(dialog).to_be_hidden()
 
 
-def test_targeted_review_puts_the_rare_detection_first_and_opens_it_in_place(
+def test_targeted_review_marks_the_rare_detection_and_opens_it_in_place(
     workbench, tmp_path
 ):
     from tests.test_xic_inspector_targeted_workbook import (
@@ -423,10 +423,12 @@ def test_targeted_review_puts_the_rare_detection_first_and_opens_it_in_place(
     overview.locator("td button", has_text="Analyte").click()
     frame = page.frame_locator("#inspector")
     rows = frame.locator(".tgt-table tbody tr")
-    expect(rows.first.locator(".tgt-sample")).to_have_text("S3")
-    rows.first.locator(".tgt-sample").click()
+    # Rows stay in run order; the rare detection is marked where it ran.
+    expect(rows.nth(2).locator(".tgt-sample")).to_have_text("S3")
+    expect(rows.nth(2).locator(".tgt-badge")).to_have_text("少數")
+    rows.nth(2).locator(".tgt-sample").click()
     # The evidence is the next row, not a panel after every other sample.
-    detail = frame.locator(".tgt-table tbody tr:nth-child(2)")
+    detail = frame.locator(".tgt-table tbody tr:nth-child(4)")
     expect(detail).to_have_class("tgt-detail-row")
     expect(detail).to_contain_text("配對 ISTD（ISTD）")
 

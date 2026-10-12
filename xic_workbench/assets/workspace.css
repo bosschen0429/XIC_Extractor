@@ -1081,7 +1081,8 @@ th.num {
 .overview-table th { color: var(--muted); background: var(--surface-2); font-size: 12px; font-weight: 550; }
 .overview-table th, .overview-table td { padding: 14px 16px; border-bottom: 1px solid var(--line); }
 .overview-table .text-button { padding: 0; text-align: center; }
-.overview-table .has-focus { background: var(--warn-soft); }
+/* Only the cell to read first carries the highlight; rows stay neutral. */
+.overview-table .focus-link { padding: 2px 10px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); font-weight: 600; }
 .overview-quantities { margin: 24px 0; }
 .overview-quantities summary { cursor: pointer; color: var(--muted); }
 .overview-quantities table { margin-top: 14px; }
