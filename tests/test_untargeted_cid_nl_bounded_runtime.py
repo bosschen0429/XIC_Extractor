@@ -2564,6 +2564,9 @@ def _run_for_spool(tmp_path, monkeypatch, *, retain):
         )
         for child in result.application_result.children
     )
+    alias = replace(result)
+    result.close()
+    alias.close()
     result.close()
     return spools[0], child_ids
 
@@ -2617,6 +2620,63 @@ def test_retained_spool_keeps_its_partitions_and_publishes_a_readable_index(
         )
         == child_ids[0]
     )
+
+
+@pytest.mark.parametrize("retain", (False, True))
+def test_result_store_close_failure_still_releases_adopted_discovery_inputs(
+    tmp_path, monkeypatch, retain
+):
+    from contextlib import ExitStack
+
+    from xic_extractor.execution.result_store import StreamedResultStore
+    from xic_extractor.untargeted_execution.execution import execute_untargeted_plan
+
+    plan, _ = _plan(tmp_path, monkeypatch)
+    result = execute_untargeted_plan(
+        plan,
+        output_dir=tmp_path / "runtime",
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "runtime.json", "cleanup"),
+        max_partition_jobs=len(plan.context.samples),
+        retain_partition_spool=retain,
+    )
+    marker = tmp_path / "discovery-resource"
+    marker.write_text("owned", encoding="utf-8")
+
+    class DiscoveryInputs:
+        def retained_physical_records(self):
+            return ()
+
+        def take_result_resources(self):
+            resources = ExitStack()
+            resources.callback(marker.unlink)
+            return resources
+
+    result = result.with_discovery_inputs(DiscoveryInputs())
+    alias = replace(result)
+    operation = "preserve_results" if retain else "cleanup"
+    original_close = getattr(StreamedResultStore, operation)
+    calls = []
+
+    def fail_close(store):
+        calls.append(store)
+        raise OSError("result store close failed")
+
+    monkeypatch.setattr(StreamedResultStore, operation, fail_close)
+    try:
+        with pytest.raises(OSError, match="result store close failed"):
+            result.close()
+        assert not marker.exists()
+        alias.close()
+        result.close()
+        assert len(calls) == 1
+    finally:
+        # Release the deliberately failed store without retrying workflow close.
+        if retain:
+            StreamedResultStore.cleanup(calls[0])
+        else:
+            original_close(calls[0])
 
 
 def _run_for_cache(tmp_path, monkeypatch, *, retain, tag, shared=None):

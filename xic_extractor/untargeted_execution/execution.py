@@ -897,30 +897,12 @@ class UntargetedPartitionPipelineAdapter:
         application_result: FinalizedUntargetBatchApplicationResult,
         store: StreamedResultStore,
     ) -> CompletedUntargetBatchWorkflowResult:
-        return CompletedUntargetBatchWorkflowResult(
+        return CompletedUntargetBatchWorkflowResult.from_runtime(
             runtime_receipt=runtime_receipt,
             application_result=application_result,
-            method_assessments=store.sequence("method_assessments"),
-            initial_groups=store.sequence("initial_groups"),
-            initial_edges=store.sequence("initial_edges"),
-            capture_evidence=store.sequence("capture_evidence"),
-            cleanup_action=self._release_store(store),
+            store=store,
+            retain_partition_spool=self._retain_partition_spool,
         )
-
-    def _release_store(self, store: StreamedResultStore) -> Callable[[], None]:
-        """Decide what closing the workflow result does to the spool.
-
-        Retaining publishes the record index and keeps the partition files, so
-        a later reader can restore one record instead of receiving a copy of
-        every record. The default still deletes the spool.
-        """
-        if not self._retain_partition_spool:
-            return store.cleanup
-
-        def retain() -> None:
-            store.preserve_results()
-
-        return retain
 
 
 def execute_untargeted_plan(

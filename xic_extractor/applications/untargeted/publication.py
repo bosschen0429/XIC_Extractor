@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable
-from contextlib import ExitStack
+from contextlib import ExitStack, closing
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -71,9 +71,7 @@ def publish_untargeted_outputs(
     owner_build_route_receipt: OwnerBuildRouteReceipt,
 ) -> AlignmentRunOutputs:
     """Publish completed owner results and close their private stores on every exit."""
-    with ExitStack() as output_stack:
-        if hasattr(completed, "close"):
-            output_stack.callback(completed.close)
+    with closing(completed), ExitStack() as output_stack:
         _ensure_output_publication_not_cancelled(should_cancel)
         inputs = completed.publication_inputs
         matrix_path = outputs.matrix_tsv

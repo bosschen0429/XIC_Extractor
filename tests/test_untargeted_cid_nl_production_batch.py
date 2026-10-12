@@ -3258,11 +3258,19 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
     application_result = object()
 
     class MockCompleted:
+        def __init__(self):
+            self.application_result = application_result
+
         def bind_publication_inputs(self, **kwargs):
-            return SimpleNamespace(
-                application_result=application_result,
-                publication_inputs=SimpleNamespace(**kwargs),
-            )
+            self.publication_inputs = SimpleNamespace(**kwargs)
+            return self
+
+        def with_discovery_inputs(self, prepared):
+            self.discovery_inputs = prepared
+            return self
+
+        def close(self):
+            self.discovery_inputs.close()
 
     completed = MockCompleted()
     calls: list[tuple[str, object]] = []
@@ -3309,6 +3317,8 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
     )
 
     assert result.application_result is application_result
+    assert result.discovery_inputs is not None
+    result.close()
     assert result.publication_inputs.candidates_by_sample == {"S1": candidates}
     assert result.publication_inputs.alignment_config == AlignmentConfig()
     assert result.publication_inputs.known_istd_reference is None

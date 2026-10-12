@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
+from contextlib import ExitStack
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
+from typing import TYPE_CHECKING
 
 from xic_extractor.alignment.completion import AlignmentWorkflowContractError
 from xic_extractor.alignment.config import AlignmentConfig
@@ -21,11 +23,41 @@ from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.execution._lifecycle import AttemptTerminalOutcome
 from xic_extractor.execution.attempt import RuntimeFinalizationReceipt
+from xic_extractor.execution.result_store import StreamedResultStore
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
 from xic_extractor.peak_detection.observations import RetainedCaptureEvidence
+
+if TYPE_CHECKING:
+    from xic_extractor.untargeted_execution.alignment import (
+        PreparedUntargetedAlignmentInputs,
+    )
+
+
+@dataclass(slots=True)
+class _CompletedResultResources:
+    """Shared lifetime of a completed result and its immutable views."""
+
+    store: StreamedResultStore | None = None
+    retain_partition_spool: bool = False
+    discovery_resources: ExitStack | None = None
+    closed: bool = False
+
+    def close(self) -> None:
+        if self.closed:
+            return
+        self.closed = True
+        try:
+            if self.store is not None:
+                if self.retain_partition_spool:
+                    self.store.preserve_results()
+                else:
+                    self.store.cleanup()
+        finally:
+            if self.discovery_resources is not None:
+                self.discovery_resources.close()
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,12 +95,47 @@ class CompletedUntargetBatchWorkflowResult:
     capture_evidence: (
         tuple[RetainedCaptureEvidence, ...] | ImmutableSequence[RetainedCaptureEvidence]
     ) = field(default=(), repr=False, compare=False)
-    cleanup_action: Callable[[], None] | None = field(
-        default=None, repr=False, compare=False
+    _resources: _CompletedResultResources = field(
+        default_factory=_CompletedResultResources, repr=False, compare=False
     )
     _publication_inputs: UntargetedPublicationInputs | None = field(
         default=None, repr=False, compare=False
     )
+
+    @classmethod
+    def from_runtime(
+        cls,
+        *,
+        runtime_receipt: RuntimeFinalizationReceipt,
+        application_result: FinalizedUntargetBatchApplicationResult,
+        store: StreamedResultStore,
+        retain_partition_spool: bool = False,
+    ) -> CompletedUntargetBatchWorkflowResult:
+        """Own the lazy result views and the store that keeps them readable.
+
+        Retention publishes a readable record index on close; ordinary results
+        remove their private spool. Acquisition cache and worker lifetimes stay
+        with execution, not this result.
+        """
+        return cls(
+            runtime_receipt=runtime_receipt,
+            application_result=application_result,
+            method_assessments=store.sequence("method_assessments"),
+            initial_groups=store.sequence("initial_groups"),
+            initial_edges=store.sequence("initial_edges"),
+            capture_evidence=store.sequence("capture_evidence"),
+            _resources=_CompletedResultResources(store, retain_partition_spool),
+        )
+
+    def with_discovery_inputs(
+        self, inputs: PreparedUntargetedAlignmentInputs
+    ) -> CompletedUntargetBatchWorkflowResult:
+        """Adopt the prepared Discovery resources along with their lazy records."""
+        completed = replace(
+            self, discovery_physical_records=inputs.retained_physical_records()
+        )
+        self._resources.discovery_resources = inputs.take_result_resources()
+        return completed
 
     def bind_publication_inputs(
         self,
@@ -124,9 +191,8 @@ class CompletedUntargetBatchWorkflowResult:
         return self.application_result.processing_attempt.processing_attempt_id
 
     def close(self) -> None:
-        """Release underlying transient partition storage and resources."""
-        if self.cleanup_action is not None:
-            self.cleanup_action()
+        """Release owned stores once, also when called through a replaced view."""
+        self._resources.close()
 
     def __post_init__(self) -> None:
         if not isinstance(self.runtime_receipt, RuntimeFinalizationReceipt):

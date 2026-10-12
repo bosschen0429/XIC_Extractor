@@ -7,7 +7,8 @@ import shutil
 from collections import Counter
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, replace
+from contextlib import ExitStack
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from tempfile import mkdtemp
 from threading import Lock
@@ -189,20 +190,50 @@ def _index_discovery_physical_sources(
 
 @dataclass(slots=True)
 class PreparedUntargetedAlignmentInputs:
-    """Prepared formal inputs; the caller owns the physical-index lifetime."""
+    """Prepared inputs own their private indexes until transferred to a result."""
 
     plan: UntargetedInputPlan
     physical_sources: dict[str, IndexedDiscoveryPhysicalFacts]
     physical_spool_dir: Path | None
     evidence_store: StreamedResultStore | None
+    _resources: ExitStack = field(repr=False)
 
-    def close(self) -> None:
-        for source in self.physical_sources.values():
-            source.close()
+    def retained_physical_records(
+        self,
+    ) -> (
+        tuple[DiscoveryPhysicalFactRecord, ...]
+        | ImmutableSequence[DiscoveryPhysicalFactRecord]
+    ):
+        """Expose retained records without materializing the indexed sidecars."""
+        if self.physical_sources:
+            sources = self.physical_sources
+            chunks = tuple(
+                (stem, indices[start : start + 64])
+                for stem, source in sources.items()
+                for indices in (tuple(sorted(source.candidate_ordinals.values())),)
+                for start in range(0, len(indices), 64)
+            )
+
+            def load_records(index: int) -> tuple[DiscoveryPhysicalFactRecord, ...]:
+                stem, indices = chunks[index]
+                return tuple(sources[stem].read_record(item) for item in indices)
+
+            return ImmutableSequence(tuple(len(ids) for _, ids in chunks), load_records)
         if self.physical_spool_dir is not None:
             shutil.rmtree(self.physical_spool_dir, ignore_errors=True)
-        if self.evidence_store is not None:
-            self.evidence_store.cleanup()
+            self.physical_spool_dir = None
+        if self.evidence_store is None:
+            return ()
+        self.evidence_store.seal()
+        return self.evidence_store.sequence("discovery_physical_records")
+
+    def take_result_resources(self) -> ExitStack:
+        """Transfer only resource handles, not the finished planning state."""
+        return self._resources.pop_all()
+
+    def close(self) -> None:
+        """Release all private inputs once, including when one close fails."""
+        self._resources.close()
 
 
 def prepare_untargeted_alignment_inputs(
@@ -283,6 +314,9 @@ def prepare_untargeted_alignment_inputs(
         and not isinstance(candidates_by_sample, DiscoveryInputSource)
         else None
     )
+    resources = ExitStack()
+    if evidence_store is not None:
+        resources.callback(evidence_store.cleanup)
 
     def retain_records(
         stem: str, records: tuple[DiscoveryPhysicalFactRecord, ...]
@@ -314,6 +348,7 @@ def prepare_untargeted_alignment_inputs(
             physical_spool_dir = Path(
                 mkdtemp(prefix=".physical_fact_indexes_", dir=output_dir)
             )
+            resources.callback(shutil.rmtree, physical_spool_dir, ignore_errors=True)
             jobs = tuple(
                 _PhysicalIndexJob(
                     path=(
@@ -343,6 +378,8 @@ def prepare_untargeted_alignment_inputs(
                     should_cancel=should_cancel,
                     progress_callback=recorder.heartbeat_event,
                 )
+                for source in indexed.sources.values():
+                    resources.callback(source.close)
                 physical_sources.update(indexed.sources)
                 stage.metrics["feature_candidate_count"] = len(
                     candidates_by_sample.feature_candidate_ids()
@@ -395,15 +432,14 @@ def prepare_untargeted_alignment_inputs(
             )
 
         return PreparedUntargetedAlignmentInputs(
-            plan, physical_sources, physical_spool_dir, evidence_store
+            plan,
+            physical_sources,
+            physical_spool_dir,
+            evidence_store,
+            _resources=resources,
         )
     except BaseException:
-        for source in physical_sources.values():
-            source.close()
-        if physical_spool_dir is not None:
-            shutil.rmtree(physical_spool_dir, ignore_errors=True)
-        if evidence_store is not None:
-            evidence_store.cleanup()
+        resources.close()
         raise
 
 
@@ -447,11 +483,9 @@ def complete_untargeted_alignment(
         should_cancel=should_cancel,
     )
     plan = prepared.plan
-    physical_sources = prepared.physical_sources
-    physical_spool_dir = prepared.physical_spool_dir
-    evidence_store = prepared.evidence_store
     recorder = timing_recorder or TimingRecorder.disabled("alignment")
-    try:
+    with ExitStack() as pending:
+        pending.callback(prepared.close)
         output_dir.mkdir(parents=True, exist_ok=True)
         inference_counts: Counter[str] = Counter()
         inference_counts_lock = Lock()
@@ -502,76 +536,16 @@ def complete_untargeted_alignment(
                 pipeline_overlap=True,
                 max_partition_jobs=max_partition_jobs,
             )
+            pending.callback(completed.close)
 
-        try:
-            completed = completed.bind_publication_inputs(
-                candidates_by_sample=candidates_by_sample,
-                alignment_config=alignment_config,
-                known_istd_reference=known_istd_reference,
-            )
-        except BaseException:
-            completed.close()
-            raise
-        if physical_sources:
-            chunks = tuple(
-                (stem, indices[start : start + 64])
-                for stem, physical_source in physical_sources.items()
-                for indices in (
-                    tuple(sorted(physical_source.candidate_ordinals.values())),
-                )
-                for start in range(0, len(indices), 64)
-            )
-
-            def load_records(index: int) -> tuple[DiscoveryPhysicalFactRecord, ...]:
-                stem, indices = chunks[index]
-                return tuple(
-                    physical_sources[stem].read_record(item) for item in indices
-                )
-
-            def close_indexed_result() -> None:
-                try:
-                    completed.close()
-                finally:
-                    for physical_source in physical_sources.values():
-                        physical_source.close()
-                    if physical_spool_dir is not None:
-                        shutil.rmtree(physical_spool_dir, ignore_errors=True)
-
-            return replace(
-                completed,
-                discovery_physical_records=ImmutableSequence(
-                    tuple(len(ids) for _, ids in chunks), load_records
-                ),
-                cleanup_action=close_indexed_result,
-            )
-        if physical_spool_dir is not None:
-            shutil.rmtree(physical_spool_dir, ignore_errors=True)
-            physical_spool_dir = None
-        if evidence_store is None:
-            return completed
-        evidence_store.seal()
-
-        def cleanup() -> None:
-            try:
-                completed.close()
-            finally:
-                evidence_store.cleanup()
-
-        return replace(
-            completed,
-            discovery_physical_records=evidence_store.sequence(
-                "discovery_physical_records"
-            ),
-            cleanup_action=cleanup,
+        completed = completed.with_discovery_inputs(prepared)
+        completed = completed.bind_publication_inputs(
+            candidates_by_sample=candidates_by_sample,
+            alignment_config=alignment_config,
+            known_istd_reference=known_istd_reference,
         )
-    except BaseException:
-        for physical_source in physical_sources.values():
-            physical_source.close()
-        if physical_spool_dir is not None:
-            shutil.rmtree(physical_spool_dir, ignore_errors=True)
-        if evidence_store is not None:
-            evidence_store.cleanup()
-        raise
+        pending.pop_all()
+        return completed
 
 
 def _load_physical_replay_inputs(

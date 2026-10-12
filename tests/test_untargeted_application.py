@@ -902,7 +902,10 @@ def test_pure_cid_nl_targets_csv_integration(
     raw_dir.mkdir()
     (raw_dir / "S1.raw").touch()
 
-    completed = SimpleNamespace(application_result=object())
+    closed = []
+    completed = SimpleNamespace(
+        application_result=object(), close=lambda: closed.append(True)
+    )
     writer_inputs = SimpleNamespace(
         matrix=_matrix(("S1",)),
         production_decisions=object(),
@@ -972,6 +975,7 @@ def test_pure_cid_nl_targets_csv_integration(
     )
 
     assert captured["known_istd_reference"] is fake_ref
+    assert closed == [True]
 
 
 def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignment(
