@@ -39,8 +39,10 @@ def test_data_sheet_preserves_measurements_and_compact_review_fields() -> None:
         records[1]["Review Reason"].replace("\n", "")
         == "已觀測到 NL，但質量誤差達到提醒範圍，需檢查 MS2 證據。"
     )
-    assert ws["C2"].number_format == "#,##0.00"
-    assert ws["D2"].number_format == "0.0000"
+    # RT precedes Area; intensities read as scientific notation, values centered.
+    assert ws["C2"].number_format == "0.0000"
+    assert ws["D2"].number_format == "0.00E+00"
+    assert {ws[cell].alignment.horizontal for cell in ("A2", "C2", "D2")} == {"center"}
     assert records[0]["IntSmoothed"] == 900
     assert records[0]["Int"] == 1000
     assert records[0]["PeakWidth"] == 0.4
