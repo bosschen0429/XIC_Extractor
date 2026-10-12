@@ -29,8 +29,8 @@ from xic_extractor.alignment.cross_sample_peak_groups import (
 from xic_extractor.alignment.peak_trajectories import BackfillPeakLocation
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
-    _mint_artifact_semantic_contract_ref,
-    _mint_evidence_artifact_ref,
+    mint_artifact_semantic_contract_ref,
+    mint_evidence_artifact_ref,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
@@ -57,7 +57,7 @@ VALIDATION_STATUS = "shadow_ready"
 PRODUCT_AUTHORITY = "none"
 BACKFILL_UNIVERSE_SCHEMA_VERSION = "conservative_backfill_candidate_universe"
 BACKFILL_UNIVERSE_ARTIFACT_SEMANTIC_ROLE = "conservative_backfill_candidate_universe"
-_BACKFILL_UNIVERSE_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
+_BACKFILL_UNIVERSE_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.alignment.conservative_backfill",
     semantic_role=BACKFILL_UNIVERSE_ARTIFACT_SEMANTIC_ROLE,
     schema_version=BACKFILL_UNIVERSE_SCHEMA_VERSION,
@@ -463,7 +463,7 @@ def mint_conservative_backfill_candidate_universe(
         localization=localization,
         localization_sources=localization_sources,
     )
-    artifact = _mint_evidence_artifact_ref(
+    artifact = mint_evidence_artifact_ref(
         producer_processing_request_id=(
             processing_owners.request.processing_request_id
         ),

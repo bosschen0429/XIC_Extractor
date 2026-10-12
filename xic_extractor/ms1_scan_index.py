@@ -54,16 +54,16 @@ def build_ms1_scan_index(
     first_scan_number: int | None = None,
     last_scan_number: int | None = None,
 ) -> tuple[MS1Scan, ...]:
-    raw_file = _raw_file(source)
+    raw = raw_file(source)
     if first_scan_number is None:
-        first_scan = int(raw_file.RunHeaderEx.FirstSpectrum)
+        first_scan = int(raw.RunHeaderEx.FirstSpectrum)
     else:
         first_scan = require_integer(
             first_scan_number,
             name="first_scan_number",
         )
     if last_scan_number is None:
-        last_scan = int(raw_file.RunHeaderEx.LastSpectrum)
+        last_scan = int(raw.RunHeaderEx.LastSpectrum)
     else:
         last_scan = require_integer(
             last_scan_number,
@@ -72,11 +72,11 @@ def build_ms1_scan_index(
     scans: list[MS1Scan] = []
     for scan_number in range(first_scan, last_scan + 1):
         try:
-            filter_obj = raw_file.GetFilterForScanNumber(scan_number)
+            filter_obj = raw.GetFilterForScanNumber(scan_number)
             if str(getattr(filter_obj, "MSOrder", "")) != "Ms":
                 continue
-            masses, intensities = _scan_arrays(raw_file, scan_number)
-            rt = float(raw_file.RetentionTimeFromScanNumber(scan_number))
+            masses, intensities = _scan_arrays(raw, scan_number)
+            rt = float(raw.RetentionTimeFromScanNumber(scan_number))
         except Exception as exc:
             raise MS1ScanReadError(
                 f"failed to read MS1 scan {scan_number}: {exc}"
@@ -114,10 +114,10 @@ def build_ms1_scan_index_for_rt_window(
     parsed_rt_max = require_finite_real(rt_max, name="rt_max")
     if parsed_rt_min > parsed_rt_max:
         raise ValueError("rt_min must be <= rt_max")
-    raw_file = _raw_file(source)
+    raw = raw_file(source)
     try:
-        first_scan = int(raw_file.ScanNumberFromRetentionTime(rt_min))
-        last_scan = int(raw_file.ScanNumberFromRetentionTime(rt_max))
+        first_scan = int(raw.ScanNumberFromRetentionTime(rt_min))
+        last_scan = int(raw.ScanNumberFromRetentionTime(rt_max))
     except Exception as exc:
         raise MS1ScanReadError(
             f"failed to resolve MS1 scan window for RT {rt_min:g}-{rt_max:g}: {exc}"
@@ -302,7 +302,7 @@ def extract_index_xic(
     return XICTrace.from_arrays(rt_values, intensity_values)
 
 
-def _raw_file(source: Any) -> Any:
+def raw_file(source: Any) -> Any:
     return getattr(source, "_raw_file", source)
 
 
@@ -392,10 +392,10 @@ def _scan_window(source: Any, request: XICRequest) -> tuple[int, int]:
     if callable(resolver):
         start_scan, end_scan = resolver(request)
         return int(start_scan), int(end_scan)
-    raw_file = _raw_file(source)
+    raw = raw_file(source)
     return (
-        int(raw_file.ScanNumberFromRetentionTime(request.rt_min)),
-        int(raw_file.ScanNumberFromRetentionTime(request.rt_max)),
+        int(raw.ScanNumberFromRetentionTime(request.rt_min)),
+        int(raw.ScanNumberFromRetentionTime(request.rt_max)),
     )
 
 

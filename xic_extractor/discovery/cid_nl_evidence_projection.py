@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from xic_extractor.discovery.models import DiscoverySeed
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
-    _mint_artifact_semantic_contract_ref,
-    _mint_evidence_artifact_ref,
+    mint_artifact_semantic_contract_ref,
+    mint_evidence_artifact_ref,
     verify_evidence_artifact_payload,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
@@ -32,7 +32,7 @@ VALIDATION_STATUS = "diagnostic_only"
 _SAMPLE_ID_PREFIX = "xic.sample:"
 _EVIDENCE_ARTIFACT_ID_PREFIX = "xic.evidence-artifact:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
+_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.discovery.cid_nl_evidence_projection",
     semantic_role=ARTIFACT_SEMANTIC_ROLE,
     schema_version=SCHEMA_VERSION,
@@ -239,7 +239,7 @@ def mint_untargeted_cid_nl_projection_ref(
         canonical_evidence_artifact_id=(
             canonical_evidence.artifact.evidence_artifact_id
         ),
-        artifact=_mint_evidence_artifact_ref(
+        artifact=mint_evidence_artifact_ref(
             producer_processing_request_id=(
                 processing_owners.request.processing_request_id
             ),

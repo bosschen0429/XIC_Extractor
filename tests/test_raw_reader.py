@@ -664,7 +664,7 @@ def test_open_raw_rechecks_content_after_vendor_open(
     thermo.raw_file_reader_adapter.FileFactory = _mutate_after_precheck
     monkeypatch.setattr(
         raw_reader,
-        "_stat_identity",
+        "stat_identity",
         lambda _value: (1, 1, len(b"sample-a"), 1, 1),
     )
 

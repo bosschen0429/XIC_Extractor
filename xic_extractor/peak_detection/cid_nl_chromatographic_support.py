@@ -8,7 +8,7 @@ or product authority.
 
 from __future__ import annotations
 
-from xic_extractor.evidence_artifacts import _mint_evidence_artifact_ref
+from xic_extractor.evidence_artifacts import mint_evidence_artifact_ref
 from xic_extractor.peak_detection.cid_nl_chromatographic_support_models import (
     _ARTIFACT_SEMANTIC_CONTRACT,
     ARTIFACT_SEMANTIC_ROLE,
@@ -52,7 +52,7 @@ def compose_cid_nl_chromatographic_support_ref(
     content = _content_from_supports(
         sample=sample, supports=supports, evidence_refs=evidence_refs
     )
-    artifact = _mint_evidence_artifact_ref(
+    artifact = mint_evidence_artifact_ref(
         producer_processing_request_id=processing_owners.request.processing_request_id,
         producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
         semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,

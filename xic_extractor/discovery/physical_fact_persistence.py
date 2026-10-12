@@ -29,8 +29,8 @@ from xic_extractor.discovery.physical_fact_source import (
     PhysicalFactSource,
 )
 from xic_extractor.peak_detection.physical_peak_codec import (
-    _physical_evaluation_from_payload,
     deserialize_physical_peak_evaluation,
+    physical_evaluation_from_payload,
     serialize_physical_peak_evaluation,
 )
 from xic_extractor.peak_detection.physical_peak_models import (
@@ -672,7 +672,7 @@ def restore_discovery_physical_fact_record(
     ):
         raise ValueError("Discovery physical sidecar crosses profile identity")
     eval_payload = _mapping(phys_val["evaluation"], label="evaluation")
-    evaluation = _physical_evaluation_from_payload(eval_payload)
+    evaluation = physical_evaluation_from_payload(eval_payload)
     if (
         evaluation.prepared.profile_id
         != expected_run_spec.signal_processing_profile.profile_id

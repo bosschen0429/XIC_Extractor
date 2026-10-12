@@ -13,7 +13,9 @@ from pathlib import Path
 
 from xic_extractor.configuration.csv_io import (
     TARGET_WRITE_FIELDS,
-    _read_settings,
+)
+from xic_extractor.configuration.csv_io import (
+    read_settings as read_settings_csv,
 )
 from xic_extractor.configuration.settings import resolve_settings
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DESCRIPTIONS
@@ -74,7 +76,7 @@ def _read_path(name: str, config_dir: Path | None = None) -> Path:
 
 def read_settings(*, config_dir: Path | None = None) -> dict[str, str]:
     """Read CSV inputs only; normalization and admission belong to their consumers."""
-    return _read_settings(_read_path("settings", config_dir))
+    return read_settings_csv(_read_path("settings", config_dir))
 
 
 def write_settings(
@@ -106,7 +108,7 @@ def _persisted_settings(
         descriptions = {
             row["key"]: row.get("description", "") for row in csv.DictReader(handle)
         }
-    return _read_settings(source), source, descriptions
+    return read_settings_csv(source), source, descriptions
 
 
 def _write_settings_rows(

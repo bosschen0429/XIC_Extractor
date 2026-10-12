@@ -14,8 +14,8 @@ from types import MappingProxyType
 
 from xic_extractor.configuration.csv_io import (
     TARGET_WRITE_FIELDS,
-    _read_settings,
     _read_target_rows,
+    read_settings,
 )
 from xic_extractor.configuration.models import ConfigError, Target
 from xic_extractor.configuration.settings import (
@@ -78,7 +78,7 @@ def apply_targeted_method(
 def load_targeted_method(directory: Path) -> TargetedMethod:
     """Load a complete method, never patch a currently selected method."""
     directory = Path(directory)
-    settings = _read_settings(directory / "settings.csv")
+    settings = read_settings(directory / "settings.csv")
     missing = sorted(set(METHOD_KEYS) - settings.keys())
     extra = sorted(settings.keys() - set(METHOD_KEYS))
     if missing or extra:

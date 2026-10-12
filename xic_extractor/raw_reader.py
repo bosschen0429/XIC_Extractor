@@ -543,7 +543,7 @@ def open_raw(
 
     resolved_dll_dir = dll_dir.resolve()
     try:
-        _ensure_assemblies_loaded(resolved_dll_dir, _import_module)
+        ensure_assemblies_loaded(resolved_dll_dir, _import_module)
         thermo = _thermo or _load_thermo_api(_import_module)
     except Exception as exc:
         raise RawReaderError(
@@ -552,7 +552,7 @@ def open_raw(
     source_binding = (
         _verify_expected_acquisition_source(path, expected_acquisition_source)
         if _expected_path_identity is None
-        else _bind_expected_path_identity(
+        else bind_expected_path_identity(
             path,
             expected_acquisition_source,
             _expected_path_identity,
@@ -699,7 +699,7 @@ def read_sld_injections(path: Path, dll_dir: Path) -> tuple[ScheduledInjection, 
     errors = preflight_raw_reader(dll_dir)
     if errors:
         raise RawReaderError("; ".join(errors))
-    _ensure_assemblies_loaded(dll_dir.resolve(), importlib.import_module)
+    ensure_assemblies_loaded(dll_dir.resolve(), importlib.import_module)
     business = importlib.import_module("ThermoFisher.CommonCore.Data.Business")
     sequence = business.SequenceFileReaderFactory.ReadFile(str(path.resolve()))
     if sequence is None or sequence.IsError or not sequence.IsOpen:
@@ -866,7 +866,7 @@ def _verify_expected_acquisition_source(
         raise RawReaderError(
             "unable to verify the expected acquisition source"
         ) from exc
-    if not os.path.samestat(before, after) or _stat_identity(before) != _stat_identity(
+    if not os.path.samestat(before, after) or stat_identity(before) != stat_identity(
         after
     ):
         raise RawReaderError("RAW source path changed while it was being verified")
@@ -879,11 +879,11 @@ def _verify_expected_acquisition_source(
         )
     return _VerifiedAcquisitionSourceBinding(
         source=expected,
-        path_identity=_stat_identity(after),
+        path_identity=stat_identity(after),
     )
 
 
-def _bind_expected_path_identity(
+def bind_expected_path_identity(
     path: Path,
     expected: AcquisitionSourceIdentity | None,
     expected_path_identity: tuple[int, int, int, int, int],
@@ -901,7 +901,7 @@ def _bind_expected_path_identity(
             "MS-controller-1 adapter"
         )
     try:
-        current = _stat_identity(path.stat())
+        current = stat_identity(path.stat())
     except OSError as exc:
         raise RawReaderError("unable to verify the expected RAW path state") from exc
     if current != expected_path_identity or current[2] != expected.byte_size:
@@ -924,7 +924,7 @@ def _verify_source_path_still_bound(
         return
     if not verify_content:
         try:
-            current_path_identity = _stat_identity(path.stat())
+            current_path_identity = stat_identity(path.stat())
         except OSError as exc:
             raise RawReaderError(
                 "RAW source path changed while the vendor handle was opening"
@@ -952,7 +952,7 @@ def _verify_source_path_still_bound(
         )
 
 
-def _stat_identity(value: os.stat_result) -> tuple[int, int, int, int, int]:
+def stat_identity(value: os.stat_result) -> tuple[int, int, int, int, int]:
     return (
         value.st_dev,
         value.st_ino,
@@ -1010,7 +1010,7 @@ def _check_dotnet_runtime(pythonnet: Any) -> None:
         get_runtime_info()
 
 
-def _ensure_assemblies_loaded(
+def ensure_assemblies_loaded(
     dll_dir: Path, import_module_func: Callable[[str], Any]
 ) -> None:
     global _ASSEMBLIES_LOADED

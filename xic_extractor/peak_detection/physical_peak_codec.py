@@ -287,7 +287,7 @@ def deserialize_physical_peak_evaluation(
         raise ValueError("persisted trace crosses expected trace identity")
 
     evaluation_value = _physical_mapping(root["evaluation"], label="evaluation")
-    evaluation = _physical_evaluation_from_payload(evaluation_value)
+    evaluation = physical_evaluation_from_payload(evaluation_value)
     if evaluation.prepared.trace_content_id != trace_content_id:
         raise ValueError("persisted physical evaluation crosses trace identity")
     if evaluation.prepared.profile_id != profile.profile_id:
@@ -448,7 +448,7 @@ def _integration_payload(integration: IntegrationResult) -> dict[str, object]:
     return payload
 
 
-def _physical_evaluation_from_payload(
+def physical_evaluation_from_payload(
     value: Mapping[str, object],
 ) -> PhysicalPeakEvaluation:
     _require_physical_keys(value, _PERSISTED_EVALUATION_KEYS, label="evaluation")
