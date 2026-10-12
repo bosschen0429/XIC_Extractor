@@ -78,7 +78,17 @@ MS1 candidate coverage spans the sample acquisition interval, including targets
 without MS2. The complete scan population is read once per sample; each tag is
 parsed once by Discovery, with shared parent-MS1 verification and scan-event
 resolution before candidate-local CID-NL assessment.
-Strong method-supported, quantifiable peaks remain counted despite RT drift.
+For named Target identity, own CID-NL support requires a compatible recorded
+scan precursor or vendor monoisotopic reference. A parent-MS1 ion found by
+searching product + configured loss establishes mass/isolation compatibility,
+not which coisolated ion produced the fragment. Such inferred observations
+remain in the method evidence but cannot independently select or identify a
+Target peak. The shared relation owner applies this reference requirement
+consistently during selection and formal support binding; Discovery retains
+its independent-mass candidate scope. Paired-ISTD and accepted Backfill identity
+remain governed by their existing owners, not a new RT gate.
+
+Strong recorded-precursor-supported, quantifiable peaks remain counted despite RT drift.
 RT-prior disagreement and legacy confidence labels alone do not create product
 review actions. Unresolved morphology or overlap concerns can require quality
 review independently of identity. Confidence and reason labels describe source

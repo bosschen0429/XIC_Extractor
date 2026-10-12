@@ -164,8 +164,19 @@ def test_recorded_monoisotopic_reference_requires_isolation_support(
         ((500.001,), 500.5, 1.6, 0.0, 7.8, "compatible", False),
     ],
 )
+@pytest.mark.parametrize(
+    "reference_requirement", ["independent_mass", "recorded_precursor"]
+)
 def test_parent_ms1_measurement_qualifies_inference_without_rewriting_origin(
-    tmp_path, centroids, selected, width, offset, parent_rt, status, supported
+    tmp_path,
+    centroids,
+    selected,
+    width,
+    offset,
+    parent_rt,
+    status,
+    supported,
+    reference_requirement,
 ):
     from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
     from xic_extractor.precursor_evidence import Ms1PrecursorObservation
@@ -193,20 +204,44 @@ def test_parent_ms1_measurement_qualifies_inference_without_rewriting_origin(
         ),
         ms1_precursor_observation=Ms1PrecursorObservation(41, parent_rt, centroids),
     )
-    policy = cid_nl_support_policy()
+    policy = replace(
+        cid_nl_support_policy(), precursor_reference_requirement=reference_requirement
+    )
+    supported = supported and reference_requirement == "independent_mass"
     verdict = evidence.observation.assess_precursor_loss(
         policy.neutral_loss_tolerance_ppm
     )
     assert verdict.status == status
+    peak = cid_nl_peak(fixture, "s1")
     individual, sets = assessment_module.resolve_cid_nl_method_relations(
         processing_owners=fixture.owners,
         sample=fixture.sample("s1"),
         evidence_refs=(evidence,),
-        candidate_peaks=(cid_nl_peak(fixture, "s1"),),
+        candidate_peaks=(peak,),
         policy=policy,
     )
     assert bool(individual) is supported
     assert not sets
+    assessment = mint_cid_nl_method_assessment_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample("s1"),
+        target=fixture.target,
+        detector_invocation_id="retained-precursor-evidence",
+        evaluation_receipt=CidNlEvaluationReceipt(
+            query_rt_min=7.5,
+            query_rt_max=8.5,
+            support_policy=policy,
+            acquisition_supported=True,
+            search_completed=True,
+            scanned_event_count=1,
+            reason_code=None,
+        ),
+        candidate_peaks=(peak,),
+        evidence_refs=(evidence,),
+        individual_support_refs=individual,
+        set_relation_refs=sets,
+    )
+    assert assessment.content.method_result == ("SUPPORT" if supported else "HOLD")
     payload = json.loads(canonical_cid_nl_evidence_bytes(evidence.observation))
     assert payload["precursor_mz_basis"] == "product_plus_neutral_loss"
     assert payload["precursor_mz"] == 500.0

@@ -145,7 +145,7 @@ def evaluate_cid_nl_method_relations(
     set_events: list[int] = []
     for event_index, event in enumerate(event_queries):
         precursor = event.precursor
-        if not precursor.supports_nl or precursor.reference_mz is None:
+        if not policy.accepts_precursor(precursor) or precursor.reference_mz is None:
             continue
         compatible = tuple(
             index
@@ -1043,9 +1043,9 @@ def _validate_upstream_bindings(
     settled_evidence_ids = individual_evidence_ids | set_relation_evidence_ids
     for evidence_content_id, evidence in evidence_by_content_id.items():
         observation = evidence.observation
-        if not observation.assess_precursor_loss(
-            support_policy.neutral_loss_tolerance_ppm
-        ).supports_nl:
+        if not support_policy.accepts_precursor(
+            observation.assess_precursor_loss(support_policy.neutral_loss_tolerance_ppm)
+        ):
             continue
         if (
             _evidence_matches_candidate_universe(
@@ -1103,7 +1103,10 @@ def _evidence_matches_candidate_universe(
     precursor = observation.assess_precursor_loss(
         support_policy.neutral_loss_tolerance_ppm
     )
-    if not precursor.supports_nl or precursor.reference_mz is None:
+    if (
+        not support_policy.accepts_precursor(precursor)
+        or precursor.reference_mz is None
+    ):
         return False
     return any(
         peak.content.integration.rt_left_min <= observation.support_rt_min
@@ -1168,9 +1171,11 @@ def _method_result(
     if set_relation_refs:
         return "HOLD", ("set_level_relation",)
     if not candidate_peaks and any(
-        evidence.observation.assess_precursor_loss(
-            evaluation_receipt.support_policy.neutral_loss_tolerance_ppm
-        ).supports_nl
+        evaluation_receipt.support_policy.accepts_precursor(
+            evidence.observation.assess_precursor_loss(
+                evaluation_receipt.support_policy.neutral_loss_tolerance_ppm
+            )
+        )
         for evidence in evidence_refs
     ):
         return "REJECT", ("qualifying_cid_nl_without_usable_ms1_peak",)

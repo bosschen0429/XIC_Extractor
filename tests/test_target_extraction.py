@@ -532,3 +532,131 @@ def test_targeted_products_use_discovery_seeds_once_per_tag(
             p.precursor_mz_basis == "product_plus_neutral_loss" for p in products
         )
         assert all(p.observed_loss_error_ppm is None for p in products)
+
+
+@pytest.mark.parametrize(
+    ("precursor_offset", "event_rt", "expected_rt", "supported"),
+    [(0.0, 8.0, 8.0, True), (-0.07, 8.0, 2.0, False), (-0.07, 2.0, None, False)],
+)
+def test_target_identity_does_not_promote_coisolated_mass_compatibility(
+    tmp_path, precursor_offset, event_rt, expected_rt, supported
+):
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata, Ms2Window
+    from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+
+    target = replace(_intent_target(2.0), is_istd=False, istd_pair="ISTD")
+    config = _strategy_config(tmp_path)
+    rt = np.linspace(0, 12, 1201)
+    intensity = (
+        10
+        + 800 * np.exp(-(((rt - 2) / 0.12) ** 2))
+        + 1000 * np.exp(-(((rt - 8) / 0.12) ** 2))
+    )
+    scan = Ms2Scan(
+        7,
+        event_rt,
+        target.mz + precursor_offset,
+        np.array([target.mz - target.neutral_loss_da]),
+        np.array([1000.0]),
+        1000.0,
+        Ms2PrecursorMetadata(
+            charge=1,
+            isolation_width_da=1.6,
+            isolation_offset_da=0.0,
+            master_scan_number=6,
+        ),
+    )
+    window = Ms2Window("sample", 0.0, 12.0, (Ms2ScanEvent(scan, None, 7),))
+
+    class Raw:
+        def acquisition_rt_bounds(self):
+            return 0.0, 12.0
+
+        def extract_xic(self, mz, low, high, ppm):
+            return rt, intensity
+
+        def read_ms1_mass_windows(self, requests):
+            return tuple(
+                Ms1PrecursorObservation(6, event_rt - 0.01, (target.mz,))
+                for _ in requests
+            )
+
+    raw = Raw()
+    seeds = target_extraction.prepare_sample_method_seeds(raw, window, [target])
+    results = {}
+    target_extraction.extract_one_target(
+        raw,
+        config,
+        "sample",
+        target,
+        reference_rt=2.0,
+        sample_window=window,
+        method_seeds=seeds["dR"],
+        results=results,
+        diagnostics=[],
+        scoring_context_factory=build_scoring_context_factory(config=config),
+    )
+    result = results[target.label]
+    if expected_rt is not None:
+        assert result.reported_rt == pytest.approx(expected_rt, abs=0.03)
+    assert result.selected_cid_nl_supported is supported
+    assert bool(result.cid_nl_relations.supported_candidate_indexes) is supported
+    # The inferred observation remains inspectable, rather than being erased.
+    assert len(result.cid_nl_products) == 1
+    product = result.cid_nl_products[0]
+    assert product.assess_precursor_loss(target.neutral_loss_da, 20).supports_nl
+    assert product.precursor_mz_basis == (
+        "scan_precursor" if supported else "product_plus_neutral_loss"
+    )
+
+
+def test_targeted_scan_resolution_keeps_recorded_support_over_precise_inference():
+    from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
+    from xic_extractor.discovery.strict_seed_receipts import (
+        resolve_discovery_scan_events,
+    )
+    from xic_extractor.extraction.targeted_peak_selection import (
+        discovery_settings_for_tag,
+    )
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
+    from xic_extractor.precursor_evidence import Ms1PrecursorObservation
+
+    scan = Ms2Scan(
+        7,
+        8.0,
+        500.0,
+        np.array([383.9516, 383.9826]),
+        np.array([11900.0, 12000.0]),
+        12000.0,
+        Ms2PrecursorMetadata(
+            charge=1,
+            isolation_width_da=1.6,
+            isolation_offset_da=0.0,
+            master_scan_number=6,
+        ),
+    )
+    settings = discovery_settings_for_tag("dR")
+    seeds = tuple(
+        replace(
+            seed,
+            ms1_precursor_observation=Ms1PrecursorObservation(
+                6, 7.99, (seed.precursor_mz,)
+            ),
+        )
+        if seed.precursor_mz_basis == "product_plus_neutral_loss"
+        else seed
+        for seed in discovery_seeds_from_scan(
+            scan, raw_file=Path("sample"), settings=settings
+        )
+    )
+    assert len(seeds) == 2
+    (discovery_event,) = resolve_discovery_scan_events(seeds, settings=settings)
+    assert discovery_event.precursor_mz_basis == "product_plus_neutral_loss"
+    for events in (seeds, seeds[::-1]):
+        (target_event,) = resolve_discovery_scan_events(
+            events,
+            settings=settings,
+            precursor_reference_requirement="recorded_precursor",
+        )
+        assert target_event.precursor_mz_basis == "scan_precursor"
+        assert target_event.product_mz == 383.9516

@@ -13,9 +13,11 @@ from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
+from xic_extractor.precursor_evidence import PrecursorReferenceRequirement
 from xic_extractor.settings_schema import TARGETED_STRATEGY_VERSION
 
 TAG_PRESETS = {"dR": "dna_dr", "R": "rna_ribose", "MeR": "rna_mer"}
+TARGETED_PRECURSOR_REFERENCE: PrecursorReferenceRequirement = "recorded_precursor"
 
 
 @dataclass(frozen=True)
@@ -45,6 +47,7 @@ def strategy_receipt() -> dict:
         "strategy_version": TARGETED_STRATEGY_VERSION,
         "candidate_coverage": "complete_acquisition_exact_mass",
         "expected_rt_usage": "identity_reference_not_acquisition_window",
+        "cid_nl_identity_precursor_reference": TARGETED_PRECURSOR_REFERENCE,
         "signal_processing": asdict(DEFAULT_SIGNAL_PROCESSING_PROFILE),
         "cid_nl_recipes": {
             tag: asdict(targeted_tag_profile(tag)) for tag in TAG_PRESETS

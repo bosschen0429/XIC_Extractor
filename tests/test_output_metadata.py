@@ -64,6 +64,7 @@ def test_build_metadata_rows_returns_contract_keys_in_order() -> None:
     assert values["config_hash"] == "abc12345"
     strategy = json.loads(values["targeted_strategy"])
     assert strategy["strategy_version"] == "targeted-cid-nl-v2"
+    assert strategy["cid_nl_identity_precursor_reference"] == "recorded_precursor"
     assert set(strategy["cid_nl_recipes"]) == {"dR", "R", "MeR"}
     assert values["signal_processing_method"] == "gaussian"
     assert values["signal_processing_window_points"] == 21

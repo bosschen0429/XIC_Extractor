@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
+from xic_extractor.configuration.targeted_strategy import TARGETED_PRECURSOR_REFERENCE
 from xic_extractor.evidence.neutral_loss import (
     CandidateMS2Evidence,
     MS2ProductEvidence,
@@ -201,6 +202,7 @@ def assess_targeted_candidate_population(
         policy = DdaCidNlPeakSupportPolicy(
             precursor_tolerance_da=max(target.mz * target.ppm_tol / 1_000_000, 1e-9),
             neutral_loss_tolerance_ppm=target.nl_ppm_max or 20.0,
+            precursor_reference_requirement=TARGETED_PRECURSOR_REFERENCE,
         )
         # The broad acquisition probe may include neighbouring precursor ions;
         # only the declared exact-mass method population enters this assessment.

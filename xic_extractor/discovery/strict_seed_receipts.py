@@ -19,7 +19,10 @@ from xic_extractor.discovery.models import (
 from xic_extractor.discovery.ms2_seeds import discovery_seeds_from_scan
 from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
-from xic_extractor.precursor_evidence import RECORDED_PRECURSOR_BASES
+from xic_extractor.precursor_evidence import (
+    RECORDED_PRECURSOR_BASES,
+    PrecursorReferenceRequirement,
+)
 
 _WRITER_ROUNDING_ABS_TOL = 5e-6
 _WRITER_ROUNDING_REL_TOL = 5e-6
@@ -121,12 +124,14 @@ def resolve_discovery_scan_events(
     *,
     settings: DiscoverySettings,
     preserve_configured_losses: bool = False,
+    precursor_reference_requirement: PrecursorReferenceRequirement = "independent_mass",
 ) -> tuple[DiscoverySeed, ...]:
     """Resolve one evidence event per scan/loss after all parent facts are read.
 
     Receipt replay retains alternatives. The provider prefers independent NL
-    compatibility, then measured loss accuracy and intensity. An unresolved
-    event remains available to the method owner without gaining strict support.
+    compatibility at the requested reference level, then loss accuracy and
+    intensity. An unresolved event remains available to the method owner
+    without gaining strict support.
     The caller supplies one owner-bound acquisition batch.
     """
     tag_precedence = {
@@ -137,7 +142,7 @@ def resolve_discovery_scan_events(
         assessment = seed.assess_precursor_loss(settings.nl_tolerance_ppm)
         error = assessment.observed_loss_error_ppm
         return (
-            not assessment.supports_nl,
+            not assessment.supports_reference(precursor_reference_requirement),
             abs(error) if error is not None else float("inf"),
             -seed.product_intensity,
             tag_precedence.get(seed.neutral_loss_tag, len(tag_precedence)),

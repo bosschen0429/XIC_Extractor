@@ -13,6 +13,7 @@ from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
+from xic_extractor.configuration.targeted_strategy import TARGETED_PRECURSOR_REFERENCE
 from xic_extractor.evidence.neutral_loss import (
     CandidateMS2Evidence,
 )
@@ -463,6 +464,7 @@ def prepare_sample_method_seeds(
                 ).precursor_mz_tolerance_ppm,
             ),
             settings=discovery_settings_for_tag(tag),
+            precursor_reference_requirement=TARGETED_PRECURSOR_REFERENCE,
         )
         for tag, seeds in prepared.items()
     }
