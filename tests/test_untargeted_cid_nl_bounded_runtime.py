@@ -595,6 +595,9 @@ def test_indexed_finalization_orders_children_by_canonical_subject(
     from types import SimpleNamespace
 
     from xic_extractor.untargeted_execution import execution as bounded_owner
+    from xic_extractor.untargeted_execution import (
+        partition_composition as composition_owner,
+    )
 
     plan, _reference = _plan(tmp_path, monkeypatch)
     indexed_plan = replace(
@@ -643,12 +646,12 @@ def test_indexed_finalization_orders_children_by_canonical_subject(
         return request
 
     monkeypatch.setattr(
-        bounded_owner,
+        composition_owner,
         "finalize_alignment_result",
         capture_finalization,
     )
     monkeypatch.setattr(
-        bounded_owner,
+        composition_owner,
         "UntargetBatchApplicationResultRequest",
         lambda **values: SimpleNamespace(**values),
     )
@@ -2162,6 +2165,20 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
             alignment_config=config,
             pool=pool,
         )
+    response_sizes = []
+
+    def reordered_response(worker):
+        def execute(request):
+            response = worker(request)
+            response_sizes.append(len(response.job_outcomes))
+            return replace(
+                response, job_outcomes=tuple(reversed(response.job_outcomes))
+            )
+
+        return execute
+
+    for entry in ("_execute_sample_initial_worker", "_execute_sample_backfill_worker"):
+        monkeypatch.setattr(runtime, entry, reordered_response(getattr(runtime, entry)))
     with LocalProcessMessages(max_workers=2) as pool:
         process = runtime.execute_partition(
             batch.jobs,
@@ -2188,7 +2205,50 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
         for result in process.sample_results
     )
     assert len({sample_id for sample_id, _, _ in serial_results}) == 2
+    assert any(size > 1 for size in response_sizes)
     assert process_results == serial_results
+
+
+@pytest.mark.parametrize("corruption", ["missing", "duplicate"])
+def test_process_outcome_must_cover_the_exact_work_units(
+    tmp_path, monkeypatch, corruption
+):
+    from xic_extractor.execution.workers import WorkerAdmissionPool
+    from xic_extractor.untargeted_execution.partition import execution as runtime
+
+    class LocalProcessMessages(WorkerAdmissionPool):
+        @property
+        def backend(self):
+            return "process"
+
+    plan, _ = _plan(tmp_path, monkeypatch, sample_count=1)
+    batch = materialize_untargeted_partition(plan, plan.subject_batch)
+    initial = runtime._execute_sample_initial_worker
+
+    def corrupt_response(request):
+        response = initial(request)
+        outcomes = response.job_outcomes
+        assert len(outcomes) > 1
+        return replace(
+            response,
+            job_outcomes=(
+                outcomes[:-1]
+                if corruption == "missing"
+                else (outcomes[0], *outcomes[:-1])
+            ),
+        )
+
+    monkeypatch.setattr(runtime, "_execute_sample_initial_worker", corrupt_response)
+    with LocalProcessMessages(max_workers=1) as pool:
+        result = runtime.execute_partition(
+            batch.jobs,
+            partition_key="crossed-worker-population",
+            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            pool=pool,
+        )
+
+    assert not result.succeeded
+    assert result.sample_results == ()
 
 
 def test_sparse_partition_materializes_only_samples_with_request_candidates(
@@ -2564,6 +2624,9 @@ def _run_for_spool(tmp_path, monkeypatch, *, retain):
         )
         for child in result.application_result.children
     )
+    alias = replace(result)
+    result.close()
+    alias.close()
     result.close()
     return spools[0], child_ids
 
@@ -2617,6 +2680,63 @@ def test_retained_spool_keeps_its_partitions_and_publishes_a_readable_index(
         )
         == child_ids[0]
     )
+
+
+@pytest.mark.parametrize("retain", (False, True))
+def test_result_store_close_failure_still_releases_adopted_discovery_inputs(
+    tmp_path, monkeypatch, retain
+):
+    from contextlib import ExitStack
+
+    from xic_extractor.execution.result_store import StreamedResultStore
+    from xic_extractor.untargeted_execution.execution import execute_untargeted_plan
+
+    plan, _ = _plan(tmp_path, monkeypatch)
+    result = execute_untargeted_plan(
+        plan,
+        output_dir=tmp_path / "runtime",
+        alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "runtime.json", "cleanup"),
+        max_partition_jobs=len(plan.context.samples),
+        retain_partition_spool=retain,
+    )
+    marker = tmp_path / "discovery-resource"
+    marker.write_text("owned", encoding="utf-8")
+
+    class DiscoveryInputs:
+        def retained_physical_records(self):
+            return ()
+
+        def take_result_resources(self):
+            resources = ExitStack()
+            resources.callback(marker.unlink)
+            return resources
+
+    result = result.with_discovery_inputs(DiscoveryInputs())
+    alias = replace(result)
+    operation = "preserve_results" if retain else "cleanup"
+    original_close = getattr(StreamedResultStore, operation)
+    calls = []
+
+    def fail_close(store):
+        calls.append(store)
+        raise OSError("result store close failed")
+
+    monkeypatch.setattr(StreamedResultStore, operation, fail_close)
+    try:
+        with pytest.raises(OSError, match="result store close failed"):
+            result.close()
+        assert not marker.exists()
+        alias.close()
+        result.close()
+        assert len(calls) == 1
+    finally:
+        # Release the deliberately failed store without retrying workflow close.
+        if retain:
+            StreamedResultStore.cleanup(calls[0])
+        else:
+            original_close(calls[0])
 
 
 def _run_for_cache(tmp_path, monkeypatch, *, retain, tag, shared=None):

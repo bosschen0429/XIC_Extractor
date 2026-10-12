@@ -86,6 +86,13 @@ method products, the search receipt and the relation answer. Production binds
 that same answer to exact sample/event/peak provenance without another relation
 decision. Only the selected candidate enters the fixed Target row; the method
 assessment still records its complete candidate and event universe.
+
+`extraction.targeted_peak_selection` owns this ordered candidate assessment,
+including exact-precursor membership, support-to-candidate mapping and the
+selected method index. Acquisition supplies retained arrays and an acquired
+MS2 window, then consumes the completed result instead of separately assembling
+those coupled facts. The owner evaluates and ranks in memory; it does not read RAW.
+
 Sample applicability
 controls inclusion, not permission to replace the selected candidate. A
 hypothesis is an evidence representation, not a competing selection owner.

@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import xic_extractor.extraction.target_extraction as target_extraction
+import xic_extractor.extraction.targeted_peak_selection as targeted_peak_selection
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
@@ -196,13 +197,13 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
     monkeypatch.setattr(
         target_extraction, "enumerate_physical_segment_universe", _enumerate
     )
-    select_targeted_peak = target_extraction.select_targeted_peak
+    select_targeted_peak = targeted_peak_selection.select_targeted_peak
 
     def _handoff(**kwargs):
         captured["handoff_inputs"] = kwargs
         return select_targeted_peak(**kwargs)
 
-    monkeypatch.setattr(target_extraction, "select_targeted_peak", _handoff)
+    monkeypatch.setattr(targeted_peak_selection, "select_targeted_peak", _handoff)
 
     acquired_rt = np.linspace(8.0, 8.8, 41)
     acquired_intensity = 10.0 + 100.0 * np.exp(-((acquired_rt - 8.4) ** 2) / 0.002)
@@ -232,7 +233,7 @@ def test_extract_one_target_uses_shared_physical_candidate_and_owner_apex(
         )
 
     monkeypatch.setattr(
-        target_extraction,
+        targeted_peak_selection,
         "build_extraction_result",
         _fake_build_extraction_result,
     )

@@ -1,4 +1,4 @@
-"""Owner-local publication boundary for finalized Targeted results."""
+"""Render and atomically publish the completed Targeted owner's result view."""
 
 from __future__ import annotations
 
@@ -8,47 +8,21 @@ import shutil
 import tempfile
 from collections.abc import Callable, Mapping
 from contextlib import ExitStack, contextmanager
-from dataclasses import replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterator, cast
+from typing import TYPE_CHECKING, Any, Iterator
 
-from xic_extractor.alignment.result.scientific_alignment import ObservedSearchSubject
 from xic_extractor.applications.targeted.application import (
-    FinalizedTargetProductionResult,
     TargetedApplicationRequest,
+    TargetedOutputBoundaryError,
     TargetedPublication,
 )
-from xic_extractor.applications.targeted.production_workflow import (
-    acquisition_snapshot_for_publication,
-)
-from xic_extractor.configuration.models import Target
-from xic_extractor.extraction.result_models import (
-    ExtractionResult,
-    FileResult,
-    RunOutput,
-)
-from xic_extractor.extraction.targeted_product_projection import (
-    build_targeted_product_projection,
-)
+from xic_extractor.extraction.result_models import RunOutput
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
-from xic_extractor.output.messages import DiagnosticRecord
-from xic_extractor.output.targeted_product_model import (
-    TargetedProductContext,
-    TargetedProductProjection,
-)
-from xic_extractor.peak_detection.models import PeakResult
-from xic_extractor.peak_detection.peak_hypothesis_identity import (
-    HYPOTHESIS_METHOD_DDA_CID_NL,
-)
 
 if TYPE_CHECKING:
     from xic_extractor.applications.targeted.production_workflow import (
         CompletedTargetedProductionWorkflow,
     )
-
-
-class TargetedOutputBoundaryError(RuntimeError):
-    """Raised before a complete finalized output set can be published."""
 
 
 class _TargetedPublicationCancelled(Exception):
@@ -78,20 +52,7 @@ def publish_targeted_outputs(
         raise TargetedOutputBoundaryError(
             "publication requires an exact attempt-bound completed workflow"
         )
-    prepared = completed_workflow.prepared
-    finalized_results = completed_workflow.finalized_results
-    acquisition_file_ids = tuple(
-        id(file_result) for file_result in acquisition_evidence.file_results
-    )
-    if acquisition_file_ids != prepared.acquisition_file_ids:
-        raise TargetedOutputBoundaryError(
-            "prepared Targeted workflow crossed the acquisition evidence"
-        )
-    try:
-        acquisition_snapshot = acquisition_snapshot_for_publication(prepared)
-    except RuntimeError as exc:
-        raise TargetedOutputBoundaryError(str(exc)) from exc
-    render_view = _build_render_view(finalized_results, acquisition_snapshot)
+    render_view = completed_workflow.publication_output(request, acquisition_evidence)
     output_dir = request.config.output_csv.parent
     output_dir.mkdir(parents=True, exist_ok=True)
     stage_root = Path(tempfile.mkdtemp(prefix=".xic-targeted-publish-", dir=output_dir))
@@ -129,292 +90,6 @@ def publish_targeted_outputs(
     finally:
         if not preserve_stage_root:
             shutil.rmtree(stage_root, ignore_errors=True)
-
-
-def _build_render_view(
-    finalized_results: tuple[FinalizedTargetProductionResult, ...],
-    acquisition_evidence: RunOutput,
-) -> RunOutput:
-    if not finalized_results:
-        raise TargetedOutputBoundaryError(
-            "finalized Targeted result population is empty"
-        )
-    expected_request = finalized_results[0].processing_request
-    expected_samples = finalized_results[0].canonical_samples
-    expected_sample_ids = tuple(
-        sample.identity.sample_identity_id for sample in expected_samples
-    )
-    samples_by_raw_stem = {
-        sample.metadata.raw_stem: sample for sample in expected_samples
-    }
-    if len(samples_by_raw_stem) != len(expected_samples):
-        raise TargetedOutputBoundaryError(
-            "finalized Targeted sample population contains duplicate RAW identities"
-        )
-
-    decisions: dict[tuple[str, str], Any] = {}
-    target_ids_by_label: dict[str, str] = {}
-    targets_by_label: dict[str, Target] = {}
-    backfills = {}
-    backfill_diagnostics = []
-    for result in finalized_results:
-        if (
-            result.processing_request != expected_request
-            or tuple(
-                sample.identity.sample_identity_id
-                for sample in result.canonical_samples
-            )
-            != expected_sample_ids
-        ):
-            raise TargetedOutputBoundaryError(
-                "finalized Targeted results crossed request or sample identities"
-            )
-        target = result.completed_projection.row_binding.target.definition
-        target_label = target.target.label
-        target_id = target.target_definition_id
-        if target_label in target_ids_by_label:
-            raise TargetedOutputBoundaryError(
-                "finalized Targeted result population contains duplicate Targets"
-            )
-        target_ids_by_label[target_label] = target_id
-        targets_by_label[target_label] = target.target
-        for backfill in result.scientific_core.targeted_backfill_decisions:
-            sample_id = backfill.target_cell.content.canonical_sample_identity_id
-            backfills[(sample_id, target_id)] = backfill
-        for projection_decision in result.completed_projection.decisions:
-            subject = cast(Any, projection_decision.subject)
-            sample_id = subject.sample.identity.sample_identity_id
-            if sample_id not in expected_sample_ids:
-                raise TargetedOutputBoundaryError(
-                    "finalized Targeted decision crossed the canonical "
-                    "sample population"
-                )
-            key = (sample_id, target_id)
-            if key in decisions:
-                raise TargetedOutputBoundaryError(
-                    "finalized Targeted decision population contains duplicates"
-                )
-            decisions[key] = projection_decision
-
-    files: list[FileResult] = []
-    consumed: set[tuple[str, str]] = set()
-    consumed_sample_ids: set[str] = set()
-    for file_result in acquisition_evidence.file_results:
-        sample = samples_by_raw_stem.get(file_result.sample_name)
-        if sample is None:
-            raise TargetedOutputBoundaryError(
-                "acquisition evidence does not resolve to a canonical sample identity"
-            )
-        sample_id = sample.identity.sample_identity_id
-        if sample_id in consumed_sample_ids:
-            raise TargetedOutputBoundaryError(
-                "acquisition evidence contains duplicate canonical samples"
-            )
-        consumed_sample_ids.add(sample_id)
-        rendered: dict[str, ExtractionResult] = {}
-        for target_label, extraction in file_result.results.items():
-            if extraction.target_label != target_label:
-                raise TargetedOutputBoundaryError(
-                    "acquisition evidence crossed its declared Target identity"
-                )
-            resolved_target_id = target_ids_by_label.get(target_label)
-            if resolved_target_id is None:
-                raise TargetedOutputBoundaryError(
-                    "acquisition evidence does not resolve to a finalized "
-                    "Target identity"
-                )
-            key = (sample_id, resolved_target_id)
-            render_decision = decisions.get(key)
-            if render_decision is None:
-                raise TargetedOutputBoundaryError(
-                    "finalized Targeted decisions do not cover acquisition evidence"
-                )
-            consumed.add(key)
-            backfill_decision = backfills.get(key)
-            if backfill_decision is not None:
-                backfill_diagnostics.append(
-                    DiagnosticRecord(
-                        file_result.sample_name,
-                        target_label,
-                        "BACKFILL_ACCEPTED"
-                        if backfill_decision.matched_candidate is not None
-                        else "BACKFILL_HOLD",
-                        "Cross-sample confirmed peak localization: "
-                        + "; ".join(backfill_decision.reason_codes)
-                        + "; direct CID/NL remains HOLD; "
-                        + (
-                            "ISTD identity confirmed by Backfill."
-                            if targets_by_label[target_label].is_istd
-                            and backfill_decision.matched_candidate is not None
-                            else "confirmed=False."
-                        ),
-                    )
-                )
-            no_write_reason = (
-                ""
-                if render_decision.variant == "numeric"
-                else getattr(
-                    render_decision,
-                    "no_write_reason",
-                    f"finalized_{render_decision.variant}",
-                )
-            )
-            rendered[target_label] = _finalized_extraction_result(
-                extraction,
-                target=targets_by_label[target_label],
-                value=render_decision.value,
-                no_write_reason=no_write_reason,
-                evidence=getattr(render_decision, "evidence", None),
-                backfill_supported=(
-                    backfill_decision is not None
-                    and backfill_decision.matched_candidate is not None
-                ),
-            )
-        files.append(replace(file_result, results=rendered))
-    if consumed != set(decisions):
-        raise TargetedOutputBoundaryError(
-            "finalized Targeted decisions crossed the acquisition sample population"
-        )
-    return RunOutput(
-        file_results=files,
-        diagnostics=[*acquisition_evidence.diagnostics, *backfill_diagnostics],
-    )
-
-
-def _finalized_extraction_result(
-    extraction: ExtractionResult,
-    *,
-    target: Target,
-    value: float | None,
-    no_write_reason: str,
-    evidence: object,
-    backfill_supported: bool = False,
-) -> ExtractionResult:
-    projection = _finalized_product_projection(
-        extraction.targeted_product_projection,
-        target=target,
-        evidence=evidence,
-        value=value,
-        no_write_reason=no_write_reason,
-        backfill_supported=backfill_supported,
-    )
-    if not no_write_reason:
-        if (
-            value is None
-            or type(evidence) is not ObservedSearchSubject
-            or _hypothesis_area(evidence.hypothesis) != value
-        ):
-            raise TargetedOutputBoundaryError(
-                "finalized Targeted value does not match its public result model"
-            )
-        integration = evidence.hypothesis.integration
-        physical_evaluation = evidence.hypothesis.peak_observation_refs[
-            0
-        ].physical_evaluation
-        rendered = replace(
-            extraction,
-            peak_result=replace(
-                extraction.peak_result,
-                peak=PeakResult(
-                    rt=integration.rt_apex_min,
-                    intensity=integration.height_raw,
-                    intensity_smoothed=integration.height_smoothed,
-                    area=value,
-                    peak_start=integration.rt_left_min,
-                    peak_end=integration.rt_right_min,
-                ),
-                candidates=(),
-                candidate_scores=(),
-            ),
-            selected_hypothesis=None,
-            selection_decision=None,
-            physical_evaluation=physical_evaluation,
-            selected_cid_nl_candidate_index=next(
-                (
-                    index
-                    for index, evaluation in enumerate(
-                        extraction.candidate_physical_evaluations
-                    )
-                    if evaluation is physical_evaluation
-                ),
-                None,
-            ),
-            targeted_product_projection=projection,
-        )
-        if rendered.reported_peak_area != value:
-            raise TargetedOutputBoundaryError(
-                "finalized Targeted hypothesis did not produce its numeric value"
-            )
-        return rendered
-    return replace(
-        extraction,
-        peak_result=replace(
-            extraction.peak_result,
-            peak=None,
-            candidates=(),
-            candidate_scores=(),
-            confidence=None,
-            reason=no_write_reason,
-        ),
-        selected_hypothesis=None,
-        selection_decision=None,
-        targeted_product_projection=projection,
-    )
-
-
-def _hypothesis_area(hypothesis: Any) -> float:
-    integration = hypothesis.integration
-    if integration.area_ms1_morphology is not None:
-        return integration.area_ms1_morphology
-    return integration.area_raw_counts_seconds
-
-
-def _finalized_product_projection(
-    projection: TargetedProductProjection | None,
-    *,
-    target: Target,
-    evidence: object,
-    value: float | None,
-    no_write_reason: str,
-    backfill_supported: bool = False,
-) -> TargetedProductProjection | None:
-    if projection is None:
-        return None
-    if no_write_reason:
-        return replace(
-            projection,
-            product_state="not_counted",
-            counted_detection=False,
-            review_state="review_required",
-            projection_reason=no_write_reason,
-        )
-    if type(evidence) is not ObservedSearchSubject:
-        raise TargetedOutputBoundaryError(
-            "numeric projection lost its finalized evidence"
-        )
-    return build_targeted_product_projection(
-        TargetedProductContext(
-            role="ISTD" if target.is_istd else "Analyte",
-            expected_present=target.is_istd,
-            target_label=target.label,
-            istd_pair=target.istd_pair,
-            neutral_loss_required=target.neutral_loss_da is not None,
-        ),
-        rt=evidence.hypothesis.integration.rt_apex_min,
-        area=value,
-        confidence=projection.legacy_evidence.get("confidence", ""),
-        nl_status=projection.legacy_evidence.get("nl_status", ""),
-        cid_nl_supported=(
-            evidence.hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
-        ),
-        backfill_supported=backfill_supported,
-        support_reasons=projection.support_reasons,
-        review_reasons=projection.review_reasons,
-        conflict_reasons=projection.conflict_reasons,
-        not_counted_reasons=projection.not_counted_reasons,
-        exclusion_reasons=projection.exclusion_reasons,
-        legacy_evidence=projection.legacy_evidence,
-    )
 
 
 def _reject_collisions(paths: Any) -> None:

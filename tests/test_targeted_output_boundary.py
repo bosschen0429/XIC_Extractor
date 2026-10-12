@@ -65,10 +65,21 @@ def _commit_staged_output_in_process(
 
 
 @pytest.mark.parametrize(
-    "with_nl,with_signal", [(True, True), (False, True), (True, False)]
+    "with_nl,with_signal,reverse_candidates",
+    [
+        (True, True, False),
+        (True, True, True),
+        (False, True, False),
+        (False, True, True),
+        (True, False, False),
+    ],
 )
 def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
-    tmp_path: Path, monkeypatch, with_nl: bool, with_signal: bool
+    tmp_path: Path,
+    monkeypatch,
+    with_nl: bool,
+    with_signal: bool,
+    reverse_candidates: bool,
 ) -> None:
     from contextlib import nullcontext
 
@@ -77,6 +88,7 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
         pipeline,
         target_extraction,
         targeted_cid_nl_assessment,
+        targeted_peak_selection,
     )
     from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
     from xic_extractor.peak_detection import cid_nl_method_assessment
@@ -143,6 +155,19 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
                     )
 
     monkeypatch.setattr(pipeline, "preflight_raw_reader", lambda _path: [])
+    physical_candidates = target_extraction.physical_candidates_result
+
+    def ordered_candidates(*args, **kwargs):
+        result = physical_candidates(*args, **kwargs)
+        return (
+            replace(result, candidates=tuple(reversed(result.candidates)))
+            if reverse_candidates
+            else result
+        )
+
+    monkeypatch.setattr(
+        target_extraction, "physical_candidates_result", ordered_candidates
+    )
     monkeypatch.setattr(
         target_extraction,
         "open_raw",
@@ -158,7 +183,7 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
         return answer
 
     monkeypatch.setattr(
-        target_extraction, "evaluate_cid_nl_method_relations", record_relations
+        targeted_peak_selection, "evaluate_cid_nl_method_relations", record_relations
     )
     monkeypatch.setattr(
         cid_nl_method_assessment, "evaluate_cid_nl_method_relations", record_relations
@@ -222,7 +247,17 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
         )
         if with_signal:
             assert result.reported_rt == pytest.approx(1.4, abs=0.01)
+            # The selected method index belongs to this exact retained population,
+            # even when its order differs from the peak's RT/ranking order.
+            index = result.selected_cid_nl_candidate_index
+            assert index is not None
+            assert index == (1 if reverse_candidates else 0)
+            assert (
+                result.candidate_physical_evaluations[index]
+                is result.physical_evaluation
+            )
         else:
+            assert result.selected_cid_nl_candidate_index is None
             assert result.reported_peak_area is None
             assert result.reported_rt is None
     workbook = load_workbook(workbook_path, read_only=True, data_only=True)
@@ -1405,6 +1440,47 @@ def test_publisher_uses_frozen_acquisition_snapshot(tmp_path: Path) -> None:
     assert publication.output.diagnostics == []
 
 
+def test_publication_replay_isolated_from_mutated_returned_view(tmp_path: Path) -> None:
+    config, target, output = production_case(
+        tmp_path,
+        sample_names=("SampleA", "SampleB"),
+        sample_peak_scales={"SampleA": 1.0, "SampleB": 2.0},
+    )
+    expected_areas = {
+        file_result.sample_name: file_result.results[target.label].reported_peak_area
+        for file_result in output.file_results
+    }
+    request = build_targeted_application_request(
+        config,
+        [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
+        injection_order={"SampleA": 1, "SampleB": 2},
+    )
+    completed = execute_targeted_production_workflow(request, output)
+    publication = publish_targeted_outputs(request, completed, output)
+    publication.output.file_results[0].results.clear()
+    publication.output.file_results.reverse()
+    publication.output.diagnostics.append(
+        DiagnosticRecord("SampleA", target.label, "FILE_ERROR", "mutated")
+    )
+
+    replay = publish_targeted_outputs(
+        replace(request, replace_existing_outputs=True), completed, output
+    )
+
+    assert [row.sample_name for row in replay.output.file_results] == [
+        "SampleA",
+        "SampleB",
+    ]
+    assert {
+        row.sample_name: row.results[target.label].reported_peak_area
+        for row in replay.output.file_results
+    } == expected_areas
+    assert expected_areas["SampleA"] != expected_areas["SampleB"]
+    assert replay.output.diagnostics == []
+    assert replay.paths == publication.paths
+
+
 def test_publisher_rejects_mutated_owner_snapshot(tmp_path: Path) -> None:
     config, target, output = production_case(tmp_path)
     request = build_targeted_application_request(
@@ -1414,7 +1490,7 @@ def test_publisher_rejects_mutated_owner_snapshot(tmp_path: Path) -> None:
         injection_order={"SampleA": 1},
     )
     completed = execute_targeted_production_workflow(request, output)
-    completed.prepared.acquisition_snapshot.file_results[0].group = "mutated"
+    completed._publication_snapshot.file_results[0].group = "mutated"
 
     with pytest.raises(TargetedOutputBoundaryError, match="snapshot was mutated"):
         publish_targeted_outputs(request, completed, output)
@@ -1573,7 +1649,7 @@ def test_cancellation_during_input_fingerprint_skips_acquisition_and_finalizatio
     )
     monkeypatch.setattr(
         "xic_extractor.applications.targeted.production_workflow."
-        "complete_prepared_targeted_production_workflow",
+        "execute_targeted_production_workflow",
         lambda *_args: pytest.fail("cancelled run invoked finalization"),
     )
 
@@ -1697,17 +1773,15 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
     # RAW enumeration order is not canonical sample-identity order.
     from xic_extractor.applications.targeted import production_workflow
 
-    complete_prepared = (
-        production_workflow.complete_prepared_targeted_production_workflow
-    )
+    original_execute = production_workflow._execute_target
     initial_counts = []
 
-    def complete_in_reverse_identity_order(request, prepared):
-        prepared = replace(
-            prepared,
+    def execute_reverse_identity(context, *args, **kwargs):
+        context = replace(
+            context,
             results_by_sample=tuple(
                 sorted(
-                    prepared.results_by_sample,
+                    context.results_by_sample,
                     key=lambda item: item[0].identity.sample_identity_id,
                     reverse=True,
                 )
@@ -1716,15 +1790,13 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         if istd_backfill:
             initial_counts.extend(
                 file.results["Analyte"].targeted_product_projection.counted_detection
-                for sample, file in prepared.results_by_sample
+                for sample, file in context.results_by_sample
                 if sample.metadata.raw_stem == "SampleC"
             )
-        return complete_prepared(request, prepared)
+        return original_execute(context, *args, **kwargs)
 
     monkeypatch.setattr(
-        production_workflow,
-        "complete_prepared_targeted_production_workflow",
-        complete_in_reverse_identity_order,
+        production_workflow, "_execute_target", execute_reverse_identity
     )
     workbook_path = tmp_path / "backfill.xlsx"
     execution = TargetedApplicationService(pipeline.run_pipeline).execute_application(

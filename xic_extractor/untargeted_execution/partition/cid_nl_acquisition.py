@@ -25,6 +25,7 @@ from xic_extractor.acquisition_contract import (
     TraceCoordinateKind,
     mint_trace_acquisition_capability,
 )
+from xic_extractor.alignment.backfill.cid_nl_planning import CidNlBackfillQuestion
 from xic_extractor.alignment.cid_nl_inputs import (
     CID_NL_ALIGNMENT_CONFIG,
     UntargetedCidNlAssessmentInput,
@@ -253,6 +254,29 @@ class UntargetedCidNlBackfillTarget:
     query_rt_basis: str = "group_center"
     query_rt_tolerance_sec: float | None = None
     query_rt_reliable: bool = True
+
+    @classmethod
+    def from_question(
+        cls, question: CidNlBackfillQuestion
+    ) -> UntargetedCidNlBackfillTarget:
+        """Adapt the complete scientific question to the acquisition contract."""
+        group = question.group
+        assert group.group_center_rt is not None
+        localized = question.localization
+        return cls(
+            group_hypothesis_id=group.group_hypothesis_id,
+            method_subject=question.method_subject,
+            physical_mz=group.family_center_mz,
+            center_rt=group.group_center_rt,
+            query_rt=None if localized is None else localized.location.query_rt,
+            query_rt_basis=(
+                "group_center" if localized is None else localized.location.basis
+            ),
+            query_rt_tolerance_sec=(
+                None if localized is None else localized.apex_tolerance_sec
+            ),
+            query_rt_reliable=True if localized is None else localized.reliable,
+        )
 
     @property
     def sample_query_rt(self) -> float:

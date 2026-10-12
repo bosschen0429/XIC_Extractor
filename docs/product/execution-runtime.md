@@ -66,6 +66,12 @@ worker budget. Sample RAW handles still close at their acquisition boundaries.
 Process pools drain and close before terminal acknowledgement, including on
 failure or cancellation; a cleanup failure prevents successful publication.
 
+Sample-phase workers return work-unit-keyed outcomes rather than parallel
+result, observation, and error arrays. Thread and process execution use the
+same outcome application in `untargeted_execution.partition.workers`; it binds
+each job's facts and first error together with the shared acquisition/cleanup
+facts. The coordinator owns scheduling, cancellation, and terminal settlement.
+
 The tissue validation plan exposes both parallel and Alignment worker budgets.
 Changing from 8RAW to 85RAW does not choose a different execution profile.
 

@@ -168,10 +168,6 @@ def _measurement_summary(
     )
 
 
-def _is_number(value: object) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
-
-
 def _exclusive_stage_summary(
     records: tuple[TimingRecordView, ...],
     exclusive_elapsed: tuple[float | None, ...],

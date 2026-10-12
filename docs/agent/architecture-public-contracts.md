@@ -31,9 +31,15 @@ schema versions, and command flags. Do not copy those inventories here.
   no extraction imports. Alignment owns the pure finalized Matrix projection;
   `output/alignment/` owns artifact selection, formatting, streaming or
   materialization, atomic writing and fingerprint receipts. The Untargeted
-  execution adapter never writes. Application publication owns cancellation, the
-  completed result's private stores and explanation lifetime through writing;
-  GUI and CLI receive durable published outputs only.
+  execution adapter never writes. Formal Alignment completion binds the candidate
+  views, Matrix m/z lookup, config and completed ISTD provenance before handoff;
+  publication does not reconstruct them from independent caller inputs. Low-level
+  runtime results remain available to explicit-input diagnostic consumers.
+  The completed result owns private-store retention and release, shared across
+  its immutable views; prepared Discovery resources transfer to that result.
+  Application publication owns cancellation and explanation lifetime through
+  writing and closes the result on every exit. Acquisition worker/cache lifetime
+  remains separate. GUI and CLI receive durable published outputs only.
   `tests/test_docs_architecture_census.py` pins these execution boundaries;
   `xic_extractor.alignment.owner_build_route_receipt` and
   `tests/test_untargeted_application.py` own the route receipt labels.

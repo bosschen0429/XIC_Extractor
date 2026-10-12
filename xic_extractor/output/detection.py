@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 
 class MissingTargetedProductProjectionError(ValueError):
     """Raised when a product consumer lacks targeted projection authority."""
@@ -34,31 +32,6 @@ def is_accepted_row_detection(
     return _is_accepted_confidence_and_nl(
         confidence=row.get("Confidence", ""),
         nl=row.get("NL", ""),
-        count_no_ms2_as_detected=count_no_ms2_as_detected,
-    )
-
-
-def is_accepted_result_detection(
-    result: Any,
-    count_no_ms2_as_detected: bool,
-    *,
-    require_projection: bool = False,
-) -> bool:
-    projection = getattr(result, "targeted_product_projection", None)
-    if projection is not None:
-        return bool(projection.counted_detection)
-    if require_projection:
-        raise MissingTargetedProductProjectionError(
-            "TargetedProductProjection is required for targeted product detection"
-        )
-    if result.reported_rt is None:
-        return False
-    peak = result.peak_result.peak
-    if peak is None or peak.area <= 0:
-        return False
-    return _is_accepted_confidence_and_nl(
-        confidence=result.confidence,
-        nl=result.nl_token or "",
         count_no_ms2_as_detected=count_no_ms2_as_detected,
     )
 

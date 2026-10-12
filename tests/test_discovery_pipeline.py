@@ -1142,9 +1142,7 @@ def test_parallel_batch_failure_preserves_completed_worker_diagnostics(
                 result = DiscoverySampleProcessResult(
                     sample_index=1,
                     sample_stem="sample-1",
-                    outputs=cast(Any, None),
-                    receipt=cast(Any, None),
-                    index_row={},
+                    publication=cast(Any, None),
                     timing_records=(
                         TimingRecord(
                             stage="discover.worker",

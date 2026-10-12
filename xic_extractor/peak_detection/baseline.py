@@ -347,24 +347,6 @@ def _median_scan_period_seconds(rt_values: np.ndarray) -> float | None:
     return scan_period
 
 
-def _pre_peak_mad(
-    intensity_values: np.ndarray,
-    left_index: int,
-    *,
-    window_size: int = 10,
-) -> float | None:
-    window_left = max(0, left_index - window_size)
-    window = intensity_values[window_left:left_index]
-    window = window[np.isfinite(window)]
-    if len(window) < 3:
-        return None
-    median = float(np.median(window))
-    mad = float(np.median(np.abs(window - median)))
-    if not np.isfinite(mad):
-        return None
-    return mad
-
-
 def _safe_ratio(value: float, reference: float) -> float | None:
     if reference <= 0:
         return None

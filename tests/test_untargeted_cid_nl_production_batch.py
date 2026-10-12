@@ -1563,6 +1563,28 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             ),
         ),
     )
+    publication = completed.publication_inputs
+    assert publication.alignment_config == AlignmentConfig(anchor_min_seed_events=1)
+    assert publication.known_istd_reference_provenance is None
+    assert dict(publication.ms1_apex_mz_by_candidate) == {
+        candidate.candidate_id: candidate.ms1_apex_mz
+        for sample_candidates in candidates.values()
+        for candidate in sample_candidates
+        if candidate.ms1_apex_mz is not None
+    }
+    assert {
+        sample: tuple(candidate.candidate_id for candidate in sample_candidates)
+        for sample, sample_candidates in publication.candidates_by_sample.items()
+    } == {
+        sample: tuple(candidate.candidate_id for candidate in sample_candidates)
+        for sample, sample_candidates in candidates.items()
+    }
+    assert completed.processing_request_id == (
+        completed.application_result.processing_request.processing_request_id
+    )
+    assert completed.processing_attempt_id == (
+        completed.application_result.processing_attempt.processing_attempt_id
+    )
     composed_universes = [item[1:] for item in hypothesis_universe_compositions]
     assert len(composed_universes) == len(set(composed_universes)), (
         {
@@ -3233,7 +3255,24 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
         candidate_receipts=receipts,
     )
     built = object()
-    completed = object()
+    application_result = object()
+
+    class MockCompleted:
+        def __init__(self):
+            self.application_result = application_result
+
+        def bind_publication_inputs(self, **kwargs):
+            self.publication_inputs = SimpleNamespace(**kwargs)
+            return self
+
+        def with_discovery_inputs(self, prepared):
+            self.discovery_inputs = prepared
+            return self
+
+        def close(self):
+            self.discovery_inputs.close()
+
+    completed = MockCompleted()
     calls: list[tuple[str, object]] = []
 
     def build(**kwargs: object) -> object:
@@ -3277,7 +3316,12 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
         ),
     )
 
-    assert result is completed
+    assert result.application_result is application_result
+    assert result.discovery_inputs is not None
+    result.close()
+    assert result.publication_inputs.candidates_by_sample == {"S1": candidates}
+    assert result.publication_inputs.alignment_config == AlignmentConfig()
+    assert result.publication_inputs.known_istd_reference is None
     assert [name for name, _kwargs in calls] == ["build", "execute"]
     build_kwargs = calls[0][1]
     assert isinstance(build_kwargs, dict)

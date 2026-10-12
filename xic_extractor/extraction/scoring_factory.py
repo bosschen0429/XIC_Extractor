@@ -1,5 +1,4 @@
 from collections.abc import Callable, Mapping
-from typing import Any
 
 import numpy as np
 
@@ -240,19 +239,6 @@ def build_scoring_context_factory(
         return builder
 
     return _factory
-
-
-def make_scoring_context_factory(
-    *,
-    config: ExtractionConfig,
-    injection_order: dict[str, int],
-    istd_rts_by_sample: dict[str, dict[str, float]],
-) -> Callable[..., Any]:
-    return build_scoring_context_factory(
-        config=config,
-        injection_order=injection_order,
-        istd_rts_by_sample=istd_rts_by_sample,
-    )
 
 
 def selected_shape_metrics(

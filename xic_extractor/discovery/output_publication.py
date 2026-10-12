@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import csv
 from contextlib import suppress
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from xic_extractor.discovery.batch_contract import (
@@ -10,6 +10,7 @@ from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_RECEIPT_COLUMNS,
     DiscoveryCandidateUniverseReceipt,
     discovery_receipt_index_fields,
+    mint_discovery_candidate_universe_receipt,
 )
 from xic_extractor.discovery.csv_writer import (
     format_discovery_csv_value,
@@ -34,6 +35,7 @@ from xic_extractor.discovery.physical_fact_sidecar import (
     stage_discovery_physical_fact_sidecar as write_discovery_physical_fact_sidecar,
 )
 from xic_extractor.execution.timing import TimingRecorder
+from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.processing_run_spec import (
     ProcessingAcquisitionInput,
     ProcessingRunSpec,
@@ -54,7 +56,67 @@ _BATCH_INDEX_COLUMNS = (
 )
 
 
-def persisted_discovery_candidates(
+@dataclass(frozen=True)
+class PublishedDiscoverySample:
+    """Committed sample artifacts and their bound receipt and batch-index facts."""
+
+    outputs: DiscoveryRunOutputs
+    receipt: DiscoveryCandidateUniverseReceipt
+    index_row: dict[str, str]
+
+
+def publish_discovery_batch_sample(
+    raw_path: Path,
+    candidates: tuple[DiscoveryCandidate, ...],
+    *,
+    output_dir: Path,
+    acquisition_source: AcquisitionSourceIdentity,
+    timing_recorder: TimingRecorder,
+    run_spec: ProcessingRunSpec | None = None,
+    acquisition_input: ProcessingAcquisitionInput | None = None,
+    physical_work_manifest: tuple[DiscoveryPhysicalWorkItem, ...] = (),
+    physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...] = (),
+    physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...] = (),
+) -> PublishedDiscoverySample:
+    """Publish one sample and bind all batch handoff facts to its persisted rows.
+
+    Both serial and process execution consume this complete handoff. The receipt
+    contract owns minting after the writer commits the sample's bytes; no batch
+    index row is returned when publication or receipt construction fails.
+    """
+
+    candidates = _persisted_discovery_candidates(candidates)
+    outputs = _write_persisted_candidate_outputs(
+        output_dir / raw_path.stem,
+        candidates,
+        timing_recorder=timing_recorder,
+        sample_stem=raw_path.stem,
+        run_spec=run_spec,
+        acquisition_input=acquisition_input,
+        physical_work_manifest=physical_work_manifest,
+        physical_evaluations=physical_evaluations,
+        physical_bindings=physical_bindings,
+    )
+    receipt = mint_discovery_candidate_universe_receipt(
+        sample_stem=raw_path.stem,
+        acquisition_source=acquisition_source,
+        candidate_csv=outputs.candidates_csv,
+        candidates=candidates,
+    )
+    return PublishedDiscoverySample(
+        outputs=outputs,
+        receipt=receipt,
+        index_row=_batch_index_row(
+            raw_path=raw_path,
+            outputs=outputs,
+            candidates=candidates,
+            receipt=receipt,
+            index_parent=output_dir,
+        ),
+    )
+
+
+def _persisted_discovery_candidates(
     candidates: tuple[DiscoveryCandidate, ...],
 ) -> tuple[DiscoveryCandidate, ...]:
     """Keep measured peaks for review independently of NL search eligibility."""
@@ -122,7 +184,32 @@ def write_dual_csvs(
     physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...] = (),
     physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...] = (),
 ) -> DiscoveryRunOutputs:
-    candidates = persisted_discovery_candidates(candidates)
+    """Publish standalone Discovery outputs without a batch receipt or index."""
+    return _write_persisted_candidate_outputs(
+        output_dir,
+        _persisted_discovery_candidates(candidates),
+        timing_recorder=timing_recorder,
+        sample_stem=sample_stem,
+        run_spec=run_spec,
+        acquisition_input=acquisition_input,
+        physical_work_manifest=physical_work_manifest,
+        physical_evaluations=physical_evaluations,
+        physical_bindings=physical_bindings,
+    )
+
+
+def _write_persisted_candidate_outputs(
+    output_dir: Path,
+    candidates: tuple[DiscoveryCandidate, ...],
+    *,
+    timing_recorder: TimingRecorder,
+    sample_stem: str,
+    run_spec: ProcessingRunSpec | None,
+    acquisition_input: ProcessingAcquisitionInput | None,
+    physical_work_manifest: tuple[DiscoveryPhysicalWorkItem, ...],
+    physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...],
+    physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...],
+) -> DiscoveryRunOutputs:
     persisted_ids = {candidate.candidate_id for candidate in candidates}
     physical_bindings = order_physical_bindings_for_candidate_csv(
         tuple(
@@ -274,7 +361,7 @@ def _discovery_output_backup_path(path: Path) -> Path:
     return path.with_name(f"{path.name}.bak")
 
 
-def batch_index_row(
+def _batch_index_row(
     *,
     raw_path: Path,
     outputs: DiscoveryRunOutputs,
