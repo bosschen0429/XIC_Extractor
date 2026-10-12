@@ -1663,6 +1663,7 @@ def test_cancellation_during_input_fingerprint_skips_acquisition_and_finalizatio
     assert execution.published_paths == ()
 
 
+@pytest.mark.parametrize("sample_review", [False, True])
 @pytest.mark.parametrize(
     "missing_pair, istd_backfill, hint_window",
     [
@@ -1678,6 +1679,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
     missing_pair: bool,
     istd_backfill: bool,
     hint_window: bool,
+    sample_review: bool,
 ) -> None:
     from contextlib import nullcontext
 
@@ -1787,6 +1789,22 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
                 )
             ),
         )
+        if sample_review:
+            for sample, file in context.results_by_sample:
+                if sample.metadata.raw_stem == "SampleC":
+                    extraction = file.results["Analyte"]
+                    projection = extraction.targeted_product_projection
+                    file.results["Analyte"] = replace(
+                        extraction,
+                        targeted_product_projection=replace(
+                            projection,
+                            review_reasons=tuple(
+                                dict.fromkeys(
+                                    (*projection.review_reasons, "sample_review")
+                                )
+                            ),
+                        ),
+                    )
         if istd_backfill:
             initial_counts.extend(
                 file.results["Analyte"].targeted_product_projection.counted_detection
@@ -1867,10 +1885,33 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
     if not missing_pair:
         assert row["RT"] == pytest.approx(1.49 if istd_backfill else 1.9, abs=0.005)
         assert row["Area"] > 0
-        if counted and hint_window:
-            # The truncated first capture's shape concern stays reviewable.
+        candidate = accepted[0].matched_candidate.peak_observation.content.integration
+        assert row["PeakStart"] == pytest.approx(candidate.rt_left_min, abs=5e-5)
+        assert row["PeakEnd"] == pytest.approx(candidate.rt_right_min, abs=5e-5)
+        rendered = next(
+            f
+            for f in execution.active_output.file_results
+            if f.sample_name == "SampleC"
+        ).results["Analyte"]
+        assert rendered.quality_flags == ()
+        assert rendered.reported_peak_start == candidate.rt_left_min
+        assert rendered.reported_peak_end == candidate.rt_right_min
+        assert rendered.reported_peak_area == candidate.area_ms1_morphology
+        from xic_inspector.sources.targeted_workbook import TargetedWorkbookSource
+
+        saved = next(
+            r
+            for r in TargetedWorkbookSource(workbook_path).records
+            if r["SampleName"] == "SampleC" and r["Target"] == "Analyte"
+        )
+        assert saved["Review"] == row["Review"]
+        assert saved["Review Reason"] == row["Review Reason"]
+        if counted and sample_review:
             assert row["Review"] == "Check"
-            assert "峰形" in str(row["Review Reason"])
+            assert row["Review Reason"] == "證據需檢查"
+            assert (
+                "sample_review" in rendered.targeted_product_projection.review_reasons
+            )
         elif counted:
             assert row["Review"] is None
             assert row["Review Reason"] is None

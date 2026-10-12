@@ -3,6 +3,7 @@ from pathlib import Path
 from xml.etree import ElementTree
 from zipfile import ZipFile
 
+import pytest
 from openpyxl import load_workbook
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
@@ -412,3 +413,55 @@ def _run_output(*, with_diagnostics: bool) -> RunOutput:
         file_results=[FileResult(sample_name="SampleA", results={"WithNL": result})],
         diagnostics=diagnostics,
     )
+
+
+@pytest.mark.parametrize(
+    "review_reason, expected",
+    [
+        ("trace_morphology_review", "峰形需檢查"),
+        ("physical_shoulder_overlap", "肩峰重疊需檢查"),
+        ("sample_review", "證據需檢查"),
+    ],
+)
+def test_counted_backfill_review_names_quality_not_identity(
+    review_reason: str,
+    expected: str,
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.output.review_queue_model import _review_why
+
+    row = {
+        "Product State": "detected_flagged",
+        "Counted Detection": "TRUE",
+        "Projection Support Reasons": "cross_sample_backfill_identity",
+        "Projection Review Reasons": review_reason,
+    }
+    assert _review_why("PROJECTION_FLAGGED", row, "BACKFILL_ACCEPTED") == expected
+
+    from xic_extractor.output.excel_pipeline import write_excel_from_run_output
+    from xic_inspector.sources.targeted_workbook import TargetedWorkbookSource
+
+    output = _run_output(with_diagnostics=False)
+    file = output.file_results[0]
+    result = file.results["WithNL"]
+    file.results["WithNL"] = replace(
+        result,
+        targeted_product_projection=replace(
+            result.targeted_product_projection,
+            support_reasons=("cross_sample_backfill_identity",),
+            review_reasons=(review_reason,),
+        ),
+    )
+    config = _config(tmp_path)
+    path = write_excel_from_run_output(
+        config,
+        [_target("WithNL")],
+        output,
+        output_path=tmp_path / "final-peak-review.xlsx",
+    )
+    saved = TargetedWorkbookSource(path).records[0]
+    assert saved["Review"] == "Check"
+    assert saved["Review Reason"] == expected
+    assert saved["Counted Detection"] == "TRUE"
+    assert saved["RT"] == result.reported_rt
+    assert saved["Area"] == result.reported_peak_area
