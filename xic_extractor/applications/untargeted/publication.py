@@ -1,21 +1,17 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
 from xic_extractor.diagnostics.alignment_explanation_projection import (
     PreparedAlignmentExplanation,
     prepare_alignment_explanation,
 )
-from xic_extractor.discovery.input_source import DiscoveryInputSource
-from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment.artifact_write_receipts import (
@@ -68,10 +64,7 @@ def publish_untargeted_outputs(
     *,
     output_dir: Path,
     outputs: AlignmentRunOutputs,
-    candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
-    alignment_config: AlignmentConfig,
     policy: UntargetedPublicationPolicy,
-    known_istd_reference: KnownIstdReference | None,
     metadata: dict[str, str],
     timing_recorder: TimingRecorder,
     should_cancel: Callable[[], bool] | None,
@@ -82,6 +75,7 @@ def publish_untargeted_outputs(
         if hasattr(completed, "close"):
             output_stack.callback(completed.close)
         _ensure_output_publication_not_cancelled(should_cancel)
+        inputs = completed.publication_inputs
         matrix_path = outputs.matrix_tsv
         write_explanation = (
             policy.emit_cid_nl_explanation
@@ -100,41 +94,23 @@ def publish_untargeted_outputs(
                     prepare_alignment_explanation(
                         output_dir / EXPLANATION_ARTIFACT_NAME,
                         completed=completed,
-                        candidates_by_sample=(
-                            candidates_by_sample.feature_view()
-                            if isinstance(candidates_by_sample, DiscoveryInputSource)
-                            else candidates_by_sample
-                        ),
-                        alignment_config=alignment_config,
-                        known_istd_reference_provenance=(
-                            None
-                            if known_istd_reference is None
-                            else known_istd_reference.explanation_provenance
-                        ),
+                        candidates_by_sample=inputs.candidates_by_sample,
+                        alignment_config=inputs.alignment_config,
+                        known_istd_reference_provenance=inputs.known_istd_reference_provenance,
                         progress_callback=timing_recorder.heartbeat_event,
                         full_audit=policy.explanation_full_audit,
                         curve_mz_ranges=policy.explanation_curve_mz_ranges,
                     )
                 )
-        ms1_apex_mz_by_candidate = (
-            candidates_by_sample.ms1_apex_mz_by_candidate
-            if isinstance(candidates_by_sample, DiscoveryInputSource)
-            else {
-                candidate.candidate_id: candidate.ms1_apex_mz
-                for candidates in candidates_by_sample.values()
-                for candidate in candidates
-                if candidate.ms1_apex_mz is not None
-            }
-        )
         writer_row_count, artifact_fingerprint_batch = (
             write_completed_untargeted_outputs_atomic(
                 outputs,
                 completed.application_result,
                 metadata=metadata,
-                alignment_config=alignment_config,
+                alignment_config=inputs.alignment_config,
                 timing_recorder=timing_recorder,
                 consume_child=_explanation_sink(explanation),
-                ms1_apex_mz_by_candidate=ms1_apex_mz_by_candidate,
+                ms1_apex_mz_by_candidate=inputs.ms1_apex_mz_by_candidate,
                 before_write=lambda: _ensure_output_publication_not_cancelled(
                     should_cancel
                 ),
@@ -165,15 +141,12 @@ def publish_untargeted_outputs(
             with outputs.matrix_tsv.open("rb") as handle:
                 matrix_sha256 = hashlib.file_digest(handle, "sha256").hexdigest()
 
-            app = getattr(completed, "application_result", None)
-            req = getattr(app, "processing_request", None)
-            att = getattr(app, "processing_attempt", None)
             evidence = EvidenceLocator(
                 report_path=db_path,
                 matrix_path=outputs.matrix_tsv,
                 matrix_sha256=matrix_sha256,
-                processing_request_id=getattr(req, "processing_request_id", ""),
-                processing_attempt_id=getattr(att, "processing_attempt_id", ""),
+                processing_request_id=completed.processing_request_id,
+                processing_attempt_id=completed.processing_attempt_id,
                 schema_version="alignment_explanation"
                 if policy.explanation_full_audit
                 else "alignment_explanation_review",

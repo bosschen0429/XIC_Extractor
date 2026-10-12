@@ -57,6 +57,20 @@ from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.xic_models import XICTrace
 
 
+def _bind_mock_publication_inputs(completed, kwargs):
+    candidates = kwargs["candidates_by_sample"]
+    reference = kwargs.get("known_istd_reference")
+    completed.publication_inputs = SimpleNamespace(
+        candidates_by_sample=candidates.feature_view(),
+        ms1_apex_mz_by_candidate=candidates.ms1_apex_mz_by_candidate,
+        alignment_config=kwargs["alignment_config"],
+        known_istd_reference_provenance=(
+            None if reference is None else reference.explanation_provenance
+        ),
+    )
+    return completed
+
+
 @pytest.mark.parametrize("writer_fails", (False, True))
 @pytest.mark.parametrize("with_reference", (False, True))
 @pytest.mark.parametrize("raw_workers", (1, 2))
@@ -72,6 +86,8 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
 
     class MockCompleted:
         application_result = object()
+        processing_request_id = "request-test"
+        processing_attempt_id = "attempt-test"
 
         def close(self) -> None:
             closed.append(True)
@@ -115,7 +131,7 @@ def test_pure_cid_nl_wrapper_reports_retained_route_and_typed_handoff(
 
     def complete(**kwargs: object) -> object:
         captured_retained.update(kwargs)
-        return completed
+        return _bind_mock_publication_inputs(completed, kwargs)
 
     monkeypatch.setattr(
         application_module,
@@ -249,7 +265,7 @@ def test_pure_cid_nl_cancellation_after_completion_skips_publication(
     monkeypatch.setattr(
         application_module,
         "complete_untargeted_alignment",
-        lambda **_kwargs: completed,
+        lambda **kwargs: _bind_mock_publication_inputs(completed, kwargs),
     )
     monkeypatch.setattr(
         output_owner,
@@ -296,7 +312,7 @@ def test_pure_cid_nl_cancellation_during_projection_skips_publication(
     monkeypatch.setattr(
         application_module,
         "complete_untargeted_alignment",
-        lambda **_kwargs: completed,
+        lambda **kwargs: _bind_mock_publication_inputs(completed, kwargs),
     )
 
     def project(value: object, **_kwargs: object) -> object:
@@ -461,7 +477,7 @@ def test_pure_cid_nl_projection_failure_publishes_no_owned_outputs(
     monkeypatch.setattr(
         application_module,
         "complete_untargeted_alignment",
-        lambda **_kwargs: completed,
+        lambda **kwargs: _bind_mock_publication_inputs(completed, kwargs),
     )
 
     def reject_projection(value: object, **_kwargs: object) -> object:
@@ -549,6 +565,9 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
     )
     assert len(completed.application_result.children) == 3
     candidates = plan.context.candidates_by_sample
+    completed = completed.bind_publication_inputs(
+        candidates_by_sample=candidates, alignment_config=config
+    )
     output_dir = tmp_path / "out"
     output_dir.mkdir()
     matrix_path = output_dir / "alignment_matrix.tsv"
@@ -677,6 +696,14 @@ def test_pipeline_streams_partition_children_once_and_cleans_up(
                 assert result.evidence is None
             else:
                 assert result.evidence.report_path == report_path
+                assert (
+                    result.evidence.processing_request_id
+                    == completed.processing_request_id
+                )
+                assert (
+                    result.evidence.processing_attempt_id
+                    == completed.processing_attempt_id
+                )
                 assert rows(report_path) == rows(reference)
                 assert read_alignment_explanation(
                     report_path
@@ -900,7 +927,9 @@ def test_pure_cid_nl_targets_csv_integration(
     monkeypatch.setattr(
         application_module,
         "complete_untargeted_alignment",
-        lambda **kwargs: captured.update(kwargs) or completed,
+        lambda **kwargs: (
+            captured.update(kwargs) or _bind_mock_publication_inputs(completed, kwargs)
+        ),
     )
     monkeypatch.setattr(
         output_owner,

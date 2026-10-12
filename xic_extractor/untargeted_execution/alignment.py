@@ -503,6 +503,15 @@ def complete_untargeted_alignment(
                 max_partition_jobs=max_partition_jobs,
             )
 
+        try:
+            completed = completed.bind_publication_inputs(
+                candidates_by_sample=candidates_by_sample,
+                alignment_config=alignment_config,
+                known_istd_reference=known_istd_reference,
+            )
+        except BaseException:
+            completed.close()
+            raise
         if physical_sources:
             chunks = tuple(
                 (stem, indices[start : start + 64])
