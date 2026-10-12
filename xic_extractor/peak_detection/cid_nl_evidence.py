@@ -24,7 +24,6 @@ from xic_extractor.precursor_evidence import (
     PrecursorLossAssessment,
     PrecursorMzBasis,
     assess_precursor_loss,
-    isolated_precursor_mz,
     precursor_inference_bounds,
     precursor_isolation_membership,
     supports_direct_nl,
@@ -107,17 +106,6 @@ class CidNlEvidenceObservation:
         )
 
     @property
-    def reference_product_mz(self) -> float:
-        """The product in the frame of ``precursor_mz``, for peak-level loss checks.
-
-        An isotopologue selection keeps its ¹³C on the measured product.
-        """
-        return self.product_mz - (
-            isolated_precursor_mz(self.precursor_mz_basis, self.precursor_mz)
-            - self.precursor_mz
-        )
-
-    @property
     def supports_direct_nl(self) -> bool:
         return supports_direct_nl(
             self.precursor_mz_basis,
@@ -192,20 +180,6 @@ class CidNlEvidenceObservation:
             ):
                 raise CidNlEvidenceContractError(
                     "monoisotopic evidence requires its recorded precursor"
-                )
-            if self.precursor_inference_tolerance_da is not None:
-                raise CidNlEvidenceContractError(
-                    "direct evidence cannot declare precursor inference tolerance"
-                )
-        elif self.precursor_mz_basis == "scan_isotopologue":
-            if not math.isclose(
-                isolated_precursor_mz(self.precursor_mz_basis, self.precursor_mz),
-                self.scan_precursor_mz,
-                rel_tol=1e-12,
-                abs_tol=1e-9,
-            ):
-                raise CidNlEvidenceContractError(
-                    "isotopologue evidence must reference its recorded selection"
                 )
             if self.precursor_inference_tolerance_da is not None:
                 raise CidNlEvidenceContractError(
@@ -292,11 +266,7 @@ class CidNlEvidenceObservation:
         if self.product_intensity <= 0.0:
             raise CidNlEvidenceContractError("product_intensity must be positive")
 
-        # The loss is measured from the ion actually isolated for fragmentation.
-        precursor_product_loss = (
-            isolated_precursor_mz(self.precursor_mz_basis, self.precursor_mz)
-            - self.product_mz
-        )
+        precursor_product_loss = self.precursor_mz - self.product_mz
         if not math.isclose(
             self.observed_neutral_loss_da,
             precursor_product_loss,
@@ -304,7 +274,7 @@ class CidNlEvidenceObservation:
             abs_tol=1e-12,
         ):
             raise CidNlEvidenceContractError(
-                "observed_neutral_loss_da must equal isolated precursor - product_mz"
+                "observed_neutral_loss_da must equal precursor_mz - product_mz"
             )
         expected_error_ppm = (
             abs(precursor_product_loss - self.configured_neutral_loss_da)
@@ -446,9 +416,7 @@ def canonical_cid_nl_evidence_bytes(
         "precursor_mz": observation.precursor_mz,
         "precursor_mz_basis": observation.precursor_mz_basis,
         "precursor_isolation_membership": precursor_isolation_membership(
-            isolated_precursor_mz(
-                observation.precursor_mz_basis, observation.precursor_mz
-            ),
+            observation.precursor_mz,
             observation.scan_precursor_mz,
             observation.precursor_metadata,
         ),

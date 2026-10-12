@@ -10,7 +10,6 @@ from xic_extractor.evidence.neutral_loss import (
     check_nl,
     find_nl_anchor_rt,
 )
-from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 from xic_extractor.raw_reader import Ms2Scan, Ms2ScanEvent
 
 PRECURSOR_MZ = 258.0969
@@ -180,15 +179,11 @@ def test_check_nl_returns_fail_with_best_ppm_when_product_is_only_diagnostic() -
 
 
 def test_targeted_check_accepts_loss_error_inside_ion_window() -> None:
-    raw = _FakeRaw(
-        [
-            _scan_event(
-                precursor_mz=PRECURSOR_MZ,
-                masses=[_product_for_loss_ppm(PRECURSOR_MZ, 40.0)],
-                intensities=[100.0],
-            )
-        ]
-    )
+    raw = _FakeRaw([_scan_event(
+        precursor_mz=PRECURSOR_MZ,
+        masses=[_product_for_loss_ppm(PRECURSOR_MZ, 40.0)],
+        intensities=[100.0],
+    )])
 
     result = _check(raw)
 
@@ -976,7 +971,9 @@ def _candidate_evidence(
 
 
 def _window(raw: "_FakeRaw", rt_min: float, rt_max: float):
-    return acquire_ms2_window(raw, sample_key="fixture", rt_min=rt_min, rt_max=rt_max)
+    return acquire_ms2_window(
+        raw, sample_key="fixture", rt_min=rt_min, rt_max=rt_max
+    )
 
 
 def _mass_at_ppm(mass: float, ppm: float) -> float:
@@ -1112,105 +1109,12 @@ def test_targeted_monoisotopic_evidence_uses_recorded_precursor_and_counts_scan_
         assert evidence.strict_nl_scan_count == 0
         assert evidence.best_product_evidence is None
         return
-    # Both widths support the NL. With 2.4 Da the monoisotopic ion was isolated;
-    # with 1.6 Da only the selected ¹³C M+1 was, and its fragment pair
-    # (184.113 and 185.116) shows it is the target's own isotopologue.
-    assert anchor == 8.1
-    # Referenced to the selected M+1, this scan's loss is 15 ppm off: a warning.
-    assert result.status == ("OK" if supported else "WARN")
+    assert anchor == (8.1 if supported else None)
+    assert result.status == ("OK" if supported else "NL_FAIL")
     assert evidence.trigger_scan_count == 1
-    assert evidence.strict_nl_scan_count == 1
+    assert evidence.strict_nl_scan_count == int(supported)
     product = evidence.best_product_evidence
+    assert product.precursor_mz == 300.1615
     assert product.scan_precursor_mz == event.scan.precursor_mz
+    assert product.precursor_mz_basis == "scan_monoisotopic"
     assert product.precursor_metadata == metadata
-    if supported:
-        assert product.precursor_mz == 300.1615
-        assert product.precursor_mz_basis == "scan_monoisotopic"
-    else:
-        assert product.precursor_mz == pytest.approx(301.16497802734 - 1.0033548)
-        assert product.precursor_mz_basis == "scan_isotopologue"
-
-
-C13 = 1.0033548
-M_PLUS_1 = PRECURSOR_MZ + C13
-
-
-def _isolated_event(
-    *, precursor_mz: float, masses: list[float], rt: float = 8.5, scan_number: int = 1
-) -> Ms2ScanEvent:
-    """A real DDA scan isolates 1.6 Da around its recorded precursor."""
-    intensities = [1000.0 - 50.0 * index for index in range(len(masses))]
-    return Ms2ScanEvent(
-        scan=Ms2Scan(
-            scan_number=scan_number,
-            rt=rt,
-            precursor_mz=precursor_mz,
-            masses=np.asarray(masses, dtype=float),
-            intensities=np.asarray(intensities, dtype=float),
-            base_peak=intensities[0],
-            precursor_metadata=Ms2PrecursorMetadata(
-                isolation_width_da=1.6, isolation_offset_da=0.0
-            ),
-        ),
-        parse_error=None,
-        scan_number=scan_number,
-    )
-
-
-def test_m_plus_1_selection_with_its_fragment_pair_supports_the_target_nl() -> None:
-    # DDA isolated the ¹³C M+1; the monoisotopic ion lies outside the window.
-    # The ¹³C either stays on the product (+1.0034) or leaves with the loss.
-    raw = _FakeRaw(
-        [
-            _isolated_event(
-                precursor_mz=M_PLUS_1,
-                masses=[EXPECTED_PRODUCT_MZ + C13, EXPECTED_PRODUCT_MZ],
-            )
-        ]
-    )
-
-    result = _check(raw)
-
-    assert result.status == "OK"
-    [evidence] = result.product_evidence
-    assert evidence.precursor_mz_basis == "scan_isotopologue"
-    assert evidence.precursor_mz == pytest.approx(PRECURSOR_MZ, abs=1e-9)
-    assert evidence.scan_precursor_mz == pytest.approx(M_PLUS_1)
-    # The method assessment sees the monoisotopic target, isolated as its M+1.
-    precursor = evidence.assess_precursor_loss(NEUTRAL_LOSS_DA, 20.0)
-    assert (precursor.status, precursor.isolation_membership) == (
-        "compatible",
-        "inside_nominal",
-    )
-    assert precursor.reference_mz == pytest.approx(PRECURSOR_MZ, abs=1e-9)
-
-
-def test_m_plus_1_selection_needs_the_pair_and_the_exact_isotope_shift() -> None:
-    for precursor_mz, masses in (
-        # Without the unshifted sibling, the ion need not be the target's.
-        (M_PLUS_1, [EXPECTED_PRODUCT_MZ + C13]),
-        # 100 ppm off the ¹³C M+1 is another ion.
-        (
-            _mass_at_ppm(M_PLUS_1, 100.0),
-            [EXPECTED_PRODUCT_MZ + C13, EXPECTED_PRODUCT_MZ],
-        ),
-    ):
-        raw = _FakeRaw([_isolated_event(precursor_mz=precursor_mz, masses=masses)])
-        assert _check(raw).status == "NO_MS2"
-
-
-def test_anchor_follows_m_plus_1_scans_on_the_peak_not_a_weak_tail_scan() -> None:
-    tail = _scan_event(
-        precursor_mz=PRECURSOR_MZ,
-        rt=9.2,
-        masses=[EXPECTED_PRODUCT_MZ],
-        intensities=[50.0],
-    )
-    apex = _isolated_event(
-        precursor_mz=M_PLUS_1,
-        masses=[EXPECTED_PRODUCT_MZ + C13, EXPECTED_PRODUCT_MZ],
-        rt=8.6,
-        scan_number=2,
-    )
-
-    assert _anchor(_FakeRaw([tail, apex])) == pytest.approx(8.6)

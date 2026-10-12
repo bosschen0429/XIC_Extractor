@@ -7,23 +7,11 @@ from typing import Literal
 from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata, Ms2Scan
 
-RecordedPrecursorMzBasis = Literal[
-    "scan_precursor", "scan_monoisotopic", "scan_isotopologue"
-]
+RecordedPrecursorMzBasis = Literal["scan_precursor", "scan_monoisotopic"]
 PrecursorMzBasis = Literal[
-    "scan_precursor",
-    "scan_monoisotopic",
-    "scan_isotopologue",
-    "product_plus_neutral_loss",
+    "scan_precursor", "scan_monoisotopic", "product_plus_neutral_loss"
 ]
-RECORDED_PRECURSOR_BASES = frozenset(
-    {"scan_precursor", "scan_monoisotopic", "scan_isotopologue"}
-)
-# ``scan_isotopologue``: the scan selected the ¹³C M+1 ion of the precursor and
-# recorded it; ``precursor_mz`` is that measurement in the monoisotopic frame.
-C13_ISOTOPE_SHIFT_DA = 1.0033548
-# Both the recorded value and the isotopologue are measured selections.
-_MEASURED_SELECTION_BASES = frozenset({"scan_precursor", "scan_isotopologue"})
+RECORDED_PRECURSOR_BASES = frozenset({"scan_precursor", "scan_monoisotopic"})
 IsolationMembership = Literal["inside_nominal", "outside_nominal", "unknown"]
 
 
@@ -102,12 +90,10 @@ def assess_precursor_loss(
         observed_loss_error_ppm = (
             abs(observed_loss_da - neutral_loss_da) / neutral_loss_da * 1e6
         )
-    membership = precursor_isolation_membership(
-        isolated_precursor_mz(basis, precursor_mz), selected_mz, metadata
-    )
+    membership = precursor_isolation_membership(precursor_mz, selected_mz, metadata)
     if membership == "outside_nominal":
         status = "outside_nominal_isolation"
-    elif membership == "unknown" and basis not in _MEASURED_SELECTION_BASES:
+    elif membership == "unknown" and basis != "scan_precursor":
         status = "isolation_unavailable"
     elif not neutral_loss_match(
         precursor_mz,
@@ -146,13 +132,6 @@ def recorded_precursor_references(
     return (selected, (mono, "scan_monoisotopic"))
 
 
-def isolated_precursor_mz(basis: PrecursorMzBasis, precursor_mz: float) -> float:
-    """The ion the quadrupole actually transmitted for this precursor reference."""
-    if basis == "scan_isotopologue":
-        return precursor_mz + C13_ISOTOPE_SHIFT_DA
-    return precursor_mz
-
-
 def precursor_isolation_membership(
     precursor_mz: float,
     selected_mz: float | None,
@@ -187,11 +166,9 @@ def supports_direct_nl(
     """
     if basis not in RECORDED_PRECURSOR_BASES:
         return False
-    membership = precursor_isolation_membership(
-        isolated_precursor_mz(basis, precursor_mz), selected_mz, metadata
-    )
+    membership = precursor_isolation_membership(precursor_mz, selected_mz, metadata)
     return membership == "inside_nominal" or (
-        basis in _MEASURED_SELECTION_BASES and membership == "unknown"
+        basis == "scan_precursor" and membership == "unknown"
     )
 
 

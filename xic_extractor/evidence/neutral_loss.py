@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from typing import Literal
 
 import numpy as np
@@ -14,7 +14,6 @@ from xic_extractor.ms2_trace_evidence import (
     summarize_ms2_trace,
 )
 from xic_extractor.precursor_evidence import (
-    C13_ISOTOPE_SHIFT_DA,
     PrecursorLossAssessment,
     RecordedPrecursorMzBasis,
     assess_precursor_loss,
@@ -241,13 +240,8 @@ def find_nl_anchor_rt(
     for event in window.events:
         if event.parse_error is not None or event.scan is None:
             continue
-        if not _selects_target(
-            event.scan,
-            precursor_mz,
-            maximum_radius_da=ms2_precursor_tol_da,
-            tolerance_ppm=nl_ppm_max,
-            neutral_loss_da=neutral_loss_da,
-            min_intensity_ratio=nl_min_intensity_ratio,
+        if not scan_has_precursor_candidate(
+            event.scan, precursor_mz, ms2_precursor_tol_da, nl_ppm_max
         ):
             continue
         evidence = _best_product_evidence(
@@ -305,13 +299,8 @@ def check_nl(
             continue
 
         valid_count += 1
-        if not _selects_target(
-            event.scan,
-            precursor_mz,
-            maximum_radius_da=ms2_precursor_tol_da,
-            tolerance_ppm=nl_ppm_max,
-            neutral_loss_da=neutral_loss_da,
-            min_intensity_ratio=nl_min_intensity_ratio,
+        if not scan_has_precursor_candidate(
+            event.scan, precursor_mz, ms2_precursor_tol_da, nl_ppm_max
         ):
             continue
 
@@ -394,13 +383,8 @@ def collect_candidate_ms2_evidence(
         if event.parse_error is not None or event.scan is None:
             continue
         scan = event.scan
-        if not _selects_target(
-            scan,
-            precursor_mz,
-            maximum_radius_da=ms2_precursor_tol_da,
-            tolerance_ppm=nl_ppm_max,
-            neutral_loss_da=neutral_loss_da,
-            min_intensity_ratio=nl_min_intensity_ratio,
+        if not scan_has_precursor_candidate(
+            scan, precursor_mz, ms2_precursor_tol_da, nl_ppm_max
         ):
             continue
 
@@ -643,125 +627,7 @@ def _best_product_evidence(
     ).evidence
 
 
-def _selects_target(
-    scan: Ms2Scan,
-    target_mz: float,
-    *,
-    maximum_radius_da: float,
-    tolerance_ppm: float,
-    neutral_loss_da: float,
-    min_intensity_ratio: float,
-) -> bool:
-    """The scan isolated the target, or its ¹³C M+1 with the target's fragments."""
-    if scan_has_precursor_candidate(scan, target_mz, maximum_radius_da, tolerance_ppm):
-        return True
-    return _isotopologue_selection(
-        scan, target_mz, tolerance_ppm
-    ) is not None and _has_isotopologue_fragment_pair(
-        scan,
-        target_precursor_mz=target_mz,
-        neutral_loss_da=neutral_loss_da,
-        tolerance_ppm=tolerance_ppm,
-        min_intensity_ratio=min_intensity_ratio,
-    )
-
-
-def _isotopologue_selection(
-    scan: Ms2Scan, target_mz: float, tolerance_ppm: float
-) -> float | None:
-    """Return the recorded selection when DDA isolated the target's ¹³C M+1."""
-    m_plus_1 = target_mz + C13_ISOTOPE_SHIFT_DA
-    for mz, basis in recorded_precursor_references(scan, tolerance_ppm):
-        if basis == "scan_precursor" and abs(mz - m_plus_1) <= (
-            m_plus_1 * tolerance_ppm / 1e6
-        ):
-            return mz
-    return None
-
-
-def _has_isotopologue_fragment_pair(
-    scan: Ms2Scan,
-    *,
-    target_precursor_mz: float,
-    neutral_loss_da: float,
-    tolerance_ppm: float,
-    min_intensity_ratio: float,
-) -> bool:
-    """An M+1 of the target also yields the product whose ¹³C left with the loss.
-
-    Only the target's own isotopologue fragments into both the shifted and the
-    unshifted product, so the unshifted sibling guards against an unrelated
-    ion that happens to sit at M+1.
-    """
-    sibling = target_precursor_mz - neutral_loss_da
-    masses = np.asarray(scan.masses, dtype=float)
-    intensities = np.asarray(scan.intensities, dtype=float)
-    usable = min(len(masses), len(intensities))
-    if sibling <= 0.0 or usable == 0 or scan.base_peak <= 0.0:
-        return False
-    near = np.abs(masses[:usable] - sibling) <= sibling * tolerance_ppm / 1e6
-    return bool(
-        (near & (intensities[:usable] >= scan.base_peak * min_intensity_ratio)).any()
-    )
-
-
 def _best_product_probe(
-    scan: Ms2Scan,
-    *,
-    target_precursor_mz: float,
-    neutral_loss_da: float,
-    nl_ppm_max: float,
-    min_intensity_ratio: float,
-    diagnostic_ppm: float,
-) -> MS2ProductProbe:
-    probe = _product_probe(
-        scan,
-        target_precursor_mz=target_precursor_mz,
-        neutral_loss_da=neutral_loss_da,
-        nl_ppm_max=nl_ppm_max,
-        min_intensity_ratio=min_intensity_ratio,
-        diagnostic_ppm=diagnostic_ppm,
-    )
-    isotopologue = _isotopologue_selection(scan, target_precursor_mz, nl_ppm_max)
-    if (
-        isotopologue is None
-        or probe.evidence is not None
-        and _matches_loss(probe.evidence, neutral_loss_da, nl_ppm_max)
-        and abs(probe.evidence.precursor_mz - target_precursor_mz)
-        <= target_precursor_mz * nl_ppm_max / 1e6
-    ):
-        # An answer referenced to the target itself stays as acquired.
-        return probe
-    if not _has_isotopologue_fragment_pair(
-        scan,
-        target_precursor_mz=target_precursor_mz,
-        neutral_loss_da=neutral_loss_da,
-        tolerance_ppm=nl_ppm_max,
-        min_intensity_ratio=min_intensity_ratio,
-    ):
-        return probe
-    # Measured in the selected M+1 frame, referenced to the monoisotopic one.
-    shifted = _product_probe(
-        scan,
-        target_precursor_mz=isotopologue,
-        neutral_loss_da=neutral_loss_da,
-        nl_ppm_max=nl_ppm_max,
-        min_intensity_ratio=min_intensity_ratio,
-        diagnostic_ppm=diagnostic_ppm,
-    )
-    if shifted.evidence is None:
-        return probe
-    evidence = replace(
-        shifted.evidence,
-        precursor_mz=shifted.evidence.precursor_mz - C13_ISOTOPE_SHIFT_DA,
-        precursor_mz_basis="scan_isotopologue",
-    )
-    if not _matches_loss(evidence, neutral_loss_da, nl_ppm_max):
-        return probe
-    return replace(shifted, evidence=evidence)
-
-
-def _product_probe(
     scan: Ms2Scan,
     *,
     target_precursor_mz: float,

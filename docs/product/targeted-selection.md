@@ -255,14 +255,6 @@ those facts itself.
 
 ### Detection and review policy
 
-- DDA can isolate the target's ¹³C M+1 isotopologue rather than its
-  monoisotopic ion. A scan whose recorded precursor is the target's M+1 is the
-  target's own scan when it also shows the isotopologue fragment pair: the
-  product with the ¹³C kept and the product whose ¹³C left with the loss. Its
-  loss is measured from the isolated M+1 (`scan_isotopologue`); the evidence
-  references the monoisotopic mass. Without the pair, an ion at M+1 is not
-  attributed to the target. A scan that already references the target stays
-  as acquired.
 - Targeted NL matching excludes scans whose recorded vendor charge is not 1;
   unavailable charge remains eligible. `NO_MS2` means no method-eligible
   precursor scan, not necessarily no acquired MS2 scan. If only rejected-charge
