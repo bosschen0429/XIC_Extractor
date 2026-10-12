@@ -41,6 +41,69 @@ PT_PATTERN_DETECTION_CONTRACT_PATHS = (
     REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_evidence_rule.py",
     *PT_PATTERN_ENTRYPOINT_PATHS,
 )
+PT_PATTERN_MODULE_STEMS = frozenset(p.stem for p in PT_PATTERN_PACKAGE_PATHS)
+
+_NON_PT_IGNORED_DIRECTORY_NAMES = frozenset(
+    {
+        ".git",
+        ".venv",
+        ".uv-cache",
+        ".worktrees",
+        ".pytest_cache",
+        "__pycache__",
+        "build",
+        "dist",
+        "output",
+        "xic_extractor.egg-info",
+    }
+)
+_NON_PT_ALLOWED_DIRECTORY_ROOTS = (
+    REPO_ROOT / "tools",
+    REPO_ROOT / "tests",
+)
+
+
+def _non_pt_production_python_paths() -> tuple[Path, ...]:
+    pt_family_set = {path.resolve() for path in PT_PATTERN_MODULE_PATHS}
+    allowed_dirs = tuple(path.resolve() for path in _NON_PT_ALLOWED_DIRECTORY_ROOTS)
+    repo_root_resolved = REPO_ROOT.resolve()
+
+    paths: list[Path] = []
+    for candidate in sorted(REPO_ROOT.rglob("*.py")):
+        candidate_resolved = candidate.resolve()
+        rel_parts = candidate_resolved.relative_to(repo_root_resolved).parts
+        if any(
+            part in _NON_PT_IGNORED_DIRECTORY_NAMES or part.startswith(".")
+            for part in rel_parts
+        ):
+            continue
+        if any(candidate_resolved.is_relative_to(d) for d in allowed_dirs):
+            continue
+        if candidate_resolved in pt_family_set:
+            continue
+        paths.append(candidate)
+    return tuple(paths)
+
+
+def _pt_pattern_inward_violations(path: Path) -> list[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    violations: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                parts = alias.name.split(".")
+                if any(part in PT_PATTERN_MODULE_STEMS for part in parts):
+                    violations.append(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            mod = node.module or ""
+            mod_parts = mod.split(".")
+            if any(part in PT_PATTERN_MODULE_STEMS for part in mod_parts):
+                violations.append(mod)
+            for alias in node.names:
+                if alias.name in PT_PATTERN_MODULE_STEMS:
+                    violations.append(f"{mod}.{alias.name}" if mod else alias.name)
+    return violations
+
 
 
 def _imported_module_names(node: ast.AST) -> list[str]:
@@ -201,7 +264,23 @@ def test_pt_pattern_boundary_scope_covers_all_discovery_owner_modules() -> None:
     assert set(DISCOVERY_PACKAGE.glob("pt_pattern_*.py")) <= covered
 
 
+def test_production_modules_do_not_import_pt_pattern_modules() -> None:
+    non_pt_paths = _non_pt_production_python_paths()
+    assert non_pt_paths, "Expected non-PT production python files to be discovered"
+
+    violations_by_file: dict[str, list[str]] = {}
+    for path in non_pt_paths:
+        violations = _pt_pattern_inward_violations(path)
+        if violations:
+            violations_by_file[path.relative_to(REPO_ROOT).as_posix()] = violations
+
+    assert not violations_by_file, (
+        f"Production modules must not import pt_pattern_* modules: {violations_by_file}"
+    )
+
+
 # ---------------------------------------------------------------------------
+
 # Task 6: no .xlsx writing anywhere in the Pt pattern lane.
 # ---------------------------------------------------------------------------
 
