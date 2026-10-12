@@ -65,10 +65,21 @@ def _commit_staged_output_in_process(
 
 
 @pytest.mark.parametrize(
-    "with_nl,with_signal", [(True, True), (False, True), (True, False)]
+    "with_nl,with_signal,reverse_candidates",
+    [
+        (True, True, False),
+        (True, True, True),
+        (False, True, False),
+        (False, True, True),
+        (True, False, False),
+    ],
 )
 def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
-    tmp_path: Path, monkeypatch, with_nl: bool, with_signal: bool
+    tmp_path: Path,
+    monkeypatch,
+    with_nl: bool,
+    with_signal: bool,
+    reverse_candidates: bool,
 ) -> None:
     from contextlib import nullcontext
 
@@ -77,6 +88,7 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
         pipeline,
         target_extraction,
         targeted_cid_nl_assessment,
+        targeted_peak_selection,
     )
     from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
     from xic_extractor.peak_detection import cid_nl_method_assessment
@@ -143,6 +155,19 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
                     )
 
     monkeypatch.setattr(pipeline, "preflight_raw_reader", lambda _path: [])
+    physical_candidates = target_extraction.physical_candidates_result
+
+    def ordered_candidates(*args, **kwargs):
+        result = physical_candidates(*args, **kwargs)
+        return (
+            replace(result, candidates=tuple(reversed(result.candidates)))
+            if reverse_candidates
+            else result
+        )
+
+    monkeypatch.setattr(
+        target_extraction, "physical_candidates_result", ordered_candidates
+    )
     monkeypatch.setattr(
         target_extraction,
         "open_raw",
@@ -158,7 +183,7 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
         return answer
 
     monkeypatch.setattr(
-        target_extraction, "evaluate_cid_nl_method_relations", record_relations
+        targeted_peak_selection, "evaluate_cid_nl_method_relations", record_relations
     )
     monkeypatch.setattr(
         cid_nl_method_assessment, "evaluate_cid_nl_method_relations", record_relations
@@ -222,7 +247,17 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
         )
         if with_signal:
             assert result.reported_rt == pytest.approx(1.4, abs=0.01)
+            # The selected method index belongs to this exact retained population,
+            # even when its order differs from the peak's RT/ranking order.
+            index = result.selected_cid_nl_candidate_index
+            assert index is not None
+            assert index == (1 if reverse_candidates else 0)
+            assert (
+                result.candidate_physical_evaluations[index]
+                is result.physical_evaluation
+            )
         else:
+            assert result.selected_cid_nl_candidate_index is None
             assert result.reported_peak_area is None
             assert result.reported_rt is None
     workbook = load_workbook(workbook_path, read_only=True, data_only=True)

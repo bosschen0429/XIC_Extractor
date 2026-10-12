@@ -44,7 +44,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | 想改什麼 | 先找哪裡 | 交接時要分清的責任 |
 | --- | --- | --- |
 | 峰選擇、邊界、面積 | `peak_detection/`（`signal_processing.py` 只保留公開的 `find_peak_and_area` 入口） | 單峰／單次觀察的答案；跨樣本群組在 Alignment |
-| Targeted 選峰結果與 physical answer | `extraction/targeted_peak_selection.py` | 消費 candidate selection 已選定的峰與 trace／MS2 evidence，完成 physical answer 與選峰事實同步，不再重新排名；[Targeted selection](product/targeted-selection.md#physical-evaluation) 定義完成責任，單峰演算法仍在 `peak_detection/` |
+| Targeted 候選評估與選峰完成 | `extraction/targeted_peak_selection.py` | 固定 candidate population、exact-precursor evidence 與 support 關聯，協調初次排名並同步 physical answer／選峰事實／retained result；完成階段不重新排名，acquisition 不自行重建 selected index；[Targeted selection](product/targeted-selection.md#physical-evaluation) 定義完成責任，單峰演算法仍在 `peak_detection/` |
 | Targeted 輸入轉成共用峰假設 | `extraction/targeted_peak_hypotheses.py` | 選峰、candidate table 與 boundary callers 共用同一 translation；audit callers 不依賴正式選峰政策 |
 | Targeted 計數、角色例外與 review 原因 | `extraction/targeted_product_projection.py` | 消費已完成的科學結果，決定產品狀態；純結果模型在 `output/targeted_product_model.py`，writer 只呈現它 |
 | Untargeted 保留批次執行 | `untargeted_execution/` | execution adapter 管排程與封存交付；`partition_composition.py` 統一 partition／batch scope、canonical ordering 與完成請求；科學驗證仍由 Alignment，發布由 application／output 負責 |
