@@ -8,7 +8,7 @@ from xic_extractor.configuration.csv_io import read_target_draft_rows
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.target_workbook import (
     DEFAULT_RT_WINDOW,
-    _assign_istd_pairs,
+    assign_istd_pairs,
     parse_dna_sheet,
     parse_rna_sheet,
 )
@@ -21,7 +21,7 @@ def import_targets(path: Path, *, sheet: str = "both") -> list[dict[str, str]]:
     suffix = source.suffix.lower()
     if suffix in {".csv", ".tsv"}:
         targets = read_target_draft_rows(source)
-        _assign_istd_pairs(targets)
+        assign_istd_pairs(targets)
         return targets
     if suffix not in {".xlsx", ".xls"}:
         raise ValueError(f"{source}: expected CSV, TSV, XLSX, or XLS target input")
@@ -47,7 +47,7 @@ def import_targets(path: Path, *, sheet: str = "both") -> list[dict[str, str]]:
             raise ConfigError(
                 f"{source}: no target rows found in the DNA or RNA worksheet"
             )
-        _assign_istd_pairs(targets)
+        assign_istd_pairs(targets)
         return [
             {key: str(value) for key, value in target.items()} for target in targets
         ]

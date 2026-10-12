@@ -3,17 +3,17 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
-from scripts.xlsx_to_targets import TargetRow, _assign_istd_pairs, write_targets_csv
+from scripts.xlsx_to_targets import TargetRow, assign_istd_pairs, write_targets_csv
 
 
-def test_assign_istd_pairs_preserves_standard_claims_and_istd_rows() -> None:
+def testassign_istd_pairs_preserves_standard_claims_and_istd_rows() -> None:
     standard_a = _target("5-hmdC", rt=8.0)
     standard_b = _target("8-oxo-Guo", rt=12.0)
     istd_a = _target("d3-5-hmdC", rt=8.1, is_istd=True)
     istd_b = _target("d3-8-oxo-Guo", rt=12.2, is_istd=True)
     targets = [standard_a, istd_a, standard_b, istd_b]
 
-    _assign_istd_pairs(targets)
+    assign_istd_pairs(targets)
 
     assert standard_a["istd_pair"] == "d3-5-hmdC"
     assert standard_b["istd_pair"] == "d3-8-oxo-Guo"
@@ -25,7 +25,7 @@ def test_name_prefill_does_not_make_rt_a_pairing_veto() -> None:
     standard = _target("5-hmdC", rt=20.0)
     istd = _target("d3-5-hmdC", rt=8.0, is_istd=True)
 
-    _assign_istd_pairs([standard, istd])
+    assign_istd_pairs([standard, istd])
 
     assert standard["istd_pair"] == "d3-5-hmdC"
 
@@ -35,10 +35,10 @@ def test_name_prefill_preserves_explicit_choices_and_ambiguous_names() -> None:
     first = _target("d3-5-medC", rt=8.0, is_istd=True)
     second = _target("d4-5-medC", rt=8.0, is_istd=True)
     nearby_name = _target("6-medC", rt=8.0)
-    _assign_istd_pairs([analyte, first, second, nearby_name])
+    assign_istd_pairs([analyte, first, second, nearby_name])
     assert analyte["istd_pair"] == nearby_name["istd_pair"] == ""
     analyte["istd_pair"] = "d4-5-medC"
-    _assign_istd_pairs([analyte, first, second])
+    assign_istd_pairs([analyte, first, second])
     assert analyte["istd_pair"] == "d4-5-medC"
 
 
@@ -47,7 +47,7 @@ def test_name_prefill_fills_missing_roles_without_overriding_explicit_roles() ->
     standard = _target("d3-5-medC", rt=8.0)
     del standard["is_istd"]
     explicitly_analyte = _target("d4-5-medC", rt=8.0)
-    _assign_istd_pairs([analyte, standard, explicitly_analyte])
+    assign_istd_pairs([analyte, standard, explicitly_analyte])
     assert standard["is_istd"] == "true"
     assert explicitly_analyte["is_istd"] == "false"
     assert analyte["istd_pair"] == "d3-5-medC"

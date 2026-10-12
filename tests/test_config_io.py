@@ -2,7 +2,7 @@ import csv
 
 import pytest
 
-from xic_extractor.configuration.csv_io import _read_settings
+from xic_extractor.configuration.csv_io import read_settings as read_settings_csv
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.settings import resolve_settings
 from xic_workbench.config_io import (
@@ -251,7 +251,7 @@ def test_csv_conflicts_are_rejected_in_ui_and_runtime_reader(tmp_path):
     with pytest.raises(ConfigError, match="conflict"):
         resolve_settings(read_settings(config_dir=tmp_path))
     with pytest.raises(ConfigError, match="conflict"):
-        _read_settings(path)
+        read_settings_csv(path)
 
 
 def test_equal_csv_duplicates_have_one_written_row(tmp_path):

@@ -97,7 +97,7 @@ from xic_extractor.xic_models import XICRequest
 
 @pytest.fixture(autouse=True)
 def _disable_real_dll_loading(monkeypatch) -> None:
-    monkeypatch.setattr(runtime_module, "_ensure_assemblies_loaded", lambda *_: None)
+    monkeypatch.setattr(runtime_module, "ensure_assemblies_loaded", lambda *_: None)
 
 
 @pytest.mark.parametrize("winner", [b"same facts", b"different facts", None])
@@ -1950,7 +1950,7 @@ def _install_runtime_raw(
     raw_path: Path,
     tmp_path: Path,
 ) -> _FakeThermoRaw:
-    monkeypatch.setattr(runtime_module, "_ensure_assemblies_loaded", lambda *_: None)
+    monkeypatch.setattr(runtime_module, "ensure_assemblies_loaded", lambda *_: None)
     reset_reader_state()
     for filename in EXPECTED_THERMO_DLLS:
         (tmp_path / filename).write_bytes(b"dll")
@@ -1992,7 +1992,7 @@ def _install_runtime_raws(
     tmp_path: Path,
 ) -> dict[Path, list[_FakeThermoRaw]]:
     # Callers importing this helper do not inherit this module's autouse fixture.
-    monkeypatch.setattr(runtime_module, "_ensure_assemblies_loaded", lambda *_: None)
+    monkeypatch.setattr(runtime_module, "ensure_assemblies_loaded", lambda *_: None)
 
     def _forbid_vendor_api(_import_module):
         pytest.fail("Synthetic RAW fixtures must not reach the real Thermo API")

@@ -17,7 +17,7 @@ from xic_extractor.alignment.backfill_evidence_contract import (
     SkippedEvidenceOwnerBindings,
     SkippedEvidenceRecord,
 )
-from xic_extractor.alignment.evidence_claims import _mint_evidence_query_result
+from xic_extractor.alignment.evidence_claims import mint_evidence_query_result
 from xic_extractor.diagnostics.backfill_evidence.bindings import (
     backfill_evidence_query_claims,
     rehydrate_backfill_evidence_bindings,
@@ -135,7 +135,7 @@ def lookup_backfill_evidence_tsv(
         if owner_result is not None:
             owner_results.append(owner_result)
     records = tuple(matches)
-    return _mint_evidence_query_result(
+    return mint_evidence_query_result(
         records=records,
         claims=backfill_evidence_query_claims(
             found=bool(records),
@@ -169,7 +169,7 @@ def lookup_skipped_evidence_tsv(
         seen.add(record.identity)
         matches.append(record)
     records = tuple(matches)
-    return _mint_evidence_query_result(
+    return mint_evidence_query_result(
         records=records,
         claims=skipped_evidence_query_claims(
             found=bool(records),

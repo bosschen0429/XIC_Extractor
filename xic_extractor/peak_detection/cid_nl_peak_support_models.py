@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass, field
 
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
-    _mint_artifact_semantic_contract_ref,
+    mint_artifact_semantic_contract_ref,
     verify_evidence_artifact_payload,
 )
 from xic_extractor.mass_accuracy import neutral_loss_match
@@ -26,7 +26,7 @@ _ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content:"
 _PEAK_CONTENT_ID_PREFIX = "xic.peak-observation-content:"
 _SAMPLE_ID_PREFIX = "xic.sample:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
+_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.peak_detection.cid_nl_peak_support",
     semantic_role=ARTIFACT_SEMANTIC_ROLE,
     schema_version=SCHEMA_VERSION,

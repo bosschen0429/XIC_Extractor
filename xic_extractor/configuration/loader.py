@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 from xic_extractor.configuration.csv_io import (
     _config_input_path,
     _parse_settings_csv_bytes,
-    _read_settings,
+    read_settings,
 )
 from xic_extractor.configuration.hashing import (
     _compute_config_hash,
@@ -149,7 +149,7 @@ def load_config(
     settings_path = _config_input_path(config_dir, "settings")
     targets_path = _config_input_path(config_dir, "targets")
 
-    raw_settings = _read_settings(settings_path)
+    raw_settings = read_settings(settings_path)
     try:
         settings, parsed, warnings = resolve_settings(
             raw_settings, settings_overrides, settings_path=settings_path

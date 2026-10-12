@@ -14,8 +14,8 @@ from dataclasses import asdict, dataclass
 
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
-    _mint_artifact_semantic_contract_ref,
-    _mint_evidence_artifact_ref,
+    mint_artifact_semantic_contract_ref,
+    mint_evidence_artifact_ref,
     verify_evidence_artifact_payload,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
@@ -46,7 +46,7 @@ _ARTIFACT_CONTENT_ID_PREFIX = "xic.artifact-content:"
 _PEAK_CONTENT_ID_PREFIX = "xic.peak-observation-content:"
 _SAMPLE_ID_PREFIX = "xic.sample:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
+_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.peak_detection.cid_nl_candidate_set_relation",
     semantic_role=ARTIFACT_SEMANTIC_ROLE,
     schema_version=SCHEMA_VERSION,
@@ -241,7 +241,7 @@ def resolve_dda_cid_nl_candidate_set_relation_ref(
         scan_rt_min=canonical_evidence.observation.scan_rt_min,
         policy=policy,
     )
-    artifact = _mint_evidence_artifact_ref(
+    artifact = mint_evidence_artifact_ref(
         producer_processing_request_id=processing_owners.request.processing_request_id,
         producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
         semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,

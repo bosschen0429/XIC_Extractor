@@ -51,7 +51,7 @@ from xic_extractor.processing_identity import (
     canonical_current_attempt_artifact_closure,
     resolve_request_acquisition_source,
 )
-from xic_extractor.raw_reader import _ensure_assemblies_loaded
+from xic_extractor.raw_reader import ensure_assemblies_loaded
 from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
     _has_recorded_precursor_reference,
     _PartitionWorkObserver,
@@ -536,13 +536,13 @@ def _prepare_runtime_work(
             max_workers=raw_workers,
             backend=raw_worker_backend,
             thread_name_prefix="cid-nl-sample",
-            initializer=lambda: _ensure_assemblies_loaded(
+            initializer=lambda: ensure_assemblies_loaded(
                 jobs[0].dll_dir, importlib.import_module
             ),
         )
         if worker_pool.initializer is None:
             worker_pool.set_initializer(
-                lambda: _ensure_assemblies_loaded(
+                lambda: ensure_assemblies_loaded(
                     jobs[0].dll_dir, importlib.import_module
                 )
             )

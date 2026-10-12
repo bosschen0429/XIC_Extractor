@@ -14,8 +14,8 @@ from dataclasses import asdict, dataclass
 
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
-    _mint_artifact_semantic_contract_ref,
-    _mint_evidence_artifact_ref,
+    mint_artifact_semantic_contract_ref,
+    mint_evidence_artifact_ref,
     verify_evidence_artifact_payload,
 )
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
@@ -46,7 +46,7 @@ ACQUISITION_MODE = "dda_ddms2"
 _SAMPLE_ID_PREFIX = "xic.sample:"
 _ACQUISITION_SOURCE_ID_PREFIX = "xic.acquisition-source:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
+_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.peak_detection.cid_nl_evidence",
     semantic_role=ARTIFACT_SEMANTIC_ROLE,
     schema_version=SCHEMA_VERSION,
@@ -388,7 +388,7 @@ def mint_cid_nl_evidence_ref(
         precursor_metadata=precursor_metadata,
         ms1_precursor_observation=ms1_precursor_observation,
     )
-    artifact = _mint_evidence_artifact_ref(
+    artifact = mint_evidence_artifact_ref(
         producer_processing_request_id=processing_owners.request.processing_request_id,
         producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
         semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,

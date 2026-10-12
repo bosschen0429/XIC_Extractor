@@ -36,7 +36,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
-    _mint_evidence_artifact_ref,
+    mint_evidence_artifact_ref,
     verify_evidence_artifact_payload,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -804,7 +804,7 @@ def mint_cell_observation_ref(
         peak_hypothesis=peak_hypothesis,
         outside_group_context=outside_group_context,
     )
-    artifact = _mint_evidence_artifact_ref(
+    artifact = mint_evidence_artifact_ref(
         producer_processing_request_id=processing_owners.request.processing_request_id,
         producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
         semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,

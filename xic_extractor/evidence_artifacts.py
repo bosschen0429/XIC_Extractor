@@ -1,7 +1,7 @@
 """Immutable evidence-artifact references for no-write lineage composition.
 
 This module owns only workflow-neutral content and reference value objects.
-Producer modules own semantic role/schema selection and call the private mint
+Producer modules own semantic role/schema selection and call the public mint
 helpers through narrow owner APIs.  Storage, runtime lifecycle, delivery, and
 publication authority deliberately remain outside this contract.
 """
@@ -243,7 +243,7 @@ def verify_evidence_artifact_payload(
         )
 
 
-def _mint_artifact_semantic_contract_ref(
+def mint_artifact_semantic_contract_ref(
     *,
     owner_namespace: str,
     semantic_role: str,
@@ -282,7 +282,7 @@ def _mint_artifact_semantic_contract_ref(
     )
 
 
-def _mint_evidence_artifact_ref(
+def mint_evidence_artifact_ref(
     *,
     producer_processing_request_id: str,
     producer_processing_attempt_id: str,
@@ -516,5 +516,7 @@ __all__ = [
     "ArtifactSemanticContractRef",
     "EvidenceArtifactContractError",
     "EvidenceArtifactRef",
+    "mint_artifact_semantic_contract_ref",
+    "mint_evidence_artifact_ref",
     "verify_evidence_artifact_payload",
 ]

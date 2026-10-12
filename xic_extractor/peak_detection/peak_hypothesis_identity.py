@@ -13,8 +13,8 @@ import json
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactContractError,
     EvidenceArtifactRef,
-    _mint_artifact_semantic_contract_ref,
-    _mint_evidence_artifact_ref,
+    mint_artifact_semantic_contract_ref,
+    mint_evidence_artifact_ref,
     verify_evidence_artifact_payload,
 )
 from xic_extractor.peak_detection.cid_nl_chromatographic_support_models import (
@@ -45,7 +45,7 @@ MEDIA_TYPE = "application/json"
 SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
 
 _HYPOTHESIS_ID_PREFIX = OWNER_BACKED_HYPOTHESIS_ID_PREFIX
-_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
+_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.peak_detection.peak_hypothesis_identity",
     semantic_role=ARTIFACT_SEMANTIC_ROLE,
     schema_version=SCHEMA_VERSION,
@@ -53,7 +53,7 @@ _ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
     media_type=MEDIA_TYPE,
     serialization_format=SERIALIZATION_FORMAT,
 )
-_OBSERVATION_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
+_OBSERVATION_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.peak_detection.peak_hypothesis_identity",
     semantic_role="owner_backed_ms1_observation_hypothesis",
     schema_version="peak_hypothesis_ms1_observation",
@@ -88,7 +88,7 @@ def compose_cid_nl_peak_hypothesis(
         peak_observation=peak_observation,
         chromatographic_support=chromatographic_support,
     )
-    artifact = _mint_evidence_artifact_ref(
+    artifact = mint_evidence_artifact_ref(
         producer_processing_request_id=processing_owners.request.processing_request_id,
         producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
         semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
@@ -133,7 +133,7 @@ def compose_ms1_observation_peak_hypothesis(
         peak_observation=peak_observation,
     )
     hypothesis_id = _observation_hypothesis_id(peak_observation)
-    artifact = _mint_evidence_artifact_ref(
+    artifact = mint_evidence_artifact_ref(
         producer_processing_request_id=processing_owners.request.processing_request_id,
         producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
         semantic_contract=_OBSERVATION_ARTIFACT_SEMANTIC_CONTRACT,

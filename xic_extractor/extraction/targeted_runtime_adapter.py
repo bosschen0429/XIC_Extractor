@@ -17,8 +17,8 @@ from dataclasses import dataclass
 
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
-    _mint_artifact_semantic_contract_ref,
-    _mint_evidence_artifact_ref,
+    mint_artifact_semantic_contract_ref,
+    mint_evidence_artifact_ref,
     verify_evidence_artifact_payload,
 )
 from xic_extractor.execution._finalization import (
@@ -62,7 +62,7 @@ class TargetedRuntimeAdapterError(ValueError):
 
 
 _SCHEMA_VERSION = "targeted_process_result_identity"
-_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
+_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.extraction.targeted_runtime_adapter",
     semantic_role="targeted_process_worker_result_identity",
     schema_version=_SCHEMA_VERSION,
@@ -417,7 +417,7 @@ def mint_targeted_process_result_ref(
         raise TargetedRuntimeAdapterError("owner_result_payload must be exact bytes")
     content_sha256 = hashlib.sha256(owner_result_payload).hexdigest()
     byte_size = len(owner_result_payload)
-    artifact = _mint_evidence_artifact_ref(
+    artifact = mint_evidence_artifact_ref(
         producer_processing_request_id=processing_attempt.processing_request_id,
         producer_processing_attempt_id=processing_attempt.processing_attempt_id,
         semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
