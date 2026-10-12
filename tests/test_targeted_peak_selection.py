@@ -217,6 +217,11 @@ def test_handoff_preserves_the_selected_candidate_through_workbook(
     )
     candidates = physical_candidates_result(prepared, universe).candidates
     assert len(candidates) == 2
+    # Audit annotations cannot rebind a candidate to a different physical peak.
+    candidates = tuple(
+        replace(candidate, proposal_sources=("physical_segment:unrelated_audit",))
+        for candidate in candidates
+    )
     first, second = candidates
     selected = candidates[selected_index]
     evaluations = None

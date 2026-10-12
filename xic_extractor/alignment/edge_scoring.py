@@ -6,12 +6,12 @@ from typing import Literal, Protocol
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.drift_evidence import KnownIstdOwnerLookup
-from xic_extractor.alignment.owner_area import owner_quantification_eligible
-from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
-from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentRef,
-    supported_cid_nl_peak_ids,
+from xic_extractor.alignment.grouping_evidence import (
+    SeedSupportLevel,
+    classify_seed_support,
+    compatible_composite_owners,
 )
+from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 
 EdgeDecision = Literal["strong_edge", "weak_edge", "blocked_edge"]
 HardGateFailureReason = Literal[
@@ -28,11 +28,7 @@ HardGateFailureReason = Literal[
 DriftPriorSource = Literal["targeted_istd_trend", "batch_istd_trend", "none"]
 RTEvidenceBasis = Literal["raw", "drift_corrected"]
 SUPPORTED_DRIFT_PRIOR_SOURCES = {"targeted_istd_trend", "batch_istd_trend", "none"}
-_DETECTION_LIMIT_SNR = 3.0
-_QUANTITATION_LIMIT_SNR = 10.0
-_DISCOVERY_MODERATE_EVIDENCE_SCORE = 40
 OwnerQuality = Literal["clean", "weak", "tail_supported", "ambiguous_nearby"]
-SeedSupportLevel = Literal["strong", "moderate", "weak"]
 DuplicateContext = Literal["none", "same_owner_events", "tail_assignment"]
 
 
@@ -92,7 +88,7 @@ def evaluate_owner_edge(
     injection_order_gap = _injection_order_gap(left, right, drift_lookup)
     duplicate_context = _duplicate_context(left, right, config)
     owner_quality = _owner_quality(left, right, duplicate_context)
-    seed_support_level = _seed_support_level(left, right, config)
+    seed_support_level = classify_seed_support(left, right, config)
 
     failure = _hard_gate_failure(
         left,
@@ -186,7 +182,7 @@ def _hard_gate_failure(
         return "same_sample"
     left_event = left.primary_identity_event
     right_event = right.primary_identity_event
-    composite_compatible = _compatible_composite_owners(left, right)
+    composite_compatible = compatible_composite_owners(left, right)
     if (left_event is None) != (right_event is None):
         return "neutral_loss_tag_mismatch"
     if not composite_compatible and left.neutral_loss_tag != right.neutral_loss_tag:
@@ -210,51 +206,6 @@ def _hard_gate_failure(
     ):
         return "observed_loss_out_of_tolerance"
     return None
-
-
-def _compatible_composite_owners(
-    left: SampleLocalMS1Owner, right: SampleLocalMS1Owner
-) -> bool:
-    """Only exact typed assessment/physical membership closes composition."""
-    first, second = left.cid_nl_composite_assessment, right.cid_nl_composite_assessment
-    if not isinstance(first, CidNlMethodAssessmentRef) or not isinstance(
-        second, CidNlMethodAssessmentRef
-    ):
-        return False
-    assessments = (first, second)
-    if (
-        first.content.method_subject.composition is None
-        or first.content.method_subject != second.content.method_subject
-    ):
-        return False
-    for owner, assessment in zip((left, right), assessments, strict=True):
-        member = owner.cross_sample_member_subject
-        if (
-            member is None
-            or member.subject_id != owner.owner_id
-            or member.processing_request_id
-            != assessment.artifact.producer_processing_request_id
-            or member.canonical_sample_identity_id
-            != assessment.content.canonical_sample_identity_id
-        ):
-            return False
-        if len(member.physical_observation_ids) != 1 or not set(
-            member.physical_observation_ids
-        ).issubset(supported_cid_nl_peak_ids(assessment)):
-            return False
-        peak = next(
-            item
-            for item in assessment.candidate_peaks
-            if item.content.peak_observation_content_id
-            == member.physical_observation_ids[0]
-        )
-        if (
-            owner.raw_file != assessment.content.acquisition_source_id
-            or owner.selected_integration != peak.content.integration
-            or owner.precursor_mz != peak.content.mz
-        ):
-            return False
-    return True
 
 
 def _drift_corrected_delta_sec(
@@ -301,99 +252,6 @@ def _injection_order_gap(
     if left_order is None or right_order is None:
         return None
     return abs(left_order - right_order)
-
-
-def _seed_support_level(
-    left: SampleLocalMS1Owner,
-    right: SampleLocalMS1Owner,
-    config: AlignmentConfig,
-) -> SeedSupportLevel:
-    """Rate the pair on the peaks Alignment resolved, not on Discovery's score.
-
-    Discovery's ``evidence_score`` is dominated by whether Discovery itself
-    found an MS1 peak.  Every owner exists because ownership re-extracted the
-    XIC and did find one, so reading that score back here judges an owner by a
-    search its own construction superseded.  Rate the resolved peaks instead,
-    at the detection- and quantitation-limit conventions, and keep the MS2 seed
-    count, which Alignment does not re-derive.  Owners whose integration never
-    recorded a baseline residual keep the Discovery-score rating.
-    """
-    left_event = left.primary_identity_event
-    right_event = right.primary_identity_event
-    min_snr = _min_owner_peak_snr(left, right)
-    if left_event is None or right_event is None:
-        if min_snr is not None and min_snr >= _QUANTITATION_LIMIT_SNR:
-            return "strong"
-        if min_snr is not None and min_snr >= _DETECTION_LIMIT_SNR:
-            return "moderate"
-        return "weak"
-    min_seed_count = min(left_event.seed_event_count, right_event.seed_event_count)
-    if min_snr is None:
-        return _discovery_seed_support_level(left, right, config)
-    if min_snr >= _QUANTITATION_LIMIT_SNR and (
-        min_seed_count >= config.anchor_min_seed_events
-    ):
-        return "strong"
-    if min_snr >= _DETECTION_LIMIT_SNR and min_seed_count >= 1:
-        return "moderate"
-    return "weak"
-
-
-def _discovery_seed_support_level(
-    left: SampleLocalMS1Owner,
-    right: SampleLocalMS1Owner,
-    config: AlignmentConfig,
-) -> SeedSupportLevel:
-    left_event = left.primary_identity_event
-    right_event = right.primary_identity_event
-    if left_event is None or right_event is None:
-        return "weak"
-    min_score = min(left_event.evidence_score, right_event.evidence_score)
-    min_seed_count = min(left_event.seed_event_count, right_event.seed_event_count)
-    if (
-        min_score >= config.anchor_min_evidence_score
-        and min_seed_count >= config.anchor_min_seed_events
-    ):
-        return "strong"
-    if min_score >= _DISCOVERY_MODERATE_EVIDENCE_SCORE and min_seed_count >= 1:
-        return "moderate"
-    return "weak"
-
-
-def _min_owner_peak_snr(
-    left: SampleLocalMS1Owner,
-    right: SampleLocalMS1Owner,
-) -> float | None:
-    left_snr = _owner_peak_snr(left)
-    right_snr = _owner_peak_snr(right)
-    if left_snr is None or right_snr is None:
-        return None
-    return min(left_snr, right_snr)
-
-
-def _owner_peak_snr(owner: SampleLocalMS1Owner) -> float | None:
-    return owner_peak_snr(owner)
-
-
-def owner_peak_snr(owner: SampleLocalMS1Owner) -> float | None:
-    """Signal-to-noise of the peak Alignment resolved for this owner."""
-    integration = owner.selected_integration
-    if integration is None:
-        return None
-    residual = integration.baseline_residual_mad
-    if residual is None or residual <= 0.0:
-        return None
-    return integration.height_raw / residual
-
-
-def owner_peak_meets_quantitation_limit(owner: SampleLocalMS1Owner) -> bool:
-    """Whether the resolved peak clears the quantitation-limit convention."""
-    snr = owner_peak_snr(owner)
-    return (
-        owner_quantification_eligible(owner)
-        and snr is not None
-        and snr >= _QUANTITATION_LIMIT_SNR
-    )
 
 
 def _owner_quality(

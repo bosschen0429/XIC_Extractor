@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from xic_extractor.peak_detection.evidence_facts import CandidateEvidenceFacts
+    from xic_extractor.peak_detection.physical_peak_models import PhysicalSegment
 
 PeakStatus = Literal["OK", "NO_SIGNAL", "WINDOW_TOO_SHORT", "PEAK_NOT_FOUND"]
 LocalMinimumQualityFlag = Literal[
@@ -59,6 +60,8 @@ class PeakCandidate:
     merge_note: str = ""
     ms2_evidence_peak_start: float | None = None
     ms2_evidence_peak_end: float | None = None
+    # The physical owner supplies this binding; proposal_sources is audit text.
+    physical_segment: PhysicalSegment | None = None
 
 
 @dataclass(frozen=True)

@@ -17,10 +17,14 @@ from xic_extractor.alignment.edge_scoring import (
     DriftLookupProtocol,
     OwnerEdgeEvidence,
     RTEvidenceBasis,
-    _compatible_composite_owners,
     _drift_corrected_delta_sec,
-    _seed_support_level,
     evaluate_owner_edge,
+)
+from xic_extractor.alignment.grouping_evidence import (
+    compatible_composite_owners,
+    grouping_chemistry_key,
+    owner_composite_subject_id,
+    owner_uncertainty_reason,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import PeakTrajectories
@@ -396,17 +400,12 @@ class _FeatureTrack:
             loss_min=0.0 if event is None else event.observed_neutral_loss_da,
             loss_max=0.0 if event is None else event.observed_neutral_loss_da,
             neutral_loss_tag=owner.neutral_loss_tag,
-            composite_subject_id=(
-                owner.cid_nl_composite_assessment.content.method_subject.method_subject_id
-                if owner.cid_nl_composite_assessment is not None
-                and _compatible_composite_owners(owner, owner)
-                else None
-            ),
+            composite_subject_id=owner_composite_subject_id(owner),
         )
 
     def add(self, owner: SampleLocalMS1Owner) -> None:
         event = owner.primary_identity_event
-        if self.composite_subject_id is not None and not _compatible_composite_owners(
+        if self.composite_subject_id is not None and not compatible_composite_owners(
             owner, self.seed
         ):
             self.composite_subject_id = None
@@ -678,16 +677,6 @@ def infer_feature_memberships(
     )
 
 
-def _owner_chemistry(owner: SampleLocalMS1Owner) -> tuple[str, str]:
-    assessment = owner.cid_nl_composite_assessment
-    if assessment is not None and _compatible_composite_owners(owner, owner):
-        return "composition", assessment.content.method_subject.method_subject_id
-    return (
-        owner.neutral_loss_tag,
-        "cid" if owner.primary_identity_event is not None else "ms1",
-    )
-
-
 def _trajectory_seeds(
     owners: Sequence[SampleLocalMS1Owner],
     correspondence: PeakTrajectories | None,
@@ -704,7 +693,7 @@ def _trajectory_seeds(
         if not members:
             continue
         if (
-            len({_owner_chemistry(member) for member in members}) != 1
+            len({grouping_chemistry_key(member) for member in members}) != 1
             or len({member.sample_stem for member in members}) != len(members)
             or not within_ppm(
                 max(member.precursor_mz for member in members),
@@ -715,7 +704,7 @@ def _trajectory_seeds(
             continue
         owner_ids = tuple(member.owner_id for member in members)
         assigned = len(members) >= 2 and not any(
-            _owner_uncertainty_reason(member, config) for member in members
+            owner_uncertainty_reason(member, config) for member in members
         )
         reason = (
             "ordered_ms1_pattern_links_existing_owners"
@@ -919,7 +908,7 @@ def _directional_inference(
         for owner in sample_owners:
             if owner.owner_id in owner_feature:
                 continue
-            weak_reason = _owner_uncertainty_reason(owner, config)
+            weak_reason = owner_uncertainty_reason(owner, config)
             if weak_reason:
                 feature_key = f"{direction}:{owner.owner_id}"
                 place(owner.owner_id, feature_key)
@@ -1100,12 +1089,12 @@ def _window_inference(
     weak = {
         owner.owner_id: reason
         for owner in owners
-        if (reason := _owner_uncertainty_reason(owner, config))
+        if (reason := owner_uncertainty_reason(owner, config))
     }
     eligible = tuple(owner for owner in owners if owner.owner_id not in weak)
     by_chemistry: dict[tuple[str, str], list[SampleLocalMS1Owner]] = defaultdict(list)
     for owner in eligible:
-        by_chemistry[_owner_chemistry(owner)].append(owner)
+        by_chemistry[grouping_chemistry_key(owner)].append(owner)
 
     final_components: list[tuple[str, ...]] = [(owner_id,) for owner_id in sorted(weak)]
     for chemistry in sorted(by_chemistry):
@@ -1128,17 +1117,6 @@ def _window_inference(
         for window in windows:
             counts["index_queries"] += len(window)
             counts["candidate_features_considered"] += len(window)
-            window_rts = sorted(corrected_rt[owner.owner_id] for owner in window)
-            sparse_radius_min = min(120.0, config.max_rt_sec) / 60.0
-            local_detection_count = {
-                owner.owner_id: bisect_right(
-                    window_rts, corrected_rt[owner.owner_id] + sparse_radius_min
-                )
-                - bisect_left(
-                    window_rts, corrected_rt[owner.owner_id] - sparse_radius_min
-                )
-                for owner in window
-            }
             parents = {owner.owner_id: owner.owner_id for owner in window}
             members = {owner.owner_id: [owner] for owner in window}
             sample_sets = {owner.owner_id: {owner.sample_stem} for owner in window}
@@ -1162,146 +1140,19 @@ def _window_inference(
                     owner_id = parents[owner_id]
                 return owner_id
 
-            arcs: list[tuple[float, str, str]] = []
-            by_order = sorted(
-                window, key=lambda owner: (orders[owner.sample_stem], owner.owner_id)
+            arcs = _window_candidate_edges(
+                window,
+                config=config,
+                orders=orders,
+                corrected_rt=corrected_rt,
+                track_indices=track_indices,
+                trajectories=trajectories,
+                counts=counts,
             )
-            for left_index, left in enumerate(by_order):
-                for right in by_order[left_index + 1 :]:
-                    gap = orders[right.sample_stem] - orders[left.sample_stem]
-                    sparse_fallback = (
-                        gap > 16
-                        and max(
-                            local_detection_count[left.owner_id],
-                            local_detection_count[right.owner_id],
-                        )
-                        <= 10
-                    )
-                    # Dense distant pairs are compared as settled bands below.
-                    if gap > 16 and not sparse_fallback:
-                        break
-                    if left.sample_stem == right.sample_stem:
-                        continue
-                    if not trajectories.permits_membership(
-                        (left.owner_id, right.owner_id)
-                    ):
-                        continue
-                    if not within_ppm(
-                        max(left.precursor_mz, right.precursor_mz),
-                        min(left.precursor_mz, right.precursor_mz),
-                        config.max_ppm,
-                    ):
-                        continue
-                    left_event = left.primary_identity_event
-                    right_event = right.primary_identity_event
-                    same_track = left.owner_id in track_indices and track_indices[
-                        left.owner_id
-                    ] == track_indices.get(right.owner_id)
-                    rt_delta_sec = (
-                        0.0
-                        if same_track
-                        else (
-                            abs(
-                                corrected_rt[left.owner_id]
-                                - corrected_rt[right.owner_id]
-                            )
-                            * 60.0
-                        )
-                    )
-                    rt_limit_sec = (
-                        max(120.0, config.preferred_rt_sec)
-                        if sparse_fallback
-                        else min(120.0, 45.0 + 4.0 * gap)
-                    )
-                    rt_limit_sec = min(rt_limit_sec, config.max_rt_sec)
-                    if rt_delta_sec > rt_limit_sec:
-                        continue
-                    counts["owner_edge_evaluations"] += 1
-                    # The tolerance describes the full separation of the
-                    # endpoints, as it does for owner-to-band costs. Measuring
-                    # only to their midpoint halves the mass evidence and can
-                    # turn distinct coeluting bands into near-equal alternatives.
-                    precursor_fraction = (
-                        absolute_ppm_error(
-                            max(left.precursor_mz, right.precursor_mz),
-                            min(left.precursor_mz, right.precursor_mz),
-                        )
-                        / config.max_ppm
-                    )
-                    product_fraction = 0.0
-                    if left_event is not None and right_event is not None:
-                        product_fraction = (
-                            absolute_ppm_error(
-                                max(left_event.product_mz, right_event.product_mz),
-                                min(left_event.product_mz, right_event.product_mz),
-                            )
-                            / config.product_mz_tolerance_ppm
-                        )
-                    cost = (
-                        (0.20 if sparse_fallback else 0.0)
-                        + 0.70
-                        * rt_delta_sec
-                        / (
-                            rt_limit_sec
-                            if sparse_fallback
-                            else config.preferred_rt_sec + 3.0 * gap
-                        )
-                        + 0.15 * min(precursor_fraction, 2.0)
-                        + 0.15 * min(product_fraction, 2.0)
-                    )
-                    arcs.append((cost, left.owner_id, right.owner_id))
             counts["supported_candidate_arcs"] += len(arcs)
-            competing: dict[tuple[str, str], list[tuple[float, str]]] = defaultdict(
-                list
+            ambiguous_window, ambiguous_arcs = _ambiguous_window_edges(
+                arcs, ordinary_by_id, seeded_owners
             )
-            neighbors: dict[str, set[str]] = defaultdict(set)
-            for cost, left_id, right_id in arcs:
-                competing[(left_id, ordinary_by_id[right_id].sample_stem)].append(
-                    (cost, right_id)
-                )
-                competing[(right_id, ordinary_by_id[left_id].sample_stem)].append(
-                    (cost, left_id)
-                )
-                neighbors[left_id].add(right_id)
-                neighbors[right_id].add(left_id)
-            ambiguous_window: set[str] = set()
-            preferred_arcs: set[tuple[str, str]] = set()
-            ambiguous_arcs: set[tuple[str, str]] = set()
-            for (owner_id, _sample), options in competing.items():
-                ranked = sorted(options)
-                if (
-                    len(ranked) < 2
-                    or ranked[1][0] > ranked[0][0] + _WINDOW_AMBIGUITY_MARGIN
-                ):
-                    preferred_arcs.add((owner_id, ranked[0][1]))
-                    continue
-                alternatives = tuple(
-                    candidate_id
-                    for cost, candidate_id in ranked
-                    if cost <= ranked[0][0] + _WINDOW_AMBIGUITY_MARGIN
-                )
-                ambiguous_arcs.update((owner_id, item) for item in alternatives)
-                shared_neighbors = set.intersection(
-                    *(neighbors[candidate_id] for candidate_id in alternatives)
-                ) - {owner_id}
-                if (
-                    len({ordinary_by_id[item].sample_stem for item in shared_neighbors})
-                    >= 2
-                ):
-                    # A doublet in one sample competes for many other owners;
-                    # isolate its alternatives without discarding their band.
-                    ambiguous_window.update(alternatives)
-                else:
-                    ambiguous_window.add(owner_id)
-            # A contested pairing to one sample does not invalidate independent
-            # reciprocal support from another. Keep that support, but do not use
-            # the contested arcs to grow a band. Unsupported doublets stay weak.
-            independently_supported = {
-                owner_id
-                for owner_id, neighbor_id in preferred_arcs
-                if (neighbor_id, owner_id) in preferred_arcs
-            } | seeded_owners
-            ambiguous_window.difference_update(independently_supported)
             for owner_id in ambiguous_window:
                 weak[owner_id] = "alternative_bands_have_near_equal_cost"
             counts["ambiguous_assignments"] += len(ambiguous_window)
@@ -1360,10 +1211,187 @@ def _window_inference(
                 for group in members.values()
             )
 
+    groups, decisions = _window_membership_result(
+        final_components,
+        owner_by_id=ordinary_by_id,
+        weak=weak,
+        orders=orders,
+        corrected_rt=corrected_rt,
+        rt_basis="drift_corrected" if rt_warp is not None else "raw",
+    )
+    counts["samples_processed"] = len(samples)
+    counts["births"] = len(groups)
+    return groups, decisions
+
+
+def _window_candidate_edges(
+    window: Sequence[SampleLocalMS1Owner],
+    *,
+    config: AlignmentConfig,
+    orders: Mapping[str, int],
+    corrected_rt: Mapping[str, float],
+    track_indices: Mapping[str, int],
+    trajectories: PeakTrajectories,
+    counts: Counter[str],
+) -> list[tuple[float, str, str]]:
+    """Apply pair eligibility and score supported edges in one mass window."""
+    window_rts = sorted(corrected_rt[owner.owner_id] for owner in window)
+    sparse_radius_min = min(120.0, config.max_rt_sec) / 60.0
+    local_detection_count = {
+        owner.owner_id: bisect_right(
+            window_rts, corrected_rt[owner.owner_id] + sparse_radius_min
+        )
+        - bisect_left(window_rts, corrected_rt[owner.owner_id] - sparse_radius_min)
+        for owner in window
+    }
+    arcs: list[tuple[float, str, str]] = []
+    by_order = sorted(
+        window, key=lambda owner: (orders[owner.sample_stem], owner.owner_id)
+    )
+    for left_index, left in enumerate(by_order):
+        for right in by_order[left_index + 1 :]:
+            gap = orders[right.sample_stem] - orders[left.sample_stem]
+            sparse_fallback = (
+                gap > 16
+                and max(
+                    local_detection_count[left.owner_id],
+                    local_detection_count[right.owner_id],
+                )
+                <= 10
+            )
+            # Dense distant pairs are compared as settled bands below.
+            if gap > 16 and not sparse_fallback:
+                break
+            if left.sample_stem == right.sample_stem:
+                continue
+            if not trajectories.permits_membership((left.owner_id, right.owner_id)):
+                continue
+            if not within_ppm(
+                max(left.precursor_mz, right.precursor_mz),
+                min(left.precursor_mz, right.precursor_mz),
+                config.max_ppm,
+            ):
+                continue
+            left_event = left.primary_identity_event
+            right_event = right.primary_identity_event
+            same_track = left.owner_id in track_indices and track_indices[
+                left.owner_id
+            ] == track_indices.get(right.owner_id)
+            rt_delta_sec = (
+                0.0
+                if same_track
+                else (
+                    abs(corrected_rt[left.owner_id] - corrected_rt[right.owner_id])
+                    * 60.0
+                )
+            )
+            rt_limit_sec = (
+                max(120.0, config.preferred_rt_sec)
+                if sparse_fallback
+                else min(120.0, 45.0 + 4.0 * gap)
+            )
+            rt_limit_sec = min(rt_limit_sec, config.max_rt_sec)
+            if rt_delta_sec > rt_limit_sec:
+                continue
+            counts["owner_edge_evaluations"] += 1
+            # The tolerance describes the full separation of the
+            # endpoints, as it does for owner-to-band costs. Measuring
+            # only to their midpoint halves the mass evidence and can
+            # turn distinct coeluting bands into near-equal alternatives.
+            precursor_fraction = (
+                absolute_ppm_error(
+                    max(left.precursor_mz, right.precursor_mz),
+                    min(left.precursor_mz, right.precursor_mz),
+                )
+                / config.max_ppm
+            )
+            product_fraction = 0.0
+            if left_event is not None and right_event is not None:
+                product_fraction = (
+                    absolute_ppm_error(
+                        max(left_event.product_mz, right_event.product_mz),
+                        min(left_event.product_mz, right_event.product_mz),
+                    )
+                    / config.product_mz_tolerance_ppm
+                )
+            cost = (
+                (0.20 if sparse_fallback else 0.0)
+                + 0.70
+                * rt_delta_sec
+                / (
+                    rt_limit_sec
+                    if sparse_fallback
+                    else config.preferred_rt_sec + 3.0 * gap
+                )
+                + 0.15 * min(precursor_fraction, 2.0)
+                + 0.15 * min(product_fraction, 2.0)
+            )
+            arcs.append((cost, left.owner_id, right.owner_id))
+    return arcs
+
+
+def _ambiguous_window_edges(
+    arcs: Sequence[tuple[float, str, str]],
+    owner_by_id: Mapping[str, SampleLocalMS1Owner],
+    seeded_owners: set[str],
+) -> tuple[set[str], set[tuple[str, str]]]:
+    """Resolve per-sample competition without discarding independent support."""
+    competing: dict[tuple[str, str], list[tuple[float, str]]] = defaultdict(list)
+    neighbors: dict[str, set[str]] = defaultdict(set)
+    for cost, left_id, right_id in arcs:
+        competing[(left_id, owner_by_id[right_id].sample_stem)].append((cost, right_id))
+        competing[(right_id, owner_by_id[left_id].sample_stem)].append((cost, left_id))
+        neighbors[left_id].add(right_id)
+        neighbors[right_id].add(left_id)
+    ambiguous_window: set[str] = set()
+    preferred_arcs: set[tuple[str, str]] = set()
+    ambiguous_arcs: set[tuple[str, str]] = set()
+    for (owner_id, _sample), options in competing.items():
+        ranked = sorted(options)
+        if len(ranked) < 2 or ranked[1][0] > ranked[0][0] + _WINDOW_AMBIGUITY_MARGIN:
+            preferred_arcs.add((owner_id, ranked[0][1]))
+            continue
+        alternatives = tuple(
+            candidate_id
+            for cost, candidate_id in ranked
+            if cost <= ranked[0][0] + _WINDOW_AMBIGUITY_MARGIN
+        )
+        ambiguous_arcs.update((owner_id, item) for item in alternatives)
+        shared_neighbors = set.intersection(
+            *(neighbors[candidate_id] for candidate_id in alternatives)
+        ) - {owner_id}
+        if len({owner_by_id[item].sample_stem for item in shared_neighbors}) >= 2:
+            # A doublet in one sample competes for many other owners;
+            # isolate its alternatives without discarding their band.
+            ambiguous_window.update(alternatives)
+        else:
+            ambiguous_window.add(owner_id)
+    # A contested pairing to one sample does not invalidate independent
+    # reciprocal support from another. Keep that support, but do not use
+    # the contested arcs to grow a band. Unsupported doublets stay weak.
+    independently_supported = {
+        owner_id
+        for owner_id, neighbor_id in preferred_arcs
+        if (neighbor_id, owner_id) in preferred_arcs
+    } | seeded_owners
+    ambiguous_window.difference_update(independently_supported)
+    return ambiguous_window, ambiguous_arcs
+
+
+def _window_membership_result(
+    components: Sequence[tuple[str, ...]],
+    *,
+    owner_by_id: Mapping[str, SampleLocalMS1Owner],
+    weak: Mapping[str, str],
+    orders: Mapping[str, int],
+    corrected_rt: Mapping[str, float],
+    rt_basis: RTEvidenceBasis,
+) -> tuple[tuple[FeatureMembershipGroup, ...], tuple[SparseFeatureDecision, ...]]:
+    """Complete group dispositions and their matching per-owner decisions."""
     groups = []
     decisions = []
-    for owner_ids in sorted(final_components):
-        group_owners = tuple(ordinary_by_id[owner_id] for owner_id in owner_ids)
+    for owner_ids in sorted(components):
+        group_owners = tuple(owner_by_id[owner_id] for owner_id in owner_ids)
         assigned = len(owner_ids) >= 2 and not any(
             owner_id in weak for owner_id in owner_ids
         )
@@ -1422,7 +1450,7 @@ def _window_inference(
                     selected_witness_owner_id=witness.owner_id
                     if witness is not None
                     else None,
-                    rt_basis="drift_corrected" if rt_warp is not None else "raw",
+                    rt_basis=rt_basis,
                     rt_raw_delta_sec=(
                         abs(owner.owner_apex_rt - witness.owner_apex_rt) * 60.0
                         if witness is not None
@@ -1431,8 +1459,6 @@ def _window_inference(
                     rt_drift_corrected_delta_sec=corrected_delta,
                 )
             )
-    counts["samples_processed"] = len(samples)
-    counts["births"] = len(groups)
     return tuple(groups), tuple(decisions)
 
 
@@ -1872,7 +1898,7 @@ def _feature_hard_reason(
         return "identity_evidence_type_mismatch", math.inf
     composite_compatible = (
         track.composite_subject_id is not None
-        and _compatible_composite_owners(owner, track.seed)
+        and compatible_composite_owners(owner, track.seed)
     )
     if not composite_compatible and owner.neutral_loss_tag != track.neutral_loss_tag:
         return "neutral_loss_tag_mismatch", math.inf
@@ -2155,23 +2181,6 @@ def _partition_by_owner(
     groups: Sequence[tuple[str, ...]],
 ) -> dict[str, int]:
     return {owner_id: index for index, group in enumerate(groups) for owner_id in group}
-
-
-def _owner_uncertainty_reason(
-    owner: SampleLocalMS1Owner,
-    config: AlignmentConfig,
-) -> str:
-    if owner.identity_conflict:
-        return "owner_identity_conflict"
-    if owner.is_provisional:
-        return "provisional_owner"
-    if owner.owner_area <= 0.0:
-        return "nonpositive_owner_area"
-    if "ambiguous" in owner.assignment_reason:
-        return "ambiguous_owner_assignment"
-    if _seed_support_level(owner, owner, config) == "weak":
-        return "weak_identity_evidence"
-    return ""
 
 
 def _sample_sort_key(

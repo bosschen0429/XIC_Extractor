@@ -10,7 +10,7 @@ from xic_extractor.alignment.cell_quality import (
     decision_map_by_family,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.edge_scoring import (
+from xic_extractor.alignment.grouping_evidence import (
     owner_peak_meets_quantitation_limit,
 )
 from xic_extractor.alignment.identity_gates import (
