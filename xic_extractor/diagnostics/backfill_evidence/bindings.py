@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from xic_extractor.alignment.backfill_evidence_contract import (
+from xic_extractor.alignment.backfill.evidence_contract import (
     BackfillEvidenceCandidateAssignment,
     BackfillEvidenceOwnerBindings,
     BackfillEvidenceOwnerResult,

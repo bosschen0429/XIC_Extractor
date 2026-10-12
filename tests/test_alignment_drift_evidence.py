@@ -258,7 +258,7 @@ def test_known_reference_grouping_preserves_main_peak_against_closer_competitor(
     from tests.alignment_pipeline_helpers import _owner
     from xic_extractor.acquisition.istd_reference import read_known_istd_reference
     from xic_extractor.alignment.config import AlignmentConfig
-    from xic_extractor.alignment.cross_sample_peak_groups import (
+    from xic_extractor.alignment.cross_sample.peak_groups import (
         construct_cross_sample_peak_group_hypotheses,
     )
 
@@ -319,7 +319,7 @@ def test_batch_reference_corrects_bootstrap_unknowns_without_merging_distinct_pe
 ) -> None:
     from tests.alignment_pipeline_helpers import _owner
     from xic_extractor.alignment.config import AlignmentConfig
-    from xic_extractor.alignment.cross_sample_peak_groups import (
+    from xic_extractor.alignment.cross_sample.peak_groups import (
         construct_cross_sample_peak_group_hypotheses,
     )
 

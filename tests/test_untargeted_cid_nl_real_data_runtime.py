@@ -965,7 +965,7 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
     backfill_stop,
     cancel_accepted,
 ) -> None:
-    from xic_extractor.alignment.cell_observation_records import CellObservationRef
+    from xic_extractor.alignment.cell_observation.records import CellObservationRef
 
     validate_cell = CellObservationRef.__post_init__
 

@@ -41,7 +41,7 @@ def test_finalizer_closes_exact_core_with_terminal_subject_variants(
     scope, captures, receipt, handoff, predecessor_cells = _finalization_inputs(
         tmp_path, monkeypatch
     )
-    from xic_extractor.alignment import cell_observations as cell_owner
+    from xic_extractor.alignment.cell_observation import observations as cell_owner
 
     compose_cells = cell_owner.compose_final_group_cell_observation_population
     composed_populations = []

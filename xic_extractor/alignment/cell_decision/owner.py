@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from dataclasses import InitVar, dataclass, field, fields
 from typing import Literal, TypeAlias, cast
 
-from xic_extractor.alignment.cell_observations import (
+from xic_extractor.alignment.cell_observation.observations import (
     CellObservationContractError,
     FinalGroupCellObservation,
     validate_final_group_cell_observation_population,

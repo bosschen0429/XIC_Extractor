@@ -7,14 +7,14 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from xic_extractor.acquisition_contract import TraceAcquisitionBatch
+from xic_extractor.alignment.backfill.conservative import (
+    ACTIVATION_ELIGIBLE_SAMPLE_ROLES,
+    minimum_direct_support_count,
+)
 from xic_extractor.alignment.cid_nl_inputs import (
     CID_NL_ALIGNMENT_CONFIG,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.conservative_backfill import (
-    ACTIVATION_ELIGIBLE_SAMPLE_ROLES,
-    minimum_direct_support_count,
-)
 from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.execution._finalization import (
     RuntimeResourceKind,

@@ -6,13 +6,13 @@ A revisit can produce a local observation. Backfill does not create a group,
 decide membership, or itself count a detection. Product policy consumes the
 accepted receipt as described below. Backfill does not grant Matrix writer
 authority on its own. The current Untargeted CID-NL path uses the bounded
-conservative decision in `xic_extractor.alignment.conservative_backfill`.
+conservative decision in `xic_extractor.alignment.backfill.conservative`.
 
 ## Contract
 
 ### Targeted route
 
-`alignment.istd_anchored_backfill` freezes a reference group from a Target's
+`alignment.backfill.istd_anchored` freezes a reference group from a Target's
 selected direct CID-NL-supported observations, then calls the same conservative
 support gate and candidate mapper. `extraction.targeted_istd_backfill` supplies
 it those peers and the paired ISTD's observations from the retained acquisition

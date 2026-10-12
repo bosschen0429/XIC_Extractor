@@ -17,7 +17,7 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.cross_sample_identity_models import (
+from xic_extractor.alignment.cross_sample.identity_models import (
     CrossSampleContractError,
     CrossSampleEdgeDisposition,
     CrossSampleGroupDisposition,
@@ -30,7 +30,7 @@ from xic_extractor.alignment.cross_sample_identity_models import (
     mint_cross_sample_group_identity,
     validate_cross_sample_group_population,
 )
-from xic_extractor.alignment.cross_sample_neighborhood_graph import (
+from xic_extractor.alignment.cross_sample.neighborhood_graph import (
     CrossSampleLineageEdge,
     CrossSampleNeighborhoodEdge,
     CrossSamplePartitionTransition,

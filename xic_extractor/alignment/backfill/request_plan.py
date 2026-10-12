@@ -11,14 +11,14 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Literal, NamedTuple
 
-from xic_extractor.alignment.backfill_runtime_projection import (
+from xic_extractor.alignment.backfill.runtime_projection import (
     BackfillRuntimeFeature,
     BackfillRuntimeFeatureProjection,
     BackfillRuntimeFeatures,
     mint_backfill_runtime_feature,
     validate_backfill_runtime_feature,
 )
-from xic_extractor.alignment.backfill_scope import (
+from xic_extractor.alignment.backfill.scope import (
     backfill_request_sample_stems,
     backfill_seed_centers,
 )

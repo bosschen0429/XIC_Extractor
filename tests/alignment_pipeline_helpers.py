@@ -1,7 +1,7 @@
 import csv
 from pathlib import Path
 
-from xic_extractor.alignment.cross_sample_identity_models import (
+from xic_extractor.alignment.cross_sample.identity_models import (
     CrossSampleGroupMemberSubject,
 )
 from xic_extractor.alignment.edge_scoring import OwnerEdgeEvidence

@@ -14,11 +14,11 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     validate_backfill_conservative_no_request_position,
     validate_backfill_retained_candidate_position,
 )
-from xic_extractor.alignment.cell_group_context import (
+from xic_extractor.alignment.cell_observation.group_context import (
     CidNlCellGroupContext,
     CidNlCellGroupSupport,
 )
-from xic_extractor.alignment.cell_observation_records import (
+from xic_extractor.alignment.cell_observation.records import (
     CellObservationContent,
     CellObservationContractError,
     CellObservationRef,
@@ -32,7 +32,7 @@ from xic_extractor.alignment.cross_sample.association import (
     CrossSampleCoveragePositionAssociation,
     validate_cross_sample_association_lineage_handoff,
 )
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
 )
@@ -69,6 +69,7 @@ _FINAL_CELL_OBSERVATION_ID_PREFIX = "xic.final-cell-observation:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _FINAL_CELL_MINT_TOKEN = object()
 _ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
+    # Persisted artifact-hash identity; intentionally not this module's path.
     owner_namespace="xic_extractor.alignment.cell_observations",
     semantic_role=ARTIFACT_SEMANTIC_ROLE,
     schema_version=SCHEMA_VERSION,

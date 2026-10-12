@@ -15,7 +15,7 @@ import math
 from dataclasses import InitVar, asdict, dataclass, field
 from typing import Literal, cast, final
 
-from xic_extractor.alignment.cell_observations import (
+from xic_extractor.alignment.cell_observation.observations import (
     CellObservationRef,
     CidNlCellGroupContext,
 )
@@ -23,7 +23,7 @@ from xic_extractor.alignment.cid_nl_evidence_spine import (
     TargetedCellObservationReferenceProjection,
     UntargetedCellObservationReferenceProjection,
 )
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.peak_trajectories import BackfillPeakLocation
@@ -58,6 +58,7 @@ PRODUCT_AUTHORITY = "none"
 BACKFILL_UNIVERSE_SCHEMA_VERSION = "conservative_backfill_candidate_universe"
 BACKFILL_UNIVERSE_ARTIFACT_SEMANTIC_ROLE = "conservative_backfill_candidate_universe"
 _BACKFILL_UNIVERSE_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
+    # Persisted artifact-hash identity; intentionally not this module's path.
     owner_namespace="xic_extractor.alignment.conservative_backfill",
     semantic_role=BACKFILL_UNIVERSE_ARTIFACT_SEMANTIC_ROLE,
     schema_version=BACKFILL_UNIVERSE_SCHEMA_VERSION,

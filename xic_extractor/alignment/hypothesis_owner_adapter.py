@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     group_member_subject_from_peak_hypothesis,
 )
 from xic_extractor.alignment.ownership_models import IdentityEvent, SampleLocalMS1Owner

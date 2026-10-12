@@ -6,23 +6,23 @@ import numpy as np
 import pytest
 from pytest import MonkeyPatch
 
-import xic_extractor.alignment.backfill_peak_fact as owner_backfill_module
-import xic_extractor.alignment.backfill_request_plan as request_plan_module
+import xic_extractor.alignment.backfill.peak_fact as owner_backfill_module
+import xic_extractor.alignment.backfill.request_plan as request_plan_module
 from tests.alignment_pipeline_helpers import _owner
-from xic_extractor.alignment import (
-    backfill_acquisition as owner_backfill_acquisition_module,
+from xic_extractor.alignment.backfill import (
+    acquisition as owner_backfill_acquisition_module,
 )
-from xic_extractor.alignment import (
-    backfill_evaluation as owner_backfill_evaluation_module,
+from xic_extractor.alignment.backfill import (
+    evaluation as owner_backfill_evaluation_module,
 )
-from xic_extractor.alignment.backfill_peak_fact import (
+from xic_extractor.alignment.backfill.peak_fact import (
     build_backfill_result,
 )
-from xic_extractor.alignment.backfill_request_plan import (
+from xic_extractor.alignment.backfill.request_plan import (
     build_backfill_request_plan,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.configuration.models import ExtractionConfig

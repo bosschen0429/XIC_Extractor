@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import InitVar, dataclass, field
 from typing import Literal, TypeAlias, cast
 
-from xic_extractor.alignment.cell_decision import (
+from xic_extractor.alignment.cell_decision.owner import (
     CellDecisionContractError,
     ProductionCellDecision,
     validate_production_cell_decision,

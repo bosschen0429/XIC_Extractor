@@ -7,11 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from xic_extractor.alignment.backfill_evidence_contract import (
+from xic_extractor.alignment.backfill.evidence_contract import (
     PREDICATE_VERSION,
     SkippedEvidenceRecord,
 )
-from xic_extractor.alignment.backfill_runtime_projection import (
+from xic_extractor.alignment.backfill.runtime_projection import (
     BackfillRuntimeFeature,
     backfill_runtime_owner_eligibility,
     median_backfill_runtime_owner_area,

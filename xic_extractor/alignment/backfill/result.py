@@ -16,7 +16,7 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillTerminalReason,
     mint_backfill_selection_subject_id,
 )
-from xic_extractor.alignment.backfill_request_plan import (
+from xic_extractor.alignment.backfill.request_plan import (
     BACKFILL_VALIDATION_MODES,
     BackfillLogicalRequestMember,
     BackfillRequestIdentity,

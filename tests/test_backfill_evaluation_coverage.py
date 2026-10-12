@@ -16,13 +16,13 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     build_backfill_evaluation_coverage,
     mint_backfill_attempt_terminal,
 )
-from xic_extractor.alignment.backfill_peak_fact import build_backfill_result
-from xic_extractor.alignment.backfill_request_plan import (
+from xic_extractor.alignment.backfill.peak_fact import build_backfill_result
+from xic_extractor.alignment.backfill.request_plan import (
     BACKFILL_TRACE_RESULT_SEMANTICS,
 )
-from xic_extractor.alignment.backfill_scope import select_backfill_features
+from xic_extractor.alignment.backfill.scope import select_backfill_features
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupMemberSubject,
     mint_cross_sample_group_identity,
 )

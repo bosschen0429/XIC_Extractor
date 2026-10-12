@@ -16,15 +16,7 @@ from tests.processing_identity_no_raw_fixture import (
     ProcessingIdentityNoRawFixture,
     build_processing_identity_no_raw_fixture,
 )
-from xic_extractor.alignment.cell_observations import (
-    CellObservationContractError,
-    mint_cell_observation_ref,
-)
-from xic_extractor.alignment.cid_nl_evidence_spine import (
-    CidNlReferenceSpine,
-    build_cid_nl_reference_spine,
-)
-from xic_extractor.alignment.conservative_backfill import (
+from xic_extractor.alignment.backfill.conservative import (
     ConservativeBackfillCellDecision,
     ConservativeBackfillContractError,
     ConservativeBackfillEvidence,
@@ -36,6 +28,14 @@ from xic_extractor.alignment.conservative_backfill import (
     minimum_direct_support_count,
     mint_conservative_backfill_candidate_universe,
     plan_conservative_backfill_targets,
+)
+from xic_extractor.alignment.cell_observation.observations import (
+    CellObservationContractError,
+    mint_cell_observation_ref,
+)
+from xic_extractor.alignment.cid_nl_evidence_spine import (
+    CidNlReferenceSpine,
+    build_cid_nl_reference_spine,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlEvaluationReceipt,

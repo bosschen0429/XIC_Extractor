@@ -9,22 +9,22 @@ from typing import TypeAlias
 import numpy as np
 from numpy.typing import NDArray
 
-from xic_extractor.alignment.backfill_acquisition import (
+from xic_extractor.alignment.backfill.acquisition import (
     _peak_facts_match_baseline,
     _positive_elapsed,
 )
-from xic_extractor.alignment.backfill_request_plan import (
+from xic_extractor.alignment.backfill.request_plan import (
     BackfillRequestItem,
 )
-from xic_extractor.alignment.backfill_result import (
+from xic_extractor.alignment.backfill.result import (
     BackfillPeakFactReceipt,
     _BackfillTraceEvaluation,
     validate_backfill_peak_fact_observation,  # noqa: F401
 )
-from xic_extractor.alignment.backfill_runtime_projection import (
+from xic_extractor.alignment.backfill.runtime_projection import (
     BackfillRuntimeFeature,
 )
-from xic_extractor.alignment.backfill_scope import (
+from xic_extractor.alignment.backfill.scope import (
     any_detected_owner_can_be_superseded,
     backfill_seed_centers,
 )

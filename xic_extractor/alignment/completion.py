@@ -6,21 +6,21 @@ from dataclasses import InitVar, dataclass, field
 from enum import Enum
 from typing import TypeAlias, cast
 
+from xic_extractor.alignment.backfill.conservative import (
+    ConservativeBackfillCellDecision,
+)
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillEvaluationCoverageBatch,
 )
-from xic_extractor.alignment.cell_observations import CellObservationRef
+from xic_extractor.alignment.cell_observation.observations import CellObservationRef
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.conservative_backfill import (
-    ConservativeBackfillCellDecision,
-)
 from xic_extractor.alignment.cross_sample.association import (
     build_cross_sample_association_lineage_handoff,
 )
-from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
-from xic_extractor.alignment.grouping_result import (
+from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingResult,
 )
+from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.grouping_workflow import (
     build_targeted_cross_sample_groups,
 )

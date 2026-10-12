@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from xic_extractor.alignment.backfill_peak_fact import BackfillWindowStrategy
+from xic_extractor.alignment.backfill.peak_fact import BackfillWindowStrategy
 from xic_extractor.alignment.config import (
     AlignmentConfig,
     BackfillXicBackend,

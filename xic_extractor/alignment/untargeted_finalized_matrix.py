@@ -7,7 +7,9 @@ from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, cast
 
-from xic_extractor.alignment.cell_observations import FinalGroupCellObservation
+from xic_extractor.alignment.cell_observation.observations import (
+    FinalGroupCellObservation,
+)
 from xic_extractor.alignment.matrix import (
     AlignedCell,
     AlignmentMatrix,

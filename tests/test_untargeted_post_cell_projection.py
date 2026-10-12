@@ -14,12 +14,12 @@ from tests.test_alignment_cell_decision import _numeric_peak
 from tests.test_untargeted_pre_cell_projection import (
     _untarget_projection_inputs,
 )
-from xic_extractor.alignment.cell_decision import (
+from xic_extractor.alignment.cell_decision.owner import (
     NoWriteCellDecision,
     decide_group_cell_population,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     construct_cross_sample_peak_group_hypotheses,
 )
 from xic_extractor.alignment.projection.untarget import (

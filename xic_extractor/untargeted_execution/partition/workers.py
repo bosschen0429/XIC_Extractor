@@ -8,17 +8,17 @@ from dataclasses import dataclass
 from typing import Literal
 
 from xic_extractor.acquisition_contract import TraceAcquisitionBatch
-from xic_extractor.alignment.cell_group_context import (
+from xic_extractor.alignment.backfill.conservative import (
+    plan_conservative_backfill_targets,
+)
+from xic_extractor.alignment.cell_observation.group_context import (
     select_cid_nl_group_backfill_subject,
 )
 from xic_extractor.alignment.cid_nl_inputs import (
     UntargetedCidNlBackfillInput,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.conservative_backfill import (
-    plan_conservative_backfill_targets,
-)
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     construct_cross_sample_peak_group_hypotheses,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (

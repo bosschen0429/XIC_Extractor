@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from xic_extractor.alignment.cell_observations import (
+from xic_extractor.alignment.cell_observation.observations import (
     CellObservationContractError,
     CellObservationRef,
     CidNlCellGroupContext,
@@ -12,7 +12,7 @@ from xic_extractor.alignment.cell_observations import (
     mint_cell_observation_ref,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
     construct_cross_sample_peak_group_hypotheses,
 )

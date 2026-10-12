@@ -14,20 +14,20 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from xic_extractor.alignment.cell_observations import (
-    CidNlCellGroupContext,
-    CidNlCellGroupSupport,
-    mint_cell_observation_ref,
-)
-from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.conservative_backfill import (
+from xic_extractor.alignment.backfill.conservative import (
     ConservativeBackfillCellDecision,
     assess_conservative_backfill_group,
     map_conservative_backfill_candidates,
     mint_conservative_backfill_candidate_universe,
     plan_conservative_backfill_targets,
 )
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cell_observation.observations import (
+    CidNlCellGroupContext,
+    CidNlCellGroupSupport,
+    mint_cell_observation_ref,
+)
+from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample.peak_groups import (
     construct_cross_sample_peak_group_hypotheses,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (

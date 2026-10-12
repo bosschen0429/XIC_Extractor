@@ -7,7 +7,7 @@ from dataclasses import InitVar, dataclass, field
 from typing import Literal
 
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.cross_sample_identity_models import (
+from xic_extractor.alignment.cross_sample.identity_models import (
     _CROSS_SAMPLE_GROUP_PREFIX,
     CrossSampleContractError,
     CrossSampleEdgeDisposition,
