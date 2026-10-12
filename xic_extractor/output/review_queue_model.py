@@ -241,6 +241,8 @@ def _review_why(issue: str, row: dict[str, str], evidence: str) -> str:
         "Projection Support Reasons", ""
     ):
         return "無直接 NL，回填確認身分"
+    if "analyte_peak_off_paired_istd_position" in row.get("Projection Reason", ""):
+        return "峰不在內標位置，報 ND"
     if "BACKFILL_HOLD" in evidence and counted == "FALSE":
         return "回填找不到唯一的峰"
     if "BACKFILL_ACCEPTED" in evidence and counted == "FALSE":

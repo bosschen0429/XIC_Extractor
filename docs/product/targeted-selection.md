@@ -126,6 +126,13 @@ The result records `paired_istd_identity` among its support reasons, so it
 remains distinguishable from NL-confirmed detection. Morphology, overlap and
 other review reasons still flag it.
 
+The same position also rejects. When the paired ISTD is counted and the
+confirmed offset exists, an uncounted analyte peak outside that tolerance is
+another signal, not this analyte. Its RT, area and bounds are published as no
+value (`analyte_peak_off_paired_istd_position`), and the measured peak remains
+an `OFF_ISTD_POSITION` diagnostic event. `paired_istd_positions` returns both
+answers from one offset.
+
 Cohort Backfill is a distinct, owner-bound recovery after direct reference
 observations are available. The [shared Backfill route](backfill.md#targeted-route)
 can attribute a unique qualified retained MS1 peak using confirmed peers and
@@ -233,7 +240,8 @@ those facts itself.
 ### Numeric output and evidence
 
 - Finalized CSV/workbook RT, area, and bounds render the cell owner's numeric
-  answer even when `Counted Detection` is false.
+  answer even when `Counted Detection` is false, except a paired analyte peak
+  outside its [paired-ISTD position](#paired-istd-identity).
 - Count, confidence, and review remain separate evidence/policy fields.
 - A typed no-write clears the retained peak before rendering.
 - Missing NL alone is not another writer veto.

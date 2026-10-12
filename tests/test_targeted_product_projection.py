@@ -1,8 +1,11 @@
 from dataclasses import dataclass
 
+import pytest
+
 from xic_extractor.extraction.targeted_product_projection import (
+    PairedIstdPositions,
     build_targeted_product_projection,
-    paired_istd_identity_samples,
+    paired_istd_positions,
 )
 from xic_extractor.output.targeted_product_model import (
     TargetedProductContext,
@@ -179,7 +182,7 @@ class _Result:
     targeted_product_projection: object
 
 
-def test_identity_needs_a_counted_istd_at_the_batch_offset() -> None:
+def test_paired_istd_position_identifies_or_rejects_the_analyte_peak() -> None:
     confirmed = {"C1": 0.10, "C2": 0.12, "C3": 0.08}
     analyte = {s: _Result(9.0 + d, _analyte(cid_nl=True)) for s, d in confirmed.items()}
     istd = {s: _Result(9.0, _istd()) for s in confirmed}
@@ -199,11 +202,12 @@ def test_identity_needs_a_counted_istd_at_the_batch_offset() -> None:
     analyte["incoherent"] = _Result(9.11, _analyte(cid_nl=False, support=()))
     istd["relocated"] = istd["incoherent"] = _Result(9.0, _istd())
 
-    assert paired_istd_identity_samples(analyte, istd) == {
-        "near",
-        "backfilled_istd",
-        "relocated",
-    }
+    positions = paired_istd_positions(analyte, istd)
+    assert positions.identified == {"near", "backfilled_istd", "relocated"}
+    # A peak 0.4 min from the paired position is another signal, not this
+    # analyte; without a counted ISTD there is no position to judge.
+    assert positions.off_position.keys() == {"off_offset"}
+    assert positions.off_position["off_offset"] == pytest.approx(0.40)
     # One confirmed sample gives no offset to agree with.
-    lone = {s: r for s, r in analyte.items() if s in {"C1", "near"}}
-    assert paired_istd_identity_samples(lone, istd) == frozenset()
+    lone = {s: r for s, r in analyte.items() if s in {"C1", "near", "off_offset"}}
+    assert paired_istd_positions(lone, istd) == PairedIstdPositions()

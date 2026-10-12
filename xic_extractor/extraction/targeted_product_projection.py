@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from statistics import median, quantiles
 from typing import TYPE_CHECKING
 
@@ -204,18 +205,28 @@ _BACKFILL_LOCALIZATION = "cross_sample_backfill_localization"
 _PAIRED_OFFSET_FLOOR_MIN = 0.2
 
 
-def paired_istd_identity_samples(
+@dataclass(frozen=True)
+class PairedIstdPositions:
+    """Where analyte peaks sit relative to their counted paired isotope ISTD."""
+
+    identified: frozenset[str] = frozenset()
+    # Sample -> minutes the selected peak lies from the paired-ISTD position.
+    off_position: Mapping[str, float] = field(default_factory=dict)
+
+
+def paired_istd_positions(
     analyte: Mapping[str, ExtractionResult],
     istd: Mapping[str, ExtractionResult],
-) -> frozenset[str]:
-    """Return samples whose analyte peak takes its identity from the paired ISTD.
+) -> PairedIstdPositions:
+    """Judge uncounted analyte peaks against the paired isotope ISTD position.
 
     An isotope-labelled ISTD co-elutes with its analyte, so once the ISTD is
-    counted in a sample (directly or by accepted Backfill), the analyte's
-    coherent MS1 peak at this batch's confirmed analyte-to-ISTD RT offset has
-    its chemical identity whether or not its own neutral loss was observed.
-    The offset is learned from samples where both are counted; with fewer than
-    two such samples there is no offset to agree with.
+    counted in a sample (directly or by accepted Backfill) it fixes where the
+    analyte must be: at this batch's confirmed analyte-to-ISTD RT offset. A
+    coherent MS1 peak there takes its chemical identity from the ISTD whether
+    or not its own neutral loss was observed. A peak elsewhere is another
+    signal, not this analyte. The offset is learned from samples where both are
+    counted; with fewer than two such samples there is no position to judge.
     """
     counted_istd = {
         sample: rt
@@ -230,7 +241,7 @@ def paired_istd_identity_samples(
         and (rt := _finite(result.reported_rt)) is not None
     ]
     if len(offsets) < 2:
-        return frozenset()
+        return PairedIstdPositions()
     center = median(offsets)
     residuals = [abs(offset - center) for offset in offsets]
     tolerance = max(
@@ -238,6 +249,7 @@ def paired_istd_identity_samples(
         quantiles(residuals, n=10, method="inclusive")[-1],
     )
     identified = set()
+    off_position = {}
     for sample, result in analyte.items():
         projection = result.targeted_product_projection
         rt = _finite(result.reported_rt)
@@ -246,18 +258,22 @@ def paired_istd_identity_samples(
             or projection.counted_detection
             or sample not in counted_istd
             or rt is None
-            or projection.conflict_reasons
-            or projection.exclusion_reasons
-            or not (
+        ):
+            continue
+        deviation = rt - counted_istd[sample] - center
+        if abs(deviation) > tolerance:
+            off_position[sample] = deviation
+        elif (
+            not projection.conflict_reasons
+            and not projection.exclusion_reasons
+            and (
                 _COHERENT_MS1_PEAK <= set(projection.support_reasons)
                 or _BACKFILL_LOCALIZATION in projection.support_reasons
             )
-            or not set(projection.not_counted_reasons) <= _MISSING_DIRECT_NL_NOT_COUNTED
+            and set(projection.not_counted_reasons) <= _MISSING_DIRECT_NL_NOT_COUNTED
         ):
-            continue
-        if abs(rt - counted_istd[sample] - center) <= tolerance:
             identified.add(sample)
-    return frozenset(identified)
+    return PairedIstdPositions(frozenset(identified), off_position)
 
 
 def _counted(result: ExtractionResult) -> bool:

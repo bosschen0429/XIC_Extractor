@@ -29,7 +29,7 @@ from xic_extractor.extraction.result_models import (
 )
 from xic_extractor.extraction.targeted_product_projection import (
     build_targeted_product_projection,
-    paired_istd_identity_samples,
+    paired_istd_positions,
 )
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 from xic_extractor.output.messages import DiagnosticRecord
@@ -279,7 +279,7 @@ def _build_render_view(
         raise TargetedOutputBoundaryError(
             "finalized Targeted decisions crossed the acquisition sample population"
         )
-    _apply_paired_istd_identity(
+    position_diagnostics = _apply_paired_istd_positions(
         {file_result.sample_name: rendered for _, file_result, rendered in files},
         cells,
         targets_by_label,
@@ -290,8 +290,17 @@ def _build_render_view(
         file_results=[
             replace(file_result, results=rendered) for _, file_result, rendered in files
         ],
-        diagnostics=[*acquisition_evidence.diagnostics, *backfill_diagnostics],
+        diagnostics=[
+            *acquisition_evidence.diagnostics,
+            *backfill_diagnostics,
+            *position_diagnostics,
+        ],
     )
+
+
+# A peak away from the paired-ISTD position is another signal; it is not
+# reported as this analyte's quantity.
+OFF_PAIRED_ISTD_POSITION = "analyte_peak_off_paired_istd_position"
 
 
 @dataclass(frozen=True)
@@ -305,28 +314,33 @@ class _RenderCell:
     evidence: object
     backfill_supported: bool
 
-    def render(self, *, paired_istd_identity: bool = False) -> ExtractionResult:
+    def render(
+        self, *, paired_istd_identity: bool = False, no_write_reason: str = ""
+    ) -> ExtractionResult:
         return _finalized_extraction_result(
             self.extraction,
             target=self.target,
             value=self.value,
-            no_write_reason=self.no_write_reason,
+            no_write_reason=no_write_reason or self.no_write_reason,
             evidence=self.evidence,
             backfill_supported=self.backfill_supported,
             paired_istd_identity=paired_istd_identity,
         )
 
 
-def _apply_paired_istd_identity(
+def _apply_paired_istd_positions(
     rendered_by_sample: Mapping[str, dict[str, ExtractionResult]],
     cells: Mapping[tuple[str, str], _RenderCell],
     targets_by_label: Mapping[str, Target],
-) -> None:
-    """Re-render analytes whose identity comes from their counted paired ISTD.
+) -> list[DiagnosticRecord]:
+    """Re-render uncounted analytes against their counted paired ISTD.
 
     The ISTD's final count, including accepted Backfill, is known only once
-    every Target of the batch has rendered.
+    every Target of the batch has rendered. A peak at the paired position takes
+    its identity; one elsewhere is published as no value, its measurement kept
+    as a diagnostic event.
     """
+    diagnostics: list[DiagnosticRecord] = []
     for label, target in targets_by_label.items():
         pair = target.istd_pair
         if target.is_istd or not pair or target.neutral_loss_da is None:
@@ -341,10 +355,27 @@ def _apply_paired_istd_identity(
             for sample, results in rendered_by_sample.items()
             if pair in results
         }
-        for sample in paired_istd_identity_samples(analyte, istd):
+        positions = paired_istd_positions(analyte, istd)
+        for sample in positions.identified:
             rendered_by_sample[sample][label] = cells[(sample, label)].render(
                 paired_istd_identity=True
             )
+        for sample, deviation in positions.off_position.items():
+            measured = analyte[sample]
+            rendered_by_sample[sample][label] = cells[(sample, label)].render(
+                no_write_reason=OFF_PAIRED_ISTD_POSITION
+            )
+            diagnostics.append(
+                DiagnosticRecord(
+                    sample,
+                    label,
+                    "OFF_ISTD_POSITION",
+                    f"Selected peak at RT {measured.reported_rt:.3f} min "
+                    f"(area {measured.reported_peak_area:.3g}) is {deviation:+.2f} "
+                    f"min from the {pair} position; reported as ND.",
+                )
+            )
+    return diagnostics
 
 
 def _finalized_extraction_result(
