@@ -12,9 +12,11 @@ conservative decision in `xic_extractor.alignment.conservative_backfill`.
 
 ### Targeted route
 
-The Targeted production workflow freezes a reference group from its selected
-direct CID-NL-supported observations, then calls the same conservative support
-gate and candidate mapper. Sample roles and batch metadata come from the
+`alignment.istd_anchored_backfill` freezes a reference group from a Target's
+selected direct CID-NL-supported observations, then calls the same conservative
+support gate and candidate mapper. `extraction.targeted_istd_backfill` supplies
+it those peers and the paired ISTD's observations from the retained acquisition
+results; the Targeted production workflow only composes the two. Sample roles and batch metadata come from the
 existing sample-metadata owner; ISTDs do not add analyte SUPPORT votes.
 
 For a paired Target, confirmed same-batch peers establish the measured

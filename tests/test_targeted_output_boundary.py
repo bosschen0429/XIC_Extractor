@@ -72,9 +72,12 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
 ) -> None:
     from contextlib import nullcontext
 
-    from xic_extractor.applications.targeted import production_workflow
     from xic_extractor.configuration.models import ExtractionConfig, Target
-    from xic_extractor.extraction import pipeline, target_extraction
+    from xic_extractor.extraction import (
+        pipeline,
+        target_extraction,
+        targeted_cid_nl_assessment,
+    )
     from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
     from xic_extractor.peak_detection import cid_nl_method_assessment
 
@@ -160,7 +163,7 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
     monkeypatch.setattr(
         cid_nl_method_assessment, "evaluate_cid_nl_method_relations", record_relations
     )
-    mint_assessment = production_workflow.mint_cid_nl_method_assessment_ref
+    mint_assessment = targeted_cid_nl_assessment.mint_cid_nl_method_assessment_ref
 
     def record_assessment(**kwargs):
         result = mint_assessment(**kwargs)
@@ -168,7 +171,9 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
         return result
 
     monkeypatch.setattr(
-        production_workflow, "mint_cid_nl_method_assessment_ref", record_assessment
+        targeted_cid_nl_assessment,
+        "mint_cid_nl_method_assessment_ref",
+        record_assessment,
     )
     workbook_path = tmp_path / "xic_results.xlsx"
     execution = TargetedApplicationService(
@@ -1692,15 +1697,17 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
     # RAW enumeration order is not canonical sample-identity order.
     from xic_extractor.applications.targeted import production_workflow
 
-    original_execute = production_workflow._execute_target
+    complete_prepared = (
+        production_workflow.complete_prepared_targeted_production_workflow
+    )
     initial_counts = []
 
-    def execute_reverse_identity(context, *args, **kwargs):
-        context = replace(
-            context,
+    def complete_in_reverse_identity_order(request, prepared):
+        prepared = replace(
+            prepared,
             results_by_sample=tuple(
                 sorted(
-                    context.results_by_sample,
+                    prepared.results_by_sample,
                     key=lambda item: item[0].identity.sample_identity_id,
                     reverse=True,
                 )
@@ -1709,13 +1716,15 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         if istd_backfill:
             initial_counts.extend(
                 file.results["Analyte"].targeted_product_projection.counted_detection
-                for sample, file in context.results_by_sample
+                for sample, file in prepared.results_by_sample
                 if sample.metadata.raw_stem == "SampleC"
             )
-        return original_execute(context, *args, **kwargs)
+        return complete_prepared(request, prepared)
 
     monkeypatch.setattr(
-        production_workflow, "_execute_target", execute_reverse_identity
+        production_workflow,
+        "complete_prepared_targeted_production_workflow",
+        complete_in_reverse_identity_order,
     )
     workbook_path = tmp_path / "backfill.xlsx"
     execution = TargetedApplicationService(pipeline.run_pipeline).execute_application(
