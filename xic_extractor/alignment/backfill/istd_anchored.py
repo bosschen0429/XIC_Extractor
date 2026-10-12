@@ -86,19 +86,27 @@ def resolve_istd_anchored_backfill(
     sample_by_id = {
         sample.identity.sample_identity_id: sample for sample in sample_population
     }
+    owners = tuple(
+        owner_from_cid_nl_assessment_support(
+            sample=support.sample,
+            assessment=support.assessment,
+            hypothesis=support.hypothesis,
+        )
+        for support in direct_supports
+    )
+    # The fixed Target is the identity: its confirmed peers form one group
+    # however far RT drifts over the run. Two bound owners in one sample remain
+    # an unresolved conflict rather than a choice between recovery windows.
+    target_identity = target.definition.target_definition_id
     groups = (
         construct_cross_sample_peak_group_hypotheses(
-            tuple(
-                owner_from_cid_nl_assessment_support(
-                    sample=support.sample,
-                    assessment=support.assessment,
-                    hypothesis=support.hypothesis,
-                )
-                for support in direct_supports
-            ),
+            owners,
             config=alignment_config,
+            known_identity_bindings=tuple(
+                (owner.owner_id, target_identity) for owner in owners
+            ),
         )
-        if direct_supports
+        if owners
         else ()
     )
     plans = (

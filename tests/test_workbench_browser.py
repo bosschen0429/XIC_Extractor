@@ -404,3 +404,55 @@ def test_review_search_and_inspector_use_one_scroll_and_visible_zoom(
     }""")
     frame.locator("#zoom-close").click()
     expect(dialog).to_be_hidden()
+
+
+def test_targeted_review_marks_the_rare_detection_and_opens_it_in_place(
+    workbench, tmp_path
+):
+    from tests.test_xic_inspector_targeted_workbook import (
+        write_rare_detection_workbook,
+    )
+
+    page = workbench
+    workbook = write_rare_detection_workbook(tmp_path / "rare.xlsx")
+    _view(page, "review")
+    page.locator("#source").fill(str(workbook))
+    page.locator("#open-form button[type=submit]").click()
+    overview = page.locator("#targeted-overview")
+    expect(overview.locator("h2")).to_have_text("先看 1 筆與多數不同的結果")
+    overview.locator("td button", has_text="Analyte").click()
+    frame = page.frame_locator("#inspector")
+    rows = frame.locator(".tgt-table tbody tr")
+    # Rows stay in run order; the rare detection is marked where it ran.
+    expect(rows.nth(2).locator(".tgt-sample")).to_have_text("S3")
+    expect(rows.nth(2).locator(".tgt-badge")).to_have_text("少數")
+    # The same sample's paired ISTD reads in the same row.
+    expect(rows.nth(2).locator(".tgt-istd").first).to_have_text("9.2")
+    rows.nth(2).locator(".tgt-sample").click()
+    # The evidence is the next row, not a panel after every other sample.
+    detail = frame.locator(".tgt-table tbody tr:nth-child(4)")
+    expect(detail).to_have_class("tgt-detail-row")
+    expect(detail).to_contain_text("配對 ISTD（ISTD）")
+
+
+def test_read_first_opens_on_minority_rows_and_clearing_lists_all(workbench, tmp_path):
+    from tests.test_xic_inspector_targeted_workbook import (
+        write_rare_detection_workbook,
+    )
+
+    page = workbench
+    workbook = write_rare_detection_workbook(tmp_path / "rare.xlsx")
+    _view(page, "review")
+    page.locator("#source").fill(str(workbook))
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#targeted-overview .overview-actions .primary").click()
+    frame = page.frame_locator("#inspector")
+    rows = frame.locator(".tgt-table tbody tr:not([hidden])")
+    # Reading first starts on the minority row; every sample is one click away.
+    expect(rows).to_have_count(1)
+    expect(frame.locator(".tgt-filter button")).to_have_text(
+        ["全部（5）", "需先看（1）"]
+    )
+    # A filter change applies at once; no separate search press is needed.
+    page.locator("#target-attention").uncheck()
+    expect(rows).to_have_count(5)

@@ -10,6 +10,7 @@ from xic_extractor.output.workbook_styles import (
     _SAMPLE_HEADER,
     BORDER,
     CENTER,
+    CENTER_WRAP,
     _add_table,
     _apply,
     _header_style,
@@ -65,30 +66,13 @@ def _build_data_sheet(
             _apply(
                 cell,
                 fill=_long_cell_fill(header, raw, row_index % 2 == 0),
+                # Values read best centered; only explanatory sentences wrap left.
                 alignment=(
                     Alignment(horizontal="left", vertical="center", wrap_text=True)
-                    if header
-                    in {
-                        "SampleName",
-                        "Target",
-                        "Review Reason",
-                        "Reason",
-                        "NL Evidence",
-                    }
-                    else (
-                        Alignment(horizontal="right", vertical="center")
-                        if header
-                        in {
-                            "Area",
-                            "RT",
-                            "IntSmoothed",
-                            "Int",
-                            "PeakWidth",
-                            "PeakStart",
-                            "PeakEnd",
-                        }
-                        else CENTER
-                    )
+                    if header in {"Review Reason", "Reason", "NL Evidence"}
+                    else CENTER_WRAP
+                    if header in {"SampleName", "Target"}
+                    else CENTER
                 ),
                 border=BORDER,
             )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections import defaultdict
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 from xml.etree.ElementTree import ParseError
@@ -146,6 +146,11 @@ class TargetedWorkbookSource:
             self._records_by_target[row["Target"]].append(row)
         for row in self.queue:
             self._queue_by_target[row["Target"]].append(row)
+        overview = summarize_targeted_results(self.records, self.queue)
+        self._focus = {target.label: target for target in overview.targets}
+        self._records_by_key = {
+            (row["SampleName"], row["Target"]): row for row in self.records
+        }
         self.summary = {
             "schema_version": "targeted_workbook",
             "source_kind": "targeted_workbook",
@@ -156,7 +161,7 @@ class TargetedWorkbookSource:
             "method_context": metadata,
             "target_names": labels,
             "review_record_count": len(self.queue),
-            "overview": asdict(summarize_targeted_results(self.records, self.queue)),
+            "overview": asdict(overview),
             "samples": [
                 {"canonical_sample_identity_id": name, "sample_stem": name}
                 for name in dict.fromkeys(row["SampleName"] for row in self.records)
@@ -177,7 +182,18 @@ class TargetedWorkbookSource:
             queue = [
                 r for r in self._queue_by_target[label] if r["Sample"] in sample_ids
             ]
-            attention = bool(queue)
+            focus = self._focus[label]
+            focus_samples = [s for s in focus.focus_samples if s in sample_ids]
+            attention = bool(focus_samples)
+            pair = target.get("ISTD Pair")
+            istd_records = {
+                r["SampleName"]: {
+                    key: istd.get(key)
+                    for key in ("Target", "RT", "Area", "Counted Detection")
+                }
+                for r in records
+                if pair and (istd := self._records_by_key.get((r["SampleName"], pair)))
+            }
             _, ref = build_canonical_ref(
                 "target", "targeted-workbook", self.locator.workbook_sha256, label
             )
@@ -196,6 +212,13 @@ class TargetedWorkbookSource:
                         "target": target,
                         "records": records,
                         "review_queue": queue,
+                        "focus": {
+                            "kind": focus.focus_kind,
+                            "samples": focus_samples,
+                            "counted": focus.counted,
+                            "decided": focus.total - focus.count_unknown,
+                        },
+                        "istd_records": istd_records,
                         "review_summary": {
                             "observed_sample_count": 0,
                             "scope_sample_count": len(records),
@@ -216,8 +239,9 @@ class TargetedWorkbookSource:
                 0,
             )
         if selection.strategy == "attention" or selection.attention_only:
+            # Lists the targets to read first; each keeps every sample, so the
+            # minority rows are read against the majority they depart from.
             items = [item for item in items if item.is_attention]
-            items = [self._review_scope(item) for item in items]
         if selection.target_ids:
             items = [item for item in items if item.identifier in selection.target_ids]
         if selection.group_ids or selection.candidate_ids:
@@ -259,24 +283,6 @@ class TargetedWorkbookSource:
             missing,
         )
 
-    @staticmethod
-    def _review_scope(item: CanonicalItem) -> CanonicalItem:
-        """The review filter selects saved review rows, not their other peers."""
-        sample_ids = {row["Sample"] for row in item.details["review_queue"]}
-        records = [
-            row for row in item.details["records"] if row["SampleName"] in sample_ids
-        ]
-        return replace(
-            item,
-            sample_ids=tuple(row["SampleName"] for row in records),
-            details=item.details
-            | {
-                "records": records,
-                "review_summary": item.details["review_summary"]
-                | {"scope_sample_count": len(records)},
-            },
-        )
-
     def load_render_items(self, items, *, capability, check_cancel):
         rendered = []
         for item in items:
@@ -288,7 +294,7 @@ class TargetedWorkbookSource:
                     "title": item.identifier,
                     "precursor_mz": item.details["target"]["m/z"],
                     "rt_apex_min": None,
-                    "badge_label": "需檢閱" if item.is_attention else "已記錄",
+                    "badge_label": "需先看" if item.is_attention else "已記錄",
                     "stratum": item.stratum,
                     "review_summary": item.details["review_summary"],
                     "details": item.details,

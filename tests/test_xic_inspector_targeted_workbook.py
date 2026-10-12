@@ -220,7 +220,7 @@ def test_workbook_binding_and_ambiguous_directory(workbook):
         )
 
 
-def test_review_filter_scopes_sample_records_not_just_targets(workbook):
+def test_review_filter_lists_targets_and_keeps_every_sample(workbook):
     book = load_workbook(workbook)
     book["XIC Results"]["H4"] = None
     book.save(workbook)
@@ -228,10 +228,105 @@ def test_review_filter_scopes_sample_records_not_just_targets(workbook):
     report = prepare_report(
         workbook, SelectionRequest(strategy="query", attention_only=True)
     )
-    records = report.payload["items"][0]["details"]["records"]
-    assert [(row["SampleName"], row["Area"]) for row in records] == [("Sample A", "ND")]
-    # Sample B's RT cannot match after the saved-review filter excluded its row.
+    [item] = report.payload["items"]
+    # The filter picks the target to read first; its rows are read against
+    # the samples they depart from, so none are dropped.
+    assert [(r["SampleName"], r["Area"]) for r in item["details"]["records"]] == [
+        ("Sample A", "ND"),
+        ("Sample B", 123.456),
+    ]
+    assert item["details"]["focus"]["samples"] == ["Sample A"]
     report = prepare_report(
         workbook, SelectionRequest(strategy="query", attention_only=True, rt_min=9)
     )
-    assert report.matched_count == 0
+    assert report.matched_count == 1
+
+
+def write_rare_detection_workbook(path):
+    """Five samples: one counted Analyte peak among shared absences."""
+    book = Workbook()
+    targets = book.active
+    targets.title = "Targets"
+    targets.append(["Label", "Role", "ISTD Pair", "m/z", "RT min", "RT max"])
+    targets.append(["Analyte", "Analyte", "ISTD", 258.1085, 8, 10])
+    targets.append(["ISTD", "ISTD", None, 261.127, 8, 10])
+    results = book.create_sheet("XIC Results")
+    results.append(
+        [
+            "SampleName",
+            "Target",
+            "RT",
+            "Area",
+            "PeakStart",
+            "PeakEnd",
+            "Review",
+            "Review Reason",
+            "Reason",
+            "Counted Detection",
+        ]
+    )
+    for index, sample in enumerate(("S1", "S2", "S3", "S4", "S5")):
+        hit = sample == "S3"
+        results.append(
+            [
+                sample,
+                "Analyte",
+                9.4 if hit else "ND",
+                55.5 if hit else "ND",
+                None,
+                None,
+                None if hit else "Review",
+                None if hit else "NL missing",
+                None,
+                "TRUE" if hit else "FALSE",
+            ]
+        )
+        results.append(
+            [
+                sample,
+                "ISTD",
+                9.0 + index / 10,
+                1000 + index,
+                None,
+                None,
+                None,
+                None,
+                None,
+                "TRUE",
+            ]
+        )
+    metadata = book.create_sheet("Run Metadata")
+    metadata.append(["Key", "Value"])
+    metadata.append(["targeted_output_schema_version", "targeted_output"])
+    metadata.append(["targeted_workbook_layout_version", 2])
+    book.save(path)
+    book.close()
+    return path
+
+
+def test_review_filter_opens_the_rare_detection_not_the_shared_absence(tmp_path):
+    path = write_rare_detection_workbook(tmp_path / "rare.xlsx")
+    report = prepare_report(path, SelectionRequest(strategy="attention"))
+    [item] = report.payload["items"]
+    details = item["details"]
+    assert item["title"] == "Analyte"
+    assert [r["SampleName"] for r in details["records"]] == [
+        "S1",
+        "S2",
+        "S3",
+        "S4",
+        "S5",
+    ]
+    assert details["focus"] == {
+        "kind": "minority_counted",
+        "samples": ["S3"],
+        "counted": 1,
+        "decided": 5,
+    }
+    # The paired ISTD of the same sample is the anchor for judging that peak.
+    assert details["istd_records"]["S3"] == {
+        "Target": "ISTD",
+        "RT": 9.2,
+        "Area": 1002,
+        "Counted Detection": "TRUE",
+    }

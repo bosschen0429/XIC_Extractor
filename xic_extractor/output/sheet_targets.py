@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from openpyxl.comments import Comment
-from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 
 from xic_extractor.configuration.models import Target
@@ -75,11 +74,7 @@ def _build_targets_sheet(ws, targets: list[Target]) -> None:
                 cell,
                 fill=_fill(fill_hex),
                 border=BORDER,
-                alignment=Alignment(
-                    horizontal="left", vertical="center", wrap_text=True
-                )
-                if col_idx in {1, 3, 12}
-                else CENTER,
+                alignment=CENTER,
             )
             header = _TARGETS_HEADERS[col_idx - 1]
             if isinstance(value, float):

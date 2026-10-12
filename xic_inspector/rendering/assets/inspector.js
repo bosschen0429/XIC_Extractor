@@ -16,7 +16,15 @@
       ? '未提供' : typeof v === 'number' ? v.toLocaleString('en-US', {maximumFractionDigits: digits}) : String(v);
     const range = (start, end) => `${value(start)} – ${value(end)} min`;
     const counted = v => v === true || v === 'TRUE' ? '是' : v === false || v === 'FALSE' ? '否' : '未記錄';
-    const badge = review => element('span', review ? ({Review: '需檢閱', Check: '待確認'}[review.Status] || review.Status) : '已記錄', `tgt-badge${review ? ' attention' : ''}`);
+    const isNumber = v => typeof v === 'number' && Number.isFinite(v);
+    // Intensities span decades, so they read as Excel-style scientific notation.
+    const scientific = v => {
+      if (!isNumber(v)) return value(v);
+      const [mantissa, exponent] = v.toExponential(2).split('e');
+      const power = Number(exponent);
+      return `${mantissa}E${power < 0 ? '-' : '+'}${String(Math.abs(power)).padStart(2, '0')}`;
+    };
+    const embedded = new URLSearchParams(location.search).has('embed');
     const facts = pairs => {
       const grid = element('dl', undefined, 'tgt-facts');
       for (const [label, saved] of pairs) {
@@ -26,60 +34,122 @@
       }
       return grid;
     };
+    const focusBanner = focus => {
+      const n = focus.samples.length, rest = focus.decided - n;
+      const text = n && {
+        minority_counted: `${rest} / ${focus.decided} 筆未計入；標「少數」的 ${n} 筆計入，確認是否抓錯峰。`,
+        minority_not_counted: `${rest} / ${focus.decided} 筆計入；標「少數」的 ${n} 筆未計入，確認是否漏抓。`,
+        mixed: `沒有明顯多數；先看 ${n} 筆有檢閱註記的結果。`,
+      }[focus.kind];
+      return text ? element('p', text, 'tgt-focus-banner') : null;
+    };
     const root = element('main', undefined, 'tgt-review');
-    if (!new URLSearchParams(location.search).has('embed')) root.append(element('h1', 'Targeted 結果'));
+    if (!embedded) root.append(element('h1', 'Targeted 結果'));
     for (const item of payload.items) {
-      const target = item.details.target;
+      const target = item.details.target, focus = item.details.focus;
+      const istdRecords = item.details.istd_records || {};
+      const focusSet = new Set(focus.samples);
+      const reviews = new Map(item.details.review_queue.map(row => [row.Sample, row]));
       const section = element('section');
       if (payload.items.length > 1) section.append(element('h2', item.title));
-      const context = [target.Role, target['ISTD Pair'] ? `ISTD：${target['ISTD Pair']}` : null, `設定 RT ${range(target['RT min'], target['RT max'])}`].filter(Boolean);
+      const context = [target.Role, target['ISTD Pair'] ? `配對 ISTD：${target['ISTD Pair']}` : null, `設定 RT ${range(target['RT min'], target['RT max'])}`].filter(Boolean);
       section.append(element('p', context.join(' · '), 'tgt-context'));
-      const reviews = new Map(item.details.review_queue.map(row => [row.Sample, row]));
+      const banner = focusBanner(focus);
+      if (banner) section.append(banner);
+      // Rows keep the saved injection order; minority rows are highlighted, not moved.
+      const records = item.details.records;
+      const filters = [
+        ['all', '全部', () => true],
+        ['focus', '需先看', record => focusSet.has(record.SampleName)],
+      ].map(([key, label, keep]) => ({key, label, keep, count: records.filter(keep).length}));
+      const bar = element('div', undefined, 'tgt-filter');
+      bar.setAttribute('role', 'group');
+      bar.setAttribute('aria-label', '篩選樣本');
       const table = element('table', undefined, 'tgt-table');
       const head = element('tr');
-      for (const title of ['樣本', '面積', 'RT (min)', '計入偵測', '檢閱', '原因']) head.append(element('th', title));
+      // A paired analyte reads beside its ISTD in the same sample row.
+      const paired = Object.keys(istdRecords).length > 0;
+      const titles = ['樣本', 'RT (min)', '面積', '計入偵測', ...(paired ? ['ISTD RT (min)', 'ISTD 面積'] : []), '檢閱註記'];
+      for (const title of titles) head.append(element('th', title));
       const thead = element('thead');thead.append(head);
       const body = element('tbody');
-      const evidence = element('section', undefined, 'tgt-evidence');
-      evidence.hidden = true;
-      evidence.setAttribute('aria-label', '樣本證據');
-      const sampleButtons = [];
-      const selectSample = (record, button) => {
-        for (const other of sampleButtons) {
-          other.setAttribute('aria-pressed', String(other === button));
-          other.closest('tr').classList.toggle('selected', other === button);
-        }
-        const review = reviews.get(record.SampleName);
-        const heading = element('div', undefined, 'tgt-evidence-heading');
-        const close = element('button', '收起', 'tgt-close');close.type = 'button';
-        close.addEventListener('click', () => {
-          evidence.hidden = true;
-          button.setAttribute('aria-pressed', 'false');button.closest('tr').classList.remove('selected');button.focus();
-        });
-        heading.append(element('h3', record.SampleName), close);
-        evidence.replaceChildren(heading, facts([
-          ['積分範圍', range(record.PeakStart, record.PeakEnd)],
-          ['NL 證據', record['NL Evidence']],
-        ]));
-        if (record.Reason) evidence.append(element('h4', '選峰與判讀說明'), element('p', record.Reason));
-        if (review?.Evidence) evidence.append(element('h4', '檢閱線索'), element('p', review.Evidence));
-        if (review?.Action) evidence.append(element('h4', '檢閱建議'), element('p', review.Action));
-        evidence.hidden = false;
+      let openRow = null;
+      const closeDetail = () => {
+        if (!openRow) return;
+        openRow.detail.remove();
+        openRow.row.classList.remove('selected');
+        openRow.button.setAttribute('aria-expanded', 'false');
+        openRow = null;
       };
-      for (const record of item.details.records) {
+      const detailFor = record => {
+        const review = reviews.get(record.SampleName), istd = istdRecords[record.SampleName];
+        const panel = element('div', undefined, 'tgt-evidence');
+        const pairs = [['積分範圍', range(record.PeakStart, record.PeakEnd)], ['NL 證據', record['NL Evidence']]];
+        if (istd) {
+          const delta = isNumber(record.RT) && isNumber(istd.RT)
+            ? `，與 ISTD 相差 ${record.RT - istd.RT >= 0 ? '+' : ''}${(record.RT - istd.RT).toFixed(3)} min` : '';
+          pairs.push([`配對 ISTD（${istd.Target}）`, `RT ${value(istd.RT)} min${delta} · 面積 ${scientific(istd.Area)} · 計入 ${counted(istd['Counted Detection'])}`]);
+        }
+        panel.append(facts(pairs));
+        if (review?.Why) panel.append(element('h4', '檢閱註記'), element('p', review.Why));
+        if (review?.Action) panel.append(element('h4', '建議檢查'), element('p', review.Action));
+        if (review?.Evidence) panel.append(element('h4', '檢閱線索'), element('p', review.Evidence));
+        if (record.Reason) {
+          const raw = element('details', undefined, 'tgt-raw');
+          raw.append(element('summary', '原始選峰紀錄'), element('p', record.Reason));
+          panel.append(raw);
+        }
+        return panel;
+      };
+      const rows = records.map(record => {
         const review = reviews.get(record.SampleName), row = element('tr');
         const sampleCell = element('td'), button = element('button', record.SampleName, 'tgt-sample');
-        button.type = 'button';button.setAttribute('aria-pressed', 'false');
-        button.addEventListener('click', () => selectSample(record, button));
-        sampleButtons.push(button);sampleCell.append(button);row.append(sampleCell);
-        row.append(element('td', value(record.Area, 6), 'tgt-number'), element('td', value(record.RT), 'tgt-number'), element('td', counted(record['Counted Detection']), 'tgt-counted'));
-        const state = element('td');state.append(badge(review));row.append(state);
-        const reason = element('td', review?.Why || record.Reason || '—', 'tgt-reason');
-        row.append(reason);body.append(row);
+        button.type = 'button';button.setAttribute('aria-expanded', 'false');
+        sampleCell.append(button);
+        if (focusSet.has(record.SampleName)) {
+          row.classList.add('focus');
+          sampleCell.append(element('span', '少數', 'tgt-badge attention'));
+        }
+        row.append(sampleCell, element('td', value(record.RT), 'tgt-number'), element('td', scientific(record.Area), 'tgt-number'), element('td', counted(record['Counted Detection']), 'tgt-counted'));
+        if (paired) {
+          const istd = istdRecords[record.SampleName];
+          const istdArea = element('td', istd ? scientific(istd.Area) : '—', 'tgt-number tgt-istd');
+          if (istd && counted(istd['Counted Detection']) !== '是') istdArea.append(element('span', 'ISTD 未計入', 'tgt-badge'));
+          row.append(element('td', istd ? value(istd.RT) : '—', 'tgt-number tgt-istd'), istdArea);
+        }
+        row.append(element('td', review?.Why || '—', 'tgt-reason'));
+        button.addEventListener('click', () => {
+          const same = openRow?.row === row;
+          closeDetail();
+          if (same) return;
+          // Evidence opens under its row, so choosing a sample never moves the reader away.
+          const detail = element('tr', undefined, 'tgt-detail-row'), cell = element('td');
+          cell.colSpan = titles.length;cell.append(detailFor(record));detail.append(cell);
+          row.after(detail);row.classList.add('selected');button.setAttribute('aria-expanded', 'true');
+          openRow = {row, detail, button};
+        });
+        body.append(row);
+        return {record, row};
+      });
+      const applyFilter = active => {
+        closeDetail();
+        for (const {record, row} of rows) row.hidden = !active.keep(record);
+        for (const button of bar.children) button.setAttribute('aria-pressed', String(button.dataset.filter === active.key));
+      };
+      for (const filter of filters) {
+        if (filter.key !== 'all' && !filter.count) continue;
+        const button = element('button', `${filter.label}（${filter.count}）`);
+        button.type = 'button';button.dataset.filter = filter.key;
+        button.addEventListener('click', () => applyFilter(filter));
+        bar.append(button);
       }
+      if (bar.children.length > 1) section.append(bar);
+      // Opened to read first: start on the minority rows, one click from all.
+      const readFirst = payload.selection?.attention_only || payload.selection?.strategy === 'attention';
+      applyFilter(readFirst && filters[1].count ? filters[1] : filters[0]);
       table.append(thead, body);
       const scroll = element('div', undefined, 'tgt-table-scroll');scroll.append(table);
-      section.append(scroll, element('p', '點選樣本查看峰界與證據。面積是保存的量值；「計入偵測」是當次分析的判定，兩者分開呈現。', 'tgt-note'), evidence);
+      section.append(scroll, element('p', '點樣本名稱展開細節。', 'tgt-note'));
       const method = element('details', undefined, 'tgt-method');
       method.append(element('summary', '方法設定'));
       method.append(facts([
@@ -103,7 +173,9 @@
     provenance.append(element('summary', '執行資訊'));
     const labels = {generated_at: '建立時間', app_version: '版本', config_hash: '設定識別', target_config_hash: '目標設定識別', parallel_mode: '執行模式', parallel_workers: 'Workers', limited_identity_gate: 'Limited identity gate'};
     provenance.append(facts(payload.summary.method_context.filter(([key]) => labels[key]).map(([key, saved]) => [labels[key], saved])));
-    root.append(provenance, element('p', '唯讀結果 · 未保存逐點曲線，不重建色譜圖。「已記錄」不代表額外的科學通過判定。', 'tgt-note'));
+    root.append(provenance);
+    // The workbench already states this beside the embedded view.
+    if (!embedded) root.append(element('p', '唯讀結果 · 未保存逐點曲線，不重建色譜圖。', 'tgt-note'));
     document.body.replaceChildren(root);
   }
   const items=Array.isArray(data.items)?data.items:[], samples=Array.isArray(data.samples)?data.samples:[];

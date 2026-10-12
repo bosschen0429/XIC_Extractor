@@ -98,6 +98,12 @@ window.XicUi = (() => {
   const fmt = (value, digits) =>
     Number.isFinite(value) ? value.toFixed(digits) : "—";
   const count = (value) => Number(value).toLocaleString();
+  // Intensities span decades, so they read as Excel-style scientific notation.
+  const scientific = (value) => {
+    const [mantissa, exponent] = value.toExponential(2).split("e");
+    const power = Number(exponent);
+    return `${mantissa}E${power < 0 ? "-" : "+"}${String(Math.abs(power)).padStart(2, "0")}`;
+  };
   const badgeTone = {
     需留意: "warn",
     診斷曲線: "accent",
@@ -222,18 +228,21 @@ window.XicUi = (() => {
     const heading = node("div", undefined, "overview-heading");
     heading.append(node("span", "整批結果總覽", "eyebrow"));
     const conclusion = !summary.result_count ? "尚無已保存結果"
-      : summary.review_count ? `先看 ${count(summary.review_count)} 筆需檢閱結果`
-        : "沒有記錄到需檢閱條件";
+      : summary.focus_count ? `先看 ${count(summary.focus_count)} 筆與多數不同的結果`
+        : "各目標結果一致，沒有需要先看的少數結果";
     heading.append(node("h2", conclusion));
-    const scope = `${count(summary.sample_count)} 個樣本 · ${count(summary.targets.length)} 個目標 · ${count(summary.result_count)} 筆樣本／目標結果`;
+    const scope = `${count(summary.sample_count)} 個樣本 · ${count(summary.targets.length)} 個目標`
+      + (summary.focus_count ? ` · 少數結果分布在 ${count(summary.focus_target_count)} 個目標` : "");
     heading.append(node("p", scope, "subtle"));
     host.append(heading);
     const metrics = node("div", undefined, "overview-metrics");
+    const ratio = (counted, total) => `${count(counted)} / ${count(total)}`;
     for (const [value, label] of [
-      [`${count(summary.counted_count)} / ${count(summary.result_count)}`, "計入偵測"],
-      [count(summary.review_count), "需檢閱結果"],
-      [count(summary.review_sample_count), "涉及樣本"],
+      [count(summary.focus_count), "需先看"],
+      [ratio(summary.analyte_counted, summary.analyte_total), "Analyte 計入"],
+      [ratio(summary.istd_counted, summary.istd_total), "ISTD 計入"],
     ]) {
+      if (label === "ISTD 計入" && !summary.istd_total) continue;
       const metric = node("div");
       metric.append(node("strong", value), node("span", label));
       metrics.append(metric);
@@ -241,27 +250,36 @@ window.XicUi = (() => {
     host.append(metrics);
     if (summary.count_unknown) host.append(node("p", `${count(summary.count_unknown)} 筆未記錄偵測判定，未推測為未偵測。`, "overview-unknown"));
     const actions = node("div", undefined, "overview-actions");
-    if (summary.review_count) actions.append(resultButton("檢閱這些結果 →", "", true, "primary"));
+    if (summary.focus_count) actions.append(resultButton(`先看這 ${count(summary.focus_count)} 筆 →`, "", true, "primary"));
     actions.append(resultButton("查看所有樣本結果 →"));
     host.append(actions);
-    host.append(node("h3", "各目標結果"), node("p", "需檢閱項目優先。選擇目標，再看各樣本的量值與原因。", "subtle"));
+    host.append(node("h3", "各目標結果"));
     const table = node("table", undefined, "overview-table");
     const head = node("thead");
     const header = node("tr");
-    for (const text of ["目標", "計入偵測 / 結果數", "需檢閱", "主要原因"]) header.append(node("th", text));
+    for (const text of ["目標", "類型", "計入 / 全部", "需先看", "要確認"]) header.append(node("th", text));
     head.append(header);
     const body = node("tbody");
+    // Counts sit in their own columns; this column says only what to check.
+    const focusText = target => {
+      switch (target.focus_kind) {
+        case "minority_counted": return "是否抓錯峰";
+        case "minority_not_counted": return "是否漏抓";
+        case "mixed": return target.focus_samples.length ? "沒有明顯多數，看檢閱註記" : "";
+        default:
+          // Quality notes on counted peaks affect quantitation; they stay one level down.
+          return target.counted && target.review ? `${target.review} 筆檢閱註記` : "";
+      }
+    };
     for (const target of summary.targets) {
       const row = node("tr");
-      if (target.review) row.className = "has-review";
       const name = node("td");
       name.append(resultButton(target.label, target.label, false, "text-button"));
       const counted = node("td", `${target.counted} / ${target.total}${target.count_unknown ? `（${target.count_unknown} 未記錄）` : ""}`);
-      const review = node("td");
-      if (target.review) review.append(resultButton(`${target.review} 筆 →`, target.label, true, "text-button"));
-      else review.textContent = "—";
-      const reason = target.reasons.slice(0, 2).join("；") || "未記錄需檢閱條件";
-      row.append(name, counted, review, node("td", `${reason}${target.reasons.length > 2 ? `；另 ${target.reasons.length - 2} 種` : ""}`));
+      const focus = node("td");
+      if (target.focus_samples.length) focus.append(resultButton(`${target.focus_samples.length} 筆 →`, target.label, true, "text-button focus-link"));
+      else focus.textContent = "—";
+      row.append(name, node("td", target.role || "—"), counted, focus, node("td", focusText(target)));
       body.append(row);
     }
     table.append(head, body);
@@ -272,18 +290,18 @@ window.XicUi = (() => {
     quantities.append(node("summary", "量值摘要（僅計入偵測的結果）"));
     const values = node("table", undefined, "overview-table");
     const valueHeader = node("tr");
-    for (const text of ["目標", "Area 中位數", "RT 範圍 (min)"]) valueHeader.append(node("th", text));
+    for (const text of ["目標", "RT 範圍 (min)", "Area 中位數"]) valueHeader.append(node("th", text));
     const valueHead = node("thead");
     valueHead.append(valueHeader);
     const valueBody = node("tbody");
     for (const target of summary.targets) {
       const row = node("tr");
-      row.append(node("td", target.label), node("td", Number.isFinite(target.median_area) ? target.median_area.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"), node("td", target.rt_min === null ? "—" : `${fmt(target.rt_min, 4)}–${fmt(target.rt_max, 4)}`));
+      row.append(node("td", target.label), node("td", target.rt_min === null ? "—" : `${fmt(target.rt_min, 4)}–${fmt(target.rt_max, 4)}`), node("td", Number.isFinite(target.median_area) ? scientific(target.median_area) : "—"));
       valueBody.append(row);
     }
     values.append(valueHead, valueBody);
     quantities.append(values);
-    host.append(quantities, node("p", "計入偵測與需檢閱可重疊。此頁摘要已保存的判定，不代表整批通過科學或品質驗收。", "overview-footnote"));
+    host.append(quantities, node("p", `需先看：各目標中占 ${Math.round(summary.minority_share * 100)}% 以下的一方；只決定閱讀順序，不改變已保存的判定。`, "overview-footnote"));
   }
   function renderPage(page) {
     state.page = page;
@@ -673,6 +691,12 @@ window.XicUi = (() => {
     event.preventDefault();
     action(() => query(0, queryFields()), "正在搜尋全批結果…");
   });
+  // Targeted filters are single choices, so each change applies immediately.
+  for (const id of ["target-id", "target-sample", "target-attention"]) {
+    $(id).addEventListener("change", () =>
+      action(() => query(0, queryFields()), "正在更新結果…"),
+    );
+  }
   $("back-to-overview").addEventListener("click", showTargetedOverview);
   $("reset-query").addEventListener("click", () =>
     action(async () => {

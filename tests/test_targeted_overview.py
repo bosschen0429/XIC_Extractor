@@ -53,8 +53,8 @@ def test_overview_summarizes_decisions_not_numeric_availability():
         overview.review_count,
         overview.review_sample_count,
     ) == (2, 3, 2)
-    assert [target.label for target in overview.targets] == ["Analyte", "ISTD"]
-    analyte, istd = overview.targets
+    assert [target.label for target in overview.targets] == ["ISTD", "Analyte"]
+    istd, analyte = overview.targets
     assert (analyte.counted, analyte.review, analyte.median_area, analyte.rt_min) == (
         0,
         2,
@@ -95,8 +95,8 @@ def test_overview_workbook_charts_saved_counts_and_links_to_result_rows(
     assert sheet["A7"].value == "2 / 4"
     assert sheet["E7"].value == 2
     assert sheet["I7"].value == 3
-    assert sheet["A29"].value == "Analyte"
-    assert sheet["K29"].hyperlink.target == "#'XIC Results'!A4"
+    assert sheet["A29"].value == "ISTD"
+    assert sheet["K29"].hyperlink.target == "#'XIC Results'!A2"
     assert len(sheet._charts) == 2
     left_chart, right_chart = sheet._charts
     assert left_chart.anchor.to.col == right_chart.anchor._from.col == 6
@@ -108,10 +108,49 @@ def test_overview_workbook_charts_saved_counts_and_links_to_result_rows(
         for axis in (chart.x_axis, chart.y_axis)
     )
     assert sheet.page_setup.fitToHeight == 1
-    assert [sheet.cell(row, 15).value for row in (2, 3)] == [0, 2]
-    assert [sheet.cell(row, 16).value for row in (2, 3)] == [2, 0]
+    assert [sheet.cell(row, 15).value for row in (2, 3)] == [2, 0]
+    assert [sheet.cell(row, 16).value for row in (2, 3)] == [0, 2]
     assert [sheet.cell(row, 17).value for row in (2, 3)] == [0, 0]
     assert any(dimension.hidden for dimension in sheet.column_dimensions.values())
     links = [cell.hyperlink.target for row in sheet for cell in row if cell.hyperlink]
     assert "#'Targets'!A1" in links and "#'Run Metadata'!A1" in links
     with_book.close()
+
+
+def test_review_focus_is_the_minority_outcome_of_each_target():
+    samples = ("S1", "S2", "S3", "S4", "S5")
+    counted = {
+        "Rare": {"S3"},
+        "Common": {"S1", "S3", "S4", "S5"},
+        "Absent": set(),
+        "Split": {"S4", "S5"},
+        "ISTD": set(samples),
+    }
+    rows = [
+        {
+            "SampleName": sample,
+            "Target": target,
+            "Role": "ISTD" if target == "ISTD" else "Analyte",
+            "Counted Detection": "TRUE" if sample in hits else "FALSE",
+        }
+        for target, hits in counted.items()
+        for sample in samples
+    ]
+    reviews = [
+        *({"Sample": sample, "Target": "Absent", "Why": "NL"} for sample in samples),
+        {"Sample": "S1", "Target": "Split", "Why": "Check evidence"},
+    ]
+    overview = summarize_targeted_results(rows, reviews)
+    focus = {t.label: (t.focus_kind, t.focus_samples) for t in overview.targets}
+    # A shared absence is the batch fact; the rare detection is what may be wrong.
+    assert focus == {
+        "Rare": ("minority_counted", ("S3",)),
+        "Common": ("minority_not_counted", ("S2",)),
+        "Split": ("mixed", ("S1",)),
+        "Absent": ("uniform", ()),
+        "ISTD": ("uniform", ()),
+    }
+    assert [t.label for t in overview.targets][:3] == ["Rare", "Common", "Split"]
+    assert (overview.focus_count, overview.focus_target_count) == (3, 3)
+    assert (overview.analyte_counted, overview.analyte_total) == (7, 20)
+    assert (overview.istd_counted, overview.istd_total) == (5, 5)
