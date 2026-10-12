@@ -1701,15 +1701,21 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
         assert evaluation.question.search_rt_window == pytest.approx((7.35, 7.75))
         assert evaluation.facts.apex_rt_min > 7.75
         assert evaluation.facts.left_rt_min < query_rt < evaluation.facts.right_rt_min
-    from xic_extractor.untargeted_execution.partition.workers import _group_revisit
+    from xic_extractor.alignment.cid_nl_backfill_planning import (
+        decide_cid_nl_backfill_revisit,
+    )
 
     assert (
-        _group_revisit(assessment, observed_rt=expected_apex, apex_tolerance_sec=2.0)
+        decide_cid_nl_backfill_revisit(
+            assessment, observed_rt=expected_apex, apex_tolerance_sec=2.0
+        )
         == "reuse"
     )
     other_peak = 8.4 if expected_apex == 7.8 else 7.8
     assert (
-        _group_revisit(assessment, observed_rt=other_peak, apex_tolerance_sec=2.0)
+        decide_cid_nl_backfill_revisit(
+            assessment, observed_rt=other_peak, apex_tolerance_sec=2.0
+        )
         == "search"
     )
 
