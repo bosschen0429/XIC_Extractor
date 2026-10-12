@@ -115,6 +115,7 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     assert wb.sheetnames == [
         "Overview",
         "XIC Results",
+        "Area Matrix",
         "Targets",
         "Run Metadata",
         "Diagnostics",
@@ -275,7 +276,7 @@ def test_workbook_explains_backfill_without_changing_saved_counts(tmp_path):
         output_path=tmp_path / "readable.xlsx",
     )
     book = load_workbook(path)
-    assert len(book["Overview"]._charts) == 2
+    assert len(book["Overview"]._charts) == 1
     sheet = book["Diagnostics"]
     values = list(sheet.values)
     header_index = next(i for i, row in enumerate(values) if row[0] == "樣本")

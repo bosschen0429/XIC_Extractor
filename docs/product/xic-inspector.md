@@ -60,19 +60,31 @@ require an explicit file choice. Normal Targeted delivery remains one XLSX:
 review creates no report or sidecar beside it and exposes no new export option.
 
 The current workbook has an `Overview` landing sheet and `XIC Results`, with
-`Targets`, `Run Metadata` and nonempty `Diagnostics` as supporting references.
+`Area Matrix`, `Targets`, `Run Metadata` and nonempty `Diagnostics` as supporting references.
 The `targeted_output` schema marker and workbook layout version 2 bind the saved
 records; other layouts are rejected rather than reinterpreted.
 
-In Excel, `Overview` presents saved counted/not-counted totals, per-target
-counts and a counted-result RT scatter plot. Result rows, and that plot's
-sample axis, follow the run's resolved injection order: the supplied order or
-sample metadata, otherwise RAW modification time. The charts do not
-recalculate scientific decisions. `Diagnostics`
-is a Traditional Chinese action list with one row per unresolved sample/target,
-the saved count outcome, a contextual explanation and links to the measurement.
-Original diagnostic events remain intact in an expandable appendix; event text
-alone does not override the final count outcome or reopen a confirmed result.
+In Excel, `Overview` consumes the shared minority-first summary: its heading
+and minority count match the workbench, with separate Analyte and ISTD counted
+totals. One horizontal count chart labels every target in table order; RT
+ranges remain table values rather than a scatter plot. The target table shows
+role and what to confirm. `Diagnostics` opens with a target × reason summary,
+then minority sample rows linking back to it and to saved measurements.
+Remaining saved review conditions (including fully counted targets) and
+original events stay intact in expandable secondary sections. This reading
+order never changes saved flags, count decisions, peak bounds, or areas.
+
+`Area Matrix` is an additive, optional sheet under layout version 2. Existing
+readers bind named sheets and canonical headers, not positions; the required
+reader sheets and their schemas are unchanged. Its Analyte and ISTD sections
+contain samples in the publication's resolved injection order (supplied order
+or sample metadata, otherwise RAW modification time). Every cell projects the
+saved `XIC Results` Area, including zero, ND and missing values, independent of
+counted detection. It calculates no ratios and creates no scientific authority.
+`XIC Results` retains canonical English first-row headers, with Traditional
+Chinese descriptions in header comments; Chinese display labels are used only
+on review sheets and do not replace reader keys.
+
 Reference-RT drift, resolved multi-peak selection and confirmed ISTD backfill
 remain context rather than standalone review tasks. Unconfirmed identity,
 unresolved conflicts and independent peak-quality concerns remain actionable.
@@ -93,6 +105,11 @@ sample is the batch fact and needs no review, even when its rows carry saved
 review conditions. Without a clear majority, the rows with saved review
 conditions remain the reading order. `summarize_targeted_results` owns this
 reading order for every consumer; it does not reclassify results.
+
+When a chosen target leaves one item, the workbench keeps target/sample
+controls in a full-width row and hides the redundant one-entry list. Clearing
+the target restores the list; standalone Targeted Inspector reports already
+render the target directly without a navigation column.
 
 Opening Targeted results first shows a full-batch overview in three levels.
 The heading states how many minority results to read first, beside Analyte and

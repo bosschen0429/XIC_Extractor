@@ -313,6 +313,7 @@ window.XicUi = (() => {
     $("group-filter").hidden = targeted;
     $("review-range-filters").open = !targeted;
     const selectedTarget = $("target-id").value;
+    document.querySelector(".review-grid").classList.toggle("single-target", targeted && Boolean(selectedTarget) && page.matched_count === 1);
     $("target-id").replaceChildren(new Option("全部目標", ""), ...(page.target_names || []).map(name => new Option(name, name)));
     $("target-id").value = selectedTarget;
     document.querySelector(".acquisition-panel").hidden = targeted;

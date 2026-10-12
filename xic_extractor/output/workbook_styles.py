@@ -220,6 +220,7 @@ def _apply_sheet_role_styles(wb: Workbook) -> None:
     role_colors = {
         "Overview": _RESULT_TAB,
         "XIC Results": _RESULT_TAB,
+        "Area Matrix": _RESULT_TAB,
         "Targets": _TECHNICAL_TAB,
         "Run Metadata": _TECHNICAL_TAB,
         "Diagnostics": "B68434",
