@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib
 from copy import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from xic_extractor.acquisition_contract import TraceAcquisitionBatch
 from xic_extractor.alignment.backfill.cid_nl_planning import (
@@ -96,6 +96,26 @@ class _RuntimeJobState:
                 )
             )
 
+    def accept_observations(
+        self,
+        artifacts: tuple[EvidenceArtifactRef, ...],
+        acquisition: TraceAcquisitionBatch | None,
+        error: Exception | None,
+        *,
+        backfill: bool = False,
+    ) -> None:
+        for artifact in artifacts:
+            self.observer.record_artifact(artifact)
+        observed = (
+            self.observer.backfill_acquisition
+            if backfill
+            else self.observer.initial_acquisition
+        )
+        if acquisition is not None and observed is None:
+            self.observer.record_acquisition(acquisition, backfill=backfill)
+        if self.error is None:
+            self.error = error
+
 
 @dataclass(frozen=True, slots=True)
 class _BackfillSupportContext:
@@ -153,6 +173,23 @@ class _BatchSamplePhaseState:
         if self.sample_template is not None:
             return self.sample_template
         return self.states[0].job
+
+    def isolated_worker_state(self) -> _BatchSamplePhaseState:
+        """Keep in-process work behind the same outcome boundary as a process.
+
+        Domain inputs stay shared; only mutable phase/job state and observation
+        collectors are local to this phase's execution.
+        """
+        return replace(
+            self,
+            states=tuple(
+                replace(
+                    state,
+                    observer=_PartitionWorkObserver(state.job.processing_owners),
+                )
+                for state in self.states
+            ),
+        )
 
 
 def _open_job_raw(
@@ -634,16 +671,91 @@ class _SampleInitialWorkerRequest:
     partition_candidates: bool
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
+class _InitialJobOutcome:
+    work_unit_key: str
+    adapter_result: CidNlAcquisitionResult | None
+    observed_artifacts: tuple[EvidenceArtifactRef, ...]
+    observed_acquisition: bool
+    error: Exception | None
+
+
+@dataclass(frozen=True, slots=True)
 class _SampleInitialWorkerResponse:
-    adapter_results: tuple[CidNlAcquisitionResult | None, ...]
-    observer_artifacts: tuple[tuple[EvidenceArtifactRef, ...], ...]
-    observer_has_acquisitions: tuple[bool, ...]
+    job_outcomes: tuple[_InitialJobOutcome, ...]
     initial_open_attempted: bool
     initial_opened: bool
     initial_cleanup_outcome: RuntimeResourceCleanupOutcome
     initial_acquisition: TraceAcquisitionBatch | None
-    errors: tuple[Exception | None, ...]
+
+    def _outcomes_by_key(
+        self, work_unit_keys: tuple[str, ...]
+    ) -> dict[str, _InitialJobOutcome]:
+        _require_outcome_keys(
+            work_unit_keys, tuple(item.work_unit_key for item in self.job_outcomes)
+        )
+        return {item.work_unit_key: item for item in self.job_outcomes}
+
+    def apply_to(self, phase: _BatchSamplePhaseState) -> None:
+        outcomes = self._outcomes_by_key(
+            tuple(state.job.work_unit_key for state in phase.states)
+        )
+        phase.initial_open_attempted = self.initial_open_attempted
+        phase.initial_opened = self.initial_opened
+        phase.initial_cleanup_outcome = self.initial_cleanup_outcome
+        phase.initial_acquisition = self.initial_acquisition
+        for state in phase.states:
+            outcome = outcomes[state.job.work_unit_key]
+            state.adapter_result = outcome.adapter_result
+            state.accept_observations(
+                outcome.observed_artifacts,
+                self.initial_acquisition if outcome.observed_acquisition else None,
+                outcome.error,
+            )
+
+    def results_for(
+        self, jobs: tuple[UntargetedPartitionJob, ...]
+    ) -> tuple[CidNlAcquisitionResult, ...]:
+        outcomes = self._outcomes_by_key(tuple(job.work_unit_key for job in jobs))
+        results = []
+        for job in jobs:
+            outcome = outcomes[job.work_unit_key]
+            if outcome.error is not None:
+                raise outcome.error
+            if outcome.adapter_result is None:
+                raise UntargetedPartitionError("initial assessment returned no result")
+            results.append(outcome.adapter_result)
+        return tuple(results)
+
+
+def _require_outcome_keys(expected: tuple[str, ...], actual: tuple[str, ...]) -> None:
+    if len(actual) != len(expected) or set(actual) != set(expected):
+        raise UntargetedPartitionError(
+            "worker outcome must cover its exact work-unit population"
+        )
+
+
+def _execute_initial_sample_phase(
+    phase: _BatchSamplePhaseState, *, partition_candidates: bool = False
+) -> _SampleInitialWorkerResponse:
+    local = phase.isolated_worker_state()
+    _execute_initial_assessment_batch(local, partition_candidates=partition_candidates)
+    return _SampleInitialWorkerResponse(
+        job_outcomes=tuple(
+            _InitialJobOutcome(
+                work_unit_key=state.job.work_unit_key,
+                adapter_result=state.adapter_result,
+                observed_artifacts=state.observer.observed_artifacts(),
+                observed_acquisition=state.observer.initial_acquisition is not None,
+                error=state.error,
+            )
+            for state in local.states
+        ),
+        initial_open_attempted=local.initial_open_attempted,
+        initial_opened=local.initial_opened,
+        initial_cleanup_outcome=local.initial_cleanup_outcome,
+        initial_acquisition=local.initial_acquisition,
+    )
 
 
 def _execute_sample_initial_worker(
@@ -665,21 +777,9 @@ def _execute_sample_initial_worker(
         initial_resource_key=request.initial_resource_key,
         backfill_resource_key=None,
     )
-    _execute_initial_assessment_batch(
+    return _execute_initial_sample_phase(
         phase,
         partition_candidates=request.partition_candidates,
-    )
-    return _SampleInitialWorkerResponse(
-        adapter_results=tuple(s.adapter_result for s in states),
-        observer_artifacts=tuple(s.observer.observed_artifacts() for s in states),
-        observer_has_acquisitions=tuple(
-            s.observer.acquisition is not None for s in states
-        ),
-        initial_open_attempted=phase.initial_open_attempted,
-        initial_opened=phase.initial_opened,
-        initial_cleanup_outcome=phase.initial_cleanup_outcome,
-        initial_acquisition=phase.initial_acquisition,
-        errors=tuple(s.error for s in states),
     )
 
 
@@ -696,14 +796,7 @@ def assess_initial_sample_jobs(
             partition_candidates=True,
         )
     )
-    results = []
-    for result, error in zip(response.adapter_results, response.errors, strict=True):
-        if error is not None:
-            raise error
-        if result is None:
-            raise UntargetedPartitionError("initial assessment returned no result")
-        results.append(result)
-    return tuple(results)
+    return response.results_for(jobs)
 
 
 @dataclass(slots=True)
@@ -714,20 +807,78 @@ class _SampleBackfillWorkerRequest:
     backfill_resource_key: str | None
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
+class _BackfillJobOutcome:
+    work_unit_key: str
+    backfill_attempts: tuple[UntargetedCidNlBackfillAttemptResult, ...]
+    backfill_input: UntargetedCidNlBackfillInput | None
+    observed_artifacts: tuple[EvidenceArtifactRef, ...]
+    observed_acquisition: bool
+    error: Exception | None
+
+
+@dataclass(frozen=True, slots=True)
 class _SampleBackfillWorkerResponse:
-    work_unit_keys: tuple[str, ...]
-    backfill_attempts_by_key: dict[
-        str, tuple[UntargetedCidNlBackfillAttemptResult, ...]
-    ]
-    backfill_inputs_by_key: dict[str, UntargetedCidNlBackfillInput | None]
-    observer_artifacts: tuple[tuple[EvidenceArtifactRef, ...], ...]
-    observer_has_acquisitions: tuple[bool, ...]
+    job_outcomes: tuple[_BackfillJobOutcome, ...]
     backfill_open_attempted: bool
     backfill_opened: bool
     backfill_cleanup_outcome: RuntimeResourceCleanupOutcome
     backfill_acquisition: TraceAcquisitionBatch | None
-    errors: tuple[Exception | None, ...]
+
+    def apply_to(self, phase: _BatchSamplePhaseState) -> None:
+        states = {
+            state.job.work_unit_key: state
+            for state in phase.states
+            if state.error is None and state.backfill_targets
+        }
+        _require_outcome_keys(
+            tuple(states), tuple(item.work_unit_key for item in self.job_outcomes)
+        )
+        phase.backfill_open_attempted = self.backfill_open_attempted
+        phase.backfill_opened = self.backfill_opened
+        phase.backfill_cleanup_outcome = self.backfill_cleanup_outcome
+        phase.backfill_acquisition = self.backfill_acquisition
+        for outcome in self.job_outcomes:
+            state = states[outcome.work_unit_key]
+            if outcome.backfill_attempts:
+                state.backfill_attempts = outcome.backfill_attempts
+            if outcome.backfill_input is not None:
+                state.backfill_input = outcome.backfill_input
+            state.accept_observations(
+                outcome.observed_artifacts,
+                self.backfill_acquisition if outcome.observed_acquisition else None,
+                outcome.error,
+                backfill=True,
+            )
+
+
+def _execute_backfill_sample_phase(
+    phase: _BatchSamplePhaseState,
+) -> _SampleBackfillWorkerResponse:
+    local = phase.isolated_worker_state()
+    pending = tuple(
+        state
+        for state in local.states
+        if state.error is None and state.backfill_targets
+    )
+    _execute_backfill_batch(local)
+    return _SampleBackfillWorkerResponse(
+        job_outcomes=tuple(
+            _BackfillJobOutcome(
+                work_unit_key=state.job.work_unit_key,
+                backfill_attempts=state.backfill_attempts,
+                backfill_input=state.backfill_input,
+                observed_artifacts=state.observer.observed_artifacts(),
+                observed_acquisition=state.observer.backfill_acquisition is not None,
+                error=state.error,
+            )
+            for state in pending
+        ),
+        backfill_open_attempted=local.backfill_open_attempted,
+        backfill_opened=local.backfill_opened,
+        backfill_cleanup_outcome=local.backfill_cleanup_outcome,
+        backfill_acquisition=local.backfill_acquisition,
+    )
 
 
 def _execute_sample_backfill_worker(
@@ -751,29 +902,7 @@ def _execute_sample_backfill_worker(
         initial_resource_key=None,
         backfill_resource_key=request.backfill_resource_key,
     )
-    _execute_backfill_batch(phase)
-    return _SampleBackfillWorkerResponse(
-        work_unit_keys=tuple(state.job.work_unit_key for state in states),
-        backfill_attempts_by_key={
-            s.job.work_unit_key: s.backfill_attempts
-            for s in states
-            if s.backfill_attempts
-        },
-        backfill_inputs_by_key={
-            s.job.work_unit_key: s.backfill_input
-            for s in states
-            if s.backfill_input is not None
-        },
-        observer_artifacts=tuple(s.observer.observed_artifacts() for s in states),
-        observer_has_acquisitions=tuple(
-            s.observer.acquisition is not None for s in states
-        ),
-        backfill_open_attempted=phase.backfill_open_attempted,
-        backfill_opened=phase.backfill_opened,
-        backfill_cleanup_outcome=phase.backfill_cleanup_outcome,
-        backfill_acquisition=phase.backfill_acquisition,
-        errors=tuple(s.error for s in states),
-    )
+    return _execute_backfill_sample_phase(phase)
 
 
 __all__ = [
@@ -785,8 +914,10 @@ __all__ = [
     "_SampleBackfillWorkerResponse",
     "_execute_initial_assessment",
     "_execute_initial_assessment_batch",
+    "_execute_initial_sample_phase",
     "_execute_backfill",
     "_execute_backfill_batch",
+    "_execute_backfill_sample_phase",
     "_execute_sample_initial_worker",
     "_execute_sample_backfill_worker",
     "_open_job_raw",

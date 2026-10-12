@@ -2165,6 +2165,20 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
             alignment_config=config,
             pool=pool,
         )
+    response_sizes = []
+
+    def reordered_response(worker):
+        def execute(request):
+            response = worker(request)
+            response_sizes.append(len(response.job_outcomes))
+            return replace(
+                response, job_outcomes=tuple(reversed(response.job_outcomes))
+            )
+
+        return execute
+
+    for entry in ("_execute_sample_initial_worker", "_execute_sample_backfill_worker"):
+        monkeypatch.setattr(runtime, entry, reordered_response(getattr(runtime, entry)))
     with LocalProcessMessages(max_workers=2) as pool:
         process = runtime.execute_partition(
             batch.jobs,
@@ -2191,7 +2205,50 @@ def test_two_sample_process_messages_match_serial_results_and_attribution(
         for result in process.sample_results
     )
     assert len({sample_id for sample_id, _, _ in serial_results}) == 2
+    assert any(size > 1 for size in response_sizes)
     assert process_results == serial_results
+
+
+@pytest.mark.parametrize("corruption", ["missing", "duplicate"])
+def test_process_outcome_must_cover_the_exact_work_units(
+    tmp_path, monkeypatch, corruption
+):
+    from xic_extractor.execution.workers import WorkerAdmissionPool
+    from xic_extractor.untargeted_execution.partition import execution as runtime
+
+    class LocalProcessMessages(WorkerAdmissionPool):
+        @property
+        def backend(self):
+            return "process"
+
+    plan, _ = _plan(tmp_path, monkeypatch, sample_count=1)
+    batch = materialize_untargeted_partition(plan, plan.subject_batch)
+    initial = runtime._execute_sample_initial_worker
+
+    def corrupt_response(request):
+        response = initial(request)
+        outcomes = response.job_outcomes
+        assert len(outcomes) > 1
+        return replace(
+            response,
+            job_outcomes=(
+                outcomes[:-1]
+                if corruption == "missing"
+                else (outcomes[0], *outcomes[:-1])
+            ),
+        )
+
+    monkeypatch.setattr(runtime, "_execute_sample_initial_worker", corrupt_response)
+    with LocalProcessMessages(max_workers=1) as pool:
+        result = runtime.execute_partition(
+            batch.jobs,
+            partition_key="crossed-worker-population",
+            alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+            pool=pool,
+        )
+
+    assert not result.succeeded
+    assert result.sample_results == ()
 
 
 def test_sparse_partition_materializes_only_samples_with_request_candidates(
