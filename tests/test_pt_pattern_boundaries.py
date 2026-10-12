@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import subprocess
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -43,20 +44,6 @@ PT_PATTERN_DETECTION_CONTRACT_PATHS = (
 )
 PT_PATTERN_MODULE_STEMS = frozenset(p.stem for p in PT_PATTERN_PACKAGE_PATHS)
 
-_NON_PT_IGNORED_DIRECTORY_NAMES = frozenset(
-    {
-        ".git",
-        ".venv",
-        ".uv-cache",
-        ".worktrees",
-        ".pytest_cache",
-        "__pycache__",
-        "build",
-        "dist",
-        "output",
-        "xic_extractor.egg-info",
-    }
-)
 _NON_PT_ALLOWED_DIRECTORY_ROOTS = (
     REPO_ROOT / "tools",
     REPO_ROOT / "tests",
@@ -66,17 +53,32 @@ _NON_PT_ALLOWED_DIRECTORY_ROOTS = (
 def _non_pt_production_python_paths() -> tuple[Path, ...]:
     pt_family_set = {path.resolve() for path in PT_PATTERN_MODULE_PATHS}
     allowed_dirs = tuple(path.resolve() for path in _NON_PT_ALLOWED_DIRECTORY_ROOTS)
-    repo_root_resolved = REPO_ROOT.resolve()
+
+    # Git owns the repository file set; ignored scratch such as the in-repo
+    # pytest basetemp may hold copied sources that are not production modules.
+    listed = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(REPO_ROOT),
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "-z",
+            "--",
+            "*.py",
+        ],
+        check=True,
+        capture_output=True,
+    ).stdout.decode("utf-8")
 
     paths: list[Path] = []
-    for candidate in sorted(REPO_ROOT.rglob("*.py")):
-        candidate_resolved = candidate.resolve()
-        rel_parts = candidate_resolved.relative_to(repo_root_resolved).parts
-        if any(
-            part in _NON_PT_IGNORED_DIRECTORY_NAMES or part.startswith(".")
-            for part in rel_parts
-        ):
+    for relative in sorted(set(filter(None, listed.split("\0")))):
+        candidate = REPO_ROOT / relative
+        if not candidate.is_file():
             continue
+        candidate_resolved = candidate.resolve()
         if any(candidate_resolved.is_relative_to(d) for d in allowed_dirs):
             continue
         if candidate_resolved in pt_family_set:
