@@ -680,23 +680,6 @@ cleanup authority. Only an exact-equal persister return reaches
 `accept_runtime_finalization_receipt`, which is the sole runtime result that a
 future workflow consumer may treat as accepted finalization.
 
-The shared runtime composes that mechanical lifecycle with the existing
-acquisition and physical-observation owners. `peak_detection.observation_batch` performs
-one capability-aware `XICRequest` batch only after resolving the sample's
-request binding and requiring the capability's acquisition source to match.
-It retains truthful native/conversion/RT coordinates and mechanical
-request/call/point counts, closes every coordinate against the capability
-source/kind, freezes copied signal arrays, and asks
-`peak_detection.observations` to validate owner-supplied `IntegrationResult`
-facts against each acquired trace before minting a `PeakObservationRef`.
-Targeted and Alignment process-result artifacts bind the same canonical batch
-receipt and exact observation-artifact upstream closure. Their existing runtime
-carriers register both wrapper and observation artifacts, and manifest-order
-normalization makes serial and deliberately reordered true-spawn results
-canonical-equal. Identical replay coalesces; a conflicting replay fails the
-attempt and exposes no observation batch through the success surface. Runtime
-does not select a peak or interpret the integration.
-
 1. Targeted process execution can stop scheduling and cancel pending futures,
    but running work drains and no attempt/dependency state exists.
 2. Targeted HTML cancellation can suppress later workbook/summary work after

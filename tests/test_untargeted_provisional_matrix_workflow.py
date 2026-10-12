@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -145,10 +146,12 @@ def test_pure_cid_nl_rejects_legacy_knobs_before_write_or_discovery(
     )
     with pytest.raises(
         ValueError,
-        match=(
+        match=re.escape(
             "pure CID-NL retained route does not support legacy Alignment options: "
-            "raw_xic_batch_size"
-        ),
+            "raw_xic_batch_size, owner_backfill_window_strategy, "
+            "sample_column_injection_order"
+        )
+        + "$",
     ):
         workflow.run_untargeted_provisional_matrix_workflow(
             raw_files=(raw_file,),
@@ -158,6 +161,8 @@ def test_pure_cid_nl_rejects_legacy_knobs_before_write_or_discovery(
             alignment_config=AlignmentConfig(),
             raw_workers=3,
             raw_xic_batch_size=16,
+            owner_backfill_window_strategy="super-window",
+            sample_column_injection_order=tmp_path / "injection_order.tsv",
         )
 
     assert discovery_called is False

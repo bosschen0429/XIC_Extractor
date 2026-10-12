@@ -71,25 +71,21 @@ def run_untargeted_provisional_matrix_workflow(
             "provisional review supports only pure single-provider CID-NL; "
             "use the dna_dr preset"
         )
+    unsupported: list[str] = []
     if raw_xic_batch_size != 1:
-        raise ValueError(
-            "pure CID-NL retained route does not support legacy Alignment options: "
-            "raw_xic_batch_size"
-        )
+        unsupported.append("raw_xic_batch_size")
     if owner_backfill_xic_backend != "raw":
-        raise ValueError(
-            "pure CID-NL retained route does not support legacy Alignment options: "
-            "owner_backfill_xic_backend"
-        )
+        unsupported.append("owner_backfill_xic_backend")
     if owner_backfill_window_strategy != "exact":
-        raise ValueError(
-            "pure CID-NL retained route does not support legacy Alignment options: "
-            "owner_backfill_window_strategy"
-        )
+        unsupported.append("owner_backfill_window_strategy")
     if owner_backfill_superwindow_span_factor != 2:
+        unsupported.append("owner_backfill_superwindow_span_factor")
+    if sample_column_injection_order is not None:
+        unsupported.append("sample_column_injection_order")
+    if unsupported:
         raise ValueError(
             "pure CID-NL retained route does not support legacy Alignment options: "
-            "owner_backfill_superwindow_span_factor"
+            + ", ".join(unsupported)
         )
     execution = UntargetedExecutionPolicy(raw_workers=raw_workers)
     legacy = RetainedAlignmentOptions(
