@@ -23,8 +23,8 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
-    _mint_artifact_semantic_contract_ref,
-    _mint_evidence_artifact_ref,
+    mint_artifact_semantic_contract_ref,
+    mint_evidence_artifact_ref,
     verify_evidence_artifact_payload,
 )
 from xic_extractor.peak_detection.baseline import (
@@ -89,7 +89,7 @@ _INTEGRATION_TEXT_FIELDS = frozenset(
         "ms1_morphology_trace_method",
     }
 )
-_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
+_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.peak_detection.observations",
     semantic_role=ARTIFACT_SEMANTIC_ROLE,
     schema_version=SCHEMA_VERSION,
@@ -518,7 +518,7 @@ def _mint_peak_observation_artifact(
         content,
         generation_provenance,
     )
-    artifact = _mint_evidence_artifact_ref(
+    artifact = mint_evidence_artifact_ref(
         producer_processing_request_id=processing_owners.request.processing_request_id,
         producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
         semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,

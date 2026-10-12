@@ -14,8 +14,8 @@ from xic_extractor.configuration.target_identity import (
 )
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
-    _mint_artifact_semantic_contract_ref,
-    _mint_evidence_artifact_ref,
+    mint_artifact_semantic_contract_ref,
+    mint_evidence_artifact_ref,
 )
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
@@ -48,7 +48,7 @@ from xic_extractor.sample_metadata import (
 )
 
 _REVIEW_REQUEST_ID = "xic.processing-request:" + "a" * 64
-_TEST_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
+_TEST_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="tests.review_roundtrip.artifact_owner",
     semantic_role="review_fixture_evidence",
     schema_version="review_fixture_evidence",
@@ -849,7 +849,7 @@ def _artifact_ref(
     processing_request_id: str | None = None,
     upstream_artifacts: tuple[EvidenceArtifactRef, ...] = (),
 ) -> EvidenceArtifactRef:
-    return _mint_evidence_artifact_ref(
+    return mint_evidence_artifact_ref(
         producer_processing_request_id=(
             attempt.processing_request_id
             if attempt is not None

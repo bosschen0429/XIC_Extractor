@@ -10,6 +10,9 @@ import pytest
 from tests.runtime_observability_fixtures import (
     build_runtime_observability_ledger,
 )
+from tests.runtime_telemetry_fixtures import (
+    mint_test_process_result_ref as mint_targeted_process_result_ref,
+)
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution._finalization import (
     AttemptFinalizationState,
@@ -47,9 +50,6 @@ from xic_extractor.execution._lifecycle import (
     preflight_required_work_manifest,
     settle_work_unit,
     start_attempt_runtime,
-)
-from xic_extractor.extraction.targeted_runtime_adapter import (
-    mint_targeted_process_result_ref,
 )
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,

@@ -66,7 +66,7 @@ def test_sld_reader_projects_sequence_rows_without_clock(monkeypatch):
         SequenceFileReaderFactory=SimpleNamespace(ReadFile=lambda path: sequence)
     )
     monkeypatch.setattr(raw_reader, "preflight_raw_reader", lambda dll: [])
-    monkeypatch.setattr(raw_reader, "_ensure_assemblies_loaded", lambda *args: None)
+    monkeypatch.setattr(raw_reader, "ensure_assemblies_loaded", lambda *args: None)
     monkeypatch.setattr(raw_reader.importlib, "import_module", lambda name: business)
     rows = raw_reader.read_sld_injections(Path("sequence.sld"), Path("dll"))
     assert [row.row_number for row in rows] == [1, 2, 3]

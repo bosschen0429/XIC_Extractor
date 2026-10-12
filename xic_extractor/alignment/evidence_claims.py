@@ -55,7 +55,7 @@ class EvidenceQueryResult(Generic[_T]):
         raise KeyError(subject)
 
 
-def _mint_evidence_query_result(
+def mint_evidence_query_result(
     *,
     records: tuple[_T, ...],
     claims: tuple[EvidenceClaim, ...],
@@ -69,4 +69,9 @@ def _mint_evidence_query_result(
     )
 
 
-__all__ = ("EvidenceClaim", "EvidenceClaimState", "EvidenceQueryResult")
+__all__ = (
+    "EvidenceClaim",
+    "EvidenceClaimState",
+    "EvidenceQueryResult",
+    "mint_evidence_query_result",
+)

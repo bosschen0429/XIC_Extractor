@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from dataclasses import InitVar, dataclass, field, fields
 from typing import Literal, TypeAlias, cast
 
-from xic_extractor.alignment.cell_observations import (
+from xic_extractor.alignment.cell_observation.observations import (
     CellObservationContractError,
     FinalGroupCellObservation,
     validate_final_group_cell_observation_population,
@@ -192,11 +192,11 @@ def decide_production_cell(
     elif type(subject) is GroupCellSubject:
         if target_projection is not None or group_handoff is None:
             raise CellDecisionContractError(
-                "Group decision requires only its exact #305 handoff population"
+                "Group decision requires only its exact observation handoff population"
             )
         if group_observations is None:
             raise CellDecisionContractError(
-                "Group decision requires the complete #305 observation population"
+                "Group decision requires the complete observation handoff population"
             )
         try:
             owner_observations = validate_final_group_cell_observation_population(
@@ -212,7 +212,8 @@ def decide_production_cell(
         evidence = observation_by_key.get(key)
         if evidence is None:
             raise CellDecisionContractError(
-                "explicit Group subject is absent from the #305 owner population"
+                "explicit Group subject is absent from the "
+                "observation handoff owner population"
             )
         _validate_group_binding(subject, evidence)
         return _decide_sealed_subject(
@@ -257,7 +258,9 @@ def decide_group_cell_population(
     subjects: Sequence[GroupCellSubject] | None = None,
     observations: Sequence[FinalGroupCellObservation] | None = None,
 ) -> tuple[ProductionCellDecision, ...]:
-    """Decide the complete Group x sample population from the exact #305 closure."""
+    """Decide the complete Group x sample population from the exact
+    observation handoff closure.
+    """
 
     ordered_subjects, observation_by_key = _validate_group_population_inputs(
         projection,

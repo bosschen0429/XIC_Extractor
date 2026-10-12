@@ -4,10 +4,10 @@ from collections.abc import Iterable
 from dataclasses import asdict
 from pathlib import Path
 
-from xic_extractor.alignment.backfill_evidence_contract import (
+from xic_extractor.alignment.backfill.evidence_contract import (
     SKIPPED_EVIDENCE_LEDGER_COLUMNS,
 )
-from xic_extractor.alignment.backfill_scope import SkippedEvidenceRecord
+from xic_extractor.alignment.backfill.scope import SkippedEvidenceRecord
 from xic_extractor.tabular_io import write_tsv
 
 

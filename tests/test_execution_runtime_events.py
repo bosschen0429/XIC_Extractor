@@ -865,8 +865,8 @@ def _owner_result_ref(
     work_unit_key: str,
     payload: bytes,
 ):
-    from xic_extractor.extraction.targeted_runtime_adapter import (
-        mint_targeted_process_result_ref,
+    from tests.runtime_telemetry_fixtures import (
+        mint_test_process_result_ref as mint_targeted_process_result_ref,
     )
 
     return mint_targeted_process_result_ref(

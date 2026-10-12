@@ -7,7 +7,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
-from xic_extractor.alignment.backfill_evidence_contract import (
+from xic_extractor.alignment.backfill.evidence_contract import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
     SKIPPED_EVIDENCE_LEDGER_COLUMNS,
     BackfillEvidenceOwnerBindings,
@@ -17,7 +17,7 @@ from xic_extractor.alignment.backfill_evidence_contract import (
     SkippedEvidenceOwnerBindings,
     SkippedEvidenceRecord,
 )
-from xic_extractor.alignment.evidence_claims import _mint_evidence_query_result
+from xic_extractor.alignment.evidence_claims import mint_evidence_query_result
 from xic_extractor.diagnostics.backfill_evidence.bindings import (
     backfill_evidence_query_claims,
     rehydrate_backfill_evidence_bindings,
@@ -185,7 +185,7 @@ def lookup_backfill_evidence_parquet(
         if owner_result is not None:
             owner_results.append(owner_result)
     result = tuple(records)
-    return _mint_evidence_query_result(
+    return mint_evidence_query_result(
         records=result,
         claims=backfill_evidence_query_claims(
             found=bool(result),
@@ -229,7 +229,7 @@ def lookup_skipped_evidence_parquet(
         seen.add(record.identity)
         records.append(record)
     result = tuple(records)
-    return _mint_evidence_query_result(
+    return mint_evidence_query_result(
         records=result,
         claims=skipped_evidence_query_claims(
             found=bool(result),

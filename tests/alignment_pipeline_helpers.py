@@ -1,9 +1,16 @@
 import csv
 from pathlib import Path
 
+from xic_extractor.alignment.cross_sample.identity_models import (
+    CrossSampleGroupMemberSubject,
+)
 from xic_extractor.alignment.edge_scoring import OwnerEdgeEvidence
 from xic_extractor.alignment.matrix import AlignedCell, AlignmentMatrix
 from xic_extractor.alignment.models import AlignmentCluster
+from xic_extractor.alignment.ownership_models import (
+    IdentityEvent,
+    SampleLocalMS1Owner,
+)
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery.batch_contract import (
     DISCOVERY_BATCH_INDEX_SCHEMA_VERSION,
@@ -13,7 +20,12 @@ from xic_extractor.discovery.batch_contract import (
 )
 from xic_extractor.discovery.csv_reader import read_discovery_candidates_csv
 from xic_extractor.discovery.models import DISCOVERY_CANDIDATE_COLUMNS
-from xic_extractor.processing_identity import build_acquisition_source_identity
+from xic_extractor.peak_detection.hypotheses import IntegrationResult
+from xic_extractor.processing_identity import (
+    build_acquisition_source_identity,
+    canonical_identity_basis_bytes,
+    typed_identity_digest,
+)
 
 
 def write_batch(
@@ -259,4 +271,98 @@ def owner_edge_evidence() -> OwnerEdgeEvidence:
         duplicate_context="none",
         score=100,
         reason="strong_edge: score=100",
+    )
+
+
+_TEST_PROCESSING_REQUEST_ID = "xic.processing-request:" + "0" * 64
+
+
+def _integration(apex_rt: float) -> IntegrationResult:
+    return IntegrationResult(
+        rt_left_min=apex_rt - 0.05,
+        rt_apex_min=apex_rt,
+        rt_right_min=apex_rt + 0.05,
+        raw_apex_rt_min=apex_rt,
+        rt_width_min=0.1,
+        height_raw=100.0,
+        height_smoothed=100.0,
+        area_raw_counts_seconds=1_000.0,
+        area_baseline_corrected=900.0,
+        baseline_type="asls",
+        boundary_sources=("test_owner",),
+        area_ms1_morphology=900.0,
+        ms1_morphology_area_source="gaussian15_positive_asls_residual",
+    )
+
+
+def _owner(
+    sample_stem: str,
+    suffix: str,
+    *,
+    apex_rt: float = 8.5,
+    neutral_loss_tag: str = "NL116",
+    precursor_mz: float = 500.0,
+    product_mz: float = 383.9526,
+    observed_loss: float = 116.0474,
+    evidence_score: int = 80,
+    seed_event_count: int = 2,
+    identity_conflict: bool = False,
+    is_provisional: bool = False,
+) -> SampleLocalMS1Owner:
+    event = IdentityEvent(
+        candidate_id=f"{sample_stem}#{suffix}",
+        sample_stem=sample_stem,
+        raw_file=f"{sample_stem}.raw",
+        neutral_loss_tag=neutral_loss_tag,
+        precursor_mz=precursor_mz,
+        product_mz=product_mz,
+        observed_neutral_loss_da=observed_loss,
+        seed_rt=apex_rt,
+        evidence_score=evidence_score,
+        seed_event_count=seed_event_count,
+    )
+    physical_id = typed_identity_digest(
+        "xic.peak-observation-content:",
+        canonical_identity_basis_bytes({"sample_stem": sample_stem, "suffix": suffix}),
+    )
+    hypothesis_id = typed_identity_digest(
+        "xic.peak-hypothesis:",
+        canonical_identity_basis_bytes({"sample_stem": sample_stem, "suffix": suffix}),
+    )
+    member_basis = canonical_identity_basis_bytes(
+        {
+            "schema_version": "group_member_subject",
+            "processing_request_id": _TEST_PROCESSING_REQUEST_ID,
+            "canonical_sample_identity_id": f"test-sample:{sample_stem}",
+            "subject": {"kind": "peak_hypothesis", "id": hypothesis_id},
+            "physical_observation_ids": [physical_id],
+        }
+    )
+    return SampleLocalMS1Owner(
+        owner_id=f"OWN-{sample_stem}-{suffix}",
+        sample_stem=sample_stem,
+        raw_file=f"{sample_stem}.raw",
+        precursor_mz=precursor_mz,
+        owner_apex_rt=apex_rt,
+        owner_peak_start_rt=apex_rt - 0.05,
+        owner_peak_end_rt=apex_rt + 0.05,
+        owner_area=1_000.0,
+        owner_height=100.0,
+        primary_identity_event=event,
+        supporting_events=(),
+        identity_conflict=identity_conflict,
+        assignment_reason="owner_exact_apex_match",
+        selected_integration=_integration(apex_rt),
+        cross_sample_member_subject=CrossSampleGroupMemberSubject(
+            member_subject_id=typed_identity_digest(
+                "xic.group-member-subject:", member_basis
+            ),
+            processing_request_id=_TEST_PROCESSING_REQUEST_ID,
+            canonical_sample_identity_id=f"test-sample:{sample_stem}",
+            subject_kind="peak_hypothesis",
+            subject_id=hypothesis_id,
+            physical_observation_ids=(physical_id,),
+            basis_bytes=member_basis,
+        ),
+        is_provisional=is_provisional,
     )

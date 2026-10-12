@@ -119,7 +119,7 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
     _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     import xic_extractor.untargeted_execution.partition.workers as workers
 
-    monkeypatch.setattr(workers, "_ensure_assemblies_loaded", lambda *_: None)
+    monkeypatch.setattr(workers, "ensure_assemblies_loaded", lambda *_: None)
     adapter = UntargetedPartitionPipelineAdapter(
         plan,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
@@ -343,7 +343,7 @@ def test_hold_reuse_beside_several_searches_completes_each_group_cell(
     _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     import xic_extractor.untargeted_execution.partition.workers as workers
 
-    monkeypatch.setattr(workers, "_ensure_assemblies_loaded", lambda *_: None)
+    monkeypatch.setattr(workers, "ensure_assemblies_loaded", lambda *_: None)
     adapter = UntargetedPartitionPipelineAdapter(
         plan,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),

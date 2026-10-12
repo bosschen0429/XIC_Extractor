@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from xic_extractor.alignment.cross_sample_neighborhood_graph import (
+from xic_extractor.alignment.cross_sample.neighborhood_graph import (
     INITIAL_GROUPING_POLICY,
     UNLISTED_PAIR_DISPOSITION,
 )

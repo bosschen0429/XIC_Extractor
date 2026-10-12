@@ -15,7 +15,7 @@ from xic_extractor.alignment.completion import (
     WorkflowStage,
     complete_analysis,
 )
-from xic_extractor.alignment.grouping_result import (
+from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.projection.target.post_cell import (
@@ -166,7 +166,7 @@ def test_workflow_forwards_exact_owner_objects_once(
     )
 
     if crossed_result:
-        with pytest.raises(workflow_owner._WorkflowStageFailure) as failure:
+        with pytest.raises(workflow_owner.WorkflowStageFailure) as failure:
             complete_analysis(request, adapter)
         assert failure.value.stage is WorkflowStage.APPLICATION_RESULT
         assert (

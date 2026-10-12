@@ -4,11 +4,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from xic_extractor.alignment.backfill_peak_fact import BackfillWindowStrategy
-from xic_extractor.alignment.backfill_scope import BackfillScope
 from xic_extractor.alignment.config import (
     AlignmentConfig,
-    BackfillXicBackend,
     OwnerBuildXicBackend,
 )
 from xic_extractor.alignment.drift_evidence import (
@@ -41,42 +38,15 @@ from xic_extractor.untargeted_execution.input_planning import (
 class RetainedAlignmentOptions:
     """Accepted advanced overrides for the retained single-provider route."""
 
-    raw_xic_batch_size: int = 1
     owner_build_xic_backend: OwnerBuildXicBackend = "raw"
-    owner_backfill_xic_backend: BackfillXicBackend = "raw"
-    owner_backfill_window_strategy: BackfillWindowStrategy = "exact"
-    owner_backfill_superwindow_span_factor: int = 2
-    sample_column_injection_order: Path | None = None
-    backfill_scope: BackfillScope = "full-audit"
     audit_evidence_mode: str = "auto"
-    selected_family_ids: frozenset[str] = frozenset()
-    selected_family_source: str = ""
     require_discovery_owner_closure: bool = False
 
     def __post_init__(self) -> None:
-        unsupported: list[str] = []
-        if self.raw_xic_batch_size != 1:
-            unsupported.append("raw_xic_batch_size")
-        if self.owner_backfill_xic_backend != "raw":
-            unsupported.append("owner_backfill_xic_backend")
-        if self.owner_backfill_window_strategy != "exact":
-            unsupported.append("owner_backfill_window_strategy")
-        if self.owner_backfill_superwindow_span_factor != 2:
-            unsupported.append("owner_backfill_superwindow_span_factor")
-        if self.sample_column_injection_order is not None:
-            unsupported.append("sample_column_injection_order")
-        if self.backfill_scope != "full-audit":
-            unsupported.append("backfill_scope")
         if self.audit_evidence_mode not in {"auto", "none"}:
-            unsupported.append("audit_evidence_mode")
-        if self.selected_family_ids:
-            unsupported.append("selected_family_ids")
-        if self.selected_family_source.strip():
-            unsupported.append("selected_family_source")
-        if unsupported:
             raise ValueError(
-                "pure CID-NL retained route does not support legacy Alignment options: "
-                + ", ".join(unsupported)
+                "pure CID-NL retained route does not support legacy Alignment "
+                "options: audit_evidence_mode"
             )
 
 

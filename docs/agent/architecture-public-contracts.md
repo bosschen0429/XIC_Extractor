@@ -79,7 +79,7 @@ a current domain/runtime result. Audit-only labels, counts, locators, and copied
 hashes remain telemetry unless a current consumer uses them to decide.
 
 Alignment Backfill records are owned by
-`xic_extractor.alignment.backfill_evidence_contract`; strict TSV and Parquet
+`xic_extractor.alignment.backfill.evidence_contract`; strict TSV and Parquet
 readers alone mint `EvidenceQueryResult`. The public label is compatibility
 metadata, not canonical identity proof. Exact headers, identity tuples,
 validation rules, and optional bundle format are owned by those readers,

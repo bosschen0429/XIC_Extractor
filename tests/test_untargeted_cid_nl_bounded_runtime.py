@@ -57,7 +57,7 @@ from xic_extractor.untargeted_execution.input_planning import (
 def _disable_real_dll_loading(monkeypatch) -> None:
     import xic_extractor.untargeted_execution.partition.execution as runtime_owner
 
-    monkeypatch.setattr(runtime_owner, "_ensure_assemblies_loaded", lambda *_: None)
+    monkeypatch.setattr(runtime_owner, "ensure_assemblies_loaded", lambda *_: None)
 
 
 def _plan(
@@ -154,7 +154,7 @@ def _plan(
 
     monkeypatch.setattr(
         runtime_owner,
-        "_ensure_assemblies_loaded",
+        "ensure_assemblies_loaded",
         lambda *_args: None,
     )
     reference = None
@@ -1072,7 +1072,7 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     warm_threads = []
     monkeypatch.setattr(
         runtime_owner,
-        "_ensure_assemblies_loaded",
+        "ensure_assemblies_loaded",
         lambda *_args: warm_threads.append(get_ident()),
         raising=False,
     )
@@ -1442,7 +1442,7 @@ def test_partition_acquisitions_overlap_with_shared_worker_budget_and_ordered_ou
     import xic_extractor.untargeted_execution.partition.execution as runtime_owner
 
     plan, _ = _plan(tmp_path, monkeypatch)
-    monkeypatch.setattr(runtime_owner, "_ensure_assemblies_loaded", lambda *_args: None)
+    monkeypatch.setattr(runtime_owner, "ensure_assemblies_loaded", lambda *_args: None)
     config = AlignmentConfig(anchor_min_seed_events=1)
     serial = owner.execute_untargeted_plan(
         plan,
@@ -1550,7 +1550,7 @@ def test_overlapped_partition_acquisition_failure_propagates(
     import xic_extractor.untargeted_execution.partition.execution as runtime_owner
 
     plan, _ = _plan(tmp_path, monkeypatch)
-    monkeypatch.setattr(runtime_owner, "_ensure_assemblies_loaded", lambda *_args: None)
+    monkeypatch.setattr(runtime_owner, "ensure_assemblies_loaded", lambda *_args: None)
     original_leaf = owner.execute_partition
     barrier = Barrier(2)
     failure_released = Event()
@@ -1768,7 +1768,7 @@ def test_sample_parallelism_keeps_partition_and_acquisition_counts_fixed(
             sleep(0.1)
 
     plan, _ = _plan(tmp_path, monkeypatch, scenario="recovery")
-    monkeypatch.setattr(runtime_owner, "_ensure_assemblies_loaded", lambda *_args: None)
+    monkeypatch.setattr(runtime_owner, "ensure_assemblies_loaded", lambda *_args: None)
     overlap_count = min(raw_workers, 3)  # Three samples have initial candidates.
     barrier = Barrier(overlap_count)
     lock = Lock()
@@ -1917,7 +1917,7 @@ def test_sample_failure_drains_without_more_samples_or_partition_publication(
     import xic_extractor.untargeted_execution.partition.execution as runtime_owner
 
     plan, _ = _plan(tmp_path, monkeypatch)
-    monkeypatch.setattr(runtime_owner, "_ensure_assemblies_loaded", lambda *_args: None)
+    monkeypatch.setattr(runtime_owner, "ensure_assemblies_loaded", lambda *_args: None)
     barrier = Barrier(2)
     lock = Lock()
     caller_cancel = Event()
@@ -2105,7 +2105,7 @@ def test_process_recovery_dispatches_only_missing_subjects(tmp_path, monkeypatch
 
     plan, _ = _plan(tmp_path, monkeypatch, scenario="partial_recovery")
     batch = materialize_untargeted_partition(plan, plan.subject_batch)
-    monkeypatch.setattr(worker, "_ensure_assemblies_loaded", lambda *_: None)
+    monkeypatch.setattr(worker, "ensure_assemblies_loaded", lambda *_: None)
     requests = []
     execute_recovery = runtime._execute_sample_backfill_worker
 

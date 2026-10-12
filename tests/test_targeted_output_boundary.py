@@ -72,9 +72,12 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
 ) -> None:
     from contextlib import nullcontext
 
-    from xic_extractor.applications.targeted import production_workflow
     from xic_extractor.configuration.models import ExtractionConfig, Target
-    from xic_extractor.extraction import pipeline, target_extraction
+    from xic_extractor.extraction import (
+        pipeline,
+        target_extraction,
+        targeted_cid_nl_assessment,
+    )
     from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
     from xic_extractor.peak_detection import cid_nl_method_assessment
 
@@ -160,7 +163,7 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
     monkeypatch.setattr(
         cid_nl_method_assessment, "evaluate_cid_nl_method_relations", record_relations
     )
-    mint_assessment = production_workflow.mint_cid_nl_method_assessment_ref
+    mint_assessment = targeted_cid_nl_assessment.mint_cid_nl_method_assessment_ref
 
     def record_assessment(**kwargs):
         result = mint_assessment(**kwargs)
@@ -168,7 +171,9 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
         return result
 
     monkeypatch.setattr(
-        production_workflow, "mint_cid_nl_method_assessment_ref", record_assessment
+        targeted_cid_nl_assessment,
+        "mint_cid_nl_method_assessment_ref",
+        record_assessment,
     )
     workbook_path = tmp_path / "xic_results.xlsx"
     execution = TargetedApplicationService(

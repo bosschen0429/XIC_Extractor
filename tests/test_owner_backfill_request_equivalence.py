@@ -5,18 +5,18 @@ from types import SimpleNamespace
 
 import pytest
 
-import xic_extractor.alignment.backfill_request_plan as request_plan_module
+import xic_extractor.alignment.backfill.request_plan as request_plan_module
+from tests.alignment_pipeline_helpers import _owner
 from tests.test_alignment_owner_backfill import _feature, _peak_config
-from tests.test_alignment_owner_clustering import _owner
-from xic_extractor.alignment import (
-    backfill_evaluation as owner_backfill_evaluation_module,
+from xic_extractor.alignment.backfill import (
+    evaluation as owner_backfill_evaluation_module,
 )
-from xic_extractor.alignment.backfill_peak_fact import (
+from xic_extractor.alignment.backfill.peak_fact import (
     BackfillLogicalExtractionResult,
     _iter_extracted_request_traces,
     build_backfill_result,
 )
-from xic_extractor.alignment.backfill_request_plan import (
+from xic_extractor.alignment.backfill.request_plan import (
     BACKFILL_TRACE_RESULT_SEMANTICS,
     BackfillRequestEquivalenceContext,
     BackfillRequestIdentity,
@@ -28,13 +28,13 @@ from xic_extractor.alignment.backfill_request_plan import (
     mint_backfill_request_identity,
     validate_backfill_sample_runtime_projection,
 )
-from xic_extractor.alignment.backfill_runtime_projection import (
+from xic_extractor.alignment.backfill.runtime_projection import (
     BackfillOwnerEligibility,
     backfill_runtime_owner_eligibility,
     mint_backfill_runtime_feature,
     validate_backfill_runtime_feature,
 )
-from xic_extractor.alignment.backfill_scope import backfill_request_sample_stems
+from xic_extractor.alignment.backfill.scope import backfill_request_sample_stems
 from xic_extractor.alignment.config import AlignmentConfig, BackfillXicBackend
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -324,7 +324,7 @@ def test_compact_runtime_projection_mints_each_source_feature_once(
         return real_mint(feature)
 
     monkeypatch.setattr(
-        "xic_extractor.alignment.backfill_request_plan.mint_backfill_runtime_feature",
+        "xic_extractor.alignment.backfill.request_plan.mint_backfill_runtime_feature",
         counted_mint,
     )
 

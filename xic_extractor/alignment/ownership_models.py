@@ -9,7 +9,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 
 if TYPE_CHECKING:
-    from xic_extractor.alignment.cross_sample_peak_groups import (
+    from xic_extractor.alignment.cross_sample.peak_groups import (
         CrossSampleGroupMemberSubject,
     )
 

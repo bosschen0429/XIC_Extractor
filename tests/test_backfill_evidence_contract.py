@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from tests.skipped_evidence_ledger_fixture import write_skipped_evidence_ledger_fixture
-from xic_extractor.alignment.backfill_evidence_contract import (
+from xic_extractor.alignment.backfill.evidence_contract import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
     PREDICATE_VERSION,
@@ -15,7 +15,7 @@ from xic_extractor.alignment.backfill_evidence_contract import (
     EvidenceClaimState,
     SkippedEvidenceOwnerBindings,
 )
-from xic_extractor.alignment.backfill_scope import (
+from xic_extractor.alignment.backfill.scope import (
     SkippedEvidenceRecord,
 )
 from xic_extractor.diagnostics.backfill_evidence.tsv import (

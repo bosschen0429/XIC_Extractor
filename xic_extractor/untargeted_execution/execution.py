@@ -21,8 +21,8 @@ from xic_extractor.alignment.result.application_result import (
 )
 from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.evidence_artifacts import (
-    _mint_artifact_semantic_contract_ref,
-    _mint_evidence_artifact_ref,
+    mint_artifact_semantic_contract_ref,
+    mint_evidence_artifact_ref,
 )
 from xic_extractor.execution._finalization import (
     RuntimeResourceKind,
@@ -55,7 +55,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
     UntargetedCidNlMethodSubjectBatch,
 )
 from xic_extractor.processing_identity import resolve_request_acquisition_source
-from xic_extractor.raw_reader import _ensure_assemblies_loaded
+from xic_extractor.raw_reader import ensure_assemblies_loaded
 from xic_extractor.untargeted_execution.execution_result import (
     CompletedUntargetBatchWorkflowResult,
 )
@@ -81,7 +81,7 @@ from xic_extractor.untargeted_execution.partition_composition import (
     prepare_untargeted_partition_grouping,
 )
 
-_PARTITION_CONTRACT = _mint_artifact_semantic_contract_ref(
+_PARTITION_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.untargeted_cid_nl_bounded_runtime",
     semantic_role="closed_scientific_partition",
     schema_version="cid_nl_scientific_partition",
@@ -90,7 +90,7 @@ _PARTITION_CONTRACT = _mint_artifact_semantic_contract_ref(
     serialization_format="canonical-json-utf8-lf",
 )
 
-_BOOTSTRAP_CONTRACT = _mint_artifact_semantic_contract_ref(
+_BOOTSTRAP_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.untargeted_cid_nl_bounded_runtime",
     semantic_role="rt_calibration_bootstrap_input",
     schema_version="cid_nl_rt_calibration_bootstrap",
@@ -120,7 +120,7 @@ class _InitialAcquisitionPartition:
     capture_evidence: tuple[()] = ()
 
 
-_GLOBAL_CLOSURE_CONTRACT = _mint_artifact_semantic_contract_ref(
+_GLOBAL_CLOSURE_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.untargeted_cid_nl_bounded_runtime",
     semantic_role="closed_application_result",
     schema_version="cid_nl_global_closure",
@@ -131,7 +131,7 @@ _GLOBAL_CLOSURE_CONTRACT = _mint_artifact_semantic_contract_ref(
 
 
 def _initialize_sample_process(dll_dir: Path) -> None:
-    _ensure_assemblies_loaded(dll_dir, importlib.import_module)
+    ensure_assemblies_loaded(dll_dir, importlib.import_module)
 
 
 def materialize_untargeted_partition(
@@ -737,7 +737,7 @@ class UntargetedPartitionPipelineAdapter:
         artifacts: list[RuntimeArtifactRegistrationReceipt] = []
         settlements: list[WorkUnitSettlement] = []
         for key in partition.work_unit_keys:
-            artifact = _mint_evidence_artifact_ref(
+            artifact = mint_evidence_artifact_ref(
                 producer_processing_request_id=(
                     self._owners.request.processing_request_id
                 ),
@@ -799,7 +799,7 @@ class UntargetedPartitionPipelineAdapter:
         Sequence[WorkUnitSettlement],
     ]:
         key = self._global_closure_work_unit_key
-        artifact = _mint_evidence_artifact_ref(
+        artifact = mint_evidence_artifact_ref(
             producer_processing_request_id=(self._owners.request.processing_request_id),
             producer_processing_attempt_id=(self._owners.attempt.processing_attempt_id),
             semantic_contract=_GLOBAL_CLOSURE_CONTRACT,

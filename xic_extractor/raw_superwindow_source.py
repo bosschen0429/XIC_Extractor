@@ -14,7 +14,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from xic_extractor.ms1_scan_index import _raw_file
+from xic_extractor.ms1_scan_index import raw_file
 from xic_extractor.xic_models import XICRequest, XICTrace, crop_xic_trace_by_rt
 
 _WindowedRequest = tuple[int, XICRequest, tuple[int, int]]
@@ -106,10 +106,10 @@ class RawSuperWindowSource:
         if callable(resolver):
             start_scan, end_scan = resolver(request)
             return int(start_scan), int(end_scan)
-        raw_file = _raw_file(self._source)
+        raw = raw_file(self._source)
         return (
-            int(raw_file.ScanNumberFromRetentionTime(request.rt_min)),
-            int(raw_file.ScanNumberFromRetentionTime(request.rt_max)),
+            int(raw.ScanNumberFromRetentionTime(request.rt_min)),
+            int(raw.ScanNumberFromRetentionTime(request.rt_max)),
         )
 
     def retention_time_for_scan(self, scan_number: int) -> float:
@@ -121,8 +121,8 @@ class RawSuperWindowSource:
         if callable(resolver):
             value = float(resolver(scan_number))
         else:
-            raw_file = _raw_file(self._source)
-            value = float(raw_file.RetentionTimeFromScanNumber(scan_number))
+            raw = raw_file(self._source)
+            value = float(raw.RetentionTimeFromScanNumber(scan_number))
         self._retention_time_cache[scan_number] = value
         return value
 

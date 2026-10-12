@@ -17,6 +17,14 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import MappingProxyType
 from typing import final
 
+from xic_extractor.alignment.backfill.conservative import (
+    ConservativeBackfillCandidateUniverse,
+    ConservativeBackfillCellDecision,
+    ConservativeBackfillGroupFacts,
+    assess_untargeted_conservative_backfill_group,
+    map_conservative_backfill_candidates,
+    mint_conservative_backfill_candidate_universe,
+)
 from xic_extractor.alignment.cid_nl_evidence_spine import (
     CidNlReferenceSpine,
     build_cid_nl_reference_spine,
@@ -26,14 +34,6 @@ from xic_extractor.alignment.cid_nl_inputs import (
     UntargetedCidNlAssessmentInput,
     UntargetedCidNlBackfillInput,
     UntargetedCidNlGoldenPathError,
-)
-from xic_extractor.alignment.conservative_backfill import (
-    ConservativeBackfillCandidateUniverse,
-    ConservativeBackfillCellDecision,
-    ConservativeBackfillGroupFacts,
-    assess_untargeted_conservative_backfill_group,
-    map_conservative_backfill_candidates,
-    mint_conservative_backfill_candidate_universe,
 )
 from xic_extractor.diagnostics.quant_matrix.acceptance import (
     CheckedProductionAcceptanceManifest,

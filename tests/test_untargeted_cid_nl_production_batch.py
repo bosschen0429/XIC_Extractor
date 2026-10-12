@@ -4357,7 +4357,7 @@ def _assert_conservative_proof_seals(
     from dataclasses import fields
 
     from xic_extractor.alignment.backfill import evaluation_coverage as owner
-    from xic_extractor.alignment.cell_observations import (
+    from xic_extractor.alignment.cell_observation.observations import (
         _derive_lane_evidence_state,
         canonical_cell_observation_bytes,
     )
@@ -4474,7 +4474,7 @@ def _assert_conservative_proof_seals(
     object.__setattr__(other_group, "group_hypothesis_id", "crossed-group")
     with pytest.raises(ValueError):
         replace(proof, group_identity=other_group)
-    from xic_extractor.alignment.conservative_backfill import (
+    from xic_extractor.alignment.backfill.conservative import (
         map_conservative_backfill_candidates,
     )
 
@@ -4504,7 +4504,7 @@ def _assert_conservative_proof_seals(
             ),
         )
 
-    from xic_extractor.alignment import conservative_backfill as conservative_owner
+    from xic_extractor.alignment.backfill import conservative as conservative_owner
 
     def unexpected_reevaluation(*args, **kwargs):
         raise AssertionError("completed Backfill decision was reevaluated")

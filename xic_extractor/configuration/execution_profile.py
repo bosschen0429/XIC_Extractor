@@ -58,9 +58,9 @@ def load_execution_profile(
     path = settings_path or (_runtime_root() / "config" / "settings.csv")
     settings: Mapping[str, str] | None = None
     if path.is_file():
-        from xic_extractor.configuration.csv_io import _read_settings
+        from xic_extractor.configuration.csv_io import read_settings
 
-        settings = _read_settings(path)
+        settings = read_settings(path)
     return resolve_execution_profile(
         settings,
         parallel_workers=parallel_workers,

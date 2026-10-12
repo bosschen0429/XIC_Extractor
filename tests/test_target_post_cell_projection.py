@@ -10,16 +10,18 @@ import pytest
 
 from tests.test_alignment_cell_decision import _numeric_peak
 from tests.test_target_pre_cell_projection import _finalized_case
-from xic_extractor.alignment.cell_decision import (
+from xic_extractor.alignment.cell_decision.owner import (
     NoWriteCellDecision,
     decide_target_cell_population,
 )
-from xic_extractor.alignment.projection.target import (
+from xic_extractor.alignment.projection.target.post_cell import (
     TargetPostCellProjection,
-    TargetProjectionContractError,
     project_target_post_cell,
-    project_target_pre_cell,
     validate_target_post_cell_projection,
+)
+from xic_extractor.alignment.projection.target.pre_cell import (
+    TargetProjectionContractError,
+    project_target_pre_cell,
 )
 
 

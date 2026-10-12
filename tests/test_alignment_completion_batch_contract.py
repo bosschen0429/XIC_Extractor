@@ -674,7 +674,7 @@ def test_subject_composition_closes_without_runtime_and_preserves_failure_stage(
         assert supplied_request is request
         assert supplied_adapter is adapter
         if fails:
-            raise workflow_owner._WorkflowStageFailure(
+            raise workflow_owner.WorkflowStageFailure(
                 WorkflowStage.CELL_DECISION, ValueError("selection failed")
             )
         return child
@@ -753,7 +753,7 @@ def test_batch_child_failure_keeps_stage_and_never_finalizes_partial_results(
     error = ValueError("child failed")
 
     def fail_child(*args, **kwargs):
-        raise workflow_owner._WorkflowStageFailure(WorkflowStage.CAPTURE, error)
+        raise workflow_owner.WorkflowStageFailure(WorkflowStage.CAPTURE, error)
 
     monkeypatch.setattr(workflow_owner, "complete_analysis", fail_child)
     monkeypatch.setattr(
@@ -761,7 +761,7 @@ def test_batch_child_failure_keeps_stage_and_never_finalizes_partial_results(
         "finalize_alignment_result",
         lambda _: pytest.fail("partial batch finalized"),
     )
-    with pytest.raises(workflow_owner._WorkflowStageFailure) as failure:
+    with pytest.raises(workflow_owner.WorkflowStageFailure) as failure:
         complete_untarget_batch(request, (bundle,))
     assert failure.value.stage is WorkflowStage.CAPTURE
     assert failure.value.error is error

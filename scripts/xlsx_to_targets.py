@@ -28,7 +28,7 @@ from xic_extractor.configuration.target_workbook import (
     DEFAULT_PPM_TOL,
     DEFAULT_RT_WINDOW,
     TargetRow,
-    _assign_istd_pairs,
+    assign_istd_pairs,
     parse_dna_sheet,
     parse_rna_sheet,
     write_targets_csv,
@@ -133,7 +133,7 @@ def main() -> None:
         print("No targets extracted. Check warnings above.", file=sys.stderr)
         sys.exit(1)
 
-    _assign_istd_pairs(targets)
+    assign_istd_pairs(targets)
     paired = sum(1 for target in targets if target["istd_pair"])
     print(f"  ISTD pairs matched: {paired}")
 

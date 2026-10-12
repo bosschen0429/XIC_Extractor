@@ -8,7 +8,6 @@ from tests.cid_nl_raw_fixture import _settings
 from xic_extractor.alignment import AlignmentConfig
 from xic_extractor.alignment.owner_build_route_receipt import (
     OwnerBuildRouteReceipt,
-    _mint_owner_build_route_receipt,
     _mint_retained_untargeted_cid_nl_route_receipt,
 )
 from xic_extractor.applications.untargeted.request import (
@@ -21,19 +20,11 @@ def test_receipt_requires_alignment_owner_mint() -> None:
     with pytest.raises(ValueError, match="must be minted by the Alignment owner"):
         OwnerBuildRouteReceipt(
             configured_owner_build_xic_backend="raw",
-            effective_owner_build_route="configured_backend",
-            effective_owner_build_xic_backend="raw",
+            effective_owner_build_route="retained_untargeted_cid_nl_batch",
+            effective_owner_build_xic_backend=None,
             processing_run_spec_id=None,
             processing_run_spec_hash=None,
             _mint_token=object(),
-        )
-
-
-def test_receipt_rejects_incomplete_run_spec_identity() -> None:
-    with pytest.raises(ValueError, match="id and hash must be provided together"):
-        _mint_owner_build_route_receipt(
-            configured_backend="raw",
-            processing_run_spec_id="run-spec-id",
         )
 
 

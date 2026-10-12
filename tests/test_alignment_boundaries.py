@@ -42,7 +42,7 @@ def test_alignment_ownership_module_stays_domain_focused():
         Path(__file__).parents[1]
         / "xic_extractor"
         / "alignment"
-        / "ownership.py"
+        / "ownership_models.py"
     ).read_text(encoding="utf-8")
 
     forbidden = (

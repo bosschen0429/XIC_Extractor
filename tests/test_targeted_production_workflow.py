@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from xic_extractor.alignment.completion import CaptureWorkflowArguments
 from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
 )
@@ -26,6 +27,10 @@ from xic_extractor.execution._observability import (
     canonical_runtime_observability_ledger_bytes,
 )
 from xic_extractor.extraction import pipeline as extraction_pipeline
+from xic_extractor.extraction import (
+    targeted_capture_population,
+    targeted_cid_nl_assessment,
+)
 from xic_extractor.extraction.result_models import (
     ExtractionResult,
     FileResult,
@@ -103,7 +108,7 @@ def test_two_samples_reuse_exact_acquired_physical_evaluations(
         for file_result in output.file_results
     }
     captured = {}
-    capture_peak_hypotheses = production_workflow.capture_peak_hypotheses
+    capture_peak_hypotheses = targeted_capture_population.capture_peak_hypotheses
 
     def _capture(*, scope, candidate_id, trace):
         binding = next(
@@ -116,7 +121,9 @@ def test_two_samples_reuse_exact_acquired_physical_evaluations(
             trace=trace,
         )
 
-    monkeypatch.setattr(production_workflow, "capture_peak_hypotheses", _capture)
+    monkeypatch.setattr(
+        targeted_capture_population, "capture_peak_hypotheses", _capture
+    )
     monkeypatch.setattr(
         capture_owner,
         "prepare_physical_signal",
@@ -274,7 +281,7 @@ def test_nl_event_outside_retained_peak_finalizes_without_direct_support(
         target,
     )
     assessments = []
-    original_assessment = production_workflow.mint_cid_nl_method_assessment_ref
+    original_assessment = targeted_cid_nl_assessment.mint_cid_nl_method_assessment_ref
 
     def record_assessment(**kwargs):
         assessment = original_assessment(**kwargs)
@@ -282,7 +289,7 @@ def test_nl_event_outside_retained_peak_finalizes_without_direct_support(
         return assessment
 
     monkeypatch.setattr(
-        production_workflow,
+        targeted_cid_nl_assessment,
         "mint_cid_nl_method_assessment_ref",
         record_assessment,
     )
@@ -580,7 +587,7 @@ def test_targeted_relation_uses_quadrature_for_retained_product(
         target,
     )
     assessments = []
-    original_assessment = production_workflow.mint_cid_nl_method_assessment_ref
+    original_assessment = targeted_cid_nl_assessment.mint_cid_nl_method_assessment_ref
 
     def record_assessment(**kwargs):
         assessment = original_assessment(**kwargs)
@@ -588,7 +595,7 @@ def test_targeted_relation_uses_quadrature_for_retained_product(
         return assessment
 
     monkeypatch.setattr(
-        production_workflow,
+        targeted_cid_nl_assessment,
         "mint_cid_nl_method_assessment_ref",
         record_assessment,
     )
@@ -1376,7 +1383,7 @@ def test_acquired_target_inputs_complete_without_runtime(tmp_path, monkeypatch):
     for value_type in (
         type(request),
         type(adapter),
-        production_workflow.CaptureWorkflowArguments,
+        CaptureWorkflowArguments,
         capture_owner.SampleLocalCapture,
     ):
         monkeypatch.setattr(

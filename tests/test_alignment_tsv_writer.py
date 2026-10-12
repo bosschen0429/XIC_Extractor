@@ -1664,7 +1664,7 @@ def test_debug_tsvs_write_cells_and_status_matrix(tmp_path: Path):
 def test_backfill_cell_evidence_tsv_is_compact_and_backfill_scoped(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.alignment.backfill_evidence_contract import (
+    from xic_extractor.alignment.backfill.evidence_contract import (
         BackfillEvidenceOwnerBindings,
         EvidenceClaimState,
     )

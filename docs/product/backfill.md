@@ -6,15 +6,17 @@ A revisit can produce a local observation. Backfill does not create a group,
 decide membership, or itself count a detection. Product policy consumes the
 accepted receipt as described below. Backfill does not grant Matrix writer
 authority on its own. The current Untargeted CID-NL path uses the bounded
-conservative decision in `xic_extractor.alignment.conservative_backfill`.
+conservative decision in `xic_extractor.alignment.backfill.conservative`.
 
 ## Contract
 
 ### Targeted route
 
-The Targeted production workflow freezes a reference group from its selected
-direct CID-NL-supported observations, then calls the same conservative support
-gate and candidate mapper. Sample roles and batch metadata come from the
+`alignment.backfill.istd_anchored` freezes a reference group from a Target's
+selected direct CID-NL-supported observations, then calls the same conservative
+support gate and candidate mapper. `extraction.targeted_istd_backfill` supplies
+it those peers and the paired ISTD's observations from the retained acquisition
+results; the Targeted production workflow only composes the two. Sample roles and batch metadata come from the
 existing sample-metadata owner; ISTDs do not add analyte SUPPORT votes.
 
 For a paired Target, confirmed same-batch peers establish the measured
@@ -51,7 +53,7 @@ expand the acquired trace or silently search another RAW window.
 
 1. Normal Untargeted HTML runs, Alignment CLI runs, and preset runs enter the
    retained CID-NL workflow through `applications.untargeted.application.run_untargeted_application`.
-2. `alignment.cid_nl_backfill_planning` owns eligible sample/group questions,
+2. `alignment.backfill.cid_nl_planning` owns eligible sample/group questions,
    subject and trajectory localization, and reuse/search/skip decisions. Sparse
    runtime execution obtains any missing initial assessment before resolving a
    question; `untargeted_execution.partition.workers` only adapts those decisions

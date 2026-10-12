@@ -7,14 +7,14 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from xic_extractor.acquisition_contract import TraceAcquisitionBatch
+from xic_extractor.alignment.backfill.conservative import (
+    ACTIVATION_ELIGIBLE_SAMPLE_ROLES,
+    minimum_direct_support_count,
+)
 from xic_extractor.alignment.cid_nl_inputs import (
     CID_NL_ALIGNMENT_CONFIG,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.conservative_backfill import (
-    ACTIVATION_ELIGIBLE_SAMPLE_ROLES,
-    minimum_direct_support_count,
-)
 from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.execution._finalization import (
     RuntimeResourceKind,
@@ -51,7 +51,7 @@ from xic_extractor.processing_identity import (
     canonical_current_attempt_artifact_closure,
     resolve_request_acquisition_source,
 )
-from xic_extractor.raw_reader import _ensure_assemblies_loaded
+from xic_extractor.raw_reader import ensure_assemblies_loaded
 from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
     _has_recorded_precursor_reference,
     _PartitionWorkObserver,
@@ -536,13 +536,13 @@ def _prepare_runtime_work(
             max_workers=raw_workers,
             backend=raw_worker_backend,
             thread_name_prefix="cid-nl-sample",
-            initializer=lambda: _ensure_assemblies_loaded(
+            initializer=lambda: ensure_assemblies_loaded(
                 jobs[0].dll_dir, importlib.import_module
             ),
         )
         if worker_pool.initializer is None:
             worker_pool.set_initializer(
-                lambda: _ensure_assemblies_loaded(
+                lambda: ensure_assemblies_loaded(
                     jobs[0].dll_dir, importlib.import_module
                 )
             )

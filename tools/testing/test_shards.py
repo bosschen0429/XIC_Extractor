@@ -203,7 +203,6 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_ms1_scan_index.py",
             "tests/test_owner_build_route_receipt.py",
             "tests/test_owner_backfill_request_equivalence.py",
-            "tests/test_owner_backfill_peak_fact_provenance.py",
             "tests/test_pt_pattern_*.py",
             "tests/test_pt_pattern_boundaries.py",
             "tests/test_pt_pattern_scan_proxy.py",

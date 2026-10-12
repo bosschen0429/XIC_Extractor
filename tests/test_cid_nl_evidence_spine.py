@@ -18,7 +18,7 @@ from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
 )
 from xic_extractor.alignment import cid_nl_evidence_spine as spine_module
-from xic_extractor.alignment.cell_observations import (
+from xic_extractor.alignment.cell_observation.observations import (
     CellObservationContractError,
     mint_cell_observation_ref,
 )

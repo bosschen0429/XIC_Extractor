@@ -2,7 +2,7 @@
 
 from dataclasses import replace
 
-from tests.test_alignment_owner_clustering import _owner
+from tests.alignment_pipeline_helpers import _owner
 from tests.test_untargeted_cid_nl_bounded_runtime import _plan
 from tools.diagnostics.grouping_experiment import main
 from xic_extractor.alignment.config import AlignmentConfig
@@ -84,7 +84,7 @@ def test_prepare_snapshot_and_cli_replay_preserve_formal_grouping(
 ):
     import xic_extractor.untargeted_execution.partition.workers as workers
 
-    monkeypatch.setattr(workers, "_ensure_assemblies_loaded", lambda *_: None)
+    monkeypatch.setattr(workers, "ensure_assemblies_loaded", lambda *_: None)
 
     def forbidden(*args, **kwargs):
         raise AssertionError("Backfill must not run during grouping experiments")
@@ -135,7 +135,7 @@ def test_rt_coordinate_override_changes_membership_without_rewriting_measurement
 ):
     import xic_extractor.untargeted_execution.partition.workers as workers
 
-    monkeypatch.setattr(workers, "_ensure_assemblies_loaded", lambda *_: None)
+    monkeypatch.setattr(workers, "ensure_assemblies_loaded", lambda *_: None)
     plan, _ = _plan(tmp_path, monkeypatch, scenario="cross_subject_recovery")
     inputs = prepare_grouping_experiment(
         plan,

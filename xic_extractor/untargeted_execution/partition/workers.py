@@ -7,7 +7,7 @@ from copy import copy
 from dataclasses import dataclass
 
 from xic_extractor.acquisition_contract import TraceAcquisitionBatch
-from xic_extractor.alignment.cid_nl_backfill_planning import (
+from xic_extractor.alignment.backfill.cid_nl_planning import (
     CidNlBackfillDecision,
     CidNlBackfillQuestion,
     plan_grouped_cid_nl_backfills,
@@ -30,8 +30,8 @@ from xic_extractor.processing_identity import resolve_request_acquisition_source
 from xic_extractor.raw_reader import (
     RawFileHandle,
     RawReaderOpenError,
-    _bind_expected_path_identity,
-    _ensure_assemblies_loaded,
+    bind_expected_path_identity,
+    ensure_assemblies_loaded,
     open_raw,
 )
 from xic_extractor.untargeted_execution.acquisition_cache import (
@@ -183,7 +183,7 @@ def _open_job_raw(
     if expectation is not None and job.acquisition_cache_dir is not None:
         # The input owner already verified the content. Cache replay still checks
         # that this path has that exact identity before returning any facts.
-        _bind_expected_path_identity(job.raw_path, source, expectation.path_identity)
+        bind_expected_path_identity(job.raw_path, source, expectation.path_identity)
         return CachedUntargetedRaw(
             open_native, source=source, cache_dir=job.acquisition_cache_dir
         )
@@ -650,7 +650,7 @@ def _execute_sample_initial_worker(
     request: _SampleInitialWorkerRequest,
 ) -> _SampleInitialWorkerResponse:
     first_job = request.jobs[0]
-    _ensure_assemblies_loaded(first_job.dll_dir, importlib.import_module)
+    ensure_assemblies_loaded(first_job.dll_dir, importlib.import_module)
     states = tuple(
         _RuntimeJobState(
             job=job,
@@ -734,7 +734,7 @@ def _execute_sample_backfill_worker(
     request: _SampleBackfillWorkerRequest,
 ) -> _SampleBackfillWorkerResponse:
     first_job = request.jobs[0]
-    _ensure_assemblies_loaded(first_job.dll_dir, importlib.import_module)
+    ensure_assemblies_loaded(first_job.dll_dir, importlib.import_module)
     states = tuple(
         _RuntimeJobState(
             job=job,

@@ -17,13 +17,13 @@ if TYPE_CHECKING:
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillEvaluationCoverageBatch,
 )
-from xic_extractor.alignment.backfill_peak_fact_provenance import (
+from xic_extractor.alignment.backfill.peak_fact_provenance import (
     BACKFILL_PEAK_FACT_PROVENANCE_SCHEMA_VERSION,
     EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
     BackfillPeakFactProvenanceBatch,
     render_backfill_peak_fact_provenance_tsv,
 )
-from xic_extractor.alignment.backfill_scope import (
+from xic_extractor.alignment.backfill.scope import (
     REQUEST_PLAN_VERSION,
 )
 from xic_extractor.alignment.config import (

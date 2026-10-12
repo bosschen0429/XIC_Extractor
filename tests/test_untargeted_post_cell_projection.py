@@ -9,17 +9,19 @@ from pathlib import Path
 
 import pytest
 
+from tests.alignment_pipeline_helpers import _owner
 from tests.test_alignment_cell_decision import _numeric_peak
-from tests.test_alignment_owner_clustering import _owner
 from tests.test_untargeted_pre_cell_projection import (
     _untarget_projection_inputs,
 )
-from xic_extractor.alignment.cell_decision import (
+from xic_extractor.alignment.cell_decision.owner import (
     NoWriteCellDecision,
     decide_group_cell_population,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.owner_clustering import cluster_sample_local_owners
+from xic_extractor.alignment.cross_sample.peak_groups import (
+    construct_cross_sample_peak_group_hypotheses,
+)
 from xic_extractor.alignment.projection.untarget import (
     UntargetPostCellProjection,
     UntargetProjectionContractError,
@@ -135,7 +137,7 @@ def test_moderate_group_disposition_controls_current_untarget_route(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    moderate_group = cluster_sample_local_owners(
+    moderate_group = construct_cross_sample_peak_group_hypotheses(
         (
             _owner(
                 "sample-a", "moderate-a", apex_rt=10.0,
@@ -148,7 +150,7 @@ def test_moderate_group_disposition_controls_current_untarget_route(
         ),
         config=AlignmentConfig(),
     )[0]
-    strong_group = cluster_sample_local_owners(
+    strong_group = construct_cross_sample_peak_group_hypotheses(
         (
             _owner("sample-a", "strong-a", apex_rt=10.0),
             _owner("sample-b", "strong-b", apex_rt=10.1),

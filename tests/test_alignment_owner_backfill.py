@@ -6,23 +6,25 @@ import numpy as np
 import pytest
 from pytest import MonkeyPatch
 
-import xic_extractor.alignment.backfill_peak_fact as owner_backfill_module
-import xic_extractor.alignment.backfill_request_plan as request_plan_module
-from tests.test_alignment_owner_clustering import _owner
-from xic_extractor.alignment import (
-    backfill_acquisition as owner_backfill_acquisition_module,
+import xic_extractor.alignment.backfill.peak_fact as owner_backfill_module
+import xic_extractor.alignment.backfill.request_plan as request_plan_module
+from tests.alignment_pipeline_helpers import _owner
+from xic_extractor.alignment.backfill import (
+    acquisition as owner_backfill_acquisition_module,
 )
-from xic_extractor.alignment import (
-    backfill_evaluation as owner_backfill_evaluation_module,
+from xic_extractor.alignment.backfill import (
+    evaluation as owner_backfill_evaluation_module,
 )
-from xic_extractor.alignment.backfill_peak_fact import (
+from xic_extractor.alignment.backfill.peak_fact import (
     build_backfill_result,
 )
-from xic_extractor.alignment.backfill_request_plan import (
+from xic_extractor.alignment.backfill.request_plan import (
     build_backfill_request_plan,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.owner_clustering import OwnerAlignedFeature
+from xic_extractor.alignment.cross_sample.peak_groups import (
+    CrossSamplePeakGroupHypothesis,
+)
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -64,9 +66,9 @@ def test_owner_backfill_backfills_missing_sample_from_feature_center() -> None:
     assert cell.trace_quality == "owner_backfill"
     assert cell.group_hypothesis_id == "FAM000001"
     assert cell.public_family_id == "FAM000001"
-    assert cell.group_construction_role == "successor_constructor"
-    assert cell.group_delivery_role == "owner_aligned_feature_compatibility_facade"
-    assert cell.group_membership_source == "owner_aligned_feature_successor_projection"
+    assert cell.group_construction_role == "successor_projection_adapter"
+    assert cell.group_delivery_role == "successor_delivery_protocol"
+    assert cell.group_membership_source == "cross_sample_peak_group_hypothesis"
     assert cell.gap_fill_state == "gap_fill_rescued"
     assert cell.gap_fill_reason == "group_centered_query_detected"
     assert cell.missing_observation_state == "queried_and_detected"
@@ -354,7 +356,7 @@ def test_owner_backfill_accepts_delivery_contract_feature_without_legacy_dto() -
         peak_config=replace(_peak_config(), resolver_min_scans=10),
     )
 
-    assert not isinstance(feature, OwnerAlignedFeature)
+    assert not isinstance(feature, CrossSamplePeakGroupHypothesis)
     assert len(cells) == 1
     assert cells[0].cluster_id == "FAM_CONTRACT"
     assert cells[0].group_hypothesis_id == "GROUP_CONTRACT"
@@ -772,7 +774,7 @@ def test_owner_backfill_request_plan_reuses_seed_centers_per_feature(
     calls: list[str] = []
 
     def fake_seed_centers(
-        seen_feature: OwnerAlignedFeature,
+        seen_feature: CrossSamplePeakGroupHypothesis,
     ) -> tuple[tuple[float, float], ...]:
         calls.append(seen_feature.feature_family_id)
         return ((500.0, 8.5), (501.0, 8.75))
@@ -1373,16 +1375,21 @@ def _feature(
     feature_family_id: str = "FAM000001",
     mz: float = 500.0,
     rt: float = 8.5,
-) -> OwnerAlignedFeature:
-    return OwnerAlignedFeature(
-        feature_family_id=feature_family_id,
+) -> CrossSamplePeakGroupHypothesis:
+    owner = _owner("sample-a", "a", apex_rt=8.5)
+    return CrossSamplePeakGroupHypothesis(
+        group_hypothesis_id=feature_family_id,
+        public_family_id=feature_family_id,
+        owner_ids=(owner.owner_id,),
+        event_ids=(owner.primary_identity_event.candidate_id,),
+        event_member_count=1,
         neutral_loss_tag="NL116",
-        family_center_mz=mz,
-        family_center_rt=rt,
-        family_product_mz=383.9526,
-        family_observed_neutral_loss_da=116.0474,
+        group_center_mz=mz,
+        group_center_rt=rt,
+        group_product_mz=383.9526,
+        group_observed_neutral_loss_da=116.0474,
         has_anchor=True,
-        owners=(_owner("sample-a", "a", apex_rt=8.5),),
+        owners=(owner,),
         evidence="single_sample_local_owner",
         review_only=review_only,
         identity_conflict=review_only,

@@ -8,10 +8,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
 from xic_extractor.acquisition_contract import TraceCoordinate
-from xic_extractor.alignment.cross_sample_peak_groups import CrossSampleGroupIdentity
+from xic_extractor.alignment.cross_sample.peak_groups import CrossSampleGroupIdentity
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
-    _mint_artifact_semantic_contract_ref,
+    mint_artifact_semantic_contract_ref,
+    mint_evidence_artifact_ref,
     verify_evidence_artifact_payload,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -21,7 +22,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
-_COMPLETED_BACKFILL_CONTRACT = _mint_artifact_semantic_contract_ref(
+_COMPLETED_BACKFILL_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.untargeted_cid_nl_real_data_runtime",
     semantic_role="owner_backfill_completed_backfill_projection",
     schema_version="owner_backfill_completed_physical_query_projection",
@@ -151,6 +152,63 @@ def canonical_backfill_completion_bytes(
         backfill_assessment=projection.backfill_assessment,
         trace_coordinate=projection.trace_coordinate,
         acquisition_sha256=projection.acquisition_sha256,
+    )
+
+
+def mint_backfill_completion_projection(
+    *,
+    processing_owners: ProcessingOwnerReferences,
+    sample: ResolvedCanonicalSampleIdentity,
+    group_identity: CrossSampleGroupIdentity,
+    group_center_mz: float,
+    group_center_rt: float,
+    query_rt: float,
+    query_rt_basis: str,
+    source_result_artifact: EvidenceArtifactRef,
+    initial_assessment_artifact: EvidenceArtifactRef,
+    backfill_assessment: CidNlMethodAssessmentRef,
+    trace_coordinate: TraceCoordinate,
+    acquisition_sha256: str,
+) -> BackfillCompletionProjection:
+    """Mint one verified completion projection and its canonical evidence artifact."""
+    payload_bytes = _completed_backfill_projection_bytes(
+        processing_owners=processing_owners,
+        sample=sample,
+        group_identity=group_identity,
+        group_center_mz=group_center_mz,
+        group_center_rt=group_center_rt,
+        query_rt=query_rt,
+        query_rt_basis=query_rt_basis,
+        source_result_artifact=source_result_artifact,
+        initial_assessment_artifact=initial_assessment_artifact,
+        backfill_assessment=backfill_assessment,
+        trace_coordinate=trace_coordinate,
+        acquisition_sha256=acquisition_sha256,
+    )
+    artifact = mint_evidence_artifact_ref(
+        producer_processing_request_id=processing_owners.request.processing_request_id,
+        producer_processing_attempt_id=processing_owners.attempt.processing_attempt_id,
+        semantic_contract=_COMPLETED_BACKFILL_CONTRACT,
+        payload_bytes=payload_bytes,
+        upstream_artifacts=(
+            source_result_artifact,
+            backfill_assessment.artifact,
+        ),
+    )
+    return BackfillCompletionProjection(
+        processing_owners=processing_owners,
+        sample=sample,
+        group_identity=group_identity,
+        group_center_mz=group_center_mz,
+        group_center_rt=group_center_rt,
+        query_rt=query_rt,
+        query_rt_basis=query_rt_basis,
+        source_result_artifact=source_result_artifact,
+        initial_assessment_artifact=initial_assessment_artifact,
+        backfill_assessment=backfill_assessment,
+        trace_coordinate=trace_coordinate,
+        acquisition_sha256=acquisition_sha256,
+        artifact=artifact,
     )
 
 

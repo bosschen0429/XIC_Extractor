@@ -444,7 +444,7 @@ the cost, not moving it, and the graph exists to feed one report nobody reads.
   each type's real constructor on its own field values costs **2.237 s** for one
   partition against **1.325 s** to serialise it, covering 225,892 of its 281,250
   dataclass instances (80.3%). The mint path is close to the validation path, so
-  that figure is not an underestimate: `_mint_evidence_artifact_ref` is
+  that figure is not an underestimate: `mint_evidence_artifact_ref` is
   19.11 us/call against 16.41 us to reconstruct the same type,
   `_build_artifact_content_identity` 9.98 us, `_typed_digest` 3.39 us, over a
   1,371-byte median artifact payload. Reuse

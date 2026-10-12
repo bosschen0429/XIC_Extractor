@@ -245,7 +245,6 @@ diff, and provenance.
 Owners:
 
 - `xic_extractor/alignment/ownership_models.py`
-- `xic_extractor/alignment/ownership.py`
 - `xic_extractor/alignment/edge_scoring.py`
 - `xic_extractor/alignment/matrix.py`
 - `xic_extractor/alignment/matrix_identity.py`

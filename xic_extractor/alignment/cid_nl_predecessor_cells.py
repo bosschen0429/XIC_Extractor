@@ -4,17 +4,17 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from xic_extractor.alignment.cell_group_context import (
+from xic_extractor.alignment.cell_observation.group_context import (
     CidNlCellGroupContext,
     CidNlCellGroupSupport,
 )
-from xic_extractor.alignment.cell_observation_records import (
+from xic_extractor.alignment.cell_observation.records import (
     CellObservationContractError,
     CellObservationRef,
     mint_cell_observation_ref,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
 from xic_extractor.alignment.edge_scoring import DriftLookupProtocol

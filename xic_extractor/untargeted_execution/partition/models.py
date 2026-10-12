@@ -14,11 +14,10 @@ from typing import cast
 
 from xic_extractor.acquisition_contract import AcquiredTrace, TraceAcquisitionBatch
 from xic_extractor.alignment.backfill.completion_evidence import (
-    _COMPLETED_BACKFILL_CONTRACT,
     BackfillCompletionProjection,
-    _completed_backfill_projection_bytes,
+    mint_backfill_completion_projection,
 )
-from xic_extractor.alignment.cell_observations import CidNlCellGroupContext
+from xic_extractor.alignment.cell_observation.observations import CidNlCellGroupContext
 from xic_extractor.alignment.cid_nl_completion import CidNlWorksetGrouping
 from xic_extractor.alignment.cid_nl_inputs import (
     UntargetedCidNlBackfillInput,
@@ -27,7 +26,7 @@ from xic_extractor.alignment.completion import (
     UntargetWorkflowCompositionRequest,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.peak_groups import (
     validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
@@ -52,8 +51,8 @@ from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
 from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
-    _mint_artifact_semantic_contract_ref,
-    _mint_evidence_artifact_ref,
+    mint_artifact_semantic_contract_ref,
+    mint_evidence_artifact_ref,
     verify_evidence_artifact_payload,
 )
 from xic_extractor.execution._lifecycle import WorkUnitTerminalOutcome
@@ -131,7 +130,7 @@ RUNTIME_CALL_COST_METRIC_NAMES = (
     "trace_point_count",
 )
 _RUNTIME_COMPATIBILITY_TOKEN = "untargeted-cid-nl-real-data-runtime"
-_ARTIFACT_SEMANTIC_CONTRACT = _mint_artifact_semantic_contract_ref(
+_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.untargeted_cid_nl_real_data_runtime",
     semantic_role="untargeted_cid_nl_real_data_sample_result",
     schema_version=SCHEMA_VERSION,
@@ -615,27 +614,7 @@ def _project_completed_backfill(
     (acquired,) = exact
     digest = result.result_ref.acquisition_sha256
     assert digest is not None
-    artifact = _mint_evidence_artifact_ref(
-        producer_processing_request_id=job.processing_owners.request.processing_request_id,
-        producer_processing_attempt_id=job.processing_owners.attempt.processing_attempt_id,
-        semantic_contract=_COMPLETED_BACKFILL_CONTRACT,
-        payload_bytes=_completed_backfill_projection_bytes(
-            processing_owners=job.processing_owners,
-            sample=job.sample,
-            group_identity=group,
-            group_center_mz=group_context.group.family_center_mz,
-            group_center_rt=center,
-            query_rt=query_rt,
-            query_rt_basis=backfill.query_rt_basis,
-            source_result_artifact=result.result_ref.artifact,
-            initial_assessment_artifact=initial.artifact,
-            backfill_assessment=assessment,
-            trace_coordinate=acquired.coordinate,
-            acquisition_sha256=digest,
-        ),
-        upstream_artifacts=(result.result_ref.artifact, assessment.artifact),
-    )
-    return BackfillCompletionProjection(
+    return mint_backfill_completion_projection(
         processing_owners=job.processing_owners,
         sample=job.sample,
         group_identity=group,
@@ -648,7 +627,6 @@ def _project_completed_backfill(
         backfill_assessment=assessment,
         trace_coordinate=acquired.coordinate,
         acquisition_sha256=digest,
-        artifact=artifact,
     )
 
 
@@ -784,7 +762,7 @@ def _mint_sample_result_ref(
         "acquisition_sha256": acquisition_sha256,
     }
     payload = _sample_result_bytes(**values)
-    artifact = _mint_evidence_artifact_ref(
+    artifact = mint_evidence_artifact_ref(
         producer_processing_request_id=(
             job.processing_owners.request.processing_request_id
         ),

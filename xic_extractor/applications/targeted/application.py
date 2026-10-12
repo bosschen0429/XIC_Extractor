@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -10,20 +10,6 @@ from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
 )
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
-from xic_extractor.execution._finalization import RuntimeResourceReservation
-from xic_extractor.execution._lifecycle import AttemptRuntime
-from xic_extractor.execution.attempt import (
-    RuntimeAttemptAggregate,
-    RuntimeFinalizationReceipt,
-    RuntimeTelemetryProvider,
-)
-from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
-from xic_extractor.extraction.targeted_runtime_adapter import (
-    TargetedRuntimeAdapterError,
-    TargetedRuntimeLifecycleApplicationResult,
-    TargetedRuntimeWorkerBatch,
-    execute_targeted_runtime_lifecycle,
-)
 
 if TYPE_CHECKING:
     from xic_extractor.extraction.result_models import RunOutput
@@ -53,19 +39,8 @@ class TargetedRunner(Protocol):
 FinalizedTargetProductionResult: TypeAlias = FinalizedTargetApplicationResult
 
 
-class TargetedRuntimeLifecycleRunner(Protocol):
-    def __call__(
-        self,
-        request: TargetedApplicationRequest,
-        aggregate: RuntimeAttemptAggregate,
-    ) -> TargetedRuntimeWorkerBatch: ...
-
-
-class TargetedRuntimeFinalizationPersister(Protocol):
-    def __call__(
-        self,
-        proposed: RuntimeFinalizationReceipt,
-    ) -> RuntimeFinalizationReceipt: ...
+class TargetedApplicationError(ValueError):
+    """Raised when a Targeted application invariant or population contract fails."""
 
 
 @dataclass(frozen=True)
@@ -102,9 +77,6 @@ class TargetedPublication:
 @dataclass(frozen=True)
 class TargetedApplicationService:
     runner: TargetedRunner
-    runtime_lifecycle_runner: TargetedRuntimeLifecycleRunner | None = None
-    runtime_finalization_persister: TargetedRuntimeFinalizationPersister | None = None
-    runtime_recovery_marker: OwnerPathRuntimeMarker | None = None
 
     def execute(self, request: TargetedApplicationRequest) -> RunOutput:
         """Preserve the existing application API while using the canonical path."""
@@ -117,9 +89,7 @@ class TargetedApplicationService:
     ) -> TargetedApplicationExecution:
         """Acquire once and publish only a complete finalized Target population."""
 
-        resolved_request = _isolate_application_request(
-            _resolve_application_request(request)
-        )
+        resolved_request = _isolate_application_request(request)
         from xic_extractor.applications.targeted.production_workflow import (
             execute_targeted_production_workflow,
             snapshot_targeted_production_inputs,
@@ -173,61 +143,6 @@ class TargetedApplicationService:
             published_paths=publication.paths,
         )
 
-    def execute_runtime_lifecycle(
-        self,
-        request: TargetedApplicationRequest,
-        runtime: AttemptRuntime,
-        *,
-        resource_reservations: Sequence[RuntimeResourceReservation],
-        telemetry_provider: RuntimeTelemetryProvider,
-    ) -> TargetedRuntimeLifecycleApplicationResult:
-        """Reserve, dispatch, settle, and require one supervisor acknowledgement."""
-
-        if self.runtime_lifecycle_runner is None:
-            raise TargetedRuntimeAdapterError(
-                "TargetedApplicationService requires runtime_lifecycle_runner "
-                "for execute_runtime_lifecycle"
-            )
-        if (
-            self.runtime_finalization_persister is not None
-            and self.runtime_recovery_marker is not None
-        ):
-            raise TargetedRuntimeAdapterError(
-                "runtime_finalization_persister and runtime_recovery_marker "
-                "are mutually exclusive finalization authorities"
-            )
-        if (
-            self.runtime_finalization_persister is None
-            and self.runtime_recovery_marker is None
-        ):
-            raise TargetedRuntimeAdapterError(
-                "TargetedApplicationService requires runtime_finalization_persister "
-                "or runtime_recovery_marker for execute_runtime_lifecycle"
-            )
-        resolved_request = _resolve_application_request(request)
-        lifecycle_runner = self.runtime_lifecycle_runner
-        if self.runtime_recovery_marker is not None:
-            self.runtime_recovery_marker.record_launch(runtime)
-        finalization_persister = (
-            self.runtime_recovery_marker
-            if self.runtime_recovery_marker is not None
-            else self.runtime_finalization_persister
-        )
-        if finalization_persister is None:
-            raise TargetedRuntimeAdapterError(
-                "Targeted runtime finalizer unexpectedly remained unresolved"
-            )
-        return execute_targeted_runtime_lifecycle(
-            runtime,
-            resource_reservations,
-            worker_batch_provider=lambda aggregate: lifecycle_runner(
-                resolved_request,
-                aggregate,
-            ),
-            telemetry_provider=telemetry_provider,
-            finalization_persister=finalization_persister,
-        )
-
 
 def build_targeted_application_request(
     config: ExtractionConfig,
@@ -248,14 +163,6 @@ def build_targeted_application_request(
         excel_output_path=excel_output_path,
         replace_existing_outputs=replace_existing_outputs,
     )
-
-
-def _resolve_application_request(
-    request: TargetedApplicationRequest,
-) -> TargetedApplicationRequest:
-    if not isinstance(request, TargetedApplicationRequest):
-        raise TypeError("request must be a TargetedApplicationRequest")
-    return request
 
 
 def _isolate_application_request(

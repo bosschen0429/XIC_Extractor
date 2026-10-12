@@ -14,7 +14,7 @@ from dataclasses import InitVar, asdict, dataclass, field, fields
 from pathlib import Path
 from typing import cast, final
 
-from xic_extractor.alignment.backfill_peak_fact import BackfillWindowStrategy
+from xic_extractor.alignment.backfill.peak_fact import BackfillWindowStrategy
 from xic_extractor.alignment.config import (
     AlignmentConfig,
     BackfillXicBackend,

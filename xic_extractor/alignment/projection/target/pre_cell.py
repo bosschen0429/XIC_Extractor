@@ -5,14 +5,14 @@ from __future__ import annotations
 from dataclasses import InitVar, dataclass, field
 from typing import Literal, TypeAlias, cast
 
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.grouping_result import (
+    CrossSampleGroupingResult,
+)
+from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     group_member_subject_from_peak_hypothesis,
     validate_cross_sample_group_population,
-)
-from xic_extractor.alignment.grouping_result import (
-    CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,

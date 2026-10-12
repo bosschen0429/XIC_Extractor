@@ -14,7 +14,7 @@ from tests.processing_identity_no_raw_fixture import (
 
 
 def _member(fixture, sample_stem: str, **peak_kwargs):
-    from xic_extractor.alignment.cross_sample_peak_groups import (
+    from xic_extractor.alignment.cross_sample.peak_groups import (
         group_member_subject_from_peak_hypothesis,
     )
     from xic_extractor.peak_detection.peak_hypothesis_identity import (
@@ -42,7 +42,7 @@ def _subjects(tmp_path, *sample_stems: str):
 
 
 def _mint_group_in_process(processing_request_id, members):
-    from xic_extractor.alignment.cross_sample_peak_groups import (
+    from xic_extractor.alignment.cross_sample.peak_groups import (
         mint_cross_sample_group_identity,
     )
 
@@ -54,7 +54,7 @@ def _mint_group_in_process(processing_request_id, members):
 
 
 def test_equal_digest_with_unequal_basis_bytes_fails_closed(tmp_path) -> None:
-    from xic_extractor.alignment.cross_sample_peak_groups import (
+    from xic_extractor.alignment.cross_sample.peak_groups import (
         CrossSampleContractError,
         CrossSampleIdentityBasisRegistry,
     )
@@ -68,7 +68,7 @@ def test_equal_digest_with_unequal_basis_bytes_fails_closed(tmp_path) -> None:
 
 
 def test_group_rejects_two_identity_members_for_one_canonical_sample(tmp_path) -> None:
-    from xic_extractor.alignment.cross_sample_peak_groups import (
+    from xic_extractor.alignment.cross_sample.peak_groups import (
         CrossSampleContractError,
         mint_cross_sample_group_identity,
     )
@@ -109,7 +109,7 @@ def test_group_identity_is_order_and_parallelism_invariant(tmp_path) -> None:
 
 
 def test_equivalent_hypothesis_wrappers_share_member_identity(tmp_path) -> None:
-    from xic_extractor.alignment.cross_sample_peak_groups import (
+    from xic_extractor.alignment.cross_sample.peak_groups import (
         group_member_subject_from_peak_hypothesis,
     )
     from xic_extractor.peak_detection.peak_hypothesis_identity import (
@@ -148,7 +148,7 @@ def test_equivalent_hypothesis_wrappers_share_member_identity(tmp_path) -> None:
 
 
 def test_group_and_population_reject_crossed_or_duplicate_membership(tmp_path) -> None:
-    from xic_extractor.alignment.cross_sample_peak_groups import (
+    from xic_extractor.alignment.cross_sample.peak_groups import (
         CrossSampleContractError,
         mint_cross_sample_group_identity,
         validate_cross_sample_group_population,
@@ -175,7 +175,7 @@ def test_group_and_population_reject_crossed_or_duplicate_membership(tmp_path) -
 
 
 def test_successor_application_rejects_mutable_closure_containers(tmp_path) -> None:
-    from xic_extractor.alignment.cross_sample_peak_groups import (
+    from xic_extractor.alignment.cross_sample.peak_groups import (
         CrossSampleContractError,
         CrossSamplePartitionTransition,
         mint_cross_sample_group_identity,
@@ -201,7 +201,7 @@ def test_initial_edge_classifier_is_closed_and_preserves_existing_policy() -> No
 
     from tests.alignment_pipeline_helpers import owner_edge_evidence
     from xic_extractor.alignment import AlignmentConfig
-    from xic_extractor.alignment.cross_sample_peak_groups import (
+    from xic_extractor.alignment.cross_sample.peak_groups import (
         classify_cross_sample_initial_edge,
     )
 

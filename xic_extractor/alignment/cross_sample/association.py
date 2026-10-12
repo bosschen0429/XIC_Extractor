@@ -10,13 +10,13 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillPlanningPosition,
     validate_backfill_evaluation_coverage,
 )
-from xic_extractor.alignment.cross_sample_peak_groups import (
+from xic_extractor.alignment.cross_sample.grouping_result import (
+    CrossSampleGroupingResult,
+)
+from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleContractError,
     CrossSampleGroupIdentity,
     validate_cross_sample_group_population,
-)
-from xic_extractor.alignment.grouping_result import (
-    CrossSampleGroupingResult,
 )
 from xic_extractor.processing_identity import (
     canonical_identity_basis_bytes,

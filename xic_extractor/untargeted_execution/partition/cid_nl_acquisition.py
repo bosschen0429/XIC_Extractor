@@ -25,7 +25,7 @@ from xic_extractor.acquisition_contract import (
     TraceCoordinateKind,
     mint_trace_acquisition_capability,
 )
-from xic_extractor.alignment.cid_nl_backfill_planning import CidNlBackfillQuestion
+from xic_extractor.alignment.backfill.cid_nl_planning import CidNlBackfillQuestion
 from xic_extractor.alignment.cid_nl_inputs import (
     CID_NL_ALIGNMENT_CONFIG,
     UntargetedCidNlAssessmentInput,

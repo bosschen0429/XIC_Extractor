@@ -75,7 +75,7 @@ def _strip_istd_prefix(label: str) -> str:
     return label
 
 
-def _assign_istd_pairs(targets: list[TargetRow]) -> None:
+def assign_istd_pairs(targets: list[TargetRow]) -> None:
     """Prefill only unique exact isotope-name counterparts; never infer identity.
 
     Existing roles and pair choices win. Mass and RT remain method inputs, not

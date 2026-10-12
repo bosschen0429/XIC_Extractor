@@ -8,7 +8,7 @@ from xic_extractor.acquisition.istd_reference import (
     extract_batch_known_istd_reference,
     read_known_istd_reference,
 )
-from xic_extractor.alignment.backfill_peak_fact_provenance import (
+from xic_extractor.alignment.backfill.peak_fact_provenance import (
     EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
 )
 from xic_extractor.alignment.owner_build_route_receipt import (
@@ -51,17 +51,13 @@ def run_untargeted_application(
         metrics={
             "raw_workers": request.execution.raw_workers,
             "raw_worker_backend": request.execution.raw_worker_backend,
-            "raw_xic_batch_size": request.legacy.raw_xic_batch_size,
+            "raw_xic_batch_size": 1,
             "owner_build_xic_backend": request.legacy.owner_build_xic_backend,
-            "owner_backfill_xic_backend": request.legacy.owner_backfill_xic_backend,
-            "owner_backfill_window_strategy": (
-                request.legacy.owner_backfill_window_strategy
-            ),
-            "owner_backfill_superwindow_span_factor": (
-                request.legacy.owner_backfill_superwindow_span_factor
-            ),
+            "owner_backfill_xic_backend": "raw",
+            "owner_backfill_window_strategy": "exact",
+            "owner_backfill_superwindow_span_factor": 2,
             "output_level": request.publication.output_level,
-            "backfill_scope": request.legacy.backfill_scope,
+            "backfill_scope": "full-audit",
             "requested_audit_evidence_mode": request.legacy.audit_evidence_mode,
             "require_discovery_owner_closure": True,
             "emit_provisional_matrix": request.publication.emit_provisional_matrix,
@@ -114,9 +110,9 @@ def run_untargeted_application(
         raw_dir=request.raw_dir,
         dll_dir=request.dll_dir,
         owner_build_xic_backend=request.legacy.owner_build_xic_backend,
-        owner_backfill_xic_backend=request.legacy.owner_backfill_xic_backend,
-        owner_backfill_window_strategy=request.legacy.owner_backfill_window_strategy,
-        owner_backfill_superwindow_span_factor=request.legacy.owner_backfill_superwindow_span_factor,
+        owner_backfill_xic_backend="raw",
+        owner_backfill_window_strategy="exact",
+        owner_backfill_superwindow_span_factor=2,
         output_level=request.publication.output_level,
         peak_config=request.peak_config,
         backfill_scope="full-audit",
