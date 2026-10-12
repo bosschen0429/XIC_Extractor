@@ -1,20 +1,20 @@
 """Targeted inputs to ISTD-anchored conservative Backfill.
 
 Backfill applies to a Target that is an internal standard or is paired with
-one. Its rule belongs to ``alignment.istd_anchored_backfill``; this module reads
+one. Its rule belongs to ``alignment.backfill.istd_anchored``; this module reads
 the Targeted population for what that rule consumes: the direct CID-NL peers and
 the paired internal standard's observation in each sample.
 """
 
 from __future__ import annotations
 
-from xic_extractor.alignment.cell_observations import CidNlCellGroupSupport
-from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.istd_anchored_backfill import (
+from xic_extractor.alignment.backfill.istd_anchored import (
     IstdAnchoredBackfill,
     SampleAssessments,
     resolve_istd_anchored_backfill,
 )
+from xic_extractor.alignment.cell_observation.observations import CidNlCellGroupSupport
+from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.extraction.target_extraction import credible_istd_anchor_rt
 from xic_extractor.extraction.targeted_capture_population import (

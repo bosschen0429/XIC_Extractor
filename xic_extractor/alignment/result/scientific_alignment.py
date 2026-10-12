@@ -6,27 +6,27 @@ from collections.abc import Sequence
 from dataclasses import InitVar, dataclass, field, fields
 from typing import Literal, TypeAlias
 
-from xic_extractor.alignment.cell_observations import (
+from xic_extractor.alignment.backfill.conservative import (
+    ConservativeBackfillCellDecision,
+)
+from xic_extractor.alignment.cell_observation.observations import (
     CellObservationContractError,
     CellObservationRef,
     FinalGroupCellObservation,
     compose_final_group_cell_observation_population,
     validate_final_group_cell_observation_population,
 )
-from xic_extractor.alignment.conservative_backfill import (
-    ConservativeBackfillCellDecision,
-)
 from xic_extractor.alignment.cross_sample.association import (
     CrossSampleAssociationLineageHandoff,
     validate_cross_sample_association_lineage_handoff,
+)
+from xic_extractor.alignment.cross_sample.grouping_result import (
+    CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleLineageEdge,
     CrossSamplePartitionTransition,
-)
-from xic_extractor.alignment.grouping_result import (
-    CrossSampleGroupingResult,
 )
 from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis

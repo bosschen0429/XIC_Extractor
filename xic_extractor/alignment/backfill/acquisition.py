@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from itertools import groupby
 from typing import TypeAlias
 
-from xic_extractor.alignment.backfill_request_plan import (
+from xic_extractor.alignment.backfill.request_plan import (
     BACKFILL_TRACE_RESULT_SEMANTICS,
     BackfillLogicalRequestMember,
     BackfillRequestEquivalenceClass,
@@ -18,7 +18,7 @@ from xic_extractor.alignment.backfill_request_plan import (
     BackfillWindowStrategy,
     mint_backfill_request_identity,
 )
-from xic_extractor.alignment.backfill_result import (
+from xic_extractor.alignment.backfill.result import (
     BackfillExtractionResult,
     BackfillLogicalExtractionResult,
     BackfillSource,

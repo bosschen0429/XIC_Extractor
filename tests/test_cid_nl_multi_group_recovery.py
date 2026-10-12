@@ -23,10 +23,12 @@ from tests.untargeted_partition_fixtures import (
     complete_dense_partition,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample.grouping_result import (
+    CrossSampleGroupingResult,
+)
 from xic_extractor.alignment.cross_sample_neighborhood_graph import (
     CrossSamplePartitionTransition,
 )
-from xic_extractor.alignment.grouping_result import CrossSampleGroupingResult
 from xic_extractor.alignment.grouping_workflow import (
     admit_cid_nl_group_backfills,
 )

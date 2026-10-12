@@ -47,7 +47,7 @@ from xic_extractor.alignment.cell_decision import (
     validate_production_cell_decision,
 )
 from xic_extractor.alignment.cell_decision import owner as decision_owner
-from xic_extractor.alignment.cell_observations import (
+from xic_extractor.alignment.cell_observation.observations import (
     CellObservationContractError,
     FinalGroupCellObservation,
     compose_final_group_cell_observation_population,

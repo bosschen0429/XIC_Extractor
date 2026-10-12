@@ -17,7 +17,7 @@ from xic_extractor.alignment.backfill.completion_evidence import (
     BackfillCompletionProjection,
     mint_backfill_completion_projection,
 )
-from xic_extractor.alignment.cell_observations import CidNlCellGroupContext
+from xic_extractor.alignment.cell_observation.observations import CidNlCellGroupContext
 from xic_extractor.alignment.cid_nl_completion import CidNlWorksetGrouping
 from xic_extractor.alignment.cid_nl_inputs import (
     UntargetedCidNlBackfillInput,

@@ -8,6 +8,13 @@ from dataclasses import dataclass
 from xic_extractor.alignment.backfill.completion_evidence import (
     BackfillCompletionProjection,
 )
+from xic_extractor.alignment.backfill.conservative import (
+    ConservativeBackfillCandidateUniverse,
+    ConservativeBackfillGroupFacts,
+    assess_conservative_backfill_group,
+    map_conservative_backfill_candidates,
+    mint_conservative_backfill_candidate_universe,
+)
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillEvaluationCoverageBatch,
     BackfillPlanningPosition,
@@ -16,11 +23,11 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     mint_backfill_planning_epoch,
     mint_backfill_position_id,
 )
-from xic_extractor.alignment.backfill_request_plan import (
+from xic_extractor.alignment.backfill.request_plan import (
     BACKFILL_TRACE_RESULT_SEMANTICS,
 )
-from xic_extractor.alignment.cell_group_context import CidNlCellGroupContext
-from xic_extractor.alignment.cell_observations import CellObservationRef
+from xic_extractor.alignment.cell_observation.group_context import CidNlCellGroupContext
+from xic_extractor.alignment.cell_observation.observations import CellObservationRef
 from xic_extractor.alignment.cid_nl_predecessor_cells import (
     compose_cid_nl_predecessor_cells,
 )
@@ -31,19 +38,14 @@ from xic_extractor.alignment.completion import (
     compose_untarget_subject,
 )
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.conservative_backfill import (
-    ConservativeBackfillCandidateUniverse,
-    ConservativeBackfillGroupFacts,
-    assess_conservative_backfill_group,
-    map_conservative_backfill_candidates,
-    mint_conservative_backfill_candidate_universe,
+from xic_extractor.alignment.cross_sample.grouping_result import (
+    CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
 from xic_extractor.alignment.grouping_bootstrap import (
     InitialGroupingScope,
     RetainedGroupingCandidate,
 )
-from xic_extractor.alignment.grouping_result import CrossSampleGroupingResult
 from xic_extractor.alignment.grouping_workflow import (
     admit_cid_nl_group_backfills,
     contested_backfill_peaks,

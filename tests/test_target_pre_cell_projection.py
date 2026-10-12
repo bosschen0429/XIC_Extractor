@@ -22,7 +22,7 @@ from tests.test_cross_sample_association_lineage import (
     _final_receipt as _lineage_final_receipt,
 )
 from tests.test_search_scope_capture import _capture_binding, _peak_config
-from xic_extractor.alignment.cell_observations import (
+from xic_extractor.alignment.cell_observation.observations import (
     compose_final_group_cell_observation_population,
 )
 from xic_extractor.alignment.cid_nl_evidence_spine import (
@@ -31,14 +31,14 @@ from xic_extractor.alignment.cid_nl_evidence_spine import (
 from xic_extractor.alignment.cross_sample import (
     build_cross_sample_association_lineage_handoff,
 )
+from xic_extractor.alignment.cross_sample.grouping_result import (
+    CrossSampleGroupingResult,
+)
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupIdentity,
     CrossSamplePartitionTransition,
     mint_cross_sample_group_identity,
     validate_cross_sample_peak_group_identity,
-)
-from xic_extractor.alignment.grouping_result import (
-    CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.projection.target import (
     TargetProjectionContractError,

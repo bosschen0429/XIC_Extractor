@@ -15,8 +15,8 @@ import xic_extractor.peak_detection.ms1_shape_identity as smoothing_runtime
 from tests.alignment_pipeline_helpers import _owner
 from tests.test_alignment_owner_backfill import _feature
 from tests.test_backfill_evaluation_coverage import _coverage_fixture
-from xic_extractor.alignment import (
-    backfill_acquisition as owner_backfill_acquisition_runtime,
+from xic_extractor.alignment.backfill import (
+    acquisition as owner_backfill_acquisition_runtime,
 )
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillEvaluationCoverageBatch,
@@ -24,7 +24,7 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     build_backfill_evaluation_coverage,
     build_backfill_planning_epoch,
 )
-from xic_extractor.alignment.backfill_request_plan import (
+from xic_extractor.alignment.backfill.request_plan import (
     BACKFILL_TRACE_RESULT_SEMANTICS,
     BackfillRequestEquivalenceContext,
     build_backfill_request_plan,
@@ -35,15 +35,15 @@ from xic_extractor.alignment.cross_sample import (
     build_cross_sample_association_lineage_handoff,
     validate_cross_sample_association_lineage_handoff,
 )
+from xic_extractor.alignment.cross_sample.grouping_result import (
+    CrossSampleGroupingContractError,
+    CrossSampleGroupingResult,
+)
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     CrossSamplePartitionTransition,
     mint_cross_sample_group_identity,
-)
-from xic_extractor.alignment.grouping_result import (
-    CrossSampleGroupingContractError,
-    CrossSampleGroupingResult,
 )
 from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.processing_identity import (

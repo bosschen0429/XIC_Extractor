@@ -197,8 +197,8 @@ authority.
 **Purpose**: Partition the live hypothesis-bound Backfill request population by
 complete typed extraction semantics, execute one extraction per canonical
 class, and fan the typed trace back to every logical request.
-**Topic group**: `xic_extractor/alignment/backfill_request_plan.py` +
-`backfill_peak_fact.py` (in-process request-plan and extraction owners; no
+**Topic group**: `xic_extractor/alignment/backfill/request_plan.py` +
+`xic_extractor/alignment/backfill/peak_fact.py` (in-process request-plan and extraction owners; no
 standalone persisted-projection reader).
 **Originating issues**: [#195](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/195)
 and [#210](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/210).

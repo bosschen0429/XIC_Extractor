@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from tools.diagnostics import backfill_evidence_parquet_shadow
-from xic_extractor.alignment.backfill_evidence_contract import (
+from xic_extractor.alignment.backfill.evidence_contract import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_SCHEMA_VERSION,
     PREDICATE_VERSION,

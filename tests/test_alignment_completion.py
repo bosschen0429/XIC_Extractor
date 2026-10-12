@@ -15,7 +15,7 @@ from xic_extractor.alignment.completion import (
     WorkflowStage,
     complete_analysis,
 )
-from xic_extractor.alignment.grouping_result import (
+from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.projection.target.post_cell import (

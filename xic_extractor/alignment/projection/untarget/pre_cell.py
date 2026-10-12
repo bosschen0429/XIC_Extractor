@@ -5,13 +5,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import InitVar, dataclass, field
 
+from xic_extractor.alignment.cross_sample.grouping_result import (
+    CrossSampleGroupingResult,
+)
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
     CrossSampleLineageEdge,
-)
-from xic_extractor.alignment.grouping_result import (
-    CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,

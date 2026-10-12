@@ -7,7 +7,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import cast
 
-from xic_extractor.alignment.backfill_evidence_contract import (
+from xic_extractor.alignment.backfill.evidence_contract import (
     ALIGNMENT_BACKFILL_CELL_EVIDENCE_COLUMNS,
     SKIPPED_EVIDENCE_LEDGER_COLUMNS,
     BackfillEvidenceOwnerBindings,

@@ -54,6 +54,7 @@ _FINAL_CELL_OBSERVATION_ID_PREFIX = "xic.final-cell-observation:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _FINAL_CELL_MINT_TOKEN = object()
 _ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
+    # Persisted artifact-hash identity; intentionally not this module's path.
     owner_namespace="xic_extractor.alignment.cell_observations",
     semantic_role=ARTIFACT_SEMANTIC_ROLE,
     schema_version=SCHEMA_VERSION,

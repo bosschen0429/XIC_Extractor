@@ -8,7 +8,7 @@ from xic_extractor.alignment.cross_sample.association import (
     build_cross_sample_association_lineage_handoff,
     validate_cross_sample_association_lineage_handoff,
 )
-from xic_extractor.alignment.grouping_result import (
+from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingContractError,
     CrossSampleGroupingResult,
 )

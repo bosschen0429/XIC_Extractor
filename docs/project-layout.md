@@ -32,6 +32,7 @@ XIC_Extractor/
 │   │   ├── quantitative_projection_authority.py  Packaged promotion contract boundary
 │   │   ├── cross_sample/       跨樣本關聯
 │   │   ├── backfill/           有限度的 observation revisit
+│   │   ├── cell_observation/   每個樣本格的 observation 紀錄與群組脈絡
 │   │   ├── cell_decision/      每個樣本格的科學決策
 │   │   ├── projection/         Targeted／Untargeted 的前後投影
 │   │   └── result/             科學結果與 application 結果

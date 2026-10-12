@@ -8,7 +8,7 @@ from xic_extractor.acquisition.istd_reference import (
     extract_batch_known_istd_reference,
     read_known_istd_reference,
 )
-from xic_extractor.alignment.backfill_peak_fact_provenance import (
+from xic_extractor.alignment.backfill.peak_fact_provenance import (
     EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH,
 )
 from xic_extractor.alignment.owner_build_route_receipt import (

@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-import xic_extractor.alignment.cell_observations as cell_owner
+import xic_extractor.alignment.cell_observation.observations as cell_owner
 import xic_extractor.alignment.cross_sample_peak_groups as group_owner
 from tests.cid_nl_peak_support_no_raw_fixture import (
     cid_nl_evidence,
@@ -34,12 +34,12 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     mint_backfill_attempt_terminal,
     mint_backfill_planning_epoch,
 )
-from xic_extractor.alignment.backfill_request_plan import (
+from xic_extractor.alignment.backfill.request_plan import (
     BACKFILL_TRACE_RESULT_SEMANTICS,
     BackfillRequestEquivalenceContext,
     build_backfill_request_plan,
 )
-from xic_extractor.alignment.cell_observations import (
+from xic_extractor.alignment.cell_observation.observations import (
     CellObservationContractError,
     compose_final_group_cell_observation_population,
     mint_cell_observation_ref,

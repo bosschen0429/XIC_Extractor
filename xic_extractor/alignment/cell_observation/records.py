@@ -6,7 +6,7 @@ import json
 from dataclasses import InitVar, asdict, dataclass, field, fields
 from typing import Literal
 
-from xic_extractor.alignment.cell_group_context import (
+from xic_extractor.alignment.cell_observation.group_context import (
     _ARTIFACT_CONTENT_ID_PREFIX,
     _ARTIFACT_SEMANTIC_CONTRACT,
     _EVIDENCE_ARTIFACT_ID_PREFIX,

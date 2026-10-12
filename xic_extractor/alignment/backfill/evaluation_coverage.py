@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Literal, cast
 from xic_extractor.alignment.backfill.completion_evidence import (
     BackfillCompletionProjection,
 )
-from xic_extractor.alignment.backfill_request_plan import (
+from xic_extractor.alignment.backfill.request_plan import (
     BACKFILL_TRACE_RESULT_SEMANTICS,
     BackfillLogicalRequestMember,
     BackfillRequestIdentity,
@@ -20,7 +20,7 @@ from xic_extractor.alignment.backfill_request_plan import (
     BackfillWindowStrategy,
     mint_backfill_logical_request_member,
 )
-from xic_extractor.alignment.backfill_scope import (
+from xic_extractor.alignment.backfill.scope import (
     BackfillScope,
     backfill_request_planning_reason,
     backfill_scope_exclusion_reasons,
@@ -50,11 +50,11 @@ from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 from xic_extractor.xic_models import XICRequest
 
 if TYPE_CHECKING:
-    from xic_extractor.alignment.cell_observations import CellObservationRef
-    from xic_extractor.alignment.conservative_backfill import (
+    from xic_extractor.alignment.backfill.conservative import (
         ConservativeBackfillCellDecision,
         ConservativeBackfillGroupFacts,
     )
+    from xic_extractor.alignment.cell_observation.observations import CellObservationRef
 
 _CONSERVATIVE_PROOF_MINT_TOKEN = object()
 
@@ -278,7 +278,7 @@ def _validate_conservative_no_request(
     group_binding: ConservativeNoRequestProofBuilder | None = None,
 ) -> None:
     # These owners consume coverage types; defer their validation imports.
-    from xic_extractor.alignment.conservative_backfill import (
+    from xic_extractor.alignment.backfill.conservative import (
         ConservativeBackfillCellDecision,
     )
 

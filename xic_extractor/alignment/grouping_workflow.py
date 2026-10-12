@@ -8,6 +8,10 @@ from dataclasses import replace
 from typing import cast
 
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.cross_sample.grouping_result import (
+    CrossSampleGroupingContractError,
+    CrossSampleGroupingResult,
+)
 from xic_extractor.alignment.cross_sample_peak_groups import (
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
@@ -32,10 +36,6 @@ from xic_extractor.alignment.grouping_bootstrap import (
     InitialGroupingScope,
     RetainedGroupingCandidate,
     bootstrap_cid_nl_initial_population,
-)
-from xic_extractor.alignment.grouping_result import (
-    CrossSampleGroupingContractError,
-    CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,

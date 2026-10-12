@@ -6,7 +6,7 @@ import json
 from dataclasses import InitVar, dataclass, field
 from typing import TYPE_CHECKING, Literal, TypeAlias
 
-from xic_extractor.alignment.grouping_result import (
+from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.result.scientific_alignment import (

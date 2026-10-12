@@ -9,7 +9,7 @@ from tools.diagnostics import backfill_evidence_cost_summary
 from tools.diagnostics.backfill_evidence_cost_summary import (
     run_backfill_evidence_cost_summary,
 )
-from xic_extractor.alignment.backfill_scope import (
+from xic_extractor.alignment.backfill.scope import (
     PREDICATE_VERSION,
     SkippedEvidenceRecord,
 )

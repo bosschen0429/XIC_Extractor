@@ -7,6 +7,20 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import TypeAlias
 
+from xic_extractor.alignment.backfill.acquisition import (
+    _available_acquisition_sources,
+    _iter_extracted_request_traces,
+    _logical_binding_for_result,
+    _request_equivalence_context,
+    _trace_for_logical_request_result,
+    _validate_owner_bound_sources,
+)
+from xic_extractor.alignment.backfill.evaluation import (
+    _backfill_feature_sample_trace,
+    _backfill_unchecked_cell,
+    _chunk_prepared_signal_cache,
+    _keep_best_backfill_outcome_cell,
+)
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillCandidatePhase,
     BackfillEvaluationCoverageContext,
@@ -17,21 +31,7 @@ from xic_extractor.alignment.backfill.evaluation_coverage import (
     mint_backfill_attempt_terminal,
     mint_backfill_selection_subject_id,
 )
-from xic_extractor.alignment.backfill_acquisition import (
-    _available_acquisition_sources,
-    _iter_extracted_request_traces,
-    _logical_binding_for_result,
-    _request_equivalence_context,
-    _trace_for_logical_request_result,
-    _validate_owner_bound_sources,
-)
-from xic_extractor.alignment.backfill_evaluation import (
-    _backfill_feature_sample_trace,
-    _backfill_unchecked_cell,
-    _chunk_prepared_signal_cache,
-    _keep_best_backfill_outcome_cell,
-)
-from xic_extractor.alignment.backfill_request_plan import (
+from xic_extractor.alignment.backfill.request_plan import (
     BACKFILL_TRACE_RESULT_SEMANTICS,
     BACKFILL_WINDOW_STRATEGIES,
     BACKFILL_XIC_BACKENDS,
@@ -43,7 +43,7 @@ from xic_extractor.alignment.backfill_request_plan import (
     build_backfill_request_equivalence_classes,
     build_backfill_request_plan,
 )
-from xic_extractor.alignment.backfill_result import (
+from xic_extractor.alignment.backfill.result import (
     _BACKFILL_PEAK_FACT_OBSERVATION_MINT_TOKEN,
     BackfillCandidateAuditRow,
     BackfillExtractionResult,  # noqa: F401
@@ -57,7 +57,7 @@ from xic_extractor.alignment.backfill_result import (
     _BackfillCoverageAttempt,
     validate_backfill_peak_fact_observation,  # noqa: F401
 )
-from xic_extractor.alignment.backfill_runtime_projection import (
+from xic_extractor.alignment.backfill.runtime_projection import (
     BackfillRuntimeFeature,
 )
 from xic_extractor.alignment.config import AlignmentConfig, BackfillXicBackend
