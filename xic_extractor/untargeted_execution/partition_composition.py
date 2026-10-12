@@ -1,8 +1,8 @@
-"""Group and compose acquired Untargeted partitions into scientific results."""
+"""Compose acquired Untargeted partitions and close their canonical batch result."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import cast
 
@@ -39,7 +39,10 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 )
 from xic_extractor.alignment.result.application_result import (
     FinalizedUntargetApplicationResult,
+    FinalizedUntargetBatchApplicationResult,
+    UntargetBatchApplicationResultRequest,
     UntargetedCandidateExclusion,
+    finalize_alignment_result,
 )
 from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.discovery.models import (
@@ -49,6 +52,7 @@ from xic_extractor.execution.result_store import (
     SealedPartition,
     StreamedResultStore,
 )
+from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.capture import (
     SampleLocalCapture,
     bind_owner_backed_capture_hypothesis,
@@ -73,6 +77,7 @@ from xic_extractor.peak_detection.search_scope import (
     require_capture_binding,
 )
 from xic_extractor.untargeted_execution.input_planning import (
+    UntargetedInputPlan,
     alignment_subject_worksets,
 )
 from xic_extractor.untargeted_execution.partition.models import (
@@ -165,6 +170,121 @@ class PersistedUntargetedPartition:
     child_count: int
     excluded_candidate_ids: tuple[str, ...]
     child_order_keys: tuple[str, ...] = ()
+
+
+def compose_untargeted_batch(
+    plan: UntargetedInputPlan,
+    *,
+    store: StreamedResultStore,
+    partitions: Sequence[PersistedUntargetedPartition],
+) -> FinalizedUntargetBatchApplicationResult:
+    """Close the planned batch with canonical, lazily loaded partition results.
+
+    Partition composition owns scientific ordering and the complete batch scope;
+    the runtime adapter supplies sealed partitions without reconstructing either.
+    Alignment remains the authority for final scientific coverage and validation.
+    """
+
+    context = plan.context
+    owners = context.processing_owners
+    exclusion_positions: list[tuple[str, int, int]] = []
+    child_positions: list[tuple[str, int, int]] = []
+    for persisted in partitions:
+        child_positions.extend(
+            (key, persisted.sealed.index, offset)
+            for offset, key in enumerate(persisted.child_order_keys)
+        )
+        exclusion_positions.extend(
+            (candidate_id, persisted.sealed.index, offset)
+            for offset, candidate_id in enumerate(persisted.excluded_candidate_ids)
+        )
+    scope = UntargetedSearchScope(
+        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
+        request=owners.request,
+        samples=context.samples,
+        method_constraints=CaptureMethodConstraints(
+            boundary_policy="resolver_interval",
+            peak_config=context.peak_config,
+            signal_processing_profile=context.signal_processing_profile,
+        ),
+        evidence_providers=tuple(
+            EvidenceProviderBinding(CID_NL_PROVIDER_ID, subject.method_subject_id)
+            for subject in plan.subject_batch.subjects
+        ),
+        declared_candidate_ids=tuple(
+            candidate_id for candidate_id, _ in plan.subject_batch.candidate_memberships
+        ),
+        # Batch closure checks request membership and exact child owners.
+        # Capture authorization and physical evidence belong to each child.
+        capture_bindings=(),
+    )
+    children = store.sequence("children")
+    if child_positions:
+        ordered_children = tuple(sorted(child_positions))
+        if len(ordered_children) != len(children):
+            raise ValueError("partition child order lost a scientific result")
+        children = ImmutableSequence(
+            (1,) * len(ordered_children),
+            lambda index: store.read_selected(
+                ordered_children[index][1],
+                "children",
+                (ordered_children[index][2],),
+            ),
+        )
+    return cast(
+        FinalizedUntargetBatchApplicationResult,
+        finalize_alignment_result(
+            UntargetBatchApplicationResultRequest(
+                scope=scope,
+                processing_request=owners.request,
+                processing_attempt=owners.attempt,
+                children=children,
+                excluded_candidates=_ordered_exclusions(
+                    store, exclusion_positions, plan.excluded_candidates
+                ),
+            )
+        ),
+    )
+
+
+def _ordered_exclusions(
+    store: StreamedResultStore,
+    positions: list[tuple[str, int, int]],
+    planning_exclusions: tuple[UntargetedCandidateExclusion, ...],
+) -> ImmutableSequence:
+    """Restore canonical candidate order with finite result windows."""
+    all_positions = list(positions)
+    # Planning exclusions have no acquisition partition or assessment payload.
+    all_positions.extend(
+        (item.candidate_id, -1, offset)
+        for offset, item in enumerate(planning_exclusions)
+    )
+    ordered = tuple(sorted(all_positions))
+    windows = tuple(
+        ordered[start : start + 2048] for start in range(0, len(ordered), 2048)
+    )
+
+    def load_window(index: int) -> tuple:
+        window = windows[index]
+        by_partition: dict[int, list[tuple[int, int]]] = {}
+        for position, (_, partition, offset) in enumerate(window):
+            by_partition.setdefault(partition, []).append((position, offset))
+        values: dict[int, UntargetedCandidateExclusion] = {}
+        for partition, selected in by_partition.items():
+            exclusions = (
+                tuple(planning_exclusions[offset] for _, offset in selected)
+                if partition == -1
+                else store.read_selected(
+                    partition,
+                    "excluded_candidates",
+                    tuple(offset for _, offset in selected),
+                )
+            )
+            for (position, _), exclusion in zip(selected, exclusions, strict=True):
+                values[position] = exclusion
+        return tuple(values[position] for position in range(len(window)))
+
+    return ImmutableSequence(tuple(map(len, windows)), load_window)
 
 
 def compose_and_persist_untargeted_partition(

@@ -47,7 +47,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | Targeted 選峰結果與 physical answer | `extraction/targeted_peak_selection.py` | 消費 candidate selection 已選定的峰與 trace／MS2 evidence，完成 physical answer 與選峰事實同步，不再重新排名；[Targeted selection](product/targeted-selection.md#physical-evaluation) 定義完成責任，單峰演算法仍在 `peak_detection/` |
 | Targeted 輸入轉成共用峰假設 | `extraction/targeted_peak_hypotheses.py` | 選峰、candidate table 與 boundary callers 共用同一 translation；audit callers 不依賴正式選峰政策 |
 | Targeted 計數、角色例外與 review 原因 | `extraction/targeted_product_projection.py` | 消費已完成的科學結果，決定產品狀態；純結果模型在 `output/targeted_product_model.py`，writer 只呈現它 |
-| Untargeted 保留批次執行 | `untargeted_execution/` | 規劃、partition 與 completion adapter；科學決策仍由 Alignment，發布由 application／output 負責 |
+| Untargeted 保留批次執行 | `untargeted_execution/` | execution adapter 管排程與封存交付；`partition_composition.py` 統一 partition／batch scope、canonical ordering 與完成請求；科學驗證仍由 Alignment，發布由 application／output 負責 |
 | 跨樣本配對、RT 漂移、群組 | `alignment/grouping_workflow.py`、`alignment/cross_sample/` | 群組決定先完成，Backfill 與格值決策消費同一結果 |
 | 從已取得的 evidence 完成科學結果 | `alignment/completion.py` | Targeted／Untargeted 共用 capture、grouping、cell 與 projection；不執行 runtime 或保存暫存 |
 | Untargeted CID-NL 群組到完整格值結果 | `alignment/cid_nl_completion.py` | 接納 Backfill、同步群組 identity、組裝格值觀察及完成 coverage；只向 runtime 要求已完成查詢的 receipt，再交回完整 application result |

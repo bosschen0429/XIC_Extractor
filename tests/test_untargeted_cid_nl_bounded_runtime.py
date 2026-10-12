@@ -595,6 +595,9 @@ def test_indexed_finalization_orders_children_by_canonical_subject(
     from types import SimpleNamespace
 
     from xic_extractor.untargeted_execution import execution as bounded_owner
+    from xic_extractor.untargeted_execution import (
+        partition_composition as composition_owner,
+    )
 
     plan, _reference = _plan(tmp_path, monkeypatch)
     indexed_plan = replace(
@@ -643,12 +646,12 @@ def test_indexed_finalization_orders_children_by_canonical_subject(
         return request
 
     monkeypatch.setattr(
-        bounded_owner,
+        composition_owner,
         "finalize_alignment_result",
         capture_finalization,
     )
     monkeypatch.setattr(
-        bounded_owner,
+        composition_owner,
         "UntargetBatchApplicationResultRequest",
         lambda **values: SimpleNamespace(**values),
     )
