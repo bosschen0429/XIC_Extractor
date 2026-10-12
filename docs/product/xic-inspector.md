@@ -74,7 +74,8 @@ alone does not override the final count outcome or reopen a confirmed result.
 Reference-RT drift, resolved multi-peak selection and confirmed ISTD backfill
 remain context rather than standalone review tasks. Unconfirmed identity,
 unresolved conflicts and independent peak-quality concerns remain actionable.
-The main results show Area, RT and IntSmoothed (smoothed apex intensity);
+The main results show RT, Area and IntSmoothed (smoothed apex intensity);
+Area and intensities use scientific notation, and table values are centered;
 raw Int and PeakWidth remain available in the grouped detail columns alongside
 review reasons. The result and target tables
 retain their canonical first-row headers and numeric values, with advanced
@@ -82,21 +83,34 @@ columns grouped away. `Run Metadata` adds explanations alongside its unchanged
 key/value records. These presentation changes retain layout version 2 and the
 Inspector reader contract.
 
-Opening Targeted results first shows a full-batch overview: sample/target/result
-counts, saved counted detections, review workload and the main reasons by target.
-It combines overview and summary rather than opening a detail table immediately.
-Review targets appear first. Buttons open all results or only the review rows;
-click a target to narrow the next level. **整批結果總覽** returns to the full batch,
-independent of the current filters or page. A collapsed quantity summary shows
-per-target median Area and RT range for counted results only. Missing
-count decisions are reported as unknown, never inferred from numeric values.
+Review starts with the results that differ from the rest of their target.
+Within a target, the saved counted outcome shared by at most 20% of its
+recorded decisions is the minority: a rare counted result may be a wrong peak,
+and a rare not-counted result may be a missed one. An outcome shared by every
+sample is the batch fact and needs no review, even when its rows carry saved
+review conditions. Without a clear majority, the rows with saved review
+conditions remain the reading order. `summarize_targeted_results` owns this
+reading order for every consumer; it does not reclassify results.
 
-Choose a target to see one compact sample table: saved Area, RT, counted
-status, review status and its short reason. Select a sample for peak bounds,
-NL evidence and the full recorded explanation; target and method settings
-are separate expandable details. The attention filter retains only rows
-carrying saved review conditions, rather than showing every sample of a
-flagged target. Inspector does not reclassify results.
+Opening Targeted results first shows a full-batch overview in three levels.
+The heading states how many minority results to read first, beside Analyte and
+ISTD counted totals. A target table follows, minority targets first, with each
+target's role, counted total and a one-line explanation; a fully counted target
+with saved review conditions mentions their number there. Expandable details
+and the target page hold the rest. Buttons open all results or only the
+minority rows; click a target to narrow the next level. **整批結果總覽** returns
+to the full batch, independent of the current filters or page. A collapsed
+quantity summary shows per-target median Area and RT range for counted results
+only. Missing count decisions are reported as unknown, never inferred from
+numeric values.
+
+Choose a target to see one compact sample table: saved Area, RT, counted status
+and saved review condition. Minority rows come first and are marked; filters
+show all rows, the minority rows, or the rows with saved review conditions.
+Selecting a sample opens its peak bounds, NL evidence, the same sample's paired
+ISTD RT, Area and counted status, review conditions and the original selection
+text directly under that row. Target and method settings are separate
+expandable details.
 
 Literal `ND`, zero and blank values remain distinct.
 The workbook is not modified, and its SHA-256 binds subsequent queries to the

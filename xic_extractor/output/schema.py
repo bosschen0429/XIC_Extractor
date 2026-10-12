@@ -18,8 +18,8 @@ TARGETED_WORKBOOK_LAYOUT_VERSION = 2
 WORKBOOK_RESULT_HEADERS: tuple[str, ...] = (
     "SampleName",
     "Target",
-    "Area",
     "RT",
+    "Area",
     "IntSmoothed",
     "Counted Detection",
     "Review",

@@ -124,13 +124,13 @@ def build_diagnostics_sheet(
                 fill=_fill(color),
                 border=BORDER,
                 alignment=Alignment(
-                    horizontal="right" if column in {6, 7} else "left",
+                    horizontal="left" if column in {4, 5} else "center",
                     vertical="center",
                     wrap_text=True,
                 ),
             )
         ws.cell(index, 6).number_format = "0.0000"
-        ws.cell(index, 7).number_format = "#,##0.00"
+        ws.cell(index, 7).number_format = "0.00E+00"
         if key in result_locations:
             ws.cell(index, 8).hyperlink = f"#'XIC Results'!A{result_locations[key]}"
             ws.cell(index, 8).font = Font(

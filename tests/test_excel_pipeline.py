@@ -125,8 +125,8 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     assert headers == [
         "SampleName",
         "Target",
-        "Area",
         "RT",
+        "Area",
         "IntSmoothed",
         "Counted Detection",
         "Review",
@@ -188,7 +188,9 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     wb.close()
     from xic_inspector.api import SelectionRequest, prepare_report
 
-    report = prepare_report(output_path, SelectionRequest(strategy="attention"))
+    report = prepare_report(
+        output_path, SelectionRequest(strategy="query", target_ids=("WithNL",))
+    )
     saved = report.payload["items"][0]["details"]
     assert saved["records"][0]["Area"] == 123.45
     assert (

@@ -178,7 +178,7 @@ def build_overview_sheet(
                 )
             cell = ws.cell(index, column, _excel_text(table_value))
             cell.alignment = Alignment(
-                horizontal="left" if column == 1 else "center",
+                horizontal="center",
                 vertical="center",
                 wrap_text=True,
             )

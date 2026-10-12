@@ -133,9 +133,7 @@ def _long_cell_fill(header: str, raw_val: str, alt: bool) -> PatternFill:
 def _long_number_format(header: str) -> str:
     if header in {"RT", "PeakStart", "PeakEnd"}:
         return "0.0000"
-    if header == "Area":
-        return "#,##0.00"
-    if header in {"Int", "IntSmoothed"}:
+    if header in {"Area", "Int", "IntSmoothed"}:
         return "0.00E+00"
     if header == "PeakWidth":
         return "0.0000"
@@ -186,9 +184,7 @@ def _prose_line_count(text: str, width: int) -> int:
 
 def _add_table(ws, name: str, reference: str) -> None:
     table = Table(displayName=name, ref=reference)
-    table.tableStyleInfo = TableStyleInfo(
-        showRowStripes=False, showColumnStripes=False
-    )
+    table.tableStyleInfo = TableStyleInfo(showRowStripes=False, showColumnStripes=False)
     ws.add_table(table)
     # A Table owns its filter. A second worksheet filter on the same range
     # makes desktop Excel repair the workbook and remove the Table.

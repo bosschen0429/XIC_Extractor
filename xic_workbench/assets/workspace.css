@@ -1077,11 +1077,11 @@ th.num {
 .overview-metrics span, .overview-footnote { color: var(--muted); font-size: 13px; }
 .overview-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0 30px; }
 .overview-table-scroll { overflow-x: auto; margin-top: 14px; }
-.overview-table { width: 100%; border-collapse: collapse; text-align: left; }
+.overview-table { width: 100%; border-collapse: collapse; text-align: center; }
 .overview-table th { color: var(--muted); background: var(--surface-2); font-size: 12px; font-weight: 550; }
 .overview-table th, .overview-table td { padding: 14px 16px; border-bottom: 1px solid var(--line); }
-.overview-table .text-button { padding: 0; text-align: left; }
-.overview-table .has-review { background: var(--warn-soft); }
+.overview-table .text-button { padding: 0; text-align: center; }
+.overview-table .has-focus { background: var(--warn-soft); }
 .overview-quantities { margin: 24px 0; }
 .overview-quantities summary { cursor: pointer; color: var(--muted); }
 .overview-quantities table { margin-top: 14px; }
