@@ -206,7 +206,7 @@ def test_typed_workflow_failure_never_reaches_publication(
         calls.append("acquire")
         return acquisition
 
-    def fail_workflow(_request, _prepared):
+    def fail_workflow(_request, _acquisition, **_kwargs):
         calls.append("workflow")
         raise RuntimeError("typed workflow failed")
 
@@ -215,7 +215,7 @@ def test_typed_workflow_failure_never_reaches_publication(
 
     monkeypatch.setattr(
         "xic_extractor.applications.targeted.production_workflow."
-        "complete_prepared_targeted_production_workflow",
+        "execute_targeted_production_workflow",
         fail_workflow,
     )
     monkeypatch.setattr(
@@ -306,7 +306,7 @@ def test_cancellation_after_partial_acquisition_skips_handoff_and_publication(
 
     monkeypatch.setattr(
         "xic_extractor.applications.targeted.production_workflow."
-        "prepare_targeted_production_workflow",
+        "execute_targeted_production_workflow",
         forbid_handoff,
     )
     monkeypatch.setattr(

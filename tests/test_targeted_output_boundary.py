@@ -1400,6 +1400,47 @@ def test_publisher_uses_frozen_acquisition_snapshot(tmp_path: Path) -> None:
     assert publication.output.diagnostics == []
 
 
+def test_publication_replay_isolated_from_mutated_returned_view(tmp_path: Path) -> None:
+    config, target, output = production_case(
+        tmp_path,
+        sample_names=("SampleA", "SampleB"),
+        sample_peak_scales={"SampleA": 1.0, "SampleB": 2.0},
+    )
+    expected_areas = {
+        file_result.sample_name: file_result.results[target.label].reported_peak_area
+        for file_result in output.file_results
+    }
+    request = build_targeted_application_request(
+        config,
+        [target],
+        excel_output_path=config.output_csv.with_suffix(".xlsx"),
+        injection_order={"SampleA": 1, "SampleB": 2},
+    )
+    completed = execute_targeted_production_workflow(request, output)
+    publication = publish_targeted_outputs(request, completed, output)
+    publication.output.file_results[0].results.clear()
+    publication.output.file_results.reverse()
+    publication.output.diagnostics.append(
+        DiagnosticRecord("SampleA", target.label, "FILE_ERROR", "mutated")
+    )
+
+    replay = publish_targeted_outputs(
+        replace(request, replace_existing_outputs=True), completed, output
+    )
+
+    assert [row.sample_name for row in replay.output.file_results] == [
+        "SampleA",
+        "SampleB",
+    ]
+    assert {
+        row.sample_name: row.results[target.label].reported_peak_area
+        for row in replay.output.file_results
+    } == expected_areas
+    assert expected_areas["SampleA"] != expected_areas["SampleB"]
+    assert replay.output.diagnostics == []
+    assert replay.paths == publication.paths
+
+
 def test_publisher_rejects_mutated_owner_snapshot(tmp_path: Path) -> None:
     config, target, output = production_case(tmp_path)
     request = build_targeted_application_request(
@@ -1409,7 +1450,7 @@ def test_publisher_rejects_mutated_owner_snapshot(tmp_path: Path) -> None:
         injection_order={"SampleA": 1},
     )
     completed = execute_targeted_production_workflow(request, output)
-    completed.prepared.acquisition_snapshot.file_results[0].group = "mutated"
+    completed._publication_snapshot.file_results[0].group = "mutated"
 
     with pytest.raises(TargetedOutputBoundaryError, match="snapshot was mutated"):
         publish_targeted_outputs(request, completed, output)
@@ -1568,7 +1609,7 @@ def test_cancellation_during_input_fingerprint_skips_acquisition_and_finalizatio
     )
     monkeypatch.setattr(
         "xic_extractor.applications.targeted.production_workflow."
-        "complete_prepared_targeted_production_workflow",
+        "execute_targeted_production_workflow",
         lambda *_args: pytest.fail("cancelled run invoked finalization"),
     )
 

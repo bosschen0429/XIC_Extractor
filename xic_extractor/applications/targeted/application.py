@@ -26,15 +26,14 @@ from xic_extractor.extraction.targeted_runtime_adapter import (
 )
 
 if TYPE_CHECKING:
-    from xic_extractor.applications.targeted.production_workflow import (
-        TargetedProductionInputSnapshot,
-    )
     from xic_extractor.extraction.result_models import RunOutput
     from xic_extractor.processing_identity import (
         AcquisitionSourceExpectation,
-        ProcessingRequestIdentity,
     )
-    from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
+
+
+class TargetedOutputBoundaryError(RuntimeError):
+    """Raised before a complete finalized output set can be published."""
 
 
 class TargetedRunner(Protocol):
@@ -122,8 +121,7 @@ class TargetedApplicationService:
             _resolve_application_request(request)
         )
         from xic_extractor.applications.targeted.production_workflow import (
-            complete_prepared_targeted_production_workflow,
-            prepare_targeted_production_workflow,
+            execute_targeted_production_workflow,
             snapshot_targeted_production_inputs,
         )
         from xic_extractor.processing_identity import FingerprintCancelledError
@@ -143,30 +141,18 @@ class TargetedApplicationService:
             progress_callback=runner_request.progress_callback,
             should_stop=runner_request.should_stop,
             injection_order=runner_request.injection_order,
-            acquisition_sources_by_sample=_acquisition_sources_by_sample(
-                input_snapshot
-            ),
+            acquisition_sources_by_sample=input_snapshot.acquisition_sources_by_sample(),
         )
         if resolved_request.should_stop is not None and resolved_request.should_stop():
             return TargetedApplicationExecution(active_output=active_output)
         if not active_output.file_results:
             raise ConfigError("No RAW files were acquired for Targeted extraction.")
-        prepared = prepare_targeted_production_workflow(
+        completed_workflow = execute_targeted_production_workflow(
             resolved_request,
             active_output,
             expected_inputs=input_snapshot,
         )
-        completed_workflow = complete_prepared_targeted_production_workflow(
-            resolved_request,
-            prepared,
-        )
         finalized_results = completed_workflow.finalized_results
-        validate_finalized_result_population(
-            resolved_request,
-            finalized_results,
-            expected_processing_request=prepared.owners.request,
-            expected_samples=prepared.samples,
-        )
         if resolved_request.should_stop is not None and resolved_request.should_stop():
             return TargetedApplicationExecution(
                 active_output=active_output,
@@ -241,87 +227,6 @@ class TargetedApplicationService:
             telemetry_provider=telemetry_provider,
             finalization_persister=finalization_persister,
         )
-
-
-def validate_finalized_result_population(
-    request: TargetedApplicationRequest,
-    results: tuple[FinalizedTargetProductionResult, ...],
-    *,
-    expected_processing_request: ProcessingRequestIdentity,
-    expected_samples: tuple[ResolvedCanonicalSampleIdentity, ...],
-) -> None:
-    if type(results) is not tuple or any(
-        type(result) is not FinalizedTargetApplicationResult for result in results
-    ):
-        raise TargetedRuntimeAdapterError(
-            "finalized workflow must return an exact immutable Target result tuple"
-        )
-    if len(results) != len(request.targets):
-        raise TargetedRuntimeAdapterError(
-            "finalized workflow did not cover every declared Target"
-        )
-    request_ids = {
-        result.processing_request.processing_request_id for result in results
-    }
-    sample_populations = {
-        tuple(sample.identity.sample_identity_id for sample in result.canonical_samples)
-        for result in results
-    }
-    if len(request_ids) != 1 or len(sample_populations) != 1:
-        raise TargetedRuntimeAdapterError(
-            "finalized Target results crossed request or sample populations"
-        )
-    expected_sample_population = tuple(
-        sorted(sample.identity.sample_identity_id for sample in expected_samples)
-    )
-    if any(
-        result.processing_request != expected_processing_request
-        or tuple(
-            sorted(
-                sample.identity.sample_identity_id
-                for sample in result.canonical_samples
-            )
-        )
-        != expected_sample_population
-        for result in results
-    ):
-        raise TargetedRuntimeAdapterError(
-            "finalized Target results do not belong to the current acquisition"
-        )
-    for target, result in zip(request.targets, results, strict=True):
-        finalized_target = (
-            result.completed_projection.row_binding.target.definition.target
-        )
-        if finalized_target != target:
-            raise TargetedRuntimeAdapterError(
-                "finalized Target result order differs from the declared Target list"
-            )
-
-
-def _acquisition_sources_by_sample(
-    snapshot: TargetedProductionInputSnapshot,
-) -> dict[str, AcquisitionSourceExpectation]:
-    from xic_extractor.processing_identity import AcquisitionSourceExpectation
-
-    request = snapshot.processing_request
-    sources_by_id = {
-        source.acquisition_source_id: source for source in request.acquisition_sources
-    }
-    states_by_stem = {
-        path.stem: state
-        for path, state in zip(
-            snapshot.raw_paths,
-            snapshot.raw_file_states,
-            strict=True,
-        )
-    }
-    return {
-        binding.adapter_input_key: AcquisitionSourceExpectation(
-            source=sources_by_id[binding.acquisition_source_id],
-            path_identity=states_by_stem[binding.adapter_input_key],
-        )
-        for binding in request.acquisition_bindings
-    }
 
 
 def build_targeted_application_request(
