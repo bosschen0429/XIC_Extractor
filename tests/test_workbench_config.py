@@ -8,6 +8,30 @@ from xic_workbench import config_io, discovery_config_io
 from xic_workbench.analysis_workspace import AnalysisWorkspace
 
 
+@pytest.mark.parametrize("preset", ["", "  ", None])
+def test_blank_discovery_preset_uses_default_without_rewriting_config(tmp_path, preset):
+    path = tmp_path / "discovery_gui.json"
+    original = json.dumps({"preset": preset})
+    path.write_text(original, encoding="utf-8")
+
+    config = discovery_config_io.read_discovery_config(config_dir=tmp_path)
+
+    assert config["preset"] == "dna_dr"
+    assert path.read_text(encoding="utf-8") == original
+
+
+def test_missing_discovery_preset_is_not_replaced_with_default(tmp_path):
+    from xic_extractor.presets import PresetError, load_preset
+
+    missing = str(tmp_path / "missing.toml")
+    discovery_config_io.write_discovery_config({"preset": missing}, config_dir=tmp_path)
+    config = discovery_config_io.read_discovery_config(config_dir=tmp_path)
+
+    assert config["preset"] == missing
+    with pytest.raises(PresetError, match="preset file not found"):
+        load_preset(config["preset"])
+
+
 def test_read_discovery_config_defaults_output_to_repo_output(
     monkeypatch, tmp_path
 ) -> None:
