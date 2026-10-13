@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from pathlib import Path
 
+from xic_extractor.configuration.atomic_write import atomic_write_text
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 
@@ -90,19 +89,7 @@ def save_workspace(
             }
             for row in targets
         ]
-    path = Path(config_dir) / STATE_NAME
-    path.parent.mkdir(parents=True, exist_ok=True)
-    staged = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", dir=path.parent, delete=False
-        ) as handle:
-            staged = Path(handle.name)
-            json.dump(state, handle, ensure_ascii=False, indent=2)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(staged, path)
-    finally:
-        if staged is not None:
-            staged.unlink(missing_ok=True)
+    atomic_write_text(
+        Path(config_dir) / STATE_NAME,
+        json.dumps(state, ensure_ascii=False, indent=2) + "\n",
+    )

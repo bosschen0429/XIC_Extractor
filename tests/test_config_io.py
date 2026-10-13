@@ -69,7 +69,7 @@ def test_failed_atomic_replace_preserves_active_settings_and_cleans_temporary(
         raise OSError("simulated interrupted save")
 
     monkeypatch.setattr(
-        "xic_extractor.configuration.workspace_state.os.replace", failed_replace
+        "xic_extractor.configuration.atomic_write.os.replace", failed_replace
     )
     with pytest.raises(OSError, match="interrupted"):
         write_settings({"dll_dir": "new-dll"}, config_dir=tmp_path)
@@ -106,7 +106,9 @@ def test_preferences_replace_atomically_without_duplicate_backup(tmp_path, monke
     def failed_replace(*_args):
         raise OSError("interrupted")
 
-    monkeypatch.setattr("xic_workbench.config_io.os.replace", failed_replace)
+    monkeypatch.setattr(
+        "xic_extractor.configuration.atomic_write.os.replace", failed_replace
+    )
     with pytest.raises(OSError, match="interrupted"):
         write_preferences({"view": "untargeted"}, config_dir=tmp_path)
     assert (tmp_path / "workbench.json").read_bytes() == before
@@ -127,7 +129,7 @@ def test_work_state_saves_batch_and_targets_in_one_atomic_generation(
         raise OSError("interrupted")
 
     with monkeypatch.context() as patch:
-        patch.setattr("xic_extractor.configuration.workspace_state.os.replace", fail)
+        patch.setattr("xic_extractor.configuration.atomic_write.os.replace", fail)
         with pytest.raises(OSError):
             save_workspace(
                 tmp_path, settings={"data_dir": "new"}, targets=[{"label": "new"}]
