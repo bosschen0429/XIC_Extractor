@@ -2455,6 +2455,81 @@ def test_strict_replay_retains_two_recorded_precursors_from_one_scan(tmp_path):
     )
 
 
+def test_physical_backfill_receipt_covers_recovered_peak_outside_apex_window(
+    tmp_path: Path,
+) -> None:
+    import json
+
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
+    from xic_extractor.peak_detection.search_scope import (
+        PHYSICAL_CAPTURE_INPUT_KEY,
+        physical_capture_input_payload,
+    )
+    from xic_extractor.processing_identity import (
+        build_processing_request_identity,
+        compose_processing_owner_references,
+        issue_processing_attempt,
+    )
+
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True,
+    )
+    profile = SignalProcessingProfile(window_points=15)
+    old = fixture.owners.request
+    request = build_processing_request_identity(
+        acquisition_sources=old.acquisition_sources,
+        acquisition_bindings=old.acquisition_bindings,
+        scientific_input_schema_version=old.scientific_input_schema_version,
+        processing_algorithm_version=old.processing_algorithm_version,
+        processing_contract_version=old.processing_contract_version,
+        scientific_inputs=json.loads(old.normalized_scientific_inputs_json)
+        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile, {})},
+    )
+    owners = compose_processing_owner_references(
+        request=request,
+        attempt=issue_processing_attempt(request),
+        sample_snapshot=fixture.owners.sample_snapshot,
+        sample_resolutions=fixture.samples,
+    )
+    fixture = replace(fixture, owners=owners)
+    source_raw = _FakeRaw(())
+    source_raw.rt = np.linspace(6.0, 10.0, 801)
+    sigma = np.where(source_raw.rt < 7.4, 0.04, 0.2)
+    source_raw.intensity = (
+        100.0
+        + 1000.0 * np.exp(-0.5 * ((source_raw.rt - 7.4) / sigma) ** 2)
+        + np.random.default_rng(0).normal(0.0, 0.01, len(source_raw.rt))
+    )
+    raw, _vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+    result = backfill_untargeted_cid_nl_sample_subject(
+        processing_owners=owners,
+        sample=fixture.sample("S1"),
+        method_subject=fixture.method_subject,
+        group_center_rt=8.0,
+        group_center_mz=500.0,
+        support_policy=DdaCidNlPeakSupportPolicy(
+            precursor_tolerance_da=0.01, neutral_loss_tolerance_ppm=20.0,
+        ),
+        peak_config=replace(_peak_config(tmp_path), nl_rt_anchor_half_window_min=0.5),
+        raw=raw,
+        signal_processing_profile=profile,
+    )
+
+    evaluation = result.capture_evidence[0].physical_evaluation
+    assert evaluation.state == "available" and evaluation.facts is not None
+    assert evaluation.question.search_rt_window == (7.5, 8.5)
+    assert evaluation.facts.apex_rt_min < 7.5
+    assert evaluation.facts.left_rt_min < 8.0 < evaluation.facts.right_rt_min
+    receipt = result.assessment.content.evaluation_receipt
+    assert (receipt.query_rt_min, receipt.query_rt_max) == (7.0, 9.0)
+    assert len(result.assessment.candidate_peaks) == 1
+    assert result.assessment.candidate_peaks[0].content.integration.rt_apex_min == (
+        evaluation.facts.apex_rt_min
+    )
+
+
 @pytest.mark.parametrize(
     "query_gate", [(None, True), (12.0, True), (30.0, True), (None, False)]
 )
@@ -2587,7 +2662,8 @@ def test_physical_backfill_context_is_not_search_permission(
     expected_window = (7.5, 8.5) if target_present and target_center == 8.45 else None
     assert first.question.search_rt_window == expected_window
     receipt = batched.assessment.content.evaluation_receipt
-    assert (receipt.query_rt_min, receipt.query_rt_max) == (7.5, 8.5)
+    expected_receipt = (7.0, 9.0) if expected_window is not None else (7.5, 8.5)
+    assert (receipt.query_rt_min, receipt.query_rt_max) == expected_receipt
     if target_present:
         assert first.state == "available" and first.facts is not None
         assert first.facts.apex_rt_min == pytest.approx(target_center, abs=0.02)
