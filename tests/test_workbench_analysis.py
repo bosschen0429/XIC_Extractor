@@ -106,7 +106,7 @@ def test_analysis_failure_and_cancel_retain_previous_published_results(
     mode = ["succeed"]
 
     class Run:
-        def __init__(self, config_dir, *, progress, should_cancel):
+        def __init__(self, config_dir, *, progress, should_cancel, output_dir=None):
             self.stage = "讀取指定 RAW"
             self.output_dir = tmp_path / "output"
             self.available_outputs = ()

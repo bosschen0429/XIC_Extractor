@@ -102,6 +102,7 @@ class FakeRuns:
 
     outcome: str = "success"
     release: threading.Event = field(default_factory=threading.Event)
+    output_dirs: list = field(default_factory=list)
 
 
 @pytest.fixture
@@ -109,7 +110,8 @@ def fake_runs(monkeypatch, tmp_path):
     control = FakeRuns()
 
     class FakeRun:
-        def __init__(self, _inputs, *, progress, should_cancel):
+        def __init__(self, _inputs, *, progress, should_cancel, output_dir=None):
+            control.output_dirs.append(output_dir)
             self.progress = progress
             self.should_cancel = should_cancel
             self.stage = "Browser fake analysis"
@@ -175,7 +177,7 @@ def test_navigation_and_theme_survive_reload(workbench):
 def test_targeted_exposes_intent_only_and_editor_round_trips(workbench, config_dir):
     page = workbench
     expect(page.locator("#targeted-form .step-head h2")).to_have_text(
-        ["批次與注射順序", "目標清單", "執行與輸出"]
+        ["資料與輸出", "目標清單", "執行資源"]
     )
     expect(page.locator("#targeted-form .step-no")).to_have_text(["1", "2", "3"])
     expect(page.locator("#target-method-state")).not_to_be_visible()
@@ -258,6 +260,34 @@ def test_template_batch_folder_reads_as_unselected_and_still_saves(
     assert (
         read_settings(config_dir=config_dir)["data_dir"]
         == CANONICAL_SETTINGS_DEFAULTS["data_dir"]
+    )
+
+
+def test_analysis_pages_share_path_rows_and_targeted_output_is_kept(
+    fake_runs, workbench, config_dir, tmp_path
+):
+    page = workbench
+    labels = page.locator("#targeted-data .path-line > label")
+    expect(labels).to_have_text(
+        ["RAW 資料夾", "上機資訊", "輸出資料夾", "RawFileReader DLL 資料夾"]
+    )
+    expect(page.locator("#t-output_dir")).to_have_value(
+        str(config_dir.parent / "output")
+    )
+    chosen = tmp_path / "chosen-output"
+    page.locator("#t-output_dir").fill(str(chosen))
+    _start(page, "targeted")
+    expect(page.locator("#analysis-job-message")).to_contain_text(
+        "Browser fake progress"
+    )
+    assert fake_runs.output_dirs == [chosen]
+    fake_runs.release.set()
+    expect(page.locator("#analysis-job-title")).to_contain_text("已完成")
+    page.reload()
+    expect(page.locator("#t-output_dir")).to_have_value(str(chosen))
+    _view(page, "untargeted")
+    expect(page.locator("#untargeted-paths .path-line:visible > label")).to_have_text(
+        ["RAW 資料夾", "輸出資料夾", "RawFileReader DLL 資料夾"]
     )
 
 
@@ -656,7 +686,7 @@ def test_targeted_review_marks_the_rare_detection_and_opens_it_in_place(
     rows = frame.locator(".tgt-table tbody tr")
     # Rows stay in run order; the rare detection is marked where it ran.
     expect(rows.nth(2).locator(".tgt-sample")).to_have_text("S3")
-    expect(rows.nth(2).locator(".tgt-badge")).to_have_text("少數")
+    expect(rows.nth(2).locator(".tgt-badge")).to_have_text("與多數不同")
     # The same sample's paired ISTD reads in the same row.
     expect(rows.nth(2).locator(".tgt-istd").first).to_have_text("9.2")
     rows.nth(2).locator(".tgt-sample").click()

@@ -40,7 +40,7 @@
     ["raw_file", "單一 RAW", "raw"],
     ["discovery_batch_index", "Discovery batch index", "csv"],
     ["output_dir", "輸出資料夾", "folder"],
-    ["dll_dir", "RawFileReader DLL", "folder"],
+    ["dll_dir", "RawFileReader DLL 資料夾", "folder"],
   ];
   const jobLabels = {
     running: "執行中",
@@ -218,8 +218,6 @@
     if (["folder", "file"].includes(kind)) input.className = "path";
     if (kind === "checkbox")
       input.checked = value === true || String(value).toLowerCase() === "true";
-    else if (["folder", "file"].includes(kind) && isTemplatePath(String(value ?? "")))
-      input.value = "";
     else input.value = value ?? "";
     const help = spec.help ? el("small", spec.help) : null;
     if (["folder", "file"].includes(kind)) {
@@ -241,14 +239,14 @@
     }
     return label;
   }
-  function pathField(container, key, label, kind, value, prefix = "u-") {
+  function pathField(container, key, label, kind, value, prefix = "u-", help = "") {
     const wrap = el("div", undefined, "path-line");
     wrap.id = `${prefix}${key}-row`;
     const title = el("label", label);
     title.htmlFor = `${prefix}${key}`;
     const input = el("input", undefined, "path");
     input.id = title.htmlFor;
-    input.value = value || "";
+    input.value = isTemplatePath(String(value || "")) ? "" : value || "";
     input.dataset.analysisIdle = "";
     const browse = el("button", "瀏覽");
     browse.type = "button";
@@ -256,6 +254,7 @@
     browse.dataset.kind = kind;
     browse.dataset.analysisIdle = "";
     wrap.append(title, input, browse);
+    if (help) wrap.append(el("small", help, "field-help"));
     container.append(wrap);
     return input;
   }
@@ -280,6 +279,8 @@
     const items = [];
     if (kind === "targeted") {
       items.push(pathItem("RAW 資料夾", "t-data_dir", "尚未選擇資料夾"));
+      items.push(pathItem("輸出資料夾", "t-output_dir", "尚未選擇資料夾"));
+      items.push(pathItem("RawFileReader DLL 資料夾", "t-dll_dir", "尚未選擇資料夾"));
       const istd = state.targets.filter(
         (row) => row.role === "istd",
       ).length;
@@ -293,7 +294,16 @@
           "target-import-path",
         ),
       );
-      items.push(pathItem("RawFileReader DLL", "t-dll_dir", "尚未設定 DLL 資料夾"));
+      const order = $("t-injection_order_source")?.value.trim();
+      items.push(
+        checkItem(
+          "info",
+          "上機資訊（選用）",
+          order ? pathTail(order) : "未提供；依 RAW 修改時間排序",
+          "t-injection_order_source",
+          Boolean(order),
+        ),
+      );
     } else {
       const mode = currentMode();
       if (mode === "discovery_only")
@@ -308,8 +318,8 @@
         );
       if (mode !== "discovery_only")
         items.push(pathItem("RAW 資料夾", "u-raw_dir", "尚未選擇資料夾"));
-      items.push(pathItem("輸出資料夾", "u-output_dir", "尚未選擇輸出位置"));
-      items.push(pathItem("RawFileReader DLL", "u-dll_dir", "尚未設定 DLL 資料夾"));
+      items.push(pathItem("輸出資料夾", "u-output_dir", "尚未選擇資料夾"));
+      items.push(pathItem("RawFileReader DLL 資料夾", "u-dll_dir", "尚未選擇資料夾"));
       const preset = $("u-preset");
       items.push(
         checkItem(
@@ -323,7 +333,7 @@
         items.push(
           checkItem(
             "info",
-            "樣本資訊（選用）",
+            "樣本與上機資訊（選用）",
             state.samples.length
               ? `${state.samples.length} 個樣本已讀取`
               : "尚未讀取；可在步驟 4 讀取並指定角色",
@@ -381,26 +391,23 @@
     const data = $("targeted-data");
     const method = $("targeted-settings");
     const execution = $("targeted-execution");
+    const outputDir = $("t-output_dir")?.value ?? state.config.targeted_output_dir;
     for (const panel of [data, method, execution]) panel.replaceChildren();
     const note = el("div", undefined, "method-note");
     note.id = "target-method-note";
     method.append(el("p", "目標清單決定名稱、m/z、預期 RT、CID-NL tag 與 ISTD 配對。平台共用候選與證據策略。", "settings-notice"), note);
-    const panels = { batch: data, environment: execution, runtime: execution };
-    const groups = new Map();
+    const grid = el("div", undefined, "settings-grid");
+    execution.append(grid);
+    // Paths use the same rows as Untargeted: RAW, run inputs, output, machine.
     for (const spec of state.config.targeted_form.settings) {
-      const panel = panels[spec.scope];
-      if (!panel || spec.kind === "readonly" || spec.key === "signal_processing_method" || spec.key === "count_no_ms2_as_detected") continue;
-      const groupKey = spec.scope;
-      if (!groups.has(groupKey)) {
-        const section = el("section", undefined, "settings-group");
-        const scopeHeading = { batch: "批次輸入", environment: "本機環境", runtime: "執行資源" };
-        section.append(el("h3", scopeHeading[spec.scope] || spec.group));
-        const grid = el("div", undefined, "settings-grid");
-        section.append(grid);
-        panel.append(section);
-        groups.set(groupKey, grid);
+      if (spec.kind === "readonly" || spec.key === "signal_processing_method" || spec.key === "count_no_ms2_as_detected") continue;
+      if (!["folder", "file"].includes(spec.kind)) {
+        grid.append(field(spec, values[spec.key], "t-"));
+        continue;
       }
-      groups.get(groupKey).append(field(spec, values[spec.key], "t-"));
+      if (spec.scope === "environment")
+        pathField(data, "output_dir", "輸出資料夾", "folder", outputDir, "t-");
+      pathField(data, spec.key, spec.label, spec.kind, values[spec.key], "t-", spec.help);
     }
     setMethodState(state.config.targeted_method);
     $("t-data_dir").dataset.batchPath = values.data_dir || "";
@@ -428,8 +435,10 @@
   }
   async function saveTargeted(quiet = false) {
     const settings = settingsValues();
-    const receipt = await api("/api/targeted/save", { settings, targets: state.targets });
+    const output_dir = $("t-output_dir").value;
+    const receipt = await api("/api/targeted/save", { settings, targets: state.targets, output_dir });
     state.config.settings = settings;
+    state.config.targeted_output_dir = output_dir;
     state.config.settings_source = "settings.csv";
     state.config.targeted_method = receipt.summary;
     setMethodState(receipt.summary);
@@ -1337,6 +1346,7 @@
         startJob("targeted", {
           settings: settingsValues(),
           targets: state.targets,
+          output_dir: $("t-output_dir").value,
         }),
       );
     });

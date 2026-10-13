@@ -982,6 +982,15 @@ th.num {
 .review-empty h2 {
   font-size: 18px;
 }
+.review-empty-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
 .review-steps {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 220px));

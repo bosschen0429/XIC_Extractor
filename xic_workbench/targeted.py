@@ -41,11 +41,14 @@ class TargetedRun:
         self,
         config_dir: Path,
         *,
+        output_dir: Path | None = None,
         progress: Callable[[int, int, str], None],
         should_cancel: Callable[[], bool],
     ) -> None:
         config_dir = Path(config_dir)
-        prepared = config_loader.prepare_targeted_config(config_dir)
+        prepared = config_loader.prepare_targeted_config(
+            config_dir, output_dir=output_dir
+        )
         self._prepared = prepared
         self._config, self._targets = prepared.config, list(prepared.targets)
         # Admission fixes the discovered file set, not analysis roles or RAW bytes.
@@ -195,22 +198,23 @@ def _is_detected(
 
 # Labels and controls are presentation only; METHOD_KEYS owns method membership.
 _SETTING_FIELDS: tuple[tuple[str, str, str, dict[str, Any]], ...] = (
-    ("data_dir", "資料目錄", "folder", {}),
-    ("dll_dir", "DLL 目錄", "folder", {}),
+    ("data_dir", "RAW 資料夾", "folder", {}),
     (
         "injection_order_source",
-        "注射順序來源",
+        "上機資訊",
         "file",
-        {"help": "CSV／XLSX；留空使用 RAW 修改時間。"},
+        {"help": "提供注射順序（CSV／XLSX）。留空時依 RAW 修改時間排序。"},
     ),
+    ("dll_dir", "RawFileReader DLL 資料夾", "folder", {}),
     (
         "parallel_workers",
-        "RAW workers",
+        "平行處理數",
         "number",
         {
             "min": 1,
             "step": 1,
-            "help": "與 Discovery 共用；留空使用 CPU 數減一（至少 1）。",
+            "help": "同時處理的 RAW 數，Untargeted 也使用此值。"
+            "留空時為 CPU 核心數減一（至少 1）。",
         },
     ),
 )

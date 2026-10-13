@@ -189,8 +189,8 @@
     const focusBanner = focus => {
       const n = focus.samples.length, rest = focus.decided - n;
       const text = n && {
-        minority_counted: `${rest} / ${focus.decided} 筆未計入；標「少數」的 ${n} 筆計入，確認是否抓錯峰。`,
-        minority_not_counted: `${rest} / ${focus.decided} 筆計入；標「少數」的 ${n} 筆未計入，確認是否漏抓。`,
+        minority_counted: `${rest} / ${focus.decided} 筆未計入；標「與多數不同」的 ${n} 筆計入，確認是否抓錯峰。`,
+        minority_not_counted: `${rest} / ${focus.decided} 筆計入；標「與多數不同」的 ${n} 筆未計入，確認是否漏抓。`,
         mixed: `沒有明顯多數；先看 ${n} 筆有檢閱註記的結果。`,
       }[focus.kind];
       return text ? element('p', text, 'tgt-focus-banner') : null;
@@ -261,7 +261,7 @@
         sampleCell.append(button);
         if (focusSet.has(record.SampleName)) {
           row.classList.add('focus');
-          sampleCell.append(element('span', '少數', 'tgt-badge attention'));
+          sampleCell.append(element('span', '與多數不同', 'tgt-badge attention'));
         }
         row.append(sampleCell, element('td', value(record.RT), 'tgt-number'), element('td', scientific(record.Area), 'tgt-number'), element('td', counted(record['Counted Detection']), 'tgt-counted'));
         if (paired) {

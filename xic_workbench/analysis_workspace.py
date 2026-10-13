@@ -34,6 +34,7 @@ class AnalysisWorkspace:
         self._files: dict[str, Path] = {}
 
     def bootstrap(self) -> dict[str, Any]:
+        from xic_extractor.configuration.loader import default_output_dir
         from xic_extractor.configuration.models import ConfigError
         from xic_extractor.configuration.settings import (
             resolve_settings,
@@ -86,6 +87,8 @@ class AnalysisWorkspace:
                 "warnings": warnings,
             },
             "settings_source": source,
+            "targeted_output_dir": self.preferences().get("targeted_output_dir")
+            or str(default_output_dir(self.config_dir)),
             "untargeted": discovery,
             "methods": list_methods(),
             "targeted_methods": self.targeted_methods(),
@@ -201,11 +204,20 @@ class AnalysisWorkspace:
             )
 
             create_targeted_method(values["settings"], values["targets"])
-            from xic_workbench.config_io import write_settings, write_targets
+            from xic_workbench.config_io import (
+                write_preferences,
+                write_settings,
+                write_targets,
+            )
             from xic_workbench.targeted import method_summary
 
             settings = write_settings(values["settings"], config_dir=self.config_dir)
             write_targets(values["targets"], config_dir=self.config_dir)
+            if values.get("output_dir"):
+                write_preferences(
+                    {"targeted_output_dir": values["output_dir"]},
+                    config_dir=self.config_dir,
+                )
             return {
                 "message": "設定與目標已儲存。",
                 "summary": method_summary(settings),

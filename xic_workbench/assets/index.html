@@ -237,7 +237,7 @@
           <div class="source-text">
             <h1 id="batch-title">開啟已完成的分析</h1>
             <p id="batch-description">
-              選擇批次輸出資料夾或 cid_nl_explanation.sqlite。
+              選擇 Targeted 或 Untargeted 的分析結果。
             </p>
           </div>
           <div class="source-meta">
@@ -274,7 +274,7 @@
               id="raw-dir"
               type="text"
               class="path"
-              placeholder="取得 XIC 時才需要"
+              placeholder="看 XIC 時才需要"
               data-idle
             /><button
               type="button"
@@ -286,12 +286,12 @@
             </button>
           </div>
           <div class="path-line">
-            <label for="dll-dir">RawFileReader DLL</label
+            <label for="dll-dir">RawFileReader DLL 資料夾</label
             ><input
               id="dll-dir"
               type="text"
               class="path"
-              placeholder="Thermo RawFileReader DLL 資料夾"
+              placeholder="看 XIC 時才需要"
               data-idle
             /><button
               type="button"
@@ -325,14 +325,20 @@
             ><span>搜尋全批項目，依 m/z、RT 或分組 ID 定位。</span>
           </li>
           <li>
-            <strong>需要時取得 XIC</strong
-            ><span>指定 RAW 與 DLL 資料夾，只讀取勾選的樣本。</span>
+            <strong>需要時看 XIC</strong
+            ><span>選擇 RAW 與 RawFileReader DLL 資料夾，只讀取選取的樣本。</span>
           </li>
         </ol>
-        <button type="button" data-view="untargeted" class="ghost">
-          還沒有結果？前往 Untargeted 分析<svg class="icon">
-            <use href="#i-chevron-right" /></svg>
-        </button>
+        <p class="review-empty-links">
+          還沒有結果？
+          <button type="button" data-view="targeted" class="ghost">
+            前往 Targeted 分析<svg class="icon">
+              <use href="#i-chevron-right" /></svg></button
+          ><button type="button" data-view="untargeted" class="ghost">
+            前往 Untargeted 分析<svg class="icon">
+              <use href="#i-chevron-right" /></svg>
+          </button>
+        </p>
       </section>
       <section id="targeted-overview" class="targeted-overview" aria-label="整批結果總覽" hidden></section>
       <nav id="targeted-review-nav" class="targeted-review-nav" aria-label="結果閱讀層級" hidden>
@@ -343,7 +349,7 @@
         <aside class="list-panel">
           <form id="query-form">
             <div class="section-heading">
-              <h2>檢閱項目</h2>
+              <h2 id="list-title">檢閱項目</h2>
               <button
                 type="button"
                 id="reset-query"
@@ -353,7 +359,7 @@
                 清除條件
               </button>
             </div>
-            <p class="subtle">搜尋範圍是整個批次的已儲存項目。</p>
+            <p class="subtle">搜尋範圍是整批已儲存的結果。</p>
             <div id="targeted-filters" hidden>
               <label class="field">目標<select id="target-id" data-idle></select></label>
               <label class="field">樣本<select id="target-sample" data-idle></select></label>
@@ -457,7 +463,7 @@
                 <span id="sample-count" class="chip"></span>
               </summary>
               <p class="subtle" id="acquisition-description">
-                勾選少數樣本，讀取保留峰頂附近的
+                勾選要看的樣本，讀取保留峰頂附近的
                 RAW。缺少觀測座標的樣本無法自動擷取。
               </p>
               <div id="sample-list" class="sample-list"></div>

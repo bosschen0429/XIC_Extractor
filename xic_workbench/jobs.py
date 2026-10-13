@@ -59,13 +59,23 @@ class AnalysisJobs:
             self._runner = None
             values = copy.deepcopy(values)
             if kind == "targeted":
-                from xic_workbench.config_io import write_settings, write_targets
+                from xic_workbench.config_io import (
+                    write_preferences,
+                    write_settings,
+                    write_targets,
+                )
                 from xic_workbench.targeted import TargetedRun
 
                 write_settings(values["settings"], config_dir=self.config_dir)
                 write_targets(values["targets"], config_dir=self.config_dir)
+                output_dir = values.get("output_dir") or None
+                if output_dir is not None:
+                    write_preferences(
+                        {"targeted_output_dir": output_dir}, config_dir=self.config_dir
+                    )
                 self._runner = TargetedRun(
                     self.config_dir,
+                    output_dir=Path(output_dir) if output_dir else None,
                     progress=self._progress,
                     should_cancel=self._cancel.is_set,
                 )

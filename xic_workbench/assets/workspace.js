@@ -234,10 +234,10 @@ window.XicUi = (() => {
     heading.append(node("span", "整批結果總覽", "eyebrow"));
     const conclusion = !summary.result_count ? "尚無已保存結果"
       : summary.focus_count ? `先看 ${count(summary.focus_count)} 筆與多數不同的結果`
-        : "各目標結果一致，沒有需要先看的少數結果";
+        : "各目標結果一致，沒有與多數不同的結果";
     heading.append(node("h2", conclusion));
     const scope = `${count(summary.sample_count)} 個樣本 · ${count(summary.targets.length)} 個目標`
-      + (summary.focus_count ? ` · 少數結果分布在 ${count(summary.focus_target_count)} 個目標` : "");
+      + (summary.focus_count ? ` · 與多數不同的結果分布在 ${count(summary.focus_target_count)} 個目標` : "");
     heading.append(node("p", scope, "subtle"));
     host.append(heading);
     const metrics = node("div", undefined, "overview-metrics");
@@ -311,6 +311,9 @@ window.XicUi = (() => {
   function renderPage(page) {
     state.page = page;
     const targeted = page.source_kind === "targeted_workbook";
+    // Targeted review items are targets; Untargeted items are candidates.
+    const noun = targeted ? "目標" : "項目";
+    $("list-title").textContent = targeted ? "目標" : "檢閱項目";
     $("targeted-overview").hidden = true;
     $("targeted-review-nav").hidden = !targeted;
     renderTargetedOverview(page.overview);
@@ -323,8 +326,8 @@ window.XicUi = (() => {
     $("target-id").value = selectedTarget;
     document.querySelector(".acquisition-panel").hidden = targeted;
     $("acquisition-description").textContent = targeted
-      ? "點結果列的「看 XIC」，或勾選少數樣本。自動帶入目標與配對 ISTD；ND 也能看圖，不改寫結果。"
-      : "勾選少數樣本，讀取保留峰頂附近的 RAW。缺少觀測座標的樣本無法自動擷取。";
+      ? "點結果列的「看 XIC」，或勾選要看的樣本。自動帶入目標與配對 ISTD；ND 也能看圖，不改寫結果。"
+      : "勾選要看的樣本，讀取保留峰頂附近的 RAW。缺少觀測座標的樣本無法自動擷取。";
     $("ppm").closest("label").hidden = targeted;
     const selectedSample = $("target-sample").value;
     $("target-sample").replaceChildren(new Option("全部樣本", ""), ...(page.all_samples || page.samples).map(s => new Option(s.label, s.id)));
@@ -341,13 +344,13 @@ window.XicUi = (() => {
     $("batch-description").title = page.source;
     $("batch-count").hidden = false;
     $("batch-count").textContent =
-      `${count(page.samples.length)} 個樣本 · ${count(page.run_total)} 個檢閱項目`;
+      `${count(page.samples.length)} 個樣本 · ${count(page.run_total)} 個${targeted ? "目標" : "檢閱項目"}`;
     const filtered = page.matched_count !== page.run_total;
     $("list-summary").replaceChildren(
       Object.assign(document.createElement("span"), {
         textContent: filtered
           ? `符合 ${count(page.matched_count)} ／ 全批 ${count(page.run_total)}`
-          : `全批 ${count(page.run_total)} 個項目`,
+          : `全批 ${count(page.run_total)} 個${noun}`,
       }),
       Object.assign(document.createElement("span"), {
         textContent: page.selected_count
@@ -400,8 +403,8 @@ window.XicUi = (() => {
       : "0 筆";
     status(
       filtered
-        ? `找到 ${count(page.matched_count)} 個符合條件的項目（搜尋範圍是全批已儲存結果）。`
-        : `已載入全批 ${count(page.run_total)} 個項目。`,
+        ? `找到 ${count(page.matched_count)} 個符合條件的${noun}（搜尋範圍是全批已儲存結果）。`
+        : `已載入全批 ${count(page.run_total)} 個${noun}。`,
     );
   }
   async function selectItem(item) {

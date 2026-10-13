@@ -20,9 +20,7 @@
     <div>
       <span class="eyebrow">Targeted 分析</span>
       <h1>依目標清單擷取 XIC</h1>
-      <p class="subtle">
-        選擇 RAW 資料、確認目標清單，用平台標準方法執行。
-      </p>
+      <p class="subtle">完成後產生一份 XLSX，可直接在結果檢閱開啟。</p>
     </div>
     <div class="button-row">
       <button id="target-new" type="button" class="ghost" data-analysis-idle>
@@ -37,8 +35,8 @@
           <div class="step-head">
             <span class="step-no">1</span>
             <div>
-              <h2>批次與注射順序</h2>
-              <p class="subtle">選擇這批 .raw 檔資料夾；更換批次後重新確認注射順序。</p>
+              <h2>資料與輸出</h2>
+              <p class="subtle">更換 RAW 資料夾時，會清空上機資訊。</p>
             </div>
           </div>
           <div id="targeted-data" class="step-body"></div>
@@ -86,12 +84,12 @@
               <button id="target-method-save" type="button" data-analysis-idle>另存清單</button>
               <button id="target-method-import" type="button" data-analysis-idle>從資料夾載入</button>
             </div>
-            <p class="subtle">清單包含目標、ISTD 配對與處理策略。載入會取代目前清單，保留 RAW 資料夾、注射順序及本機設定。</p>
+            <p class="subtle">清單包含目標、ISTD 配對與處理策略。載入會取代目前清單；RAW 資料夾、上機資訊和本機設定不變。</p>
           </div>
           <details class="step-body subtle"><summary>處理策略與設定來源</summary><p>平台統一管理處理策略：<span id="target-method-state">共用 CID-NL 策略</span></p><div id="targeted-settings"></div></details>
         </section>
         <section class="card step">
-          <div class="step-head"><span class="step-no">3</span><div><h2>執行與輸出</h2><p class="subtle">完成後交付一份 XLSX；可直接開啟結果檢閱。</p></div></div>
+          <div class="step-head"><span class="step-no">3</span><div><h2>執行資源</h2><p class="subtle">同時處理多個 RAW 可縮短執行時間。</p></div></div>
           <div id="targeted-execution" class="step-body"></div>
         </section>
       </form>
@@ -116,7 +114,7 @@
           class="block"
           data-analysis-idle
         >
-          <svg class="icon"><use href="#i-save" /></svg>儲存設定與目標
+          <svg class="icon"><use href="#i-save" /></svg>儲存設定
         </button>
         <p class="hint"><kbd>Ctrl</kbd> <kbd>Enter</kbd> 開始</p>
       </section>
@@ -195,7 +193,7 @@
             <span class="step-no">2</span>
             <div>
               <h2>資料與輸出</h2>
-              <p class="subtle">RAW 來源、輸出位置與本機 DLL。</p>
+              <p class="subtle">依執行範圍顯示需要的檔案。</p>
             </div>
           </div>
           <div class="step-body">
@@ -225,7 +223,7 @@
             </div>
             <div class="button-row step-action">
               <button type="button" id="method-import" class="ghost" data-analysis-idle>
-                匯入 preset</button
+                匯入方法</button
               ><button type="button" id="method-new" class="ghost" data-analysis-idle>
                 <svg class="icon"><use href="#i-plus" /></svg>新增</button
               ><button type="button" id="method-edit" data-analysis-idle>
@@ -309,7 +307,7 @@
           class="block"
           data-analysis-idle
         >
-          <svg class="icon"><use href="#i-save" /></svg>儲存批次設定
+          <svg class="icon"><use href="#i-save" /></svg>儲存設定
         </button>
         <p class="hint"><kbd>Ctrl</kbd> <kbd>Enter</kbd> 開始</p>
       </section>

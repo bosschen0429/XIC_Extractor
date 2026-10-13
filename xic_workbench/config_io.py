@@ -178,7 +178,7 @@ def read_preferences(*, config_dir: Path | None = None) -> dict:
 
 
 def write_preferences(values: dict, *, config_dir: Path | None = None) -> dict:
-    if set(values) - {"theme", "view"}:
+    if set(values) - {"theme", "view", "targeted_output_dir"}:
         raise ValueError("不支援此偏好設定；DLL 目錄由 settings.csv 管理。")
     payload = read_preferences(config_dir=config_dir) | values
     _write_json_object(_runtime_dir(config_dir) / "workbench.json", payload)
