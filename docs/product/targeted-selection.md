@@ -127,7 +127,7 @@ separate.
 An isotope-labelled ISTD co-elutes with its analyte, so a counted ISTD confers
 chemical identity on the analyte's MS1 peak at the expected position. The
 analyte's own neutral loss is then not required, whether its MS2 was missing or
-was acquired without the configured loss. `paired_istd_identity_samples` in the
+was acquired without the configured loss. `paired_istd_positions` in the
 Targeted projection owner applies the rule, and the publication boundary
 composes it once every Target of the batch has rendered. All of these must hold:
 
@@ -139,24 +139,25 @@ composes it once every Target of the batch has rendered. All of these must hold:
    recovered peak, whose first capture may describe another peak). It has no
    conflict or exclusion, and its only not-counted reasons are missing direct
    NL/MS2.
-3. Its apex RT minus the ISTD's agrees with this batch's confirmed offset: the
-   median over samples where both are counted, within the larger of 12 s and
-   the p90 of those samples' residuals. Fewer than two confirmed samples give no
-   offset, so proximity alone does not confer identity.
+3. Its apex RT minus the ISTD's agrees with the paired position. When at least
+   two confirmed pairs are available, their median offset and the larger of
+   12 s and the p90 residual refine that position and tolerance. Otherwise the
+   counted ISTD itself is the reference, with the 12 s co-elution tolerance.
+   Batch confirmation count is not an identity gate: both cases use the same
+   current-sample ISTD, peak-quality and blocker requirements above.
 
 The result records `paired_istd_identity` among its support reasons, so it
 remains distinguishable from NL-confirmed detection. Morphology, overlap and
 other review reasons still flag it.
 
-The same position also rejects. When the paired ISTD is counted and the
-confirmed offset exists, an uncounted analyte peak outside that tolerance is
+The same position also rejects. When the paired ISTD is counted, an uncounted
+analyte peak outside that tolerance is
 another signal, not this analyte. Its RT, area and bounds are published as no
 value (`analyte_peak_off_paired_istd_position`), and the measured peak remains
 an `OFF_ISTD_POSITION` diagnostic event. `paired_istd_positions` returns both
-answers from one position assessment. Without two confirmed analyte/ISTD pairs,
-rejection still applies around the counted ISTD itself using the existing 12 s
-co-elution floor. An out-of-position unconfirmed signal is ND, not a numeric
-Target result; being inside this fallback window does not confer identity.
+answers from one position assessment. An out-of-position unconfirmed signal
+is ND, not a numeric Target result. Being inside the window is not sufficient
+by itself: the peak-quality and blocker requirements still apply.
 
 Cohort Backfill is a distinct, owner-bound recovery after direct reference
 observations are available. The [shared Backfill route](backfill.md#targeted-route)

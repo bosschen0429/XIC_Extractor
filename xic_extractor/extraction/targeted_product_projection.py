@@ -222,12 +222,12 @@ def paired_istd_positions(
 
     An isotope-labelled ISTD co-elutes with its analyte, so once the ISTD is
     counted in a sample (directly or by accepted Backfill) it fixes where the
-    analyte must be: at this batch's confirmed analyte-to-ISTD RT offset. A
-    coherent MS1 peak there takes its chemical identity from the ISTD whether
-    or not its own neutral loss was observed. A peak elsewhere is another
-    signal, not this analyte. The offset is learned from samples where both are
-    counted. Without two confirmed pairs, co-elution still rejects a distant
-    unconfirmed signal, but proximity alone does not confer identity.
+    analyte must be. A coherent MS1 peak there takes its chemical identity from
+    the ISTD whether or not its own neutral loss was observed. A peak elsewhere
+    is another signal, not this analyte. Confirmed pairs can refine the batch
+    offset and tolerance; otherwise the co-elution reference and 12 s floor
+    apply. The number of other confirmed samples never gates identity: the
+    current sample still needs a valid ISTD, qualified peak and no blockers.
     """
     counted_istd = {
         sample: rt
@@ -263,8 +263,7 @@ def paired_istd_positions(
         if abs(deviation) > tolerance:
             off_position[sample] = deviation
         elif (
-            calibrated
-            and not projection.conflict_reasons
+            not projection.conflict_reasons
             and not projection.exclusion_reasons
             and (
                 _COHERENT_MS1_PEAK <= set(projection.support_reasons)
