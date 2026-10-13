@@ -68,7 +68,7 @@ typed no-write reasons and archive references remain internal lifecycle records.
 
 ## Targets
 
-One row per configured target. Mirrors `targets.csv` with computed columns.
+One row per configured target. Mirrors the admitted target intent with computed columns.
 
 | Column | Type | Description |
 | --- | --- | --- |

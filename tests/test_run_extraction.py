@@ -1,4 +1,3 @@
-import csv
 import re
 from dataclasses import replace
 from pathlib import Path
@@ -10,6 +9,7 @@ from xic_extractor.applications.targeted.application import TargetedApplicationE
 from xic_extractor.applications.targeted.output_boundary import (
     TargetedOutputBoundaryError,
 )
+from xic_extractor.configuration.loader import PreparedTargetedConfig
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.extraction.result_models import RunOutput
 from xic_extractor.output.messages import DiagnosticRecord
@@ -61,11 +61,11 @@ def test_cli_runs_extraction_with_base_dir_and_workbook(
     targets = [_target("Analyte")]
     calls: dict[str, object] = {}
 
-    def _load_config(config_dir: Path) -> tuple[ExtractionConfig, list[Target]]:
+    def _load_config(config_dir: Path, **kwargs):
         calls["config_dir"] = config_dir
-        return config, targets
+        return PreparedTargetedConfig(config, tuple(targets), config_dir)
 
-    monkeypatch.setattr(module, "load_config", _load_config)
+    monkeypatch.setattr(module, "prepare_targeted_config", _load_config)
     monkeypatch.setattr(module.extractor, "run", _fake_run(calls))
     monkeypatch.setattr(
         module,
@@ -96,7 +96,13 @@ def test_cli_runs_excel_conversion_by_default(
     targets = [_target("Analyte")]
     calls: dict[str, object] = {}
 
-    monkeypatch.setattr(module, "load_config", lambda _config_dir: (config, targets))
+    monkeypatch.setattr(
+        module,
+        "prepare_targeted_config",
+        lambda config_dir, **kwargs: PreparedTargetedConfig(
+            config, tuple(targets), config_dir
+        ),
+    )
     monkeypatch.setattr(module.extractor, "run", _fake_run(calls))
     monkeypatch.setattr(
         csv_to_excel,
@@ -142,16 +148,16 @@ def test_cli_accepts_data_dir_override_for_validation_subset(
     validation_dir.mkdir()
     calls: dict[str, object] = {}
 
-    def fake_load_config(_config_dir, *, settings_overrides=None):
+    def fake_load_config(_config_dir, *, settings_overrides=None, **kwargs):
         calls["settings_overrides"] = settings_overrides
         loaded_config = (
             replace(config, data_dir=Path(settings_overrides["data_dir"]))
             if settings_overrides
             else config
         )
-        return loaded_config, targets
+        return PreparedTargetedConfig(loaded_config, tuple(targets), _config_dir)
 
-    monkeypatch.setattr(module, "load_config", fake_load_config)
+    monkeypatch.setattr(module, "prepare_targeted_config", fake_load_config)
     monkeypatch.setattr(module.extractor, "run", _fake_run(calls))
     monkeypatch.setattr(
         module,
@@ -212,42 +218,15 @@ def test_cli_applies_data_dir_override_before_real_config_validation(
     assert "settings.csv" not in capsys.readouterr().err
 
 
-def test_cli_accepts_example_defaults_when_runtime_config_is_missing(
-    tmp_path: Path, monkeypatch, capsys
-) -> None:
-    module = _module()
+def test_cli_does_not_migrate_old_csv_inputs(tmp_path, capsys):
     config_dir = tmp_path / "config"
-    validation_dir = tmp_path / "validation"
-    dll_dir = tmp_path / "dll"
-    validation_dir.mkdir()
-    dll_dir.mkdir()
-    _write_cli_config(
-        config_dir,
-        data_dir=tmp_path / "placeholder_missing",
-        dll_dir=dll_dir,
-    )
-    (config_dir / "settings.csv").rename(config_dir / "settings.example.csv")
-    (config_dir / "targets.csv").rename(config_dir / "targets.example.csv")
-    calls: dict[str, object] = {}
-
-    monkeypatch.setattr(module.extractor, "run", _fake_run(calls))
-    monkeypatch.setattr(
-        module,
-        "write_excel_from_run_output",
-        lambda *_args, **_kwargs: None,
-        raising=False,
-    )
-
-    exit_code = module.main(
-        ["--base-dir", str(tmp_path), "--data-dir", str(validation_dir)]
-    )
-
-    assert exit_code == 0
-    assert calls["run_config"].data_dir == validation_dir.resolve()
-    assert calls["run_targets"][0].label == "Analyte"
-    assert not (config_dir / "settings.csv").exists()
-    assert not (config_dir / "targets.csv").exists()
-    assert capsys.readouterr().err == ""
+    config_dir.mkdir()
+    path = config_dir / "targets.csv"
+    path.write_text("legacy input left untouched", encoding="utf-8")
+    assert _module().main(["--base-dir", str(tmp_path)]) == 2
+    assert "at least one target row" in capsys.readouterr().err
+    assert path.read_text() == "legacy input left untouched"
+    assert not (config_dir / "workspace.json").exists()
 
 
 @pytest.mark.parametrize(
@@ -268,7 +247,13 @@ def test_cli_preserves_loaded_parallel_settings_when_overrides_are_omitted(
     targets = [_target("Analyte")]
     calls: dict[str, object] = {}
 
-    monkeypatch.setattr(module, "load_config", lambda _config_dir: (config, targets))
+    monkeypatch.setattr(
+        module,
+        "prepare_targeted_config",
+        lambda config_dir, **kwargs: PreparedTargetedConfig(
+            config, tuple(targets), config_dir
+        ),
+    )
     monkeypatch.setattr(module.extractor, "run", _fake_run(calls))
     monkeypatch.setattr(
         module,
@@ -291,15 +276,17 @@ def test_cli_reports_config_errors_without_traceback(
     module = _module()
     monkeypatch.setattr(
         module,
-        "load_config",
-        lambda _config_dir: (_ for _ in ()).throw(ConfigError("settings.csv missing")),
+        "prepare_targeted_config",
+        lambda _config_dir, **kwargs: (_ for _ in ()).throw(
+            ConfigError("workspace.json invalid")
+        ),
     )
 
     exit_code = module.main(["--base-dir", str(tmp_path)])
 
     captured = capsys.readouterr()
     assert exit_code == 2
-    assert "settings.csv missing" in captured.err
+    assert "workspace.json invalid" in captured.err
     assert "Traceback" not in captured.err
 
 
@@ -309,7 +296,13 @@ def test_cli_reports_publication_rejections_without_traceback(
     module = _module()
     config = _config(tmp_path)
     targets = [_target("Analyte")]
-    monkeypatch.setattr(module, "load_config", lambda _config_dir: (config, targets))
+    monkeypatch.setattr(
+        module,
+        "prepare_targeted_config",
+        lambda config_dir, **kwargs: PreparedTargetedConfig(
+            config, tuple(targets), config_dir
+        ),
+    )
 
     class _RejectingService:
         def execute_application(self, _request):
@@ -335,7 +328,13 @@ def test_cli_reports_reader_setup_errors_without_traceback(
     module = _module()
     config = _config(tmp_path)
     targets = [_target("Analyte")]
-    monkeypatch.setattr(module, "load_config", lambda _config_dir: (config, targets))
+    monkeypatch.setattr(
+        module,
+        "prepare_targeted_config",
+        lambda config_dir, **kwargs: PreparedTargetedConfig(
+            config, tuple(targets), config_dir
+        ),
+    )
     monkeypatch.setattr(
         module.extractor,
         "run",
@@ -424,27 +423,12 @@ def _target(label: str) -> Target:
 
 
 def _write_cli_config(config_dir: Path, *, data_dir: Path, dll_dir: Path) -> None:
-    config_dir.mkdir(parents=True, exist_ok=True)
-    settings = {
-        "data_dir": str(data_dir),
-        "dll_dir": str(dll_dir),
-        "injection_order_source": "",
-    }
-    with (config_dir / "settings.csv").open(
-        "w", newline="", encoding="utf-8-sig"
-    ) as handle:
-        writer = csv.DictWriter(handle, fieldnames=["key", "value", "description"])
-        writer.writeheader()
-        for key, value in settings.items():
-            writer.writerow({"key": key, "value": value, "description": key})
+    from xic_extractor.configuration.workspace_state import save_workspace
 
-    fields = ["label", "mz", "expected_rt_min", "cid_nl_tag", "role", "istd_pair"]
-    with (config_dir / "targets.csv").open(
-        "w", newline="", encoding="utf-8-sig"
-    ) as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
-        writer.writeheader()
-        writer.writerow(
+    save_workspace(
+        config_dir,
+        settings={"data_dir": str(data_dir), "dll_dir": str(dll_dir)},
+        targets=[
             dict(
                 label="Analyte",
                 mz="258.1085",
@@ -453,7 +437,8 @@ def _write_cli_config(config_dir: Path, *, data_dir: Path, dll_dir: Path) -> Non
                 role="istd",
                 istd_pair="",
             )
-        )
+        ],
+    )
 
 
 def test_cli_reusable_method_freezes_inputs_only_until_run_finishes(
@@ -472,7 +457,7 @@ def test_cli_reusable_method_freezes_inputs_only_until_run_finishes(
     for folder in (raw_dir, new_batch, dll_dir):
         folder.mkdir()
     _write_cli_config(tmp_path / "config", data_dir=raw_dir, dll_dir=dll_dir)
-    method_dir = tmp_path / "method"
+    method_dir = tmp_path / "method.xlsx"
     target_rows = [
         dict(
             label="MethodTarget",
@@ -495,8 +480,8 @@ def test_cli_reusable_method_freezes_inputs_only_until_run_finishes(
         return prepared
 
     def run_and_change_active_sources(config, targets, **kwargs):
-        (method_dir / "targets.csv").write_text("edited during run", encoding="utf-8")
-        (tmp_path / "config" / "settings.csv").write_text(
+        method_dir.write_text("edited during run", encoding="utf-8")
+        (tmp_path / "config" / "workspace.json").write_text(
             "edited during run", encoding="utf-8"
         )
         receipt = calls["frozen_inputs"]
@@ -512,7 +497,7 @@ def test_cli_reusable_method_freezes_inputs_only_until_run_finishes(
             [
                 "--base-dir",
                 str(tmp_path),
-                "--method-dir",
+                "--method",
                 str(method_dir),
                 "--data-dir",
                 str(new_batch),

@@ -33,12 +33,13 @@ _ASSETS = {
     "/assets/analysis.js": ("analysis.js", "text/javascript; charset=utf-8"),
     "/assets/analysis.css": ("analysis.css", "text/css; charset=utf-8"),
 }
+_EXAMPLES = {"/examples/targeted-method.xlsx", "/examples/targets.xlsx"}
 _BROWSE_SUFFIXES = {
     "folder": (),
     "report": (".sqlite", ".db", ".xlsx"),
     "raw": (".raw",),
     "csv": (".csv",),
-    "targets": (".csv", ".tsv", ".xlsx", ".xls"),
+    "targets": (".csv", ".tsv", ".xlsx"),
     "metadata": (".docx", ".xlsx", ".csv", ".tsv"),
     "preset": (".toml",),
     "file": (".csv", ".tsv", ".xlsx", ".json", ".toml", ".txt"),
@@ -195,6 +196,16 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
                 asset, content_type = _ASSETS[url.path]
                 data = files("xic_workbench").joinpath("assets", asset).read_bytes()
                 self._send(200, data, content_type)
+            elif url.path in _EXAMPLES:
+                # Fixed public resources only; no arbitrary filesystem access.
+                name = url.path.rsplit("/", 1)[-1]
+                data = files("xic_extractor.configuration").joinpath("data", name)
+                self._send(
+                    200,
+                    data.read_bytes(),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    Content_Disposition=f'attachment; filename="{name}"',
+                )
             elif url.path == "/api/session":
                 self._send(
                     200,
@@ -301,6 +312,7 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
                 "targeted/method/save",
                 "targeted/method/load",
                 "targets/import",
+                "targets/export",
                 "untargeted/save",
                 "method",
                 "method/save",

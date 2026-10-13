@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Sequence
 
 from xic_extractor import extractor
-from xic_extractor.configuration.loader import load_config
+from xic_extractor.configuration.loader import prepare_targeted_config
 from xic_extractor.extraction.result_models import RunOutput
 from xic_extractor.tabular_io import write_delimited_rows
 
@@ -205,23 +205,27 @@ def write_report_csv(output_path: Path, report: ResolverComparisonReport) -> Pat
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     base_dir = args.base_dir.resolve()
-    config, targets = load_config(base_dir / "config")
-    savgol_config = replace(config, resolver_mode="savgol")
-    local_config = replace(config, resolver_mode="local_minimum")
+    prepared = prepare_targeted_config(base_dir / "config")
+    try:
+        config, targets = prepared.config, list(prepared.targets)
+        savgol_config = replace(config, resolver_mode="savgol")
+        local_config = replace(config, resolver_mode="local_minimum")
 
-    savgol_output = extractor.acquire(savgol_config, targets)
-    local_output = extractor.acquire(local_config, targets)
+        savgol_output = extractor.acquire(savgol_config, targets)
+        local_output = extractor.acquire(local_config, targets)
 
-    report = compare_rows(
-        savgol_output,
-        local_output,
-        focus_targets=set(args.focus_target),
-        rt_delta_threshold=args.rt_delta_threshold,
-        area_ratio_threshold=args.area_ratio_threshold,
-    )
-    output_path = write_report_csv(args.output.resolve(), report)
-    _print_report(output_path, report)
-    return 0
+        report = compare_rows(
+            savgol_output,
+            local_output,
+            focus_targets=set(args.focus_target),
+            rt_delta_threshold=args.rt_delta_threshold,
+            area_ratio_threshold=args.area_ratio_threshold,
+        )
+        output_path = write_report_csv(args.output.resolve(), report)
+        _print_report(output_path, report)
+        return 0
+    finally:
+        prepared.cleanup()
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
@@ -291,11 +295,7 @@ def _rt_delta(savgol: ResolverRow, local: ResolverRow) -> float | None:
 
 
 def _area_ratio_delta(savgol: ResolverRow, local: ResolverRow) -> float | None:
-    if (
-        savgol.area is None
-        or local.area is None
-        or savgol.area <= 0
-    ):
+    if savgol.area is None or local.area is None or savgol.area <= 0:
         return None
     return abs(local.area - savgol.area) / savgol.area
 
@@ -318,9 +318,7 @@ def _print_report(output_path: Path, report: ResolverComparisonReport) -> None:
     if report.focus_rows:
         print("Focus targets:")
         for row in report.focus_rows:
-            print(
-                f"  {row.sample_name} {row.target} {row.role} {row.issue}"
-            )
+            print(f"  {row.sample_name} {row.target} {row.role} {row.issue}")
 
 
 if __name__ == "__main__":

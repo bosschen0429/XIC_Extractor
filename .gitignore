@@ -56,9 +56,6 @@ progress-report.server-info.json
 docs/superpowers/handoffs/current/*
 docs/superpowers/handoffs/archive/*
 
-# Private user config/profiles (only examples are versioned)
+# Private user config/profiles (only the environment template is versioned)
 config/*
 !config/env.example
-!config/settings.example.csv
-!config/targets.example.csv
-!config/MixSTDs.csv

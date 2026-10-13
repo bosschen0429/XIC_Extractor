@@ -71,39 +71,35 @@ def test_read_discovery_config_preserves_custom_output(monkeypatch, tmp_path) ->
     assert config["output_dir"] == custom
 
 
-def test_target_write_fieldnames_preserves_extra_order() -> None:
-    fieldnames = config_io._target_write_fieldnames(
-        [
-            {"Target": "A", "extra_b": "1", "extra_a": "2"},
-            {"extra_a": "3", "extra_c": "4"},
-        ],
-    )
+def test_target_rows_preserve_extra_metadata_order(tmp_path):
+    from tests.test_targeted_method_files import rows
 
-    assert fieldnames[: len(config_io.TARGET_WRITE_FIELDS)] == list(
-        config_io.TARGET_WRITE_FIELDS,
-    )
-    assert fieldnames[-3:] == ["extra_b", "extra_a", "extra_c"]
+    values = rows()
+    values[0].update(extra_b="1", extra_a="2")
+    config_io.write_targets(values, config_dir=tmp_path)
+    saved = config_io.read_targets(config_dir=tmp_path)
+    assert list(saved[0]) == list(values[0])
+    assert saved == values
 
 
 def test_discovery_defaults_use_bundled_shared_targets(monkeypatch, tmp_path):
     monkeypatch.setattr(discovery_config_io, "CONFIG_DIR", tmp_path / "config")
     monkeypatch.setattr(
         discovery_config_io,
-        "targets_example_path",
-        lambda: tmp_path / "bundle" / "targets.example.csv",
+        "targets_template_path",
+        lambda: tmp_path / "bundle" / "targets.csv",
     )
     assert discovery_config_io.read_discovery_config()["targets_csv"] == str(
-        tmp_path / "bundle" / "targets.example.csv"
+        tmp_path / "bundle" / "targets.csv"
     )
     discovery_config_io.write_discovery_config({"targets_csv": ""})
     assert discovery_config_io.read_discovery_config()["targets_csv"] == ""
 
 
 def test_invalid_targeted_values_do_not_block_workspace_or_untargeted_dll(tmp_path):
-    settings_path = tmp_path / "settings.csv"
-    settings_path.write_text(
-        "key,value\nsignal_processing_window_points,14\n", encoding="utf-8"
-    )
+    from xic_extractor.configuration.workspace_state import save_workspace
+
+    save_workspace(tmp_path, settings={"parallel_workers": "0"})
     workspace = AnalysisWorkspace(tmp_path, {})
     try:
         config = workspace.bootstrap()
@@ -111,12 +107,12 @@ def test_invalid_targeted_values_do_not_block_workspace_or_untargeted_dll(tmp_pa
     finally:
         workspace.jobs.close()
     assert any(
-        "signal_processing_window_points" in warning
+        "parallel_workers" in warning
         for warning in config["targeted_method"]["warnings"]
     )
     saved = config_io.read_settings(config_dir=tmp_path)
     assert saved["dll_dir"] == "shared-dll"
-    assert saved["signal_processing_window_points"] == "14"
+    assert saved["parallel_workers"] == "0"
 
 
 def test_untargeted_save_routes_dll_to_canonical_and_preserves_unrelated_controls(
@@ -156,7 +152,7 @@ def test_preferences_write_only_theme_view_and_preserves_existing_other_keys(tmp
     )
     preferences = config_io.write_preferences({"theme": "dark"}, config_dir=tmp_path)
     assert preferences == {"theme": "dark", "view": "targeted", "future_key": "keep"}
-    with pytest.raises(ValueError, match="settings.csv"):
+    with pytest.raises(ValueError, match="應用設定"):
         config_io.write_preferences(
             {"dll_dir": "not-authorized-source"}, config_dir=tmp_path
         )
@@ -165,20 +161,19 @@ def test_preferences_write_only_theme_view_and_preserves_existing_other_keys(tmp
 
 def test_launch_dll_override_is_transient_and_both_workflows_share_it(tmp_path):
     config_io.write_settings({"dll_dir": "persisted-dll"}, config_dir=tmp_path)
-    before = (tmp_path / "settings.csv").read_bytes()
+    before = (tmp_path / "workspace.json").read_bytes()
     workspace = AnalysisWorkspace(tmp_path, {"dll_dir": "launch-dll"})
     try:
         bootstrap = workspace.bootstrap()
         assert bootstrap["settings"]["dll_dir"] == "launch-dll"
         assert bootstrap["untargeted"]["dll_dir"] == "launch-dll"
         assert any("dll_dir" in w for w in bootstrap["targeted_method"]["warnings"])
-        assert (tmp_path / "settings.csv").read_bytes() == before
+        assert (tmp_path / "workspace.json").read_bytes() == before
         assert (
             config_io.read_settings(config_dir=tmp_path)["dll_dir"] == "persisted-dll"
         )
     finally:
         workspace.jobs.close()
-
 
 
 def test_configuration_reads_are_read_only_and_discovery_does_not_parse_targeted(
@@ -195,10 +190,7 @@ def test_configuration_reads_are_read_only_and_discovery_does_not_parse_targeted
     for name, text in paths.items():
         (tmp_path / name).write_text(text, encoding="utf-8")
     before = {name: (tmp_path / name).read_bytes() for name in paths}
-    assert (
-        config_io.read_settings(config_dir=tmp_path)["ms2_precursor_tol_da"]
-        == "not-a-number"
-    )
+    assert "ms2_precursor_tol_da" not in config_io.read_settings(config_dir=tmp_path)
     assert config_io.read_preferences(config_dir=tmp_path)["theme"] == "dark"
     assert (
         discovery_config_io.read_discovery_config(config_dir=tmp_path)["raw_dir"]

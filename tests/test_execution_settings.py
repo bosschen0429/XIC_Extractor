@@ -53,38 +53,28 @@ def test_profile_rejects_invalid_worker_counts(
         )
 
 
-def test_load_profile_reads_only_worker_setting_and_defaults_missing_or_blank(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    explicit = tmp_path / "explicit.csv"
-    explicit.write_text(
-        "key,value\n"
-        "signal_processing_window_points,15\n"
-        "ms1_morphology_smoothing_window_points,21\n"
-        "parallel_workers,5\n",
-        encoding="utf-8",
-    )
-    missing = tmp_path / "missing-worker.csv"
-    missing.write_text("key,value\nparallel_mode,serial\n", encoding="utf-8")
-    blank = tmp_path / "blank-worker.csv"
-    blank.write_text("key,value\nparallel_workers,\n", encoding="utf-8")
+@pytest.mark.parametrize(
+    "saved,expected",
+    [({"parallel_workers": "5"}, 5), ({}, 8), ({"parallel_workers": ""}, 8)],
+)
+def test_profile_reads_application_state(monkeypatch, tmp_path, saved, expected):
+    from xic_extractor.configuration.workspace_state import save_workspace
+
+    monkeypatch.setattr(execution_settings, "runtime_root", lambda: tmp_path)
     monkeypatch.setattr(execution_settings.os, "cpu_count", lambda: 9)
-
-    assert execution_settings.load_execution_profile(explicit).parallel_workers == 5
-    assert execution_settings.load_execution_profile(missing).parallel_workers == 8
-    assert execution_settings.load_execution_profile(blank).parallel_workers == 8
+    save_workspace(tmp_path / "config", settings=saved)
+    assert execution_settings.load_execution_profile().parallel_workers == expected
 
 
-def test_explicit_override_bypasses_invalid_saved_worker(tmp_path: Path) -> None:
-    settings_path = tmp_path / "settings.csv"
-    settings_path.write_text("key,value\nparallel_workers,invalid\n", encoding="utf-8")
+def test_explicit_override_bypasses_invalid_saved_worker(monkeypatch, tmp_path):
+    from xic_extractor.configuration.workspace_state import save_workspace
 
-    profile = execution_settings.load_execution_profile(
-        settings_path, parallel_workers=3
+    monkeypatch.setattr(execution_settings, "runtime_root", lambda: tmp_path)
+    save_workspace(tmp_path / "config", settings={"parallel_workers": "invalid"})
+    assert (
+        execution_settings.load_execution_profile(parallel_workers=3).parallel_workers
+        == 3
     )
-
-    assert profile.parallel_workers == 3
 
 
 @pytest.mark.parametrize("frozen", [False, True])
@@ -94,17 +84,18 @@ def test_default_settings_resolve_from_development_or_executable_root(
     runtime_root = tmp_path / ("bundle" if frozen else "checkout")
     config_dir = runtime_root / "config"
     config_dir.mkdir(parents=True)
-    (config_dir / "settings.csv").write_text(
-        "key,value\nparallel_workers,7\n", encoding="utf-8"
-    )
-    monkeypatch.setattr(execution_settings.sys, "frozen", frozen, raising=False)
+    from xic_extractor.configuration.workspace_state import save_workspace
+
+    (runtime_root / "pyproject.toml").touch()
+    save_workspace(config_dir, settings={"parallel_workers": "7"})
+    from xic_extractor.configuration import paths
+
+    monkeypatch.setattr(paths.sys, "frozen", frozen, raising=False)
+    monkeypatch.setattr(paths.sys, "executable", str(runtime_root / "xic.exe"))
     monkeypatch.setattr(
-        execution_settings.sys, "executable", str(runtime_root / "xic.exe")
-    )
-    monkeypatch.setattr(
-        execution_settings,
-        "__file__",
-        str(runtime_root / "xic_extractor" / "configuration" / "profile.py"),
+        paths,
+        "_PACKAGE_PARENT",
+        runtime_root,
     )
 
     assert execution_settings.load_execution_profile().parallel_workers == 7

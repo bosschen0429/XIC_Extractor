@@ -163,7 +163,13 @@ def test_compare_resolvers_main_runs_both_modes_and_writes_csv(
             diagnostics=[],
         )
 
-    monkeypatch.setattr(module, "load_config", _load_config)
+    from xic_extractor.configuration.loader import PreparedTargetedConfig
+
+    monkeypatch.setattr(
+        module,
+        "prepare_targeted_config",
+        lambda path: PreparedTargetedConfig(*_load_config(path), path),
+    )
     monkeypatch.setattr(module.extractor, "acquire", _run)
 
     output_path = tmp_path / "resolver_compare.csv"

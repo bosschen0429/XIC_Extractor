@@ -10,7 +10,7 @@ if __package__ in {None, ""}:
 
 from scripts.compare_workbooks import WorkbookCompareResult, compare_workbooks
 from xic_extractor import extractor
-from xic_extractor.configuration.loader import load_config
+from xic_extractor.configuration.loader import prepare_targeted_config
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 from xic_extractor.raw_reader import RawReaderError
@@ -122,26 +122,31 @@ def _run_extraction_once(
         **dict(settings_overrides or {}),
         "data_dir": str(data_dir),
     }
-    config, targets = load_config(
+    prepared = prepare_targeted_config(
         base_dir / "config",
         settings_overrides=effective_overrides,
+        output_dir=output_dir,
     )
-    run_config = replace(
-        config,
-        data_dir=data_dir,
-        output_csv=output_dir / "xic_results.csv",
-        diagnostics_csv=output_dir / "xic_diagnostics.csv",
-        parallel_mode=mode,
-        parallel_workers=workers,
-    )
-    output = extractor.acquire(run_config, targets)
-    workbook_path = output_dir / f"xic_results_{mode}_w{workers}.xlsx"
-    return write_excel_from_run_output(
-        run_config,
-        targets,
-        output,
-        output_path=workbook_path,
-    )
+    try:
+        config, targets = prepared.config, list(prepared.targets)
+        run_config = replace(
+            config,
+            data_dir=data_dir,
+            output_csv=output_dir / "xic_results.csv",
+            diagnostics_csv=output_dir / "xic_diagnostics.csv",
+            parallel_mode=mode,
+            parallel_workers=workers,
+        )
+        output = extractor.acquire(run_config, targets)
+        workbook_path = output_dir / f"xic_results_{mode}_w{workers}.xlsx"
+        return write_excel_from_run_output(
+            run_config,
+            targets,
+            output,
+            output_path=workbook_path,
+        )
+    finally:
+        prepared.cleanup()
 
 
 def _write_summary_csv(path: Path, results: Sequence[BenchmarkRunResult]) -> Path:

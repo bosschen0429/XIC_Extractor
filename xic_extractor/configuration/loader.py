@@ -1,13 +1,12 @@
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from xic_extractor.configuration.csv_io import (
-    _config_input_path,
-    _parse_settings_csv_bytes,
     read_settings,
+    write_config_snapshot,
 )
 from xic_extractor.configuration.hashing import (
     _compute_config_hash,
@@ -23,12 +22,14 @@ from xic_extractor.configuration.target_identity import (
     mint_target_list_snapshot,
 )
 from xic_extractor.configuration.targeted_method_files import (
-    _write_csv,
-    _write_method_targets,
     apply_targeted_method,
     load_targeted_method,
 )
-from xic_extractor.configuration.targets import _read_targets
+from xic_extractor.configuration.targets import _read_targets, parse_target_rows
+from xic_extractor.configuration.workspace_state import (
+    read_workspace,
+    workspace_settings,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ def default_output_dir(config_dir: Path) -> Path:
 def prepare_targeted_config(
     config_dir: Path,
     *,
-    method_dir: Path | None = None,
+    method_path: Path | None = None,
     settings_overrides: Mapping[str, str] | None = None,
     output_dir: Path | None = None,
 ) -> PreparedTargetedConfig:
@@ -67,15 +68,11 @@ def prepare_targeted_config(
     Resource-bound portable cases are rejected rather than silently downgraded.
     """
     config_dir = Path(config_dir).resolve()
-    settings_path = _config_input_path(config_dir, "settings")
-    if not settings_path.is_file():
-        raise ConfigError(f"{settings_path}: file is missing")
-    settings_bytes = settings_path.read_bytes()
-    raw = _parse_settings_csv_bytes(settings_bytes, settings_path)
+    state = read_workspace(config_dir)
+    raw = workspace_settings(state)
     overrides = dict(settings_overrides or {})
     if (
-        method_dir is not None
-        and overrides.get("data_dir")
+        overrides.get("data_dir")
         and Path(overrides["data_dir"]).resolve()
         != Path(raw.get("data_dir", "")).resolve()
         and raw.get("injection_order_source", "").strip()
@@ -85,18 +82,15 @@ def prepare_targeted_config(
             "更換 RAW 批次不能沿用原注射順序；請以 --injection-order-source "
             "明確提供本批次的順序資料，或清空本批次設定中的 injection_order_source。"
         )
-    method = load_targeted_method(method_dir) if method_dir is not None else None
+    method = load_targeted_method(method_path) if method_path is not None else None
     values = (
         apply_targeted_method(raw, method, overrides=overrides)
         if method is not None
         else {**raw, **overrides}
     )
+    target_rows = method.target_rows if method is not None else state["targets"]
+    targets = method.targets if method is not None else parse_target_rows(target_rows)
     order_source = values.get("injection_order_source", "").strip()
-    targets_bytes = (
-        None
-        if method is not None
-        else _config_input_path(config_dir, "targets").read_bytes()
-    )
     output_dir = (
         Path(output_dir) if output_dir is not None else default_output_dir(config_dir)
     ).resolve()
@@ -110,21 +104,26 @@ def prepare_targeted_config(
             frozen_source = receipt_dir / f"injection_order{source.suffix}"
             frozen_source.write_bytes(source.read_bytes())
             values["injection_order_source"] = str(frozen_source)
-        if method is not None or overrides or order_source:
-            _write_csv(
-                receipt_dir / "settings.csv",
-                ("key", "value"),
-                [{"key": key, "value": value} for key, value in values.items()],
-            )
-        else:
-            (receipt_dir / "settings.csv").write_bytes(settings_bytes)
-        if method is not None:
-            _write_method_targets(method, receipt_dir / "targets.csv")
-        else:
-            assert targets_bytes is not None
-            (receipt_dir / "targets.csv").write_bytes(targets_bytes)
-        config, targets = load_config(receipt_dir, output_dir=output_dir)
-        return PreparedTargetedConfig(config, tuple(targets), receipt_dir, workspace)
+        settings_path = receipt_dir / "settings.csv"
+        targets_path = receipt_dir / "targets.csv"
+        values, parsed, warnings = resolve_settings(values, settings_path=settings_path)
+        for warning in warnings:
+            LOGGER.warning(warning)
+        write_config_snapshot(receipt_dir, values, target_rows)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        config = build_extraction_config(
+            parsed,
+            values,
+            settings_path,
+            output_dir,
+            _compute_config_hash(targets_path, settings_path, settings_overrides=None),
+        )
+        config = replace(
+            config, target_config_hash=compute_target_config_hash(targets_path)
+        )
+        # The already admitted targets stay authoritative; the private CSVs are
+        # receipts, not a second input boundary to reparse during the same run.
+        return PreparedTargetedConfig(config, targets, receipt_dir, workspace)
     except BaseException:
         workspace.cleanup()
         raise
@@ -137,22 +136,22 @@ def load_target_list_snapshot(
 ) -> TargetListSnapshot:
     """Load and owner-mint the exact target-list snapshot for one run."""
 
-    targets_path = _config_input_path(config_dir, "targets")
+    targets_path = config_dir / "targets.csv"
     return mint_target_list_snapshot(
         tuple(_read_targets(targets_path)),
         identity_namespace=identity_namespace,
     )
 
 
-def load_config(
+def load_config_snapshot(
     config_dir: Path,
     *,
     settings_overrides: dict[str, str] | None = None,
     output_dir: Path | None = None,
 ) -> tuple[ExtractionConfig, list[Target]]:
-    """Load active settings; output_dir only controls run artifact placement."""
-    settings_path = _config_input_path(config_dir, "settings")
-    targets_path = _config_input_path(config_dir, "targets")
+    """Read explicit machine-generated CSV receipts; never discover user inputs."""
+    settings_path = config_dir / "settings.csv"
+    targets_path = config_dir / "targets.csv"
 
     raw_settings = read_settings(settings_path)
     try:

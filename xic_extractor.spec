@@ -38,8 +38,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ("assets", "assets"),
-        ("config/settings.example.csv", "config"),
-        ("config/targets.example.csv", "config"),
+        ("xic_extractor/configuration/data", "xic_extractor/configuration/data"),
         ("scripts", "scripts"),
     ]
     + preset_datas

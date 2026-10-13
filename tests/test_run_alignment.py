@@ -1439,7 +1439,13 @@ def test_run_alignment_cli_preflight_only_prints_launch_contract(
         assert f"Known ISTD reference workbook: {reference_path.resolve()}" in stdout
         assert hashlib.sha256(reference_path.read_bytes()).hexdigest() in stdout
     if reference_kind is None:
-        expected = run_alignment._repo_root() / "config" / "targets.example.csv"
+        expected = (
+            run_alignment._repo_root()
+            / "xic_extractor"
+            / "configuration"
+            / "data"
+            / "targets.csv"
+        )
         assert f"Targets CSV: {expected}" in stdout
         assert "7 ISTD loaded" in stdout
         assert "ISTD alignment: enabled (GUI default)" in stdout
@@ -1833,8 +1839,18 @@ def test_run_alignment_cli_istd_input_is_explicit_or_validated_before_raw(
     batch_index, raw_dir = _write_owner_closed_preflight_batch(tmp_path, ("S1",))
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
-    template = run_alignment._repo_root() / "config" / "targets.example.csv"
-    monkeypatch.setattr(run_alignment, "_repo_root", lambda: tmp_path)
+    template = (
+        run_alignment._repo_root()
+        / "xic_extractor"
+        / "configuration"
+        / "data"
+        / "targets.csv"
+    )
+    monkeypatch.setattr(
+        run_alignment,
+        "targets_template_path",
+        lambda: tmp_path / "config" / "targets.example.csv",
+    )
 
     def no_raw(request, context=None):
         pytest.fail("preflight or invalid ISTD input reached RAW execution")

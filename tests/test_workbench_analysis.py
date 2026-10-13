@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from tests.raw_header_fakes import install_raw_sample_headers
+from tests.test_targeted_method_files import rows as sample_target_rows
 from tests.test_xic_inspector_api import _create_mock_db
 from tests.test_xic_workbench import _client
 from xic_extractor.evidence_artifacts import EvidenceLocator
@@ -139,10 +140,12 @@ def test_analysis_failure_and_cancel_retain_previous_published_results(
     monkeypatch.setattr("xic_workbench.config_io.write_targets", lambda *a, **kw: None)
     jobs = AnalysisJobs(tmp_path)
     try:
-        jobs.start("targeted", {"settings": {}, "targets": []})
+        jobs.start("targeted", {"settings": {}, "targets": sample_target_rows()})
         success = _terminal(jobs)["results"]["targeted"]
         mode[0] = "fail"
-        running = jobs.start("targeted", {"settings": {}, "targets": []})
+        running = jobs.start(
+            "targeted", {"settings": {}, "targets": sample_target_rows()}
+        )
         assert entered.wait(3)
         with pytest.raises(WorkspaceBusy):
             jobs.start("samples", {})
@@ -153,7 +156,9 @@ def test_analysis_failure_and_cancel_retain_previous_published_results(
         assert state["results"]["targeted"] == success
         entered.clear()
         proceed.clear()
-        running = jobs.start("targeted", {"settings": {}, "targets": []})
+        running = jobs.start(
+            "targeted", {"settings": {}, "targets": sample_target_rows()}
+        )
         assert entered.wait(3)
         assert jobs.cancel(running["job"]["job_id"])["job"]["status"] == "cancelling"
         proceed.set()
@@ -176,7 +181,7 @@ def test_http_analysis_configuration_roundtrip_without_qt(tmp_path):
             "data_dir": "C:/new batch",
         }
         targets = [
-            config["targets"][0]
+            sample_target_rows()[0]
             | {
                 "label": "precise",
                 "mz": "501.1234567890123",
@@ -573,18 +578,17 @@ def test_inspector_job_rejects_source_not_bound_to_published_untargeted_result(
 def test_http_targeted_bootstrap_explains_active_source(tmp_path):
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    (config_dir / "settings.csv").write_text(
-        "key,value,description\nsignal_processing_window_points,21,saved\n",
-        encoding="utf-8",
-    )
+    from xic_extractor.configuration.workspace_state import save_workspace
+
+    save_workspace(config_dir, settings={"parallel_workers": "0"})
     workspace = ReviewWorkspace(config_dir=config_dir)
     with _client(workspace) as request:
         status, config, _ = request("/api/config")
         assert status == 200
-        assert config["settings"]["signal_processing_window_points"] == "21"
+        assert config["settings"]["parallel_workers"] == "0"
         summary = config["targeted_method"]
         assert summary["warnings"]
-        assert config["settings_source"] == "settings.csv"
+        assert config["settings_source"] == "workspace.json"
 
 
 def test_targeted_bootstrap_combines_saved_settings_and_launch_values(
@@ -592,10 +596,9 @@ def test_targeted_bootstrap_combines_saved_settings_and_launch_values(
 ):
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    (config_dir / "settings.csv").write_text(
-        "key,value,description\nsignal_processing_window_points,21,saved\n",
-        encoding="utf-8",
-    )
+    from xic_extractor.configuration.workspace_state import save_workspace
+
+    save_workspace(config_dir, settings={"parallel_workers": "0"})
     workspace = AnalysisWorkspace(
         config_dir, {"raw_dir": "C:/launch-batch", "dll_dir": "C:/preferred-dll"}
     )
@@ -603,7 +606,7 @@ def test_targeted_bootstrap_combines_saved_settings_and_launch_values(
         config = workspace.bootstrap()
         assert config["settings"]["data_dir"] == "C:/launch-batch"
         assert config["settings"]["dll_dir"] == "C:/preferred-dll"
-        assert config["settings"]["signal_processing_window_points"] == "21"
+        assert config["settings"]["parallel_workers"] == "0"
         assert config["untargeted"]["dll_dir"] == "C:/preferred-dll"
         assert config["targeted_method"]["warnings"]
     finally:

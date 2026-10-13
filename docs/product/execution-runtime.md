@@ -36,7 +36,7 @@ Matrix, workbook, Backfill-write, activation, publication, or export authority.
 ## Worker Settings
 
 `xic_extractor.configuration.execution_profile` owns the shared execution profile and worker
-defaults. The existing `config/settings.csv` owns the saved `parallel_workers`
+defaults. The `application` section in `config/workspace.json` owns the saved `parallel_workers`
 value used by Targeted, Discovery CLI/HTML, and tissue validation. When absent,
 the profile supplies the CPU-count-minus-one default (at least one). An explicit
 CLI override takes precedence for that invocation; it does not rewrite saved
@@ -44,7 +44,7 @@ settings. Scientific presets do not carry machine resource settings.
 
 Targeted accepts a blank or positive-integer `parallel_workers` and uses this
 same execution-profile owner. Its backend remains `process`; the retired
-`parallel_mode` key must be removed from legacy Targeted settings. Worker
+`parallel_mode` key is not accepted; legacy CSV workspaces are not imported. Worker
 configuration does not reopen retired scientific overrides.
 
 Alignment defaults to four workers in the same profile. Its explicit worker

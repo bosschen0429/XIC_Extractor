@@ -4,7 +4,7 @@ from xic_extractor.configuration.hashing import (
     _settings_csv_bytes_with_overrides,
     compute_config_hash,
 )
-from xic_extractor.configuration.loader import load_config
+from xic_extractor.configuration.loader import load_config_snapshot
 
 
 def test_same_bytes_same_hash(tmp_path: Path) -> None:
@@ -65,7 +65,7 @@ def test_hash_is_8_hex_chars(tmp_path: Path) -> None:
     assert all(c in "0123456789abcdef" for c in h)
 
 
-def test_load_config_hash_reflects_new_override_key(tmp_path: Path) -> None:
+def test_load_config_snapshot_hash_reflects_new_override_key(tmp_path: Path) -> None:
     config_dir = tmp_path / "config"
     data_dir = tmp_path / "raw"
     dll_dir = tmp_path / "dll"
@@ -84,12 +84,12 @@ def test_load_config_hash_reflects_new_override_key(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    base_config, _ = load_config(config_dir)
-    override_a, _ = load_config(
+    base_config, _ = load_config_snapshot(config_dir)
+    override_a, _ = load_config_snapshot(
         config_dir,
         settings_overrides={"injection_order_source": str(tmp_path / "order.csv")},
     )
-    override_b, _ = load_config(
+    override_b, _ = load_config_snapshot(
         config_dir,
         settings_overrides={"injection_order_source": str(tmp_path / "order.csv")},
     )

@@ -69,7 +69,8 @@ def test_preflight_8_and_85_share_science_without_output_or_execution(
     )
     if not blank_enabled:
         monkeypatch.setattr(
-            run_tissue_validation.BlankBackgroundLibrary, "load_json",
+            run_tissue_validation.BlankBackgroundLibrary,
+            "load_json",
             lambda _path: pytest.fail("disabled filtering must not read a library"),
         )
     plans = []
@@ -83,9 +84,17 @@ def test_preflight_8_and_85_share_science_without_output_or_execution(
                 raw_dir=raw_dir,
                 dll_dir=dll_dir,
                 library=library,
-            ) if blank_enabled else [
-                "--dataset", str(dataset), "--raw-dir", str(raw_dir),
-                "--dll-dir", str(dll_dir), "--output-dir", str(output_dir),
+            )
+            if blank_enabled
+            else [
+                "--dataset",
+                str(dataset),
+                "--raw-dir",
+                str(raw_dir),
+                "--dll-dir",
+                str(dll_dir),
+                "--output-dir",
+                str(output_dir),
                 "--preflight-only",
             ]
         )
@@ -152,7 +161,9 @@ def test_preflight_exposes_overrides_and_rejects_output_reuse(
     raw_dir, dll_dir, library = _inputs(tmp_path, count=8)
     targets = tmp_path / "targets.csv"
     targets.write_text(
-        (Path("config") / "targets.example.csv").read_text(encoding="utf-8"),
+        Path("xic_extractor/configuration/data/targets.csv").read_text(
+            encoding="utf-8"
+        ),
         encoding="utf-8",
     )
     output_dir = tmp_path / "custom-output"
@@ -264,8 +275,15 @@ def test_preflight_passes_a_shared_acquisition_cache_to_alignment(
     if configured is not None:
         monkeypatch.setenv("XIC_ACQUISITION_CACHE_DIR", str(tmp_path / configured))
     argv = [
-        "--dataset", "8", "--raw-dir", str(raw_dir), "--dll-dir", str(dll_dir),
-        "--output-dir", str(tmp_path / "out"), "--preflight-only",
+        "--dataset",
+        "8",
+        "--raw-dir",
+        str(raw_dir),
+        "--dll-dir",
+        str(dll_dir),
+        "--output-dir",
+        str(tmp_path / "out"),
+        "--preflight-only",
     ]
     if explicit is not None:
         argv += ["--acquisition-cache-dir", str(tmp_path / explicit)]
@@ -306,8 +324,15 @@ def test_85raw_preflight_applies_tracked_sample_metadata_by_default(
 
     code = run_tissue_validation.main(
         [
-            "--dataset", "85", "--raw-dir", str(raw_dir), "--dll-dir", str(dll_dir),
-            "--output-dir", str(tmp_path / "out"), "--preflight-only",
+            "--dataset",
+            "85",
+            "--raw-dir",
+            str(raw_dir),
+            "--dll-dir",
+            str(dll_dir),
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--preflight-only",
         ]
     )
 

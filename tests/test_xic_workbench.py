@@ -17,6 +17,33 @@ from xic_workbench.server import create_server
 from xic_workbench.workspace import ReviewWorkspace
 
 
+def test_example_downloads_are_fixed_public_resources_not_local_files(tmp_path):
+    from xic_extractor.configuration.paths import targets_template_path
+
+    config = tmp_path / "config"
+    config.mkdir()
+    private = config / "workspace.json"
+    private.write_text("private-local-state", encoding="utf-8")
+    with _client(ReviewWorkspace(config_dir=config)) as request:
+        for name in ("targeted-method.xlsx", "targets.xlsx"):
+            status, payload, headers = request(f"/examples/{name}")
+            assert status == 200
+            assert headers["Content-Disposition"] == f'attachment; filename="{name}"'
+            assert headers["Content-Type"] == (
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            assert payload == (targets_template_path().parent / name).read_bytes()
+        for path in ("workspace.json", "../config/workspace.json", "targets.csv"):
+            assert request(f"/examples/{path}")[0] == 404
+        assert (
+            request(
+                "/examples/targets.xlsx", headers={"Origin": "https://other.example"}
+            )[0]
+            == 403
+        )
+    assert private.read_text(encoding="utf-8") == "private-local-state"
+
+
 @contextmanager
 def _client(workspace):
     server = create_server(workspace, port=0)

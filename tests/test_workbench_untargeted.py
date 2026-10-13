@@ -635,7 +635,7 @@ def test_untargeted_missing_targets_rejects_before_queue_or_active_save(
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     write_settings({"dll_dir": "original"}, config_dir=config_dir)
-    original = (config_dir / "settings.csv").read_bytes()
+    original = (config_dir / "workspace.json").read_bytes()
     values = _request_values(tmp_path, "discovery_only")
     values["targets_csv"] = str(tmp_path / "missing.csv")
     submitted = []
@@ -645,7 +645,7 @@ def test_untargeted_missing_targets_rejects_before_queue_or_active_save(
         with pytest.raises(FileNotFoundError):
             jobs.start("untargeted", values)
         assert not submitted
-        assert (config_dir / "settings.csv").read_bytes() == original
+        assert (config_dir / "workspace.json").read_bytes() == original
         assert jobs.state()["job"] is None
     finally:
         jobs.close()

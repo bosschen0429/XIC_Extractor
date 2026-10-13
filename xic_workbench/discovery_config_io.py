@@ -7,11 +7,11 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from xic_extractor.configuration.paths import targets_template_path
 from xic_workbench.config_io import (
     ROOT,
     _read_json_object,
     _write_json_object,
-    targets_example_path,
 )
 
 CONFIG_DIR = ROOT / "config"
@@ -36,7 +36,7 @@ def _runtime_dir(config_dir: Path | None) -> Path:
 
 def _fresh_defaults() -> dict[str, Any]:
     defaults = copy.deepcopy(DEFAULT_CONFIG)
-    defaults["targets_csv"] = str(targets_example_path())
+    defaults["targets_csv"] = str(targets_template_path())
     return defaults
 
 

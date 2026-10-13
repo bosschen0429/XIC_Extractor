@@ -1,10 +1,6 @@
-import csv
-
 import pytest
 
-from xic_extractor.configuration.csv_io import read_settings as read_settings_csv
 from xic_extractor.configuration.models import ConfigError
-from xic_extractor.configuration.settings import resolve_settings
 from xic_workbench.config_io import (
     read_settings,
     read_targets,
@@ -12,207 +8,133 @@ from xic_workbench.config_io import (
     write_targets,
 )
 
-TARGET_CSV = (
-    "label,mz,expected_rt_min,cid_nl_tag,role,istd_pair\n"
-    "5-hmdC,258.1085,9,dR,analyte,d3-5-hmdC\n"
-    "d3-5-hmdC,261.1273,9,dR,istd,\n"
-)
 
-
-@pytest.fixture()
-def tmp_config(tmp_path):
-    (tmp_path / "settings.csv").write_text(
-        "key,value,description\ndata_dir,C:\\data,資料目錄\ndll_dir,C:\\dll,DLL路徑\n",
-        encoding="utf-8-sig",
-    )
-    (tmp_path / "targets.csv").write_text(TARGET_CSV, encoding="utf-8-sig")
-    return tmp_path
-
-
-def test_read_settings(tmp_config, monkeypatch):
-    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_config)
-    assert read_settings()["data_dir"] == "C:\\data"
-
-
-def test_write_settings_round_trips(tmp_config, monkeypatch):
-    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_config)
-    write_settings({"data_dir": "C:\\new", "dll_dir": "C:\\d"})
-    assert read_settings()["data_dir"] == "C:\\new"
-    assert read_settings()["dll_dir"] == "C:\\d"
-
-
-def test_write_settings_preserves_description(tmp_config, monkeypatch):
-    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_config)
-    write_settings({"data_dir": "C:\\x", "dll_dir": "C:\\y"})
-    with (tmp_config / "settings.csv").open(encoding="utf-8-sig") as handle:
-        rows = list(csv.DictReader(handle))
-    assert {row["key"]: row["description"] for row in rows}["data_dir"] == "資料目錄"
-
-
-def test_write_settings_backfills_descriptions_for_current_settings(tmp_config):
-    write_settings({"injection_order_source": "order.csv"}, config_dir=tmp_config)
-    with (tmp_config / "settings.csv").open(encoding="utf-8-sig") as handle:
-        descriptions = {
-            row["key"]: row["description"] for row in csv.DictReader(handle)
+def test_json_settings_and_targets_have_one_state_file(tmp_path):
+    write_settings({"data_dir": "local", "parallel_workers": "3"}, config_dir=tmp_path)
+    rows = [
+        {
+            "label": "IS",
+            "mz": "258.1085",
+            "expected_rt_min": "9",
+            "cid_nl_tag": "dR",
+            "role": "istd",
+            "istd_pair": "",
         }
-    assert descriptions["injection_order_source"]
+    ]
+    write_targets(rows, config_dir=tmp_path)
+    assert read_settings(config_dir=tmp_path)["data_dir"] == "local"
+    assert read_targets(config_dir=tmp_path) == rows
+    assert {p.name for p in tmp_path.iterdir()} == {"workspace.json"}
 
 
-def test_read_targets(tmp_config, monkeypatch):
-    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_config)
-    assert read_targets()[0]["label"] == "5-hmdC"
+def test_old_csv_inputs_are_not_read_or_rewritten(tmp_path):
+    originals = {}
+    for name in ("settings.csv", "targets.csv", "settings.example.csv"):
+        path = tmp_path / name
+        path.write_text("invalid legacy content", encoding="utf-8")
+        originals[path] = path.read_bytes()
+    assert read_targets(config_dir=tmp_path) == []
+    write_settings({"parallel_workers": "2"}, config_dir=tmp_path)
+    assert all(path.read_bytes() == content for path, content in originals.items())
+    assert read_settings(config_dir=tmp_path)["parallel_workers"] == "2"
 
 
-def test_write_targets_round_trips_intent_and_relationships(tmp_config, monkeypatch):
-    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_config)
-    rows = list(csv.DictReader(TARGET_CSV.splitlines()))
-    rows[0]["expected_rt_min"] = "9.1"
-    write_targets(rows)
-    saved = read_targets()
-    assert saved[0]["label"] == "5-hmdC"
-    assert saved[0]["expected_rt_min"] == "9.1"
-    assert saved[0]["cid_nl_tag"] == "dR"
-    assert saved[0]["role"] == "analyte"
-    assert saved[0]["istd_pair"] == "d3-5-hmdC"
-    assert saved[1]["role"] == "istd"
-    assert saved[1]["istd_pair"] == ""
-
-
-def test_read_settings_uses_example_without_creating_runtime_copy(
-    tmp_path, monkeypatch
-):
-    (tmp_path / "settings.example.csv").write_text(
-        "key,value,description\ndata_dir,/placeholder,資料目錄\n",
-        encoding="utf-8-sig",
-    )
-    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_path)
-    monkeypatch.setattr("xic_workbench.config_io._BUNDLE_CONFIG", tmp_path)
-    assert read_settings()["data_dir"] == "/placeholder"
-    assert not (tmp_path / "settings.csv").exists()
-
-
-def test_read_targets_uses_example_without_creating_runtime_copy(tmp_path, monkeypatch):
-    (tmp_path / "targets.example.csv").write_text(TARGET_CSV, encoding="utf-8-sig")
-    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_path)
-    monkeypatch.setattr("xic_workbench.config_io._BUNDLE_CONFIG", tmp_path)
-    assert read_targets()[0]["label"] == "5-hmdC"
-    assert not (tmp_path / "targets.csv").exists()
-
-
-def test_write_settings_creates_runtime_copy_with_example_descriptions(
-    tmp_path, monkeypatch
-):
-    (tmp_path / "settings.example.csv").write_text(
-        "key,value,description\ndata_dir,/placeholder,資料目錄\n",
-        encoding="utf-8-sig",
-    )
-    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_path)
-    monkeypatch.setattr("xic_workbench.config_io._BUNDLE_CONFIG", tmp_path)
-    write_settings({"data_dir": "C:\\real"})
-    with (tmp_path / "settings.csv").open(encoding="utf-8-sig") as handle:
-        saved = {row["key"]: row for row in csv.DictReader(handle)}
-    assert saved["data_dir"] == {
-        "key": "data_dir",
-        "value": "C:\\real",
-        "description": "資料目錄",
-    }
-    assert set(saved) == {
-        "data_dir",
-        "dll_dir",
-        "injection_order_source",
-        "parallel_workers",
-    }
-    assert saved["parallel_workers"]["value"] == ""
-    assert saved["parallel_workers"]["description"]
-
-
-def test_write_targets_creates_runtime_copy_only_on_save(tmp_path, monkeypatch):
-    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_path)
-    write_targets(list(csv.DictReader(TARGET_CSV.splitlines())))
-    assert (tmp_path / "targets.csv").exists()
-    assert read_targets()[0]["label"] == "5-hmdC"
-
-
-def test_csv_conflicts_are_rejected_in_ui_and_runtime_reader(tmp_path):
-    path = tmp_path / "settings.csv"
-    path.write_text("key,value\ndata_dir,first\ndata_dir,second\n", encoding="utf-8")
-    with pytest.raises(ConfigError, match="conflict"):
-        resolve_settings(read_settings(config_dir=tmp_path))
-    with pytest.raises(ConfigError, match="conflict"):
-        read_settings_csv(path)
-
-
-def test_equal_csv_duplicates_have_one_written_row_and_recovery_backup(tmp_path):
-    path = tmp_path / "settings.csv"
-    path.write_text(
-        "key,value,description\ndata_dir,local,canonical\ndata_dir,local,duplicate\n",
-        encoding="utf-8",
-    )
-    original = path.read_bytes()
-    write_settings({"injection_order_source": "order.csv"}, config_dir=tmp_path)
-    with path.open(encoding="utf-8-sig") as handle:
-        rows = list(csv.DictReader(handle))
-    assert sum(row["key"] == "data_dir" for row in rows) == 1
-    assert path.with_suffix(".csv.bak").read_bytes() == original
-
-
-@pytest.mark.parametrize("workers", ["", "7"])
-def test_save_merges_partial_batch_values_and_preserves_machine_settings(
-    tmp_path, workers
+def test_save_merges_partial_values_and_preserves_existing_runtime_and_resources(
+    tmp_path,
 ):
     write_settings(
-        {"data_dir": "local", "dll_dir": "dll", "parallel_workers": workers},
+        {
+            "data_dir": "local",
+            "parallel_workers": "1",
+            "injection_order_source": "prior.csv",
+        },
         config_dir=tmp_path,
     )
-    write_settings({"injection_order_source": "order.csv"}, config_dir=tmp_path)
+    write_settings({"dll_dir": "new-dll"}, config_dir=tmp_path)
     values = read_settings(config_dir=tmp_path)
-    assert values == {
-        "data_dir": "local",
-        "dll_dir": "dll",
-        "injection_order_source": "order.csv",
-        "parallel_workers": workers,
-    }
+    assert values["data_dir"] == "local"
+    assert values["parallel_workers"] == "1"
+    assert values["injection_order_source"] == "prior.csv"
+    assert values["dll_dir"] == "new-dll"
 
 
 def test_failed_atomic_replace_preserves_active_settings_and_cleans_temporary(
     tmp_path, monkeypatch
 ):
-    write_settings({"data_dir": "first"}, config_dir=tmp_path)
-    path = tmp_path / "settings.csv"
+    write_settings({"dll_dir": "original-dll"}, config_dir=tmp_path)
+    path = tmp_path / "workspace.json"
     before = path.read_bytes()
 
     def failed_replace(*_args):
         raise OSError("simulated interrupted save")
 
+    monkeypatch.setattr(
+        "xic_extractor.configuration.workspace_state.os.replace", failed_replace
+    )
+    with pytest.raises(OSError, match="interrupted"):
+        write_settings({"dll_dir": "new-dll"}, config_dir=tmp_path)
+    assert path.read_bytes() == before
+    assert {p.name for p in tmp_path.iterdir()} == {"workspace.json"}
+
+
+def test_invalid_save_preserves_active_file(tmp_path):
+    write_settings({}, config_dir=tmp_path)
+    path = tmp_path / "workspace.json"
+    before = path.read_bytes()
+    with pytest.raises(ConfigError):
+        write_settings({"signal_processing_window_points": "16"}, config_dir=tmp_path)
+    assert path.read_bytes() == before
+
+
+def test_retired_setting_is_rejected_without_changing_work(tmp_path):
+    write_settings({"dll_dir": "original-dll"}, config_dir=tmp_path)
+    before = (tmp_path / "workspace.json").read_bytes()
+    with pytest.raises(ConfigError, match="resolver_mode"):
+        write_settings({"resolver_mode": "legacy_savgol"}, config_dir=tmp_path)
+    assert (tmp_path / "workspace.json").read_bytes() == before
+
+
+def test_preferences_replace_atomically_without_duplicate_backup(tmp_path, monkeypatch):
+    from xic_workbench.config_io import read_preferences, write_preferences
+
+    write_preferences({"view": "review"}, config_dir=tmp_path)
+    write_preferences({"theme": "dark"}, config_dir=tmp_path)
+    assert read_preferences(config_dir=tmp_path) == {"view": "review", "theme": "dark"}
+    assert {p.name for p in tmp_path.iterdir()} == {"workbench.json"}
+    before = (tmp_path / "workbench.json").read_bytes()
+
+    def failed_replace(*_args):
+        raise OSError("interrupted")
+
     monkeypatch.setattr("xic_workbench.config_io.os.replace", failed_replace)
     with pytest.raises(OSError, match="interrupted"):
-        write_settings({"data_dir": "second"}, config_dir=tmp_path)
-    assert path.read_bytes() == before
-    assert list(tmp_path.glob(".settings-*.tmp")) == []
+        write_preferences({"view": "untargeted"}, config_dir=tmp_path)
+    assert (tmp_path / "workbench.json").read_bytes() == before
+    assert {p.name for p in tmp_path.iterdir()} == {"workbench.json"}
 
 
-@pytest.mark.parametrize(
-    "key",
-    [
-        "signal_processing_window_points",
-        "dirty_matrix_mode",
-        "resolver_mode",
-    ],
-)
-def test_retired_settings_save_is_rejected_without_changing_active_file(tmp_path, key):
-    write_settings({}, config_dir=tmp_path)
-    path = tmp_path / "settings.csv"
-    before = path.read_bytes()
-    with pytest.raises(ConfigError, match="Retired or unknown"):
-        write_settings({key: "1"}, config_dir=tmp_path)
-    assert path.read_bytes() == before
+def test_work_state_saves_batch_and_targets_in_one_atomic_generation(
+    tmp_path, monkeypatch
+):
+    import json
 
+    from xic_extractor.configuration.workspace_state import save_workspace
 
-def test_invalid_target_save_preserves_active_file(tmp_config):
-    path = tmp_config / "targets.csv"
-    before = path.read_bytes()
-    with pytest.raises(ConfigError, match="unsupported target schema"):
-        write_targets(
-            [{"label": "old", "rt_min": "8", "rt_max": "10"}], config_dir=tmp_config
-        )
-    assert path.read_bytes() == before
+    save_workspace(tmp_path, settings={"data_dir": "old"}, targets=[{"label": "old"}])
+    before = (tmp_path / "workspace.json").read_bytes()
+
+    def fail(*args):
+        raise OSError("interrupted")
+
+    with monkeypatch.context() as patch:
+        patch.setattr("xic_extractor.configuration.workspace_state.os.replace", fail)
+        with pytest.raises(OSError):
+            save_workspace(
+                tmp_path, settings={"data_dir": "new"}, targets=[{"label": "new"}]
+            )
+    assert (tmp_path / "workspace.json").read_bytes() == before
+    save_workspace(tmp_path, settings={"data_dir": "new"}, targets=[{"label": "new"}])
+    state = json.loads((tmp_path / "workspace.json").read_text())
+    assert set(state) == {"version", "application", "batch", "targets"}
+    assert state["batch"]["data_dir"] == "new"
+    assert state["targets"] == [{"label": "new"}]

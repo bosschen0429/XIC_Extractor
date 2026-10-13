@@ -71,6 +71,15 @@ def run_smoke(report_path: Path) -> int:
         ):
             if not request(asset):
                 raise RuntimeError(f"Empty frontend asset: {asset}")
+        from xic_extractor.configuration.paths import targets_template_path
+        from xic_extractor.configuration.targeted_method_files import load_target_table
+
+        for name in ("targeted-method.xlsx", "targets.xlsx"):
+            if not request(f"/examples/{name}"):
+                raise RuntimeError(f"Empty example: {name}")
+        config["targets"] = load_target_table(
+            targets_template_path().with_name("targets.xlsx")
+        )
         if not config["settings"] or not config["targets"]:
             raise RuntimeError("Bundled settings or targets are empty")
         report["server_started"] = True

@@ -36,13 +36,13 @@ class AnalysisWorkspace:
     def bootstrap(self) -> dict[str, Any]:
         from xic_extractor.configuration.loader import default_output_dir
         from xic_extractor.configuration.models import ConfigError
+        from xic_extractor.configuration.paths import targets_template_path
         from xic_extractor.configuration.settings import (
             resolve_settings,
         )
         from xic_workbench.config_io import (
             read_settings,
             read_targets,
-            targets_example_path,
         )
         from xic_workbench.discovery_config_io import read_discovery_config
         from xic_workbench.methods import list_methods
@@ -61,7 +61,7 @@ class AnalysisWorkspace:
         except ConfigError as exc:
             # Opening the workspace must stay possible so the value can be fixed.
             settings, warnings = {**raw, **overrides}, []
-            warnings.append(f"settings.csv 有無效值，修正後才能執行 Targeted：{exc}")
+            warnings.append(f"workspace.json 有無效值，修正後才能執行 Targeted：{exc}")
         if overrides:
             warnings.append("啟動選項覆寫：" + ", ".join(overrides))
         discovery = read_discovery_config(config_dir=self.config_dir)
@@ -69,15 +69,13 @@ class AnalysisWorkspace:
         if self.defaults.get("raw_dir") and not discovery.get("raw_dir"):
             discovery["raw_dir"] = self.defaults["raw_dir"]
         source = (
-            "settings.csv"
-            if (self.config_dir / "settings.csv").exists()
-            else "settings.example.csv"
+            "workspace.json"
+            if (self.config_dir / "workspace.json").exists()
+            else "defaults"
         )
-        if source == "settings.example.csv":
-            warnings.append("尚未儲存 settings.csv，目前使用範本設定。")
         return {
             "config_dir": str(self.config_dir),
-            "targets_example": str(targets_example_path()),
+            "targets_example": str(targets_template_path()),
             "review_source": self.defaults.get("source", ""),
             "settings": settings,
             "targets": read_targets(config_dir=self.config_dir),
@@ -101,11 +99,9 @@ class AnalysisWorkspace:
         if not root.exists():
             return []
         return [
-            {"name": path.name, "path": str(path.absolute())}
+            {"name": path.stem, "path": str(path.absolute())}
             for path in sorted(root.iterdir())
-            if path.is_dir()
-            and (path / "settings.csv").is_file()
-            and (path / "targets.csv").is_file()
+            if path.is_file() and path.suffix.lower() == ".xlsx"
         ]
 
     def preferences(self) -> dict[str, str]:
@@ -168,7 +164,7 @@ class AnalysisWorkspace:
                 }
             ):
                 raise ValueError("請輸入有效的方法名稱，不可使用路徑或系統保留名稱。")
-            path = self.config_dir / "methods" / name
+            path = self.config_dir / "methods" / f"{name}.xlsx"
             if path.exists():
                 raise ValueError(
                     "方法名稱已存在；請使用新名稱另存版本，原方法不會被覆寫。"
@@ -199,20 +195,15 @@ class AnalysisWorkspace:
 
             return write_preferences(values, config_dir=self.config_dir)
         if action == "targeted/save":
-            from xic_extractor.configuration.targeted_method_files import (
-                create_targeted_method,
-            )
-
-            create_targeted_method(values["settings"], values["targets"])
             from xic_workbench.config_io import (
                 write_preferences,
-                write_settings,
-                write_targets,
+                write_work,
             )
             from xic_workbench.targeted import method_summary
 
-            settings = write_settings(values["settings"], config_dir=self.config_dir)
-            write_targets(values["targets"], config_dir=self.config_dir)
+            settings = write_work(
+                values["settings"], values["targets"], config_dir=self.config_dir
+            )
             if values.get("output_dir"):
                 write_preferences(
                     {"targeted_output_dir": values["output_dir"]},
@@ -237,14 +228,18 @@ class AnalysisWorkspace:
             settings, _parsed, warnings = resolve_settings(raw)
             summary = {**method_summary(settings), "warnings": warnings}
             return summary
+        if action == "targets/export":
+            from xic_extractor.configuration.targeted_method_files import (
+                save_target_table,
+            )
+
+            path = Path(values["path"])
+            save_target_table(values["targets"], path)
+            return {"message": f"已匯出目標表：{path}", "path": str(path)}
         if action == "targets/import":
             from xic_workbench.target_import import import_targets
 
-            return {
-                "targets": import_targets(
-                    Path(values["path"]), sheet=values.get("sheet", "both")
-                )
-            }
+            return {"targets": import_targets(Path(values["path"]))}
         if action == "untargeted/save":
             from xic_workbench.config_io import write_dll_dir
             from xic_workbench.discovery_config_io import write_discovery_config
@@ -278,10 +273,10 @@ class AnalysisWorkspace:
             selection = read_istd_targets(Path(values["path"]))
             return {"selection": json_value(selection)}
         if action == "istd/copy":
-            from xic_workbench.config_io import targets_example_path
+            from xic_extractor.configuration.paths import targets_template_path
 
             source, destination = Path(values["path"]), Path(values["destination"])
-            if destination.resolve() == targets_example_path().resolve():
+            if destination.resolve() == targets_template_path().resolve():
                 raise ValueError("請另存副本，保留隨附內標範本。")
             if source.resolve() == destination.resolve():
                 raise ValueError("請選擇新的副本位置。")
