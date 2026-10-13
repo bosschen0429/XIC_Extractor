@@ -91,6 +91,9 @@ its independent-mass candidate scope. Paired-ISTD and accepted Backfill identity
 remain governed by their existing owners, not a new RT gate.
 
 Strong recorded-precursor-supported, quantifiable peaks remain counted despite RT drift.
+When such a peak disagrees with the position of a counted paired ISTD, it retains
+its measurement and count but requires identity review; chemical support alone
+does not resolve that positional contradiction.
 RT-prior disagreement and legacy confidence labels alone do not create product
 review actions. Unresolved morphology or overlap concerns can require quality
 review independently of identity. Confidence and reason labels describe source
@@ -140,9 +143,11 @@ composes it once every Target of the batch has rendered. All of these must hold:
    conflict or exclusion, and its only not-counted reasons are missing direct
    NL/MS2.
 3. Its apex RT minus the ISTD's agrees with the paired position. When at least
-   two confirmed pairs are available, their median offset and the larger of
-   12 s and the p90 residual refine that position and tolerance. Otherwise the
-   counted ISTD itself is the reference, with the 12 s co-elution tolerance.
+   two confirmed pairs agree with the configured expected-RT offset within
+   12 s, their median offset and the larger of 12 s and the p90 residual refine
+   that position and tolerance. Contradictory counted peaks cannot calibrate
+   away their own mismatch. Otherwise the counted ISTD plus the configured
+   analyte-minus-ISTD expected-RT offset is the reference, with a 12 s tolerance.
    Batch confirmation count is not an identity gate: both cases use the same
    current-sample ISTD, peak-quality and blocker requirements above.
 
@@ -158,6 +163,12 @@ an `OFF_ISTD_POSITION` diagnostic event. `paired_istd_positions` returns both
 answers from one position assessment. An out-of-position unconfirmed signal
 is ND, not a numeric Target result. Being inside the window is not sufficient
 by itself: the peak-quality and blocker requirements still apply.
+
+An already-counted analyte outside the same paired-position tolerance is not
+silently cleared or reselected. It retains its RT, area, bounds and count with
+`paired_istd_position_mismatch`, `detected_flagged`, and `review_required`.
+The workbook and Inspector expose the identity-review action. An uncounted or
+missing ISTD cannot impose this paired-position review.
 
 Cohort Backfill is a distinct, owner-bound recovery after direct reference
 observations are available. The [shared Backfill route](backfill.md#targeted-route)

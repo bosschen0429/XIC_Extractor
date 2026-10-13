@@ -508,7 +508,11 @@ class _RenderCell:
     backfill_supported: bool
 
     def render(
-        self, *, paired_istd_identity: bool = False, no_write_reason: str = ""
+        self,
+        *,
+        paired_istd_identity: bool = False,
+        no_write_reason: str = "",
+        paired_istd_position_review: bool = False,
     ) -> ExtractionResult:
         return _finalized_extraction_result(
             self.extraction,
@@ -518,6 +522,7 @@ class _RenderCell:
             evidence=self.evidence,
             backfill_supported=self.backfill_supported,
             paired_istd_identity=paired_istd_identity,
+            paired_istd_position_review=paired_istd_position_review,
         )
 
 
@@ -526,13 +531,16 @@ def _apply_paired_istd_positions(
     cells: Mapping[tuple[str, str], _RenderCell],
     targets_by_label: Mapping[str, Target],
 ) -> list[DiagnosticRecord]:
-    """Re-render uncounted analytes against their counted paired ISTD.
+    """Re-render analytes against their counted paired ISTD.
 
     The ISTD's final count, including accepted Backfill, is known only once
     every Target of the batch has rendered. A peak at the paired position takes
-    its identity; one elsewhere is published as no value, its measurement kept
-    as a diagnostic event.
+    its identity; an uncounted peak elsewhere is published as no value, its
+    measurement kept as a diagnostic event. An already-counted peak elsewhere
+    retains its measurement and count but requires identity review.
     """
+    from xic_extractor.extraction.target_extraction import current_target_reference_rt
+
     diagnostics: list[DiagnosticRecord] = []
     for label, target in targets_by_label.items():
         pair = target.istd_pair
@@ -548,7 +556,26 @@ def _apply_paired_istd_positions(
             for sample, results in rendered_by_sample.items()
             if pair in results
         }
-        positions = paired_istd_positions(analyte, istd)
+        positions = paired_istd_positions(
+            analyte,
+            istd,
+            expected_offset_min=current_target_reference_rt(
+                target, reference_rt=0.0, paired_target=targets_by_label[pair]
+            ),
+        )
+        for sample, deviation in positions.review_required.items():
+            rendered_by_sample[sample][label] = cells[(sample, label)].render(
+                paired_istd_position_review=True
+            )
+            diagnostics.append(
+                DiagnosticRecord(
+                    sample,
+                    label,
+                    "PAIRED_ISTD_POSITION_REVIEW",
+                    f"Counted peak is {deviation:+.2f} min from the {pair} position; "
+                    "retained with mandatory identity review.",
+                )
+            )
         for sample in positions.identified:
             rendered_by_sample[sample][label] = cells[(sample, label)].render(
                 paired_istd_identity=True
@@ -580,6 +607,7 @@ def _finalized_extraction_result(
     evidence: object,
     backfill_supported: bool = False,
     paired_istd_identity: bool = False,
+    paired_istd_position_review: bool = False,
 ) -> ExtractionResult:
     captured_physical_evaluation = extraction.physical_evaluation
     reported_evaluation = (
@@ -596,6 +624,7 @@ def _finalized_extraction_result(
         no_write_reason=no_write_reason,
         backfill_supported=backfill_supported,
         paired_istd_identity=paired_istd_identity,
+        paired_istd_position_review=paired_istd_position_review,
         captured_physical_evaluation=captured_physical_evaluation,
         nl_status=extraction.nl_token or "",
     )
@@ -726,6 +755,7 @@ def _finalized_product_projection(
     nl_status: str,
     backfill_supported: bool = False,
     paired_istd_identity: bool = False,
+    paired_istd_position_review: bool = False,
     captured_physical_evaluation: PhysicalPeakEvaluation | None = None,
 ) -> TargetedProductProjection | None:
     if projection is None:
@@ -768,6 +798,7 @@ def _finalized_product_projection(
         ),
         backfill_supported=backfill_supported,
         paired_istd_identity=paired_istd_identity,
+        paired_istd_position_review=paired_istd_position_review,
         support_reasons=projection.support_reasons,
         review_reasons=projection.review_reasons,
         conflict_reasons=projection.conflict_reasons,

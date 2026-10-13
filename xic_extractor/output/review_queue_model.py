@@ -239,6 +239,8 @@ def _review_why(issue: str, row: dict[str, str], evidence: str) -> str:
         return "證據衝突，身分未定"
     if "analyte_peak_off_paired_istd_position" in row.get("Projection Reason", ""):
         return "峰不在內標位置，報 ND"
+    if "paired_istd_position_mismatch" in row.get("Projection Review Reasons", ""):
+        return "峰偏離配對內標位置，需確認身分"
     if "BACKFILL_HOLD" in evidence and counted == "FALSE":
         return "回填找不到唯一的峰"
     if "BACKFILL_ACCEPTED" in evidence and counted == "FALSE":
@@ -282,6 +284,8 @@ def _has_product_projection(row: dict[str, str]) -> bool:
 
 
 def _suggested_action(issue: str, row: dict[str, str], evidence: str) -> str:
+    if "paired_istd_position_mismatch" in row.get("Projection Review Reasons", ""):
+        return "比較 analyte／ISTD 預期 RT 差與實際峰位置，確認是否為其他訊號"
     if "BACKFILL" in evidence:
         return "比較同批樣本的回填位置與峰形"
     if issue in {"NL_FAIL", "NL_WARN"}:

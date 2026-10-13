@@ -181,6 +181,40 @@ class _Result:
     targeted_product_projection: object
 
 
+@pytest.mark.parametrize("confirmed", [0, 1, 2])
+def test_pair_position_preserves_configured_offset_without_batch_gate(confirmed):
+    analyte = {"sample": _Result(25.5, _analyte(cid_nl=False))}
+    istd = {"sample": _Result(25.0, _istd())}
+    for index in range(confirmed):
+        analyte[str(index)] = _Result(25.5, _analyte(cid_nl=True))
+        istd[str(index)] = _Result(25.0, _istd())
+    positions = paired_istd_positions(analyte, istd, expected_offset_min=0.5)
+    assert positions.identified == {"sample"}
+    assert positions.off_position == {}
+
+
+@pytest.mark.parametrize("confirmed", [0, 2])
+def test_counted_off_position_peaks_require_review_not_self_calibration(confirmed):
+    analyte = {"far": _Result(30.0, _analyte(cid_nl=True))}
+    istd = {"far": _Result(25.0, _istd())}
+    for index in range(confirmed):
+        analyte[str(index)] = _Result(30.0, _analyte(cid_nl=True))
+        istd[str(index)] = _Result(25.0, _istd())
+    positions = paired_istd_positions(analyte, istd, expected_offset_min=0.5)
+    assert positions.review_required == {sample: 4.5 for sample in analyte}
+    assert positions.off_position == {}
+    assert positions.identified == set()
+
+
+@pytest.mark.parametrize("pair", [None, _istd(cid_nl=False)])
+def test_unconfirmed_or_missing_istd_cannot_force_position_review(pair):
+    analyte = {"sample": _Result(30.0, _analyte(cid_nl=True))}
+    istd = {} if pair is None else {"sample": _Result(25.0, pair)}
+    positions = paired_istd_positions(analyte, istd, expected_offset_min=0.5)
+    assert positions.review_required == {}
+    assert positions.off_position == {}
+
+
 def test_paired_istd_position_identifies_or_rejects_the_analyte_peak() -> None:
     confirmed = {"C1": 0.10, "C2": 0.12, "C3": 0.08}
     analyte = {s: _Result(9.0 + d, _analyte(cid_nl=True)) for s, d in confirmed.items()}
