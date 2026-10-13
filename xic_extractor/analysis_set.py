@@ -8,22 +8,39 @@ from pathlib import Path, PureWindowsPath
 from typing import Literal
 
 from xic_extractor.injection_timeline import Injection
-from xic_extractor.sample_metadata import SampleMetadata, SampleRole
+from xic_extractor.sample_metadata import (
+    SampleMetadata,
+    SampleRole,
+    SequenceMatchReport,
+)
 
 ANALYSIS_SAMPLE_ROLES: frozenset[str] = frozenset({"study_sample", "qc", "pooled_qc"})
 
-RoleSource = Literal["sample_metadata", "raw_header", "raw_file_name"]
+RoleSource = Literal["sample_metadata", "raw_header"]
 ContextReason = Literal["role", "excluded"]
 
 
 @dataclass(frozen=True)
 class AnalysisSetEntry:
+    """One injection: its RAW copy and the sample facts every flow reads."""
+
     raw_path: Path
-    raw_stem: str
-    injection_order: int | None
-    sample_role: SampleRole
+    metadata: SampleMetadata
     role_source: RoleSource
     context_reason: ContextReason | None
+
+    @property
+    def raw_stem(self) -> str:
+        return self.metadata.raw_stem
+
+    @property
+    def injection_order(self) -> int:
+        assert self.metadata.injection_order is not None
+        return self.metadata.injection_order
+
+    @property
+    def sample_role(self) -> SampleRole:
+        return self.metadata.sample_role
 
     @property
     def analyzed(self) -> bool:
@@ -35,6 +52,13 @@ class AnalysisSet:
     """Every injection stays in chronology; only analyzed entries are processed."""
 
     entries: tuple[AnalysisSetEntry, ...]
+    sequence: SequenceMatchReport | None = None
+    # Unreadable RAW that would not be analyzed; reported, not ordered.
+    unreadable: tuple[Path, ...] = ()
+
+    @property
+    def sample_metadata(self) -> tuple[SampleMetadata, ...]:
+        return tuple(entry.metadata for entry in self.entries)
 
     @property
     def analyzed(self) -> tuple[AnalysisSetEntry, ...]:
@@ -56,38 +80,61 @@ def discover_raw_files(root: Path) -> tuple[Path, ...]:
 
 def select_analysis_set(
     timeline: Sequence[Injection],
-    inferred_roles: Mapping[str, SampleRole],
-    sample_metadata: Sequence[SampleMetadata] | None = None,
+    header_rows: Mapping[str, SampleMetadata],
+    overrides: Sequence[SampleMetadata] = (),
     *,
-    unread_paths: Sequence[str] = (),
+    unreadable: Mapping[str, SampleMetadata] | None = None,
+    sequence: SequenceMatchReport | None = None,
 ) -> AnalysisSet:
-    """Decide analysis membership by role; metadata rows override inferred roles.
+    """Give each injection its sample facts and decide analysis membership.
 
-    ``inferred_roles`` is keyed by RAW path as the reader recorded it. A metadata
-    row with a known role replaces the inferred role; its ``excluded`` flag
-    removes a sample that was injected but is not part of the analysis.
-    ``unread_paths`` are RAW whose header could not be read: they keep a
-    filename role and no chronology, so their file error surfaces downstream.
+    ``header_rows`` holds the RAW header facts keyed by RAW path as the reader
+    recorded it: header sample name, role, and batch. The timeline owns
+    injection order. ``overrides`` are RAW-keyed annotations from 上機資訊 or
+    the workbench: a known role replaces the header role, and group, batch,
+    preparation, matrix, and exclusion fields fill in. They never rename a
+    sample or change its order.
+
+    ``unreadable`` holds RAW without a readable header, keyed by path, with a
+    filename role. One that would be analyzed stops resolution because its
+    order is unknown; any other is left out and listed in ``unreadable``.
     """
-    rows = _metadata_by_stem(sample_metadata or ())
-    located: list[tuple[str, str, int | None, RoleSource]] = [
-        (_local_copy_path(i), i.raw_stem, i.injection_order, "raw_header")
-        for i in timeline
-    ]
-    located.extend(
-        (path, PureWindowsPath(path).stem, None, "raw_file_name")
-        for path in unread_paths
-    )
+    rows = _metadata_by_stem(overrides)
+    blocking: list[str] = []
+    skipped: list[Path] = []
+    for path, fallback in (unreadable or {}).items():
+        row = rows.get(fallback.raw_stem.casefold())
+        fallback_role = (
+            row.sample_role
+            if row is not None and row.sample_role != "unknown"
+            else fallback.sample_role
+        )
+        excluded = row is not None and row.excluded
+        if fallback_role in ANALYSIS_SAMPLE_ROLES and not excluded:
+            blocking.append(PureWindowsPath(path).name)
+        else:
+            skipped.append(Path(path))
+    if blocking:
+        shown = "、".join(blocking[:5]) + (" 等" if len(blocking) > 5 else "")
+        raise ValueError(
+            f"無法讀取 {len(blocking)} 個要分析的 RAW 檔頭，無法確定注射順序：{shown}。"
+            "請確認 RAW 檔案完整，且 RawFileReader DLL 資料夾正確。"
+        )
     entries: list[AnalysisSetEntry] = []
     analyzed_stems: set[str] = set()
-    for copy_path, raw_stem, injection_order, inferred_source in located:
+    names: set[str] = set()
+    for injection in timeline:
+        copy_path = _local_copy_path(injection)
+        raw_stem = injection.raw_stem
+        header = header_rows[copy_path]
+        name = _sample_name(header.sample_name, raw_stem, names)
         row = rows.get(raw_stem.casefold())
         if row is not None and row.sample_role != "unknown":
             role: SampleRole = row.sample_role
             source: RoleSource = "sample_metadata"
         else:
-            role = inferred_roles[copy_path]
-            source = inferred_source
+            role = header.sample_role
+            source = "raw_header"
         reason: ContextReason | None = (
             "excluded"
             if row is not None and row.excluded
@@ -99,17 +146,36 @@ def select_analysis_set(
             if raw_stem.casefold() in analyzed_stems:
                 raise ValueError(f"distinct injections share RAW stem: {raw_stem}")
             analyzed_stems.add(raw_stem.casefold())
+        annotation = row or header
         entries.append(
             AnalysisSetEntry(
                 raw_path=Path(copy_path),
-                raw_stem=raw_stem,
-                injection_order=injection_order,
-                sample_role=role,
+                metadata=SampleMetadata(
+                    sample_name=name,
+                    raw_stem=raw_stem,
+                    injection_order=injection.injection_order,
+                    sample_role=role,
+                    batch_id=annotation.batch_id or header.batch_id,
+                    prep_batch_id=annotation.prep_batch_id,
+                    matrix_type=annotation.matrix_type,
+                    group=annotation.group or header.group,
+                    excluded=row is not None and row.excluded,
+                    exclusion_reason=row.exclusion_reason if row is not None else "",
+                ),
                 role_source=source,
                 context_reason=reason,
             )
         )
-    return AnalysisSet(tuple(entries))
+    return AnalysisSet(tuple(entries), sequence, tuple(skipped))
+
+
+def _sample_name(header_name: str, raw_stem: str, taken: set[str]) -> str:
+    """Header SampleName when usable and unique, otherwise the RAW stem."""
+    name = header_name.strip()
+    if not name or name.lower() in {"unknown", "sample"} or name in taken:
+        name = raw_stem
+    taken.add(name)
+    return name
 
 
 def _metadata_by_stem(rows: Sequence[SampleMetadata]) -> dict[str, SampleMetadata]:

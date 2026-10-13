@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from tests.raw_header_fakes import install_fake_raw_headers
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extraction.result_models import RunOutput
 from xic_extractor.extraction.targeted_inputs import (
@@ -15,6 +16,12 @@ from xic_extractor.processing_identity import (
     AcquisitionSourceExpectation,
     build_acquisition_source_identity,
 )
+
+
+@pytest.fixture(autouse=True)
+def _placeholder_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    # RAW files here are placeholders; order them by their file times.
+    install_fake_raw_headers(monkeypatch)
 
 _OPEN_RAW_SEAM = "xic_extractor.extraction.target_extraction.open_raw"
 
@@ -326,12 +333,10 @@ def test_acquire_resolves_scoring_inputs_before_backend(
         }
     )
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
-    targets = [_target("Analyte")]
-
-    monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_inputs.read_injection_order",
-        lambda path: {"SampleA": 1},
+    config.injection_order_source.write_text(
+        "Sample_Name,Injection_Order\nSampleA,1\n", encoding="utf-8"
     )
+    targets = [_target("Analyte")]
 
     def _fake_run_serial(
         config_arg: ExtractionConfig,
@@ -356,7 +361,7 @@ def test_acquire_resolves_scoring_inputs_before_backend(
     assert output.file_results == []
 
 
-def test_acquire_resolves_sample_metadata_source_as_injection_order(
+def test_acquire_orders_by_raw_even_with_a_sample_metadata_source(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -408,7 +413,8 @@ def test_acquire_resolves_sample_metadata_source_as_injection_order(
         assert config_arg is config
         assert targets_arg is targets
         assert [path.name for path in raw_paths] == ["RawA.raw"]
-        assert injection_order == {"SampleA": 7, "RawA": 7}
+        # The metadata number 7 annotates nothing about order; the RAW does.
+        assert injection_order == {"RawA": 1}
 
         return RunOutput(file_results=[], diagnostics=[])
 
@@ -417,16 +423,6 @@ def test_acquire_resolves_sample_metadata_source_as_injection_order(
     output = extractor.acquire(config, targets)
 
     assert output.file_results == []
-
-
-def test_resolve_injection_order_returns_empty_dict_without_raw_files(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.extraction.targeted_inputs import resolve_injection_order
-
-    config = _config(tmp_path)
-
-    assert resolve_injection_order(config, [], None) == {}
 
 
 def test_serial_backend_keeps_sorted_raw_output_order(

@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.raw_header_fakes import install_raw_sample_headers
 from tests.test_xic_inspector_api import _create_mock_db
 from tests.test_xic_workbench import _client
 from xic_extractor.evidence_artifacts import EvidenceLocator
@@ -229,9 +230,9 @@ def test_untargeted_job_loads_saved_sequence_metadata_when_samples_are_absent(
     raw.write_bytes(b"")
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
-    monkeypatch.setattr(
-        "xic_extractor.raw_reader.read_raw_sample_header",
-        lambda path, dll_dir: RawSampleHeader(
+    install_raw_sample_headers(
+        monkeypatch,
+        lambda path: RawSampleHeader(
             raw_path=str(path),
             raw_stem=path.stem,
             sample_name="Header Alpha",
@@ -242,6 +243,7 @@ def test_untargeted_job_loads_saved_sequence_metadata_when_samples_are_absent(
             vial="A:04",
             comment="",
         ),
+        lambda path: 0,
     )
     sequence = tmp_path / "sample_metadata.tsv"
     sequence.write_text(
@@ -290,10 +292,11 @@ def test_untargeted_job_loads_saved_sequence_metadata_when_samples_are_absent(
         assert state["job"]["status"] == "succeeded"
         metadata = captured["request"].sample_metadata
         assert metadata is not None
+        # The RAW names and orders the sample; the sequence adds its role.
         assert [(row.sample_name, row.sample_role) for row in metadata] == [
-            ("Alpha", "pooled_qc")
+            ("Header Alpha", "pooled_qc")
         ]
-        assert metadata[0].injection_order == 4
+        assert metadata[0].injection_order == 1
     finally:
         jobs.close()
 
@@ -354,7 +357,7 @@ def test_untargeted_job_uses_shared_execution_profile_when_omitted(
         jobs.close()
 
 
-def test_untargeted_job_completes_explicit_sample_order_from_raw_headers(
+def test_untargeted_job_takes_order_and_names_from_raw_and_keeps_annotations(
     tmp_path, monkeypatch
 ):
     from xic_workbench import untargeted
@@ -367,23 +370,21 @@ def test_untargeted_job_completes_explicit_sample_order_from_raw_headers(
     raw_b.write_bytes(b"")
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
-    header_reads = []
-
-    def read_header(path, dll_dir):
-        header_reads.append(path)
-        return RawSampleHeader(
+    install_raw_sample_headers(
+        monkeypatch,
+        lambda path: RawSampleHeader(
             raw_path=str(path),
             raw_stem=path.stem,
             sample_name=f"Header {path.stem}",
             sample_id=path.stem,
-            row_number={"Sample-A": 2, "Sample-B": 1}[path.stem],
+            row_number=None,
             sample_type="Unknown",
             creation_date=None,
             vial="",
             comment="",
-        )
-
-    monkeypatch.setattr("xic_extractor.raw_reader.read_raw_sample_header", read_header)
+        ),
+        lambda path: {"Sample-A": 10, "Sample-B": 0}[path.stem],
+    )
     captured = {}
 
     class Run:
@@ -448,13 +449,18 @@ def test_untargeted_job_completes_explicit_sample_order_from_raw_headers(
         assert state["job"]["status"] == "succeeded"
         metadata = captured["request"].sample_metadata
         assert metadata is not None
-        assert [row.injection_order for row in metadata] == [2, 9]
-        assert [row.sample_name for row in metadata] == [
-            "Operator Alpha",
-            "Operator Beta",
-        ]
-        assert metadata[1].excluded is True
-        assert header_reads == [raw_a, raw_b]
+        rows = {row.raw_stem: row for row in metadata}
+        # The operator's order 9 and names never override the RAW clock.
+        assert (rows["Sample-A"].injection_order, rows["Sample-B"].injection_order) == (
+            2,
+            1,
+        )
+        assert rows["Sample-A"].sample_name == "Header Sample-A"
+        assert (rows["Sample-A"].sample_role, rows["Sample-A"].prep_batch_id) == (
+            "qc",
+            "Prep A",
+        )
+        assert rows["Sample-B"].excluded is True
     finally:
         jobs.close()
 
@@ -479,7 +485,7 @@ def test_untargeted_job_leaves_default_metadata_to_alignment_owner(
 
     monkeypatch.setattr(untargeted, "UntargetedRun", Run)
     monkeypatch.setattr(
-        "xic_workbench.samples.derive_sample_metadata_from_raw_files",
+        "xic_workbench.samples.read_analysis_set",
         lambda *_args, **_kwargs: pytest.fail(
             "adapter must leave default metadata alone"
         ),

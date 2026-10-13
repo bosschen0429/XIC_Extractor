@@ -663,3 +663,10 @@
   margin: 10px 0 4px;
 }
 .method-difference { font-weight: 600; }
+.sequence-conflicts {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: var(--warn);
+  font-size: 12px;
+  line-height: 1.6;
+}

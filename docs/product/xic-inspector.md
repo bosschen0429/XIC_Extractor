@@ -80,7 +80,7 @@ order never changes saved flags, count decisions, peak bounds, or areas.
 readers bind named sheets and canonical headers, not positions; the required
 reader sheets and their schemas are unchanged. Its Analyte and ISTD sections
 contain samples in the publication's resolved injection order (supplied order
-or sample metadata, otherwise RAW modification time). Every cell projects the
+or sample metadata, otherwise the RAW acquisition timeline). Every cell projects the
 saved `XIC Results` Area, including zero, ND and missing values, independent of
 counted detection. It calculates no ratios and creates no scientific authority.
 `XIC Results` retains canonical English first-row headers, with Traditional

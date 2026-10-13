@@ -239,6 +239,28 @@
     }
     return label;
   }
+  // 上機資訊 only annotates; disagreements are listed and the RAW decides.
+  function renderSampleSummary(summary) {
+    const notes = [];
+    for (const conflict of summary.conflicts || []) {
+      const names = conflict.sequence_names.join("、");
+      if (conflict.kind === "duplicate_order")
+        notes.push(`序號 ${conflict.detail} 出現 ${conflict.sequence_names.length} 次：${names}`);
+      else {
+        const [file, text] = conflict.detail.split(" / ");
+        notes.push(`${names}：檔名是 ${file}，描述寫 ${text}`);
+      }
+    }
+    if (summary.unreadable_raw?.length)
+      notes.push(`讀不到檔頭，已排除（不分析）：${summary.unreadable_raw.join("、")}`);
+    const unmatched = summary.unmatched_sequence_names?.length;
+    $("samples-summary").textContent =
+      `RAW ${summary.raw_count} 次上機 · 上機資訊配對 ${summary.matched_count} 個` +
+      (unmatched ? ` · ${unmatched} 筆上機資訊未配對` : "") +
+      (notes.length ? ` · ${notes.length} 處要確認，注射順序與樣本名稱以 RAW 為準` : "");
+    $("samples-conflicts").replaceChildren(...notes.map((note) => el("li", note)));
+    $("samples-conflicts").hidden = !notes.length;
+  }
   function pathField(container, key, label, kind, value, prefix = "u-", help = "") {
     const wrap = el("div", undefined, "path-line");
     wrap.id = `${prefix}${key}-row`;
@@ -299,7 +321,7 @@
         checkItem(
           "info",
           "上機資訊（選用）",
-          order ? pathTail(order) : "未提供；依 RAW 修改時間排序",
+          order ? pathTail(order) : "未提供；依 RAW 檔案資訊判斷",
           "t-injection_order_source",
           Boolean(order),
         ),
@@ -407,7 +429,7 @@
       }
       if (spec.scope === "environment")
         pathField(data, "output_dir", "輸出資料夾", "folder", outputDir, "t-");
-      pathField(data, spec.key, spec.label, spec.kind, values[spec.key], "t-", spec.help);
+      pathField(data, spec.key, spec.label, spec.browse || spec.kind, values[spec.key], "t-", spec.help);
     }
     setMethodState(state.config.targeted_method);
     $("t-data_dir").dataset.batchPath = values.data_dir || "";
@@ -998,8 +1020,7 @@
         const result = state.analysis.results.samples;
         state.samples = result.samples;
         renderSamples();
-        $("samples-summary").textContent =
-          `RAW ${result.summary.raw_count} 個 · 上機資訊配對 ${result.summary.matched_count} 個${result.summary.unmatched_sequence_names?.length ? ` · ${result.summary.unmatched_sequence_names.length} 筆上機資訊未配對` : ""}`;
+        renderSampleSummary(result.summary);
         dirty("untargeted");
         done(`已讀取 ${state.samples.length} 個樣本。`);
       } else if (job.kind === "quality")
@@ -1532,6 +1553,7 @@
           state.config.untargeted.custom_roles = {};
           renderSamples();
           $("samples-summary").textContent = "";
+          $("samples-conflicts").hidden = true;
           $("untargeted-result").hidden = true;
           if (id === "untargeted-clear") {
             $("u-targets_csv").value = "";
@@ -1549,6 +1571,7 @@
       state.config.untargeted.custom_roles = {};
       state.samples = [];
       $("samples-summary").textContent = "";
+      $("samples-conflicts").hidden = true;
       renderSamples();
       const name = $("u-raw_dir")
         .value.replace(/\\/g, "/")

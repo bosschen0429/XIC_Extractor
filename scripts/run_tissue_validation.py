@@ -23,7 +23,6 @@ from xic_extractor.configuration.targets import read_istd_targets
 from xic_extractor.discovery.blank_qualification import BlankBackgroundLibrary
 from xic_extractor.presets import bind_cid_nl_recipe, load_preset
 from xic_extractor.raw_reader import preflight_raw_reader, read_analysis_set
-from xic_extractor.sample_metadata import load_sample_metadata
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 # The 85RAW root also holds injected samples outside the study design.
@@ -155,9 +154,7 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
         else _DATASET_SAMPLE_METADATA.get(dataset)
     )
     raw_paths = read_analysis_set(
-        raw_dir,
-        dll_dir,
-        load_sample_metadata(sample_metadata) if sample_metadata is not None else None,
+        raw_dir, dll_dir, sequence_source=sample_metadata
     ).raw_paths
     if len(raw_paths) != dataset:
         raise ValueError(

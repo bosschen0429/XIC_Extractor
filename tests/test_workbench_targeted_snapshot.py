@@ -124,12 +124,12 @@ def _snapshot_workspace(tmp_path, *, order_source=None):
     return config_dir, settings, targets
 
 
-def test_queued_targeted_metadata_membership_and_order_are_frozen(
+def test_queued_targeted_metadata_membership_is_frozen(
     tmp_path, monkeypatch
 ):
     import csv
 
-    from xic_extractor.analysis_set import select_analysis_set
+    from tests.raw_header_fakes import install_fake_raw_headers
     from xic_extractor.extraction import targeted_inputs
     from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
     from xic_workbench import targeted
@@ -170,13 +170,7 @@ def test_queued_targeted_metadata_membership_and_order_are_frozen(
         path.write_bytes(b"external RAW test stand-in")
     # Only the external RAW header read is replaced; metadata and membership
     # decisions still cross their real owners.
-    monkeypatch.setattr(
-        targeted_inputs,
-        "read_analysis_set",
-        lambda _root, _dll, metadata: select_analysis_set(
-            (), {}, metadata, unread_paths=[str(path) for path in raw_paths]
-        ),
-    )
+    install_fake_raw_headers(monkeypatch)
     captured = []
     receipts = _record_receipts(monkeypatch)
     submitted = []
@@ -210,7 +204,8 @@ def test_queued_targeted_metadata_membership_and_order_are_frozen(
         assert jobs.state()["job"]["status"] == "succeeded"
         request, selected, inputs = captured[0]
         assert [path.stem for path in selected] == ["A"]
-        assert inputs.injection_order == {"A": 1, "B": 2}
+        # Order comes from the RAW, never from the sequence numbers.
+        assert inputs.injection_order == {"A": 1}
         assert not request.config.injection_order_source.exists()
         assert request.config.injection_order_source != order_source
         assert order_source.read_bytes() != original_order

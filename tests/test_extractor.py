@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from tests.raw_header_fakes import install_fake_raw_headers
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import NLResult
 from xic_extractor.extraction.result_models import ExtractionResult
@@ -39,6 +40,7 @@ def _disable_reader_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
         lambda _dll_dir: [],
         raising=False,
     )
+    install_fake_raw_headers(monkeypatch)
 
 
 def test_run_raises_before_processing_when_reader_preflight_fails(
@@ -570,24 +572,18 @@ def test_run_loads_scoring_inputs_from_config_paths(
     )
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [_target("NoNL", neutral_loss_da=None)]
-    calls: dict[str, object] = {}
     monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
     monkeypatch.setattr(
         "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence([_ok_peak(8.5, 1200.0, 3400.25)]),
     )
-
-    def _read_injection_order(path: Path) -> dict[str, int]:
-        calls["injection_order_path"] = path
-        return {"SampleA": 1}
-
-    monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_inputs.read_injection_order",
-        _read_injection_order,
+    config.injection_order_source.write_text(
+        "Sample_Name,Injection_Order\nSampleA,1\n", encoding="utf-8"
     )
-    _run(config, targets)
 
-    assert calls["injection_order_path"] == config.injection_order_source
+    output = _run(config, targets)
+
+    assert [result.sample_name for result in output.file_results] == ["SampleA"]
 
 
 def test_run_falls_back_to_main_pass_when_prepass_returns_none(

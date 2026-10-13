@@ -30,7 +30,7 @@ from xic_extractor.discovery.tag_profiles import (
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.presets import PresetError, bind_cid_nl_recipe, load_preset
 from xic_extractor.raw_reader import RawReaderError, read_analysis_set
-from xic_extractor.sample_metadata import SampleMetadataError, load_sample_metadata
+from xic_extractor.sample_metadata import SampleMetadataError
 from xic_extractor.settings_schema import (
     ARBITRATED_RESOLVER_RETIRED_MESSAGE,
     RESOLVER_MODES,
@@ -485,12 +485,11 @@ def _raw_paths_from_dir(
 ) -> tuple[Path, ...]:
     if raw_dir is None:
         return ()
-    metadata = (
-        load_sample_metadata(sample_metadata.resolve())
-        if sample_metadata is not None
-        else None
+    analysis_set = read_analysis_set(
+        raw_dir,
+        dll_dir,
+        sequence_source=sample_metadata.resolve() if sample_metadata else None,
     )
-    analysis_set = read_analysis_set(raw_dir, dll_dir, metadata)
     return tuple(sorted(analysis_set.raw_paths, key=lambda path: path.name.lower()))
 
 

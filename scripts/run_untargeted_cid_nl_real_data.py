@@ -45,7 +45,7 @@ from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
 )
-from xic_extractor.sample_metadata import load_sample_metadata
+from xic_extractor.raw_reader import read_analysis_set
 from xic_extractor.settings_schema import (
     RESOLVER_MODES,
 )
@@ -148,7 +148,12 @@ def _run(
             batch_index.candidate_csvs[stem],
             receipt=receipt,
         )
-    metadata_rows = load_sample_metadata(args.sample_metadata.resolve())
+    metadata_rows = read_analysis_set(
+        args.raw_dir.resolve(),
+        args.dll_dir.resolve(),
+        sequence_source=args.sample_metadata.resolve(),
+        raw_paths=tuple(raw_paths_by_sample[stem] for stem in selected_stems),
+    ).sample_metadata
     metadata_by_stem = {row.raw_stem: row for row in metadata_rows}
     missing_metadata = tuple(
         stem for stem in selected_stems if stem not in metadata_by_stem

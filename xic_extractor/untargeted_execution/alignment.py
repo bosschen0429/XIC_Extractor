@@ -279,29 +279,22 @@ def prepare_untargeted_alignment_inputs(
     if sample_metadata is not None:
         retained_sample_metadata = sample_metadata
     else:
-        try:
-            from xic_extractor.raw_reader import (
-                derive_sample_metadata_from_raw_files,
-            )
+        from xic_extractor.raw_reader import read_analysis_set
 
-            retained_sample_metadata = derive_sample_metadata_from_raw_files(
-                ordered_raw_paths,
-                dll_dir=dll_dir,
-                batch_id=raw_dir.resolve().name,
+        by_stem = {
+            row.raw_stem: row
+            for row in read_analysis_set(
+                raw_dir, dll_dir, raw_paths=ordered_raw_paths
+            ).sample_metadata
+        }
+        missing = [stem for stem in discovery_batch.sample_order if stem not in by_stem]
+        if missing:
+            raise ValueError(
+                "RAW analysis set has no injection for: " + ", ".join(missing)
             )
-        except Exception:
-            retained_sample_metadata = tuple(
-                SampleMetadata(
-                    sample_name=sample_stem,
-                    raw_stem=sample_stem,
-                    injection_order=index,
-                    sample_role="study_sample",
-                )
-                for index, sample_stem in enumerate(
-                    discovery_batch.sample_order,
-                    start=1,
-                )
-            )
+        retained_sample_metadata = tuple(
+            by_stem[stem] for stem in discovery_batch.sample_order
+        )
     recorder = timing_recorder or TimingRecorder.disabled("alignment")
     output_dir.mkdir(parents=True, exist_ok=True)
     evidence_store = (

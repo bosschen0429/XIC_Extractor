@@ -203,7 +203,12 @@ _SETTING_FIELDS: tuple[tuple[str, str, str, dict[str, Any]], ...] = (
         "injection_order_source",
         "上機資訊",
         "file",
-        {"help": "提供注射順序（CSV／XLSX）。留空時依 RAW 修改時間排序。"},
+        {
+            # The same 上機資訊 files as Untargeted.
+            "browse": "metadata",
+            "help": "Word、Excel、CSV 或 TSV。補充樣本角色、組別與排除標記；"
+            "注射順序與樣本名稱以 RAW 為準。",
+        },
     ),
     ("dll_dir", "RawFileReader DLL 資料夾", "folder", {}),
     (

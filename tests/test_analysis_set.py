@@ -26,9 +26,18 @@ def header(path: str, minute: float, *, source: str | None = None) -> InjectionH
     )
 
 
+def header_rows(headers, roles):
+    return {
+        h.raw_path: SampleMetadata(
+            Path(h.raw_path).stem, Path(h.raw_path).stem, sample_role=roles[h.raw_path]
+        )
+        for h in headers
+    }
+
+
 def resolve(headers, roles, metadata=None):
     timeline = build_injection_timeline(headers, PerturbationPolicy())
-    return select_analysis_set(timeline, roles, metadata)
+    return select_analysis_set(timeline, header_rows(headers, roles), metadata or ())
 
 
 def test_flat_and_nested_layouts_give_the_same_analysis_set() -> None:
@@ -107,20 +116,82 @@ def test_discover_raw_files_is_recursive(tmp_path: Path) -> None:
     ] == ["Blank/B.raw", "S.RAW"]
 
 
-def test_unreadable_raw_stays_a_filename_role_member(tmp_path: Path) -> None:
+def test_unreadable_raw_stops_only_when_it_would_be_analyzed() -> None:
+    readable = header("/b/S1.raw", 0)
+    timeline = build_injection_timeline([readable], PerturbationPolicy())
+    rows = header_rows([readable], {readable.raw_path: "study_sample"})
+
+    def unread(stem, role):
+        return {f"/b/{stem}.raw": SampleMetadata(stem, stem, sample_role=role)}
+
+    result = select_analysis_set(timeline, rows, unreadable=unread("Blank_9", "blank"))
+    assert result.raw_paths == (Path("/b/S1.raw"),)
+    assert result.unreadable == (Path("/b/Blank_9.raw"),)
+    excluded = SampleMetadata("S9", "S9", excluded=True)
+    assert select_analysis_set(
+        timeline, rows, [excluded], unreadable=unread("S9", "study_sample")
+    ).unreadable == (Path("/b/S9.raw"),)
+    with pytest.raises(ValueError, match="要分析的 RAW 檔頭.*S9.raw"):
+        select_analysis_set(timeline, rows, unreadable=unread("S9", "study_sample"))
+
+
+def test_reader_stops_on_an_unreadable_analysis_raw(tmp_path: Path) -> None:
     from xic_extractor.raw_reader import read_analysis_set
 
-    (tmp_path / "Blank").mkdir()
-    for rel in ("S1.raw", "Blank/Blank_1.raw"):
-        (tmp_path / rel).write_bytes(b"not a raw")
-    result = read_analysis_set(tmp_path, tmp_path / "missing-dll")
-    assert [
-        (e.raw_stem, e.role_source, e.injection_order, e.analyzed)
-        for e in result.entries
-    ] == [
-        ("Blank_1", "raw_file_name", None, False),
-        ("S1", "raw_file_name", None, True),
+    (tmp_path / "S1.raw").write_bytes(b"not a raw")
+    with pytest.raises(ValueError, match="S1.raw"):
+        read_analysis_set(tmp_path, tmp_path / "missing-dll")
+
+
+def test_raw_owns_names_and_order_while_a_partial_sequence_annotates(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from tests.test_sample_metadata_sequence_parsing import _create_synthetic_docx
+    from xic_extractor import raw_reader
+
+    # Two batches in one root; the Word sequence covers the newer one only and
+    # numbers it Blank 1 ... Normal 4, against the RAW clock below.
+    clock = {
+        "older/Old_S1": 0,
+        "newer/NormalBC001_DNA": 10,
+        "newer/TumorBC001_DNA": 20,
+        "newer/QC_Pool_1": 30,
+        "newer/Blank_1": 40,
+    }
+    for rel in clock:
+        (tmp_path / f"{rel}.raw").parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / f"{rel}.raw").write_bytes(b"")
+
+    def analysis_header(path: Path, _dll: Path):
+        rel = path.relative_to(tmp_path).with_suffix("").as_posix()
+        h = header(str(path.resolve()), clock[rel])
+        return h, "study_sample", f"header {path.stem}"
+
+    monkeypatch.setattr(raw_reader, "_analysis_header", analysis_header)
+    sequence = tmp_path / "sequence.docx"
+    _create_synthetic_docx(sequence)
+
+    result = raw_reader.read_analysis_set(tmp_path, tmp_path, sequence_source=sequence)
+
+    rows = {row.raw_stem: row for row in result.sample_metadata}
+    assert [row.raw_stem for row in result.sample_metadata] == [
+        "Old_S1",
+        "NormalBC001_DNA",
+        "TumorBC001_DNA",
+        "QC_Pool_1",
+        "Blank_1",
     ]
+    assert [row.injection_order for row in result.sample_metadata] == [1, 2, 3, 4, 5]
+    assert {row.sample_name for row in result.sample_metadata} == {
+        f"header {stem}" for stem in rows
+    }
+    assert (rows["QC_Pool_1"].sample_role, rows["Blank_1"].sample_role) == (
+        "pooled_qc",
+        "blank",
+    )
+    assert rows["TumorBC001_DNA"].group == "Tumor"
+    assert rows["Old_S1"].sample_role == "study_sample"
+    assert result.sequence is not None and result.sequence.matched_count == 4
 
 
 def test_unchanged_raw_header_is_read_once(tmp_path: Path, monkeypatch) -> None:
@@ -160,11 +231,13 @@ def test_unchanged_raw_header_is_read_once(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_discovery_cli_excludes_metadata_flagged_nested_samples(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch
 ) -> None:
     from scripts.run_discovery import _raw_paths_from_dir
+    from tests.raw_header_fakes import install_fake_raw_headers
     from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
 
+    install_fake_raw_headers(monkeypatch)
     raws = tmp_path / "raws"
     for rel in ("S1.raw", "Blank/Blank_1.raw", "except sample/S2.raw", "sub/S3.raw"):
         (raws / rel).parent.mkdir(parents=True, exist_ok=True)

@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 from openpyxl import load_workbook
 
+from tests.raw_header_fakes import install_fake_raw_headers
 from tests.test_targeted_production_workflow import (
     production_case,
     with_method_universe,
@@ -47,6 +48,12 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import build_acquisition_source_identity
+
+
+@pytest.fixture(autouse=True)
+def _placeholder_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    # RAW files here are placeholders; order them by their file times.
+    install_fake_raw_headers(monkeypatch)
 
 
 def _commit_staged_output_in_process(

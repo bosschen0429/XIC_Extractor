@@ -7,16 +7,13 @@ from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any, cast
 
-from xic_extractor.analysis_set import discover_raw_files
-from xic_extractor.raw_reader import derive_sample_metadata_from_raw_files
+from xic_extractor.raw_reader import read_analysis_set
 from xic_extractor.sample_metadata import (
     SAMPLE_METADATA_COLUMNS,
     SAMPLE_METADATA_SCHEMA_VERSION,
     SAMPLE_ROLES,
     SampleMetadata,
     SampleRole,
-    infer_sample_role,
-    load_and_match_sample_metadata,
 )
 
 ROLE_CHOICES = (
@@ -39,56 +36,35 @@ def load_samples(
     sequence_source: Path | None = None,
     custom_roles: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Enumerate one row per RAW stem and optionally project sequence metadata."""
+    """One row per injection, as the RAW analysis-set owner resolves it."""
 
-    root = Path(raw_dir)
-    raw_files = _shallowest_raws(root)
-    stems = tuple(path.stem for path in raw_files)
-    derived_rows = (
-        derive_sample_metadata_from_raw_files(
-            raw_files,
-            Path(dll_dir),
-            batch_id=root.name,
-        )
-        if dll_dir is not None
-        else None
+    if dll_dir is None:
+        raise ValueError("讀取 RAW 樣本需要 RawFileReader DLL 資料夾。")
+    analysis = read_analysis_set(
+        Path(raw_dir),
+        Path(dll_dir),
+        sequence_source=Path(sequence_source) if sequence_source else None,
     )
-    if sequence_source is None:
-        rows = (
-            derived_rows
-            if derived_rows is not None
-            else tuple(
-                SampleMetadata(
-                    sample_name=stem,
-                    raw_stem=stem,
-                    sample_role=infer_sample_role("Unknown", sample_name=stem),
-                    batch_id=root.name,
-                )
-                for stem in stems
-            )
-        )
-        summary: dict[str, Any] = {
-            "raw_count": len(stems),
-            "matched_count": 0,
-            "unmatched_raw_stems": list(stems),
-            "unmatched_sequence_names": [],
-            "ambiguous_sequence_names": [],
-        }
-    else:
-        report = load_and_match_sample_metadata(Path(sequence_source), stems)
-        rows = (
-            _merge_sequence_rows(report.rows, report.matched_raw_stems, derived_rows)
-            if derived_rows is not None
-            else tuple(report.rows)
-        )
-        summary = {
-            "raw_count": len(stems),
-            "matched_count": report.matched_count,
-            "unmatched_raw_stems": list(report.unmatched_raw_stems),
-            "unmatched_sequence_names": list(report.unmatched_sequence_names),
-            "ambiguous_sequence_names": list(report.ambiguous_sequence_names),
-            "sequence_source": str(Path(sequence_source)),
-        }
+    rows = analysis.sample_metadata
+    stems = [row.raw_stem for row in rows]
+    report = analysis.sequence
+    summary: dict[str, Any] = {
+        "raw_count": len(stems),
+        "matched_count": report.matched_count if report else 0,
+        "unmatched_raw_stems": list(report.unmatched_raw_stems if report else stems),
+        "unmatched_sequence_names": list(
+            report.unmatched_sequence_names if report else ()
+        ),
+        "ambiguous_sequence_names": list(
+            report.ambiguous_sequence_names if report else ()
+        ),
+        "conflicts": [asdict(conflict) for conflict in report.conflicts]
+        if report
+        else [],
+    }
+    summary["unreadable_raw"] = [path.name for path in analysis.unreadable]
+    if sequence_source:
+        summary["sequence_source"] = str(Path(sequence_source))
 
     overrides = custom_roles or {}
     invalid_roles = sorted(set(overrides.values()) - SAMPLE_ROLES)
@@ -112,36 +88,15 @@ def load_samples(
     return {"samples": [asdict(row) for row in rows], "summary": summary}
 
 
-def complete_injection_orders(
+def apply_raw_chronology(
     rows: list[dict[str, Any]],
     *,
     raw_dir: Path,
     dll_dir: Path,
 ) -> list[dict[str, Any]]:
-    """Complete missing chronology from the canonical RAW-header owner."""
-
-    metadata = from_payload(rows) or ()
-    if all(row.injection_order is not None for row in metadata):
-        return [asdict(row) for row in metadata]
-    raw_files = _shallowest_raws(Path(raw_dir))
-    derived = derive_sample_metadata_from_raw_files(
-        raw_files,
-        Path(dll_dir),
-        batch_id=Path(raw_dir).name,
-    )
-    order_by_stem = {row.raw_stem.casefold(): row.injection_order for row in derived}
-    completed: list[SampleMetadata] = []
-    for row in metadata:
-        if row.injection_order is not None:
-            completed.append(row)
-            continue
-        order = order_by_stem.get(row.raw_stem.casefold())
-        if order is None:
-            raise ValueError(
-                f"RAW header did not provide injection_order for {row.raw_stem}"
-            )
-        completed.append(replace(row, injection_order=order))
-    return [asdict(row) for row in completed]
+    """Keep the workbench annotations; order and names come from the RAW."""
+    analysis = read_analysis_set(Path(raw_dir), Path(dll_dir), from_payload(rows))
+    return [asdict(row) for row in analysis.sample_metadata]
 
 
 def from_payload(value: object) -> tuple[SampleMetadata, ...] | None:
@@ -191,44 +146,6 @@ def export_samples(rows: list[dict[str, Any]], path: Path) -> dict[str, Any]:
                 }
             )
     return {"path": str(destination), "row_count": len(metadata)}
-
-
-def _shallowest_raws(raw_dir: Path) -> tuple[Path, ...]:
-    shallowest: dict[str, Path] = {}
-    for path in sorted(
-        discover_raw_files(raw_dir),
-        key=lambda item: (len(item.parts), item.name.casefold()),
-    ):
-        shallowest.setdefault(path.stem.casefold(), path)
-    return tuple(sorted(shallowest.values(), key=lambda item: item.name.casefold()))
-
-
-def _merge_sequence_rows(
-    sequence_rows: tuple[SampleMetadata, ...],
-    matched_raw_stems: tuple[str, ...],
-    derived_rows: tuple[SampleMetadata, ...],
-) -> tuple[SampleMetadata, ...]:
-    sequence_by_stem = {row.raw_stem.casefold(): row for row in sequence_rows}
-    matched = {stem.casefold() for stem in matched_raw_stems}
-    merged: list[SampleMetadata] = []
-    for derived in derived_rows:
-        key = derived.raw_stem.casefold()
-        if key not in matched:
-            merged.append(derived)
-            continue
-        source = sequence_by_stem[key]
-        merged.append(
-            replace(
-                source,
-                raw_stem=derived.raw_stem,
-                injection_order=(
-                    source.injection_order
-                    if source.injection_order is not None
-                    else derived.injection_order
-                ),
-            )
-        )
-    return tuple(merged)
 
 
 def _validate_row(row: SampleMetadata, *, index: int) -> None:

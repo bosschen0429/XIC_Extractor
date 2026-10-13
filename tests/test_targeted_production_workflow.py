@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from tests.raw_header_fakes import install_fake_raw_headers
 from xic_extractor.alignment.completion import CaptureWorkflowArguments
 from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
@@ -70,6 +71,12 @@ from xic_extractor.processing_identity import (
     AcquisitionSourceExpectation,
     build_acquisition_source_identity,
 )
+
+
+@pytest.fixture(autouse=True)
+def _placeholder_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    # RAW files here are placeholders; order them by their file times.
+    install_fake_raw_headers(monkeypatch)
 
 
 def test_retained_trace_reaches_one_finalized_target_result(tmp_path: Path) -> None:

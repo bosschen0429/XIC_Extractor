@@ -59,8 +59,8 @@ from xic_extractor.presets import (
     load_preset,
 )
 from xic_extractor.presets.models import Preset
-from xic_extractor.raw_reader import RawReaderError
-from xic_extractor.sample_metadata import SampleMetadataError, load_sample_metadata
+from xic_extractor.raw_reader import RawReaderError, read_analysis_set
+from xic_extractor.sample_metadata import SampleMetadataError
 from xic_extractor.untargeted_execution.input_planning import (
     is_supported_alignment_discovery,
 )
@@ -87,8 +87,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.sample_metadata is not None:
         metadata_path = args.sample_metadata.resolve()
         try:
-            sample_metadata = load_sample_metadata(metadata_path)
-        except (SampleMetadataError, OSError) as exc:
+            # 上機資訊 annotates; the RAW owner supplies names and order.
+            sample_metadata = read_analysis_set(
+                raw_dir, dll_dir, sequence_source=metadata_path
+            ).sample_metadata
+        except (SampleMetadataError, RawReaderError, ValueError, OSError) as exc:
             print(str(exc), file=sys.stderr)
             return 2
         batches = sorted({row.batch_id for row in sample_metadata})

@@ -35,7 +35,7 @@ from xic_extractor.diagnostics.grouping_experiment_io import (
 from xic_extractor.discovery.csv_reader import read_discovery_batch_index
 from xic_extractor.discovery.input_source import DiscoveryInputSource
 from xic_extractor.presets import bind_cid_nl_recipe, load_preset
-from xic_extractor.sample_metadata import load_sample_metadata
+from xic_extractor.raw_reader import read_analysis_set
 from xic_extractor.untargeted_execution.alignment import (
     prepare_untargeted_alignment_inputs,
 )
@@ -131,7 +131,9 @@ def _prepare(args: argparse.Namespace) -> dict:
         output_dir=args.output_dir,
         settings=recipe.discovery_settings,
         peak_config=peak_config,
-        sample_metadata=load_sample_metadata(args.sample_metadata)
+        sample_metadata=read_analysis_set(
+            args.raw_dir, args.dll_dir, sequence_source=args.sample_metadata
+        ).sample_metadata
         if args.sample_metadata
         else None,
         signal_processing_profile=profile,

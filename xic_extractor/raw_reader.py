@@ -3,7 +3,7 @@ import math
 import os
 from collections import defaultdict
 from collections.abc import Callable, Iterator, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PureWindowsPath
 from types import SimpleNamespace
@@ -38,6 +38,7 @@ from xic_extractor.sample_metadata import (
     SampleMetadata,
     SampleRole,
     infer_sample_role,
+    load_and_match_sample_metadata,
 )
 from xic_extractor.xic_models import XICRequest, XICTrace
 
@@ -600,19 +601,6 @@ def open_raw(
     )
 
 
-def read_raw_sample_header(path: Path, dll_dir: Path) -> RawSampleHeader:
-    with open_raw(path, dll_dir=dll_dir) as handle:
-        header = handle.sample_header
-        if not header.raw_path:
-            header = replace(
-                header,
-                raw_path=str(path.resolve()),
-                raw_stem=path.stem,
-                sample_name=header.sample_name or path.stem,
-            )
-        return header
-
-
 def read_raw_injection_header(path: Path, dll_dir: Path) -> InjectionHeader:
     """Read chronology facts only, without spectra or content hashing."""
     with open_raw(path, dll_dir=dll_dir) as handle:
@@ -639,31 +627,81 @@ def read_analysis_set(
     raw_root: Path,
     dll_dir: Path,
     sample_metadata: Sequence[SampleMetadata] | None = None,
+    *,
+    sequence_source: Path | None = None,
+    raw_paths: Sequence[Path] | None = None,
 ) -> AnalysisSet:
-    """Resolve the analysis set from every RAW below root, one open per RAW."""
+    """Resolve who each RAW below root is and when it was injected.
+
+    ``raw_paths`` names the RAW files when a caller already holds them (for
+    example a Discovery batch); otherwise every RAW below ``raw_root`` is read.
+
+    The RAW headers own order (acquisition clock, older batches first) and the
+    sample name. 上機資訊 (``sequence_source``) and workbench rows
+    (``sample_metadata``, RAW-keyed) only annotate role, group, batch, and
+    exclusion; a document may cover just some of the RAW. An unreadable RAW
+    that would be analyzed stops resolution, because its order would be a
+    guess; one that would not be analyzed is listed in ``unreadable``.
+    """
+    root = Path(raw_root)
     headers: list[InjectionHeader] = []
-    roles: dict[str, SampleRole] = {}
-    unread: list[str] = []
-    for path in discover_raw_files(raw_root):
+    header_rows: dict[str, SampleMetadata] = {}
+    unread: dict[str, SampleMetadata] = {}
+    for path in raw_paths if raw_paths is not None else discover_raw_files(root):
         try:
-            header, role = _analysis_header(path, dll_dir)
+            header, role, header_name = _analysis_header(path, dll_dir)
         except (RawReaderError, ValueError):
-            key = str(path.resolve())
-            unread.append(key)
-            roles[key] = infer_sample_role(None, sample_name=path.stem)
+            unread[str(path.resolve())] = SampleMetadata(
+                sample_name=path.stem,
+                raw_stem=path.stem,
+                sample_role=infer_sample_role(None, sample_name=path.stem),
+                batch_id=root.name,
+            )
             continue
         headers.append(header)
-        roles[header.raw_path] = role
+        header_rows[header.raw_path] = SampleMetadata(
+            sample_name=header_name,
+            raw_stem=path.stem,
+            sample_role=role,
+            batch_id=root.name,
+        )
     timeline = build_injection_timeline(headers, PerturbationPolicy())
-    return select_analysis_set(timeline, roles, sample_metadata, unread_paths=unread)
+    sequence = (
+        load_and_match_sample_metadata(
+            sequence_source,
+            tuple(injection.raw_stem for injection in timeline)
+            + tuple(row.raw_stem for row in unread.values()),
+        )
+        if sequence_source is not None
+        else None
+    )
+    overrides = (
+        {
+            row.raw_stem.casefold(): row
+            for row in sequence.rows
+            if row.raw_stem in set(sequence.matched_raw_stems)
+        }
+        if sequence is not None
+        else {}
+    )
+    overrides.update({row.raw_stem.casefold(): row for row in sample_metadata or ()})
+    return select_analysis_set(
+        timeline,
+        header_rows,
+        tuple(overrides.values()),
+        unreadable=unread,
+        sequence=sequence,
+    )
 
 
 _ANALYSIS_HEADER_CACHE: dict[
-    tuple[str, int, int, str], tuple[InjectionHeader, SampleRole]
+    tuple[str, int, int, str], tuple[InjectionHeader, SampleRole, str]
 ] = {}
 
 
-def _analysis_header(path: Path, dll_dir: Path) -> tuple[InjectionHeader, SampleRole]:
+def _analysis_header(
+    path: Path, dll_dir: Path
+) -> tuple[InjectionHeader, SampleRole, str]:
     """Header facts are immutable for an unchanged file; reuse across resolutions."""
     stat = path.stat()
     key = (str(path.resolve()), stat.st_size, stat.st_mtime_ns, str(dll_dir))
@@ -673,9 +711,9 @@ def _analysis_header(path: Path, dll_dir: Path) -> tuple[InjectionHeader, Sample
     with open_raw(path, dll_dir=dll_dir) as handle:
         header = _injection_header(handle, path)
         sample = handle.sample_header
-    role = _raw_sample_role(path, sample)
-    _ANALYSIS_HEADER_CACHE[key] = (header, role)
-    return header, role
+    facts = (header, _raw_sample_role(path, sample), str(sample.sample_name or ""))
+    _ANALYSIS_HEADER_CACHE[key] = facts
+    return facts
 
 
 def _raw_sample_role(path: Path, sample: RawSampleHeader) -> SampleRole:
@@ -719,90 +757,6 @@ def read_sld_injections(path: Path, dll_dir: Path) -> tuple[ScheduledInjection, 
             )
         )
     return tuple(entries)
-
-
-def derive_sample_metadata_from_raw_files(
-    raw_paths: Sequence[Path],
-    dll_dir: Path,
-    *,
-    batch_id: str | None = None,
-) -> tuple[SampleMetadata, ...]:
-    """Derive canonical SampleMetadata rows directly from Thermo RAW file headers.
-
-    ``batch_id`` names one batch for every RAW; without it each parent folder
-    is a batch with its own injection order.
-    """
-    if not raw_paths:
-        return ()
-
-    batches: dict[str, list[tuple[Path, Any]]] = {}
-    for path in raw_paths:
-        header = read_raw_sample_header(path, dll_dir=dll_dir)
-        batches.setdefault(
-            path.parent.name if batch_id is None else batch_id, []
-        ).append((path, header))
-
-    metadata_rows: list[SampleMetadata] = []
-    seen_sample_names: set[str] = set()
-
-    for batch_key, items in batches.items():
-        row_numbers = [h.row_number for _, h in items]
-        has_valid_row_numbers = all(
-            isinstance(rn, int) and rn > 0 for rn in row_numbers
-        ) and len(set(row_numbers)) == len(items)
-
-        if has_valid_row_numbers:
-            sorted_items = sorted(
-                items,
-                key=lambda x: (x[1].row_number, x[1].raw_stem or x[0].stem),
-            )
-            use_row_number = True
-        else:
-            min_dt = datetime.min
-            sorted_items = sorted(
-                items,
-                key=lambda x: (
-                    x[1].creation_date or min_dt,
-                    x[1].raw_stem or x[0].stem,
-                ),
-            )
-            use_row_number = False
-
-        for order_idx, (path, header) in enumerate(sorted_items, start=1):
-            injection_order = header.row_number if use_row_number else order_idx
-            raw_stem = header.raw_stem or path.stem
-
-            raw_name = header.sample_name or raw_stem
-            if (
-                not raw_name
-                or raw_name.lower() in {"unknown", "sample"}
-                or raw_name in seen_sample_names
-            ):
-                sample_name = raw_stem
-            else:
-                sample_name = raw_name
-
-            if sample_name in seen_sample_names:
-                sample_name = raw_stem
-            seen_sample_names.add(sample_name)
-
-            role = _raw_sample_role(path, header)
-            metadata_rows.append(
-                SampleMetadata(
-                    sample_name=sample_name,
-                    raw_stem=raw_stem,
-                    injection_order=injection_order,
-                    sample_role=role,
-                    batch_id=batch_key,
-                    prep_batch_id="",
-                    matrix_type="",
-                    group="",
-                    excluded=False,
-                    exclusion_reason="",
-                )
-            )
-
-    return tuple(metadata_rows)
 
 
 def _validate_raw_session_capability(

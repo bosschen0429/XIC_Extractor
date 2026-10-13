@@ -3,6 +3,7 @@ import hashlib
 import json
 from collections.abc import Iterator, Mapping
 from dataclasses import fields, replace
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID
@@ -10,6 +11,7 @@ from uuid import UUID
 import pytest
 
 import xic_extractor.processing_identity as processing_identity_module
+from tests.raw_header_fakes import install_fake_raw_headers
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.target_identity import mint_target_list_snapshot
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
@@ -21,7 +23,9 @@ from xic_extractor.extraction.targeted_inputs import (
     ResolvedTargetedInputs,
     build_targeted_processing_request_identity,
     resolve_targeted_inputs,
+    resolve_targeted_raw_paths,
 )
+from xic_extractor.injection_timeline import InjectionHeader
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
     AcquisitionSourceIdentity,
@@ -35,7 +39,14 @@ from xic_extractor.processing_identity import (
 from xic_extractor.sample_metadata import (
     SAMPLE_METADATA_COLUMNS,
     SAMPLE_METADATA_SCHEMA_VERSION,
+    infer_sample_role,
 )
+
+
+@pytest.fixture(autouse=True)
+def _placeholder_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    # RAW files here are placeholders; order them by their file times.
+    install_fake_raw_headers(monkeypatch)
 
 
 def test_typed_identity_reuse_preserves_prefix_and_byte_content() -> None:
@@ -772,9 +783,68 @@ def test_sample_metadata_alias_projection_builds_targeted_request(
 
     request = _request(config, [raw_path], resolved=resolved)
 
-    assert resolved.injection_order == {"QC1": 1, raw_path.stem: 1}
-    assert resolved.acquisition_injection_order == {raw_path.stem: 1}
+    assert resolved.injection_order == {raw_path.stem: 1}
     assert request.acquisition_bindings[0].adapter_input_key == raw_path.stem
+
+
+def test_targeted_and_untargeted_read_one_sequence_owner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.test_sample_metadata_sequence_parsing import _create_synthetic_docx
+    from xic_extractor import raw_reader
+    from xic_workbench.samples import load_samples
+
+    # The Word sequence numbers Blank 1 ... Normal 4; the RAW clock disagrees.
+    clock = {
+        "NormalBC001_DNA": 0,
+        "TumorBC001_DNA": 10,
+        "QC_Pool_1": 20,
+        "Blank_1": 30,
+        "Older_batch_S1": -60,
+    }
+    for stem in clock:
+        _raw(tmp_path / f"{stem}.raw", stem.encode())
+
+    def analysis_header(path: Path, _dll: Path):
+        header = InjectionHeader(
+            raw_path=str(path.resolve()),
+            acquisition_source=f"D:/acquired/{path.name}",
+            creation_date=datetime(2026, 1, 1, 12)
+            + timedelta(minutes=clock[path.stem]),
+            start_time_min=0.0,
+            end_time_min=5.0,
+            instrument_method="",
+        )
+        return header, infer_sample_role(None, sample_name=path.stem), path.stem
+
+    monkeypatch.setattr(raw_reader, "_analysis_header", analysis_header)
+    sequence = tmp_path / "sequence.docx"
+    _create_synthetic_docx(sequence)
+    config = replace(_config(tmp_path), injection_order_source=sequence)
+
+    raw_paths = resolve_targeted_raw_paths(config)
+    targeted = resolve_targeted_inputs(
+        config, raw_paths=raw_paths, injection_order=None
+    )
+    untargeted = {
+        row["raw_stem"]: row
+        for row in load_samples(tmp_path, dll_dir=tmp_path, sequence_source=sequence)[
+            "samples"
+        ]
+    }
+
+    assert targeted.injection_order == {
+        "Older_batch_S1": 1,
+        "NormalBC001_DNA": 2,
+        "TumorBC001_DNA": 3,
+        "QC_Pool_1": 4,
+    }
+    for row in targeted.sample_metadata:
+        assert (row.injection_order, row.sample_role) == (
+            untargeted[row.raw_stem]["injection_order"],
+            untargeted[row.raw_stem]["sample_role"],
+        )
+    assert untargeted["Blank_1"]["sample_role"] == "blank"
 
 
 def test_retry_issues_new_attempt_without_mutating_request_or_predecessor(

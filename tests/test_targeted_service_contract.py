@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.raw_header_fakes import install_fake_raw_headers
 from xic_extractor import extractor
 from xic_extractor.applications.targeted.application import (
     TargetedApplicationService,
@@ -11,6 +12,12 @@ from xic_extractor.applications.targeted.application import (
 )
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
 from xic_extractor.extraction.result_models import FileResult, RunOutput
+
+
+@pytest.fixture(autouse=True)
+def _placeholder_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    # RAW files here are placeholders; order them by their file times.
+    install_fake_raw_headers(monkeypatch)
 
 
 def test_cli_and_html_use_same_targeted_application_service() -> None:

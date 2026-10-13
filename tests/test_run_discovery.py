@@ -5,11 +5,18 @@ from pathlib import Path
 import pytest
 
 from scripts import run_discovery
+from tests.raw_header_fakes import install_fake_raw_headers
 from xic_extractor.discovery.blank_qualification import (
     get_default_background_library_path,
 )
 from xic_extractor.discovery.models import DiscoveryBatchOutputs, DiscoveryRunOutputs
 from xic_extractor.raw_reader import RawReaderError
+
+
+@pytest.fixture(autouse=True)
+def _placeholder_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    # RAW files here are placeholders; order them by their file times.
+    install_fake_raw_headers(monkeypatch)
 
 
 @pytest.mark.parametrize("blank_override", [False, True])

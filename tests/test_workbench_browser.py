@@ -174,6 +174,43 @@ def test_navigation_and_theme_survive_reload(workbench):
     expect(page.locator("#workspace-untargeted")).to_be_visible()
 
 
+def test_sequence_warnings_are_visible_in_sample_loading(workbench, monkeypatch):
+    page = workbench
+    summary = {
+        "raw_count": 1,
+        "matched_count": 1,
+        "unmatched_sequence_names": ["missing"],
+        "conflicts": [
+            {"kind": "duplicate_order", "detail": "7", "sequence_names": ["A", "B"]},
+            {
+                "kind": "name_mismatch",
+                "detail": "BC2312 / BC2303",
+                "sequence_names": ["A"],
+            },
+        ],
+        "unreadable_raw": ["blank.raw"],
+    }
+    monkeypatch.setattr(
+        "xic_workbench.samples.load_samples",
+        lambda *args, **kwargs: {"samples": [], "summary": summary},
+    )
+    _view(page, "untargeted")
+    page.locator("#samples-refresh").click()
+    expect(page.locator("#samples-conflicts li")).to_have_text(
+        [
+            "序號 7 出現 2 次：A、B",
+            "A：檔名是 BC2312，描述寫 BC2303",
+            "讀不到檔頭，已排除（不分析）：blank.raw",
+        ]
+    )
+    expect(page.locator("#samples-summary")).to_contain_text("1 筆上機資訊未配對")
+    expect(page.locator("#samples-summary")).to_contain_text("以 RAW 為準")
+    summary["conflicts"] = []
+    summary["unreadable_raw"] = []
+    page.locator("#samples-refresh").click()
+    expect(page.locator("#samples-conflicts")).to_be_hidden()
+
+
 def test_targeted_exposes_intent_only_and_editor_round_trips(workbench, config_dir):
     page = workbench
     expect(page.locator("#targeted-form .step-head h2")).to_have_text(

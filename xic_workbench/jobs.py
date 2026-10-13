@@ -143,7 +143,7 @@ class AnalysisJobs:
             load_execution_profile,
         )
         from xic_workbench.discovery_config_io import write_discovery_config
-        from xic_workbench.samples import complete_injection_orders, load_samples
+        from xic_workbench.samples import apply_raw_chronology, load_samples
         from xic_workbench.untargeted import UntargetedRun, parse_request
 
         if (
@@ -168,7 +168,7 @@ class AnalysisJobs:
             and values.get("dll_dir")
             and values.get("mode", "full") in {"full", "align_only"}
         ):
-            values["samples"] = complete_injection_orders(
+            values["samples"] = apply_raw_chronology(
                 values["samples"],
                 raw_dir=Path(values["raw_dir"]),
                 dll_dir=Path(values["dll_dir"]),
