@@ -432,6 +432,54 @@ def test_review_search_and_inspector_use_one_scroll_and_visible_zoom(
     expect(dialog).to_be_hidden()
 
 
+def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
+    workbench,
+    tmp_path,
+    monkeypatch,
+):
+    from tests.test_xic_inspector_targeted_workbook import (
+        install_targeted_raws,
+        write_rare_detection_workbook,
+    )
+
+    page = workbench
+    raw_dir = tmp_path / "review-raw"
+    reads = install_targeted_raws(monkeypatch, raw_dir, {"S3": 1000})
+    workbook = write_rare_detection_workbook(tmp_path / "paired.xlsx")
+    original = workbook.read_bytes()
+    _view(page, "review")
+    page.locator("#source").fill(str(workbook))
+    page.locator("#raw-dir").fill(str(raw_dir))
+    page.locator("#dll-dir").fill(str(tmp_path))
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#targeted-overview td button", has_text="Analyte").click()
+    frame = page.frame_locator("#inspector")
+    frame.get_by_role("button", name="看 S3 的 Analyte XIC", exact=True).click()
+    expect(page.locator("#tab-curves")).to_have_attribute("aria-selected", "true")
+    expect(page.locator("#view-note")).to_contain_text("無法驗證是否為原分析檔")
+    curves = frame.locator('#svg-raw polyline[data-kind="smoothed"]')
+    expect(curves).to_have_count(2)
+    expect(frame.locator(".fact-row")).to_contain_text("Analyte / ISTD")
+    expect(frame.locator(".fact-row")).not_to_contain_text("多個候選")
+    expect(frame.locator('#svg-raw polyline[stroke-dasharray="7 4"]')).to_have_count(1)
+    original_points = curves.first.get_attribute("points")
+    frame.get_by_label("顯示 RT 起點", exact=True).fill("8.95")
+    frame.get_by_label("顯示 RT 終點", exact=True).fill("9.05")
+    frame.get_by_role("button", name="套用範圍", exact=True).click()
+    assert curves.first.get_attribute("points") != original_points
+    frame.get_by_role("button", name="完整已載入範圍", exact=True).click()
+    expect(frame.get_by_label("顯示 RT 起點", exact=True)).to_have_value("0")
+    expect(frame.get_by_label("顯示 RT 終點", exact=True)).to_have_value("12")
+    page.locator("#tab-recorded").click()
+    expect(
+        frame.get_by_role("button", name="看 S3 的 Analyte XIC", exact=True)
+    ).to_be_visible()
+    page.locator("#tab-curves").click()
+    expect(curves).to_have_count(2)
+    assert len(reads) == 2  # Returning to the loaded plot does not reacquire RAW.
+    assert workbook.read_bytes() == original
+
+
 def test_targeted_review_marks_the_rare_detection_and_opens_it_in_place(
     workbench, tmp_path
 ):

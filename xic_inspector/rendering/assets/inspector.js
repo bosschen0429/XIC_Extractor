@@ -69,7 +69,8 @@
       const head = element('tr');
       // A paired analyte reads beside its ISTD in the same sample row.
       const paired = Object.keys(istdRecords).length > 0;
-      const titles = ['樣本', 'RT (min)', '面積', '計入偵測', ...(paired ? ['ISTD RT (min)', 'ISTD 面積'] : []), '檢閱註記'];
+      const canLoadCurves = embedded && window.parent !== window;
+      const titles = ['樣本', 'RT (min)', '面積', '計入偵測', ...(paired ? ['ISTD RT (min)', 'ISTD 面積'] : []), '檢閱註記', ...(canLoadCurves ? ['曲線'] : [])];
       for (const title of titles) head.append(element('th', title));
       const thead = element('thead');thead.append(head);
       const body = element('tbody');
@@ -118,6 +119,12 @@
           row.append(element('td', istd ? value(istd.RT) : '—', 'tgt-number tgt-istd'), istdArea);
         }
         row.append(element('td', review?.Why || '—', 'tgt-reason'));
+        if (canLoadCurves) {
+          const cell = element('td'), view = element('button', '看 XIC', 'tgt-xic');
+          view.type = 'button';view.setAttribute('aria-label', `看 ${record.SampleName} 的 ${item.title} XIC`);
+          view.addEventListener('click', () => window.parent.postMessage({type: 'xic-targeted-curves', item_id: item.id, sample_id: record.SampleName}, location.origin));
+          cell.append(view);row.append(cell);
+        }
         button.addEventListener('click', () => {
           const same = openRow?.row === row;
           closeDetail();
@@ -207,7 +214,9 @@
     rows.forEach(w=>{const id=candidateId(w);if(id&&!ids.includes(id))ids.push(id);});
     return ids.map((id,index)=>({id,index,witness:rows.find(w=>candidateId(w)===id)}));
   }
+  function isTargetedXic(item){return (item.curves||[]).some(c=>c.quality_flags?.target_label);}
   function sampleNotices(item,row){
+    if(isTargetedXic(item))return [];
     const notices=[], count=candidates(item,row.sample_id).length, curve=(item.curves||[]).some(c=>c.sample_id===row.sample_id&&c.raw_rts?.length);
     if(count>1)notices.push({kind:'candidates',label:`${count} 個候選`,short:`${count} 候選`});
     if(!has(row,'quantitative_value'))notices.push({kind:'missing',label:'無單一結果',short:'無單一結果'});
@@ -376,6 +385,7 @@
     itemRows(item).forEach(r=>{if(!has(r,'quantitative_value'))noSingle++;else if(r.quantitative_value===null)nulls++;else values++;if(!(item.curves||[]).some(c=>c.sample_id===r.sample_id&&c.raw_rts?.length))noCurves++;});
     const multi=itemRows(item).filter(r=>candidates(item,r.sample_id).length>1);
     const fact=(label,value,unit='',warn=false,title='')=>`<div class="fact ${warn?'warn':''}"${title?` title="${esc(title)}"`:''}><dt>${label}</dt><dd>${value}${unit?`<small>${unit}</small>`:''}</dd></div>`;
+    if(isTargetedXic(item))return `<dl class="fact-row">${fact('目標',esc([...new Set(item.curves.map(c=>c.quality_flags.target_label))].join(' / ')))}${fact('樣本',itemRows(item).length)}${fact('診斷曲線',item.curves.length)}</dl>`;
     return `<dl class="fact-row">${fact('m/z',mz(item.precursor_mz))}${fact('主要 RT',rt(item.rt_apex_min),'min')}${fact('樣本',itemRows(item).length)}${fact('有定量值',values)}${nulls?fact('空值',nulls,'',true):''}${noSingle?fact('無單一結果',noSingle,'',true):''}${noCurves?fact('未提供曲線',noCurves,'',true):''}${multi.length?fact('多個候選',multi.length,'個樣本',true,multi.map(r=>sampleName(r.sample_id)).join('、')):''}</dl>`;
   }
   function evidenceButtons(refs,context,label='查看定量依據'){
@@ -419,7 +429,7 @@
   function plot(item,axis,peer=false,wide=false){
     const drawable=curvesForPlot(item,peer).flatMap(curve=>seriesList(curve,axis,state.signal).map(series=>({curve,series})));
     if(!drawable.length)return `<div class="empty-state"><strong>${axis==='aligned'?'所選資料未提供對齊座標':'目前沒有可顯示的曲線'}</strong><p>${axis==='aligned'?'請切回原始時間；不會以原始座標代替。':state.signal==='smoothed'?'所選來源未保存可用的平滑曲線；可切換原始訊號檢查。':'請確認樣本顯示勾選，或來源是否保存曲線。'}</p></div>`;
-    const reviewWindow=axis==='raw'&&Array.isArray(item.review_rt_window)?item.review_rt_window:null;
+    const reviewWindow=axis==='raw'?(state.plotWindow||(Array.isArray(item.review_rt_window)?item.review_rt_window:null)):null;
     let lo=reviewWindow?.[0]??Infinity,hi=reviewWindow?.[1]??-Infinity,lowY=0,highY=0;
     drawable.forEach(({series:s})=>s.rts.forEach((v,i)=>{const y=s.intensities[i];if(finite(v)&&finite(y)&&(!reviewWindow||v>=lo&&v<=hi)){if(!reviewWindow){lo=Math.min(lo,v);hi=Math.max(hi,v);}lowY=Math.min(lowY,y);highY=Math.max(highY,y);}}));
     if(!finite(lo)||!finite(hi))return '<div class="empty-state">未提供成對的時間與訊號數值。</div>';if(lo===hi){lo-=.5;hi+=.5;}if(lowY===highY)highY=lowY+1;
@@ -430,7 +440,7 @@
     for(let i=0;i<=4;i++){const v=lo+(hi-lo)*i/4;svg+=`<text x="${x(v)}" y="298" text-anchor="middle" font-size="13" fill="#48534f">${rt(v)}</text>`;}
     const active=peer?null:activeCurve(item);
     if(active&&state.bounds){const left=axis==='aligned'?active.aligned_bound_left_rt:active.bound_left_rt,right=axis==='aligned'?active.aligned_bound_right_rt:active.bound_right_rt;if(finite(left)&&finite(right)){const a=Math.max(lo,Math.min(left,right)),b=Math.min(hi,Math.max(left,right));if(b>=a)svg+=`<rect data-integration-range="true" x="${x(a)}" y="${T}" width="${Math.max(0,x(b)-x(a))}" height="${IH}" fill="${color(active.sample_id)}" opacity=".09"><title>積分範圍 ${drt(left)}–${drt(right)} min</title></rect>`;}}
-    drawable.forEach(({curve,series:s})=>{const focused=peer||!state.sample||curve.sample_id===state.sample,opacity=!peer&&state.sample&&!focused?.16:.92,points=s.rts.map((v,i)=>finite(v)&&finite(s.intensities[i])?`${x(v)},${y(s.intensities[i])}`:'').filter(Boolean).join(' '),signalName={raw:'原始訊號',baseline:'基線',smoothed:'平滑訊號',positive:'基線以上訊號',positive_signal:'基線以上訊號'}[s.kind]||'處理訊號',origin=curveOrigin(item,curve.sample_id);svg+=`<polyline data-kind="${esc(s.kind)}" data-curve-ref="${esc(curve.evidence_ref||'')}" data-support-origin="${originClass(origin)}" clip-path="url(#curve-window-${axis})" fill="none" stroke="${color(curve.sample_id)}" stroke-width="${s.kind==='raw'?1.7:2.2}" stroke-dasharray="${curveDash(item,origin,s.kind)}" opacity="${opacity}" points="${points}"><title>${esc(sampleName(curve.sample_id))} · ${signalName} · ${esc(originLabel(origin))} · ${esc(curve.stage_label||curve.kind||'保留曲線')}</title></polyline>`;if(curve!==active||!state.bounds||s.kind!==state.signal&&!(state.signal==='positive'&&s.kind==='positive_signal'))return;
+    drawable.forEach(({curve,series:s})=>{const focused=peer||!state.sample||curve.sample_id===state.sample,opacity=!peer&&state.sample&&!focused?.16:.92,points=s.rts.map((v,i)=>finite(v)&&finite(s.intensities[i])?`${x(v)},${y(s.intensities[i])}`:'').filter(Boolean).join(' '),signalName={raw:'原始訊號',baseline:'基線',smoothed:'平滑訊號',positive:'基線以上訊號',positive_signal:'基線以上訊號'}[s.kind]||'處理訊號',origin=curveOrigin(item,curve.sample_id);svg+=`<polyline data-kind="${esc(s.kind)}" data-curve-ref="${esc(curve.evidence_ref||'')}" data-support-origin="${originClass(origin)}" clip-path="url(#curve-window-${axis})" fill="none" stroke="${color(curve.sample_id)}" stroke-width="${s.kind==='raw'?1.7:2.2}" stroke-dasharray="${curve.quality_flags?.paired_istd ? '7 4' : curveDash(item,origin,s.kind)}" opacity="${opacity}" points="${points}"><title>${esc(sampleName(curve.sample_id))} · ${signalName} · ${esc(originLabel(origin))} · ${esc(curve.stage_label||curve.kind||'保留曲線')}</title></polyline>`;if((curve!==active&&!curve.quality_flags?.target_label)||!state.bounds||s.kind!==state.signal&&!(state.signal==='positive'&&s.kind==='positive_signal'))return;
       const marks=axis==='aligned'?[['bound','左峰界',curve.aligned_bound_left_rt],['bound','右峰界',curve.aligned_bound_right_rt],['apex','積分峰頂',curve.aligned_apex_rt]]:[['bound','左峰界',curve.bound_left_rt],['bound','右峰界',curve.bound_right_rt],['apex','積分峰頂',curve.apex_rt],...(finite(curve.integration?.raw_apex_rt_min)&&(!finite(curve.apex_rt)||Math.abs(curve.integration.raw_apex_rt_min-curve.apex_rt)>1e-7)?[['raw-apex','原始訊號峰頂',curve.integration.raw_apex_rt_min]]:[])];
       marks.forEach(([kind,label,v])=>{if(finite(v))svg+=`<line data-marker="${kind}" x1="${x(v)}" x2="${x(v)}" y1="${T}" y2="${T+IH}" stroke="${color(curve.sample_id)}" stroke-dasharray="${kind==='bound'?'5 4':kind==='raw-apex'?'2 4':'1 3'}"><title>${label} ${drt(v)} min</title></line>`;});
     });
@@ -440,7 +450,13 @@
     const isAligned=axis==='aligned', coverage=alignmentCoverage(item), total=Math.max(coverage.total,coverage.available);
     if(isAligned&&!alignedAvailable(item))return `<p class="plot-note" id="plot-aligned"><strong>對齊時間圖不可用</strong>：來源未提供目前所選曲線與${signalLabel}的對齊座標；不以原始座標代替。</p>`;
     const calibration=isAligned?`<p class="alignment-summary ${coverage.available<total?'partial':''}">${coverage.available} / ${total} 個顯示中樣本有對齊座標${coverage.available<total?'；其餘不外插':''}</p>`:'';
-    return `<section class="plot-card" id="plot-${axis}"><div class="plot-header"><div><h4>${isAligned?'對齊時間':'原始時間'} · ${signalLabel}</h4>${calibration}</div><button type="button" data-zoom="${axis}">放大 ↗</button></div><div class="svg-container" id="svg-${axis}">${plot(item,axis,false,wide)}</div></section>`;
+    return `<section class="plot-card" id="plot-${axis}"><div class="plot-header"><div><h4>${isAligned?'對齊時間':'原始時間'} · ${signalLabel}</h4>${calibration}</div><button type="button" data-zoom="${axis}">放大 ↗</button></div>${isAligned?'':rtViewControls(item)}<div class="svg-container" id="svg-${axis}">${plot(item,axis,false,wide)}</div></section>`;
+  }
+  function rtViewControls(item) {
+    if (!Array.isArray(item.review_rt_window)) return '';
+    const window = state.plotWindow || item.review_rt_window;
+    const paired = (item.curves || []).some(c => c.quality_flags?.paired_istd);
+    return `<div class="selection-controls"><label>顯示 RT 起點 <input id="plot-rt-start" type="number" step="any" value="${window[0]}" aria-label="顯示 RT 起點"></label><label>終點 <input id="plot-rt-end" type="number" step="any" value="${window[1]}" aria-label="顯示 RT 終點"></label><button type="button" data-rt-view="apply">套用範圍</button><button type="button" data-rt-view="full">完整已載入範圍</button></div>${paired?'<p class="control-note">實線：目標；虛線：配對 ISTD。顯示絕對強度；查看樣本後可分別選擇曲線。峰界是工作簿保存的位置。</p>':''}`;
   }
   function fieldValue(value){
     // Serialized objects/lists from source records read as key-value lines instead of raw JSON text.
@@ -500,9 +516,33 @@
     const aligned=alignedAvailable(item);
     $('workspace-content').innerHTML=`<div class="detail-top"><div><p class="detail-eyebrow">${itemName(item)}${item.method_label?` · ${esc(item.method_label)}`:''}</p><h2>${esc(itemTitle(item))}</h2><p class="detail-reason">${esc(item.reason_label||'未記錄項目判定說明。')}</p></div><span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span></div>${summary(item)}${evidencePanel(item)}<section class="advanced-inspection" aria-label="候選與積分"><section class="inspection-section" id="inspection-workspace"><div class="inspection-heading"><div class="inspection-title"><h3 id="inspection-title" tabindex="-1">${esc(graph)}</h3>${state.sample?'<button type="button" class="return-all" id="btn-unfocus">← 返回所有樣本</button>':''}</div><span class="focus-status">${state.sample?'候選與擷取':'曲線與積分'}</span></div><div class="selection-controls">${state.sample?`<div class="control-group"><span class="control-label">候選峰</span>${candidateControl(item)}</div><div class="control-group"><span class="control-label">擷取階段</span>${captureControl(item)}</div>`:''}<div class="control-group"><span class="control-label">訊號種類</span>${signalControl(item)}</div></div><div class="chart-toolbar"><div class="sample-legend" aria-label="樣本曲線顯示">${legend(item)}</div><label><input id="chk-bounds" type="checkbox" ${state.bounds?'checked':''}> 顯示積分範圍與峰頂</label></div><div class="analysis-layout ${state.evidence?'with-evidence':''}"><div class="chart-column"><div class="charts-grid ${aligned?'':'single'}">${plotCard(item,'raw',signalLabel,!aligned)}${aligned?plotCard(item,'aligned',signalLabel):''}</div>${aligned?'':plotCard(item,'aligned',signalLabel)}<section class="integration-card" id="integration-readout">${readout(item)}</section></div></div></section></section>${internalPairSupportPanel(item)}<section class="sample-section" aria-label="所有樣本的正式結果與支持紀錄"><div class="section-heading"><h3>所有樣本的正式結果與支持紀錄</h3></div>${sampleTable(item)}</section>`;
   }
-  function reset(){rel.node=null;rel.pair=null;rel.captures={};state.sample=null;state.candidate='';state.capture='';state.signal='smoothed';state.evidence='';state.evidenceContext='';evidenceOpener=null;}
+  function reset(){state.plotWindow=null;rel.node=null;rel.pair=null;rel.captures={};state.sample=null;state.candidate='';state.capture='';state.signal='smoothed';state.evidence='';state.evidenceContext='';evidenceOpener=null;}
   function clearFilters(){for(const id of ['search','mz-min','mz-max','rt-min','rt-max'])$(id).value='';list();}
   $('record-list').addEventListener('click',event=>{const toggle=event.target.closest('[data-excluded-toggle]');if(toggle){const opening=!state.excludedOpen;state.excludedOpen=opening;list(!(opening&&!state.id));$('record-list').querySelector('[data-excluded-toggle]')?.focus();return;}const b=event.target.closest('[data-item]');if(!b)return;state.id=b.dataset.item;reset();list();$('record-list').querySelector('[aria-current="true"]')?.focus();});
+  $('detail-panel').addEventListener('click', event => {
+    const button = event.target.closest('[data-rt-view]');
+    if (!button) return;
+    const item = items.find(i => i.id === state.id);
+    if (!item) return;
+    const start = $('plot-rt-start'), end = $('plot-rt-end');
+    start.setCustomValidity('');
+    if (button.dataset.rtView === 'full') {
+      let lower = Infinity, upper = -Infinity;
+      for (const curve of item.curves || []) {
+        const rt = curve.raw_rts || [];
+        if (rt.length) { lower = Math.min(lower, rt[0]); upper = Math.max(upper, rt[rt.length - 1]); }
+      }
+      if (!finite(lower) || !finite(upper) || lower >= upper) return;
+      state.plotWindow = [lower, upper];
+    } else {
+      const lower = start.valueAsNumber, upper = end.valueAsNumber;
+      if (!finite(lower) || !finite(upper) || lower >= upper) {
+        start.setCustomValidity('請輸入有效範圍，起點必須小於終點。');start.reportValidity();return;
+      }
+      state.plotWindow = [lower, upper];
+    }
+    detail();
+  });
   $('detail-panel').addEventListener('click',event=>{
     const item=items.find(i=>i.id===state.id);if(!item)return;
     const node=event.target.closest('[data-relation-node]'),pair=event.target.closest('[data-relation-pair]'),axis=event.target.closest('[data-time-axis]'),resetButton=event.target.closest('[data-relation-reset]');
@@ -521,7 +561,7 @@
     else if(el.dataset.laneCapture)rel.captures[el.dataset.laneCapture]=el.value;
     else return;event.stopImmediatePropagation();detail();
   });
-  $('detail-panel').addEventListener('change',event=>{const el=event.target,item=items.find(i=>i.id===state.id);if(!item)return;if(el.id==='candidate-select'){state.candidate=el.value;state.capture='';state.evidence='';normalize(item);}if(el.id==='capture-select'){state.capture=el.value;state.evidence='';}if(el.id==='signal-select')state.signal=el.value;if(el.id==='chk-bounds')state.bounds=el.checked;if(el.dataset.sampleVisible){if(el.checked)state.visible.add(el.dataset.sampleVisible);else state.visible.delete(el.dataset.sampleVisible);}detail();});
+  $('detail-panel').addEventListener('change',event=>{const el=event.target,item=items.find(i=>i.id===state.id);if(!item)return;if(el.id==='plot-rt-start'||el.id==='plot-rt-end')return;if(el.id==='candidate-select'){state.candidate=el.value;state.capture='';state.evidence='';normalize(item);}if(el.id==='capture-select'){state.capture=el.value;state.evidence='';}if(el.id==='signal-select')state.signal=el.value;if(el.id==='chk-bounds')state.bounds=el.checked;if(el.dataset.sampleVisible){if(el.checked)state.visible.add(el.dataset.sampleVisible);else state.visible.delete(el.dataset.sampleVisible);}detail();});
   $('detail-panel').addEventListener('click',async event=>{const item=items.find(i=>i.id===state.id);if(!item)return;const focus=event.target.closest('[data-focus]');if(focus){state.sample=focus.dataset.focus;state.candidate='';state.capture='';state.evidence='';state.evidenceContext='';evidenceOpener=null;normalize(item,true);detail();requestAnimationFrame(()=>{const heading=$('inspection-title');heading?.focus({preventScroll:true});heading?.scrollIntoView({behavior:'smooth',block:'start'});});return;}if(event.target.closest('#btn-unfocus')){state.sample=null;state.candidate='';state.capture='';state.evidence='';state.evidenceContext='';evidenceOpener=null;normalize(item);detail();requestAnimationFrame(()=>{const heading=$('inspection-title');heading?.focus({preventScroll:true});heading?.scrollIntoView({behavior:'smooth',block:'start'});});return;}const evidence=event.target.closest('[data-evidence-ref]');if(evidence){evidenceOpener={ref:evidence.dataset.evidenceRef,context:evidence.dataset.evidenceContext||''};state.evidence=evidenceOpener.ref;state.evidenceContext=evidenceOpener.context;detail();requestAnimationFrame(()=>{const panel=$('evidence-panel');panel?.scrollIntoView({behavior:'smooth',block:'start'});panel?.focus({preventScroll:true});});return;}const link=event.target.closest('[data-record-ref]');if(link){state.evidence=link.dataset.recordRef;detail();requestAnimationFrame(()=>{const panel=$('evidence-panel');panel?.scrollIntoView({behavior:'smooth',block:'start'});panel?.focus({preventScroll:true});});return;}if(event.target.closest('#close-evidence')){state.evidence='';state.evidenceContext='';detail();requestAnimationFrame(()=>{const opener=[...document.querySelectorAll('[data-evidence-ref]')].find(el=>el.dataset.evidenceRef===evidenceOpener?.ref&&(el.dataset.evidenceContext||'')===evidenceOpener?.context);opener?.scrollIntoView({block:'nearest'});opener?.focus({preventScroll:true});evidenceOpener=null;});return;}const copy=event.target.closest('[data-copy]');if(copy){try{await navigator.clipboard.writeText(copy.dataset.copy||'');const old=copy.textContent;copy.textContent='已複製';setTimeout(()=>copy.textContent=old,1200);}catch(_){copy.textContent='無法複製';}return;}const zoom=event.target.closest('[data-zoom]');if(zoom){dialogOpener=zoom;$('zoom-title').textContent=`${itemTitle(item)} · ${state.sample?sampleName(state.sample):'所有可見樣本'} · ${zoom.dataset.zoom==='raw'?'原始時間':'對齊時間'}`;$('zoom-container').innerHTML=plot(item,zoom.dataset.zoom);$('zoom-dialog').showModal();}});
   for(const id of ['search','mz-min','mz-max','rt-min','rt-max'])$(id).addEventListener('input',list);
   $('clear').addEventListener('click',clearFilters);$('active-filters').addEventListener('click',event=>{if(event.target.closest('#clear-inline'))clearFilters();});

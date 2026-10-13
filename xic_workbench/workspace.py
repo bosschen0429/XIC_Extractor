@@ -210,6 +210,12 @@ class ReviewWorkspace:
                 and witness.get("precursor_mz") is not None
             }
         )
+        target_id = None
+        curve_samples = observed
+        if item["kind"] == "target":
+            target_id = item["details"]["target"]["Label"]
+            # A known Target can be inspected even when its saved result is ND.
+            curve_samples = [row["SampleName"] for row in item["details"]["records"]]
         return {
             key: item.get(key)
             for key in (
@@ -223,7 +229,9 @@ class ReviewWorkspace:
         } | {
             "group_id": group_id,
             "candidate_id": candidate_id,
+            "target_id": target_id,
             "observed_sample_ids": observed,
+            "curve_sample_ids": curve_samples,
             "review_summary": item.get("review_summary", {}),
         }
 
@@ -267,9 +275,11 @@ class ReviewWorkspace:
                 raise WorkspaceBusy("分析仍在執行；請完成或停止後再讀取診斷曲線。")
             item = self._item(values.get("item_id"))
             description = self._item_summary(item)
-            if not description["group_id"] and not description["candidate_id"]:
+            if not any(
+                description[k] for k in ("group_id", "candidate_id", "target_id")
+            ):
                 raise ValueError("此項目沒有可供擷取的分組或候選身份。")
-            unsupported = set(samples) - set(description["observed_sample_ids"])
+            unsupported = set(samples) - set(description["curve_sample_ids"])
             if unsupported:
                 raise ValueError("所選樣本缺少已記錄的擷取座標，無法自動取得此組曲線。")
             assert self._report is not None and self._page is not None
@@ -297,6 +307,10 @@ class ReviewWorkspace:
                 "ppm": values.get("ppm", 5.0),
                 "padding_min": values.get("padding_min", 0.5),
             }
+            if description["target_id"]:
+                request.pop("group_id")
+                request.pop("candidate_id")
+                request["target_id"] = description["target_id"]
             self._executor.submit(
                 self._acquire_curves,
                 job_id,
@@ -344,21 +358,36 @@ class ReviewWorkspace:
                     strategy="query",
                     limit=1,
                     sample_ids=request["sample_ids"],
-                    group_ids=(request["group_id"],) if request["group_id"] else (),
+                    target_ids=(request["target_id"],)
+                    if request.get("target_id")
+                    else (),
+                    group_ids=(request["group_id"],) if request.get("group_id") else (),
                     candidate_ids=(request["candidate_id"],)
-                    if request["candidate_id"]
+                    if request.get("candidate_id")
                     else (),
                 ),
                 expected_source=expected_source,
                 is_cancelled=cancel.is_set,
             )
-            receipt = export_explanation_curves(
-                source,
-                bundle_path,
-                **request,
-                is_cancelled=cancel.is_set,
-                on_progress=acquired,
-            )
+            if request.get("target_id"):
+                from xic_workbench.targeted_curves import export_targeted_curves
+
+                receipt = export_targeted_curves(
+                    source,
+                    bundle_path,
+                    **request,
+                    expected_source=expected_source,
+                    is_cancelled=cancel.is_set,
+                    on_progress=acquired,
+                )
+            else:
+                receipt = export_explanation_curves(
+                    source,
+                    bundle_path,
+                    **request,
+                    is_cancelled=cancel.is_set,
+                    on_progress=acquired,
+                )
             generate_report(
                 bundle_path,
                 SelectionRequest(sample_ids=request["sample_ids"]),

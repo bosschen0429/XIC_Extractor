@@ -91,8 +91,17 @@ directory-level Discovery followed by Alignment.
   source Matrix remains unchanged.
 - A completed evidence locator can open the Inspector review view directly or
   generate a custom standalone Inspector HTML report.
-- Inspector selection and rendering use `xic_inspector`. On-demand XIC uses
-  the saved observation binding and does not choose peaks, integrate, or write
+- Inspector selection and rendering use `xic_inspector`. Untargeted on-demand
+  XIC uses the saved observation binding. In Targeted review, each sample row's
+  **看 XIC** loads only that sample's target and paired ISTD, including ND rows
+  with known target coordinates. Select the RAW and DLL directories first.
+- Targeted curves use the workbook's extraction tolerance and signal-processing
+  settings over the full acquisition trace; saved peak bounds are overlays.
+  XLSX sample names do not certify the original RAW: the view and exported HTML
+  explicitly mark that binding as unverified. New RAW fingerprints identify
+  this diagnostic extraction only.
+- Plot RT controls change the loaded view without rereading RAW. Neither mode
+  chooses peaks, reintegrates, changes counted detection, or writes workbook or
   Matrix values.
 - Sample metadata export supports TSV and CSV. Custom sample-role corrections
   are included in the submitted and exported population.
@@ -122,6 +131,7 @@ directory-level Discovery followed by Alignment.
 | `xic_workbench/methods.py` | CID-NL method editing and portable preset serialization |
 | `xic_workbench/samples.py` | Sample metadata matching, role correction, and export |
 | `xic_workbench/workspace.py` | Completed evidence selection and on-demand XIC jobs |
+| `xic_workbench/targeted_curves.py` | Read-only Targeted and paired-ISTD RAW acquisition |
 | `xic_workbench/assets/` | Unified analysis and review HTML, JavaScript, and CSS |
 
 ## Boundaries

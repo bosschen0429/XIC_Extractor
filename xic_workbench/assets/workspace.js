@@ -316,8 +316,12 @@ window.XicUi = (() => {
     document.querySelector(".review-grid").classList.toggle("single-target", targeted && Boolean(selectedTarget) && page.matched_count === 1);
     $("target-id").replaceChildren(new Option("全部目標", ""), ...(page.target_names || []).map(name => new Option(name, name)));
     $("target-id").value = selectedTarget;
-    document.querySelector(".acquisition-panel").hidden = targeted;
-    $("tab-curves").hidden = targeted;
+    document.querySelector(".acquisition-panel").hidden = false;
+    $("tab-curves").hidden = false;
+    $("acquisition-description").textContent = targeted
+      ? "點結果列的「看 XIC」，或勾選少數樣本。自動帶入目標與配對 ISTD；ND 也能看圖，不改寫結果。"
+      : "勾選少數樣本，讀取保留峰頂附近的 RAW。缺少觀測座標的樣本無法自動擷取。";
+    $("ppm").closest("label").hidden = targeted;
     const selectedSample = $("target-sample").value;
     $("target-sample").replaceChildren(new Option("全部樣本", ""), ...(page.all_samples || page.samples).map(s => new Option(s.label, s.id)));
     $("target-sample").value = selectedSample;
@@ -326,9 +330,9 @@ window.XicUi = (() => {
     $("review-empty").hidden = true;
     $("batch-title").textContent = targeted ? "Targeted 結果" : "批次結果已開啟";
     $("batch-description").textContent = targeted ? page.source.split(/[\\/]/).pop() : page.source;
-    $("raw-dir").closest(".path-line").hidden = targeted;
-    $("dll-dir").closest(".path-line").hidden = targeted;
-    $("source-settings").querySelector("summary").textContent = targeted ? "切換結果來源" : "結果與 RAW 位置";
+    $("raw-dir").closest(".path-line").hidden = false;
+    $("dll-dir").closest(".path-line").hidden = false;
+    $("source-settings").querySelector("summary").textContent = "結果與 RAW 位置";
     $("batch-description").className = "mono";
     $("batch-description").title = page.source;
     $("batch-count").hidden = false;
@@ -424,7 +428,7 @@ window.XicUi = (() => {
           String(button.dataset.itemId === item.id),
         ),
       );
-    const available = new Set(detail.item.observed_sample_ids);
+    const available = new Set(detail.item.curve_sample_ids);
     state.samples = new Set(
       [...state.samples].filter((id) => available.has(id)),
     );
@@ -464,7 +468,7 @@ window.XicUi = (() => {
       list.append(label);
     }
     showTab("recorded");
-    status(state.page.source_kind === "targeted_workbook" ? "唯讀檢閱已保存的 Targeted 結果，不需要 RAW。" : "可查看當次分析紀錄，或為勾選的樣本載入 XIC。");
+    status("可查看已保存結果，或按「看 XIC」讀取 RAW；看圖不改寫結果。");
   }
   function showTab(tab) {
     const view = tab === "curves" ? state.curves : state.recorded;
@@ -475,13 +479,15 @@ window.XicUi = (() => {
     $("view-note").className = `view-note${tab === "curves" ? " curves" : ""}`;
     $("view-note").textContent =
       tab === "curves"
-        ? `新取得的診斷曲線 · ${state.curveLabels.join("、")}。依報告樣本檔名取檔，已核對 RAW 內容屬於此批次；來源未保留獨立的樣本與 RAW 綁定。這些曲線不改寫當次定量值。`
+        ? state.page.source_kind === "targeted_workbook"
+          ? `新取得的 Targeted XIC · ${state.curveLabels.join("、")}。依樣本名稱讀取指定 RAW；工作簿未保存 RAW 指紋，無法驗證是否為原分析檔。實線為目標，虛線為配對 ISTD；峰界來自已保存結果，不重新積分。`
+          : `新取得的診斷曲線 · ${state.curveLabels.join("、")}。依報告樣本檔名取檔，已核對 RAW 內容屬於此批次；來源未保留獨立的樣本與 RAW 綁定。這些曲線不改寫當次定量值。`
         : state.page.source_kind === "targeted_workbook"
           ? "唯讀 XLSX · 只顯示已保存結果，不重新計算。"
           : "這是當次分析保存的證據與量值。若未保留曲線，可在上方按需取得 XIC。";
     $("inspector").src = `/reports/${view}.html?embed=1`;
     $("download").href = `/reports/${view}.html?download=1`;
-    $("download").hidden = state.page.source_kind === "targeted_workbook";
+    $("download").hidden = state.page.source_kind === "targeted_workbook" && tab !== "curves";
   }
   async function openBatch() {
     const page = await api("/api/open", { source: $("source").value });
@@ -571,6 +577,20 @@ window.XicUi = (() => {
   // The embedded Inspector grows with its content so the page keeps one
   // scroll; its dialogs are placed inside the part of the frame on screen.
   const frame = $("inspector");
+  window.addEventListener("message", event => {
+    if (event.origin !== location.origin || event.source !== frame.contentWindow ||
+        event.data?.type !== "xic-targeted-curves" ||
+        state.page?.source_kind !== "targeted_workbook" ||
+        event.data.item_id !== state.item?.id ||
+        !state.item.curve_sample_ids.includes(event.data.sample_id)) return;
+    action(async () => {
+      state.samples = new Set([event.data.sample_id]);
+      document.querySelectorAll("#sample-list input").forEach(input => {
+        input.checked = state.samples.has(input.value);
+      });
+      await startCurves();
+    }, "正在取得目標與配對 ISTD 的 XIC…");
+  });
   let frameObserver = null;
   function frameDocument() {
     try {
