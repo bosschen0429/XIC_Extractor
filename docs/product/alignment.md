@@ -36,6 +36,13 @@ that location. The existing assessment, admission and cell decision rules still
 decide support and values. A trajectory with no matched context still contains
 its supported owners; the same localization owner uses those observations.
 
+For an unobserved sample, a forecast extended by MS1-only positions must agree
+with the same-cohort direct-reference trend when that trend has at least three
+distinct injection positions and bounded held-out residuals. Disagreement beyond
+the larger empirical RT tolerance leaves localization unreliable: it does not
+select either predicted peak or widen the search. Observed correspondence and
+independently measured paired-ISTD localization retain their existing rules.
+
 Physical Backfill acquires its search trace and one wider context trace in the
 same sample batch. A complete narrow capture keeps its original integral. Only
 `incomplete_peak_context` permits the wider capture, with candidate apices still

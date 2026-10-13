@@ -101,6 +101,8 @@ class PeakTrajectory:
         check; observed MS1 correspondence is not replaced by that forecast.
         Scatter larger than the acquisition half-window means localization is
         unreliable, not permission to enlarge the accepted RT interval.
+        A forecast extended by MS1-only positions must also agree with a
+        supported direct-reference trend; disagreement leaves it unlocated.
         """
         locations = {
             sample: self.locate(
@@ -117,38 +119,14 @@ class PeakTrajectory:
             for sample, location in locations.items()
             if not location.observed and sample in sample_cohorts
         }
-        residuals: dict[str, list[float]] = defaultdict(list)
-        for sample, observed_rt in self.sample_apices:
-            cohort = sample_cohorts.get(sample)
-            if sample not in reference_samples or cohort not in needed_cohorts:
-                continue
-            peers = tuple(
-                point
-                for point in self.sample_apices
-                if point[0] != sample and sample_cohorts.get(point[0]) == cohort
-            )
-            if not peers:
-                continue
-            held_out = PeakTrajectory((), peers).locate(
-                sample,
-                injection_order=injection_order,
-                sample_cohorts=sample_cohorts,
-                rt_warp=rt_warp,
-                backfill_half_window_min=backfill_half_window_min,
-            )
-            assert cohort is not None
-            residuals[cohort].append(abs(held_out.query_rt - observed_rt) * 60.0)
-        tolerance_by_cohort = {}
-        for cohort, values in residuals.items():
-            if len(values) < 2:
-                continue
-            residual_p90 = float(np.quantile(values, 0.9))
-            half_window_sec = backfill_half_window_min * 60.0
-            if residual_p90 <= half_window_sec:
-                tolerance_by_cohort[cohort] = min(
-                    max(12.0, residual_p90),
-                    half_window_sec,
-                )
+        tolerance_by_cohort = self._empirical_tolerances(
+            reference_samples=reference_samples,
+            needed_cohorts=needed_cohorts,
+            injection_order=injection_order,
+            sample_cohorts=sample_cohorts,
+            rt_warp=rt_warp,
+            backfill_half_window_min=backfill_half_window_min,
+        )
         result = {
             sample: BackfillPeakLocation(
                 location,
@@ -158,6 +136,64 @@ class PeakTrajectory:
             )
             for sample, location in locations.items()
         }
+        reference_points = tuple(
+            point for point in self.sample_apices if point[0] in reference_samples
+        )
+        if len(reference_points) < len(self.sample_apices):
+            forecast_cohorts = {
+                sample_cohorts[sample]
+                for sample, localized in result.items()
+                if localized.reliable
+                and not localized.location.observed
+                and sample in sample_cohorts
+            }
+            reference_orders: dict[str, set[int]] = defaultdict(set)
+            for sample, _ in reference_points:
+                cohort = sample_cohorts.get(sample)
+                order = injection_order.get(sample)
+                if cohort in forecast_cohorts and order is not None:
+                    assert cohort is not None
+                    reference_orders[cohort].add(order)
+            # A sparse median has no supported slope with which to challenge
+            # an MS1-extended trend. Never borrow another cohort's references.
+            comparable_cohorts = {
+                cohort
+                for cohort, orders in reference_orders.items()
+                if len(orders) >= 3
+            }
+            reference = PeakTrajectory((), reference_points)
+            reference_tolerances = reference._empirical_tolerances(
+                reference_samples=reference_samples,
+                needed_cohorts=comparable_cohorts,
+                injection_order=injection_order,
+                sample_cohorts=sample_cohorts,
+                rt_warp=rt_warp,
+                backfill_half_window_min=backfill_half_window_min,
+            )
+            for sample, localized in result.items():
+                reference_tolerance = reference_tolerances.get(
+                    sample_cohorts.get(sample, "")
+                )
+                if (
+                    localized.location.observed
+                    or localized.apex_tolerance_sec is None
+                    or reference_tolerance is None
+                ):
+                    continue
+                direct = reference.locate(
+                    sample,
+                    injection_order=injection_order,
+                    sample_cohorts=sample_cohorts,
+                    rt_warp=rt_warp,
+                    backfill_half_window_min=backfill_half_window_min,
+                )
+                # Both estimates use the same scientific owner and empirical
+                # compatibility rule. Neither wins a conflict: retain the query
+                # for explanation, but do not authorize a selected peak there.
+                if abs(localized.location.query_rt - direct.query_rt) * 60.0 > max(
+                    localized.apex_tolerance_sec, reference_tolerance
+                ):
+                    result[sample] = BackfillPeakLocation(localized.location, None)
         if paired_istd_rts is not None:
             # Confirmed peers establish the analyte-to-ISTD offset. The missing
             # sample contributes only its independently measured paired ISTD.
@@ -189,6 +225,48 @@ class PeakTrajectory:
                     else None,
                 )
         return result
+
+    def _empirical_tolerances(
+        self,
+        *,
+        reference_samples: frozenset[str],
+        needed_cohorts: set[str],
+        injection_order: Mapping[str, int],
+        sample_cohorts: Mapping[str, str],
+        rt_warp: RtCalibration | None,
+        backfill_half_window_min: float,
+    ) -> dict[str, float]:
+        """Bound each cohort once using held-out direct-reference residuals."""
+        residuals: dict[str, list[float]] = defaultdict(list)
+        for sample, observed_rt in self.sample_apices:
+            cohort = sample_cohorts.get(sample)
+            if sample not in reference_samples or cohort not in needed_cohorts:
+                continue
+            peers = tuple(
+                point
+                for point in self.sample_apices
+                if point[0] != sample and sample_cohorts.get(point[0]) == cohort
+            )
+            if not peers:
+                continue
+            held_out = PeakTrajectory((), peers).locate(
+                sample,
+                injection_order=injection_order,
+                sample_cohorts=sample_cohorts,
+                rt_warp=rt_warp,
+                backfill_half_window_min=backfill_half_window_min,
+            )
+            assert cohort is not None
+            residuals[cohort].append(abs(held_out.query_rt - observed_rt) * 60.0)
+        tolerances = {}
+        for cohort, values in residuals.items():
+            if len(values) < 2:
+                continue
+            residual_p90 = float(np.quantile(values, 0.9))
+            half_window_sec = backfill_half_window_min * 60.0
+            if residual_p90 <= half_window_sec:
+                tolerances[cohort] = min(max(12.0, residual_p90), half_window_sec)
+        return tolerances
 
     def locate(
         self,
