@@ -6,13 +6,14 @@ import json
 import os
 import sqlite3
 import threading
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import pytest
 from playwright.sync_api import expect, sync_playwright
 
 from tests.test_xic_inspector_api import _create_mock_db, _insert_link
+from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 from xic_workbench.config_io import read_settings, write_settings, write_targets
 from xic_workbench.server import create_server
@@ -341,6 +342,9 @@ def test_target_list_save_and_load_preserves_batch(workbench):
     page.get_by_role("textbox", name="預期 RT（min）（第 1 列）", exact=True).fill("4")
     page.locator("#target-editor-save").click()
     page.get_by_role("button", name="載入清單", exact=True).click()
+    expect(
+        page.locator("#toasts .toast.ok").filter(has_text="已載入目標清單")
+    ).to_be_visible()
     expect(page.locator("#t-data_dir")).to_have_value(original_batch)
     page.locator("#target-edit").click()
     expect(
@@ -851,3 +855,74 @@ def test_read_first_opens_on_minority_rows_and_clearing_lists_all(workbench, tmp
     # A filter change applies at once; no separate search press is needed.
     page.locator("#target-attention").uncheck()
     expect(rows).to_have_count(5)
+
+
+@pytest.mark.parametrize(
+    "changed_input", [None, "raw_dir", "sequence_source", "dll_dir", "saved_role"]
+)
+def test_sample_restore_is_bound_to_current_inputs(
+    workbench, fake_runs, tmp_path, monkeypatch, changed_input
+):
+    page = workbench
+    old = tmp_path / "batch_a"
+    old.mkdir()
+    row = asdict(SampleMetadata("S1", "S1", sample_role="blank", injection_order=1))
+    monkeypatch.setattr(
+        "xic_workbench.samples.load_samples",
+        lambda *args, **kwargs: {
+            "samples": [row],
+            "summary": {
+                "raw_count": 1,
+                "matched_count": 0,
+                "conflicts": [],
+                "unreadable_raw": ["old_blank.raw"],
+            },
+        },
+    )
+    _view(page, "untargeted")
+    page.locator("#u-raw_dir").fill(str(old))
+    page.locator("#u-raw_dir").press("Tab")
+    with page.expect_response(lambda r: r.url.endswith("/api/untargeted/save")):
+        page.locator("#untargeted-save").click()
+    page.locator("#samples-refresh").click()
+    expect(page.locator("#samples-count")).to_have_text("1 個樣本")
+    # Restoration must not depend on the most recent job being a samples job.
+    _view(page, "targeted")
+    fake_runs.release.set()
+    _start(page, "targeted")
+    expect(page.locator("#analysis-job-title")).to_contain_text("已完成")
+    _view(page, "untargeted")
+    if changed_input == "saved_role":
+        page.locator("#samples-edit").click()
+        page.get_by_label("S1 角色", exact=True).select_option("study_sample")
+        page.keyboard.press("Escape")
+        with page.expect_response(lambda r: r.url.endswith("/api/untargeted/save")):
+            page.locator("#untargeted-save").click()
+    elif changed_input:
+        selector = (
+            "#sequence-source"
+            if changed_input == "sequence_source"
+            else f"#u-{changed_input}"
+        )
+        page.locator(selector).fill(str(tmp_path / "new_source"))
+        page.locator(selector).press("Tab")
+        with page.expect_response(lambda r: r.url.endswith("/api/untargeted/save")):
+            page.locator("#untargeted-save").click()
+    page.reload()
+    expect(page.locator("body")).not_to_have_class("booting")
+    with page.expect_request(lambda r: r.url.endswith("/api/untargeted/save")) as sent:
+        page.locator("#untargeted-save").click()
+    payload = sent.value.post_data_json
+    if changed_input and changed_input != "saved_role":
+        assert payload["samples"] is None
+        expect(page.locator("#samples-conflicts")).to_be_hidden()
+        if changed_input == "raw_dir":
+            assert payload["custom_roles"] == {}
+    else:
+        expected = (
+            {**row, "sample_role": "study_sample"}
+            if changed_input == "saved_role"
+            else row
+        )
+        assert payload["samples"] == [expected]
+        expect(page.locator("#samples-conflicts")).to_contain_text("old_blank.raw")

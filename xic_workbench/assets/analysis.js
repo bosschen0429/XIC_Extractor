@@ -1743,8 +1743,16 @@
     modeFields();
     state.analysis = state.config.analysis;
     const loadedSamples = state.analysis.results.samples;
-    if (loadedSamples) {
-      state.samples = loadedSamples.samples;
+    if (loadedSamples?.input_paths &&
+        loadedSamples.input_paths.raw_dir === $("u-raw_dir").value &&
+        loadedSamples.input_paths.dll_dir === $("u-dll_dir").value &&
+        loadedSamples.input_paths.sequence_source === $("sequence-source").value) {
+      // Saved role edits are newer than the cached sample-loading result.
+      const savedRoles = state.config.untargeted.custom_roles || {};
+      state.samples = loadedSamples.samples.map((sample) => ({
+        ...sample,
+        sample_role: savedRoles[sample.raw_stem] ?? sample.sample_role,
+      }));
       renderSamples();
       renderSampleSummary(loadedSamples.summary);
     }

@@ -201,7 +201,7 @@ class AnalysisJobs:
         if kind == "samples":
             from xic_workbench.samples import load_samples
 
-            return load_samples(
+            result = load_samples(
                 Path(values["raw_dir"]),
                 dll_dir=Path(values["dll_dir"]) if values.get("dll_dir") else None,
                 sequence_source=Path(values["sequence_source"])
@@ -209,6 +209,11 @@ class AnalysisJobs:
                 else None,
                 custom_roles=values.get("custom_roles"),
             )
+            result["input_paths"] = {
+                key: str(values.get(key) or "")
+                for key in ("raw_dir", "dll_dir", "sequence_source")
+            }
+            return result
         if kind == "quality":
             from xic_extractor.feature_quality_io import export_feature_quality
 
