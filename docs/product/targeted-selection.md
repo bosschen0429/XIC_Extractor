@@ -226,6 +226,10 @@ those facts itself.
 - A credible current-sample paired ISTD transfers observed drift while preserving
   the analyte/ISTD expected-RT offset. Missing or untrusted pairs use the analyte
   reference plus available current-sample drift.
+- An analyte with no configured ISTD pair uses that method reference as a
+  selection anchor. Among independently supported peaks, a complete nearby
+  candidate is not displaced only by denser MS2 support on a distant isomer.
+  This does not impose a hard RT exclusion or grant chemical identity from RT.
 - CID-NL evidence comes from the shared Discovery chemistry and mass policy for
   the row's `dR`, `R`, or `MeR` tag. Recorded-precursor and product-plus-neutral-loss
   inference retain their evidence basis and parent-MS1 support requirements.
