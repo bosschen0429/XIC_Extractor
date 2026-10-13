@@ -42,6 +42,10 @@ class AnalysisJobs:
                 job["elapsed_seconds"] = max(0, end - job["started_at"])
                 if self._runner is not None:
                     job["stage"] = self._runner.stage
+                    if job["kind"] == "targeted":
+                        job["sample_summary"] = copy.deepcopy(
+                            getattr(self._runner, "sample_summary", None)
+                        )
                     job["output_dir"] = str(self._runner.output_dir)
                     job["available_outputs"] = [
                         {"label": label, "path": str(path)}

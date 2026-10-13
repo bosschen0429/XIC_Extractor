@@ -123,11 +123,12 @@ def select_analysis_set(
     entries: list[AnalysisSetEntry] = []
     analyzed_stems: set[str] = set()
     names: set[str] = set()
+    raw_aliases = {injection.raw_stem for injection in timeline}
     for injection in timeline:
         copy_path = _local_copy_path(injection)
         raw_stem = injection.raw_stem
         header = header_rows[copy_path]
-        name = _sample_name(header.sample_name, raw_stem, names)
+        name = _sample_name(header.sample_name, raw_stem, names, raw_aliases)
         row = rows.get(raw_stem.casefold())
         if row is not None and row.sample_role != "unknown":
             role: SampleRole = row.sample_role
@@ -169,11 +170,22 @@ def select_analysis_set(
     return AnalysisSet(tuple(entries), sequence, tuple(skipped))
 
 
-def _sample_name(header_name: str, raw_stem: str, taken: set[str]) -> str:
-    """Header SampleName when usable and unique, otherwise the RAW stem."""
+def _sample_name(
+    header_name: str, raw_stem: str, taken: set[str], raw_aliases: set[str]
+) -> str:
+    """Reserve every RAW lookup alias before choosing header display names."""
     name = header_name.strip()
-    if not name or name.lower() in {"unknown", "sample"} or name in taken:
+    if (
+        not name
+        or name.lower() in {"unknown", "sample"}
+        or name in taken
+        or (name in raw_aliases and name != raw_stem)
+    ):
         name = raw_stem
+    suffix = 2
+    while name in taken or (name in raw_aliases and name != raw_stem):
+        name = f"{raw_stem}__{suffix}"
+        suffix += 1
     taken.add(name)
     return name
 

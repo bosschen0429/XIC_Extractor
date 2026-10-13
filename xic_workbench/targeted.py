@@ -58,6 +58,7 @@ class TargetedRun:
         self.stage = "讀取 Targeted 設定"
         self.output_dir = self._config.output_csv.parent
         self.available_outputs: tuple[tuple[str, Path], ...] = ()
+        self.sample_summary: dict[str, Any] | None = None
         self.cancellation_reason = "使用者要求停止，本次 Targeted 執行已停止。"
 
     def execute(self) -> dict[str, Any]:
@@ -73,6 +74,17 @@ class TargetedRun:
         ):
             raise ConfigError("排隊後 RAW 檔案集合已變更；請確認本批次資料並重新提交。")
         config, targets = self._config, self._targets
+        from xic_workbench.samples import load_samples
+
+        self.stage = "讀取 Targeted 樣本與上機資訊"
+        sample_summary = load_samples(
+            config.data_dir,
+            dll_dir=config.dll_dir,
+            sequence_source=config.injection_order_source,
+        )["summary"]
+        # The source here is a private queued-input copy, not a published path.
+        sample_summary.pop("sequence_source", None)
+        self.sample_summary = sample_summary
         self.output_dir = config.output_csv.parent
         excel_path = _excel_output_path(config)
         self.stage = "Targeted 分析與結果發布"
@@ -102,6 +114,7 @@ class TargetedRun:
         self.stage = "Targeted 結果摘要"
         summary = build_summary(config, targets, execution.active_output, excel_path)
         summary["published_paths"] = [str(path) for path in published_paths]
+        summary["sample_summary"] = self.sample_summary
         return summary
 
 

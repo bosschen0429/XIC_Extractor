@@ -407,6 +407,8 @@ def _substitute_prepared_inputs(monkeypatch, module, config_dir, config, targets
 
     config.data_dir = config_dir.parent / "raw"
     config.data_dir.mkdir(exist_ok=True)
+    config.dll_dir = config_dir.parent / "dll"
+    config.injection_order_source = None
     monkeypatch.setattr(
         module.config_loader,
         "prepare_targeted_config",

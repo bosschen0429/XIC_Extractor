@@ -1572,6 +1572,7 @@ def _assert_alignment_uses_configured_recovery_groups(
             candidate_receipts=kwargs["discovery_receipts_by_sample"],
         ),
         candidates_by_sample=candidates,
+        sample_metadata=kwargs["sample_metadata"],
         raw_dir=tmp_path,
         dll_dir=tmp_path,
         output_dir=tmp_path / "alignment",

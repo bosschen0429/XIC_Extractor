@@ -63,6 +63,96 @@ def test_flat_and_nested_layouts_give_the_same_analysis_set() -> None:
     assert [e.context_reason for e in nested_set.entries[:2]] == ["role", "role"]
 
 
+@pytest.mark.parametrize("header_names", [("B", "B"), ("B", "different"), ("B", "A")])
+def test_header_names_cannot_collide_with_another_raw_alias(header_names):
+    from xic_extractor.sample_metadata import (
+        mint_sample_metadata_snapshot,
+        resolve_canonical_sample_identity,
+    )
+
+    headers = [header("/b/A.raw", 0), header("/b/B.raw", 11)]
+    rows = {
+        h.raw_path: SampleMetadata(
+            name, Path(h.raw_path).stem, sample_role="study_sample"
+        )
+        for h, name in zip(headers, header_names, strict=True)
+    }
+    result = select_analysis_set(
+        build_injection_timeline(headers, PerturbationPolicy()), rows
+    )
+    snapshot = mint_sample_metadata_snapshot(
+        result.sample_metadata, identity_namespace="test"
+    )
+    assert resolve_canonical_sample_identity(snapshot, "A").metadata.raw_stem == "A"
+    assert resolve_canonical_sample_identity(snapshot, "B").metadata.raw_stem == "B"
+
+
+def test_retained_alignment_keeps_full_root_injection_order(tmp_path, monkeypatch):
+    from tests.cid_nl_raw_fixture import (
+        _current_candidates,
+        _FakeRaw,
+        _peak_config,
+        _settings,
+    )
+    from tests.test_untargeted_cid_nl_real_data_runtime import _discovery_receipts
+    from xic_extractor.discovery.csv_reader import DiscoveryBatchInput
+    from xic_extractor.raw_reader import read_analysis_set
+    from xic_extractor.untargeted_execution.alignment import (
+        prepare_untargeted_alignment_inputs,
+    )
+
+    paths = tuple(tmp_path / name for name in ("Blank.raw", "A.raw", "B.raw"))
+    for path in paths:
+        path.write_bytes(path.name.encode())
+    facts = {
+        path: (
+            header(str(path), i * 11),
+            "blank" if i == 0 else "study_sample",
+            path.stem,
+        )
+        for i, path in enumerate(paths)
+    }
+    monkeypatch.setattr(
+        "xic_extractor.raw_reader._analysis_header", lambda p, d: facts[p]
+    )
+    settings, config = _settings(), _peak_config(tmp_path)
+    candidates = {
+        p.stem: _current_candidates(
+            _FakeRaw((7.98,)), raw_file=p, settings=settings, peak_config=config
+        )
+        for p in paths[1:]
+    }
+    receipts = _discovery_receipts(tmp_path, paths[1:], candidates)
+    batch = DiscoveryBatchInput(
+        sample_order=("A", "B"),
+        candidate_csvs={},
+        raw_files={p.stem: p for p in paths[1:]},
+        review_csvs={},
+        candidate_receipts=receipts,
+    )
+    prepared = prepare_untargeted_alignment_inputs(
+        discovery_batch=batch,
+        candidates_by_sample=candidates,
+        raw_dir=tmp_path,
+        dll_dir=tmp_path,
+        output_dir=tmp_path / "out",
+        settings=settings,
+        peak_config=config,
+    )
+    try:
+        orders = {
+            s.metadata.raw_stem: s.metadata.injection_order
+            for s in prepared.plan.context.samples
+        }
+        assert orders == {"A": 2, "B": 3}
+        assert orders == {
+            e.raw_stem: e.injection_order
+            for e in read_analysis_set(tmp_path, tmp_path).analyzed
+        }
+    finally:
+        prepared.close()
+
+
 def test_copies_resolve_to_one_shallow_member() -> None:
     top = header("/b/Tumor_1.raw", 0)
     copy = replace(top, raw_path="/b/validation/Tumor_1.raw")
@@ -105,6 +195,10 @@ def test_distinct_analyzed_injections_sharing_a_stem_are_rejected() -> None:
         resolve([first, second], roles)
     roles[second.raw_path] = "blank"
     assert resolve([first, second], roles).raw_paths == (Path("/b/a/S.raw"),)
+    third = header("/b/c/S__2.raw", 22)
+    roles[third.raw_path] = "study_sample"
+    result = resolve([first, second, third], roles)
+    assert [row.sample_name for row in result.sample_metadata] == ["S", "S__3", "S__2"]
 
 
 def test_discover_raw_files_is_recursive(tmp_path: Path) -> None:

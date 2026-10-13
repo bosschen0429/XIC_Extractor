@@ -283,9 +283,7 @@ def prepare_untargeted_alignment_inputs(
 
         by_stem = {
             row.raw_stem: row
-            for row in read_analysis_set(
-                raw_dir, dll_dir, raw_paths=ordered_raw_paths
-            ).sample_metadata
+            for row in read_analysis_set(raw_dir, dll_dir).sample_metadata
         }
         missing = [stem for stem in discovery_batch.sample_order if stem not in by_stem]
         if missing:
@@ -704,6 +702,8 @@ def _coarse_runtime_telemetry(
         ),
         unavailable_reason=unavailable_reason,
     )
+
+
 __all__ = [
     "complete_untargeted_alignment",
 ]

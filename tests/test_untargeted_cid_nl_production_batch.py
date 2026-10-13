@@ -894,7 +894,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
 
     separate_groups = len(group_sizes) == 2
     sample_stems = tuple(f"S{index + 1}" for index in range(sum(group_sizes)))
-    paths = tuple(tmp_path / f"{stem}.synthetic" for stem in sample_stems)
+    paths = tuple(tmp_path / f"{stem}.raw" for stem in sample_stems)
     for path in paths:
         path.write_bytes(path.stem.encode())
     # Observed RAW coordinates: acquisition bounds do not land on scan RTs.
@@ -1707,7 +1707,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         )
 
     assert Counter(preparation_fingerprints) == Counter(
-        tmp_path / f"{stem}.synthetic" for stem in discovery_batch.sample_order
+        tmp_path / f"{stem}.raw" for stem in discovery_batch.sample_order
     ), "formal preparation must fully fingerprint each RAW source once"
     assert runtime_fingerprints == [], (
         "RAW opens must reuse the input owner's source verification",

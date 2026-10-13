@@ -240,7 +240,7 @@
     return label;
   }
   // 上機資訊 only annotates; disagreements are listed and the RAW decides.
-  function renderSampleSummary(summary) {
+  function renderSampleSummary(summary, prefix = "samples") {
     const notes = [];
     for (const conflict of summary.conflicts || []) {
       const names = conflict.sequence_names.join("、");
@@ -254,12 +254,12 @@
     if (summary.unreadable_raw?.length)
       notes.push(`讀不到檔頭，已排除（不分析）：${summary.unreadable_raw.join("、")}`);
     const unmatched = summary.unmatched_sequence_names?.length;
-    $("samples-summary").textContent =
+    $(`${prefix}-summary`).textContent =
       `RAW ${summary.raw_count} 次上機 · 上機資訊配對 ${summary.matched_count} 個` +
       (unmatched ? ` · ${unmatched} 筆上機資訊未配對` : "") +
       (notes.length ? ` · ${notes.length} 處要確認，注射順序與樣本名稱以 RAW 為準` : "");
-    $("samples-conflicts").replaceChildren(...notes.map((note) => el("li", note)));
-    $("samples-conflicts").hidden = !notes.length;
+    $(`${prefix}-conflicts`).replaceChildren(...notes.map((note) => el("li", note)));
+    $(`${prefix}-conflicts`).hidden = !notes.length;
   }
   function pathField(container, key, label, kind, value, prefix = "u-", help = "") {
     const wrap = el("div", undefined, "path-line");
@@ -944,6 +944,11 @@
   }
   function renderJob() {
     const job = state.analysis.job;
+    const sampleSummary = job?.kind === "targeted"
+      ? job.sample_summary
+      : state.analysis.results.targeted?.sample_summary;
+    $("target-samples-review").hidden = !sampleSummary;
+    if (sampleSummary) renderSampleSummary(sampleSummary, "target-samples");
     const card = $("analysis-job");
     card.hidden = !job || (jobPage[job.kind] || "untargeted") !== state.view;
     lock();
@@ -1008,10 +1013,6 @@
     state.seenJob = job.job_id;
     if (!state.booted) {
       renderResults();
-      if (job.kind === "samples" && job.status === "succeeded") {
-        state.samples = state.analysis.results.samples.samples;
-        renderSamples();
-      }
       return;
     }
     state.seenAt = Date.now();
@@ -1741,6 +1742,12 @@
     renderRoleSummary();
     modeFields();
     state.analysis = state.config.analysis;
+    const loadedSamples = state.analysis.results.samples;
+    if (loadedSamples) {
+      state.samples = loadedSamples.samples;
+      renderSamples();
+      renderSampleSummary(loadedSamples.summary);
+    }
     renderResults();
     selectView(
       state.config.preferences.view ||

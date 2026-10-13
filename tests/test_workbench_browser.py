@@ -205,10 +205,78 @@ def test_sequence_warnings_are_visible_in_sample_loading(workbench, monkeypatch)
     )
     expect(page.locator("#samples-summary")).to_contain_text("1 筆上機資訊未配對")
     expect(page.locator("#samples-summary")).to_contain_text("以 RAW 為準")
+    page.reload()
+    expect(page.locator("body")).not_to_have_class("booting")
+    expect(page.locator("#samples-conflicts li")).to_have_count(3)
+    expect(page.locator("#samples-summary")).to_contain_text("以 RAW 為準")
     summary["conflicts"] = []
     summary["unreadable_raw"] = []
     page.locator("#samples-refresh").click()
     expect(page.locator("#samples-conflicts")).to_be_hidden()
+
+
+def test_targeted_reports_sequence_warnings_before_analysis_and_after_reload(
+    workbench,
+    tmp_path,
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    from tests.test_analysis_set import header
+    from xic_extractor.raw_reader import RawReaderError
+
+    page = workbench
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (tmp_path / "dll").mkdir()
+    for name in ("A.raw", "B.raw", "Blank_bad.raw"):
+        (raw / name).touch()
+    sequence = tmp_path / "sequence.csv"
+    sequence.write_text("File Name,Sample Name,Order\nA,A,7\nB,B,7\n", encoding="utf-8")
+
+    def read_header(path, dll):
+        if path.stem == "Blank_bad":
+            raise RawReaderError("unreadable test header")
+        return (
+            header(str(path), 0 if path.stem == "A" else 11),
+            "study_sample",
+            path.stem,
+        )
+
+    monkeypatch.setattr("xic_extractor.raw_reader._analysis_header", read_header)
+    release = threading.Event()
+
+    class Service:
+        def execute_application(self, request):
+            assert release.wait(30)
+            return SimpleNamespace(
+                active_output=SimpleNamespace(file_results=[], diagnostics=[]),
+                published_paths=(),
+            )
+
+    monkeypatch.setattr(
+        "xic_workbench.targeted.build_canonical_targeted_application_service",
+        lambda _: Service(),
+    )
+    page.locator("#t-injection_order_source").fill(str(sequence))
+    page.locator('button[form="targeted-form"]').click()
+    try:
+        expect(page.locator("#target-samples-conflicts")).to_contain_text(
+            "序號 7 出現 2 次"
+        )
+        expect(page.locator("#target-samples-conflicts")).to_contain_text(
+            "Blank_bad.raw"
+        )
+        page.reload()
+        expect(page.locator("body")).not_to_have_class("booting")
+        expect(page.locator("#target-samples-conflicts")).to_contain_text(
+            "序號 7 出現 2 次"
+        )
+    finally:
+        release.set()
+    expect(page.locator("#target-result")).to_be_visible()
+    page.reload()
+    expect(page.locator("#target-samples-conflicts")).to_contain_text("Blank_bad.raw")
 
 
 def test_targeted_exposes_intent_only_and_editor_round_trips(workbench, config_dir):

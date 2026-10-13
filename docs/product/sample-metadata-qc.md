@@ -114,7 +114,9 @@ Targeted, Untargeted, and their command-line entry points. Injection order comes
 from the copy-aware acquisition timeline (`CreationDate` plus `RunHeaderEx`),
 not filesystem modification time, directory enumeration, or sequence row numbers.
 Sample names come from RAW headers, with local RAW stems as the fallback for
-missing or duplicate names.
+missing or duplicate names or names that collide with another RAW lookup alias.
+All RAW aliases are reserved before names are chosen; repeated context-file
+stems receive a unique display-name suffix rather than taking another RAW alias.
 
 Word, Excel, CSV, and TSV sequence inputs supply role, group, batch, and exclusion
 annotations; they do not rename samples or replace acquisition order. Partial
@@ -122,7 +124,10 @@ coverage is allowed. Matching reports unmatched entries in both directions,
 duplicate printed sequence numbers, and contradictory sample codes. Unreadable
 RAWs that would be analyzed fail with a file list; unreadable excluded or blank
 files are omitted with a warning. The workbench displays these conflicts and
-omissions. Queued Targeted work retains its frozen sequence and membership.
+omissions. Targeted reports the frozen input's sample checks before extraction
+and retains them with the result. Reloading the workbench restores these checks
+and the last loaded Untargeted sample summary. Queued Targeted work retains its
+frozen sequence and membership.
 
 This input-preparation contract can change resolved order relative to legacy
 mtime or document ordering. It is distinct from the no-value-change canonical
