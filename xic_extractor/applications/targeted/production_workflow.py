@@ -90,7 +90,7 @@ from xic_extractor.extraction.targeted_product_projection import (
     build_targeted_product_projection,
     paired_istd_positions,
 )
-from xic_extractor.output.messages import DiagnosticRecord, build_ms2_diagnostic_record
+from xic_extractor.output.messages import DiagnosticRecord, build_ms2_diagnostic_records
 from xic_extractor.output.targeted_product_model import (
     TargetedProductContext,
     TargetedProductProjection,
@@ -475,18 +475,15 @@ def _build_publication_output(
             *(
                 record
                 for record in acquisition_evidence.diagnostics
-                if record.issue not in {"NL_FAIL", "NO_MS2"}
+                if record.issue not in {"NL_FAIL", "NO_MS2", "ISTD_CONFIDENCE"}
             ),
             *(
                 record
                 for _, file_result, rendered in files
                 for label, result in rendered.items()
-                if (
-                    record := build_ms2_diagnostic_record(
-                        file_result.sample_name, targets_by_label[label], result, config
-                    )
+                for record in build_ms2_diagnostic_records(
+                    file_result.sample_name, targets_by_label[label], result, config
                 )
-                is not None
             ),
             *backfill_diagnostics,
             *position_diagnostics,

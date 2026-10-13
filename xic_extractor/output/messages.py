@@ -77,9 +77,7 @@ def build_diagnostic_records(
             )
         )
 
-    ms2_record = build_ms2_diagnostic_record(sample_name, target, result, config)
-    if ms2_record is not None:
-        records.append(ms2_record)
+    records.extend(build_ms2_diagnostic_records(sample_name, target, result, config))
 
     if result.peak_result.status == "OK" and result.peak_result.peak is not None:
         peak = result.peak_result.peak
@@ -104,29 +102,32 @@ def build_diagnostic_records(
                 )
             )
 
-        istd_confidence = _istd_confidence_diagnostic(sample_name, target, result)
-        if istd_confidence is not None:
-            records.append(istd_confidence)
-
     return records
 
 
-def build_ms2_diagnostic_record(
+def build_ms2_diagnostic_records(
     sample_name: str,
     target: Target,
     result: ExtractionResultLike,
     config: ExtractionConfig,
-) -> DiagnosticRecord | None:
+) -> list[DiagnosticRecord]:
     """Render the current selected peak's evidence, including after Backfill."""
+    records = []
     issue = _selected_or_window_nl_issue(result)
-    if issue is None:
-        return None
-    return DiagnosticRecord(
-        sample_name=sample_name,
-        target_label=target.label,
-        issue=cast(DiagnosticIssue, issue),
-        reason=_nl_reason(target, result, config),
-    )
+    if issue is not None:
+        records.append(
+            DiagnosticRecord(
+                sample_name=sample_name,
+                target_label=target.label,
+                issue=cast(DiagnosticIssue, issue),
+                reason=_nl_reason(target, result, config),
+            )
+        )
+    if result.reported_rt is not None:
+        istd_confidence = _istd_confidence_diagnostic(sample_name, target, result)
+        if istd_confidence is not None:
+            records.append(istd_confidence)
+    return records
 
 
 def istd_confidence_note(istd_confidence: str | None) -> str | None:
@@ -306,14 +307,20 @@ def _istd_confidence_diagnostic(
 
     flags: list[str] = []
     confidence = "HIGH"
-    if result.nl is not None:
-        if result.nl.status == "NO_MS2":
+    evidence = result.candidate_ms2_evidence
+    status = (
+        evidence.nl_status
+        if evidence is not None
+        else (result.nl.status if result.nl is not None else None)
+    )
+    if status is not None:
+        if status == "NO_MS2":
             flags.append("NO_MS2")
             confidence = "MEDIUM"
-        elif result.nl.status == "NL_FAIL":
+        elif status == "NL_FAIL":
             flags.append("NL_FAIL")
             confidence = "LOW"
-        elif result.nl.status == "WARN":
+        elif status == "WARN":
             flags.append("NL_WARN")
             confidence = "MEDIUM"
 
