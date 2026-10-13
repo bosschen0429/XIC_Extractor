@@ -588,9 +588,9 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
             assert workbook_rows[sample_name][field] == float(expected_text)
         for row in (long_rows[sample_name], workbook_rows[sample_name]):
             assert row["NL Evidence"] == (
-                "Not observed within tolerance"
+                "Target-peak CID-NL not supported"
                 if nl_status == "NL_FAIL"
-                else "No MS2 spectrum"
+                else "No target-matched MS2 in peak"
             )
             assert row["Reason"].startswith("MS1 peak measured; review:")
             assert "Not counted" not in row["Reason"]

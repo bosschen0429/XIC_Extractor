@@ -57,6 +57,7 @@ class ExtractionResult:
     cid_nl_products: tuple[MS2ProductEvidence, ...] = ()
     cid_nl_evaluation_receipt: CidNlEvaluationReceipt | None = None
     cid_nl_relations: CidNlMethodRelations | None = None
+    cid_nl_candidate_evidence: tuple[CandidateMS2Evidence, ...] = ()
     selected_cid_nl_candidate_index: int | None = None
     targeted_product_projection: TargetedProductProjection | None = None
 
@@ -87,6 +88,10 @@ class ExtractionResult:
     def nl_token(self) -> str | None:
         if self.candidate_ms2_evidence is not None:
             return self.candidate_ms2_evidence.to_token()
+        if self.cid_nl_evaluation_receipt is not None:
+            # No selected peak means no peak-owned positive claim. A different
+            # scan elsewhere in the acquired run is not an output fallback.
+            return None
         if self.nl is not None:
             return self.nl.to_token()
         return None

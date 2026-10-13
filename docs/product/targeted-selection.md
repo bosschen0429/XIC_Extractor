@@ -200,6 +200,22 @@ those facts itself.
 - CID-NL evidence comes from the shared Discovery chemistry and mass policy for
   the row's `dR`, `R`, or `MeR` tag. Recorded-precursor and product-plus-neutral-loss
   inference retain their evidence basis and parent-MS1 support requirements.
+- Each retained physical candidate receives one completed target-scoped MS2
+  answer from the shared CID-NL relation. Ranking, qualitative support, trace
+  diagnostics and the published `NL Evidence` consume that answer. A neighbouring
+  precursor's matching loss cannot supply trace strength or a positive label.
+- Only positive, individually attributed CID-NL support receives chemical ranking
+  priority. No MS2 and MS2 without qualified support are both unconfirmed; neither
+  has an automatic identity advantage over the other. In their absence, the
+  ordinary physical and RT/ISTD evidence decides candidate localization.
+- Final selection, including Backfill, selects the corresponding retained MS2
+  answer as well as the peak. A no-write cell has no selected-peak positive NL
+  claim. Publication never falls back to a whole-run neutral-loss observation.
+- A target-matched recorded precursor with unqualified isolation or product
+  evidence is reported as `Target-peak CID-NL not supported`, with the diagnostic
+  cause retained. `No target-matched MS2 in peak` describes acquisition opportunity,
+  not chemical absence. Neither label suppresses an independently accepted ISTD
+  Backfill or paired-ISTD identity, nor creates direct CID-NL support.
 - Identity ranking does not alter physical bounds or area. Full-trace shared
   baseline estimation can change quantitation relative to a cropped trace.
 - Product Targeted output is a workflow-owned projection from evidence and

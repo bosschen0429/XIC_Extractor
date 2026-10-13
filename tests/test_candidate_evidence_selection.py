@@ -439,7 +439,7 @@ def test_strict_decision_record_places_anchor_gate_before_tie_breaks() -> None:
     ]
     assert record.tie_break[0][0] == "strict_anchor_area_demotion_rank"
     assert record.gate == (
-        ("chemical_evidence_rank", 3.0),
+        ("chemical_evidence_rank", 1.0),
         ("anchor_selection_completeness_rank", 0.0),
         ("decision_class_rank", 1.0),
         ("blocker_count", 1.0),

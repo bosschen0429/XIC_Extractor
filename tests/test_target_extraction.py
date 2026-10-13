@@ -10,7 +10,6 @@ from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
-from xic_extractor.extraction.ms2_selection import selected_candidate_ms2_evidence
 from xic_extractor.extraction.result_models import ExtractionResult
 from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
 from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
@@ -36,38 +35,6 @@ from xic_extractor.peak_detection.physical_peak_models import (
 )
 
 _OPEN_RAW_SEAM = "xic_extractor.extraction.target_extraction.open_raw"
-
-
-def test_selected_candidate_builds_missing_ms2_evidence() -> None:
-    candidate = _candidate()
-    evidence = _evidence("NO_MS2")
-    calls: list[PeakCandidate] = []
-
-    def _builder(value: PeakCandidate) -> CandidateMS2Evidence:
-        calls.append(value)
-        return evidence
-
-    selected = selected_candidate_ms2_evidence(candidate, {}, _builder)
-
-    assert selected is evidence
-    assert calls == [candidate]
-
-
-def test_selected_candidate_prefers_existing_ms2_cache() -> None:
-    # The legacy finder deliberately points elsewhere. Formal Targeted must
-    # select from the shared physical universe and carry that owner's apex.
-    candidate = _candidate(rt=8.75, peak_start=8.7, peak_end=8.8)
-    calls: list[PeakCandidate] = []
-
-    def _builder(value: PeakCandidate) -> CandidateMS2Evidence:
-        calls.append(value)
-        return _evidence("NL_FAIL")
-
-    cached = _evidence("NO_MS2")
-    selected = selected_candidate_ms2_evidence(candidate, {candidate: cached}, _builder)
-
-    assert selected is cached
-    assert calls == []
 
 
 def test_credible_istd_anchor_rt_uses_selected_ms1_reported_rt() -> None:
@@ -715,3 +682,53 @@ def test_shared_scan_preserves_each_targets_recorded_precursor_support(tmp_path)
         assert result.selected_cid_nl_supported
         assert result.reported_rt == pytest.approx(8.0, abs=0.03)
         assert {p.precursor_mz for p in result.cid_nl_products} == {target.mz}
+
+
+@pytest.mark.parametrize("neighbour_loss_match", [False, True])
+def test_target_peak_evidence_does_not_reward_missing_or_foreign_ms2(
+    tmp_path, neighbour_loss_match
+):
+    from xic_extractor.ms2_scan_models import Ms2Window
+
+    target = _intent_target(8.0)
+    config = _strategy_config(tmp_path)
+    rt = np.linspace(0, 12, 1201)
+    intensity = (
+        10
+        + 200 * np.exp(-(((rt - 2) / 0.12) ** 2))
+        + 1000 * np.exp(-(((rt - 8) / 0.12) ** 2))
+    )
+    precursor = target.mz - 0.015 if neighbour_loss_match else target.mz
+    product = precursor - target.neutral_loss_da if neighbour_loss_match else 110.0
+    scan = Ms2Scan(7, 8.0, precursor, np.array([product]), np.array([1000.0]), 1000.0)
+    window = Ms2Window("sample", 0.0, 12.0, (Ms2ScanEvent(scan, None, 7),))
+
+    class Raw:
+        def acquisition_rt_bounds(self):
+            return 0.0, 12.0
+
+        def extract_xic(self, mz, low, high, ppm):
+            return rt, intensity
+
+    results = {}
+    target_extraction.extract_one_target(
+        Raw(),
+        config,
+        "sample",
+        target,
+        reference_rt=8.0,
+        sample_window=window,
+        results=results,
+        diagnostics=[],
+        scoring_context_factory=build_scoring_context_factory(config=config),
+    )
+    result = results[target.label]
+    # A missing DDA observation is not a chemical advantage over the reference
+    # peak; a neighbouring precursor's class loss is not this target's evidence.
+    assert result.reported_rt == pytest.approx(8.0, abs=0.03)
+    assert not result.selected_cid_nl_supported
+    assert result.candidate_ms2_evidence is not None
+    assert not result.candidate_ms2_evidence.nl_match
+    assert result.candidate_ms2_evidence.trace.product_point_count == 0
+    assert result.candidate_ms2_evidence.best_product_evidence is None
+    assert result.nl_token != "OK"

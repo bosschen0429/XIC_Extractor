@@ -77,16 +77,9 @@ def build_diagnostic_records(
             )
         )
 
-    nl_issue = _selected_or_window_nl_issue(result)
-    if nl_issue is not None:
-        records.append(
-            DiagnosticRecord(
-                sample_name=sample_name,
-                target_label=target.label,
-                issue=cast(DiagnosticIssue, nl_issue),
-                reason=_nl_reason(target, result, config),
-            )
-        )
+    ms2_record = build_ms2_diagnostic_record(sample_name, target, result, config)
+    if ms2_record is not None:
+        records.append(ms2_record)
 
     if result.peak_result.status == "OK" and result.peak_result.peak is not None:
         peak = result.peak_result.peak
@@ -116,6 +109,24 @@ def build_diagnostic_records(
             records.append(istd_confidence)
 
     return records
+
+
+def build_ms2_diagnostic_record(
+    sample_name: str,
+    target: Target,
+    result: ExtractionResultLike,
+    config: ExtractionConfig,
+) -> DiagnosticRecord | None:
+    """Render the current selected peak's evidence, including after Backfill."""
+    issue = _selected_or_window_nl_issue(result)
+    if issue is None:
+        return None
+    return DiagnosticRecord(
+        sample_name=sample_name,
+        target_label=target.label,
+        issue=cast(DiagnosticIssue, issue),
+        reason=_nl_reason(target, result, config),
+    )
 
 
 def istd_confidence_note(istd_confidence: str | None) -> str | None:
@@ -233,8 +244,8 @@ def _candidate_ms2_reason(target: Target, evidence: CandidateMS2Evidence) -> str
     probe_info = _candidate_product_probe_info(evidence)
     return (
         f"selected candidate has {evidence.trigger_scan_count} "
-        f"candidate-aligned MS2 trigger scans; strict observed neutral loss "
-        f"{nl_da:g} Da not detected in any aligned scan; "
+        f"target-matched MS2 trigger scans; target-peak CID-NL support "
+        f"for {nl_da:g} Da was not established; "
         f"alignment={evidence.alignment_source}{probe_info}"
     )
 

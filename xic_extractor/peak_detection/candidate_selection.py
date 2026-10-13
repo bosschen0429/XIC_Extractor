@@ -140,7 +140,9 @@ def candidate_selection_decision_record(
             ("rt_prior_distance", _rt_prior_distance(facts)),
             ("negative_abundance", -facts.abundance),
         )
-    # Direct method support precedes RT hints and measurement-quality review.
+    # Only positive, peak-owned method support precedes RT hints. An unobserved
+    # DDA product is not negative identity evidence, and a scan-free unrelated
+    # peak must not beat the reference peak simply by having no MS2 opportunity.
     gate = (("chemical_evidence_rank", float(_chemical_rank(facts))), *gate)
     tie_break = tuple(term for term in tie_break if term[0] != "chemical_evidence_rank")
     return DecisionRecord(
@@ -270,13 +272,9 @@ def _typed_strict_anchor_area_demotion_rank(
 
 
 def _chemical_rank(facts: CandidateEvidenceFacts) -> int:
-    if not facts.chemical.neutral_loss_required:
-        return 1
-    if facts.chemical.ms2_present and facts.chemical.nl_match:
+    if facts.chemical.neutral_loss_required and facts.chemical.nl_match:
         return 0
-    if facts.chemical.ms2_present and facts.chemical.nl_match is False:
-        return 3
-    return 2
+    return 1
 
 
 def _trace_strength_rank(facts: CandidateEvidenceFacts) -> int:

@@ -14,10 +14,10 @@ from xic_extractor.configuration.targeted_strategy import TARGETED_PRECURSOR_REF
 from xic_extractor.evidence.neutral_loss import (
     CandidateMS2Evidence,
     MS2ProductEvidence,
-    NLResult,
 )
 from xic_extractor.extraction.result_assembly import build_extraction_result
 from xic_extractor.extraction.scoring_factory import selected_candidate
+from xic_extractor.extraction.targeted_peak_evidence import build_targeted_peak_evidence
 from xic_extractor.extraction.targeted_peak_hypotheses import (
     build_targeted_peak_hypotheses as build_peak_hypotheses,
 )
@@ -91,7 +91,7 @@ class TargetedCandidateAssessment:
     preferred_rt: float | None
     strict_preferred_rt: bool
     candidate_evaluations: Mapping[PeakCandidate, PhysicalPeakEvaluation]
-    candidate_nl_support: Mapping[PeakCandidate, bool] | None
+    candidate_ms2_evidence: Mapping[PeakCandidate, CandidateMS2Evidence]
     method_products: tuple[MS2ProductEvidence, ...]
     method_receipt: CidNlEvaluationReceipt | None
     method_relations: CidNlMethodRelations | None
@@ -124,8 +124,6 @@ class TargetedCandidateAssessment:
         self,
         peak_result: PeakDetectionResult,
         *,
-        candidate_ms2_evidence: CandidateMS2EvidenceMap,
-        nl_result: NLResult | None,
         scoring_context_builder: Callable[[PeakCandidate], ScoringContext] | None,
     ) -> ExtractionResult:
         selection = select_targeted_peak(
@@ -133,7 +131,7 @@ class TargetedCandidateAssessment:
             target=self.target,
             peak_result=peak_result,
             trace_group=self.trace_group,
-            candidate_ms2_evidence=candidate_ms2_evidence,
+            candidate_ms2_evidence=self.candidate_ms2_evidence,
             prepared_result=self.prepared_result,
             universe=self.universe,
             selection_rt_min=self.selection_window[0],
@@ -143,7 +141,7 @@ class TargetedCandidateAssessment:
         candidate = selected_candidate(selection.peak_result)
         return build_extraction_result(
             peak_result=selection.peak_result,
-            nl_result=nl_result,
+            nl_result=None,
             candidate_ms2_evidence=selection.candidate_ms2_evidence,
             target=self.target,
             candidate=candidate,
@@ -156,6 +154,7 @@ class TargetedCandidateAssessment:
             cid_nl_products=self.method_products,
             cid_nl_evaluation_receipt=self.method_receipt,
             cid_nl_relations=self.method_relations,
+            cid_nl_candidate_evidence=tuple(self.candidate_ms2_evidence.values()),
             selected_cid_nl_candidate_index=(
                 tuple(self.candidate_evaluations).index(candidate)
                 if candidate is not None and self.method_relations is not None
@@ -194,7 +193,7 @@ def assess_targeted_candidate_population(
     receipt = None
     relations = None
     products: tuple[MS2ProductEvidence, ...] = ()
-    support = None
+    candidate_ms2 = {}
     if target.neutral_loss_da is not None:
         if method_window is None:
             raise ValueError("CID-NL candidate assessment requires its acquired window")
@@ -241,13 +240,16 @@ def assess_targeted_candidate_population(
             ),
             policy=policy,
         )
-        supported = relations.supported_candidate_indexes
-        support = MappingProxyType(
-            {
-                candidate: index in supported
-                for index, candidate in enumerate(candidates.candidates)
-            }
+        answers = build_targeted_peak_evidence(
+            target=target,
+            window=method_window,
+            products=products,
+            relations=relations,
+            candidate_apex_rts=tuple(
+                c.selection_apex_rt for c in candidates.candidates
+            ),
         )
+        candidate_ms2 = dict(zip(candidates.candidates, answers, strict=True))
     return TargetedCandidateAssessment(
         target=target,
         config=config,
@@ -259,7 +261,7 @@ def assess_targeted_candidate_population(
         preferred_rt=preferred_rt,
         strict_preferred_rt=strict_preferred_rt or target.neutral_loss_da is None,
         candidate_evaluations=MappingProxyType(evaluations),
-        candidate_nl_support=support,
+        candidate_ms2_evidence=MappingProxyType(candidate_ms2),
         method_products=products,
         method_receipt=receipt,
         method_relations=relations,

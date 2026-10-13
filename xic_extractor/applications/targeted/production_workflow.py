@@ -83,11 +83,14 @@ from xic_extractor.extraction.targeted_inputs import (
 from xic_extractor.extraction.targeted_istd_backfill import (
     resolve_targeted_istd_backfill,
 )
+from xic_extractor.extraction.targeted_peak_evidence import (
+    reselect_targeted_peak_evidence,
+)
 from xic_extractor.extraction.targeted_product_projection import (
     build_targeted_product_projection,
     paired_istd_positions,
 )
-from xic_extractor.output.messages import DiagnosticRecord
+from xic_extractor.output.messages import DiagnosticRecord, build_ms2_diagnostic_record
 from xic_extractor.output.targeted_product_model import (
     TargetedProductContext,
     TargetedProductProjection,
@@ -251,7 +254,7 @@ def execute_targeted_production_workflow(
         expected_samples=prepared.samples,
     )
     publication_snapshot = _build_publication_output(
-        finalized_results, prepared.acquisition_snapshot
+        finalized_results, prepared.acquisition_snapshot, config=request.config
     )
     return CompletedTargetedProductionWorkflow(
         finalized_results=finalized_results,
@@ -327,6 +330,8 @@ def _validate_target_population(
 def _build_publication_output(
     finalized_results: tuple[FinalizedTargetProductionResult, ...],
     acquisition_evidence: RunOutput,
+    *,
+    config: ExtractionConfig,
 ) -> RunOutput:
     expected_samples = finalized_results[0].canonical_samples
     expected_sample_ids = tuple(
@@ -467,7 +472,22 @@ def _build_publication_output(
             replace(file_result, results=rendered) for _, file_result, rendered in files
         ],
         diagnostics=[
-            *acquisition_evidence.diagnostics,
+            *(
+                record
+                for record in acquisition_evidence.diagnostics
+                if record.issue not in {"NL_FAIL", "NO_MS2"}
+            ),
+            *(
+                record
+                for _, file_result, rendered in files
+                for label, result in rendered.items()
+                if (
+                    record := build_ms2_diagnostic_record(
+                        file_result.sample_name, targets_by_label[label], result, config
+                    )
+                )
+                is not None
+            ),
             *backfill_diagnostics,
             *position_diagnostics,
         ],
@@ -564,6 +584,13 @@ def _finalized_extraction_result(
     backfill_supported: bool = False,
     paired_istd_identity: bool = False,
 ) -> ExtractionResult:
+    captured_physical_evaluation = extraction.physical_evaluation
+    reported_evaluation = (
+        evidence.hypothesis.peak_observation_refs[0].physical_evaluation
+        if not no_write_reason and type(evidence) is ObservedSearchSubject
+        else None
+    )
+    extraction = reselect_targeted_peak_evidence(extraction, reported_evaluation)
     projection = _finalized_product_projection(
         extraction.targeted_product_projection,
         target=target,
@@ -572,7 +599,8 @@ def _finalized_extraction_result(
         no_write_reason=no_write_reason,
         backfill_supported=backfill_supported,
         paired_istd_identity=paired_istd_identity,
-        captured_physical_evaluation=extraction.physical_evaluation,
+        captured_physical_evaluation=captured_physical_evaluation,
+        nl_status=extraction.nl_token or "",
     )
     if not no_write_reason:
         if (
@@ -612,16 +640,6 @@ def _finalized_extraction_result(
                     extraction.physical_evaluation, physical_evaluation
                 )
                 else evidence.hypothesis.evidence.quality_flags
-            ),
-            selected_cid_nl_candidate_index=next(
-                (
-                    index
-                    for index, evaluation in enumerate(
-                        extraction.candidate_physical_evaluations
-                    )
-                    if evaluation is physical_evaluation
-                ),
-                None,
             ),
             targeted_product_projection=projection,
         )
@@ -708,6 +726,7 @@ def _finalized_product_projection(
     evidence: object,
     value: float | None,
     no_write_reason: str,
+    nl_status: str,
     backfill_supported: bool = False,
     paired_istd_identity: bool = False,
     captured_physical_evaluation: PhysicalPeakEvaluation | None = None,
@@ -746,7 +765,7 @@ def _finalized_product_projection(
         rt=evidence.hypothesis.integration.rt_apex_min,
         area=value,
         confidence=projection.legacy_evidence.get("confidence", ""),
-        nl_status=projection.legacy_evidence.get("nl_status", ""),
+        nl_status=nl_status,
         cid_nl_supported=(
             evidence.hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
         ),
@@ -757,7 +776,7 @@ def _finalized_product_projection(
         conflict_reasons=projection.conflict_reasons,
         not_counted_reasons=projection.not_counted_reasons,
         exclusion_reasons=projection.exclusion_reasons,
-        legacy_evidence=projection.legacy_evidence,
+        legacy_evidence={**projection.legacy_evidence, "nl_status": nl_status},
     )
 
 

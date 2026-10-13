@@ -85,8 +85,8 @@ def display_nl_evidence(token: str | None, *, configured: bool) -> str:
     return {
         "OK": "Observed",
         "WARN": "Observed with tolerance warning",
-        "NL_FAIL": "Not observed within tolerance",
-        "NO_MS2": "No MS2 spectrum",
+        "NL_FAIL": "Target-peak CID-NL not supported",
+        "NO_MS2": "No target-matched MS2 in peak",
         "ERROR": "Processing error",
     }.get(token or "", "Unavailable")
 

@@ -1,9 +1,9 @@
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 
 import numpy as np
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
-from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
+from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.peak_detection import ms1_morphology
 from xic_extractor.peak_detection.models import PeakCandidate, PeakDetectionResult
 from xic_extractor.peak_detection.ms1_morphology import (
@@ -31,13 +31,11 @@ def build_scoring_context_factory(
         prepared_result: PreparedSignalResult,
         istd_rt_in_this_sample: float | None,
         paired_istd_fwhm: float | None,
-        nl_result: NLResult | None,
         target_reference_rt: float | None = None,
         candidate_ms2_evidence_builder: Callable[
             [PeakCandidate], CandidateMS2Evidence | None
         ]
         | None = None,
-        candidate_nl_support: Mapping[PeakCandidate, bool] | None = None,
     ) -> Callable[[PeakCandidate], ScoringContext]:
         # Expected RT is an identity prior, not a peak-generation or confidence window.
         rt_prior = (
@@ -87,13 +85,6 @@ def build_scoring_context_factory(
             except (TypeError, ValueError, FloatingPointError):
                 active_intensity_values = intensity_values
                 active_baseline_array = baseline_array
-        target_window_ms2_present = (
-            nl_result is not None and nl_result.matched_scan_count > 0
-        )
-        target_window_nl_match = nl_result is not None and nl_result.status in {
-            "OK",
-            "WARN",
-        }
 
         def builder(candidate: PeakCandidate) -> ScoringContext:
             candidate_ms2 = (
@@ -102,17 +93,9 @@ def build_scoring_context_factory(
                 else None
             )
             ms2_present = (
-                candidate_ms2.ms2_present
-                if candidate_ms2 is not None
-                else target_window_ms2_present
+                candidate_ms2.ms2_present if candidate_ms2 is not None else False
             )
-            nl_match = (
-                candidate_ms2.nl_match
-                if candidate_ms2 is not None
-                else target_window_nl_match
-            )
-            if candidate_nl_support is not None:
-                nl_match = candidate_nl_support[candidate]
+            nl_match = candidate_ms2.nl_match if candidate_ms2 is not None else False
             ms2_trace_strength = (
                 candidate_ms2.trace.strength if candidate_ms2 is not None else None
             )

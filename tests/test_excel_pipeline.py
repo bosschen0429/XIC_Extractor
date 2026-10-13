@@ -245,7 +245,7 @@ def test_workbook_explains_backfill_without_changing_saved_counts(tmp_path):
             "PeakStart": "8.5",
             "PeakEnd": "9.5",
             "NL": "NL_FAIL",
-            "NL Evidence": "Not observed within tolerance",
+            "NL Evidence": "Target-peak CID-NL not supported",
             "Confidence": "LOW",
             "Counted Detection": counted,
             "Product State": state,

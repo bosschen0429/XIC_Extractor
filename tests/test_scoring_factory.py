@@ -52,7 +52,6 @@ def test_factory_scores_analyte_against_current_sample_reference(
         istd_rt_in_this_sample=anchor,
         target_reference_rt=reference,
         paired_istd_fwhm=2.0,
-        nl_result=None,
     )
     candidate = replace(_candidate(apex_index=3), selection_apex_rt=reference)
     ctx = builder(candidate)
@@ -150,7 +149,6 @@ def test_same_prepared_shape_is_shared_by_analyte_and_selected_istd(
         prepared_result=prepared_result,
         istd_rt_in_this_sample=1.0,
         paired_istd_fwhm=paired_istd_fwhm(target, {"ISTD-A": metrics}),
-        nl_result=None,
     )(candidate)
     prepared = prepared_result.prepared
     assert prepared is not None
@@ -180,7 +178,6 @@ def test_missing_paired_width_retains_neutral_width_quality() -> None:
         prepared_result=_prepared(rt, _gaussian(rt)),
         istd_rt_in_this_sample=1.0,
         paired_istd_fwhm=paired_istd_fwhm(target, {}),
-        nl_result=None,
     )(candidate)
 
     assert ctx.fwhm_ratio is None
@@ -211,7 +208,6 @@ def test_missing_prepared_shape_keeps_legacy_active_sn(
         prepared_result=prepared_result,
         istd_rt_in_this_sample=None,
         paired_istd_fwhm=0.2,
-        nl_result=None,
     )(candidate)
     assert ctx.half_width_ratio == 1.0
     assert ctx.fwhm_ratio is None
@@ -297,7 +293,6 @@ def test_rebuilt_factories_reuse_unclipped_rt_baseline_with_expected_sn(
             prepared_result=prepared_result,
             istd_rt_in_this_sample=None,
             paired_istd_fwhm=None,
-            nl_result=None,
         )
         for apex in (150, 151):
             candidate = _candidate(apex_index=apex)
@@ -384,7 +379,6 @@ def test_missing_live_baseline_keeps_standalone_sn(
         prepared_result=prepared_result,
         istd_rt_in_this_sample=None,
         paired_istd_fwhm=None,
-        nl_result=None,
     )(_candidate(apex_index=15))
     np.testing.assert_array_equal(
         ctx.intensity_array,
@@ -409,7 +403,6 @@ def test_missing_sn_cache_keeps_raw_context(intensity: np.ndarray) -> None:
         prepared_result=_prepared(rt, intensity),
         istd_rt_in_this_sample=None,
         paired_istd_fwhm=None,
-        nl_result=None,
     )(_candidate(apex_index=1))
     np.testing.assert_array_equal(ctx.intensity_array, intensity)
     assert ctx.baseline_array is None
@@ -447,7 +440,6 @@ def test_scoring_smoothing_failure_retains_raw_sn_fallback(
         prepared_result=prepared_result,
         istd_rt_in_this_sample=None,
         paired_istd_fwhm=None,
-        nl_result=None,
     )(_candidate(apex_index=15))
     np.testing.assert_array_equal(ctx.intensity_array, intensity)
     np.testing.assert_allclose(

@@ -534,8 +534,8 @@ def _long_row(
         "NL Evidence": {
             "OK": "Observed",
             "WARN": "Observed with tolerance warning",
-            "NL_FAIL": "Not observed within tolerance",
-            "NO_MS2": "No MS2 spectrum",
+            "NL_FAIL": "Target-peak CID-NL not supported",
+            "NO_MS2": "No target-matched MS2 in peak",
             "ERROR": "Processing error",
         }.get(nl.split("_")[0] if nl.startswith("WARN_") else nl, "Unavailable"),
         "Int": "1000",

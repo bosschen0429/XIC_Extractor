@@ -11,7 +11,7 @@ from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
-from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
+from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
 from xic_extractor.ms2_trace_evidence import MS2TraceEvidence
 from xic_extractor.peak_detection.candidate_scoring import score_candidate
@@ -44,7 +44,6 @@ def test_istd_context_uses_expected_rt_prior() -> None:
         ),
         istd_rt_in_this_sample=None,
         paired_istd_fwhm=None,
-        nl_result=None,
     )
 
     ctx = builder(SimpleNamespace(selection_apex_index=3))
@@ -75,7 +74,6 @@ def test_scoring_context_uses_configured_ms1_morphology_smoothing_window() -> No
         ),
         istd_rt_in_this_sample=None,
         paired_istd_fwhm=None,
-        nl_result=None,
     )
 
     ctx = builder(SimpleNamespace(selection_apex_index=4))
@@ -99,22 +97,14 @@ def test_analyte_context_keeps_shape_ratio_with_expected_rt() -> None:
         ),
         istd_rt_in_this_sample=10.0,
         paired_istd_fwhm=2.0,
-        nl_result=NLResult(
-            status="OK",
-            best_ppm=10.0,
-            best_scan_rt=10.2,
-            valid_ms2_scan_count=3,
-            parse_error_count=0,
-            matched_scan_count=3,
-        ),
     )
 
     ctx = builder(SimpleNamespace(selection_apex_index=3))
 
     assert ctx.rt_prior == 10.0
     assert ctx.rt_prior_sigma is None
-    assert ctx.ms2_present is True
-    assert ctx.nl_match is True
+    assert ctx.ms2_present is False
+    assert ctx.nl_match is False
     assert ctx.fwhm_ratio is not None
     assert ctx.fwhm_ratio > 0
 
@@ -134,14 +124,6 @@ def test_context_without_other_sample_data_uses_expected_rt() -> None:
         ),
         istd_rt_in_this_sample=None,
         paired_istd_fwhm=None,
-        nl_result=NLResult(
-            status="NO_MS2",
-            best_ppm=None,
-            best_scan_rt=None,
-            valid_ms2_scan_count=0,
-            parse_error_count=0,
-            matched_scan_count=0,
-        ),
     )
 
     ctx = builder(SimpleNamespace(selection_apex_index=3))
@@ -152,7 +134,7 @@ def test_context_without_other_sample_data_uses_expected_rt() -> None:
     assert ctx.nl_match is False
 
 
-def test_scoring_context_uses_candidate_ms2_evidence_not_target_window_nl() -> None:
+def test_scoring_context_uses_complete_candidate_ms2_evidence() -> None:
     factory = build_scoring_context_factory(
         config=_config(),
     )
@@ -167,14 +149,6 @@ def test_scoring_context_uses_candidate_ms2_evidence_not_target_window_nl() -> N
         ),
         istd_rt_in_this_sample=None,
         paired_istd_fwhm=None,
-        nl_result=NLResult(
-            status="OK",
-            best_ppm=1.0,
-            best_scan_rt=10.2,
-            valid_ms2_scan_count=3,
-            parse_error_count=0,
-            matched_scan_count=3,
-        ),
         candidate_ms2_evidence_builder=lambda _candidate: CandidateMS2Evidence(
             ms2_present=False,
             nl_match=False,
@@ -208,7 +182,6 @@ def test_scoring_context_keeps_trigger_without_strict_nl_match() -> None:
         ),
         istd_rt_in_this_sample=None,
         paired_istd_fwhm=None,
-        nl_result=None,
         candidate_ms2_evidence_builder=lambda _candidate: CandidateMS2Evidence(
             ms2_present=True,
             nl_match=False,
@@ -242,7 +215,6 @@ def test_scoring_context_copies_candidate_ms2_trace_strength() -> None:
         ),
         istd_rt_in_this_sample=None,
         paired_istd_fwhm=None,
-        nl_result=None,
         candidate_ms2_evidence_builder=lambda _candidate: CandidateMS2Evidence(
             ms2_present=True,
             nl_match=True,
@@ -319,14 +291,6 @@ def test_strict_nl_candidate_beats_candidate_with_trigger_but_failed_nl() -> Non
         ),
         istd_rt_in_this_sample=None,
         paired_istd_fwhm=None,
-        nl_result=NLResult(
-            status="OK",
-            best_ppm=1.0,
-            best_scan_rt=10.2,
-            valid_ms2_scan_count=3,
-            parse_error_count=0,
-            matched_scan_count=3,
-        ),
         candidate_ms2_evidence_builder=_candidate_ms2_evidence,
     )
     scored = [
@@ -374,7 +338,6 @@ def test_scoring_context_caches_asls_without_retained_intermediate(
         prepared_result=replace(_prepared(rt, intensity), baseline_unclipped=None),
         istd_rt_in_this_sample=None,
         paired_istd_fwhm=None,
-        nl_result=None,
     )
 
     result = find_peak_and_area(

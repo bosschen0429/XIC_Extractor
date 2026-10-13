@@ -107,11 +107,11 @@ def _bind_acquisition_sources(
                         acquisition_source_id=source.acquisition_source_id,
                     )
                 )
-            result = replace(result, cid_nl_products=tuple(products))
-            candidate = result.candidate_ms2_evidence
-            product = None if candidate is None else candidate.best_product_evidence
-            if product is not None:
-                assert candidate is not None
+
+            def bind_candidate(candidate):
+                product = None if candidate is None else candidate.best_product_evidence
+                if product is None:
+                    return candidate
                 if product.acquisition_source_id not in (
                     "",
                     source.acquisition_source_id,
@@ -120,14 +120,23 @@ def _bind_acquisition_sources(
                         "Acquisition output contains MS2 evidence from a different "
                         f"RAW source for {sample_name!r}/{target_label!r}."
                     )
-                candidate = replace(
+                return replace(
                     candidate,
                     best_product_evidence=replace(
                         product,
                         acquisition_source_id=source.acquisition_source_id,
                     ),
                 )
-                result = replace(result, candidate_ms2_evidence=candidate)
+
+            result = replace(
+                result,
+                cid_nl_products=tuple(products),
+                candidate_ms2_evidence=bind_candidate(result.candidate_ms2_evidence),
+                cid_nl_candidate_evidence=tuple(
+                    bind_candidate(candidate)
+                    for candidate in result.cid_nl_candidate_evidence
+                ),
+            )
             results[target_label] = result
         file_results.append(replace(file_result, results=results))
     return replace(output, file_results=file_results)

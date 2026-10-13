@@ -13,23 +13,16 @@ from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
-from xic_extractor.evidence.neutral_loss import (
-    CandidateMS2Evidence,
-)
 from xic_extractor.extraction.anchors import (
     paired_anchor_mismatch_diagnostic,
 )
 from xic_extractor.extraction.diagnostics import (
-    candidate_ms2_evidence_builder,
-    check_target_nl,
     istd_anchor_missing_diagnostic,
 )
 from xic_extractor.extraction.drift import estimate_sample_drift
-from xic_extractor.extraction.ms2_selection import selected_candidate_ms2_evidence
 from xic_extractor.extraction.scoring_factory import (
     is_credible_istd_peak,
     paired_istd_fwhm,
-    selected_candidate,
     selected_shape_metrics,
 )
 from xic_extractor.extraction.targeted_peak_selection import (
@@ -43,9 +36,6 @@ from xic_extractor.output.messages import (
     DiagnosticRecord,
     build_diagnostic_records,
     istd_confidence_note,
-)
-from xic_extractor.peak_detection.models import (
-    PeakCandidate,
 )
 from xic_extractor.peak_detection.physical_peak_candidate_adapter import (
     physical_candidates_result,
@@ -268,9 +258,6 @@ def extract_one_target(
         method_seeds = prepare_sample_method_seeds(raw, sample_window, [target])[
             target.cid_nl_tag
         ]
-    nl_result = check_target_nl(
-        raw, target, config, sample_key=sample_name, window=sample_window
-    )
     profile = resolve_signal_processing_profile(
         signal_processing_method=config.signal_processing_method,
         signal_processing_window_points=config.signal_processing_window_points,
@@ -317,22 +304,6 @@ def extract_one_target(
     )
 
     scoring_context_builder = None
-    candidate_ms2_builder = candidate_ms2_evidence_builder(
-        raw, target, config, sample_key=sample_name, window=method_window
-    )
-    candidate_ms2_cache: dict[PeakCandidate, CandidateMS2Evidence] = {}
-
-    def _cached_candidate_ms2_builder(
-        candidate: PeakCandidate,
-    ) -> CandidateMS2Evidence | None:
-        if candidate_ms2_builder is None:
-            return None
-        evidence = candidate_ms2_cache.get(candidate)
-        if evidence is None:
-            evidence = candidate_ms2_builder(candidate)
-            candidate_ms2_cache[candidate] = evidence
-        return evidence
-
     if scoring_context_factory is not None:
         scoring_context_builder = scoring_context_factory(
             target=target,
@@ -342,9 +313,7 @@ def extract_one_target(
             istd_rt_in_this_sample=istd_rt_in_this_sample,
             target_reference_rt=target_reference_rt,
             paired_istd_fwhm=paired_istd_fwhm,
-            nl_result=nl_result,
-            candidate_ms2_evidence_builder=_cached_candidate_ms2_builder,
-            candidate_nl_support=candidate_assessment.candidate_nl_support,
+            candidate_ms2_evidence_builder=candidate_assessment.candidate_ms2_evidence.get,
             prepared_result=prepared,
         )
     peak_result = candidate_assessment.rank_candidates(
@@ -365,16 +334,8 @@ def extract_one_target(
             peak_result,
             paired_istd_anchor_rt=istd_rt_in_this_sample,
         )
-    candidate = selected_candidate(peak_result)
-    selected_candidate_ms2_evidence(
-        candidate,
-        candidate_ms2_cache,
-        _cached_candidate_ms2_builder,
-    )
     result = candidate_assessment.complete_result(
         peak_result,
-        candidate_ms2_evidence=candidate_ms2_cache,
-        nl_result=nl_result,
         scoring_context_builder=scoring_context_builder,
     )
     peak_result = result.peak_result
