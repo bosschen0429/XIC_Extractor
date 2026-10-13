@@ -90,6 +90,8 @@ def test_default_settings_resolve_from_development_or_executable_root(
     save_workspace(config_dir, settings={"parallel_workers": "7"})
     from xic_extractor.configuration import paths
 
+    # This test exercises root selection itself, within its disposable checkout.
+    monkeypatch.setattr(execution_settings, "runtime_root", paths.runtime_root)
     monkeypatch.setattr(paths.sys, "frozen", frozen, raising=False)
     monkeypatch.setattr(paths.sys, "executable", str(runtime_root / "xic.exe"))
     monkeypatch.setattr(

@@ -137,6 +137,7 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    isolated_config_dir: Path,
 ) -> None:
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
@@ -148,14 +149,9 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
     dll_dir.mkdir()
     output_dir = tmp_path / "out"
     captured = {}
-    execution_root = tmp_path / "runtime"
-    (execution_root / "config").mkdir(parents=True)
-    (execution_root / "config" / "settings.csv").write_text(
-        "key,value\nparallel_workers,1\n", encoding="utf-8"
-    )
-    from xic_extractor.configuration import execution_profile as execution_settings
+    from xic_extractor.configuration.workspace_state import save_workspace
 
-    monkeypatch.setattr(execution_settings, "_runtime_root", lambda: execution_root)
+    save_workspace(isolated_config_dir, settings={"parallel_workers": "1"})
 
     def _fake_run_discovery_batch(
         raw_paths, *, output_dir, settings, peak_config, run_spec, max_workers

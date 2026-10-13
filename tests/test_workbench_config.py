@@ -223,3 +223,35 @@ def test_bootstrap_resolves_effective_settings_once(tmp_path, monkeypatch):
         assert config["untargeted"]["dll_dir"] == config["settings"]["dll_dir"]
     finally:
         workspace.jobs.close()
+
+
+def test_default_workspace_save_and_cli_share_isolated_settings(isolated_config_dir):
+    from xic_extractor.configuration.execution_profile import load_execution_profile
+    from xic_workbench.workspace import ReviewWorkspace
+
+    workspace = ReviewWorkspace()
+    try:
+        workspace.analysis.action(
+            "targeted/save",
+            {
+                "settings": {"parallel_workers": "3"},
+                "targets": [
+                    {
+                        "label": "test",
+                        "mz": "258.1085",
+                        "expected_rt_min": "9.0",
+                        "cid_nl_tag": "dR",
+                        "role": "istd",
+                        "istd_pair": "",
+                    }
+                ],
+            },
+        )
+        workspace.analysis.action("untargeted/save", {"raw_dir": "test-raws"})
+    finally:
+        workspace.close()
+
+    assert (isolated_config_dir / "workspace.json").is_file()
+    assert config_io.read_settings()["parallel_workers"] == "3"
+    assert load_execution_profile().parallel_workers == 3
+    assert discovery_config_io.read_discovery_config()["raw_dir"] == "test-raws"

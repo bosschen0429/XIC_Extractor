@@ -70,12 +70,16 @@ def test_equal_workbench_cli_inputs_compile_equal_immutable_identity(
 def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    isolated_config_dir: Path,
 ) -> None:
     import xic_workbench.untargeted as workbench_module
     from scripts import run_discovery as cli_module
     from tests.raw_header_fakes import install_fake_raw_headers
 
     install_fake_raw_headers(monkeypatch)
+    from xic_extractor.configuration.workspace_state import save_workspace
+
+    save_workspace(isolated_config_dir, settings={"parallel_workers": "2"})
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
     (raw_dir / "B.raw").write_bytes(b"second acquisition")
@@ -121,6 +125,7 @@ def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
 
     def cli_batch(*_args, **kwargs):
         captured["cli"] = kwargs["run_spec"]
+        captured["cli_workers"] = kwargs["max_workers"]
         return SimpleNamespace(batch_index_csv=index_path, per_sample=())
 
     monkeypatch.setattr(cli_module, "run_discovery_batch", cli_batch)
@@ -137,6 +142,7 @@ def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
         )
         == 0
     )
+    assert captured["cli_workers"] == 2
 
     specs = tuple(cast(object, captured[key]) for key in ("workbench", "cli"))
     serialized = tuple(
