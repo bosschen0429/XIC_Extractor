@@ -50,7 +50,9 @@ def strategy_receipt() -> dict:
         "cid_nl_identity_precursor_reference": TARGETED_PRECURSOR_REFERENCE,
         "cid_nl_evidence_scope": "target_mass_and_physical_peak",
         "cid_nl_ranking_priority": "positive_support_only",
-        "uncalibrated_paired_istd_position": "coelution_rejection_only",
+        "uncalibrated_paired_istd_position": (
+            "qualified_identity_and_coelution_rejection"
+        ),
         "signal_processing": asdict(DEFAULT_SIGNAL_PROCESSING_PROFILE),
         "cid_nl_recipes": {
             tag: asdict(targeted_tag_profile(tag)) for tag in TAG_PRESETS

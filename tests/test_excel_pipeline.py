@@ -1,3 +1,4 @@
+import json
 from dataclasses import replace
 from pathlib import Path
 from xml.etree import ElementTree
@@ -187,6 +188,14 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
         "signal_processing_method",
         "signal_processing_window_points",
     } <= metadata_keys
+    metadata_values = dict(
+        ws_metadata.iter_rows(min_row=2, max_col=2, values_only=True)
+    )
+    strategy = json.loads(metadata_values["targeted_strategy"])
+    assert (
+        strategy["uncalibrated_paired_istd_position"]
+        == "qualified_identity_and_coelution_rejection"
+    )
     wb.close()
     from xic_inspector.api import SelectionRequest, prepare_report
 
