@@ -3,7 +3,6 @@ from dataclasses import dataclass
 import pytest
 
 from xic_extractor.extraction.targeted_product_projection import (
-    PairedIstdPositions,
     build_targeted_product_projection,
     paired_istd_positions,
 )
@@ -208,6 +207,30 @@ def test_paired_istd_position_identifies_or_rejects_the_analyte_peak() -> None:
     # analyte; without a counted ISTD there is no position to judge.
     assert positions.off_position.keys() == {"off_offset"}
     assert positions.off_position["off_offset"] == pytest.approx(0.40)
-    # One confirmed sample gives no offset to agree with.
+    # One confirmed sample cannot confer identity, but must not publish a far peak.
     lone = {s: r for s, r in analyte.items() if s in {"C1", "near", "off_offset"}}
-    assert paired_istd_positions(lone, istd) == PairedIstdPositions()
+    lone_positions = paired_istd_positions(lone, istd)
+    assert not lone_positions.identified
+    assert lone_positions.off_position == {"off_offset": pytest.approx(0.5)}
+
+
+@pytest.mark.parametrize("confirmed_count", [0, 1])
+def test_uncalibrated_pair_rejects_far_signal_without_promoting_near_signal(
+    confirmed_count: int,
+) -> None:
+    analyte = {
+        "near": _Result(26.04, _analyte(cid_nl=False)),
+        "far": _Result(44.45, _analyte(cid_nl=False)),
+        "no_anchor": _Result(44.45, _analyte(cid_nl=False)),
+    }
+    istd = {
+        "near": _Result(26.0, _istd()),
+        "far": _Result(25.0, _istd(cid_nl=False, backfill=True)),
+        "no_anchor": _Result(25.0, _istd(cid_nl=False)),
+    }
+    if confirmed_count:
+        analyte["confirmed"] = _Result(26.05, _analyte(cid_nl=True))
+        istd["confirmed"] = _Result(26.0, _istd())
+    positions = paired_istd_positions(analyte, istd)
+    assert positions.off_position == {"far": pytest.approx(19.45)}
+    assert not positions.identified

@@ -226,7 +226,8 @@ def paired_istd_positions(
     coherent MS1 peak there takes its chemical identity from the ISTD whether
     or not its own neutral loss was observed. A peak elsewhere is another
     signal, not this analyte. The offset is learned from samples where both are
-    counted; with fewer than two such samples there is no position to judge.
+    counted. Without two confirmed pairs, co-elution still rejects a distant
+    unconfirmed signal, but proximity alone does not confer identity.
     """
     counted_istd = {
         sample: rt
@@ -240,14 +241,12 @@ def paired_istd_positions(
         and _counted(result)
         and (rt := _finite(result.reported_rt)) is not None
     ]
-    if len(offsets) < 2:
-        return PairedIstdPositions()
-    center = median(offsets)
-    residuals = [abs(offset - center) for offset in offsets]
-    tolerance = max(
-        _PAIRED_OFFSET_FLOOR_MIN,
-        quantiles(residuals, n=10, method="inclusive")[-1],
-    )
+    calibrated = len(offsets) >= 2
+    center = median(offsets) if calibrated else 0.0
+    tolerance = _PAIRED_OFFSET_FLOOR_MIN
+    if calibrated:
+        residuals = [abs(offset - center) for offset in offsets]
+        tolerance = max(tolerance, quantiles(residuals, n=10, method="inclusive")[-1])
     identified = set()
     off_position = {}
     for sample, result in analyte.items():
@@ -264,7 +263,8 @@ def paired_istd_positions(
         if abs(deviation) > tolerance:
             off_position[sample] = deviation
         elif (
-            not projection.conflict_reasons
+            calibrated
+            and not projection.conflict_reasons
             and not projection.exclusion_reasons
             and (
                 _COHERENT_MS1_PEAK <= set(projection.support_reasons)

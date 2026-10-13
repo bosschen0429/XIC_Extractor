@@ -142,7 +142,7 @@ composes it once every Target of the batch has rendered. All of these must hold:
 3. Its apex RT minus the ISTD's agrees with this batch's confirmed offset: the
    median over samples where both are counted, within the larger of 12 s and
    the p90 of those samples' residuals. Fewer than two confirmed samples give no
-   offset, and the rule does not apply.
+   offset, so proximity alone does not confer identity.
 
 The result records `paired_istd_identity` among its support reasons, so it
 remains distinguishable from NL-confirmed detection. Morphology, overlap and
@@ -153,7 +153,10 @@ confirmed offset exists, an uncounted analyte peak outside that tolerance is
 another signal, not this analyte. Its RT, area and bounds are published as no
 value (`analyte_peak_off_paired_istd_position`), and the measured peak remains
 an `OFF_ISTD_POSITION` diagnostic event. `paired_istd_positions` returns both
-answers from one offset.
+answers from one position assessment. Without two confirmed analyte/ISTD pairs,
+rejection still applies around the counted ISTD itself using the existing 12 s
+co-elution floor. An out-of-position unconfirmed signal is ND, not a numeric
+Target result; being inside this fallback window does not confer identity.
 
 Cohort Backfill is a distinct, owner-bound recovery after direct reference
 observations are available. The [shared Backfill route](backfill.md#targeted-route)
