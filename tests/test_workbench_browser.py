@@ -187,6 +187,8 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(workbench, config_d
         expect(cell).to_have_css("text-align", "center")
     expect(page.locator("#targeted-advanced")).to_have_count(0)
     expect(page.locator("#t-ms2_precursor_tol_da")).to_have_count(0)
+    expect(page.locator("#t-parallel_workers")).to_be_visible()
+    page.locator("#t-parallel_workers").fill("2")
     page.locator("#target-edit").click()
     expect(page.locator("#target-editor")).to_be_visible()
     editor_cells = page.locator(
@@ -215,6 +217,8 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(workbench, config_d
         )
     ).to_have_value("R")
     assert set(read_settings(config_dir=config_dir)) == set(CANONICAL_SETTINGS_DEFAULTS)
+    assert read_settings(config_dir=config_dir)["parallel_workers"] == "2"
+    expect(page.locator("#t-parallel_workers")).to_have_value("2")
 
 
 def test_target_list_save_and_load_preserves_batch(workbench):

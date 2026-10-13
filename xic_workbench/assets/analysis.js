@@ -379,7 +379,7 @@
     const note = el("div", undefined, "method-note");
     note.id = "target-method-note";
     method.append(el("p", "目標清單決定名稱、m/z、預期 RT、CID-NL tag 與 ISTD 配對。平台共用候選與證據策略。", "settings-notice"), note);
-    const panels = { batch: data, environment: execution };
+    const panels = { batch: data, environment: execution, runtime: execution };
     const groups = new Map();
     for (const spec of state.config.targeted_form.settings) {
       const panel = panels[spec.scope];
@@ -387,7 +387,7 @@
       const groupKey = spec.scope;
       if (!groups.has(groupKey)) {
         const section = el("section", undefined, "settings-group");
-        const scopeHeading = { batch: "批次輸入", environment: "本機環境" };
+        const scopeHeading = { batch: "批次輸入", environment: "本機環境", runtime: "執行資源" };
         section.append(el("h3", scopeHeading[spec.scope] || spec.group));
         const grid = el("div", undefined, "settings-grid");
         section.append(grid);

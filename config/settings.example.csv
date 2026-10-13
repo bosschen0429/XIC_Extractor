@@ -2,3 +2,4 @@ key,value,description
 data_dir,C:/your/data/folder,RAW batch directory
 dll_dir,C:/Xcalibur/system/programs,Xcalibur DLL directory
 injection_order_source,,Optional CSV/XLSX injection order; blank uses RAW mtime
+parallel_workers,,RAW worker count; blank uses CPU count minus one (at least 1)

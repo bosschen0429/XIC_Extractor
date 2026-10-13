@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from xic_extractor.configuration.execution_profile import default_parallel_workers
+from xic_extractor.configuration.execution_profile import resolve_execution_profile
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig
 from xic_extractor.configuration.parsing import (
     _parse_existing_dir,
@@ -17,6 +17,7 @@ class _ParsedSettings:
     data_dir: Path
     dll_dir: Path
     injection_order_source: Path | None
+    parallel_workers: int
 
 
 def fill_setting_defaults(raw: dict[str, str]) -> tuple[dict[str, str], list[str]]:
@@ -25,7 +26,8 @@ def fill_setting_defaults(raw: dict[str, str]) -> tuple[dict[str, str], list[str
         raise ConfigError(
             "Retired or unknown Targeted settings: "
             + ", ".join(unknown)
-            + ". Use only data_dir, dll_dir and injection_order_source; "
+            + ". Use only data_dir, dll_dir, injection_order_source "
+            "and parallel_workers; "
             "scientific overrides are not accepted."
         )
     return {**CANONICAL_SETTINGS_DEFAULTS, **raw}, []
@@ -38,10 +40,15 @@ def validate_settings_values(
     for key in ("data_dir", "dll_dir"):
         if not values[key].strip():
             raise ConfigError(f"{settings_path}: {key} is required")
+    try:
+        execution = resolve_execution_profile(values)
+    except ValueError as exc:
+        raise ConfigError(f"{settings_path}: {exc}") from exc
     return _ParsedSettings(
         Path(values["data_dir"]).expanduser(),
         Path(values["dll_dir"]).expanduser(),
         _parse_optional_path(values["injection_order_source"]),
+        execution.parallel_workers,
     )
 
 
@@ -83,6 +90,6 @@ def build_extraction_config(
         nl_min_intensity_ratio=policy.nl_min_intensity_ratio,
         injection_order_source=parsed.injection_order_source,
         parallel_mode="process",
-        parallel_workers=default_parallel_workers(),
+        parallel_workers=parsed.parallel_workers,
         config_hash=config_hash,
     )

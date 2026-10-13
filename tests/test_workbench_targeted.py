@@ -36,6 +36,7 @@ def test_settings_round_trip_rejects_hidden_science_without_migrating(tmp_path):
         "data_dir": "C:/RAW",
         "dll_dir": "C:/Thermo",
         "injection_order_source": "",
+        "parallel_workers": "",
     }
     write_settings(settings, config_dir=tmp_path)
     with pytest.raises(ConfigError, match="dirty_matrix_mode"):
@@ -162,9 +163,17 @@ def test_targeted_fields_are_batch_and_machine_only():
     from xic_workbench.targeted import setting_fields
 
     fields = {field["key"]: field for field in setting_fields()}
-    assert set(fields) == {"data_dir", "dll_dir", "injection_order_source"}
+    assert set(fields) == {
+        "data_dir",
+        "dll_dir",
+        "injection_order_source",
+        "parallel_workers",
+    }
     assert fields["data_dir"]["scope"] == "batch"
     assert fields["dll_dir"]["scope"] == "environment"
+    assert fields["parallel_workers"]["scope"] == "runtime"
+    assert fields["parallel_workers"]["default"] == ""
+    assert fields["parallel_workers"]["min"] == 1
 
 
 def test_targeted_run_uses_canonical_service_and_returns_published_two_sample_summary(

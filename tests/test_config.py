@@ -87,7 +87,6 @@ def test_missing_input_is_actionable(tmp_path, name):
     "key",
     [
         "parallel_mode",
-        "parallel_workers",
         "dirty_matrix_mode",
         "rolling_window_size",
         "nl_rt_anchor_search_margin_min",
@@ -109,8 +108,34 @@ def test_settings_reject_all_hidden_overrides(key):
 def test_defaults_are_only_batch_and_machine():
     values, warnings = fill_setting_defaults({})
     assert values == CANONICAL_SETTINGS_DEFAULTS
-    assert set(values) == {"data_dir", "dll_dir", "injection_order_source"}
+    assert set(values) == {
+        "data_dir",
+        "dll_dir",
+        "injection_order_source",
+        "parallel_workers",
+    }
     assert warnings == []
+
+
+@pytest.mark.parametrize("workers", ["", "2", "5"])
+def test_targeted_and_discovery_share_saved_worker_budget(tmp_path, workers):
+    from xic_extractor.configuration.execution_profile import load_execution_profile
+    from xic_workbench.config_io import write_settings
+
+    _write_valid_config(tmp_path)
+    path = tmp_path / "settings.csv"
+    write_settings({"parallel_workers": workers}, config_dir=tmp_path)
+    assert read_settings(path)["parallel_workers"] == workers
+    config, _ = load_config(tmp_path)
+    assert config.parallel_workers == load_execution_profile(path).parallel_workers
+    if workers:
+        assert config.parallel_workers == int(workers)
+
+
+@pytest.mark.parametrize("workers", ["0", "-1", "1.5", "bad"])
+def test_targeted_rejects_invalid_worker_budget(workers):
+    with pytest.raises(ConfigError, match="parallel_workers.*integer >= 1"):
+        resolve_settings({"parallel_workers": workers})
 
 
 @pytest.mark.parametrize("tag", ["dR", "R", "MeR"])

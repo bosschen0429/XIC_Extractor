@@ -203,6 +203,16 @@ _SETTING_FIELDS: tuple[tuple[str, str, str, dict[str, Any]], ...] = (
         "file",
         {"help": "CSV／XLSX；留空使用 RAW 修改時間。"},
     ),
+    (
+        "parallel_workers",
+        "RAW workers",
+        "number",
+        {
+            "min": 1,
+            "step": 1,
+            "help": "與 Discovery 共用；留空使用 CPU 數減一（至少 1）。",
+        },
+    ),
 )
 
 
