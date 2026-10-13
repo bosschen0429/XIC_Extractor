@@ -538,8 +538,14 @@ window.XicUi = (() => {
   async function startCurves() {
     if (!$("raw-dir").value.trim() || !$("dll-dir").value.trim()) {
       $("source-settings").open = true;
-      $(!$("raw-dir").value.trim() ? "raw-dir" : "dll-dir").focus();
-      throw new Error("請先在「結果與 RAW 位置」選擇 RAW 與 DLL 資料夾，再點「看 XIC」。");
+      const rawMissing = !$("raw-dir").value.trim();
+      const missing = $(rawMissing ? "raw-dir" : "dll-dir");
+      // The click may come from far down the page; bring the field and the
+      // status line below it on screen. action() disables inputs while it
+      // runs, so focus waits until they are enabled again.
+      missing.scrollIntoView({ block: "center" });
+      setTimeout(() => missing.focus({ preventScroll: true }));
+      throw new Error(`看 XIC 需要讀取 RAW。請先選擇${rawMissing ? " RAW 資料夾" : " RawFileReader DLL 資料夾"}。`);
     }
     const targeted = state.page.source_kind === "targeted_workbook";
     $("xic-title").textContent = targeted ? state.item.title : `XIC · m/z ${fmt(state.item.precursor_mz, 4)}`;

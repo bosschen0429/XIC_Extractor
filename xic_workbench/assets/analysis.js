@@ -178,6 +178,9 @@
   }
 
   // Form fields
+  // Example templates ship placeholder paths that are not real inputs.
+  const isTemplatePath = (value) =>
+    value.startsWith("<") || /[\\/]your[\\/]/i.test(value);
   function field(spec, value, prefix) {
     const kind = spec.kind === "choice" ? "select" : spec.kind;
     const label = el(
@@ -215,6 +218,8 @@
     if (["folder", "file"].includes(kind)) input.className = "path";
     if (kind === "checkbox")
       input.checked = value === true || String(value).toLowerCase() === "true";
+    else if (["folder", "file"].includes(kind) && isTemplatePath(String(value ?? "")))
+      input.value = "";
     else input.value = value ?? "";
     const help = spec.help ? el("small", spec.help) : null;
     if (["folder", "file"].includes(kind)) {
@@ -261,9 +266,7 @@
   }
   function pathItem(label, id, missing) {
     const value = $(id)?.value.trim() || "";
-    // Example templates ship placeholder paths that are not real inputs.
-    const usable =
-      value && !value.startsWith("<") && !/[\\/]your[\\/]/i.test(value);
+    const usable = value && !isTemplatePath(value);
     return checkItem(
       usable ? "ok" : "todo",
       label,
@@ -366,8 +369,11 @@
     const values = { ...state.config.settings };
     for (const spec of state.config.targeted_form.settings) {
       const input = $(`t-${spec.key}`);
-      if (input) values[spec.key] =
-        spec.kind === "checkbox" ? String(input.checked) : input.value;
+      if (!input) continue;
+      if (spec.kind === "checkbox") values[spec.key] = String(input.checked);
+      // A field left blank over a template path keeps saving the template.
+      else if (input.value || !isTemplatePath(String(values[spec.key] ?? "")))
+        values[spec.key] = input.value;
     }
     return values;
   }

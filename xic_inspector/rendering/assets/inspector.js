@@ -161,6 +161,9 @@
     const value = (v, digits = 4) => v === null || v === undefined || v === ''
       ? '未提供' : typeof v === 'number' ? v.toLocaleString('en-US', {maximumFractionDigits: digits}) : String(v);
     const range = (start, end) => `${value(start)} – ${value(end)} min`;
+    // Current target lists save one expected RT as equal RT min/max.
+    const rtSetting = (start, end) => start === end && start !== null && start !== undefined && start !== ''
+      ? `預期 RT ${value(start)} min` : `設定 RT ${range(start, end)}`;
     const counted = v => v === true || v === 'TRUE' ? '是' : v === false || v === 'FALSE' ? '否' : '未記錄';
     const reviewWhy = review => review?.Why === '峰不在內標位置，報 ND'
       ? 'ND；舊紀錄僅描述所選候選峰偏離內標，近內標訊號的排除原因未記錄，請看原始 scan'
@@ -201,7 +204,7 @@
       const reviews = new Map(item.details.review_queue.map(row => [row.Sample, row]));
       const section = element('section');
       if (payload.items.length > 1) section.append(element('h2', item.title));
-      const context = [target.Role, target['ISTD Pair'] ? `配對 ISTD：${target['ISTD Pair']}` : null, `設定 RT ${range(target['RT min'], target['RT max'])}`].filter(Boolean);
+      const context = [target.Role, target['ISTD Pair'] ? `配對 ISTD：${target['ISTD Pair']}` : null, rtSetting(target['RT min'], target['RT max'])].filter(Boolean);
       section.append(element('p', context.join(' · '), 'tgt-context'));
       const banner = focusBanner(focus);
       if (banner) section.append(banner);

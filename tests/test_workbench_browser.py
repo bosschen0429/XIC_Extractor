@@ -241,6 +241,26 @@ def test_target_list_save_and_load_preserves_batch(workbench):
     ).to_have_value("1.5")
 
 
+def test_template_batch_folder_reads_as_unselected_and_still_saves(
+    workbench, config_dir, tmp_path
+):
+    page = workbench
+    write_settings(
+        {**CANONICAL_SETTINGS_DEFAULTS, "dll_dir": str(tmp_path / "dll")},
+        config_dir=config_dir,
+    )
+    page.reload()
+    # The shipped example path is not a user choice; the field must look empty.
+    expect(page.locator("#t-data_dir")).to_have_value("")
+    expect(page.locator("#target-checklist")).to_contain_text("尚未選擇資料夾")
+    page.locator("#target-save").click()
+    expect(page.locator("#toasts .toast.ok")).to_contain_text("已儲存")
+    assert (
+        read_settings(config_dir=config_dir)["data_dir"]
+        == CANONICAL_SETTINGS_DEFAULTS["data_dir"]
+    )
+
+
 def test_saved_intent_submits_without_advanced_settings(fake_runs, workbench):
     page = workbench
     _start(page, "targeted")
@@ -609,12 +629,19 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
 def test_targeted_review_marks_the_rare_detection_and_opens_it_in_place(
     workbench, tmp_path
 ):
+    from openpyxl import load_workbook
+
     from tests.test_xic_inspector_targeted_workbook import (
         write_rare_detection_workbook,
     )
 
     page = workbench
     workbook = write_rare_detection_workbook(tmp_path / "rare.xlsx")
+    # Current Targeted workbooks store one expected RT as equal RT min/max.
+    book = load_workbook(workbook)
+    book["Targets"]["E2"] = book["Targets"]["F2"] = 9.25
+    book.save(workbook)
+    book.close()
     _view(page, "review")
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
@@ -625,6 +652,7 @@ def test_targeted_review_marks_the_rare_detection_and_opens_it_in_place(
     expect(page.locator("#target-id")).to_be_visible()
     expect(page.locator("#review")).to_have_class("review-grid single-target")
     frame = page.frame_locator("#inspector")
+    expect(frame.locator(".tgt-context")).to_contain_text("預期 RT 9.25 min")
     rows = frame.locator(".tgt-table tbody tr")
     # Rows stay in run order; the rare detection is marked where it ran.
     expect(rows.nth(2).locator(".tgt-sample")).to_have_text("S3")
@@ -639,6 +667,32 @@ def test_targeted_review_marks_the_rare_detection_and_opens_it_in_place(
     page.locator("#target-id").select_option("")
     expect(page.locator("#item-list")).to_be_visible()
     expect(page.locator("#review")).to_have_class("review-grid")
+
+
+def test_targeted_row_xic_without_raw_points_at_the_missing_folder(workbench, tmp_path):
+    from tests.test_xic_inspector_targeted_workbook import (
+        write_rare_detection_workbook,
+    )
+
+    page = workbench
+    page.set_viewport_size({"width": 1280, "height": 480})
+    workbook = write_rare_detection_workbook(tmp_path / "rare.xlsx")
+    _view(page, "review")
+    page.locator("#source").fill(str(workbook))
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#targeted-overview td button", has_text="Analyte").click()
+    row_button = page.frame_locator("#inspector").get_by_role(
+        "button", name="看 S5 的 Analyte XIC", exact=True
+    )
+    row_button.scroll_into_view_if_needed()
+    expect(page.locator("#raw-dir")).not_to_be_in_viewport()
+    row_button.click()
+    # The request stops before RAW work and the reason is where the user looks.
+    expect(page.locator("#xic-dialog")).to_be_hidden()
+    expect(page.locator("#raw-dir")).to_be_focused()
+    expect(page.locator("#raw-dir")).to_be_in_viewport()
+    expect(page.locator("#status")).to_contain_text("請先選擇 RAW 資料夾")
+    expect(page.locator("#status")).to_be_in_viewport()
 
 
 def test_read_first_opens_on_minority_rows_and_clearing_lists_all(workbench, tmp_path):
