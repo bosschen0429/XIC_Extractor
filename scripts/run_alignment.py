@@ -41,6 +41,7 @@ from xic_extractor.configuration.execution_profile import (
     load_execution_profile,
 )
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig
+from xic_extractor.configuration.paths import targets_template_path
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
@@ -350,9 +351,7 @@ def _resolve_istd_input(args: argparse.Namespace) -> KnownIstdReference | None:
         print(f"Known ISTD labels loaded: {len(reference.anchor.observed_labels)}")
         return reference
     source = "explicit targets CSV" if args.targets_csv is not None else "GUI default"
-    args.targets_csv = (
-        args.targets_csv or (_repo_root() / "config" / "targets.example.csv")
-    ).resolve()
+    args.targets_csv = (args.targets_csv or targets_template_path()).resolve()
     if not args.targets_csv.is_file():
         raise ValueError(f"{args.targets_csv}: targets CSV file does not exist")
     from xic_extractor.configuration.targets import read_istd_targets
@@ -430,7 +429,8 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
             "Targets CSV containing ISTD definitions. When provided, ISTD drift "
             "anchors are extracted directly in-memory from RAW files without "
             "requiring an external Excel workbook. Defaults to the GUI template "
-            "config/targets.example.csv unless a workbook or --allow-uncorrected "
+            "xic_extractor/configuration/data/targets.csv unless a workbook "
+            "or --allow-uncorrected "
             "is specified. The resolved source and ISTD count are printed."
         ),
     )

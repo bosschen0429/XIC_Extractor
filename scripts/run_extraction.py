@@ -14,7 +14,6 @@ from xic_extractor.applications.targeted.output_boundary import (
     TargetedOutputBoundaryError,
 )
 from xic_extractor.configuration.loader import (
-    load_config,
     prepare_targeted_config,
 )
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig
@@ -29,20 +28,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         base_dir = (args.base_dir or Path.cwd()).resolve()
         config_dir = base_dir / "config"
         settings_overrides = _settings_overrides(args)
-        if args.method_dir is not None:
-            prepared = prepare_targeted_config(
-                config_dir,
-                method_dir=args.method_dir.resolve(),
-                settings_overrides=settings_overrides,
-                output_dir=base_dir / "output",
-            )
-            config, targets = prepared.config, list(prepared.targets)
-        elif settings_overrides:
-            config, targets = load_config(
-                config_dir, settings_overrides=settings_overrides
-            )
-        else:
-            config, targets = load_config(config_dir)
+        prepared = prepare_targeted_config(
+            config_dir,
+            method_path=args.method.resolve() if args.method else None,
+            settings_overrides=settings_overrides,
+            output_dir=base_dir / "output",
+        )
+        config, targets = prepared.config, list(prepared.targets)
         output = (
             build_canonical_targeted_application_service(extractor.acquire)
             .execute_application(
@@ -96,19 +88,19 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         help="Project/base directory containing config/ and output/.",
     )
     parser.add_argument(
-        "--method-dir",
+        "--method",
         type=Path,
         default=None,
         help=(
-            "Select a complete reusable Targeted method directory (settings.csv "
-            "and targets.csv). Batch/machine settings come from --base-dir."
+            "Select a Targeted XLSX (Method + Targets). "
+            "Batch/machine settings come from --base-dir/config/workspace.json."
         ),
     )
     parser.add_argument(
         "--data-dir",
         type=Path,
         default=None,
-        help="Override settings.csv data_dir for validation subsets.",
+        help="Override current batch data_dir for validation subsets.",
     )
     parser.add_argument(
         "--injection-order-source",

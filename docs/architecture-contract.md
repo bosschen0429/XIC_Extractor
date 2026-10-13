@@ -93,6 +93,16 @@ Package 名稱不是可強制的分層證明：`alignment/` 包含科學與外�
   the current contract's tests or documentation; the
   [testing contract](agent/testing.md) governs new regression coverage.
 
+## Configuration Documents
+
+`configuration.targeted_method_files` owns strict Targeted XLSX exchange; the
+existing settings and target owners admit strategy and target intent.
+`configuration.workspace_state` owns local JSON application/batch/target persistence.
+Workbench and CLI consume that state; they do not discover legacy CSV workspaces.
+`prepare_targeted_config` freezes admitted inputs into private CSV run receipts;
+`load_config_snapshot` is an explicit diagnostic receipt reader, not a user-input
+fallback. Public examples are read-only resources in `configuration/data/`.
+
 ## Change Locality
 
 XIC technical evidence for ownership, serialization, derived-fact, or

@@ -1,14 +1,13 @@
 import csv
-from pathlib import Path
 
 import pytest
 
-from xic_extractor.configuration.csv_io import TARGET_WRITE_FIELDS, read_settings
+from xic_extractor.configuration.csv_io import TARGET_WRITE_FIELDS
 from xic_extractor.configuration.hashing import (
     compute_config_hash,
     compute_target_config_hash,
 )
-from xic_extractor.configuration.loader import load_config
+from xic_extractor.configuration.loader import load_config_snapshot
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.settings import fill_setting_defaults, resolve_settings
 from xic_extractor.configuration.targeted_strategy import targeted_tag_profile
@@ -52,9 +51,9 @@ def _write_valid_config(config_dir):
         writer.writerow(_target_row())
 
 
-def test_load_config_freezes_intent_hashes_and_fixed_strategy(tmp_path):
+def test_load_config_snapshot_freezes_intent_hashes_and_fixed_strategy(tmp_path):
     _write_valid_config(tmp_path / "config")
-    config, targets = load_config(tmp_path / "config")
+    config, targets = load_config_snapshot(tmp_path / "config")
     assert config.output_csv == tmp_path / "output" / "xic_results.csv"
     assert config.signal_processing_method == "gaussian"
     assert config.signal_processing_window_points == 15
@@ -68,11 +67,11 @@ def test_load_config_freezes_intent_hashes_and_fixed_strategy(tmp_path):
     assert targets[0].cid_nl_tag == "dR"
 
 
-def test_load_config_uses_examples(tmp_path):
+def test_snapshot_never_falls_back_to_examples(tmp_path):
     _write_valid_config(tmp_path)
-    for name in ("settings", "targets"):
-        (tmp_path / f"{name}.csv").rename(tmp_path / f"{name}.example.csv")
-    assert load_config(tmp_path)[1][0].label == "ISTD"
+    (tmp_path / "settings.csv").rename(tmp_path / "settings.example.csv")
+    with pytest.raises(ConfigError, match="missing"):
+        load_config_snapshot(tmp_path)
 
 
 @pytest.mark.parametrize("name", ["settings", "targets"])
@@ -80,7 +79,7 @@ def test_missing_input_is_actionable(tmp_path, name):
     _write_valid_config(tmp_path)
     (tmp_path / f"{name}.csv").unlink()
     with pytest.raises(ConfigError, match="missing"):
-        load_config(tmp_path)
+        load_config_snapshot(tmp_path)
 
 
 @pytest.mark.parametrize(
@@ -118,18 +117,36 @@ def test_defaults_are_only_batch_and_machine():
 
 
 @pytest.mark.parametrize("workers", ["", "2", "5"])
-def test_targeted_and_discovery_share_saved_worker_budget(tmp_path, workers):
+def test_targeted_and_discovery_share_saved_worker_budget(
+    tmp_path, workers, monkeypatch
+):
     from xic_extractor.configuration.execution_profile import load_execution_profile
+    from xic_extractor.configuration.loader import prepare_targeted_config
+    from xic_extractor.configuration.workspace_state import save_workspace
+    from xic_workbench.config_io import read_settings as read_work_settings
     from xic_workbench.config_io import write_settings
 
-    _write_valid_config(tmp_path)
-    path = tmp_path / "settings.csv"
-    write_settings({"parallel_workers": workers}, config_dir=tmp_path)
-    assert read_settings(path)["parallel_workers"] == workers
-    config, _ = load_config(tmp_path)
-    assert config.parallel_workers == load_execution_profile(path).parallel_workers
-    if workers:
-        assert config.parallel_workers == int(workers)
+    config_dir = tmp_path / "config"
+    save_workspace(
+        config_dir,
+        settings={"data_dir": str(tmp_path), "dll_dir": str(tmp_path)},
+        targets=[_target_row()],
+    )
+    write_settings({"parallel_workers": workers}, config_dir=config_dir)
+    assert read_work_settings(config_dir=config_dir)["parallel_workers"] == workers
+    monkeypatch.setattr(
+        "xic_extractor.configuration.execution_profile.runtime_root", lambda: tmp_path
+    )
+    prepared = prepare_targeted_config(config_dir)
+    try:
+        assert (
+            prepared.config.parallel_workers
+            == load_execution_profile().parallel_workers
+        )
+        if workers:
+            assert prepared.config.parallel_workers == int(workers)
+    finally:
+        prepared.cleanup()
 
 
 @pytest.mark.parametrize("workers", ["0", "-1", "1.5", "bad"])
@@ -205,11 +222,10 @@ def test_target_relationships_and_metadata():
 
 
 def test_templates_and_untargeted_istd_projection_share_new_format():
-    root = Path(__file__).resolve().parents[1] / "config"
-    assert set(read_settings(root / "settings.example.csv")) == set(
-        CANONICAL_SETTINGS_DEFAULTS
-    )
-    targets = read_targets(root / "targets.example.csv")
-    selected = read_istd_targets(root / "targets.example.csv")
+    from xic_extractor.configuration.paths import targets_template_path
+
+    root = targets_template_path().parent
+    targets = read_targets(root / "targets.csv")
+    selected = read_istd_targets(root / "targets.csv")
     assert selected.targets == tuple(t for t in targets if t.is_istd)
     assert len(targets) == len(selected.targets) + selected.skipped_count

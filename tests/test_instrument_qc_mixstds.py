@@ -69,8 +69,7 @@ def test_discover_mixstds_uses_pairs_as_fallback_when_stds_missing(
 def test_mixstds_target_registry_loads_reviewed_csv(tmp_path: Path) -> None:
     registry = tmp_path / "mixstds.csv"
     registry.write_text(
-        "compound,precursor_mz,rt_min,rt_max,ppm_tol\n"
-        "STD-A,123.4567,1.0,2.0,8\n",
+        "compound,precursor_mz,rt_min,rt_max,ppm_tol\nSTD-A,123.4567,1.0,2.0,8\n",
         encoding="utf-8",
     )
 
@@ -124,7 +123,9 @@ def test_mixstds_target_registry_loads_existing_targets_csv_schema(
 
 
 def test_versioned_mixstds_registry_loads_reviewed_targets() -> None:
-    result = load_mixstds_target_registry(Path("config/MixSTDs.csv"))
+    result = load_mixstds_target_registry(
+        Path("tests/fixtures/instrument_qc/MixSTDs.csv")
+    )
 
     assert result.status == "loaded"
     assert len(result.targets) == 48
@@ -142,8 +143,7 @@ def test_mixstds_target_registry_accepts_utf8_sig_targets_csv(
 ) -> None:
     registry = tmp_path / "targets.csv"
     registry.write_text(
-        "label,mz,rt_min,rt_max,ppm_tol\n"
-        "5-hmdC,258.1085,8.05,10.05,20\n",
+        "label,mz,rt_min,rt_max,ppm_tol\n5-hmdC,258.1085,8.05,10.05,20\n",
         encoding="utf-8-sig",
     )
 

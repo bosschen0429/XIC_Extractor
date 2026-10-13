@@ -152,7 +152,7 @@
     chip.className = custom.size ? "settings-warning" : "";
     const notes = $("target-method-note");
     notes.replaceChildren();
-    notes.append(el("p", `設定檔：${state.config.settings_source || "settings.csv"}`, "settings-source"));
+    notes.append(el("p", `設定檔：${state.config.settings_source || "workspace.json"}`, "settings-source"));
     for (const warning of summary?.warnings || []) {
       notes.append(el("p", warning, "settings-warning"));
     }
@@ -461,7 +461,7 @@
     const receipt = await api("/api/targeted/save", { settings, targets: state.targets, output_dir });
     state.config.settings = settings;
     state.config.targeted_output_dir = output_dir;
-    state.config.settings_source = "settings.csv";
+    state.config.settings_source = "workspace.json";
     state.config.targeted_method = receipt.summary;
     setMethodState(receipt.summary);
     dirty("targeted", false);
@@ -1379,13 +1379,13 @@
     $("target-save").onclick = () => act(() => saveTargeted());
     $("target-method-load").onclick = () => act(() => loadTargetedMethod($("target-method-select").value));
     $("target-method-import").onclick = () => act(async () => {
-      const path = await requestPath("載入清單資料夾（settings.csv 與 targets.csv）");
+      const path = await requestPath("載入方法文件（.xlsx）");
       if (!path) return;
       await loadTargetedMethod(path);
       $("target-method-select").value = "";
     });
     $("target-method-save").onclick = () => act(async () => {
-      const name = await requestPath("另存目標清單", "", "清單名稱");
+      const name = await requestPath("另存目標清單", "", "清單名稱（不含 .xlsx）");
       if (!name) return;
       const result = await api("/api/targeted/method/save", { name, settings: settingsValues(), targets: state.targets });
       state.config.targeted_methods = result.methods;
@@ -1430,6 +1430,12 @@
         await saveTargeted();
         $("target-editor").close();
       });
+    $("target-export").onclick = () => act(async () => {
+      const path = await requestPath("匯出目標清單（.xlsx）");
+      if (!path) return;
+      const result = await api("/api/targets/export", { path, targets: state.targets });
+      done(result.message);
+    });
     $("target-import").onclick = () =>
       act(async () => {
         const result = await api("/api/targets/import", {

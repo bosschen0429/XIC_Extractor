@@ -77,4 +77,4 @@ class Target:
 
 
 class ConfigError(Exception):
-    """Raised when settings.csv or targets.csv contains invalid values."""
+    """Raised when a configuration document or input value is invalid."""

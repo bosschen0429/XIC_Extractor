@@ -59,7 +59,7 @@ XIC_Extractor/
 │   ├── superpowers/           既有 schema、驗證與 productization 機器契約
 │   ├── architecture-contract.md  程式入口、責任與依賴方向
 │   └── project-layout.md      本結構樹與收納規則
-├── config/                    公開設定與範例
+├── config/                    未追蹤的本機狀態與部署環境範本
 ├── assets/                    圖示與截圖
 ├── .github/                   CI 與 GitHub 設定
 ├── .codex/                    Repo 的 agent 執行規則
@@ -119,7 +119,7 @@ XIC_Extractor/
 | `docs/superpowers/fixtures/` | Focused tracked evidence fixtures |
 | `docs/superpowers/productization/` | Current productization compatibility/evidence surfaces |
 | `assets/` | Icons and screenshots |
-| `config/` | Runtime public config/examples；private values 不追蹤 |
+| `config/` | Local JSON state and named methods；private values 不追蹤；公開 Targeted 範例在 `xic_extractor/configuration/data/` |
 | `.github/` | GitHub workflows |
 | `.codex/` | Repo-local skills, hooks, rules, and profiles |
 

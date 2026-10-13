@@ -16,6 +16,7 @@ from typing import Any
 from xic_extractor.acquisition.istd_reference import read_known_istd_reference
 from xic_extractor.configuration.execution_profile import load_execution_profile
 from xic_extractor.configuration.models import ConfigError
+from xic_extractor.configuration.paths import targets_template_path
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
@@ -33,7 +34,7 @@ _DATASET_SAMPLE_METADATA = {
     / "validation"
     / "tissue_85raw_sample_metadata.tsv",
 }
-_DEFAULT_TARGETS = _REPO_ROOT / "config" / "targets.example.csv"
+_DEFAULT_TARGETS = targets_template_path()
 _LOCAL_ENV = _REPO_ROOT / ".env.xic-local"
 
 
@@ -90,21 +91,24 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--raw-dir", type=Path)
     parser.add_argument("--dll-dir", type=Path)
     parser.add_argument(
-        "--sample-metadata", type=Path,
+        "--sample-metadata",
+        type=Path,
         help=(
             "Roles and excluded flags deciding the analysis set below --raw-dir "
             "(default for --dataset 85: the tracked 85RAW sample metadata)."
         ),
     )
     parser.add_argument(
-        "--acquisition-cache-dir", type=Path,
+        "--acquisition-cache-dir",
+        type=Path,
         help=(
             "Shared RAW acquisition cache for Alignment "
             "(default: XIC_ACQUISITION_CACHE_DIR, else the run's own output)."
         ),
     )
     parser.add_argument(
-        "--blank-library", type=Path,
+        "--blank-library",
+        type=Path,
         help="Explicitly opt in to blank filtering with this library (default: off).",
     )
     istd = parser.add_mutually_exclusive_group()
@@ -158,8 +162,7 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
     ).raw_paths
     if len(raw_paths) != dataset:
         raise ValueError(
-            f"{raw_dir}: expected {dataset} analysis RAW files, "
-            f"found {len(raw_paths)}"
+            f"{raw_dir}: expected {dataset} analysis RAW files, found {len(raw_paths)}"
         )
 
     blank_library = None
@@ -226,9 +229,7 @@ def _build_plan(args: argparse.Namespace) -> dict[str, Any]:
             ["--acquisition-cache-dir", str(acquisition_cache_dir)]
         )
     if workbook is not None:
-        alignment_command.extend(
-            ["--known-istd-reference-workbook", str(workbook)]
-        )
+        alignment_command.extend(["--known-istd-reference-workbook", str(workbook)])
     else:
         alignment_command.extend(["--targets-csv", str(targets_csv)])
 
@@ -324,8 +325,7 @@ def _resolve_input_dir(
     configured = environment.get(variable)
     if explicit is None and not configured:
         raise ValueError(
-            f"{label} directory is required "
-            f"(--{label.lower()}-dir or {variable})"
+            f"{label} directory is required (--{label.lower()}-dir or {variable})"
         )
     value = explicit if explicit is not None else Path(str(configured))
     resolved = value.resolve()

@@ -63,7 +63,7 @@ def test_http_method_save_load_replaces_intent_preserves_batch_and_metadata(tmp_
         _, unchanged, _ = request("/api/config")
         assert unchanged["settings"] == original["settings"]
         assert unchanged["targets"] == original["targets"]
-        assert not (config_dir / "settings.csv").exists()
+        assert not (config_dir / "workspace.json").exists()
 
 
 @pytest.mark.parametrize(
@@ -102,13 +102,13 @@ def test_existing_method_rejected_and_bootstrap_omits_incomplete_folders(tmp_pat
         values = {"name": "original", "settings": config["settings"], "targets": rows()}
         assert request("/api/targeted/method/save", values)[0] == 200
         root = tmp_path / "config" / "methods"
-        before = {p.name: p.read_bytes() for p in (root / "original").iterdir()}
+        before = (root / "original.xlsx").read_bytes()
         (root / "incomplete").mkdir()
         (root / "incomplete" / "settings.csv").write_text("broken")
         (root / "not a method.txt").write_text("unrelated")
         values["settings"] = {**config["settings"], "dirty_matrix_mode": "true"}
         assert request("/api/targeted/method/save", values)[0] == 400
-        assert before == {p.name: p.read_bytes() for p in (root / "original").iterdir()}
+        assert before == (root / "original.xlsx").read_bytes()
         assert [m["name"] for m in request("/api/config")[1]["targeted_methods"]] == [
             "original"
         ]

@@ -1239,7 +1239,13 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
     import xic_extractor.acquisition.raw_paths as raw_sources
     from xic_extractor.configuration.targets import read_targets
 
-    source = Path(__file__).parents[1] / "config" / "targets.example.csv"
+    source = (
+        Path(__file__).parents[1]
+        / "xic_extractor"
+        / "configuration"
+        / "data"
+        / "targets.csv"
+    )
     all_targets = read_targets(source)
     batch_index = _write_batch(tmp_path, ("S1",))
     captured = {}

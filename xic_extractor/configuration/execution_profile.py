@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import os
-import sys
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from xic_extractor.configuration.paths import runtime_root
 
 DEFAULT_ALIGNMENT_WORKERS = 4
 # Thermo reads scale poorly across threads in one process; separate worker
@@ -50,28 +51,18 @@ def resolve_execution_profile(
 
 
 def load_execution_profile(
-    settings_path: Path | None = None,
     *,
     parallel_workers: int | None = None,
     alignment_workers: int | None = None,
 ) -> ExecutionProfile:
-    path = settings_path or (_runtime_root() / "config" / "settings.csv")
-    settings: Mapping[str, str] | None = None
-    if path.is_file():
-        from xic_extractor.configuration.csv_io import read_settings
+    from xic_extractor.configuration.workspace_state import read_workspace
 
-        settings = read_settings(path)
+    settings = read_workspace(runtime_root() / "config")["application"]
     return resolve_execution_profile(
         settings,
         parallel_workers=parallel_workers,
         alignment_workers=alignment_workers,
     )
-
-
-def _runtime_root() -> Path:
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parents[2]
 
 
 def _parse_workers(value: str, *, field: str) -> int:

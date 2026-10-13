@@ -94,9 +94,9 @@ def test_mint_known_istd_reference_computes_centers_and_deltas() -> None:
 
 
 def test_read_targets_from_csv() -> None:
-    csv_path = Path("config/targets.example.csv")
+    csv_path = Path("xic_extractor/configuration/data/targets.csv")
     if not csv_path.is_file():
-        pytest.skip("config/targets.example.csv not found")
+        pytest.skip("xic_extractor/configuration/data/targets.csv not found")
 
     targets = read_targets(csv_path)
     assert len(targets) == 14
@@ -165,8 +165,11 @@ def test_batch_istd_coordinates_require_unique_native_identity(
         )
         product_precursor = (
             selected_mz
-            if precursor_context in {
-                "coisolated_other", "outside_target_ppm", "inside_target_ppm",
+            if precursor_context
+            in {
+                "coisolated_other",
+                "outside_target_ppm",
+                "inside_target_ppm",
             }
             else target.mz
         )

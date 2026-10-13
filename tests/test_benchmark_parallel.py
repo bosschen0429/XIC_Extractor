@@ -1,4 +1,3 @@
-import csv
 import subprocess
 import sys
 from pathlib import Path
@@ -202,6 +201,7 @@ def test_run_extraction_once_applies_additional_settings_overrides(
 
     def fake_run(config, targets, *, model_selection_expected_diff_approvals=None):
         captured_configs.append(config)
+        captured["order"] = config.injection_order_source.read_bytes()
         captured["targets"] = targets
         captured["approvals"] = model_selection_expected_diff_approvals
         return object()
@@ -212,6 +212,8 @@ def test_run_extraction_once_applies_additional_settings_overrides(
         lambda _config, _targets, _output, *, output_path: output_path,
     )
 
+    order = b"Sample_Name,Injection_Order\nSampleA,1\n"
+    (tmp_path / "order.csv").write_bytes(order)
     _run_extraction_once(
         base_dir=tmp_path,
         data_dir=validation_dir,
@@ -222,7 +224,8 @@ def test_run_extraction_once_applies_additional_settings_overrides(
     )
 
     assert captured_configs[0].data_dir == validation_dir
-    assert captured_configs[0].injection_order_source == tmp_path / "order.csv"
+    assert captured["order"] == order
+    assert not captured_configs[0].injection_order_source.exists()
     assert captured_configs[0].parallel_mode == "process"
     assert captured_configs[0].parallel_workers == 4
     assert captured["approvals"] is None
@@ -263,23 +266,26 @@ def _fake_timer():
 def _write_benchmark_settings(
     config_dir: Path, *, data_dir: Path, dll_dir: Path
 ) -> None:
-    config_dir.mkdir(parents=True, exist_ok=True)
-    rows = {
-        "data_dir": str(data_dir),
-        "dll_dir": str(dll_dir),
-    }
-    with (config_dir / "settings.csv").open(
-        "w", newline="", encoding="utf-8-sig"
-    ) as handle:
-        writer = csv.DictWriter(handle, fieldnames=["key", "value", "description"])
-        writer.writeheader()
-        for key, value in rows.items():
-            writer.writerow({"key": key, "value": value, "description": key})
+    from xic_extractor.configuration.workspace_state import save_workspace
+
+    save_workspace(
+        config_dir, settings={"data_dir": str(data_dir), "dll_dir": str(dll_dir)}
+    )
 
 
 def _write_benchmark_targets(config_dir: Path) -> None:
-    (config_dir / "targets.csv").write_text(
-        "label,mz,expected_rt_min,cid_nl_tag,role,istd_pair\n"
-        "ISTD,258.1085,9,dR,istd,\n",
-        encoding="utf-8-sig",
+    from xic_extractor.configuration.workspace_state import save_workspace
+
+    save_workspace(
+        config_dir,
+        targets=[
+            dict(
+                label="ISTD",
+                mz="258.1085",
+                expected_rt_min="9",
+                cid_nl_tag="dR",
+                role="istd",
+                istd_pair="",
+            )
+        ],
     )

@@ -65,13 +65,13 @@ class AnalysisJobs:
             if kind == "targeted":
                 from xic_workbench.config_io import (
                     write_preferences,
-                    write_settings,
-                    write_targets,
+                    write_work,
                 )
                 from xic_workbench.targeted import TargetedRun
 
-                write_settings(values["settings"], config_dir=self.config_dir)
-                write_targets(values["targets"], config_dir=self.config_dir)
+                write_work(
+                    values["settings"], values["targets"], config_dir=self.config_dir
+                )
                 output_dir = values.get("output_dir") or None
                 if output_dir is not None:
                     write_preferences(
@@ -144,7 +144,7 @@ class AnalysisJobs:
 
     def _prepare_untargeted(self, values: dict[str, Any]) -> Any:
         from xic_extractor.configuration.execution_profile import (
-            load_execution_profile,
+            resolve_execution_profile,
         )
         from xic_workbench.discovery_config_io import write_discovery_config
         from xic_workbench.samples import apply_raw_chronology, load_samples
@@ -178,7 +178,11 @@ class AnalysisJobs:
                 dll_dir=Path(values["dll_dir"]),
             )
         if values.get("execution_profile") is None:
-            profile = load_execution_profile(self.config_dir / "settings.csv")
+            from xic_workbench.config_io import read_settings
+
+            profile = resolve_execution_profile(
+                read_settings(config_dir=self.config_dir)
+            )
             values["execution_profile"] = {
                 "parallel_workers": profile.parallel_workers,
                 "alignment_workers": profile.alignment_workers,

@@ -20,7 +20,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from xic_extractor import extractor
-from xic_extractor.configuration.loader import load_config
+from xic_extractor.configuration.loader import load_config_snapshot
 from xic_extractor.configuration.models import ConfigError, Target
 from xic_extractor.extraction.result_models import RunOutput
 from xic_extractor.raw_reader import RawReaderError
@@ -245,7 +245,7 @@ def _run_case(
         targets_path=case.targets_path,
         execution_overrides=execution_overrides,
     )
-    config, targets = load_config(config_dir)
+    config, targets = load_config_snapshot(config_dir)
     config = replace(
         config,
         **{

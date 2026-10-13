@@ -70,13 +70,23 @@ for asset in (
 ):
     if not files("xic_workbench").joinpath("assets", asset).read_bytes():
         raise RuntimeError(f"installed workspace asset is empty: {asset}")
-for template in ("settings.example.csv", "targets.example.csv"):
-    if not (target / "config" / template).read_bytes():
-        raise RuntimeError(f"installed config template is empty: {template}")
+from xic_extractor.configuration.paths import targets_template_path
+if (target / "config" / "settings.example.csv").exists():
+    raise RuntimeError("retired settings template was shipped")
+if not targets_template_path().read_bytes():
+    raise RuntimeError("installed targets template is empty")
 if config_io.CONFIG_DIR.resolve().is_relative_to(target):
     raise RuntimeError("installed workbench would write settings into site-packages")
-if not config_io.targets_example_path().resolve().is_relative_to(target / "config"):
-    raise RuntimeError("installed workbench did not find its config template")
+if not targets_template_path().resolve().is_relative_to(target / "xic_extractor"):
+    raise RuntimeError("template is not owned by the installed package")
+from xic_extractor.configuration.targeted_method_files import (
+    load_targeted_method, load_target_table,
+)
+examples = targets_template_path().parent
+method = load_targeted_method(examples / "targeted-method.xlsx")
+target_rows = load_target_table(examples / "targets.xlsx")
+if not method.targets or list(method.target_rows) != target_rows:
+    raise RuntimeError("installed XLSX examples are missing or inconsistent")
 installed_distribution = next(
     distribution for distribution in distributions(path=[str(target)])
     if distribution.metadata["Name"] == "xic-extractor"
@@ -296,6 +306,13 @@ def authority_packaging_source(tmp_path_factory: pytest.TempPathFactory) -> Path
     for filename in ("pyproject.toml", "xic_extractor.spec"):
         shutil.copy2(PROJECT_ROOT / filename, source_root / filename)
     for directory in PACKAGING_SOURCE_DIRECTORIES:
+        if directory == "config":
+            # A package must not depend on or copy a developer's ignored state.
+            (source_root / "config").mkdir()
+            shutil.copy2(
+                PROJECT_ROOT / "config/env.example", source_root / "config/env.example"
+            )
+            continue
         shutil.copytree(
             PROJECT_ROOT / directory,
             source_root / directory,
@@ -338,24 +355,20 @@ def test_primary_package_routes_to_html_workbench_without_qt() -> None:
         (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )
 
-    assert project["project"]["scripts"]["xic-extractor"] == (
-        "xic_workbench.cli:main"
-    )
+    assert project["project"]["scripts"]["xic-extractor"] == ("xic_workbench.cli:main")
     assert not any(
         dependency.casefold().startswith(("pyqt6", "pyside6"))
         for dependency in project["project"]["dependencies"]
     )
-    assert "gui*" not in project["tool"]["setuptools"]["packages"]["find"][
-        "include"
-    ]
-    assert project["tool"]["setuptools"]["data-files"]["config"] == [
-        "config/settings.example.csv",
-        "config/targets.example.csv",
-    ]
+    assert "gui*" not in project["tool"]["setuptools"]["packages"]["find"]["include"]
+    assert project["tool"]["setuptools"]["package-data"][
+        "xic_extractor.configuration"
+    ] == ["data/*.csv", "data/*.xlsx"]
+    assert "data-files" not in project["tool"]["setuptools"]
 
 
 def test_installed_config_defaults_to_user_local_state(monkeypatch, tmp_path) -> None:
-    import xic_workbench.config_io as config_io
+    import xic_extractor.configuration.paths as config_io
 
     package_parent = tmp_path / "site-packages"
     local_app_data = tmp_path / "LocalAppData"
@@ -364,25 +377,25 @@ def test_installed_config_defaults_to_user_local_state(monkeypatch, tmp_path) ->
     monkeypatch.setattr(config_io.sys, "platform", "win32")
     monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
 
-    assert config_io._default_root() == local_app_data / "XICExtractor"
+    assert config_io.runtime_root() == local_app_data / "XICExtractor"
 
 
 def test_development_and_frozen_config_roots_stay_with_the_application(
     monkeypatch, tmp_path
 ) -> None:
-    import xic_workbench.config_io as config_io
+    import xic_extractor.configuration.paths as config_io
 
     development_root = tmp_path / "source"
     (development_root / "config").mkdir(parents=True)
     (development_root / "pyproject.toml").write_text("", encoding="utf-8")
     monkeypatch.setattr(config_io, "_PACKAGE_PARENT", development_root)
     monkeypatch.delattr(config_io.sys, "frozen", raising=False)
-    assert config_io._default_root() == development_root
+    assert config_io.runtime_root() == development_root
 
     executable = tmp_path / "delivered" / "XIC_Extractor.exe"
     monkeypatch.setattr(config_io.sys, "frozen", True, raising=False)
     monkeypatch.setattr(config_io.sys, "executable", str(executable))
-    assert config_io._default_root() == executable.parent
+    assert config_io.runtime_root() == executable.parent
 
 
 def test_pyinstaller_spec_includes_dynamic_raw_reader_imports() -> None:
@@ -725,6 +738,25 @@ def test_final_pyinstaller_output_contains_one_byte_identical_quantitative_autho
 
     final_output = dist_root / "XIC_Extractor"
     assert final_output.is_dir()
+    templates = list(
+        final_output.glob("**/xic_extractor/configuration/data/targets.csv")
+    )
+    assert len(templates) == 1
+    assert (
+        templates[0].read_bytes()
+        == (PROJECT_ROOT / "xic_extractor/configuration/data/targets.csv").read_bytes()
+    )
+    assert not list(final_output.rglob("settings.example.csv"))
+    assert not list(final_output.rglob("targets.example.csv"))
+    for name in ("targeted-method.xlsx", "targets.xlsx"):
+        examples = list(
+            final_output.glob(f"**/xic_extractor/configuration/data/{name}")
+        )
+        assert len(examples) == 1
+        assert (
+            examples[0].read_bytes()
+            == (PROJECT_ROOT / "xic_extractor/configuration/data" / name).read_bytes()
+        )
     resource_paths = [
         path
         for path in final_output.rglob("*")

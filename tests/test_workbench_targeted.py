@@ -45,8 +45,7 @@ def test_settings_round_trip_rejects_hidden_science_without_migrating(tmp_path):
     (tmp_path / "settings.csv").write_text(
         "key,value\nold_unknown,keep-not-effective\n", encoding="utf-8"
     )
-    with pytest.raises(ConfigError, match="old_unknown"):
-        write_settings(settings, config_dir=tmp_path)
+    write_settings(settings, config_dir=tmp_path)
     assert "old_unknown" in (tmp_path / "settings.csv").read_text()
 
 
@@ -72,10 +71,10 @@ def test_invalid_targets_leave_saved_input_unchanged(tmp_path):
         istd_pair="",
     )
     write_targets([row], config_dir=tmp_path)
-    before = (tmp_path / "targets.csv").read_bytes()
+    before = (tmp_path / "workspace.json").read_bytes()
     with pytest.raises(ConfigError):
         write_targets([{**row, "rt_min": "1"}], config_dir=tmp_path)
-    assert (tmp_path / "targets.csv").read_bytes() == before
+    assert (tmp_path / "workspace.json").read_bytes() == before
 
 
 def test_failed_target_import_leaves_the_callers_rows_unchanged(tmp_path: Path) -> None:
@@ -106,42 +105,22 @@ def test_target_import_entrypoint_preserves_draft_precision_and_hidden_metadata(
         {
             "label": "Target A",
             "mz": "250.100000",
-            "role": "analyte",
             "source_note": "keep me",
         }
     ]
 
 
-def test_target_import_entrypoint_uses_the_existing_dna_workbook_contract(
-    tmp_path: Path,
-) -> None:
-    import openpyxl
-
+def test_target_import_entrypoint_uses_explicit_targets_sheet(tmp_path):
+    from tests.test_targeted_method_files import rows
+    from xic_extractor.configuration.targeted_method_files import save_target_table
     from xic_workbench.target_import import import_targets
 
-    source = tmp_path / "rt_check.xlsx"
-    workbook = openpyxl.Workbook()
-    worksheet = workbook.active
-    worksheet.title = "DNA"
-    worksheet.append(["m/z", "Anticipated adducts", "RT"])
-    worksheet.append([258.1085, "5-hmdC", 8.0])
-    worksheet.append([261.1273, "d3-5-hmdC", 8.1])
-    workbook.save(source)
-    workbook.close()
-
-    rows = import_targets(source, sheet="DNA")
-
-    assert rows[0] == {
-        "label": "5-hmdC",
-        "mz": "258.1085",
-        "expected_rt_min": "8.0",
-        "cid_nl_tag": "dR",
-        "role": "analyte",
-        "istd_pair": "d3-5-hmdC",
-    }
-    assert rows[1]["label"] == "d3-5-hmdC"
-    assert rows[1]["role"] == "istd"
-    assert rows[1]["istd_pair"] == ""
+    source = tmp_path / "targets.xlsx"
+    save_target_table(rows(), source)
+    imported = import_targets(source)
+    assert imported[0]["role"] == "istd"
+    assert imported[1]["istd_pair"] == "standard"
+    assert imported[1]["expected_rt_min"] == "2"
 
 
 def test_excel_target_import_without_target_rows_is_rejected(tmp_path: Path) -> None:
@@ -155,7 +134,7 @@ def test_excel_target_import_without_target_rows_is_rejected(tmp_path: Path) -> 
     workbook.save(source)
     workbook.close()
 
-    with pytest.raises(ConfigError, match="no target rows"):
+    with pytest.raises(ConfigError, match="工作表必須"):
         import_targets(source)
 
 

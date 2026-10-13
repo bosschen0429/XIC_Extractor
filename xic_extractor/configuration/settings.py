@@ -34,7 +34,7 @@ def fill_setting_defaults(raw: dict[str, str]) -> tuple[dict[str, str], list[str
 
 
 def validate_settings_values(
-    settings: dict[str, str], settings_path: Path = Path("settings.csv")
+    settings: dict[str, str], settings_path: Path = Path("workspace.json")
 ) -> _ParsedSettings:
     values, _ = fill_setting_defaults(settings)
     for key in ("data_dir", "dll_dir"):
@@ -56,7 +56,7 @@ def resolve_settings(
     raw: dict[str, str],
     overrides: dict[str, str] | None = None,
     *,
-    settings_path: Path = Path("settings.csv"),
+    settings_path: Path = Path("workspace.json"),
 ) -> tuple[dict[str, str], _ParsedSettings, list[str]]:
     # Validate both inputs before merge so an override cannot hide a retired key.
     fill_setting_defaults(raw)

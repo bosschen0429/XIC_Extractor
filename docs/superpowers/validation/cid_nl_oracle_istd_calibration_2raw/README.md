@@ -20,7 +20,9 @@ metrics.
 - Targeted MS1 rescue policy: `explicit_support_tsv`, with no support TSV.
 - Integration audit baseline: AsLS.
 
-The six-target config was derived from `config/targets.example.csv`. The NL132
+The six-target config was derived from the then-current target template
+(retained in Git); the current packaged template is
+`xic_extractor/configuration/data/targets.csv`. The NL132
 `[13C,15N2]-8-oxo-Guo` anchor is intentionally excluded because it is outside
 the current NL116-only proposal scope.
 

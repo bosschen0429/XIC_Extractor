@@ -333,7 +333,7 @@ def test_target_list_save_and_load_preserves_batch(workbench):
     page = workbench
     original_batch = page.locator("#t-data_dir").input_value()
     page.get_by_role("button", name="另存清單", exact=True).click()
-    page.get_by_label("清單名稱", exact=True).fill("Browser saved list")
+    page.get_by_label("清單名稱（不含 .xlsx）", exact=True).fill("Browser saved list")
     page.locator("#path-dialog").get_by_role("button", name="確定").click()
     expect(page.locator("#target-method-select option:checked")).to_have_text(
         "Browser saved list"
@@ -930,3 +930,45 @@ def test_sample_restore_is_bound_to_current_inputs(
         )
         assert payload["samples"] == [expected]
         expect(page.locator("#samples-conflicts")).to_contain_text("old_blank.raw")
+
+
+def test_downloaded_current_method_edits_and_saves_without_changing_batch(
+    workbench, config_dir, tmp_path
+):
+    from xic_extractor.configuration.targeted_method_files import load_targeted_method
+
+    page = workbench
+    batch = page.locator("#t-data_dir").input_value()
+    dll = page.locator("#t-dll_dir").input_value()
+    with page.expect_download() as download:
+        page.get_by_role("link", name="下載方法範例 XLSX", exact=True).click()
+    path = tmp_path / "downloaded-method.xlsx"
+    download.value.save_as(path)
+    original = path.read_bytes()
+    assert dict(load_targeted_method(path).settings) == {"strategy": "cid-nl"}
+    page.locator("#target-method-import").click()
+    page.locator("#path-dialog-value").fill(str(path))
+    page.locator("#path-dialog").get_by_role("button", name="確定").click()
+    expect(page.locator("#target-preview")).to_contain_text("5-hmdC")
+    expect(page.locator("#t-data_dir")).to_have_value(batch)
+    expect(page.locator("#t-dll_dir")).to_have_value(dll)
+    page.locator("#target-edit").click()
+    page.get_by_role("textbox", name="預期 RT（min）（第 1 列）", exact=True).fill(
+        "9.25"
+    )
+    page.locator("#target-editor-save").click()
+    page.locator("#target-method-save").click()
+    page.locator("#path-dialog-value").fill("Edited method")
+    page.locator("#path-dialog").get_by_role("button", name="確定").click()
+    expect(page.locator("#target-method-select option:checked")).to_have_text(
+        "Edited method"
+    )
+    saved = load_targeted_method(config_dir / "methods" / "Edited method.xlsx")
+    assert dict(saved.settings) == {"strategy": "cid-nl"}
+    assert saved.target_rows[0]["expected_rt_min"] == "9.25"
+    assert saved.target_rows[0]["cid_nl_tag"] == "dR"
+    assert path.read_bytes() == original
+    assert not (config_dir / "settings.csv").exists()
+    assert not (config_dir / "targets.csv").exists()
+    assert (config_dir / "workspace.json").is_file()
+    page.screenshot(path=str(tmp_path / "xlsx-method-workspace.png"), full_page=True)

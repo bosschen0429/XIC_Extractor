@@ -72,18 +72,18 @@ def test_targeted_dispatch_freezes_inputs_until_completion(tmp_path, monkeypatch
         write_settings(settings, config_dir=config_dir)
         write_targets(targets, config_dir=config_dir)
         jobs.start("targeted", {"settings": settings, "targets": targets})
-        original_settings = (config_dir / "settings.csv").read_bytes()
-        original_targets = (config_dir / "targets.csv").read_bytes()
+        original_settings = (receipts[0] / "settings.csv").read_bytes()
+        original_targets = (receipts[0] / "targets.csv").read_bytes()
         write_settings({**settings, "dll_dir": str(raw)}, config_dir=config_dir)
         write_targets(
             [{**target, "expected_rt_min": "8"} for target in targets],
             config_dir=config_dir,
         )
-        later_settings = (config_dir / "settings.csv").read_bytes()
+        later_settings = (config_dir / "workspace.json").read_bytes()
         callback, *args = submitted[0]
         callback(*args)
         assert jobs.state()["job"]["status"] == "succeeded"
-        assert (config_dir / "settings.csv").read_bytes() == later_settings
+        assert (config_dir / "workspace.json").read_bytes() == later_settings
         request = captured[0]
         assert request.config.dll_dir == dll
         assert [(t.label, t.expected_rt_min) for t in request.targets] == [
@@ -124,9 +124,7 @@ def _snapshot_workspace(tmp_path, *, order_source=None):
     return config_dir, settings, targets
 
 
-def test_queued_targeted_metadata_membership_is_frozen(
-    tmp_path, monkeypatch
-):
+def test_queued_targeted_metadata_membership_is_frozen(tmp_path, monkeypatch):
     import csv
 
     from tests.raw_header_fakes import install_fake_raw_headers

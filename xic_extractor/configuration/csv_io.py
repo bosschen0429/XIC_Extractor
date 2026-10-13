@@ -1,5 +1,7 @@
 import csv
 import io
+import os
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from xic_extractor.configuration.models import ConfigError
@@ -19,16 +21,6 @@ OPTIONAL_TARGET_METADATA_FIELDS = ("sample_applicability",)
 TARGET_WRITE_FIELDS = (*TARGET_FIELDS, *OPTIONAL_TARGET_METADATA_FIELDS)
 _REQUIRED_SETTING_FIELDS = ("key", "value")
 _TARGET_DRAFT_IDENTITY_FIELDS = ("label", "mz")
-
-
-def _config_input_path(config_dir: Path, name: str) -> Path:
-    runtime_path = config_dir / f"{name}.csv"
-    if runtime_path.exists():
-        return runtime_path
-    example_path = config_dir / f"{name}.example.csv"
-    if example_path.exists():
-        return example_path
-    return runtime_path
 
 
 def read_settings(path: Path) -> dict[str, str]:
@@ -117,3 +109,31 @@ def _read_target_file_rows(
                 )
             result.append((row_number, row))
         return result
+
+
+def write_config_snapshot(
+    directory: Path,
+    settings: Mapping[str, str],
+    target_rows: Sequence[Mapping[str, str]],
+) -> None:
+    """Write machine-owned run inputs, not user-editable method documents."""
+    fields = tuple(
+        dict.fromkeys(
+            [*TARGET_WRITE_FIELDS, *(key for row in target_rows for key in row)]
+        )
+    )
+    tables = (
+        (
+            "settings.csv",
+            ("key", "value"),
+            [{"key": key, "value": value} for key, value in settings.items()],
+        ),
+        ("targets.csv", fields, target_rows),
+    )
+    for name, columns, rows in tables:
+        with (directory / name).open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=columns)
+            writer.writeheader()
+            writer.writerows(rows)
+            handle.flush()
+            os.fsync(handle.fileno())

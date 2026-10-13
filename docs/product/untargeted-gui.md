@@ -31,10 +31,11 @@ historical filename as the stable topic locator.
 - A portable method saves the target intent and strategy version. There is no
   advanced Targeted method panel, parameter reset, Dirty Matrix branch or user
   worker/backend selector. Scientific policy is recorded in run metadata.
-- `settings.csv` contains only RAW/DLL paths and optional injection order.
+- `workspace.json` stores application settings (DLL and worker count), batch
+  inputs (RAW and sample metadata), and target rows in one atomic generation.
   Reading configuration never writes it; unsupported settings are reported,
   not preserved as hidden effective overrides. No schema conversion is offered.
-- CSV/TSV and workbook import produce editable target intent. Numeric text and
+- Explicit CSV/TSV and `Targets`-sheet XLSX imports produce editable target intent. Numeric text and
   descriptive metadata survive a validated save. Scientific legacy fields do not.
 - Save validates settings and targets before writing. Run invokes the canonical
   Targeted application and publishes one finalized workbook; value, count and

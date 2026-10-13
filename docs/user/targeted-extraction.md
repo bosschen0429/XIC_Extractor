@@ -10,11 +10,11 @@ and internal-standard relationships you want to review.
 1. Open `XIC_Extractor.exe`, or run `uv run xic-workbench` in a developer
    checkout.
 2. Select **Targeted Extraction**.
-3. Select a saved method and press **載入方法與目標**, or configure a method
+3. Select a saved method and press **載入清單**, or configure a method
    for the first time. Set the new RAW data directory; the local DLL setting is retained.
 4. For a new method, import targets or choose **檢視與編輯** to open the full-height target table.
    **返回批次設定** (`Alt+Left`) preserves edits and returns to the batch summary.
-5. Press **開始執行** below the workspace.
+5. Press **開始 Targeted 分析** in the run panel.
 6. Start review from the generated workbook in `output/`.
 
 **開始新批次** clears the RAW directory, injection-order source and displayed results while retaining
@@ -22,18 +22,15 @@ targets, DLL, and the selected strategy. The environment section remains availab
 for machine-path corrections. Editing settings after a
 completed run labels the displayed results as previous results.
 
-The GUI and CLI use the same targeted pipeline. Packaged builds start from:
+The GUI and CLI use the same Targeted pipeline and `config/workspace.json` current
+work state. A fresh workspace has no selected targets. Download the method or
+target-table XLSX example from the target-list card, save a copy, and load it
+explicitly. **保存目前工作** writes local JSON; **另存清單** creates a reusable XLSX.
+Reading settings never creates or imports old CSV working copies.
 
-- `config/settings.example.csv`
-- `config/targets.example.csv`
-
-Runtime working copies are created after Save or Run:
-
-- `config/settings.csv`
-- `config/targets.csv`
-
-Keep real machine paths in runtime files. Do not commit local RAW, DLL, or
-private lab paths.
+Keep real machine paths in ignored runtime files. Do not commit local RAW, DLL,
+or private lab paths. The [field reference](targeted-config-reference.md) owns
+workbook sheet names and the exact editable fields.
 
 ## Inputs
 
@@ -43,7 +40,7 @@ private lab paths.
 | DLL directory | Folder containing Thermo RawFileReader DLLs |
 | Target table | Names, m/z, expected RT, CID-NL tag, role, and ISTD pairing |
 | Reusable analysis method | Processing strategy plus the complete targets/ISTD table |
-| Environment and output | DLL and output location; resource scheduling is automatic |
+| Environment and output | DLL and output location; shared worker count in execution resources |
 
 Target labels become public workbook and CSV identifiers. Rename them only when
 downstream scripts and review expectations can tolerate the changed column
@@ -56,10 +53,11 @@ The target table specifies name, m/z, expected RT in minutes, CID-NL tag
 (`dR`, `R`, `MeR`), role and ISTD relationship. An analyte references an ISTD row;
 an ISTD does not reference another row. The tag is the single chemistry input.
 
-Use **另存為方法** to save the complete target table plus the scientific strategy.
+Use **另存清單** to save the complete target table plus the scientific strategy.
 Load it for another batch without changing that batch's RAW/DLL paths
 or injection order. There is no advanced method panel or method reset: scientific
-processing and resource scheduling belong to the platform, not hidden settings.
+processing belongs to the platform, not hidden settings. Local worker count is
+an execution resource, never part of a portable method.
 
 The current sample's credible paired ISTD supplies the RT shift while preserving
 the declared expected analyte–ISTD offset. Expected RT is an identity hint, not an
@@ -68,9 +66,8 @@ the sample acquisition span, even without MS2, and uses the shared Discovery
 CID-NL event and physical-peak owners. Missing NL does not count as direct support.
 Conservative, confirmed-peer ISTD Backfill keeps its separate provenance.
 
-The CLI accepts `--method-dir <folder>` and `--data-dir <new-batch>`; execution
-inputs are frozen at start. Settings contain only RAW/DLL paths and injection
-order. The [field reference](targeted-config-reference.md) is the input contract.
+The CLI accepts `--method <file.xlsx>` and `--data-dir <new-batch>`; execution
+inputs are frozen at start. Local settings contain RAW/DLL paths, sample metadata and worker count. The [field reference](targeted-config-reference.md) is the input contract.
 Old target/scientific-settings formats are rejected, not silently converted.
 
 ## Main Output
@@ -133,7 +130,7 @@ Useful overrides:
 | --- | --- |
 | `--base-dir` | Directory containing `config/` and `output/` |
 | `--data-dir` | One-run RAW directory override |
-| `--method-dir` | Saved target-intent method folder |
+| `--method` | Saved target-intent XLSX (`Method` + `Targets`) |
 | `--injection-order-source` | Explicit injection order for this batch |
 
 Execution scheduling is automatic; actual workers are recorded in run metadata.
@@ -152,7 +149,7 @@ For developer-level validation harness details, see
 
 | Symptom | Action |
 | --- | --- |
-| `settings.csv` or `targets.csv` format error | Fix the file, row, and column named in the error |
+| XLSX or current-work JSON format error | Fix the file, row, and column named in the error |
 | `data_dir` does not exist | Point Settings to the folder containing `.raw` files |
 | DLL load failure | Point Settings to the folder with Thermo RawFileReader DLLs |
 | One RAW file fails | Continue the run and inspect the `FILE_ERROR` diagnostic row |
