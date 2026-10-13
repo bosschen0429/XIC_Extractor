@@ -116,7 +116,14 @@ def test_write_settings_creates_runtime_copy_with_example_descriptions(
         "value": "C:\\real",
         "description": "資料目錄",
     }
-    assert set(saved) == {"data_dir", "dll_dir", "injection_order_source"}
+    assert set(saved) == {
+        "data_dir",
+        "dll_dir",
+        "injection_order_source",
+        "parallel_workers",
+    }
+    assert saved["parallel_workers"]["value"] == ""
+    assert saved["parallel_workers"]["description"]
 
 
 def test_write_targets_creates_runtime_copy_only_on_save(tmp_path, monkeypatch):
@@ -149,14 +156,21 @@ def test_equal_csv_duplicates_have_one_written_row_and_recovery_backup(tmp_path)
     assert path.with_suffix(".csv.bak").read_bytes() == original
 
 
-def test_save_merges_partial_batch_values_and_preserves_machine_settings(tmp_path):
-    write_settings({"data_dir": "local", "dll_dir": "dll"}, config_dir=tmp_path)
+@pytest.mark.parametrize("workers", ["", "7"])
+def test_save_merges_partial_batch_values_and_preserves_machine_settings(
+    tmp_path, workers
+):
+    write_settings(
+        {"data_dir": "local", "dll_dir": "dll", "parallel_workers": workers},
+        config_dir=tmp_path,
+    )
     write_settings({"injection_order_source": "order.csv"}, config_dir=tmp_path)
     values = read_settings(config_dir=tmp_path)
     assert values == {
         "data_dir": "local",
         "dll_dir": "dll",
         "injection_order_source": "order.csv",
+        "parallel_workers": workers,
     }
 
 
@@ -181,7 +195,6 @@ def test_failed_atomic_replace_preserves_active_settings_and_cleans_temporary(
     "key",
     [
         "signal_processing_window_points",
-        "parallel_workers",
         "dirty_matrix_mode",
         "resolver_mode",
     ],
