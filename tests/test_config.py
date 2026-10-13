@@ -210,8 +210,10 @@ def test_target_relationships_and_metadata():
     )
     parsed = parse_target_rows([standard, analyte])
     assert parsed[1].sample_applicability == "rna_containing"
+    unpaired = parse_target_rows([dict(analyte, istd_pair="")])
+    assert unpaired[0].istd_pair == ""
+    assert not unpaired[0].is_istd
     for bad in [
-        dict(analyte, istd_pair=""),
         dict(analyte, istd_pair="missing"),
         dict(standard, istd_pair="ISTD"),
     ]:

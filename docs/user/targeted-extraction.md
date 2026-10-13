@@ -52,8 +52,8 @@ prefixes.
 
 The normal flow is **select samples → choose method/targets → run → review**.
 The target table specifies name, m/z, expected RT in minutes, CID-NL tag
-(`dR`, `R`, `MeR`), role and ISTD relationship. An analyte references an ISTD row;
-an ISTD does not reference another row. The tag is the single chemistry input.
+(`dR`, `R`, `MeR`), role and an optional ISTD relationship. An analyte may reference
+an ISTD row or leave the pair blank; an ISTD does not reference another row. The tag is the single chemistry input.
 
 Use **另存清單** to save the complete target table plus the scientific strategy.
 Load it for another batch without changing that batch's RAW/DLL paths

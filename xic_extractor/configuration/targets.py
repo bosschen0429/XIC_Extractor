@@ -69,14 +69,6 @@ def _validate_target_relationships(path: Path, targets: list[Target]) -> None:
                 "is_istd=true targets must not set istd_pair",
             )
         if not target.istd_pair:
-            if not target.is_istd and target.expected_rt_min is not None:
-                raise _config_error(
-                    path,
-                    row_number,
-                    "istd_pair",
-                    "",
-                    "analyte requires an ISTD relationship",
-                )
             continue
         pair = by_label.get(target.istd_pair)
         if pair is None or not pair.is_istd:
