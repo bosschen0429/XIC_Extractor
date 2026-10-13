@@ -45,11 +45,7 @@ def test_complete_method_roundtrip_without_batch_machine_or_resource_state(tmp_p
     folder = tmp_path / "method-a"
     saved = files.save_targeted_method(method, folder)
     loaded = files.load_targeted_method(folder)
-    assert (
-        dict(loaded.settings)
-        == dict(saved.settings)
-        == {"strategy_version": "targeted-cid-nl-v2"}
-    )
+    assert dict(loaded.settings) == dict(saved.settings) == {"strategy": "cid-nl"}
     assert loaded.targets == method.targets == read_targets(folder / "targets.csv")
     assert loaded.targets[1].istd_pair == "standard"
     assert loaded.targets[1].sample_applicability == "rna_containing"
@@ -67,7 +63,7 @@ def test_new_method_replaces_every_method_value_and_targets(tmp_path):
     b = files.create_targeted_method({}, b_rows)
     files.save_targeted_method(b, folder)
     loaded = files.load_targeted_method(folder)
-    assert loaded.settings["strategy_version"] == "targeted-cid-nl-v2"
+    assert loaded.settings["strategy"] == "cid-nl"
     assert [target.label for target in loaded.targets] == ["other-standard"]
 
 

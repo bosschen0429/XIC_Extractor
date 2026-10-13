@@ -1,4 +1,4 @@
-"""Versioned target intent over shared read-only chemistry and mass policy."""
+"""Target intent over shared read-only chemistry and mass policy."""
 
 import tomllib
 from dataclasses import asdict, dataclass
@@ -14,7 +14,7 @@ from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
 from xic_extractor.precursor_evidence import PrecursorReferenceRequirement
-from xic_extractor.settings_schema import TARGETED_STRATEGY_VERSION
+from xic_extractor.settings_schema import TARGETED_STRATEGY
 
 TAG_PRESETS = {"dR": "dna_dr", "R": "rna_ribose", "MeR": "rna_mer"}
 TARGETED_PRECURSOR_REFERENCE: PrecursorReferenceRequirement = "recorded_precursor"
@@ -44,7 +44,7 @@ def targeted_tag_profile(tag: str) -> TargetedTagProfile:
 
 def strategy_receipt() -> dict:
     return {
-        "strategy_version": TARGETED_STRATEGY_VERSION,
+        "strategy": TARGETED_STRATEGY,
         "candidate_coverage": "complete_acquisition_exact_mass",
         "expected_rt_usage": "identity_reference_not_acquisition_window",
         "cid_nl_identity_precursor_reference": TARGETED_PRECURSOR_REFERENCE,

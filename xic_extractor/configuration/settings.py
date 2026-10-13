@@ -39,8 +39,8 @@ def validate_settings_values(
         if not values[key].strip():
             raise ConfigError(f"{settings_path}: {key} is required")
     return _ParsedSettings(
-        Path(values["data_dir"]),
-        Path(values["dll_dir"]),
+        Path(values["data_dir"]).expanduser(),
+        Path(values["dll_dir"]).expanduser(),
         _parse_optional_path(values["injection_order_source"]),
     )
 

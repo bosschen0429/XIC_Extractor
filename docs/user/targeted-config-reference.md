@@ -15,7 +15,7 @@ or settings produce an error rather than becoming hidden scientific overrides.
 Scientific policy and process scheduling are platform-owned. The normal GUI and
 Targeted CLI do not offer smoothing, tolerance, anchor-window, Dirty Matrix,
 serial/process or worker controls. The run metadata records the effective
-versioned policy and actual resource allocation.
+policy and actual resource allocation.
 
 ## Target intent (`targets.csv`)
 
@@ -38,9 +38,9 @@ not crop the acquired candidate universe.
 ## Portable method
 
 A method folder contains `targets.csv` and `settings.csv`. The latter contains
-only `strategy_version,targeted-cid-nl-v2` under the `key,value` header.
+only `strategy,cid-nl` under the `key,value` header.
 Batch and machine paths do not travel with the method. Loading replaces the
-whole target intent; unsupported strategy versions are rejected.
+whole target intent; unsupported strategies are rejected.
 
 ## Evidence and outputs
 

@@ -49,11 +49,11 @@ def test_settings_round_trip_rejects_hidden_science_without_migrating(tmp_path):
     assert "old_unknown" in (tmp_path / "settings.csv").read_text()
 
 
-def test_method_summary_shows_version_not_knob_differences():
+def test_method_summary_names_strategy_without_revision():
     from xic_workbench.targeted import method_summary
 
     assert method_summary({}) == {
-        "label": "targeted-cid-nl-v2",
+        "label": "共用 CID-NL 策略",
         "custom_keys": [],
         "differences": [],
     }

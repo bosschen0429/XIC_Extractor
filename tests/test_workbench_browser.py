@@ -179,6 +179,10 @@ def test_targeted_exposes_intent_only_and_editor_round_trips(workbench, config_d
     )
     expect(page.locator("#targeted-form .step-no")).to_have_text(["1", "2", "3"])
     expect(page.locator("#target-method-state")).not_to_be_visible()
+    page.locator("summary", has_text="處理策略與設定來源").click()
+    expect(page.locator("#target-method-state")).to_have_text("共用 CID-NL 策略")
+    expect(page.locator("#targeted-form")).not_to_contain_text("版本")
+    page.locator("summary", has_text="處理策略與設定來源").click()
     for cell in page.locator("#target-preview th, #target-preview td").all():
         expect(cell).to_have_css("text-align", "center")
     expect(page.locator("#targeted-advanced")).to_have_count(0)

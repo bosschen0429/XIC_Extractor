@@ -145,7 +145,7 @@
     checklist(kind);
   }
   function setMethodState(summary) {
-    const label = summary?.label || "targeted-cid-nl-v2";
+    const label = summary?.label || "共用 CID-NL 策略";
     const custom = new Set(summary?.custom_keys || []);
     const chip = $("target-method-state");
     chip.textContent = label;

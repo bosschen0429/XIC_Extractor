@@ -234,6 +234,4 @@ def setting_fields() -> list[dict[str, Any]]:
 
 
 def method_summary(settings: dict[str, str]) -> dict[str, Any]:
-    from xic_extractor.settings_schema import TARGETED_STRATEGY_VERSION
-
-    return {"label": TARGETED_STRATEGY_VERSION, "custom_keys": [], "differences": []}
+    return {"label": "共用 CID-NL 策略", "custom_keys": [], "differences": []}

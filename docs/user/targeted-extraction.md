@@ -42,7 +42,7 @@ private lab paths.
 | RAW directory | Batch of Thermo `.raw` files to process |
 | DLL directory | Folder containing Thermo RawFileReader DLLs |
 | Target table | Names, m/z, expected RT, CID-NL tag, role, and ISTD pairing |
-| Reusable analysis method | Strategy version plus the complete targets/ISTD table |
+| Reusable analysis method | Processing strategy plus the complete targets/ISTD table |
 | Environment and output | DLL and output location; resource scheduling is automatic |
 
 Target labels become public workbook and CSV identifiers. Rename them only when
@@ -56,8 +56,8 @@ The target table specifies name, m/z, expected RT in minutes, CID-NL tag
 (`dR`, `R`, `MeR`), role and ISTD relationship. An analyte references an ISTD row;
 an ISTD does not reference another row. The tag is the single chemistry input.
 
-Use **另存為方法** to save the complete target table plus the scientific strategy
-version. Load it for another batch without changing that batch's RAW/DLL paths
+Use **另存為方法** to save the complete target table plus the scientific strategy.
+Load it for another batch without changing that batch's RAW/DLL paths
 or injection order. There is no advanced method panel or method reset: scientific
 processing and resource scheduling belong to the platform, not hidden settings.
 

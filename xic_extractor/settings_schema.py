@@ -16,7 +16,7 @@ ARBITRATED_RESOLVER_RETIRED_MESSAGE = (
 )
 
 
-TARGETED_STRATEGY_VERSION = "targeted-cid-nl-v2"
+TARGETED_STRATEGY = "cid-nl"
 
 CANONICAL_SETTINGS_DEFAULTS: dict[str, str] = {
     "data_dir": "C:/your/data/folder",
@@ -28,4 +28,4 @@ CANONICAL_SETTINGS_DESCRIPTIONS: dict[str, str] = {
     "dll_dir": "Xcalibur DLL 資料夾",
     "injection_order_source": "CSV／XLSX 注射順序；留空使用 RAW 修改時間",
 }
-METHOD_KEYS = ("strategy_version",)
+METHOD_KEYS = ("strategy",)

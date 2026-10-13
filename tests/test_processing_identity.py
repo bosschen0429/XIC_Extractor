@@ -938,7 +938,9 @@ def test_targeted_formal_request_binds_strategy_and_shared_mass_policy(
     receipt = json.loads(baseline.normalized_scientific_inputs_json)["strategy"]
     assert receipt["candidate_coverage"] == "complete_acquisition_exact_mass"
     assert set(receipt["cid_nl_recipes"]) == {"dR", "R", "MeR"}
-    monkeypatch.setattr(targeted_strategy, "TARGETED_STRATEGY_VERSION", "next-strategy")
+    monkeypatch.setattr(
+        targeted_strategy, "TARGETED_PRECURSOR_REFERENCE", "independent_mass"
+    )
     assert (
         _request(config, paths).processing_request_id != baseline.processing_request_id
     )

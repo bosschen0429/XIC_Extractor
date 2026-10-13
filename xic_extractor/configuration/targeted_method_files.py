@@ -25,7 +25,7 @@ from xic_extractor.configuration.targets import parse_target_rows
 from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,
     METHOD_KEYS,
-    TARGETED_STRATEGY_VERSION,
+    TARGETED_STRATEGY,
 )
 
 _FILES = frozenset({"settings.csv", "targets.csv"})
@@ -49,14 +49,12 @@ def create_targeted_method(
     )
     if unknown:
         raise ConfigError("Retired or unknown method settings: " + ", ".join(unknown))
-    version = settings.get("strategy_version", TARGETED_STRATEGY_VERSION)
-    if version != TARGETED_STRATEGY_VERSION:
-        raise ConfigError(f"Unsupported Targeted strategy version: {version}")
+    strategy = settings.get("strategy", TARGETED_STRATEGY)
+    if strategy != TARGETED_STRATEGY:
+        raise ConfigError(f"Unsupported Targeted strategy: {strategy}")
     rows = tuple(MappingProxyType(dict(row)) for row in target_rows)
     targets = parse_target_rows(rows)
-    return TargetedMethod(
-        MappingProxyType({"strategy_version": version}), targets, rows
-    )
+    return TargetedMethod(MappingProxyType({"strategy": strategy}), targets, rows)
 
 
 def apply_targeted_method(
@@ -66,8 +64,8 @@ def apply_targeted_method(
     overrides: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
     """Bind the admitted strategy while retaining batch and machine inputs."""
-    if method.settings.get("strategy_version") != TARGETED_STRATEGY_VERSION:
-        raise ConfigError("Unsupported Targeted strategy version")
+    if method.settings.get("strategy") != TARGETED_STRATEGY:
+        raise ConfigError("Unsupported Targeted strategy")
     return resolve_settings(dict(settings), dict(overrides or {}))[0]
 
 
