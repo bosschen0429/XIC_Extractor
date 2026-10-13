@@ -32,6 +32,32 @@ def test_missing_discovery_preset_is_not_replaced_with_default(tmp_path):
         load_preset(config["preset"])
 
 
+def test_default_workspace_save_and_cli_share_isolated_settings(isolated_config_dir):
+    from xic_extractor.configuration.execution_profile import load_execution_profile
+    from xic_workbench.workspace import ReviewWorkspace
+
+    workspace = ReviewWorkspace()
+    try:
+        workspace.analysis.action(
+            "targeted/save",
+            {
+                "settings": {"parallel_workers": "3"},
+                "targets": [{
+                    "label": "test", "mz": "258.1085", "expected_rt_min": "9.0",
+                    "cid_nl_tag": "dR", "role": "istd", "istd_pair": "",
+                }],
+            },
+        )
+        workspace.analysis.action("untargeted/save", {"raw_dir": "test-raws"})
+    finally:
+        workspace.close()
+
+    assert (isolated_config_dir / "settings.csv").is_file()
+    assert config_io.read_settings()["parallel_workers"] == "3"
+    assert load_execution_profile().parallel_workers == 3
+    assert discovery_config_io.read_discovery_config()["raw_dir"] == "test-raws"
+
+
 def test_read_discovery_config_defaults_output_to_repo_output(
     monkeypatch, tmp_path
 ) -> None:
