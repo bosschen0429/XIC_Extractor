@@ -87,7 +87,11 @@ def test_header_names_cannot_collide_with_another_raw_alias(header_names):
     assert resolve_canonical_sample_identity(snapshot, "B").metadata.raw_stem == "B"
 
 
-def test_retained_alignment_keeps_full_root_injection_order(tmp_path, monkeypatch):
+@pytest.mark.parametrize("same_stem_context", [False, True])
+@pytest.mark.parametrize("retained_copy", [False, True])
+def test_retained_alignment_keeps_full_root_injection_order(
+    tmp_path, monkeypatch, same_stem_context, retained_copy
+):
     from tests.cid_nl_raw_fixture import (
         _current_candidates,
         _FakeRaw,
@@ -101,12 +105,18 @@ def test_retained_alignment_keeps_full_root_injection_order(tmp_path, monkeypatc
         prepare_untargeted_alignment_inputs,
     )
 
-    paths = tuple(tmp_path / name for name in ("Blank.raw", "A.raw", "B.raw"))
+    paths = (
+        tmp_path / ("context/A.raw" if same_stem_context else "Blank.raw"),
+        tmp_path / "A.raw",
+        tmp_path / "B.raw",
+    )
     for path in paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(path.name.encode())
+    minutes = (11, 0, 22) if same_stem_context else (0, 11, 22)
     facts = {
         path: (
-            header(str(path), i * 11),
+            header(str(path), minutes[i]),
             "blank" if i == 0 else "study_sample",
             path.stem,
         )
@@ -115,18 +125,26 @@ def test_retained_alignment_keeps_full_root_injection_order(tmp_path, monkeypatc
     monkeypatch.setattr(
         "xic_extractor.raw_reader._analysis_header", lambda p, d: facts[p]
     )
+    selected_paths = paths[1:]
+    if retained_copy:
+        copy = tmp_path / "retained" / "A.raw"
+        copy.parent.mkdir()
+        copy.write_bytes(paths[1].read_bytes())
+        original_header, role, name = facts[paths[1]]
+        facts[copy] = (replace(original_header, raw_path=str(copy)), role, name)
+        selected_paths = (copy, paths[2])
     settings, config = _settings(), _peak_config(tmp_path)
     candidates = {
         p.stem: _current_candidates(
             _FakeRaw((7.98,)), raw_file=p, settings=settings, peak_config=config
         )
-        for p in paths[1:]
+        for p in selected_paths
     }
-    receipts = _discovery_receipts(tmp_path, paths[1:], candidates)
+    receipts = _discovery_receipts(tmp_path, selected_paths, candidates)
     batch = DiscoveryBatchInput(
         sample_order=("A", "B"),
         candidate_csvs={},
-        raw_files={p.stem: p for p in paths[1:]},
+        raw_files={p.stem: p for p in selected_paths},
         review_csvs={},
         candidate_receipts=receipts,
     )
@@ -144,7 +162,11 @@ def test_retained_alignment_keeps_full_root_injection_order(tmp_path, monkeypatc
             s.metadata.raw_stem: s.metadata.injection_order
             for s in prepared.plan.context.samples
         }
-        assert orders == {"A": 2, "B": 3}
+        assert orders == {"A": 1 if same_stem_context else 2, "B": 3}
+        assert [
+            (s.metadata.raw_stem, s.metadata.sample_name, s.metadata.sample_role)
+            for s in prepared.plan.context.samples
+        ] == [("A", "A", "study_sample"), ("B", "B", "study_sample")]
         assert orders == {
             e.raw_stem: e.injection_order
             for e in read_analysis_set(tmp_path, tmp_path).analyzed

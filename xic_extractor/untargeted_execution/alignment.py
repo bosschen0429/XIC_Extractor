@@ -281,17 +281,21 @@ def prepare_untargeted_alignment_inputs(
     else:
         from xic_extractor.raw_reader import read_analysis_set
 
-        by_stem = {
-            row.raw_stem: row
-            for row in read_analysis_set(raw_dir, dll_dir).sample_metadata
+        by_path = {
+            path.resolve(): entry.metadata
+            for entry in read_analysis_set(raw_dir, dll_dir).entries
+            for path in entry.copy_paths
         }
-        missing = [stem for stem in discovery_batch.sample_order if stem not in by_stem]
-        if missing:
+        missing_paths = [
+            path for path in ordered_raw_paths if path.resolve() not in by_path
+        ]
+        if missing_paths:
             raise ValueError(
-                "RAW analysis set has no injection for: " + ", ".join(missing)
+                "RAW analysis set has no injection for: "
+                + ", ".join(map(str, missing_paths))
             )
         retained_sample_metadata = tuple(
-            by_stem[stem] for stem in discovery_batch.sample_order
+            by_path[path.resolve()] for path in ordered_raw_paths
         )
     recorder = timing_recorder or TimingRecorder.disabled("alignment")
     output_dir.mkdir(parents=True, exist_ok=True)

@@ -25,6 +25,7 @@ class AnalysisSetEntry:
     """One injection: its RAW copy and the sample facts every flow reads."""
 
     raw_path: Path
+    copy_paths: tuple[Path, ...]
     metadata: SampleMetadata
     role_source: RoleSource
     context_reason: ContextReason | None
@@ -151,6 +152,7 @@ def select_analysis_set(
         entries.append(
             AnalysisSetEntry(
                 raw_path=Path(copy_path),
+                copy_paths=tuple(Path(path) for path in injection.copy_paths),
                 metadata=SampleMetadata(
                     sample_name=name,
                     raw_stem=raw_stem,
