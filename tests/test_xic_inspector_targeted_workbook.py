@@ -139,10 +139,12 @@ def install_targeted_raws(
     return reads
 
 
+@pytest.mark.parametrize("nested", [False, True])
 def test_targeted_xic_reads_only_selected_raw_and_includes_pair_without_writes(
     workbook,
     tmp_path,
     monkeypatch,
+    nested,
 ):
     from xic_inspector.sources.curve_bundle import read_curve_bundle
     from xic_workbench import targeted_curves
@@ -152,6 +154,11 @@ def test_targeted_xic_reads_only_selected_raw_and_includes_pair_without_writes(
     reads = install_targeted_raws(
         monkeypatch, raw_dir, {"Sample A": 100, "Sample B": 300}
     )
+    if nested:
+        for sample in ("Sample A", "Sample B"):
+            batch = raw_dir / sample / "batch"
+            batch.mkdir(parents=True)
+            (raw_dir / f"{sample}.raw").rename(batch / f"{sample}.RAW")
     output = tmp_path / "curves.json"
     receipt = targeted_curves.export_targeted_curves(
         workbook,
@@ -190,6 +197,9 @@ def test_targeted_http_loads_nd_sample_curves_without_changing_workbook(
 
     raw_dir = tmp_path / "raw"
     reads = install_targeted_raws(monkeypatch, raw_dir, {"Sample A": 100})
+    batch = raw_dir / "batch"
+    batch.mkdir()
+    (raw_dir / "Sample A.raw").rename(batch / "Sample A.raw")
     before = workbook.read_bytes()
     with _client(ReviewWorkspace()) as request:
         _, page, _ = request("/api/open", {"source": str(workbook)})
@@ -219,6 +229,35 @@ def test_targeted_http_loads_nd_sample_curves_without_changing_workbook(
         }
         assert {c["sample_id"] for c in curves} == {"Sample A"}
     assert len(reads) == 2
+    assert workbook.read_bytes() == before
+
+
+def test_targeted_curve_rejects_ambiguous_raw_before_acquisition(
+    workbook, tmp_path, monkeypatch
+):
+    from xic_extractor.diagnostics.alignment_explanation import ExplanationError
+    from xic_workbench.targeted_curves import export_targeted_curves
+
+    raw_dir = tmp_path / "raw"
+    reads = install_targeted_raws(
+        monkeypatch, raw_dir, {"Sample A": 100, "Sample B": 300}
+    )
+    batch = raw_dir / "other-batch"
+    batch.mkdir()
+    (batch / "Sample A.RAW").write_bytes(b"different injection with the same stem")
+    before = workbook.read_bytes()
+    output = tmp_path / "curves.json"
+    with pytest.raises(ExplanationError, match="Sample A.*多個 RAW"):
+        export_targeted_curves(
+            workbook,
+            output,
+            raw_dir=raw_dir,
+            dll_dir=tmp_path,
+            target_id="Analyte",
+            sample_ids=("Sample B", "Sample A"),
+        )
+    assert not reads
+    assert not output.exists()
     assert workbook.read_bytes() == before
 
 

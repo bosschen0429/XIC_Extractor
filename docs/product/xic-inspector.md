@@ -152,6 +152,10 @@ standalone saved-result view does not reconstruct plots. In the local workspace,
 ND rows. Both charts show original scan points and the smoothed line together,
 with a shared RT range and independent per-ion intensity scales covering both
 series. Saved peak bounds are overlays, not new integration results.
+Targeted curve lookup uses the analysis owner's recursive RAW discovery under
+the selected root. Each requested workbook label must match one RAW filename
+stem; multiple matches fail explicitly rather than choosing one by folder order.
+This locates a file for diagnostic reading, not a verified original acquisition.
 
 For uncounted targets with a counted paired ISTD, diagnostic support checks reuse
 the physical candidate gate for segments containing the saved ISTD RT. A rejected

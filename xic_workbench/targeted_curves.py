@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 from typing import Any, Callable, cast
 
+from xic_extractor.analysis_set import discover_raw_files
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
@@ -101,13 +102,36 @@ def export_targeted_curves(
         if is_cancelled is not None and is_cancelled():
             raise CurveAcquisitionCancelled("已取消曲線載入。")
 
-    for index, sample in enumerate(samples):
-        check_cancel()
+    check_cancel()
+    paths_by_stem: dict[str, list[Path]] = {}
+    for sample in samples:
         if Path(sample).name != sample or sample in {".", ".."}:
             raise ExplanationError("工作簿樣本名稱不可含路徑。")
-        path = raw_dir / f"{sample}.raw"
-        if not path.is_file():
-            raise ExplanationError(f"找不到所選樣本的 RAW：{path}")
+        paths_by_stem[sample.casefold()] = []
+    try:
+        raw_paths = discover_raw_files(raw_dir)
+    except ValueError as exc:
+        raise ExplanationError(str(exc)) from exc
+    for path in raw_paths:
+        if path.stem.casefold() in paths_by_stem:
+            paths_by_stem[path.stem.casefold()].append(path)
+    selected_paths = {}
+    for sample in samples:
+        matches = paths_by_stem[sample.casefold()]
+        if not matches:
+            raise ExplanationError(
+                f"找不到所選樣本的 RAW：{sample}（搜尋根目錄：{raw_dir}）"
+            )
+        if len(matches) > 1:
+            raise ExplanationError(
+                f"樣本 {sample} 對應多個 RAW，請選擇唯一對應的資料夾："
+                + "、".join(str(path) for path in matches)
+            )
+        selected_paths[sample] = matches[0]
+
+    for index, sample in enumerate(samples):
+        check_cancel()
+        path = selected_paths[sample]
         try:
             identity = build_acquisition_source_identity(
                 path,

@@ -699,6 +699,10 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     reads = install_targeted_raws(
         monkeypatch, raw_dir, {"S3": 1000, "S4": 300}, pair_scale=1000
     )
+    for sample in ("S3", "S4"):
+        batch = raw_dir / sample
+        batch.mkdir()
+        (raw_dir / f"{sample}.raw").rename(batch / f"{sample}.raw")
     workbook = write_rare_detection_workbook(tmp_path / "paired.xlsx")
     original = workbook.read_bytes()
     _view(page, "review")
