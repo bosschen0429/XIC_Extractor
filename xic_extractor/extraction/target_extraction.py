@@ -13,7 +13,6 @@ from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.signal_processing_profile import (
     resolve_signal_processing_profile,
 )
-from xic_extractor.configuration.targeted_strategy import TARGETED_PRECURSOR_REFERENCE
 from xic_extractor.evidence.neutral_loss import (
     CandidateMS2Evidence,
 )
@@ -447,24 +446,17 @@ def _finite_positive(value: float | None) -> bool:
 def prepare_sample_method_seeds(
     raw: Any, window: Ms2Window, targets: list[Target]
 ) -> dict[str, tuple]:
-    """Acquire shared parent-MS1 verification once, then resolve shared scan events."""
+    """Read shared parent facts once; retain alternatives for each target's mass."""
     from xic_extractor.discovery.strict_seed_receipts import (
         read_parent_ms1_observations,
-        resolve_discovery_scan_events,
     )
 
     prepared = prepare_targeted_method_seeds(window, targets)
     return {
-        tag: resolve_discovery_scan_events(
-            read_parent_ms1_observations(
-                raw,
-                seeds,
-                tolerance_ppm=discovery_settings_for_tag(
-                    tag
-                ).precursor_mz_tolerance_ppm,
-            ),
-            settings=discovery_settings_for_tag(tag),
-            precursor_reference_requirement=TARGETED_PRECURSOR_REFERENCE,
+        tag: read_parent_ms1_observations(
+            raw,
+            seeds,
+            tolerance_ppm=discovery_settings_for_tag(tag).precursor_mz_tolerance_ppm,
         )
         for tag, seeds in prepared.items()
     }

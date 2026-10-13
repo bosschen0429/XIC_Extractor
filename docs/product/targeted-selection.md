@@ -77,7 +77,9 @@ break ties within the supported evidence ordering. Expected RT and paired-ISTD s
 MS1 candidate coverage spans the sample acquisition interval, including targets
 without MS2. The complete scan population is read once per sample; each tag is
 parsed once by Discovery, with shared parent-MS1 verification and scan-event
-resolution before candidate-local CID-NL assessment.
+resolution within each target’s m/z population before candidate-local CID-NL
+assessment. Different recorded precursors from one scan remain available to
+their respective targets.
 For named Target identity, own CID-NL support requires a compatible recorded
 scan precursor or vendor monoisotopic reference. A parent-MS1 ion found by
 searching product + configured loss establishes mass/isolation compatibility,

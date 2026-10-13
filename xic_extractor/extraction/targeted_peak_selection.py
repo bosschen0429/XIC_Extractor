@@ -500,6 +500,10 @@ def _discovery_method_products(
     window: Ms2Window, target: Target, seeds: tuple | None
 ) -> tuple[MS2ProductEvidence, ...]:
     """Adapt shared Discovery events, preserving their recorded/inferred basis."""
+    from xic_extractor.discovery.strict_seed_receipts import (
+        resolve_discovery_scan_events,
+    )
+
     if seeds is None:
         seeds = prepare_targeted_method_seeds(window, [target])[target.cid_nl_tag]
     base_by_scan = {
@@ -508,6 +512,15 @@ def _discovery_method_products(
         if event.scan is not None
     }
     tolerance_da = target.mz * target.ppm_tol / 1e6
+    # Resolve only within this target's mass question. A scan can carry distinct
+    # valid recorded references for different targets of the same chemistry.
+    seeds = resolve_discovery_scan_events(
+        tuple(
+            seed for seed in seeds if abs(seed.precursor_mz - target.mz) <= tolerance_da
+        ),
+        settings=discovery_settings_for_tag(target.cid_nl_tag),
+        precursor_reference_requirement=TARGETED_PRECURSOR_REFERENCE,
+    )
     assert target.neutral_loss_da is not None
     expected_product = target.mz - target.neutral_loss_da
     inference_tolerance = discovery_settings_for_tag(
@@ -538,7 +551,6 @@ def _discovery_method_products(
             ),
         )
         for seed in seeds
-        if abs(seed.precursor_mz - target.mz) <= tolerance_da
     )
 
 

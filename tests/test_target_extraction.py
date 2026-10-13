@@ -660,3 +660,58 @@ def test_targeted_scan_resolution_keeps_recorded_support_over_precise_inference(
         )
         assert target_event.precursor_mz_basis == "scan_precursor"
         assert target_event.product_mz == 383.9516
+
+
+def test_shared_scan_preserves_each_targets_recorded_precursor_support(tmp_path):
+    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata, Ms2Window
+
+    targets = [
+        replace(_intent_target(8.0), label=label, mz=mz)
+        for label, mz in (("selected", 301.00335), ("monoisotopic", 300.0))
+    ]
+    scan = Ms2Scan(
+        7,
+        8.0,
+        targets[0].mz,
+        np.array([t.mz - t.neutral_loss_da for t in targets]),
+        np.array([1000.0, 900.0]),
+        1000.0,
+        Ms2PrecursorMetadata(
+            monoisotopic_mz=300.0,
+            charge=1,
+            isolation_width_da=3.0,
+            isolation_offset_da=0.0,
+            master_scan_number=6,
+        ),
+    )
+    window = Ms2Window("sample", 0.0, 12.0, (Ms2ScanEvent(scan, None, 7),))
+    rt = np.linspace(0, 12, 1201)
+
+    class Raw:
+        def acquisition_rt_bounds(self):
+            return 0.0, 12.0
+
+        def extract_xic(self, mz, low, high, ppm):
+            return rt, 10 + 1000 * np.exp(-(((rt - 8) / 0.12) ** 2))
+
+    raw = Raw()
+    prepared = target_extraction.prepare_sample_method_seeds(raw, window, targets)
+    config = _strategy_config(tmp_path)
+    results = {}
+    for target in targets:
+        target_extraction.extract_one_target(
+            raw,
+            config,
+            "sample",
+            target,
+            reference_rt=8.0,
+            sample_window=window,
+            method_seeds=prepared["dR"],
+            results=results,
+            diagnostics=[],
+            scoring_context_factory=build_scoring_context_factory(config=config),
+        )
+        result = results[target.label]
+        assert result.selected_cid_nl_supported
+        assert result.reported_rt == pytest.approx(8.0, abs=0.03)
+        assert {p.precursor_mz for p in result.cid_nl_products} == {target.mz}
