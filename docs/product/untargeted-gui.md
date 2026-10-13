@@ -25,33 +25,22 @@ historical filename as the stable topic locator.
 
 ### Targeted
 
-- The primary Targeted path is RAW folder, target list, then Run.
-- The standard method is the default. Advanced method settings stay collapsed
-  until the operator opens them. The separate DLL section expands when its
-  value needs attention.
-- A persisted setting that differs from the canonical method is labelled
-  `自訂參數 · N 項調整`. Only the 10 scalar parameters owned by
-  `xic_extractor.settings_schema.METHOD_KEYS` contribute to the count; batch, environment,
-  workers, output, and targets do not. **回到預設** restores those
-  scalar parameters. Gaussian is fixed information, not a method choice.
-- `settings.csv` is the sole active Targeted settings file. Reset preserves
-  batch and execution settings. GUI and CLI use the existing settings
-  parser; the Workbench only presents its method values and differences.
-- Ordinary configuration reads do not write files. The workspace supplies the
-  shared DLL value to both workflows; saving it does not validate Targeted
-  method values, and invalid Targeted values are shown as warnings so they can
-  be corrected in the workspace.
-- `count_no_ms2_as_detected` affects legacy fallback rows without formal
-  projection fields, not formal Detection %. New saves use only the canonical
-  smoothing-window key; legacy aliases load, but conflicting values fail.
-- The target table supports CSV, TSV, and Excel import plus in-workspace edit.
-  Unknown source columns and numeric text survive edits where the target owner
-  permits them.
-- Save writes `settings.csv` and `targets.csv` in the selected config
-  directory. Run calls the canonical Targeted application and publishes its
-  workbook and result summary.
-- **開始新批次** changes the output paths for another run and keeps the current
-  method and target list. It does not silently reset a custom method.
+- The primary path is samples, method/target intent, Run, then result review.
+- Target rows contain name, m/z, expected RT in minutes, CID-NL tag, role and
+  ISTD pairing. Tags use the same built-in chemistry recipes as Discovery.
+- A portable method saves the target intent and strategy version. There is no
+  advanced Targeted method panel, parameter reset, Dirty Matrix branch or user
+  worker/backend selector. Scientific policy is recorded in run metadata.
+- `settings.csv` contains only RAW/DLL paths and optional injection order.
+  Reading configuration never writes it; unsupported settings are reported,
+  not preserved as hidden effective overrides. No schema conversion is offered.
+- CSV/TSV and workbook import produce editable target intent. Numeric text and
+  descriptive metadata survive a validated save. Scientific legacy fields do not.
+- Save validates settings and targets before writing. Run invokes the canonical
+  Targeted application and publishes one finalized workbook; value, count and
+  review stay distinct.
+- **開始新批次** clears the RAW directory, injection order and displayed results,
+  preserving the method, targets and machine DLL path.
 
 ### Untargeted modes
 
@@ -102,8 +91,20 @@ directory-level Discovery followed by Alignment.
   source Matrix remains unchanged.
 - A completed evidence locator can open the Inspector review view directly or
   generate a custom standalone Inspector HTML report.
-- Inspector selection and rendering use `xic_inspector`. On-demand XIC uses
-  the saved observation binding and does not choose peaks, integrate, or write
+- Inspector selection and rendering use `xic_inspector`. Untargeted on-demand
+  XIC uses the saved observation binding. In Targeted review, each sample row's
+  **看 XIC** loads only that sample's target and paired ISTD, including ND rows
+  with known target coordinates. Select the RAW and DLL directories first.
+  Curves open in a side drawer without replacing the saved results table;
+  closing restores row focus, and revisiting a loaded sample reuses its curves.
+  Targeted charts show original scan points and smoothed lines together.
+- Targeted curves use the workbook's extraction tolerance and signal-processing
+  settings over the full acquisition trace; saved peak bounds are overlays.
+  XLSX sample names do not certify the original RAW: the view and exported HTML
+  explicitly mark that binding as unverified. New RAW fingerprints identify
+  this diagnostic extraction only.
+- Plot RT controls change the loaded view without rereading RAW. Neither mode
+  chooses peaks, reintegrates, changes counted detection, or writes workbook or
   Matrix values.
 - Sample metadata export supports TSV and CSV. Custom sample-role corrections
   are included in the submitted and exported population.
@@ -133,6 +134,7 @@ directory-level Discovery followed by Alignment.
 | `xic_workbench/methods.py` | CID-NL method editing and portable preset serialization |
 | `xic_workbench/samples.py` | Sample metadata matching, role correction, and export |
 | `xic_workbench/workspace.py` | Completed evidence selection and on-demand XIC jobs |
+| `xic_workbench/targeted_curves.py` | Read-only Targeted and paired-ISTD RAW acquisition |
 | `xic_workbench/assets/` | Unified analysis and review HTML, JavaScript, and CSS |
 
 ## Boundaries

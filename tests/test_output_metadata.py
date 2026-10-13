@@ -1,5 +1,6 @@
 import importlib
 import importlib.metadata
+import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -52,19 +53,21 @@ def test_build_metadata_rows_returns_contract_keys_in_order() -> None:
         "targeted_output_schema_version",
         "parallel_mode",
         "parallel_workers",
+        "targeted_strategy",
         "signal_processing_method",
         "signal_processing_window_points",
         "ms2_precursor_tol_da",
         "nl_min_intensity_ratio",
         "count_no_ms2_as_detected",
-        "nl_rt_anchor_search_margin_min",
-        "nl_rt_anchor_half_window_min",
-        "nl_fallback_half_window_min",
-        "rolling_window_size",
-        "dirty_matrix_mode",
     ]
     values = dict(rows)
     assert values["config_hash"] == "abc12345"
+    strategy = json.loads(values["targeted_strategy"])
+    assert strategy["strategy"] == "cid-nl"
+    assert strategy["cid_nl_identity_precursor_reference"] == "recorded_precursor"
+    assert strategy["cid_nl_evidence_scope"] == "target_mass_and_physical_peak"
+    assert strategy["cid_nl_ranking_priority"] == "positive_support_only"
+    assert set(strategy["cid_nl_recipes"]) == {"dR", "R", "MeR"}
     assert values["signal_processing_method"] == "gaussian"
     assert values["signal_processing_window_points"] == 21
     assert values["nl_min_intensity_ratio"] == 0.02

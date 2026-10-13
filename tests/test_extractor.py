@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from tests.raw_header_fakes import install_fake_raw_headers
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.evidence.neutral_loss import NLResult
 from xic_extractor.extraction.result_models import ExtractionResult
@@ -27,18 +28,19 @@ from xic_extractor.raw_reader import Ms2Scan, Ms2ScanEvent, RawReaderError
 
 _OPEN_RAW_SEAM = "xic_extractor.extraction.target_extraction.open_raw"
 
-_active_nl_fixture_result: NLResult | None = None
+_active_nl_fixture_results: list[NLResult] = []
 
 
 @pytest.fixture(autouse=True)
 def _disable_reader_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
-    global _active_nl_fixture_result
-    _active_nl_fixture_result = None
+    global _active_nl_fixture_results
+    _active_nl_fixture_results = []
     monkeypatch.setattr(
         "xic_extractor.extraction.pipeline.preflight_raw_reader",
         lambda _dll_dir: [],
         raising=False,
     )
+    install_fake_raw_headers(monkeypatch)
 
 
 def test_run_raises_before_processing_when_reader_preflight_fails(
@@ -73,7 +75,7 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
     targets = [_target("NoNL", neutral_loss_da=None), _target("WithNL")]
     monkeypatch.setattr(
         _OPEN_RAW_SEAM,
-        _open_raw_factory(peak_centers=[8.5, 9.5]),
+        _open_raw_factory(peak_centers=[9.5, 9.5]),
     )
     monkeypatch.setattr(
         "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
@@ -89,21 +91,13 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
             ]
         ),
     )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.diagnostics.check_nl",
-        _nl_sequence([NLResult("WARN", 80.0, None, 3, 0, 2)]),
-    )
+    _set_ms2_fixtures([NLResult("OK", 1.0, 9.5, 3, 0, 2)])
 
     output = _run(config, targets, progress_callback=lambda *_args: None)
 
     results = output.file_results[0].results
-    # WithNL target triggers NL_ANCHOR_FALLBACK; no error diagnostics.
-    assert all(
-        d["Issue"] == "NL_ANCHOR_FALLBACK"
-        for d in _diagnostics_to_rows(output.diagnostics)
-    )
+    assert all(d.issue != "FILE_ERROR" for d in output.diagnostics)
     assert len(output.file_results) == 1
-    assert all(d.issue == "NL_ANCHOR_FALLBACK" for d in output.diagnostics)
     long_rows = _run_output_to_long_rows(output, targets)
     no_nl_projection = results["NoNL"].targeted_product_projection
     assert no_nl_projection is not None
@@ -113,16 +107,16 @@ def test_run_writes_success_rows_with_area_columns_and_optional_nl(
             **_formatted_long_success_row("NoNL", results["NoNL"], nl=""),
             "Confidence": "LOW",
         },
-        _formatted_long_success_row(
-            "WithNL",
-            results["WithNL"],
-            nl="WARN_80.0ppm",
-        ),
+        {
+            **_formatted_long_success_row("WithNL", results["WithNL"], nl="OK"),
+            "Confidence": "LOW",
+        },
     ]
     assert [row["Counted Detection"] for row in long_rows] == ["TRUE", "TRUE"]
     assert [row["Product State"] for row in long_rows] == ["detected_clean"] * 2
     assert all(not row["Projection Conflict Reasons"] for row in long_rows)
-    assert "candidate_aligned_ms2_nl" in long_rows[1]["Projection Support Reasons"]
+    assert results["WithNL"].candidate_ms2_evidence is not None
+    assert results["WithNL"].candidate_ms2_evidence.nl_match is True
 
 
 @pytest.mark.parametrize("outside_height", [0.0, 50000.0])
@@ -136,7 +130,7 @@ def test_outside_strong_peak_cannot_erase_in_window_peak(
     class Raw(_FakeRaw):
         def extract_xic(self, mz, rt_min, rt_max, ppm_tol):
             windows.append((rt_min, rt_max))
-            rt = np.linspace(rt_min, rt_max, 1501)
+            rt = np.arange(rt_min, rt_max + 0.0025, 0.0025)
             inside = 1000.0 * np.exp(-0.5 * ((rt - 5.0) / 0.04) ** 2)
             outside = outside_height * np.exp(-0.5 * ((rt - 6.0) / 0.04) ** 2)
             return rt, 10.0 + inside + outside
@@ -145,11 +139,21 @@ def test_outside_strong_peak_cannot_erase_in_window_peak(
     target = replace(_target("Inside", neutral_loss_da=None), rt_min=4.5, rt_max=5.5)
     output = _run(config, [target])
     result = output.file_results[0].results["Inside"]
-    assert windows == [(3.5, 6.5)]
+    assert windows == [(0.0, 20.0)]
     assert result.reported_rt == pytest.approx(5.0, abs=0.002)
     assert result.reported_peak_area is not None
     known_area = 1000.0 * 0.04 * np.sqrt(2 * np.pi) * 60.0
-    assert result.reported_peak_area == pytest.approx(known_area, rel=0.04)
+    if outside_height == 0:
+        assert result.reported_peak_area == pytest.approx(known_area, rel=0.04)
+    # A full-acquisition AsLS baseline can change quantitation under interference;
+    # Targeted must retain the component and publish the shared physical answer.
+    assert result.physical_evaluation is not None
+    assert result.physical_evaluation.facts is not None
+    assert (
+        result.reported_peak_area
+        == result.physical_evaluation.facts.area_counts_seconds
+    )
+    assert result.reported_peak_area > 0
 
 
 def test_peak_only_outside_selection_still_answers_physical_question(
@@ -160,7 +164,7 @@ def test_peak_only_outside_selection_still_answers_physical_question(
 
     class Raw(_FakeRaw):
         def extract_xic(self, mz, rt_min, rt_max, ppm_tol):
-            rt = np.linspace(rt_min, rt_max, 1501)
+            rt = np.arange(rt_min, rt_max + 0.0025, 0.0025)
             outside = 5000.0 * np.exp(-0.5 * ((rt - 6.0) / 0.04) ** 2)
             return rt, 10.0 + outside
 
@@ -188,6 +192,7 @@ def test_formal_target_ranks_only_physically_supported_signal(
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     target = replace(
         _target("Qualified", neutral_loss_da=None),
+        expected_rt_min=4.7 if with_supported_main else 6.0,
         rt_min=4.0 if with_supported_main else 5.5,
         rt_max=7.0 if with_supported_main else 6.5,
     )
@@ -322,19 +327,15 @@ def test_retained_apex_outside_rt_hint_is_measured_without_inventing_nl_support(
     )
 
     class BroadTailRaw(_FakeRaw):
+        def iter_ms2_scans(self, rt_min, rt_max):
+            return iter(())
+
         def extract_xic(self, mz, rt_min, rt_max, ppm_tol):
             rt = np.linspace(rt_min, rt_max, 1801)
             return rt, 5000.0 * np.exp(-0.5 * ((rt - 12.6) / 0.8) ** 2)
 
     monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args, **_kwargs: BroadTailRaw())
-    monkeypatch.setattr(
-        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
-        _anchor_sequence([10.8]),
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.diagnostics.check_nl",
-        _nl_sequence([NLResult("OK", 1.0, 10.8, 1, 0, 1)]),
-    )
+    _set_ms2_fixtures([NLResult("OK", 1.0, 10.8, 1, 0, 1)])
 
     output = _run(config, [target])
     result = output.file_results[0].results[target.label]
@@ -397,18 +398,11 @@ def test_target_selection_window_uses_one_wide_physical_context(
         _OPEN_RAW_SEAM,
         lambda *_args, **_kwargs: raw,
     )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
-        _anchor_sequence([9.0]),
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.diagnostics.check_nl",
-        _nl_sequence([NLResult("OK", 1.0, 9.0, 1, 0, 1)]),
-    )
+    _set_ms2_fixtures([NLResult("OK", 1.0, 9.0, 1, 0, 1)])
 
     output = _run(config, targets)
 
-    assert raw.windows == [(6.0, 12.0), (6.0, 12.0)]
+    assert raw.windows == [(0.0, 20.0), (0.0, 20.0)]
     no_nl = output.file_results[0].results["NoNL"].physical_evaluation
     with_nl = output.file_results[0].results["WithNL"].physical_evaluation
     assert no_nl is not None and no_nl.facts is not None
@@ -478,34 +472,18 @@ def test_run_multi_sample_preserves_sample_attribution_and_ordering(
 def test_run_wires_candidate_ms2_evidence_into_scoring_context(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from xic_extractor.extraction import diagnostics
-
     config = _config(tmp_path)
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
-    evidence_calls: list[object] = []
-    evaluate = diagnostics.evaluate_candidate_ms2_evidence
-
-    def observe_evidence(window, *, geometry, **kwargs):
-        evidence_calls.append(geometry)
-        return evaluate(window, geometry=geometry, **kwargs)
-
-    monkeypatch.setattr(
-        _OPEN_RAW_SEAM,
-        _open_raw_factory(peak_centers=[8.5]),
-    )
-    monkeypatch.setattr(
-        diagnostics, "evaluate_candidate_ms2_evidence", observe_evidence
-    )
-    monkeypatch.setattr(
-        diagnostics, "check_nl", _nl_sequence([NLResult("OK", 1.0, 8.5, 1, 0, 1)])
-    )
+    monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory(peak_centers=[8.5]))
+    _set_ms2_fixtures([NLResult("OK", 1.0, 8.5, 1, 0, 1)])
 
     output = _run(config, [_target("WithNL")])
 
     assert output.file_results[0].error is None
     result = output.file_results[0].results["WithNL"]
-    assert len(evidence_calls) == 1
-    assert evidence_calls[0].apex_rt == pytest.approx(8.5, abs=0.02)
+    index = result.selected_cid_nl_candidate_index
+    assert index is not None
+    assert result.candidate_ms2_evidence is result.cid_nl_candidate_evidence[index]
     assert result.candidate_ms2_evidence.nl_match is True
     assert result.selected_cid_nl_supported is True
     assert result.targeted_product_projection.counted_detection is True
@@ -594,24 +572,18 @@ def test_run_loads_scoring_inputs_from_config_paths(
     )
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [_target("NoNL", neutral_loss_da=None)]
-    calls: dict[str, object] = {}
     monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
     monkeypatch.setattr(
         "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence([_ok_peak(8.5, 1200.0, 3400.25)]),
     )
-
-    def _read_injection_order(path: Path) -> dict[str, int]:
-        calls["injection_order_path"] = path
-        return {"SampleA": 1}
-
-    monkeypatch.setattr(
-        "xic_extractor.extraction.targeted_inputs.read_injection_order",
-        _read_injection_order,
+    config.injection_order_source.write_text(
+        "Sample_Name,Injection_Order\nSampleA,1\n", encoding="utf-8"
     )
-    _run(config, targets)
 
-    assert calls["injection_order_path"] == config.injection_order_source
+    output = _run(config, targets)
+
+    assert [result.sample_name for result in output.file_results] == ["SampleA"]
 
 
 def test_run_falls_back_to_main_pass_when_prepass_returns_none(
@@ -621,10 +593,6 @@ def test_run_falls_back_to_main_pass_when_prepass_returns_none(
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [_target("ISTD", is_istd=True), _target("Analyte", istd_pair="ISTD")]
     monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
-    monkeypatch.setattr(
-        "xic_extractor.extraction.istd_prepass.extract_istd_anchors_only",
-        lambda *_args, **_kwargs: None,
-    )
     monkeypatch.setattr(
         "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence(
@@ -641,133 +609,13 @@ def test_run_falls_back_to_main_pass_when_prepass_returns_none(
     assert output.file_results[0].results["Analyte"].peak_result.peak is not None
 
 
-def test_prepass_excludes_flagged_istd_anchor_from_prior_map(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from xic_extractor.extraction.istd_prepass import extract_istd_anchors_only
-    from xic_extractor.extraction.result_models import ExtractionResult
-
-    config = _config(tmp_path)
-    raw_path = config.data_dir / "SampleA.raw"
-    raw_path.write_text("", encoding="utf-8")
-    target = _target("ISTD", is_istd=True)
-    monkeypatch.setattr(
-        "xic_extractor.extraction.istd_prepass.open_raw",
-        _open_raw_factory(),
-    )
-
-    def _fake_extract_one_target(
-        raw,
-        config,
-        sample_name,
-        target,
-        *,
-        reference_rt,
-        strict_preferred_rt,
-        results,
-        diagnostics,
-        shape_metrics_by_label,
-        **kwargs,
-    ) -> float | None:
-        results[target.label] = ExtractionResult(
-            peak_result=_ok_peak(
-                9.05,
-                1500.0,
-                2000.0,
-                quality_flags=("too_broad",),
-            ),
-            nl=None,
-            target_label=target.label,
-            role="ISTD",
-        )
-        return 9.05
-
-    monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.extract_one_target",
-        _fake_extract_one_target,
-    )
-
-    anchors, results, diagnostics, shape_metrics = extract_istd_anchors_only(
-        config,
-        [target],
-        raw_path,
-    )
-
-    assert anchors == {}
-    assert results[target.label].peak_result.peak is not None
-    assert diagnostics == []
-    assert shape_metrics == {}
-
-
-def test_prepass_uses_selected_istd_rt_instead_of_window_anchor(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from xic_extractor.extraction.istd_prepass import extract_istd_anchors_only
-    from xic_extractor.extraction.result_models import ExtractionResult
-
-    config = _config(tmp_path)
-    raw_path = config.data_dir / "SampleA.raw"
-    raw_path.write_text("", encoding="utf-8")
-    target = _target("ISTD", is_istd=True)
-    monkeypatch.setattr(
-        "xic_extractor.extraction.istd_prepass.open_raw",
-        _open_raw_factory(),
-    )
-
-    def _fake_extract_one_target(
-        raw,
-        config,
-        sample_name,
-        target,
-        *,
-        reference_rt,
-        strict_preferred_rt,
-        results,
-        diagnostics,
-        shape_metrics_by_label,
-        **kwargs,
-    ) -> float | None:
-        results[target.label] = ExtractionResult(
-            peak_result=_ok_peak(9.20, 1500.0, 2000.0),
-            nl=None,
-            target_label=target.label,
-            role="ISTD",
-        )
-        return 9.05
-
-    monkeypatch.setattr(
-        "xic_extractor.extraction.target_extraction.extract_one_target",
-        _fake_extract_one_target,
-    )
-
-    anchors, results, diagnostics, shape_metrics = extract_istd_anchors_only(
-        config,
-        [target],
-        raw_path,
-    )
-
-    assert anchors == {"ISTD": pytest.approx(9.20)}
-    assert results[target.label].reported_rt == pytest.approx(9.20)
-    assert diagnostics == []
-    assert shape_metrics == {}
-
-
-def test_run_reextracts_istd_in_main_pass_to_keep_scoring_metadata(
+def test_istd_single_pass_preserves_scoring_metadata_without_ms2_promotion(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = _config(tmp_path)
     (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
     targets = [_target("ISTD", is_istd=True)]
     monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
-    monkeypatch.setattr(
-        "xic_extractor.extraction.istd_prepass.extract_istd_anchors_only",
-        lambda *_args, **_kwargs: (
-            {"ISTD": 9.05},
-            {},
-            [],
-            {},
-        ),
-    )
     monkeypatch.setattr(
         "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence(
@@ -789,13 +637,13 @@ def test_run_reextracts_istd_in_main_pass_to_keep_scoring_metadata(
     result = output.file_results[0].results["ISTD"]
     assert result.peak_result.confidence == "LOW"
     assert result.peak_result.reason == "concerns: rt_prior (major)"
-    assert result.confidence == "HIGH"
+    assert result.confidence == "LOW"
     assert result.selection_decision is not None
     assert result.confidence == result.selection_decision.projected_confidence
     assert result.severities == ((2, "rt_prior"),)
 
 
-def test_run_writes_nd_for_peak_failure_but_keeps_nl_result(
+def test_run_does_not_publish_peak_nl_without_a_physical_peak(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = _config(tmp_path)
@@ -804,14 +652,11 @@ def test_run_writes_nd_for_peak_failure_but_keeps_nl_result(
 
     class FlatRaw(_FakeRaw):
         def extract_xic(self, mz, rt_min, rt_max, ppm_tol):
-            rt = np.linspace(rt_min, rt_max, 201)
+            rt = np.arange(rt_min, rt_max + 0.0025, 0.0025)
             return rt, np.full(len(rt), 10.0)
 
     monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args, **_kwargs: FlatRaw())
-    monkeypatch.setattr(
-        "xic_extractor.extraction.diagnostics.check_nl",
-        _nl_sequence([NLResult("OK", 1.2, None, 3, 0, 2)]),
-    )
+    _set_ms2_fixtures([NLResult("OK", 1.2, None, 3, 0, 2)])
 
     output = _run(config, targets)
 
@@ -821,14 +666,14 @@ def test_run_writes_nd_for_peak_failure_but_keeps_nl_result(
     assert _result_row(output, targets, "WithNL", 0)["PeakStart"] == "ND"
     assert _result_row(output, targets, "WithNL", 0)["PeakEnd"] == "ND"
     assert _result_row(output, targets, "WithNL", 0)["PeakWidth"] == "ND"
-    assert _result_row(output, targets, "WithNL", 0)["NL"] == "OK"
+    assert _result_row(output, targets, "WithNL", 0)["NL"] == ""
     diagnostics = _diagnostics_to_rows(output.diagnostics)
     assert diagnostics[0]["Issue"] == "PEAK_NOT_FOUND"
     assert diagnostics[0]["Target"] == "WithNL"
     assert diagnostics[0]["Reason"] == "Physical peak unavailable: peak_not_found"
 
 
-def test_run_projects_very_low_for_nd_rows_with_failed_nl(
+def test_run_projects_very_low_without_peak_scoped_nl_for_nd_rows(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = _config(tmp_path)
@@ -841,10 +686,7 @@ def test_run_projects_very_low_for_nd_rows_with_failed_nl(
             [_failed_peak("PEAK_NOT_FOUND", n_points=15, max_smoothed=1234.0)]
         ),
     )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.diagnostics.check_nl",
-        _nl_sequence([NLResult("NL_FAIL", 200.0, None, 10, 1, 3)]),
-    )
+    _set_ms2_fixtures([NLResult("NL_FAIL", 200.0, None, 10, 1, 3)])
 
     output = _run(config, targets)
 
@@ -858,7 +700,7 @@ def test_run_projects_very_low_for_nd_rows_with_failed_nl(
             "ISTD Pair": "",
             "RT": "ND",
             "Area": "ND",
-            "NL": "NL_FAIL",
+            "NL": "",
             "Int": "ND",
             "PeakStart": "ND",
             "PeakEnd": "ND",
@@ -932,10 +774,7 @@ def test_run_writes_file_error_row_and_continues(
         "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence([_ok_peak(8.5, 1000.0, 2000.0), _ok_peak(9.5, 1100.0, 2100.0)]),
     )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.diagnostics.check_nl",
-        _nl_sequence([NLResult("OK", 1.0, None, 2, 0, 1)]),
-    )
+    _set_ms2_fixtures([NLResult("OK", 1.0, None, 2, 0, 1)])
 
     output = _run(config, targets)
 
@@ -988,12 +827,12 @@ def test_peak_diagnostic_owner_preserves_status_and_reason(
         (
             NLResult("NL_FAIL", 200.0, None, 10, 1, 3),
             "NL_FAIL",
-            "best observed-loss error 200.0 ppm (quadrature window at 50 ppm per ion)",
+            "subcause=no_target_product_support",
         ),
         (
             NLResult("NL_FAIL", None, None, 10, 1, 3),
             "NL_FAIL",
-            "not detected in any aligned scan",
+            "target-peak CID-NL support for 116.047 Da was not established",
         ),
         (
             NLResult("NO_MS2", None, None, 42, 2, 0),
@@ -1017,9 +856,7 @@ def test_run_writes_neutral_loss_diagnostics(
         "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence([_ok_peak(8.5, 1000.0, 2000.0)]),
     )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.diagnostics.check_nl", _nl_sequence([nl_result])
-    )
+    _set_ms2_fixtures([nl_result])
 
     output = _run(config, targets)
 
@@ -1041,17 +878,10 @@ def test_istd_no_ms2_keeps_ms1_peak_and_writes_confidence_flags(
         _open_raw_factory(peak_centers=[9.05]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.istd_prepass.extract_istd_anchors_only",
-        lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
         "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence([_ok_peak(9.05, 1200.0, 3400.25)]),
     )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.diagnostics.check_nl",
-        _nl_sequence([NLResult("NO_MS2", None, None, 12, 0, 0)]),
-    )
+    _set_ms2_fixtures([NLResult("NO_MS2", None, None, 12, 0, 0)])
 
     output = _run(config, targets)
 
@@ -1118,28 +948,17 @@ def test_paired_analyte_uses_strict_anchor_peak_selection(
         _open_raw_factory(peak_centers=[13.70, 13.75]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.istd_prepass.extract_istd_anchors_only",
-        lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
-        _anchor_sequence([13.70, 13.75]),
-    )
-    monkeypatch.setattr(
         "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _capturing_peak_sequence(
             [_ok_peak(13.70, 2000.0, 3000.0), _ok_peak(13.75, 500.0, 800.0)],
             strict_flags,
         ),
     )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.diagnostics.check_nl",
-        _nl_sequence(
-            [
-                NLResult("OK", 1.0, 13.70, 1, 0, 1),
-                NLResult("OK", 1.0, 13.75, 1, 0, 1),
-            ]
-        ),
+    _set_ms2_fixtures(
+        [
+            NLResult("OK", 1.0, 13.70, 1, 0, 1),
+            NLResult("OK", 1.0, 13.75, 1, 0, 1),
+        ]
     )
 
     _run(config, targets)
@@ -1147,7 +966,7 @@ def test_paired_analyte_uses_strict_anchor_peak_selection(
     assert strict_flags == [False, True]
 
 
-def test_istd_anchor_keeps_strongest_anchor_when_far_from_target_center(
+def test_istd_far_peak_uses_expected_rt_as_identity_prior(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = _config(tmp_path)
@@ -1185,29 +1004,18 @@ def test_istd_anchor_keeps_strongest_anchor_when_far_from_target_center(
 
     monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
     monkeypatch.setattr(
-        "xic_extractor.extraction.istd_prepass.extract_istd_anchors_only",
-        lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
-        _fake_find_nl_anchor_rt,
-    )
-    monkeypatch.setattr(
         "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _fake_select_peak_and_area,
     )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.diagnostics.check_nl",
-        _nl_sequence([NLResult("OK", 1.0, 7.08, 1, 0, 1)]),
-    )
+    _set_ms2_fixtures([NLResult("OK", 1.0, 7.08, 1, 0, 1)])
 
     _run(config, targets)
 
-    assert anchor_reference_rts == [None]
-    assert _dedupe_consecutive(preferred_rts) == [7.08]
+    assert anchor_reference_rts == []
+    assert _dedupe_consecutive(preferred_rts) == [9.0]
 
 
-def test_istd_anchor_keeps_strongest_anchor_when_it_is_near_target_center(
+def test_istd_near_peak_uses_expected_rt_as_identity_prior(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     config = _config(tmp_path)
@@ -1245,26 +1053,15 @@ def test_istd_anchor_keeps_strongest_anchor_when_it_is_near_target_center(
 
     monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
     monkeypatch.setattr(
-        "xic_extractor.extraction.istd_prepass.extract_istd_anchors_only",
-        lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
-        _fake_find_nl_anchor_rt,
-    )
-    monkeypatch.setattr(
         "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _fake_select_peak_and_area,
     )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.diagnostics.check_nl",
-        _nl_sequence([NLResult("OK", 1.0, 8.55, 1, 0, 1)]),
-    )
+    _set_ms2_fixtures([NLResult("OK", 1.0, 8.55, 1, 0, 1)])
 
     _run(config, targets)
 
-    assert anchor_reference_rts == [None]
-    assert _dedupe_consecutive(preferred_rts) == [8.55]
+    assert anchor_reference_rts == []
+    assert _dedupe_consecutive(preferred_rts) == [9.0]
 
 
 def test_istd_peak_not_found_does_not_reacquire_context(
@@ -1280,30 +1077,19 @@ def test_istd_peak_not_found_does_not_reacquire_context(
         lambda *_args, **_kwargs: raw,
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.istd_prepass.extract_istd_anchors_only",
-        lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
-        _anchor_sequence([9.0]),
-    )
-    monkeypatch.setattr(
         "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence(
             [_failed_peak("PEAK_NOT_FOUND", n_points=15, max_smoothed=1234.0)]
         ),
     )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.diagnostics.check_nl",
-        _nl_sequence([NLResult("OK", 1.0, 9.0, 1, 0, 1)]),
-    )
+    _set_ms2_fixtures([NLResult("OK", 1.0, 9.0, 1, 0, 1)])
 
     output = _run(config, targets)
 
     result = output.file_results[0].results["ISTD"]
     assert result.peak_result.status == "PEAK_NOT_FOUND"
     assert result.peak is None
-    assert raw.windows == [(6.0, 12.0)]
+    assert raw.windows == [(0.0, 20.0)]
 
 
 def test_istd_no_signal_does_not_reacquire_context(
@@ -1325,28 +1111,17 @@ def test_istd_no_signal_does_not_reacquire_context(
         lambda *_args, **_kwargs: raw,
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.istd_prepass.extract_istd_anchors_only",
-        lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
-        _anchor_sequence([9.0]),
-    )
-    monkeypatch.setattr(
         "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence([_failed_peak("NO_SIGNAL", n_points=0, max_smoothed=None)]),
     )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.diagnostics.check_nl",
-        _nl_sequence([NLResult("OK", 1.0, 9.0, 1, 0, 1)]),
-    )
+    _set_ms2_fixtures([NLResult("OK", 1.0, 9.0, 1, 0, 1)])
 
     output = _run(config, targets)
 
     result = output.file_results[0].results["ISTD"]
     assert result.peak_result.status == "NO_SIGNAL"
     assert result.peak is None
-    assert raw.windows == [(6.0, 12.0)]
+    assert raw.windows == [(0.0, 20.0)]
 
 
 def test_istd_weak_peak_keeps_single_complete_context(
@@ -1362,14 +1137,6 @@ def test_istd_weak_peak_keeps_single_complete_context(
         lambda *_args, **_kwargs: raw,
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.istd_prepass.extract_istd_anchors_only",
-        lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
-        _anchor_sequence([9.0]),
-    )
-    monkeypatch.setattr(
         "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence(
             [
@@ -1382,10 +1149,7 @@ def test_istd_weak_peak_keeps_single_complete_context(
             ]
         ),
     )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.diagnostics.check_nl",
-        _nl_sequence([NLResult("OK", 1.0, 9.0, 1, 0, 1)]),
-    )
+    _set_ms2_fixtures([NLResult("OK", 1.0, 9.0, 1, 0, 1)])
 
     output = _run(config, targets)
 
@@ -1395,7 +1159,7 @@ def test_istd_weak_peak_keeps_single_complete_context(
     assert result.peak.rt == pytest.approx(9.05, abs=0.02)
     known_area = 100.0 * 0.08 * np.sqrt(2 * np.pi) * 60
     assert result.reported_peak_area == pytest.approx(known_area, rel=0.04)
-    assert raw.windows == [(6.0, 12.0)]
+    assert raw.windows == [(0.0, 20.0)]
 
 
 def test_istd_low_confidence_peak_keeps_single_complete_context(
@@ -1411,14 +1175,6 @@ def test_istd_low_confidence_peak_keeps_single_complete_context(
         lambda *_args, **_kwargs: raw,
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.istd_prepass.extract_istd_anchors_only",
-        lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
-        _anchor_sequence([9.0]),
-    )
-    monkeypatch.setattr(
         "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence(
             [
@@ -1432,10 +1188,7 @@ def test_istd_low_confidence_peak_keeps_single_complete_context(
             ]
         ),
     )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.diagnostics.check_nl",
-        _nl_sequence([NLResult("OK", 1.0, 9.0, 1, 0, 1)]),
-    )
+    _set_ms2_fixtures([NLResult("OK", 1.0, 9.0, 1, 0, 1)])
 
     output = _run(config, targets)
 
@@ -1445,7 +1198,7 @@ def test_istd_low_confidence_peak_keeps_single_complete_context(
     assert result.peak.rt == pytest.approx(9.05, abs=0.02)
     known_area = 100.0 * 0.08 * np.sqrt(2 * np.pi) * 60
     assert result.reported_peak_area == pytest.approx(known_area, rel=0.04)
-    assert raw.windows == [(6.0, 12.0)]
+    assert raw.windows == [(0.0, 20.0)]
 
 
 def test_paired_analyte_with_nl_remains_counted_despite_target_anchor_mismatch(
@@ -1464,27 +1217,16 @@ def test_paired_analyte_with_nl_remains_counted_despite_target_anchor_mismatch(
         lambda *_args, **_kwargs: raw,
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.istd_prepass.extract_istd_anchors_only",
-        lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
-        _anchor_sequence([13.70, 13.75]),
-    )
-    monkeypatch.setattr(
         "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence(
             [_ok_peak(13.70, 2000.0, 3000.0), _ok_peak(13.06, 5000.0, 8000.0)]
         ),
     )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.diagnostics.check_nl",
-        _nl_sequence(
-            [
-                NLResult("OK", 1.0, 13.70, 1, 0, 1),
-                NLResult("OK", 1.0, 13.75, 1, 0, 1),
-            ]
-        ),
+    _set_ms2_fixtures(
+        [
+            NLResult("OK", 1.0, 13.70, 1, 0, 1),
+            NLResult("OK", 1.0, 13.06, 1, 0, 1),
+        ]
     )
 
     output = _run(config, targets)
@@ -1492,11 +1234,11 @@ def test_paired_analyte_with_nl_remains_counted_despite_target_anchor_mismatch(
     expected_peak = _formatted_peak_columns(
         "Analyte", output.file_results[0].results["Analyte"]
     )
-    # The fixture supplies a symmetric Gaussian on this 201-point acquired
+    # The fixture supplies a symmetric Gaussian on a fixed acquired
     # grid. Its nearest sample to the known center is the independent apex
     # oracle; the mocked ranking result does not own physical peak facts.
     assert len(raw.windows) == 2
-    sampled_rt = np.linspace(*raw.windows[1], 201)
+    sampled_rt = np.arange(raw.windows[1][0], raw.windows[1][1] + 0.0025, 0.0025)
     expected_apex_rt = sampled_rt[np.argmin(np.abs(sampled_rt - 13.06))]
     assert _result_row(output, targets, "Analyte", 0)["RT"] == f"{expected_apex_rt:.4f}"
     assert (
@@ -1514,15 +1256,9 @@ def test_paired_analyte_with_nl_remains_counted_despite_target_anchor_mismatch(
     assert analyte_row["Counted Detection"] == "TRUE"
     assert analyte_row["Projection Conflict Reasons"] == ""
     assert output.file_results[0].results["Analyte"].confidence == "LOW"
-    diagnostics = _diagnostics_to_rows(output.diagnostics)
-    assert any(
-        record["Target"] == "Analyte"
-        and record["Issue"] == "ANCHOR_RT_MISMATCH"
-        and f"Paired analyte peak RT {expected_apex_rt:.3f}" in record["Reason"]
-        and "target NL anchor at 13.750" in record["Reason"]
-        and "allowed ±0.25 min" in record["Reason"]
-        for record in diagnostics
-    )
+    # Expected RT and the paired offset are identity priors, not DDA anchor crops.
+    assert all(record.issue != "NL_ANCHOR_FALLBACK" for record in output.diagnostics)
+    assert output.file_results[0].results["Analyte"].candidate_ms2_evidence.nl_match
 
 
 def test_paired_analyte_accepts_peak_close_to_target_anchor_even_if_farther_from_istd(
@@ -1540,27 +1276,16 @@ def test_paired_analyte_accepts_peak_close_to_target_anchor_even_if_farther_from
         _open_raw_factory(peak_centers=[13.70, 13.95]),
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.istd_prepass.extract_istd_anchors_only",
-        lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
-        _anchor_sequence([13.70, 13.95]),
-    )
-    monkeypatch.setattr(
         "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence(
             [_ok_peak(13.70, 2000.0, 3000.0), _ok_peak(13.95, 5000.0, 8000.0)]
         ),
     )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.diagnostics.check_nl",
-        _nl_sequence(
-            [
-                NLResult("OK", 1.0, 13.70, 1, 0, 1),
-                NLResult("OK", 1.0, 13.95, 1, 0, 1),
-            ]
-        ),
+    _set_ms2_fixtures(
+        [
+            NLResult("OK", 1.0, 13.70, 1, 0, 1),
+            NLResult("OK", 1.0, 13.95, 1, 0, 1),
+        ]
     )
 
     output = _run(config, targets)
@@ -1619,31 +1344,20 @@ def test_paired_analyte_keeps_target_nl_anchor_far_from_istd_anchor(
 
     monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args: raw)
     monkeypatch.setattr(
-        "xic_extractor.extraction.istd_prepass.extract_istd_anchors_only",
-        lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
-        _anchor_sequence([13.70, 15.10]),
-    )
-    monkeypatch.setattr(
         "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _fake_select_peak_and_area,
     )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.diagnostics.check_nl",
-        _nl_sequence(
-            [
-                NLResult("OK", 1.0, 13.70, 1, 0, 1),
-                NLResult("NL_FAIL", None, None, 1, 0, 1),
-            ]
-        ),
+    _set_ms2_fixtures(
+        [
+            NLResult("OK", 1.0, 13.70, 1, 0, 1),
+            NLResult("NL_FAIL", None, None, 1, 0, 1),
+        ]
     )
 
     _run(config, targets)
 
-    assert _dedupe_consecutive(preferred_rts) == [13.70, 15.10]
-    assert raw.windows[1] == pytest.approx((12.10, 18.10))
+    assert _dedupe_consecutive(preferred_rts) == pytest.approx([13.70, 15.10])
+    assert raw.windows[1] == (0.0, 20.0)
 
 
 def test_paired_analyte_istd_rt_fallback_does_not_force_counted_detection(
@@ -1662,14 +1376,6 @@ def test_paired_analyte_istd_rt_fallback_does_not_force_counted_detection(
         lambda *_args, **_kwargs: raw,
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.istd_prepass.extract_istd_anchors_only",
-        lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
-        _anchor_sequence([13.70, None]),
-    )
-    monkeypatch.setattr(
         "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence(
             [
@@ -1678,14 +1384,11 @@ def test_paired_analyte_istd_rt_fallback_does_not_force_counted_detection(
             ]
         ),
     )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.diagnostics.check_nl",
-        _nl_sequence(
-            [
-                NLResult("OK", 1.0, 13.70, 1, 0, 1),
-                NLResult("NL_FAIL", None, None, 1, 0, 1),
-            ]
-        ),
+    _set_ms2_fixtures(
+        [
+            NLResult("OK", 1.0, 13.70, 1, 0, 1),
+            NLResult("NL_FAIL", None, None, 1, 0, 1),
+        ]
     )
 
     output = _run(config, targets)
@@ -1696,7 +1399,7 @@ def test_paired_analyte_istd_rt_fallback_does_not_force_counted_detection(
         "Analyte", output.file_results[0].results["Analyte"]
     )
     assert len(raw.windows) == 2
-    sampled_rt = np.linspace(*raw.windows[1], 201)
+    sampled_rt = np.arange(raw.windows[1][0], raw.windows[1][1] + 0.0025, 0.0025)
     expected_apex_rt = sampled_rt[np.argmin(np.abs(sampled_rt - 13.72))]
     assert analyte_row["RT"] == f"{expected_apex_rt:.4f}"
     assert analyte_row["Area"] == expected_peak["Analyte_Area"]
@@ -1724,14 +1427,6 @@ def test_paired_analyte_fallback_preserves_not_counted_peak_in_matrix(
         lambda *_args, **_kwargs: raw,
     )
     monkeypatch.setattr(
-        "xic_extractor.extraction.istd_prepass.extract_istd_anchors_only",
-        lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.rt_windows.find_nl_anchor_rt",
-        _anchor_sequence([13.70, None]),
-    )
-    monkeypatch.setattr(
         "xic_extractor.extraction.targeted_peak_selection.select_peak_and_area",
         _peak_sequence(
             [
@@ -1740,14 +1435,11 @@ def test_paired_analyte_fallback_preserves_not_counted_peak_in_matrix(
             ]
         ),
     )
-    monkeypatch.setattr(
-        "xic_extractor.extraction.diagnostics.check_nl",
-        _nl_sequence(
-            [
-                NLResult("OK", 1.0, 13.70, 1, 0, 1),
-                NLResult("NL_FAIL", None, None, 1, 0, 1),
-            ]
-        ),
+    _set_ms2_fixtures(
+        [
+            NLResult("OK", 1.0, 13.70, 1, 0, 1),
+            NLResult("NL_FAIL", None, None, 1, 0, 1),
+        ]
     )
 
     output = _run(config, targets)
@@ -1756,7 +1448,7 @@ def test_paired_analyte_fallback_preserves_not_counted_peak_in_matrix(
         "Analyte", output.file_results[0].results["Analyte"]
     )
     assert len(raw.windows) == 2
-    sampled_rt = np.linspace(*raw.windows[1], 201)
+    sampled_rt = np.arange(raw.windows[1][0], raw.windows[1][1] + 0.0025, 0.0025)
     expected_apex_rt = sampled_rt[np.argmin(np.abs(sampled_rt - 14.31))]
     assert _result_row(output, targets, "Analyte", 0)["RT"] == f"{expected_apex_rt:.4f}"
     assert (
@@ -1835,11 +1527,12 @@ def _target(
 ) -> Target:
     return Target(
         label=label,
-        mz=258.1085,
+        mz=261.1085 if is_istd else 258.1085,
         rt_min=rt_min,
         rt_max=rt_max,
         ppm_tol=20.0,
         neutral_loss_da=neutral_loss_da,
+        cid_nl_tag="dR",
         nl_ppm_warn=20.0 if neutral_loss_da is not None else None,
         nl_ppm_max=50.0 if neutral_loss_da is not None else None,
         is_istd=is_istd,
@@ -2080,15 +1773,9 @@ def _dedupe_consecutive(values: list[float | None]) -> list[float | None]:
     return deduped
 
 
-def _nl_sequence(results: list[NLResult]):
-    pending = list(results)
-
-    def _fake_check_nl(*_args, **_kwargs) -> NLResult:
-        global _active_nl_fixture_result
-        _active_nl_fixture_result = pending.pop(0)
-        return _active_nl_fixture_result
-
-    return _fake_check_nl
+def _set_ms2_fixtures(results: list[NLResult]) -> None:
+    global _active_nl_fixture_results
+    _active_nl_fixture_results = list(results)
 
 
 def _typed_kwarg(kwargs: dict[str, object], name: str) -> str | None:
@@ -2122,9 +1809,14 @@ def _open_raw_factory(
 
 
 class _FakeRaw:
+    def acquisition_rt_bounds(self):
+        return 0.0, 20.0
+
     def __init__(self, *, peak_centers: list[float] | None = None) -> None:
         self._peak_centers = list(peak_centers or [])
-        self._scan_rt: float | None = None
+        self._scan_rt: float | None = (
+            self._peak_centers[0] if self._peak_centers else 10.0
+        )
 
     def __enter__(self):
         return self
@@ -2139,35 +1831,47 @@ class _FakeRaw:
             self._peak_centers.pop(0) if self._peak_centers else (rt_min + rt_max) / 2
         )
         self._scan_rt = center
-        rt = np.linspace(rt_min, rt_max, 201)
+        rt = np.arange(rt_min, rt_max + 0.0025, 0.0025)
         intensity = 10.0 + 5000.0 * np.exp(-0.5 * ((rt - center) / 0.08) ** 2)
         return rt, intensity
 
     def iter_ms2_scans(self, rt_min: float, rt_max: float):
-        result = _active_nl_fixture_result
-        scan_rt = self._scan_rt
-        if (
-            result is None
-            or result.status == "NO_MS2"
-            or scan_rt is None
-            or not rt_min <= scan_rt <= rt_max
-        ):
-            return
-        precursor_mz, loss_da = 258.1085, 116.0474
-        product_mz = (
-            precursor_mz - loss_da * (1 + result.best_ppm / 1_000_000)
-            if result.best_ppm is not None
-            else 300.0
-        )
-        scan = Ms2Scan(
-            scan_number=1,
-            rt=scan_rt,
-            precursor_mz=precursor_mz,
-            masses=np.array([product_mz]),
-            intensities=np.array([1000.0]),
-            base_peak=1000.0,
-        )
-        yield Ms2ScanEvent(scan=scan, parse_error=None, scan_number=1)
+        # Acquisition is immutable and shared across all targets, not generated
+        # by whichever target happened to query NL most recently.
+        scans = _active_nl_fixture_results
+        for index, result in enumerate(scans):
+            scan_rt = (
+                result.best_scan_rt
+                if result.best_scan_rt is not None
+                else self._scan_rt
+            )
+            if (
+                result.status == "NO_MS2"
+                or scan_rt is None
+                or not rt_min <= scan_rt <= rt_max
+            ):
+                continue
+            precursors = (
+                (258.1085, 261.1085)
+                if len(scans) == 1
+                else ((261.1085,) if index == 0 else (258.1085,))
+            )
+            for precursor_mz in precursors:
+                product_mz = (
+                    precursor_mz - 116.0474 * (1 + result.best_ppm / 1_000_000)
+                    if result.best_ppm is not None
+                    else 300.0
+                )
+                scan_number = index * 2 + (1 if precursor_mz == 258.1085 else 2)
+                scan = Ms2Scan(
+                    scan_number=scan_number,
+                    rt=scan_rt,
+                    precursor_mz=precursor_mz,
+                    masses=np.array([product_mz]),
+                    intensities=np.array([1000.0]),
+                    base_peak=1000.0,
+                )
+                yield Ms2ScanEvent(scan=scan, parse_error=None, scan_number=scan_number)
 
 
 class _RecordingRaw(_FakeRaw):
@@ -2301,7 +2005,6 @@ def _typed_candidate_score(
             rt_prior_sigma=0.1,
             rt_min=rt_min if rt_min is not None else candidate.peak.peak_start,
             rt_max=rt_max if rt_max is not None else candidate.peak.peak_end,
-            dirty_matrix=False,
             neutral_loss_required=neutral_loss_required,
             ms2_trace_strength="strong" if ms2_present and nl_match else "none",
             ms2_alignment_source="fixture_candidate",

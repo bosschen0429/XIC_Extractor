@@ -354,11 +354,12 @@ def _validate_inputs(
         except PeakObservationContractError as exc:
             raise DdaCidNlCandidateSetRelationContractError(str(exc)) from exc
     observation = canonical_evidence.observation
-    if not observation.assess_precursor_loss(
-        policy.neutral_loss_tolerance_ppm
-    ).supports_nl:
+    if not policy.accepts_precursor(
+        observation.assess_precursor_loss(policy.neutral_loss_tolerance_ppm)
+    ):
         raise DdaCidNlCandidateSetRelationContractError(
-            "CID-NL evidence does not satisfy the strict neutral-loss tolerance"
+            "CID-NL evidence does not satisfy the strict neutral-loss tolerance "
+            "or precursor reference requirement"
         )
     return candidates
 
@@ -371,7 +372,7 @@ def _set_level_members(
 ) -> tuple[PeakObservationRef, ...]:
     observation = canonical_evidence.observation
     precursor = observation.assess_precursor_loss(policy.neutral_loss_tolerance_ppm)
-    if not precursor.supports_nl or precursor.reference_mz is None:
+    if not policy.accepts_precursor(precursor) or precursor.reference_mz is None:
         raise DdaCidNlCandidateSetRelationContractError(
             "CID-NL evidence lacks independent precursor isolation support"
         )

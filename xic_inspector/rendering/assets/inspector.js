@@ -4,6 +4,152 @@
     renderTargetedWorkbook(data);
     return;
   }
+  if (data.items?.length && data.items.every(item => item.curves?.some(curve => curve.quality_flags?.target_label))) {
+    renderTargetedCurves(data);
+    return;
+  }
+
+  function renderTargetedCurves(payload) {
+    // A target and its ISTD are two known ions, not competing candidates.
+    // Share their time axis, but keep absolute intensity scales independent.
+    const node = (tag, text, cls) => {
+      const el = document.createElement(tag);
+      if (text !== undefined) el.textContent = text;
+      if (cls) el.className = cls;
+      return el;
+    };
+    const finite = value => typeof value === 'number' && Number.isFinite(value);
+    const number = value => finite(value) ? Number(value.toPrecision(4)).toLocaleString('en-US') : '—';
+    const area = value => finite(value) ? value.toExponential(2) : String(value ?? '—');
+    const embedded = new URLSearchParams(location.search).has('embed');
+    const root = node('main', undefined, 'tx-review');
+    document.body.classList.add('tx-body');
+    document.body.replaceChildren(root);
+    const heading = node('header', undefined, 'tx-heading');
+    if (!embedded) heading.append(node('h1', 'Targeted XIC'));
+    const sampleName = node('p', '', `tx-sample-name${embedded ? ' sr-only' : ''}`);
+    heading.append(sampleName);
+    const itemSelect = node('select'); itemSelect.setAttribute('aria-label', '目標');
+    for (const [index, item] of payload.items.entries()) {
+      itemSelect.append(new Option(item.curves.find(c => !c.quality_flags.paired_istd)?.quality_flags.target_label || item.title, String(index)));
+    }
+    if (payload.items.length > 1) heading.append(itemSelect);
+    const sampleSelect = node('select'); sampleSelect.setAttribute('aria-label', '樣本');
+    heading.append(sampleSelect); root.append(heading);
+    const toolbar = node('div', undefined, 'tx-toolbar');
+    const legend = node('div', undefined, 'tx-legend');
+    legend.append(node('span', '原始 scan 點', 'tx-raw-key'), node('span', '平滑線', 'tx-smooth-key'));
+    const boundsLabel = node('label', undefined, 'tx-bounds');
+    const bounds = node('input'); bounds.type = 'checkbox'; bounds.checked = true;
+    boundsLabel.append(bounds, document.createTextNode('已保存峰界'));
+    toolbar.append(legend, boundsLabel, node('span', '同一 RT 範圍 · 強度各自縮放', 'tx-scale-note'));
+    const range = node('form', undefined, 'tx-range');
+    const start = node('input'), end = node('input');
+    for (const [field, label] of [[start, '顯示 RT 起點'], [end, '顯示 RT 終點']]) {
+      field.type = 'number'; field.step = 'any'; field.required = true; field.setAttribute('aria-label', label);
+      field.addEventListener('input', () => start.setCustomValidity(''));
+    }
+    const apply = node('button', '套用範圍'); apply.type = 'submit';
+    const nearby = node('button', '峰附近'), full = node('button', '完整 RT');
+    nearby.type = full.type = 'button';
+    range.append(node('span', 'RT'), start, node('span', '–'), end, node('span', 'min'), apply, nearby, full);
+    root.append(toolbar, range);
+    const charts = node('div', undefined, 'tx-charts'); root.append(charts);
+    const provenance = node('details', undefined, 'tx-provenance');
+    provenance.append(node('summary', '來源未驗證 · 檢視讀取設定'));
+    provenance.append(node('p', '依樣本名稱讀取 RAW；工作簿沒有原始 RAW 指紋，無法驗證是否為原分析檔。這是新取得的診斷曲線，峰界與數值來自已保存結果，不重新積分。'));
+    const extraction = node('p'); provenance.append(extraction); root.append(provenance);
+    let item, sample, rtWindow;
+    const traces = () => item.curves.filter(curve => curve.sample_id === sample);
+    const extent = () => [Math.min(...traces().map(c => c.raw_rts[0])), Math.max(...traces().map(c => c.raw_rts[c.raw_rts.length - 1]))];
+    function setWindow(value) {
+      rtWindow = value;
+      start.value = String(Number(value[0].toFixed(4)));
+      end.value = String(Number(value[1].toFixed(4)));
+      start.setCustomValidity('');
+      draw();
+    }
+    function draw() {
+      charts.replaceChildren();
+      const width = Math.max(300, root.clientWidth - 34), height = 200;
+      const [lo, hi] = rtWindow, left = 58, right = width - 14, top = 14, bottom = height - 30;
+      const x = value => left + (value - lo) / (hi - lo) * (right - left);
+      for (const curve of traces()) {
+        const flags = curve.quality_flags, paired = flags.paired_istd;
+        const card = node('section', undefined, `tx-chart${paired ? ' tx-istd' : ''}`);
+        const head = node('div', undefined, 'tx-chart-heading');
+        const identity = node('div');
+        identity.append(node('span', paired ? '配對 ISTD' : flags.target_role === 'ISTD' ? 'ISTD' : '目標', 'tx-role'), node('h2', flags.target_label, 'tx-chart-title'));
+        const metadata = node('p', `m/z ${curve.provenance.mz.toFixed(4)} · 保存 RT ${finite(curve.apex_rt) ? curve.apex_rt.toFixed(4) + ' min' : '—'} · 面積 ${area(flags.saved_area)}`, 'tx-chart-meta');
+        head.append(identity, metadata); card.append(head);
+        const failures = flags.reference_support_failures || [];
+        const supportReason = failures.includes('insufficient_original_xic_support')
+          ? '原始訊號支撐不足：近內標段少於 2 個高於基線的原始 scan；平滑展開的鐘形不代表完整峰。'
+          : failures.includes('insufficient_original_xic_continuity')
+          ? '原始訊號支撐不足：近內標段沒有連續的有效原始 scan。' : '';
+        if (supportReason) {
+          card.append(node('p', `ND 訊號檢查 · ${supportReason} 這是本次讀取 XIC 的檢查結果；原始分析來源未驗證，不改寫已保存判定。`, 'tx-support-note'));
+        }
+        const series = curve.processed_curves.find(s => s.kind === 'smoothed');
+        const points = series?.rts.flatMap((rt, i) => rt >= lo && rt <= hi && finite(series.intensities[i]) ? [[rt, series.intensities[i]]] : []) || [];
+        const rawPoints = curve.raw_rts.flatMap((rt, i) => rt >= lo && rt <= hi && finite(curve.raw_intensities[i]) ? [[rt, curve.raw_intensities[i]]] : []);
+        if (!points.length) {
+          card.append(node('p', '此範圍沒有訊號點，請調整 RT 範圍。', 'tx-empty')); charts.append(card); continue;
+        }
+        let low = 0, high = 0;
+        [...points, ...rawPoints].forEach(([, value]) => { low = Math.min(low, value); high = Math.max(high, value); });
+        if (low === high) high = low + 1;
+        const y = value => bottom - (value - low) / (high - low) * (bottom - top);
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', `0 0 ${width} ${height}`); svg.setAttribute('role', 'img');
+        svg.setAttribute('aria-label', `${flags.target_label} XIC，RT ${number(lo)} 到 ${number(hi)} 分鐘`);
+        let markup = '';
+        for (let i = 0; i <= 3; i++) {
+          const value = low + (high - low) * i / 3, yp = y(value);
+          markup += `<line class="tx-grid" x1="${left}" x2="${right}" y1="${yp}" y2="${yp}"/><text x="${left - 9}" y="${yp + 4}" text-anchor="end">${value === 0 ? '0' : Math.abs(value) >= 1e5 ? value.toExponential(1) : number(value)}</text>`;
+        }
+        for (let i = 0; i <= 4; i++) {
+          const value = lo + (hi - lo) * i / 4;
+          markup += `<text x="${x(value)}" y="${height - 8}" text-anchor="middle">${value.toFixed(2)}</text>`;
+        }
+        if (bounds.checked && finite(curve.bound_left_rt) && finite(curve.bound_right_rt)) {
+          const a = Math.max(lo, curve.bound_left_rt), b = Math.min(hi, curve.bound_right_rt);
+          if (b > a) markup += `<rect class="tx-saved-bounds" x="${x(a)}" y="${top}" width="${x(b) - x(a)}" height="${bottom - top}"/>`;
+          if (finite(curve.apex_rt) && curve.apex_rt >= lo && curve.apex_rt <= hi) markup += `<line class="tx-apex" x1="${x(curve.apex_rt)}" x2="${x(curve.apex_rt)}" y1="${top}" y2="${bottom}"/>`;
+        }
+        markup += `<polyline data-kind="smoothed" points="${points.map(([rt, intensity]) => `${x(rt)},${y(intensity)}`).join(' ')}"/>`;
+        markup += rawPoints.map(([rt, intensity]) => `<circle data-kind="raw" cx="${x(rt)}" cy="${y(intensity)}" r="2.2"><title>RT ${rt.toFixed(4)} min · ${number(intensity)}</title></circle>`).join('');
+        svg.innerHTML = markup; card.append(svg); charts.append(card);
+      }
+      extraction.textContent = traces().map(c => `${c.quality_flags.target_label}：m/z ${c.provenance.mz} ± ${c.provenance.ppm} ppm`).join('；');
+    }
+    function selectSample() {
+      sample = sampleSelect.value; sampleName.textContent = sample;
+      setWindow(item.review_rt_window || extent());
+    }
+    function selectItem() {
+      item = payload.items[Number(itemSelect.value) || 0];
+      const ids = [...new Set(item.curves.map(c => c.sample_id))];
+      sampleSelect.replaceChildren(...ids.map(id => new Option(id, id)));
+      sampleSelect.hidden = ids.length === 1;
+      selectSample();
+    }
+    range.addEventListener('submit', event => {
+      event.preventDefault();
+      const lo = start.valueAsNumber, hi = end.valueAsNumber;
+      if (!finite(lo) || !finite(hi) || lo >= hi) {
+        start.setCustomValidity('起點必須小於終點。'); start.reportValidity(); return;
+      }
+      setWindow([lo, hi]);
+    });
+    nearby.addEventListener('click', () => setWindow(item.review_rt_window || extent()));
+    full.addEventListener('click', () => setWindow(extent()));
+    bounds.addEventListener('change', draw);
+    sampleSelect.addEventListener('change', selectSample); itemSelect.addEventListener('change', selectItem);
+    selectItem();
+    let previousWidth = root.clientWidth;
+    new ResizeObserver(() => { if (root.clientWidth !== previousWidth) { previousWidth = root.clientWidth; draw(); } }).observe(root);
+  }
 
   function renderTargetedWorkbook(payload) {
     const element = (tag, text, className) => {
@@ -15,7 +161,13 @@
     const value = (v, digits = 4) => v === null || v === undefined || v === ''
       ? '未提供' : typeof v === 'number' ? v.toLocaleString('en-US', {maximumFractionDigits: digits}) : String(v);
     const range = (start, end) => `${value(start)} – ${value(end)} min`;
+    // Current target lists save one expected RT as equal RT min/max.
+    const rtSetting = (start, end) => start === end && start !== null && start !== undefined && start !== ''
+      ? `預期 RT ${value(start)} min` : `設定 RT ${range(start, end)}`;
     const counted = v => v === true || v === 'TRUE' ? '是' : v === false || v === 'FALSE' ? '否' : '未記錄';
+    const reviewWhy = review => review?.Why === '峰不在內標位置，報 ND'
+      ? 'ND；舊紀錄僅描述所選候選峰偏離內標，近內標訊號的排除原因未記錄，請看原始 scan'
+      : review?.Why || '—';
     const isNumber = v => typeof v === 'number' && Number.isFinite(v);
     // Intensities span decades, so they read as Excel-style scientific notation.
     const scientific = v => {
@@ -37,8 +189,8 @@
     const focusBanner = focus => {
       const n = focus.samples.length, rest = focus.decided - n;
       const text = n && {
-        minority_counted: `${rest} / ${focus.decided} 筆未計入；標「少數」的 ${n} 筆計入，確認是否抓錯峰。`,
-        minority_not_counted: `${rest} / ${focus.decided} 筆計入；標「少數」的 ${n} 筆未計入，確認是否漏抓。`,
+        minority_counted: `${rest} / ${focus.decided} 筆未計入；標「與多數不同」的 ${n} 筆計入，確認是否抓錯峰。`,
+        minority_not_counted: `${rest} / ${focus.decided} 筆計入；標「與多數不同」的 ${n} 筆未計入，確認是否漏抓。`,
         mixed: `沒有明顯多數；先看 ${n} 筆有檢閱註記的結果。`,
       }[focus.kind];
       return text ? element('p', text, 'tgt-focus-banner') : null;
@@ -52,7 +204,7 @@
       const reviews = new Map(item.details.review_queue.map(row => [row.Sample, row]));
       const section = element('section');
       if (payload.items.length > 1) section.append(element('h2', item.title));
-      const context = [target.Role, target['ISTD Pair'] ? `配對 ISTD：${target['ISTD Pair']}` : null, `設定 RT ${range(target['RT min'], target['RT max'])}`].filter(Boolean);
+      const context = [target.Role, target['ISTD Pair'] ? `配對 ISTD：${target['ISTD Pair']}` : null, rtSetting(target['RT min'], target['RT max'])].filter(Boolean);
       section.append(element('p', context.join(' · '), 'tgt-context'));
       const banner = focusBanner(focus);
       if (banner) section.append(banner);
@@ -69,7 +221,8 @@
       const head = element('tr');
       // A paired analyte reads beside its ISTD in the same sample row.
       const paired = Object.keys(istdRecords).length > 0;
-      const titles = ['樣本', 'RT (min)', '面積', '計入偵測', ...(paired ? ['ISTD RT (min)', 'ISTD 面積'] : []), '檢閱註記'];
+      const canLoadCurves = embedded && window.parent !== window;
+      const titles = ['樣本', 'RT (min)', '面積', '計入偵測', ...(paired ? ['ISTD RT (min)', 'ISTD 面積'] : []), '檢閱註記', ...(canLoadCurves ? ['曲線'] : [])];
       for (const title of titles) head.append(element('th', title));
       const thead = element('thead');thead.append(head);
       const body = element('tbody');
@@ -91,7 +244,7 @@
           pairs.push([`配對 ISTD（${istd.Target}）`, `RT ${value(istd.RT)} min${delta} · 面積 ${scientific(istd.Area)} · 計入 ${counted(istd['Counted Detection'])}`]);
         }
         panel.append(facts(pairs));
-        if (review?.Why) panel.append(element('h4', '檢閱註記'), element('p', review.Why));
+        if (review?.Why) panel.append(element('h4', '檢閱註記'), element('p', reviewWhy(review)));
         if (review?.Action) panel.append(element('h4', '建議檢查'), element('p', review.Action));
         if (review?.Evidence) panel.append(element('h4', '檢閱線索'), element('p', review.Evidence));
         if (record.Reason) {
@@ -108,7 +261,7 @@
         sampleCell.append(button);
         if (focusSet.has(record.SampleName)) {
           row.classList.add('focus');
-          sampleCell.append(element('span', '少數', 'tgt-badge attention'));
+          sampleCell.append(element('span', '與多數不同', 'tgt-badge attention'));
         }
         row.append(sampleCell, element('td', value(record.RT), 'tgt-number'), element('td', scientific(record.Area), 'tgt-number'), element('td', counted(record['Counted Detection']), 'tgt-counted'));
         if (paired) {
@@ -117,7 +270,13 @@
           if (istd && counted(istd['Counted Detection']) !== '是') istdArea.append(element('span', 'ISTD 未計入', 'tgt-badge'));
           row.append(element('td', istd ? value(istd.RT) : '—', 'tgt-number tgt-istd'), istdArea);
         }
-        row.append(element('td', review?.Why || '—', 'tgt-reason'));
+        row.append(element('td', reviewWhy(review), 'tgt-reason'));
+        if (canLoadCurves) {
+          const cell = element('td'), view = element('button', '看 XIC', 'tgt-xic');
+          view.type = 'button';view.setAttribute('aria-label', `看 ${record.SampleName} 的 ${item.title} XIC`);
+          view.addEventListener('click', () => window.parent.postMessage({type: 'xic-targeted-curves', item_id: item.id, sample_id: record.SampleName}, location.origin));
+          cell.append(view);row.append(cell);
+        }
         button.addEventListener('click', () => {
           const same = openRow?.row === row;
           closeDetail();
@@ -419,7 +578,7 @@
   function plot(item,axis,peer=false,wide=false){
     const drawable=curvesForPlot(item,peer).flatMap(curve=>seriesList(curve,axis,state.signal).map(series=>({curve,series})));
     if(!drawable.length)return `<div class="empty-state"><strong>${axis==='aligned'?'所選資料未提供對齊座標':'目前沒有可顯示的曲線'}</strong><p>${axis==='aligned'?'請切回原始時間；不會以原始座標代替。':state.signal==='smoothed'?'所選來源未保存可用的平滑曲線；可切換原始訊號檢查。':'請確認樣本顯示勾選，或來源是否保存曲線。'}</p></div>`;
-    const reviewWindow=axis==='raw'&&Array.isArray(item.review_rt_window)?item.review_rt_window:null;
+    const reviewWindow=axis==='raw'?(state.plotWindow||(Array.isArray(item.review_rt_window)?item.review_rt_window:null)):null;
     let lo=reviewWindow?.[0]??Infinity,hi=reviewWindow?.[1]??-Infinity,lowY=0,highY=0;
     drawable.forEach(({series:s})=>s.rts.forEach((v,i)=>{const y=s.intensities[i];if(finite(v)&&finite(y)&&(!reviewWindow||v>=lo&&v<=hi)){if(!reviewWindow){lo=Math.min(lo,v);hi=Math.max(hi,v);}lowY=Math.min(lowY,y);highY=Math.max(highY,y);}}));
     if(!finite(lo)||!finite(hi))return '<div class="empty-state">未提供成對的時間與訊號數值。</div>';if(lo===hi){lo-=.5;hi+=.5;}if(lowY===highY)highY=lowY+1;
@@ -440,7 +599,12 @@
     const isAligned=axis==='aligned', coverage=alignmentCoverage(item), total=Math.max(coverage.total,coverage.available);
     if(isAligned&&!alignedAvailable(item))return `<p class="plot-note" id="plot-aligned"><strong>對齊時間圖不可用</strong>：來源未提供目前所選曲線與${signalLabel}的對齊座標；不以原始座標代替。</p>`;
     const calibration=isAligned?`<p class="alignment-summary ${coverage.available<total?'partial':''}">${coverage.available} / ${total} 個顯示中樣本有對齊座標${coverage.available<total?'；其餘不外插':''}</p>`:'';
-    return `<section class="plot-card" id="plot-${axis}"><div class="plot-header"><div><h4>${isAligned?'對齊時間':'原始時間'} · ${signalLabel}</h4>${calibration}</div><button type="button" data-zoom="${axis}">放大 ↗</button></div><div class="svg-container" id="svg-${axis}">${plot(item,axis,false,wide)}</div></section>`;
+    return `<section class="plot-card" id="plot-${axis}"><div class="plot-header"><div><h4>${isAligned?'對齊時間':'原始時間'} · ${signalLabel}</h4>${calibration}</div><button type="button" data-zoom="${axis}">放大 ↗</button></div>${isAligned?'':rtViewControls(item)}<div class="svg-container" id="svg-${axis}">${plot(item,axis,false,wide)}</div></section>`;
+  }
+  function rtViewControls(item) {
+    if (!Array.isArray(item.review_rt_window)) return '';
+    const window = state.plotWindow || item.review_rt_window;
+    return `<div class="selection-controls"><label>顯示 RT 起點 <input id="plot-rt-start" type="number" step="any" value="${window[0]}" aria-label="顯示 RT 起點"></label><label>終點 <input id="plot-rt-end" type="number" step="any" value="${window[1]}" aria-label="顯示 RT 終點"></label><button type="button" data-rt-view="apply">套用範圍</button><button type="button" data-rt-view="full">完整已載入範圍</button></div>`;
   }
   function fieldValue(value){
     // Serialized objects/lists from source records read as key-value lines instead of raw JSON text.
@@ -500,9 +664,33 @@
     const aligned=alignedAvailable(item);
     $('workspace-content').innerHTML=`<div class="detail-top"><div><p class="detail-eyebrow">${itemName(item)}${item.method_label?` · ${esc(item.method_label)}`:''}</p><h2>${esc(itemTitle(item))}</h2><p class="detail-reason">${esc(item.reason_label||'未記錄項目判定說明。')}</p></div><span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span></div>${summary(item)}${evidencePanel(item)}<section class="advanced-inspection" aria-label="候選與積分"><section class="inspection-section" id="inspection-workspace"><div class="inspection-heading"><div class="inspection-title"><h3 id="inspection-title" tabindex="-1">${esc(graph)}</h3>${state.sample?'<button type="button" class="return-all" id="btn-unfocus">← 返回所有樣本</button>':''}</div><span class="focus-status">${state.sample?'候選與擷取':'曲線與積分'}</span></div><div class="selection-controls">${state.sample?`<div class="control-group"><span class="control-label">候選峰</span>${candidateControl(item)}</div><div class="control-group"><span class="control-label">擷取階段</span>${captureControl(item)}</div>`:''}<div class="control-group"><span class="control-label">訊號種類</span>${signalControl(item)}</div></div><div class="chart-toolbar"><div class="sample-legend" aria-label="樣本曲線顯示">${legend(item)}</div><label><input id="chk-bounds" type="checkbox" ${state.bounds?'checked':''}> 顯示積分範圍與峰頂</label></div><div class="analysis-layout ${state.evidence?'with-evidence':''}"><div class="chart-column"><div class="charts-grid ${aligned?'':'single'}">${plotCard(item,'raw',signalLabel,!aligned)}${aligned?plotCard(item,'aligned',signalLabel):''}</div>${aligned?'':plotCard(item,'aligned',signalLabel)}<section class="integration-card" id="integration-readout">${readout(item)}</section></div></div></section></section>${internalPairSupportPanel(item)}<section class="sample-section" aria-label="所有樣本的正式結果與支持紀錄"><div class="section-heading"><h3>所有樣本的正式結果與支持紀錄</h3></div>${sampleTable(item)}</section>`;
   }
-  function reset(){rel.node=null;rel.pair=null;rel.captures={};state.sample=null;state.candidate='';state.capture='';state.signal='smoothed';state.evidence='';state.evidenceContext='';evidenceOpener=null;}
+  function reset(){state.plotWindow=null;rel.node=null;rel.pair=null;rel.captures={};state.sample=null;state.candidate='';state.capture='';state.signal='smoothed';state.evidence='';state.evidenceContext='';evidenceOpener=null;}
   function clearFilters(){for(const id of ['search','mz-min','mz-max','rt-min','rt-max'])$(id).value='';list();}
   $('record-list').addEventListener('click',event=>{const toggle=event.target.closest('[data-excluded-toggle]');if(toggle){const opening=!state.excludedOpen;state.excludedOpen=opening;list(!(opening&&!state.id));$('record-list').querySelector('[data-excluded-toggle]')?.focus();return;}const b=event.target.closest('[data-item]');if(!b)return;state.id=b.dataset.item;reset();list();$('record-list').querySelector('[aria-current="true"]')?.focus();});
+  $('detail-panel').addEventListener('click', event => {
+    const button = event.target.closest('[data-rt-view]');
+    if (!button) return;
+    const item = items.find(i => i.id === state.id);
+    if (!item) return;
+    const start = $('plot-rt-start'), end = $('plot-rt-end');
+    start.setCustomValidity('');
+    if (button.dataset.rtView === 'full') {
+      let lower = Infinity, upper = -Infinity;
+      for (const curve of item.curves || []) {
+        const rt = curve.raw_rts || [];
+        if (rt.length) { lower = Math.min(lower, rt[0]); upper = Math.max(upper, rt[rt.length - 1]); }
+      }
+      if (!finite(lower) || !finite(upper) || lower >= upper) return;
+      state.plotWindow = [lower, upper];
+    } else {
+      const lower = start.valueAsNumber, upper = end.valueAsNumber;
+      if (!finite(lower) || !finite(upper) || lower >= upper) {
+        start.setCustomValidity('請輸入有效範圍，起點必須小於終點。');start.reportValidity();return;
+      }
+      state.plotWindow = [lower, upper];
+    }
+    detail();
+  });
   $('detail-panel').addEventListener('click',event=>{
     const item=items.find(i=>i.id===state.id);if(!item)return;
     const node=event.target.closest('[data-relation-node]'),pair=event.target.closest('[data-relation-pair]'),axis=event.target.closest('[data-time-axis]'),resetButton=event.target.closest('[data-relation-reset]');
@@ -521,7 +709,7 @@
     else if(el.dataset.laneCapture)rel.captures[el.dataset.laneCapture]=el.value;
     else return;event.stopImmediatePropagation();detail();
   });
-  $('detail-panel').addEventListener('change',event=>{const el=event.target,item=items.find(i=>i.id===state.id);if(!item)return;if(el.id==='candidate-select'){state.candidate=el.value;state.capture='';state.evidence='';normalize(item);}if(el.id==='capture-select'){state.capture=el.value;state.evidence='';}if(el.id==='signal-select')state.signal=el.value;if(el.id==='chk-bounds')state.bounds=el.checked;if(el.dataset.sampleVisible){if(el.checked)state.visible.add(el.dataset.sampleVisible);else state.visible.delete(el.dataset.sampleVisible);}detail();});
+  $('detail-panel').addEventListener('change',event=>{const el=event.target,item=items.find(i=>i.id===state.id);if(!item)return;if(el.id==='plot-rt-start'||el.id==='plot-rt-end')return;if(el.id==='candidate-select'){state.candidate=el.value;state.capture='';state.evidence='';normalize(item);}if(el.id==='capture-select'){state.capture=el.value;state.evidence='';}if(el.id==='signal-select')state.signal=el.value;if(el.id==='chk-bounds')state.bounds=el.checked;if(el.dataset.sampleVisible){if(el.checked)state.visible.add(el.dataset.sampleVisible);else state.visible.delete(el.dataset.sampleVisible);}detail();});
   $('detail-panel').addEventListener('click',async event=>{const item=items.find(i=>i.id===state.id);if(!item)return;const focus=event.target.closest('[data-focus]');if(focus){state.sample=focus.dataset.focus;state.candidate='';state.capture='';state.evidence='';state.evidenceContext='';evidenceOpener=null;normalize(item,true);detail();requestAnimationFrame(()=>{const heading=$('inspection-title');heading?.focus({preventScroll:true});heading?.scrollIntoView({behavior:'smooth',block:'start'});});return;}if(event.target.closest('#btn-unfocus')){state.sample=null;state.candidate='';state.capture='';state.evidence='';state.evidenceContext='';evidenceOpener=null;normalize(item);detail();requestAnimationFrame(()=>{const heading=$('inspection-title');heading?.focus({preventScroll:true});heading?.scrollIntoView({behavior:'smooth',block:'start'});});return;}const evidence=event.target.closest('[data-evidence-ref]');if(evidence){evidenceOpener={ref:evidence.dataset.evidenceRef,context:evidence.dataset.evidenceContext||''};state.evidence=evidenceOpener.ref;state.evidenceContext=evidenceOpener.context;detail();requestAnimationFrame(()=>{const panel=$('evidence-panel');panel?.scrollIntoView({behavior:'smooth',block:'start'});panel?.focus({preventScroll:true});});return;}const link=event.target.closest('[data-record-ref]');if(link){state.evidence=link.dataset.recordRef;detail();requestAnimationFrame(()=>{const panel=$('evidence-panel');panel?.scrollIntoView({behavior:'smooth',block:'start'});panel?.focus({preventScroll:true});});return;}if(event.target.closest('#close-evidence')){state.evidence='';state.evidenceContext='';detail();requestAnimationFrame(()=>{const opener=[...document.querySelectorAll('[data-evidence-ref]')].find(el=>el.dataset.evidenceRef===evidenceOpener?.ref&&(el.dataset.evidenceContext||'')===evidenceOpener?.context);opener?.scrollIntoView({block:'nearest'});opener?.focus({preventScroll:true});evidenceOpener=null;});return;}const copy=event.target.closest('[data-copy]');if(copy){try{await navigator.clipboard.writeText(copy.dataset.copy||'');const old=copy.textContent;copy.textContent='已複製';setTimeout(()=>copy.textContent=old,1200);}catch(_){copy.textContent='無法複製';}return;}const zoom=event.target.closest('[data-zoom]');if(zoom){dialogOpener=zoom;$('zoom-title').textContent=`${itemTitle(item)} · ${state.sample?sampleName(state.sample):'所有可見樣本'} · ${zoom.dataset.zoom==='raw'?'原始時間':'對齊時間'}`;$('zoom-container').innerHTML=plot(item,zoom.dataset.zoom);$('zoom-dialog').showModal();}});
   for(const id of ['search','mz-min','mz-max','rt-min','rt-max'])$(id).addEventListener('input',list);
   $('clear').addEventListener('click',clearFilters);$('active-filters').addEventListener('click',event=>{if(event.target.closest('#clear-inline'))clearFilters();});

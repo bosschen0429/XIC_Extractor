@@ -34,6 +34,7 @@ from xic_extractor.applications.untargeted.request import (
     UntargetedRequest,
     validate_retained_processing_profile,
 )
+from xic_extractor.configuration.cid_nl_profile import DEFAULT_CID_NL_MASS_POLICY
 from xic_extractor.configuration.execution_profile import (
     DEFAULT_ALIGNMENT_WORKER_BACKEND,
     UntargetedExecutionPolicy,
@@ -58,9 +59,8 @@ from xic_extractor.presets import (
     load_preset,
 )
 from xic_extractor.presets.models import Preset
-from xic_extractor.raw_reader import RawReaderError
-from xic_extractor.sample_metadata import SampleMetadataError, load_sample_metadata
-from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
+from xic_extractor.raw_reader import RawReaderError, read_analysis_set
+from xic_extractor.sample_metadata import SampleMetadataError
 from xic_extractor.untargeted_execution.input_planning import (
     is_supported_alignment_discovery,
 )
@@ -87,8 +87,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.sample_metadata is not None:
         metadata_path = args.sample_metadata.resolve()
         try:
-            sample_metadata = load_sample_metadata(metadata_path)
-        except (SampleMetadataError, OSError) as exc:
+            # 上機資訊 annotates; the RAW owner supplies names and order.
+            sample_metadata = read_analysis_set(
+                raw_dir, dll_dir, sequence_source=metadata_path
+            ).sample_metadata
+        except (SampleMetadataError, RawReaderError, ValueError, OSError) as exc:
             print(str(exc), file=sys.stderr)
             return 2
         batches = sorted({row.batch_id for row in sample_metadata})
@@ -906,7 +909,6 @@ def _peak_config(
     signal_processing_profile: SignalProcessingProfile | None = None,
     nl_min_intensity_ratio: float | None = None,
 ) -> ExtractionConfig:
-    defaults = CANONICAL_SETTINGS_DEFAULTS
     profile = signal_processing_profile or resolve_signal_processing_profile()
     return ExtractionConfig(
         data_dir=raw_dir,
@@ -920,9 +922,9 @@ def _peak_config(
         ms1_morphology_smoothing_window_points=profile.window_points,
         peak_rel_height=0.95,
         peak_min_prominence_ratio=0.10,
-        ms2_precursor_tol_da=float(defaults["ms2_precursor_tol_da"]),
+        ms2_precursor_tol_da=DEFAULT_CID_NL_MASS_POLICY.ms2_precursor_tol_da,
         nl_min_intensity_ratio=(
-            float(defaults["nl_min_intensity_ratio"])
+            DEFAULT_CID_NL_MASS_POLICY.nl_min_intensity_ratio
             if nl_min_intensity_ratio is None
             else nl_min_intensity_ratio
         ),

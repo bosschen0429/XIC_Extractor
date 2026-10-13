@@ -12,7 +12,6 @@ from xic_extractor.sample_metadata import (
     load_sample_metadata,
     parse_sample_metadata,
     sample_metadata_to_injection_order,
-    sample_metadata_to_raw_stem_injection_order,
     summarize_sample_metadata,
 )
 
@@ -43,10 +42,6 @@ def test_parse_sample_metadata_validates_roles_and_injection_order() -> None:
     assert sample_metadata_to_injection_order(rows) == {
         "TumorBC001_DNA": 1,
         "QC1": 2,
-        "Breast_Cancer_Tissue_pooled_QC1": 2,
-    }
-    assert sample_metadata_to_raw_stem_injection_order(rows) == {
-        "TumorBC001_DNA": 1,
         "Breast_Cancer_Tissue_pooled_QC1": 2,
     }
     assert summarize_sample_metadata(rows) == {

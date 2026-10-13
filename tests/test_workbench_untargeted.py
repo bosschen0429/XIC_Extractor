@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from tests.raw_header_fakes import install_raw_sample_headers
 from xic_extractor.presets import load_preset
 from xic_extractor.raw_reader import RawSampleHeader
 from xic_workbench.discovery_config_io import (
@@ -37,16 +38,26 @@ def test_untargeted_config_round_trips_only_supported_fields(tmp_path) -> None:
     assert restored["output_dir"]
 
 
-def test_samples_keep_shallowest_raw_and_complete_metadata(tmp_path) -> None:
+def test_samples_take_annotations_from_metadata_but_names_and_order_from_raw(
+    tmp_path, monkeypatch
+) -> None:
     raw_dir = tmp_path / "raws"
-    nested = raw_dir / "nested"
-    nested.mkdir(parents=True)
-    (raw_dir / "Sample-A.raw").write_bytes(b"")
-    (nested / "sample-a.RAW").write_bytes(b"")
-    (nested / "Sample-B.raw").write_bytes(b"")
+    raw_dir.mkdir()
+    for stem in ("Sample-A", "Sample-B"):
+        (raw_dir / f"{stem}.raw").write_bytes(b"")
+    install_raw_sample_headers(
+        monkeypatch,
+        lambda path: SimpleNamespace(
+            sample_name=f"Header {path.stem}",
+            sample_type="Unknown",
+            comment="",
+            instrument_method="",
+        ),
+        lambda path: {"Sample-A": 0, "Sample-B": 10}[path.stem],
+    )
     sequence = tmp_path / "sample_metadata.tsv"
     with sequence.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.writer(handle, delimiter="\t")
+        writer = csv.writer(handle, delimiter="	")
         writer.writerow(
             (
                 "schema_version",
@@ -95,16 +106,17 @@ def test_samples_keep_shallowest_raw_and_complete_metadata(tmp_path) -> None:
 
     result = load_samples(
         raw_dir,
+        dll_dir=tmp_path,
         sequence_source=sequence,
         custom_roles={"Sample-A": "pooled_qc"},
     )
 
     assert [row["raw_stem"] for row in result["samples"]] == ["Sample-A", "Sample-B"]
-    first = result["samples"][0]
-    assert first == {
-        "sample_name": "Alpha",
+    # The metadata numbers 2 and 1 and names Alpha/Beta never override the RAW.
+    assert result["samples"][0] == {
+        "sample_name": "Header Sample-A",
         "raw_stem": "Sample-A",
-        "injection_order": 2,
+        "injection_order": 1,
         "sample_role": "pooled_qc",
         "batch_id": "B1",
         "prep_batch_id": "P1",
@@ -152,9 +164,10 @@ def test_samples_use_raw_header_order_and_preserve_sequence_and_role_overrides(
             comment="",
         ),
     }
-    monkeypatch.setattr(
-        "xic_extractor.raw_reader.read_raw_sample_header",
-        lambda path, dll_dir: headers[path],
+    install_raw_sample_headers(
+        monkeypatch,
+        lambda path: headers[path],
+        lambda path: (headers[path].creation_date - datetime(2026, 1, 1)).seconds / 60,
     )
     sequence = tmp_path / "sample_metadata.tsv"
     sequence.write_text(
@@ -181,8 +194,8 @@ def test_samples_use_raw_header_order_and_preserve_sequence_and_role_overrides(
     ]
     assert [row["injection_order"] for row in result["samples"]] == [1, 2]
     assert [row["sample_name"] for row in result["samples"]] == [
-        "Sequence Beta",
-        "Sequence Alpha",
+        "Header Beta",
+        "Header Alpha",
     ]
     assert [row["sample_role"] for row in result["samples"]] == [
         "pooled_qc",
@@ -557,7 +570,11 @@ def test_raw_sample_refresh_preserves_filename_and_method_roles(tmp_path, monkey
             instrument_method="wash.meth" if path.stem == "Sample001" else "study.meth",
         )
 
-    monkeypatch.setattr("xic_extractor.raw_reader.read_raw_sample_header", header)
+    install_raw_sample_headers(
+        monkeypatch,
+        lambda path: header(path, None),
+        lambda path: names.index(path.stem),
+    )
     rows = load_samples(raw_dir, dll_dir=tmp_path)["samples"]
     assert {r["raw_stem"]: r["sample_role"] for r in rows} == {
         "Blank_01": "blank",
@@ -572,7 +589,7 @@ def test_untargeted_dispatch_freezes_recipe_profile_and_targets(tmp_path, monkey
 
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    write_settings({"parallel_workers": "3"}, config_dir=config_dir)
+    write_settings({"dll_dir": "original"}, config_dir=config_dir)
     draft = method_details("dna_dr")["draft"]
     draft["overrides"]["nl_tolerance_ppm"] = 12.5
     preset_path = tmp_path / "method.toml"
@@ -581,7 +598,7 @@ def test_untargeted_dispatch_freezes_recipe_profile_and_targets(tmp_path, monkey
     targets_path.write_text("label,mz\nISTD,100\n")
     values = _request_values(tmp_path, "discovery_only")
     values.update(preset=str(preset_path), targets_csv=str(targets_path))
-    values.pop("execution_profile", None)
+    values["execution_profile"] = {"parallel_workers": 3, "alignment_workers": 4}
     submitted = []
     jobs = AnalysisJobs(config_dir)
     monkeypatch.setattr(jobs._executor, "submit", lambda *args: submitted.append(args))
@@ -590,7 +607,7 @@ def test_untargeted_dispatch_freezes_recipe_profile_and_targets(tmp_path, monkey
         runner = jobs._runner
         draft["overrides"]["nl_tolerance_ppm"] = 25
         save_method(draft, preset_path)
-        write_settings({"parallel_workers": "7"}, config_dir=config_dir)
+        values["execution_profile"]["parallel_workers"] = 7
         targets_path.write_text("label,mz\nCHANGED,200\n")
         assert runner._build_settings().nl_tolerance_ppm == 12.5
         assert runner.request.execution_profile.parallel_workers == 3

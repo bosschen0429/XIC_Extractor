@@ -35,7 +35,6 @@ def test_anchor_mismatch_is_diagnostic_without_changing_quantification() -> None
         peak_result,
         reference_rt=10.0,
         anchor_rt=10.0,
-        anchor_used=True,
         strict_preferred_rt=True,
     )
     assert diagnostic is not None and diagnostic.issue == "ANCHOR_RT_MISMATCH"

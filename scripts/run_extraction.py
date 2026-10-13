@@ -2,7 +2,6 @@ import argparse
 import multiprocessing
 import sys
 from collections.abc import Sequence
-from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
@@ -44,11 +43,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         else:
             config, targets = load_config(config_dir)
-        # Execution resources are runtime choices, not part of the method hash.
-        if args.parallel_mode is not None:
-            config = replace(config, parallel_mode=args.parallel_mode)
-        if args.parallel_workers is not None:
-            config = replace(config, parallel_workers=args.parallel_workers)
         output = (
             build_canonical_targeted_application_service(extractor.acquire)
             .execute_application(
@@ -122,26 +116,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         default=None,
         help="Explicit injection-order CSV/XLSX for this RAW batch.",
     )
-    parser.add_argument(
-        "--parallel-mode",
-        choices=("serial", "process"),
-        default=None,
-        help="Override settings.csv parallel_mode.",
-    )
-    parser.add_argument(
-        "--parallel-workers",
-        type=_positive_int,
-        default=None,
-        help="Override settings.csv parallel_workers.",
-    )
     return parser.parse_args(argv)
-
-
-def _positive_int(value: str) -> int:
-    parsed = int(value)
-    if parsed < 1:
-        raise argparse.ArgumentTypeError("parallel-workers must be >= 1")
-    return parsed
 
 
 def _print_progress(current: int, total: int, filename: str) -> None:

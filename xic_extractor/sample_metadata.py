@@ -96,6 +96,23 @@ class SampleMetadataError(ValueError):
     """Raised when sample metadata cannot be treated as a shared contract."""
 
 
+SequenceConflictKind = Literal["duplicate_order", "name_mismatch"]
+
+
+@dataclass(frozen=True, slots=True)
+class SequenceConflict:
+    """A document disagreement that is reported, never silently resolved.
+
+    ``duplicate_order``: several rows carry one printed number (``detail``).
+    ``name_mismatch``: a row's file name and sample text name different sample
+    codes (``detail`` lists them).
+    """
+
+    kind: SequenceConflictKind
+    sequence_names: tuple[str, ...]
+    detail: str
+
+
 @dataclass(frozen=True, slots=True)
 class SequenceMatchReport:
     """Auditable projection of one sequence source onto the active RAW files."""
@@ -105,6 +122,7 @@ class SequenceMatchReport:
     unmatched_raw_stems: tuple[str, ...]
     unmatched_sequence_names: tuple[str, ...]
     ambiguous_sequence_names: tuple[str, ...]
+    conflicts: tuple[SequenceConflict, ...] = ()
 
     @property
     def matched_count(self) -> int:
@@ -554,16 +572,18 @@ def _parse_generic_tabular_sequence(path: Path) -> list[dict[str, Any]]:
 
 def parse_sequence_file(path: Path) -> tuple[SampleMetadata, ...]:
     """Parse laboratory sequence list from Word (.docx), Excel (.xlsx), or CSV/TSV."""
+    return _metadata_from_sequence_entries(_sequence_entries(path))
+
+
+def _sequence_entries(path: Path) -> list[dict[str, Any]]:
     suffix = path.suffix.lower()
     if suffix == ".docx":
-        raw_entries = _parse_docx_sequence_table(path)
-    elif suffix in {".xlsx", ".xls"}:
-        raw_entries = _parse_xlsx_sequence_table(path)
-    elif suffix in {".csv", ".tsv", ".txt"}:
-        raw_entries = _parse_generic_tabular_sequence(path)
-    else:
-        raise SampleMetadataError(f"{path.name}: 不支援的序列表檔案格式 ({suffix})")
-    return _metadata_from_sequence_entries(raw_entries)
+        return _parse_docx_sequence_table(path)
+    if suffix in {".xlsx", ".xls"}:
+        return _parse_xlsx_sequence_table(path)
+    if suffix in {".csv", ".tsv", ".txt"}:
+        return _parse_generic_tabular_sequence(path)
+    raise SampleMetadataError(f"{path.name}: 不支援的序列表檔案格式 ({suffix})")
 
 
 def _metadata_from_sequence_entries(
@@ -633,8 +653,24 @@ def load_and_match_sample_metadata(
 ) -> SequenceMatchReport:
     """Load a sequence source and project it onto the active RAW stems."""
     if path.suffix.lower() != ".docx":
-        metadata = load_sample_metadata(path)
-        return match_sequence_to_raw_stems_report(metadata, raw_stems)
+        if path.suffix.lower() in {".csv", ".tsv", ".txt"} and (
+            is_sample_metadata_source(path)
+        ):
+            metadata = load_sample_metadata(path)
+            written = [
+                {
+                    "order": row.injection_order,
+                    "raw_stem": row.raw_stem,
+                    "sample_name": row.sample_name,
+                }
+                for row in metadata
+            ]
+        else:
+            written = _sequence_entries(path)
+            metadata = _metadata_from_sequence_entries(written)
+        return match_sequence_to_raw_stems_report(
+            metadata, raw_stems, conflicts=_sequence_conflicts(written)
+        )
 
     from xic_extractor.instrument_qc.sequence_manifest import (
         ManifestMatchStatus,
@@ -650,7 +686,8 @@ def load_and_match_sample_metadata(
         raise SampleMetadataError(str(exc)) from exc
     if not entries:
         raise SampleMetadataError(f"{path.name}: 未在 Word 文件中找到有效的進樣序列表")
-    metadata = _metadata_from_sequence_entries(_sequence_doc_entries_as_rows(entries))
+    doc_rows = _sequence_doc_entries_as_rows(entries)
+    metadata = _metadata_from_sequence_entries(doc_rows)
 
     manifest = build_sequence_manifest_from_entries(
         entries,
@@ -679,12 +716,15 @@ def load_and_match_sample_metadata(
         matched_by_raw=matched_by_raw,
         unmatched_sequence_names=unmatched_sequence_names,
         ambiguous_sequence_names=ambiguous_sequence_names,
+        conflicts=_sequence_conflicts(doc_rows),
     )
 
 
 def match_sequence_to_raw_stems_report(
     sequence_rows: Sequence[SampleMetadata],
     raw_stems: Sequence[str],
+    *,
+    conflicts: tuple[SequenceConflict, ...] = (),
 ) -> SequenceMatchReport:
     """Match a non-Word sequence source and retain ambiguity/unmatched evidence."""
     raw_stem_order = tuple(raw_stems)
@@ -720,6 +760,7 @@ def match_sequence_to_raw_stems_report(
         matched_by_raw=matched_by_raw,
         unmatched_sequence_names=unmatched_sequence_names,
         ambiguous_sequence_names=ambiguous_sequence_names,
+        conflicts=conflicts,
     )
 
 
@@ -738,6 +779,7 @@ def _sequence_match_report(
     matched_by_raw: Mapping[str, SampleMetadata],
     unmatched_sequence_names: Sequence[str],
     ambiguous_sequence_names: Sequence[str],
+    conflicts: tuple[SequenceConflict, ...] = (),
 ) -> SequenceMatchReport:
     raw_stem_order = tuple(raw_stems)
     if not raw_stem_order:
@@ -747,6 +789,7 @@ def _sequence_match_report(
             unmatched_raw_stems=(),
             unmatched_sequence_names=tuple(unmatched_sequence_names),
             ambiguous_sequence_names=tuple(ambiguous_sequence_names),
+            conflicts=conflicts,
         )
 
     rows: list[SampleMetadata] = []
@@ -788,7 +831,39 @@ def _sequence_match_report(
         unmatched_raw_stems=tuple(unmatched_raw_stems),
         unmatched_sequence_names=tuple(unmatched_sequence_names),
         ambiguous_sequence_names=tuple(ambiguous_sequence_names),
+        conflicts=conflicts,
     )
+
+
+# Sample codes such as BC2312: up to three capitals, then at least three
+# digits, so "TumorBC2312_DNA" yields BC2312 and dates such as 20260103 none.
+_SAMPLE_CODE = re.compile(r"[A-Z]{1,3}\d{3,}")
+
+
+def _sequence_conflicts(
+    entries: Sequence[Mapping[str, Any]],
+) -> tuple[SequenceConflict, ...]:
+    """Check document rows as written, before names are made unique."""
+    by_order: dict[int, list[str]] = {}
+    for entry in entries:
+        if entry["order"] is not None:
+            by_order.setdefault(int(entry["order"]), []).append(entry["raw_stem"])
+    conflicts = [
+        SequenceConflict("duplicate_order", tuple(names), str(order))
+        for order, names in sorted(by_order.items())
+        if len(names) > 1
+    ]
+    for entry in entries:
+        file_name, sample_text = entry["raw_stem"] or "", entry["sample_name"] or ""
+        file_codes = _SAMPLE_CODE.findall(file_name)
+        text_codes = _SAMPLE_CODE.findall(sample_text)
+        shared = {code.casefold() for code in file_codes} & {
+            code.casefold() for code in text_codes
+        }
+        if file_codes and text_codes and not shared:
+            detail = f"{', '.join(file_codes)} / {', '.join(text_codes)}"
+            conflicts.append(SequenceConflict("name_mismatch", (file_name,), detail))
+    return tuple(conflicts)
 
 
 def load_sample_metadata(path: Path) -> tuple[SampleMetadata, ...]:
@@ -959,20 +1034,6 @@ def sample_metadata_to_injection_order(
         _add_injection_order(out, row.sample_name, row.injection_order)
         if row.raw_stem and row.raw_stem != row.sample_name:
             _add_injection_order(out, row.raw_stem, row.injection_order)
-    return out
-
-
-def sample_metadata_to_raw_stem_injection_order(
-    rows: Sequence[SampleMetadata],
-) -> dict[str, int]:
-    """Project exactly one request-local RAW stem key for each ordered sample."""
-
-    out: dict[str, int] = {}
-    for row in rows:
-        if row.injection_order is None:
-            continue
-        raw_stem = row.raw_stem or row.sample_name
-        _add_injection_order(out, raw_stem, row.injection_order)
     return out
 
 

@@ -16,7 +16,6 @@ from xic_extractor.applications.targeted.application import (
 )
 from xic_extractor.configuration import loader as config_loader
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig, Target
-from xic_extractor.configuration.settings import method_settings_differences
 from xic_extractor.extraction.result_models import ExtractionResult, RunOutput
 from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,
@@ -42,11 +41,14 @@ class TargetedRun:
         self,
         config_dir: Path,
         *,
+        output_dir: Path | None = None,
         progress: Callable[[int, int, str], None],
         should_cancel: Callable[[], bool],
     ) -> None:
         config_dir = Path(config_dir)
-        prepared = config_loader.prepare_targeted_config(config_dir)
+        prepared = config_loader.prepare_targeted_config(
+            config_dir, output_dir=output_dir
+        )
         self._prepared = prepared
         self._config, self._targets = prepared.config, list(prepared.targets)
         # Admission fixes the discovered file set, not analysis roles or RAW bytes.
@@ -56,6 +58,7 @@ class TargetedRun:
         self.stage = "讀取 Targeted 設定"
         self.output_dir = self._config.output_csv.parent
         self.available_outputs: tuple[tuple[str, Path], ...] = ()
+        self.sample_summary: dict[str, Any] | None = None
         self.cancellation_reason = "使用者要求停止，本次 Targeted 執行已停止。"
 
     def execute(self) -> dict[str, Any]:
@@ -71,6 +74,17 @@ class TargetedRun:
         ):
             raise ConfigError("排隊後 RAW 檔案集合已變更；請確認本批次資料並重新提交。")
         config, targets = self._config, self._targets
+        from xic_workbench.samples import load_samples
+
+        self.stage = "讀取 Targeted 樣本與上機資訊"
+        sample_summary = load_samples(
+            config.data_dir,
+            dll_dir=config.dll_dir,
+            sequence_source=config.injection_order_source,
+        )["summary"]
+        # The source here is a private queued-input copy, not a published path.
+        sample_summary.pop("sequence_source", None)
+        self.sample_summary = sample_summary
         self.output_dir = config.output_csv.parent
         excel_path = _excel_output_path(config)
         self.stage = "Targeted 分析與結果發布"
@@ -100,6 +114,7 @@ class TargetedRun:
         self.stage = "Targeted 結果摘要"
         summary = build_summary(config, targets, execution.active_output, excel_path)
         summary["published_paths"] = [str(path) for path in published_paths]
+        summary["sample_summary"] = self.sample_summary
         return summary
 
 
@@ -196,89 +211,29 @@ def _is_detected(
 
 # Labels and controls are presentation only; METHOD_KEYS owns method membership.
 _SETTING_FIELDS: tuple[tuple[str, str, str, dict[str, Any]], ...] = (
-    ("data_dir", "資料目錄", "folder", {}),
-    ("dll_dir", "DLL 目錄", "folder", {}),
-    ("signal_processing_method", "平滑方法", "readonly", {"options": ["gaussian"]}),
-    (
-        "signal_processing_window_points",
-        "Gaussian 平滑視窗（點）",
-        "number",
-        {"min": 3, "step": 2, "help": "奇數 3–999。"},
-    ),
-    (
-        "ms2_precursor_tol_da",
-        "MS2 precursor 容差（Da）",
-        "number",
-        {
-            "min": 0.01,
-            "help": "掃描 precursor 與推算 precursor 的最大差距。",
-        },
-    ),
-    (
-        "nl_min_intensity_ratio",
-        "NL product 最低強度比",
-        "number",
-        {"min": 0.01, "step": 0.01, "help": "相對於該 scan 的 base peak。"},
-    ),
-    (
-        "count_no_ms2_as_detected",
-        "將 NO_MS2 視為偵測到",
-        "readonly",
-        {
-            "help": "相容設定；正式 Targeted 結果不將 NO_MS2 算為偵測到。",
-            "compatibility_only": True,
-        },
-    ),
+    ("data_dir", "RAW 資料夾", "folder", {}),
     (
         "injection_order_source",
-        "注射順序來源",
+        "上機資訊",
         "file",
-        {"help": "CSV／XLSX 注射順序；留空時使用 RAW 修改時間。"},
-    ),
-    (
-        "rolling_window_size",
-        "ISTD RT prior 滾動視窗（± 注射數）",
-        "number",
-        {"min": 1, "step": 1},
-    ),
-    (
-        "dirty_matrix_mode",
-        "複雜基質模式",
-        "checkbox",
-        {"help": "放寬 S/N、收緊峰形；用於尿液等複雜基質。"},
-    ),
-    (
-        "nl_rt_anchor_search_margin_min",
-        "NL 錨點搜尋半徑（min）",
-        "number",
-        {"min": 0.0, "help": "在目標 RT 中心 ± 此值內尋找 NL 確認的 MS2。"},
-    ),
-    (
-        "nl_rt_anchor_half_window_min",
-        "錨定後 XIC 半寬（min）",
-        "number",
-        {"min": 0.0, "help": "找到錨點時，XIC 視窗為錨點 RT ± 此值。"},
-    ),
-    (
-        "nl_fallback_half_window_min",
-        "未錨定時 XIC 半寬（min）",
-        "number",
-        {"min": 0.0, "help": "找不到錨點時，XIC 視窗為 RT 中心 ± 此值。"},
-    ),
-    (
-        "parallel_mode",
-        "執行方式",
-        "select",
         {
-            "options": ["serial", "process"],
-            "help": "process 平行處理；serial 逐一處理，供除錯使用。",
+            # The same 上機資訊 files as Untargeted.
+            "browse": "metadata",
+            "help": "Word、Excel、CSV 或 TSV。補充樣本角色、組別與排除標記；"
+            "注射順序與樣本名稱以 RAW 為準。",
         },
     ),
+    ("dll_dir", "RawFileReader DLL 資料夾", "folder", {}),
     (
         "parallel_workers",
-        "平行 worker 數",
+        "平行處理數",
         "number",
-        {"min": 1, "step": 1, "help": "process 模式使用的行程數。"},
+        {
+            "min": 1,
+            "step": 1,
+            "help": "同時處理的 RAW 數，Untargeted 也使用此值。"
+            "留空時為 CPU 核心數減一（至少 1）。",
+        },
     ),
 )
 
@@ -311,9 +266,4 @@ def setting_fields() -> list[dict[str, Any]]:
 
 
 def method_summary(settings: dict[str, str]) -> dict[str, Any]:
-    differences = method_settings_differences(settings)
-    return {
-        "label": f"自訂參數 · {len(differences)} 項調整" if differences else "標準參數",
-        "custom_keys": [row["key"] for row in differences],
-        "differences": differences,
-    }
+    return {"label": "共用 CID-NL 策略", "custom_keys": [], "differences": []}

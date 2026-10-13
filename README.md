@@ -19,7 +19,7 @@ samples.
 
 | Workflow | Bring | Main result | Step-by-step guide |
 | --- | --- | --- | --- |
-| **Targeted Extraction** | RAW files and a targets CSV with m/z, RT windows, and optional neutral-loss/ISTD settings | `xic_results_YYYYMMDD_HHMM.xlsx` | [Targeted guide](docs/user/targeted-extraction.md) |
+| **Targeted Extraction** | RAW files and a targets CSV with name, m/z, expected RT, CID-NL tag, and ISTD relationships | `xic_results_YYYYMMDD_HHMM.xlsx` | [Targeted guide](docs/user/targeted-extraction.md) |
 | **Untargeted Discovery** | RAW files and a method preset | Discovery candidates, then `alignment_matrix.tsv` for supported CID-NL Alignment | [Untargeted guide](docs/user/untargeted-discovery.md) |
 
 ### Run the HTML workbench
@@ -33,7 +33,7 @@ same local HTML workspace for analysis and result review. Use `--no-open` when
 you only want the printed URL, `--port` to choose a port, and `--config-dir` to
 choose the writable settings directory.
 
-For Targeted, load a saved method (parameters and targets/ISTD), select the new
+For Targeted, load a saved method (strategy version and targets/ISTD), select the new
 RAW folder, and run. Save a new method once with **另存為方法**; DLL and worker
 settings remain local. The standard parameters are the default; optional advanced
 settings stay collapsed. **還原方法參數** restores standard scalar values without

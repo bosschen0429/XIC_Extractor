@@ -117,17 +117,6 @@
 .settings-grid .span-all {
   grid-column: 1 / -1;
 }
-.settings-group + .settings-group {
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid var(--line);
-}
-.settings-group h3 {
-  margin-bottom: 10px;
-  color: var(--muted);
-  font-size: 12px;
-  letter-spacing: 0.04em;
-}
 .advanced-panel {
   margin-top: 14px;
   padding: 16px;
@@ -233,6 +222,15 @@
 /* Target preview */
 .target-preview table {
   font-size: 13px;
+}
+#target-preview th,
+#target-preview td,
+#target-editor table th,
+#target-editor table td,
+#target-editor table input,
+#target-editor table select {
+  text-align: center;
+  vertical-align: middle;
 }
 .target-preview .table-scroll {
   margin: 0;
@@ -655,8 +653,9 @@
   margin: 8px 0;
 }
 .settings-warning { color: var(--warning, #a76816); }
-#targeted-data .settings-grid { grid-template-columns: minmax(0, 1fr); }
-#targeted-execution .settings-group + .settings-group { margin-top: 16px; }
+.path-line > small.field-help { grid-column: 2 / -1; margin-top: -4px; }
+#targeted-execution .settings-grid { grid-template-columns: minmax(0, 1fr); }
+#targeted-execution .field input { max-width: 228px; }
 
 .settings-source {
   color: var(--muted);
@@ -664,3 +663,10 @@
   margin: 10px 0 4px;
 }
 .method-difference { font-weight: 600; }
+.sequence-conflicts {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  color: var(--warn);
+  font-size: 12px;
+  line-height: 1.6;
+}

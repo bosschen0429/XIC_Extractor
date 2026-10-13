@@ -102,6 +102,9 @@ def test_multi_peak_diagnostic_reports_formally_selected_lower_peak() -> None:
     )
 
     class Raw:
+        def acquisition_rt_bounds(self):
+            return 0.0, 20.0
+
         def extract_xic(self, _mz, rt_min, rt_max, _ppm_tol):
             mask = (rt >= rt_min) & (rt <= rt_max)
             return rt[mask], intensity[mask]

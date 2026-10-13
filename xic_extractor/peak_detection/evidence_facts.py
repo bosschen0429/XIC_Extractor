@@ -700,7 +700,7 @@ def _local_sn_facts(ctx: Any) -> tuple[float | None, EvidenceQuality, str, str]:
         if mad <= 0:
             return None, "strong", baseline_method, noise_source
         ratio = float((intensity[apex_index] - baseline[apex_index]) / mad)
-        quality = _sn_quality(ratio, bool(getattr(ctx, "dirty_matrix", False)))
+        quality = _sn_quality(ratio)
         return ratio, quality, baseline_method, noise_source
     if intensity.ndim == 1 and 0 <= apex_index < len(intensity):
         computed_baseline, computed_mad = compute_local_sn_cache(intensity)
@@ -712,7 +712,7 @@ def _local_sn_facts(ctx: Any) -> tuple[float | None, EvidenceQuality, str, str]:
             ratio = float(
                 (intensity[apex_index] - computed_baseline[apex_index]) / computed_mad
             )
-            quality = _sn_quality(ratio, bool(getattr(ctx, "dirty_matrix", False)))
+            quality = _sn_quality(ratio)
             return ratio, quality, baseline_method, noise_source
     return None, "poor", baseline_method, noise_source
 
@@ -923,9 +923,9 @@ def _candidate_height(candidate: Any) -> float:
     return value if _is_finite(value) else 0.0
 
 
-def _sn_quality(ratio: float, dirty_matrix: bool) -> EvidenceQuality:
-    hard = 1.3 if dirty_matrix else 2.0
-    soft = 2.0 if dirty_matrix else 3.0
+def _sn_quality(ratio: float) -> EvidenceQuality:
+    hard = 2.0
+    soft = 3.0
     if ratio < hard:
         return "poor"
     if ratio < soft:

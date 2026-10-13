@@ -8,22 +8,12 @@ from dataclasses import dataclass, fields, is_dataclass
 from multiprocessing import get_context
 from pathlib import Path
 from types import ModuleType
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extraction.result_models import RawFileExtractionResult
 from xic_extractor.extraction.scoring_factory import build_scoring_context_factory
 from xic_extractor.processing_identity import AcquisitionSourceExpectation
-
-if TYPE_CHECKING:
-    from xic_extractor.extraction.result_models import ExtractionResult
-    from xic_extractor.output.messages import DiagnosticRecord
-
-
-@dataclass(frozen=True)
-class ScoringInputs:
-    injection_order: dict[str, int]
-    istd_rts_by_sample: dict[str, dict[str, float]]
 
 
 @dataclass(frozen=True)
@@ -32,19 +22,7 @@ class RawFileJob:
     raw_path: Path
     config: ExtractionConfig
     targets: tuple[Target, ...]
-    scoring_inputs: ScoringInputs | None = None
     expected_acquisition_source: AcquisitionSourceExpectation | None = None
-
-
-@dataclass(frozen=True)
-class IstdPrepassResult:
-    raw_index: int
-    raw_name: str
-    sample_name: str
-    anchors: dict[str, float]
-    results: dict[str, ExtractionResult]
-    diagnostics: list[DiagnosticRecord]
-    shape_metrics: dict[str, tuple[float, float | None]]
 
 
 @dataclass(frozen=True)
@@ -65,7 +43,6 @@ class ParallelExecutionError(RuntimeError):
 
 
 WorkerResult = RawFileExtractionResult | WorkerError
-IstdPrepassWorkerResult = IstdPrepassResult | WorkerError
 
 
 def validate_job_payload(job: RawFileJob) -> None:
@@ -91,21 +68,6 @@ def collect_ordered_results(
     return sorted(successes, key=lambda item: item.raw_index)
 
 
-def collect_istd_prepass_results(
-    results: Iterable[IstdPrepassWorkerResult],
-) -> list[IstdPrepassResult]:
-    successes: list[IstdPrepassResult] = []
-    errors: list[WorkerError] = []
-    for result in results:
-        if isinstance(result, WorkerError):
-            errors.append(result)
-        else:
-            successes.append(result)
-
-    _raise_worker_errors(errors)
-    return sorted(successes, key=lambda item: item.raw_index)
-
-
 def _raise_worker_errors(errors: list[WorkerError]) -> None:
     if not errors:
         return
@@ -117,20 +79,6 @@ def _raise_worker_errors(errors: list[WorkerError]) -> None:
         )
     )
     raise ParallelExecutionError(messages)
-
-
-def run_istd_prepass_jobs(
-    jobs: Iterable[RawFileJob],
-    *,
-    max_workers: int,
-    should_stop: Callable[[], bool] | None = None,
-) -> list[IstdPrepassWorkerResult]:
-    return _run_jobs(
-        jobs,
-        worker=extract_istd_prepass_job,
-        max_workers=max_workers,
-        should_stop=should_stop,
-    )
 
 
 def run_raw_file_jobs(
@@ -229,13 +177,7 @@ def extract_raw_file_job(job: RawFileJob) -> WorkerResult:
     from xic_extractor.extraction.target_extraction import extract_raw_file_result
 
     try:
-        scoring_context_factory = None
-        if job.scoring_inputs is not None:
-            scoring_context_factory = build_scoring_context_factory(
-                config=job.config,
-                injection_order=job.scoring_inputs.injection_order,
-                istd_rts_by_sample=job.scoring_inputs.istd_rts_by_sample,
-            )
+        scoring_context_factory = build_scoring_context_factory(config=job.config)
         extraction_kwargs = {}
         if job.expected_acquisition_source is not None:
             extraction_kwargs["expected_acquisition_source"] = (
@@ -248,51 +190,6 @@ def extract_raw_file_job(job: RawFileJob) -> WorkerResult:
             job.raw_path,
             scoring_context_factory=scoring_context_factory,
             **extraction_kwargs,
-        )
-    except Exception as exc:
-        return WorkerError(
-            raw_index=job.raw_index,
-            raw_name=job.raw_path.name,
-            message=f"{type(exc).__name__}: {exc}",
-        )
-
-
-def extract_istd_prepass_job(job: RawFileJob) -> IstdPrepassWorkerResult:
-    from xic_extractor.extraction.istd_prepass import extract_istd_anchors_only
-
-    try:
-        if job.expected_acquisition_source is None:
-            prepass = extract_istd_anchors_only(
-                job.config,
-                list(job.targets),
-                job.raw_path,
-            )
-        else:
-            prepass = extract_istd_anchors_only(
-                job.config,
-                list(job.targets),
-                job.raw_path,
-                expected_acquisition_source=job.expected_acquisition_source,
-            )
-        if prepass is None:
-            return IstdPrepassResult(
-                raw_index=job.raw_index,
-                raw_name=job.raw_path.name,
-                sample_name=job.raw_path.stem,
-                anchors={},
-                results={},
-                diagnostics=[],
-                shape_metrics={},
-            )
-        anchors, results, diagnostics, shape_metrics = prepass
-        return IstdPrepassResult(
-            raw_index=job.raw_index,
-            raw_name=job.raw_path.name,
-            sample_name=job.raw_path.stem,
-            anchors=anchors,
-            results=results,
-            diagnostics=diagnostics,
-            shape_metrics=shape_metrics,
         )
     except Exception as exc:
         return WorkerError(

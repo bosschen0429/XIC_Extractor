@@ -70,9 +70,7 @@ class SignalProcessingProfile:
     boundary_min_sigma_rt: float = 0.08
     segment_min_prominence_fraction: float = 0.04
     segment_universe_limit: int = 64
-    segment_selection_behavior: str = (
-        "complete_supported_envelope_contains_query"
-    )
+    segment_selection_behavior: str = "complete_supported_envelope_contains_query"
     area_basis: str = "trapezoid_counts_seconds_on_canonical_signal"
     relative_shape_basis: str = "own_max_canonical_signal"
 

@@ -73,9 +73,27 @@ MS2 product as proof of unique support.
 candidate once from typed
 candidate evidence and physical eligibility. Chemical support precedes
 localization hints and trace quality; contextual RT and deterministic abundance
-break ties within the supported evidence ordering. Configured RT windows guide
-bounded acquisition, not a second hard apex veto within retained context.
-Strong method-supported, quantifiable peaks remain counted despite RT drift.
+break ties within the supported evidence ordering. Expected RT and paired-ISTD shifts guide identity, not acquisition. Exact-mass
+MS1 candidate coverage spans the sample acquisition interval, including targets
+without MS2. The complete scan population is read once per sample; each tag is
+parsed once by Discovery, with shared parent-MS1 verification and scan-event
+resolution within each target’s m/z population before candidate-local CID-NL
+assessment. Different recorded precursors from one scan remain available to
+their respective targets.
+For named Target identity, own CID-NL support requires a compatible recorded
+scan precursor or vendor monoisotopic reference. A parent-MS1 ion found by
+searching product + configured loss establishes mass/isolation compatibility,
+not which coisolated ion produced the fragment. Such inferred observations
+remain in the method evidence but cannot independently select or identify a
+Target peak. The shared relation owner applies this reference requirement
+consistently during selection and formal support binding; Discovery retains
+its independent-mass candidate scope. Paired-ISTD and accepted Backfill identity
+remain governed by their existing owners, not a new RT gate.
+
+Strong recorded-precursor-supported, quantifiable peaks remain counted despite RT drift.
+When such a peak disagrees with the position of a counted paired ISTD, it retains
+its measurement and count but requires identity review; chemical support alone
+does not resolve that positional contradiction.
 RT-prior disagreement and legacy confidence labels alone do not create product
 review actions. Unresolved morphology or overlap concerns can require quality
 review independently of identity. Confidence and reason labels describe source
@@ -112,7 +130,7 @@ separate.
 An isotope-labelled ISTD co-elutes with its analyte, so a counted ISTD confers
 chemical identity on the analyte's MS1 peak at the expected position. The
 analyte's own neutral loss is then not required, whether its MS2 was missing or
-was acquired without the configured loss. `paired_istd_identity_samples` in the
+was acquired without the configured loss. `paired_istd_positions` in the
 Targeted projection owner applies the rule, and the publication boundary
 composes it once every Target of the batch has rendered. All of these must hold:
 
@@ -124,21 +142,33 @@ composes it once every Target of the batch has rendered. All of these must hold:
    recovered peak, whose first capture may describe another peak). It has no
    conflict or exclusion, and its only not-counted reasons are missing direct
    NL/MS2.
-3. Its apex RT minus the ISTD's agrees with this batch's confirmed offset: the
-   median over samples where both are counted, within the larger of 12 s and
-   the p90 of those samples' residuals. Fewer than two confirmed samples give no
-   offset, and the rule does not apply.
+3. Its apex RT minus the ISTD's agrees with the paired position. When at least
+   two confirmed pairs agree with the configured expected-RT offset within
+   12 s, their median offset and the larger of 12 s and the p90 residual refine
+   that position and tolerance. Contradictory counted peaks cannot calibrate
+   away their own mismatch. Otherwise the counted ISTD plus the configured
+   analyte-minus-ISTD expected-RT offset is the reference, with a 12 s tolerance.
+   Batch confirmation count is not an identity gate: both cases use the same
+   current-sample ISTD, peak-quality and blocker requirements above.
 
 The result records `paired_istd_identity` among its support reasons, so it
 remains distinguishable from NL-confirmed detection. Morphology, overlap and
 other review reasons still flag it.
 
-The same position also rejects. When the paired ISTD is counted and the
-confirmed offset exists, an uncounted analyte peak outside that tolerance is
+The same position also rejects. When the paired ISTD is counted, an uncounted
+analyte peak outside that tolerance is
 another signal, not this analyte. Its RT, area and bounds are published as no
 value (`analyte_peak_off_paired_istd_position`), and the measured peak remains
 an `OFF_ISTD_POSITION` diagnostic event. `paired_istd_positions` returns both
-answers from one offset.
+answers from one position assessment. An out-of-position unconfirmed signal
+is ND, not a numeric Target result. Being inside the window is not sufficient
+by itself: the peak-quality and blocker requirements still apply.
+
+An already-counted analyte outside the same paired-position tolerance is not
+silently cleared or reselected. It retains its RT, area, bounds and count with
+`paired_istd_position_mismatch`, `detected_flagged`, and `review_required`.
+The workbook and Inspector expose the identity-review action. An uncounted or
+missing ISTD cannot impose this paired-position review.
 
 Cohort Backfill is a distinct, owner-bound recovery after direct reference
 observations are available. The [shared Backfill route](backfill.md#targeted-route)
@@ -172,34 +202,37 @@ those facts itself.
 - When identity selection chooses no component, the physical question retains
   the acquired context and full segment universe with no admissible selection;
   capture preserves the unavailable answer instead of selecting a broad tail.
-- If the selection window has no qualified physical candidate but contains a
-  clipped segment's apex, acquisition expands its context once by the configured
-  target-window width on each side, with a zero lower RT limit. Selection bounds
-  and reference RT stay unchanged. An existing qualified in-window candidate
-  keeps its original acquisition and quantitation.
+- Exact-mass MS1 acquisition covers the complete acquisition RT bounds. No
+  expected-RT window, DDA anchor crop, or reacquisition expands or truncates the
+  physical candidate population.
 
 ### Target identity and search scope
 
-- ISTD selection retains the complete configured RT window. A DDA NL anchor
-  remains a selection reference; a displaced or absent anchor does not exclude
-  an otherwise qualified ISTD MS1 component inside that window.
-- Among non-strict ISTD candidates in the same eligibility class, local chemical
-  support precedes the number of review reasons. Rolling-RT disagreement remains
-  reported review evidence; exclusion, ambiguity, and hard-quality classes keep
-  their precedence.
-- For no-NL inputs, the configured RT-window center participates in component
-  identity while the complete acquisition context remains available to the
-  shared physical owner. The supplied group reference is encoded in that
-  center; missing reference rows remain excluded by the input owner.
-- A credible paired ISTD transfers observed drift while preserving the
-  configured analyte/ISTD RT offset. Missing or untrusted pairs fall back to the
-  analyte reference and existing sample drift. No-NL selection does not use
-  learned RT-library priors.
-- Among strongly supported no-NL physical candidates without other identity
-  blockers, selection first prefers an interval containing the reference, then
-  the closest apex. Shape concerns remain evidence for the existing product
-  policy; identity selection does not alter counted detection or physical
-  bounds and area. Equal references for different target rows are permitted.
+- `expected_rt_min` is a method identity reference, not an acquisition window.
+- A credible current-sample paired ISTD transfers observed drift while preserving
+  the analyte/ISTD expected-RT offset. Missing or untrusted pairs use the analyte
+  reference plus available current-sample drift.
+- CID-NL evidence comes from the shared Discovery chemistry and mass policy for
+  the row's `dR`, `R`, or `MeR` tag. Recorded-precursor and product-plus-neutral-loss
+  inference retain their evidence basis and parent-MS1 support requirements.
+- Each retained physical candidate receives one completed target-scoped MS2
+  answer from the shared CID-NL relation. Ranking, qualitative support, trace
+  diagnostics and the published `NL Evidence` consume that answer. A neighbouring
+  precursor's matching loss cannot supply trace strength or a positive label.
+- Only positive, individually attributed CID-NL support receives chemical ranking
+  priority. No MS2 and MS2 without qualified support are both unconfirmed; neither
+  has an automatic identity advantage over the other. In their absence, the
+  ordinary physical and RT/ISTD evidence decides candidate localization.
+- Final selection, including Backfill, selects the corresponding retained MS2
+  answer as well as the peak. A no-write cell has no selected-peak positive NL
+  claim. Publication never falls back to a whole-run neutral-loss observation.
+- A target-matched recorded precursor with unqualified isolation or product
+  evidence is reported as `Target-peak CID-NL not supported`, with the diagnostic
+  cause retained. `No target-matched MS2 in peak` describes acquisition opportunity,
+  not chemical absence. Neither label suppresses an independently accepted ISTD
+  Backfill or paired-ISTD identity, nor creates direct CID-NL support.
+- Identity ranking does not alter physical bounds or area. Full-trace shared
+  baseline estimation can change quantitation relative to a cropped trace.
 - Product Targeted output is a workflow-owned projection from evidence and
   selection decisions.
 - Shared evidence providers inform Targeted product state. Shared evidence
@@ -288,26 +321,24 @@ those facts itself.
 ### Current-sample paired RT reference
 
 For an analyte with a credible paired ISTD in this sample, the RT reference is
-the analyte's configured window midpoint plus the observed ISTD shift from its
-own configured midpoint. NL and no-NL analytes use this same answer. The
+the analyte's expected RT plus the observed ISTD shift from its own expected RT. The
 configured difference is retained, including nonzero isotope-labelled offsets;
 pairing does not force identical apex times.
 
 Candidate scoring uses this same reference as its paired-ISTD RT prior and
-centers the configured-width RT scoring window on it. Agreement can support
+uses the complete acquisition span for the window-position evidence. Agreement can support
 ranking; shared sample drift does not incur an unshifted-window penalty.
 The RT prior is not an additional chemical identity or NL confirmation.
 
 Missing or untrusted paired ISTD observations do not become anchors. The
-fallback remains the configured analyte midpoint plus the available sample
+fallback remains the analyte expected RT plus the available sample
 drift. Neither fallback nor RT agreement establishes chemical identity. Humans
-still provide target identities, pairings and method-appropriate search windows;
+still provide target identities, pairings and method-appropriate expected RT;
 these cannot be assumed portable across batches or methods.
 
 The reference is computed directly in memory for the current sample. External
-RT-prior/pair calibration files are not analysis inputs. The retained rolling
-ISTD context assesses within-batch ISTD consistency; it is not a replacement for
-a missing current-sample paired observation or an independent identity oracle.
+RT-prior/pair calibration files and rolling ISTD prepasses are not analysis
+inputs. A different sample cannot replace missing current-sample identity support.
 
 ### Counting and product selection
 

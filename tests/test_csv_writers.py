@@ -498,9 +498,13 @@ def _selected_hypothesis_with_integration(
         (
             NLResult("NL_FAIL", 125.0, None, 1, 0, 1),
             True,
-            "Not observed within tolerance",
+            "Target-peak CID-NL not supported",
         ),
-        (NLResult("NO_MS2", None, None, 0, 0, 0), True, "No MS2 spectrum"),
+        (
+            NLResult("NO_MS2", None, None, 0, 0, 0),
+            True,
+            "No target-matched MS2 in peak",
+        ),
     ],
 )
 def test_long_csv_reports_configured_nl_observation(

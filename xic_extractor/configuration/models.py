@@ -24,9 +24,7 @@ class ExtractionConfig:
     peak_min_prominence_ratio: float
     ms2_precursor_tol_da: float
     nl_min_intensity_ratio: float
-    # Compatibility field for callers outside the canonical profile migration.
-    # Settings ingestion maps the legacy spelling one-way into the canonical
-    # field; covered Owner Backfill processing does not read this field.
+    # Internal morphology evidence budget, separate from shared signal processing.
     ms1_morphology_smoothing_window_points: int = 15
     resolver_mode: str = CANONICAL_RESOLVER_MODE
     resolver_chrom_threshold: float = 0.05
@@ -38,12 +36,9 @@ class ExtractionConfig:
     resolver_peak_duration_max: float = 2.0
     resolver_min_scans: int = 5
     count_no_ms2_as_detected: bool = False
-    nl_rt_anchor_search_margin_min: float = 2.0
+    # Internal Untargeted Owner Backfill acquisition budget; not a Targeted setting.
     nl_rt_anchor_half_window_min: float = 1.0
-    nl_fallback_half_window_min: float = 2.0
     injection_order_source: Path | None = None
-    rolling_window_size: int = 5
-    dirty_matrix_mode: bool = False
     baseline_integration_method: str = "asls"
     parallel_mode: str = "serial"
     parallel_workers: int = field(default_factory=default_parallel_workers)
@@ -77,6 +72,8 @@ class Target:
     is_istd: bool
     istd_pair: str
     sample_applicability: str = "all"
+    expected_rt_min: float | None = None
+    cid_nl_tag: str = ""
 
 
 class ConfigError(Exception):

@@ -22,6 +22,8 @@ DiagnosticIssue = Literal[
     "ISTD_CONFIDENCE",
     "TARGET_PAIR_RT_AUTO_RESELECTION_SKIPPED",
     "OFF_ISTD_POSITION",
+    "PAIRED_ISTD_POSITION_REVIEW",
+    "PAIRED_POSITION_SUPPORT_REJECTED",
 ]
 
 _TAILING_THRESHOLD: float = 2.0
@@ -77,16 +79,7 @@ def build_diagnostic_records(
             )
         )
 
-    nl_issue = _selected_or_window_nl_issue(result)
-    if nl_issue is not None:
-        records.append(
-            DiagnosticRecord(
-                sample_name=sample_name,
-                target_label=target.label,
-                issue=cast(DiagnosticIssue, nl_issue),
-                reason=_nl_reason(target, result, config),
-            )
-        )
+    records.extend(build_ms2_diagnostic_records(sample_name, target, result, config))
 
     if result.peak_result.status == "OK" and result.peak_result.peak is not None:
         peak = result.peak_result.peak
@@ -111,10 +104,31 @@ def build_diagnostic_records(
                 )
             )
 
+    return records
+
+
+def build_ms2_diagnostic_records(
+    sample_name: str,
+    target: Target,
+    result: ExtractionResultLike,
+    config: ExtractionConfig,
+) -> list[DiagnosticRecord]:
+    """Render the current selected peak's evidence, including after Backfill."""
+    records = []
+    issue = _selected_or_window_nl_issue(result)
+    if issue is not None:
+        records.append(
+            DiagnosticRecord(
+                sample_name=sample_name,
+                target_label=target.label,
+                issue=cast(DiagnosticIssue, issue),
+                reason=_nl_reason(target, result, config),
+            )
+        )
+    if result.reported_rt is not None:
         istd_confidence = _istd_confidence_diagnostic(sample_name, target, result)
         if istd_confidence is not None:
             records.append(istd_confidence)
-
     return records
 
 
@@ -233,8 +247,8 @@ def _candidate_ms2_reason(target: Target, evidence: CandidateMS2Evidence) -> str
     probe_info = _candidate_product_probe_info(evidence)
     return (
         f"selected candidate has {evidence.trigger_scan_count} "
-        f"candidate-aligned MS2 trigger scans; strict observed neutral loss "
-        f"{nl_da:g} Da not detected in any aligned scan; "
+        f"target-matched MS2 trigger scans; target-peak CID-NL support "
+        f"for {nl_da:g} Da was not established; "
         f"alignment={evidence.alignment_source}{probe_info}"
     )
 
@@ -295,14 +309,20 @@ def _istd_confidence_diagnostic(
 
     flags: list[str] = []
     confidence = "HIGH"
-    if result.nl is not None:
-        if result.nl.status == "NO_MS2":
+    evidence = result.candidate_ms2_evidence
+    status = (
+        evidence.nl_status
+        if evidence is not None
+        else (result.nl.status if result.nl is not None else None)
+    )
+    if status is not None:
+        if status == "NO_MS2":
             flags.append("NO_MS2")
             confidence = "MEDIUM"
-        elif result.nl.status == "NL_FAIL":
+        elif status == "NL_FAIL":
             flags.append("NL_FAIL")
             confidence = "LOW"
-        elif result.nl.status == "WARN":
+        elif status == "WARN":
             flags.append("NL_WARN")
             confidence = "MEDIUM"
 

@@ -8,6 +8,9 @@ from typing import Any
 
 from xic_extractor.configuration.execution_profile import load_execution_profile
 from xic_extractor.configuration.models import ConfigError, ExtractionConfig
+from xic_extractor.configuration.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+)
 from xic_extractor.discovery.blank_qualification import (
     extract_blank_background_library,
 )
@@ -27,10 +30,9 @@ from xic_extractor.discovery.tag_profiles import (
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.presets import PresetError, bind_cid_nl_recipe, load_preset
 from xic_extractor.raw_reader import RawReaderError, read_analysis_set
-from xic_extractor.sample_metadata import SampleMetadataError, load_sample_metadata
+from xic_extractor.sample_metadata import SampleMetadataError
 from xic_extractor.settings_schema import (
     ARBITRATED_RESOLVER_RETIRED_MESSAGE,
-    CANONICAL_SETTINGS_DEFAULTS,
     RESOLVER_MODES,
 )
 
@@ -458,7 +460,6 @@ def _peak_config(
     output_dir: Path,
     settings: DiscoverySettings,
 ) -> ExtractionConfig:
-    defaults = CANONICAL_SETTINGS_DEFAULTS
     return ExtractionConfig(
         data_dir=data_dir,
         dll_dir=dll_dir,
@@ -466,8 +467,8 @@ def _peak_config(
         diagnostics_csv=output_dir / "xic_diagnostics.csv",
         smooth_window=15,
         smooth_polyorder=3,
-        ms1_morphology_smoothing_window_points=int(
-            defaults["signal_processing_window_points"]
+        ms1_morphology_smoothing_window_points=(
+            DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points
         ),
         peak_rel_height=0.95,
         peak_min_prominence_ratio=0.10,
@@ -484,12 +485,11 @@ def _raw_paths_from_dir(
 ) -> tuple[Path, ...]:
     if raw_dir is None:
         return ()
-    metadata = (
-        load_sample_metadata(sample_metadata.resolve())
-        if sample_metadata is not None
-        else None
+    analysis_set = read_analysis_set(
+        raw_dir,
+        dll_dir,
+        sequence_source=sample_metadata.resolve() if sample_metadata else None,
     )
-    analysis_set = read_analysis_set(raw_dir, dll_dir, metadata)
     return tuple(sorted(analysis_set.raw_paths, key=lambda path: path.name.lower()))
 
 

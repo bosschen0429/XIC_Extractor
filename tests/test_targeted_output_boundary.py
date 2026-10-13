@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 from openpyxl import load_workbook
 
+from tests.raw_header_fakes import install_fake_raw_headers
 from tests.test_targeted_production_workflow import (
     production_case,
     with_method_universe,
@@ -47,6 +48,12 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import build_acquisition_source_identity
+
+
+@pytest.fixture(autouse=True)
+def _placeholder_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    # RAW files here are placeholders; order them by their file times.
+    install_fake_raw_headers(monkeypatch)
 
 
 def _commit_staged_output_in_process(
@@ -109,8 +116,6 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
         peak_min_prominence_ratio=0.01,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
-        nl_rt_anchor_half_window_min=0.5,
-        nl_fallback_half_window_min=0.5,
         count_no_ms2_as_detected=True,
     )
     target = Target(
@@ -119,7 +124,8 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
         rt_min=1.0,
         rt_max=2.0,
         ppm_tol=20.0,
-        neutral_loss_da=116.0,
+        neutral_loss_da=116.0474,
+        cid_nl_tag="dR",
         nl_ppm_warn=20.0,
         nl_ppm_max=40.0,
         is_istd=False,
@@ -129,6 +135,9 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
     class Raw:
         def __init__(self, scale: float) -> None:
             self.scale = scale
+
+        def acquisition_rt_bounds(self):
+            return 1.0, 2.0
 
         def extract_xic(self, _mz, rt_min, rt_max, _ppm):
             rt = np.linspace(rt_min, rt_max, 1201)
@@ -146,7 +155,7 @@ def test_formal_entry_retains_the_method_universe_and_publishes_its_decision(
                             scan_number=index,
                             rt=rt,
                             precursor_mz=250.0,
-                            masses=np.array([134.0 if with_nl else 135.0]),
+                            masses=np.array([133.9526 if with_nl else 135.0]),
                             intensities=np.array([500.0]),
                             base_peak=500.0,
                         ),
@@ -347,9 +356,7 @@ def test_workbook_only_delivery_embeds_method_settings(
     )
     workbook.close()
     assert metadata["signal_processing_method"] == config.signal_processing_method
-    assert (
-        metadata["nl_rt_anchor_half_window_min"] == config.nl_rt_anchor_half_window_min
-    )
+    assert "targeted_strategy" in metadata
     assert set(config.output_csv.parent.iterdir()) == {excel_path}
 
 
@@ -588,9 +595,9 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
             assert workbook_rows[sample_name][field] == float(expected_text)
         for row in (long_rows[sample_name], workbook_rows[sample_name]):
             assert row["NL Evidence"] == (
-                "Not observed within tolerance"
+                "Target-peak CID-NL not supported"
                 if nl_status == "NL_FAIL"
-                else "No MS2 spectrum"
+                else "No target-matched MS2 in peak"
             )
             assert row["Reason"].startswith("MS1 peak measured; review:")
             assert "Not counted" not in row["Reason"]
@@ -1707,8 +1714,6 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         peak_min_prominence_ratio=0.01,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
-        nl_rt_anchor_half_window_min=0.6,
-        nl_fallback_half_window_min=0.6,
     )
     analyte = Target(
         label="Analyte",
@@ -1716,7 +1721,8 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         rt_min=1.1,
         rt_max=1.4 if hint_window else 2.5,
         ppm_tol=20.0,
-        neutral_loss_da=116.0,
+        neutral_loss_da=116.0474,
+        cid_nl_tag="dR",
         nl_ppm_warn=20.0,
         nl_ppm_max=40.0,
         is_istd=istd_backfill,
@@ -1726,8 +1732,10 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         analyte,
         label="ISTD",
         mz=255.0,
-        rt_min=0.7,
-        rt_max=2.1,
+        # Legacy geometric targets use interval midpoints as their expected RT.
+        # Preserve the known 0.1 min analyte/ISTD offset in both hint variants.
+        rt_min=analyte.rt_min - 0.1,
+        rt_max=analyte.rt_max - 0.1,
         is_istd=True,
         istd_pair="",
     )
@@ -1735,6 +1743,9 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
     class Raw:
         def __init__(self, name):
             self.name = name
+
+        def acquisition_rt_bounds(self):
+            return 0.7, 2.5
 
         def extract_xic(self, mz, rt_min, rt_max, _ppm):
             rt = np.linspace(rt_min, rt_max, 1801)
@@ -1758,7 +1769,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
                             scan_number=index,
                             rt=rt,
                             precursor_mz=mz,
-                            masses=np.array([mz - 116.0]),
+                            masses=np.array([mz - 116.0474]),
                             intensities=np.array([500.0]),
                             base_peak=500.0,
                         ),
@@ -1929,6 +1940,160 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         assert ref["Counted Detection"] == "TRUE"
 
 
+def test_paired_position_offset_and_mandatory_review_reach_workbook_and_inspector(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from contextlib import nullcontext
+
+    from xic_extractor.configuration.models import ExtractionConfig
+    from xic_extractor.configuration.targets import parse_target_rows
+    from xic_extractor.extraction import pipeline, target_extraction
+    from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
+    from xic_inspector.sources.targeted_workbook import TargetedWorkbookSource
+
+    data = tmp_path / "raw"
+    data.mkdir()
+    for name in ("Near", "Far", "Spike"):
+        (data / f"{name}.raw").write_bytes(name.encode())
+    config = ExtractionConfig(
+        data_dir=data,
+        dll_dir=tmp_path,
+        output_csv=tmp_path / "result.csv",
+        diagnostics_csv=tmp_path / "diag.csv",
+        smooth_window=9,
+        smooth_polyorder=2,
+        peak_rel_height=0.02,
+        peak_min_prominence_ratio=0.01,
+        ms2_precursor_tol_da=0.5,
+        nl_min_intensity_ratio=0.01,
+    )
+    analyte, istd = parse_target_rows(
+        [
+            dict(
+                label="Analyte",
+                mz="250",
+                expected_rt_min="1.5",
+                cid_nl_tag="dR",
+                role="analyte",
+                istd_pair="ISTD",
+            ),
+            dict(
+                label="ISTD",
+                mz="255",
+                expected_rt_min="1.0",
+                cid_nl_tag="dR",
+                role="istd",
+                istd_pair="",
+            ),
+        ]
+    )
+
+    class Raw:
+        def __init__(self, name):
+            self.name = name
+
+        def acquisition_rt_bounds(self):
+            return 0.5, 2.5
+
+        def extract_xic(self, mz, rt_min, rt_max, _ppm):
+            rt = np.linspace(rt_min, rt_max, 2001)
+            center = 1.0 if mz == 255.0 else 1.5
+            signal = 10 + 2000 * np.exp(-(((rt - center) / 0.025) ** 2))
+            if self.name == "Spike" and mz == 250.0:
+                signal = np.zeros_like(rt)
+                signal[np.argmin(abs(rt - 1.5))] = 2000
+                signal += 1000 * np.exp(-(((rt - 2.1) / 0.025) ** 2))
+            if self.name == "Far" and mz == 250.0:
+                # A second, recorded-NL-supported peak wins selection over
+                # the unfragmented peak at the expected paired position.
+                signal += 4000 * np.exp(-(((rt - 2.1) / 0.025) ** 2))
+            return rt, signal
+
+        def iter_ms2_scans(self, rt_min, rt_max):
+            for index, mz in enumerate((255.0, 250.0), 1):
+                if mz == 250.0 and self.name in {"Near", "Spike"}:
+                    continue
+                rt = 1.0 if mz == 255.0 else 2.1
+                if rt_min <= rt <= rt_max:
+                    yield Ms2ScanEvent(
+                        scan=Ms2Scan(
+                            scan_number=index,
+                            rt=rt,
+                            precursor_mz=mz,
+                            masses=np.array([mz - 116.0474]),
+                            intensities=np.array([500.0]),
+                            base_peak=500.0,
+                        ),
+                        parse_error=None,
+                        scan_number=index,
+                    )
+
+    monkeypatch.setattr(pipeline, "preflight_raw_reader", lambda _path: [])
+    monkeypatch.setattr(
+        target_extraction,
+        "open_raw",
+        lambda path, *_a, **_k: nullcontext(Raw(path.stem)),
+    )
+    path = tmp_path / "paired.xlsx"
+    execution = TargetedApplicationService(pipeline.run_pipeline).execute_application(
+        build_targeted_application_request(
+            config,
+            [analyte, istd],
+            injection_order={"Near": 1, "Far": 2, "Spike": 3},
+            excel_output_path=path,
+        )
+    )
+    results = {
+        f.sample_name: f.results["Analyte"]
+        for f in execution.active_output.file_results
+    }
+    near, far = results["Near"], results["Far"]
+    assert far.reported_rt == pytest.approx(2.1, abs=0.005)
+    assert far.selected_cid_nl_supported
+    assert far.targeted_product_projection.counted_detection
+    assert far.targeted_product_projection.review_state == "review_required"
+    assert (
+        "paired_istd_position_mismatch"
+        in far.targeted_product_projection.review_reasons
+    )
+    assert near.reported_rt == pytest.approx(1.5, abs=0.005)
+    assert near.targeted_product_projection.counted_detection
+    assert "paired_istd_identity" in near.targeted_product_projection.support_reasons
+    assert far.reported_peak_area > near.reported_peak_area
+    workbook = load_workbook(path, read_only=True, data_only=True)
+    values = iter(workbook["XIC Results"].values)
+    headers = next(values)
+    rows = {
+        r["SampleName"]: r
+        for cells in values
+        if (r := dict(zip(headers, cells)))["Target"] == "Analyte"
+    }
+    workbook.close()
+    assert rows["Far"]["Counted Detection"] == "TRUE"
+    assert rows["Far"]["Review"] == "Check"
+    assert rows["Far"]["Review Reason"] == "峰偏離配對內標位置，需確認身分"
+    assert rows["Near"]["Review"] is None
+    assert rows["Spike"]["Counted Detection"] == "FALSE"
+    assert rows["Spike"]["Area"] == "ND"
+    assert "原始 scan 支撐不足" in rows["Spike"]["Review Reason"]
+    assert "insufficient_original_xic_support" in rows["Spike"]["Review Evidence"]
+    from xic_extractor.output.review_queue_model import _review_queue_rows
+
+    queue = _review_queue_rows(
+        _run_output_to_long_rows(execution.active_output, [analyte, istd]), []
+    )
+    assert any(row["Sample"] == "Far" and row["Target"] == "Analyte" for row in queue)
+    saved = {
+        r["SampleName"]: r
+        for r in TargetedWorkbookSource(path).records
+        if r["Target"] == "Analyte"
+    }
+    for sample in ("Near", "Far", "Spike"):
+        assert saved[sample]["Review"] == rows[sample]["Review"]
+        assert saved[sample]["Review Reason"] == rows[sample]["Review Reason"]
+
+
 def test_cli_and_workbench_route_through_acquisition_service_boundary() -> None:
     import scripts.run_extraction as cli_module
     import xic_workbench.targeted as workbench_module
@@ -1976,7 +2141,7 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
     from xic_extractor.extraction import pipeline, target_extraction
     from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent
 
-    mz, loss = 255.0, 116.0
+    mz, loss = 255.0, 116.0474
     # Steady drift along injection order spans more than the grouping RT limit.
     apex = {"S1": 1.0, "S2": 1.8, "S3": 2.6, "S4": 3.4, "S5": 4.2}
     data = tmp_path / "raw"
@@ -1994,8 +2159,6 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
         peak_min_prominence_ratio=0.01,
         ms2_precursor_tol_da=0.5,
         nl_min_intensity_ratio=0.01,
-        nl_rt_anchor_half_window_min=0.6,
-        nl_fallback_half_window_min=0.6,
     )
     istd = Target(
         label="ISTD",
@@ -2004,6 +2167,7 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
         rt_max=4.7,
         ppm_tol=20.0,
         neutral_loss_da=loss,
+        cid_nl_tag="dR",
         nl_ppm_warn=20.0,
         nl_ppm_max=40.0,
         is_istd=True,
@@ -2013,6 +2177,9 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
     class Raw:
         def __init__(self, name):
             self.name = name
+
+        def acquisition_rt_bounds(self):
+            return 0.5, 4.7
 
         def extract_xic(self, _mz, rt_min, rt_max, _ppm):
             rt = np.linspace(rt_min, rt_max, 2401)

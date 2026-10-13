@@ -13,6 +13,7 @@ PrecursorMzBasis = Literal[
 ]
 RECORDED_PRECURSOR_BASES = frozenset({"scan_precursor", "scan_monoisotopic"})
 IsolationMembership = Literal["inside_nominal", "outside_nominal", "unknown"]
+PrecursorReferenceRequirement = Literal["independent_mass", "recorded_precursor"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +53,18 @@ class PrecursorLossAssessment:
     @property
     def supports_nl(self) -> bool:
         return self.status == "compatible"
+
+    def supports_reference(self, requirement: PrecursorReferenceRequirement) -> bool:
+        """Mass compatibility does not identify a coisolated fragment's parent.
+
+        Discovery can retain independently measured parent-MS1 compatibility.
+        A named Target's own CID-NL identity requires a recorded precursor
+        reference, rather than an ion found by searching product + loss.
+        """
+        return self.supports_nl and (
+            requirement == "independent_mass"
+            or self.reference_source in RECORDED_PRECURSOR_BASES
+        )
 
 
 def assess_precursor_loss(

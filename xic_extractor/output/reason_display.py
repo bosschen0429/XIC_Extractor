@@ -10,6 +10,9 @@ _REASON_TEXT = {
     "role_aware_rt_support": "RT supported by reference/ISTD",
     "paired_istd_anchor_support": "RT agrees with paired ISTD",
     "paired_istd_identity": "Identity from the counted paired isotope ISTD",
+    "paired_istd_position_mismatch": (
+        "Peak disagrees with the counted paired ISTD position"
+    ),
     "cross_sample_backfill_localization": "Peak located by cross-sample Backfill",
     "paired_area_ratio_support": "Plausible area ratio to paired ISTD",
     "chrom_peak_segment_context": "Chromatographic peak-segment support",
@@ -85,8 +88,8 @@ def display_nl_evidence(token: str | None, *, configured: bool) -> str:
     return {
         "OK": "Observed",
         "WARN": "Observed with tolerance warning",
-        "NL_FAIL": "Not observed within tolerance",
-        "NO_MS2": "No MS2 spectrum",
+        "NL_FAIL": "Target-peak CID-NL not supported",
+        "NO_MS2": "No target-matched MS2 in peak",
         "ERROR": "Processing error",
     }.get(token or "", "Unavailable")
 

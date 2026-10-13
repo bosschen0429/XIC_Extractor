@@ -36,7 +36,7 @@ def _cfg() -> ExtractionConfig:
 
 def test_find_peak_and_area_without_scoring_context_unchanged() -> None:
     rt = np.linspace(0, 10, 501)
-    y = 100 * np.exp(-((rt - 5) / 0.2) ** 2) + 1
+    y = 100 * np.exp(-(((rt - 5) / 0.2) ** 2)) + 1
     result = find_peak_and_area(rt, y, _cfg())
     assert result.status == "OK"
     assert result.peak is not None
@@ -51,7 +51,7 @@ def test_find_peak_and_area_with_scoring_returns_same_best_for_clean_peak(
     resolver_mode: str,
 ) -> None:
     rt = np.linspace(0, 10, 501)
-    y = 100 * np.exp(-((rt - 5) / 0.2) ** 2) + 1
+    y = 100 * np.exp(-(((rt - 5) / 0.2) ** 2)) + 1
 
     def ctx_builder(candidate) -> ScoringContext:
         return ScoringContext(
@@ -66,7 +66,6 @@ def test_find_peak_and_area_with_scoring_returns_same_best_for_clean_peak(
             rt_prior_sigma=0.1,
             rt_min=0.0,
             rt_max=10.0,
-            dirty_matrix=False,
         )
 
     config = _cfg()
@@ -89,8 +88,8 @@ def test_find_peak_and_area_with_scoring_returns_same_best_for_clean_peak(
 
 def test_local_minimum_preferred_rt_selects_nearest_region() -> None:
     rt = np.linspace(8.7, 9.3, 601)
-    y = 950 * np.exp(-((rt - 8.93) / 0.035) ** 2)
-    y += 520 * np.exp(-((rt - 9.08) / 0.03) ** 2)
+    y = 950 * np.exp(-(((rt - 8.93) / 0.035) ** 2))
+    y += 520 * np.exp(-(((rt - 9.08) / 0.03) ** 2))
     y += 20.0
 
     config = _cfg()
@@ -134,8 +133,8 @@ def test_find_peak_and_area_rejects_retired_arbitrated_resolver() -> None:
 
 def test_local_minimum_relaxed_search_relaxes_region_filters_for_preferred_rt() -> None:
     rt = np.linspace(8.0, 10.0, 401)
-    y = 1000 * np.exp(-((rt - 8.48) / 0.04) ** 2)
-    y += 80 * np.exp(-((rt - 9.03) / 0.05) ** 2)
+    y = 1000 * np.exp(-(((rt - 8.48) / 0.04) ** 2))
+    y += 80 * np.exp(-(((rt - 9.03) / 0.05) ** 2))
     y += 5.0
 
     config = _cfg()
@@ -166,7 +165,7 @@ def test_local_minimum_relaxed_search_relaxes_region_filters_for_preferred_rt() 
 
 def test_relaxed_search_relaxes_duration_cap_for_broad_preferred_peak() -> None:
     rt = np.linspace(8.0, 10.0, 401)
-    y = 320000 * np.exp(-((rt - 9.0) / 0.30) ** 2)
+    y = 320000 * np.exp(-(((rt - 9.0) / 0.30) ** 2))
     y += 500.0
 
     config = _cfg()
@@ -199,7 +198,7 @@ def test_relaxed_search_relaxes_duration_cap_for_broad_preferred_peak() -> None:
 
 def test_local_minimum_detects_broad_peak_without_preferred_rt_relaxed_search() -> None:
     rt = np.linspace(8.0, 10.0, 401)
-    y = 320000 * np.exp(-((rt - 9.0) / 0.30) ** 2)
+    y = 320000 * np.exp(-(((rt - 9.0) / 0.30) ** 2))
     y += 500.0
 
     config = _cfg()
@@ -229,7 +228,7 @@ def test_local_minimum_detects_broad_peak_without_preferred_rt_relaxed_search() 
 
 def test_local_minimum_flagged_candidate_scores_lower_confidence() -> None:
     rt = np.linspace(8.0, 10.0, 401)
-    y = 320000 * np.exp(-((rt - 9.0) / 0.30) ** 2)
+    y = 320000 * np.exp(-(((rt - 9.0) / 0.30) ** 2))
     y += 500.0
 
     def ctx_builder(candidate) -> ScoringContext:
@@ -245,7 +244,6 @@ def test_local_minimum_flagged_candidate_scores_lower_confidence() -> None:
             rt_prior_sigma=0.1,
             rt_min=8.0,
             rt_max=10.0,
-            dirty_matrix=False,
         )
 
     config = _cfg()
@@ -275,8 +273,8 @@ def test_local_minimum_flagged_candidate_scores_lower_confidence() -> None:
 
 def test_recovery_path_preserves_scoring_metadata() -> None:
     rt = np.linspace(8.0, 10.0, 401)
-    y = 1000 * np.exp(-((rt - 8.48) / 0.04) ** 2)
-    y += 80 * np.exp(-((rt - 9.03) / 0.05) ** 2)
+    y = 1000 * np.exp(-(((rt - 8.48) / 0.04) ** 2))
+    y += 80 * np.exp(-(((rt - 9.03) / 0.05) ** 2))
 
     def ctx_builder(candidate) -> ScoringContext:
         return ScoringContext(
@@ -291,7 +289,6 @@ def test_recovery_path_preserves_scoring_metadata() -> None:
             rt_prior_sigma=0.02,
             rt_min=8.0,
             rt_max=10.0,
-            dirty_matrix=False,
         )
 
     result = find_peak_and_area(
@@ -313,8 +310,8 @@ def test_recovery_path_preserves_scoring_metadata() -> None:
 
 def test_scored_selection_honors_valid_preferred_rt_anchor() -> None:
     rt = np.linspace(9.6, 10.4, 401)
-    y = 300 * np.exp(-((rt - 10.00) / 0.03) ** 2)
-    y += 300 * np.exp(-((rt - 10.25) / 0.03) ** 2)
+    y = 300 * np.exp(-(((rt - 10.00) / 0.03) ** 2))
+    y += 300 * np.exp(-(((rt - 10.25) / 0.03) ** 2))
     y += 2.0
 
     def ctx_builder(candidate) -> ScoringContext:
@@ -330,7 +327,6 @@ def test_scored_selection_honors_valid_preferred_rt_anchor() -> None:
             rt_prior_sigma=1.0,
             rt_min=9.6,
             rt_max=10.4,
-            dirty_matrix=False,
         )
 
     result = find_peak_and_area(
@@ -349,8 +345,8 @@ def test_scored_selection_honors_valid_preferred_rt_anchor() -> None:
 
 def test_scored_selection_ignores_tiny_preferred_rt_anchor_peak() -> None:
     rt = np.linspace(9.6, 10.4, 401)
-    y = 20 * np.exp(-((rt - 10.00) / 0.03) ** 2)
-    y += 300 * np.exp(-((rt - 10.25) / 0.03) ** 2)
+    y = 20 * np.exp(-(((rt - 10.00) / 0.03) ** 2))
+    y += 300 * np.exp(-(((rt - 10.25) / 0.03) ** 2))
     y += 2.0
 
     def ctx_builder(candidate) -> ScoringContext:
@@ -366,7 +362,6 @@ def test_scored_selection_ignores_tiny_preferred_rt_anchor_peak() -> None:
             rt_prior_sigma=0.05,
             rt_min=9.6,
             rt_max=10.4,
-            dirty_matrix=False,
         )
 
     result = find_peak_and_area(
@@ -387,8 +382,8 @@ def test_typed_recovery_selection_ignores_legacy_confidence_monkeypatch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     rt = np.linspace(8.0, 10.0, 401)
-    y = 1000 * np.exp(-((rt - 8.48) / 0.04) ** 2)
-    y += 80 * np.exp(-((rt - 9.03) / 0.05) ** 2)
+    y = 1000 * np.exp(-(((rt - 8.48) / 0.04) ** 2))
+    y += 80 * np.exp(-(((rt - 9.03) / 0.05) ** 2))
 
     def ctx_builder(candidate) -> ScoringContext:
         return ScoringContext(
@@ -403,7 +398,6 @@ def test_typed_recovery_selection_ignores_legacy_confidence_monkeypatch(
             rt_prior_sigma=None,
             rt_min=8.0,
             rt_max=10.0,
-            dirty_matrix=False,
         )
 
     def _score_candidate(
@@ -450,8 +444,8 @@ def test_recovery_candidate_uses_single_scored_selection_pass(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     rt = np.linspace(8.0, 10.0, 401)
-    y = 1000 * np.exp(-((rt - 8.48) / 0.04) ** 2)
-    y += 80 * np.exp(-((rt - 9.03) / 0.05) ** 2)
+    y = 1000 * np.exp(-(((rt - 8.48) / 0.04) ** 2))
+    y += 80 * np.exp(-(((rt - 9.03) / 0.05) ** 2))
     calls: list[int] = []
 
     def ctx_builder(candidate) -> ScoringContext:
@@ -467,7 +461,6 @@ def test_recovery_candidate_uses_single_scored_selection_pass(
             rt_prior_sigma=None,
             rt_min=8.0,
             rt_max=10.0,
-            dirty_matrix=False,
         )
 
     def _select_once(scored, *, selection_rt=None, strict_selection_rt=False):
@@ -502,8 +495,8 @@ def test_find_peak_and_area_passes_context_prior_into_scoring(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     rt = np.linspace(9.6, 10.4, 401)
-    y = 300 * np.exp(-((rt - 10.00) / 0.03) ** 2)
-    y += 300 * np.exp(-((rt - 10.25) / 0.03) ** 2)
+    y = 300 * np.exp(-(((rt - 10.00) / 0.03) ** 2))
+    y += 300 * np.exp(-(((rt - 10.25) / 0.03) ** 2))
     y += 2.0
     observed_prior_rts: list[float | None] = []
 
@@ -520,7 +513,6 @@ def test_find_peak_and_area_passes_context_prior_into_scoring(
             rt_prior_sigma=0.05,
             rt_min=9.6,
             rt_max=10.4,
-            dirty_matrix=False,
         )
 
     def _score_candidate(
@@ -556,8 +548,8 @@ def test_find_peak_and_area_passes_context_prior_into_scoring(
 
 def test_find_peak_and_area_uses_paired_istd_anchor_in_typed_evidence() -> None:
     rt = np.linspace(9.8, 11.6, 901)
-    y = 80 * np.exp(-((rt - 10.20) / 0.03) ** 2)
-    y += 1000 * np.exp(-((rt - 11.25) / 0.04) ** 2)
+    y = 80 * np.exp(-(((rt - 10.20) / 0.03) ** 2))
+    y += 1000 * np.exp(-(((rt - 11.25) / 0.04) ** 2))
     y += 2.0
 
     def ctx_builder(candidate) -> ScoringContext:
@@ -573,7 +565,6 @@ def test_find_peak_and_area_uses_paired_istd_anchor_in_typed_evidence() -> None:
             rt_prior_sigma=None,
             rt_min=9.8,
             rt_max=11.6,
-            dirty_matrix=False,
             ms2_trace_strength="weak",
             trigger_scan_count=1,
             strict_nl_scan_count=0,

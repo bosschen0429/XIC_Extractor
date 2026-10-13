@@ -33,7 +33,7 @@ from xic_extractor.presets import (
     load_preset,
 )
 from xic_extractor.processing_identity import fingerprint_file_content
-from xic_extractor.raw_reader import preflight_raw_reader
+from xic_extractor.raw_reader import preflight_raw_reader, read_analysis_set
 from xic_extractor.sample_metadata import SampleMetadata, load_sample_metadata
 from xic_extractor.untargeted_execution.input_planning import (
     is_pure_single_provider_cid_nl,
@@ -355,6 +355,15 @@ def _resolve_inputs(args: argparse.Namespace) -> _OperatorInputs:
         if extra:
             details.append(f"RAW without metadata: {', '.join(sorted(extra))}")
         raise ValueError("; ".join(details))
+
+    # The metadata file selects the run; names and order come from the RAW owner.
+    owner_rows = {
+        row.raw_stem.casefold(): row
+        for row in read_analysis_set(
+            raw_dir, dll_dir, sequence_source=sample_metadata_path
+        ).sample_metadata
+    }
+    metadata = tuple(owner_rows[row.raw_stem.casefold()] for row in metadata)
 
     preset = load_preset(args.preset)
     recipe = bind_cid_nl_recipe(

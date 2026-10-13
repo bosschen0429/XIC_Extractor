@@ -49,6 +49,11 @@ class PreparedTargetedConfig:
             self._workspace.cleanup()
 
 
+def default_output_dir(config_dir: Path) -> Path:
+    """Run artifacts go beside the config folder unless a caller chooses."""
+    return Path(config_dir).parent / "output"
+
+
 def prepare_targeted_config(
     config_dir: Path,
     *,
@@ -93,7 +98,7 @@ def prepare_targeted_config(
         else _config_input_path(config_dir, "targets").read_bytes()
     )
     output_dir = (
-        Path(output_dir) if output_dir is not None else config_dir.parent / "output"
+        Path(output_dir) if output_dir is not None else default_output_dir(config_dir)
     ).resolve()
     workspace = TemporaryDirectory(prefix="xic-targeted-inputs-")
     receipt_dir = Path(workspace.name)
@@ -160,7 +165,7 @@ def load_config(
         LOGGER.warning(warning)
 
     output_dir = (
-        Path(output_dir) if output_dir is not None else config_dir.parent / "output"
+        Path(output_dir) if output_dir is not None else default_output_dir(config_dir)
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from xic_extractor.configuration.csv_io import (
+    LEGACY_TARGET_FIELDS,
     OPTIONAL_TARGET_METADATA_FIELDS,
     TARGET_FIELDS,
     _read_target_rows,
@@ -11,7 +12,6 @@ from xic_extractor.configuration.csv_io import (
 from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.parsing import (
     _config_error,
-    _parse_bool,
     _parse_float,
 )
 
@@ -68,6 +68,14 @@ def _validate_target_relationships(path: Path, targets: list[Target]) -> None:
                 "is_istd=true targets must not set istd_pair",
             )
         if not target.istd_pair:
+            if not target.is_istd and target.expected_rt_min is not None:
+                raise _config_error(
+                    path,
+                    row_number,
+                    "istd_pair",
+                    "",
+                    "analyte requires an ISTD relationship",
+                )
             continue
         pair = by_label.get(target.istd_pair)
         if pair is None or not pair.is_istd:
@@ -81,6 +89,17 @@ def _validate_target_relationships(path: Path, targets: list[Target]) -> None:
 
 
 def _parse_target_row(path: Path, row_number: int, row: dict[str, str]) -> Target:
+    from xic_extractor.configuration.targeted_strategy import targeted_tag_profile
+
+    retired = sorted(set(row) & set(LEGACY_TARGET_FIELDS))
+    if retired:
+        raise _config_error(
+            path,
+            row_number,
+            retired[0],
+            row[retired[0]],
+            "unsupported target schema; use expected_rt_min, cid_nl_tag and role",
+        )
     values = {
         field: str(row.get(field, "")).strip()
         for field in (*TARGET_FIELDS, *OPTIONAL_TARGET_METADATA_FIELDS)
@@ -88,43 +107,42 @@ def _parse_target_row(path: Path, row_number: int, row: dict[str, str]) -> Targe
     label = values["label"]
     if not label:
         raise _config_error(path, row_number, "label", label, "must not be empty")
-
     mz = _parse_float(path, row_number, "mz", values["mz"])
-    rt_min = _parse_float(path, row_number, "rt_min", values["rt_min"])
-    rt_max = _parse_float(path, row_number, "rt_max", values["rt_max"])
-    ppm_tol = _parse_float(path, row_number, "ppm_tol", values["ppm_tol"])
-    is_istd = _parse_bool(path, row_number, "is_istd", values["is_istd"] or "false")
-
-    if mz <= 0:
-        raise _config_error(path, row_number, "mz", values["mz"], "must be > 0")
-    if ppm_tol <= 0:
-        raise _config_error(
-            path, row_number, "ppm_tol", values["ppm_tol"], "must be > 0"
-        )
-    if rt_min < 0 or rt_max < 0 or rt_min >= rt_max:
+    expected_rt = _parse_float(
+        path, row_number, "expected_rt_min", values["expected_rt_min"]
+    )
+    if mz <= 0 or expected_rt < 0:
         raise _config_error(
             path,
             row_number,
-            "rt_min",
-            values["rt_min"],
-            "must be non-negative and < rt_max",
+            "mz/expected_rt_min",
+            "",
+            "m/z must be positive and expected RT non-negative",
         )
-
-    neutral_loss_da, nl_ppm_warn, nl_ppm_max = _parse_neutral_loss(
-        path, row_number, values, mz
-    )
-
+    if values["role"] not in {"analyte", "istd"}:
+        raise _config_error(
+            path, row_number, "role", values["role"], "must be analyte or istd"
+        )
+    policy = targeted_tag_profile(values["cid_nl_tag"])
+    loss = policy.neutral_loss_profiles[0].neutral_loss_da
+    if loss >= mz:
+        raise _config_error(
+            path, row_number, "mz", values["mz"], "must exceed the selected CID-NL mass"
+        )
+    # Existing in-memory consumers retain a center pair, not a search window.
     return Target(
         label=label,
         mz=mz,
-        rt_min=rt_min,
-        rt_max=rt_max,
-        ppm_tol=ppm_tol,
-        neutral_loss_da=neutral_loss_da,
-        nl_ppm_warn=nl_ppm_warn,
-        nl_ppm_max=nl_ppm_max,
-        is_istd=is_istd,
+        rt_min=expected_rt,
+        rt_max=expected_rt,
+        ppm_tol=policy.precursor_mz_tolerance_ppm,
+        neutral_loss_da=loss,
+        nl_ppm_warn=policy.nl_tolerance_ppm,
+        nl_ppm_max=policy.nl_tolerance_ppm,
+        is_istd=values["role"] == "istd",
         istd_pair=values["istd_pair"],
+        expected_rt_min=expected_rt,
+        cid_nl_tag=values["cid_nl_tag"],
         sample_applicability=_parse_target_metadata_enum(
             path,
             row_number,
@@ -134,53 +152,6 @@ def _parse_target_row(path: Path, row_number: int, row: dict[str, str]) -> Targe
             default="all",
         ),
     )
-
-
-def _parse_neutral_loss(
-    path: Path, row_number: int, values: dict[str, str], mz: float
-) -> tuple[float | None, float | None, float | None]:
-    if values["neutral_loss_da"] == "":
-        if values["nl_ppm_warn"] or values["nl_ppm_max"]:
-            LOGGER.warning(
-                "%s row %s has NL thresholds without neutral_loss_da; "
-                "thresholds ignored",
-                path,
-                row_number,
-            )
-        return None, None, None
-
-    neutral_loss_da = _parse_float(
-        path, row_number, "neutral_loss_da", values["neutral_loss_da"]
-    )
-    nl_ppm_warn = _parse_float(path, row_number, "nl_ppm_warn", values["nl_ppm_warn"])
-    nl_ppm_max = _parse_float(path, row_number, "nl_ppm_max", values["nl_ppm_max"])
-
-    if neutral_loss_da <= 0 or neutral_loss_da >= mz:
-        raise _config_error(
-            path,
-            row_number,
-            "neutral_loss_da",
-            values["neutral_loss_da"],
-            "must be > 0 and < mz",
-        )
-    if nl_ppm_warn <= 0:
-        raise _config_error(
-            path, row_number, "nl_ppm_warn", values["nl_ppm_warn"], "must be > 0"
-        )
-    if nl_ppm_max <= 0:
-        raise _config_error(
-            path, row_number, "nl_ppm_max", values["nl_ppm_max"], "must be > 0"
-        )
-    if nl_ppm_warn > nl_ppm_max:
-        raise _config_error(
-            path,
-            row_number,
-            "nl_ppm_warn",
-            values["nl_ppm_warn"],
-            "must be <= nl_ppm_max",
-        )
-
-    return neutral_loss_da, nl_ppm_warn, nl_ppm_max
 
 
 def _parse_target_metadata_enum(

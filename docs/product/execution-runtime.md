@@ -42,6 +42,11 @@ the profile supplies the CPU-count-minus-one default (at least one). An explicit
 CLI override takes precedence for that invocation; it does not rewrite saved
 settings. Scientific presets do not carry machine resource settings.
 
+Targeted accepts a blank or positive-integer `parallel_workers` and uses this
+same execution-profile owner. Its backend remains `process`; the retired
+`parallel_mode` key must be removed from legacy Targeted settings. Worker
+configuration does not reopen retired scientific overrides.
+
 Alignment defaults to four workers in the same profile. Its explicit worker
 override remains available, including one for serial execution. Discovery
 bounds its active workers by sample count; that cap is scheduling, not another

@@ -14,6 +14,10 @@ from xic_extractor.evidence_artifacts import (
 )
 from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.peak_detection.cid_nl_evidence import ACQUISITION_MODE
+from xic_extractor.precursor_evidence import (
+    PrecursorLossAssessment,
+    PrecursorReferenceRequirement,
+)
 
 SCHEMA_VERSION = "dda_cid_nl_peak_support"
 ARTIFACT_SEMANTIC_ROLE = "dda_cid_nl_peak_support"
@@ -46,8 +50,16 @@ class DdaCidNlPeakSupportPolicy:
 
     precursor_tolerance_da: float
     neutral_loss_tolerance_ppm: float
+    precursor_reference_requirement: PrecursorReferenceRequirement = "independent_mass"
 
     def __post_init__(self) -> None:
+        if self.precursor_reference_requirement not in {
+            "independent_mass",
+            "recorded_precursor",
+        }:
+            raise DdaCidNlPeakSupportContractError(
+                "invalid precursor reference requirement"
+            )
         precursor_tolerance = _finite_float(
             self.precursor_tolerance_da,
             field="precursor_tolerance_da",
@@ -70,6 +82,9 @@ class DdaCidNlPeakSupportPolicy:
             "neutral_loss_tolerance_ppm",
             neutral_loss_tolerance,
         )
+
+    def accepts_precursor(self, assessment: PrecursorLossAssessment) -> bool:
+        return assessment.supports_reference(self.precursor_reference_requirement)
 
 
 @dataclass(frozen=True, slots=True)

@@ -28,12 +28,14 @@ from xic_extractor.configuration.execution_profile import (
     UntargetedExecutionPolicy,
 )
 from xic_extractor.configuration.models import ExtractionConfig
+from xic_extractor.configuration.signal_processing_profile import (
+    DEFAULT_SIGNAL_PROCESSING_PROFILE,
+)
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.pipeline import run_discovery_batch
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.sample_metadata import SampleMetadata
-from xic_extractor.settings_schema import CANONICAL_SETTINGS_DEFAULTS
 from xic_extractor.untargeted_execution.input_planning import (
     is_pure_single_provider_cid_nl,
 )
@@ -177,7 +179,6 @@ def _peak_config(
     output_dir: Path,
     settings: DiscoverySettings,
 ) -> ExtractionConfig:
-    defaults = CANONICAL_SETTINGS_DEFAULTS
     return ExtractionConfig(
         data_dir=raw_dir,
         dll_dir=dll_dir,
@@ -185,9 +186,7 @@ def _peak_config(
         diagnostics_csv=output_dir / "unused_xic_diagnostics.csv",
         smooth_window=15,
         smooth_polyorder=3,
-        ms1_morphology_smoothing_window_points=int(
-            defaults["signal_processing_window_points"]
-        ),
+        ms1_morphology_smoothing_window_points=DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points,
         peak_rel_height=0.95,
         peak_min_prominence_ratio=0.10,
         ms2_precursor_tol_da=settings.ms2_precursor_tol_da,

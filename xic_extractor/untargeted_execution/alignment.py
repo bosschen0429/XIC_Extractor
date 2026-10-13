@@ -279,29 +279,24 @@ def prepare_untargeted_alignment_inputs(
     if sample_metadata is not None:
         retained_sample_metadata = sample_metadata
     else:
-        try:
-            from xic_extractor.raw_reader import (
-                derive_sample_metadata_from_raw_files,
-            )
+        from xic_extractor.raw_reader import read_analysis_set
 
-            retained_sample_metadata = derive_sample_metadata_from_raw_files(
-                ordered_raw_paths,
-                dll_dir=dll_dir,
-                batch_id=raw_dir.resolve().name,
+        by_path = {
+            path.resolve(): entry.metadata
+            for entry in read_analysis_set(raw_dir, dll_dir).entries
+            for path in entry.copy_paths
+        }
+        missing_paths = [
+            path for path in ordered_raw_paths if path.resolve() not in by_path
+        ]
+        if missing_paths:
+            raise ValueError(
+                "RAW analysis set has no injection for: "
+                + ", ".join(map(str, missing_paths))
             )
-        except Exception:
-            retained_sample_metadata = tuple(
-                SampleMetadata(
-                    sample_name=sample_stem,
-                    raw_stem=sample_stem,
-                    injection_order=index,
-                    sample_role="study_sample",
-                )
-                for index, sample_stem in enumerate(
-                    discovery_batch.sample_order,
-                    start=1,
-                )
-            )
+        retained_sample_metadata = tuple(
+            by_path[path.resolve()] for path in ordered_raw_paths
+        )
     recorder = timing_recorder or TimingRecorder.disabled("alignment")
     output_dir.mkdir(parents=True, exist_ok=True)
     evidence_store = (
@@ -711,6 +706,8 @@ def _coarse_runtime_telemetry(
         ),
         unavailable_reason=unavailable_reason,
     )
+
+
 __all__ = [
     "complete_untargeted_alignment",
 ]

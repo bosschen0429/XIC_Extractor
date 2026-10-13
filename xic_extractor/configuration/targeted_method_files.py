@@ -19,13 +19,13 @@ from xic_extractor.configuration.csv_io import (
 )
 from xic_extractor.configuration.models import ConfigError, Target
 from xic_extractor.configuration.settings import (
-    fill_setting_defaults,
     resolve_settings,
 )
 from xic_extractor.configuration.targets import parse_target_rows
 from xic_extractor.settings_schema import (
     CANONICAL_SETTINGS_DEFAULTS,
     METHOD_KEYS,
+    TARGETED_STRATEGY,
 )
 
 _FILES = frozenset({"settings.csv", "targets.csv"})
@@ -44,19 +44,17 @@ def create_targeted_method(
     settings: Mapping[str, str], target_rows: Sequence[Mapping[str, str]]
 ) -> TargetedMethod:
     """Admit an editable method without reading files."""
-    normalized, _warnings = fill_setting_defaults(dict(settings))
-    unknown = sorted(set(normalized) - CANONICAL_SETTINGS_DEFAULTS.keys())
-    if unknown:
-        raise ConfigError(f"方法包含尚未支援的設定：{', '.join(unknown)}；原設定保留。")
-    # Batch and machine settings are not method values and must not affect admission.
-    values, _parsed, _warnings = resolve_settings(
-        {key: normalized[key] for key in METHOD_KEYS}
+    unknown = sorted(
+        set(settings) - set(CANONICAL_SETTINGS_DEFAULTS) - set(METHOD_KEYS)
     )
+    if unknown:
+        raise ConfigError("Retired or unknown method settings: " + ", ".join(unknown))
+    strategy = settings.get("strategy", TARGETED_STRATEGY)
+    if strategy != TARGETED_STRATEGY:
+        raise ConfigError(f"Unsupported Targeted strategy: {strategy}")
     rows = tuple(MappingProxyType(dict(row)) for row in target_rows)
     targets = parse_target_rows(rows)
-    return TargetedMethod(
-        MappingProxyType({key: values[key] for key in METHOD_KEYS}), targets, rows
-    )
+    return TargetedMethod(MappingProxyType({"strategy": strategy}), targets, rows)
 
 
 def apply_targeted_method(
@@ -65,14 +63,10 @@ def apply_targeted_method(
     *,
     overrides: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
-    """Replace all method intent while retaining this batch and local configuration.
-
-    Explicit overrides are applied after method selection.
-    """
-    values, _warnings = fill_setting_defaults(dict(settings))
-    values.update(method.settings)
-    values.update(overrides or {})
-    return values
+    """Bind the admitted strategy while retaining batch and machine inputs."""
+    if method.settings.get("strategy") != TARGETED_STRATEGY:
+        raise ConfigError("Unsupported Targeted strategy")
+    return resolve_settings(dict(settings), dict(overrides or {}))[0]
 
 
 def load_targeted_method(directory: Path) -> TargetedMethod:

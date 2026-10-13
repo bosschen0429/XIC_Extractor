@@ -100,6 +100,193 @@ def _payload(html):
     )
 
 
+def install_targeted_raws(
+    monkeypatch, raw_dir, scales, *, pair_scale=1.0, impulse_samples=()
+):
+    from contextlib import contextmanager
+
+    import numpy as np
+
+    from xic_workbench import targeted_curves
+
+    raw_dir.mkdir(exist_ok=True)
+    for sample in scales:
+        (raw_dir / f"{sample}.raw").write_bytes(sample.encode())
+    reads = []
+
+    class Raw:
+        def __init__(self, name):
+            self.name = name
+
+        def acquisition_rt_bounds(self):
+            return 0.0, 12.0
+
+        def extract_xic(self, mz, lower, upper, ppm):
+            reads.append((self.name, mz, lower, upper, ppm))
+            rt = np.linspace(lower, upper, 1201)
+            scale = scales[self.name] * (pair_scale if mz > 260 else 1.0)
+            if mz < 260 and self.name in impulse_samples:
+                intensity = np.zeros_like(rt)
+                intensity[np.argmin(abs(rt - 9.0))] = scale
+                return rt, intensity
+            return rt, scale * np.exp(-(((rt - 9.0) / 0.1) ** 2))
+
+    @contextmanager
+    def open_raw(path, dll_dir, **kwargs):
+        yield Raw(path.stem)
+
+    monkeypatch.setattr(targeted_curves, "open_raw", open_raw)
+    return reads
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_targeted_xic_reads_only_selected_raw_and_includes_pair_without_writes(
+    workbook,
+    tmp_path,
+    monkeypatch,
+    nested,
+):
+    from xic_inspector.sources.curve_bundle import read_curve_bundle
+    from xic_workbench import targeted_curves
+
+    before = workbook.read_bytes()
+    raw_dir = tmp_path / "raw"
+    reads = install_targeted_raws(
+        monkeypatch, raw_dir, {"Sample A": 100, "Sample B": 300}
+    )
+    if nested:
+        for sample in ("Sample A", "Sample B"):
+            batch = raw_dir / sample / "batch"
+            batch.mkdir(parents=True)
+            (raw_dir / f"{sample}.raw").rename(batch / f"{sample}.RAW")
+    output = tmp_path / "curves.json"
+    receipt = targeted_curves.export_targeted_curves(
+        workbook,
+        output,
+        raw_dir=raw_dir,
+        dll_dir=tmp_path,
+        target_id="Analyte",
+        sample_ids=("Sample A", "Sample B"),
+    )
+    bundle = read_curve_bundle(output)
+    traces = bundle.transitions[0].traces
+    assert len(traces) == 4
+    assert [(t.sample_id, t.quality_flags["target_label"]) for t in traces] == [
+        ("Sample A", "Analyte"),
+        ("Sample A", "ISTD"),
+        ("Sample B", "Analyte"),
+        ("Sample B", "ISTD"),
+    ]
+    assert all(read[2:4] == (0.0, 12.0) for read in reads)
+    assert max(traces[2].raw.intensity) == pytest.approx(
+        3 * max(traces[0].raw.intensity)
+    )
+    assert traces[0].peak_bounds is None  # ND is still inspectable.
+    assert traces[2].peak_bounds.apex == 9.1
+    assert receipt["source_binding_basis"] == "workbook_sample_name_unverified"
+    assert not receipt["original_acquisition_verified"]
+    assert workbook.read_bytes() == before
+
+
+def test_targeted_http_loads_nd_sample_curves_without_changing_workbook(
+    workbook,
+    tmp_path,
+    monkeypatch,
+):
+    import time
+
+    raw_dir = tmp_path / "raw"
+    reads = install_targeted_raws(monkeypatch, raw_dir, {"Sample A": 100})
+    batch = raw_dir / "batch"
+    batch.mkdir()
+    (raw_dir / "Sample A.raw").rename(batch / "Sample A.raw")
+    before = workbook.read_bytes()
+    with _client(ReviewWorkspace()) as request:
+        _, page, _ = request("/api/open", {"source": str(workbook)})
+        item = next(item for item in page["items"] if item["title"] == "Analyte")
+        assert item["observed_sample_ids"] == []
+        assert item["curve_sample_ids"] == ["Sample A", "Sample B"]
+        status, job, _ = request(
+            "/api/curves",
+            {
+                "item_id": item["id"],
+                "sample_ids": ["Sample A"],
+                "raw_dir": str(raw_dir),
+                "dll_dir": str(tmp_path),
+            },
+        )
+        assert status == 202
+        deadline = time.monotonic() + 10
+        while job["status"] == "running" and time.monotonic() < deadline:
+            time.sleep(0.02)
+            _, job, _ = request(f"/api/jobs/{job['id']}")
+        assert job["status"] == "succeeded", job
+        _, html, _ = request(f"/reports/{job['view_id']}.html")
+        curves = _payload(html)["items"][0]["curves"]
+        assert {c["quality_flags"]["target_label"] for c in curves} == {
+            "Analyte",
+            "ISTD",
+        }
+        assert {c["sample_id"] for c in curves} == {"Sample A"}
+    assert len(reads) == 2
+    assert workbook.read_bytes() == before
+
+
+def test_targeted_curve_rejects_ambiguous_raw_before_acquisition(
+    workbook, tmp_path, monkeypatch
+):
+    from xic_extractor.diagnostics.alignment_explanation import ExplanationError
+    from xic_workbench.targeted_curves import export_targeted_curves
+
+    raw_dir = tmp_path / "raw"
+    reads = install_targeted_raws(
+        monkeypatch, raw_dir, {"Sample A": 100, "Sample B": 300}
+    )
+    batch = raw_dir / "other-batch"
+    batch.mkdir()
+    (batch / "Sample A.RAW").write_bytes(b"different injection with the same stem")
+    before = workbook.read_bytes()
+    output = tmp_path / "curves.json"
+    with pytest.raises(ExplanationError, match="Sample A.*多個 RAW"):
+        export_targeted_curves(
+            workbook,
+            output,
+            raw_dir=raw_dir,
+            dll_dir=tmp_path,
+            target_id="Analyte",
+            sample_ids=("Sample B", "Sample A"),
+        )
+    assert not reads
+    assert not output.exists()
+    assert workbook.read_bytes() == before
+
+
+@pytest.mark.parametrize("failure", ["missing_raw", "cancelled", "unknown_sample"])
+def test_targeted_curve_failure_does_not_publish_or_modify_results(
+    workbook,
+    tmp_path,
+    failure,
+):
+    from xic_extractor.diagnostics.alignment_explanation import ExplanationError
+    from xic_workbench.acquisition import CurveAcquisitionCancelled
+    from xic_workbench.targeted_curves import export_targeted_curves
+
+    before = workbook.read_bytes()
+    output = tmp_path / "curves.json"
+    with pytest.raises((ExplanationError, CurveAcquisitionCancelled)):
+        export_targeted_curves(
+            workbook,
+            output,
+            target_id="Analyte",
+            raw_dir=tmp_path,
+            dll_dir=tmp_path,
+            sample_ids=("Unknown" if failure == "unknown_sample" else "Sample A",),
+            is_cancelled=lambda: failure == "cancelled",
+        )
+    assert not output.exists()
+    assert workbook.read_bytes() == before
+
+
 def test_targeted_http_review_preserves_values_scope_and_source(workbook):
     before = hashlib.sha256(workbook.read_bytes()).hexdigest()
     files = set(workbook.parent.iterdir())

@@ -1,9 +1,8 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import pytest
 
 from xic_extractor.extraction.targeted_product_projection import (
-    PairedIstdPositions,
     build_targeted_product_projection,
     paired_istd_positions,
 )
@@ -182,6 +181,40 @@ class _Result:
     targeted_product_projection: object
 
 
+@pytest.mark.parametrize("confirmed", [0, 1, 2])
+def test_pair_position_preserves_configured_offset_without_batch_gate(confirmed):
+    analyte = {"sample": _Result(25.5, _analyte(cid_nl=False))}
+    istd = {"sample": _Result(25.0, _istd())}
+    for index in range(confirmed):
+        analyte[str(index)] = _Result(25.5, _analyte(cid_nl=True))
+        istd[str(index)] = _Result(25.0, _istd())
+    positions = paired_istd_positions(analyte, istd, expected_offset_min=0.5)
+    assert positions.identified == {"sample"}
+    assert positions.off_position == {}
+
+
+@pytest.mark.parametrize("confirmed", [0, 2])
+def test_counted_off_position_peaks_require_review_not_self_calibration(confirmed):
+    analyte = {"far": _Result(30.0, _analyte(cid_nl=True))}
+    istd = {"far": _Result(25.0, _istd())}
+    for index in range(confirmed):
+        analyte[str(index)] = _Result(30.0, _analyte(cid_nl=True))
+        istd[str(index)] = _Result(25.0, _istd())
+    positions = paired_istd_positions(analyte, istd, expected_offset_min=0.5)
+    assert positions.review_required == {sample: 4.5 for sample in analyte}
+    assert positions.off_position == {}
+    assert positions.identified == set()
+
+
+@pytest.mark.parametrize("pair", [None, _istd(cid_nl=False)])
+def test_unconfirmed_or_missing_istd_cannot_force_position_review(pair):
+    analyte = {"sample": _Result(30.0, _analyte(cid_nl=True))}
+    istd = {} if pair is None else {"sample": _Result(25.0, pair)}
+    positions = paired_istd_positions(analyte, istd, expected_offset_min=0.5)
+    assert positions.review_required == {}
+    assert positions.off_position == {}
+
+
 def test_paired_istd_position_identifies_or_rejects_the_analyte_peak() -> None:
     confirmed = {"C1": 0.10, "C2": 0.12, "C3": 0.08}
     analyte = {s: _Result(9.0 + d, _analyte(cid_nl=True)) for s, d in confirmed.items()}
@@ -208,6 +241,43 @@ def test_paired_istd_position_identifies_or_rejects_the_analyte_peak() -> None:
     # analyte; without a counted ISTD there is no position to judge.
     assert positions.off_position.keys() == {"off_offset"}
     assert positions.off_position["off_offset"] == pytest.approx(0.40)
-    # One confirmed sample gives no offset to agree with.
+    # Sparse batch confirmation does not veto the current sample's valid pair.
     lone = {s: r for s, r in analyte.items() if s in {"C1", "near", "off_offset"}}
-    assert paired_istd_positions(lone, istd) == PairedIstdPositions()
+    lone_positions = paired_istd_positions(lone, istd)
+    assert lone_positions.identified == {"near"}
+    assert lone_positions.off_position == {"off_offset": pytest.approx(0.5)}
+
+
+@pytest.mark.parametrize("confirmed_count", [0, 1])
+def test_uncalibrated_pair_uses_sample_istd_position_and_peak_quality(
+    confirmed_count: int,
+) -> None:
+    analyte = {
+        "near": _Result(26.04, _analyte(cid_nl=False)),
+        "backfilled_istd": _Result(26.06, _analyte(cid_nl=False)),
+        "far": _Result(44.45, _analyte(cid_nl=False)),
+        "no_anchor": _Result(26.04, _analyte(cid_nl=False)),
+        "incoherent": _Result(26.04, _analyte(cid_nl=False, support=())),
+    }
+    istd = {
+        "near": _Result(26.0, _istd()),
+        "backfilled_istd": _Result(26.0, _istd(cid_nl=False, backfill=True)),
+        "far": _Result(25.0, _istd(cid_nl=False, backfill=True)),
+        "no_anchor": _Result(26.0, _istd(cid_nl=False)),
+        "incoherent": _Result(26.0, _istd()),
+    }
+    for field, reason in (
+        ("conflict_reasons", "unresolved_identity"),
+        ("exclusion_reasons", "sample_excluded"),
+        ("not_counted_reasons", "missing_positive_ms1_peak"),
+    ):
+        analyte[field] = _Result(
+            26.04, replace(_analyte(cid_nl=False), **{field: (reason,)})
+        )
+        istd[field] = _Result(26.0, _istd())
+    if confirmed_count:
+        analyte["confirmed"] = _Result(26.05, _analyte(cid_nl=True))
+        istd["confirmed"] = _Result(26.0, _istd())
+    positions = paired_istd_positions(analyte, istd)
+    assert positions.off_position == {"far": pytest.approx(19.45)}
+    assert positions.identified == {"near", "backfilled_istd"}

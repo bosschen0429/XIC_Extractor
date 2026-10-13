@@ -1,3 +1,4 @@
+import json
 from dataclasses import replace
 from pathlib import Path
 from xml.etree import ElementTree
@@ -52,7 +53,9 @@ def test_workbook_filters_belong_to_tables_not_overlapping_worksheet_ranges(tmp_
                 assert table_filter is not None
                 assert table_filter.attrib["ref"] == table.attrib["ref"]
     book = load_workbook(path)
-    assert str(book["Run Metadata"].print_area) == "'Run Metadata'!$A$1:$C$19"
+    assert str(book["Run Metadata"].print_area) == (
+        f"'Run Metadata'!$A$1:$C${book['Run Metadata'].max_row}"
+    )
     book.close()
 
 
@@ -181,9 +184,18 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
         "config_hash",
         "app_version",
         "generated_at",
+        "targeted_strategy",
         "signal_processing_method",
         "signal_processing_window_points",
     } <= metadata_keys
+    metadata_values = dict(
+        ws_metadata.iter_rows(min_row=2, max_col=2, values_only=True)
+    )
+    strategy = json.loads(metadata_values["targeted_strategy"])
+    assert (
+        strategy["uncalibrated_paired_istd_position"]
+        == "qualified_identity_and_coelution_rejection"
+    )
     wb.close()
     from xic_inspector.api import SelectionRequest, prepare_report
 
@@ -242,7 +254,7 @@ def test_workbook_explains_backfill_without_changing_saved_counts(tmp_path):
             "PeakStart": "8.5",
             "PeakEnd": "9.5",
             "NL": "NL_FAIL",
-            "NL Evidence": "Not observed within tolerance",
+            "NL Evidence": "Target-peak CID-NL not supported",
             "Confidence": "LOW",
             "Counted Detection": counted,
             "Product State": state,

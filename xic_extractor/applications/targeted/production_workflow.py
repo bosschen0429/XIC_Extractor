@@ -83,11 +83,14 @@ from xic_extractor.extraction.targeted_inputs import (
 from xic_extractor.extraction.targeted_istd_backfill import (
     resolve_targeted_istd_backfill,
 )
+from xic_extractor.extraction.targeted_peak_evidence import (
+    reselect_targeted_peak_evidence,
+)
 from xic_extractor.extraction.targeted_product_projection import (
     build_targeted_product_projection,
     paired_istd_positions,
 )
-from xic_extractor.output.messages import DiagnosticRecord
+from xic_extractor.output.messages import DiagnosticRecord, build_ms2_diagnostic_records
 from xic_extractor.output.targeted_product_model import (
     TargetedProductContext,
     TargetedProductProjection,
@@ -251,7 +254,7 @@ def execute_targeted_production_workflow(
         expected_samples=prepared.samples,
     )
     publication_snapshot = _build_publication_output(
-        finalized_results, prepared.acquisition_snapshot
+        finalized_results, prepared.acquisition_snapshot, config=request.config
     )
     return CompletedTargetedProductionWorkflow(
         finalized_results=finalized_results,
@@ -327,6 +330,8 @@ def _validate_target_population(
 def _build_publication_output(
     finalized_results: tuple[FinalizedTargetProductionResult, ...],
     acquisition_evidence: RunOutput,
+    *,
+    config: ExtractionConfig,
 ) -> RunOutput:
     expected_samples = finalized_results[0].canonical_samples
     expected_sample_ids = tuple(
@@ -467,7 +472,19 @@ def _build_publication_output(
             replace(file_result, results=rendered) for _, file_result, rendered in files
         ],
         diagnostics=[
-            *acquisition_evidence.diagnostics,
+            *(
+                record
+                for record in acquisition_evidence.diagnostics
+                if record.issue not in {"NL_FAIL", "NO_MS2", "ISTD_CONFIDENCE"}
+            ),
+            *(
+                record
+                for _, file_result, rendered in files
+                for label, result in rendered.items()
+                for record in build_ms2_diagnostic_records(
+                    file_result.sample_name, targets_by_label[label], result, config
+                )
+            ),
             *backfill_diagnostics,
             *position_diagnostics,
         ],
@@ -491,7 +508,11 @@ class _RenderCell:
     backfill_supported: bool
 
     def render(
-        self, *, paired_istd_identity: bool = False, no_write_reason: str = ""
+        self,
+        *,
+        paired_istd_identity: bool = False,
+        no_write_reason: str = "",
+        paired_istd_position_review: bool = False,
     ) -> ExtractionResult:
         return _finalized_extraction_result(
             self.extraction,
@@ -501,6 +522,7 @@ class _RenderCell:
             evidence=self.evidence,
             backfill_supported=self.backfill_supported,
             paired_istd_identity=paired_istd_identity,
+            paired_istd_position_review=paired_istd_position_review,
         )
 
 
@@ -509,13 +531,19 @@ def _apply_paired_istd_positions(
     cells: Mapping[tuple[str, str], _RenderCell],
     targets_by_label: Mapping[str, Target],
 ) -> list[DiagnosticRecord]:
-    """Re-render uncounted analytes against their counted paired ISTD.
+    """Re-render analytes against their counted paired ISTD.
 
     The ISTD's final count, including accepted Backfill, is known only once
     every Target of the batch has rendered. A peak at the paired position takes
-    its identity; one elsewhere is published as no value, its measurement kept
-    as a diagnostic event.
+    its identity; an uncounted peak elsewhere is published as no value, its
+    measurement kept as a diagnostic event. An already-counted peak elsewhere
+    retains its measurement and count but requires identity review.
     """
+    from xic_extractor.extraction.target_extraction import current_target_reference_rt
+    from xic_extractor.peak_detection.physical_peak_evaluation import (
+        physical_peak_support_failures_at_reference,
+    )
+
     diagnostics: list[DiagnosticRecord] = []
     for label, target in targets_by_label.items():
         pair = target.istd_pair
@@ -531,7 +559,26 @@ def _apply_paired_istd_positions(
             for sample, results in rendered_by_sample.items()
             if pair in results
         }
-        positions = paired_istd_positions(analyte, istd)
+        positions = paired_istd_positions(
+            analyte,
+            istd,
+            expected_offset_min=current_target_reference_rt(
+                target, reference_rt=0.0, paired_target=targets_by_label[pair]
+            ),
+        )
+        for sample, deviation in positions.review_required.items():
+            rendered_by_sample[sample][label] = cells[(sample, label)].render(
+                paired_istd_position_review=True
+            )
+            diagnostics.append(
+                DiagnosticRecord(
+                    sample,
+                    label,
+                    "PAIRED_ISTD_POSITION_REVIEW",
+                    f"Counted peak is {deviation:+.2f} min from the {pair} position; "
+                    "retained with mandatory identity review.",
+                )
+            )
         for sample in positions.identified:
             rendered_by_sample[sample][label] = cells[(sample, label)].render(
                 paired_istd_identity=True
@@ -541,6 +588,33 @@ def _apply_paired_istd_positions(
             rendered_by_sample[sample][label] = cells[(sample, label)].render(
                 no_write_reason=OFF_PAIRED_ISTD_POSITION
             )
+            physical = measured.physical_evaluation
+            reference_rt = current_target_reference_rt(
+                target,
+                reference_rt=istd[sample].reported_rt,
+                paired_target=targets_by_label[pair],
+            )
+            if (
+                physical is not None
+                and physical.retained_prepared_signal is not None
+                and reference_rt is not None
+            ):
+                failures = physical_peak_support_failures_at_reference(
+                    physical.retained_prepared_signal,
+                    physical.segment_universe,
+                    reference_rt,
+                )
+                if failures:
+                    diagnostics.append(
+                        DiagnosticRecord(
+                            sample,
+                            label,
+                            "PAIRED_POSITION_SUPPORT_REJECTED",
+                            "At paired-ISTD-derived reference "
+                            f"RT {reference_rt:.4f} min: "
+                            + "; ".join(failures),
+                        )
+                    )
             diagnostics.append(
                 DiagnosticRecord(
                     sample,
@@ -563,7 +637,15 @@ def _finalized_extraction_result(
     evidence: object,
     backfill_supported: bool = False,
     paired_istd_identity: bool = False,
+    paired_istd_position_review: bool = False,
 ) -> ExtractionResult:
+    captured_physical_evaluation = extraction.physical_evaluation
+    reported_evaluation = (
+        evidence.hypothesis.peak_observation_refs[0].physical_evaluation
+        if not no_write_reason and type(evidence) is ObservedSearchSubject
+        else None
+    )
+    extraction = reselect_targeted_peak_evidence(extraction, reported_evaluation)
     projection = _finalized_product_projection(
         extraction.targeted_product_projection,
         target=target,
@@ -572,7 +654,9 @@ def _finalized_extraction_result(
         no_write_reason=no_write_reason,
         backfill_supported=backfill_supported,
         paired_istd_identity=paired_istd_identity,
-        captured_physical_evaluation=extraction.physical_evaluation,
+        paired_istd_position_review=paired_istd_position_review,
+        captured_physical_evaluation=captured_physical_evaluation,
+        nl_status=extraction.nl_token or "",
     )
     if not no_write_reason:
         if (
@@ -612,16 +696,6 @@ def _finalized_extraction_result(
                     extraction.physical_evaluation, physical_evaluation
                 )
                 else evidence.hypothesis.evidence.quality_flags
-            ),
-            selected_cid_nl_candidate_index=next(
-                (
-                    index
-                    for index, evaluation in enumerate(
-                        extraction.candidate_physical_evaluations
-                    )
-                    if evaluation is physical_evaluation
-                ),
-                None,
             ),
             targeted_product_projection=projection,
         )
@@ -708,8 +782,10 @@ def _finalized_product_projection(
     evidence: object,
     value: float | None,
     no_write_reason: str,
+    nl_status: str,
     backfill_supported: bool = False,
     paired_istd_identity: bool = False,
+    paired_istd_position_review: bool = False,
     captured_physical_evaluation: PhysicalPeakEvaluation | None = None,
 ) -> TargetedProductProjection | None:
     if projection is None:
@@ -746,18 +822,19 @@ def _finalized_product_projection(
         rt=evidence.hypothesis.integration.rt_apex_min,
         area=value,
         confidence=projection.legacy_evidence.get("confidence", ""),
-        nl_status=projection.legacy_evidence.get("nl_status", ""),
+        nl_status=nl_status,
         cid_nl_supported=(
             evidence.hypothesis.hypothesis_method == HYPOTHESIS_METHOD_DDA_CID_NL
         ),
         backfill_supported=backfill_supported,
         paired_istd_identity=paired_istd_identity,
+        paired_istd_position_review=paired_istd_position_review,
         support_reasons=projection.support_reasons,
         review_reasons=projection.review_reasons,
         conflict_reasons=projection.conflict_reasons,
         not_counted_reasons=projection.not_counted_reasons,
         exclusion_reasons=projection.exclusion_reasons,
-        legacy_evidence=projection.legacy_evidence,
+        legacy_evidence={**projection.legacy_evidence, "nl_status": nl_status},
     )
 
 

@@ -42,6 +42,10 @@ class AnalysisJobs:
                 job["elapsed_seconds"] = max(0, end - job["started_at"])
                 if self._runner is not None:
                     job["stage"] = self._runner.stage
+                    if job["kind"] == "targeted":
+                        job["sample_summary"] = copy.deepcopy(
+                            getattr(self._runner, "sample_summary", None)
+                        )
                     job["output_dir"] = str(self._runner.output_dir)
                     job["available_outputs"] = [
                         {"label": label, "path": str(path)}
@@ -59,13 +63,23 @@ class AnalysisJobs:
             self._runner = None
             values = copy.deepcopy(values)
             if kind == "targeted":
-                from xic_workbench.config_io import write_settings, write_targets
+                from xic_workbench.config_io import (
+                    write_preferences,
+                    write_settings,
+                    write_targets,
+                )
                 from xic_workbench.targeted import TargetedRun
 
                 write_settings(values["settings"], config_dir=self.config_dir)
                 write_targets(values["targets"], config_dir=self.config_dir)
+                output_dir = values.get("output_dir") or None
+                if output_dir is not None:
+                    write_preferences(
+                        {"targeted_output_dir": output_dir}, config_dir=self.config_dir
+                    )
                 self._runner = TargetedRun(
                     self.config_dir,
+                    output_dir=Path(output_dir) if output_dir else None,
                     progress=self._progress,
                     should_cancel=self._cancel.is_set,
                 )
@@ -133,7 +147,7 @@ class AnalysisJobs:
             load_execution_profile,
         )
         from xic_workbench.discovery_config_io import write_discovery_config
-        from xic_workbench.samples import complete_injection_orders, load_samples
+        from xic_workbench.samples import apply_raw_chronology, load_samples
         from xic_workbench.untargeted import UntargetedRun, parse_request
 
         if (
@@ -158,7 +172,7 @@ class AnalysisJobs:
             and values.get("dll_dir")
             and values.get("mode", "full") in {"full", "align_only"}
         ):
-            values["samples"] = complete_injection_orders(
+            values["samples"] = apply_raw_chronology(
                 values["samples"],
                 raw_dir=Path(values["raw_dir"]),
                 dll_dir=Path(values["dll_dir"]),
@@ -187,7 +201,7 @@ class AnalysisJobs:
         if kind == "samples":
             from xic_workbench.samples import load_samples
 
-            return load_samples(
+            result = load_samples(
                 Path(values["raw_dir"]),
                 dll_dir=Path(values["dll_dir"]) if values.get("dll_dir") else None,
                 sequence_source=Path(values["sequence_source"])
@@ -195,6 +209,11 @@ class AnalysisJobs:
                 else None,
                 custom_roles=values.get("custom_roles"),
             )
+            result["input_paths"] = {
+                key: str(values.get(key) or "")
+                for key in ("raw_dir", "dll_dir", "sequence_source")
+            }
+            return result
         if kind == "quality":
             from xic_extractor.feature_quality_io import export_feature_quality
 

@@ -9,8 +9,8 @@ from xic_extractor.raw_reader import (
     RawSampleHeader,
     _ThermoApi,
     _to_python_datetime,
+    open_raw,
     preflight_raw_reader,
-    read_raw_sample_header,
 )
 
 
@@ -84,7 +84,8 @@ def test_real_raw_sample_header_if_available() -> None:
     if environment_errors:
         pytest.skip("Thermo environment unavailable: " + "; ".join(environment_errors))
 
-    header = read_raw_sample_header(raw_path, dll_dir)
+    with open_raw(raw_path, dll_dir=dll_dir) as handle:
+        header = handle.sample_header
 
     assert header.raw_stem == "BenignfatBC0979_DNA"
     assert header.row_number == 42

@@ -25,8 +25,6 @@ from pathlib import Path
 import openpyxl
 
 from xic_extractor.configuration.target_workbook import (
-    DEFAULT_PPM_TOL,
-    DEFAULT_RT_WINDOW,
     TargetRow,
     assign_istd_pairs,
     parse_dna_sheet,
@@ -85,19 +83,6 @@ def _build_parser() -> argparse.ArgumentParser:
             "named <stem>_targets_<SHEET>.csv"
         ),
     )
-    parser.add_argument(
-        "--rt-window",
-        type=float,
-        default=DEFAULT_RT_WINDOW,
-        metavar="MIN",
-        help="RT window (± minutes) around observed RT",
-    )
-    parser.add_argument(
-        "--ppm-tol",
-        type=int,
-        default=DEFAULT_PPM_TOL,
-        help="XIC precursor m/z tolerance (ppm)",
-    )
     return parser
 
 
@@ -116,7 +101,7 @@ def main() -> None:
         if "DNA" not in workbook.sheetnames:
             print("Warning: 'DNA' sheet not found in workbook", file=sys.stderr)
         else:
-            dna_targets = parse_dna_sheet(workbook["DNA"], args.rt_window)
+            dna_targets = parse_dna_sheet(workbook["DNA"])
             print(f"  DNA: {len(dna_targets)} compounds found")
             targets.extend(dna_targets)
 
@@ -124,7 +109,7 @@ def main() -> None:
         if "RNA" not in workbook.sheetnames:
             print("Warning: 'RNA' sheet not found in workbook", file=sys.stderr)
         else:
-            rna_targets = parse_rna_sheet(workbook["RNA"], args.rt_window)
+            rna_targets = parse_rna_sheet(workbook["RNA"])
             print(f"  RNA: {len(rna_targets)} compounds found")
             targets.extend(rna_targets)
 

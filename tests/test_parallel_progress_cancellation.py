@@ -65,7 +65,6 @@ def test_raw_job_runner_reports_progress_and_cancels_pending_futures(
 def test_raw_process_collector_does_not_schedule_when_already_cancelled(
     tmp_path: Path,
 ) -> None:
-    from xic_extractor.extraction.jobs import ScoringInputs
     from xic_extractor.extraction.process_backend import (
         collect_raw_file_results_process,
     )
@@ -81,7 +80,6 @@ def test_raw_process_collector_does_not_schedule_when_already_cancelled(
         config,
         (_target("Analyte"),),
         [tmp_path / "A.raw"],
-        ScoringInputs(injection_order={}, istd_rts_by_sample={}),
         should_stop=lambda: True,
         runner=_runner,
     )

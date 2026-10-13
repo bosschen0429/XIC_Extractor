@@ -12,94 +12,50 @@ from xic_workbench.config_io import (
     write_targets,
 )
 
+TARGET_CSV = (
+    "label,mz,expected_rt_min,cid_nl_tag,role,istd_pair\n"
+    "5-hmdC,258.1085,9,dR,analyte,d3-5-hmdC\n"
+    "d3-5-hmdC,261.1273,9,dR,istd,\n"
+)
+
 
 @pytest.fixture()
 def tmp_config(tmp_path):
     (tmp_path / "settings.csv").write_text(
-        "key,value,description\ndata_dir,C:\\data,資料目錄\ndll_dir,C:\\dll,DLL路徑\n"
-        "signal_processing_method,gaussian,method\n"
-        "signal_processing_window_points,15,window\n",
+        "key,value,description\ndata_dir,C:\\data,資料目錄\ndll_dir,C:\\dll,DLL路徑\n",
         encoding="utf-8-sig",
     )
-    (tmp_path / "targets.csv").write_text(
-        "label,mz,rt_min,rt_max,ppm_tol,neutral_loss_da,nl_ppm_warn,nl_ppm_max,is_istd,istd_pair\n"
-        "5-hmdC,258.1085,8.0,10.0,20,116.0474,20,50,false,d3-5-hmdC\n"
-        "d3-5-hmdC,261.1273,8.0,10.0,20,116.0474,20,50,true,\n",
-        encoding="utf-8-sig",
-    )
+    (tmp_path / "targets.csv").write_text(TARGET_CSV, encoding="utf-8-sig")
     return tmp_path
 
 
 def test_read_settings(tmp_config, monkeypatch):
     monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_config)
-    assert read_settings()["signal_processing_window_points"] == "15"
-
-
-def test_saved_worker_budget_reaches_shared_execution_profile(tmp_config, monkeypatch):
-    from xic_extractor.configuration.execution_profile import resolve_execution_profile
-
-    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_config)
-    settings = read_settings()
-    settings["parallel_workers"] = "3"
-    write_settings(settings)
-    profile = resolve_execution_profile(read_settings())
-    assert profile.parallel_workers == 3
-    assert profile.alignment_workers == 4
+    assert read_settings()["data_dir"] == "C:\\data"
 
 
 def test_write_settings_round_trips(tmp_config, monkeypatch):
     monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_config)
-    write_settings(
-        {
-            "data_dir": "C:\\new",
-            "dll_dir": "C:\\d",
-            "signal_processing_method": "gaussian",
-            "signal_processing_window_points": "21",
-        }
-    )
+    write_settings({"data_dir": "C:\\new", "dll_dir": "C:\\d"})
     assert read_settings()["data_dir"] == "C:\\new"
+    assert read_settings()["dll_dir"] == "C:\\d"
 
 
 def test_write_settings_preserves_description(tmp_config, monkeypatch):
     monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_config)
-    write_settings(
-        {
-            "data_dir": "C:\\x",
-            "dll_dir": "C:\\y",
-            "signal_processing_method": "gaussian",
-            "signal_processing_window_points": "15",
-        }
-    )
-    rows = list(
-        csv.DictReader((tmp_config / "settings.csv").open(encoding="utf-8-sig"))
-    )
+    write_settings({"data_dir": "C:\\x", "dll_dir": "C:\\y"})
+    with (tmp_config / "settings.csv").open(encoding="utf-8-sig") as handle:
+        rows = list(csv.DictReader(handle))
     assert {row["key"]: row["description"] for row in rows}["data_dir"] == "資料目錄"
 
 
-def test_write_settings_backfills_descriptions_for_current_settings(
-    tmp_config, monkeypatch
-):
-    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_config)
-    write_settings(
-        {
-            "data_dir": "C:\\x",
-            "dll_dir": "C:\\y",
-            "signal_processing_method": "gaussian",
-            "signal_processing_window_points": "15",
-            "ms2_precursor_tol_da": "0.5",
-            "nl_min_intensity_ratio": "0.01",
-            "count_no_ms2_as_detected": "false",
+def test_write_settings_backfills_descriptions_for_current_settings(tmp_config):
+    write_settings({"injection_order_source": "order.csv"}, config_dir=tmp_config)
+    with (tmp_config / "settings.csv").open(encoding="utf-8-sig") as handle:
+        descriptions = {
+            row["key"]: row["description"] for row in csv.DictReader(handle)
         }
-    )
-
-    rows = list(
-        csv.DictReader((tmp_config / "settings.csv").open(encoding="utf-8-sig"))
-    )
-
-    descriptions = {row["key"]: row["description"] for row in rows}
-    assert descriptions["signal_processing_method"]
-    assert descriptions["signal_processing_window_points"]
-    assert descriptions["count_no_ms2_as_detected"]
+    assert descriptions["injection_order_source"]
 
 
 def test_read_targets(tmp_config, monkeypatch):
@@ -107,95 +63,43 @@ def test_read_targets(tmp_config, monkeypatch):
     assert read_targets()[0]["label"] == "5-hmdC"
 
 
-def test_write_targets_round_trips(tmp_config, monkeypatch):
+def test_write_targets_round_trips_intent_and_relationships(tmp_config, monkeypatch):
     monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_config)
-    write_targets(
-        [
-            {
-                "label": "5-hmdC",
-                "mz": "258.1085",
-                "rt_min": "8.0",
-                "rt_max": "10.0",
-                "ppm_tol": "20",
-                "neutral_loss_da": "116.0474",
-                "nl_ppm_warn": "20",
-                "nl_ppm_max": "50",
-                "is_istd": "false",
-                "istd_pair": "d3-5-hmdC",
-            }
-        ]
-    )
-    assert read_targets()[0]["label"] == "5-hmdC"
+    rows = list(csv.DictReader(TARGET_CSV.splitlines()))
+    rows[0]["expected_rt_min"] = "9.1"
+    write_targets(rows)
+    saved = read_targets()
+    assert saved[0]["label"] == "5-hmdC"
+    assert saved[0]["expected_rt_min"] == "9.1"
+    assert saved[0]["cid_nl_tag"] == "dR"
+    assert saved[0]["role"] == "analyte"
+    assert saved[0]["istd_pair"] == "d3-5-hmdC"
+    assert saved[1]["role"] == "istd"
+    assert saved[1]["istd_pair"] == ""
 
 
-def test_write_targets_round_trips_with_istd_fields(tmp_config, monkeypatch):
-    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_config)
-    write_targets(
-        [
-            {
-                "label": "5-hmdC",
-                "mz": "258.1085",
-                "rt_min": "8.0",
-                "rt_max": "10.0",
-                "ppm_tol": "20",
-                "neutral_loss_da": "116.0474",
-                "nl_ppm_warn": "20",
-                "nl_ppm_max": "50",
-                "is_istd": "false",
-                "istd_pair": "d3-5-hmdC",
-            }
-        ]
-    )
-    targets = read_targets()
-    assert targets[0]["is_istd"] == "false"
-    assert targets[0]["istd_pair"] == "d3-5-hmdC"
-
-
-def test_read_targets_backward_compat_missing_istd_cols(tmp_path, monkeypatch):
-    """Old CSV without is_istd/istd_pair columns reads without error."""
-    (tmp_path / "targets.csv").write_text(
-        "label,mz,rt_min,rt_max,ppm_tol,neutral_loss_da,nl_ppm_warn,nl_ppm_max\n"
-        "5-hmdC,258.1085,8,10,20,116.0474,20,50\n",
-        encoding="utf-8-sig",
-    )
-    monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_path)
-    targets = read_targets()
-    assert targets[0]["label"] == "5-hmdC"
-    assert targets[0].get("is_istd", "false") == "false"
-
-
-def test_read_settings_uses_example_when_missing_without_creating_runtime_copy(
+def test_read_settings_uses_example_without_creating_runtime_copy(
     tmp_path, monkeypatch
 ):
-    """read_settings() 可讀取範本，但不主動產生 settings.csv。"""
     (tmp_path / "settings.example.csv").write_text(
         "key,value,description\ndata_dir,/placeholder,資料目錄\n",
         encoding="utf-8-sig",
     )
     monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_path)
     monkeypatch.setattr("xic_workbench.config_io._BUNDLE_CONFIG", tmp_path)
-    result = read_settings()
-    assert result["data_dir"] == "/placeholder"
+    assert read_settings()["data_dir"] == "/placeholder"
     assert not (tmp_path / "settings.csv").exists()
 
 
-def test_read_targets_uses_example_when_missing_without_creating_runtime_copy(
-    tmp_path, monkeypatch
-):
-    """read_targets() 可讀取範本，但不主動產生 targets.csv。"""
-    (tmp_path / "targets.example.csv").write_text(
-        "label,mz,rt_min,rt_max,ppm_tol,neutral_loss_da,nl_ppm_warn,nl_ppm_max\n"
-        "ExA,258.1085,8.0,10.0,20,116.0474,20,50\n",
-        encoding="utf-8-sig",
-    )
+def test_read_targets_uses_example_without_creating_runtime_copy(tmp_path, monkeypatch):
+    (tmp_path / "targets.example.csv").write_text(TARGET_CSV, encoding="utf-8-sig")
     monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_path)
     monkeypatch.setattr("xic_workbench.config_io._BUNDLE_CONFIG", tmp_path)
-    result = read_targets()
-    assert result[0]["label"] == "ExA"
+    assert read_targets()[0]["label"] == "5-hmdC"
     assert not (tmp_path / "targets.csv").exists()
 
 
-def test_write_settings_creates_runtime_copy_from_values_and_example_descriptions(
+def test_write_settings_creates_runtime_copy_with_example_descriptions(
     tmp_path, monkeypatch
 ):
     (tmp_path / "settings.example.csv").write_text(
@@ -204,102 +108,76 @@ def test_write_settings_creates_runtime_copy_from_values_and_example_description
     )
     monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_path)
     monkeypatch.setattr("xic_workbench.config_io._BUNDLE_CONFIG", tmp_path)
-
     write_settings({"data_dir": "C:\\real"})
-
-    rows = list(csv.DictReader((tmp_path / "settings.csv").open(encoding="utf-8-sig")))
-    saved = {row["key"]: row for row in rows}
+    with (tmp_path / "settings.csv").open(encoding="utf-8-sig") as handle:
+        saved = {row["key"]: row for row in csv.DictReader(handle)}
     assert saved["data_dir"] == {
         "key": "data_dir",
         "value": "C:\\real",
         "description": "資料目錄",
     }
-    assert saved["signal_processing_method"]["value"] == "gaussian"
-    assert saved["signal_processing_window_points"]["value"] == "15"
+    assert set(saved) == {
+        "data_dir",
+        "dll_dir",
+        "injection_order_source",
+        "parallel_workers",
+    }
+    assert saved["parallel_workers"]["value"] == ""
+    assert saved["parallel_workers"]["description"]
 
 
 def test_write_targets_creates_runtime_copy_only_on_save(tmp_path, monkeypatch):
     monkeypatch.setattr("xic_workbench.config_io.CONFIG_DIR", tmp_path)
-
-    write_targets(
-        [
-            {
-                "label": "ExA",
-                "mz": "258.1085",
-                "rt_min": "8.0",
-                "rt_max": "10.0",
-                "ppm_tol": "20",
-                "neutral_loss_da": "116.0474",
-                "nl_ppm_warn": "20",
-                "nl_ppm_max": "50",
-            }
-        ]
-    )
-
+    write_targets(list(csv.DictReader(TARGET_CSV.splitlines())))
     assert (tmp_path / "targets.csv").exists()
-    assert read_targets()[0]["label"] == "ExA"
+    assert read_targets()[0]["label"] == "5-hmdC"
 
 
 def test_csv_conflicts_are_rejected_in_ui_and_runtime_reader(tmp_path):
     path = tmp_path / "settings.csv"
-    path.write_text(
-        "key,value\n"
-        "signal_processing_window_points,15\n"
-        "signal_processing_window_points,21\n",
-        encoding="utf-8",
-    )
+    path.write_text("key,value\ndata_dir,first\ndata_dir,second\n", encoding="utf-8")
     with pytest.raises(ConfigError, match="conflict"):
         resolve_settings(read_settings(config_dir=tmp_path))
     with pytest.raises(ConfigError, match="conflict"):
         read_settings_csv(path)
 
 
-def test_equal_csv_duplicates_have_one_written_row(tmp_path):
+def test_equal_csv_duplicates_have_one_written_row_and_recovery_backup(tmp_path):
     path = tmp_path / "settings.csv"
     path.write_text(
-        "key,value,description\n"
-        "signal_processing_window_points,15,canonical\n"
-        "signal_processing_window_points,15,duplicate\n"
-        "retired_setting,keep,old description\n",
+        "key,value,description\ndata_dir,local,canonical\ndata_dir,local,duplicate\n",
         encoding="utf-8",
     )
     original = path.read_bytes()
-    write_settings({"dirty_matrix_mode": "true"}, config_dir=tmp_path)
-    rows = list(csv.DictReader(path.open(encoding="utf-8-sig")))
-    assert sum(row["key"] == "signal_processing_window_points" for row in rows) == 1
-    assert next(row for row in rows if row["key"] == "retired_setting") == {
-        "key": "retired_setting",
-        "value": "keep",
-        "description": "old description",
-    }
+    write_settings({"injection_order_source": "order.csv"}, config_dir=tmp_path)
+    with path.open(encoding="utf-8-sig") as handle:
+        rows = list(csv.DictReader(handle))
+    assert sum(row["key"] == "data_dir" for row in rows) == 1
     assert path.with_suffix(".csv.bak").read_bytes() == original
 
 
-
-def test_save_merges_partial_values_and_preserves_existing_runtime_and_resources(
-    tmp_path,
+@pytest.mark.parametrize("workers", ["", "7"])
+def test_save_merges_partial_batch_values_and_preserves_machine_settings(
+    tmp_path, workers
 ):
     write_settings(
-        {
-            "data_dir": "local",
-            "parallel_workers": "1",
-            "targeted_ms1_shape_identity_support_tsv": "prior.csv",
-        },
+        {"data_dir": "local", "dll_dir": "dll", "parallel_workers": workers},
         config_dir=tmp_path,
     )
-    write_settings({"dirty_matrix_mode": "true"}, config_dir=tmp_path)
+    write_settings({"injection_order_source": "order.csv"}, config_dir=tmp_path)
     values = read_settings(config_dir=tmp_path)
-    assert values["data_dir"] == "local"
-    assert values["parallel_workers"] == "1"
-    assert values["targeted_ms1_shape_identity_support_tsv"] == "prior.csv"
-    assert values["dirty_matrix_mode"] == "true"
-
+    assert values == {
+        "data_dir": "local",
+        "dll_dir": "dll",
+        "injection_order_source": "order.csv",
+        "parallel_workers": workers,
+    }
 
 
 def test_failed_atomic_replace_preserves_active_settings_and_cleans_temporary(
     tmp_path, monkeypatch
 ):
-    write_settings({"dirty_matrix_mode": "false"}, config_dir=tmp_path)
+    write_settings({"data_dir": "first"}, config_dir=tmp_path)
     path = tmp_path / "settings.csv"
     before = path.read_bytes()
 
@@ -308,28 +186,33 @@ def test_failed_atomic_replace_preserves_active_settings_and_cleans_temporary(
 
     monkeypatch.setattr("xic_workbench.config_io.os.replace", failed_replace)
     with pytest.raises(OSError, match="interrupted"):
-        write_settings({"dirty_matrix_mode": "true"}, config_dir=tmp_path)
+        write_settings({"data_dir": "second"}, config_dir=tmp_path)
     assert path.read_bytes() == before
     assert list(tmp_path.glob(".settings-*.tmp")) == []
 
 
-
-def test_invalid_save_preserves_active_file(tmp_path):
+@pytest.mark.parametrize(
+    "key",
+    [
+        "signal_processing_window_points",
+        "dirty_matrix_mode",
+        "resolver_mode",
+    ],
+)
+def test_retired_settings_save_is_rejected_without_changing_active_file(tmp_path, key):
     write_settings({}, config_dir=tmp_path)
     path = tmp_path / "settings.csv"
     before = path.read_bytes()
-    with pytest.raises(ConfigError):
-        write_settings({"signal_processing_window_points": "16"}, config_dir=tmp_path)
+    with pytest.raises(ConfigError, match="Retired or unknown"):
+        write_settings({key: "1"}, config_dir=tmp_path)
     assert path.read_bytes() == before
 
 
-
-def test_retired_resolver_setting_round_trips_without_changing_its_value(tmp_path):
-    write_settings({"resolver_mode": "legacy_savgol"}, config_dir=tmp_path)
-    write_settings({"dirty_matrix_mode": "true"}, config_dir=tmp_path)
-    values, _parsed, warnings = resolve_settings(read_settings(config_dir=tmp_path))
-    assert values["resolver_mode"] == "legacy_savgol"
-    assert any(
-        "resolver_mode" in warning and "not consumed" in warning
-        for warning in warnings
-    )
+def test_invalid_target_save_preserves_active_file(tmp_config):
+    path = tmp_config / "targets.csv"
+    before = path.read_bytes()
+    with pytest.raises(ConfigError, match="unsupported target schema"):
+        write_targets(
+            [{"label": "old", "rt_min": "8", "rt_max": "10"}], config_dir=tmp_config
+        )
+    assert path.read_bytes() == before

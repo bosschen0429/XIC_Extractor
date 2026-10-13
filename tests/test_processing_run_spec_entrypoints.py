@@ -73,7 +73,9 @@ def test_actual_workbench_full_and_cli_main_reach_equal_final_run_spec(
 ) -> None:
     import xic_workbench.untargeted as workbench_module
     from scripts import run_discovery as cli_module
+    from tests.raw_header_fakes import install_fake_raw_headers
 
+    install_fake_raw_headers(monkeypatch)
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
     (raw_dir / "B.raw").write_bytes(b"second acquisition")

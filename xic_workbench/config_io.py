@@ -178,7 +178,7 @@ def read_preferences(*, config_dir: Path | None = None) -> dict:
 
 
 def write_preferences(values: dict, *, config_dir: Path | None = None) -> dict:
-    if set(values) - {"theme", "view"}:
+    if set(values) - {"theme", "view", "targeted_output_dir"}:
         raise ValueError("不支援此偏好設定；DLL 目錄由 settings.csv 管理。")
     payload = read_preferences(config_dir=config_dir) | values
     _write_json_object(_runtime_dir(config_dir) / "workbench.json", payload)
@@ -195,16 +195,19 @@ def read_targets(*, config_dir: Path | None = None) -> list[dict[str, str]]:
 def write_targets(
     targets: list[dict[str, str]], *, config_dir: Path | None = None
 ) -> None:
-    destination_dir = _runtime_dir(config_dir)
-    destination_dir.mkdir(parents=True, exist_ok=True)
+    from xic_extractor.configuration.targets import parse_target_rows
+
+    parse_target_rows(targets)
     fieldnames = _target_write_fieldnames(targets)
-    with (destination_dir / "targets.csv").open(
-        "w", newline="", encoding="utf-8-sig"
-    ) as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        for target in targets:
-            writer.writerow({field: target.get(field, "") for field in fieldnames})
+    buffer = io.StringIO(newline="")
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(
+        {field: target.get(field, "") for field in fieldnames} for target in targets
+    )
+    _atomic_write(
+        _runtime_dir(config_dir) / "targets.csv", "\ufeff" + buffer.getvalue()
+    )
 
 
 def _target_write_fieldnames(targets: list[dict[str, str]]) -> list[str]:

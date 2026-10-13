@@ -218,6 +218,29 @@ def test_parse_xlsx_sequence(tmp_path: Path) -> None:
     assert rows[1].sample_role == "study_sample"
 
 
+def test_sequence_disagreements_are_reported_as_written(tmp_path: Path) -> None:
+    # A stale sequence: two rows share number 7, and one row's file name and
+    # sample text name different samples. The second BC2303 text is a real
+    # duplicate, so de-duplicating names must not hide the disagreement.
+    sequence = tmp_path / "sequence.xlsx"
+    book = openpyxl.Workbook()
+    for row in (
+        ["No", "File Name", "Sample"],
+        [6, "TumorBC2303_DNA", "Tumor tissue BC2303_DNA"],
+        [7, "TumorBC2312_DNA", "Tumor tissue BC2303_DNA"],
+        [7, "NormalBC2259_DNA", "Normal tissue BC2259_DNA"],
+    ):
+        book.active.append(row)
+    book.save(sequence)
+
+    report = load_and_match_sample_metadata(sequence, ("TumorBC2312_DNA",))
+
+    assert [(c.kind, c.sequence_names, c.detail) for c in report.conflicts] == [
+        ("duplicate_order", ("TumorBC2312_DNA", "NormalBC2259_DNA"), "7"),
+        ("name_mismatch", ("TumorBC2312_DNA",), "BC2312 / BC2303"),
+    ]
+
+
 def test_parse_generic_csv_sequence(tmp_path: Path) -> None:
     csv_file = tmp_path / "plain_sequence.csv"
     with csv_file.open("w", newline="", encoding="utf-8") as f:

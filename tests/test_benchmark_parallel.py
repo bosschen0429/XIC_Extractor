@@ -218,11 +218,11 @@ def test_run_extraction_once_applies_additional_settings_overrides(
         mode="process",
         workers=4,
         output_dir=tmp_path / "out",
-        settings_overrides={"resolver_mode": "local_minimum"},
+        settings_overrides={"injection_order_source": str(tmp_path / "order.csv")},
     )
 
     assert captured_configs[0].data_dir == validation_dir
-    assert captured_configs[0].resolver_mode == "local_minimum"
+    assert captured_configs[0].injection_order_source == tmp_path / "order.csv"
     assert captured_configs[0].parallel_mode == "process"
     assert captured_configs[0].parallel_workers == 4
     assert captured["approvals"] is None
@@ -267,13 +267,6 @@ def _write_benchmark_settings(
     rows = {
         "data_dir": str(data_dir),
         "dll_dir": str(dll_dir),
-        "smooth_window": "15",
-        "smooth_polyorder": "3",
-        "peak_rel_height": "0.95",
-        "peak_min_prominence_ratio": "0.10",
-        "ms2_precursor_tol_da": "0.5",
-        "nl_min_intensity_ratio": "0.01",
-        "count_no_ms2_as_detected": "false",
     }
     with (config_dir / "settings.csv").open(
         "w", newline="", encoding="utf-8-sig"
@@ -285,34 +278,8 @@ def _write_benchmark_settings(
 
 
 def _write_benchmark_targets(config_dir: Path) -> None:
-    fieldnames = [
-        "label",
-        "mz",
-        "rt_min",
-        "rt_max",
-        "ppm_tol",
-        "neutral_loss_da",
-        "nl_ppm_warn",
-        "nl_ppm_max",
-        "is_istd",
-        "istd_pair",
-    ]
-    with (config_dir / "targets.csv").open(
-        "w", newline="", encoding="utf-8-sig"
-    ) as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerow(
-            {
-                "label": "Analyte",
-                "mz": "258.1085",
-                "rt_min": "8.0",
-                "rt_max": "10.0",
-                "ppm_tol": "20",
-                "neutral_loss_da": "116.0474",
-                "nl_ppm_warn": "20",
-                "nl_ppm_max": "50",
-                "is_istd": "false",
-                "istd_pair": "",
-            }
-        )
+    (config_dir / "targets.csv").write_text(
+        "label,mz,expected_rt_min,cid_nl_tag,role,istd_pair\n"
+        "ISTD,258.1085,9,dR,istd,\n",
+        encoding="utf-8-sig",
+    )

@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from tests.raw_header_fakes import install_fake_raw_headers
 from xic_extractor.alignment.completion import CaptureWorkflowArguments
 from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
@@ -40,9 +41,11 @@ from xic_extractor.extraction.targeted_inputs import (
     THERMO_RAW_ACQUISITION_FORMAT,
     THERMO_RAW_OBSERVATION_NAMESPACE,
 )
+from xic_extractor.extraction.targeted_peak_evidence import build_targeted_peak_evidence
 from xic_extractor.extraction.targeted_product_projection import (
     build_targeted_product_projection,
 )
+from xic_extractor.ms2_scan_models import Ms2Scan, Ms2ScanEvent, Ms2Window
 from xic_extractor.output.targeted_product_model import (
     TargetedProductContext,
 )
@@ -70,6 +73,12 @@ from xic_extractor.processing_identity import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _placeholder_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    # RAW files here are placeholders; order them by their file times.
+    install_fake_raw_headers(monkeypatch)
+
+
 def test_retained_trace_reaches_one_finalized_target_result(tmp_path: Path) -> None:
     config, target, output = production_case(tmp_path)
 
@@ -92,6 +101,68 @@ def test_retained_trace_reaches_one_finalized_target_result(tmp_path: Path) -> N
     assert (
         finalized[0].scientific_core.grouping_result.partition_transition.lineage == ()
     )
+
+
+def test_publication_uses_final_peak_evidence_not_stale_selected_summary(tmp_path):
+    from xic_extractor.output.messages import DiagnosticRecord
+
+    config, target, output = production_case(
+        tmp_path, sample_names=("SampleA", "SampleB")
+    )
+    first = output.file_results[0].results[target.label]
+    first_answer = first.candidate_ms2_evidence
+    assert first_answer is not None and first_answer.nl_match
+    second = output.file_results[1].results[target.label]
+    second_answer = second.candidate_ms2_evidence
+    assert second_answer is not None and second_answer.best_product_evidence is not None
+    outside = second.reported_peak_end + 0.05
+    second = with_method_universe(
+        replace(
+            second,
+            candidate_ms2_evidence=replace(
+                second_answer,
+                best_product_evidence=replace(
+                    second_answer.best_product_evidence, scan_rt=outside
+                ),
+            ),
+        ),
+        target,
+    )
+    # Model the stale selected summary left by a previous selected peak. The
+    # complete retained population is the authority at final selection.
+    output.file_results[0].results[target.label] = replace(
+        first,
+        candidate_ms2_evidence=second.candidate_ms2_evidence,
+    )
+    output.file_results[1].results[target.label] = replace(
+        second,
+        candidate_ms2_evidence=first_answer,
+    )
+    output.diagnostics.append(
+        DiagnosticRecord("SampleA", target.label, "NO_MS2", "stale")
+    )
+    request = build_targeted_application_request(
+        config,
+        [target],
+        injection_order={"SampleA": 1, "SampleB": 2},
+    )
+    completed = execute_targeted_production_workflow(request, output)
+    published = completed.publication_output(request, output)
+    first_final, second_final = [
+        f.results[target.label] for f in published.file_results
+    ]
+    assert first_final.nl_token == "OK"
+    assert first_final.selected_cid_nl_supported
+    assert second_final.nl_token == "NO_MS2"
+    assert not second_final.selected_cid_nl_supported
+    assert first_final.targeted_product_projection.legacy_evidence["nl_status"] == "OK"
+    assert (
+        second_final.targeted_product_projection.legacy_evidence["nl_status"]
+        == "NO_MS2"
+    )
+    nl_records = [d for d in published.diagnostics if d.issue in {"NL_FAIL", "NO_MS2"}]
+    assert [d.sample_name for d in nl_records] == ["SampleB"]
+    assert "stale" not in nl_records[0].reason
 
 
 def test_two_samples_reuse_exact_acquired_physical_evaluations(
@@ -1159,6 +1230,33 @@ def with_method_universe(result: ExtractionResult, target: Target) -> Extraction
         ),
         policy=policy,
     )
+    answers = build_targeted_peak_evidence(
+        target=target,
+        window=Ms2Window(
+            "fixture",
+            target.rt_min,
+            target.rt_max,
+            tuple(
+                Ms2ScanEvent(
+                    Ms2Scan(
+                        p.scan_number or 1,
+                        p.scan_rt,
+                        p.scan_precursor_mz or p.precursor_mz,
+                        np.array([p.product_mz]),
+                        np.array([p.product_intensity]),
+                        p.product_intensity / p.product_base_ratio,
+                        p.precursor_metadata,
+                    ),
+                    None,
+                    p.scan_number or 1,
+                )
+                for p in products
+            ),
+        ),
+        products=products,
+        relations=relations,
+        candidate_apex_rts=tuple(e.integration.rt_apex_min for e in evaluations),
+    )
     return replace(
         result,
         candidate_physical_evaluations=evaluations,
@@ -1173,6 +1271,8 @@ def with_method_universe(result: ExtractionResult, target: Target) -> Extraction
             reason_code=None,
         ),
         cid_nl_relations=relations,
+        cid_nl_candidate_evidence=answers,
+        candidate_ms2_evidence=answers[0] if answers else None,
         selected_cid_nl_candidate_index=0 if evaluations else None,
     )
 

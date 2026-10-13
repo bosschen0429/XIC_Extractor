@@ -212,21 +212,27 @@ class PairedIstdPositions:
     identified: frozenset[str] = frozenset()
     # Sample -> minutes the selected peak lies from the paired-ISTD position.
     off_position: Mapping[str, float] = field(default_factory=dict)
+    review_required: Mapping[str, float] = field(default_factory=dict)
 
 
 def paired_istd_positions(
     analyte: Mapping[str, ExtractionResult],
     istd: Mapping[str, ExtractionResult],
+    *,
+    expected_offset_min: float = 0.0,
 ) -> PairedIstdPositions:
-    """Judge uncounted analyte peaks against the paired isotope ISTD position.
+    """Judge analyte peaks against the paired isotope ISTD position.
 
     An isotope-labelled ISTD co-elutes with its analyte, so once the ISTD is
     counted in a sample (directly or by accepted Backfill) it fixes where the
-    analyte must be: at this batch's confirmed analyte-to-ISTD RT offset. A
-    coherent MS1 peak there takes its chemical identity from the ISTD whether
-    or not its own neutral loss was observed. A peak elsewhere is another
-    signal, not this analyte. The offset is learned from samples where both are
-    counted; with fewer than two such samples there is no position to judge.
+    analyte must be. A coherent MS1 peak there takes its chemical identity from
+    the ISTD whether or not its own neutral loss was observed. An unconfirmed
+    peak elsewhere is another signal, not this analyte. Confirmed pairs refine
+    the batch offset and tolerance only when consistent with the configured offset;
+    otherwise that offset and the 12 s floor apply. Counted off-position peaks
+    require review without losing their measurement or count. The number of
+    other confirmed samples never gates identity: the current sample still
+    needs a valid ISTD, qualified peak and no blockers.
     """
     counted_istd = {
         sample: rt
@@ -239,32 +245,33 @@ def paired_istd_positions(
         if sample in counted_istd
         and _counted(result)
         and (rt := _finite(result.reported_rt)) is not None
+        # A contradictory counted peak cannot calibrate away its own mismatch.
+        and abs(rt - counted_istd[sample] - expected_offset_min)
+        <= _PAIRED_OFFSET_FLOOR_MIN
     ]
-    if len(offsets) < 2:
-        return PairedIstdPositions()
-    center = median(offsets)
-    residuals = [abs(offset - center) for offset in offsets]
-    tolerance = max(
-        _PAIRED_OFFSET_FLOOR_MIN,
-        quantiles(residuals, n=10, method="inclusive")[-1],
-    )
+    calibrated = len(offsets) >= 2
+    center = median(offsets) if calibrated else expected_offset_min
+    tolerance = _PAIRED_OFFSET_FLOOR_MIN
+    if calibrated:
+        residuals = [abs(offset - center) for offset in offsets]
+        tolerance = max(tolerance, quantiles(residuals, n=10, method="inclusive")[-1])
     identified = set()
     off_position = {}
+    review_required = {}
     for sample, result in analyte.items():
         projection = result.targeted_product_projection
         rt = _finite(result.reported_rt)
-        if (
-            projection is None
-            or projection.counted_detection
-            or sample not in counted_istd
-            or rt is None
-        ):
+        if projection is None or sample not in counted_istd or rt is None:
             continue
         deviation = rt - counted_istd[sample] - center
         if abs(deviation) > tolerance:
-            off_position[sample] = deviation
+            if projection.counted_detection:
+                review_required[sample] = deviation
+            else:
+                off_position[sample] = deviation
         elif (
-            not projection.conflict_reasons
+            not projection.counted_detection
+            and not projection.conflict_reasons
             and not projection.exclusion_reasons
             and (
                 _COHERENT_MS1_PEAK <= set(projection.support_reasons)
@@ -273,7 +280,7 @@ def paired_istd_positions(
             and set(projection.not_counted_reasons) <= _MISSING_DIRECT_NL_NOT_COUNTED
         ):
             identified.add(sample)
-    return PairedIstdPositions(frozenset(identified), off_position)
+    return PairedIstdPositions(frozenset(identified), off_position, review_required)
 
 
 def _counted(result: ExtractionResult) -> bool:
@@ -323,6 +330,7 @@ def build_targeted_product_projection(
     cid_nl_supported: bool = False,
     backfill_supported: bool = False,
     paired_istd_identity: bool = False,
+    paired_istd_position_review: bool = False,
     support_reasons: tuple[str, ...] = (),
     review_reasons: tuple[str, ...] = (),
     conflict_reasons: tuple[str, ...] = (),
@@ -345,6 +353,8 @@ def build_targeted_product_projection(
         "backfill_identity_confirmed",
     }
     review = _stable_reasons(tuple(r for r in review_reasons if r not in context_only))
+    if paired_istd_position_review:
+        review = _merge_reasons(review, ("paired_istd_position_mismatch",))
     localization_conflicts = {"targeted_rt_conflict", "anchor_conflict"}
     review_categories = {
         "trace_morphology_conflict": "trace_morphology_review",
@@ -451,7 +461,9 @@ def build_targeted_product_projection(
         return _projection(
             "detected_flagged",
             True,
-            "flagged",
+            "review_required"
+            if "paired_istd_position_mismatch" in review
+            else "flagged",
             support,
             review,
             conflicts,

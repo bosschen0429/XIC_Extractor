@@ -3,6 +3,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+from xic_extractor.configuration.cid_nl_profile import DEFAULT_CID_NL_MASS_POLICY
+from xic_extractor.configuration.cid_nl_profile import (
+    NeutralLossProfile as NeutralLossProfile,
+)
 from xic_extractor.discovery.evidence_config import (
     DEFAULT_EVIDENCE_PROFILE,
     DiscoveryEvidenceProfile,
@@ -143,23 +147,21 @@ DISCOVERY_BRIEF_COLUMNS = (
 
 
 @dataclass(frozen=True)
-class NeutralLossProfile:
-    tag: str
-    neutral_loss_da: float
-
-
-@dataclass(frozen=True)
 class DiscoverySettings:
     neutral_loss_profile: NeutralLossProfile | None = None
     neutral_loss_profiles: tuple[NeutralLossProfile, ...] = ()
     selected_tag_names: tuple[str, ...] = ()
     tag_combine_mode: Literal["single", "union", "intersection"] = "single"
-    nl_tolerance_ppm: float = 20.0
-    precursor_mz_tolerance_ppm: float = 20.0
-    product_mz_tolerance_ppm: float = 20.0
-    product_search_ppm: float = 50.0
-    ms2_precursor_tol_da: float = 0.8
-    nl_min_intensity_ratio: float = 0.01
+    nl_tolerance_ppm: float = DEFAULT_CID_NL_MASS_POLICY.nl_tolerance_ppm
+    precursor_mz_tolerance_ppm: float = (
+        DEFAULT_CID_NL_MASS_POLICY.precursor_mz_tolerance_ppm
+    )
+    product_mz_tolerance_ppm: float = (
+        DEFAULT_CID_NL_MASS_POLICY.product_mz_tolerance_ppm
+    )
+    product_search_ppm: float = DEFAULT_CID_NL_MASS_POLICY.product_search_ppm
+    ms2_precursor_tol_da: float = DEFAULT_CID_NL_MASS_POLICY.ms2_precursor_tol_da
+    nl_min_intensity_ratio: float = DEFAULT_CID_NL_MASS_POLICY.nl_min_intensity_ratio
     seed_rt_gap_min: float = 0.20
     ms1_search_padding_min: float = 0.35
     rt_min: float | None = None

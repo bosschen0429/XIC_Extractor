@@ -40,7 +40,7 @@
     ["raw_file", "單一 RAW", "raw"],
     ["discovery_batch_index", "Discovery batch index", "csv"],
     ["output_dir", "輸出資料夾", "folder"],
-    ["dll_dir", "RawFileReader DLL", "folder"],
+    ["dll_dir", "RawFileReader DLL 資料夾", "folder"],
   ];
   const jobLabels = {
     running: "執行中",
@@ -145,42 +145,13 @@
     checklist(kind);
   }
   function setMethodState(summary) {
-    const label = summary?.label || "標準參數";
+    const label = summary?.label || "共用 CID-NL 策略";
     const custom = new Set(summary?.custom_keys || []);
     const chip = $("target-method-state");
     chip.textContent = label;
-    chip.className = `chip ${custom.size ? "warn" : "ok"}`;
-    for (const spec of state.config.targeted_form.settings) {
-      const input = $(`t-${spec.key}`);
-      const fieldNode = input?.closest(".field");
-      if (!fieldNode) continue;
-      fieldNode.classList.toggle("is-custom", custom.has(spec.key));
-      fieldNode.querySelector(".default-hint")?.remove();
-      if (custom.has(spec.key)) {
-        const value = spec.default;
-        const hint = el(
-          "button",
-          `標準值 ${value === "" ? "（空白）" : value === "true" ? "開" : value === "false" ? "關" : value} · 還原`,
-          "default-hint",
-        );
-        hint.type = "button";
-        hint.title = "把這一欄改回標準參數的值";
-        hint.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          if (input.type === "checkbox") input.checked = value === "true";
-          else input.value = value;
-          input.dispatchEvent(new Event("input", { bubbles: true }));
-        });
-        (fieldNode.querySelector(":scope > span") || fieldNode).append(hint);
-      }
-    }
+    chip.className = custom.size ? "settings-warning" : "";
     const notes = $("target-method-note");
     notes.replaceChildren();
-    for (const difference of summary?.differences || []) {
-      const spec = state.config.targeted_form.settings.find((item) => item.key === difference.key);
-      notes.append(el("p", `${spec?.label || difference.key}：${difference.default || "（空白）"} → ${difference.value || "（空白）"}`, "method-difference"));
-    }
     notes.append(el("p", `設定檔：${state.config.settings_source || "settings.csv"}`, "settings-source"));
     for (const warning of summary?.warnings || []) {
       notes.append(el("p", warning, "settings-warning"));
@@ -207,6 +178,9 @@
   }
 
   // Form fields
+  // Example templates ship placeholder paths that are not real inputs.
+  const isTemplatePath = (value) =>
+    value.startsWith("<") || /[\\/]your[\\/]/i.test(value);
   function field(spec, value, prefix) {
     const kind = spec.kind === "choice" ? "select" : spec.kind;
     const label = el(
@@ -265,14 +239,36 @@
     }
     return label;
   }
-  function pathField(container, key, label, kind, value, prefix = "u-") {
+  // 上機資訊 only annotates; disagreements are listed and the RAW decides.
+  function renderSampleSummary(summary, prefix = "samples") {
+    const notes = [];
+    for (const conflict of summary.conflicts || []) {
+      const names = conflict.sequence_names.join("、");
+      if (conflict.kind === "duplicate_order")
+        notes.push(`序號 ${conflict.detail} 出現 ${conflict.sequence_names.length} 次：${names}`);
+      else {
+        const [file, text] = conflict.detail.split(" / ");
+        notes.push(`${names}：檔名是 ${file}，描述寫 ${text}`);
+      }
+    }
+    if (summary.unreadable_raw?.length)
+      notes.push(`讀不到檔頭，已排除（不分析）：${summary.unreadable_raw.join("、")}`);
+    const unmatched = summary.unmatched_sequence_names?.length;
+    $(`${prefix}-summary`).textContent =
+      `RAW ${summary.raw_count} 次上機 · 上機資訊配對 ${summary.matched_count} 個` +
+      (unmatched ? ` · ${unmatched} 筆上機資訊未配對` : "") +
+      (notes.length ? ` · ${notes.length} 處要確認，注射順序與樣本名稱以 RAW 為準` : "");
+    $(`${prefix}-conflicts`).replaceChildren(...notes.map((note) => el("li", note)));
+    $(`${prefix}-conflicts`).hidden = !notes.length;
+  }
+  function pathField(container, key, label, kind, value, prefix = "u-", help = "") {
     const wrap = el("div", undefined, "path-line");
     wrap.id = `${prefix}${key}-row`;
     const title = el("label", label);
     title.htmlFor = `${prefix}${key}`;
     const input = el("input", undefined, "path");
     input.id = title.htmlFor;
-    input.value = value || "";
+    input.value = isTemplatePath(String(value || "")) ? "" : value || "";
     input.dataset.analysisIdle = "";
     const browse = el("button", "瀏覽");
     browse.type = "button";
@@ -280,6 +276,7 @@
     browse.dataset.kind = kind;
     browse.dataset.analysisIdle = "";
     wrap.append(title, input, browse);
+    if (help) wrap.append(el("small", help, "field-help"));
     container.append(wrap);
     return input;
   }
@@ -290,9 +287,7 @@
   }
   function pathItem(label, id, missing) {
     const value = $(id)?.value.trim() || "";
-    // Example templates ship placeholder paths that are not real inputs.
-    const usable =
-      value && !value.startsWith("<") && !/[\\/]your[\\/]/i.test(value);
+    const usable = value && !isTemplatePath(value);
     return checkItem(
       usable ? "ok" : "todo",
       label,
@@ -306,8 +301,10 @@
     const items = [];
     if (kind === "targeted") {
       items.push(pathItem("RAW 資料夾", "t-data_dir", "尚未選擇資料夾"));
+      items.push(pathItem("輸出資料夾", "t-output_dir", "尚未選擇資料夾"));
+      items.push(pathItem("RawFileReader DLL 資料夾", "t-dll_dir", "尚未選擇資料夾"));
       const istd = state.targets.filter(
-        (row) => String(row.is_istd).toLowerCase() === "true",
+        (row) => row.role === "istd",
       ).length;
       items.push(
         checkItem(
@@ -319,14 +316,14 @@
           "target-import-path",
         ),
       );
-      items.push(pathItem("RawFileReader DLL", "t-dll_dir", "尚未設定 DLL 資料夾"));
-      const method = $("target-method-state").textContent;
+      const order = $("t-injection_order_source")?.value.trim();
       items.push(
         checkItem(
-          method.startsWith("自訂") ? "info" : "ok",
-          "分析方法",
-          method,
-          "targeted-advanced",
+          "info",
+          "上機資訊（選用）",
+          order ? pathTail(order) : "未提供；依 RAW 檔案資訊判斷",
+          "t-injection_order_source",
+          Boolean(order),
         ),
       );
     } else {
@@ -343,8 +340,8 @@
         );
       if (mode !== "discovery_only")
         items.push(pathItem("RAW 資料夾", "u-raw_dir", "尚未選擇資料夾"));
-      items.push(pathItem("輸出資料夾", "u-output_dir", "尚未選擇輸出位置"));
-      items.push(pathItem("RawFileReader DLL", "u-dll_dir", "尚未設定 DLL 資料夾"));
+      items.push(pathItem("輸出資料夾", "u-output_dir", "尚未選擇資料夾"));
+      items.push(pathItem("RawFileReader DLL 資料夾", "u-dll_dir", "尚未選擇資料夾"));
       const preset = $("u-preset");
       items.push(
         checkItem(
@@ -358,7 +355,7 @@
         items.push(
           checkItem(
             "info",
-            "樣本資訊（選用）",
+            "樣本與上機資訊（選用）",
             state.samples.length
               ? `${state.samples.length} 個樣本已讀取`
               : "尚未讀取；可在步驟 4 讀取並指定角色",
@@ -404,8 +401,11 @@
     const values = { ...state.config.settings };
     for (const spec of state.config.targeted_form.settings) {
       const input = $(`t-${spec.key}`);
-      if (input) values[spec.key] =
-        spec.kind === "checkbox" ? String(input.checked) : input.value;
+      if (!input) continue;
+      if (spec.kind === "checkbox") values[spec.key] = String(input.checked);
+      // A field left blank over a template path keeps saving the template.
+      else if (input.value || !isTemplatePath(String(values[spec.key] ?? "")))
+        values[spec.key] = input.value;
     }
     return values;
   }
@@ -413,31 +413,23 @@
     const data = $("targeted-data");
     const method = $("targeted-settings");
     const execution = $("targeted-execution");
+    const outputDir = $("t-output_dir")?.value ?? state.config.targeted_output_dir;
     for (const panel of [data, method, execution]) panel.replaceChildren();
-    const advanced = el("details");
-    advanced.id = "targeted-advanced";
-    advanced.append(el("summary", "調整方法參數"));
-    const methodPanel = el("div", undefined, "advanced-panel");
-    advanced.append(methodPanel);
     const note = el("div", undefined, "method-note");
     note.id = "target-method-note";
-    method.append(el("p", "訊號處理固定使用 Gaussian；正式 Targeted 結果不將 NO_MS2 算為偵測到。", "settings-notice"), advanced, note);
-    const panels = { batch: data, method: methodPanel, environment: execution, runtime: execution, output: execution };
-    const groups = new Map();
+    method.append(el("p", "目標清單決定名稱、m/z、預期 RT、CID-NL tag 與 ISTD 配對。平台共用候選與證據策略。", "settings-notice"), note);
+    const grid = el("div", undefined, "settings-grid");
+    execution.append(grid);
+    // Paths use the same rows as Untargeted: RAW, run inputs, output, machine.
     for (const spec of state.config.targeted_form.settings) {
-      const panel = panels[spec.scope];
-      if (!panel || spec.kind === "readonly" || spec.key === "signal_processing_method" || spec.key === "count_no_ms2_as_detected") continue;
-      const groupKey = spec.scope;
-      if (!groups.has(groupKey)) {
-        const section = el("section", undefined, "settings-group");
-        const scopeHeading = { method: "進階方法參數", batch: "批次輸入", environment: "本機環境", runtime: "執行方式", output: "輸出選項" };
-        section.append(el("h3", scopeHeading[spec.scope] || spec.group));
-        const grid = el("div", undefined, "settings-grid");
-        section.append(grid);
-        panel.append(section);
-        groups.set(groupKey, grid);
+      if (spec.kind === "readonly" || spec.key === "signal_processing_method" || spec.key === "count_no_ms2_as_detected") continue;
+      if (!["folder", "file"].includes(spec.kind)) {
+        grid.append(field(spec, values[spec.key], "t-"));
+        continue;
       }
-      groups.get(groupKey).append(field(spec, values[spec.key], "t-"));
+      if (spec.scope === "environment")
+        pathField(data, "output_dir", "輸出資料夾", "folder", outputDir, "t-");
+      pathField(data, spec.key, spec.label, spec.browse || spec.kind, values[spec.key], "t-", spec.help);
     }
     setMethodState(state.config.targeted_method);
     $("t-data_dir").dataset.batchPath = values.data_dir || "";
@@ -456,24 +448,26 @@
     select.value = selected;
   }
   async function loadTargetedMethod(path) {
-    if (!path) throw new Error("請先選擇方法。");
+    if (!path) throw new Error("請先選擇清單。");
     const result = await api("/api/targeted/method/load", { path, settings: settingsValues() });
     state.targets = result.targets;
     applyTargetedDraft(result);
     targetCount();
-    done("已載入完整方法與目標；批次及本機設定保持不變。儲存或開始分析後套用。");
+    done("已載入目標清單；批次及本機設定保持不變。儲存或開始分析後套用。");
   }
   async function saveTargeted(quiet = false) {
     const settings = settingsValues();
-    const receipt = await api("/api/targeted/save", { settings, targets: state.targets });
+    const output_dir = $("t-output_dir").value;
+    const receipt = await api("/api/targeted/save", { settings, targets: state.targets, output_dir });
     state.config.settings = settings;
+    state.config.targeted_output_dir = output_dir;
     state.config.settings_source = "settings.csv";
     state.config.targeted_method = receipt.summary;
     setMethodState(receipt.summary);
     dirty("targeted", false);
     if (!quiet) done("Targeted 設定與目標已儲存。");
   }
-  const isIstd = (row) => String(row.is_istd).toLowerCase() === "true";
+  const isIstd = (row) => row.role === "istd";
   function targetCount() {
     const istd = state.targets.filter(isIstd).length;
     $("target-count").textContent = state.targets.length
@@ -499,8 +493,8 @@
     for (const [label, cls] of [
       ["名稱", ""],
       ["m/z", "num"],
-      ["RT 範圍 (min)", "num"],
-      ["Neutral loss (Da)", "num"],
+      ["預期 RT (min)", "num"],
+      ["CID-NL tag", "num"],
       ["ISTD 配對", ""],
     ])
       head.append(el("th", label, cls));
@@ -517,12 +511,10 @@
         el("td", row.mz || "—", "num"),
         el(
           "td",
-          row.rt_min || row.rt_max
-            ? `${row.rt_min || "—"} – ${row.rt_max || "—"}`
-            : "—",
+          row.expected_rt_min || "—",
           "num",
         ),
-        el("td", row.neutral_loss_da || "—", "num"),
+        el("td", row.cid_nl_tag || "—", "num"),
         el("td", row.istd_pair || "—"),
       );
       body.append(tr);
@@ -545,10 +537,8 @@
     ["label", "名稱"],
     ["pairing", "角色／ISTD 配對"],
     ["mz", "m/z"],
-    ["rt_min", "RT min"],
-    ["rt_max", "RT max"],
-    ["ppm_tol", "ppm"],
-    ["neutral_loss_da", "Neutral loss (Da)"],
+    ["expected_rt_min", "預期 RT（min）"],
+    ["cid_nl_tag", "CID-NL tag（dR / R / MeR）"],
   ];
   function renderTargets() {
     const head = el("tr");
@@ -580,7 +570,7 @@
         } else {
           input.value = row[key] || "";
           if (
-            ["mz", "rt_min", "rt_max", "ppm_tol", "neutral_loss_da"].includes(
+            ["mz", "expected_rt_min"].includes(
               key,
             )
           )
@@ -588,7 +578,7 @@
         }
         input.addEventListener("input", () => {
           if (key === "pairing") {
-            row.is_istd = String(input.value === "role:istd");
+            row.role = input.value === "role:istd" ? "istd" : "analyte";
             row.istd_pair = input.value.startsWith("pair:") ? input.value.slice(5) : "";
             renderTargets();
           } else row[key] = input.value;
@@ -954,6 +944,11 @@
   }
   function renderJob() {
     const job = state.analysis.job;
+    const sampleSummary = job?.kind === "targeted"
+      ? job.sample_summary
+      : state.analysis.results.targeted?.sample_summary;
+    $("target-samples-review").hidden = !sampleSummary;
+    if (sampleSummary) renderSampleSummary(sampleSummary, "target-samples");
     const card = $("analysis-job");
     card.hidden = !job || (jobPage[job.kind] || "untargeted") !== state.view;
     lock();
@@ -1018,10 +1013,6 @@
     state.seenJob = job.job_id;
     if (!state.booted) {
       renderResults();
-      if (job.kind === "samples" && job.status === "succeeded") {
-        state.samples = state.analysis.results.samples.samples;
-        renderSamples();
-      }
       return;
     }
     state.seenAt = Date.now();
@@ -1030,8 +1021,7 @@
         const result = state.analysis.results.samples;
         state.samples = result.samples;
         renderSamples();
-        $("samples-summary").textContent =
-          `RAW ${result.summary.raw_count} 個 · 上機資訊配對 ${result.summary.matched_count} 個${result.summary.unmatched_sequence_names?.length ? ` · ${result.summary.unmatched_sequence_names.length} 筆上機資訊未配對` : ""}`;
+        renderSampleSummary(result.summary);
         dirty("untargeted");
         done(`已讀取 ${state.samples.length} 個樣本。`);
       } else if (job.kind === "quality")
@@ -1378,6 +1368,7 @@
         startJob("targeted", {
           settings: settingsValues(),
           targets: state.targets,
+          output_dir: $("t-output_dir").value,
         }),
       );
     });
@@ -1388,18 +1379,18 @@
     $("target-save").onclick = () => act(() => saveTargeted());
     $("target-method-load").onclick = () => act(() => loadTargetedMethod($("target-method-select").value));
     $("target-method-import").onclick = () => act(async () => {
-      const path = await requestPath("載入方法資料夾（settings.csv 與 targets.csv）");
+      const path = await requestPath("載入清單資料夾（settings.csv 與 targets.csv）");
       if (!path) return;
       await loadTargetedMethod(path);
       $("target-method-select").value = "";
     });
     $("target-method-save").onclick = () => act(async () => {
-      const name = await requestPath("另存為可重複使用的方法", "", "方法名稱");
+      const name = await requestPath("另存目標清單", "", "清單名稱");
       if (!name) return;
       const result = await api("/api/targeted/method/save", { name, settings: settingsValues(), targets: state.targets });
       state.config.targeted_methods = result.methods;
       renderTargetedMethods(result.methods, result.methods.find((method) => method.name === result.name)?.path);
-      done(result.message);
+      done(`已另存目標清單：${result.name}`);
     });
     $("untargeted-save").onclick = () => act(() => saveUntargeted());
     $("target-new").onclick = () => {
@@ -1417,10 +1408,6 @@
         event.target.dataset.batchPath = event.target.value;
       }
     });
-    $("target-reset").onclick = () => act(async () => {
-      applyTargetedDraft(await api("/api/targeted/method/reset", { settings: settingsValues() }));
-      done("已還原方法參數；批次、目標、外部資源與執行設定保持不變。");
-    });
     $("target-edit").onclick = () => {
       renderTargets();
       $("target-editor").showModal();
@@ -1429,13 +1416,9 @@
       state.targets.push({
         label: "",
         mz: "",
-        rt_min: "",
-        rt_max: "",
-        ppm_tol: "20",
-        neutral_loss_da: "",
-        nl_ppm_warn: "20",
-        nl_ppm_max: "50",
-        is_istd: "false",
+        expected_rt_min: "",
+        cid_nl_tag: "dR",
+        role: "analyte",
         istd_pair: "",
       });
       dirty("targeted");
@@ -1571,6 +1554,7 @@
           state.config.untargeted.custom_roles = {};
           renderSamples();
           $("samples-summary").textContent = "";
+          $("samples-conflicts").hidden = true;
           $("untargeted-result").hidden = true;
           if (id === "untargeted-clear") {
             $("u-targets_csv").value = "";
@@ -1588,6 +1572,7 @@
       state.config.untargeted.custom_roles = {};
       state.samples = [];
       $("samples-summary").textContent = "";
+      $("samples-conflicts").hidden = true;
       renderSamples();
       const name = $("u-raw_dir")
         .value.replace(/\\/g, "/")
@@ -1757,6 +1742,20 @@
     renderRoleSummary();
     modeFields();
     state.analysis = state.config.analysis;
+    const loadedSamples = state.analysis.results.samples;
+    if (loadedSamples?.input_paths &&
+        loadedSamples.input_paths.raw_dir === $("u-raw_dir").value &&
+        loadedSamples.input_paths.dll_dir === $("u-dll_dir").value &&
+        loadedSamples.input_paths.sequence_source === $("sequence-source").value) {
+      // Saved role edits are newer than the cached sample-loading result.
+      const savedRoles = state.config.untargeted.custom_roles || {};
+      state.samples = loadedSamples.samples.map((sample) => ({
+        ...sample,
+        sample_role: savedRoles[sample.raw_stem] ?? sample.sample_role,
+      }));
+      renderSamples();
+      renderSampleSummary(loadedSamples.summary);
+    }
     renderResults();
     selectView(
       state.config.preferences.view ||

@@ -352,6 +352,10 @@ processing, see [`product/signal-processing-rationale.md`](product/signal-proces
 - Use missing evidence as negative evidence only when acquisition opportunity,
   local sensitivity, precursor selection or scan coverage, and comparable
   positive controls show that the evidence should have been observable.
+- The presence of a DDA trigger alone does not establish those conditions.
+  A scan-free peak must not gain chemical ranking priority over a reference peak
+  whose acquired MS2 lacks qualified target support. Only positive evidence
+  assigned to the same target and physical peak earns that priority.
 
 ## Product Ions, Neutral Losses, Adducts, And Fragments
 

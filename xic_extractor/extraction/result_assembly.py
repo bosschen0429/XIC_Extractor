@@ -51,6 +51,7 @@ def build_extraction_result(
     cid_nl_products: tuple[MS2ProductEvidence, ...] = (),
     cid_nl_evaluation_receipt: CidNlEvaluationReceipt | None = None,
     cid_nl_relations: CidNlMethodRelations | None = None,
+    cid_nl_candidate_evidence: tuple[CandidateMS2Evidence, ...] = (),
     selected_cid_nl_candidate_index: int | None = None,
     sample_name: str = "",
 ) -> ExtractionResult:
@@ -97,6 +98,7 @@ def build_extraction_result(
         cid_nl_products=cid_nl_products,
         cid_nl_evaluation_receipt=cid_nl_evaluation_receipt,
         cid_nl_relations=cid_nl_relations,
+        cid_nl_candidate_evidence=cid_nl_candidate_evidence,
         selected_cid_nl_candidate_index=selected_cid_nl_candidate_index,
     )
     return replace(

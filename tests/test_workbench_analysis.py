@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.raw_header_fakes import install_raw_sample_headers
 from tests.test_xic_inspector_api import _create_mock_db
 from tests.test_xic_workbench import _client
 from xic_extractor.evidence_artifacts import EvidenceLocator
@@ -106,7 +107,7 @@ def test_analysis_failure_and_cancel_retain_previous_published_results(
     mode = ["succeed"]
 
     class Run:
-        def __init__(self, config_dir, *, progress, should_cancel):
+        def __init__(self, config_dir, *, progress, should_cancel, output_dir=None):
             self.stage = "讀取指定 RAW"
             self.output_dir = tmp_path / "output"
             self.available_outputs = ()
@@ -176,7 +177,13 @@ def test_http_analysis_configuration_roundtrip_without_qt(tmp_path):
         }
         targets = [
             config["targets"][0]
-            | {"label": "precise", "mz": "501.1234567890123", "extra": "keep-me"}
+            | {
+                "label": "precise",
+                "mz": "501.1234567890123",
+                "extra": "keep-me",
+                "role": "istd",
+                "istd_pair": "",
+            }
         ]
         assert (
             request("/api/targeted/save", {"settings": settings, "targets": targets})[0]
@@ -223,9 +230,9 @@ def test_untargeted_job_loads_saved_sequence_metadata_when_samples_are_absent(
     raw.write_bytes(b"")
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
-    monkeypatch.setattr(
-        "xic_extractor.raw_reader.read_raw_sample_header",
-        lambda path, dll_dir: RawSampleHeader(
+    install_raw_sample_headers(
+        monkeypatch,
+        lambda path: RawSampleHeader(
             raw_path=str(path),
             raw_stem=path.stem,
             sample_name="Header Alpha",
@@ -236,6 +243,7 @@ def test_untargeted_job_loads_saved_sequence_metadata_when_samples_are_absent(
             vial="A:04",
             comment="",
         ),
+        lambda path: 0,
     )
     sequence = tmp_path / "sample_metadata.tsv"
     sequence.write_text(
@@ -284,22 +292,23 @@ def test_untargeted_job_loads_saved_sequence_metadata_when_samples_are_absent(
         assert state["job"]["status"] == "succeeded"
         metadata = captured["request"].sample_metadata
         assert metadata is not None
+        # The RAW names and orders the sample; the sequence adds its role.
         assert [(row.sample_name, row.sample_role) for row in metadata] == [
-            ("Alpha", "pooled_qc")
+            ("Header Alpha", "pooled_qc")
         ]
-        assert metadata[0].injection_order == 4
+        assert metadata[0].injection_order == 1
     finally:
         jobs.close()
 
 
-def test_untargeted_job_uses_saved_global_execution_profile_when_omitted(
+def test_untargeted_job_uses_shared_execution_profile_when_omitted(
     tmp_path, monkeypatch
 ):
     from xic_workbench import untargeted
     from xic_workbench.config_io import write_settings
 
     config_dir = tmp_path / "config"
-    write_settings({"parallel_workers": "3"}, config_dir=config_dir)
+    write_settings({}, config_dir=config_dir)
     captured = {}
 
     class Run:
@@ -336,12 +345,19 @@ def test_untargeted_job_uses_saved_global_execution_profile_when_omitted(
         state = _terminal(jobs)
 
         assert state["job"]["status"] == "succeeded"
-        assert captured["request"].execution_profile.parallel_workers == 3
+        from xic_extractor.configuration.execution_profile import (
+            default_parallel_workers,
+        )
+
+        assert (
+            captured["request"].execution_profile.parallel_workers
+            == default_parallel_workers()
+        )
     finally:
         jobs.close()
 
 
-def test_untargeted_job_completes_explicit_sample_order_from_raw_headers(
+def test_untargeted_job_takes_order_and_names_from_raw_and_keeps_annotations(
     tmp_path, monkeypatch
 ):
     from xic_workbench import untargeted
@@ -354,23 +370,21 @@ def test_untargeted_job_completes_explicit_sample_order_from_raw_headers(
     raw_b.write_bytes(b"")
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
-    header_reads = []
-
-    def read_header(path, dll_dir):
-        header_reads.append(path)
-        return RawSampleHeader(
+    install_raw_sample_headers(
+        monkeypatch,
+        lambda path: RawSampleHeader(
             raw_path=str(path),
             raw_stem=path.stem,
             sample_name=f"Header {path.stem}",
             sample_id=path.stem,
-            row_number={"Sample-A": 2, "Sample-B": 1}[path.stem],
+            row_number=None,
             sample_type="Unknown",
             creation_date=None,
             vial="",
             comment="",
-        )
-
-    monkeypatch.setattr("xic_extractor.raw_reader.read_raw_sample_header", read_header)
+        ),
+        lambda path: {"Sample-A": 10, "Sample-B": 0}[path.stem],
+    )
     captured = {}
 
     class Run:
@@ -435,13 +449,18 @@ def test_untargeted_job_completes_explicit_sample_order_from_raw_headers(
         assert state["job"]["status"] == "succeeded"
         metadata = captured["request"].sample_metadata
         assert metadata is not None
-        assert [row.injection_order for row in metadata] == [2, 9]
-        assert [row.sample_name for row in metadata] == [
-            "Operator Alpha",
-            "Operator Beta",
-        ]
-        assert metadata[1].excluded is True
-        assert header_reads == [raw_a, raw_b]
+        rows = {row.raw_stem: row for row in metadata}
+        # The operator's order 9 and names never override the RAW clock.
+        assert (rows["Sample-A"].injection_order, rows["Sample-B"].injection_order) == (
+            2,
+            1,
+        )
+        assert rows["Sample-A"].sample_name == "Header Sample-A"
+        assert (rows["Sample-A"].sample_role, rows["Sample-A"].prep_batch_id) == (
+            "qc",
+            "Prep A",
+        )
+        assert rows["Sample-B"].excluded is True
     finally:
         jobs.close()
 
@@ -466,7 +485,7 @@ def test_untargeted_job_leaves_default_metadata_to_alignment_owner(
 
     monkeypatch.setattr(untargeted, "UntargetedRun", Run)
     monkeypatch.setattr(
-        "xic_workbench.samples.derive_sample_metadata_from_raw_files",
+        "xic_workbench.samples.read_analysis_set",
         lambda *_args, **_kwargs: pytest.fail(
             "adapter must leave default metadata alone"
         ),
@@ -591,28 +610,18 @@ def test_targeted_bootstrap_combines_saved_settings_and_launch_values(
         workspace.jobs.close()
 
 
-def test_http_method_reset_preserves_batch_resources_and_execution(tmp_path):
+def test_http_retired_method_overrides_and_reset_are_not_accepted(tmp_path):
+    from tests.test_xic_workbench import _client
+    from xic_workbench.workspace import ReviewWorkspace
+
     workspace = ReviewWorkspace(config_dir=tmp_path / "config")
     with _client(workspace) as request:
-        status, config, _ = request("/api/config")
-        assert status == 200
-        local = {
-            "data_dir": "different-batch",
-            "dll_dir": "different-dll",
-            "injection_order_source": "order.csv",
-            "parallel_workers": "1",
-        }
-        settings = {**config["settings"], **local, "ms2_precursor_tol_da": "1.2"}
-        status, summary, _ = request("/api/targeted/method", {"settings": settings})
-        assert status == 200
-        assert summary["custom_keys"] == ["ms2_precursor_tol_da"]
-        status, reset, _ = request("/api/targeted/method/reset", {"settings": settings})
-        assert status == 200
-        assert reset["settings"]["ms2_precursor_tol_da"] == "0.8"
-        assert {key: reset["settings"][key] for key in local} == local
-        assert reset["summary"]["custom_keys"] == []
-        # Draft operations do not persist settings or alter the target input.
+        _, config, _ = request("/api/config")
+        settings = {**config["settings"], "ms2_precursor_tol_da": "1.2"}
+        assert request("/api/targeted/method", {"settings": settings})[0] == 400
+        assert (
+            request("/api/targeted/method/reset", {"settings": config["settings"]})[0]
+            == 404
+        )
+        assert request("/api/config")[1]["settings"] == config["settings"]
         assert not (tmp_path / "config" / "settings.csv").exists()
-        _, unchanged, _ = request("/api/config")
-        assert unchanged["targets"] == config["targets"]
-        assert unchanged["settings"] == config["settings"]

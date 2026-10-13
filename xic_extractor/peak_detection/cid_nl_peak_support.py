@@ -64,9 +64,10 @@ def resolve_dda_cid_nl_peak_support_ref(
         raise DdaCidNlPeakSupportContractError(
             "CID-NL evidence lacks independent precursor isolation support"
         )
-    if not precursor.supports_nl:
+    if not policy.accepts_precursor(precursor):
         raise DdaCidNlPeakSupportContractError(
-            "CID-NL evidence does not satisfy the strict neutral-loss tolerance"
+            "CID-NL evidence does not satisfy the strict neutral-loss tolerance "
+            "or precursor reference requirement"
         )
     matching_peaks = tuple(
         peak
@@ -240,7 +241,7 @@ def _matches_observation(
     integration = peak_content.integration
     precursor = observation.assess_precursor_loss(policy.neutral_loss_tolerance_ppm)
     return (
-        precursor.supports_nl
+        policy.accepts_precursor(precursor)
         and precursor.reference_mz is not None
         and integration.rt_left_min <= observation.support_rt_min
         and observation.scan_rt_min <= integration.rt_right_min

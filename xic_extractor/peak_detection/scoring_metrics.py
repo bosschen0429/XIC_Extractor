@@ -35,25 +35,17 @@ def short_scale_noise_mad(rt: np.ndarray, intensity: np.ndarray) -> float:
         return 0.0
     weight = (rt[2:] - rt[1:-1]) / (rt[2:] - rt[:-2])
     residual = (
-        weight * intensity[:-2]
-        + (1.0 - weight) * intensity[2:]
-        - intensity[1:-1]
-    ) / np.sqrt(1.0 + weight**2 + (1.0 - weight)**2)
+        weight * intensity[:-2] + (1.0 - weight) * intensity[2:] - intensity[1:-1]
+    ) / np.sqrt(1.0 + weight**2 + (1.0 - weight) ** 2)
     return float(np.median(np.abs(residual - np.median(residual))))
 
 
 def symmetry_severity(half_width_ratio: float) -> tuple[int, str]:
     if not _is_finite(half_width_ratio):
         return 2, LABEL_SYMMETRY
-    if (
-        half_width_ratio < _SYMMETRY_HARD_LOW
-        or half_width_ratio > _SYMMETRY_HARD_HIGH
-    ):
+    if half_width_ratio < _SYMMETRY_HARD_LOW or half_width_ratio > _SYMMETRY_HARD_HIGH:
         return 2, LABEL_SYMMETRY
-    if (
-        half_width_ratio < _SYMMETRY_SOFT_LOW
-        or half_width_ratio > _SYMMETRY_SOFT_HIGH
-    ):
+    if half_width_ratio < _SYMMETRY_SOFT_LOW or half_width_ratio > _SYMMETRY_SOFT_HIGH:
         return 1, LABEL_SYMMETRY
     return 0, LABEL_SYMMETRY
 
@@ -61,7 +53,6 @@ def symmetry_severity(half_width_ratio: float) -> tuple[int, str]:
 def local_sn_severity(
     intensity: np.ndarray,
     apex_index: int,
-    dirty_matrix: bool,
     *,
     baseline: np.ndarray | None = None,
     residual_mad: float | None = None,
@@ -80,8 +71,8 @@ def local_sn_severity(
         return 0, LABEL_LOCAL_SN
     peak_above_baseline = float(values[apex_index] - cached_baseline[apex_index])
     ratio = peak_above_baseline / mad
-    hard = _SN_DIRTY_HARD_THRESHOLD if dirty_matrix else _SN_HARD_THRESHOLD
-    soft = _SN_DIRTY_SOFT_THRESHOLD if dirty_matrix else _SN_SOFT_THRESHOLD
+    hard = _SN_HARD_THRESHOLD
+    soft = _SN_SOFT_THRESHOLD
     if ratio < hard:
         return 2, LABEL_LOCAL_SN
     if ratio < soft:

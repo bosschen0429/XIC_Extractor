@@ -35,21 +35,14 @@ def test_targeted_dispatch_freezes_inputs_until_completion(tmp_path, monkeypatch
     settings = {
         "data_dir": str(raw),
         "dll_dir": str(dll),
-        "signal_processing_window_points": "17",
-        "ms2_precursor_tol_da": "0.37",
-        "targeted_ms1_shape_identity_activation_policy": "explicit_support_tsv",
     }
     targets = [
         dict(
             label=label,
             mz=mz,
-            rt_min=1,
-            rt_max=3,
-            ppm_tol=5,
-            neutral_loss_da=116,
-            nl_ppm_warn=10,
-            nl_ppm_max=20,
-            is_istd=False,
+            expected_rt_min=2,
+            cid_nl_tag="dR",
+            role="istd",
             istd_pair="",
         )
         for label, mz in (("A", 250), ("B", 270))
@@ -81,11 +74,10 @@ def test_targeted_dispatch_freezes_inputs_until_completion(tmp_path, monkeypatch
         jobs.start("targeted", {"settings": settings, "targets": targets})
         original_settings = (config_dir / "settings.csv").read_bytes()
         original_targets = (config_dir / "targets.csv").read_bytes()
-        write_settings(
-            {**settings, "ms2_precursor_tol_da": "0.8"}, config_dir=config_dir
-        )
+        write_settings({**settings, "dll_dir": str(raw)}, config_dir=config_dir)
         write_targets(
-            [{**target, "rt_max": "8"} for target in targets], config_dir=config_dir
+            [{**target, "expected_rt_min": "8"} for target in targets],
+            config_dir=config_dir,
         )
         later_settings = (config_dir / "settings.csv").read_bytes()
         callback, *args = submitted[0]
@@ -93,9 +85,11 @@ def test_targeted_dispatch_freezes_inputs_until_completion(tmp_path, monkeypatch
         assert jobs.state()["job"]["status"] == "succeeded"
         assert (config_dir / "settings.csv").read_bytes() == later_settings
         request = captured[0]
-        assert request.config.ms2_precursor_tol_da == 0.37
-        assert request.config.signal_processing_window_points == 17
-        assert [(t.label, t.rt_max) for t in request.targets] == [("A", 3), ("B", 3)]
+        assert request.config.dll_dir == dll
+        assert [(t.label, t.expected_rt_min) for t in request.targets] == [
+            ("A", 2),
+            ("B", 2),
+        ]
         receipt_dir = Path(receipts[0])
         assert not receipt_dir.exists()
         assert request.config.output_csv.parent == tmp_path / "output"
@@ -112,7 +106,6 @@ def _snapshot_workspace(tmp_path, *, order_source=None):
     settings = {
         "data_dir": str(raw),
         "dll_dir": str(dll),
-        "targeted_ms1_shape_identity_activation_policy": "explicit_support_tsv",
     }
     if order_source is not None:
         settings["injection_order_source"] = str(order_source)
@@ -120,13 +113,9 @@ def _snapshot_workspace(tmp_path, *, order_source=None):
         dict(
             label="Target",
             mz=250,
-            rt_min=1,
-            rt_max=3,
-            ppm_tol=5,
-            neutral_loss_da=116,
-            nl_ppm_warn=10,
-            nl_ppm_max=20,
-            is_istd=False,
+            expected_rt_min=2,
+            cid_nl_tag="dR",
+            role="istd",
             istd_pair="",
         )
     ]
@@ -135,12 +124,12 @@ def _snapshot_workspace(tmp_path, *, order_source=None):
     return config_dir, settings, targets
 
 
-def test_queued_targeted_metadata_membership_and_order_are_frozen(
+def test_queued_targeted_metadata_membership_is_frozen(
     tmp_path, monkeypatch
 ):
     import csv
 
-    from xic_extractor.analysis_set import select_analysis_set
+    from tests.raw_header_fakes import install_fake_raw_headers
     from xic_extractor.extraction import targeted_inputs
     from xic_extractor.sample_metadata import SAMPLE_METADATA_COLUMNS
     from xic_workbench import targeted
@@ -181,13 +170,7 @@ def test_queued_targeted_metadata_membership_and_order_are_frozen(
         path.write_bytes(b"external RAW test stand-in")
     # Only the external RAW header read is replaced; metadata and membership
     # decisions still cross their real owners.
-    monkeypatch.setattr(
-        targeted_inputs,
-        "read_analysis_set",
-        lambda _root, _dll, metadata: select_analysis_set(
-            (), {}, metadata, unread_paths=[str(path) for path in raw_paths]
-        ),
-    )
+    install_fake_raw_headers(monkeypatch)
     captured = []
     receipts = _record_receipts(monkeypatch)
     submitted = []
@@ -221,7 +204,8 @@ def test_queued_targeted_metadata_membership_and_order_are_frozen(
         assert jobs.state()["job"]["status"] == "succeeded"
         request, selected, inputs = captured[0]
         assert [path.stem for path in selected] == ["A"]
-        assert inputs.injection_order == {"A": 1, "B": 2}
+        # Order comes from the RAW, never from the sequence numbers.
+        assert inputs.injection_order == {"A": 1}
         assert not request.config.injection_order_source.exists()
         assert request.config.injection_order_source != order_source
         assert order_source.read_bytes() != original_order

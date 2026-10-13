@@ -4,11 +4,18 @@ import numpy as np
 import pytest
 from openpyxl import load_workbook
 
+from tests.raw_header_fakes import install_fake_raw_headers
 from xic_extractor import extractor
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.extraction.result_models import RunOutput
 from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 from xic_extractor.output.messages import DiagnosticRecord
+
+
+@pytest.fixture(autouse=True)
+def _placeholder_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+    # RAW files here are placeholders; order them by their file times.
+    install_fake_raw_headers(monkeypatch)
 
 _OPEN_RAW_SEAM = "xic_extractor.extraction.target_extraction.open_raw"
 
@@ -69,6 +76,7 @@ def test_run_metadata_sheet_has_required_keys(tmp_path: Path, monkeypatch) -> No
         "config_hash",
         "app_version",
         "generated_at",
+        "targeted_strategy",
         "signal_processing_method",
         "signal_processing_window_points",
     } <= keys
@@ -91,6 +99,7 @@ def _run_pipeline(
     monkeypatch.setattr(_OPEN_RAW_SEAM, _open_raw_factory())
 
     run_output = extractor.acquire(config, [target])
+    assert not any(result.error for result in run_output.file_results)
     if with_diagnostics:
         run_output = RunOutput(
             file_results=run_output.file_results,
@@ -150,6 +159,9 @@ def _open_raw_factory():
 
         def __exit__(self, *_args: object) -> None:
             return None
+
+        def acquisition_rt_bounds(self):
+            return 8.0, 10.0
 
         def extract_xic(
             self, mz: float, rt_min: float, rt_max: float, ppm_tol: float

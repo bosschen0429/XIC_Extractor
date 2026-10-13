@@ -732,6 +732,25 @@ def qualified_physical_segments(
     )
 
 
+def physical_peak_support_failures_at_reference(
+    prepared: PreparedSignal,
+    universe: PhysicalSegmentUniverse,
+    reference_rt: float,
+) -> tuple[str, ...]:
+    """Explain rejected segments containing a reference without selecting a peak.
+
+    These are diagnostic support facts, not identity or counting decisions.
+    No containing segment, or any supported segment, means no shared failure
+    can be attributed to the reference. Reuse the candidate gate verbatim.
+    """
+    failures = tuple(
+        _physical_segment_support_failure(prepared, segment)
+        for segment in universe.segments
+        if segment.left_rt_min <= reference_rt <= segment.right_rt_min
+    )
+    return tuple(dict.fromkeys(failures)) if failures and all(failures) else ()
+
+
 def _physical_segment_support_failure(
     prepared: PreparedSignal,
     selected: PhysicalSegment,

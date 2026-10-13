@@ -49,6 +49,9 @@ def _merge_known_keys(config: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _with_runtime_defaults(config: dict[str, Any]) -> dict[str, Any]:
+    preset = config.get("preset")
+    if preset is None or (isinstance(preset, str) and not preset.strip()):
+        config["preset"] = DEFAULT_CONFIG["preset"]
     if not str(config.get("output_dir") or "").strip():
         config["output_dir"] = str(ROOT / "output")
     return config

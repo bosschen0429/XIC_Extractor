@@ -1,5 +1,6 @@
 import csv
 import json
+import os
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
@@ -1924,8 +1925,10 @@ def test_run_alignment_cli_routes_sample_metadata_without_losing_cohorts(
     capsys: pytest.CaptureFixture[str],
     explicit_metadata: bool,
 ) -> None:
+    from tests.raw_header_fakes import install_fake_raw_headers
     from xic_extractor.sample_metadata import SampleMetadata
 
+    install_fake_raw_headers(monkeypatch)
     batch_index = tmp_path / "discovery_batch_index.csv"
     batch_index.write_text(
         "sample_stem,raw_file,candidate_csv\nS1,S1.raw,S1.csv\nS2,S2.raw,S2.csv\n",
@@ -1935,6 +1938,11 @@ def test_run_alignment_cli_routes_sample_metadata_without_losing_cohorts(
         (tmp_path / f"{stem}.csv").write_text("x\n", encoding="utf-8")
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
+    # The RAW clock runs S2 before S1, against the metadata numbers 12 and 3.
+    for stem, seconds in (("S1", 600), ("S2", 0)):
+        raw = raw_dir / f"{stem}.raw"
+        raw.write_bytes(b"")
+        os.utime(raw, (1_767_225_600 + seconds, 1_767_225_600 + seconds))
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
     metadata = tmp_path / "sample_metadata.tsv"
@@ -1978,26 +1986,27 @@ def test_run_alignment_cli_routes_sample_metadata_without_losing_cohorts(
     assert run_alignment.main(argv) == 0
     stdout = capsys.readouterr().out
     if explicit_metadata:
+        # Names and order come from the RAW; the metadata adds the rest.
         assert captured["request"].sample_metadata == (
             SampleMetadata(
-                sample_name="QC one",
-                raw_stem="S1",
-                injection_order=12,
-                sample_role="pooled_qc",
-                batch_id="batch_A",
-                prep_batch_id="prep_A",
-                matrix_type="tissue",
-                group="A",
-            ),
-            SampleMetadata(
-                sample_name="Study two",
+                sample_name="S2",
                 raw_stem="S2",
-                injection_order=3,
+                injection_order=1,
                 sample_role="study_sample",
                 batch_id="batch_B",
                 prep_batch_id="prep_B",
                 matrix_type="plasma",
                 group="B",
+            ),
+            SampleMetadata(
+                sample_name="S1",
+                raw_stem="S1",
+                injection_order=2,
+                sample_role="pooled_qc",
+                batch_id="batch_A",
+                prep_batch_id="prep_A",
+                matrix_type="tissue",
+                group="A",
             ),
         )
         assert str(metadata.resolve()) in stdout

@@ -237,7 +237,7 @@
           <div class="source-text">
             <h1 id="batch-title">開啟已完成的分析</h1>
             <p id="batch-description">
-              選擇批次輸出資料夾或 cid_nl_explanation.sqlite。
+              選擇 Targeted 或 Untargeted 的分析結果。
             </p>
           </div>
           <div class="source-meta">
@@ -274,7 +274,7 @@
               id="raw-dir"
               type="text"
               class="path"
-              placeholder="取得 XIC 時才需要"
+              placeholder="看 XIC 時才需要"
               data-idle
             /><button
               type="button"
@@ -286,12 +286,12 @@
             </button>
           </div>
           <div class="path-line">
-            <label for="dll-dir">RawFileReader DLL</label
+            <label for="dll-dir">RawFileReader DLL 資料夾</label
             ><input
               id="dll-dir"
               type="text"
               class="path"
-              placeholder="Thermo RawFileReader DLL 資料夾"
+              placeholder="看 XIC 時才需要"
               data-idle
             /><button
               type="button"
@@ -325,14 +325,20 @@
             ><span>搜尋全批項目，依 m/z、RT 或分組 ID 定位。</span>
           </li>
           <li>
-            <strong>需要時取得 XIC</strong
-            ><span>指定 RAW 與 DLL 資料夾，只讀取勾選的樣本。</span>
+            <strong>需要時看 XIC</strong
+            ><span>選擇 RAW 與 RawFileReader DLL 資料夾，只讀取選取的樣本。</span>
           </li>
         </ol>
-        <button type="button" data-view="untargeted" class="ghost">
-          還沒有結果？前往 Untargeted 分析<svg class="icon">
-            <use href="#i-chevron-right" /></svg>
-        </button>
+        <p class="review-empty-links">
+          還沒有結果？
+          <button type="button" data-view="targeted" class="ghost">
+            前往 Targeted 分析<svg class="icon">
+              <use href="#i-chevron-right" /></svg></button
+          ><button type="button" data-view="untargeted" class="ghost">
+            前往 Untargeted 分析<svg class="icon">
+              <use href="#i-chevron-right" /></svg>
+          </button>
+        </p>
       </section>
       <section id="targeted-overview" class="targeted-overview" aria-label="整批結果總覽" hidden></section>
       <nav id="targeted-review-nav" class="targeted-review-nav" aria-label="結果閱讀層級" hidden>
@@ -343,7 +349,7 @@
         <aside class="list-panel">
           <form id="query-form">
             <div class="section-heading">
-              <h2>檢閱項目</h2>
+              <h2 id="list-title">檢閱項目</h2>
               <button
                 type="button"
                 id="reset-query"
@@ -353,7 +359,7 @@
                 清除條件
               </button>
             </div>
-            <p class="subtle">搜尋範圍是整個批次的已儲存項目。</p>
+            <p class="subtle">搜尋範圍是整批已儲存的結果。</p>
             <div id="targeted-filters" hidden>
               <label class="field">目標<select id="target-id" data-idle></select></label>
               <label class="field">樣本<select id="target-sample" data-idle></select></label>
@@ -451,15 +457,13 @@
               <summary>來源明細</summary>
               <code id="item-identity"></code>
             </details>
-            <section class="acquisition-panel">
-              <div class="section-heading">
-                <h3>
-                  <svg class="icon"><use href="#i-peak" /></svg>按需取得 XIC
-                </h3>
+            <details class="acquisition-panel">
+              <summary class="section-heading">
+                <span><svg class="icon"><use href="#i-peak" /></svg>查看樣本 XIC</span>
                 <span id="sample-count" class="chip"></span>
-              </div>
-              <p class="subtle">
-                勾選少數樣本，讀取保留峰頂附近的
+              </summary>
+              <p class="subtle" id="acquisition-description">
+                勾選要看的樣本，讀取保留峰頂附近的
                 RAW。缺少觀測座標的樣本無法自動擷取。
               </p>
               <div id="sample-list" class="sample-list"></div>
@@ -504,25 +508,7 @@
                 <progress id="progress"></progress
                 ><span id="job-message"></span>
               </div>
-            </section>
-            <div class="tabs" role="tablist" aria-label="檢閱來源">
-              <button
-                id="tab-recorded"
-                type="button"
-                role="tab"
-                aria-selected="true"
-              >
-                當次分析紀錄</button
-              ><button
-                id="tab-curves"
-                type="button"
-                role="tab"
-                aria-selected="false"
-                disabled
-              >
-                新取得 XIC
-              </button>
-            </div>
+            </details>
             <p id="view-note" class="view-note"></p>
             <iframe
               id="inspector"
@@ -534,6 +520,30 @@
         </section>
       </section>
     </main>
+
+    <dialog id="xic-dialog" class="xic-dialog" aria-labelledby="xic-title">
+      <header class="xic-heading">
+        <div><span class="eyebrow">色譜檢閱 · 唯讀</span><h2 id="xic-title">XIC</h2></div>
+        <div class="xic-heading-actions">
+          <a id="xic-download" class="button-link" hidden>匯出圖表</a>
+          <button id="xic-close" type="button" class="icon-button" aria-label="關閉曲線，返回結果"><svg class="icon"><use href="#i-x" /></svg></button>
+        </div>
+      </header>
+      <div id="xic-navigation" class="xic-navigation">
+        <button id="xic-previous" type="button" aria-label="上一個樣本">←</button>
+        <label><span class="sr-only">檢閱樣本</span><select id="xic-sample"></select></label>
+        <button id="xic-next" type="button" aria-label="下一個樣本">→</button>
+        <span id="xic-position" class="subtle"></span>
+      </div>
+      <div id="xic-loading" class="xic-loading" role="status" aria-live="polite">
+        <svg class="icon"><use href="#i-peak" /></svg>
+        <p id="xic-status">讀取所選樣本的曲線…</p>
+        <button id="xic-cancel" type="button">取消載入</button>
+        <button id="xic-retry" type="button" hidden>重試</button>
+      </div>
+      <iframe id="xic-inspector" title="樣本 XIC 圖表" src="about:blank" hidden></iframe>
+      <footer class="xic-footer"><span id="xic-source-note">只載入正在查看的曲線，不變更已保存的結果。</span><span>Esc 返回結果</span></footer>
+    </dialog>
 
     <div id="toasts" class="toasts" aria-live="polite"></div>
 

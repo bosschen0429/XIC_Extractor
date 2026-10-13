@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from xic_extractor.analysis_set import AnalysisSet
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.scientific_settings import SCIENTIFIC_SETTING_FIELDS
 from xic_extractor.configuration.signal_processing_profile import (
@@ -15,8 +16,8 @@ from xic_extractor.configuration.target_identity import (
     TargetListSnapshot,
     target_list_snapshot_payload,
 )
+from xic_extractor.configuration.targeted_strategy import strategy_receipt
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
-from xic_extractor.injection_rolling import read_injection_order
 from xic_extractor.peak_detection.physical_peak_models import PhysicalPeakEvaluation
 from xic_extractor.peak_detection.search_scope import (
     PHYSICAL_CAPTURE_INPUT_KEY,
@@ -34,14 +35,7 @@ from xic_extractor.raw_reader import (
     THERMO_RAW_OBSERVATION_NAMESPACE,
     read_analysis_set,
 )
-from xic_extractor.sample_metadata import (
-    SampleMetadata,
-    is_sample_metadata_source,
-    load_sample_metadata,
-    match_sequence_to_raw_stems_report,
-    sample_metadata_to_injection_order,
-    sample_metadata_to_raw_stem_injection_order,
-)
+from xic_extractor.sample_metadata import SampleMetadata
 
 TARGETED_PROCESSING_INPUT_SCHEMA_VERSION = "targeted_extraction_inputs"
 TARGETED_PROCESSING_ALGORITHM_VERSION = "targeted_extraction_algorithm"
@@ -63,7 +57,6 @@ TARGETED_REAL_DATA_DISCOVERY_SETTINGS_SCHEMA_VERSION = (
 @dataclass(frozen=True)
 class ResolvedTargetedInputs:
     injection_order: dict[str, int]
-    acquisition_injection_order: dict[str, int] | None = None
     sample_metadata: tuple[SampleMetadata, ...] = ()
 
 
@@ -73,33 +66,28 @@ def resolve_targeted_inputs(
     raw_paths: list[Path],
     injection_order: dict[str, int] | None,
 ) -> ResolvedTargetedInputs:
-    resolved_injection_order, acquisition_injection_order = _resolve_injection_orders(
-        config,
-        raw_paths,
-        injection_order,
-    )
+    by_path = {entry.raw_path: entry for entry in _analysis_set(config).entries}
+    selected = [by_path[path] for path in raw_paths]
     return ResolvedTargetedInputs(
-        injection_order=resolved_injection_order,
-        acquisition_injection_order=acquisition_injection_order,
-        sample_metadata=match_sequence_to_raw_stems_report(
-            load_sample_metadata(config.injection_order_source)
-            if config.injection_order_source is not None
-            and is_sample_metadata_source(config.injection_order_source)
-            else (),
-            tuple(path.stem for path in raw_paths),
-        ).rows,
+        injection_order=(
+            injection_order
+            if injection_order is not None
+            else {entry.raw_stem: entry.injection_order for entry in selected}
+        ),
+        sample_metadata=tuple(entry.metadata for entry in selected),
     )
 
 
 def resolve_targeted_raw_paths(config: ExtractionConfig) -> list[Path]:
-    source = config.injection_order_source
-    metadata = (
-        load_sample_metadata(source)
-        if source is not None and is_sample_metadata_source(source)
-        else None
-    )
-    return sorted(
-        read_analysis_set(config.data_dir, config.dll_dir, metadata).raw_paths
+    return sorted(_analysis_set(config).raw_paths)
+
+
+def _analysis_set(config: ExtractionConfig) -> AnalysisSet:
+    # 上機資訊 annotates roles; the RAW headers own order and sample names.
+    return read_analysis_set(
+        config.data_dir,
+        config.dll_dir,
+        sequence_source=config.injection_order_source,
     )
 
 
@@ -129,11 +117,7 @@ def build_targeted_processing_request_identity(
             should_cancel=should_cancel,
         )
 
-    identity_injection_order = (
-        resolved_inputs.acquisition_injection_order
-        if resolved_inputs.acquisition_injection_order is not None
-        else resolved_inputs.injection_order
-    )
+    identity_injection_order = resolved_inputs.injection_order
     expected_stems = set(sources_by_stem)
     actual_stems = set(identity_injection_order)
     if actual_stems != expected_stems:
@@ -154,6 +138,7 @@ def build_targeted_processing_request_identity(
     )
     scientific_inputs = {
         "sample_metadata": [asdict(row) for row in resolved_inputs.sample_metadata],
+        "strategy": strategy_receipt(),
         "settings": {
             field: getattr(config, field) for field in SCIENTIFIC_SETTING_FIELDS
         },
@@ -463,50 +448,3 @@ def targeted_real_data_discovery_settings_payload(
             "current_discovery_settings must have canonical JSON content"
         )
     return normalized
-
-
-def resolve_injection_order(
-    config: ExtractionConfig,
-    raw_paths: list[Path],
-    injection_order: dict[str, int] | None,
-) -> dict[str, int]:
-    resolved_injection_order, _ = _resolve_injection_orders(
-        config,
-        raw_paths,
-        injection_order,
-    )
-    return resolved_injection_order
-
-
-def _resolve_injection_orders(
-    config: ExtractionConfig,
-    raw_paths: list[Path],
-    injection_order: dict[str, int] | None,
-) -> tuple[dict[str, int], dict[str, int]]:
-    if injection_order is not None:
-        return injection_order, injection_order
-    if config.injection_order_source is not None:
-        return _read_injection_order_source(config.injection_order_source)
-    fallback = fallback_injection_order_from_mtime(raw_paths)
-    return fallback, fallback
-
-
-def _read_injection_order_source(
-    path: Path,
-) -> tuple[dict[str, int], dict[str, int]]:
-    if is_sample_metadata_source(path):
-        rows = load_sample_metadata(path)
-        return (
-            sample_metadata_to_injection_order(rows),
-            sample_metadata_to_raw_stem_injection_order(rows),
-        )
-    injection_order = read_injection_order(path)
-    return injection_order, injection_order
-
-
-def fallback_injection_order_from_mtime(raw_paths: list[Path]) -> dict[str, int]:
-    ordered_paths = sorted(
-        raw_paths,
-        key=lambda path: (path.stat().st_mtime, path.name),
-    )
-    return {path.stem: index for index, path in enumerate(ordered_paths, start=1)}

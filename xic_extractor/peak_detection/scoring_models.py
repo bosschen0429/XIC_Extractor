@@ -55,7 +55,6 @@ class ScoringContext:
     rt_prior_sigma: float | None
     rt_min: float
     rt_max: float
-    dirty_matrix: bool
     neutral_loss_required: bool = True
     count_no_ms2_as_detected: bool = False
     ms2_trace_strength: MS2TraceStrength | None = None
