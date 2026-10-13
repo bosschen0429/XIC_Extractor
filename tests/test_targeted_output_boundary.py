@@ -1947,7 +1947,7 @@ def test_paired_position_offset_and_mandatory_review_reach_workbook_and_inspecto
 
     data = tmp_path / "raw"
     data.mkdir()
-    for name in ("Near", "Far"):
+    for name in ("Near", "Far", "Spike"):
         (data / f"{name}.raw").write_bytes(name.encode())
     config = ExtractionConfig(
         data_dir=data,
@@ -1993,6 +1993,10 @@ def test_paired_position_offset_and_mandatory_review_reach_workbook_and_inspecto
             rt = np.linspace(rt_min, rt_max, 2001)
             center = 1.0 if mz == 255.0 else 1.5
             signal = 10 + 2000 * np.exp(-(((rt - center) / 0.025) ** 2))
+            if self.name == "Spike" and mz == 250.0:
+                signal = np.zeros_like(rt)
+                signal[np.argmin(abs(rt - 1.5))] = 2000
+                signal += 1000 * np.exp(-(((rt - 2.1) / 0.025) ** 2))
             if self.name == "Far" and mz == 250.0:
                 # A second, recorded-NL-supported peak wins selection over
                 # the unfragmented peak at the expected paired position.
@@ -2001,7 +2005,7 @@ def test_paired_position_offset_and_mandatory_review_reach_workbook_and_inspecto
 
         def iter_ms2_scans(self, rt_min, rt_max):
             for index, mz in enumerate((255.0, 250.0), 1):
-                if mz == 250.0 and self.name == "Near":
+                if mz == 250.0 and self.name in {"Near", "Spike"}:
                     continue
                 rt = 1.0 if mz == 255.0 else 2.1
                 if rt_min <= rt <= rt_max:
@@ -2029,7 +2033,7 @@ def test_paired_position_offset_and_mandatory_review_reach_workbook_and_inspecto
         build_targeted_application_request(
             config,
             [analyte, istd],
-            injection_order={"Near": 1, "Far": 2},
+            injection_order={"Near": 1, "Far": 2, "Spike": 3},
             excel_output_path=path,
         )
     )
@@ -2063,6 +2067,10 @@ def test_paired_position_offset_and_mandatory_review_reach_workbook_and_inspecto
     assert rows["Far"]["Review"] == "Check"
     assert rows["Far"]["Review Reason"] == "峰偏離配對內標位置，需確認身分"
     assert rows["Near"]["Review"] is None
+    assert rows["Spike"]["Counted Detection"] == "FALSE"
+    assert rows["Spike"]["Area"] == "ND"
+    assert "原始 scan 支撐不足" in rows["Spike"]["Review Reason"]
+    assert "insufficient_original_xic_support" in rows["Spike"]["Review Evidence"]
     from xic_extractor.output.review_queue_model import _review_queue_rows
 
     queue = _review_queue_rows(
@@ -2074,7 +2082,7 @@ def test_paired_position_offset_and_mandatory_review_reach_workbook_and_inspecto
         for r in TargetedWorkbookSource(path).records
         if r["Target"] == "Analyte"
     }
-    for sample in ("Near", "Far"):
+    for sample in ("Near", "Far", "Spike"):
         assert saved[sample]["Review"] == rows[sample]["Review"]
         assert saved[sample]["Review Reason"] == rows[sample]["Review Reason"]
 

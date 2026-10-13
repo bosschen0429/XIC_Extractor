@@ -540,6 +540,9 @@ def _apply_paired_istd_positions(
     retains its measurement and count but requires identity review.
     """
     from xic_extractor.extraction.target_extraction import current_target_reference_rt
+    from xic_extractor.peak_detection.physical_peak_evaluation import (
+        physical_peak_support_failures_at_reference,
+    )
 
     diagnostics: list[DiagnosticRecord] = []
     for label, target in targets_by_label.items():
@@ -585,6 +588,33 @@ def _apply_paired_istd_positions(
             rendered_by_sample[sample][label] = cells[(sample, label)].render(
                 no_write_reason=OFF_PAIRED_ISTD_POSITION
             )
+            physical = measured.physical_evaluation
+            reference_rt = current_target_reference_rt(
+                target,
+                reference_rt=istd[sample].reported_rt,
+                paired_target=targets_by_label[pair],
+            )
+            if (
+                physical is not None
+                and physical.retained_prepared_signal is not None
+                and reference_rt is not None
+            ):
+                failures = physical_peak_support_failures_at_reference(
+                    physical.retained_prepared_signal,
+                    physical.segment_universe,
+                    reference_rt,
+                )
+                if failures:
+                    diagnostics.append(
+                        DiagnosticRecord(
+                            sample,
+                            label,
+                            "PAIRED_POSITION_SUPPORT_REJECTED",
+                            "At paired-ISTD-derived reference "
+                            f"RT {reference_rt:.4f} min: "
+                            + "; ".join(failures),
+                        )
+                    )
             diagnostics.append(
                 DiagnosticRecord(
                     sample,

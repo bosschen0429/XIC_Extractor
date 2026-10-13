@@ -11,6 +11,8 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.diagnostics.alignment_explanation import ExplanationError
 from xic_extractor.peak_detection.physical_peak_evaluation import (
+    enumerate_physical_segment_universe,
+    physical_peak_support_failures_at_reference,
     prepare_physical_signal,
 )
 from xic_extractor.processing_identity import (
@@ -130,12 +132,26 @@ def export_targeted_curves(
                 expected = [_number(spec.get(k)) for k in ("RT min", "RT max")]
                 reference_rts.extend(v for v in [saved_rt, *expected] if v is not None)
                 rt, intensity = raw.extract_xic(mz, lower, upper, tolerance)
-                prepared = prepare_physical_signal(
+                prepared_result = prepare_physical_signal(
                     rt, intensity, profile=profile
-                ).prepared
+                )
+                prepared = prepared_result.prepared
                 if prepared is None:
                     raise ExplanationError(
                         f"{sample} / {label} 沒有可繪製的 XIC 資料。"
+                    )
+                reference = records.get((sample, spec.get("ISTD Pair")), {})
+                reference_rt = _number(reference.get("RT"))
+                support_failures: tuple[str, ...] = ()
+                if (
+                    str(record.get("Counted Detection")).upper() == "FALSE"
+                    and str(reference.get("Counted Detection")).upper() == "TRUE"
+                    and reference_rt is not None
+                ):
+                    support_failures = physical_peak_support_failures_at_reference(
+                        prepared,
+                        enumerate_physical_segment_universe(prepared_result),
+                        reference_rt,
                     )
                 bounds = None
                 start, end = (_number(record.get(k)) for k in ("PeakStart", "PeakEnd"))
@@ -170,6 +186,8 @@ def export_targeted_curves(
                             "new_diagnostic_extraction": True,
                             "saved_area": record.get("Area"),
                             "saved_counted_detection": record.get("Counted Detection"),
+                            "reference_support_failures": list(support_failures),
+                            "support_reference_rt": reference_rt,
                             "source_binding_basis": "workbook_sample_name_unverified",
                             "original_acquisition_verified": False,
                             "workbook_sha256": source.locator.workbook_sha256,

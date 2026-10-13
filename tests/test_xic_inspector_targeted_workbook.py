@@ -100,7 +100,9 @@ def _payload(html):
     )
 
 
-def install_targeted_raws(monkeypatch, raw_dir, scales):
+def install_targeted_raws(
+    monkeypatch, raw_dir, scales, *, pair_scale=1.0, impulse_samples=()
+):
     from contextlib import contextmanager
 
     import numpy as np
@@ -122,7 +124,11 @@ def install_targeted_raws(monkeypatch, raw_dir, scales):
         def extract_xic(self, mz, lower, upper, ppm):
             reads.append((self.name, mz, lower, upper, ppm))
             rt = np.linspace(lower, upper, 1201)
-            scale = scales[self.name]
+            scale = scales[self.name] * (pair_scale if mz > 260 else 1.0)
+            if mz < 260 and self.name in impulse_samples:
+                intensity = np.zeros_like(rt)
+                intensity[np.argmin(abs(rt - 9.0))] = scale
+                return rt, intensity
             return rt, scale * np.exp(-(((rt - 9.0) / 0.1) ** 2))
 
     @contextmanager

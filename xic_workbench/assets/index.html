@@ -451,13 +451,11 @@
               <summary>來源明細</summary>
               <code id="item-identity"></code>
             </details>
-            <section class="acquisition-panel">
-              <div class="section-heading">
-                <h3>
-                  <svg class="icon"><use href="#i-peak" /></svg>按需取得 XIC
-                </h3>
+            <details class="acquisition-panel">
+              <summary class="section-heading">
+                <span><svg class="icon"><use href="#i-peak" /></svg>查看樣本 XIC</span>
                 <span id="sample-count" class="chip"></span>
-              </div>
+              </summary>
               <p class="subtle" id="acquisition-description">
                 勾選少數樣本，讀取保留峰頂附近的
                 RAW。缺少觀測座標的樣本無法自動擷取。
@@ -504,25 +502,7 @@
                 <progress id="progress"></progress
                 ><span id="job-message"></span>
               </div>
-            </section>
-            <div class="tabs" role="tablist" aria-label="檢閱來源">
-              <button
-                id="tab-recorded"
-                type="button"
-                role="tab"
-                aria-selected="true"
-              >
-                當次分析紀錄</button
-              ><button
-                id="tab-curves"
-                type="button"
-                role="tab"
-                aria-selected="false"
-                disabled
-              >
-                新取得 XIC
-              </button>
-            </div>
+            </details>
             <p id="view-note" class="view-note"></p>
             <iframe
               id="inspector"
@@ -534,6 +514,30 @@
         </section>
       </section>
     </main>
+
+    <dialog id="xic-dialog" class="xic-dialog" aria-labelledby="xic-title">
+      <header class="xic-heading">
+        <div><span class="eyebrow">色譜檢閱 · 唯讀</span><h2 id="xic-title">XIC</h2></div>
+        <div class="xic-heading-actions">
+          <a id="xic-download" class="button-link" hidden>匯出圖表</a>
+          <button id="xic-close" type="button" class="icon-button" aria-label="關閉曲線，返回結果"><svg class="icon"><use href="#i-x" /></svg></button>
+        </div>
+      </header>
+      <div id="xic-navigation" class="xic-navigation">
+        <button id="xic-previous" type="button" aria-label="上一個樣本">←</button>
+        <label><span class="sr-only">檢閱樣本</span><select id="xic-sample"></select></label>
+        <button id="xic-next" type="button" aria-label="下一個樣本">→</button>
+        <span id="xic-position" class="subtle"></span>
+      </div>
+      <div id="xic-loading" class="xic-loading" role="status" aria-live="polite">
+        <svg class="icon"><use href="#i-peak" /></svg>
+        <p id="xic-status">讀取所選樣本的曲線…</p>
+        <button id="xic-cancel" type="button">取消載入</button>
+        <button id="xic-retry" type="button" hidden>重試</button>
+      </div>
+      <iframe id="xic-inspector" title="樣本 XIC 圖表" src="about:blank" hidden></iframe>
+      <footer class="xic-footer"><span id="xic-source-note">只載入正在查看的曲線，不變更已保存的結果。</span><span>Esc 返回結果</span></footer>
+    </dialog>
 
     <div id="toasts" class="toasts" aria-live="polite"></div>
 

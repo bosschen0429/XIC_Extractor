@@ -139,6 +139,8 @@ def _diagnostic_tag(diagnostic: dict[str, str]) -> str:
         return f"multi_peak={count}" if count else "multi_peak"
     if issue in {"PEAK_NOT_FOUND", "NO_SIGNAL"}:
         return "peak_not_found"
+    if issue == "PAIRED_POSITION_SUPPORT_REJECTED":
+        return f"{issue}: {reason}"
     return issue
 
 
@@ -237,8 +239,13 @@ def _review_why(issue: str, row: dict[str, str], evidence: str) -> str:
         return "已被規則排除"
     if state == "ambiguous" or row.get("Projection Conflict Reasons"):
         return "證據衝突，身分未定"
+    if counted == "FALSE" and "PAIRED_POSITION_SUPPORT_REJECTED" in evidence:
+        if "insufficient_original_xic_support" in evidence:
+            return "近內標訊號的原始 scan 支撐不足，報 ND（平滑線不代表完整峰）"
+        if "insufficient_original_xic_continuity" in evidence:
+            return "近內標訊號缺少連續原始 scan 支撐，報 ND"
     if "analyte_peak_off_paired_istd_position" in row.get("Projection Reason", ""):
-        return "峰不在內標位置，報 ND"
+        return "ND；所選候選峰偏離內標，近內標訊號的排除原因未記錄"
     if "paired_istd_position_mismatch" in row.get("Projection Review Reasons", ""):
         return "峰偏離配對內標位置，需確認身分"
     if "BACKFILL_HOLD" in evidence and counted == "FALSE":
@@ -284,6 +291,8 @@ def _has_product_projection(row: dict[str, str]) -> bool:
 
 
 def _suggested_action(issue: str, row: dict[str, str], evidence: str) -> str:
+    if "PAIRED_POSITION_SUPPORT_REJECTED" in evidence:
+        return "比較近內標段的原始 scan 點與平滑線，不以平滑外形代替訊號支撐"
     if "paired_istd_position_mismatch" in row.get("Projection Review Reasons", ""):
         return "比較 analyte／ISTD 預期 RT 差與實際峰位置，確認是否為其他訊號"
     if "BACKFILL" in evidence:

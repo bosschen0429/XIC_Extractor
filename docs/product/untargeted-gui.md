@@ -95,6 +95,9 @@ directory-level Discovery followed by Alignment.
   XIC uses the saved observation binding. In Targeted review, each sample row's
   **看 XIC** loads only that sample's target and paired ISTD, including ND rows
   with known target coordinates. Select the RAW and DLL directories first.
+  Curves open in a side drawer without replacing the saved results table;
+  closing restores row focus, and revisiting a loaded sample reuses its curves.
+  Targeted charts show original scan points and smoothed lines together.
 - Targeted curves use the workbook's extraction tolerance and signal-processing
   settings over the full acquisition trace; saved peak bounds are overlays.
   XLSX sample names do not certify the original RAW: the view and exported HTML

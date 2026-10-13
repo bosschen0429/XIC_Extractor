@@ -432,6 +432,99 @@ def test_review_search_and_inspector_use_one_scroll_and_visible_zoom(
     expect(dialog).to_be_hidden()
 
 
+def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
+    workbench, tmp_path, monkeypatch
+):
+    from dataclasses import replace
+
+    from tests.test_xic_inspector_curve_bundle import _fixture_bundle
+    from xic_inspector.sources.curve_bundle import CurveBundle, write_curve_bundle
+    from xic_workbench import acquisition
+
+    calls = []
+
+    def acquire(report, output, *, sample_ids, **kwargs):
+        calls.append(sample_ids)
+        transition = _fixture_bundle().transitions[0]
+        traces = tuple(
+            replace(transition.traces[0], trace_id=sid, sample_id=sid, sample_label=sid)
+            for sid in sample_ids
+        )
+        write_curve_bundle(CurveBundle((replace(transition, traces=traces),)), output)
+        return {"curve_count": len(traces)}
+
+    monkeypatch.setattr(acquisition, "export_explanation_curves", acquire)
+    page = workbench
+    db, _, _ = _create_mock_db(tmp_path)
+    _view(page, "review")
+    page.locator("#source").fill(str(db))
+    page.locator("#raw-dir").fill(str(tmp_path))
+    page.locator("#dll-dir").fill(str(tmp_path))
+    page.locator("#open-form button[type=submit]").click()
+    expect(page.locator(".acquisition-panel > summary")).to_be_visible()
+    expect(page.locator("#sample-list")).to_be_hidden()
+    page.locator(".acquisition-panel > summary").click()
+    recorded = page.locator("#inspector").get_attribute("src")
+    page.locator("#load-curves").click()
+    frame = page.frame_locator("#xic-inspector")
+    expect(frame.locator("#svg-raw polyline")).to_have_count(1)
+    expect(page.locator("#xic-navigation")).to_be_hidden()
+    assert page.locator("#inspector").get_attribute("src") == recorded
+    page.locator("#xic-close").click()
+    page.locator("#load-curves").click()
+    expect(frame.locator("#svg-raw polyline")).to_have_count(1)
+    assert len(calls) == 1
+
+
+def test_targeted_nd_shows_original_points_and_support_failure(
+    workbench, tmp_path, monkeypatch
+):
+    from openpyxl import load_workbook
+
+    from tests.test_xic_inspector_targeted_workbook import (
+        install_targeted_raws,
+        write_rare_detection_workbook,
+    )
+
+    page = workbench
+    raw_dir = tmp_path / "raw"
+    install_targeted_raws(
+        monkeypatch, raw_dir, {"S1": 13000, "S2": 1000}, impulse_samples=("S1",)
+    )
+    path = write_rare_detection_workbook(tmp_path / "nd.xlsx")
+    book = load_workbook(path)
+    book["XIC Results"].cell(2, 8, "峰不在內標位置，報 ND")
+    book.save(path)
+    book.close()
+    original = path.read_bytes()
+    _view(page, "review")
+    page.locator("#source").fill(str(path))
+    page.locator("#raw-dir").fill(str(raw_dir))
+    page.locator("#dll-dir").fill(str(tmp_path))
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#targeted-overview td button", has_text="Analyte").click()
+    saved = page.frame_locator("#inspector")
+    expect(saved.locator(".tgt-reason").first).to_contain_text("排除原因未記錄")
+    saved.get_by_role("button", name="看 S1 的 Analyte XIC", exact=True).click()
+    frame = page.frame_locator("#xic-inspector")
+    expect(frame.locator(".tx-support-note")).to_contain_text("原始訊號支撐不足")
+    expect(frame.locator(".tx-support-note")).to_contain_text("本次讀取 XIC")
+    expect(frame.locator('.tx-chart polyline[data-kind="smoothed"]')).to_have_count(2)
+    raw_points = frame.locator(".tx-chart").first.locator('circle[data-kind="raw"]')
+    values = raw_points.locator("title").all_text_contents()
+    assert sum(not value.endswith("· 0") for value in values) == 1
+    # Raw spikes must fit the shared per-ion Y scale, not be clipped by smoothing.
+    assert (
+        min(float(raw_points.nth(i).get_attribute("cy")) for i in range(len(values)))
+        >= 14
+    )
+    page.locator("#xic-next").click()
+    expect(page.locator("#xic-sample")).to_have_value("S2")
+    expect(frame.locator(".tx-support-note")).to_have_count(0)
+    expect(frame.locator(".tx-chart polyline")).to_have_count(2)
+    assert path.read_bytes() == original
+
+
 def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     workbench,
     tmp_path,
@@ -444,7 +537,9 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
 
     page = workbench
     raw_dir = tmp_path / "review-raw"
-    reads = install_targeted_raws(monkeypatch, raw_dir, {"S3": 1000})
+    reads = install_targeted_raws(
+        monkeypatch, raw_dir, {"S3": 1000, "S4": 300}, pair_scale=1000
+    )
     workbook = write_rare_detection_workbook(tmp_path / "paired.xlsx")
     original = workbook.read_bytes()
     _view(page, "review")
@@ -453,30 +548,61 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     page.locator("#dll-dir").fill(str(tmp_path))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
-    frame = page.frame_locator("#inspector")
-    frame.get_by_role("button", name="看 S3 的 Analyte XIC", exact=True).click()
-    expect(page.locator("#tab-curves")).to_have_attribute("aria-selected", "true")
-    expect(page.locator("#view-note")).to_contain_text("無法驗證是否為原分析檔")
-    curves = frame.locator('#svg-raw polyline[data-kind="smoothed"]')
+    recorded = page.frame_locator("#inspector")
+    row_button = recorded.get_by_role("button", name="看 S3 的 Analyte XIC", exact=True)
+    expect(row_button).to_be_visible()
+    recorded_url = page.locator("#inspector").get_attribute("src")
+    row_button.click()
+    dialog = page.locator("#xic-dialog")
+    expect(dialog).to_be_visible()
+    expect(page.locator(".acquisition-panel")).to_be_hidden()
+    expect(page.locator("#xic-sample")).to_have_value("S3")
+    frame = page.frame_locator("#xic-inspector")
+    curves = frame.locator(".tx-chart polyline")
+    expect(frame.locator('.tx-chart circle[data-kind="raw"]')).not_to_have_count(0)
+    expect(frame.get_by_text("原始 scan 點", exact=True)).to_be_visible()
     expect(curves).to_have_count(2)
-    expect(frame.locator(".fact-row")).to_contain_text("Analyte / ISTD")
-    expect(frame.locator(".fact-row")).not_to_contain_text("多個候選")
-    expect(frame.locator('#svg-raw polyline[stroke-dasharray="7 4"]')).to_have_count(1)
+    expect(frame.locator(".tx-chart-title")).to_have_text(["Analyte", "ISTD"])
+    expect(frame.locator(".tx-provenance")).to_contain_text("無法驗證是否為原分析檔")
+    # The result table never navigates away; each ion has its own y scale.
+    assert page.locator("#inspector").get_attribute("src") == recorded_url
+    expect(frame.locator(".tx-chart")).to_have_count(2)
+    for line in curves.all():
+        ys = [
+            float(point.split(",")[1]) for point in line.get_attribute("points").split()
+        ]
+        assert min(ys) < 25 and max(ys) > 150  # Neither ion is flattened by its pair.
     original_points = curves.first.get_attribute("points")
     frame.get_by_label("顯示 RT 起點", exact=True).fill("8.95")
     frame.get_by_label("顯示 RT 終點", exact=True).fill("9.05")
     frame.get_by_role("button", name="套用範圍", exact=True).click()
     assert curves.first.get_attribute("points") != original_points
-    frame.get_by_role("button", name="完整已載入範圍", exact=True).click()
+    frame.get_by_role("button", name="完整 RT", exact=True).click()
     expect(frame.get_by_label("顯示 RT 起點", exact=True)).to_have_value("0")
     expect(frame.get_by_label("顯示 RT 終點", exact=True)).to_have_value("12")
-    page.locator("#tab-recorded").click()
-    expect(
-        frame.get_by_role("button", name="看 S3 的 Analyte XIC", exact=True)
-    ).to_be_visible()
-    page.locator("#tab-curves").click()
+    page.locator("#xic-close").click()
+    expect(dialog).to_be_hidden()
+    expect(row_button).to_be_focused()
+    row_button.click()
     expect(curves).to_have_count(2)
-    assert len(reads) == 2  # Returning to the loaded plot does not reacquire RAW.
+    assert len(reads) == 2  # Reopening the same sample reuses the loaded report.
+    page.locator("#xic-next").click()
+    expect(page.locator("#xic-sample")).to_have_value("S4")
+    expect(frame.locator(".tx-sample-name")).to_have_text("S4")
+    expect(curves).to_have_count(2)
+    assert len(reads) == 4
+    page.locator("#xic-next").click()  # S5 has no RAW: keep a recoverable local error.
+    expect(page.locator("#xic-status")).to_contain_text("找不到")
+    expect(page.locator("#xic-inspector")).to_be_hidden()
+    expect(page.locator("#xic-retry")).to_be_visible()
+    page.locator("#xic-previous").click()
+    expect(frame.locator(".tx-sample-name")).to_have_text("S4")
+    expect(page.locator("#xic-inspector")).to_be_visible()
+    assert len(reads) == 4
+    page.set_viewport_size({"width": 420, "height": 760})
+    bounds = dialog.bounding_box()
+    assert bounds and bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= 421
+    assert page.locator("#inspector").get_attribute("src") == recorded_url
     assert workbook.read_bytes() == original
 
 

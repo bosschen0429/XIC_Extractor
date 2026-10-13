@@ -4,6 +4,152 @@
     renderTargetedWorkbook(data);
     return;
   }
+  if (data.items?.length && data.items.every(item => item.curves?.some(curve => curve.quality_flags?.target_label))) {
+    renderTargetedCurves(data);
+    return;
+  }
+
+  function renderTargetedCurves(payload) {
+    // A target and its ISTD are two known ions, not competing candidates.
+    // Share their time axis, but keep absolute intensity scales independent.
+    const node = (tag, text, cls) => {
+      const el = document.createElement(tag);
+      if (text !== undefined) el.textContent = text;
+      if (cls) el.className = cls;
+      return el;
+    };
+    const finite = value => typeof value === 'number' && Number.isFinite(value);
+    const number = value => finite(value) ? Number(value.toPrecision(4)).toLocaleString('en-US') : '—';
+    const area = value => finite(value) ? value.toExponential(2) : String(value ?? '—');
+    const embedded = new URLSearchParams(location.search).has('embed');
+    const root = node('main', undefined, 'tx-review');
+    document.body.classList.add('tx-body');
+    document.body.replaceChildren(root);
+    const heading = node('header', undefined, 'tx-heading');
+    if (!embedded) heading.append(node('h1', 'Targeted XIC'));
+    const sampleName = node('p', '', `tx-sample-name${embedded ? ' sr-only' : ''}`);
+    heading.append(sampleName);
+    const itemSelect = node('select'); itemSelect.setAttribute('aria-label', '目標');
+    for (const [index, item] of payload.items.entries()) {
+      itemSelect.append(new Option(item.curves.find(c => !c.quality_flags.paired_istd)?.quality_flags.target_label || item.title, String(index)));
+    }
+    if (payload.items.length > 1) heading.append(itemSelect);
+    const sampleSelect = node('select'); sampleSelect.setAttribute('aria-label', '樣本');
+    heading.append(sampleSelect); root.append(heading);
+    const toolbar = node('div', undefined, 'tx-toolbar');
+    const legend = node('div', undefined, 'tx-legend');
+    legend.append(node('span', '原始 scan 點', 'tx-raw-key'), node('span', '平滑線', 'tx-smooth-key'));
+    const boundsLabel = node('label', undefined, 'tx-bounds');
+    const bounds = node('input'); bounds.type = 'checkbox'; bounds.checked = true;
+    boundsLabel.append(bounds, document.createTextNode('已保存峰界'));
+    toolbar.append(legend, boundsLabel, node('span', '同一 RT 範圍 · 強度各自縮放', 'tx-scale-note'));
+    const range = node('form', undefined, 'tx-range');
+    const start = node('input'), end = node('input');
+    for (const [field, label] of [[start, '顯示 RT 起點'], [end, '顯示 RT 終點']]) {
+      field.type = 'number'; field.step = 'any'; field.required = true; field.setAttribute('aria-label', label);
+      field.addEventListener('input', () => start.setCustomValidity(''));
+    }
+    const apply = node('button', '套用範圍'); apply.type = 'submit';
+    const nearby = node('button', '峰附近'), full = node('button', '完整 RT');
+    nearby.type = full.type = 'button';
+    range.append(node('span', 'RT'), start, node('span', '–'), end, node('span', 'min'), apply, nearby, full);
+    root.append(toolbar, range);
+    const charts = node('div', undefined, 'tx-charts'); root.append(charts);
+    const provenance = node('details', undefined, 'tx-provenance');
+    provenance.append(node('summary', '來源未驗證 · 檢視讀取設定'));
+    provenance.append(node('p', '依樣本名稱讀取 RAW；工作簿沒有原始 RAW 指紋，無法驗證是否為原分析檔。這是新取得的診斷曲線，峰界與數值來自已保存結果，不重新積分。'));
+    const extraction = node('p'); provenance.append(extraction); root.append(provenance);
+    let item, sample, rtWindow;
+    const traces = () => item.curves.filter(curve => curve.sample_id === sample);
+    const extent = () => [Math.min(...traces().map(c => c.raw_rts[0])), Math.max(...traces().map(c => c.raw_rts[c.raw_rts.length - 1]))];
+    function setWindow(value) {
+      rtWindow = value;
+      start.value = String(Number(value[0].toFixed(4)));
+      end.value = String(Number(value[1].toFixed(4)));
+      start.setCustomValidity('');
+      draw();
+    }
+    function draw() {
+      charts.replaceChildren();
+      const width = Math.max(300, root.clientWidth - 34), height = 200;
+      const [lo, hi] = rtWindow, left = 58, right = width - 14, top = 14, bottom = height - 30;
+      const x = value => left + (value - lo) / (hi - lo) * (right - left);
+      for (const curve of traces()) {
+        const flags = curve.quality_flags, paired = flags.paired_istd;
+        const card = node('section', undefined, `tx-chart${paired ? ' tx-istd' : ''}`);
+        const head = node('div', undefined, 'tx-chart-heading');
+        const identity = node('div');
+        identity.append(node('span', paired ? '配對 ISTD' : flags.target_role === 'ISTD' ? 'ISTD' : '目標', 'tx-role'), node('h2', flags.target_label, 'tx-chart-title'));
+        const metadata = node('p', `m/z ${curve.provenance.mz.toFixed(4)} · 保存 RT ${finite(curve.apex_rt) ? curve.apex_rt.toFixed(4) + ' min' : '—'} · 面積 ${area(flags.saved_area)}`, 'tx-chart-meta');
+        head.append(identity, metadata); card.append(head);
+        const failures = flags.reference_support_failures || [];
+        const supportReason = failures.includes('insufficient_original_xic_support')
+          ? '原始訊號支撐不足：近內標段少於 2 個高於基線的原始 scan；平滑展開的鐘形不代表完整峰。'
+          : failures.includes('insufficient_original_xic_continuity')
+          ? '原始訊號支撐不足：近內標段沒有連續的有效原始 scan。' : '';
+        if (supportReason) {
+          card.append(node('p', `ND 訊號檢查 · ${supportReason} 這是本次讀取 XIC 的檢查結果；原始分析來源未驗證，不改寫已保存判定。`, 'tx-support-note'));
+        }
+        const series = curve.processed_curves.find(s => s.kind === 'smoothed');
+        const points = series?.rts.flatMap((rt, i) => rt >= lo && rt <= hi && finite(series.intensities[i]) ? [[rt, series.intensities[i]]] : []) || [];
+        const rawPoints = curve.raw_rts.flatMap((rt, i) => rt >= lo && rt <= hi && finite(curve.raw_intensities[i]) ? [[rt, curve.raw_intensities[i]]] : []);
+        if (!points.length) {
+          card.append(node('p', '此範圍沒有訊號點，請調整 RT 範圍。', 'tx-empty')); charts.append(card); continue;
+        }
+        let low = 0, high = 0;
+        [...points, ...rawPoints].forEach(([, value]) => { low = Math.min(low, value); high = Math.max(high, value); });
+        if (low === high) high = low + 1;
+        const y = value => bottom - (value - low) / (high - low) * (bottom - top);
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', `0 0 ${width} ${height}`); svg.setAttribute('role', 'img');
+        svg.setAttribute('aria-label', `${flags.target_label} XIC，RT ${number(lo)} 到 ${number(hi)} 分鐘`);
+        let markup = '';
+        for (let i = 0; i <= 3; i++) {
+          const value = low + (high - low) * i / 3, yp = y(value);
+          markup += `<line class="tx-grid" x1="${left}" x2="${right}" y1="${yp}" y2="${yp}"/><text x="${left - 9}" y="${yp + 4}" text-anchor="end">${value === 0 ? '0' : Math.abs(value) >= 1e5 ? value.toExponential(1) : number(value)}</text>`;
+        }
+        for (let i = 0; i <= 4; i++) {
+          const value = lo + (hi - lo) * i / 4;
+          markup += `<text x="${x(value)}" y="${height - 8}" text-anchor="middle">${value.toFixed(2)}</text>`;
+        }
+        if (bounds.checked && finite(curve.bound_left_rt) && finite(curve.bound_right_rt)) {
+          const a = Math.max(lo, curve.bound_left_rt), b = Math.min(hi, curve.bound_right_rt);
+          if (b > a) markup += `<rect class="tx-saved-bounds" x="${x(a)}" y="${top}" width="${x(b) - x(a)}" height="${bottom - top}"/>`;
+          if (finite(curve.apex_rt) && curve.apex_rt >= lo && curve.apex_rt <= hi) markup += `<line class="tx-apex" x1="${x(curve.apex_rt)}" x2="${x(curve.apex_rt)}" y1="${top}" y2="${bottom}"/>`;
+        }
+        markup += `<polyline data-kind="smoothed" points="${points.map(([rt, intensity]) => `${x(rt)},${y(intensity)}`).join(' ')}"/>`;
+        markup += rawPoints.map(([rt, intensity]) => `<circle data-kind="raw" cx="${x(rt)}" cy="${y(intensity)}" r="2.2"><title>RT ${rt.toFixed(4)} min · ${number(intensity)}</title></circle>`).join('');
+        svg.innerHTML = markup; card.append(svg); charts.append(card);
+      }
+      extraction.textContent = traces().map(c => `${c.quality_flags.target_label}：m/z ${c.provenance.mz} ± ${c.provenance.ppm} ppm`).join('；');
+    }
+    function selectSample() {
+      sample = sampleSelect.value; sampleName.textContent = sample;
+      setWindow(item.review_rt_window || extent());
+    }
+    function selectItem() {
+      item = payload.items[Number(itemSelect.value) || 0];
+      const ids = [...new Set(item.curves.map(c => c.sample_id))];
+      sampleSelect.replaceChildren(...ids.map(id => new Option(id, id)));
+      sampleSelect.hidden = ids.length === 1;
+      selectSample();
+    }
+    range.addEventListener('submit', event => {
+      event.preventDefault();
+      const lo = start.valueAsNumber, hi = end.valueAsNumber;
+      if (!finite(lo) || !finite(hi) || lo >= hi) {
+        start.setCustomValidity('起點必須小於終點。'); start.reportValidity(); return;
+      }
+      setWindow([lo, hi]);
+    });
+    nearby.addEventListener('click', () => setWindow(item.review_rt_window || extent()));
+    full.addEventListener('click', () => setWindow(extent()));
+    bounds.addEventListener('change', draw);
+    sampleSelect.addEventListener('change', selectSample); itemSelect.addEventListener('change', selectItem);
+    selectItem();
+    let previousWidth = root.clientWidth;
+    new ResizeObserver(() => { if (root.clientWidth !== previousWidth) { previousWidth = root.clientWidth; draw(); } }).observe(root);
+  }
 
   function renderTargetedWorkbook(payload) {
     const element = (tag, text, className) => {
@@ -16,6 +162,9 @@
       ? '未提供' : typeof v === 'number' ? v.toLocaleString('en-US', {maximumFractionDigits: digits}) : String(v);
     const range = (start, end) => `${value(start)} – ${value(end)} min`;
     const counted = v => v === true || v === 'TRUE' ? '是' : v === false || v === 'FALSE' ? '否' : '未記錄';
+    const reviewWhy = review => review?.Why === '峰不在內標位置，報 ND'
+      ? 'ND；舊紀錄僅描述所選候選峰偏離內標，近內標訊號的排除原因未記錄，請看原始 scan'
+      : review?.Why || '—';
     const isNumber = v => typeof v === 'number' && Number.isFinite(v);
     // Intensities span decades, so they read as Excel-style scientific notation.
     const scientific = v => {
@@ -92,7 +241,7 @@
           pairs.push([`配對 ISTD（${istd.Target}）`, `RT ${value(istd.RT)} min${delta} · 面積 ${scientific(istd.Area)} · 計入 ${counted(istd['Counted Detection'])}`]);
         }
         panel.append(facts(pairs));
-        if (review?.Why) panel.append(element('h4', '檢閱註記'), element('p', review.Why));
+        if (review?.Why) panel.append(element('h4', '檢閱註記'), element('p', reviewWhy(review)));
         if (review?.Action) panel.append(element('h4', '建議檢查'), element('p', review.Action));
         if (review?.Evidence) panel.append(element('h4', '檢閱線索'), element('p', review.Evidence));
         if (record.Reason) {
@@ -118,7 +267,7 @@
           if (istd && counted(istd['Counted Detection']) !== '是') istdArea.append(element('span', 'ISTD 未計入', 'tgt-badge'));
           row.append(element('td', istd ? value(istd.RT) : '—', 'tgt-number tgt-istd'), istdArea);
         }
-        row.append(element('td', review?.Why || '—', 'tgt-reason'));
+        row.append(element('td', reviewWhy(review), 'tgt-reason'));
         if (canLoadCurves) {
           const cell = element('td'), view = element('button', '看 XIC', 'tgt-xic');
           view.type = 'button';view.setAttribute('aria-label', `看 ${record.SampleName} 的 ${item.title} XIC`);
@@ -214,9 +363,7 @@
     rows.forEach(w=>{const id=candidateId(w);if(id&&!ids.includes(id))ids.push(id);});
     return ids.map((id,index)=>({id,index,witness:rows.find(w=>candidateId(w)===id)}));
   }
-  function isTargetedXic(item){return (item.curves||[]).some(c=>c.quality_flags?.target_label);}
   function sampleNotices(item,row){
-    if(isTargetedXic(item))return [];
     const notices=[], count=candidates(item,row.sample_id).length, curve=(item.curves||[]).some(c=>c.sample_id===row.sample_id&&c.raw_rts?.length);
     if(count>1)notices.push({kind:'candidates',label:`${count} 個候選`,short:`${count} 候選`});
     if(!has(row,'quantitative_value'))notices.push({kind:'missing',label:'無單一結果',short:'無單一結果'});
@@ -385,7 +532,6 @@
     itemRows(item).forEach(r=>{if(!has(r,'quantitative_value'))noSingle++;else if(r.quantitative_value===null)nulls++;else values++;if(!(item.curves||[]).some(c=>c.sample_id===r.sample_id&&c.raw_rts?.length))noCurves++;});
     const multi=itemRows(item).filter(r=>candidates(item,r.sample_id).length>1);
     const fact=(label,value,unit='',warn=false,title='')=>`<div class="fact ${warn?'warn':''}"${title?` title="${esc(title)}"`:''}><dt>${label}</dt><dd>${value}${unit?`<small>${unit}</small>`:''}</dd></div>`;
-    if(isTargetedXic(item))return `<dl class="fact-row">${fact('目標',esc([...new Set(item.curves.map(c=>c.quality_flags.target_label))].join(' / ')))}${fact('樣本',itemRows(item).length)}${fact('診斷曲線',item.curves.length)}</dl>`;
     return `<dl class="fact-row">${fact('m/z',mz(item.precursor_mz))}${fact('主要 RT',rt(item.rt_apex_min),'min')}${fact('樣本',itemRows(item).length)}${fact('有定量值',values)}${nulls?fact('空值',nulls,'',true):''}${noSingle?fact('無單一結果',noSingle,'',true):''}${noCurves?fact('未提供曲線',noCurves,'',true):''}${multi.length?fact('多個候選',multi.length,'個樣本',true,multi.map(r=>sampleName(r.sample_id)).join('、')):''}</dl>`;
   }
   function evidenceButtons(refs,context,label='查看定量依據'){
@@ -440,7 +586,7 @@
     for(let i=0;i<=4;i++){const v=lo+(hi-lo)*i/4;svg+=`<text x="${x(v)}" y="298" text-anchor="middle" font-size="13" fill="#48534f">${rt(v)}</text>`;}
     const active=peer?null:activeCurve(item);
     if(active&&state.bounds){const left=axis==='aligned'?active.aligned_bound_left_rt:active.bound_left_rt,right=axis==='aligned'?active.aligned_bound_right_rt:active.bound_right_rt;if(finite(left)&&finite(right)){const a=Math.max(lo,Math.min(left,right)),b=Math.min(hi,Math.max(left,right));if(b>=a)svg+=`<rect data-integration-range="true" x="${x(a)}" y="${T}" width="${Math.max(0,x(b)-x(a))}" height="${IH}" fill="${color(active.sample_id)}" opacity=".09"><title>積分範圍 ${drt(left)}–${drt(right)} min</title></rect>`;}}
-    drawable.forEach(({curve,series:s})=>{const focused=peer||!state.sample||curve.sample_id===state.sample,opacity=!peer&&state.sample&&!focused?.16:.92,points=s.rts.map((v,i)=>finite(v)&&finite(s.intensities[i])?`${x(v)},${y(s.intensities[i])}`:'').filter(Boolean).join(' '),signalName={raw:'原始訊號',baseline:'基線',smoothed:'平滑訊號',positive:'基線以上訊號',positive_signal:'基線以上訊號'}[s.kind]||'處理訊號',origin=curveOrigin(item,curve.sample_id);svg+=`<polyline data-kind="${esc(s.kind)}" data-curve-ref="${esc(curve.evidence_ref||'')}" data-support-origin="${originClass(origin)}" clip-path="url(#curve-window-${axis})" fill="none" stroke="${color(curve.sample_id)}" stroke-width="${s.kind==='raw'?1.7:2.2}" stroke-dasharray="${curve.quality_flags?.paired_istd ? '7 4' : curveDash(item,origin,s.kind)}" opacity="${opacity}" points="${points}"><title>${esc(sampleName(curve.sample_id))} · ${signalName} · ${esc(originLabel(origin))} · ${esc(curve.stage_label||curve.kind||'保留曲線')}</title></polyline>`;if((curve!==active&&!curve.quality_flags?.target_label)||!state.bounds||s.kind!==state.signal&&!(state.signal==='positive'&&s.kind==='positive_signal'))return;
+    drawable.forEach(({curve,series:s})=>{const focused=peer||!state.sample||curve.sample_id===state.sample,opacity=!peer&&state.sample&&!focused?.16:.92,points=s.rts.map((v,i)=>finite(v)&&finite(s.intensities[i])?`${x(v)},${y(s.intensities[i])}`:'').filter(Boolean).join(' '),signalName={raw:'原始訊號',baseline:'基線',smoothed:'平滑訊號',positive:'基線以上訊號',positive_signal:'基線以上訊號'}[s.kind]||'處理訊號',origin=curveOrigin(item,curve.sample_id);svg+=`<polyline data-kind="${esc(s.kind)}" data-curve-ref="${esc(curve.evidence_ref||'')}" data-support-origin="${originClass(origin)}" clip-path="url(#curve-window-${axis})" fill="none" stroke="${color(curve.sample_id)}" stroke-width="${s.kind==='raw'?1.7:2.2}" stroke-dasharray="${curveDash(item,origin,s.kind)}" opacity="${opacity}" points="${points}"><title>${esc(sampleName(curve.sample_id))} · ${signalName} · ${esc(originLabel(origin))} · ${esc(curve.stage_label||curve.kind||'保留曲線')}</title></polyline>`;if(curve!==active||!state.bounds||s.kind!==state.signal&&!(state.signal==='positive'&&s.kind==='positive_signal'))return;
       const marks=axis==='aligned'?[['bound','左峰界',curve.aligned_bound_left_rt],['bound','右峰界',curve.aligned_bound_right_rt],['apex','積分峰頂',curve.aligned_apex_rt]]:[['bound','左峰界',curve.bound_left_rt],['bound','右峰界',curve.bound_right_rt],['apex','積分峰頂',curve.apex_rt],...(finite(curve.integration?.raw_apex_rt_min)&&(!finite(curve.apex_rt)||Math.abs(curve.integration.raw_apex_rt_min-curve.apex_rt)>1e-7)?[['raw-apex','原始訊號峰頂',curve.integration.raw_apex_rt_min]]:[])];
       marks.forEach(([kind,label,v])=>{if(finite(v))svg+=`<line data-marker="${kind}" x1="${x(v)}" x2="${x(v)}" y1="${T}" y2="${T+IH}" stroke="${color(curve.sample_id)}" stroke-dasharray="${kind==='bound'?'5 4':kind==='raw-apex'?'2 4':'1 3'}"><title>${label} ${drt(v)} min</title></line>`;});
     });
@@ -455,8 +601,7 @@
   function rtViewControls(item) {
     if (!Array.isArray(item.review_rt_window)) return '';
     const window = state.plotWindow || item.review_rt_window;
-    const paired = (item.curves || []).some(c => c.quality_flags?.paired_istd);
-    return `<div class="selection-controls"><label>顯示 RT 起點 <input id="plot-rt-start" type="number" step="any" value="${window[0]}" aria-label="顯示 RT 起點"></label><label>終點 <input id="plot-rt-end" type="number" step="any" value="${window[1]}" aria-label="顯示 RT 終點"></label><button type="button" data-rt-view="apply">套用範圍</button><button type="button" data-rt-view="full">完整已載入範圍</button></div>${paired?'<p class="control-note">實線：目標；虛線：配對 ISTD。顯示絕對強度；查看樣本後可分別選擇曲線。峰界是工作簿保存的位置。</p>':''}`;
+    return `<div class="selection-controls"><label>顯示 RT 起點 <input id="plot-rt-start" type="number" step="any" value="${window[0]}" aria-label="顯示 RT 起點"></label><label>終點 <input id="plot-rt-end" type="number" step="any" value="${window[1]}" aria-label="顯示 RT 終點"></label><button type="button" data-rt-view="apply">套用範圍</button><button type="button" data-rt-view="full">完整已載入範圍</button></div>`;
   }
   function fieldValue(value){
     // Serialized objects/lists from source records read as key-value lines instead of raw JSON text.

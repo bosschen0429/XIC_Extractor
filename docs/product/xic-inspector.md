@@ -30,7 +30,9 @@ The population includes both grouped records and ungrouped candidates. Select
 an item to inspect its saved evidence, then select a few observed samples and
 load their XIC. A sample without retained apex coordinates is shown as
 unavailable, not as zero signal. The recorded view and newly acquired curves
-have separate tabs; the selected tab's download is a standalone Inspector HTML.
+remain separate: XIC opens in a side drawer, leaving the saved table in place.
+Closing it restores the row focus; previously loaded samples reuse their curves.
+The displayed curve report can be downloaded as standalone Inspector HTML.
 
 Acquisition is sequential and bounded to the saved observations of the selected
 samples. The page displays progress and supports cooperative cancellation
@@ -145,9 +147,23 @@ is not scientific acceptance.
 
 Saved-result review does not require RAW or DLL access. The workbook does not
 retain point-by-point chromatograms or a verified sample-to-RAW binding, so this
-view offers neither reconstructed plots nor on-demand acquisition. Sample names
-are workbook labels, not verified acquisition identities. Its review pages are
-temporary session views, not additional normal-run outputs.
+standalone saved-result view does not reconstruct plots. In the local workspace,
+**看 XIC** reads that sample's target and paired ISTD into a side drawer, including
+ND rows. Both charts show original scan points and the smoothed line together,
+with a shared RT range and independent per-ion intensity scales covering both
+series. Saved peak bounds are overlays, not new integration results.
+
+For uncounted targets with a counted paired ISTD, diagnostic support checks reuse
+the physical candidate gate for segments containing the saved ISTD RT. A rejected
+single-scan or discontinuous signal is explained beside the plot, not presented
+as a complete peak merely because smoothing spreads it. These checks do not
+select peaks, change ND or write values. Sample names are workbook labels, not
+verified acquisition identities; newly read support facts are explicitly distinct
+from the original analysis. Old workbooks without the near-reference rejection
+reason say it is unavailable instead of using a remote selected peak as its cause.
+New Targeted output retains near-reference support rejection diagnostics, including
+the method's expected analyte/ISTD offset, and prioritizes them in Review Reason.
+Review pages remain temporary session views, not additional normal-run outputs.
 
 ## Public entry points
 

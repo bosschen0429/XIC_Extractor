@@ -455,6 +455,20 @@ def test_original_xic_support_limits_physical_answers(
     rt = np.linspace(0.0, 3.0, 31)
     raw = np.zeros_like(rt)
     raw[15 : 15 + positive_points] = 1000.0
+    from xic_extractor.peak_detection.physical_peak_evaluation import (
+        enumerate_physical_segment_universe,
+        physical_peak_support_failures_at_reference,
+    )
+
+    prepared = prepare_physical_signal(rt, raw)
+    universe = enumerate_physical_segment_universe(prepared)
+    assert prepared.prepared is not None
+    assert physical_peak_support_failures_at_reference(
+        prepared.prepared, universe, 1.5
+    ) == (("insufficient_original_xic_support",) if positive_points == 1 else ())
+    assert physical_peak_support_failures_at_reference(
+        prepared.prepared, universe, 0.0
+    ) == ()  # No containing segment is not proof of insufficient raw support.
     result = evaluate_physical_peak(
         prepare_physical_signal(rt, raw),
         selection_subject_id="original-sampling-support",
