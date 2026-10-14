@@ -2821,3 +2821,126 @@ def test_duplicate_exact_canonical_seed_is_rejected(
             settings=settings,
             preserve_configured_losses=preserve_configured_losses,
         )
+
+
+@pytest.mark.parametrize("side", [-1, 1])
+def test_backfill_containing_peak_closes_assessment_outside_apex_window(
+    tmp_path: Path,
+    side: int,
+) -> None:
+    import json
+
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
+    from xic_extractor.peak_detection.capture import (
+        capture_physical_backfill_observation,
+    )
+    from xic_extractor.peak_detection.cid_nl_method_assessment import (
+        CidNlEvaluationReceipt,
+        CidNlMethodAssessmentContractError,
+        mint_cid_nl_method_assessment_ref,
+    )
+    from xic_extractor.peak_detection.search_scope import (
+        PHYSICAL_CAPTURE_INPUT_KEY,
+        physical_capture_input_payload,
+    )
+    from xic_extractor.peak_detection.traces import Trace
+    from xic_extractor.processing_identity import (
+        build_processing_request_identity,
+        compose_processing_owner_references,
+        issue_processing_attempt,
+        resolve_request_acquisition_source,
+    )
+
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path,
+        sample_roles={"S1": "study_sample"},
+        thermo_raw_sources=True,
+    )
+    profile = SignalProcessingProfile(window_points=15)
+    old = fixture.owners.request
+    request = build_processing_request_identity(
+        acquisition_sources=old.acquisition_sources,
+        acquisition_bindings=old.acquisition_bindings,
+        scientific_input_schema_version=old.scientific_input_schema_version,
+        processing_algorithm_version=old.processing_algorithm_version,
+        processing_contract_version=old.processing_contract_version,
+        scientific_inputs=json.loads(old.normalized_scientific_inputs_json)
+        | {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(profile, {})},
+    )
+    owners = compose_processing_owner_references(
+        request=request,
+        attempt=issue_processing_attempt(request),
+        sample_snapshot=fixture.owners.sample_snapshot,
+        sample_resolutions=fixture.samples,
+    )
+    fixture = replace(fixture, owners=owners)
+
+    sample = fixture.sample("S1")
+    source = resolve_request_acquisition_source(processing_owners=owners, sample=sample)
+    rt = np.linspace(7.0, 9.0, 401)
+    offset = side * (rt - 8.0)
+    intensity = 1000.0 * np.exp(
+        -0.5 * ((offset - 0.6) / np.where(offset < 0.6, 0.30, 0.06)) ** 2
+    )
+    peak = capture_physical_backfill_observation(
+        processing_owners=owners,
+        sample=sample,
+        method_subject=fixture.method_subject,
+        trace=Trace(
+            sample_name="S1",
+            mz=500.0,
+            rt=rt,
+            intensity=intensity,
+            rt_min=7.0,
+            rt_max=9.0,
+            ppm_tol=fixture.method_subject.precursor_tolerance_ppm,
+            acquisition_source_id=source.acquisition_source_id,
+        ),
+        query_rt_min=8.0,
+        physical_mz=500.0,
+        profile=profile,
+        resolver_mode="local_minimum",
+        search_rt_window=(7.5, 8.5),
+    )
+    assert peak is not None
+    evaluation = peak.physical_evaluation
+    assert evaluation is not None and evaluation.facts is not None
+    assert not 7.5 <= evaluation.facts.apex_rt_min <= 8.5
+    assert evaluation.facts.left_rt_min < 8.0 < evaluation.facts.right_rt_min
+    receipt = CidNlEvaluationReceipt(
+        query_rt_min=7.5,
+        query_rt_max=8.5,
+        support_policy=DdaCidNlPeakSupportPolicy(
+            precursor_tolerance_da=0.01,
+            neutral_loss_tolerance_ppm=20.0,
+        ),
+        acquisition_supported=True,
+        search_completed=True,
+        scanned_event_count=0,
+        reason_code=None,
+    )
+    kwargs = dict(
+        processing_owners=owners,
+        sample=sample,
+        method_subject=fixture.method_subject,
+        detector_invocation_id="untargeted-cid-nl-backfill",
+        evaluation_receipt=receipt,
+    )
+    assessment = mint_cid_nl_method_assessment_ref(**kwargs, candidate_peaks=(peak,))
+    assert assessment.content.method_result == "HOLD"
+    assert assessment.content.evaluation_receipt == receipt
+    assert assessment.candidate_peaks[0].content.integration.area_ms1_morphology == (
+        evaluation.facts.area_counts_seconds
+    )
+    # Ordinary observations cannot use the physical Backfill owner's selection.
+    with pytest.raises(CidNlMethodAssessmentContractError, match="candidate peak apex"):
+        mint_cid_nl_method_assessment_ref(
+            **kwargs,
+            candidate_peaks=(replace(peak, physical_evaluation=None),),
+        )
+    # The physical question itself must still belong to the queried interval.
+    kwargs["evaluation_receipt"] = replace(receipt, query_rt_min=8.1, query_rt_max=8.2)
+    with pytest.raises(CidNlMethodAssessmentContractError, match="outside"):
+        mint_cid_nl_method_assessment_ref(**kwargs, candidate_peaks=(peak,))
