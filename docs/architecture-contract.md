@@ -61,7 +61,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | Discovery 已保存輸入 | `discovery/csv_reader.py`、`discovery/input_source.py` | 依 Discovery receipt 讀取 batch/candidate CSV，提供整批或有界 row loading；Alignment 只消費候選 |
 | 樣本 RAW 檔案定位 | `acquisition/raw_paths.py` | 依宣告的 sample/raw 路徑與既有 fallback 規則定位檔案；不做科學判定 |
 | Targeted／Alignment RT-window MS2 擷取與 NL 解讀 | `acquisition/ms2_windows.py` 擷取單一樣本的有界視窗；`evidence/neutral_loss.py` 解讀已擷取事件 | 前者持有 reader 呼叫，後者只處理 `Ms2Window` 與候選幾何；Discovery 宣告 scan 的 strict receipt 保留原 owner |
-| Untargeted ISTD 參考資料取得 | `acquisition/istd_reference.py` | 讀取 workbook 或依既有 target 邊界擷取 RAW trace；兩種來源都交由 Alignment 的 drift evidence owner 建立同一 reference，科學 owner 不開檔 |
+| Untargeted ISTD 參考資料取得 | `acquisition/istd_reference.py` | 讀取 workbook，或呼叫 Targeted 正式抽取與可信內標 anchor 判定；只將選定實測 RT 交由 Alignment 的 drift evidence owner 建立 reference，不另行選峰，科學 owner 不開檔 |
 | 欄位、workbook 或 Matrix 格式 | `output/`；Alignment Matrix 的 schema、格式及 atomic publishing 在 `output/alignment/` | 呈現 owner 的答案；不要從格式變更反向改變選峰或計數 |
 
 Package 名稱不是可強制的分層證明：`alignment/` 包含科學與外層 adapter，

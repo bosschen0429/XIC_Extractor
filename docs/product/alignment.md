@@ -486,6 +486,16 @@ unresolved and rejected groups remain AuditTrail facts.
 
 ### RT mechanisms and their consumers
 
+RAW-derived known-ISTD references use Targeted's formal per-sample extraction,
+scoring context, and credible-ISTD anchor decision. The acquisition adapter
+projects the selected measured RT; it does not enumerate or rank a competing
+candidate population. Multiple chemically supported peaks therefore receive
+the same Targeted identity decision rather than an independent all-or-nothing
+uniqueness gate. A Targeted result that is not a credible anchor remains
+unavailable, and a file failure aborts reference acquisition rather than
+becoming a missing detection. This reuse applies to declared ISTDs only;
+ordinary Untargeted candidate search and grouping remain unchanged.
+
 | Mechanism | Evidence and scope | Current consumer | Does not do |
 | --- | --- | --- | --- |
 | Known-ISTD identity / drift lookup | Exact reference bindings and supported reference range | Known identity constraints and bootstrap comparison | Replace measured peak RT or authorize Backfill values |
