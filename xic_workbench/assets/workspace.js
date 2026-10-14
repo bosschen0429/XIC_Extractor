@@ -75,16 +75,76 @@ window.XicUi = (() => {
     if (m) return `${m} 分 ${String(s).padStart(2, "0")} 秒`;
     return `${s} 秒`;
   }
-  return { icon, toast, confirm, setTheme, formatDuration };
+  // History owns reading locations, not iframe loads or filter edits. Snapshots
+  // remain in this document so refresh starts from the server's current batch.
+  const locations = new Map();
+  const readers = new Map();
+  const session = `${Date.now()}-${Math.random()}`;
+  let position = 0;
+  let revision = 0;
+  let restoring = false;
+  const capture = () => ({
+    parts: [...readers].map(([name, reader]) => [name, reader.capture()]),
+    scroll: window.scrollY,
+  });
+  const mark = () => ({ xicNavigation: session, position });
+  history.replaceState(mark(), "");
+  history.scrollRestoration = "manual";
+  const navigation = {
+    get revision() { return revision; },
+    register(name, reader) { readers.set(name, reader); },
+    push() {
+      if (restoring) return;
+      locations.set(position, capture());
+      for (const key of locations.keys()) if (key > position) locations.delete(key);
+      position += 1;
+      history.pushState(mark(), "");
+    },
+    back(fallback) {
+      if (position > 0 && locations.has(position - 1)) history.back();
+      else fallback();
+    },
+  };
+  window.addEventListener("popstate", (event) => {
+    if (event.state?.xicNavigation !== session) return;
+    revision += 1;
+    locations.set(position, capture());
+    position = event.state.position;
+    const location = locations.get(position);
+    if (!location) return;
+    const currentRevision = revision;
+    // Wait for the browser to finish restoring the joint iframe history.
+    setTimeout(() => {
+      if (revision !== currentRevision) return;
+      restoring = true;
+      try {
+        for (const [name, value] of location.parts) readers.get(name)?.restore(value);
+        requestAnimationFrame(() => window.scrollTo(0, location.scroll));
+      } finally { restoring = false; }
+    }, 0);
+  });
+  const frameDestinations = new WeakMap();
+  function loadFrame(frame, url) {
+    // Frame src assignments create phantom Back stops in the top-level tab.
+    const destination = new URL(url, window.location.href).href;
+    if (frameDestinations.get(frame) === destination &&
+        frame.contentWindow.location.href === destination) return false;
+    frameDestinations.set(frame, destination);
+    frame.contentWindow.location.replace(destination);
+    return true;
+  }
+  return { icon, toast, confirm, setTheme, formatDuration, navigation, loadFrame };
 })();
 
 (() => {
   const $ = (id) => document.getElementById(id);
-  const { icon } = window.XicUi;
+  const { icon, navigation, loadFrame } = window.XicUi;
   const state = {
     page: null,
     item: null,
+    detail: null,
     recorded: null,
+    curveView: null,
     curveCache: new Map(),
     curveRequestKey: null,
     curveOpener: null,
@@ -192,11 +252,12 @@ window.XicUi = (() => {
   }
   function clearSelection() {
     state.item = null;
+    state.detail = null;
     state.recorded = null;
     state.curveCache.clear();
     $("selection").hidden = true;
     $("selection-empty").hidden = false;
-    $("inspector").src = "about:blank";
+    loadFrame($("inspector"), "about:blank");
     $("job-progress").hidden = true;
   }
   function showTargetedOverview() {
@@ -204,12 +265,49 @@ window.XicUi = (() => {
     $("targeted-review-nav").hidden = true;
     $("review").hidden = true;
   }
+  navigation.register("review", {
+    capture: () => ({
+      page: state.page, detail: state.detail, filters: state.filters,
+      fields: [...$("query-form").elements].filter(input => input.id).map(input =>
+        [input.id, input.value, input.checked]),
+      overview: !$("targeted-overview").hidden,
+      curves: $("xic-dialog").open,
+      sample: $("xic-sample").value,
+    }),
+    restore(saved) {
+      // A newly opened batch supersedes old result links in this tab.
+      if (saved.page && saved.page.source === state.page?.source) {
+        if (!saved.overview && (state.page !== saved.page || state.detail !== saved.detail)) {
+          for (const [id, value, checked] of saved.fields) {
+            $(id).value = value;
+            $(id).checked = checked;
+          }
+          state.filters = saved.filters;
+          renderPage(saved.page);
+          if (saved.detail) restoreDetail(saved.detail);
+        }
+        if (saved.overview) showTargetedOverview();
+        else {
+          $("targeted-overview").hidden = true;
+          $("targeted-review-nav").hidden = saved.page.source_kind !== "targeted_workbook";
+          $("review").hidden = false;
+        }
+      }
+      if (saved.curves && saved.page?.source === state.page?.source) {
+        $("xic-sample").value = saved.sample;
+        if (!$("xic-dialog").open) $("xic-dialog").showModal();
+        if (state.curveView) showCurveView(state.curveView);
+      } else if ($("xic-dialog").open) $("xic-dialog").close();
+      controls();
+    },
+  });
   async function openTargetedResults(target = "", attentionOnly = false) {
+    navigation.push();
     $("query-form").reset();
     $("target-id").value = target;
     $("target-attention").checked = attentionOnly;
-    await query(0, queryFields());
-    $("targeted-review-nav").scrollIntoView({ block: "start", behavior: "smooth" });
+    if (await query(0, queryFields()))
+      $("targeted-review-nav").scrollIntoView({ block: "start" });
   }
   function renderTargetedOverview(summary) {
     const host = $("targeted-overview");
@@ -408,10 +506,12 @@ window.XicUi = (() => {
     );
   }
   async function selectItem(item) {
+    const revision = navigation.revision;
     const detail = await api("/api/detail", { item_id: item.id });
-    restoreDetail(detail);
+    if (revision === navigation.revision) restoreDetail(detail);
   }
   function restoreDetail(detail) {
+    state.detail = detail;
     const item = detail.item;
     state.item = detail.item;
     state.recorded = detail.view_id;
@@ -483,19 +583,21 @@ window.XicUi = (() => {
     $("view-note").textContent = state.page.source_kind === "targeted_workbook"
       ? "點樣本列的「看 XIC」開啟圖表；關閉後回到原來的位置。"
       : "當次分析保存的證據與量值。展開「查看樣本 XIC」可讀取 RAW，不改變結果。";
-    $("inspector").src = `/reports/${state.recorded}.html?embed=1`;
+    loadFrame($("inspector"), `/reports/${state.recorded}.html?embed=1`);
     $("download").href = `/reports/${state.recorded}.html?download=1`;
     $("download").hidden = state.page.source_kind === "targeted_workbook";
   }
   function showCurveView(view) {
+    state.curveView = view;
     const url = `/reports/${view}.html?embed=1`;
-    if ($("xic-inspector").getAttribute("src") !== url) $("xic-inspector").src = url;
+    loadFrame($("xic-inspector"), url);
     $("xic-inspector").hidden = false;
     $("xic-loading").hidden = true;
     $("xic-download").href = `/reports/${view}.html?download=1`;
     $("xic-download").hidden = false;
   }
   function curveMessage(message, retry = false) {
+    state.curveView = null;
     $("xic-status").textContent = message;
     $("xic-loading").hidden = false;
     $("xic-inspector").hidden = true;
@@ -533,10 +635,13 @@ window.XicUi = (() => {
     return filters;
   }
   async function query(offset, filters = state.filters) {
+    const revision = navigation.revision;
     const page = await api("/api/query", { ...filters, offset, limit: 25 });
+    if (revision !== navigation.revision) return false;
     state.filters = filters;
     renderPage(page);
     if (page.items.length) await selectItem(page.items[0]);
+    return revision === navigation.revision;
   }
   async function startCurves() {
     if (!$("raw-dir").value.trim() || !$("dll-dir").value.trim()) {
@@ -561,7 +666,10 @@ window.XicUi = (() => {
       const index = state.item.curve_sample_ids.indexOf($("xic-sample").value);
       $("xic-position").textContent = `${index + 1} / ${state.item.curve_sample_ids.length}`;
     }
-    if (!$("xic-dialog").open) $("xic-dialog").showModal();
+    if (!$("xic-dialog").open) {
+      navigation.push();
+      $("xic-dialog").showModal();
+    }
     const request = {
       item_id: state.item.id,
       sample_ids: [...state.samples],
@@ -577,7 +685,7 @@ window.XicUi = (() => {
       return;
     }
     curveMessage("正在讀取所選樣本的 RAW；不會重跑整批分析。 ");
-    $("xic-inspector").src = "about:blank";
+    loadFrame($("xic-inspector"), "about:blank");
     try {
       state.job = await api("/api/curves", request);
       $("job-progress").hidden = false;
@@ -639,11 +747,19 @@ window.XicUi = (() => {
     state.curveOpener = frame.contentDocument?.activeElement;
     action(() => selectCurveSample(event.data.sample_id));
   });
-  $("xic-close").addEventListener("click", () => $("xic-dialog").close());
+  const closeCurves = () => navigation.back(() => $("xic-dialog").close());
+  $("xic-close").addEventListener("click", closeCurves);
+  $("xic-dialog").addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeCurves();
+  });
   $("xic-dialog").addEventListener("close", () => {
     if (state.curveOpener?.isConnected) state.curveOpener.focus({preventScroll: true});
   });
   $("xic-inspector").addEventListener("load", () => {
+    if (state.curveView && $("xic-dialog").open) {
+      if (loadFrame($("xic-inspector"), `/reports/${state.curveView}.html?embed=1`)) return;
+    }
     $("xic-inspector").contentDocument.documentElement.dataset.theme = document.documentElement.dataset.theme || "light";
   });
   $("xic-sample").addEventListener("change", () => action(() => selectCurveSample($("xic-sample").value)));
@@ -687,7 +803,7 @@ window.XicUi = (() => {
     frameObserver?.disconnect();
     frameObserver = null;
     const doc = frameDocument();
-    if (!doc?.body || frame.getAttribute("src") === "about:blank") {
+    if (!doc?.body || doc.URL === "about:blank") {
       frame.style.height = "";
       return;
     }
@@ -781,7 +897,7 @@ window.XicUi = (() => {
       action(() => query(0, queryFields()), "正在更新結果…"),
     );
   }
-  $("back-to-overview").addEventListener("click", showTargetedOverview);
+  $("back-to-overview").addEventListener("click", () => navigation.back(showTargetedOverview));
   $("reset-query").addEventListener("click", () =>
     action(async () => {
       $("query-form").reset();

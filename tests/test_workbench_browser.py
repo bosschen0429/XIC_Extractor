@@ -557,9 +557,6 @@ def test_review_search_and_inspector_use_one_scroll_and_visible_zoom(
     ) as detail:
         page.locator("#item-list button").first.click()
     report_path = f"/reports/{detail.value.json()['view_id']}.html"
-    expect(page.locator("#inspector")).to_have_attribute(
-        "src", report_path + "?embed=1"
-    )
     page.wait_for_function(
         """path => document.getElementById('inspector')
         .contentWindow.location.pathname === path""",
@@ -631,12 +628,19 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     expect(page.locator(".acquisition-panel > summary")).to_be_visible()
     expect(page.locator("#sample-list")).to_be_hidden()
     page.locator(".acquisition-panel > summary").click()
-    recorded = page.locator("#inspector").get_attribute("src")
+    recorded = page.locator("#inspector").evaluate(
+        "frame => frame.contentWindow.location.href"
+    )
     page.locator("#load-curves").click()
     frame = page.frame_locator("#xic-inspector")
     expect(frame.locator("#svg-raw polyline")).to_have_count(1)
     expect(page.locator("#xic-navigation")).to_be_hidden()
-    assert page.locator("#inspector").get_attribute("src") == recorded
+    assert (
+        page.locator("#inspector").evaluate(
+            "frame => frame.contentWindow.location.href"
+        )
+        == recorded
+    )
     page.locator("#xic-close").click()
     page.locator("#load-curves").click()
     expect(frame.locator("#svg-raw polyline")).to_have_count(1)
@@ -697,16 +701,29 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     tmp_path,
     monkeypatch,
 ):
+    from contextlib import contextmanager
+
     from tests.test_xic_inspector_targeted_workbook import (
         install_targeted_raws,
         write_rare_detection_workbook,
     )
+    from xic_workbench import targeted_curves
 
     page = workbench
     raw_dir = tmp_path / "review-raw"
     reads = install_targeted_raws(
         monkeypatch, raw_dir, {"S3": 1000, "S4": 300}, pair_scale=1000
     )
+    release = threading.Event()
+    open_raw = targeted_curves.open_raw
+
+    @contextmanager
+    def delayed_raw(*args, **kwargs):
+        assert release.wait(10)
+        with open_raw(*args, **kwargs) as raw:
+            yield raw
+
+    monkeypatch.setattr(targeted_curves, "open_raw", delayed_raw)
     for sample in ("S3", "S4"):
         batch = raw_dir / sample
         batch.mkdir()
@@ -722,9 +739,20 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     recorded = page.frame_locator("#inspector")
     row_button = recorded.get_by_role("button", name="看 S3 的 Analyte XIC", exact=True)
     expect(row_button).to_be_visible()
-    recorded_url = page.locator("#inspector").get_attribute("src")
+    row_button.scroll_into_view_if_needed()
+    reading_scroll = page.evaluate("window.scrollY")
+    recorded_url = page.locator("#inspector").evaluate(
+        "frame => frame.contentWindow.location.href"
+    )
     row_button.click()
     dialog = page.locator("#xic-dialog")
+    expect(dialog).to_be_visible()
+    page.go_back()
+    expect(dialog).to_be_hidden()
+    page.wait_for_function("y => Math.abs(window.scrollY - y) < 2", arg=reading_scroll)
+    release.set()
+    expect(page.locator("#status")).to_contain_text("診斷曲線已載入")
+    page.go_forward()
     expect(dialog).to_be_visible()
     expect(page.locator(".acquisition-panel")).to_be_hidden()
     expect(page.locator("#xic-sample")).to_have_value("S3")
@@ -736,7 +764,12 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     expect(frame.locator(".tx-chart-title")).to_have_text(["Analyte", "ISTD"])
     expect(frame.locator(".tx-provenance")).to_contain_text("無法驗證是否為原分析檔")
     # The result table never navigates away; each ion has its own y scale.
-    assert page.locator("#inspector").get_attribute("src") == recorded_url
+    assert (
+        page.locator("#inspector").evaluate(
+            "frame => frame.contentWindow.location.href"
+        )
+        == recorded_url
+    )
     expect(frame.locator(".tx-chart")).to_have_count(2)
     for line in curves.all():
         ys = [
@@ -751,6 +784,17 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     frame.get_by_role("button", name="完整 RT", exact=True).click()
     expect(frame.get_by_label("顯示 RT 起點", exact=True)).to_have_value("0")
     expect(frame.get_by_label("顯示 RT 終點", exact=True)).to_have_value("12")
+    page.go_back()
+    expect(dialog).to_be_hidden()
+    expect(row_button).to_be_focused()
+    page.go_forward()
+    expect(dialog).to_be_visible()
+    expect(frame.locator(".tx-sample-name")).to_have_text("S3")
+    assert len(reads) == 2
+    page.keyboard.press("Escape")
+    expect(dialog).to_be_hidden()
+    page.go_forward()
+    expect(dialog).to_be_visible()
     page.locator("#xic-close").click()
     expect(dialog).to_be_hidden()
     expect(row_button).to_be_focused()
@@ -773,7 +817,12 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     page.set_viewport_size({"width": 420, "height": 760})
     bounds = dialog.bounding_box()
     assert bounds and bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= 421
-    assert page.locator("#inspector").get_attribute("src") == recorded_url
+    assert (
+        page.locator("#inspector").evaluate(
+            "frame => frame.contentWindow.location.href"
+        )
+        == recorded_url
+    )
     assert workbook.read_bytes() == original
 
 
@@ -818,6 +867,41 @@ def test_targeted_review_marks_the_rare_detection_and_opens_it_in_place(
     page.locator("#target-id").select_option("")
     expect(page.locator("#item-list")).to_be_visible()
     expect(page.locator("#review")).to_have_class("review-grid")
+
+
+def test_review_back_forward_preserves_target_and_filters(workbench, tmp_path):
+    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+
+    page = workbench
+    workbook = write_rare_detection_workbook(tmp_path / "navigation.xlsx")
+    _view(page, "review")
+    page.locator("#source").fill(str(workbook))
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#targeted-overview td button", has_text="Analyte").click()
+    expect(page.locator("#item-title")).to_contain_text("Analyte")
+    page.locator("#target-attention").check()
+    expect(
+        page.frame_locator("#inspector").locator(".tgt-table tbody tr:not([hidden])")
+    ).to_have_count(1)
+    page.go_back()
+    expect(page.locator("#targeted-overview")).to_be_visible()
+    page.go_forward()
+    expect(page.locator("#review")).to_be_visible()
+    expect(page.locator("#target-id")).to_have_value("Analyte")
+    expect(page.locator("#target-attention")).to_be_checked()
+    expect(
+        page.frame_locator("#inspector").locator(".tgt-table tbody tr:not([hidden])")
+    ).to_have_count(1)
+    page.locator("#back-to-overview").click()
+    expect(page.locator("#targeted-overview")).to_be_visible()
+    page.go_forward()
+    expect(page.locator("#item-title")).to_contain_text("Analyte")
+    _view(page, "targeted")
+    page.go_back()
+    expect(page.locator("#workspace-review")).to_be_visible()
+    expect(page.locator("#target-attention")).to_be_checked()
+    page.go_forward()
+    expect(page.locator("#workspace-targeted")).to_be_visible()
 
 
 def test_targeted_row_xic_without_raw_points_at_the_missing_folder(workbench, tmp_path):

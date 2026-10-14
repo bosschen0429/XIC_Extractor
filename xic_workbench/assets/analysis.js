@@ -160,6 +160,7 @@
     checklist("targeted");
   }
   function selectView(view, persist = true) {
+    if (persist && view !== state.view) window.XicUi.navigation.push();
     state.view = view;
     document.body.dataset.view = view;
     for (const name of ["targeted", "untargeted", "review"])
@@ -177,6 +178,10 @@
     if (state.config) renderJob();
     if (persist) act(() => api("/api/preferences", { view }));
   }
+  window.XicUi.navigation.register("workspace", {
+    capture: () => state.view,
+    restore: view => selectView(view, false),
+  });
 
   // Form fields
   // Example templates ship placeholder paths that are not real inputs.
