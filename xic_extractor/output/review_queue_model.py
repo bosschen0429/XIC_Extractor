@@ -160,6 +160,19 @@ def _dedupe_text(values: Iterable[str]) -> list[str]:
     return deduped
 
 
+def _unqualified_ms1_shape(row: dict[str, str]) -> bool:
+    """Present saved peak qualification, without re-evaluating the trace."""
+    support = set(row.get("Projection Support Reasons", "").replace(";", " ").split())
+    review = set(row.get("Projection Review Reasons", "").replace(";", " ").split())
+    return (
+        row.get("Counted Detection", "").upper() == "FALSE"
+        and "ms1_peak_present" in support
+        and "ms1_coherent" not in support
+        and "cross_sample_backfill_localization" not in support
+        and bool(review & {"physical_shoulder_overlap", "trace_morphology_review"})
+    )
+
+
 def _row_review_issue(row: dict[str, str]) -> str:
     nl = row.get("NL", "")
     if _has_product_projection(row):
@@ -171,6 +184,8 @@ def _row_review_issue(row: dict[str, str]) -> str:
         if product_state == "ambiguous":
             return "PRODUCT_AMBIGUOUS"
         if row.get("Counted Detection", "").upper() == "FALSE":
+            if _unqualified_ms1_shape(row):
+                return "PRODUCT_NOT_COUNTED"
             if nl in {"NL_FAIL", "NO_MS2"}:
                 return nl
             return "PRODUCT_NOT_COUNTED"
@@ -252,6 +267,14 @@ def _review_why(issue: str, row: dict[str, str], evidence: str) -> str:
         return "回填找不到唯一的峰"
     if "BACKFILL_ACCEPTED" in evidence and counted == "FALSE":
         return "已回填定位，身分未確認"
+    if _unqualified_ms1_shape(row):
+        detail = (
+            "（肩峰／重疊）"
+            if "physical_shoulder_overlap" in row.get("Projection Review Reasons", "")
+            else ""
+        )
+        ms2 = "；另無 MS2" if row.get("NL") == "NO_MS2" else ""
+        return f"MS1 峰形品質不足{detail}{ms2}"
     if issue == "NL_FAIL":
         return "CID-NL 確認條件未通過（不代表沒有 fragment 訊號）"
     if issue == "NO_MS2":
@@ -297,6 +320,8 @@ def _suggested_action(issue: str, row: dict[str, str], evidence: str) -> str:
         return "比較 analyte／ISTD 預期 RT 差與實際峰位置，確認是否為其他訊號"
     if "BACKFILL" in evidence:
         return "比較同批樣本的回填位置與峰形"
+    if _unqualified_ms1_shape(row):
+        return "檢查 MS1 峰形與肩峰／重疊，不以 RT 吻合取代峰形資格"
     if issue in {"NL_FAIL", "NL_WARN"}:
         return "看所選 RT 附近的 MS2"
     if issue == "NO_MS2":

@@ -299,6 +299,51 @@ def test_run_writes_one_review_table_and_method_context(tmp_path: Path) -> None:
     wb.close()
 
 
+@pytest.mark.parametrize(
+    "qualification", ["", "ms1_coherent", "cross_sample_backfill_localization"]
+)
+def test_review_prioritizes_unqualified_ms1_shape_over_missing_ms2(qualification):
+    row = _long_row(
+        "TumorBC2312_DNA",
+        "8-oxodG",
+        "16.4936",
+        "513298",
+        "NO_MS2",
+        counted_detection="FALSE",
+        product_state="not_counted",
+    )
+    row.update(
+        {
+            "Projection Support Reasons": (
+                "ms1_peak_present;paired_istd_anchor_support;trace_coherent"
+            )
+            + (f";{qualification}" if qualification else ""),
+            "Projection Review Reasons": (
+                "missing_ms2_not_observed;physical_shoulder_overlap;"
+                "trace_morphology_review"
+            ),
+        }
+    )
+    queue = _review_queue_rows([row], [])
+    wb = Workbook()
+    _build_data_sheet(wb.active, [row], review_rows=queue)
+    saved = _sheet_records(wb.active)[0]
+    assert saved["RT"] == 16.4936
+    assert saved["Area"] == 513298
+    assert saved["Counted Detection"] == "FALSE"
+    if qualification:
+        assert saved["Review Reason"].replace("\n", "") == "沒有 MS2"
+    else:
+        assert (
+            saved["Review Reason"].replace("\n", "")
+            == "MS1 峰形品質不足（肩峰／重疊）；另無 MS2"
+        )
+        assert (
+            queue[0]["Action"] == "檢查 MS1 峰形與肩峰／重疊，不以 RT 吻合取代峰形資格"
+        )
+    wb.close()
+
+
 def test_run_blocks_product_long_results_without_projection_fields(
     tmp_path: Path,
 ) -> None:
