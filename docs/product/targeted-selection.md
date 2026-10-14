@@ -80,6 +80,14 @@ parsed once by Discovery, with shared parent-MS1 verification and scan-event
 resolution within each target’s m/z population before candidate-local CID-NL
 assessment. Different recorded precursors from one scan remain available to
 their respective targets.
+
+Within the same chemical-support tier, an ISTD candidate meeting the existing
+anchor completeness and reference-proximity rule precedes a remote candidate,
+even if the remote candidate has stronger MS2 trace support. A matching NL at
+another chromatographic position does not make the two peaks interchangeable.
+This preference does not crop acquisition, confirm an unsupported nearby peak,
+or reject supported drift when no qualified reference-local candidate exists.
+
 For named Target identity, own CID-NL support requires a compatible recorded
 scan precursor or vendor monoisotopic reference. A parent-MS1 ion found by
 searching product + configured loss establishes mass/isolation compatibility,

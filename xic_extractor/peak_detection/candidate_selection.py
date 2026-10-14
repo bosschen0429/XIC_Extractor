@@ -140,6 +140,18 @@ def candidate_selection_decision_record(
             ("rt_prior_distance", _rt_prior_distance(facts)),
             ("negative_abundance", -facts.abundance),
         )
+    if facts.rt.role == "ISTD" and reference is not None and not strict_selection_rt:
+        # Known-standard localization precedes trace-strength tie-breaks. Two
+        # peaks sharing the configured NL are not interchangeable identities.
+        # Reuse the anchor's physical-completeness/proximity rule; this neither
+        # crops acquisition nor promotes a nearby peak without method support.
+        gate = (
+            (
+                "istd_reference_completeness_rank",
+                float(_typed_anchor_rank(facts, selection_rt=reference)),
+            ),
+            *gate,
+        )
     # Only positive, peak-owned method support precedes RT hints. An unobserved
     # DDA product is not negative identity evidence, and a scan-free unrelated
     # peak must not beat the reference peak simply by having no MS2 opportunity.
