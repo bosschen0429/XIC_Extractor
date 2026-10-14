@@ -90,6 +90,16 @@ consistently during selection and formal support binding; Discovery retains
 its independent-mass candidate scope. Paired-ISTD and accepted Backfill identity
 remain governed by their existing owners, not a new RT gate.
 
+A recorded vendor monoisotopic reference can support CID-NL even when the
+monoisotopic m/z lies outside the nominal isolation window: the selected ion
+must be inside that window, have recorded charge 1, and match a positive integer
+carbon-isotope offset from the vendor monoisotopic m/z within the shared
+precursor mass policy (20 ppm). Missing geometry or charge, an unrelated mass
+offset, and a product-plus-loss inference do not qualify for this route. The
+reported monoisotopic isolation membership remains `outside_nominal`; eligibility
+does not rewrite geometry or prove exclusive fragment parentage. Existing
+product/NL mass, intensity, target attribution, and peak-local checks still apply.
+
 Strong recorded-precursor-supported, quantifiable peaks remain counted despite RT drift.
 When such a peak disagrees with the position of a counted paired ISTD, it retains
 its measurement and count but requires identity review; chemical support alone

@@ -4,6 +4,7 @@ import math
 from dataclasses import dataclass
 from typing import Literal
 
+from xic_extractor.configuration.cid_nl_profile import DEFAULT_CID_NL_MASS_POLICY
 from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata, Ms2Scan
 
@@ -14,6 +15,7 @@ PrecursorMzBasis = Literal[
 RECORDED_PRECURSOR_BASES = frozenset({"scan_precursor", "scan_monoisotopic"})
 IsolationMembership = Literal["inside_nominal", "outside_nominal", "unknown"]
 PrecursorReferenceRequirement = Literal["independent_mass", "recorded_precursor"]
+_CARBON_ISOTOPE_SPACING_DA = 1.0033548
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,7 +106,9 @@ def assess_precursor_loss(
             abs(observed_loss_da - neutral_loss_da) / neutral_loss_da * 1e6
         )
     membership = precursor_isolation_membership(precursor_mz, selected_mz, metadata)
-    if membership == "outside_nominal":
+    if membership == "outside_nominal" and not _isolated_vendor_isotope(
+        basis, precursor_mz, selected_mz, metadata
+    ):
         status = "outside_nominal_isolation"
     elif membership == "unknown" and basis != "scan_precursor":
         status = "isolation_unavailable"
@@ -173,16 +177,51 @@ def supports_direct_nl(
     """Require independent mass reference and compatible precursor selection.
 
     Selected scan precursors preserve the method's acquisition evidence when
-    geometry is unavailable. A vendor monoisotopic assignment alone does not.
+    geometry is unavailable. A vendor monoisotopic assignment outside the
+    window qualifies only through a compatible, isolated isotope selection.
     This eligibility still requires the caller's mass and RT checks; it does
     not establish a unique chemical parent in a coisolated population.
     """
     if basis not in RECORDED_PRECURSOR_BASES:
         return False
     membership = precursor_isolation_membership(precursor_mz, selected_mz, metadata)
-    return membership == "inside_nominal" or (
-        basis == "scan_precursor" and membership == "unknown"
+    return (
+        membership == "inside_nominal"
+        or (basis == "scan_precursor" and membership == "unknown")
+        or _isolated_vendor_isotope(basis, precursor_mz, selected_mz, metadata)
     )
+
+
+def _isolated_vendor_isotope(
+    basis: PrecursorMzBasis,
+    precursor_mz: float,
+    selected_mz: float | None,
+    metadata: Ms2PrecursorMetadata | None,
+) -> bool:
+    """Qualify vendor M+n selection without relabelling M's window geometry.
+
+    The recorded assignment supplies the independent mass reference, not a
+    product-plus-loss search. Known charge 1 and integer carbon isotope spacing
+    must agree within the shared precursor mass policy; the selected isotope
+    itself must be in the nominal window. Product/NL and peak checks remain with
+    their existing owners. This does not prove exclusive fragment parentage.
+    """
+    if (
+        basis != "scan_monoisotopic"
+        or metadata is None
+        or metadata.charge != 1
+        or metadata.monoisotopic_mz != precursor_mz
+        or selected_mz is None
+        or precursor_isolation_membership(selected_mz, selected_mz, metadata)
+        != "inside_nominal"
+    ):
+        return False
+    isotope_number = round((selected_mz - precursor_mz) / _CARBON_ISOTOPE_SPACING_DA)
+    if isotope_number < 1:
+        return False
+    expected_mz = precursor_mz + isotope_number * _CARBON_ISOTOPE_SPACING_DA
+    tolerance = DEFAULT_CID_NL_MASS_POLICY.precursor_mz_tolerance_ppm / 1e6
+    return abs(selected_mz - expected_mz) <= expected_mz * tolerance
 
 
 def precursor_inference_bounds(

@@ -1056,8 +1056,17 @@ class _FakeCandidate:
         self.ms2_evidence_peak_end = ms2_evidence_peak_end
 
 
-@pytest.mark.parametrize("charge", (None, 1, 2))
-@pytest.mark.parametrize("width,supported", [(1.6, False), (2.4, True)])
+@pytest.mark.parametrize(
+    "charge,width,supported",
+    [
+        (None, 1.6, False),
+        (1, 1.6, True),
+        (2, 1.6, False),
+        (None, 2.4, True),
+        (1, 2.4, True),
+        (2, 2.4, False),
+    ],
+)
 def test_targeted_monoisotopic_evidence_uses_recorded_precursor_and_counts_scan_once(
     charge,
     width,
