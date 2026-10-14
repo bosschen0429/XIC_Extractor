@@ -1940,7 +1940,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         assert ref["Counted Detection"] == "TRUE"
 
 
-def test_paired_position_offset_and_mandatory_review_reach_workbook_and_inspector(
+def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2049,18 +2049,20 @@ def test_paired_position_offset_and_mandatory_review_reach_workbook_and_inspecto
         for f in execution.active_output.file_results
     }
     near, far = results["Near"], results["Far"]
-    assert far.reported_rt == pytest.approx(2.1, abs=0.005)
-    assert far.selected_cid_nl_supported
-    assert far.targeted_product_projection.counted_detection
-    assert far.targeted_product_projection.review_state == "review_required"
-    assert (
-        "paired_istd_position_mismatch"
-        in far.targeted_product_projection.review_reasons
+    assert far.reported_rt is None
+    assert far.reported_peak_area is None
+    assert far.reported_peak_start is None
+    assert far.reported_peak_end is None
+    assert not far.targeted_product_projection.counted_detection
+    assert any(
+        record.sample_name == "Far"
+        and record.issue == "OFF_ISTD_POSITION"
+        and "2.100" in record.reason
+        for record in execution.active_output.diagnostics
     )
     assert near.reported_rt == pytest.approx(1.5, abs=0.005)
     assert near.targeted_product_projection.counted_detection
     assert "paired_istd_identity" in near.targeted_product_projection.support_reasons
-    assert far.reported_peak_area > near.reported_peak_area
     workbook = load_workbook(path, read_only=True, data_only=True)
     values = iter(workbook["XIC Results"].values)
     headers = next(values)
@@ -2070,9 +2072,10 @@ def test_paired_position_offset_and_mandatory_review_reach_workbook_and_inspecto
         if (r := dict(zip(headers, cells)))["Target"] == "Analyte"
     }
     workbook.close()
-    assert rows["Far"]["Counted Detection"] == "TRUE"
-    assert rows["Far"]["Review"] == "Check"
-    assert rows["Far"]["Review Reason"] == "峰偏離配對內標位置，需確認身分"
+    assert rows["Far"]["Counted Detection"] == "FALSE"
+    assert rows["Far"]["Area"] == "ND"
+    assert rows["Far"]["RT"] == "ND"
+    assert "偏離內標" in rows["Far"]["Review Reason"]
     assert rows["Near"]["Review"] is None
     assert rows["Spike"]["Counted Detection"] == "FALSE"
     assert rows["Spike"]["Area"] == "ND"
@@ -2092,6 +2095,8 @@ def test_paired_position_offset_and_mandatory_review_reach_workbook_and_inspecto
     for sample in ("Near", "Far", "Spike"):
         assert saved[sample]["Review"] == rows[sample]["Review"]
         assert saved[sample]["Review Reason"] == rows[sample]["Review Reason"]
+    for column in ("RT", "Area", "Counted Detection"):
+        assert saved["Far"][column] == rows["Far"][column]
 
 
 def test_cli_and_workbench_route_through_acquisition_service_boundary() -> None:

@@ -512,7 +512,6 @@ class _RenderCell:
         *,
         paired_istd_identity: bool = False,
         no_write_reason: str = "",
-        paired_istd_position_review: bool = False,
     ) -> ExtractionResult:
         return _finalized_extraction_result(
             self.extraction,
@@ -522,7 +521,6 @@ class _RenderCell:
             evidence=self.evidence,
             backfill_supported=self.backfill_supported,
             paired_istd_identity=paired_istd_identity,
-            paired_istd_position_review=paired_istd_position_review,
         )
 
 
@@ -535,9 +533,8 @@ def _apply_paired_istd_positions(
 
     The ISTD's final count, including accepted Backfill, is known only once
     every Target of the batch has rendered. A peak at the paired position takes
-    its identity; an uncounted peak elsewhere is published as no value, its
-    measurement kept as a diagnostic event. An already-counted peak elsewhere
-    retains its measurement and count but requires identity review.
+    its identity; a peak elsewhere is published as no value even with its own
+    neutral-loss support, with its measurement kept as a diagnostic event.
     """
     from xic_extractor.extraction.target_extraction import current_target_reference_rt
     from xic_extractor.peak_detection.physical_peak_evaluation import (
@@ -566,19 +563,6 @@ def _apply_paired_istd_positions(
                 target, reference_rt=0.0, paired_target=targets_by_label[pair]
             ),
         )
-        for sample, deviation in positions.review_required.items():
-            rendered_by_sample[sample][label] = cells[(sample, label)].render(
-                paired_istd_position_review=True
-            )
-            diagnostics.append(
-                DiagnosticRecord(
-                    sample,
-                    label,
-                    "PAIRED_ISTD_POSITION_REVIEW",
-                    f"Counted peak is {deviation:+.2f} min from the {pair} position; "
-                    "retained with mandatory identity review.",
-                )
-            )
         for sample in positions.identified:
             rendered_by_sample[sample][label] = cells[(sample, label)].render(
                 paired_istd_identity=True
@@ -637,7 +621,6 @@ def _finalized_extraction_result(
     evidence: object,
     backfill_supported: bool = False,
     paired_istd_identity: bool = False,
-    paired_istd_position_review: bool = False,
 ) -> ExtractionResult:
     captured_physical_evaluation = extraction.physical_evaluation
     reported_evaluation = (
@@ -654,7 +637,6 @@ def _finalized_extraction_result(
         no_write_reason=no_write_reason,
         backfill_supported=backfill_supported,
         paired_istd_identity=paired_istd_identity,
-        paired_istd_position_review=paired_istd_position_review,
         captured_physical_evaluation=captured_physical_evaluation,
         nl_status=extraction.nl_token or "",
     )
@@ -785,7 +767,6 @@ def _finalized_product_projection(
     nl_status: str,
     backfill_supported: bool = False,
     paired_istd_identity: bool = False,
-    paired_istd_position_review: bool = False,
     captured_physical_evaluation: PhysicalPeakEvaluation | None = None,
 ) -> TargetedProductProjection | None:
     if projection is None:
@@ -828,7 +809,6 @@ def _finalized_product_projection(
         ),
         backfill_supported=backfill_supported,
         paired_istd_identity=paired_istd_identity,
-        paired_istd_position_review=paired_istd_position_review,
         support_reasons=projection.support_reasons,
         review_reasons=projection.review_reasons,
         conflict_reasons=projection.conflict_reasons,

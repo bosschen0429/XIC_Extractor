@@ -109,9 +109,9 @@ does not rewrite geometry or prove exclusive fragment parentage. Existing
 product/NL mass, intensity, target attribution, and peak-local checks still apply.
 
 Strong recorded-precursor-supported, quantifiable peaks remain counted despite RT drift.
-When such a peak disagrees with the position of a counted paired ISTD, it retains
-its measurement and count but requires identity review; chemical support alone
-does not resolve that positional contradiction.
+This does not override a counted paired ISTD: a peak outside its paired-position
+tolerance is ND, even with neutral-loss support. Chemical support alone does not
+resolve that positional contradiction.
 RT-prior disagreement and legacy confidence labels alone do not create product
 review actions. Unresolved morphology or overlap concerns can require quality
 review independently of identity. Confidence and reason labels describe source
@@ -173,20 +173,16 @@ The result records `paired_istd_identity` among its support reasons, so it
 remains distinguishable from NL-confirmed detection. Morphology, overlap and
 other review reasons still flag it.
 
-The same position also rejects. When the paired ISTD is counted, an uncounted
-analyte peak outside that tolerance is
-another signal, not this analyte. Its RT, area and bounds are published as no
-value (`analyte_peak_off_paired_istd_position`), and the measured peak remains
-an `OFF_ISTD_POSITION` diagnostic event. `paired_istd_positions` returns both
-answers from one position assessment. An out-of-position unconfirmed signal
-is ND, not a numeric Target result. Being inside the window is not sufficient
-by itself: the peak-quality and blocker requirements still apply.
-
-An already-counted analyte outside the same paired-position tolerance is not
-silently cleared or reselected. It retains its RT, area, bounds and count with
-`paired_istd_position_mismatch`, `detected_flagged`, and `review_required`.
-The workbook and Inspector expose the identity-review action. An uncounted or
-missing ISTD cannot impose this paired-position review.
+The same position also rejects. When the paired ISTD is counted, any analyte
+peak outside that tolerance is another signal, not this analyte, even if its own
+neutral loss had made it counted. Its RT, area and bounds are published as ND
+(`analyte_peak_off_paired_istd_position`) and counted detection is false. The
+measured peak remains an `OFF_ISTD_POSITION` diagnostic event and its candidate
+evidence remains available for inspection; another peak is not silently selected.
+`paired_istd_positions` returns both identity and rejection from one position
+assessment. Being inside the window is not sufficient by itself: the peak-quality
+and blocker requirements still apply. An uncounted or missing ISTD cannot impose
+this paired-position rejection.
 
 Cohort Backfill is a distinct, owner-bound recovery after direct reference
 observations are available. The [shared Backfill route](backfill.md#targeted-route)
