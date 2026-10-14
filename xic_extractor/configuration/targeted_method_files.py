@@ -88,7 +88,15 @@ def load_target_table(path: Path) -> list[dict[str, str]]:
     return rows
 
 
-def _read_workbook(path: Path, sheets: set[str]) -> dict[str, list[dict[str, str]]]:
+def load_workbook_targets(path: Path) -> tuple[Target, ...]:
+    """Read shared target intent, ignoring optional Targeted method settings."""
+    rows = _read_workbook(path, {"Targets"}, optional_sheets={"Method"})["Targets"]
+    return parse_target_rows(rows, Path(path))
+
+
+def _read_workbook(
+    path: Path, sheets: set[str], *, optional_sheets: set[str] | None = None
+) -> dict[str, list[dict[str, str]]]:
     import openpyxl
 
     path = Path(path)
@@ -99,7 +107,8 @@ def _read_workbook(path: Path, sheets: set[str]) -> dict[str, list[dict[str, str
     except (OSError, ValueError, KeyError, BadZipFile) as exc:
         raise ConfigError(f"{path}: 無法讀取 XLSX：{exc}") from exc
     try:
-        if set(book.sheetnames) != sheets:
+        actual = set(book.sheetnames)
+        if not sheets <= actual or actual - sheets - (optional_sheets or set()):
             raise ConfigError(f"{path}: 工作表必須為 {sorted(sheets)}")
         tables = {}
         for name in sheets:

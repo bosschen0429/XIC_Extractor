@@ -178,6 +178,12 @@ def _parse_target_metadata_enum(
 
 
 def read_targets(path: Path) -> tuple[Target, ...]:
+    if path.suffix.lower() == ".xlsx":
+        from xic_extractor.configuration.targeted_method_files import (
+            load_workbook_targets,
+        )
+
+        return load_workbook_targets(path)
     return tuple(_read_targets(path))
 
 
@@ -194,7 +200,7 @@ def read_istd_targets(path: Path) -> IstdTargetSelection:
     istds = tuple(target for target in targets if target.is_istd)
     if not istds:
         raise ValueError(
-            f"{path}: no internal standards; set is_istd=TRUE for an ISTD row "
+            f"{path}: no internal standards; set role=istd for an ISTD row "
             "or clear the optional list to run without ISTD alignment."
         )
     return IstdTargetSelection(istds, len(targets) - len(istds))

@@ -14,8 +14,9 @@ align them across samples, and open reviewable outputs from the GUI.
 4. Set RAW input, Thermo DLL directory, and output directory.
 5. Import the Word **上機資訊** to match file names and injection order. Check
    unmatched or ambiguous entries; alphabetical file order is not injection order.
-6. Check the **內標清單**. The bundled example is selected by default; only
-   `is_istd=TRUE` rows are used. Other analyte rows are counted as skipped.
+6. Check the **內標清單**. Download the shared XLSX example beside **選擇檔案**,
+   then choose or drop an XLSX, CSV or TSV file. Only `role=istd` rows are used;
+   the preview shows admitted standards and the skipped analyte count.
 7. Choose a CID-NL starting method and open **編輯方法…** to select dR, R, MeR,
    or custom NL tags and their combination. Apply the method to the current run.
 8. Press **開始執行** and start review from the output directory.
@@ -48,13 +49,14 @@ the GUI, use `full` when starting from a RAW directory.
 | DLL directory | Folder containing Thermo RawFileReader DLLs |
 | Output directory | Where candidate and Alignment artifacts are written |
 | Acquisition information | Word sequence table supplying file/sample matching and injection order |
-| Internal-standard list | Shared targets CSV; Untargeted consumes only `is_istd=TRUE` rows |
+| Internal-standard list | Shared Targeted XLSX, CSV or TSV; Untargeted consumes only `role=istd` rows |
 | Preset | CID-NL method with selected tags and combination |
 | Advanced overrides | Optional per-run method changes layered on the preset |
 
 The target list uses the same format as Targeted. Save a copy of the bundled
-example, edit it in Excel or the system's associated application, then reload
-it in the GUI. Keep the CSV headers and the `is_istd` flag. There is no separate
+example, edit it in Excel, then choose or drop it in the GUI. Keep the `Targets`
+sheet headers and `role=istd` for standards. A Targeted method XLSX is also accepted;
+its method settings do not change the Untargeted method. There is no separate
 Untargeted list to maintain. A supplied file with no internal standards shows an
 error; clearing the field runs without an internal-standard list.
 

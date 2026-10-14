@@ -461,6 +461,34 @@
     targetCount();
     done("已載入目標清單；批次及本機設定保持不變。儲存或開始分析後套用。");
   }
+  function bindListUpload(prefix, receive) {
+    $(`${prefix}-import`).onclick = () => $(`${prefix}-import-file`).click();
+    $(`${prefix}-import-file`).onchange = (event) => {
+      receive(event.target.files);
+      event.target.value = "";
+    };
+    const zone = $(`${prefix}-dropzone`);
+    for (const type of ["dragenter", "dragover", "dragleave", "drop"]) {
+      zone.addEventListener(type, (event) => {
+        event.preventDefault();
+        zone.classList.toggle("drag-over", !isBusy() && ["dragenter", "dragover"].includes(type));
+        if (type === "drop") receive(event.dataTransfer.files);
+      });
+    }
+  }
+  async function readListFile(files) {
+    if (files.length !== 1) throw new Error("請一次選擇一個方法檔或目標表。");
+    const file = files[0];
+    if (!/\.(xlsx|csv|tsv)$/i.test(file.name)) throw new Error("請選擇 XLSX、CSV 或 TSV 檔案；不支援 .xls。");
+    if (!file.size || file.size > 1024 * 1024) throw new Error("請選擇非空白且不超過 1 MiB 的檔案。");
+    const content = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(",")[1]);
+      reader.onerror = () => reject(new Error("無法讀取檔案，請重新選擇。"));
+      reader.readAsDataURL(file);
+    });
+    return { name: file.name, content };
+  }
   let pendingTargetImport = null;
   async function previewTargetFiles(files) {
     if (isBusy()) return;
@@ -469,23 +497,14 @@
     message.className = "";
     pendingTargetImport = null;
     try {
-      if (files.length !== 1) throw new Error("請一次選擇一個方法檔或目標表。");
-      const file = files[0];
-      if (!/\.(xlsx|csv|tsv)$/i.test(file.name)) throw new Error("請選擇 XLSX、CSV 或 TSV 檔案；不支援 .xls。");
-      if (!file.size || file.size > 1024 * 1024) throw new Error("請選擇非空白且不超過 1 MiB 的檔案。");
       state.importing = true;
       lock();
-      message.textContent = `正在讀取 ${file.name}…`;
-      const content = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result.split(",")[1]);
-        reader.onerror = () => reject(new Error("無法讀取檔案，請重新選擇。"));
-        reader.readAsDataURL(file);
-      });
-      const result = await api("/api/targets/upload", { name: file.name, content, settings: settingsValues() });
+      message.textContent = "正在讀取檔案…";
+      const upload = await readListFile(files);
+      const result = await api("/api/targets/upload", { ...upload, settings: settingsValues() });
       pendingTargetImport = result;
       const istdCount = result.targets.filter((row) => row.role === "istd").length;
-      $("target-import-summary").textContent = `${file.name} · ${result.kind === "method" ? "方法檔（Method + Targets）" : "目標表"} · ${result.targets.length} 個目標（ISTD ${istdCount} 個）`;
+      $("target-import-summary").textContent = `${upload.name} · ${result.kind === "method" ? "方法檔（Method + Targets）" : "目標表"} · ${result.targets.length} 個目標（ISTD ${istdCount} 個）`;
       const body = $("target-import-rows");
       body.replaceChildren();
       for (const row of result.targets) {
@@ -1301,16 +1320,59 @@
       ),
     );
   }
-  async function reloadIstd() {
-    const result = await api("/api/istd", { path: $("u-targets_csv").value });
-    $("istd-summary").textContent =
-      result.message ||
+  function renderIstd(result) {
+    $("istd-summary").textContent = result.message ||
       `${result.selection.targets.length} 個內標；略過 ${result.selection.skipped_count} 個一般目標。`;
+    const preview = $("istd-preview");
+    preview.replaceChildren();
+    if (!result.selection) return;
+    const table = el("table");
+    const head = el("tr");
+    for (const label of ["內標名稱", "m/z", "預期 RT (min)"]) head.append(el("th", label));
+    table.append(head);
+    for (const target of result.selection.targets) {
+      const row = el("tr");
+      for (const value of [target.label, target.mz, target.expected_rt_min]) row.append(el("td", String(value ?? "")));
+      table.append(row);
+    }
+    preview.append(table);
+  }
+  async function reloadIstd() {
+    $("istd-preview").replaceChildren();
+    $("istd-summary").textContent = "正在讀取清單…";
+    try {
+      renderIstd(await api("/api/istd", { path: $("u-targets_csv").value }));
+    } catch (error) {
+      $("istd-summary").textContent = "清單未載入，請修正檔案或清空路徑停用。";
+      throw error;
+    }
+  }
+  async function importIstdFiles(files) {
+    if (isBusy()) return;
+    const message = $("istd-import-status");
+    message.className = "";
+    try {
+      state.importing = true;
+      lock();
+      message.textContent = "正在讀取檔案…";
+      const upload = await readListFile(files);
+      const result = await api("/api/istd/upload", upload);
+      $("u-targets_csv").value = result.path;
+      renderIstd(result);
+      dirty("untargeted");
+      message.textContent = `已匯入 ${upload.name}；儲存或開始分析後套用。`;
+    } catch (error) {
+      message.textContent = error.message;
+      message.className = "error";
+    } finally {
+      state.importing = false;
+      lock();
+    }
   }
   async function copyIstd() {
     const destination = await requestPath(
       "另存可編輯內標副本",
-      `${state.config.config_dir}/my-targets.csv`,
+      `${state.config.config_dir}/my-targets.${$("u-targets_csv").value.split(".").pop() || "xlsx"}`,
     );
     if (!destination) return;
     const result = await api("/api/istd/copy", {
@@ -1482,19 +1544,8 @@
       const result = await api("/api/targets/export", { path, targets: state.targets });
       done(result.message);
     });
-    $("target-import").onclick = () => $("target-import-file").click();
-    $("target-import-file").onchange = (event) => {
-      previewTargetFiles(event.target.files);
-      event.target.value = "";
-    };
-    const dropzone = $("target-dropzone");
-    for (const type of ["dragenter", "dragover", "dragleave", "drop"]) {
-      dropzone.addEventListener(type, (event) => {
-        event.preventDefault();
-        dropzone.classList.toggle("drag-over", !isBusy() && ["dragenter", "dragover"].includes(type));
-        if (type === "drop") previewTargetFiles(event.dataTransfer.files);
-      });
-    }
+    bindListUpload("target", previewTargetFiles);
+    bindListUpload("istd", importIstdFiles);
     $("target-import-preview").addEventListener("close", () => {
       if (pendingTargetImport) $("target-import-status").textContent = "已取消匯入，目前清單未變更。";
       pendingTargetImport = null;
@@ -1629,6 +1680,7 @@
           $("untargeted-result").hidden = true;
           if (id === "untargeted-clear") {
             $("u-targets_csv").value = "";
+            await reloadIstd();
             await loadMethod("dna_dr");
           }
           dirty("untargeted");
@@ -1782,8 +1834,8 @@
     pathField(
       $("istd-path-field"),
       "targets_csv",
-      "內標 CSV（留空停用）",
-      "csv",
+      "內標清單 XLSX／CSV／TSV（留空停用）",
+      "targets",
       state.config.untargeted.targets_csv,
     );
     setMode(state.config.untargeted.mode);

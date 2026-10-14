@@ -221,11 +221,14 @@ def test_target_relationships_and_metadata():
         parse_target_rows([standard, standard])
 
 
-def test_templates_and_untargeted_istd_projection_share_new_format():
+@pytest.mark.parametrize(
+    "name", ["targets.csv", "targets.xlsx", "targeted-method.xlsx"]
+)
+def test_templates_and_untargeted_istd_projection_share_new_format(name):
     from xic_extractor.configuration.paths import targets_template_path
 
     root = targets_template_path().parent
     targets = read_targets(root / "targets.csv")
-    selected = read_istd_targets(root / "targets.csv")
+    selected = read_istd_targets(root / name)
     assert selected.targets == tuple(t for t in targets if t.is_istd)
     assert len(targets) == len(selected.targets) + selected.skipped_count

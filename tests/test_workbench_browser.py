@@ -1173,3 +1173,87 @@ def test_analysis_review_uses_run_paths_even_after_batch_edit(
     frame = page.frame_locator("#xic-inspector")
     expect(frame.locator('.tx-chart polyline[data-kind="smoothed"]')).to_have_count(2)
     expect(page.locator("#status")).not_to_contain_text("請先選擇 RAW 資料夾")
+
+
+@pytest.mark.parametrize("extension,drop", [("xlsx", True), ("tsv", False)])
+def test_untargeted_istd_shared_upload_and_persistence(
+    workbench, config_dir, tmp_path, extension, drop
+):
+    import base64
+    import csv
+
+    from tests.test_targeted_method_files import rows
+    from xic_extractor.configuration.targeted_method_files import save_target_table
+    from xic_extractor.configuration.targets import read_istd_targets
+
+    page = workbench
+    path = tmp_path / f"shared.{extension}"
+    if extension == "xlsx":
+        save_target_table(rows(), path)
+    else:
+        with path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=list(dict.fromkeys(k for r in rows() for k in r)),
+                delimiter="\t",
+            )
+            writer.writeheader()
+            writer.writerows(rows())
+    original_targets = page.locator("#target-preview").inner_text()
+    page.get_by_role("button", name="Untargeted", exact=True).click()
+    expect(page.get_by_role("link", name="下載共用清單範例 XLSX")).to_be_visible()
+    with page.expect_download() as download:
+        page.get_by_role("link", name="下載共用清單範例 XLSX").click()
+    download.value.save_as(tmp_path / "example.xlsx")
+    assert read_istd_targets(tmp_path / "example.xlsx").targets
+    if drop:
+        transfer = page.evaluate_handle(
+            """({name, content}) => {
+            const transfer = new DataTransfer();
+            const bytes = Uint8Array.from(atob(content), c => c.charCodeAt(0));
+            transfer.items.add(new File([bytes], name));
+            return transfer;
+        }""",
+            {
+                "name": path.name,
+                "content": base64.b64encode(path.read_bytes()).decode(),
+            },
+        )
+        page.locator("#istd-dropzone").dispatch_event(
+            "drop", {"dataTransfer": transfer}
+        )
+    else:
+        page.locator("#istd-import-file").set_input_files(path)
+    expect(page.locator("#istd-import-status")).to_contain_text(
+        f"已匯入 shared.{extension}"
+    )
+    expect(page.locator("#istd-summary")).to_have_text("1 個內標；略過 1 個一般目標。")
+    expect(page.locator("#istd-preview")).to_contain_text("standard")
+    expect(page.locator("#istd-preview")).not_to_contain_text("analyte")
+    retained = page.locator("#u-targets_csv").input_value()
+    page.locator("#istd-import-file").set_input_files(
+        {"name": "bad.xls", "mimeType": "application/octet-stream", "buffer": b"bad"}
+    )
+    expect(page.locator("#istd-import-status")).to_contain_text("不支援 .xls")
+    expect(page.locator("#u-targets_csv")).to_have_value(retained)
+    expect(page.locator("#istd-preview")).to_contain_text("standard")
+    page.locator("#untargeted-save").click()
+    expect(page.locator("#untargeted-dirty")).to_be_empty()
+    assert (
+        json.loads((config_dir / "discovery_gui.json").read_text(encoding="utf-8"))[
+            "targets_csv"
+        ]
+        == retained
+    )
+    path.unlink()
+    page.reload()
+    page.get_by_role("button", name="Untargeted", exact=True).click()
+    expect(page.locator("#u-targets_csv")).to_have_value(retained)
+    expect(page.locator("#istd-summary")).to_have_text("1 個內標；略過 1 個一般目標。")
+    page.locator("#untargeted-clear").click()
+    expect(page.locator("#istd-summary")).to_have_text("本次不使用內標清單。")
+    expect(page.locator("#istd-preview")).to_be_empty()
+    page.get_by_role("button", name="Targeted", exact=True).click()
+    expect(page.locator("#target-preview")).to_have_text(
+        original_targets, use_inner_text=True
+    )

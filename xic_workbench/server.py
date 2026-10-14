@@ -319,6 +319,7 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
                 "method/save",
                 "samples/export",
                 "istd",
+                "istd/upload",
                 "istd/copy",
                 "open-local",
             }:

@@ -80,8 +80,14 @@ directory-level Discovery followed by Alignment.
 - The sample editor retains undisplayed metadata fields. Filters change only
   visibility. Role corrections and the source locator persist in
   `discovery_gui.json`.
-- The internal-standard list uses only rows marked `is_istd=TRUE`. An empty
-  input opts out; a non-empty list without an internal standard is invalid.
+- The internal-standard list shares Targeted XLSX (`Targets`, with optional
+  `Method`), CSV and TSV intake. Choose a file, browse its local path, or drop
+  it onto the list area; the adjacent link downloads the shared XLSX example.
+  Only `role=istd` rows are used. The preview lists admitted standards and the
+  skipped analyte count; Targeted method settings are not applied.
+- Browser uploads are validated before a workspace copy is retained. Invalid
+  uploads preserve the active list; Save or Run persists the selected locator.
+  An empty input opts out; a non-empty list without an internal standard is invalid.
 
 ### Results and exports
 

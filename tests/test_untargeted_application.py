@@ -1232,9 +1232,13 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
     ] == pytest.approx(2.0, rel=0.01)
 
 
+@pytest.mark.parametrize(
+    "filename", ["targets.csv", "targets.xlsx", "targeted-method.xlsx"]
+)
 def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
     tmp_path,
     monkeypatch,
+    filename,
 ):
     import xic_extractor.acquisition.raw_paths as raw_sources
     from xic_extractor.configuration.targets import read_targets
@@ -1244,7 +1248,7 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
         / "xic_extractor"
         / "configuration"
         / "data"
-        / "targets.csv"
+        / filename
     )
     all_targets = read_targets(source)
     batch_index = _write_batch(tmp_path, ("S1",))

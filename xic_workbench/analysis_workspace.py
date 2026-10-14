@@ -278,6 +278,14 @@ class AnalysisWorkspace:
                 return {"message": "本次不使用內標清單。"}
             selection = read_istd_targets(Path(values["path"]))
             return {"selection": json_value(selection)}
+        if action == "istd/upload":
+            from xic_workbench.target_import import import_istd_upload
+
+            return json_value(
+                import_istd_upload(
+                    values.get("name"), values.get("content"), self.config_dir
+                )
+            )
         if action == "istd/copy":
             from xic_extractor.configuration.paths import targets_template_path
 

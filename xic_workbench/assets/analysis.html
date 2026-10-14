@@ -191,10 +191,20 @@
           </div>
           <div class="step-body">
             <div id="untargeted-paths"></div>
-            <details class="method-section">
+            <details class="method-section" open>
               <summary>內標清單（選用）</summary>
+              <p class="subtle">與 Targeted 共用清單格式，只使用 role=istd 的列；忽略一般目標及 Targeted 方法設定。</p>
+              <div id="istd-dropzone" class="target-dropzone">
+                <strong>拖曳內標清單到這裡</strong>
+                <p class="subtle">支援 XLSX 目標表／方法檔、CSV、TSV（單檔上限 1 MiB）。</p>
+                <input id="istd-import-file" type="file" accept=".xlsx,.csv,.tsv" hidden data-analysis-idle />
+                <button id="istd-import" type="button" data-analysis-idle>選擇檔案</button>
+                <a href="/examples/targets.xlsx" download>下載共用清單範例 XLSX</a>
+                <p id="istd-import-status" role="status" aria-live="polite"></p>
+              </div>
               <div id="istd-path-field"></div>
               <p id="istd-summary" class="subtle"></p>
+              <div id="istd-preview" class="target-preview"></div>
               <div class="button-row">
                 <button type="button" id="istd-reload" data-analysis-idle>
                   <svg class="icon"><use href="#i-refresh" /></svg>重新載入</button
