@@ -33,6 +33,13 @@ same local HTML workspace for analysis and result review. Use `--no-open` when
 you only want the printed URL, `--port` to choose a port, and `--config-dir` to
 choose the writable settings directory.
 
+On Windows, double-click `launch_gui.vbs` in the checkout to open the browser
+without a console window. Dropped result folders/XLSX files and CLI arguments
+are supported. Background logs are saved under `output/launcher/`; closing the
+browser does not stop the server; use **結束工作區** in the page to stop it.
+Use `launch_gui.bat` instead when you want a
+visible console and Ctrl+C to stop it.
+
 For Targeted, load a saved method (strategy version and targets/ISTD), select the new
 RAW folder, and run. Save a new method once with **另存為方法**; DLL and worker
 settings remain local. The standard parameters are the default; optional advanced
