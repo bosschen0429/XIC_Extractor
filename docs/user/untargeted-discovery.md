@@ -16,7 +16,10 @@ align them across samples, and open reviewable outputs from the GUI.
    unmatched or ambiguous entries; alphabetical file order is not injection order.
 6. Check the **內標清單**. Download the shared XLSX example beside **選擇檔案**,
    then choose or drop an XLSX, CSV or TSV file. Only `role=istd` rows are used;
-   the preview shows admitted standards and the skipped analyte count.
+   the preview shows method-compatible standards and skipped rows. A dR method
+   uses dR standards, not R standards such as `[13C,15N2]-8-oxo-Guo`. Incompatible
+   standards are marked not applicable, not ND; changing the method refreshes
+   this selection.
 7. Choose a CID-NL starting method and open **編輯方法…** to select dR, R, MeR,
    or custom NL tags and their combination. Apply the method to the current run.
 8. Press **開始執行** and start review from the output directory.

@@ -1227,7 +1227,9 @@ def test_untargeted_istd_shared_upload_and_persistence(
     expect(page.locator("#istd-import-status")).to_contain_text(
         f"已匯入 shared.{extension}"
     )
-    expect(page.locator("#istd-summary")).to_have_text("1 個內標；略過 1 個一般目標。")
+    expect(page.locator("#istd-summary")).to_have_text(
+        "1 個適用內標；0 個不適用此方法；略過 1 個一般目標。"
+    )
     expect(page.locator("#istd-preview")).to_contain_text("standard")
     expect(page.locator("#istd-preview")).not_to_contain_text("analyte")
     retained = page.locator("#u-targets_csv").input_value()
@@ -1249,7 +1251,9 @@ def test_untargeted_istd_shared_upload_and_persistence(
     page.reload()
     page.get_by_role("button", name="Untargeted", exact=True).click()
     expect(page.locator("#u-targets_csv")).to_have_value(retained)
-    expect(page.locator("#istd-summary")).to_have_text("1 個內標；略過 1 個一般目標。")
+    expect(page.locator("#istd-summary")).to_have_text(
+        "1 個適用內標；0 個不適用此方法；略過 1 個一般目標。"
+    )
     page.locator("#untargeted-clear").click()
     expect(page.locator("#istd-summary")).to_have_text("本次不使用內標清單。")
     expect(page.locator("#istd-preview")).to_be_empty()
@@ -1257,3 +1261,26 @@ def test_untargeted_istd_shared_upload_and_persistence(
     expect(page.locator("#target-preview")).to_have_text(
         original_targets, use_inner_text=True
     )
+
+
+def test_untargeted_istd_applicability_tracks_method_not_nd(workbench):
+    page = workbench
+    page.get_by_role("button", name="Untargeted", exact=True).click()
+    rna = page.locator("#istd-preview tr").filter(has_text="[13C,15N2]-8-oxo-Guo")
+    expect(page.locator("#istd-summary")).to_have_text(
+        "6 個適用內標；1 個不適用此方法；略過 7 個一般目標。"
+    )
+    expect(rna).to_contain_text("不適用此方法（略過）")
+    expect(rna.locator("td").nth(1)).to_have_text("R")
+    page.locator("#u-preset").select_option("rna_ribose")
+    expect(page.locator("#istd-summary")).to_have_text(
+        "1 個適用內標；6 個不適用此方法；略過 7 個一般目標。"
+    )
+    expect(rna.locator("td").last).to_have_text("適用")
+    page.locator("#u-preset").select_option("rna_mer")
+    expect(page.locator("#istd-summary")).to_contain_text("0 個適用內標")
+    expect(page.locator("#istd-summary")).to_contain_text("本次不使用內標參考")
+    expect(rna.locator("td").last).to_have_text("不適用此方法（略過）")
+    expect(page.locator("#istd-preview")).not_to_contain_text("ND")
+    page.locator("#u-preset").select_option("dna_dr")
+    expect(page.locator("#istd-summary")).to_contain_text("6 個適用內標")

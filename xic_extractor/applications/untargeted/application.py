@@ -84,20 +84,26 @@ def run_untargeted_application(
         from xic_extractor.acquisition.raw_paths import existing_raw_paths
         from xic_extractor.configuration.targets import read_istd_targets
 
-        targets = read_istd_targets(request.targets_csv).targets
-        raw_paths_by_sample = existing_raw_paths(
-            sample_order=batch.sample_order,
-            raw_files=batch.raw_files,
-            raw_dir=request.raw_dir,
+        selection = read_istd_targets(request.targets_csv).for_method(
+            request.discovery_settings.neutral_loss_profiles
         )
-        resolved_known_istd_reference = extract_batch_known_istd_reference(
-            targets=targets,
-            raw_paths_by_sample=raw_paths_by_sample,
-            dll_dir=request.dll_dir,
-            peak_config=request.peak_config,
-            source_identifier=str(request.targets_csv.resolve()),
-            source_sha256=hashlib.sha256(request.targets_csv.read_bytes()).hexdigest(),
-        )
+        resolved_known_istd_reference = None
+        if selection.targets:
+            raw_paths_by_sample = existing_raw_paths(
+                sample_order=batch.sample_order,
+                raw_files=batch.raw_files,
+                raw_dir=request.raw_dir,
+            )
+            resolved_known_istd_reference = extract_batch_known_istd_reference(
+                targets=selection.targets,
+                raw_paths_by_sample=raw_paths_by_sample,
+                dll_dir=request.dll_dir,
+                peak_config=request.peak_config,
+                source_identifier=str(request.targets_csv.resolve()),
+                source_sha256=hashlib.sha256(
+                    request.targets_csv.read_bytes()
+                ).hexdigest(),
+            )
     elif request.known_istd_reference_workbook is not None:
         resolved_known_istd_reference = read_known_istd_reference(
             request.known_istd_reference_workbook

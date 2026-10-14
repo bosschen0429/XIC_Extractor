@@ -83,8 +83,14 @@ directory-level Discovery followed by Alignment.
 - The internal-standard list shares Targeted XLSX (`Targets`, with optional
   `Method`), CSV and TSV intake. Choose a file, browse its local path, or drop
   it onto the list area; the adjacent link downloads the shared XLSX example.
-  Only `role=istd` rows are used. The preview lists admitted standards and the
-  skipped analyte count; Targeted method settings are not applied.
+  Only `role=istd` rows whose configured neutral loss is enabled by the active
+  Untargeted method are used for reference extraction. Editable tag names do not
+  change chemistry matching. With multiple tags, a standard may match any
+  enabled recipe; this does not change Discovery's union/intersection rule.
+- The preview shows each standard's CID-NL tag and method applicability. Changing
+  the method refreshes the preview. Incompatible standards are skipped, not ND;
+  if none apply, the run proceeds without an ISTD reference. The same selection
+  owner governs preview and execution. Targeted method settings are not applied.
 - Browser uploads are validated before a workspace copy is retained. Invalid
   uploads preserve the active list; Save or Run persists the selected locator.
   An empty input opts out; a non-empty list without an internal standard is invalid.

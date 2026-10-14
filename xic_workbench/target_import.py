@@ -4,7 +4,7 @@ import base64
 import binascii
 import shutil
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -12,6 +12,7 @@ from zipfile import BadZipFile, ZipFile
 
 import openpyxl
 
+from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.configuration.csv_io import read_target_draft_rows
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.targeted_method_files import load_target_table
@@ -47,7 +48,13 @@ def preview_target_upload(name: str, content: str, settings: dict) -> dict:
         return {"kind": "targets", "targets": import_targets(path)}
 
 
-def import_istd_upload(name: str, content: str, config_dir: Path) -> dict:
+def import_istd_upload(
+    name: str,
+    content: str,
+    config_dir: Path,
+    *,
+    profiles: Sequence[NeutralLossProfile] | None = None,
+) -> dict:
     """Validate the shared list before retaining bytes for an Untargeted run."""
     from xic_extractor.configuration.targets import read_istd_targets
 
@@ -56,6 +63,8 @@ def import_istd_upload(name: str, content: str, config_dir: Path) -> dict:
             selection = read_istd_targets(source)
         except ValueError as exc:
             raise ConfigError(str(exc)) from exc
+        if profiles is not None:
+            selection = selection.for_method(profiles)
         destination = config_dir / "imports" / f"istd-{uuid.uuid4().hex}{source.suffix}"
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, destination)

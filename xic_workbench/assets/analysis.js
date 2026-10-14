@@ -781,6 +781,7 @@
     tuning.append(cropLabel, cropNote, cropFields);
     lock();
     updateMethodPreview();
+    if (state.booted) await act(reloadIstd);
   }
   function updateMethodPreview() {
     if (!state.method) return;
@@ -1321,27 +1322,34 @@
     );
   }
   function renderIstd(result) {
+    const selection = result.selection;
     $("istd-summary").textContent = result.message ||
-      `${result.selection.targets.length} 個內標；略過 ${result.selection.skipped_count} 個一般目標。`;
+      `${selection.targets.length} 個適用內標；${selection.method_skipped.length} 個不適用此方法；略過 ${selection.skipped_count} 個一般目標。${selection.targets.length ? "" : " 本次不使用內標參考。"}`;
     const preview = $("istd-preview");
     preview.replaceChildren();
-    if (!result.selection) return;
+    if (!selection) return;
     const table = el("table");
     const head = el("tr");
-    for (const label of ["內標名稱", "m/z", "預期 RT (min)"]) head.append(el("th", label));
+    for (const label of ["內標名稱", "CID-NL tag", "m/z", "預期 RT (min)", "本方法使用狀態"]) head.append(el("th", label));
     table.append(head);
-    for (const target of result.selection.targets) {
-      const row = el("tr");
-      for (const value of [target.label, target.mz, target.expected_rt_min]) row.append(el("td", String(value ?? "")));
-      table.append(row);
+    for (const [targets, status] of [[selection.targets, "適用"], [selection.method_skipped, "不適用此方法（略過）"]]) {
+      for (const target of targets) {
+        const row = el("tr");
+        for (const value of [target.label, target.cid_nl_tag, target.mz, target.expected_rt_min, status]) row.append(el("td", String(value ?? "")));
+        table.append(row);
+      }
     }
     preview.append(table);
   }
   async function reloadIstd() {
+    if (!state.method) {
+      renderIstd({ message: "請先選擇有效方法，才能判定適用內標。" });
+      return;
+    }
     $("istd-preview").replaceChildren();
     $("istd-summary").textContent = "正在讀取清單…";
     try {
-      renderIstd(await api("/api/istd", { path: $("u-targets_csv").value }));
+      renderIstd(await api("/api/istd", { path: $("u-targets_csv").value, preset_snapshot: state.method.draft }));
     } catch (error) {
       $("istd-summary").textContent = "清單未載入，請修正檔案或清空路徑停用。";
       throw error;
@@ -1356,7 +1364,8 @@
       lock();
       message.textContent = "正在讀取檔案…";
       const upload = await readListFile(files);
-      const result = await api("/api/istd/upload", upload);
+      if (!state.method) throw new Error("請先選擇有效方法，再匯入內標清單。");
+      const result = await api("/api/istd/upload", { ...upload, preset_snapshot: state.method.draft });
       $("u-targets_csv").value = result.path;
       renderIstd(result);
       dirty("untargeted");

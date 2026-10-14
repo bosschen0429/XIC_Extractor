@@ -173,3 +173,40 @@ def test_istd_upload_rejects_invalid_content_without_writing(tmp_path):
             )
             assert status == 400
         assert not (tmp_path / "config" / "imports").exists()
+
+
+@pytest.mark.parametrize(
+    "method,tag,count",
+    [("dna_dr", "dR", 6), ("rna_ribose", "R", 1), ("rna_mer", "MeR", 0)],
+)
+def test_istd_http_preview_and_upload_share_method_applicability(
+    tmp_path, method, tag, count
+):
+    import base64
+
+    from xic_extractor.configuration.paths import targets_template_path
+    from xic_workbench.methods import method_details
+
+    source = targets_template_path().with_suffix(".xlsx")
+    snapshot = method_details(method)["draft"]
+    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
+    with _client(workspace) as request:
+        for action, values in [
+            ("istd", {"path": str(source)}),
+            (
+                "istd/upload",
+                {
+                    "name": source.name,
+                    "content": base64.b64encode(source.read_bytes()).decode(),
+                },
+            ),
+        ]:
+            status, result, _ = request(
+                f"/api/{action}", {**values, "preset_snapshot": snapshot}
+            )
+            assert status == 200
+            selection = result["selection"]
+            assert len(selection["targets"]) == count
+            assert all(t["cid_nl_tag"] == tag for t in selection["targets"])
+            assert len(selection["method_skipped"]) == 7 - count
+            assert selection["skipped_count"] == 7

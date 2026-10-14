@@ -232,3 +232,28 @@ def test_templates_and_untargeted_istd_projection_share_new_format(name):
     selected = read_istd_targets(root / name)
     assert selected.targets == tuple(t for t in targets if t.is_istd)
     assert len(targets) == len(selected.targets) + selected.skipped_count
+
+
+@pytest.mark.parametrize(
+    "losses,expected_tags,count",
+    [
+        ((116.0474,), {"dR"}, 6),
+        ((132.0423,), {"R"}, 1),
+        ((116.0474, 132.0423), {"dR", "R"}, 7),
+        ((146.0579,), set(), 0),
+    ],
+)
+def test_istd_selection_respects_method_chemistry(losses, expected_tags, count):
+    from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
+    from xic_extractor.configuration.paths import targets_template_path
+
+    shared = read_istd_targets(targets_template_path())
+    selected = shared.for_method(
+        tuple(NeutralLossProfile(f"custom-{i}", loss) for i, loss in enumerate(losses))
+    )
+    assert len(shared.targets) == 7
+    assert len(selected.targets) == count
+    assert {t.cid_nl_tag for t in selected.targets} == expected_tags
+    assert len(selected.method_skipped) == 7 - count
+    assert selected.skipped_count == 7
+    assert all(t.is_istd for t in selected.method_skipped)

@@ -3,6 +3,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.configuration.csv_io import (
     LEGACY_TARGET_FIELDS,
     OPTIONAL_TARGET_METADATA_FIELDS,
@@ -193,6 +194,24 @@ class IstdTargetSelection:
 
     targets: tuple[Target, ...]
     skipped_count: int
+    method_skipped: tuple[Target, ...] = ()
+
+    def for_method(
+        self, profiles: Sequence[NeutralLossProfile]
+    ) -> "IstdTargetSelection":
+        """Limit standards to active chemistry, not measured detection status.
+
+        Match configured loss values, not editable tag names or measurement
+        tolerances. Each admitted standard retains its own CID-NL identity.
+        """
+        losses = {profile.neutral_loss_da for profile in profiles}
+        applicable: list[Target] = []
+        skipped: list[Target] = []
+        for target in (*self.targets, *self.method_skipped):
+            (applicable if target.neutral_loss_da in losses else skipped).append(target)
+        return IstdTargetSelection(
+            tuple(applicable), self.skipped_count, tuple(skipped)
+        )
 
 
 def read_istd_targets(path: Path) -> IstdTargetSelection:

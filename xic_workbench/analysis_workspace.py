@@ -271,21 +271,32 @@ class AnalysisWorkspace:
             from xic_workbench.samples import export_samples
 
             return export_samples(values["samples"], Path(values["path"]))
-        if action == "istd":
+        if action in {"istd", "istd/upload"}:
             from xic_extractor.configuration.targets import read_istd_targets
+            from xic_extractor.presets import apply_to_discovery
+            from xic_workbench.methods import preset_from_payload
+            from xic_workbench.target_import import import_istd_upload
 
+            profiles = None
+            if "preset_snapshot" in values:
+                profiles = apply_to_discovery(
+                    preset_from_payload(values["preset_snapshot"])
+                ).neutral_loss_profiles
+            if action == "istd/upload":
+                return json_value(
+                    import_istd_upload(
+                        values.get("name"),
+                        values.get("content"),
+                        self.config_dir,
+                        profiles=profiles,
+                    )
+                )
             if not values.get("path"):
                 return {"message": "本次不使用內標清單。"}
             selection = read_istd_targets(Path(values["path"]))
+            if profiles is not None:
+                selection = selection.for_method(profiles)
             return {"selection": json_value(selection)}
-        if action == "istd/upload":
-            from xic_workbench.target_import import import_istd_upload
-
-            return json_value(
-                import_istd_upload(
-                    values.get("name"), values.get("content"), self.config_dir
-                )
-            )
         if action == "istd/copy":
             from xic_extractor.configuration.paths import targets_template_path
 
