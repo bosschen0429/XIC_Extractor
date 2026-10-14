@@ -946,9 +946,14 @@ def test_downloaded_current_method_edits_and_saves_without_changing_batch(
     download.value.save_as(path)
     original = path.read_bytes()
     assert dict(load_targeted_method(path).settings) == {"strategy": "cid-nl"}
-    page.locator("#target-method-import").click()
-    page.locator("#path-dialog-value").fill(str(path))
-    page.locator("#path-dialog").get_by_role("button", name="確定").click()
+    with page.expect_file_chooser() as chooser:
+        page.get_by_role("button", name="選擇檔案", exact=True).click()
+    chooser.value.set_files(path)
+    expect(page.locator("#target-import-summary")).to_contain_text(
+        "方法檔（Method + Targets）"
+    )
+    expect(page.locator("#target-preview")).to_contain_text("Browser target")
+    page.locator("#target-import-confirm").click()
     expect(page.locator("#target-preview")).to_contain_text("5-hmdC")
     expect(page.locator("#t-data_dir")).to_have_value(batch)
     expect(page.locator("#t-dll_dir")).to_have_value(dll)
@@ -972,3 +977,66 @@ def test_downloaded_current_method_edits_and_saves_without_changing_batch(
     assert not (config_dir / "targets.csv").exists()
     assert (config_dir / "workspace.json").is_file()
     page.screenshot(path=str(tmp_path / "xlsx-method-workspace.png"), full_page=True)
+
+
+@pytest.mark.parametrize("extension", ["xlsx", "csv", "tsv"])
+def test_drop_target_table_preview_cancel_and_confirm(workbench, tmp_path, extension):
+    import base64
+
+    from tests.test_targeted_method_files import rows
+    from xic_extractor.configuration.targeted_method_files import save_target_table
+
+    page = workbench
+    path = tmp_path / f"renamed.{extension}"
+    if extension == "xlsx":
+        save_target_table(rows(), path)
+    else:
+        import csv
+
+        with path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=list(dict.fromkeys(k for row in rows() for k in row)),
+                delimiter="\t" if extension == "tsv" else ",",
+            )
+            writer.writeheader()
+            writer.writerows(rows())
+    batch = page.locator("#t-data_dir").input_value()
+    for confirm in [False, True]:
+        transfer = page.evaluate_handle(
+            """({name, content}) => {
+            const bytes = Uint8Array.from(atob(content), c => c.charCodeAt(0));
+            const transfer = new DataTransfer();
+            transfer.items.add(new File([bytes], name));
+            return transfer;
+        }""",
+            {
+                "name": path.name,
+                "content": base64.b64encode(path.read_bytes()).decode(),
+            },
+        )
+        page.locator("#target-dropzone").dispatch_event(
+            "drop", {"dataTransfer": transfer}
+        )
+        expect(page.locator("#target-import-summary")).to_contain_text(
+            "目標表 · 2 個目標（ISTD 1 個）"
+        )
+        expect(page.locator("#target-import-rows tr").nth(1)).to_contain_text(
+            "standard"
+        )
+        expect(page.locator("#target-preview")).to_contain_text("Browser target")
+        if confirm:
+            page.locator("#target-import-confirm").click()
+        else:
+            page.locator("#target-import-preview").get_by_role(
+                "button", name="取消", exact=True
+            ).click()
+            expect(page.locator("#target-preview")).to_contain_text("Browser target")
+    expect(page.locator("#target-preview")).to_contain_text("analyte")
+    expect(page.locator("#target-preview")).not_to_contain_text("Browser target")
+    expect(page.locator("#t-data_dir")).to_have_value(batch)
+    page.locator("#target-import-file").set_input_files(
+        {"name": "bad.xls", "mimeType": "application/octet-stream", "buffer": b"bad"}
+    )
+    expect(page.locator("#target-import-status")).to_contain_text("不支援 .xls")
+    expect(page.locator("#target-preview")).to_contain_text("analyte")

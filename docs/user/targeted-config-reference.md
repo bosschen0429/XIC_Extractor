@@ -55,6 +55,11 @@ or [target-table XLSX](../../xic_extractor/configuration/data/targets.xlsx), or 
 the links in the target-list card. Save a copy before editing. These are format
 examples, not evidence that the listed method is appropriate for your samples.
 
+Drag a file into the target-list import area or use **選擇檔案**. XLSX content
+automatically distinguishes a method from a target table; CSV/TSV are target tables.
+Uploads accept one nonempty file up to 1 MiB. Review the filename, detected type,
+targets and ISTD pairs, then choose **確認匯入並取代**; cancellation changes nothing.
+
 Loading a method replaces the complete target list while retaining RAW/DLL paths,
 injection metadata and worker settings. **另存清單** creates a named XLSX under
 `config/methods/`; **保存目前工作** saves JSON without overwriting that named method.

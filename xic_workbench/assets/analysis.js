@@ -10,6 +10,7 @@
     draft: null,
     analysis: { job: null, results: {} },
     reviewBusy: false,
+    importing: false,
     view: "targeted",
     dirty: { targeted: false, untargeted: false },
     seenJob: null,
@@ -112,7 +113,7 @@
     return ["running", "cancelling"].includes(state.analysis.job?.status);
   }
   function isBusy() {
-    return state.reviewBusy || isRunning();
+    return state.importing || state.reviewBusy || isRunning();
   }
   function lock() {
     document
@@ -313,7 +314,7 @@
           state.targets.length
             ? `${state.targets.length} 個目標 · ${istd} 個 ISTD`
             : "清單是空的，請匯入或新增目標",
-          "target-import-path",
+          "target-import",
         ),
       );
       const order = $("t-injection_order_source")?.value.trim();
@@ -454,6 +455,52 @@
     applyTargetedDraft(result);
     targetCount();
     done("已載入目標清單；批次及本機設定保持不變。儲存或開始分析後套用。");
+  }
+  let pendingTargetImport = null;
+  async function previewTargetFiles(files) {
+    if (isBusy()) return;
+    const message = $("target-import-status");
+    message.textContent = "";
+    message.className = "";
+    pendingTargetImport = null;
+    try {
+      if (files.length !== 1) throw new Error("請一次選擇一個方法檔或目標表。");
+      const file = files[0];
+      if (!/\.(xlsx|csv|tsv)$/i.test(file.name)) throw new Error("請選擇 XLSX、CSV 或 TSV 檔案；不支援 .xls。");
+      if (!file.size || file.size > 1024 * 1024) throw new Error("請選擇非空白且不超過 1 MiB 的檔案。");
+      state.importing = true;
+      lock();
+      message.textContent = `正在讀取 ${file.name}…`;
+      const content = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(",")[1]);
+        reader.onerror = () => reject(new Error("無法讀取檔案，請重新選擇。"));
+        reader.readAsDataURL(file);
+      });
+      const result = await api("/api/targets/upload", { name: file.name, content, settings: settingsValues() });
+      pendingTargetImport = result;
+      const istdCount = result.targets.filter((row) => row.role === "istd").length;
+      $("target-import-summary").textContent = `${file.name} · ${result.kind === "method" ? "方法檔（Method + Targets）" : "目標表"} · ${result.targets.length} 個目標（ISTD ${istdCount} 個）`;
+      const body = $("target-import-rows");
+      body.replaceChildren();
+      for (const row of result.targets) {
+        const tr = document.createElement("tr");
+        for (const value of [row.label, row.mz, row.expected_rt_min, row.role === "istd" ? "ISTD" : "Analyte", row.istd_pair || "—"]) {
+          const td = document.createElement("td");
+          td.textContent = value || "";
+          tr.append(td);
+        }
+        body.append(tr);
+      }
+      message.textContent = "已辨識檔案，請確認預覽；取消不會變更目前清單。";
+      $("target-import-preview").showModal();
+    } catch (error) {
+      message.textContent = error.message;
+      message.className = "error";
+    } finally {
+      state.importing = false;
+      lock();
+    }
   }
   async function saveTargeted(quiet = false) {
     const settings = settingsValues();
@@ -1378,12 +1425,6 @@
     });
     $("target-save").onclick = () => act(() => saveTargeted());
     $("target-method-load").onclick = () => act(() => loadTargetedMethod($("target-method-select").value));
-    $("target-method-import").onclick = () => act(async () => {
-      const path = await requestPath("載入方法文件（.xlsx）");
-      if (!path) return;
-      await loadTargetedMethod(path);
-      $("target-method-select").value = "";
-    });
     $("target-method-save").onclick = () => act(async () => {
       const name = await requestPath("另存目標清單", "", "清單名稱（不含 .xlsx）");
       if (!name) return;
@@ -1436,16 +1477,35 @@
       const result = await api("/api/targets/export", { path, targets: state.targets });
       done(result.message);
     });
-    $("target-import").onclick = () =>
-      act(async () => {
-        const result = await api("/api/targets/import", {
-          path: $("target-import-path").value,
-        });
-        state.targets = result.targets;
-        targetCount();
-        dirty("targeted");
-        done(`已匯入 ${state.targets.length} 個目標；儲存或開始分析後套用。`);
+    $("target-import").onclick = () => $("target-import-file").click();
+    $("target-import-file").onchange = (event) => {
+      previewTargetFiles(event.target.files);
+      event.target.value = "";
+    };
+    const dropzone = $("target-dropzone");
+    for (const type of ["dragenter", "dragover", "dragleave", "drop"]) {
+      dropzone.addEventListener(type, (event) => {
+        event.preventDefault();
+        dropzone.classList.toggle("drag-over", !isBusy() && ["dragenter", "dragover"].includes(type));
+        if (type === "drop") previewTargetFiles(event.dataTransfer.files);
       });
+    }
+    $("target-import-preview").addEventListener("close", () => {
+      if (pendingTargetImport) $("target-import-status").textContent = "已取消匯入，目前清單未變更。";
+      pendingTargetImport = null;
+    });
+    $("target-import-confirm").onclick = () => {
+      if (!pendingTargetImport || isBusy()) return;
+      const result = pendingTargetImport;
+      pendingTargetImport = null;
+      state.targets = result.targets;
+      if (result.kind === "method") applyTargetedDraft(result);
+      $("target-method-select").value = "";
+      targetCount();
+      dirty("targeted");
+      $("target-import-preview").close();
+      $("target-import-status").textContent = `已匯入 ${state.targets.length} 個目標；儲存或開始分析後套用。`;
+    };
     $("u-mode").addEventListener("change", modeFields);
     $("u-preset").onchange = () =>
       act(async () => {

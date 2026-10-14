@@ -59,30 +59,17 @@
           </div>
           <div class="step-body">
             <div id="target-preview" class="target-preview"></div>
-            <div class="import-line">
-              <label for="target-import-path">匯入清單</label
-              ><input
-                id="target-import-path"
-                type="text"
-                class="path"
-                placeholder="XLSX 目標表（也可匯入 CSV／TSV）"
-                data-analysis-idle
-              /><button
-                type="button"
-                data-browse="target-import-path"
-                data-kind="targets"
-                data-analysis-idle
-              >
-                瀏覽</button
-              ><button id="target-import" type="button" data-analysis-idle>
-                <svg class="icon"><use href="#i-download" /></svg>匯入並取代
-              </button>
+            <div id="target-dropzone" class="target-dropzone">
+              <strong>拖曳方法檔或目標表到這裡</strong>
+              <p class="subtle">自動辨識 XLSX 方法檔／目標表，也支援 CSV、TSV（單檔上限 1 MiB）。</p>
+              <input id="target-import-file" type="file" accept=".xlsx,.csv,.tsv" hidden data-analysis-idle />
+              <button id="target-import" type="button" data-analysis-idle>選擇檔案</button>
+              <p id="target-import-status" role="status" aria-live="polite"></p>
             </div>
             <label class="field">已儲存的清單<select id="target-method-select" data-analysis-idle><option value="">目前工作區設定</option></select></label>
             <div class="actions">
               <button id="target-method-load" type="button" data-analysis-idle>載入清單</button>
               <button id="target-method-save" type="button" data-analysis-idle>另存清單</button>
-              <button id="target-method-import" type="button" data-analysis-idle>從 XLSX 載入</button>
             </div>
             <div class="actions"><a href="/examples/targeted-method.xlsx" download>下載方法範例 XLSX</a><a href="/examples/targets.xlsx" download>下載目標表範例 XLSX</a><button id="target-export" type="button" data-analysis-idle>匯出目標表 XLSX</button></div>
             <p class="subtle">方法 XLSX 包含目標、ISTD 配對與共用處理策略。載入會取代目前清單；RAW 資料夾、上機資訊和本機設定不變。</p>
@@ -322,6 +309,16 @@
     </aside>
   </div>
 </main>
+
+<dialog id="target-import-preview" class="wide-dialog" aria-labelledby="target-import-title">
+  <div class="dialog-head"><h2 id="target-import-title">確認匯入</h2></div>
+  <div class="dialog-body">
+    <p id="target-import-summary"></p>
+    <p class="subtle">確認後取代目前目標清單；RAW 資料夾、上機資訊與本機設定不變。儲存或開始分析後才會保存。</p>
+    <div class="table-scroll"><table><thead><tr><th>目標</th><th>m/z</th><th>預期 RT</th><th>角色</th><th>ISTD 配對</th></tr></thead><tbody id="target-import-rows"></tbody></table></div>
+  </div>
+  <div class="dialog-foot"><button type="button" data-close="target-import-preview">取消</button><button id="target-import-confirm" type="button">確認匯入並取代</button></div>
+</dialog>
 
 <dialog id="target-editor" class="wide-dialog">
   <div class="dialog-head">

@@ -236,6 +236,12 @@ class AnalysisWorkspace:
             path = Path(values["path"])
             save_target_table(values["targets"], path)
             return {"message": f"已匯出目標表：{path}", "path": str(path)}
+        if action == "targets/upload":
+            from xic_workbench.target_import import preview_target_upload
+
+            return preview_target_upload(
+                values.get("name"), values.get("content"), values.get("settings", {})
+            )
         if action == "targets/import":
             from xic_workbench.target_import import import_targets
 
