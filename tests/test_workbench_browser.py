@@ -104,6 +104,7 @@ class FakeRuns:
     outcome: str = "success"
     release: threading.Event = field(default_factory=threading.Event)
     output_dirs: list = field(default_factory=list)
+    targeted_workbook: Path | None = None
 
 
 @pytest.fixture
@@ -134,6 +135,11 @@ def fake_runs(monkeypatch, tmp_path):
             self.progress(2, 2, "Browser fake complete")
             return {
                 "output_dir": str(self.output_dir),
+                **(
+                    {"excel_path": str(control.targeted_workbook)}
+                    if control.targeted_workbook
+                    else {}
+                ),
                 "published_paths": [str(artifact)],
                 "total_files": 1,
                 "targets": [{"label": "Browser target"}],
@@ -1040,3 +1046,34 @@ def test_drop_target_table_preview_cancel_and_confirm(workbench, tmp_path, exten
     )
     expect(page.locator("#target-import-status")).to_contain_text("不支援 .xls")
     expect(page.locator("#target-preview")).to_contain_text("analyte")
+
+
+def test_analysis_review_uses_run_paths_even_after_batch_edit(
+    workbench, fake_runs, tmp_path, monkeypatch
+):
+    from tests.test_xic_inspector_targeted_workbook import (
+        install_targeted_raws,
+        write_rare_detection_workbook,
+    )
+
+    page = workbench
+    raw_dir = tmp_path / "run-raw"
+    install_targeted_raws(monkeypatch, raw_dir, {"S1": 13000})
+    fake_runs.targeted_workbook = write_rare_detection_workbook(tmp_path / "run.xlsx")
+    fake_runs.release.set()
+    page.locator("#t-data_dir").fill(str(raw_dir))
+    page.locator("#t-dll_dir").fill(str(tmp_path))
+    page.get_by_role("button", name="開始 Targeted 分析", exact=True).click()
+    expect(page.locator("#analysis-job-message")).to_contain_text("工作已完成")
+    page.locator("#t-data_dir").fill(str(tmp_path / "next-batch"))
+    page.locator("#t-dll_dir").fill(str(tmp_path / "next-dll"))
+    page.get_by_role("button", name="在結果檢閱開啟", exact=True).click()
+    expect(page.locator("#raw-dir")).to_have_value(str(raw_dir))
+    expect(page.locator("#dll-dir")).to_have_value(str(tmp_path))
+    page.locator("#targeted-overview td button", has_text="Analyte").click()
+    page.frame_locator("#inspector").get_by_role(
+        "button", name="看 S1 的 Analyte XIC", exact=True
+    ).click()
+    frame = page.frame_locator("#xic-inspector")
+    expect(frame.locator('.tx-chart polyline[data-kind="smoothed"]')).to_have_count(2)
+    expect(page.locator("#status")).not_to_contain_text("請先選擇 RAW 資料夾")

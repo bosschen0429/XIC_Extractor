@@ -1165,7 +1165,7 @@
       metric(metrics, targeted.total_files, "RAW 檔案");
       metric(metrics, targeted.targets?.length, "目標");
       container.append(metrics);
-      if (targeted.excel_path) container.append(button("在結果檢閱開啟", () => openReview(targeted.excel_path), "primary", "review"));
+      if (targeted.excel_path) container.append(button("在結果檢閱開啟", () => openReview(targeted.excel_path, targeted.review_paths), "primary", "review"));
       container.append(artifacts);
       const warnings = el("div");
       for (const warning of targeted.istd_warnings || []) {
@@ -1196,7 +1196,7 @@
       const evidence = result.evidence?.path || result.evidence?.report_path;
       if (evidence) {
         actions.append(
-          button("在結果檢閱開啟", () => openReview(evidence), "primary", "review"),
+          button("在結果檢閱開啟", () => openReview(evidence, result.review_paths), "primary", "review"),
         );
         actions.append(
           button(
@@ -1226,10 +1226,10 @@
       container.append(actions, artifacts);
     }
   }
-  function openReview(source) {
+  function openReview(source, reviewPaths) {
     selectView("review");
     document.dispatchEvent(
-      new CustomEvent("xic:open-review", { detail: source }),
+      new CustomEvent("xic:open-review", { detail: { source, reviewPaths } }),
     );
   }
   function openQuality(result) {

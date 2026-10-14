@@ -198,10 +198,17 @@ class AnalysisJobs:
         return runner
 
     def _run(self, kind: str, values: dict[str, Any]) -> dict[str, Any]:
-        if kind == "targeted":
-            return self._runner.execute()
-        if kind == "untargeted":
-            return self._runner.execute()
+        if kind in {"targeted", "untargeted"}:
+            result = self._runner.execute()
+            inputs = values["settings"] if kind == "targeted" else values
+            # Bind review acquisition to this run, not the next editable batch.
+            result["review_paths"] = {
+                "raw_dir": str(
+                    inputs.get("data_dir" if kind == "targeted" else "raw_dir") or ""
+                ),
+                "dll_dir": str(inputs.get("dll_dir") or ""),
+            }
+            return result
         if kind == "samples":
             from xic_workbench.samples import load_samples
 

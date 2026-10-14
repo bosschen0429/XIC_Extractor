@@ -846,7 +846,11 @@ window.XicUi = (() => {
     browse($(state.browser.target).value);
   });
   document.addEventListener("xic:open-review", (event) => {
-    $("source").value = event.detail;
+    $("source").value = event.detail.source;
+    if (event.detail.reviewPaths) {
+      $("raw-dir").value = event.detail.reviewPaths.raw_dir;
+      $("dll-dir").value = event.detail.reviewPaths.dll_dir;
+    }
     action(openBatch, "正在讀取分析結果…");
   });
   document.addEventListener("xic:analysis-busy", (event) => {

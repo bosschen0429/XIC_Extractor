@@ -628,3 +628,35 @@ def test_http_retired_method_overrides_and_reset_are_not_accepted(tmp_path):
         )
         assert request("/api/config")[1]["settings"] == config["settings"]
         assert not (tmp_path / "config" / "settings.csv").exists()
+
+
+@pytest.mark.parametrize("kind", ["targeted", "untargeted"])
+def test_completed_analysis_keeps_its_own_review_locations(tmp_path, monkeypatch, kind):
+    class Run:
+        stage = "done"
+        output_dir = tmp_path
+        available_outputs = ()
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def execute(self):
+            return {"published_paths": []}
+
+    monkeypatch.setattr("xic_workbench.targeted.TargetedRun", Run)
+    monkeypatch.setattr(AnalysisJobs, "_prepare_untargeted", lambda *args: Run())
+    settings = {"data_dir": "batch-a", "dll_dir": "dll-a"}
+    values = (
+        {"settings": settings, "targets": sample_target_rows()}
+        if kind == "targeted"
+        else {"raw_dir": "batch-a", "dll_dir": "dll-a"}
+    )
+    jobs = AnalysisJobs(tmp_path)
+    try:
+        jobs.start(kind, values)
+        values.update(raw_dir="batch-b", dll_dir="dll-b")
+        settings.update(data_dir="batch-b", dll_dir="dll-b")
+        result = _terminal(jobs)["results"][kind]
+        assert result["review_paths"] == {"raw_dir": "batch-a", "dll_dir": "dll-a"}
+    finally:
+        jobs.close()
