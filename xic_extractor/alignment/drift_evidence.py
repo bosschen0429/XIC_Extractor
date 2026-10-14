@@ -228,14 +228,10 @@ class KnownIstdReference:
                         owner.primary_identity_event.observed_neutral_loss_da
                     ),
                 )[2]
-                and self.anchor.matches_observation(
-                    target,
-                    # SUPPORT projects a typed CID-NL method tag, while the
-                    # legacy target matcher accepts the DNA dR semantic tag.
-                    neutral_loss_tag="dR",
-                    precursor_mz=owner.precursor_mz,
-                    apex_rt=owner.owner_apex_rt,
-                )
+                # The measured coordinate above identifies the physical peak;
+                # expected RT must not clip a shifted, already measured ISTD.
+                and abs(owner.precursor_mz - target.mz)
+                <= target.mz * target.ppm_tol / 1e6
             )
             for owner in matches:
                 counts[owner.owner_id] = counts.get(owner.owner_id, 0) + 1

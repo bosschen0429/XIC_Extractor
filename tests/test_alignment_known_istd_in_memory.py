@@ -105,6 +105,75 @@ def test_read_targets_from_csv() -> None:
     assert all(t.is_istd for t in istd_targets)
 
 
+def test_current_target_expected_rt_does_not_clip_istd_measurements(
+    tmp_path, monkeypatch
+):
+    from xic_extractor.configuration.targets import parse_target_rows
+
+    targets = parse_target_rows(
+        [
+            {
+                "label": "ISTD",
+                "mz": "300",
+                "expected_rt_min": "12",
+                "cid_nl_tag": "dR",
+                "role": "istd",
+                "istd_pair": "",
+            }
+        ]
+    )
+    measured = {"S1": 8.1, "S2": 8.5}
+
+    class Raw:
+        def __init__(self, sample):
+            self.apex = measured[sample]
+
+        def acquisition_rt_bounds(self):
+            return 1.0, 15.0
+
+        def extract_xic_many(self, requests):
+            return tuple(
+                XICTrace.from_arrays(
+                    rt := np.arange(r.rt_min, r.rt_max, 0.02),
+                    10 + 100000 * np.exp(-0.5 * ((rt - self.apex) / 0.13) ** 2),
+                )
+                for r in requests
+            )
+
+        def iter_ms2_scans(self, start, end):
+            if not start <= self.apex <= end:
+                return ()
+            scan = Ms2Scan(
+                1, self.apex, 300, np.array([183.9526]), np.array([100.0]), 100.0
+            )
+            return (Ms2ScanEvent(scan, None, 1),)
+
+    @contextmanager
+    def open_raw(path, *, dll_dir):
+        yield Raw(path.stem)
+
+    monkeypatch.setattr("xic_extractor.raw_reader.open_raw", open_raw)
+    config = ExtractionConfig(
+        data_dir=tmp_path,
+        dll_dir=tmp_path,
+        output_csv=tmp_path / "unused.csv",
+        diagnostics_csv=tmp_path / "unused-diagnostics.csv",
+        smooth_window=15,
+        smooth_polyorder=3,
+        peak_rel_height=0.95,
+        peak_min_prominence_ratio=0.1,
+        ms2_precursor_tol_da=1.1,
+        nl_min_intensity_ratio=0.01,
+        resolver_mode="local_minimum",
+    )
+    reference = extract_batch_known_istd_reference(
+        targets, {s: tmp_path / f"{s}.raw" for s in measured}, tmp_path, config
+    )
+    assert {sample: rt for _, sample, rt, _ in reference.coordinates} == pytest.approx(
+        measured, abs=0.021
+    )
+
+
 @pytest.mark.parametrize(
     ("matched_rts", "neutral_loss", "precursor_context", "expected_rt"),
     [
@@ -145,7 +214,8 @@ def test_batch_istd_coordinates_require_unique_native_identity(
         outside_isolation = precursor_context == "outside_isolation"
         coisolated = precursor_context.startswith("coisolated_")
         selected_mz = target.mz + {
-            "outside_isolation": 1.0,
+            # Not an M+1 selection supported by the recorded monoisotopic ion.
+            "outside_isolation": 0.8,
             "coisolated_other": 0.5,
             "coisolated_target_mono": 0.5,
             "outside_target_ppm": 0.004,
@@ -198,6 +268,9 @@ def test_batch_istd_coordinates_require_unique_native_identity(
     ms2_calls = []
 
     class Raw:
+        def acquisition_rt_bounds(self):
+            return 7.0, 11.0
+
         def extract_xic_many(
             self, requests: tuple[XICRequest, ...]
         ) -> tuple[XICTrace, ...]:
@@ -267,4 +340,4 @@ def test_batch_istd_coordinates_require_unique_native_identity(
         for requests in batches
         for request in requests
     )
-    assert ms2_calls == ([] if neutral_loss is None else [(8.0, 10.0)] * 2)
+    assert ms2_calls == ([] if neutral_loss is None else [(7.0, 11.0)] * 2)

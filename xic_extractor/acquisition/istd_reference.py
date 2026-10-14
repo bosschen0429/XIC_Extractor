@@ -43,15 +43,6 @@ def extract_batch_known_istd_reference(
     if not istd_targets:
         raise ValueError("No ISTD targets (is_istd=True) found in targets")
 
-    requests = tuple(
-        XICRequest(
-            mz=target.mz,
-            rt_min=max(0.0, target.rt_min - 1.0),
-            rt_max=target.rt_max + 1.0,
-            ppm_tol=target.ppm_tol,
-        )
-        for target in istd_targets
-    )
     profile = resolve_signal_processing_profile(
         signal_processing_method=peak_config.signal_processing_method,
         signal_processing_window_points=peak_config.signal_processing_window_points,
@@ -60,6 +51,14 @@ def extract_batch_known_istd_reference(
     coordinates: dict[tuple[str, str], float] = {}
     for sample_stem, raw_path in sorted(raw_paths_by_sample.items()):
         with open_raw(raw_path, dll_dir=dll_dir) as raw:
+            # Expected RT is an identity reference, not an acquisition window.
+            rt_min, rt_max = raw.acquisition_rt_bounds()
+            requests = tuple(
+                XICRequest(
+                    mz=target.mz, rt_min=rt_min, rt_max=rt_max, ppm_tol=target.ppm_tol
+                )
+                for target in istd_targets
+            )
             traces = raw.extract_xic_many(requests)
             ms2_windows: dict[tuple[float, float], tuple[Ms2ScanEvent, ...]] = {}
             for target, trace in zip(istd_targets, traces, strict=True):
@@ -78,13 +77,9 @@ def extract_batch_known_istd_reference(
                 segments = qualified_physical_segments(
                     prepared.prepared, universe.segments
                 )
-                window_key = (target.rt_min, target.rt_max)
+                window_key = (rt_min, rt_max)
                 qualified_rts = []
                 for segment in segments:
-                    # Context supports morphology, but never expands the declared
-                    # identity search or supplies a nearest/strongest tie-break.
-                    if not target.rt_min <= segment.apex_rt_min <= target.rt_max:
-                        continue
                     if window_key not in ms2_windows:
                         ms2_windows[window_key] = tuple(raw.iter_ms2_scans(*window_key))
                     events = tuple(
@@ -97,7 +92,8 @@ def extract_batch_known_istd_reference(
                         and any(
                             abs(mz - target.mz) <= target.mz * target.ppm_tol / 1e6
                             for mz, _ in recorded_precursor_references(
-                                event.scan, target.nl_ppm_max,
+                                event.scan,
+                                target.nl_ppm_max,
                             )
                         )
                     )
