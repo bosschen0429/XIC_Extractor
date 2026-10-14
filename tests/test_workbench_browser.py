@@ -499,7 +499,7 @@ def test_job_progress_artifact_failure_retention_and_confirmed_stop(
     expect(result).to_have_text(previous, use_inner_text=True)
 
 
-def test_review_search_and_inspector_use_one_scroll_and_visible_zoom(
+def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
     workbench, tmp_path
 ):
     page = workbench
@@ -563,41 +563,58 @@ def test_review_search_and_inspector_use_one_scroll_and_visible_zoom(
         arg=report_path,
     )
     frame = page.frame_locator("#inspector")
-    zoom = frame.locator("button[data-zoom]").first
-    expect(zoom).to_be_visible()
+    expect(frame.get_by_role("heading", name="已保存的樣本結果")).to_be_visible()
+    expect(frame.locator("#svg-raw")).to_have_count(0)
     page.wait_for_function("""() => {
         const frame = document.getElementById('inspector');
         const doc = frame.contentDocument;
         return doc && frame.clientHeight >= doc.documentElement.scrollHeight - 2;
     }""")
-    zoom.scroll_into_view_if_needed()
-    # Put the opener near the top of the host viewport, with the frame's own
-    # top already scrolled away. Merely centering it can leave frame.top > 0,
-    # which would not exercise viewport-relative dialog placement at all.
-    page.evaluate(
-        """offset => window.scrollBy(0,
-            document.getElementById('inspector').getBoundingClientRect().top
-            + offset - 120)""",
-        arg=zoom.evaluate("button => button.getBoundingClientRect().top"),
+    frame.get_by_role("button", name="查看依據").first.click()
+    expect(frame.locator("#evidence-panel")).to_be_visible()
+    frame.locator("#close-evidence").click()
+    expect(frame.locator("#evidence-panel")).to_have_count(0)
+
+
+def test_untargeted_review_starts_with_results_and_explains_missing_curves(
+    workbench, tmp_path
+):
+    from tests.test_xic_workbench import _review_batch
+
+    report, _ = _review_batch(tmp_path)
+    page = workbench
+    _view(page, "review")
+    page.locator("#source").fill(str(report))
+    page.locator("#raw-dir").fill("")
+    page.locator("#open-form button[type=submit]").click()
+    overview = page.locator("#targeted-overview")
+    expect(overview.get_by_role("heading", name="先看 1 組未解決定量")).to_be_visible()
+    expect(page.locator("#review")).to_be_hidden()
+    overview.get_by_role("button", name="先看未解決定量", exact=True).click()
+    expect(page.locator("#item-list button")).to_have_count(1)
+    expect(page.locator("#inline-curve-status")).to_contain_text(
+        "尚未設定 RAW 或 DLL 位置"
     )
-    assert page.evaluate("window.scrollY") > 0
-    assert page.locator("#inspector").bounding_box()["y"] < 0
-    zoom.click()
-    dialog = frame.locator("#zoom-dialog")
-    expect(dialog).to_be_visible()
-    page.wait_for_function("""() => {
-        const frame = document.getElementById('inspector');
-        const dialog = frame.contentDocument.getElementById('zoom-dialog');
-        const f = frame.getBoundingClientRect(), d = dialog.getBoundingClientRect();
-        return f.top + d.top >= 0 && f.top + d.bottom <= innerHeight + 2
-            && f.left + d.left >= 0 && f.left + d.right <= innerWidth + 2;
-    }""")
-    frame.locator("#zoom-close").click()
-    expect(dialog).to_be_hidden()
+    saved = page.frame_locator("#inspector")
+    expect(saved.get_by_role("heading", name="已保存的樣本結果")).to_be_visible()
+    expect(saved.locator(".sample-table tbody tr").first).to_contain_text("4.000e+2")
+    expect(saved.locator("#svg-raw")).to_have_count(0)
+    page.locator("#back-to-overview").click()
+    expect(overview).to_be_visible()
+    overview.get_by_role("button", name="查看全部矩陣群組").click()
+    expect(page.locator("#item-list button")).to_have_count(3)
+    page.locator("#back-to-overview").click()
+    overview.locator("summary").click()
+    overview.get_by_role("button", name="1 組未採用").click()
+    expect(page.locator("#list-summary")).to_contain_text("未採用群組 · 1 組")
+    expect(
+        page.frame_locator("#inspector").locator(".sample-table tbody tr").first
+    ).to_contain_text("5.000e+2")
 
 
+@pytest.mark.parametrize("sample_count", (1, 6))
 def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
-    workbench, tmp_path, monkeypatch
+    workbench, tmp_path, monkeypatch, sample_count
 ):
     from dataclasses import replace
 
@@ -619,32 +636,56 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
 
     monkeypatch.setattr(acquisition, "export_explanation_curves", acquire)
     page = workbench
-    db, _, _ = _create_mock_db(tmp_path)
+    from tests.test_xic_workbench import _review_batch
+
+    db = (
+        _create_mock_db(tmp_path)[0]
+        if sample_count == 1
+        else _review_batch(tmp_path, sample_count=sample_count)[0]
+    )
     _view(page, "review")
     page.locator("#source").fill(str(db))
     page.locator("#raw-dir").fill(str(tmp_path))
     page.locator("#dll-dir").fill(str(tmp_path))
     page.locator("#open-form button[type=submit]").click()
+    if sample_count > 1:
+        page.get_by_role("button", name="查看全部矩陣群組").click()
+        expect(
+            page.frame_locator("#inline-curve-frame").locator("#svg-raw polyline")
+        ).to_have_count(1)
+        page.locator("#item-list button").filter(has_text="6 / 6 個樣本有值").click()
     expect(page.locator(".acquisition-panel > summary")).to_be_visible()
     expect(page.locator("#sample-list")).to_be_hidden()
     page.locator(".acquisition-panel > summary").click()
     recorded = page.locator("#inspector").evaluate(
         "frame => frame.contentWindow.location.href"
     )
-    page.locator("#load-curves").click()
-    frame = page.frame_locator("#xic-inspector")
-    expect(frame.locator("#svg-raw polyline")).to_have_count(1)
-    expect(page.locator("#xic-navigation")).to_be_hidden()
+    frame = page.frame_locator("#inline-curve-frame")
+    expect(frame.locator("#svg-raw polyline")).to_have_count(sample_count)
+    expect(page.locator("#xic-dialog")).to_be_hidden()
+    saved = page.frame_locator("#inspector")
+    expect(saved.get_by_role("heading", name="已保存的樣本結果")).to_be_visible()
+    expect(saved.locator("#svg-raw")).to_have_count(0)
     assert (
         page.locator("#inspector").evaluate(
             "frame => frame.contentWindow.location.href"
         )
         == recorded
     )
-    page.locator("#xic-close").click()
     page.locator("#load-curves").click()
-    expect(frame.locator("#svg-raw polyline")).to_have_count(1)
-    assert len(calls) == 1
+    expect(frame.locator("#svg-raw polyline")).to_have_count(sample_count)
+    assert set(calls[-1]) == {f"S{i + 1}" for i in range(sample_count)}
+    assert len(calls) == (1 if sample_count == 1 else 2)
+    frame.locator("button[data-zoom]").click()
+    expect(frame.locator("#zoom-dialog")).to_be_visible()
+    page.wait_for_function("""() => {
+        const frame = document.getElementById('inline-curve-frame');
+        const dialog = frame.contentDocument.getElementById('zoom-dialog');
+        const f = frame.getBoundingClientRect(), d = dialog.getBoundingClientRect();
+        return f.top + d.top >= 0 && f.top + d.bottom <= innerHeight + 2;
+    }""")
+    frame.locator("#zoom-close").click()
+    expect(frame.locator("#zoom-dialog")).to_be_hidden()
 
 
 def test_targeted_nd_shows_original_points_and_support_failure(

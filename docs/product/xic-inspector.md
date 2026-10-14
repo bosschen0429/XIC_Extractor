@@ -24,15 +24,27 @@ their output actions remain available beside review; they delegate to the
 existing application and writer owners described in
 [the workbench contract](untargeted-gui.md).
 
-The workspace shows full-run, matched and current-page counts. Exact group ID,
-m/z and RT filters use the Inspector's full-population query, in pages of 25.
-The population includes both grouped records and ungrouped candidates. Select
-an item to inspect its saved evidence, then select a few observed samples and
-load their XIC. A sample without retained apex coordinates is shown as
-unavailable, not as zero signal. The recorded view and newly acquired curves
-remain separate: XIC opens in a side drawer, leaving the saved table in place.
-Closing it restores the row focus; previously loaded samples reuse their curves.
-The displayed curve report can be downloaded as standalone Inspector HTML.
+For current Untargeted review reports, the landing page summarizes matrix
+groups, groups with a numeric value in every sample, and groups containing an
+explicitly unresolved saved decision. The last group is the priority queue;
+ordinary missing values are not inferred to be abnormal or not detected.
+Archived groups and ungrouped candidates are secondary evidence, not mixed
+into the default result list. Exact group ID, m/z and RT filters search the
+selected population before pagination, in pages of 25. Reading order uses
+unresolved-cell count, then numeric sample coverage; it is not a new scientific
+score. The offline custom Inspector retains its bounded evidence-sampling view.
+
+Selecting an Untargeted group automatically loads all observed samples'
+XIC inline when RAW and DLL locations are configured. The sample selector can
+restrict the display explicitly. Counts distinguish saved numeric results,
+samples with acquisition coordinates, and loaded curves; samples without
+coordinates are named. Saved Area and decision labels stay in a separate
+table; internal evidence is disclosed on demand. Missing locations, coordinates,
+or failed acquisition are explained instead of displaying empty plots. A sample
+without retained apex coordinates is unavailable, not zero signal. Targeted XIC
+continues to open in its side drawer, leaving the saved table in place; closing
+it restores row focus. Repeated selections within the same group reuse loaded
+curves. Source evidence and newly acquired diagnostic curves remain distinct.
 
 Acquisition is sequential and bounded to the saved observations of the selected
 samples. The page displays progress and supports cooperative cancellation

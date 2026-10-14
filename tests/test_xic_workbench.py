@@ -17,6 +17,127 @@ from xic_workbench.server import create_server
 from xic_workbench.workspace import ReviewWorkspace
 
 
+def _review_batch(tmp_path, sample_count=2):
+    from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
+
+    sample_ids = tuple(f"S{i + 1}" for i in range(sample_count))
+    matrix = tmp_path / "matrix.tsv"
+    matrix.write_text("recorded matrix fixture", encoding="utf-8")
+    report = tmp_path / "review.sqlite"
+    with ExplanationReportWriter(report, review_only=True) as writer:
+        for rid, route, values in (
+            ("a-complete", "matrix", tuple(100 * (i + 1) for i in range(sample_count))),
+            ("b-missing", "matrix", (300,) + ("unavailable",) * (sample_count - 1)),
+            ("z-priority", "matrix", (400,) + ("unresolved",) * (sample_count - 1)),
+            ("archive", "archive", (500,) + ("unresolved",) * (sample_count - 1)),
+        ):
+            keys = []
+            for sid, value in zip(sample_ids, values):
+                if isinstance(value, int):
+                    cid = f"{rid}-{sid}"
+                    keys.append((cid, sid))
+                    writer.add_candidate(
+                        cid,
+                        sid,
+                        {
+                            "candidate_id": cid,
+                            "canonical_sample_identity_id": sid,
+                            "precursor_mz": value,
+                            "rt_apex_min": 1,
+                        },
+                    )
+            writer.add_record(
+                "rows",
+                rid,
+                {
+                    "row_key_id": rid,
+                    "group_hypothesis_id": rid,
+                    "route": {"destination": route, "reason": "recorded"},
+                },
+                keys,
+            )
+            writer.add_record("final_groups", rid, {"group_hypothesis_id": rid}, keys)
+            writer.add_row_cells(
+                rid,
+                rid,
+                [
+                    {
+                        "canonical_sample_identity_id": sid,
+                        "variant": "numeric" if isinstance(value, int) else value,
+                        "value": value if isinstance(value, int) else None,
+                    }
+                    for sid, value in zip(sample_ids, values)
+                ],
+                {sid: i for i, sid in enumerate(sample_ids)},
+            )
+        writer.add_candidate(
+            "orphan",
+            "S1",
+            {
+                "candidate_id": "orphan",
+                "canonical_sample_identity_id": "S1",
+                "precursor_mz": 600,
+                "rt_apex_min": 1,
+            },
+        )
+        writer.finalize(
+            {
+                "matrix_path": str(matrix),
+                "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
+                "samples": [
+                    {"canonical_sample_identity_id": s, "sample_stem": s}
+                    for s in sample_ids
+                ],
+                "selection_evidence_capability": "recorded_decisions",
+            }
+        )
+    return report, matrix
+
+
+def test_review_overview_separates_matrix_priority_and_internal_evidence(tmp_path):
+    report, matrix = _review_batch(tmp_path)
+    before = [p.read_bytes() for p in (report, matrix)]
+    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
+    try:
+        page = workspace.open(str(report))
+        overview = page["overview"]
+        assert (
+            overview["matrix_count"],
+            overview["unresolved_count"],
+            overview["complete_count"],
+            overview["archive_count"],
+            overview["candidate_count"],
+        ) == (3, 1, 1, 1, 1)
+        assert [s["numeric_count"] for s in overview["samples"]] == [3, 1]
+        assert [i["group_id"] for i in page["items"]] == [
+            "z-priority",
+            "a-complete",
+            "b-missing",
+        ]
+        page = workspace.query({"limit": 1, "offset": 1})
+        assert page["items"][0]["group_id"] == "a-complete"
+        page = workspace.query({"review_scope": "unresolved", "offset": 0})
+        assert page["matched_count"] == 1
+        assert page["items"][0]["unresolved_count"] == 1
+        assert (
+            workspace.query({"review_scope": "matrix", "mz_min": 300, "mz_max": 300})[
+                "items"
+            ][0]["group_id"]
+            == "b-missing"
+        )
+        assert (
+            workspace.query({"review_scope": "archive"})["items"][0]["group_id"]
+            == "archive"
+        )
+        assert (
+            workspace.query({"review_scope": "candidates"})["items"][0]["candidate_id"]
+            == "orphan"
+        )
+    finally:
+        workspace.close()
+    assert [p.read_bytes() for p in (report, matrix)] == before
+
+
 def test_example_downloads_are_fixed_public_resources_not_local_files(tmp_path):
     from xic_extractor.configuration.paths import targets_template_path
 
@@ -248,10 +369,15 @@ def test_http_cancel_and_failure_leave_prior_report_readable(tmp_path, monkeypat
             acquisition, "export_explanation_curves", lambda *a, **k: {}
         )
 
-        def render_fixture(source, selection, path, **kwargs):
-            path.write_text("<html>diagnostic fixture</html>", encoding="utf-8")
+        def render_fixture(source, selection, **kwargs):
+            from types import SimpleNamespace
 
-        monkeypatch.setattr("xic_workbench.workspace.generate_report", render_fixture)
+            return SimpleNamespace(
+                payload={"selection": {}},
+                to_html=lambda: "<html>diagnostic fixture</html>",
+            )
+
+        monkeypatch.setattr("xic_workbench.workspace.prepare_report", render_fixture)
         _, job, _ = request("/api/curves", parameters)
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
@@ -263,6 +389,9 @@ def test_http_cancel_and_failure_leave_prior_report_readable(tmp_path, monkeypat
         assert restored["detail"] == detail
         url = f"/reports/{restored['job']['view_id']}.html"
         assert request(url)[1] == b"<html>diagnostic fixture</html>"
+        from xic_inspector.api import prepare_report
+
+        monkeypatch.setattr("xic_workbench.workspace.prepare_report", prepare_report)
         request("/api/query", {})
         _, restored, _ = request("/api/review")
         assert restored["job"] is None

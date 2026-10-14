@@ -15,7 +15,6 @@ from xic_inspector.api import (
     InspectorCancelled,
     PreparedReport,
     SelectionRequest,
-    generate_report,
     prepare_report,
     read_evidence_summary,
     resolve_source,
@@ -111,7 +110,14 @@ class ReviewWorkspace:
                 raise ValueError("這份結果沒有可檢閱的樣本。")
             page = prepare_report(
                 path,
-                SelectionRequest(strategy="query", sample_ids=sample_ids, limit=25),
+                SelectionRequest(
+                    strategy="query",
+                    sample_ids=sample_ids,
+                    limit=25,
+                    review_scope="matrix"
+                    if summary.get("query_index_version") == 2
+                    else "all",
+                ),
             )
             # Failed opens never displace the previously usable batch.
             self._report, self._page = path, page
@@ -130,6 +136,7 @@ class ReviewWorkspace:
             "rt_max",
             "offset",
             "limit",
+            "review_scope",
         }
         if set(values) - allowed:
             raise ValueError("查詢包含不支援的欄位。")
@@ -146,6 +153,10 @@ class ReviewWorkspace:
                 raise ValueError("目標與樣本名稱必須是文字。")
             request = SelectionRequest(
                 strategy="query",
+                review_scope=values.get(
+                    "review_scope",
+                    self._page.payload["selection"].get("review_scope", "all"),
+                ),
                 sample_ids=(sample_id,)
                 if sample_id
                 else tuple(
@@ -157,12 +168,20 @@ class ReviewWorkspace:
                 **{
                     key: value
                     for key, value in values.items()
-                    if key not in {"group_id", "target_id", "sample_id"}
+                    if key not in {"group_id", "target_id", "sample_id", "review_scope"}
                 },
             )
             page = prepare_report(
                 self._report, request, expected_source=self._page.source
             )
+            if (
+                "overview" not in page.payload["summary"]
+                and self._page.payload["summary"].get("overview", {}).get("kind")
+                == "untargeted"
+            ):
+                page.payload["summary"]["overview"] = self._page.payload["summary"][
+                    "overview"
+                ]
             self._page = page
             self._detail, self._job = None, None
             return self._page_response()
@@ -175,6 +194,7 @@ class ReviewWorkspace:
             "source_kind": page.payload["summary"].get("source_kind", "evidence"),
             "target_names": page.payload["summary"].get("target_names", []),
             "overview": page.payload["summary"].get("overview"),
+            "review_scope": page.payload["selection"].get("review_scope", "all"),
             "all_samples": [
                 {
                     "id": row["canonical_sample_identity_id"],
@@ -212,6 +232,11 @@ class ReviewWorkspace:
         )
         target_id = None
         curve_samples = observed
+        numeric_samples = [
+            s["sample_id"]
+            for s in item.get("samples", [])
+            if isinstance(s.get("quantitative_value"), (int, float))
+        ]
         if item["kind"] == "target":
             target_id = item["details"]["target"]["Label"]
             # A known Target can be inspected even when its saved result is ND.
@@ -233,6 +258,12 @@ class ReviewWorkspace:
             "observed_sample_ids": observed,
             "curve_sample_ids": curve_samples,
             "review_summary": item.get("review_summary", {}),
+            "numeric_count": len(numeric_samples),
+            "numeric_sample_ids": numeric_samples,
+            "unresolved_count": sum(
+                any(c.get("variant") == "unresolved" for c in s.get("refs", []))
+                for s in item.get("samples", [])
+            ),
         }
 
     def _item(self, item_id: Any) -> dict[str, Any]:
@@ -251,6 +282,7 @@ class ReviewWorkspace:
             payload["items"] = [copy.deepcopy(item)]
             payload["selection"]["limit"] = 1
             payload["selection"]["workspace_item_id"] = item["id"]
+            payload["selection"]["workspace_view"] = "result"
             prepared = replace(self._page, payload=payload, selected_count=1)
             view_id = uuid.uuid4().hex
             path = self._folder / f"{view_id}.html"
@@ -388,13 +420,14 @@ class ReviewWorkspace:
                     is_cancelled=cancel.is_set,
                     on_progress=acquired,
                 )
-            generate_report(
+            prepared = prepare_report(
                 bundle_path,
                 SelectionRequest(sample_ids=request["sample_ids"]),
-                html_path,
                 on_progress=rendered,
                 is_cancelled=cancel.is_set,
             )
+            prepared.payload["selection"]["workspace_view"] = "curves"
+            write_report_atomically(prepared.to_html(), html_path)
             with self._lock:
                 if cancel.is_set():
                     raise CurveAcquisitionCancelled("已取消曲線載入。")

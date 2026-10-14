@@ -247,10 +247,23 @@ def query_page(
     rt_max=None,
     offset=0,
     limit=30,
+    ordered_item_ids=None,
 ):
     """Return population counts and item IDs, filtering each witness as one row."""
     params: list[Any] = []
     predicates = []
+    order = "i.sort_key"
+    if ordered_item_ids is not None:
+        db.execute(
+            "CREATE TEMP TABLE review_order "
+            "(item INTEGER PRIMARY KEY, priority INTEGER)"
+        )
+        db.executemany(
+            "INSERT INTO review_order VALUES (?,?)",
+            ((item, priority) for priority, item in enumerate(ordered_item_ids)),
+        )
+        predicates.append("i.id IN (SELECT item FROM review_order)")
+        order = "(SELECT priority FROM review_order WHERE item=i.id),i.sort_key"
     for column, values in (
         ("s.sample_id", scope),
         ("c.candidate_id", candidate_ids),
@@ -285,7 +298,7 @@ def query_page(
     page = [
         row[0]
         for row in db.execute(
-            matches + " ORDER BY i.sort_key LIMIT ? OFFSET ?", [*params, limit, offset]
+            matches + f" ORDER BY {order} LIMIT ? OFFSET ?", [*params, limit, offset]
         )
     ]
     run_total = db.execute("SELECT COUNT(*) FROM query_items").fetchone()[0]

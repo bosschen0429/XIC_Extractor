@@ -251,6 +251,8 @@ window.XicUi = (() => {
     }
   }
   function clearSelection() {
+    $("inline-curves").hidden = true;
+    loadFrame($("inline-curve-frame"), "about:blank");
     state.item = null;
     state.detail = null;
     state.recorded = null;
@@ -289,7 +291,7 @@ window.XicUi = (() => {
         if (saved.overview) showTargetedOverview();
         else {
           $("targeted-overview").hidden = true;
-          $("targeted-review-nav").hidden = saved.page.source_kind !== "targeted_workbook";
+          $("targeted-review-nav").hidden = !saved.page.overview;
           $("review").hidden = false;
         }
       }
@@ -309,16 +311,16 @@ window.XicUi = (() => {
     if (await query(0, queryFields()))
       $("targeted-review-nav").scrollIntoView({ block: "start" });
   }
-  function renderTargetedOverview(summary) {
-    const host = $("targeted-overview");
-    host.replaceChildren();
-    if (!summary) return;
     const node = (tag, text, className = "") => {
       const element = document.createElement(tag);
       if (text !== undefined) element.textContent = text;
       element.className = className;
       return element;
     };
+  function renderTargetedOverview(summary) {
+    const host = $("targeted-overview");
+    host.replaceChildren();
+    if (!summary) return;
     const resultButton = (text, target = "", attentionOnly = false, className = "") => {
       const button = node("button", text, className);
       button.type = "button";
@@ -406,6 +408,35 @@ window.XicUi = (() => {
     quantities.append(values);
     host.append(quantities, node("p", `需先看：各目標中占 ${Math.round(summary.minority_share * 100)}% 以下的一方；只決定閱讀順序，不改變已保存的判定。`, "overview-footnote"));
   }
+  function renderUntargetedOverview(summary) {
+    const host = $("targeted-overview");
+    host.replaceChildren();
+    host.append(node("span", "Untargeted · 整批結果總覽", "eyebrow"),
+      node("h2", summary.unresolved_count ? `先看 ${count(summary.unresolved_count)} 組未解決定量` : "矩陣中沒有未解決定量"),
+      node("p", "閱讀順序依已保存的定量狀態與樣本覆蓋數；不重新判定峰，也不把缺值當作異常。"));
+    const metrics = node("div", undefined, "overview-metrics");
+    for (const [value, label] of [[summary.matrix_count, "進入矩陣"], [summary.complete_count, "全部樣本都有值"], [summary.unresolved_count, "需先看"]]) {
+      const metric = node("div"); metric.append(node("strong", count(value)), node("span", label)); metrics.append(metric);
+    }
+    host.append(metrics);
+    const openScope = (label, scope, parent = host) => {
+      const button = node("button", label); button.type = "button"; button.dataset.idle = "";
+      button.addEventListener("click", () => action(async () => {
+        navigation.push(); $("query-form").reset(); await query(0, {review_scope: scope});
+      })); parent.append(button);
+    };
+    if (summary.unresolved_count) openScope("先看未解決定量", "unresolved");
+    openScope("查看全部矩陣群組", "matrix");
+    if (summary.uncalibrated_count) host.append(node("p", `${summary.uncalibrated_count} / ${summary.samples.length} 個樣本未建立內標 RT 校正。XIC 顯示原始時間；這不代表內標未檢出。`, "overview-unknown"));
+    const table = node("table", undefined, "overview-table");
+    const head = node("tr"); head.append(node("th", "樣本"), node("th", "矩陣中有定量值的群組")); table.append(head);
+    for (const sample of summary.samples) {const row = node("tr"); row.append(node("td", sample.label), node("td", `${count(sample.numeric_count)} / ${count(summary.matrix_count)}`)); table.append(row);}
+    host.append(table);
+    const more = node("details"); more.append(node("summary", "進階：未採用群組與候選證據"), node("p", "這些不是矩陣結果，僅在追查未採用原因時檢閱。"));
+    openScope(`${count(summary.archive_count)} 組未採用`, "archive", more);
+    openScope(`${count(summary.candidate_count)} 筆未分組候選`, "candidates", more);
+    host.append(more);
+  }
   function renderPage(page) {
     state.page = page;
     const targeted = page.source_kind === "targeted_workbook";
@@ -413,11 +444,13 @@ window.XicUi = (() => {
     const noun = targeted ? "目標" : "項目";
     $("list-title").textContent = targeted ? "目標" : "檢閱項目";
     $("targeted-overview").hidden = true;
-    $("targeted-review-nav").hidden = !targeted;
-    renderTargetedOverview(page.overview);
+    $("targeted-review-nav").hidden = !page.overview;
+    $("targeted-review-nav").querySelector("span").textContent = targeted ? "樣本結果 → 點選樣本查看峰界與證據" : "群組結果 → XIC 與已保存定量 → 需要時查看依據";
+    if (page.overview?.kind === "untargeted") renderUntargetedOverview(page.overview);
+    else renderTargetedOverview(page.overview);
     $("targeted-filters").hidden = !targeted;
     $("group-filter").hidden = targeted;
-    $("review-range-filters").open = !targeted;
+    $("review-range-filters").open = false;
     const selectedTarget = $("target-id").value;
     document.querySelector(".review-grid").classList.toggle("single-target", targeted && Boolean(selectedTarget) && page.matched_count === 1);
     $("target-id").replaceChildren(new Option("全部目標", ""), ...(page.target_names || []).map(name => new Option(name, name)));
@@ -441,12 +474,13 @@ window.XicUi = (() => {
     $("batch-description").className = "mono";
     $("batch-description").title = page.source;
     $("batch-count").hidden = false;
-    $("batch-count").textContent =
-      `${count(page.samples.length)} 個樣本 · ${count(page.run_total)} 個${targeted ? "目標" : "檢閱項目"}`;
+    $("batch-count").textContent = page.overview?.kind === "untargeted"
+      ? `${count(page.samples.length)} 個樣本 · ${count(page.overview.matrix_count)} 組矩陣結果`
+      : `${count(page.samples.length)} 個樣本 · ${count(page.run_total)} 個${targeted ? "目標" : "檢閱項目"}`;
     const filtered = page.matched_count !== page.run_total;
     $("list-summary").replaceChildren(
       Object.assign(document.createElement("span"), {
-        textContent: filtered
+        textContent: page.overview?.kind === "untargeted" ? `${({matrix:"矩陣群組",unresolved:"未解決定量",archive:"未採用群組",candidates:"未分組候選"})[page.review_scope] || "所有紀錄"} · ${count(page.matched_count)} 組` : filtered
           ? `符合 ${count(page.matched_count)} ／ 全批 ${count(page.run_total)}`
           : `全批 ${count(page.run_total)} 個${noun}`,
       }),
@@ -477,9 +511,9 @@ window.XicUi = (() => {
       const summary = document.createElement("span");
       summary.textContent = targeted
         ? `${item.review_summary.scope_sample_count} 個樣本的已保存結果`
-        : `${item.title} · ${item.review_summary.observed_sample_count || 0} 個樣本`;
+        : `${item.numeric_count} / ${page.samples.length} 個樣本有值`;
       const badge = document.createElement("span");
-      const label = item.badge_label || "已記錄";
+      const label = targeted ? item.badge_label || "已記錄" : item.unresolved_count ? `${item.unresolved_count} 個未解決定量` : "已保存結果";
       badge.className = `chip ${badgeTone[label] || ""}`;
       badge.textContent = label;
       bottom.append(summary, badge);
@@ -508,7 +542,15 @@ window.XicUi = (() => {
   async function selectItem(item) {
     const revision = navigation.revision;
     const detail = await api("/api/detail", { item_id: item.id });
-    if (revision === navigation.revision) restoreDetail(detail);
+    if (revision === navigation.revision) {
+      restoreDetail(detail);
+      if (state.page.source_kind !== "targeted_workbook") {
+        $("inline-curves").hidden = false;
+        if (!state.samples.size) $("inline-curve-status").textContent = "這組沒有可用觀測座標，無法自動取得 XIC。已保存的結果仍可查看。";
+        else if (!$("raw-dir").value.trim() || !$("dll-dir").value.trim()) $("inline-curve-status").textContent = "尚未設定 RAW 或 DLL 位置。設定「結果與 RAW 位置」後，按「載入所選樣本 XIC」。";
+        else await startCurves();
+      }
+    }
   }
   function restoreDetail(detail) {
     state.detail = detail;
@@ -535,9 +577,9 @@ window.XicUi = (() => {
         ),
       );
     const available = new Set(detail.item.curve_sample_ids);
-    state.samples = new Set(
+    state.samples = targeted ? new Set(
       [...state.samples].filter((id) => available.has(id)),
-    );
+    ) : new Set(available);
     if (!state.samples.size)
       state.samples = new Set(
         state.page.samples
@@ -576,13 +618,20 @@ window.XicUi = (() => {
     $("xic-sample").replaceChildren(...detail.item.curve_sample_ids.map(id => new Option(
       state.page.samples.find(sample => sample.id === id)?.label || id, id,
     )));
+    if (!targeted) {
+      const missing = state.page.samples.filter(sample => !available.has(sample.id));
+      const numericMissing = missing.filter(sample => item.numeric_sample_ids.includes(sample.id));
+      $("inline-curve-coverage").textContent = `${item.numeric_count} 個樣本有定量值 · ${available.size} 個樣本可讀取 XIC（預設全部載入）`
+        + (numericMissing.length ? `。有定量值，但目前檢閱資料未提供可擷取座標：${numericMissing.map(sample => sample.label).join("、")}。` : "。")
+        + (missing.length ? `本次無法取得曲線的樣本：${missing.map(sample => sample.label).join("、")}。` : "");
+    }
     showRecorded();
     status("可查看已保存結果，或按「看 XIC」讀取 RAW；看圖不改寫結果。");
   }
   function showRecorded() {
     $("view-note").textContent = state.page.source_kind === "targeted_workbook"
       ? "點樣本列的「看 XIC」開啟圖表；關閉後回到原來的位置。"
-      : "當次分析保存的證據與量值。展開「查看樣本 XIC」可讀取 RAW，不改變結果。";
+      : "先看 XIC 與下方保存的 Area；可展開「查看樣本 XIC」更換樣本。內部證據收在進階內容。";
     loadFrame($("inspector"), `/reports/${state.recorded}.html?embed=1`);
     $("download").href = `/reports/${state.recorded}.html?download=1`;
     $("download").hidden = state.page.source_kind === "targeted_workbook";
@@ -590,6 +639,12 @@ window.XicUi = (() => {
   function showCurveView(view) {
     state.curveView = view;
     const url = `/reports/${view}.html?embed=1`;
+    if (state.page.source_kind !== "targeted_workbook") {
+      loadFrame($("inline-curve-frame"), url);
+      $("inline-curve-frame").hidden = false;
+      $("inline-curve-status").textContent = `已載入 ${state.samples.size} 個樣本的 XIC；不改寫已保存結果。`;
+      return;
+    }
     loadFrame($("xic-inspector"), url);
     $("xic-inspector").hidden = false;
     $("xic-loading").hidden = true;
@@ -597,6 +652,11 @@ window.XicUi = (() => {
     $("xic-download").hidden = false;
   }
   function curveMessage(message, retry = false) {
+    if (state.page.source_kind !== "targeted_workbook") {
+      $("inline-curves").hidden = false;
+      $("inline-curve-status").textContent = message;
+      $("inline-curve-frame").hidden = true;
+    }
     state.curveView = null;
     $("xic-status").textContent = message;
     $("xic-loading").hidden = false;
@@ -618,13 +678,13 @@ window.XicUi = (() => {
     state.samples = new Set();
     renderPage(page);
     $("source-settings").open = false;
-    if (page.source_kind === "targeted_workbook") showTargetedOverview();
+    if (page.overview) showTargetedOverview();
     else if (page.items.length) await selectItem(page.items[0]);
   }
   function queryFields() {
     const filters = state.page?.source_kind === "targeted_workbook"
       ? { target_id: $("target-id").value.trim(), sample_id: $("target-sample").value, attention_only: $("target-attention").checked }
-      : { group_id: $("group-id").value.trim() };
+      : { group_id: $("group-id").value.trim(), review_scope: state.page.review_scope };
     for (const [id, key] of [
       ["mz-min", "mz_min"],
       ["mz-max", "mz_max"],
@@ -666,7 +726,7 @@ window.XicUi = (() => {
       const index = state.item.curve_sample_ids.indexOf($("xic-sample").value);
       $("xic-position").textContent = `${index + 1} / ${state.item.curve_sample_ids.length}`;
     }
-    if (!$("xic-dialog").open) {
+    if (targeted && !$("xic-dialog").open) {
       navigation.push();
       $("xic-dialog").showModal();
     }
@@ -706,6 +766,7 @@ window.XicUi = (() => {
     $("job-message").textContent =
       `${job.phase}${job.total ? ` · ${job.completed}/${job.total}` : ""} · ${job.message}`;
     $("xic-status").textContent = job.message;
+    $("inline-curve-status").textContent = job.message;
     status(job.message, job.status === "failed" ? "error" : "working");
   }
   async function pollJob() {
@@ -738,6 +799,16 @@ window.XicUi = (() => {
   // The embedded Inspector grows with its content so the page keeps one
   // scroll; its dialogs are placed inside the part of the frame on screen.
   const frame = $("inspector");
+  let inlineObserver;
+  $("inline-curve-frame").addEventListener("load", () => {
+    inlineObserver?.disconnect();
+    const inline = $("inline-curve-frame"), doc = inline.contentDocument;
+    if (!doc?.body) return;
+    doc.documentElement.dataset.theme = document.documentElement.dataset.theme || "light";
+    inlineObserver = new ResizeObserver(() => {inline.style.height = `${Math.max(420, Math.ceil(doc.body.getBoundingClientRect().height) + 8)}px`;});
+    inlineObserver.observe(doc.body);
+    placeFrameDialogs();
+  });
   window.addEventListener("message", event => {
     if (event.origin !== location.origin || event.source !== frame.contentWindow ||
         event.data?.type !== "xic-targeted-curves" ||
@@ -779,18 +850,16 @@ window.XicUi = (() => {
     }
   }
   function placeFrameDialogs() {
-    const doc = frameDocument();
-    if (!doc?.documentElement || frame.offsetParent === null) return;
     const topbar = document.querySelector(".topbar")?.offsetHeight || 0;
-    const rect = frame.getBoundingClientRect();
-    doc.documentElement.style.setProperty(
-      "--host-top",
-      `${Math.max(0, topbar - rect.top)}px`,
-    );
-    doc.documentElement.style.setProperty(
-      "--host-height",
-      `${window.innerHeight - topbar}px`,
-    );
+    for (const embedded of [frame, $("inline-curve-frame")]) {
+      const doc = embedded.contentDocument;
+      if (!doc?.documentElement || embedded.offsetParent === null) continue;
+      const rect = embedded.getBoundingClientRect();
+      const visibleTop = Math.max(topbar, rect.top);
+      const visibleHeight = Math.max(0, Math.min(window.innerHeight, rect.bottom) - visibleTop);
+      doc.documentElement.style.setProperty("--host-top", `${Math.max(0, visibleTop - rect.top)}px`);
+      doc.documentElement.style.setProperty("--host-height", `${visibleHeight}px`);
+    }
   }
   function fitFrame() {
     const doc = frameDocument();
@@ -998,7 +1067,7 @@ window.XicUi = (() => {
       $("source").value = review.page.source;
       renderPage(review.page);
       if (review.job) state.samples = new Set(review.job.sample_ids);
-      if (review.page.source_kind === "targeted_workbook") showTargetedOverview();
+      if (review.page.overview) showTargetedOverview();
       else if (review.detail) restoreDetail(review.detail);
       if (review.job) {
         state.job = review.job;
