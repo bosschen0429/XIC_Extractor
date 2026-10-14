@@ -1172,7 +1172,7 @@
         const line = el("p", undefined, "result-warning");
         line.append(
           ui.icon("alert"),
-          `ISTD ${warning.label}：只有 ${warning.detected} / ${warning.total} 個樣本偵測到。`,
+          `ISTD ${warning.label}：${warning.detected} / ${warning.total} 個樣本通過確認；未通過確認不代表沒有訊號。請到結果檢閱查看原因。`,
         );
         warnings.append(line);
       }

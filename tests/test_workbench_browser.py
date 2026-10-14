@@ -105,6 +105,7 @@ class FakeRuns:
     release: threading.Event = field(default_factory=threading.Event)
     output_dirs: list = field(default_factory=list)
     targeted_workbook: Path | None = None
+    istd_warnings: list = field(default_factory=list)
 
 
 @pytest.fixture
@@ -142,6 +143,7 @@ def fake_runs(monkeypatch, tmp_path):
                 ),
                 "published_paths": [str(artifact)],
                 "total_files": 1,
+                "istd_warnings": control.istd_warnings,
                 "targets": [{"label": "Browser target"}],
                 "sample_count": 1,
                 "candidate_counts": {"total": 1},
@@ -1046,6 +1048,16 @@ def test_drop_target_table_preview_cancel_and_confirm(workbench, tmp_path, exten
     )
     expect(page.locator("#target-import-status")).to_contain_text("不支援 .xls")
     expect(page.locator("#target-preview")).to_contain_text("analyte")
+
+
+def test_istd_warning_distinguishes_confirmation_from_signal(workbench, fake_runs):
+    fake_runs.istd_warnings = [{"label": "d4-N6-2HE-dA", "detected": 0, "total": 1}]
+    fake_runs.release.set()
+    _start(workbench, "targeted")
+    warning = workbench.locator(".result-warning")
+    expect(warning).to_contain_text("ISTD d4-N6-2HE-dA：0 / 1 個樣本通過確認")
+    expect(warning).to_contain_text("未通過確認不代表沒有訊號")
+    expect(warning).not_to_contain_text("個樣本偵測到")
 
 
 def test_analysis_review_uses_run_paths_even_after_batch_edit(

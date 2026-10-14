@@ -253,7 +253,7 @@ def _review_why(issue: str, row: dict[str, str], evidence: str) -> str:
     if "BACKFILL_ACCEPTED" in evidence and counted == "FALSE":
         return "已回填定位，身分未確認"
     if issue == "NL_FAIL":
-        return "MS2 未見 NL"
+        return "CID-NL 確認條件未通過（不代表沒有 fragment 訊號）"
     if issue == "NO_MS2":
         return "沒有 MS2"
     if issue == "NL_WARN":

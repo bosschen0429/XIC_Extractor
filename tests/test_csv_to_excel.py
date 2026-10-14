@@ -152,7 +152,7 @@ def test_review_queue_aggregates_diagnostics_by_sample_target() -> None:
     assert review_rows[0]["Sample"] == "Tumor_1"
     assert review_rows[0]["Target"] == "Analyte"
     assert review_rows[0]["Status"] == "Review"
-    assert review_rows[0]["Why"] == "MS2 未見 NL"
+    assert review_rows[0]["Why"] == "CID-NL 確認條件未通過（不代表沒有 fragment 訊號）"
     assert review_rows[0]["Action"] == "看所選 RT 附近的 MS2"
     assert review_rows[0]["Issue Count"] == "2"
     assert review_rows[0]["Evidence"] == "NL_FAIL; ANCHOR_MISMATCH"
