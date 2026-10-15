@@ -97,6 +97,9 @@ jobs:
         working-directory: repo-3.12-tests
         env:
           XIC_PLAYWRIGHT_CHANNEL: ""
+          # xdist owns parallelism; native BLAS pools must not multiply its
+          # worker budget and starve browser actions or subprocess deadlines.
+          OPENBLAS_NUM_THREADS: "1"
         run: |
           $venvScripts = (Resolve-Path .\.venv\Scripts).Path
           $env:PATH = "$venvScripts;$env:PATH"
