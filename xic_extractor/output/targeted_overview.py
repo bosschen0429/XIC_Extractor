@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from math import isfinite
 from statistics import median
 
-from xic_extractor.output.review_queue_model import _review_queue_rows
+from xic_extractor.output.review_queue_model import _decision_basis, _review_queue_rows
 
 # A detection outcome shared by at most this share of a target's recorded
 # decisions is the unusual one: it is where a wrong peak or a missed peak hides.
@@ -113,8 +113,9 @@ def focus_worklist(
 ) -> list[dict[str, object]]:
     """List the results the reader should look at first, in summary order.
 
-    A minority outcome without a saved review condition states the saved
-    decision against the majority; it is not a new scientific flag. Events with
+    A minority outcome without a saved review condition states the evidence
+    its saved decision rests on against the majority; it is not a new
+    scientific flag. Events with
     no delivered result (a RAW file that failed to open) stay visible here.
     """
     reviews = {(str(r["Sample"]), str(r["Target"])): r for r in review_rows}
@@ -136,10 +137,9 @@ def focus_worklist(
                     "Sample": sample,
                     "Target": target.label,
                     "Outcome": "已計入" if counted else "未計入",
-                    "Why": "此目標多數樣本未計入，此樣本計入"
-                    if counted
-                    else "此目標多數樣本計入，此樣本未計入",
-                    "Action": "在 XIC 確認是否抓錯峰"
+                    "Why": f"多數樣本{'未' if counted else ''}計入；"
+                    f"此樣本：{_decision_basis(record)}",
+                    "Action": "在 XIC 確認峰形成立，不是雜訊或鄰近峰"
                     if counted
                     else "在 XIC 確認是否漏抓",
                     "RT": record.get("RT", ""),

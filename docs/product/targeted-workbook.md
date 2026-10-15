@@ -41,8 +41,15 @@ change; they never change saved values or decisions.
   not for reading the batch.
 - `面積` projects every saved Area, including zero, ND and blank, independent of
   counted detection. It calculates no ratio.
-- Review reasons and suggested checks use plain domain words (RT, MS2, XIC, ISTD,
-  中性丟失) and point to the XIC view; internal codes stay out of the workbook.
+- A review reason names the evidence the saved decision rests on, and the
+  suggested check names the one thing that could overturn it. A counted analyte
+  rests on its MS1 peak at the paired ISTD position (or on observed neutral
+  loss); an uncounted one names the failed MS1 check or the missing identity
+  source. Under CID a missing neutral loss or MS2 scan is a given fact, so it is
+  never the reason or the check. An answer that follows from the evidence stays
+  quiet: a counted result without a saved concern is not listed.
+- Reasons and checks use plain domain words (RT, MS1, XIC, ISTD, 中性丟失) and
+  point to the XIC view; internal codes stay out of the workbook.
 
 ## Presentation rules
 
@@ -64,7 +71,7 @@ change; they never change saved values or decisions.
 
 - Writer: `xic_extractor.output.workbook_builder` and its `sheet_*` modules.
 - Focus and worklist: `xic_extractor.output.targeted_overview`.
-- Review wording: `xic_extractor.output.review_queue_model`.
+- Decisive evidence and review wording: `xic_extractor.output.review_queue_model`.
 - Saved-workbook reader: `xic_inspector.sources.targeted_workbook`
   ([XIC Inspector](xic-inspector.md#targeted-xlsx-review)).
 - Column meanings for users: [Targeted Output Reference](../user/targeted-output-reference.md).

@@ -103,9 +103,13 @@ def test_review_sheet_lists_only_results_that_differ_from_the_majority():
     assert first_rows == {"Common": 2}
 
 
-def test_minority_counted_without_saved_review_states_the_saved_decision():
+def test_minority_counted_without_saved_review_names_its_supporting_evidence():
     rows = [
-        r | {"Counted Detection": "TRUE" if r["SampleName"] == "S3" else "FALSE"}
+        r
+        | {
+            "Counted Detection": "TRUE" if r["SampleName"] == "S3" else "FALSE",
+            "Projection Support Reasons": "ms1_coherent;paired_istd_identity",
+        }
         for r in _saved_rows()
         if r["Target"] == "Common"
     ]
@@ -113,7 +117,9 @@ def test_minority_counted_without_saved_review_states_the_saved_decision():
     [record] = focus_worklist(overview, rows, [], [])
     assert record["Sample"] == "S3"
     assert record["Outcome"] == "已計入"
-    assert record["Why"] == "此目標多數樣本未計入，此樣本計入"
+    # The reader tests the evidence the saved count rests on.
+    assert record["Why"] == "多數樣本未計入；此樣本：MS1 峰形合格，位於配對 ISTD 位置"
+    assert record["Action"] == "在 XIC 確認峰形成立，不是雜訊或鄰近峰"
     assert record["Area"] == "13.5"
 
 

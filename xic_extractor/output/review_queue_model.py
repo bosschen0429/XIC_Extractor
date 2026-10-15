@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 _INFORMATIONAL_EVENTS = {
     "MULTI_PEAK",
@@ -160,12 +160,67 @@ def _dedupe_text(values: Iterable[str]) -> list[str]:
     return deduped
 
 
-def _unqualified_ms1_shape(row: dict[str, str]) -> bool:
+_MISSING_DIRECT_NL_NOT_COUNTED = frozenset(
+    {
+        "cid_nl_method_not_supported",
+        "missing_ms2_policy_not_counted",
+        "istd_nl_fail_without_dropout_support",
+    }
+)
+_MISSING_DIRECT_NL_REVIEW = frozenset(
+    {
+        "plausible_nl_dropout_review",
+        "missing_ms2_not_observed",
+        "missing_nl_support_review",
+    }
+)
+
+
+def _reasons(row: Mapping[str, object], field: str) -> set[str]:
+    return set(str(row.get(field) or "").replace(";", " ").split())
+
+
+def _decision_basis(row: Mapping[str, object]) -> str:
+    """Name the evidence the saved decision rests on, for a reader to test.
+
+    Under CID, a missing neutral loss is a given fact rather than evidence to
+    revisit, so it is never named here; the MS1 peak and its identity are.
+    """
+    support = _reasons(row, "Projection Support Reasons")
+    not_counted = _reasons(row, "Projection Not Counted Reasons")
+    if str(row.get("Counted Detection", "")).upper() == "TRUE":
+        if "cross_sample_backfill_identity" in support:
+            return "由同批樣本回填確認的峰"
+        if "paired_istd_identity" in support:
+            return "MS1 峰形合格，位於配對 ISTD 位置"
+        nl = str(row.get("NL", ""))
+        if nl == "OK" or nl.startswith("WARN_"):
+            return "MS2 見到預期的中性丟失"
+        return "MS1 峰形合格"
+    if "missing_positive_ms1_peak" in not_counted:
+        return "沒有 MS1 峰"
+    if row.get("Projection Reason") == "analyte_peak_off_paired_istd_position":
+        return "峰不在配對 ISTD 位置"
+    if _unqualified_ms1_shape(row):
+        review = _reasons(row, "Projection Review Reasons")
+        shoulder = "physical_shoulder_overlap" in review
+        failed = "肩峰／重疊" if shoulder else "形狀不連續或不完整"
+        return f"MS1 峰形未通過：{failed}"
+    if not_counted and not_counted <= _MISSING_DIRECT_NL_NOT_COUNTED:
+        if str(row.get("Role", "")).upper() == "ISTD":
+            return "ISTD 峰沒有可確認身分的依據"
+        if row.get("ISTD Pair"):
+            return "配對 ISTD 在此樣本未計入，無法確認身分"
+        return "未設定配對 ISTD，無法確認身分"
+    return "證據不足以計入"
+
+
+def _unqualified_ms1_shape(row: Mapping[str, object]) -> bool:
     """Present saved peak qualification, without re-evaluating the trace."""
-    support = set(row.get("Projection Support Reasons", "").replace(";", " ").split())
-    review = set(row.get("Projection Review Reasons", "").replace(";", " ").split())
+    support = _reasons(row, "Projection Support Reasons")
+    review = _reasons(row, "Projection Review Reasons")
     return (
-        row.get("Counted Detection", "").upper() == "FALSE"
+        str(row.get("Counted Detection", "")).upper() == "FALSE"
         and "ms1_peak_present" in support
         and "ms1_coherent" not in support
         and "cross_sample_backfill_localization" not in support
@@ -279,14 +334,12 @@ def _review_why(issue: str, row: dict[str, str], evidence: str) -> str:
         return "回填找不到唯一的峰"
     if "BACKFILL_ACCEPTED" in evidence and counted == "FALSE":
         return "已回填定位，身分未確認"
-    if _unqualified_ms1_shape(row):
-        detail = (
-            "（肩峰／重疊）"
-            if "physical_shoulder_overlap" in row.get("Projection Review Reasons", "")
-            else ""
-        )
-        ms2 = "；另無 MS2" if row.get("NL") == "NO_MS2" else ""
-        return f"MS1 峰形品質不足{detail}{ms2}"
+    if _has_product_projection(row):
+        if counted == "FALSE":
+            return _decision_basis(row)
+        review = _reasons(row, "Projection Review Reasons")
+        if review and review <= _MISSING_DIRECT_NL_REVIEW:
+            return _decision_basis(row)
     if issue == "NL_FAIL":
         return "MS2 未見預期的中性丟失"
     if issue == "NO_MS2":
@@ -325,6 +378,36 @@ def _has_product_projection(row: dict[str, str]) -> bool:
     )
 
 
+def _projection_action(issue: str, row: dict[str, str]) -> str:
+    if issue == "PRODUCT_EXCLUDED":
+        if "file_error" in row.get("Projection Exclusion Reasons", ""):
+            return "確認 RAW 檔路徑與能否開啟"
+        return "核對 Targets 的樣本適用範圍"
+    if issue in {"PROJECTION_CONFLICT", "PRODUCT_AMBIGUOUS"}:
+        return "在 XIC 確認所選峰是不是目標"
+    review = _reasons(row, "Projection Review Reasons")
+    if row.get("Counted Detection", "").upper() == "TRUE":
+        if "physical_shoulder_overlap" in review:
+            return "在 XIC 看肩峰是否影響積分範圍"
+        if "trace_morphology_review" in review:
+            return "在 XIC 看峰形是否完整"
+        if "targeted_rt_review" in review:
+            return "在 XIC 比對 RT 與配對 ISTD"
+        return "在 XIC 確認峰形成立，不是雜訊或鄰近峰"
+    basis = _decision_basis(row)
+    if basis.startswith("MS1 峰形未通過"):
+        return "在 XIC 看峰形為什麼未通過"
+    if basis.startswith("配對 ISTD"):
+        return "先看配對 ISTD 在此樣本的結果"
+    if basis.startswith("ISTD 峰"):
+        return "在 XIC 比較同批樣本的 ISTD 峰"
+    if basis.startswith("未設定配對 ISTD"):
+        return "在 XIC 判斷這個峰是否就是目標"
+    if basis == "沒有 MS1 峰":
+        return "在 XIC 確認 RT 範圍內是否有峰"
+    return "在 XIC 確認此峰"
+
+
 def _suggested_action(issue: str, row: dict[str, str], evidence: str) -> str:
     if "PAIRED_POSITION_SUPPORT_REJECTED" in evidence:
         return "在 XIC 確認內標附近有真實的訊號點，而不只是平滑線的起伏"
@@ -332,8 +415,8 @@ def _suggested_action(issue: str, row: dict[str, str], evidence: str) -> str:
         return "在 XIC 比對此峰與配對 ISTD 的 RT 差，確認不是其他物質"
     if "BACKFILL" in evidence:
         return "在 XIC 比較同批樣本的峰位置與峰形"
-    if _unqualified_ms1_shape(row):
-        return "在 XIC 看峰形是否有肩峰或重疊；RT 對得上不代表峰形合格"
+    if _has_product_projection(row):
+        return _projection_action(issue, row)
     if issue in {"NL_FAIL", "NL_WARN"}:
         return "看所選 RT 附近的 MS2 是否有預期的中性丟失"
     if issue == "NO_MS2":

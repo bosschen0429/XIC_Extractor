@@ -296,6 +296,12 @@ def test_run_writes_one_review_table_and_method_context(tmp_path: Path) -> None:
             product_state="not_counted",
         ),
     ]
+    rows[1].update(
+        {
+            "Projection Support Reasons": "ms1_peak_present;ms1_coherent",
+            "Projection Not Counted Reasons": "missing_ms2_policy_not_counted",
+        }
+    )
     _write_csv(config.output_csv.with_name("xic_results_long.csv"), rows)
     _write_empty_diagnostics_csv(config.diagnostics_csv)
     wb = load_workbook(run(config, [_target("Analyte")]))
@@ -314,7 +320,7 @@ def test_run_writes_one_review_table_and_method_context(tmp_path: Path) -> None:
         ("Sample A", 123, "TRUE"),
         ("Sample B", 456, "FALSE"),
     ]
-    assert records[1]["Review Reason"].replace("\n", "") == "沒有 MS2"
+    assert records[1]["Review Reason"] == "未設定配對 ISTD，無法確認身分"
     assert {row[0]: row[2] for row in wb["Run Metadata"].values}[
         "targeted_workbook_layout_version"
     ] == 2
@@ -322,15 +328,41 @@ def test_run_writes_one_review_table_and_method_context(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "qualification", ["", "ms1_coherent", "cross_sample_backfill_localization"]
+    ("qualification", "istd_pair", "why", "action"),
+    [
+        # The MS1 shape failed, so the paired ISTD could not lend identity.
+        ("", "", "MS1 峰形未通過：肩峰／重疊", "在 XIC 看峰形為什麼未通過"),
+        # A qualified MS1 peak lacks only an identity source.
+        (
+            "ms1_coherent",
+            "",
+            "未設定配對 ISTD，無法確認身分",
+            "在 XIC 判斷這個峰是否就是目標",
+        ),
+        (
+            "ms1_coherent",
+            "d3-8-oxodG",
+            "配對 ISTD 在此樣本未計入，無法確認身分",
+            "先看配對 ISTD 在此樣本的結果",
+        ),
+        (
+            "cross_sample_backfill_localization",
+            "",
+            "未設定配對 ISTD，無法確認身分",
+            "在 XIC 判斷這個峰是否就是目標",
+        ),
+    ],
 )
-def test_review_prioritizes_unqualified_ms1_shape_over_missing_ms2(qualification):
+def test_review_names_the_decisive_ms1_evidence_not_missing_ms2(
+    qualification, istd_pair, why, action
+):
     row = _long_row(
         "TumorBC2312_DNA",
         "8-oxodG",
         "16.4936",
         "513298",
         "NO_MS2",
+        istd_pair=istd_pair,
         counted_detection="FALSE",
         product_state="not_counted",
     )
@@ -344,6 +376,7 @@ def test_review_prioritizes_unqualified_ms1_shape_over_missing_ms2(qualification
                 "missing_ms2_not_observed;physical_shoulder_overlap;"
                 "trace_morphology_review"
             ),
+            "Projection Not Counted Reasons": "missing_ms2_policy_not_counted",
         }
     )
     queue = _review_queue_rows([row], [])
@@ -353,18 +386,43 @@ def test_review_prioritizes_unqualified_ms1_shape_over_missing_ms2(qualification
     assert saved["RT"] == 16.4936
     assert saved["Area"] == 513298
     assert saved["Counted Detection"] == "FALSE"
-    if qualification:
-        assert saved["Review Reason"].replace("\n", "") == "沒有 MS2"
-    else:
-        assert (
-            saved["Review Reason"].replace("\n", "")
-            == "MS1 峰形品質不足（肩峰／重疊）；另無 MS2"
-        )
-        assert (
-            queue[0]["Action"]
-            == "在 XIC 看峰形是否有肩峰或重疊；RT 對得上不代表峰形合格"
-        )
+    assert saved["Review Reason"] == why
+    assert queue[0]["Action"] == action
+    # Under CID a missing neutral loss is a given fact, not the thing to check.
+    assert "MS2" not in why + action
     wb.close()
+
+
+@pytest.mark.parametrize(
+    ("review_reason", "action"),
+    [
+        ("physical_shoulder_overlap", "在 XIC 看肩峰是否影響積分範圍"),
+        ("trace_morphology_review", "在 XIC 看峰形是否完整"),
+        ("targeted_rt_review", "在 XIC 比對 RT 與配對 ISTD"),
+    ],
+)
+def test_counted_review_points_at_the_concern_that_could_overturn_it(
+    review_reason, action
+):
+    row = _long_row(
+        "Sample A",
+        "Analyte",
+        "9.1",
+        "123",
+        "NO_MS2",
+        counted_detection="TRUE",
+        product_state="detected_flagged",
+    )
+    row.update(
+        {
+            "Review State": "flagged",
+            "Projection Support Reasons": "ms1_coherent;paired_istd_identity",
+            "Projection Review Reasons": review_reason,
+        }
+    )
+    [review] = _review_queue_rows([row], [])
+    assert review["Action"] == action
+    assert "MS2" not in review["Why"] + review["Action"]
 
 
 def test_run_blocks_product_long_results_without_projection_fields(
