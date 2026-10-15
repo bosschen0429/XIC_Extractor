@@ -8,6 +8,7 @@ import mimetypes
 import os
 import re
 import secrets
+import socket
 import sqlite3
 import string
 import threading
@@ -102,6 +103,12 @@ def _browse(values: dict) -> dict:
             key=lambda entry: (not entry["directory"], entry["name"].casefold()),
         ),
     }
+
+
+class _WorkbenchHTTPServer(ThreadingHTTPServer):
+    # Browsers open parallel connections for the page's assets. The Python 3.12
+    # default backlog of five can reject that burst before the accept loop runs.
+    request_queue_size = socket.SOMAXCONN
 
 
 def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTPServer:
@@ -329,6 +336,6 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
                 return
             self._send(200, result)
 
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server = _WorkbenchHTTPServer(("127.0.0.1", port), Handler)
     server.daemon_threads = True
     return server

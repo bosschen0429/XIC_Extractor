@@ -98,6 +98,30 @@ def workbench(browser, config_dir, tmp_path):
         assert not errors, "Browser errors: " + "\n".join(errors)
 
 
+def test_analysis_poll_waits_for_previous_response(workbench):
+    page = workbench
+    pending = []
+    page.route("**/api/analysis", lambda route: pending.append(route))
+    page.clock.install()
+    try:
+        with page.expect_request("**/api/analysis"):
+            page.reload()
+            expect(page.locator("body")).not_to_have_class("booting")
+        # Several polling intervals elapse while the first response is held.
+        # A slow local server must not accumulate overlapping status requests.
+        page.clock.run_for(3000)
+        assert len(pending) == 1
+        with page.expect_response("**/api/analysis") as response:
+            pending.pop().continue_()
+        response.value.finished()
+        with page.expect_request("**/api/analysis"):
+            page.clock.run_for(1500)
+    finally:
+        for route in pending:
+            route.continue_()
+        page.unroute("**/api/analysis")
+
+
 @dataclass
 class FakeRuns:
     """Gate completion on an event so polling/progress assertions cannot race."""
