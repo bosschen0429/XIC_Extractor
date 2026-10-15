@@ -916,16 +916,22 @@ def test_targeted_review_marks_the_rare_detection_and_opens_it_in_place(
     book["Targets"]["E2"] = book["Targets"]["F2"] = 9.25
     results = book["XIC Results"]
     nl_column = results.max_column + 1
-    results.cell(1, nl_column, "NL Evidence")
+    results.cell(1, nl_column, "NL")
+    results.cell(1, nl_column + 1, "NL Evidence")
     for row in range(2, results.max_row + 1):
-        results.cell(row, nl_column, "所選峰沒有對應的 MS2")
+        # Only S1's Analyte (row 2) observed its neutral loss.
+        observed = row == 2
+        results.cell(row, nl_column, "OK" if observed else "NO_MS2")
+        results.cell(
+            row, nl_column + 1, "已觀察到" if observed else "所選峰沒有對應的 MS2"
+        )
     book.save(workbook)
     book.close()
     _view(page, "review")
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     overview = page.locator("#targeted-overview")
-    expect(overview.locator("h2")).to_have_text("先看 1 筆與多數不同的結果")
+    expect(overview.locator("h2")).to_have_text("先看 1 筆結果")
     overview.locator("td button", has_text="Analyte").click()
     expect(page.locator("#item-list")).to_be_hidden()
     expect(page.locator("#target-id")).to_be_visible()
@@ -949,6 +955,12 @@ def test_targeted_review_marks_the_rare_detection_and_opens_it_in_place(
     expect(detail.locator(".tgt-raw")).to_contain_text("NL 證據：所選峰沒有對應的 MS2")
     expect(detail).not_to_contain_text("配對 ISTD（ISTD）")
     expect(detail).not_to_contain_text("檢閱註記")
+    # An observed neutral loss supports the result, so it reads up front.
+    rows.nth(0).locator(".tgt-sample").click()
+    observed = frame.locator(".tgt-table tbody tr:nth-child(2)")
+    expect(observed).to_have_class("tgt-detail-row")
+    expect(observed.locator(".tgt-facts")).to_contain_text("NL 證據")
+    expect(observed.locator(".tgt-facts")).to_contain_text("已觀察到")
     page.locator("#target-id").select_option("")
     expect(page.locator("#item-list")).to_be_visible()
     expect(page.locator("#review")).to_have_class("review-grid")

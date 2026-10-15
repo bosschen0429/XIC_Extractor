@@ -12,7 +12,7 @@ from xic_extractor.output.detection import (
     MissingTargetedProductProjectionError,
     is_accepted_row_detection,
 )
-from xic_extractor.output.review_queue_model import _review_queue_rows
+from xic_extractor.output.review_queue_model import review_queue_rows
 from xic_extractor.output.schema import TARGETED_WORKBOOK_LAYOUT_VERSION
 from xic_extractor.output.sheet_area_matrix import build_area_matrix_sheet
 from xic_extractor.output.sheet_diagnostic_events import build_diagnostic_events_sheet
@@ -48,7 +48,7 @@ def write_workbook_from_rows(
 ) -> Path:
     if require_projection:
         _require_product_projection(rows)
-    review_rows = _review_queue_rows(rows, diagnostics)
+    review_rows = review_queue_rows(rows, diagnostics)
     overview = summarize_targeted_results(rows, review_rows)
     worklist = focus_worklist(overview, rows, review_rows, diagnostics)
     result_rows = {
@@ -67,6 +67,7 @@ def write_workbook_from_rows(
         summary,
         overview,
         pairs={target.label: target.istd_pair for target in targets},
+        worklist_size=len(worklist),
         review_rows_by_target=review_rows_by_target,
     )
     build_area_matrix_sheet(wb.create_sheet("面積"), rows)

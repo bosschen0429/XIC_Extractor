@@ -12,10 +12,22 @@ from xic_extractor.output.workbook_styles import (
 )
 
 FIELD_GUIDE: tuple[tuple[str, str, str, str], ...] = (
+    ("摘要", "目標 / 類型 / 配對 ISTD", "目標名稱、ISTD 或 Analyte、配對的 ISTD。", ""),
+    ("摘要", "計入 / 全部", "已計入的結果數與已保存的結果數。", ""),
+    (
+        "摘要",
+        "需先看 / 說明",
+        "該目標要先看的結果數與要確認的事；點數字跳到需檢查。",
+        "",
+    ),
+    ("需檢查", "目標 / 樣本", "要先看的結果；點樣本跳到 XIC Results 的那一列。", ""),
+    ("需檢查", "結果", "已保存的判定：已計入或未計入。", ""),
+    ("需檢查", "原因 / 建議檢查", "判定依據的證據，以及能推翻它的那一項檢查。", ""),
+    ("需檢查", "RT (min) / Area", "所選峰的頂點保留時間與面積。", "min / counts·s"),
     (
         "面積",
-        "（每個目標一欄）",
-        "已保存峰面積；analyte 後面接它配對的 ISTD。"
+        "樣本 / （每個目標一欄）",
+        "已保存峰面積；共用同一 ISTD 的 analyte 排在一起，後面接該 ISTD。"
         "灰字＝未計入，數值保留；ND＝未偵測。",
         "counts·s",
     ),
@@ -39,10 +51,14 @@ FIELD_GUIDE: tuple[tuple[str, str, str, str], ...] = (
         "min",
     ),
     ("XIC Results", "NL Evidence / Reason", "中性丟失觀察與完整判定說明。", ""),
+    ("XIC Results", "Review Evidence", "檢閱註記的來源事件代碼，供追查用。", ""),
     ("XIC Results", "Role / Group", "ISTD 或 Analyte；依樣本名稱判斷的樣本組別。", ""),
     ("XIC Results", "NL / Confidence", "中性丟失摘要與信心分級，供追查用。", ""),
     ("XIC Results", "Int / PeakWidth", "原始峰頂強度與峰寬。", "counts / min"),
+    ("Targets", "Label / Role", "目標名稱；ISTD 或 Analyte。", ""),
+    ("Targets", "ISTD Pair", "analyte 配對的 ISTD；空白＝未設定。", ""),
     ("Targets", "m/z", "目標前驅離子質荷比。", "m/z"),
+    ("Targets", "ppm tol", "擷取 XIC 的質量容許誤差。", "ppm"),
     ("Targets", "RT min / RT max", "RT 定位提示範圍，不是身分確認的硬界線。", "min"),
     ("Targets", "NL (Da)", "設定的中性丟失質量；空白＝未設定，不是測得零。", "Da"),
     (
@@ -51,8 +67,19 @@ FIELD_GUIDE: tuple[tuple[str, str, str, str], ...] = (
         "目標 m/z 減去中性丟失質量的設定參考值，不是實測產物。",
         "m/z",
     ),
+    (
+        "Targets",
+        "NL ppm warn / NL ppm max",
+        "中性丟失質量偏差的警示門檻與上限。",
+        "ppm",
+    ),
     ("Targets", "Sample applicability", "目標適用的樣本範圍；空白＝不限制。", ""),
-    ("Run Metadata", "Key / Value", "分析設定與版本，供比對兩次執行是否相同。", ""),
+    (
+        "Run Metadata",
+        "Key / 說明 / Value",
+        "分析設定與版本，供比對兩次執行是否相同。",
+        "",
+    ),
 )
 _HEADERS = ("工作表", "欄位", "意思", "單位")
 

@@ -84,8 +84,8 @@ completed workbook.
 | Workbook sheet | Purpose |
 | --- | --- |
 | `摘要` | First view: batch conclusion and one table of targets with what to look at first |
-| `需檢查` (when needed) | The results that differ from their target's majority, with reason and suggested check |
-| `面積` | Saved Area per sample and target; each analyte beside its paired ISTD |
+| `需檢查` (when needed) | The results to look at first (a target's minority outcome, or its review notes when there is no clear majority), with reason and suggested check |
+| `面積` | Saved Area per sample and target; analytes sharing an ISTD sit together, followed by that ISTD |
 | `XIC Results` | Sample-target Area, RT, counted status and review reason; expand secondary columns for evidence |
 | `Targets` | Supporting reference: snapshot of the target table used for the run |
 | `Run Metadata` | Supporting reference: method settings and provenance |

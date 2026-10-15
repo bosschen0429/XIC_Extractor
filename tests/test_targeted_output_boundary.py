@@ -616,9 +616,8 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
         assert (
             long_rows[sample_name]["Projection Reason"] == projection.projection_reason
         )
-        assert workbook_rows[sample_name]["Review"] == (
-            "Review" if nl_status == "NL_FAIL" else "Check"
-        )
+        # Under CID the neutral-loss status does not set the review level.
+        assert workbook_rows[sample_name]["Review"] == "Review"
         assert workbook_rows[sample_name]["Review Reason"]
         for field in ("Int", "IntSmoothed"):
             assert workbook_rows[sample_name][field] == float(
@@ -2093,9 +2092,9 @@ def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
         and "insufficient_original_xic_support" in record.reason
         for record in execution.active_output.diagnostics
     )
-    from xic_extractor.output.review_queue_model import _review_queue_rows
+    from xic_extractor.output.review_queue_model import review_queue_rows
 
-    queue = _review_queue_rows(
+    queue = review_queue_rows(
         _run_output_to_long_rows(execution.active_output, [analyte, istd]), []
     )
     assert not any(row["Target"] == "Analyte" for row in queue)

@@ -2,15 +2,15 @@
 
 The normal completed Targeted run delivers one `xic_results_YYYYMMDD_HHMM.xlsx`
 inside its run directory. It opens on `摘要`; `需檢查` follows when some results
-differ from their target's majority, then `面積`, `XIC Results`, `Targets`,
+need a look first, then `面積`, `XIC Results`, `Targets`,
 `Run Metadata` and `欄位說明`.
 Inspector reads this layout. Opening a workbook for review does not modify it or create sidecar files.
 The design rules are in [Targeted Workbook](../product/targeted-workbook.md).
 
 ## 摘要: start here
 
-The first line is the conclusion: how many results to look at first, or that
-every target agrees. The second line gives samples, targets, and Analyte and
+The first line is the conclusion: how many rows `需檢查` lists, or that none
+needs a look first. The second line gives samples, targets, and Analyte and
 ISTD counted totals. One table lists every target with its role, paired ISTD,
 counted and total results, the 先看 count and what to confirm.
 
@@ -29,9 +29,9 @@ workbook in the workbench to see the XIC for each row.
 
 ## 面積
 
-Saved Area per sample (rows, in injection order) and target (columns). Each
-analyte column is followed by its paired ISTD, so a ratio is one formula, for
-example `=B5/C5`. Grey text is a value the saved decision did not count; it is
+Saved Area per sample (rows, in injection order) and target (columns).
+Analytes sharing an ISTD sit together, followed by that ISTD, so a ratio is one
+formula, for example `=B5/D5`. Grey text is a value the saved decision did not count; it is
 kept so the reader can judge it. `ND` is text and is skipped by `AVERAGE`.
 
 ## XIC Results

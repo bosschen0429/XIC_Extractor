@@ -13,7 +13,7 @@ inspection belongs to the workbench XIC view, not the XLSX.
 | --- | --- | --- |
 | `摘要` | One conclusion line, one batch fact line, one table of targets | Human (landing sheet) |
 | `需檢查` | Only the results counted in 先看, one row each; absent when there are none | Human |
-| `面積` | Saved Area per sample × target; each analyte followed by its paired ISTD | Human, in-sheet calculation |
+| `面積` | Saved Area per sample × target; analytes sharing an ISTD sit together, followed by that ISTD | Human, in-sheet calculation |
 | `XIC Results` | One row per sample-target result | Inspector, ISTD reference, human |
 | `Targets` | Admitted target intent | Inspector, human |
 | `Run Metadata` | `Key`, `說明`, `Value` | Inspector, workbook compare |
@@ -30,7 +30,8 @@ change; they never change saved values or decisions.
 
 - `需先看` is the minority outcome of each target (at most 20% of recorded
   decisions), or, without a clear majority, the targets' saved review conditions.
-  The summary, the worklist and the workbench count the same rows.
+  The summary target table, the worklist and the workbench count the same result
+  rows; the summary headline counts every `需檢查` row.
 - A minority outcome without a saved review condition states the saved decision
   against the majority. It adds no scientific flag.
 - A diagnostic event without a delivered result (a RAW file that failed to open)
@@ -46,8 +47,9 @@ change; they never change saved values or decisions.
   rests on its MS1 peak at the paired ISTD position (or on observed neutral
   loss); an uncounted one names the failed MS1 check or the missing identity
   source. Under CID a missing neutral loss or MS2 scan is a given fact, so it is
-  never the reason or the check. An answer that follows from the evidence stays
-  quiet: a counted result without a saved concern is not listed.
+  never the reason, the check or the review level. An answer that follows from
+  the evidence stays quiet: a counted result without a saved concern (a missing
+  neutral loss is none) is not listed.
 - `XIC Results` `Reason` (the workbench's 原始選峰紀錄) states the same basis
   first, then other saved concerns; a missing neutral loss is not listed. The
   workbench shows `NL Evidence` up front only when a neutral loss was observed.

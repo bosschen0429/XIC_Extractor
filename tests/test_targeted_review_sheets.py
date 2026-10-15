@@ -85,6 +85,52 @@ def test_area_matrix_keeps_saved_values_beside_the_paired_istd():
     assert all(cell.data_type != "f" for row in sheet for cell in row)
 
 
+def test_area_matrix_groups_analytes_that_share_an_istd():
+    rows = [
+        {"SampleName": "S1", "Target": target, "Role": role, "ISTD Pair": pair}
+        for target, role, pair in [
+            ("A", "Analyte", "IS"),
+            ("Lone", "Analyte", ""),
+            ("IS", "ISTD", ""),
+            ("B", "Analyte", "IS"),
+        ]
+    ]
+    sheet = Workbook().active
+    build_area_matrix_sheet(sheet, rows)
+    # Each analyte sharing the ISTD sits beside the others, then the ISTD.
+    assert [sheet.cell(4, column).value for column in range(2, 6)] == [
+        "A",
+        "B",
+        "IS",
+        "Lone",
+    ]
+
+
+def test_summary_headline_counts_events_without_a_result():
+    rows = [
+        {"SampleName": "S1", "Target": "Common", "Counted Detection": "TRUE"},
+    ]
+    failed = {
+        "SampleName": "S2",
+        "Target": "Common",
+        "Issue": "FILE_ERROR",
+        "Reason": "RAW file could not be opened",
+    }
+    overview = summarize_targeted_results(rows, [])
+    worklist = focus_worklist(overview, rows, [], [failed])
+    sheet = Workbook().active
+    build_overview_sheet(
+        sheet,
+        overview,
+        pairs={},
+        worklist_size=len(worklist),
+        review_rows_by_target={},
+    )
+    # The failed RAW file is on 需檢查, so the headline cannot say "none".
+    assert len(worklist) == 1
+    assert sheet["A1"].value == "先看 1 筆結果"
+
+
 def test_review_sheet_lists_only_results_that_differ_from_the_majority():
     rows = _saved_rows()
     reviews = [
@@ -143,9 +189,11 @@ def test_summary_names_each_focus_kind_and_links_to_the_worklist():
         sheet,
         overview,
         pairs={},
+        worklist_size=2,
         review_rows_by_target={"Rare": 2, "Split": 3},
     )
-    assert sheet["A1"].value == "先看 2 筆與多數不同的結果"
+    # The rows read first include review notes, not only minority outcomes.
+    assert sheet["A1"].value == "先看 2 筆結果"
     table = {
         sheet.cell(row, 1).value: (sheet.cell(row, 6).value, sheet.cell(row, 7).value)
         for row in range(5, 8)

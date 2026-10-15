@@ -379,11 +379,11 @@ window.XicUi = (() => {
     const heading = node("div", undefined, "overview-heading");
     heading.append(node("span", "整批結果總覽", "eyebrow"));
     const conclusion = !summary.result_count ? "尚無已保存結果"
-      : summary.focus_count ? `先看 ${count(summary.focus_count)} 筆與多數不同的結果`
-        : "各目標結果一致，沒有與多數不同的結果";
+      : summary.focus_count ? `先看 ${count(summary.focus_count)} 筆結果`
+        : "沒有需要先看的結果";
     heading.append(node("h2", conclusion));
     const scope = `${count(summary.sample_count)} 個樣本 · ${count(summary.targets.length)} 個目標`
-      + (summary.focus_count ? ` · 與多數不同的結果分布在 ${count(summary.focus_target_count)} 個目標` : "");
+      + (summary.focus_count ? ` · 分布在 ${count(summary.focus_target_count)} 個目標` : "");
     heading.append(node("p", scope, "subtle"));
     host.append(heading);
     const metrics = node("div", undefined, "overview-metrics");

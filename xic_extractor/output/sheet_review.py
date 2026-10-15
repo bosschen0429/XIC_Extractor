@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
+from openpyxl.utils import get_column_letter
+
 from xic_extractor.output.workbook_styles import (
     INK,
     LINE_HEIGHT,
@@ -76,6 +78,6 @@ def build_review_sheet(
     else:
         ws.cell(2, 1, "沒有需要先看的結果。").font = _font(MUTED)
     for column, (_, _, width) in enumerate(_COLUMNS, 1):
-        ws.column_dimensions[chr(64 + column)].width = width
+        ws.column_dimensions[get_column_letter(column)].width = width
     ws.freeze_panes = "C2"
     return first_rows

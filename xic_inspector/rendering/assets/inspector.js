@@ -238,7 +238,8 @@
         const panel = element('div', undefined, 'tgt-evidence');
         // An observed neutral loss supports the result; its absence under CID is a
         // given fact, so it stays with the selection record instead of up front.
-        const nlObserved = /^(已觀察到|Observed)/.test(record['NL Evidence'] || '');
+        const nl = String(record.NL || '');
+        const nlObserved = nl === 'OK' || nl.startsWith('WARN');
         const pairs = [['積分範圍', range(record.PeakStart, record.PeakEnd)]];
         if (nlObserved) pairs.push(['NL 證據', record['NL Evidence']]);
         panel.append(facts(pairs));

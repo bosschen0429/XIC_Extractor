@@ -22,8 +22,9 @@ _HEADER_ROW = 4
 def build_area_matrix_sheet(ws, rows) -> None:
     """Project saved values only; no filtering by counted outcome or ratios.
 
-    Each analyte column is followed by its paired ISTD so a ratio is one
-    formula away. Grey text repeats what `Counted Detection` already records.
+    Analytes sharing an ISTD sit together, followed by that ISTD, so each
+    ratio is one formula away. Grey text repeats what `Counted Detection`
+    already records.
     """
     samples = list(dict.fromkeys(row["SampleName"] for row in rows))
     records = {(row["SampleName"], row["Target"]): row for row in rows}
@@ -77,10 +78,16 @@ def _column_order(rows) -> list[str]:
     pairs = {row["Target"]: row.get("ISTD Pair", "") for row in rows}
     order: list[str] = []
     for label in targets:
-        if roles[label] == "ISTD":
+        if roles[label] == "ISTD" or label in order:
             continue
-        order.append(label)
         pair = pairs[label]
-        if pair in roles and pair not in order:
-            order.append(pair)
+        if pair not in roles:
+            order.append(label)
+            continue
+        order.extend(
+            other
+            for other in targets
+            if roles[other] != "ISTD" and pairs[other] == pair
+        )
+        order.append(pair)
     return order + [label for label in targets if label not in order]

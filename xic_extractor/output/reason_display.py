@@ -8,6 +8,8 @@ rather than evidence to revisit; it is never offered as the reason.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import Literal
 
 MISSING_DIRECT_NL_NOT_COUNTED = frozenset(
     {
@@ -25,6 +27,9 @@ MISSING_DIRECT_NL_REVIEW = frozenset(
     }
 )
 _SHAPE_REVIEW = frozenset({"physical_shoulder_overlap", "trace_morphology_review"})
+# The saved support reasons that let a paired ISTD lend its identity to a peak.
+_COHERENT_MS1_PEAK = frozenset({"ms1_peak_present", "ms1_coherent", "trace_coherent"})
+_BACKFILL_LOCALIZATION = "cross_sample_backfill_localization"
 # Restates that no decisive evidence exists; the decision basis already says so.
 _RESTATED_REVIEW = frozenset({"insufficient_typed_evidence"})
 
@@ -64,56 +69,101 @@ def reasons(row: Mapping[str, object], field: str) -> set[str]:
     return set(str(row.get(field) or "").replace(";", " ").split())
 
 
-def unqualified_ms1_shape(row: Mapping[str, object]) -> bool:
-    """Present saved peak qualification, without re-evaluating the trace."""
-    support = reasons(row, "Projection Support Reasons")
-    return (
-        str(row.get("Counted Detection", "")).upper() == "FALSE"
-        and "ms1_peak_present" in support
-        and "ms1_coherent" not in support
-        and "cross_sample_backfill_localization" not in support
-        and bool(reasons(row, "Projection Review Reasons") & _SHAPE_REVIEW)
-    )
+BasisKind = Literal[
+    "backfill_identity",
+    "paired_istd_identity",
+    "nl_observed",
+    "ms1_coherent",
+    "rt_support",
+    "nl_not_required",
+    "ms1_peak",
+    "no_ms1_peak",
+    "off_paired_istd_position",
+    "ms1_shape_failed",
+    "istd_without_identity",
+    "paired_istd_not_counted",
+    "no_paired_istd",
+    "other_not_counted",
+    "insufficient_evidence",
+]
+# Bases that already judge the MS1 peak shape, so a shape review restates them.
+_SHAPE_BASES: frozenset[BasisKind] = frozenset(
+    {"paired_istd_identity", "ms1_coherent", "ms1_shape_failed"}
+)
 
 
-def decision_basis(row: Mapping[str, object]) -> str:
+@dataclass(frozen=True)
+class DecisionBasis:
+    """The evidence a saved decision rests on; consumers branch on `kind`."""
+
+    kind: BasisKind
+    text: str
+
+
+def decision_basis(row: Mapping[str, object]) -> DecisionBasis:
     """Name the evidence the saved decision rests on, for a reader to test."""
     support = reasons(row, "Projection Support Reasons")
     not_counted = reasons(row, "Projection Not Counted Reasons")
     if str(row.get("Counted Detection", "")).upper() == "TRUE":
         if "cross_sample_backfill_identity" in support:
-            return "由同批樣本回填確認的峰"
+            return DecisionBasis("backfill_identity", "由同批樣本回填確認的峰")
         if "paired_istd_identity" in support:
-            return "MS1 峰形合格，位於配對 ISTD 位置"
+            return DecisionBasis(
+                "paired_istd_identity", "MS1 峰形合格，位於配對 ISTD 位置"
+            )
         nl = str(row.get("NL", ""))
         if nl == "OK" or nl.startswith("WARN_"):
-            return "MS2 見到預期的中性丟失"
+            return DecisionBasis("nl_observed", "MS2 見到預期的中性丟失")
         if "ms1_coherent" in support:
-            return "MS1 峰形合格"
+            return DecisionBasis("ms1_coherent", "MS1 峰形合格")
         if "role_aware_rt_support" in support:
-            return "MS1 峰位於預期 RT"
+            return DecisionBasis("rt_support", "MS1 峰位於預期 RT")
         if not nl:
-            return "有 MS1 峰；此目標不要求中性丟失"
-        return "有 MS1 峰"
+            return DecisionBasis("nl_not_required", "有 MS1 峰；此目標不要求中性丟失")
+        return DecisionBasis("ms1_peak", "有 MS1 峰")
     if "missing_positive_ms1_peak" in not_counted:
-        return "沒有 MS1 峰"
+        return DecisionBasis("no_ms1_peak", "沒有 MS1 峰")
     if row.get("Projection Reason") == "analyte_peak_off_paired_istd_position":
-        return "峰不在配對 ISTD 位置"
-    if unqualified_ms1_shape(row):
+        return DecisionBasis("off_paired_istd_position", "峰不在配對 ISTD 位置")
+    if _unqualified_ms1_shape(row):
         review = reasons(row, "Projection Review Reasons")
         shoulder = "physical_shoulder_overlap" in review
         failed = "肩峰／重疊" if shoulder else "形狀不連續或不完整"
-        return f"MS1 峰形未通過：{failed}"
+        return DecisionBasis("ms1_shape_failed", f"MS1 峰形未通過：{failed}")
     if not_counted and not_counted <= MISSING_DIRECT_NL_NOT_COUNTED:
         if str(row.get("Role", "")).upper() == "ISTD":
-            return "ISTD 峰沒有可確認身分的依據"
-        if row.get("ISTD Pair"):
-            return "配對 ISTD 在此樣本未計入，無法確認身分"
-        return "未設定配對 ISTD，無法確認身分"
+            return DecisionBasis("istd_without_identity", "ISTD 峰沒有可確認身分的依據")
+        if not row.get("ISTD Pair"):
+            return DecisionBasis("no_paired_istd", "未設定配對 ISTD，無法確認身分")
+        # A qualified peak at a counted paired ISTD takes its identity, so an
+        # unidentified qualified peak means the ISTD was not counted here.
+        if _qualified_for_paired_identity(support):
+            return DecisionBasis(
+                "paired_istd_not_counted", "配對 ISTD 在此樣本未計入，無法確認身分"
+            )
+        return DecisionBasis(
+            "ms1_shape_failed", "MS1 峰形未通過，無法由配對 ISTD 確認身分"
+        )
     other = sorted(not_counted - MISSING_DIRECT_NL_NOT_COUNTED)
     if other:
-        return f"未計入：{reason_text(other[0])}"
-    return "證據不足以計入"
+        return DecisionBasis("other_not_counted", f"未計入：{reason_text(other[0])}")
+    return DecisionBasis("insufficient_evidence", "證據不足以計入")
+
+
+def _qualified_for_paired_identity(support: set[str]) -> bool:
+    """Mirror the projection's paired-identity peak gate on saved reasons."""
+    return _COHERENT_MS1_PEAK <= support or _BACKFILL_LOCALIZATION in support
+
+
+def _unqualified_ms1_shape(row: Mapping[str, object]) -> bool:
+    """Present saved peak qualification, without re-evaluating the trace."""
+    support = reasons(row, "Projection Support Reasons")
+    return (
+        str(row.get("Counted Detection", "")).upper() == "FALSE"
+        and "ms1_peak_present" in support
+        and not _qualified_for_paired_identity(support)
+        and bool(reasons(row, "Projection Review Reasons") & _SHAPE_REVIEW)
+    )
 
 
 def display_measurement_reason(
@@ -132,12 +182,12 @@ def display_measurement_reason(
     if conflicts:
         first = str(row.get("Projection Conflict Reasons")).split(";")[0].strip()
         return f"證據互相矛盾：{_conflict_text(first, concerns)}。"
-    if row.get("Projection Reason") == "analyte_peak_off_paired_istd_position":
-        return "峰不在配對 ISTD 位置，報 ND。"
+    basis = decision_basis(row)
+    if basis.kind == "off_paired_istd_position":
+        return f"{basis.text}，報 ND。"
     if not has_quantifiable_peak:
         return "搜尋範圍內沒有可定量的 MS1 峰。"
-    basis = decision_basis(row)
-    covered = _SHAPE_REVIEW if "峰形" in basis else frozenset()
+    covered = _SHAPE_REVIEW if basis.kind in _SHAPE_BASES else frozenset()
     saved = str(row.get("Projection Review Reasons") or "")
     review = [reason.strip() for reason in saved.split(";")]
     extra = [
@@ -148,8 +198,8 @@ def display_measurement_reason(
         and reason not in covered
     ]
     if extra:
-        return f"{basis}。另需注意：{'；'.join(dict.fromkeys(extra))}。"
-    return f"{basis}。"
+        return f"{basis.text}。另需注意：{'；'.join(dict.fromkeys(extra))}。"
+    return f"{basis.text}。"
 
 
 def display_nl_evidence(token: str | None, *, configured: bool) -> str:

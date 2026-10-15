@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from openpyxl.utils import get_column_letter
+
 from xic_extractor.output.targeted_overview import TargetedOverview, TargetOverview
 from xic_extractor.output.workbook_styles import (
     FOCUS,
@@ -28,16 +30,20 @@ def build_overview_sheet(
     overview: TargetedOverview,
     *,
     pairs: Mapping[str, str],
+    worklist_size: int,
     review_rows_by_target: Mapping[str, int],
 ) -> None:
-    """Write the summary; `review_rows_by_target` locates each target in 需檢查."""
+    """Write the summary; `review_rows_by_target` locates each target in 需檢查.
+
+    The headline counts every 需檢查 row, including events without a result.
+    """
     _prepare_sheet(ws, landscape=False)
     ws["A1"] = (
         "尚無已保存結果"
         if not overview.result_count
-        else f"先看 {overview.focus_count} 筆與多數不同的結果"
-        if overview.focus_count
-        else "各目標結果一致，沒有需要先看的結果"
+        else f"先看 {worklist_size} 筆結果"
+        if worklist_size
+        else "沒有需要先看的結果"
     )
     ws["A1"].font = _font(INK, bold=True, size=16)
     ws.row_dimensions[1].height = 30
@@ -88,7 +94,7 @@ def build_overview_sheet(
     ):
         ws.cell(row, 1, text).font = _font(SOFT, size=9)
     for column, width in enumerate(_WIDTHS, 1):
-        ws.column_dimensions[chr(64 + column)].width = width
+        ws.column_dimensions[get_column_letter(column)].width = width
     ws.freeze_panes = f"A{_TABLE_ROW + 1}"
     ws.print_area = f"A1:G{note + 1}"
 

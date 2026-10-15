@@ -110,7 +110,7 @@ the target restores the list; standalone Targeted Inspector reports already
 render the target directly without a navigation column.
 
 Opening Targeted results first shows a full-batch overview in three levels.
-The heading states how many minority results to read first, beside Analyte and
+The heading states how many results to read first, beside Analyte and
 ISTD counted totals. A target table follows, minority targets first, with each
 target's role, counted total, minority count and what to check there; a fully
 counted target with saved review conditions shows their number instead. Expandable details
