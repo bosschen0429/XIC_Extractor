@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from contextlib import closing
 from dataclasses import replace
@@ -36,6 +37,54 @@ class IndexedCidNlSource(CidNlSource):
     def __init__(self, path, summary):
         super().__init__(path, metadata=ExplanationMetadata(summary, {}, {}, ()))
         self._compact_selection = True
+        self.missing_mz_count = 0
+        self.mz_distances = {}
+
+    def _nearest_page(self, db, scope, request, criteria, ordered):
+        # Reuse exact RT/sample eligibility, but not its reading-order pagination.
+        ids, run_total, eligible, _, missing_rt = query_page(
+            db,
+            tuple(sorted(scope)),
+            **criteria,
+            ordered_item_ids=ordered,
+            limit=-1,
+        )
+        db.execute("CREATE TEMP TABLE nearest_eligible (item INTEGER PRIMARY KEY)")
+        db.executemany(
+            "INSERT INTO nearest_eligible VALUES (?)", ((item,) for item in ids)
+        )
+        ranked = []
+        for item_id, sort_key, mz in db.execute(
+            "SELECT item,sort_key,mz FROM ("
+            "SELECT w.item,i.sort_key,c.mz,ROW_NUMBER() OVER "
+            "(PARTITION BY w.item ORDER BY w.ordinal) AS position "
+            "FROM query_witnesses w JOIN nearest_eligible e ON e.item=w.item "
+            "JOIN query_items i ON i.id=w.item "
+            "JOIN query_candidates c ON c.id=w.candidate "
+            "JOIN query_samples s ON s.id=c.sample "
+            f"WHERE s.sample_id IN ({','.join('?' for _ in scope)})) WHERE position=1",
+            tuple(sorted(scope)),
+        ):
+            # Match build_render_item's first scoped witness, not the nearest
+            # witness or the first witness satisfying the optional RT bounds.
+            if isinstance(mz, (int, float)) and math.isfinite(mz) and mz > 0:
+                ranked.append((abs(mz - request.nearest_mz), sort_key, item_id))
+        population_count = len(ids)
+        if request.rt_min is None and request.rt_max is None:
+            # A saved matrix cell can exist without any retained witness. It has
+            # no display m/z, but still belongs in the excluded-count disclosure.
+            population_count = db.execute(
+                "SELECT COUNT(DISTINCT q.item) FROM query_scope q "
+                "JOIN query_samples s ON s.id=q.sample "
+                "JOIN review_order r ON r.item=q.item "
+                f"WHERE s.sample_id IN ({','.join('?' for _ in scope)})",
+                tuple(sorted(scope)),
+            ).fetchone()[0]
+        self.missing_mz_count = population_count - len(ranked)
+        ranked.sort()
+        page = ranked[request.offset : request.offset + request.limit]
+        distances = {item_id: distance for distance, _, item_id in page}
+        return list(distances), run_total, eligible, len(ranked), missing_rt, distances
 
     def _review_page(self, db, scope, request):
         """Evaluate compact scope masks, then select IDs before reading details."""
@@ -143,14 +192,19 @@ class IndexedCidNlSource(CidNlSource):
                     ).fetchone()[0]
                     self.summary["overview"] = overview
                     ordered = ordered_review_items(db, rows, request.review_scope)
-                ids, run_total, eligible, matched, missing = query_page(
-                    db,
-                    tuple(sorted(scope)),
-                    **criteria,
-                    offset=request.offset,
-                    limit=request.limit,
-                    ordered_item_ids=ordered,
-                )
+                if request.nearest_mz is not None:
+                    ids, run_total, eligible, matched, missing, distances = (
+                        self._nearest_page(db, scope, request, criteria, ordered)
+                    )
+                else:
+                    ids, run_total, eligible, matched, missing = query_page(
+                        db,
+                        tuple(sorted(scope)),
+                        **criteria,
+                        offset=request.offset,
+                        limit=request.limit,
+                        ordered_item_ids=ordered,
+                    )
             else:
                 ids, run_total, eligible, matched, missing = self._review_page(
                     db, scope, request
@@ -236,6 +290,8 @@ class IndexedCidNlSource(CidNlSource):
                         primary, matched_witnesses=with_matches[0].matched_witnesses
                     )
                 selected.append(primary)
+                if request.nearest_mz is not None:
+                    self.mz_distances[primary.serialized_ref] = distances[item_id]
                 peer = db.execute(
                     "SELECT p.peer FROM query_peers p JOIN query_items i "
                     "ON i.id=p.peer "

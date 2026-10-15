@@ -369,9 +369,24 @@
               <label class="field">樣本<select id="target-sample" data-idle></select></label>
               <label><input id="target-attention" type="checkbox" data-idle />只列需先看的目標</label>
             </div>
+            <div id="untargeted-search" hidden>
+              <label class="field">搜尋方式
+                <select id="untargeted-search-mode" data-idle>
+                  <option value="nearest">近似 m/z 候選</option>
+                  <option value="exact">精確範圍／分組 ID</option>
+                </select>
+              </label>
+              <label id="nearest-mz-field" class="field">約略 m/z（留白瀏覽）
+                <input id="nearest-mz" type="text" inputmode="decimal"
+                  placeholder="例如 123.4" aria-describedby="search-mode-hint nearest-mz-error"
+                  data-idle />
+              </label>
+              <p id="search-mode-hint" class="subtle"></p>
+              <p id="nearest-mz-error" class="query-error" role="alert" hidden></p>
+            </div>
             <details id="review-range-filters" class="query-advanced" open>
               <summary>m/z / RT 範圍</summary>
-            <div class="range-row">
+            <div id="exact-mz-range" class="range-row">
               <span>m/z</span
               ><input
                 id="mz-min"
@@ -426,6 +441,7 @@
             </button>
           </form>
           <div id="list-summary" class="list-summary"></div>
+          <p id="nearest-results-note" class="nearest-results-note" role="status" hidden></p>
           <div
             id="item-list"
             class="item-list"

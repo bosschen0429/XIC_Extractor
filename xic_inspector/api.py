@@ -102,6 +102,7 @@ class SelectionRequest:
     rt_max: float | None = None
     offset: int = 0
     review_scope: str = "all"
+    nearest_mz: float | None = None
 
     def validate(self) -> None:
         """Validate request invariants per Issue #398 Section 4."""
@@ -117,6 +118,33 @@ class SelectionRequest:
             raise InspectorError(2, "Review scope requires query selection")
         if self.strategy not in ("sample", "attention", "query"):
             raise InspectorError(2, f"Invalid strategy: {self.strategy}")
+
+        if self.nearest_mz is not None:
+            if (
+                isinstance(self.nearest_mz, bool)
+                or not isinstance(self.nearest_mz, (int, float))
+                or not math.isfinite(self.nearest_mz)
+                or self.nearest_mz <= 0
+            ):
+                raise InspectorError(2, "nearest_mz must be a finite positive number")
+            if self.strategy != "query" or self.review_scope not in {
+                "matrix",
+                "unresolved",
+            }:
+                raise InspectorError(
+                    2, "Nearest m/z requires a matrix or unresolved query"
+                )
+            if (
+                self.mz_min is not None
+                or self.mz_max is not None
+                or self.candidate_ids
+                or self.group_ids
+                or self.target_ids
+                or self.attention_only
+            ):
+                raise InspectorError(
+                    2, "Nearest m/z cannot be combined with exact m/z or ID filters"
+                )
 
         if (
             not isinstance(self.limit, int)
@@ -208,7 +236,8 @@ class SelectionRequest:
 
         if self.strategy == "query":
             has_filter = bool(
-                self.sample_ids
+                self.nearest_mz is not None
+                or self.sample_ids
                 or self.candidate_ids
                 or self.group_ids
                 or self.target_ids
@@ -324,6 +353,14 @@ def prepare_report(
         raise InspectorError(3, str(exc), cause=exc) from exc
     except ExplanationError as exc:
         raise InspectorError(4, f"Invalid source: {exc}", cause=exc) from exc
+
+    if selection.nearest_mz is not None:
+        from xic_inspector.sources.cid_nl_query import IndexedCidNlSource
+
+        if not isinstance(source, IndexedCidNlSource):
+            raise InspectorError(
+                2, "Nearest m/z requires indexed Untargeted matrix evidence"
+            )
 
     if (selection.target_ids or selection.attention_only) and not isinstance(
         source, TargetedWorkbookSource
@@ -503,6 +540,10 @@ def prepare_report(
     except ExplanationError as exc:
         raise InspectorError(4, str(exc), cause=exc) from exc
 
+    if selection.nearest_mz is not None:
+        for item in rendered_items:
+            item["mz_distance"] = source.mz_distances[item["id"]]
+
     if on_progress:
         on_progress(
             ReportProgress(
@@ -557,6 +598,11 @@ def prepare_report(
         ],
         "items": rendered_items,
     }
+    if selection.nearest_mz is not None:
+        payload_dict["selection"].update(
+            nearest_mz=selection.nearest_mz,
+            missing_mz_count=source.missing_mz_count,
+        )
 
     return PreparedReport(
         source=source_locator,

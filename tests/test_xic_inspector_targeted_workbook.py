@@ -517,3 +517,12 @@ def test_review_filter_opens_the_rare_detection_not_the_shared_absence(tmp_path)
         "Area": 1002,
         "Counted Detection": "TRUE",
     }
+
+
+def test_nearest_mz_does_not_extend_targeted_workbook_search(workbook):
+    with pytest.raises(InspectorError, match="indexed Untargeted matrix") as exc:
+        prepare_report(
+            workbook,
+            SelectionRequest(strategy="query", review_scope="matrix", nearest_mz=258),
+        )
+    assert exc.value.code == 2
