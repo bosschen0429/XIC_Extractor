@@ -10,6 +10,7 @@ import socket
 import threading
 import time
 from contextlib import contextmanager
+from http.server import ThreadingHTTPServer
 
 import pytest
 
@@ -233,6 +234,35 @@ def _client(workspace):
         server.server_close()
         thread.join(timeout=5)
         workspace.close()
+
+
+def test_http_reuses_connection_for_assets_and_status(tmp_path, monkeypatch):
+    accepted = []
+    accept = ThreadingHTTPServer.get_request
+
+    def record_accept(server):
+        connection, address = accept(server)
+        accepted.append(address)
+        return connection, address
+
+    monkeypatch.setattr(ThreadingHTTPServer, "get_request", record_accept)
+    with _client(ReviewWorkspace(config_dir=tmp_path)) as request:
+        for _ in range(6):
+            assert request("/assets/analysis.js")[0] == 200
+            status, payload, _ = request("/api/analysis")
+            assert status == 200
+            assert payload["job"] is None
+        assert len(accepted) == 1, "Page reads must reuse the session's TCP connection"
+
+
+def test_http_closes_rejected_request_before_accepting_another(tmp_path):
+    with _client(ReviewWorkspace(config_dir=tmp_path)) as request:
+        status, _, headers = request(
+            "/api/open", {"source": "."}, headers={"Cookie": ""}
+        )
+        assert status == 403
+        assert headers.get("Connection", "").lower() == "close"
+        assert request("/api/analysis")[0] == 200
 
 
 def test_http_query_detail_export_and_invalid_open_preserve_source(tmp_path):
