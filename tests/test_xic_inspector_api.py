@@ -2192,6 +2192,7 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
                             "quantitative_value": 700.0,
                             "variant": "numeric",
                             "source": source_code,
+                            "evidence_states": ["ms1_only_backfill_observation"],
                         }
                     ),
                 ),
@@ -2227,4 +2228,10 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
     assert item["samples"][0]["decision_reason"] == (
         "來源記錄定量方式為當次採用訊號的梯形積分；未另記理由。"
     )
+    if sample_count == 2:
+        readable = {
+            record["ref"]: record for record in item["details"]["readable_records"]
+        }
+        assert readable["cd-02"]["summary"] == "MS1 Backfill（非直接 CID-NL 確認）"
+        assert "MS1 Backfill" not in readable["cd-01"]["summary"]
     assert item["curves"][0]["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]
