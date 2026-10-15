@@ -904,7 +904,9 @@ def test_targeted_review_marks_the_rare_detection_and_opens_it_in_place(
     # The evidence is the next row, not a panel after every other sample.
     detail = frame.locator(".tgt-table tbody tr:nth-child(4)")
     expect(detail).to_have_class("tgt-detail-row")
-    expect(detail).to_contain_text("配對 ISTD（ISTD）")
+    expect(detail).to_contain_text("積分範圍")
+    expect(detail).not_to_contain_text("配對 ISTD（ISTD）")
+    expect(detail).not_to_contain_text("檢閱註記")
     page.locator("#target-id").select_option("")
     expect(page.locator("#item-list")).to_be_visible()
     expect(page.locator("#review")).to_have_class("review-grid")

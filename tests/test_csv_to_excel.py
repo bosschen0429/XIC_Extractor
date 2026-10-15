@@ -152,7 +152,7 @@ def test_review_queue_aggregates_diagnostics_by_sample_target() -> None:
     assert review_rows[0]["Sample"] == "Tumor_1"
     assert review_rows[0]["Target"] == "Analyte"
     assert review_rows[0]["Status"] == "Review"
-    assert review_rows[0]["Why"] == "CID-NL 確認條件未通過（不代表沒有 fragment 訊號）"
+    assert review_rows[0]["Why"] == "CID-NL 未確認"
     assert review_rows[0]["Action"] == "看所選 RT 附近的 MS2"
     assert review_rows[0]["Issue Count"] == "2"
     assert review_rows[0]["Evidence"] == "NL_FAIL; ANCHOR_MISMATCH"
@@ -203,6 +203,28 @@ def test_review_queue_product_mode_does_not_use_legacy_confidence_as_issue() -> 
     review_rows = _review_queue_rows(rows, [])
 
     assert review_rows == []
+
+
+def test_review_queue_does_not_turn_ordinary_nd_into_attention() -> None:
+    row = _long_row(
+        "Absent",
+        "Analyte",
+        "ND",
+        "ND",
+        "NO_MS2",
+        counted_detection="FALSE",
+        product_state="not_counted",
+    ) | {"Projection Not Counted Reasons": "missing_positive_ms1_peak"}
+    diagnostics = [{"SampleName": "Absent", "Target": "Analyte", "Issue": "NO_SIGNAL"}]
+    assert _review_queue_rows([row], diagnostics) == []
+    # A missing spiked internal standard is actionable, unlike an absent analyte.
+    istd = row | {"Role": "ISTD"}
+    assert _review_queue_rows([istd], diagnostics)[0]["Why"] == "內標未檢出"
+    failed = row | {"Projection Exclusion Reasons": "file_error"}
+    assert _review_queue_rows([failed], diagnostics)[0]["Why"] == "RAW 處理失敗"
+    # Missing signal must not conceal an independent unresolved conflict.
+    row["Projection Conflict Reasons"] = "identity_conflict"
+    assert _review_queue_rows([row], diagnostics)[0]["Status"] == "Review"
 
 
 def test_targets_sheet_marks_expected_product_as_nominal_reference() -> None:

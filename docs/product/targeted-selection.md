@@ -313,6 +313,11 @@ those facts itself.
 
 ### Detection and review policy
 
+- A completed ND without an independent conflict or exclusion needs no review
+  note. Missing positive MS1 signal and rejected off-pair candidates remain in
+  the diagnostic record; they do not create a human review action. A retained
+  measured peak with unresolved identity or quality, or a missing spiked ISTD,
+  still requires review.
 - Targeted NL matching excludes scans whose recorded vendor charge is not 1;
   unavailable charge remains eligible. `NO_MS2` means no method-eligible
   precursor scan, not necessarily no acquired MS2 scan. If only rejected-charge

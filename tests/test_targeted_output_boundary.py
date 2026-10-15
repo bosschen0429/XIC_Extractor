@@ -2075,18 +2075,25 @@ def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
     assert rows["Far"]["Counted Detection"] == "FALSE"
     assert rows["Far"]["Area"] == "ND"
     assert rows["Far"]["RT"] == "ND"
-    assert "偏離內標" in rows["Far"]["Review Reason"]
+    assert rows["Far"]["Review"] is None
+    assert rows["Far"]["Review Reason"] is None
     assert rows["Near"]["Review"] is None
     assert rows["Spike"]["Counted Detection"] == "FALSE"
     assert rows["Spike"]["Area"] == "ND"
-    assert "原始 scan 支撐不足" in rows["Spike"]["Review Reason"]
-    assert "insufficient_original_xic_support" in rows["Spike"]["Review Evidence"]
+    assert rows["Spike"]["Review"] is None
+    assert rows["Spike"]["Review Reason"] is None
+    assert any(
+        record.sample_name == "Spike"
+        and record.issue == "PAIRED_POSITION_SUPPORT_REJECTED"
+        and "insufficient_original_xic_support" in record.reason
+        for record in execution.active_output.diagnostics
+    )
     from xic_extractor.output.review_queue_model import _review_queue_rows
 
     queue = _review_queue_rows(
         _run_output_to_long_rows(execution.active_output, [analyte, istd]), []
     )
-    assert any(row["Sample"] == "Far" and row["Target"] == "Analyte" for row in queue)
+    assert not any(row["Target"] == "Analyte" for row in queue)
     saved = {
         r["SampleName"]: r
         for r in TargetedWorkbookSource(path).records

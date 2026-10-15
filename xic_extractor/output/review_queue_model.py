@@ -184,6 +184,16 @@ def _row_review_issue(row: dict[str, str]) -> str:
         if product_state == "ambiguous":
             return "PRODUCT_AMBIGUOUS"
         if row.get("Counted Detection", "").upper() == "FALSE":
+            # A completed ND is a result, not a request for human review.
+            # Retain the selection diagnostics without promoting them to action.
+            if row.get("Projection Reason") == "analyte_peak_off_paired_istd_position":
+                return ""
+            not_counted = row.get("Projection Not Counted Reasons", "")
+            if (
+                row.get("Role", "").upper() != "ISTD"
+                and "missing_positive_ms1_peak" in not_counted.replace(";", " ").split()
+            ):
+                return ""
             if _unqualified_ms1_shape(row):
                 return "PRODUCT_NOT_COUNTED"
             if nl in {"NL_FAIL", "NO_MS2"}:
@@ -250,17 +260,19 @@ def _review_why(issue: str, row: dict[str, str], evidence: str) -> str:
     """Name the saved fact briefly; counting is its own column, never restated."""
     counted = row.get("Counted Detection", "").upper()
     state = row.get("Product State", "")
-    if state == "excluded":
+    if state == "excluded" or issue == "PRODUCT_EXCLUDED":
+        exclusions = row.get("Projection Exclusion Reasons", "")
+        if "file_error" in exclusions:
+            return "RAW 處理失敗"
+        if "target_sample_applicability:" in exclusions:
+            return "不適用此樣本"
         return "已被規則排除"
     if state == "ambiguous" or row.get("Projection Conflict Reasons"):
         return "證據衝突，身分未定"
-    if counted == "FALSE" and "PAIRED_POSITION_SUPPORT_REJECTED" in evidence:
-        if "insufficient_original_xic_support" in evidence:
-            return "近內標訊號的原始 scan 支撐不足，報 ND（平滑線不代表完整峰）"
-        if "insufficient_original_xic_continuity" in evidence:
-            return "近內標訊號缺少連續原始 scan 支撐，報 ND"
-    if "analyte_peak_off_paired_istd_position" in row.get("Projection Reason", ""):
-        return "ND；所選候選峰偏離內標，近內標訊號的排除原因未記錄"
+    if row.get("Role", "").upper() == "ISTD" and "missing_positive_ms1_peak" in row.get(
+        "Projection Not Counted Reasons", ""
+    ):
+        return "內標未檢出"
     if "paired_istd_position_mismatch" in row.get("Projection Review Reasons", ""):
         return "峰偏離配對內標位置，需確認身分"
     if "BACKFILL_HOLD" in evidence and counted == "FALSE":
@@ -276,7 +288,7 @@ def _review_why(issue: str, row: dict[str, str], evidence: str) -> str:
         ms2 = "；另無 MS2" if row.get("NL") == "NO_MS2" else ""
         return f"MS1 峰形品質不足{detail}{ms2}"
     if issue == "NL_FAIL":
-        return "CID-NL 確認條件未通過（不代表沒有 fragment 訊號）"
+        return "CID-NL 未確認"
     if issue == "NO_MS2":
         return "沒有 MS2"
     if issue == "NL_WARN":

@@ -235,18 +235,11 @@
         openRow = null;
       };
       const detailFor = record => {
-        const review = reviews.get(record.SampleName), istd = istdRecords[record.SampleName];
+        const review = reviews.get(record.SampleName);
         const panel = element('div', undefined, 'tgt-evidence');
         const pairs = [['積分範圍', range(record.PeakStart, record.PeakEnd)], ['NL 證據', record['NL Evidence']]];
-        if (istd) {
-          const delta = isNumber(record.RT) && isNumber(istd.RT)
-            ? `，與 ISTD 相差 ${record.RT - istd.RT >= 0 ? '+' : ''}${(record.RT - istd.RT).toFixed(3)} min` : '';
-          pairs.push([`配對 ISTD（${istd.Target}）`, `RT ${value(istd.RT)} min${delta} · 面積 ${scientific(istd.Area)} · 計入 ${counted(istd['Counted Detection'])}`]);
-        }
         panel.append(facts(pairs));
-        if (review?.Why) panel.append(element('h4', '檢閱註記'), element('p', reviewWhy(review)));
-        if (review?.Action) panel.append(element('h4', '建議檢查'), element('p', review.Action));
-        if (review?.Evidence) panel.append(element('h4', '檢閱線索'), element('p', review.Evidence));
+        if (review?.Action) panel.append(element('p', review.Action));
         if (record.Reason) {
           const raw = element('details', undefined, 'tgt-raw');
           raw.append(element('summary', '原始選峰紀錄'), element('p', record.Reason));

@@ -491,7 +491,6 @@ window.XicUi = (() => {
     $("list-title").textContent = targeted ? "目標" : "檢閱項目";
     $("targeted-overview").hidden = true;
     $("targeted-review-nav").hidden = !page.overview;
-    $("targeted-review-nav").querySelector("span").textContent = targeted ? "樣本結果 → 點選樣本查看峰界與證據" : "群組結果 → XIC 與已保存定量 → 需要時查看依據";
     if (page.overview?.kind === "untargeted") renderUntargetedOverview(page.overview);
     else renderTargetedOverview(page.overview);
     $("targeted-filters").hidden = !targeted;
@@ -675,8 +674,9 @@ window.XicUi = (() => {
     status("可查看已保存結果，或按「看 XIC」讀取 RAW；看圖不改寫結果。");
   }
   function showRecorded() {
+    $("view-note").hidden = state.page.source_kind === "targeted_workbook";
     $("view-note").textContent = state.page.source_kind === "targeted_workbook"
-      ? "點樣本列的「看 XIC」開啟圖表；關閉後回到原來的位置。"
+      ? ""
       : "先看 XIC 與下方保存的 Area；可展開「查看樣本 XIC」更換樣本。內部證據收在進階內容。";
     loadFrame($("inspector"), `/reports/${state.recorded}.html?embed=1`);
     $("download").href = `/reports/${state.recorded}.html?download=1`;
