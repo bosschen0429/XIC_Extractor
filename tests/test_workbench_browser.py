@@ -22,6 +22,10 @@ from xic_workbench.workspace import ReviewWorkspace
 
 pytestmark = pytest.mark.browser_e2e
 
+# Background jobs include server work and polling before UI content is ready.
+# Keep content assertions at Playwright's default deadline after this boundary.
+BACKGROUND_JOB_TIMEOUT_MS = 30_000
+
 
 @pytest.fixture(scope="module")
 def browser():
@@ -200,6 +204,19 @@ def _view(page, name):
 
 def _start(page, kind):
     page.locator(f"button[form={kind}-form][type=submit]").click()
+
+
+def _wait_for_analysis_status(page, status):
+    expect(page.locator("#analysis-job-title")).to_contain_text(
+        status, timeout=BACKGROUND_JOB_TIMEOUT_MS
+    )
+
+
+def _wait_for_curve_report(page, *, inline=False):
+    review = page.locator("#inline-curve-review" if inline else "#xic-review")
+    # The view becomes visible only after acquisition and report mounting finish.
+    expect(review).to_be_visible(timeout=BACKGROUND_JOB_TIMEOUT_MS)
+    return review
 
 
 def test_navigation_and_theme_survive_reload(workbench):
@@ -434,7 +451,7 @@ def test_analysis_pages_share_path_rows_and_targeted_output_is_kept(
     )
     assert fake_runs.output_dirs == [chosen]
     fake_runs.release.set()
-    expect(page.locator("#analysis-job-title")).to_contain_text("已完成")
+    _wait_for_analysis_status(page, "已完成")
     page.reload()
     expect(page.locator("#t-output_dir")).to_have_value(str(chosen))
     _view(page, "untargeted")
@@ -529,7 +546,7 @@ def test_job_progress_artifact_failure_retention_and_confirmed_stop(
     expect(page.locator("#analysis-progress")).to_have_attribute("value", "1")
     expect(page.locator(f"button[form={kind}-form][type=submit]")).to_be_disabled()
     fake_runs.release.set()
-    expect(page.locator("#analysis-job-title")).to_contain_text("已完成")
+    _wait_for_analysis_status(page, "已完成")
     result = page.locator(f"#{'target' if kind == 'targeted' else kind}-result")
     expect(result).to_be_visible()
     link = result.get_by_role("link", name="browser-result.tsv")
@@ -547,7 +564,7 @@ def test_job_progress_artifact_failure_retention_and_confirmed_stop(
     _start(page, kind)
     expect(page.locator("#analysis-job-title")).to_contain_text("執行中")
     fake_runs.release.set()
-    expect(page.locator("#analysis-job-title")).to_contain_text("執行失敗")
+    _wait_for_analysis_status(page, "執行失敗")
     expect(page.locator("#analysis-job-message")).to_contain_text(
         "Browser fake failure"
     )
@@ -563,7 +580,7 @@ def test_job_progress_artifact_failure_retention_and_confirmed_stop(
     expect(page.locator("#analysis-job-title")).to_contain_text("執行中")
     page.locator("#analysis-stop").click()
     page.locator("#confirm-accept").click()
-    expect(page.locator("#analysis-job-title")).to_contain_text("已停止")
+    _wait_for_analysis_status(page, "已停止")
     expect(result).to_be_visible()
     expect(result).to_have_text(previous, use_inner_text=True)
 
@@ -856,6 +873,7 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     page.locator("#open-form button[type=submit]").click()
     if sample_count > 1:
         page.get_by_role("button", name="查看全部矩陣群組").click()
+        _wait_for_curve_report(page, inline=True)
         expect(
             page.locator("#inline-curve-review").locator(
                 "[data-inspector-id='svg-raw'] polyline"
@@ -869,7 +887,7 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     # The acquisition controls appear before the saved view's async mount.
     expect(saved).to_have_attribute("data-view-id", re.compile(r".+"))
     recorded = saved.get_attribute("data-view-id")
-    review = page.locator("#inline-curve-review")
+    review = _wait_for_curve_report(page, inline=True)
     expect(review.locator("[data-inspector-id='svg-raw'] polyline")).to_have_count(
         sample_count
     )
@@ -930,7 +948,7 @@ def test_targeted_nd_shows_original_points_and_support_failure(
     saved = page.locator("#recorded-review")
     expect(saved.locator(".tgt-reason").first).to_contain_text("排除原因未記錄")
     saved.get_by_role("button", name="看 S1 的 Analyte XIC", exact=True).click()
-    review = page.locator("#xic-review")
+    review = _wait_for_curve_report(page)
     expect(review.locator(".tx-support-note")).to_contain_text("原始訊號支撐不足")
     expect(review.locator(".tx-support-note")).to_contain_text("本次讀取 XIC")
     expect(review.locator('.tx-chart polyline[data-kind="smoothed"]')).to_have_count(2)
@@ -944,6 +962,7 @@ def test_targeted_nd_shows_original_points_and_support_failure(
     )
     page.locator("#xic-next").click()
     expect(page.locator("#xic-sample")).to_have_value("S2")
+    _wait_for_curve_report(page)
     expect(review.locator(".tx-support-note")).to_have_count(0)
     expect(review.locator(".tx-chart polyline")).to_have_count(2)
     assert path.read_bytes() == original
@@ -1017,7 +1036,9 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     expect(dialog).to_be_hidden()
     page.wait_for_function("y => Math.abs(window.scrollY - y) < 2", arg=reading_scroll)
     release.set()
-    expect(page.locator("#status")).to_contain_text("診斷曲線已載入")
+    expect(page.locator("#status")).to_contain_text(
+        "診斷曲線已載入", timeout=BACKGROUND_JOB_TIMEOUT_MS
+    )
     # Closing during payload loading must not mount the response into a hidden
     # drawer; Forward can request that same completed curve snapshot again.
     view_id = page.locator("#xic-download").get_attribute("href").split("/")[-1]
@@ -1055,6 +1076,7 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     expect(dialog).to_be_visible()
     expect(page.locator(".acquisition-panel")).to_be_hidden()
     expect(page.locator("#xic-sample")).to_have_value("S3")
+    _wait_for_curve_report(page)
     curves = review.locator(".tx-chart polyline")
     expect(review.locator('.tx-chart circle[data-kind="raw"]')).not_to_have_count(0)
     expect(review.get_by_text("原始 scan 點", exact=True)).to_be_visible()
@@ -1116,11 +1138,14 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     assert len(reads) == 2  # Reopening the same sample reuses the loaded report.
     page.locator("#xic-next").click()
     expect(page.locator("#xic-sample")).to_have_value("S4")
+    _wait_for_curve_report(page)
     expect(review.locator(".tx-sample-name")).to_have_text("S4")
     expect(curves).to_have_count(2)
     assert len(reads) == 4
     page.locator("#xic-next").click()  # S5 has no RAW: keep a recoverable local error.
-    expect(page.locator("#xic-status")).to_contain_text("找不到")
+    expect(page.locator("#xic-status")).to_contain_text(
+        "找不到", timeout=BACKGROUND_JOB_TIMEOUT_MS
+    )
     expect(page.locator("#status")).to_contain_text("S5")
     expect(page.locator("#status")).to_have_class(re.compile(r"\berror\b"))
     expect(page.locator("#xic-review")).to_be_hidden()
@@ -1209,10 +1234,11 @@ def cached_paired_curves(workbench, tmp_path, monkeypatch):
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
     page.get_by_role("button", name="看 S3 的 Analyte XIC", exact=True).click()
-    review = page.locator("#xic-review")
+    review = _wait_for_curve_report(page)
     expect(review.locator(".tx-sample-name")).to_have_text("S3")
     views = {"S3": review.get_attribute("data-view-id")}
     page.locator("#xic-next").click()
+    _wait_for_curve_report(page)
     expect(review.locator(".tx-sample-name")).to_have_text("S4")
     views["S4"] = review.get_attribute("data-view-id")
     assert len(reads) == 4
@@ -1476,7 +1502,8 @@ def test_review_history_restores_server_query_before_loading_xic(
     with page.expect_response("**/api/curves") as response:
         analyte_xic.click()
     assert response.value.status == 202, response.value.json()
-    expect(page.locator("#xic-review").locator(".tx-chart-title")).to_have_text(
+    review = _wait_for_curve_report(page)
+    expect(review.locator(".tx-chart-title")).to_have_text(
         ["Analyte", "ISTD"]
     )
 
@@ -1582,7 +1609,7 @@ def test_sample_restore_is_bound_to_current_inputs(
     _view(page, "targeted")
     fake_runs.release.set()
     _start(page, "targeted")
-    expect(page.locator("#analysis-job-title")).to_contain_text("已完成")
+    _wait_for_analysis_status(page, "已完成")
     _view(page, "untargeted")
     if changed_input == "saved_role":
         page.locator("#samples-edit").click()
@@ -1734,6 +1761,7 @@ def test_istd_warning_distinguishes_confirmation_from_signal(workbench, fake_run
     fake_runs.istd_warnings = [{"label": "d4-N6-2HE-dA", "detected": 0, "total": 1}]
     fake_runs.release.set()
     _start(workbench, "targeted")
+    _wait_for_analysis_status(workbench, "已完成")
     warning = workbench.locator(".result-warning")
     expect(warning).to_contain_text("ISTD d4-N6-2HE-dA：0 / 1 個樣本通過確認")
     expect(warning).to_contain_text("未通過確認不代表沒有訊號")
@@ -1756,6 +1784,7 @@ def test_analysis_review_uses_run_paths_even_after_batch_edit(
     page.locator("#t-data_dir").fill(str(raw_dir))
     page.locator("#t-dll_dir").fill(str(tmp_path))
     page.get_by_role("button", name="開始 Targeted 分析", exact=True).click()
+    _wait_for_analysis_status(page, "已完成")
     expect(page.locator("#analysis-job-message")).to_contain_text("工作已完成")
     page.locator("#t-data_dir").fill(str(tmp_path / "next-batch"))
     page.locator("#t-dll_dir").fill(str(tmp_path / "next-dll"))
@@ -1773,7 +1802,7 @@ def test_analysis_review_uses_run_paths_even_after_batch_edit(
     page.locator("#recorded-review").get_by_role(
         "button", name="看 S1 的 Analyte XIC", exact=True
     ).click()
-    review = page.locator("#xic-review")
+    review = _wait_for_curve_report(page)
     expect(review.locator('.tx-chart polyline[data-kind="smoothed"]')).to_have_count(2)
     expect(page.locator("#status")).not_to_contain_text("請先選擇 RAW 資料夾")
 
@@ -1955,7 +1984,7 @@ def test_downloaded_curve_report_keeps_snapshot_and_interacts_without_network(
     page.locator("#recorded-review").get_by_role(
         "button", name="看 S3 的 Analyte XIC", exact=True
     ).click()
-    mounted = page.locator("#xic-review")
+    mounted = _wait_for_curve_report(page)
     expect(mounted.locator(".tx-chart-title")).to_have_text(["Analyte", "ISTD"])
     expect(mounted.locator(".tx-chart-meta").first).to_contain_text("面積 5.55e+1")
     with page.expect_download() as pending:
@@ -1963,6 +1992,7 @@ def test_downloaded_curve_report_keeps_snapshot_and_interacts_without_network(
     downloaded = tmp_path / "downloaded-s3.html"
     pending.value.save_as(downloaded)
     page.locator("#xic-next").click()
+    _wait_for_curve_report(page)
     expect(mounted.locator(".tx-sample-name")).to_have_text("S4")
     expect(mounted.locator(".tx-chart-meta").first).to_contain_text("面積 ND")
 
