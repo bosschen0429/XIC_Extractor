@@ -34,7 +34,7 @@ def test_data_sheet_preserves_measurements_and_compact_review_fields() -> None:
         ("Tumor_2", 9.2, 22345.6),
         ("Tumor_3", "ND", "ND"),
     ]
-    assert records[0]["NL Evidence"] == "Observed"
+    assert records[0]["NL Evidence"] == "已觀察到"
     assert records[1]["NL"] == "⚠ 12.3ppm"
     assert records[1]["Review Reason"].replace("\n", "") == "中性丟失質量偏差偏大"
     # RT precedes Area; intensities read as scientific notation. Numbers align
@@ -662,12 +662,12 @@ def _long_row(
         "Area": area,
         "NL": nl,
         "NL Evidence": {
-            "OK": "Observed",
-            "WARN": "Observed with tolerance warning",
-            "NL_FAIL": "Target-peak CID-NL not supported",
-            "NO_MS2": "No target-matched MS2 in peak",
-            "ERROR": "Processing error",
-        }.get(nl.split("_")[0] if nl.startswith("WARN_") else nl, "Unavailable"),
+            "OK": "已觀察到",
+            "WARN": "已觀察到（質量偏差偏大）",
+            "NL_FAIL": "所選峰未見預期的中性丟失",
+            "NO_MS2": "所選峰沒有對應的 MS2",
+            "ERROR": "處理錯誤",
+        }.get(nl.split("_")[0] if nl.startswith("WARN_") else nl, "無資料"),
         "Int": "1000",
         "IntSmoothed": "900",
         "PeakStart": "8.9",

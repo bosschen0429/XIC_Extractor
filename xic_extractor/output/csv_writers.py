@@ -129,7 +129,7 @@ def _long_output_rows(
             row["NL Evidence"] = display_nl_evidence(
                 "ERROR", configured=target.neutral_loss_da is not None
             )
-            row["Reason"] = "RAW file could not be processed."
+            row["Reason"] = "RAW 檔無法處理。"
             row.update(_error_projection_fields())
         else:
             result = file_result.results[target.label]
@@ -141,8 +141,8 @@ def _long_output_rows(
                 result.nl_token, configured=target.neutral_loss_da is not None
             )
             row["Confidence"] = _display_confidence(result)
-            row["Reason"] = _display_reason(result)
             row.update(_projection_fields(result.targeted_product_projection))
+            row["Reason"] = _display_reason(result, row)
         rows.append(row)
     return rows
 
@@ -167,15 +167,12 @@ def _projection_fields(
     }
 
 
-def _display_reason(result: ExtractionResultLike) -> str:
-    projection = result.targeted_product_projection
-    if projection is not None:
+def _display_reason(result: ExtractionResultLike, row: dict[str, str]) -> str:
+    """Explain the finished projection already rendered into `row`."""
+    if result.targeted_product_projection is not None:
         return display_measurement_reason(
+            row,
             has_quantifiable_peak=_has_reported_peak(result),
-            review_reasons=projection.review_reasons,
-            conflict_reasons=projection.conflict_reasons,
-            not_counted_reasons=projection.not_counted_reasons,
-            exclusion_reasons=projection.exclusion_reasons,
             concerns=dict(result.score_breakdown).get("Concerns", ""),
         )
     return result.reason

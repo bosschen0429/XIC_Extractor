@@ -165,7 +165,7 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     assert record["IntSmoothed"] == 450.0
     assert record["Int"] == 500.0
     assert record["PeakWidth"] == 0.3
-    assert record["NL Evidence"] == "Observed with tolerance warning"
+    assert record["NL Evidence"] == "已觀察到（質量偏差偏大）"
     assert record["NL"] == "⚠ 12.3ppm"
     assert record["Confidence"] == "LOW"
     assert record["Review"] == "Check"
@@ -268,7 +268,7 @@ def test_workbook_explains_backfill_without_changing_saved_counts(tmp_path):
             "PeakStart": "8.5",
             "PeakEnd": "9.5",
             "NL": "NL_FAIL",
-            "NL Evidence": "Target-peak CID-NL not supported",
+            "NL Evidence": "所選峰未見預期的中性丟失",
             "Confidence": "LOW",
             "Counted Detection": counted,
             "Product State": state,

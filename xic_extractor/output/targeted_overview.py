@@ -8,7 +8,8 @@ from dataclasses import dataclass
 from math import isfinite
 from statistics import median
 
-from xic_extractor.output.review_queue_model import _decision_basis, _review_queue_rows
+from xic_extractor.output.reason_display import decision_basis
+from xic_extractor.output.review_queue_model import _review_queue_rows
 
 # A detection outcome shared by at most this share of a target's recorded
 # decisions is the unusual one: it is where a wrong peak or a missed peak hides.
@@ -138,7 +139,7 @@ def focus_worklist(
                     "Target": target.label,
                     "Outcome": "已計入" if counted else "未計入",
                     "Why": f"多數樣本{'未' if counted else ''}計入；"
-                    f"此樣本：{_decision_basis(record)}",
+                    f"此樣本：{decision_basis(record)}",
                     "Action": "在 XIC 確認峰形成立，不是雜訊或鄰近峰"
                     if counted
                     else "在 XIC 確認是否漏抓",

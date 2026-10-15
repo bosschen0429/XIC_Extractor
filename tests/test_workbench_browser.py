@@ -914,6 +914,11 @@ def test_targeted_review_marks_the_rare_detection_and_opens_it_in_place(
     # Current Targeted workbooks store one expected RT as equal RT min/max.
     book = load_workbook(workbook)
     book["Targets"]["E2"] = book["Targets"]["F2"] = 9.25
+    results = book["XIC Results"]
+    nl_column = results.max_column + 1
+    results.cell(1, nl_column, "NL Evidence")
+    for row in range(2, results.max_row + 1):
+        results.cell(row, nl_column, "所選峰沒有對應的 MS2")
     book.save(workbook)
     book.close()
     _view(page, "review")
@@ -938,6 +943,10 @@ def test_targeted_review_marks_the_rare_detection_and_opens_it_in_place(
     detail = frame.locator(".tgt-table tbody tr:nth-child(4)")
     expect(detail).to_have_class("tgt-detail-row")
     expect(detail).to_contain_text("積分範圍")
+    # A neutral loss that was not observed is a given fact under CID: it stays
+    # with the selection record instead of the first layer.
+    expect(detail.locator(".tgt-facts")).not_to_contain_text("NL 證據")
+    expect(detail.locator(".tgt-raw")).to_contain_text("NL 證據：所選峰沒有對應的 MS2")
     expect(detail).not_to_contain_text("配對 ISTD（ISTD）")
     expect(detail).not_to_contain_text("檢閱註記")
     page.locator("#target-id").select_option("")

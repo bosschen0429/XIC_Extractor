@@ -235,14 +235,18 @@
         openRow = null;
       };
       const detailFor = record => {
-        const review = reviews.get(record.SampleName);
         const panel = element('div', undefined, 'tgt-evidence');
-        const pairs = [['積分範圍', range(record.PeakStart, record.PeakEnd)], ['NL 證據', record['NL Evidence']]];
+        // An observed neutral loss supports the result; its absence under CID is a
+        // given fact, so it stays with the selection record instead of up front.
+        const nlObserved = /^(已觀察到|Observed)/.test(record['NL Evidence'] || '');
+        const pairs = [['積分範圍', range(record.PeakStart, record.PeakEnd)]];
+        if (nlObserved) pairs.push(['NL 證據', record['NL Evidence']]);
         panel.append(facts(pairs));
-        if (review?.Action) panel.append(element('p', review.Action));
-        if (record.Reason) {
+        const background = [record.Reason, nlObserved ? '' : record['NL Evidence'] && `NL 證據：${record['NL Evidence']}`]
+          .filter(Boolean);
+        if (background.length) {
           const raw = element('details', undefined, 'tgt-raw');
-          raw.append(element('summary', '原始選峰紀錄'), element('p', record.Reason));
+          raw.append(element('summary', '原始選峰紀錄'), ...background.map(text => element('p', text)));
           panel.append(raw);
         }
         return panel;

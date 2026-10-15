@@ -600,11 +600,11 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
             assert workbook_rows[sample_name][field] == float(expected_text)
         for row in (long_rows[sample_name], workbook_rows[sample_name]):
             assert row["NL Evidence"] == (
-                "Target-peak CID-NL not supported"
+                "所選峰未見預期的中性丟失"
                 if nl_status == "NL_FAIL"
-                else "No target-matched MS2 in peak"
+                else "所選峰沒有對應的 MS2"
             )
-            assert row["Reason"].startswith("MS1 peak measured; review:")
+            assert row["Reason"] == "未設定配對 ISTD，無法確認身分。"
             assert "Not counted" not in row["Reason"]
             assert row["Counted Detection"] == "FALSE"
         assert long_rows[sample_name]["Product State"] == "not_counted"
@@ -747,9 +747,9 @@ def test_neutral_loss_disabled_target_publishes_ms1_backfill(
     assert request.excel_output_path.is_file()
     row = _run_output_to_long_rows(published.output, [target])[0]
     assert row["NL"] == ""
-    assert row["NL Evidence"] == "Not requested"
+    assert row["NL Evidence"] == "未設定"
     assert row["Area"] != "ND"
-    assert row["Reason"].startswith("MS1 peak measured")
+    assert row["Reason"] == "有 MS1 峰；此目標不要求中性丟失。"
 
 
 def test_workbench_summary_consumes_the_finalized_publication_view(

@@ -48,6 +48,9 @@ change; they never change saved values or decisions.
   source. Under CID a missing neutral loss or MS2 scan is a given fact, so it is
   never the reason or the check. An answer that follows from the evidence stays
   quiet: a counted result without a saved concern is not listed.
+- `XIC Results` `Reason` (the workbench's 原始選峰紀錄) states the same basis
+  first, then other saved concerns; a missing neutral loss is not listed. The
+  workbench shows `NL Evidence` up front only when a neutral loss was observed.
 - Reasons and checks use plain domain words (RT, MS1, XIC, ISTD, 中性丟失) and
   point to the XIC view; internal codes stay out of the workbook.
 
@@ -71,7 +74,8 @@ change; they never change saved values or decisions.
 
 - Writer: `xic_extractor.output.workbook_builder` and its `sheet_*` modules.
 - Focus and worklist: `xic_extractor.output.targeted_overview`.
-- Decisive evidence and review wording: `xic_extractor.output.review_queue_model`.
+- Decisive evidence wording: `xic_extractor.output.reason_display`; review
+  routing: `xic_extractor.output.review_queue_model`.
 - Saved-workbook reader: `xic_inspector.sources.targeted_workbook`
   ([XIC Inspector](xic-inspector.md#targeted-xlsx-review)).
 - Column meanings for users: [Targeted Output Reference](../user/targeted-output-reference.md).
