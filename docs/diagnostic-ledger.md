@@ -1558,3 +1558,42 @@ Receipts and reproducible probes are under `output/trajectory-performance/`:
 `paired-timing.json`, `density-and-retained-timing.json`, `order-cost.json`,
 `qa-parity.json` and `qa-retained.json`. Rerun for changed ppm/order semantics,
 population density or a broader timing claim, not merely another code reader.
+
+### 2026-10-16 Review Overview Streams Expanded Cells
+
+Baseline `4260f04d33214cd2d2f816dec437a9e62aad06a7`; measured candidate
+`alignment_explanation.py` SHA-256
+`1136633c76a17a9fcbc1d04a467601f2b3a724dddcb15f117d07e0a7aa32d107`
+and `untargeted_overview.py` SHA-256
+`70edeab25e99c74e965f3381e93bbdebbedca7dbcb887089079c70574d109cdd`.
+The read-only population reader streams expanded cells one row at a time.
+The overview retains row counts and routes for ordering, not all expanded cells.
+Statistics, sorting, pagination and persisted schemas are unchanged.
+
+The paired synthetic probe uses the same SQLite bytes, 85 samples, mixed
+numeric/unresolved cells and matrix/archive routes, and worktree-local Python
+3.12.13. One warmup per variant precedes four interleaved BC/CB timing runs;
+two allocation measurements per variant run separately from timing.
+
+| Rows | Baseline peak bytes | Streaming peak bytes | Median seconds, baseline / streaming |
+| --- | ---: | ---: | ---: |
+| 100 | 7,865,855 | 208,148 | 0.0130 / 0.0098 |
+| 400 | 31,416,522 | 304,287 | 0.0904 / 0.0470 |
+| 1,600 | 125,663,125 | 678,933 | 0.5144 / 0.1695 |
+
+These are `tracemalloc` Python allocation peaks, not process RSS. At 1,600 rows,
+the peak falls 99.46%; timing ranges are 0.4914-0.5484 s and 0.1518-0.2165 s.
+Every overview and row-fact map is exactly equal. All 170 paired workspace page
+responses preserve statistics, item order, scope, filters and pagination;
+comparison excludes only session-local artifact capabilities. Source SQLite and
+matrix bytes remain unchanged. Malformed routes, compressed cells and sample
+ordinals retain their exception types and messages.
+
+Evidence: `diagnostic_only`; oracle: `exact_safe`; disposition: `optimized` for
+this bounded warm overview workload. Row summaries still grow with row count,
+all rows are scanned, and a single compressed row has no new expansion limit.
+This is not RAW, scientific-readiness or whole-workbench memory evidence.
+Receipts and the producing probe are under `output/overview-memory/`, including
+`run-1792083976451789500/paired-results.json`. Reopen for changed reader/overview
+semantics or a broader memory claim, not merely another code reader. Follow-up
+resource limits and caching remain separate work under Issue #781.
