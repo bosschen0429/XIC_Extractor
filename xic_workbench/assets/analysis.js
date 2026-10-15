@@ -1115,13 +1115,13 @@
       );
     renderResults();
   }
-  function artifactLink(artifact) {
+  function artifactLink(artifact, label = artifact.name) {
     const link = el("a");
     const html = artifact.name.toLowerCase().endsWith(".html");
-    link.append(ui.icon(html ? "external" : "file"), artifact.name);
+    link.append(ui.icon(html ? "external" : "file"), label);
     link.href = artifact.url;
     link.download = artifact.name;
-    link.title = html ? "在工作區開啟報告" : "下載檔案";
+    link.title = html ? "在工作區開啟報告" : `下載 ${artifact.name}`;
     if (html) {
       link.removeAttribute("download");
       link.addEventListener("click", (event) => {
@@ -1178,8 +1178,11 @@
       );
     container.replaceChildren(head);
     const artifacts = el("div", undefined, "artifact-list");
-    for (const artifact of result.artifacts || [])
-      artifacts.append(artifactLink(artifact));
+    for (const artifact of result.artifacts || []) {
+      const label = artifact.path === result.excel_path ? "下載結果 XLSX"
+        : artifact.path === result.matrix_tsv ? "下載矩陣 TSV" : artifact.name;
+      artifacts.append(artifactLink(artifact, label));
+    }
     return { container, artifacts };
   }
   function renderResults() {

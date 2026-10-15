@@ -22,6 +22,9 @@ historical filename as the stable topic locator.
   progress, elapsed time, terminal status, and outputs.
 - Targeted, Untargeted, and Inspector jobs accept cooperative cancellation.
   Feature Quality and sample export finish their active write.
+- Completed results and the review header expose direct downloads of the
+  published Targeted XLSX or bound Untargeted Matrix TSV. These links serve the
+  existing files without rerunning analysis or rebuilding them from Inspector.
 
 ### Targeted
 

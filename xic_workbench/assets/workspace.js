@@ -518,6 +518,17 @@ window.XicUi = (() => {
     $("source-settings").querySelector("summary").textContent = "結果與 RAW 位置";
     $("batch-description").className = "mono";
     $("batch-description").title = page.source;
+    const download = $("result-download");
+    download.hidden = !page.result_artifact;
+    if (page.result_artifact) {
+      download.href = page.result_artifact.url;
+      download.download = page.result_artifact.name;
+      download.title = page.result_artifact.name;
+      download.querySelector("span").textContent = targeted ? "下載結果 XLSX" : "下載矩陣 TSV";
+    } else {
+      download.removeAttribute("href");
+      download.removeAttribute("download");
+    }
     $("batch-count").hidden = false;
     $("batch-count").textContent = page.overview?.kind === "untargeted"
       ? `${count(page.samples.length)} 個樣本 · ${count(page.overview.matrix_count)} 組矩陣結果`

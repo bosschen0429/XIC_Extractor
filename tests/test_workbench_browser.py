@@ -141,7 +141,12 @@ def fake_runs(monkeypatch, tmp_path):
                     if control.targeted_workbook
                     else {}
                 ),
-                "published_paths": [str(artifact)],
+                "published_paths": [str(artifact)]
+                + (
+                    [str(control.targeted_workbook)]
+                    if control.targeted_workbook
+                    else []
+                ),
                 "total_files": 1,
                 "istd_warnings": control.istd_warnings,
                 "targets": [{"label": "Browser target"}],
@@ -574,6 +579,34 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
     expect(frame.locator("#evidence-panel")).to_be_visible()
     frame.locator("#close-evidence").click()
     expect(frame.locator("#evidence-panel")).to_have_count(0)
+
+
+@pytest.mark.parametrize("targeted", [True, False])
+def test_review_download_survives_reload_and_keeps_original_product(
+    workbench, tmp_path, targeted
+):
+    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+    from tests.test_xic_workbench import _review_batch
+
+    if targeted:
+        source = product = write_rare_detection_workbook(tmp_path / "分析結果.xlsx")
+    else:
+        source, product = _review_batch(tmp_path)
+    page = workbench
+    _view(page, "review")
+    page.locator("#source").fill(str(source))
+    page.locator("#open-form button[type=submit]").click()
+    link = page.get_by_role(
+        "link", name="下載結果 XLSX" if targeted else "下載矩陣 TSV", exact=True
+    )
+    expect(link).to_be_visible()
+    page.reload()
+    expect(link).to_be_visible()
+    with page.expect_download() as pending:
+        link.click()
+    downloaded = pending.value
+    assert downloaded.suggested_filename == product.name
+    assert Path(downloaded.path()).read_bytes() == product.read_bytes()
 
 
 def test_untargeted_review_starts_with_results_and_explains_missing_curves(
@@ -1290,7 +1323,14 @@ def test_analysis_review_uses_run_paths_even_after_batch_edit(
     expect(page.locator("#analysis-job-message")).to_contain_text("工作已完成")
     page.locator("#t-data_dir").fill(str(tmp_path / "next-batch"))
     page.locator("#t-dll_dir").fill(str(tmp_path / "next-dll"))
+    with page.expect_download() as pending:
+        page.get_by_role("link", name="下載結果 XLSX", exact=True).click()
+    assert (
+        Path(pending.value.path()).read_bytes()
+        == fake_runs.targeted_workbook.read_bytes()
+    )
     page.get_by_role("button", name="在結果檢閱開啟", exact=True).click()
+    expect(page.get_by_role("link", name="下載結果 XLSX", exact=True)).to_be_visible()
     expect(page.locator("#raw-dir")).to_have_value(str(raw_dir))
     expect(page.locator("#dll-dir")).to_have_value(str(tmp_path))
     page.locator("#targeted-overview td button", has_text="Analyte").click()

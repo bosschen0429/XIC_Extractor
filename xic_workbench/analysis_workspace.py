@@ -117,16 +117,19 @@ class AnalysisWorkspace:
                 result[key] for key in ("output", "manifest_path") if result.get(key)
             ]
             result["artifacts"] = [
-                self._artifact(Path(path)) for path in paths if Path(path).is_file()
+                self.register_artifact(Path(path))
+                for path in paths
+                if Path(path).is_file()
             ]
         job = state.get("job")
         if job is not None:
             for item in job.get("available_outputs", []):
                 if Path(item["path"]).is_file():
-                    item["artifact"] = self._artifact(Path(item["path"]))
+                    item["artifact"] = self.register_artifact(Path(item["path"]))
         return state
 
-    def _artifact(self, path: Path) -> dict[str, str]:
+    def register_artifact(self, path: Path) -> dict[str, str]:
+        """Expose a published or opened result through the local file allowlist."""
         path = path.resolve()
         key = next((key for key, value in self._files.items() if value == path), None)
         if key is None:

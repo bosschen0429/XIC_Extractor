@@ -11,6 +11,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
+from xic_extractor.evidence_artifacts import EvidenceLocator
 from xic_inspector.api import (
     InspectorCancelled,
     PreparedReport,
@@ -20,6 +21,7 @@ from xic_inspector.api import (
     resolve_source,
 )
 from xic_inspector.rendering.html_builder import write_report_atomically
+from xic_inspector.sources.targeted_workbook import TargetedWorkbookLocator
 
 
 class WorkspaceBusy(ValueError):
@@ -189,8 +191,14 @@ class ReviewWorkspace:
     def _page_response(self) -> dict[str, Any]:
         assert self._page is not None and self._report is not None
         page = self._page
+        artifact = None
+        if isinstance(page.source, TargetedWorkbookLocator):
+            artifact = self.analysis.register_artifact(page.source.workbook_path)
+        elif isinstance(page.source, EvidenceLocator):
+            artifact = self.analysis.register_artifact(page.source.matrix_path)
         return {
             "source": str(self._report),
+            "result_artifact": artifact,
             "source_kind": page.payload["summary"].get("source_kind", "evidence"),
             "target_names": page.payload["summary"].get("target_names", []),
             "overview": page.payload["summary"].get("overview"),

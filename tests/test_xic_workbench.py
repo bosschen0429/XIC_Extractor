@@ -303,6 +303,34 @@ def test_browse_uses_current_report_folder_without_exposing_other_files(tmp_path
         assert request("/sample.raw")[0] == 404
 
 
+def test_opened_results_download_original_bytes_and_switch_with_source(tmp_path):
+    from urllib.parse import quote
+
+    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+
+    workbook = write_rare_detection_workbook(tmp_path / "分析結果.xlsx")
+    report, matrix = _review_batch(tmp_path)
+    with _client(ReviewWorkspace(config_dir=tmp_path / "config")) as request:
+        urls = []
+        for source, product in ((workbook, workbook), (report, matrix)):
+            status, page, _ = request("/api/open", {"source": str(source)})
+            assert status == 200
+            artifact = page["result_artifact"]
+            urls.append(artifact["url"])
+            assert artifact["name"] == product.name
+            status, downloaded, headers = request(artifact["url"])
+            assert status == 200
+            assert downloaded == product.read_bytes()
+            assert headers["Content-Disposition"] == (
+                f"attachment; filename*=UTF-8''{quote(product.name)}"
+            )
+            assert request("/api/query", {"limit": 1})[1]["result_artifact"] == artifact
+            assert request("/api/review")[1]["page"]["result_artifact"] == artifact
+        assert urls[0] != urls[1]
+        assert request("/files/" + "0" * 32)[0] == 400
+        assert request("/files/../../workspace.json")[0] == 404
+
+
 def test_http_cancel_and_failure_leave_prior_report_readable(tmp_path, monkeypatch):
     from xic_workbench import acquisition
 
