@@ -215,10 +215,8 @@ def test_long_rows_use_targeted_product_projection() -> None:
 
     assert long_row["NL"] == "NL_FAIL"
     assert long_row["Confidence"] == "VERY_LOW"
-    assert (
-        long_row["Reason"]
-        == "MS1 peak measured; review: MS2/NL may be missing from DDA sampling."
-    )
+    # A possible DDA dropout is a given fact under CID, not the reason.
+    assert long_row["Reason"] == "有 MS1 峰。"
     assert long_row["Product State"] == "detected_flagged"
     assert long_row["Counted Detection"] == "TRUE"
     assert long_row["Projection Review Reasons"] == "plausible_dda_nl_dropout"
@@ -250,8 +248,8 @@ def test_long_row_reason_prefers_projection_over_legacy_not_counted_text() -> No
 
     assert long_row["Counted Detection"] == "TRUE"
     assert long_row["Product State"] == "detected_flagged"
-    assert long_row["Reason"].startswith("MS1 peak measured; review:")
-    assert "not counted" not in long_row["Reason"]
+    assert long_row["Reason"] == "MS1 峰位於預期 RT。"
+    assert "未計入" not in long_row["Reason"]
 
 
 def test_long_row_confidence_follows_not_counted_projection() -> None:
@@ -280,10 +278,7 @@ def test_long_row_confidence_follows_not_counted_projection() -> None:
     assert long_row["Product State"] == "not_counted"
     assert long_row["Counted Detection"] == "FALSE"
     assert long_row["Confidence"] == "VERY_LOW"
-    assert (
-        long_row["Reason"]
-        == "MS1 peak measured; review: no positive MS1 peak available."
-    )
+    assert long_row["Reason"] == "沒有 MS1 峰。"
 
 
 def test_long_reason_explains_conflict_without_repeating_support() -> None:
@@ -303,10 +298,7 @@ def test_long_reason_explains_conflict_without_repeating_support() -> None:
     result = replace(_result(), targeted_product_projection=projection)
     row = _long_output_rows(FileResult("SampleA", {target.label: result}), [target])[0]
 
-    assert row["Reason"] == (
-        "MS1 peak measured; review: "
-        "peak position conflicts with the RT reference/window."
-    )
+    assert row["Reason"] == "證據互相矛盾：峰位置與 RT 參考或範圍衝突。"
     assert row["RT"] == "9.0000"
     assert row["Area"] == "123.45"
     assert row["Counted Detection"] == "FALSE"
@@ -320,9 +312,7 @@ def test_long_reason_explains_conflict_without_repeating_support() -> None:
     precise_row = _long_output_rows(
         FileResult("SampleA", {target.label: result}), [target]
     )[0]
-    assert precise_row["Reason"] == (
-        "MS1 peak measured; review: peak is off-centre in the RT window (borderline)."
-    )
+    assert precise_row["Reason"] == "證據互相矛盾：峰偏離 RT 範圍中心（邊界）。"
 
 
 def test_long_reason_prioritizes_unresolved_boundaries_over_review_flags() -> None:
@@ -341,9 +331,8 @@ def test_long_reason_prioritizes_unresolved_boundaries_over_review_flags() -> No
     result = replace(_result(), targeted_product_projection=projection)
     row = _long_output_rows(FileResult("SampleA", {target.label: result}), [target])[0]
 
-    assert (
-        row["Reason"]
-        == "MS1 peak measured; review: peak/integration boundaries are unresolved."
+    assert row["Reason"] == (
+        "未計入：峰或積分邊界未定。另需注意：信心分級偏低；有多個峰段，邊界需檢查。"
     )
     assert row["Projection Review Reasons"] == (
         "legacy_confidence_review; selected_envelope_split_supported"
@@ -393,7 +382,7 @@ def test_csv_rows_preserve_values_with_runtime_selected_hypothesis() -> None:
         selected_long["Projection Not Counted Reasons"] == "cid_nl_method_not_supported"
     )
     assert selected_long["Confidence"] == "VERY_LOW"
-    assert selected_long["Reason"].startswith("MS1 peak measured; review:")
+    assert selected_long["Reason"] == "未設定配對 ISTD，無法確認身分。"
     assert selected_long["Product State"]
     assert selected_long["Counted Detection"] in {"TRUE", "FALSE"}
 
@@ -430,9 +419,7 @@ def test_csv_rows_project_selected_integration_values_when_present() -> None:
     assert long_row["PeakWidth"] == "0.4200"
     assert long_row["NL"] == "WARN_12.3ppm"
     assert long_row["Confidence"] == "LOW"
-    assert (
-        long_row["Reason"] == "MS1 peak measured; review: weak local signal-to-noise."
-    )
+    assert long_row["Reason"] == "MS2 見到預期的中性丟失。另需注意：局部訊噪比偏弱。"
 
 
 def test_csv_rows_preserve_no_peak_nd_projection() -> None:
@@ -492,18 +479,18 @@ def _selected_hypothesis_with_integration(
 @pytest.mark.parametrize(
     ("nl", "configured", "expected"),
     [
-        (None, False, "Not requested"),
-        (NLResult("OK", 1.0, 9.0, 1, 0, 1), True, "Observed"),
-        (NLResult("WARN", 25.0, 9.0, 1, 0, 1), True, "Observed with tolerance warning"),
+        (None, False, "未設定"),
+        (NLResult("OK", 1.0, 9.0, 1, 0, 1), True, "已觀察到"),
+        (NLResult("WARN", 25.0, 9.0, 1, 0, 1), True, "已觀察到（質量偏差偏大）"),
         (
             NLResult("NL_FAIL", 125.0, None, 1, 0, 1),
             True,
-            "Target-peak CID-NL not supported",
+            "所選峰未見預期的中性丟失",
         ),
         (
             NLResult("NO_MS2", None, None, 0, 0, 0),
             True,
-            "No target-matched MS2 in peak",
+            "所選峰沒有對應的 MS2",
         ),
     ],
 )
@@ -522,7 +509,7 @@ def test_long_csv_reports_file_processing_error() -> None:
     row = _long_output_rows(
         FileResult("Bad", {}, error="read failed"), [_target("WithNL")]
     )[0]
-    assert row["NL Evidence"] == "Processing error"
-    assert row["Reason"] == "RAW file could not be processed."
+    assert row["NL Evidence"] == "處理錯誤"
+    assert row["Reason"] == "RAW 檔無法處理。"
     assert row["Area"] == "ERROR"
     assert row["Counted Detection"] == "FALSE"

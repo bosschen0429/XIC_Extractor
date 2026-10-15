@@ -1,34 +1,45 @@
 # Targeted Output Reference
 
 The normal completed Targeted run delivers one `xic_results_YYYYMMDD_HHMM.xlsx`
-inside its run directory. Workbook layout 2 opens on `Overview`, followed by
-`XIC Results`. `Targets`, `Run Metadata` and the nonempty `Diagnostics` appendix
-are supporting references, not the first reading layer.
+inside its run directory. It opens on `摘要`; `需檢查` follows when some results
+need a look first, then `面積`, `XIC Results`, `Targets`,
+`Run Metadata` and `欄位說明`.
 Inspector reads this layout. Opening a workbook for review does not modify it or create sidecar files.
+The design rules are in [Targeted Workbook](../product/targeted-workbook.md).
 
-## Overview: start here
+## 摘要: start here
 
-The combined overview/summary answers three questions before showing row details:
+The first line is the conclusion: how many rows `需檢查` lists, or that none
+needs a look first. The second line gives samples, targets, and Analyte and
+ISTD counted totals. One table lists every target with its role, paired ISTD,
+counted and total results, the 先看 count and what to confirm.
 
-1. How many samples, targets and sample-target results are represented?
-2. How many saved results count as detections, and how many need review?
-3. Which targets should be inspected first, and why?
+先看 is the minority outcome of a target (at most 20% of its decisions). A rare
+counted result may be a wrong peak; a rare uncounted result may be a missed
+peak. Without a clear majority, the saved review notes are the reading order.
+The 先看 count links to the target's rows on `需檢查`. This order never changes
+saved values or decisions.
 
-Targets with review conditions appear first. Links lead to their sample rows in
-`XIC Results`; filter that table by Target or Review. Counted detections and review
-conditions may overlap. Missing detection decisions remain unknown, not
-inferred from Area, NL or review status. No review condition is not a batch pass.
+## 需檢查
 
-A collapsed row group contains per-target median Area and RT range for counted
-detections only. Expand it when assessing quantities. Reference links at the
-bottom lead to target settings, run metadata and, when present, diagnostic text.
-There is no separate Summary dashboard or duplicated Review Queue table.
+Only the 先看 results, one row each: target, sample, saved outcome, reason,
+suggested check, RT and Area. The sample links to its `XIC Results` row. A RAW
+file that failed to open is listed here with its error message. Open the
+workbook in the workbench to see the XIC for each row.
+
+## 面積
+
+Saved Area per sample (rows, in injection order) and target (columns).
+Analytes sharing an ISTD sit together, followed by that ISTD, so a ratio is one
+formula, for example `=B5/D5`. Grey text is a value the saved decision did not count; it is
+kept so the reader can judge it. `ND` is text and is skipped by `AVERAGE`.
 
 ## XIC Results
 
 One row per sample-target pair, with repeated sample labels, Excel filters and
-frozen identifiers. The first seven columns answer the everyday review questions;
-expand the grouped secondary columns only when more evidence is needed.
+frozen identifiers. Not-counted rows read in grey. The first eight columns answer
+the everyday review questions; expand the grouped secondary columns only when
+more evidence is needed.
 
 ### Main columns
 
@@ -38,6 +49,7 @@ expand the grouped secondary columns only when more evidence is needed.
 | Target | Target label; method inputs and ISTD pairing are in `Targets` |
 | Area | Selected shared physical peak's Gaussian-smoothed positive AsLS residual area (counts·seconds) |
 | RT | Smoothed peak apex retention time (min) |
+| IntSmoothed | Smoothed apex intensity (counts); not an area |
 | Counted Detection | Finished Targeted owner's counted-detection decision |
 | Review | Saved review routing: `Review`, `Check`, or blank when no review condition is recorded |
 | Review Reason | Short explanation of the primary review condition |
@@ -60,9 +72,9 @@ the workbook in Inspector and use its attention filter.
 | Group | Sample grouping |
 | NL | Recorded neutral-loss status; retained for existing evidence readers |
 | Confidence | Recorded confidence; not an independent detection or publication gate |
+| Int / PeakWidth | Raw apex intensity and peak width |
 
-Raw/smoothed intensities, derived peak width, duplicated ISTD pairing and internal
-projection code lists are not part of this presentation table. Internal long-row
+Internal projection code lists are not part of this table. Internal long-row
 contracts remain separate. `TargetKey`, `TargetDefinition`, `TargetRowBinding`,
 typed no-write reasons and archive references remain internal lifecycle records.
 
@@ -86,16 +98,10 @@ One row per configured target. Mirrors the admitted target intent with computed 
 
 ---
 
-## Diagnostics (when nonempty)
-
-Supporting records with `SampleName`, `Target`, `Issue` and the full supplied
-`Reason`, including records not attached to a result row. The appendix preserves
-traceability; it is not another review verdict. `Review Evidence` is a concise
-row-level guide, not a replacement for this diagnostic text.
-
 ## Run Metadata
 
-Key-value pairs recording settings and provenance for the run.
+`Key`, `說明` and `Value` rows recording settings and provenance for the run.
+Value is the last column so a long setting such as `targeted_strategy` stays readable.
 
 | Key | Example value | Description |
 | --- | --- | --- |
@@ -108,6 +114,18 @@ Key-value pairs recording settings and provenance for the run.
 | targeted_output_schema_version | `targeted_output` | Output schema version |
 
 ---
+
+## 欄位說明
+
+The meaning and unit of every delivered column, in one visible table.
+
+## Hidden trace sheets
+
+A run with diagnostic events adds the hidden sheet `診斷事件`: one row per event
+with `SampleName`, `Target`, `Issue` and the full `Reason`, including events not
+attached to a result row. It preserves why a selection was made; it is not another
+review verdict. Unhide it in Excel (right-click a sheet tab → Unhide) when tracing
+a past decision.
 
 ## Embedded decision inputs
 

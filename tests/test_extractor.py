@@ -706,7 +706,7 @@ def test_run_projects_very_low_without_peak_scoped_nl_for_nd_rows(
             "PeakEnd": "ND",
             "PeakWidth": "ND",
             "Confidence": "VERY_LOW",
-            "Reason": "No quantifiable MS1 peak was retained in the searched window.",
+            "Reason": "搜尋範圍內沒有可定量的 MS1 峰。",
         }
     ]
     assert long_rows[0]["Projection Reason"] == (
@@ -751,7 +751,7 @@ def test_run_leaves_confidence_blank_for_file_error_rows(
             "PeakEnd": "ERROR",
             "PeakWidth": "ERROR",
             "Confidence": "",
-            "Reason": "RAW file could not be processed.",
+            "Reason": "RAW 檔無法處理。",
         }
     ]
     assert long_rows[0]["Product State"] == "excluded"
@@ -2017,7 +2017,7 @@ def _formatted_long_success_row(
         "PeakEnd": peak[f"{label}_PeakEnd"],
         "PeakWidth": peak[f"{label}_PeakWidth"],
         "Confidence": "HIGH",
-        "Reason": "MS1 peak measured.",
+        "Reason": "MS2 見到預期的中性丟失。" if nl == "OK" else "MS1 峰形合格。",
     }
 
 

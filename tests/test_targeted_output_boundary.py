@@ -351,9 +351,9 @@ def test_workbook_only_delivery_embeds_method_settings(
     publish_targeted_outputs(request, finalized, output)
 
     workbook = load_workbook(excel_path, read_only=True, data_only=True)
-    metadata = dict(
-        row[:2] for row in workbook["Run Metadata"].iter_rows(values_only=True)
-    )
+    metadata = {
+        row[0]: row[2] for row in workbook["Run Metadata"].iter_rows(values_only=True)
+    }
     workbook.close()
     assert metadata["signal_processing_method"] == config.signal_processing_method
     assert "targeted_strategy" in metadata
@@ -545,15 +545,20 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
         headers = next(rows)
         workbook_rows = {row[0]: dict(zip(headers, row)) for row in rows}
         sheet = workbook["XIC Results"]
-        for header in ("Area", "RT", "IntSmoothed", "Counted Detection"):
+        for header in (
+            "Area",
+            "RT",
+            "IntSmoothed",
+            "Counted Detection",
+            "Review",
+            "Review Reason",
+        ):
             index = headers.index(header) + 1
             assert not any(
                 dimension.hidden and dimension.min <= index <= dimension.max
                 for dimension in sheet.column_dimensions.values()
             )
         for header in (
-            "Review",
-            "Review Reason",
             "Reason",
             "NL Evidence",
             "PeakStart",
@@ -595,11 +600,11 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
             assert workbook_rows[sample_name][field] == float(expected_text)
         for row in (long_rows[sample_name], workbook_rows[sample_name]):
             assert row["NL Evidence"] == (
-                "Target-peak CID-NL not supported"
+                "所選峰未見預期的中性丟失"
                 if nl_status == "NL_FAIL"
-                else "No target-matched MS2 in peak"
+                else "所選峰沒有對應的 MS2"
             )
-            assert row["Reason"].startswith("MS1 peak measured; review:")
+            assert row["Reason"] == "未設定配對 ISTD，無法確認身分。"
             assert "Not counted" not in row["Reason"]
             assert row["Counted Detection"] == "FALSE"
         assert long_rows[sample_name]["Product State"] == "not_counted"
@@ -611,9 +616,8 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
         assert (
             long_rows[sample_name]["Projection Reason"] == projection.projection_reason
         )
-        assert workbook_rows[sample_name]["Review"] == (
-            "Review" if nl_status == "NL_FAIL" else "Check"
-        )
+        # Under CID the neutral-loss status does not set the review level.
+        assert workbook_rows[sample_name]["Review"] == "Review"
         assert workbook_rows[sample_name]["Review Reason"]
         for field in ("Int", "IntSmoothed"):
             assert workbook_rows[sample_name][field] == float(
@@ -742,9 +746,9 @@ def test_neutral_loss_disabled_target_publishes_ms1_backfill(
     assert request.excel_output_path.is_file()
     row = _run_output_to_long_rows(published.output, [target])[0]
     assert row["NL"] == ""
-    assert row["NL Evidence"] == "Not requested"
+    assert row["NL Evidence"] == "未設定"
     assert row["Area"] != "ND"
-    assert row["Reason"].startswith("MS1 peak measured")
+    assert row["Reason"] == "有 MS1 峰；此目標不要求中性丟失。"
 
 
 def test_workbench_summary_consumes_the_finalized_publication_view(
@@ -925,7 +929,7 @@ def test_concurrent_non_replacing_publications_are_collision_atomic(
             diagnostics=[
                 DiagnosticRecord(
                     sample_name="SampleA",
-                    target_label=target.label,
+                    target_label="",
                     issue="FILE_ERROR",
                     reason=marker,
                 )
@@ -957,10 +961,10 @@ def test_concurrent_non_replacing_publications_are_collision_atomic(
     assert set(winning.paths) == expected_paths
     assert all(path.is_file() for path in winning.paths)
     workbook = load_workbook(request.excel_output_path, read_only=True)
-    diagnostics_text = str(list(workbook["Diagnostics"].values))
+    worklist_text = str(list(workbook["需檢查"].values))
     workbook.close()
     assert (
-        sum(marker in diagnostics_text for marker in ("concurrent-a", "concurrent-b"))
+        sum(marker in worklist_text for marker in ("concurrent-a", "concurrent-b"))
         == 1
     )
     assert not list(config.output_csv.parent.glob(".xic-targeted-publish-*"))
@@ -1880,7 +1884,6 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
     values = iter(workbook["XIC Results"].values)
     headers = next(values)
     rows = [dict(zip(headers, row)) for row in values]
-    diagnostic_values = list(workbook["Diagnostics"].values)
     workbook.close()
     row = next(
         r for r in rows if r["SampleName"] == "SampleC" and r["Target"] == "Analyte"
@@ -1930,8 +1933,9 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         else:
             assert "backfill" in str(row["Review Evidence"]).lower()
         assert any(
-            "SampleC" in cells and "Analyte" in cells and "BACKFILL_ACCEPTED" in cells
-            for cells in diagnostic_values
+            (record.sample_name, record.target_label, record.issue)
+            == ("SampleC", "Analyte", "BACKFILL_ACCEPTED")
+            for record in execution.active_output.diagnostics
         )
         ref = next(
             r for r in rows if r["SampleName"] == "SampleA" and r["Target"] == "Analyte"
@@ -2088,9 +2092,9 @@ def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
         and "insufficient_original_xic_support" in record.reason
         for record in execution.active_output.diagnostics
     )
-    from xic_extractor.output.review_queue_model import _review_queue_rows
+    from xic_extractor.output.review_queue_model import review_queue_rows
 
-    queue = _review_queue_rows(
+    queue = review_queue_rows(
         _run_output_to_long_rows(execution.active_output, [analyte, istd]), []
     )
     assert not any(row["Target"] == "Analyte" for row in queue)

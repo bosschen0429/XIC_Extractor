@@ -12,14 +12,20 @@ from xic_extractor.output.detection import (
     MissingTargetedProductProjectionError,
     is_accepted_row_detection,
 )
-from xic_extractor.output.review_queue_model import _review_queue_rows
+from xic_extractor.output.review_queue_model import review_queue_rows
 from xic_extractor.output.schema import TARGETED_WORKBOOK_LAYOUT_VERSION
 from xic_extractor.output.sheet_area_matrix import build_area_matrix_sheet
-from xic_extractor.output.sheet_diagnostics import build_diagnostics_sheet
+from xic_extractor.output.sheet_diagnostic_events import build_diagnostic_events_sheet
+from xic_extractor.output.sheet_field_guide import build_field_guide_sheet
 from xic_extractor.output.sheet_metadata import _build_metadata_sheet
 from xic_extractor.output.sheet_overview import build_overview_sheet
 from xic_extractor.output.sheet_results import _build_data_sheet
+from xic_extractor.output.sheet_review import build_review_sheet
 from xic_extractor.output.sheet_targets import _build_targets_sheet
+from xic_extractor.output.targeted_overview import (
+    focus_worklist,
+    summarize_targeted_results,
+)
 from xic_extractor.output.workbook_inputs import (
     _read_diagnostics,
     _read_long_results,
@@ -42,16 +48,30 @@ def write_workbook_from_rows(
 ) -> Path:
     if require_projection:
         _require_product_projection(rows)
-    review_rows = _review_queue_rows(rows, diagnostics)
+    review_rows = review_queue_rows(rows, diagnostics)
+    overview = summarize_targeted_results(rows, review_rows)
+    worklist = focus_worklist(overview, rows, review_rows, diagnostics)
+    result_rows = {
+        (row.get("SampleName", ""), row.get("Target", "")): index
+        for index, row in enumerate(rows, 2)
+    }
     wb = Workbook()
-    ws_overview = wb.active
-    ws_overview.title = "Overview"
-    build_overview_sheet(
-        ws_overview, rows, review_rows, has_diagnostics=bool(diagnostics or review_rows)
+    summary = wb.active
+    summary.title = "摘要"
+    review_rows_by_target = (
+        build_review_sheet(wb.create_sheet("需檢查"), worklist, result_rows=result_rows)
+        if worklist
+        else {}
     )
-    ws_data = wb.create_sheet("XIC Results")
-    _build_data_sheet(ws_data, rows, review_rows=review_rows)
-    build_area_matrix_sheet(wb.create_sheet("Area Matrix"), rows)
+    build_overview_sheet(
+        summary,
+        overview,
+        pairs={target.label: target.istd_pair for target in targets},
+        worklist_size=len(worklist),
+        review_rows_by_target=review_rows_by_target,
+    )
+    build_area_matrix_sheet(wb.create_sheet("面積"), rows)
+    _build_data_sheet(wb.create_sheet("XIC Results"), rows, review_rows=review_rows)
     _build_targets_sheet(wb.create_sheet("Targets"), targets)
     _build_metadata_sheet(
         wb.create_sheet("Run Metadata"),
@@ -60,19 +80,14 @@ def write_workbook_from_rows(
             ("targeted_workbook_layout_version", TARGETED_WORKBOOK_LAYOUT_VERSION),
         ),
     )
-
-    if diagnostics or review_rows:
-        build_diagnostics_sheet(
-            wb.create_sheet("Diagnostics"),
-            diagnostics,
-            result_rows=rows,
-            review_rows=review_rows,
-        )
+    build_field_guide_sheet(wb.create_sheet("欄位說明"))
+    if diagnostics:
+        build_diagnostic_events_sheet(wb.create_sheet("診斷事件"), diagnostics)
 
     if config.injection_order_source is not None:
         _embed_input_table(wb, "Sample Context", config.injection_order_source)
 
-    wb.active = wb.index(ws_overview)
+    wb.active = wb.index(summary)
     _apply_sheet_role_styles(wb)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(output_path)

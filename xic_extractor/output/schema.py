@@ -14,7 +14,8 @@ TARGETED_DIAGNOSTIC_CSV_SCHEMA_VERSION = "targeted_diagnostics_csv"
 TARGETED_WORKBOOK_LAYOUT_VERSION = 2
 
 # The delivered workbook is a measurement table, not the internal long-row dump.
-# Secondary columns retain peak evidence and the established ISTD readers.
+# Measurements, counted status and review reasons show; the collapsed secondary
+# columns retain peak evidence and the established ISTD readers.
 WORKBOOK_RESULT_HEADERS: tuple[str, ...] = (
     "SampleName",
     "Target",
@@ -36,7 +37,7 @@ WORKBOOK_RESULT_HEADERS: tuple[str, ...] = (
     "Int",
     "PeakWidth",
 )
-WORKBOOK_DETAIL_HEADERS = frozenset(WORKBOOK_RESULT_HEADERS[6:])
+WORKBOOK_DETAIL_HEADERS = frozenset(WORKBOOK_RESULT_HEADERS[8:])
 
 MS1_SUFFIXES: tuple[str, ...] = (
     "RT",

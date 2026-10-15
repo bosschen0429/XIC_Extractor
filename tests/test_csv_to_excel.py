@@ -10,7 +10,8 @@ from xic_extractor.evidence.neutral_loss import NLResult
 from xic_extractor.extraction.result_models import ExtractionResult
 from xic_extractor.output.detection import MissingTargetedProductProjectionError
 from xic_extractor.output.messages import build_diagnostic_records
-from xic_extractor.output.review_queue_model import _review_queue_rows
+from xic_extractor.output.review_queue_model import review_queue_rows
+from xic_extractor.output.sheet_field_guide import FIELD_GUIDE
 from xic_extractor.output.sheet_results import _build_data_sheet
 from xic_extractor.output.sheet_targets import _build_targets_sheet
 from xic_extractor.output.workbook_inputs import _wide_to_long_rows
@@ -26,20 +27,22 @@ def test_data_sheet_preserves_measurements_and_compact_review_fields() -> None:
     ]
     wb = Workbook()
     ws = wb.active
-    _build_data_sheet(ws, rows, review_rows=_review_queue_rows(rows, []))
+    _build_data_sheet(ws, rows, review_rows=review_queue_rows(rows, []))
     records = _sheet_records(ws)
     assert [(r["SampleName"], r["RT"], r["Area"]) for r in records] == [
         ("Tumor_1", 9.1234, 12345.6),
         ("Tumor_2", 9.2, 22345.6),
         ("Tumor_3", "ND", "ND"),
     ]
-    assert records[0]["NL Evidence"] == "Observed"
+    assert records[0]["NL Evidence"] == "已觀察到"
     assert records[1]["NL"] == "⚠ 12.3ppm"
-    assert records[1]["Review Reason"].replace("\n", "") == "NL 質量誤差偏大"
-    # RT precedes Area; intensities read as scientific notation, values centered.
-    assert ws["C2"].number_format == "0.0000"
+    assert records[1]["Review Reason"].replace("\n", "") == "中性丟失質量偏差偏大"
+    # RT precedes Area; intensities read as scientific notation. Numbers align
+    # right and text left so a column scans by magnitude.
+    assert ws["C2"].number_format == "0.00"
     assert ws["D2"].number_format == "0.00E+00"
-    assert {ws[cell].alignment.horizontal for cell in ("A2", "C2", "D2")} == {"center"}
+    assert ws["A2"].alignment.horizontal == "left"
+    assert {ws[cell].alignment.horizontal for cell in ("C2", "D2")} == {"right"}
     assert records[0]["IntSmoothed"] == 900
     assert records[0]["Int"] == 1000
     assert records[0]["PeakWidth"] == 0.4
@@ -84,7 +87,7 @@ def test_data_sheet_preserves_reason_without_dumping_projection_codes() -> None:
         }
     )
     wb = Workbook()
-    _build_data_sheet(wb.active, [row], review_rows=_review_queue_rows([row], []))
+    _build_data_sheet(wb.active, [row], review_rows=review_queue_rows([row], []))
     record = _sheet_records(wb.active)[0]
     assert record["Reason"] == row["Reason"]
     assert record["Area"] == 123
@@ -101,7 +104,7 @@ def test_data_sheet_forces_sample_names_and_target_labels_to_literal_text() -> N
     wb = Workbook()
     ws = wb.active
 
-    _build_data_sheet(ws, rows, review_rows=_review_queue_rows(rows, []))
+    _build_data_sheet(ws, rows, review_rows=review_queue_rows(rows, []))
 
     assert ws["A2"].value == "'+Sample"
     assert ws["A2"].data_type != "f"
@@ -145,15 +148,15 @@ def test_review_queue_aggregates_diagnostics_by_sample_target() -> None:
         },
     ]
 
-    review_rows = _review_queue_rows(rows, diagnostics)
+    review_rows = review_queue_rows(rows, diagnostics)
 
     assert len(review_rows) == 1
     assert review_rows[0]["Priority"] == "1"
     assert review_rows[0]["Sample"] == "Tumor_1"
     assert review_rows[0]["Target"] == "Analyte"
     assert review_rows[0]["Status"] == "Review"
-    assert review_rows[0]["Why"] == "CID-NL 未確認"
-    assert review_rows[0]["Action"] == "看所選 RT 附近的 MS2"
+    assert review_rows[0]["Why"] == "MS2 未見預期的中性丟失"
+    assert review_rows[0]["Action"] == "看所選 RT 附近的 MS2 是否有預期的中性丟失"
     assert review_rows[0]["Issue Count"] == "2"
     assert review_rows[0]["Evidence"] == "NL_FAIL; ANCHOR_MISMATCH"
 
@@ -182,7 +185,7 @@ def test_review_queue_does_not_reopen_confirmed_results_from_diagnostic_history(
             "BACKFILL_ACCEPTED",
         )
     ]
-    assert _review_queue_rows([row], diagnostics) == []
+    assert review_queue_rows([row], diagnostics) == []
 
 
 def test_review_queue_product_mode_does_not_use_legacy_confidence_as_issue() -> None:
@@ -200,7 +203,7 @@ def test_review_queue_product_mode_does_not_use_legacy_confidence_as_issue() -> 
         )
     ]
 
-    review_rows = _review_queue_rows(rows, [])
+    review_rows = review_queue_rows(rows, [])
 
     assert review_rows == []
 
@@ -216,15 +219,15 @@ def test_review_queue_does_not_turn_ordinary_nd_into_attention() -> None:
         product_state="not_counted",
     ) | {"Projection Not Counted Reasons": "missing_positive_ms1_peak"}
     diagnostics = [{"SampleName": "Absent", "Target": "Analyte", "Issue": "NO_SIGNAL"}]
-    assert _review_queue_rows([row], diagnostics) == []
+    assert review_queue_rows([row], diagnostics) == []
     # A missing spiked internal standard is actionable, unlike an absent analyte.
     istd = row | {"Role": "ISTD"}
-    assert _review_queue_rows([istd], diagnostics)[0]["Why"] == "內標未檢出"
+    assert review_queue_rows([istd], diagnostics)[0]["Why"] == "內標未檢出"
     failed = row | {"Projection Exclusion Reasons": "file_error"}
-    assert _review_queue_rows([failed], diagnostics)[0]["Why"] == "RAW 處理失敗"
+    assert review_queue_rows([failed], diagnostics)[0]["Why"] == "RAW 處理失敗"
     # Missing signal must not conceal an independent unresolved conflict.
     row["Projection Conflict Reasons"] = "identity_conflict"
-    assert _review_queue_rows([row], diagnostics)[0]["Status"] == "Review"
+    assert review_queue_rows([row], diagnostics)[0]["Status"] == "Review"
 
 
 def test_targets_sheet_marks_expected_product_as_nominal_reference() -> None:
@@ -234,9 +237,8 @@ def test_targets_sheet_marks_expected_product_as_nominal_reference() -> None:
     _build_targets_sheet(ws, [_target("Analyte")])
 
     assert ws["I1"].value == "Expected product m/z"
-    assert ws["I1"].comment is not None
-    assert "設定參考值，不是實測產物" in ws["I1"].comment.text
-    assert "實測中性丟失與所選峰" in ws["I1"].comment.text
+    meaning = {field: text for _, field, text, _ in FIELD_GUIDE}
+    assert "設定參考值，不是實測產物" in meaning["Expected product m/z"]
 
 
 def test_wide_to_long_rows_classifies_qc_from_sample_name_token() -> None:
@@ -294,43 +296,88 @@ def test_run_writes_one_review_table_and_method_context(tmp_path: Path) -> None:
             product_state="not_counted",
         ),
     ]
+    rows[1].update(
+        {
+            "Projection Support Reasons": "ms1_peak_present;ms1_coherent",
+            "Projection Not Counted Reasons": "missing_ms2_policy_not_counted",
+        }
+    )
     _write_csv(config.output_csv.with_name("xic_results_long.csv"), rows)
     _write_empty_diagnostics_csv(config.diagnostics_csv)
     wb = load_workbook(run(config, [_target("Analyte")]))
     assert wb.sheetnames == [
-        "Overview",
+        "摘要",
+        "需檢查",
+        "面積",
         "XIC Results",
-        "Area Matrix",
         "Targets",
         "Run Metadata",
-        "Diagnostics",
+        "欄位說明",
     ]
-    assert wb.active.title == "Overview"
+    assert wb.active.title == "摘要"
+    # Every delivered column is explained on 欄位說明.
+    guide = {
+        (sheet, name)
+        for sheet, fields, _, _ in FIELD_GUIDE
+        for name in fields.split(" / ")
+    }
+    for title, header_row in (
+        ("摘要", 4),
+        ("需檢查", 1),
+        ("XIC Results", 1),
+        ("Targets", 1),
+        ("Run Metadata", 1),
+    ):
+        headers = {cell.value for cell in wb[title][header_row] if cell.value}
+        assert {(title, header) for header in headers} <= guide, title
     records = _sheet_records(wb["XIC Results"])
     assert [(r["SampleName"], r["Area"], r["Counted Detection"]) for r in records] == [
         ("Sample A", 123, "TRUE"),
         ("Sample B", 456, "FALSE"),
     ]
-    assert records[1]["Review Reason"].replace("\n", "") == "沒有 MS2"
-    assert (
-        dict(row[:2] for row in wb["Run Metadata"].values)[
-            "targeted_workbook_layout_version"
-        ]
-        == 2
-    )
+    assert records[1]["Review Reason"] == "未設定配對 ISTD，無法確認身分"
+    assert {row[0]: row[2] for row in wb["Run Metadata"].values}[
+        "targeted_workbook_layout_version"
+    ] == 2
     wb.close()
 
 
 @pytest.mark.parametrize(
-    "qualification", ["", "ms1_coherent", "cross_sample_backfill_localization"]
+    ("qualification", "istd_pair", "why", "action"),
+    [
+        # The MS1 shape failed, so the paired ISTD could not lend identity.
+        ("", "", "MS1 峰形未通過：肩峰／重疊", "在 XIC 看峰形為什麼未通過"),
+        # A qualified MS1 peak lacks only an identity source.
+        (
+            "ms1_coherent",
+            "",
+            "未設定配對 ISTD，無法確認身分",
+            "在 XIC 判斷這個峰是否就是目標",
+        ),
+        (
+            "ms1_coherent",
+            "d3-8-oxodG",
+            "配對 ISTD 在此樣本未計入，無法確認身分",
+            "先看配對 ISTD 在此樣本的結果",
+        ),
+        (
+            "cross_sample_backfill_localization",
+            "",
+            "未設定配對 ISTD，無法確認身分",
+            "在 XIC 判斷這個峰是否就是目標",
+        ),
+    ],
 )
-def test_review_prioritizes_unqualified_ms1_shape_over_missing_ms2(qualification):
+def test_review_names_the_decisive_ms1_evidence_not_missing_ms2(
+    qualification, istd_pair, why, action
+):
     row = _long_row(
         "TumorBC2312_DNA",
         "8-oxodG",
         "16.4936",
         "513298",
         "NO_MS2",
+        istd_pair=istd_pair,
         counted_detection="FALSE",
         product_state="not_counted",
     )
@@ -344,26 +391,106 @@ def test_review_prioritizes_unqualified_ms1_shape_over_missing_ms2(qualification
                 "missing_ms2_not_observed;physical_shoulder_overlap;"
                 "trace_morphology_review"
             ),
+            "Projection Not Counted Reasons": "missing_ms2_policy_not_counted",
         }
     )
-    queue = _review_queue_rows([row], [])
+    queue = review_queue_rows([row], [])
     wb = Workbook()
     _build_data_sheet(wb.active, [row], review_rows=queue)
     saved = _sheet_records(wb.active)[0]
     assert saved["RT"] == 16.4936
     assert saved["Area"] == 513298
     assert saved["Counted Detection"] == "FALSE"
-    if qualification:
-        assert saved["Review Reason"].replace("\n", "") == "沒有 MS2"
-    else:
-        assert (
-            saved["Review Reason"].replace("\n", "")
-            == "MS1 峰形品質不足（肩峰／重疊）；另無 MS2"
-        )
-        assert (
-            queue[0]["Action"] == "檢查 MS1 峰形與肩峰／重疊，不以 RT 吻合取代峰形資格"
-        )
+    assert saved["Review Reason"] == why
+    assert queue[0]["Action"] == action
+    # Under CID a missing neutral loss is a given fact, not the thing to check.
+    assert "MS2" not in why + action
     wb.close()
+
+
+@pytest.mark.parametrize(
+    ("shape_review", "why"),
+    [
+        ("trace_morphology_review", "MS1 峰形未通過：形狀不連續或不完整"),
+        ("", "MS1 峰形未通過，無法由配對 ISTD 確認身分"),
+    ],
+)
+def test_an_unqualified_ms1_peak_is_not_blamed_on_the_paired_istd(shape_review, why):
+    row = _long_row(
+        "TumorBC2312_DNA",
+        "8-oxodG",
+        "16.4936",
+        "513298",
+        "NO_MS2",
+        istd_pair="d3-8-oxodG",
+        counted_detection="FALSE",
+        product_state="not_counted",
+    )
+    row.update(
+        {
+            # A hard quality flag removed trace coherence, so the paired ISTD
+            # could not lend identity whether or not it was counted.
+            "Projection Support Reasons": "ms1_peak_present;ms1_coherent",
+            "Projection Review Reasons": shape_review,
+            "Projection Not Counted Reasons": "missing_ms2_policy_not_counted",
+        }
+    )
+    [review] = review_queue_rows([row], [])
+    assert review["Why"] == why
+    assert review["Action"] == "在 XIC 看峰形為什麼未通過"
+
+
+def test_a_counted_result_noted_only_for_missing_neutral_loss_stays_quiet():
+    row = _long_row(
+        "Sample A",
+        "Analyte",
+        "9.1",
+        "123",
+        "NO_MS2",
+        counted_detection="TRUE",
+        product_state="detected_flagged",
+    )
+    row.update(
+        {
+            "Review State": "flagged",
+            "Projection Support Reasons": "ms1_peak_present;ms1_coherent",
+            "Projection Review Reasons": "missing_ms2_not_observed",
+        }
+    )
+    # Under CID a missing MS2 scan is a given fact, not a concern to list.
+    assert review_queue_rows([row], []) == []
+
+
+@pytest.mark.parametrize(
+    ("review_reason", "action"),
+    [
+        ("physical_shoulder_overlap", "在 XIC 看肩峰是否影響積分範圍"),
+        ("trace_morphology_review", "在 XIC 看峰形是否完整"),
+        ("targeted_rt_review", "在 XIC 比對 RT 與配對 ISTD"),
+    ],
+)
+def test_counted_review_points_at_the_concern_that_could_overturn_it(
+    review_reason, action
+):
+    row = _long_row(
+        "Sample A",
+        "Analyte",
+        "9.1",
+        "123",
+        "NO_MS2",
+        counted_detection="TRUE",
+        product_state="detected_flagged",
+    )
+    row.update(
+        {
+            "Review State": "flagged",
+            "Projection Support Reasons": "ms1_coherent;paired_istd_identity",
+            "Projection Review Reasons": review_reason,
+        }
+    )
+    [review] = review_queue_rows([row], [])
+    assert review["Action"] == action
+    assert "MS2" not in review["Why"] + review["Action"]
 
 
 def test_run_blocks_product_long_results_without_projection_fields(
@@ -494,7 +621,7 @@ def test_review_queue_evidence_uses_short_tags() -> None:
         },
     ]
 
-    queue = _review_queue_rows(rows, diagnostics)
+    queue = review_queue_rows(rows, diagnostics)
 
     assert queue[0]["Evidence"] == "NL_FAIL; anchor dRT=0.71 min; multi_peak=4"
     assert "selected candidate has" not in queue[0]["Evidence"]
@@ -560,9 +687,13 @@ def test_csv_to_excel_retains_multi_peak_selection_and_candidate_count(
     record = _sheet_records(workbook["XIC Results"])[0]
     assert record["Review"] is None
     assert record["Review Evidence"] is None
+    # An informational event is not a worklist entry; its full text stays on
+    # the hidden trace sheet so a past selection can still be explained.
+    assert "需檢查" not in workbook.sheetnames
+    assert workbook["診斷事件"].sheet_state == "hidden"
     assert any(
         row[2:4] == ("MULTI_PEAK", records[0].reason)
-        for row in workbook["Diagnostics"].values
+        for row in workbook["診斷事件"].values
     )
     assert record["RT"] == 9.0
     assert record["Area"] == 123.0
@@ -599,12 +730,12 @@ def _long_row(
         "Area": area,
         "NL": nl,
         "NL Evidence": {
-            "OK": "Observed",
-            "WARN": "Observed with tolerance warning",
-            "NL_FAIL": "Target-peak CID-NL not supported",
-            "NO_MS2": "No target-matched MS2 in peak",
-            "ERROR": "Processing error",
-        }.get(nl.split("_")[0] if nl.startswith("WARN_") else nl, "Unavailable"),
+            "OK": "已觀察到",
+            "WARN": "已觀察到（質量偏差偏大）",
+            "NL_FAIL": "所選峰未見預期的中性丟失",
+            "NO_MS2": "所選峰沒有對應的 MS2",
+            "ERROR": "處理錯誤",
+        }.get(nl.split("_")[0] if nl.startswith("WARN_") else nl, "無資料"),
         "Int": "1000",
         "IntSmoothed": "900",
         "PeakStart": "8.9",

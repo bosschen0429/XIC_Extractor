@@ -8,6 +8,12 @@ from dataclasses import dataclass
 from math import isfinite
 from statistics import median
 
+from xic_extractor.output.reason_display import decision_basis
+from xic_extractor.output.review_queue_model import (
+    CONFIRM_COUNTED_PEAK,
+    review_queue_rows,
+)
+
 # A detection outcome shared by at most this share of a target's recorded
 # decisions is the unusual one: it is where a wrong peak or a missed peak hides.
 MINORITY_SHARE = 0.2
@@ -101,6 +107,61 @@ def summarize_targeted_results(
         istd_total=sum(t.total for t in targets if t.role == "ISTD"),
         targets=tuple(targets),
     )
+
+
+def focus_worklist(
+    overview: TargetedOverview,
+    result_rows: Sequence[Mapping[str, object]],
+    review_rows: Sequence[Mapping[str, object]],
+    diagnostics: list[dict[str, str]],
+) -> list[dict[str, object]]:
+    """List the results the reader should look at first, in summary order.
+
+    A minority outcome without a saved review condition states the evidence
+    its saved decision rests on against the majority; it is not a new
+    scientific flag. Events with
+    no delivered result (a RAW file that failed to open) stay visible here.
+    """
+    reviews = {(str(r["Sample"]), str(r["Target"])): r for r in review_rows}
+    records = {(str(r["SampleName"]), str(r["Target"])): r for r in result_rows}
+    sample_order = {key[0]: index for index, key in reversed(list(enumerate(records)))}
+    worklist: list[dict[str, object]] = []
+    for target in overview.targets:
+        for sample in sorted(
+            target.focus_samples, key=lambda s: sample_order.get(s, len(sample_order))
+        ):
+            key = (sample, target.label)
+            if key in reviews:
+                worklist.append(dict(reviews[key]))
+                continue
+            record = records[key]
+            counted = _counted(record) == "TRUE"
+            worklist.append(
+                {
+                    "Sample": sample,
+                    "Target": target.label,
+                    "Outcome": "已計入" if counted else "未計入",
+                    "Why": f"多數樣本{'未' if counted else ''}計入；"
+                    f"此樣本：{decision_basis(record).text}",
+                    "Action": CONFIRM_COUNTED_PEAK
+                    if counted
+                    else "在 XIC 確認是否漏抓",
+                    "RT": record.get("RT", ""),
+                    "Area": record.get("Area", ""),
+                }
+            )
+    orphans: dict[tuple[str, str], list[str]] = defaultdict(list)
+    for event in diagnostics:
+        key = (str(event.get("SampleName", "")), str(event.get("Target", "")))
+        if key not in records:
+            orphans[key].append(str(event.get("Reason", "")))
+    orphan_rows = [{"SampleName": key[0], "Target": key[1]} for key in orphans]
+    for review in review_queue_rows(orphan_rows, diagnostics):
+        messages = orphans[(review["Sample"], review["Target"])]
+        entry: dict[str, object] = dict(review)
+        entry["Action"] = f"{review['Action']}：{'；'.join(messages)}"
+        worklist.append(entry)
+    return worklist
 
 
 def _review_focus(

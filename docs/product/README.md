@@ -32,6 +32,7 @@ owner for product documentation.
 | Topic | Start here | Scope |
 | --- | --- | --- |
 | Quant Matrix | [`quant-matrix.md`](quant-matrix.md) | Product-facing matrix values, Backfill activation boundaries, authority routing |
+| Targeted Workbook | [`targeted-workbook.md`](targeted-workbook.md) | Delivered Targeted XLSX: purpose, sheets, reader contracts, content and presentation rules |
 | Evidence Spine | [`evidence-spine.md`](evidence-spine.md) | Shared evidence carriers, peak hypotheses, projection boundaries |
 | Vendor RAW Evidence Model | [`vendor-raw-evidence-model.md`](vendor-raw-evidence-model.md) | Qual Browser-derived RAW evidence-query concepts, scan-filter lineage, trace-type boundaries |
 | Peak Anchor And Group Boundary | [`family-hypothesis-boundary.md`](family-hypothesis-boundary.md) | Discovery peak anchors, cross-sample groups, PeakHypothesis, and projection authority |

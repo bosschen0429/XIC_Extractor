@@ -38,32 +38,33 @@ def test_default_output_only_has_one_xlsx(tmp_path: Path, monkeypatch) -> None:
     assert list(output_dir.glob("*.json")) == []
 
 
-def test_default_xlsx_has_overview_landing_sheet(tmp_path: Path, monkeypatch) -> None:
+def test_default_xlsx_has_summary_landing_sheet(tmp_path: Path, monkeypatch) -> None:
     xlsx_path = _run_pipeline(tmp_path, monkeypatch)
 
     wb = load_workbook(xlsx_path)
     assert wb.sheetnames == [
-        "Overview",
+        "摘要",
+        "面積",
         "XIC Results",
-        "Area Matrix",
         "Targets",
         "Run Metadata",
+        "欄位說明",
     ]
-    assert wb.active.title == "Overview"
+    assert wb.active.title == "摘要"
 
 
 def test_landing_sheet_when_diagnostics_empty(tmp_path: Path, monkeypatch) -> None:
     xlsx_path = _run_pipeline(tmp_path, monkeypatch, with_diagnostics=False)
 
     wb = load_workbook(xlsx_path)
-    assert wb.active.title == "Overview"
+    assert wb.active.title == "摘要"
 
 
 def test_landing_sheet_when_diagnostics_present(tmp_path: Path, monkeypatch) -> None:
     xlsx_path = _run_pipeline(tmp_path, monkeypatch, with_diagnostics=True)
 
     wb = load_workbook(xlsx_path)
-    assert wb.active.title == "Overview"
+    assert wb.active.title == "摘要"
 
 
 def test_run_metadata_sheet_has_required_keys(tmp_path: Path, monkeypatch) -> None:

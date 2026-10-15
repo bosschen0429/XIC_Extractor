@@ -39,7 +39,7 @@ def test_workbook_filters_belong_to_tables_not_overlapping_worksheet_ranges(tmp_
     with ZipFile(path) as archive:
         assert (
             len([name for name in archive.namelist() if name.startswith("xl/tables/")])
-            == 4
+            == 5
         )
         for name in archive.namelist():
             if name.startswith("xl/worksheets/sheet"):
@@ -116,15 +116,18 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     assert not config.diagnostics_csv.exists()
 
     wb = load_workbook(output_path)
+    # One sample shares the batch outcome, so there is nothing to look at first.
     assert wb.sheetnames == [
-        "Overview",
+        "摘要",
+        "面積",
         "XIC Results",
-        "Area Matrix",
         "Targets",
         "Run Metadata",
-        "Diagnostics",
+        "欄位說明",
+        "診斷事件",
     ]
-    assert wb.active.title == "Overview"
+    assert wb["診斷事件"].sheet_state == "hidden"
+    assert wb.active.title == "摘要"
     ws = wb["XIC Results"]
     headers = [cell.value for cell in ws[1]]
     assert headers == [
@@ -162,7 +165,7 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     assert record["IntSmoothed"] == 450.0
     assert record["Int"] == 500.0
     assert record["PeakWidth"] == 0.3
-    assert record["NL Evidence"] == "Observed with tolerance warning"
+    assert record["NL Evidence"] == "已觀察到（質量偏差偏大）"
     assert record["NL"] == "⚠ 12.3ppm"
     assert record["Confidence"] == "LOW"
     assert record["Review"] == "Check"
@@ -170,9 +173,10 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     assert not ws.merged_cells.ranges
     assert ws.freeze_panes == "C2"
     result_columns = {cell.value: cell.column_letter for cell in ws[1]}
-    for header in headers[:6]:
+    # Measurements, counted status and review reasons show; evidence collapses.
+    for header in headers[:8]:
         assert ws.column_dimensions[result_columns[header]].hidden is not True
-    for header in headers[6:]:
+    for header in headers[8:]:
         assert ws.column_dimensions[result_columns[header]].hidden is True
 
     ws_metadata = wb["Run Metadata"]
@@ -188,9 +192,10 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
         "signal_processing_method",
         "signal_processing_window_points",
     } <= metadata_keys
-    metadata_values = dict(
-        ws_metadata.iter_rows(min_row=2, max_col=2, values_only=True)
-    )
+    metadata_values = {
+        row[0]: row[2]
+        for row in ws_metadata.iter_rows(min_row=2, max_col=3, values_only=True)
+    }
     strategy = json.loads(metadata_values["targeted_strategy"])
     assert (
         strategy["uncalibrated_paired_istd_position"]
@@ -207,36 +212,45 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
     assert saved["review_queue"][0]["Why"].replace("\n", "") == "證據需檢查"
 
 
-def test_workbook_retains_complete_diagnostic_text_in_secondary_appendix(tmp_path):
+def test_workbook_keeps_an_event_without_a_result_on_the_worklist(tmp_path):
     from xic_extractor.output.excel_pipeline import write_excel_from_run_output
 
     config = _config(tmp_path)
     original = _run_output(with_diagnostics=False)
-    # An event without a matching result key must not disappear into the worklist.
+    # A RAW file that failed to open has no result row; its message must stay
+    # readable because no XIC view can explain it.
     diagnostic = DiagnosticRecord(
         sample_name="Another sample",
-        target_label="Another target",
+        target_label="",
         issue="FILE_ERROR",
-        reason="=original diagnostic text; acquisition detail remains attributable",
+        reason="=Failed to open .raw: OSError: missing file",
     )
     output = RunOutput(file_results=original.file_results, diagnostics=[diagnostic])
     path = write_excel_from_run_output(
         config, [_target("WithNL")], output, output_path=tmp_path / "results.xlsx"
     )
     book = load_workbook(path)
-    assert book.active.title == "Overview"
-    sheet = book["Diagnostics"]
-    raw_record = next(
-        row
-        for row in sheet
-        if tuple(cell.value for cell in row[:3])
-        == ("Another sample", "Another target", "FILE_ERROR")
-    )
-    assert raw_record[3].value.endswith(diagnostic.reason)
-    assert raw_record[3].data_type != "f"
-    assert any(
-        row[0] == "Another sample" and row[2] == "未記錄判定" for row in sheet.values
-    )
+    assert book.active.title == "摘要"
+    rows = list(book["需檢查"].iter_rows(values_only=False))
+    headers = [cell.value for cell in rows[0]]
+    record = {h: cell for h, cell in zip(headers, rows[1], strict=True)}
+    assert record["樣本"].value == "Another sample"
+    assert record["結果"].value == "未記錄判定"
+    assert record["原因"].value == "RAW 處理失敗"
+    assert record["建議檢查"].value.endswith(diagnostic.reason)
+    assert record["建議檢查"].data_type != "f"
+    # The full event also stays on the hidden trace sheet, as literal text.
+    events = book["診斷事件"]
+    assert events.sheet_state == "hidden"
+    assert [cell.value for cell in events[1]] == [
+        "SampleName",
+        "Target",
+        "Issue",
+        "Reason",
+    ]
+    assert events["C2"].value == "FILE_ERROR"
+    assert events["D2"].value == "'" + diagnostic.reason
+    assert events["D2"].data_type != "f"
     book.close()
 
 
@@ -254,7 +268,7 @@ def test_workbook_explains_backfill_without_changing_saved_counts(tmp_path):
             "PeakStart": "8.5",
             "PeakEnd": "9.5",
             "NL": "NL_FAIL",
-            "NL Evidence": "Target-peak CID-NL not supported",
+            "NL Evidence": "所選峰未見預期的中性丟失",
             "Confidence": "LOW",
             "Counted Detection": counted,
             "Product State": state,
@@ -289,21 +303,12 @@ def test_workbook_explains_backfill_without_changing_saved_counts(tmp_path):
         output_path=tmp_path / "readable.xlsx",
     )
     book = load_workbook(path)
-    assert len(book["Overview"]._charts) == 1
-    sheet = book["Diagnostics"]
-    values = list(sheet.values)
-    header_index = next(i for i, row in enumerate(values) if row[0] == "樣本")
-    records = {
-        row[0]: dict(zip(values[header_index], row))
-        for row in values[header_index + 1 : header_index + 2]
-    }
+    values = list(book["需檢查"].values)
+    records = {row[1]: dict(zip(values[0], row, strict=True)) for row in values[1:]}
     assert "Recovered" not in records
     assert records["Held"]["結果"] == "未計入"
-    assert "找不到" in records["Held"]["原因說明"].replace("\n", "")
-    assert records["Held"]["Area (counts·s)"] == 678.90
-    assert any(
-        row[2:4] == ("BACKFILL_HOLD", "no_unique_qualified_ms1_peak") for row in values
-    )
+    assert "找不到" in records["Held"]["原因"]
+    assert records["Held"]["Area"] == 678.90
     book.close()
     source = TargetedWorkbookSource(path)
     assert [
