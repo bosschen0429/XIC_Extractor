@@ -821,6 +821,59 @@ def _build_workflow_script(step_id: str) -> str:
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows release workflow")
 @pytest.mark.parametrize(
+    "case",
+    ("release", "wrong_version", "expression_tag", "branch", "expression_branch"),
+)
+def test_package_metadata_treats_git_refs_as_data(tmp_path, case):
+    with (PROJECT_ROOT / "pyproject.toml").open("rb") as handle:
+        version = tomllib.load(handle)["project"]["version"]
+    ref_name = {
+        "release": f"v{version}",
+        "wrong_version": f"v{version}-wrong",
+        "expression_tag": f"v$(Write-Warning(781)){version}",
+        "branch": "master",
+        "expression_branch": "topic/$(Write-Warning(781))",
+    }[case]
+    is_tag = case not in {"branch", "expression_branch"}
+    ref = f"refs/{'tags' if is_tag else 'heads'}/{ref_name}"
+    source = _build_workflow_script("meta")
+    # Model Actions' source interpolation so the regression reaches the shell.
+    source = source.replace("${{ github.ref }}", ref).replace(
+        "${{ github.ref_name }}", ref_name
+    )
+    script = tmp_path / "metadata.ps1"
+    script.write_text(source, encoding="utf-8")
+    output = tmp_path / "github-output.txt"
+    completed = subprocess.run(
+        ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(script)],
+        cwd=PROJECT_ROOT,
+        env={
+            **os.environ,
+            "GITHUB_REF": ref,
+            "GITHUB_REF_NAME": ref_name,
+            "GITHUB_OUTPUT": str(output),
+        },
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=20,
+    )
+    assert "WARNING: 781" not in completed.stdout
+    accepted = case not in {"wrong_version", "expression_tag"}
+    assert (completed.returncode == 0) is accepted, completed.stderr
+    if accepted:
+        package_version = f"v{version}" + ("" if is_tag else "-dev")
+        assert output.read_text(encoding="utf-8-sig").splitlines() == [
+            f"version={package_version}",
+            f"artifact_stem=XIC_Extractor-Windows-{package_version}",
+        ]
+    else:
+        assert not output.exists()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows release workflow")
+@pytest.mark.parametrize(
     ("runs", "accepted"),
     (
         ([{"id": 1, "head_sha": "release-sha", "conclusion": "success"}], True),
@@ -909,9 +962,7 @@ function Stop-Process {
     param($Id, [switch]$Force)
 }
 """
-        + _build_workflow_script("smoke_archive").replace(
-            "${{ steps.meta.outputs.artifact_stem }}", "fixture"
-        ),
+        + _build_workflow_script("smoke_archive"),
         encoding="utf-8",
     )
     completed = subprocess.run(
@@ -920,6 +971,7 @@ function Stop-Process {
         env={
             **os.environ,
             "RUNNER_TEMP": str(tmp_path),
+            "ARTIFACT_STEM": "fixture",
             "SMOKE_RESPONSE": str(report),
             "SMOKE_EXIT": "7" if outcome == "nonzero" else "0",
             "SMOKE_OUTCOME": outcome,
