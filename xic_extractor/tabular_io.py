@@ -340,6 +340,18 @@ def escape_excel_formula(value: str) -> str:
     return value
 
 
+def format_spreadsheet_value(value: object) -> str:
+    """Protect display-only text, retaining typed numbers and their precision.
+
+    Machine handoffs must preserve their original strings instead.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return escape_excel_formula(value)
+    return str(value)
+
+
 def format_machine_float(value: float) -> str:
     """Format a machine-handoff float without losing binary precision.
 

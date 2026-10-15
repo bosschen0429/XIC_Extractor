@@ -8,7 +8,7 @@ from xic_extractor.instrument_qc.models import (
     InstrumentQCDiagnostic,
     SDOLEKTrendRow,
 )
-from xic_extractor.tabular_io import write_tsv
+from xic_extractor.tabular_io import format_spreadsheet_value, write_tsv
 
 TREND_TSV_COLUMNS = [
     "sample_name",
@@ -71,10 +71,13 @@ def write_diagnostics_tsv(
     path: Path,
     diagnostics: Iterable[InstrumentQCDiagnostic],
 ) -> None:
-    _write_tsv_rows(
+    """Write spreadsheet-safe review text; JSON retains the original strings."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_tsv(
         path,
         (_diagnostic_to_dict(diagnostic) for diagnostic in diagnostics),
         DIAGNOSTIC_TSV_COLUMNS,
+        formatter=format_spreadsheet_value,
     )
 
 
@@ -163,6 +166,7 @@ def _write_tsv_rows(
 
 
 def _format_csv_value(value: object) -> str:
+    # Trend and HCD TSVs are also inputs to the calibration evidence reader.
     if value is None:
         return ""
     return str(value)

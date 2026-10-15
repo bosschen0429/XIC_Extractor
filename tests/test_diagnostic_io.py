@@ -8,6 +8,7 @@ from xic_extractor.tabular_io import (
     bool_value,
     file_sha256,
     format_diagnostic_value,
+    format_spreadsheet_value,
     has_semicolon_token,
     identity_family_keys,
     numeric_equal,
@@ -25,6 +26,28 @@ from xic_extractor.tabular_io import (
     write_delimited_rows,
     write_tsv,
 )
+
+
+def test_spreadsheet_format_preserves_typed_numbers_and_empty_values() -> None:
+    row = {
+        "label": "=1+1",
+        "count": -2,
+        "offset": -0.123456789,
+        "optional": None,
+        "enabled": False,
+    }
+    text = render_delimited_rows(
+        [row], tuple(row), delimiter="\t", formatter=format_spreadsheet_value
+    )
+    assert list(csv.DictReader(text.splitlines(), delimiter="\t")) == [
+        {
+            "label": "'=1+1",
+            "count": "-2",
+            "offset": "-0.123456789",
+            "optional": "",
+            "enabled": "False",
+        }
+    ]
 
 
 def test_read_delimited_rows_fails_with_clear_missing_columns(

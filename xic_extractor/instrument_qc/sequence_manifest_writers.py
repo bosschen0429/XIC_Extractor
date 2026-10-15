@@ -12,7 +12,11 @@ from xic_extractor.sample_metadata import (
     SAMPLE_METADATA_COLUMNS,
     SAMPLE_METADATA_SCHEMA_VERSION,
 )
-from xic_extractor.tabular_io import write_delimited_rows, write_tsv
+from xic_extractor.tabular_io import (
+    format_spreadsheet_value,
+    write_delimited_rows,
+    write_tsv,
+)
 
 MANIFEST_TSV_COLUMNS = [
     "source_doc",
@@ -36,13 +40,14 @@ def write_sequence_manifest_tsv(
     path: Path,
     rows: Iterable[SequenceManifestRow],
 ) -> None:
+    """Write the spreadsheet-facing audit, not the machine metadata handoff."""
     row_list = list(rows)
     path.parent.mkdir(parents=True, exist_ok=True)
     write_tsv(
         path,
         [_manifest_row_to_dict(row) for row in row_list],
         MANIFEST_TSV_COLUMNS,
-        formatter=_format_tabular_value,
+        formatter=format_spreadsheet_value,
     )
 
 
@@ -199,6 +204,7 @@ def _sample_role(row: SequenceManifestRow) -> str:
 
 
 def _format_tabular_value(value: object) -> str:
+    # Injection order and sample metadata must round-trip exact RAW identities.
     if value is None:
         return ""
     return str(value)
