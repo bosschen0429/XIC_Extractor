@@ -1232,19 +1232,31 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
     ] == pytest.approx(2.0, rel=0.01)
 
 
+@pytest.mark.parametrize(
+    "filename", ["targets.csv", "targets.xlsx", "targeted-method.xlsx"]
+)
+@pytest.mark.parametrize(
+    "method,tag,count",
+    [("dna_dr", "dR", 6), ("rna_ribose", "R", 1), ("rna_mer", "MeR", 0)],
+)
 def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
     tmp_path,
     monkeypatch,
+    filename,
+    method,
+    tag,
+    count,
 ):
     import xic_extractor.acquisition.raw_paths as raw_sources
     from xic_extractor.configuration.targets import read_targets
+    from xic_extractor.presets import apply_to_discovery, load_preset
 
     source = (
         Path(__file__).parents[1]
         / "xic_extractor"
         / "configuration"
         / "data"
-        / "targets.csv"
+        / filename
     )
     all_targets = read_targets(source)
     batch_index = _write_batch(tmp_path, ("S1",))
@@ -1276,12 +1288,17 @@ def test_mixed_target_list_only_supplies_istds_to_untargeted_alignment(
             output_dir=tmp_path / "out",
             alignment_config=AlignmentConfig(),
             peak_config=_peak_config(),
-            discovery_settings=_settings(),
+            discovery_settings=apply_to_discovery(load_preset(method)),
             targets_csv=source,
         )
     )
-    assert captured["targets"] == tuple(t for t in all_targets if t.is_istd)
-    assert len(captured["targets"]) < len(all_targets)
+    if not count:
+        assert not captured
+    else:
+        assert captured["targets"] == tuple(
+            t for t in all_targets if t.is_istd and t.cid_nl_tag == tag
+        )
+        assert len(captured["targets"]) == count
 
 
 def test_alignment_outputs_publish_no_live_workflow_result() -> None:

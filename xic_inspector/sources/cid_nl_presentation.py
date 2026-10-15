@@ -204,6 +204,8 @@ def _record_summary(
         owner = f"{sample} 的" if sample else "這筆"
         if value is None:
             return f"{owner}正式定量決策記錄為空值；空值不等於零。"
+        if "ms1_only_backfill_observation" in facts.get("evidence_states", []):
+            return "MS1 Backfill（非直接 CID-NL 確認）"
         if value == 0:
             return f"{owner}正式定量決策記錄為零。"
         return f"{owner}正式定量決策記錄數值 {_format_measurement(value)}。"

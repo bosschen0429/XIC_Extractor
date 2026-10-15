@@ -66,16 +66,22 @@ def test_paired_istd_localization_uses_only_confirmed_same_batch_offsets(
 
 
 @pytest.mark.parametrize("half_window_min", [0.15, 1.0])
+@pytest.mark.parametrize("with_ms1_positions", [False, True])
 def test_backfill_location_prepares_held_out_residuals_once_per_group(
     monkeypatch,
     half_window_min,
+    with_ms1_positions,
 ):
     references = tuple((f"s{i}", 10.0 + i * 0.1) for i in range(6))
     targets = tuple(f"t{i}" for i in range(20))
     orders = {sample: i for i, (sample, _) in enumerate(references)}
     orders.update({sample: i + 6 for i, sample in enumerate(targets)})
+    positions = references
+    if with_ms1_positions:
+        positions += (("ms1_early", 9.8), ("ms1_late", 12.9))
+        orders.update({"ms1_early": -2, "ms1_late": 29})
     cohorts = {sample: "batch" for sample in orders}
-    trajectory = PeakTrajectory((), references)
+    trajectory = PeakTrajectory((), positions)
     calls = []
     original = PeakTrajectory.locate
 
@@ -92,7 +98,8 @@ def test_backfill_location_prepares_held_out_residuals_once_per_group(
         rt_warp=None,
         backfill_half_window_min=half_window_min,
     )
-    assert len(calls) == len(references) + len(targets)
+    model_count = 2 if with_ms1_positions else 1
+    assert len(calls) == model_count * (len(references) + len(targets))
     assert result["t0"].location.query_rt == pytest.approx(10.6)
     assert all(
         location.apex_tolerance_sec == min(12.0, half_window_min * 60.0)
@@ -113,6 +120,52 @@ def test_backfill_localization_does_not_turn_row_scatter_into_unbounded_permissi
     )
     assert not result["missing"].reliable
     assert result["missing"].apex_tolerance_sec is None
+
+
+@pytest.mark.parametrize("pattern_offset", [0.0, 1.0])
+def test_forecast_requires_agreement_with_direct_reference_trajectory(pattern_offset):
+    references = tuple((f"s{i}", 10.0 + i * 0.1) for i in range(1, 9))
+    pattern = tuple(
+        (f"s{i}", 10.0 + i * 0.1 + pattern_offset) for i in (10, 11, 13, 14)
+    )
+    trajectory = PeakTrajectory((), references + pattern)
+    orders = {sample: int(sample[1:]) for sample, _ in references + pattern}
+    orders["missing"] = 12
+    kwargs = {
+        "injection_order": orders,
+        "sample_cohorts": dict.fromkeys(orders, "batch"),
+        "rt_warp": None,
+        "backfill_half_window_min": 1.0,
+    }
+    prediction = trajectory.locate("missing", **kwargs)
+    result = trajectory.backfill_locations(
+        ("missing",),
+        reference_samples=frozenset(sample for sample, _ in references),
+        **kwargs,
+    )["missing"]
+
+    # A conflict withholds permission; it does not invent a replacement peak.
+    assert result.location == prediction
+    assert result.reliable is (pattern_offset == 0.0)
+    if pattern_offset == 0.0:
+        assert result.location.query_rt == pytest.approx(11.2)
+
+
+def test_sparse_reference_median_cannot_veto_a_supported_drift_forecast():
+    references = (("s1", 10.1), ("s2", 10.2))
+    pattern = tuple((f"s{i}", 10.0 + i * 0.1) for i in (10, 11, 13, 14))
+    orders = {sample: int(sample[1:]) for sample, _ in references + pattern}
+    orders["missing"] = 12
+    result = PeakTrajectory((), references + pattern).backfill_locations(
+        ("missing",),
+        reference_samples=frozenset(sample for sample, _ in references),
+        injection_order=orders,
+        sample_cohorts=dict.fromkeys(orders, "batch"),
+        rt_warp=None,
+        backfill_half_window_min=1.0,
+    )["missing"]
+    assert result.reliable
+    assert result.location.query_rt == pytest.approx(11.2)
 
 
 def test_observed_peak_keeps_its_location_without_borrowing_another_batch():

@@ -152,7 +152,7 @@ def test_review_queue_aggregates_diagnostics_by_sample_target() -> None:
     assert review_rows[0]["Sample"] == "Tumor_1"
     assert review_rows[0]["Target"] == "Analyte"
     assert review_rows[0]["Status"] == "Review"
-    assert review_rows[0]["Why"] == "MS2 未見 NL"
+    assert review_rows[0]["Why"] == "CID-NL 未確認"
     assert review_rows[0]["Action"] == "看所選 RT 附近的 MS2"
     assert review_rows[0]["Issue Count"] == "2"
     assert review_rows[0]["Evidence"] == "NL_FAIL; ANCHOR_MISMATCH"
@@ -203,6 +203,28 @@ def test_review_queue_product_mode_does_not_use_legacy_confidence_as_issue() -> 
     review_rows = _review_queue_rows(rows, [])
 
     assert review_rows == []
+
+
+def test_review_queue_does_not_turn_ordinary_nd_into_attention() -> None:
+    row = _long_row(
+        "Absent",
+        "Analyte",
+        "ND",
+        "ND",
+        "NO_MS2",
+        counted_detection="FALSE",
+        product_state="not_counted",
+    ) | {"Projection Not Counted Reasons": "missing_positive_ms1_peak"}
+    diagnostics = [{"SampleName": "Absent", "Target": "Analyte", "Issue": "NO_SIGNAL"}]
+    assert _review_queue_rows([row], diagnostics) == []
+    # A missing spiked internal standard is actionable, unlike an absent analyte.
+    istd = row | {"Role": "ISTD"}
+    assert _review_queue_rows([istd], diagnostics)[0]["Why"] == "內標未檢出"
+    failed = row | {"Projection Exclusion Reasons": "file_error"}
+    assert _review_queue_rows([failed], diagnostics)[0]["Why"] == "RAW 處理失敗"
+    # Missing signal must not conceal an independent unresolved conflict.
+    row["Projection Conflict Reasons"] = "identity_conflict"
+    assert _review_queue_rows([row], diagnostics)[0]["Status"] == "Review"
 
 
 def test_targets_sheet_marks_expected_product_as_nominal_reference() -> None:
@@ -296,6 +318,51 @@ def test_run_writes_one_review_table_and_method_context(tmp_path: Path) -> None:
         ]
         == 2
     )
+    wb.close()
+
+
+@pytest.mark.parametrize(
+    "qualification", ["", "ms1_coherent", "cross_sample_backfill_localization"]
+)
+def test_review_prioritizes_unqualified_ms1_shape_over_missing_ms2(qualification):
+    row = _long_row(
+        "TumorBC2312_DNA",
+        "8-oxodG",
+        "16.4936",
+        "513298",
+        "NO_MS2",
+        counted_detection="FALSE",
+        product_state="not_counted",
+    )
+    row.update(
+        {
+            "Projection Support Reasons": (
+                "ms1_peak_present;paired_istd_anchor_support;trace_coherent"
+            )
+            + (f";{qualification}" if qualification else ""),
+            "Projection Review Reasons": (
+                "missing_ms2_not_observed;physical_shoulder_overlap;"
+                "trace_morphology_review"
+            ),
+        }
+    )
+    queue = _review_queue_rows([row], [])
+    wb = Workbook()
+    _build_data_sheet(wb.active, [row], review_rows=queue)
+    saved = _sheet_records(wb.active)[0]
+    assert saved["RT"] == 16.4936
+    assert saved["Area"] == 513298
+    assert saved["Counted Detection"] == "FALSE"
+    if qualification:
+        assert saved["Review Reason"].replace("\n", "") == "沒有 MS2"
+    else:
+        assert (
+            saved["Review Reason"].replace("\n", "")
+            == "MS1 峰形品質不足（肩峰／重疊）；另無 MS2"
+        )
+        assert (
+            queue[0]["Action"] == "檢查 MS1 峰形與肩峰／重疊，不以 RT 吻合取代峰形資格"
+        )
     wb.close()
 
 

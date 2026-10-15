@@ -7,4 +7,6 @@ if exist ".venv\Scripts\python.exe" (
 ) else (
     uv run python -m xic_workbench %*
 )
-if errorlevel 1 pause
+set "xic_exit_code=%errorlevel%"
+if not defined XIC_BACKGROUND_LAUNCH if not "%xic_exit_code%"=="0" pause
+exit /b %xic_exit_code%

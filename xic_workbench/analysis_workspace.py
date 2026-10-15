@@ -117,16 +117,19 @@ class AnalysisWorkspace:
                 result[key] for key in ("output", "manifest_path") if result.get(key)
             ]
             result["artifacts"] = [
-                self._artifact(Path(path)) for path in paths if Path(path).is_file()
+                self.register_artifact(Path(path))
+                for path in paths
+                if Path(path).is_file()
             ]
         job = state.get("job")
         if job is not None:
             for item in job.get("available_outputs", []):
                 if Path(item["path"]).is_file():
-                    item["artifact"] = self._artifact(Path(item["path"]))
+                    item["artifact"] = self.register_artifact(Path(item["path"]))
         return state
 
-    def _artifact(self, path: Path) -> dict[str, str]:
+    def register_artifact(self, path: Path) -> dict[str, str]:
+        """Expose a published or opened result through the local file allowlist."""
         path = path.resolve()
         key = next((key for key, value in self._files.items() if value == path), None)
         if key is None:
@@ -236,6 +239,12 @@ class AnalysisWorkspace:
             path = Path(values["path"])
             save_target_table(values["targets"], path)
             return {"message": f"已匯出目標表：{path}", "path": str(path)}
+        if action == "targets/upload":
+            from xic_workbench.target_import import preview_target_upload
+
+            return preview_target_upload(
+                values.get("name"), values.get("content"), values.get("settings", {})
+            )
         if action == "targets/import":
             from xic_workbench.target_import import import_targets
 
@@ -265,12 +274,31 @@ class AnalysisWorkspace:
             from xic_workbench.samples import export_samples
 
             return export_samples(values["samples"], Path(values["path"]))
-        if action == "istd":
+        if action in {"istd", "istd/upload"}:
             from xic_extractor.configuration.targets import read_istd_targets
+            from xic_extractor.presets import apply_to_discovery
+            from xic_workbench.methods import preset_from_payload
+            from xic_workbench.target_import import import_istd_upload
 
+            profiles = None
+            if "preset_snapshot" in values:
+                profiles = apply_to_discovery(
+                    preset_from_payload(values["preset_snapshot"])
+                ).neutral_loss_profiles
+            if action == "istd/upload":
+                return json_value(
+                    import_istd_upload(
+                        values.get("name"),
+                        values.get("content"),
+                        self.config_dir,
+                        profiles=profiles,
+                    )
+                )
             if not values.get("path"):
                 return {"message": "本次不使用內標清單。"}
             selection = read_istd_targets(Path(values["path"]))
+            if profiles is not None:
+                selection = selection.for_method(profiles)
             return {"selection": json_value(selection)}
         if action == "istd/copy":
             from xic_extractor.configuration.paths import targets_template_path

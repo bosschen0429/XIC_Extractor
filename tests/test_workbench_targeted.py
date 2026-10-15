@@ -419,3 +419,67 @@ def _result(*, area: float, nl_status: str, detected: bool) -> SimpleNamespace:
         peak_result=SimpleNamespace(status="OK", peak=object()),
         reported_peak_area=area,
     )
+
+
+@pytest.mark.parametrize("kind", ["method", "targets"])
+def test_uploaded_workbook_detects_content_and_preserves_batch(tmp_path, kind):
+    import base64
+
+    from tests.test_targeted_method_files import rows
+    from xic_extractor.configuration import targeted_method_files as files
+    from xic_workbench.target_import import preview_target_upload
+
+    path = tmp_path / "arbitrary-name.xlsx"
+    if kind == "method":
+        files.save_targeted_method(files.create_targeted_method({}, rows()), path)
+    else:
+        files.save_target_table(rows(), path)
+    settings = {"data_dir": "current-raw", "dll_dir": "current-dll"}
+    result = preview_target_upload(
+        path.name, base64.b64encode(path.read_bytes()).decode(), settings
+    )
+    assert result["kind"] == kind
+    assert result["targets"][1]["istd_pair"] == "standard"
+    if kind == "method":
+        assert result["settings"]["data_dir"] == "current-raw"
+        assert result["settings"]["dll_dir"] == "current-dll"
+    else:
+        assert "settings" not in result
+
+
+def test_uploaded_invalid_method_is_not_downgraded_to_target_table(tmp_path):
+    import base64
+
+    import openpyxl
+
+    from tests.test_targeted_method_files import rows
+    from xic_extractor.configuration.targeted_method_files import save_target_table
+    from xic_workbench.target_import import preview_target_upload
+
+    path = tmp_path / "broken.xlsx"
+    save_target_table(rows(), path)
+    book = openpyxl.load_workbook(path)
+    book.create_sheet("Method").append(["invalid"])
+    book.save(path)
+    book.close()
+    with pytest.raises(ConfigError):
+        preview_target_upload(
+            path.name, base64.b64encode(path.read_bytes()).decode(), {}
+        )
+
+
+@pytest.mark.parametrize(
+    "name, content",
+    [
+        ("file.xls", "AA=="),
+        ("file.xlsx", "!"),
+        ("file.xlsx", "AA=="),
+        ("file.csv", "YQ==" * 400000),
+    ],
+    ids=["extension", "base64", "workbook", "oversized"],
+)
+def test_upload_rejects_invalid_or_oversized_input(name, content):
+    from xic_workbench.target_import import preview_target_upload
+
+    with pytest.raises(ConfigError):
+        preview_target_upload(name, content, {})

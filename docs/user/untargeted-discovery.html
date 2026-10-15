@@ -99,7 +99,7 @@
           <li><h3>選擇 run mode</h3><p>新批次通常選 <code>full</code>；單檔候選探索選 <code>discovery_only</code>；既有探索結果要重新對齊選 <code>align_only</code>。</p></li>
           <li><h3>設定資料路徑</h3><p>指定 RAW 輸入、Thermo DLL 資料夾與輸出資料夾。</p></li>
           <li><h3>匯入 Word「上機資訊」</h3><p>依檔名配對樣本與注射順序；檢查未配對或有歧義項目。字母順序不是注射順序。</p></li>
-          <li><h3>檢查「內標清單」</h3><p>預設選用隨附範例。流程只使用 <code>is_istd=TRUE</code> 列；其他 analyte 列會列為 skipped。</p></li>
+          <li><h3>檢查「內標清單」</h3><p>在「選擇檔案」旁下載共用 XLSX 範例；可選檔或拖放 XLSX、CSV、TSV。預覽會列出內標；流程只使用 <code>role=istd</code> 且符合目前方法 CID-NL 的列。dR 方法不使用 R 內標；不適用會標示略過，不是 ND。切換方法會更新預覽。</p></li>
           <li><h3>選 CID-NL 起始方法</h3><p>開「編輯方法…」選 dR、R、MeR 或 custom NL tags 與組合，將方法套用到本次執行。</p></li>
           <li><h3>按「開始執行」</h3><p>確認設定完成後執行。</p></li>
           <li><h3>從輸出資料夾開始檢視</h3><p>按問題選候選 CSV 或 Alignment matrix；GUI 預設呈現 matrix。</p></li>
@@ -121,10 +121,10 @@
           <article class="input-card"><h3>DLL directory</h3><p>包含 Thermo RawFileReader DLL 的資料夾。</p></article>
           <article class="input-card"><h3>Output directory</h3><p>候選與 Alignment artifacts 的寫入位置。</p></article>
           <article class="input-card"><h3>上機資訊</h3><p>Word sequence table，供檔案／樣本配對及注射順序使用。</p></article>
-          <article class="input-card"><h3>內標清單</h3><p>與 Targeted 共用的 targets CSV；Untargeted 只消費 <code>is_istd=TRUE</code> 列。</p></article>
+          <article class="input-card"><h3>內標清單</h3><p>與 Targeted 共用的 XLSX、CSV、TSV 清單；Untargeted 只消費 <code>role=istd</code> 列。</p></article>
           <article class="input-card"><h3>Preset 與 advanced overrides</h3><p>選定 CID-NL tags 與組合；進階覆寫可在本次執行中調整 preset 方法。</p></article>
         </div>
-        <div class="note"><p><strong>要換內標清單：</strong>複製隨附範例，於 Excel 或系統關聯程式編輯後在 GUI 重載；保留 CSV headers 與 <code>is_istd</code> 標記。沒有第二份 Untargeted 專用清單。</p><p>若提供的檔案沒有內標，GUI 會報錯；清空該欄位可不使用內標清單執行。</p></div>
+        <div class="note"><p><strong>要換內標清單：</strong>下載共用 XLSX 範例，於 Excel 編輯後選檔或拖放匯入；保留 <code>Targets</code> 工作表欄名與 <code>role=istd</code>。方法 XLSX 只取清單，不套用 Targeted 方法設定。沒有第二份 Untargeted 專用清單。</p><p>若提供的檔案沒有內標，GUI 會報錯；清空該欄位可不使用內標清單執行。</p></div>
       </section>
       <section id="outputs" aria-labelledby="outputs-heading">
         <p class="eyebrow">04 · 輸出與檢視</p><h2 id="outputs-heading">依你要回答的問題開檔</h2><p class="intro">GUI Alignment 會保留矩陣、配對的特徵識別資料與 review/provenance 表，支援結果頁的「篩選匯出…」。曲線檢閱統一由 Inspector 開啟。CLI 仍預設只輸出矩陣。</p>

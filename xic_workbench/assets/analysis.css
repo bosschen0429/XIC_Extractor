@@ -670,3 +670,17 @@
   font-size: 12px;
   line-height: 1.6;
 }
+.target-dropzone {
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  padding: 18px;
+  margin: 12px 0;
+  background: var(--surface);
+}
+.target-dropzone.drag-over {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+#target-import-status:empty { display: none; }
+#target-import-status.error { color: var(--danger); }
+#target-import-preview .table-scroll { max-height: 45vh; overflow: auto; }

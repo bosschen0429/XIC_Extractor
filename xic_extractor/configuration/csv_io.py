@@ -49,7 +49,8 @@ def _parse_settings_csv_bytes(payload: bytes, path: Path) -> dict[str, str]:
 
 
 def _read_target_rows(path: Path) -> list[tuple[int, dict[str, str]]]:
-    return _read_target_file_rows(path, delimiter=",", required=TARGET_FIELDS)
+    delimiter = "\t" if path.suffix.lower() == ".tsv" else ","
+    return _read_target_file_rows(path, delimiter=delimiter, required=TARGET_FIELDS)
 
 
 def read_target_draft_rows(path: Path) -> list[dict[str, str]]:

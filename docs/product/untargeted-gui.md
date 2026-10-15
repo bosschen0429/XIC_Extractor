@@ -22,6 +22,9 @@ historical filename as the stable topic locator.
   progress, elapsed time, terminal status, and outputs.
 - Targeted, Untargeted, and Inspector jobs accept cooperative cancellation.
   Feature Quality and sample export finish their active write.
+- Completed results and the review header expose direct downloads of the
+  published Targeted XLSX or bound Untargeted Matrix TSV. These links serve the
+  existing files without rerunning analysis or rebuilding them from Inspector.
 
 ### Targeted
 
@@ -80,8 +83,20 @@ directory-level Discovery followed by Alignment.
 - The sample editor retains undisplayed metadata fields. Filters change only
   visibility. Role corrections and the source locator persist in
   `discovery_gui.json`.
-- The internal-standard list uses only rows marked `is_istd=TRUE`. An empty
-  input opts out; a non-empty list without an internal standard is invalid.
+- The internal-standard list shares Targeted XLSX (`Targets`, with optional
+  `Method`), CSV and TSV intake. Choose a file, browse its local path, or drop
+  it onto the list area; the adjacent link downloads the shared XLSX example.
+  Only `role=istd` rows whose configured neutral loss is enabled by the active
+  Untargeted method are used for reference extraction. Editable tag names do not
+  change chemistry matching. With multiple tags, a standard may match any
+  enabled recipe; this does not change Discovery's union/intersection rule.
+- The preview shows each standard's CID-NL tag and method applicability. Changing
+  the method refreshes the preview. Incompatible standards are skipped, not ND;
+  if none apply, the run proceeds without an ISTD reference. The same selection
+  owner governs preview and execution. Targeted method settings are not applied.
+- Browser uploads are validated before a workspace copy is retained. Invalid
+  uploads preserve the active list; Save or Run persists the selected locator.
+  An empty input opts out; a non-empty list without an internal standard is invalid.
 
 ### Results and exports
 

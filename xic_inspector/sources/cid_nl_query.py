@@ -24,6 +24,10 @@ from xic_inspector.selection.sampler import (
 )
 from xic_inspector.selection.strata import classify_scoped_stratum
 from xic_inspector.sources.cid_nl import CidNlSource
+from xic_inspector.sources.untargeted_overview import (
+    ordered_review_items,
+    review_overview,
+)
 
 
 class IndexedCidNlSource(CidNlSource):
@@ -131,12 +135,21 @@ class IndexedCidNlSource(CidNlSource):
             sqlite3.connect(self.path.resolve().as_uri() + "?mode=ro", uri=True)
         ) as db:
             if request.strategy == "query":
+                ordered = None
+                if request.review_scope != "all":
+                    overview, rows = review_overview(self.path, self.summary)
+                    overview["candidate_count"] = db.execute(
+                        "SELECT COUNT(*) FROM query_items WHERE kind='candidate'"
+                    ).fetchone()[0]
+                    self.summary["overview"] = overview
+                    ordered = ordered_review_items(db, rows, request.review_scope)
                 ids, run_total, eligible, matched, missing = query_page(
                     db,
                     tuple(sorted(scope)),
                     **criteria,
                     offset=request.offset,
                     limit=request.limit,
+                    ordered_item_ids=ordered,
                 )
             else:
                 ids, run_total, eligible, matched, missing = self._review_page(
@@ -241,7 +254,9 @@ class IndexedCidNlSource(CidNlSource):
                     )
                     self.related_items[primary.serialized_ref] = [(item(peer[0]), refs)]
             return (
-                sorted(selected, key=lambda item: item.sort_key),
+                selected
+                if request.review_scope != "all"
+                else sorted(selected, key=lambda item: item.sort_key),
                 run_total,
                 eligible,
                 matched,

@@ -171,7 +171,9 @@ def process_file(
                     method_seeds=seeds_by_tag.get(target.cid_nl_tag),
                     paired_target=istd_targets.get(target.istd_pair),
                     sample_drift=sample_drift,
-                    strict_preferred_rt=reference_rt is not None,
+                    strict_preferred_rt=(
+                        reference_rt is not None or not target.istd_pair
+                    ),
                     results=results,
                     diagnostics=diagnostics,
                     scoring_context_factory=scoring_context_factory,

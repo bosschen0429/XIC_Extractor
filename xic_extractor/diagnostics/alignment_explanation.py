@@ -676,6 +676,28 @@ def open_review_cells(
         yield lambda row_id: _read_review_cells(connection, summary, (row_id,))
 
 
+def read_review_population(
+    path: Path, summary: Mapping[str, Any]
+) -> list[dict[str, Any]]:
+    """Read recorded routes and cells for result-review presentation only."""
+    with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
+        samples = [s["canonical_sample_identity_id"] for s in summary["samples"]]
+        return [
+            {
+                "row": _object(record),
+                "cells": list(
+                    unpack_cells(
+                        payload, row_id=row_id, group_id=group_id, sample_ids=samples
+                    ).values()
+                ),
+            }
+            for row_id, group_id, payload, record in db.execute(
+                "SELECT c.row_key_id,c.group_id,c.payload,r.payload FROM row_cells c "
+                "JOIN records r ON r.kind='rows' AND r.record_id=c.row_key_id"
+            )
+        ]
+
+
 def read_review_row_samples(
     path: Path, summary: Mapping[str, Any]
 ) -> dict[str, frozenset[str]]:

@@ -198,6 +198,46 @@ def test_istd_selector_preserves_nl_identity_over_rolling_rt_review(
         assert "targeted_rt_review" in decision.blockers
 
 
+@pytest.mark.parametrize("nearby_usable", [True, False])
+def test_istd_reference_peak_precedes_stronger_remote_nl_trace(
+    nearby_usable: bool,
+) -> None:
+    remote = _candidate(10.6, area=320_000_000.0)
+    reference = _candidate(23.26, area=200_000_000.0)
+    scored = []
+    for candidate, strength in [(remote, "strong"), (reference, "moderate")]:
+        facts = _facts(
+            candidate,
+            rt=candidate.selection_apex_rt,
+            abundance=candidate.peak.area,
+            ms2_trace_strength=strength,
+            shape_quality="clean",
+        )
+        facts = replace(
+            facts,
+            rt=replace(
+                facts.rt,
+                role="ISTD",
+                rt_prior_min=23.5,
+                rt_prior_delta_min=abs(candidate.selection_apex_rt - 23.5),
+                rt_prior_status="far" if candidate is remote else "borderline",
+            ),
+            trace=replace(
+                facts.trace,
+                hard_quality_flags=(
+                    ("low_scan_support",)
+                    if candidate is reference and not nearby_usable
+                    else ()
+                ),
+            ),
+        )
+        scored.append(_scored_with_facts(candidate, facts))
+
+    selected = select_candidate_by_evidence(scored, selection_rt=23.5)
+
+    assert selected.candidate is (reference if nearby_usable else remote)
+
+
 def test_strict_selector_keeps_direct_nl_over_paired_rt_hint() -> None:
     paired_rt_segment = _candidate(
         10.02,

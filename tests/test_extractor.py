@@ -966,6 +966,55 @@ def test_paired_analyte_uses_strict_anchor_peak_selection(
     assert strict_flags == [False, True]
 
 
+def test_unpaired_isomers_use_expected_rt_to_select_their_own_supported_peak(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _config(tmp_path)
+    (config.data_dir / "SampleA.raw").write_text("", encoding="utf-8")
+    targets = [
+        replace(_target("Early", rt_min=4.0, rt_max=6.0), expected_rt_min=4.9),
+        replace(_target("Late", rt_min=24.0, rt_max=26.0), expected_rt_min=25.3),
+    ]
+
+    class Raw(_FakeRaw):
+        def acquisition_rt_bounds(self):
+            return 0.0, 60.0
+
+        def extract_xic(self, mz, rt_min, rt_max, ppm_tol):
+            rt = np.arange(rt_min, rt_max + 0.005, 0.01)
+            sigma = np.where(rt < 5.2, 0.08, 0.23)
+            early = 2500.0 * np.exp(-0.5 * ((rt - 5.2) / sigma) ** 2)
+            late = 10000.0 * np.exp(-0.5 * ((rt - 25.35) / 0.08) ** 2)
+            return rt, 10.0 + early + late
+
+        def iter_ms2_scans(self, rt_min, rt_max):
+            # Both isomers have independent NL support; the later peak has
+            # denser DDA acquisition, which must not erase their RT identity.
+            scan_rts = (5.2, 25.29, 25.32, 25.35, 25.38, 25.41)
+            for number, scan_rt in enumerate(scan_rts, start=1):
+                scan = Ms2Scan(
+                    scan_number=number,
+                    rt=scan_rt,
+                    precursor_mz=258.1085,
+                    masses=np.array([258.1085 - 116.0474]),
+                    intensities=np.array([1000.0]),
+                    base_peak=1000.0,
+                )
+                yield Ms2ScanEvent(scan=scan, parse_error=None, scan_number=number)
+
+    monkeypatch.setattr(_OPEN_RAW_SEAM, lambda *_args: Raw())
+    output = _run(config, targets)
+    results = output.file_results[0].results
+
+    assert results["Early"].reported_rt == pytest.approx(5.2, abs=0.1)
+    assert results["Late"].reported_rt == pytest.approx(25.35, abs=0.1)
+    for result in results.values():
+        assert result.reported_peak_area is not None
+        assert result.reported_peak_area > 0
+        assert result.targeted_product_projection is not None
+        assert result.targeted_product_projection.counted_detection is True
+
+
 def test_istd_far_peak_uses_expected_rt_as_identity_prior(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

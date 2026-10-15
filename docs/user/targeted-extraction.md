@@ -24,8 +24,10 @@ completed run labels the displayed results as previous results.
 
 The GUI and CLI use the same Targeted pipeline and `config/workspace.json` current
 work state. A fresh workspace has no selected targets. Download the method or
-target-table XLSX example from the target-list card, save a copy, and load it
-explicitly. **保存目前工作** writes local JSON; **另存清單** creates a reusable XLSX.
+target-table XLSX example from the target-list card and save a copy. Drag the file
+onto the import area or click **選擇檔案** (no pasted path). Workbench detects the
+file type and previews targets and ISTD pairs; **確認匯入並取代** applies the list,
+while **取消** leaves current work unchanged. **保存目前工作** writes local JSON; **另存清單** creates a reusable XLSX.
 Reading settings never creates or imports old CSV working copies.
 
 Keep real machine paths in ignored runtime files. Do not commit local RAW, DLL,
@@ -50,8 +52,8 @@ prefixes.
 
 The normal flow is **select samples → choose method/targets → run → review**.
 The target table specifies name, m/z, expected RT in minutes, CID-NL tag
-(`dR`, `R`, `MeR`), role and ISTD relationship. An analyte references an ISTD row;
-an ISTD does not reference another row. The tag is the single chemistry input.
+(`dR`, `R`, `MeR`), role and an optional ISTD relationship. An analyte may reference
+an ISTD row or leave the pair blank; an ISTD does not reference another row. The tag is the single chemistry input.
 
 Use **另存清單** to save the complete target table plus the scientific strategy.
 Load it for another batch without changing that batch's RAW/DLL paths

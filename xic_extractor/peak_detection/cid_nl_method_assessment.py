@@ -53,6 +53,9 @@ from xic_extractor.peak_detection.observations import (
     PeakObservationRef,
     validate_peak_observation_binding,
 )
+from xic_extractor.peak_detection.physical_peak_models import (
+    PHYSICAL_PEAK_BACKFILL_POLICY,
+)
 from xic_extractor.precursor_evidence import PrecursorLossAssessment
 from xic_extractor.processing_identity import (
     IdentityContractError,
@@ -917,10 +920,26 @@ def _validate_upstream_bindings(
             target_tolerance_ppm=method_subject.precursor_tolerance_ppm,
             subject="candidate peak",
         )
+        physical = peak.physical_evaluation
+        physical_backfill = (
+            peak.capture_stage == "method_backfill"
+            and physical is not None
+            and physical.question.selection_policy_version
+            == PHYSICAL_PEAK_BACKFILL_POLICY
+        )
+        # Physical Backfill may select a complete segment containing the query
+        # even when its apex lies outside the window. Consume that owner's
+        # selected question without widening the CID-NL evidence search receipt.
         _validate_query_rt(
-            observed_rt_min=peak.content.integration.rt_apex_min,
+            observed_rt_min=(
+                physical.question.query_rt_min
+                if physical_backfill and physical is not None
+                else peak.content.integration.rt_apex_min
+            ),
             evaluation_receipt=evaluation_receipt,
-            subject="candidate peak apex",
+            subject="candidate physical query"
+            if physical_backfill
+            else "candidate peak apex",
         )
     evidence_by_content_id = {}
     for evidence in evidence_refs:

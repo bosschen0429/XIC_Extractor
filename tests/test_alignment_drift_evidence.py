@@ -16,6 +16,43 @@ from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.target_identity import mint_target_list_snapshot
 
 
+def test_measured_istd_binding_uses_observed_peak_not_expected_rt() -> None:
+    from tests.test_alignment_edge_scoring import _owner
+    from xic_extractor.alignment.drift_evidence import (
+        mint_known_istd_reference_from_measurements,
+    )
+    from xic_extractor.configuration.targets import parse_target_rows
+
+    targets = parse_target_rows(
+        [
+            {
+                "label": "ISTD",
+                "mz": "500",
+                "expected_rt_min": "12",
+                "cid_nl_tag": "dR",
+                "role": "istd",
+                "istd_pair": "",
+            }
+        ]
+    )
+    reference = mint_known_istd_reference_from_measurements(
+        targets, {("ISTD", "early"): 8.0, ("ISTD", "late"): 9.0}
+    )
+    owners = tuple(
+        _owner(
+            sample,
+            precursor_mz=500,
+            product_mz=383.9526,
+            observed_neutral_loss_da=116.0474,
+            owner_apex_rt=rt,
+        )
+        for sample, rt in (("early", 8.0), ("late", 9.0))
+    )
+    lookup = reference.bind(owners)
+    assert len(lookup.bindings) == 2
+    assert lookup.corrected_pair_delta_sec(*owners) == pytest.approx(0)
+
+
 def _known_reference_workbook(path: Path) -> Workbook:
     workbook = Workbook()
     targets = workbook.active

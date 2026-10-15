@@ -112,3 +112,101 @@ def test_existing_method_rejected_and_bootstrap_omits_incomplete_folders(tmp_pat
         assert [m["name"] for m in request("/api/config")[1]["targeted_methods"]] == [
             "original"
         ]
+
+
+@pytest.mark.parametrize(
+    "name", ["targets.csv", "targets.xlsx", "targeted-method.xlsx"]
+)
+def test_istd_upload_uses_shared_target_files_without_changing_targeted(tmp_path, name):
+    import base64
+    from pathlib import Path
+
+    from xic_extractor.configuration.paths import targets_template_path
+    from xic_extractor.configuration.targets import read_istd_targets
+
+    source = targets_template_path().parent / name
+    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
+    with _client(workspace) as request:
+        original = request("/api/config")[1]
+        status, result, _ = request(
+            "/api/istd/upload",
+            {
+                "name": name,
+                "content": base64.b64encode(source.read_bytes()).decode(),
+            },
+        )
+        assert status == 200
+        saved = Path(result["path"])
+        assert saved.is_relative_to(tmp_path / "config")
+        assert saved.read_bytes() == source.read_bytes()
+        selection = read_istd_targets(saved)
+        assert result["selection"]["skipped_count"] == selection.skipped_count
+        assert [r["label"] for r in result["selection"]["targets"]] == [
+            t.label for t in selection.targets
+        ]
+        assert all(t.is_istd for t in selection.targets)
+        current = request("/api/config")[1]
+        assert current["targets"] == original["targets"]
+        assert current["settings"] == original["settings"]
+        assert current["untargeted"] == original["untargeted"]
+
+
+def test_istd_upload_rejects_invalid_content_without_writing(tmp_path):
+    import base64
+
+    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
+    with _client(workspace) as request:
+        for name, payload in [
+            ("bad.xls", b"bad"),
+            ("bad.xlsx", b"bad"),
+            (
+                "empty.csv",
+                b"label,mz,expected_rt_min,cid_nl_tag,role,istd_pair\nA,250,2,dR,analyte,\n",
+            ),
+        ]:
+            status, _, _ = request(
+                "/api/istd/upload",
+                {
+                    "name": name,
+                    "content": base64.b64encode(payload).decode(),
+                },
+            )
+            assert status == 400
+        assert not (tmp_path / "config" / "imports").exists()
+
+
+@pytest.mark.parametrize(
+    "method,tag,count",
+    [("dna_dr", "dR", 6), ("rna_ribose", "R", 1), ("rna_mer", "MeR", 0)],
+)
+def test_istd_http_preview_and_upload_share_method_applicability(
+    tmp_path, method, tag, count
+):
+    import base64
+
+    from xic_extractor.configuration.paths import targets_template_path
+    from xic_workbench.methods import method_details
+
+    source = targets_template_path().with_suffix(".xlsx")
+    snapshot = method_details(method)["draft"]
+    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
+    with _client(workspace) as request:
+        for action, values in [
+            ("istd", {"path": str(source)}),
+            (
+                "istd/upload",
+                {
+                    "name": source.name,
+                    "content": base64.b64encode(source.read_bytes()).decode(),
+                },
+            ),
+        ]:
+            status, result, _ = request(
+                f"/api/{action}", {**values, "preset_snapshot": snapshot}
+            )
+            assert status == 200
+            selection = result["selection"]
+            assert len(selection["targets"]) == count
+            assert all(t["cid_nl_tag"] == tag for t in selection["targets"])
+            assert len(selection["method_skipped"]) == 7 - count
+            assert selection["skipped_count"] == 7

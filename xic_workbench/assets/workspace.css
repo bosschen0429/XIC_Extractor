@@ -1096,14 +1096,12 @@ th.num {
 .overview-quantities summary { cursor: pointer; color: var(--muted); }
 .overview-quantities table { margin-top: 14px; }
 .overview-unknown { color: var(--warn); }
-.targeted-review-nav { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
-.targeted-review-nav span { color: var(--subtle); font-size: 14px; }
+.targeted-review-nav { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; position: sticky; top: var(--topbar-h); z-index: 5; background: var(--surface); padding: 10px 0; }
 @media (max-width: 700px) {
   .targeted-overview { padding: 20px 16px; }
   .overview-heading h2 { font-size: 22px; }
   .overview-metrics { gap: 20px; }
   .overview-table th, .overview-table td { padding: 10px; }
-  .targeted-review-nav span { display: none; }
 }
 .review-grid {
   display: grid;
@@ -1605,6 +1603,8 @@ kbd {
 .review-grid.single-target { grid-template-columns: minmax(0, 1fr); }
 .single-target .list-panel { position: static; max-height: none; }
 .single-target .list-panel form { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.single-target .list-panel .section-heading,
+.single-target .list-panel form > button[type="submit"],
 .single-target .list-panel h2,
 .single-target #list-summary,
 .single-target #item-list,

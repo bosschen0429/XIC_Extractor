@@ -80,6 +80,14 @@ parsed once by Discovery, with shared parent-MS1 verification and scan-event
 resolution within each target’s m/z population before candidate-local CID-NL
 assessment. Different recorded precursors from one scan remain available to
 their respective targets.
+
+Within the same chemical-support tier, an ISTD candidate meeting the existing
+anchor completeness and reference-proximity rule precedes a remote candidate,
+even if the remote candidate has stronger MS2 trace support. A matching NL at
+another chromatographic position does not make the two peaks interchangeable.
+This preference does not crop acquisition, confirm an unsupported nearby peak,
+or reject supported drift when no qualified reference-local candidate exists.
+
 For named Target identity, own CID-NL support requires a compatible recorded
 scan precursor or vendor monoisotopic reference. A parent-MS1 ion found by
 searching product + configured loss establishes mass/isolation compatibility,
@@ -90,10 +98,20 @@ consistently during selection and formal support binding; Discovery retains
 its independent-mass candidate scope. Paired-ISTD and accepted Backfill identity
 remain governed by their existing owners, not a new RT gate.
 
+A recorded vendor monoisotopic reference can support CID-NL even when the
+monoisotopic m/z lies outside the nominal isolation window: the selected ion
+must be inside that window, have recorded charge 1, and match a positive integer
+carbon-isotope offset from the vendor monoisotopic m/z within the shared
+precursor mass policy (20 ppm). Missing geometry or charge, an unrelated mass
+offset, and a product-plus-loss inference do not qualify for this route. The
+reported monoisotopic isolation membership remains `outside_nominal`; eligibility
+does not rewrite geometry or prove exclusive fragment parentage. Existing
+product/NL mass, intensity, target attribution, and peak-local checks still apply.
+
 Strong recorded-precursor-supported, quantifiable peaks remain counted despite RT drift.
-When such a peak disagrees with the position of a counted paired ISTD, it retains
-its measurement and count but requires identity review; chemical support alone
-does not resolve that positional contradiction.
+This does not override a counted paired ISTD: a peak outside its paired-position
+tolerance is ND, even with neutral-loss support. Chemical support alone does not
+resolve that positional contradiction.
 RT-prior disagreement and legacy confidence labels alone do not create product
 review actions. Unresolved morphology or overlap concerns can require quality
 review independently of identity. Confidence and reason labels describe source
@@ -155,20 +173,16 @@ The result records `paired_istd_identity` among its support reasons, so it
 remains distinguishable from NL-confirmed detection. Morphology, overlap and
 other review reasons still flag it.
 
-The same position also rejects. When the paired ISTD is counted, an uncounted
-analyte peak outside that tolerance is
-another signal, not this analyte. Its RT, area and bounds are published as no
-value (`analyte_peak_off_paired_istd_position`), and the measured peak remains
-an `OFF_ISTD_POSITION` diagnostic event. `paired_istd_positions` returns both
-answers from one position assessment. An out-of-position unconfirmed signal
-is ND, not a numeric Target result. Being inside the window is not sufficient
-by itself: the peak-quality and blocker requirements still apply.
-
-An already-counted analyte outside the same paired-position tolerance is not
-silently cleared or reselected. It retains its RT, area, bounds and count with
-`paired_istd_position_mismatch`, `detected_flagged`, and `review_required`.
-The workbook and Inspector expose the identity-review action. An uncounted or
-missing ISTD cannot impose this paired-position review.
+The same position also rejects. When the paired ISTD is counted, any analyte
+peak outside that tolerance is another signal, not this analyte, even if its own
+neutral loss had made it counted. Its RT, area and bounds are published as ND
+(`analyte_peak_off_paired_istd_position`) and counted detection is false. The
+measured peak remains an `OFF_ISTD_POSITION` diagnostic event and its candidate
+evidence remains available for inspection; another peak is not silently selected.
+`paired_istd_positions` returns both identity and rejection from one position
+assessment. Being inside the window is not sufficient by itself: the peak-quality
+and blocker requirements still apply. An uncounted or missing ISTD cannot impose
+this paired-position rejection.
 
 Cohort Backfill is a distinct, owner-bound recovery after direct reference
 observations are available. The [shared Backfill route](backfill.md#targeted-route)
@@ -212,6 +226,10 @@ those facts itself.
 - A credible current-sample paired ISTD transfers observed drift while preserving
   the analyte/ISTD expected-RT offset. Missing or untrusted pairs use the analyte
   reference plus available current-sample drift.
+- An analyte with no configured ISTD pair uses that method reference as a
+  selection anchor. Among independently supported peaks, a complete nearby
+  candidate is not displaced only by denser MS2 support on a distant isomer.
+  This does not impose a hard RT exclusion or grant chemical identity from RT.
 - CID-NL evidence comes from the shared Discovery chemistry and mass policy for
   the row's `dR`, `R`, or `MeR` tag. Recorded-precursor and product-plus-neutral-loss
   inference retain their evidence basis and parent-MS1 support requirements.
@@ -295,6 +313,11 @@ those facts itself.
 
 ### Detection and review policy
 
+- A completed ND without an independent conflict or exclusion needs no review
+  note. Missing positive MS1 signal and rejected off-pair candidates remain in
+  the diagnostic record; they do not create a human review action. A retained
+  measured peak with unresolved identity or quality, or a missing spiked ISTD,
+  still requires review.
 - Targeted NL matching excludes scans whose recorded vendor charge is not 1;
   unavailable charge remains eligible. `NO_MS2` means no method-eligible
   precursor scan, not necessarily no acquired MS2 scan. If only rejected-charge

@@ -3,6 +3,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from xic_extractor.configuration.cid_nl_profile import NeutralLossProfile
 from xic_extractor.configuration.csv_io import (
     LEGACY_TARGET_FIELDS,
     OPTIONAL_TARGET_METADATA_FIELDS,
@@ -68,14 +69,6 @@ def _validate_target_relationships(path: Path, targets: list[Target]) -> None:
                 "is_istd=true targets must not set istd_pair",
             )
         if not target.istd_pair:
-            if not target.is_istd and target.expected_rt_min is not None:
-                raise _config_error(
-                    path,
-                    row_number,
-                    "istd_pair",
-                    "",
-                    "analyte requires an ISTD relationship",
-                )
             continue
         pair = by_label.get(target.istd_pair)
         if pair is None or not pair.is_istd:
@@ -178,6 +171,12 @@ def _parse_target_metadata_enum(
 
 
 def read_targets(path: Path) -> tuple[Target, ...]:
+    if path.suffix.lower() == ".xlsx":
+        from xic_extractor.configuration.targeted_method_files import (
+            load_workbook_targets,
+        )
+
+        return load_workbook_targets(path)
     return tuple(_read_targets(path))
 
 
@@ -187,6 +186,24 @@ class IstdTargetSelection:
 
     targets: tuple[Target, ...]
     skipped_count: int
+    method_skipped: tuple[Target, ...] = ()
+
+    def for_method(
+        self, profiles: Sequence[NeutralLossProfile]
+    ) -> "IstdTargetSelection":
+        """Limit standards to active chemistry, not measured detection status.
+
+        Match configured loss values, not editable tag names or measurement
+        tolerances. Each admitted standard retains its own CID-NL identity.
+        """
+        losses = {profile.neutral_loss_da for profile in profiles}
+        applicable: list[Target] = []
+        skipped: list[Target] = []
+        for target in (*self.targets, *self.method_skipped):
+            (applicable if target.neutral_loss_da in losses else skipped).append(target)
+        return IstdTargetSelection(
+            tuple(applicable), self.skipped_count, tuple(skipped)
+        )
 
 
 def read_istd_targets(path: Path) -> IstdTargetSelection:
@@ -194,7 +211,7 @@ def read_istd_targets(path: Path) -> IstdTargetSelection:
     istds = tuple(target for target in targets if target.is_istd)
     if not istds:
         raise ValueError(
-            f"{path}: no internal standards; set is_istd=TRUE for an ISTD row "
+            f"{path}: no internal standards; set role=istd for an ISTD row "
             "or clear the optional list to run without ISTD alignment."
         )
     return IstdTargetSelection(istds, len(targets) - len(istds))

@@ -101,9 +101,20 @@ class SelectionRequest:
     rt_min: float | None = None
     rt_max: float | None = None
     offset: int = 0
+    review_scope: str = "all"
 
     def validate(self) -> None:
         """Validate request invariants per Issue #398 Section 4."""
+        if not isinstance(self.review_scope, str) or self.review_scope not in {
+            "all",
+            "matrix",
+            "unresolved",
+            "archive",
+            "candidates",
+        }:
+            raise InspectorError(2, "Invalid review scope")
+        if self.review_scope != "all" and self.strategy != "query":
+            raise InspectorError(2, "Review scope requires query selection")
         if self.strategy not in ("sample", "attention", "query"):
             raise InspectorError(2, f"Invalid strategy: {self.strategy}")
 
@@ -520,6 +531,7 @@ def prepare_report(
             "seed": selection.seed,
             "limit": selection.limit,
             "offset": selection.offset,
+            "review_scope": selection.review_scope,
             "case_counts": dict(sorted(case_counts.items())),
             "sample_ids": selection.sample_ids,
             "candidate_ids": selection.candidate_ids,

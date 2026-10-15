@@ -92,23 +92,36 @@ def test_absent_rt_receipt_is_only_valid_for_unattempted_declared_search(
 
 
 @pytest.mark.parametrize(
-    "width,offset,supported",
+    "selected,charge,width,offset,supported,membership",
     [
-        (1.6, 0.0, False),
-        (2.4, 0.0, True),
-        (None, None, False),
-        (2.4, None, False),
-        (1.6, -0.5, True),
+        (301.164978, 1, 1.6, 0.0, True, "outside_nominal"),
+        (302.168210, 1, 1.6, 0.0, True, "outside_nominal"),
+        (301.164978, 1, 2.4, 0.0, True, "inside_nominal"),
+        (301.164978, 1, None, None, False, "unknown"),
+        (301.164978, 1, 2.4, None, False, "unknown"),
+        (301.164978, 1, 1.6, -0.5, True, "inside_nominal"),
+        (301.20, 1, 1.6, 0.0, False, "outside_nominal"),
+        (299.158145, 1, 1.6, 0.0, False, "outside_nominal"),
+        (301.164978, None, 1.6, 0.0, False, "outside_nominal"),
+        (301.164978, 1, 1.6, 2.0, False, "outside_nominal"),
     ],
 )
-def test_recorded_monoisotopic_reference_requires_isolation_support(
-    tmp_path: Path, width, offset, supported
+@pytest.mark.parametrize("product_matches", (True, False))
+def test_recorded_monoisotopic_reference_accepts_isolated_vendor_isotope(
+    tmp_path: Path,
+    selected,
+    charge,
+    width,
+    offset,
+    supported,
+    membership,
+    product_matches,
 ) -> None:
     from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 
     fixture = build_processing_identity_no_raw_fixture(tmp_path, sample_stems=("s1",))
     mono = 300.1615
-    product = 184.11323547363
+    product = 184.11323547363 if product_matches else 184.21323547363
     loss = 116.0474
     evidence = mint_cid_nl_evidence_ref(
         processing_owners=fixture.owners,
@@ -122,10 +135,10 @@ def test_recorded_monoisotopic_reference_requires_isolation_support(
         scan_rt_min=8.0,
         product_intensity=278825.7,
         precursor_mz_basis="scan_monoisotopic",
-        scan_precursor_mz=301.16497802734,
+        scan_precursor_mz=selected,
         precursor_metadata=Ms2PrecursorMetadata(
             monoisotopic_mz=mono,
-            charge=1,
+            charge=charge,
             isolation_width_da=width,
             isolation_offset_da=offset,
         ),
@@ -137,19 +150,15 @@ def test_recorded_monoisotopic_reference_requires_isolation_support(
         candidate_peaks=(cid_nl_peak(fixture, "s1", mz=mono),),
         policy=cid_nl_support_policy(),
     )
-    assert bool(individual) is supported
+    assert bool(individual) is (supported and product_matches)
     assert not sets
     payload = json.loads(canonical_cid_nl_evidence_bytes(evidence.observation))
-    assert payload["precursor_isolation_membership"] == (
-        "unknown"
-        if width is None or offset is None
-        else "inside_nominal"
-        if supported
-        else "outside_nominal"
-    )
-    assert evidence.observation.observed_loss_error_ppm == pytest.approx(
-        7.44977, abs=1e-5
-    )
+    assert payload["precursor_isolation_membership"] == membership
+    assert payload["supports_direct_nl"] is supported
+    if product_matches:
+        assert evidence.observation.observed_loss_error_ppm == pytest.approx(
+            7.44977, abs=1e-5
+        )
 
 
 @pytest.mark.parametrize(

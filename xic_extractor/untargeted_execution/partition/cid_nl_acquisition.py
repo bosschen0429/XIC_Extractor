@@ -1451,8 +1451,21 @@ def backfill_untargeted_cid_nl_sample_subject(
             method_subject=method_subject,
             detector_invocation_id="untargeted-cid-nl-backfill",
             evaluation_receipt=CidNlEvaluationReceipt(
-                query_rt_min=query_rt_min,
-                query_rt_max=query_rt_max,
+                # The physical owner may recover a complete query-containing
+                # peak from bounded context. Cover that evaluated acquisition,
+                # without expanding the search question or MS2 evidence query.
+                query_rt_min=min(
+                    (
+                        query_rt_min,
+                        *(p.generation_provenance.query_rt_min for p in observations),
+                    )
+                ),
+                query_rt_max=max(
+                    (
+                        query_rt_max,
+                        *(p.generation_provenance.query_rt_max for p in observations),
+                    )
+                ),
                 support_policy=support_policy,
                 acquisition_supported=True,
                 search_completed=True,

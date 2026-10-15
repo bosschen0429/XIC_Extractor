@@ -104,6 +104,8 @@ class FakeRuns:
     outcome: str = "success"
     release: threading.Event = field(default_factory=threading.Event)
     output_dirs: list = field(default_factory=list)
+    targeted_workbook: Path | None = None
+    istd_warnings: list = field(default_factory=list)
 
 
 @pytest.fixture
@@ -134,8 +136,19 @@ def fake_runs(monkeypatch, tmp_path):
             self.progress(2, 2, "Browser fake complete")
             return {
                 "output_dir": str(self.output_dir),
-                "published_paths": [str(artifact)],
+                **(
+                    {"excel_path": str(control.targeted_workbook)}
+                    if control.targeted_workbook
+                    else {}
+                ),
+                "published_paths": [str(artifact)]
+                + (
+                    [str(control.targeted_workbook)]
+                    if control.targeted_workbook
+                    else []
+                ),
                 "total_files": 1,
+                "istd_warnings": control.istd_warnings,
                 "targets": [{"label": "Browser target"}],
                 "sample_count": 1,
                 "candidate_counts": {"total": 1},
@@ -491,7 +504,7 @@ def test_job_progress_artifact_failure_retention_and_confirmed_stop(
     expect(result).to_have_text(previous, use_inner_text=True)
 
 
-def test_review_search_and_inspector_use_one_scroll_and_visible_zoom(
+def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
     workbench, tmp_path
 ):
     page = workbench
@@ -549,50 +562,92 @@ def test_review_search_and_inspector_use_one_scroll_and_visible_zoom(
     ) as detail:
         page.locator("#item-list button").first.click()
     report_path = f"/reports/{detail.value.json()['view_id']}.html"
-    expect(page.locator("#inspector")).to_have_attribute(
-        "src", report_path + "?embed=1"
-    )
     page.wait_for_function(
         """path => document.getElementById('inspector')
         .contentWindow.location.pathname === path""",
         arg=report_path,
     )
     frame = page.frame_locator("#inspector")
-    zoom = frame.locator("button[data-zoom]").first
-    expect(zoom).to_be_visible()
+    expect(frame.get_by_role("heading", name="已保存的樣本結果")).to_be_visible()
+    expect(frame.locator("#svg-raw")).to_have_count(0)
     page.wait_for_function("""() => {
         const frame = document.getElementById('inspector');
         const doc = frame.contentDocument;
         return doc && frame.clientHeight >= doc.documentElement.scrollHeight - 2;
     }""")
-    zoom.scroll_into_view_if_needed()
-    # Put the opener near the top of the host viewport, with the frame's own
-    # top already scrolled away. Merely centering it can leave frame.top > 0,
-    # which would not exercise viewport-relative dialog placement at all.
-    page.evaluate(
-        """offset => window.scrollBy(0,
-            document.getElementById('inspector').getBoundingClientRect().top
-            + offset - 120)""",
-        arg=zoom.evaluate("button => button.getBoundingClientRect().top"),
+    frame.get_by_role("button", name="查看依據").first.click()
+    expect(frame.locator("#evidence-panel")).to_be_visible()
+    frame.locator("#close-evidence").click()
+    expect(frame.locator("#evidence-panel")).to_have_count(0)
+
+
+@pytest.mark.parametrize("targeted", [True, False])
+def test_review_download_survives_reload_and_keeps_original_product(
+    workbench, tmp_path, targeted
+):
+    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+    from tests.test_xic_workbench import _review_batch
+
+    if targeted:
+        source = product = write_rare_detection_workbook(tmp_path / "分析結果.xlsx")
+    else:
+        source, product = _review_batch(tmp_path)
+    page = workbench
+    _view(page, "review")
+    page.locator("#source").fill(str(source))
+    page.locator("#open-form button[type=submit]").click()
+    link = page.get_by_role(
+        "link", name="下載結果 XLSX" if targeted else "下載矩陣 TSV", exact=True
     )
-    assert page.evaluate("window.scrollY") > 0
-    assert page.locator("#inspector").bounding_box()["y"] < 0
-    zoom.click()
-    dialog = frame.locator("#zoom-dialog")
-    expect(dialog).to_be_visible()
-    page.wait_for_function("""() => {
-        const frame = document.getElementById('inspector');
-        const dialog = frame.contentDocument.getElementById('zoom-dialog');
-        const f = frame.getBoundingClientRect(), d = dialog.getBoundingClientRect();
-        return f.top + d.top >= 0 && f.top + d.bottom <= innerHeight + 2
-            && f.left + d.left >= 0 && f.left + d.right <= innerWidth + 2;
-    }""")
-    frame.locator("#zoom-close").click()
-    expect(dialog).to_be_hidden()
+    expect(link).to_be_visible()
+    page.reload()
+    expect(link).to_be_visible()
+    with page.expect_download() as pending:
+        link.click()
+    downloaded = pending.value
+    assert downloaded.suggested_filename == product.name
+    assert Path(downloaded.path()).read_bytes() == product.read_bytes()
 
 
+def test_untargeted_review_starts_with_results_and_explains_missing_curves(
+    workbench, tmp_path
+):
+    from tests.test_xic_workbench import _review_batch
+
+    report, _ = _review_batch(tmp_path)
+    page = workbench
+    _view(page, "review")
+    page.locator("#source").fill(str(report))
+    page.locator("#raw-dir").fill("")
+    page.locator("#open-form button[type=submit]").click()
+    overview = page.locator("#targeted-overview")
+    expect(overview.get_by_role("heading", name="先看 1 組未解決定量")).to_be_visible()
+    expect(page.locator("#review")).to_be_hidden()
+    overview.get_by_role("button", name="先看未解決定量", exact=True).click()
+    expect(page.locator("#item-list button")).to_have_count(1)
+    expect(page.locator("#inline-curve-status")).to_contain_text(
+        "尚未設定 RAW 或 DLL 位置"
+    )
+    saved = page.frame_locator("#inspector")
+    expect(saved.get_by_role("heading", name="已保存的樣本結果")).to_be_visible()
+    expect(saved.locator(".sample-table tbody tr").first).to_contain_text("4.000e+2")
+    expect(saved.locator("#svg-raw")).to_have_count(0)
+    page.locator("#back-to-overview").click()
+    expect(overview).to_be_visible()
+    overview.get_by_role("button", name="查看全部矩陣群組").click()
+    expect(page.locator("#item-list button")).to_have_count(3)
+    page.locator("#back-to-overview").click()
+    overview.locator("summary").click()
+    overview.get_by_role("button", name="1 組未採用").click()
+    expect(page.locator("#list-summary")).to_contain_text("未採用群組 · 1 組")
+    expect(
+        page.frame_locator("#inspector").locator(".sample-table tbody tr").first
+    ).to_contain_text("5.000e+2")
+
+
+@pytest.mark.parametrize("sample_count", (1, 6))
 def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
-    workbench, tmp_path, monkeypatch
+    workbench, tmp_path, monkeypatch, sample_count
 ):
     from dataclasses import replace
 
@@ -614,25 +669,56 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
 
     monkeypatch.setattr(acquisition, "export_explanation_curves", acquire)
     page = workbench
-    db, _, _ = _create_mock_db(tmp_path)
+    from tests.test_xic_workbench import _review_batch
+
+    db = (
+        _create_mock_db(tmp_path)[0]
+        if sample_count == 1
+        else _review_batch(tmp_path, sample_count=sample_count)[0]
+    )
     _view(page, "review")
     page.locator("#source").fill(str(db))
     page.locator("#raw-dir").fill(str(tmp_path))
     page.locator("#dll-dir").fill(str(tmp_path))
     page.locator("#open-form button[type=submit]").click()
+    if sample_count > 1:
+        page.get_by_role("button", name="查看全部矩陣群組").click()
+        expect(
+            page.frame_locator("#inline-curve-frame").locator("#svg-raw polyline")
+        ).to_have_count(1)
+        page.locator("#item-list button").filter(has_text="6 / 6 個樣本有值").click()
     expect(page.locator(".acquisition-panel > summary")).to_be_visible()
     expect(page.locator("#sample-list")).to_be_hidden()
     page.locator(".acquisition-panel > summary").click()
-    recorded = page.locator("#inspector").get_attribute("src")
+    recorded = page.locator("#inspector").evaluate(
+        "frame => frame.contentWindow.location.href"
+    )
+    frame = page.frame_locator("#inline-curve-frame")
+    expect(frame.locator("#svg-raw polyline")).to_have_count(sample_count)
+    expect(page.locator("#xic-dialog")).to_be_hidden()
+    saved = page.frame_locator("#inspector")
+    expect(saved.get_by_role("heading", name="已保存的樣本結果")).to_be_visible()
+    expect(saved.locator("#svg-raw")).to_have_count(0)
+    assert (
+        page.locator("#inspector").evaluate(
+            "frame => frame.contentWindow.location.href"
+        )
+        == recorded
+    )
     page.locator("#load-curves").click()
-    frame = page.frame_locator("#xic-inspector")
-    expect(frame.locator("#svg-raw polyline")).to_have_count(1)
-    expect(page.locator("#xic-navigation")).to_be_hidden()
-    assert page.locator("#inspector").get_attribute("src") == recorded
-    page.locator("#xic-close").click()
-    page.locator("#load-curves").click()
-    expect(frame.locator("#svg-raw polyline")).to_have_count(1)
-    assert len(calls) == 1
+    expect(frame.locator("#svg-raw polyline")).to_have_count(sample_count)
+    assert set(calls[-1]) == {f"S{i + 1}" for i in range(sample_count)}
+    assert len(calls) == (1 if sample_count == 1 else 2)
+    frame.locator("button[data-zoom]").click()
+    expect(frame.locator("#zoom-dialog")).to_be_visible()
+    page.wait_for_function("""() => {
+        const frame = document.getElementById('inline-curve-frame');
+        const dialog = frame.contentDocument.getElementById('zoom-dialog');
+        const f = frame.getBoundingClientRect(), d = dialog.getBoundingClientRect();
+        return f.top + d.top >= 0 && f.top + d.bottom <= innerHeight + 2;
+    }""")
+    frame.locator("#zoom-close").click()
+    expect(frame.locator("#zoom-dialog")).to_be_hidden()
 
 
 def test_targeted_nd_shows_original_points_and_support_failure(
@@ -689,16 +775,29 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     tmp_path,
     monkeypatch,
 ):
+    from contextlib import contextmanager
+
     from tests.test_xic_inspector_targeted_workbook import (
         install_targeted_raws,
         write_rare_detection_workbook,
     )
+    from xic_workbench import targeted_curves
 
     page = workbench
     raw_dir = tmp_path / "review-raw"
     reads = install_targeted_raws(
         monkeypatch, raw_dir, {"S3": 1000, "S4": 300}, pair_scale=1000
     )
+    release = threading.Event()
+    open_raw = targeted_curves.open_raw
+
+    @contextmanager
+    def delayed_raw(*args, **kwargs):
+        assert release.wait(10)
+        with open_raw(*args, **kwargs) as raw:
+            yield raw
+
+    monkeypatch.setattr(targeted_curves, "open_raw", delayed_raw)
     for sample in ("S3", "S4"):
         batch = raw_dir / sample
         batch.mkdir()
@@ -714,9 +813,20 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     recorded = page.frame_locator("#inspector")
     row_button = recorded.get_by_role("button", name="看 S3 的 Analyte XIC", exact=True)
     expect(row_button).to_be_visible()
-    recorded_url = page.locator("#inspector").get_attribute("src")
+    row_button.scroll_into_view_if_needed()
+    reading_scroll = page.evaluate("window.scrollY")
+    recorded_url = page.locator("#inspector").evaluate(
+        "frame => frame.contentWindow.location.href"
+    )
     row_button.click()
     dialog = page.locator("#xic-dialog")
+    expect(dialog).to_be_visible()
+    page.go_back()
+    expect(dialog).to_be_hidden()
+    page.wait_for_function("y => Math.abs(window.scrollY - y) < 2", arg=reading_scroll)
+    release.set()
+    expect(page.locator("#status")).to_contain_text("診斷曲線已載入")
+    page.go_forward()
     expect(dialog).to_be_visible()
     expect(page.locator(".acquisition-panel")).to_be_hidden()
     expect(page.locator("#xic-sample")).to_have_value("S3")
@@ -728,7 +838,12 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     expect(frame.locator(".tx-chart-title")).to_have_text(["Analyte", "ISTD"])
     expect(frame.locator(".tx-provenance")).to_contain_text("無法驗證是否為原分析檔")
     # The result table never navigates away; each ion has its own y scale.
-    assert page.locator("#inspector").get_attribute("src") == recorded_url
+    assert (
+        page.locator("#inspector").evaluate(
+            "frame => frame.contentWindow.location.href"
+        )
+        == recorded_url
+    )
     expect(frame.locator(".tx-chart")).to_have_count(2)
     for line in curves.all():
         ys = [
@@ -743,6 +858,17 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     frame.get_by_role("button", name="完整 RT", exact=True).click()
     expect(frame.get_by_label("顯示 RT 起點", exact=True)).to_have_value("0")
     expect(frame.get_by_label("顯示 RT 終點", exact=True)).to_have_value("12")
+    page.go_back()
+    expect(dialog).to_be_hidden()
+    expect(row_button).to_be_focused()
+    page.go_forward()
+    expect(dialog).to_be_visible()
+    expect(frame.locator(".tx-sample-name")).to_have_text("S3")
+    assert len(reads) == 2
+    page.keyboard.press("Escape")
+    expect(dialog).to_be_hidden()
+    page.go_forward()
+    expect(dialog).to_be_visible()
     page.locator("#xic-close").click()
     expect(dialog).to_be_hidden()
     expect(row_button).to_be_focused()
@@ -765,7 +891,12 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     page.set_viewport_size({"width": 420, "height": 760})
     bounds = dialog.bounding_box()
     assert bounds and bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= 421
-    assert page.locator("#inspector").get_attribute("src") == recorded_url
+    assert (
+        page.locator("#inspector").evaluate(
+            "frame => frame.contentWindow.location.href"
+        )
+        == recorded_url
+    )
     assert workbook.read_bytes() == original
 
 
@@ -806,10 +937,131 @@ def test_targeted_review_marks_the_rare_detection_and_opens_it_in_place(
     # The evidence is the next row, not a panel after every other sample.
     detail = frame.locator(".tgt-table tbody tr:nth-child(4)")
     expect(detail).to_have_class("tgt-detail-row")
-    expect(detail).to_contain_text("配對 ISTD（ISTD）")
+    expect(detail).to_contain_text("積分範圍")
+    expect(detail).not_to_contain_text("配對 ISTD（ISTD）")
+    expect(detail).not_to_contain_text("檢閱註記")
     page.locator("#target-id").select_option("")
     expect(page.locator("#item-list")).to_be_visible()
     expect(page.locator("#review")).to_have_class("review-grid")
+
+
+def test_review_back_forward_preserves_target_and_filters(workbench, tmp_path):
+    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+
+    page = workbench
+    workbook = write_rare_detection_workbook(tmp_path / "navigation.xlsx")
+    _view(page, "review")
+    page.locator("#source").fill(str(workbook))
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#targeted-overview td button", has_text="Analyte").click()
+    expect(page.locator("#item-title")).to_contain_text("Analyte")
+    page.locator("#target-attention").check()
+    expect(
+        page.frame_locator("#inspector").locator(".tgt-table tbody tr:not([hidden])")
+    ).to_have_count(1)
+    page.go_back()
+    expect(page.locator("#targeted-overview")).to_be_visible()
+    page.go_forward()
+    expect(page.locator("#review")).to_be_visible()
+    expect(page.locator("#target-id")).to_have_value("Analyte")
+    expect(page.locator("#target-attention")).to_be_checked()
+    expect(
+        page.frame_locator("#inspector").locator(".tgt-table tbody tr:not([hidden])")
+    ).to_have_count(1)
+    page.locator("#back-to-overview").click()
+    expect(page.locator("#targeted-overview")).to_be_visible()
+    page.go_forward()
+    expect(page.locator("#item-title")).to_contain_text("Analyte")
+    _view(page, "targeted")
+    page.go_back()
+    expect(page.locator("#workspace-review")).to_be_visible()
+    expect(page.locator("#target-attention")).to_be_checked()
+    page.go_forward()
+    expect(page.locator("#workspace-targeted")).to_be_visible()
+
+
+@pytest.mark.parametrize("query_pending", [False, True], ids=["completed", "pending"])
+def test_review_history_restores_server_query_before_loading_xic(
+    workbench, tmp_path, monkeypatch, query_pending
+):
+    from tests.test_xic_inspector_targeted_workbook import (
+        install_targeted_raws,
+        write_rare_detection_workbook,
+    )
+
+    page = workbench
+    queried, release = threading.Event(), threading.Event()
+    if query_pending:
+        query = ReviewWorkspace.query
+
+        def hold_query_response(workspace, values):
+            result = query(workspace, values)
+            if values.get("target_id") == "ISTD":
+                queried.set()
+                assert release.wait(10)
+            return result
+
+        monkeypatch.setattr(ReviewWorkspace, "query", hold_query_response)
+    raw_dir = tmp_path / "review-raw"
+    install_targeted_raws(monkeypatch, raw_dir, {"S3": 1000}, pair_scale=1000)
+    workbook = write_rare_detection_workbook(tmp_path / "navigation.xlsx")
+    _view(page, "review")
+    page.locator("#source").fill(str(workbook))
+    page.locator("#raw-dir").fill(str(raw_dir))
+    page.locator("#dll-dir").fill(str(tmp_path))
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#targeted-overview td button", has_text="Analyte").click()
+    expect(page.locator("#item-title")).to_contain_text("Analyte")
+    analyte_xic = page.frame_locator("#inspector").get_by_role(
+        "button", name="看 S3 的 Analyte XIC", exact=True
+    )
+    expect(analyte_xic).to_be_visible()
+    _view(page, "targeted")
+    _view(page, "review")
+    page.locator("#target-id").select_option("ISTD")
+    try:
+        if query_pending:
+            assert queried.wait(10)
+        else:
+            expect(page.locator("#item-title")).to_contain_text("ISTD")
+            expect(
+                page.frame_locator("#inspector").get_by_role(
+                    "button", name="看 S3 的 ISTD XIC", exact=True
+                )
+            ).to_be_visible()
+        page.go_back()
+        expect(page.locator("#workspace-targeted")).to_be_visible()
+        page.go_back()
+    finally:
+        release.set()
+    expect(page.locator("#workspace-review")).to_be_visible()
+    expect(page.locator("#item-title")).to_contain_text("Analyte")
+    expect(page.locator("#load-curves")).to_be_enabled()
+    with page.expect_response("**/api/curves") as response:
+        analyte_xic.click()
+    assert response.value.status == 202, response.value.json()
+    expect(
+        page.frame_locator("#xic-inspector").locator(".tx-chart-title")
+    ).to_have_text(["Analyte", "ISTD"])
+
+
+def test_review_overview_button_skips_workspace_tab_history(workbench, tmp_path):
+    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+
+    page = workbench
+    workbook = write_rare_detection_workbook(tmp_path / "navigation.xlsx")
+    _view(page, "review")
+    page.locator("#source").fill(str(workbook))
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#targeted-overview td button", has_text="Analyte").click()
+    expect(page.locator("#item-title")).to_contain_text("Analyte")
+    _view(page, "targeted")
+    _view(page, "review")
+    page.locator("#back-to-overview").click()
+    expect(page.locator("#workspace-review")).to_be_visible()
+    expect(page.locator("#targeted-overview")).to_be_visible()
+    page.go_forward()
+    expect(page.locator("#item-title")).to_contain_text("Analyte")
 
 
 def test_targeted_row_xic_without_raw_points_at_the_missing_folder(workbench, tmp_path):
@@ -946,9 +1198,14 @@ def test_downloaded_current_method_edits_and_saves_without_changing_batch(
     download.value.save_as(path)
     original = path.read_bytes()
     assert dict(load_targeted_method(path).settings) == {"strategy": "cid-nl"}
-    page.locator("#target-method-import").click()
-    page.locator("#path-dialog-value").fill(str(path))
-    page.locator("#path-dialog").get_by_role("button", name="確定").click()
+    with page.expect_file_chooser() as chooser:
+        page.get_by_role("button", name="選擇檔案", exact=True).click()
+    chooser.value.set_files(path)
+    expect(page.locator("#target-import-summary")).to_contain_text(
+        "方法檔（Method + Targets）"
+    )
+    expect(page.locator("#target-preview")).to_contain_text("Browser target")
+    page.locator("#target-import-confirm").click()
     expect(page.locator("#target-preview")).to_contain_text("5-hmdC")
     expect(page.locator("#t-data_dir")).to_have_value(batch)
     expect(page.locator("#t-dll_dir")).to_have_value(dll)
@@ -972,3 +1229,225 @@ def test_downloaded_current_method_edits_and_saves_without_changing_batch(
     assert not (config_dir / "targets.csv").exists()
     assert (config_dir / "workspace.json").is_file()
     page.screenshot(path=str(tmp_path / "xlsx-method-workspace.png"), full_page=True)
+
+
+@pytest.mark.parametrize("extension", ["xlsx", "csv", "tsv"])
+def test_drop_target_table_preview_cancel_and_confirm(workbench, tmp_path, extension):
+    import base64
+
+    from tests.test_targeted_method_files import rows
+    from xic_extractor.configuration.targeted_method_files import save_target_table
+
+    page = workbench
+    path = tmp_path / f"renamed.{extension}"
+    if extension == "xlsx":
+        save_target_table(rows(), path)
+    else:
+        import csv
+
+        with path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=list(dict.fromkeys(k for row in rows() for k in row)),
+                delimiter="\t" if extension == "tsv" else ",",
+            )
+            writer.writeheader()
+            writer.writerows(rows())
+    batch = page.locator("#t-data_dir").input_value()
+    for confirm in [False, True]:
+        transfer = page.evaluate_handle(
+            """({name, content}) => {
+            const bytes = Uint8Array.from(atob(content), c => c.charCodeAt(0));
+            const transfer = new DataTransfer();
+            transfer.items.add(new File([bytes], name));
+            return transfer;
+        }""",
+            {
+                "name": path.name,
+                "content": base64.b64encode(path.read_bytes()).decode(),
+            },
+        )
+        page.locator("#target-dropzone").dispatch_event(
+            "drop", {"dataTransfer": transfer}
+        )
+        expect(page.locator("#target-import-summary")).to_contain_text(
+            "目標表 · 2 個目標（ISTD 1 個）"
+        )
+        expect(page.locator("#target-import-rows tr").nth(1)).to_contain_text(
+            "standard"
+        )
+        expect(page.locator("#target-preview")).to_contain_text("Browser target")
+        if confirm:
+            page.locator("#target-import-confirm").click()
+        else:
+            page.locator("#target-import-preview").get_by_role(
+                "button", name="取消", exact=True
+            ).click()
+            expect(page.locator("#target-preview")).to_contain_text("Browser target")
+    expect(page.locator("#target-preview")).to_contain_text("analyte")
+    expect(page.locator("#target-preview")).not_to_contain_text("Browser target")
+    expect(page.locator("#t-data_dir")).to_have_value(batch)
+    page.locator("#target-import-file").set_input_files(
+        {"name": "bad.xls", "mimeType": "application/octet-stream", "buffer": b"bad"}
+    )
+    expect(page.locator("#target-import-status")).to_contain_text("不支援 .xls")
+    expect(page.locator("#target-preview")).to_contain_text("analyte")
+
+
+def test_istd_warning_distinguishes_confirmation_from_signal(workbench, fake_runs):
+    fake_runs.istd_warnings = [{"label": "d4-N6-2HE-dA", "detected": 0, "total": 1}]
+    fake_runs.release.set()
+    _start(workbench, "targeted")
+    warning = workbench.locator(".result-warning")
+    expect(warning).to_contain_text("ISTD d4-N6-2HE-dA：0 / 1 個樣本通過確認")
+    expect(warning).to_contain_text("未通過確認不代表沒有訊號")
+    expect(warning).not_to_contain_text("個樣本偵測到")
+
+
+def test_analysis_review_uses_run_paths_even_after_batch_edit(
+    workbench, fake_runs, tmp_path, monkeypatch
+):
+    from tests.test_xic_inspector_targeted_workbook import (
+        install_targeted_raws,
+        write_rare_detection_workbook,
+    )
+
+    page = workbench
+    raw_dir = tmp_path / "run-raw"
+    install_targeted_raws(monkeypatch, raw_dir, {"S1": 13000})
+    fake_runs.targeted_workbook = write_rare_detection_workbook(tmp_path / "run.xlsx")
+    fake_runs.release.set()
+    page.locator("#t-data_dir").fill(str(raw_dir))
+    page.locator("#t-dll_dir").fill(str(tmp_path))
+    page.get_by_role("button", name="開始 Targeted 分析", exact=True).click()
+    expect(page.locator("#analysis-job-message")).to_contain_text("工作已完成")
+    page.locator("#t-data_dir").fill(str(tmp_path / "next-batch"))
+    page.locator("#t-dll_dir").fill(str(tmp_path / "next-dll"))
+    with page.expect_download() as pending:
+        page.get_by_role("link", name="下載結果 XLSX", exact=True).click()
+    assert (
+        Path(pending.value.path()).read_bytes()
+        == fake_runs.targeted_workbook.read_bytes()
+    )
+    page.get_by_role("button", name="在結果檢閱開啟", exact=True).click()
+    expect(page.get_by_role("link", name="下載結果 XLSX", exact=True)).to_be_visible()
+    expect(page.locator("#raw-dir")).to_have_value(str(raw_dir))
+    expect(page.locator("#dll-dir")).to_have_value(str(tmp_path))
+    page.locator("#targeted-overview td button", has_text="Analyte").click()
+    page.frame_locator("#inspector").get_by_role(
+        "button", name="看 S1 的 Analyte XIC", exact=True
+    ).click()
+    frame = page.frame_locator("#xic-inspector")
+    expect(frame.locator('.tx-chart polyline[data-kind="smoothed"]')).to_have_count(2)
+    expect(page.locator("#status")).not_to_contain_text("請先選擇 RAW 資料夾")
+
+
+@pytest.mark.parametrize("extension,drop", [("xlsx", True), ("tsv", False)])
+def test_untargeted_istd_shared_upload_and_persistence(
+    workbench, config_dir, tmp_path, extension, drop
+):
+    import base64
+    import csv
+
+    from tests.test_targeted_method_files import rows
+    from xic_extractor.configuration.targeted_method_files import save_target_table
+    from xic_extractor.configuration.targets import read_istd_targets
+
+    page = workbench
+    path = tmp_path / f"shared.{extension}"
+    if extension == "xlsx":
+        save_target_table(rows(), path)
+    else:
+        with path.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=list(dict.fromkeys(k for r in rows() for k in r)),
+                delimiter="\t",
+            )
+            writer.writeheader()
+            writer.writerows(rows())
+    original_targets = page.locator("#target-preview").inner_text()
+    page.get_by_role("button", name="Untargeted", exact=True).click()
+    expect(page.get_by_role("link", name="下載共用清單範例 XLSX")).to_be_visible()
+    with page.expect_download() as download:
+        page.get_by_role("link", name="下載共用清單範例 XLSX").click()
+    download.value.save_as(tmp_path / "example.xlsx")
+    assert read_istd_targets(tmp_path / "example.xlsx").targets
+    if drop:
+        transfer = page.evaluate_handle(
+            """({name, content}) => {
+            const transfer = new DataTransfer();
+            const bytes = Uint8Array.from(atob(content), c => c.charCodeAt(0));
+            transfer.items.add(new File([bytes], name));
+            return transfer;
+        }""",
+            {
+                "name": path.name,
+                "content": base64.b64encode(path.read_bytes()).decode(),
+            },
+        )
+        page.locator("#istd-dropzone").dispatch_event(
+            "drop", {"dataTransfer": transfer}
+        )
+    else:
+        page.locator("#istd-import-file").set_input_files(path)
+    expect(page.locator("#istd-import-status")).to_contain_text(
+        f"已匯入 shared.{extension}"
+    )
+    expect(page.locator("#istd-summary")).to_have_text(
+        "1 個適用內標；0 個不適用此方法；略過 1 個一般目標。"
+    )
+    expect(page.locator("#istd-preview")).to_contain_text("standard")
+    expect(page.locator("#istd-preview")).not_to_contain_text("analyte")
+    retained = page.locator("#u-targets_csv").input_value()
+    page.locator("#istd-import-file").set_input_files(
+        {"name": "bad.xls", "mimeType": "application/octet-stream", "buffer": b"bad"}
+    )
+    expect(page.locator("#istd-import-status")).to_contain_text("不支援 .xls")
+    expect(page.locator("#u-targets_csv")).to_have_value(retained)
+    expect(page.locator("#istd-preview")).to_contain_text("standard")
+    page.locator("#untargeted-save").click()
+    expect(page.locator("#untargeted-dirty")).to_be_empty()
+    assert (
+        json.loads((config_dir / "discovery_gui.json").read_text(encoding="utf-8"))[
+            "targets_csv"
+        ]
+        == retained
+    )
+    path.unlink()
+    page.reload()
+    page.get_by_role("button", name="Untargeted", exact=True).click()
+    expect(page.locator("#u-targets_csv")).to_have_value(retained)
+    expect(page.locator("#istd-summary")).to_have_text(
+        "1 個適用內標；0 個不適用此方法；略過 1 個一般目標。"
+    )
+    page.locator("#untargeted-clear").click()
+    expect(page.locator("#istd-summary")).to_have_text("本次不使用內標清單。")
+    expect(page.locator("#istd-preview")).to_be_empty()
+    page.get_by_role("button", name="Targeted", exact=True).click()
+    expect(page.locator("#target-preview")).to_have_text(
+        original_targets, use_inner_text=True
+    )
+
+
+def test_untargeted_istd_applicability_tracks_method_not_nd(workbench):
+    page = workbench
+    page.get_by_role("button", name="Untargeted", exact=True).click()
+    rna = page.locator("#istd-preview tr").filter(has_text="[13C,15N2]-8-oxo-Guo")
+    expect(page.locator("#istd-summary")).to_have_text(
+        "6 個適用內標；1 個不適用此方法；略過 7 個一般目標。"
+    )
+    expect(rna).to_contain_text("不適用此方法（略過）")
+    expect(rna.locator("td").nth(1)).to_have_text("R")
+    page.locator("#u-preset").select_option("rna_ribose")
+    expect(page.locator("#istd-summary")).to_have_text(
+        "1 個適用內標；6 個不適用此方法；略過 7 個一般目標。"
+    )
+    expect(rna.locator("td").last).to_have_text("適用")
+    page.locator("#u-preset").select_option("rna_mer")
+    expect(page.locator("#istd-summary")).to_contain_text("0 個適用內標")
+    expect(page.locator("#istd-summary")).to_contain_text("本次不使用內標參考")
+    expect(rna.locator("td").last).to_have_text("不適用此方法（略過）")
+    expect(page.locator("#istd-preview")).not_to_contain_text("ND")
+    page.locator("#u-preset").select_option("dna_dr")
+    expect(page.locator("#istd-summary")).to_contain_text("6 個適用內標")

@@ -99,7 +99,7 @@
         <ol class="steps">
           <li><h3>選擇 Targeted Extraction</h3><p>進入已知目標的工作區。</p></li>
           <li><h3>指定 RAW 與 DLL 資料夾</h3><p>RAW 資料夾放這批 Thermo <code>.raw</code>；DLL 資料夾須包含 RawFileReader DLL。</p></li>
-          <li><h3>匯入或編輯目標</h3><p>匯入目標表，或按「檢視與編輯」開啟全高目標表。「返回批次設定」或 <code>Alt+Left</code> 會保留編輯並回到批次摘要。</p></li>
+          <li><h3>匯入或編輯目標</h3><p>拖曳 XLSX 方法檔／目標表到匯入區，或按「選擇檔案」（也支援 CSV／TSV，單檔上限 1 MiB）。系統自動辨識並預覽目標與 ISTD 配對；按「確認匯入並取代」才套用，取消不變更目前清單。也可按「檢視與編輯」開啟全高目標表。「返回批次設定」或 <code>Alt+Left</code> 會保留編輯並回到批次摘要。</p></li>
           <li><h3>按「開始執行」</h3><p>按工作區下方的執行按鈕；完成後，到 <code>output/</code> 找本次 workbook。</p></li>
         </ol>
         <div class="note"><p><strong>接著跑新批次？</strong>「開始新批次」會清除 RAW 資料夾與畫面上的結果，保留目標、DLL 與分析參數。本機環境與執行資源可另外調整。</p><p>已完成執行後若改設定，畫面會把現有結果標為「先前結果」；請用新執行的 workbook 判讀新設定。</p></div>

@@ -75,20 +75,87 @@ window.XicUi = (() => {
     if (m) return `${m} 分 ${String(s).padStart(2, "0")} 秒`;
     return `${s} 秒`;
   }
-  return { icon, toast, confirm, setTheme, formatDuration };
+  // History owns reading locations, not iframe loads or filter edits. Snapshots
+  // remain in this document so refresh starts from the server's current batch.
+  const locations = new Map();
+  const readers = new Map();
+  const session = `${Date.now()}-${Math.random()}`;
+  let position = 0;
+  let revision = 0;
+  let restoring = false;
+  const capture = () => ({
+    parts: [...readers].map(([name, reader]) => [name, reader.capture()]),
+    scroll: window.scrollY,
+  });
+  const mark = () => ({ xicNavigation: session, position });
+  history.replaceState(mark(), "");
+  history.scrollRestoration = "manual";
+  const navigation = {
+    get revision() { return revision; },
+    register(name, reader) { readers.set(name, reader); },
+    push() {
+      if (restoring) return;
+      locations.set(position, capture());
+      for (const key of locations.keys()) if (key > position) locations.delete(key);
+      position += 1;
+      history.pushState(mark(), "");
+    },
+    back(fallback, matches = () => true) {
+      for (let target = position - 1; target >= 0; target -= 1) {
+        const location = locations.get(target);
+        if (location && matches(Object.fromEntries(location.parts))) {
+          history.go(target - position);
+          return;
+        }
+      }
+      fallback();
+    },
+  };
+  window.addEventListener("popstate", (event) => {
+    if (event.state?.xicNavigation !== session) return;
+    revision += 1;
+    locations.set(position, capture());
+    position = event.state.position;
+    const location = locations.get(position);
+    if (!location) return;
+    const currentRevision = revision;
+    // Wait for the browser to finish restoring the joint iframe history.
+    setTimeout(() => {
+      if (revision !== currentRevision) return;
+      restoring = true;
+      try {
+        for (const [name, value] of location.parts) readers.get(name)?.restore(value);
+        requestAnimationFrame(() => window.scrollTo(0, location.scroll));
+      } finally { restoring = false; }
+    }, 0);
+  });
+  const frameDestinations = new WeakMap();
+  function loadFrame(frame, url) {
+    // Frame src assignments create phantom Back stops in the top-level tab.
+    const destination = new URL(url, window.location.href).href;
+    if (frameDestinations.get(frame) === destination &&
+        frame.contentWindow.location.href === destination) return false;
+    frameDestinations.set(frame, destination);
+    frame.contentWindow.location.replace(destination);
+    return true;
+  }
+  return { icon, toast, confirm, setTheme, formatDuration, navigation, loadFrame };
 })();
 
 (() => {
   const $ = (id) => document.getElementById(id);
-  const { icon } = window.XicUi;
+  const { icon, navigation, loadFrame } = window.XicUi;
   const state = {
     page: null,
     item: null,
+    detail: null,
     recorded: null,
+    curveView: null,
     curveCache: new Map(),
     curveRequestKey: null,
     curveOpener: null,
     busy: false,
+    restoring: false,
     job: null,
     samples: new Set(),
     filters: {},
@@ -126,8 +193,47 @@ window.XicUi = (() => {
       throw new Error(data.error || `要求失敗（${response.status}）`);
     return data;
   }
+  let serverPage = null;
+  let pageRequest = Promise.resolve();
+  function requestPage(path, values) {
+    // The server owns one active query. A history restore must run after any
+    // earlier query, even when navigation discarded that query's UI response.
+    const request = pageRequest.then(() => api(path, values)).then(page => {
+      serverPage = page;
+      return page;
+    });
+    pageRequest = request.catch(() => {});
+    return request;
+  }
+  async function restoreQuery(page, filters) {
+    const revision = navigation.revision;
+    state.restoring = true;
+    controls();
+    try {
+      await pageRequest;
+      if (!page || state.page !== page || revision !== navigation.revision ||
+          serverPage === page || state.job) return;
+      status("正在還原結果查詢…", "working");
+      await requestPage("/api/query", {
+        ...filters, review_scope: page.review_scope, offset: page.offset, limit: page.limit,
+      });
+      if (revision === navigation.revision && state.page === page) {
+        // The unchanged source keeps saved report/item IDs valid. Reuse its
+        // reading snapshot after restoring the corresponding server query.
+        serverPage = page;
+        status("已還原結果查詢。");
+      }
+    } catch (error) {
+      if (revision === navigation.revision) status(error.message, "error");
+    } finally {
+      if (revision === navigation.revision) {
+        state.restoring = false;
+        controls();
+      }
+    }
+  }
   function locked() {
-    return state.busy || !!state.job;
+    return state.busy || state.restoring || !!state.job;
   }
   function controls() {
     const busy = locked();
@@ -191,12 +297,15 @@ window.XicUi = (() => {
     }
   }
   function clearSelection() {
+    $("inline-curves").hidden = true;
+    loadFrame($("inline-curve-frame"), "about:blank");
     state.item = null;
+    state.detail = null;
     state.recorded = null;
     state.curveCache.clear();
     $("selection").hidden = true;
     $("selection-empty").hidden = false;
-    $("inspector").src = "about:blank";
+    loadFrame($("inspector"), "about:blank");
     $("job-progress").hidden = true;
   }
   function showTargetedOverview() {
@@ -204,23 +313,60 @@ window.XicUi = (() => {
     $("targeted-review-nav").hidden = true;
     $("review").hidden = true;
   }
+  navigation.register("review", {
+    capture: () => ({
+      page: state.page, detail: state.detail, filters: state.filters,
+      fields: [...$("query-form").elements].filter(input => input.id).map(input =>
+        [input.id, input.value, input.checked]),
+      overview: !$("targeted-overview").hidden,
+      curves: $("xic-dialog").open,
+      sample: $("xic-sample").value,
+    }),
+    restore(saved) {
+      // A newly opened batch supersedes old result links in this tab.
+      if (saved.page && saved.page.source === state.page?.source) {
+        if (!saved.overview && (state.page !== saved.page || state.detail !== saved.detail)) {
+          for (const [id, value, checked] of saved.fields) {
+            $(id).value = value;
+            $(id).checked = checked;
+          }
+          state.filters = saved.filters;
+          renderPage(saved.page);
+          if (saved.detail) restoreDetail(saved.detail);
+        }
+        if (saved.overview) showTargetedOverview();
+        else {
+          $("targeted-overview").hidden = true;
+          $("targeted-review-nav").hidden = !saved.page.overview;
+          $("review").hidden = false;
+        }
+      }
+      if (saved.curves && saved.page?.source === state.page?.source) {
+        $("xic-sample").value = saved.sample;
+        if (!$("xic-dialog").open) $("xic-dialog").showModal();
+        if (state.curveView) showCurveView(state.curveView);
+      } else if ($("xic-dialog").open) $("xic-dialog").close();
+      restoreQuery(!saved.overview && saved.page === state.page ? saved.page : null, saved.filters);
+    },
+  });
   async function openTargetedResults(target = "", attentionOnly = false) {
+    navigation.push();
     $("query-form").reset();
     $("target-id").value = target;
     $("target-attention").checked = attentionOnly;
-    await query(0, queryFields());
-    $("targeted-review-nav").scrollIntoView({ block: "start", behavior: "smooth" });
+    if (await query(0, queryFields()))
+      $("targeted-review-nav").scrollIntoView({ block: "start" });
   }
-  function renderTargetedOverview(summary) {
-    const host = $("targeted-overview");
-    host.replaceChildren();
-    if (!summary) return;
     const node = (tag, text, className = "") => {
       const element = document.createElement(tag);
       if (text !== undefined) element.textContent = text;
       element.className = className;
       return element;
     };
+  function renderTargetedOverview(summary) {
+    const host = $("targeted-overview");
+    host.replaceChildren();
+    if (!summary) return;
     const resultButton = (text, target = "", attentionOnly = false, className = "") => {
       const button = node("button", text, className);
       button.type = "button";
@@ -308,6 +454,35 @@ window.XicUi = (() => {
     quantities.append(values);
     host.append(quantities, node("p", `需先看：各目標中占 ${Math.round(summary.minority_share * 100)}% 以下的一方；只決定閱讀順序，不改變已保存的判定。`, "overview-footnote"));
   }
+  function renderUntargetedOverview(summary) {
+    const host = $("targeted-overview");
+    host.replaceChildren();
+    host.append(node("span", "Untargeted · 整批結果總覽", "eyebrow"),
+      node("h2", summary.unresolved_count ? `先看 ${count(summary.unresolved_count)} 組未解決定量` : "矩陣中沒有未解決定量"),
+      node("p", "閱讀順序依已保存的定量狀態與樣本覆蓋數；不重新判定峰，也不把缺值當作異常。"));
+    const metrics = node("div", undefined, "overview-metrics");
+    for (const [value, label] of [[summary.matrix_count, "進入矩陣"], [summary.complete_count, "全部樣本都有值"], [summary.unresolved_count, "需先看"]]) {
+      const metric = node("div"); metric.append(node("strong", count(value)), node("span", label)); metrics.append(metric);
+    }
+    host.append(metrics);
+    const openScope = (label, scope, parent = host) => {
+      const button = node("button", label); button.type = "button"; button.dataset.idle = "";
+      button.addEventListener("click", () => action(async () => {
+        navigation.push(); $("query-form").reset(); await query(0, {review_scope: scope});
+      })); parent.append(button);
+    };
+    if (summary.unresolved_count) openScope("先看未解決定量", "unresolved");
+    openScope("查看全部矩陣群組", "matrix");
+    if (summary.uncalibrated_count) host.append(node("p", `${summary.uncalibrated_count} / ${summary.samples.length} 個樣本未建立內標 RT 校正。XIC 顯示原始時間；這不代表內標未檢出。`, "overview-unknown"));
+    const table = node("table", undefined, "overview-table");
+    const head = node("tr"); head.append(node("th", "樣本"), node("th", "矩陣中有定量值的群組")); table.append(head);
+    for (const sample of summary.samples) {const row = node("tr"); row.append(node("td", sample.label), node("td", `${count(sample.numeric_count)} / ${count(summary.matrix_count)}`)); table.append(row);}
+    host.append(table);
+    const more = node("details"); more.append(node("summary", "進階：未採用群組與候選證據"), node("p", "這些不是矩陣結果，僅在追查未採用原因時檢閱。"));
+    openScope(`${count(summary.archive_count)} 組未採用`, "archive", more);
+    openScope(`${count(summary.candidate_count)} 筆未分組候選`, "candidates", more);
+    host.append(more);
+  }
   function renderPage(page) {
     state.page = page;
     const targeted = page.source_kind === "targeted_workbook";
@@ -315,11 +490,12 @@ window.XicUi = (() => {
     const noun = targeted ? "目標" : "項目";
     $("list-title").textContent = targeted ? "目標" : "檢閱項目";
     $("targeted-overview").hidden = true;
-    $("targeted-review-nav").hidden = !targeted;
-    renderTargetedOverview(page.overview);
+    $("targeted-review-nav").hidden = !page.overview;
+    if (page.overview?.kind === "untargeted") renderUntargetedOverview(page.overview);
+    else renderTargetedOverview(page.overview);
     $("targeted-filters").hidden = !targeted;
     $("group-filter").hidden = targeted;
-    $("review-range-filters").open = !targeted;
+    $("review-range-filters").open = false;
     const selectedTarget = $("target-id").value;
     document.querySelector(".review-grid").classList.toggle("single-target", targeted && Boolean(selectedTarget) && page.matched_count === 1);
     $("target-id").replaceChildren(new Option("全部目標", ""), ...(page.target_names || []).map(name => new Option(name, name)));
@@ -342,13 +518,25 @@ window.XicUi = (() => {
     $("source-settings").querySelector("summary").textContent = "結果與 RAW 位置";
     $("batch-description").className = "mono";
     $("batch-description").title = page.source;
+    const download = $("result-download");
+    download.hidden = !page.result_artifact;
+    if (page.result_artifact) {
+      download.href = page.result_artifact.url;
+      download.download = page.result_artifact.name;
+      download.title = page.result_artifact.name;
+      download.querySelector("span").textContent = targeted ? "下載結果 XLSX" : "下載矩陣 TSV";
+    } else {
+      download.removeAttribute("href");
+      download.removeAttribute("download");
+    }
     $("batch-count").hidden = false;
-    $("batch-count").textContent =
-      `${count(page.samples.length)} 個樣本 · ${count(page.run_total)} 個${targeted ? "目標" : "檢閱項目"}`;
+    $("batch-count").textContent = page.overview?.kind === "untargeted"
+      ? `${count(page.samples.length)} 個樣本 · ${count(page.overview.matrix_count)} 組矩陣結果`
+      : `${count(page.samples.length)} 個樣本 · ${count(page.run_total)} 個${targeted ? "目標" : "檢閱項目"}`;
     const filtered = page.matched_count !== page.run_total;
     $("list-summary").replaceChildren(
       Object.assign(document.createElement("span"), {
-        textContent: filtered
+        textContent: page.overview?.kind === "untargeted" ? `${({matrix:"矩陣群組",unresolved:"未解決定量",archive:"未採用群組",candidates:"未分組候選"})[page.review_scope] || "所有紀錄"} · ${count(page.matched_count)} 組` : filtered
           ? `符合 ${count(page.matched_count)} ／ 全批 ${count(page.run_total)}`
           : `全批 ${count(page.run_total)} 個${noun}`,
       }),
@@ -379,9 +567,9 @@ window.XicUi = (() => {
       const summary = document.createElement("span");
       summary.textContent = targeted
         ? `${item.review_summary.scope_sample_count} 個樣本的已保存結果`
-        : `${item.title} · ${item.review_summary.observed_sample_count || 0} 個樣本`;
+        : `${item.numeric_count} / ${page.samples.length} 個樣本有值`;
       const badge = document.createElement("span");
-      const label = item.badge_label || "已記錄";
+      const label = targeted ? item.badge_label || "已記錄" : item.unresolved_count ? `${item.unresolved_count} 個未解決定量` : "已保存結果";
       badge.className = `chip ${badgeTone[label] || ""}`;
       badge.textContent = label;
       bottom.append(summary, badge);
@@ -408,10 +596,20 @@ window.XicUi = (() => {
     );
   }
   async function selectItem(item) {
+    const revision = navigation.revision;
     const detail = await api("/api/detail", { item_id: item.id });
-    restoreDetail(detail);
+    if (revision === navigation.revision) {
+      restoreDetail(detail);
+      if (state.page.source_kind !== "targeted_workbook") {
+        $("inline-curves").hidden = false;
+        if (!state.samples.size) $("inline-curve-status").textContent = "這組沒有可用觀測座標，無法自動取得 XIC。已保存的結果仍可查看。";
+        else if (!$("raw-dir").value.trim() || !$("dll-dir").value.trim()) $("inline-curve-status").textContent = "尚未設定 RAW 或 DLL 位置。設定「結果與 RAW 位置」後，按「載入所選樣本 XIC」。";
+        else await startCurves();
+      }
+    }
   }
   function restoreDetail(detail) {
+    state.detail = detail;
     const item = detail.item;
     state.item = detail.item;
     state.recorded = detail.view_id;
@@ -435,9 +633,9 @@ window.XicUi = (() => {
         ),
       );
     const available = new Set(detail.item.curve_sample_ids);
-    state.samples = new Set(
+    state.samples = targeted ? new Set(
       [...state.samples].filter((id) => available.has(id)),
-    );
+    ) : new Set(available);
     if (!state.samples.size)
       state.samples = new Set(
         state.page.samples
@@ -476,26 +674,47 @@ window.XicUi = (() => {
     $("xic-sample").replaceChildren(...detail.item.curve_sample_ids.map(id => new Option(
       state.page.samples.find(sample => sample.id === id)?.label || id, id,
     )));
+    if (!targeted) {
+      const missing = state.page.samples.filter(sample => !available.has(sample.id));
+      const numericMissing = missing.filter(sample => item.numeric_sample_ids.includes(sample.id));
+      $("inline-curve-coverage").textContent = `${item.numeric_count} 個樣本有定量值 · ${available.size} 個樣本可讀取 XIC（預設全部載入）`
+        + (numericMissing.length ? `。有定量值，但目前檢閱資料未提供可擷取座標：${numericMissing.map(sample => sample.label).join("、")}。` : "。")
+        + (missing.length ? `本次無法取得曲線的樣本：${missing.map(sample => sample.label).join("、")}。` : "");
+    }
     showRecorded();
     status("可查看已保存結果，或按「看 XIC」讀取 RAW；看圖不改寫結果。");
   }
   function showRecorded() {
+    $("view-note").hidden = state.page.source_kind === "targeted_workbook";
     $("view-note").textContent = state.page.source_kind === "targeted_workbook"
-      ? "點樣本列的「看 XIC」開啟圖表；關閉後回到原來的位置。"
-      : "當次分析保存的證據與量值。展開「查看樣本 XIC」可讀取 RAW，不改變結果。";
-    $("inspector").src = `/reports/${state.recorded}.html?embed=1`;
+      ? ""
+      : "先看 XIC 與下方保存的 Area；可展開「查看樣本 XIC」更換樣本。內部證據收在進階內容。";
+    loadFrame($("inspector"), `/reports/${state.recorded}.html?embed=1`);
     $("download").href = `/reports/${state.recorded}.html?download=1`;
     $("download").hidden = state.page.source_kind === "targeted_workbook";
   }
   function showCurveView(view) {
+    state.curveView = view;
     const url = `/reports/${view}.html?embed=1`;
-    if ($("xic-inspector").getAttribute("src") !== url) $("xic-inspector").src = url;
+    if (state.page.source_kind !== "targeted_workbook") {
+      loadFrame($("inline-curve-frame"), url);
+      $("inline-curve-frame").hidden = false;
+      $("inline-curve-status").textContent = `已載入 ${state.samples.size} 個樣本的 XIC；不改寫已保存結果。`;
+      return;
+    }
+    loadFrame($("xic-inspector"), url);
     $("xic-inspector").hidden = false;
     $("xic-loading").hidden = true;
     $("xic-download").href = `/reports/${view}.html?download=1`;
     $("xic-download").hidden = false;
   }
   function curveMessage(message, retry = false) {
+    if (state.page.source_kind !== "targeted_workbook") {
+      $("inline-curves").hidden = false;
+      $("inline-curve-status").textContent = message;
+      $("inline-curve-frame").hidden = true;
+    }
+    state.curveView = null;
     $("xic-status").textContent = message;
     $("xic-loading").hidden = false;
     $("xic-inspector").hidden = true;
@@ -510,19 +729,19 @@ window.XicUi = (() => {
     return startCurves();
   }
   async function openBatch() {
-    const page = await api("/api/open", { source: $("source").value });
+    const page = await requestPage("/api/open", { source: $("source").value });
     $("query-form").reset();
     state.filters = {};
     state.samples = new Set();
     renderPage(page);
     $("source-settings").open = false;
-    if (page.source_kind === "targeted_workbook") showTargetedOverview();
+    if (page.overview) showTargetedOverview();
     else if (page.items.length) await selectItem(page.items[0]);
   }
   function queryFields() {
     const filters = state.page?.source_kind === "targeted_workbook"
       ? { target_id: $("target-id").value.trim(), sample_id: $("target-sample").value, attention_only: $("target-attention").checked }
-      : { group_id: $("group-id").value.trim() };
+      : { group_id: $("group-id").value.trim(), review_scope: state.page.review_scope };
     for (const [id, key] of [
       ["mz-min", "mz_min"],
       ["mz-max", "mz_max"],
@@ -533,10 +752,13 @@ window.XicUi = (() => {
     return filters;
   }
   async function query(offset, filters = state.filters) {
-    const page = await api("/api/query", { ...filters, offset, limit: 25 });
+    const revision = navigation.revision;
+    const page = await requestPage("/api/query", { ...filters, offset, limit: 25 });
+    if (revision !== navigation.revision) return false;
     state.filters = filters;
     renderPage(page);
     if (page.items.length) await selectItem(page.items[0]);
+    return revision === navigation.revision;
   }
   async function startCurves() {
     if (!$("raw-dir").value.trim() || !$("dll-dir").value.trim()) {
@@ -561,7 +783,10 @@ window.XicUi = (() => {
       const index = state.item.curve_sample_ids.indexOf($("xic-sample").value);
       $("xic-position").textContent = `${index + 1} / ${state.item.curve_sample_ids.length}`;
     }
-    if (!$("xic-dialog").open) $("xic-dialog").showModal();
+    if (targeted && !$("xic-dialog").open) {
+      navigation.push();
+      $("xic-dialog").showModal();
+    }
     const request = {
       item_id: state.item.id,
       sample_ids: [...state.samples],
@@ -577,7 +802,7 @@ window.XicUi = (() => {
       return;
     }
     curveMessage("正在讀取所選樣本的 RAW；不會重跑整批分析。 ");
-    $("xic-inspector").src = "about:blank";
+    loadFrame($("xic-inspector"), "about:blank");
     try {
       state.job = await api("/api/curves", request);
       $("job-progress").hidden = false;
@@ -598,6 +823,7 @@ window.XicUi = (() => {
     $("job-message").textContent =
       `${job.phase}${job.total ? ` · ${job.completed}/${job.total}` : ""} · ${job.message}`;
     $("xic-status").textContent = job.message;
+    $("inline-curve-status").textContent = job.message;
     status(job.message, job.status === "failed" ? "error" : "working");
   }
   async function pollJob() {
@@ -620,7 +846,8 @@ window.XicUi = (() => {
       }
       state.job = null;
       status(job.message, job.status === "failed" ? "error" : "");
-      controls();
+      if (!state.restoring && serverPage !== state.page) restoreQuery(state.page, state.filters);
+      else controls();
     } catch (error) {
       status(`無法讀取工作進度：${error.message}。正在重新連線…`, "error");
       setTimeout(pollJob, 2000);
@@ -630,6 +857,16 @@ window.XicUi = (() => {
   // The embedded Inspector grows with its content so the page keeps one
   // scroll; its dialogs are placed inside the part of the frame on screen.
   const frame = $("inspector");
+  let inlineObserver;
+  $("inline-curve-frame").addEventListener("load", () => {
+    inlineObserver?.disconnect();
+    const inline = $("inline-curve-frame"), doc = inline.contentDocument;
+    if (!doc?.body) return;
+    doc.documentElement.dataset.theme = document.documentElement.dataset.theme || "light";
+    inlineObserver = new ResizeObserver(() => {inline.style.height = `${Math.max(420, Math.ceil(doc.body.getBoundingClientRect().height) + 8)}px`;});
+    inlineObserver.observe(doc.body);
+    placeFrameDialogs();
+  });
   window.addEventListener("message", event => {
     if (event.origin !== location.origin || event.source !== frame.contentWindow ||
         event.data?.type !== "xic-targeted-curves" ||
@@ -639,11 +876,19 @@ window.XicUi = (() => {
     state.curveOpener = frame.contentDocument?.activeElement;
     action(() => selectCurveSample(event.data.sample_id));
   });
-  $("xic-close").addEventListener("click", () => $("xic-dialog").close());
+  const closeCurves = () => navigation.back(() => $("xic-dialog").close());
+  $("xic-close").addEventListener("click", closeCurves);
+  $("xic-dialog").addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeCurves();
+  });
   $("xic-dialog").addEventListener("close", () => {
     if (state.curveOpener?.isConnected) state.curveOpener.focus({preventScroll: true});
   });
   $("xic-inspector").addEventListener("load", () => {
+    if (state.curveView && $("xic-dialog").open) {
+      if (loadFrame($("xic-inspector"), `/reports/${state.curveView}.html?embed=1`)) return;
+    }
     $("xic-inspector").contentDocument.documentElement.dataset.theme = document.documentElement.dataset.theme || "light";
   });
   $("xic-sample").addEventListener("change", () => action(() => selectCurveSample($("xic-sample").value)));
@@ -663,18 +908,16 @@ window.XicUi = (() => {
     }
   }
   function placeFrameDialogs() {
-    const doc = frameDocument();
-    if (!doc?.documentElement || frame.offsetParent === null) return;
     const topbar = document.querySelector(".topbar")?.offsetHeight || 0;
-    const rect = frame.getBoundingClientRect();
-    doc.documentElement.style.setProperty(
-      "--host-top",
-      `${Math.max(0, topbar - rect.top)}px`,
-    );
-    doc.documentElement.style.setProperty(
-      "--host-height",
-      `${window.innerHeight - topbar}px`,
-    );
+    for (const embedded of [frame, $("inline-curve-frame")]) {
+      const doc = embedded.contentDocument;
+      if (!doc?.documentElement || embedded.offsetParent === null) continue;
+      const rect = embedded.getBoundingClientRect();
+      const visibleTop = Math.max(topbar, rect.top);
+      const visibleHeight = Math.max(0, Math.min(window.innerHeight, rect.bottom) - visibleTop);
+      doc.documentElement.style.setProperty("--host-top", `${Math.max(0, visibleTop - rect.top)}px`);
+      doc.documentElement.style.setProperty("--host-height", `${visibleHeight}px`);
+    }
   }
   function fitFrame() {
     const doc = frameDocument();
@@ -687,7 +930,7 @@ window.XicUi = (() => {
     frameObserver?.disconnect();
     frameObserver = null;
     const doc = frameDocument();
-    if (!doc?.body || frame.getAttribute("src") === "about:blank") {
+    if (!doc?.body || doc.URL === "about:blank") {
       frame.style.height = "";
       return;
     }
@@ -781,7 +1024,11 @@ window.XicUi = (() => {
       action(() => query(0, queryFields()), "正在更新結果…"),
     );
   }
-  $("back-to-overview").addEventListener("click", showTargetedOverview);
+  $("back-to-overview").addEventListener("click", () => navigation.back(
+    showTargetedOverview,
+    saved => saved.workspace === "review" && saved.review?.overview &&
+      saved.review.page?.source === state.page?.source,
+  ));
   $("reset-query").addEventListener("click", () =>
     action(async () => {
       $("query-form").reset();
@@ -846,7 +1093,11 @@ window.XicUi = (() => {
     browse($(state.browser.target).value);
   });
   document.addEventListener("xic:open-review", (event) => {
-    $("source").value = event.detail;
+    $("source").value = event.detail.source;
+    if (event.detail.reviewPaths) {
+      $("raw-dir").value = event.detail.reviewPaths.raw_dir;
+      $("dll-dir").value = event.detail.reviewPaths.dll_dir;
+    }
     action(openBatch, "正在讀取分析結果…");
   });
   document.addEventListener("xic:analysis-busy", (event) => {
@@ -878,7 +1129,7 @@ window.XicUi = (() => {
       $("source").value = review.page.source;
       renderPage(review.page);
       if (review.job) state.samples = new Set(review.job.sample_ids);
-      if (review.page.source_kind === "targeted_workbook") showTargetedOverview();
+      if (review.page.overview) showTargetedOverview();
       else if (review.detail) restoreDetail(review.detail);
       if (review.job) {
         state.job = review.job;
