@@ -1,8 +1,14 @@
 import csv
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable
 
+import pytest
+
+from xic_extractor.instrument_qc.calibration_product_evidence import (
+    collect_level0_evidence,
+)
 from xic_extractor.instrument_qc.models import (
     HCDAuditRow,
     InstrumentQCDiagnostic,
@@ -76,6 +82,69 @@ def test_write_diagnostics_tsv_uses_contract_columns(tmp_path: Path) -> None:
 
     text = path.read_text(encoding="utf-8")
     assert text.splitlines()[0] == "sample_name\traw_path\tissue\tdetail"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    (
+        ("=1+1", "'=1+1"),
+        ("+1+1", "'+1+1"),
+        ("-1+1", "'-1+1"),
+        ("@SUM(1,1)", "'@SUM(1,1)"),
+        ('Sample "α"\tβ\nγ', 'Sample "α"\tβ\nγ'),
+        ("", ""),
+    ),
+)
+def test_diagnostic_report_escapes_text_without_mutating_json(
+    tmp_path: Path, text: str, expected: str
+) -> None:
+    diagnostic = InstrumentQCDiagnostic(
+        sample_name=text, raw_path=Path("=1+1.raw"), issue="@issue", detail=text
+    )
+    path = tmp_path / "diagnostics.tsv"
+    write_diagnostics_tsv(path, [diagnostic])
+    with path.open(encoding="utf-8", newline="") as handle:
+        assert list(csv.DictReader(handle, delimiter="\t")) == [
+            {
+                "sample_name": expected,
+                "raw_path": "'=1+1.raw",
+                "issue": "'@issue",
+                "detail": expected,
+            }
+        ]
+
+    json_path = tmp_path / "trend.json"
+    write_sdolek_json(json_path, [], [diagnostic])
+    saved = json.loads(json_path.read_text(encoding="utf-8"))["diagnostics"][0]
+    assert saved == {
+        "sample_name": text,
+        "raw_path": "=1+1.raw",
+        "issue": "@issue",
+        "detail": text,
+    }
+
+
+def test_calibration_handoffs_preserve_sample_identity_and_negative_numbers(
+    tmp_path: Path,
+) -> None:
+    name = "=1+1"
+    trend = replace(
+        _row(Path(f"{name}.raw")),
+        sample_name=name,
+        rt_delta_to_reference_min=-0.123456789,
+    )
+    hcd = replace(_hcd_row(Path(f"{name}.raw")), sample_name=name)
+    write_trend_tsv(tmp_path / "instrument_qc_sdolek_trend.tsv", [trend])
+    write_hcd_audit_tsv(tmp_path / "instrument_qc_hcd_audit.tsv", [hcd])
+
+    evidence = collect_level0_evidence(instrument_qc_dir=tmp_path, bundle_id="bundle")
+    assert len(evidence.rows) == 2
+    assert all(
+        row.sample_name == name and row.raw_stem == name for row in evidence.rows
+    )
+    sdolek = next(row for row in evidence.rows if row.source_type == "sdolek")
+    assert sdolek.rt_delta_min == -0.123456789
+    assert sdolek.area == trend.area
 
 
 def test_write_hcd_audit_tsv_uses_contract_columns_and_values(

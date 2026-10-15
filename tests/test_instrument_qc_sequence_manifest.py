@@ -2,6 +2,8 @@ import csv
 import json
 from pathlib import Path
 
+import pytest
+
 from xic_extractor.instrument_qc import sequence_manifest_writers
 from xic_extractor.instrument_qc.classification import InstrumentQCClass
 from xic_extractor.instrument_qc.sequence_manifest import (
@@ -19,7 +21,10 @@ from xic_extractor.instrument_qc.sequence_manifest_writers import (
     write_sequence_manifest_markdown,
     write_sequence_manifest_tsv,
 )
-from xic_extractor.sample_metadata import SAMPLE_METADATA_SCHEMA_VERSION
+from xic_extractor.sample_metadata import (
+    SAMPLE_METADATA_SCHEMA_VERSION,
+    load_sample_metadata,
+)
 
 
 def test_sequence_table_produces_manifest_rows_with_classes_and_matches() -> None:
@@ -323,6 +328,56 @@ def test_sequence_manifest_writers_emit_audit_and_injection_order(
         "unmatched": 1,
     }
     assert "SDOLEK-missing" in manifest_md.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("name", "display_name"),
+    (
+        ("=1+1", "'=1+1"),
+        ("+1+1", "'+1+1"),
+        ("-1+1", "'-1+1"),
+        ("@SUM(1,1)", "'@SUM(1,1)"),
+        ("'=literal", "'=literal"),
+        ("Sample Ω", "Sample Ω"),
+    ),
+)
+def test_manifest_escapes_display_text_without_changing_machine_handoffs(
+    tmp_path: Path, name: str, display_name: str
+) -> None:
+    entries = parse_sequence_tables(
+        [
+            [
+                ["ID", "File Name", "Instrument Method", "Sample", "Inj"],
+                ["4", name, "20260105 SDOLEK", "50 ppb", "2"],
+            ]
+        ],
+        source_doc="=source.docx",
+    )
+    rows = build_sequence_manifest_from_entries(entries, raw_stems=(name,))
+    manifest = tmp_path / "manifest.tsv"
+    write_sequence_manifest_tsv(manifest, rows)
+    with manifest.open(encoding="utf-8", newline="") as handle:
+        saved = next(csv.DictReader(handle, delimiter="\t"))
+    assert saved["source_doc"] == "'=source.docx"
+    assert saved["raw_stem"] == saved["doc_display_name"] == display_name
+    assert saved["injection_order"] == "4"
+
+    order = tmp_path / "order.csv"
+    write_injection_order_csv(order, rows)
+    with order.open(encoding="utf-8", newline="") as handle:
+        assert list(csv.DictReader(handle)) == [
+            {"Sample_Name": name, "Injection_Order": "4"}
+        ]
+    metadata = tmp_path / "metadata.tsv"
+    sequence_manifest_writers.write_sample_metadata_tsv(metadata, rows)
+    restored = load_sample_metadata(metadata)
+    assert len(restored) == 1
+    assert restored[0].sample_name == restored[0].raw_stem == name
+    json_path = tmp_path / "manifest.json"
+    write_sequence_manifest_json(json_path, rows)
+    saved = json.loads(json_path.read_text(encoding="utf-8"))["rows"][0]
+    assert saved["source_doc"] == "=source.docx"
+    assert saved["raw_stem"] == saved["doc_display_name"] == name
 
 
 def test_sequence_manifest_writes_sample_metadata_for_actual_raw_rows(

@@ -22,6 +22,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           submodules: false
+          persist-credentials: false
 
       - uses: astral-sh/setup-uv@v8.2.0
         with:
@@ -61,10 +62,12 @@ jobs:
         id: meta
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           $projectVersion = & .\.venv\Scripts\python.exe -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])"
-          if ("${{ github.ref }}".StartsWith("refs/tags/")) {
-            $packageVersion = "${{ github.ref_name }}"
-            if ($packageVersion -ne "v$projectVersion") {
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($env:GITHUB_REF.StartsWith("refs/tags/")) {
+            $packageVersion = $env:GITHUB_REF_NAME
+            if ($packageVersion -cne "v$projectVersion") {
               throw "Tag $packageVersion does not match project version v$projectVersion"
             }
           } else {
@@ -82,8 +85,10 @@ jobs:
 
       - name: Package distribution
         shell: pwsh
+        env:
+          ARTIFACT_STEM: ${{ steps.meta.outputs.artifact_stem }}
         run: |
-          $artifactStem = "${{ steps.meta.outputs.artifact_stem }}"
+          $artifactStem = $env:ARTIFACT_STEM
           $stageDir = Join-Path $env:RUNNER_TEMP $artifactStem
           $archivePath = Join-Path "dist" "$artifactStem.zip"
 
@@ -104,9 +109,11 @@ jobs:
       - name: Smoke the delivered archive
         id: smoke_archive
         shell: pwsh
+        env:
+          ARTIFACT_STEM: ${{ steps.meta.outputs.artifact_stem }}
         run: |
           $ErrorActionPreference = "Stop"
-          $artifactStem = "${{ steps.meta.outputs.artifact_stem }}"
+          $artifactStem = $env:ARTIFACT_STEM
           $archivePath = Join-Path "dist" "$artifactStem.zip"
           $archiveHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash
           $smokeRoot = Join-Path $env:RUNNER_TEMP ("xic-delivered-smoke-" + [guid]::NewGuid().ToString("N"))
