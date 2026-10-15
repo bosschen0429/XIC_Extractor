@@ -100,9 +100,15 @@ window.XicUi = (() => {
       position += 1;
       history.pushState(mark(), "");
     },
-    back(fallback) {
-      if (position > 0 && locations.has(position - 1)) history.back();
-      else fallback();
+    back(fallback, matches = () => true) {
+      for (let target = position - 1; target >= 0; target -= 1) {
+        const location = locations.get(target);
+        if (location && matches(Object.fromEntries(location.parts))) {
+          history.go(target - position);
+          return;
+        }
+      }
+      fallback();
     },
   };
   window.addEventListener("popstate", (event) => {
@@ -149,6 +155,7 @@ window.XicUi = (() => {
     curveRequestKey: null,
     curveOpener: null,
     busy: false,
+    restoring: false,
     job: null,
     samples: new Set(),
     filters: {},
@@ -186,8 +193,47 @@ window.XicUi = (() => {
       throw new Error(data.error || `要求失敗（${response.status}）`);
     return data;
   }
+  let serverPage = null;
+  let pageRequest = Promise.resolve();
+  function requestPage(path, values) {
+    // The server owns one active query. A history restore must run after any
+    // earlier query, even when navigation discarded that query's UI response.
+    const request = pageRequest.then(() => api(path, values)).then(page => {
+      serverPage = page;
+      return page;
+    });
+    pageRequest = request.catch(() => {});
+    return request;
+  }
+  async function restoreQuery(page, filters) {
+    const revision = navigation.revision;
+    state.restoring = true;
+    controls();
+    try {
+      await pageRequest;
+      if (!page || state.page !== page || revision !== navigation.revision ||
+          serverPage === page || state.job) return;
+      status("正在還原結果查詢…", "working");
+      await requestPage("/api/query", {
+        ...filters, review_scope: page.review_scope, offset: page.offset, limit: page.limit,
+      });
+      if (revision === navigation.revision && state.page === page) {
+        // The unchanged source keeps saved report/item IDs valid. Reuse its
+        // reading snapshot after restoring the corresponding server query.
+        serverPage = page;
+        status("已還原結果查詢。");
+      }
+    } catch (error) {
+      if (revision === navigation.revision) status(error.message, "error");
+    } finally {
+      if (revision === navigation.revision) {
+        state.restoring = false;
+        controls();
+      }
+    }
+  }
   function locked() {
-    return state.busy || !!state.job;
+    return state.busy || state.restoring || !!state.job;
   }
   function controls() {
     const busy = locked();
@@ -300,7 +346,7 @@ window.XicUi = (() => {
         if (!$("xic-dialog").open) $("xic-dialog").showModal();
         if (state.curveView) showCurveView(state.curveView);
       } else if ($("xic-dialog").open) $("xic-dialog").close();
-      controls();
+      restoreQuery(!saved.overview && saved.page === state.page ? saved.page : null, saved.filters);
     },
   });
   async function openTargetedResults(target = "", attentionOnly = false) {
@@ -672,7 +718,7 @@ window.XicUi = (() => {
     return startCurves();
   }
   async function openBatch() {
-    const page = await api("/api/open", { source: $("source").value });
+    const page = await requestPage("/api/open", { source: $("source").value });
     $("query-form").reset();
     state.filters = {};
     state.samples = new Set();
@@ -696,7 +742,7 @@ window.XicUi = (() => {
   }
   async function query(offset, filters = state.filters) {
     const revision = navigation.revision;
-    const page = await api("/api/query", { ...filters, offset, limit: 25 });
+    const page = await requestPage("/api/query", { ...filters, offset, limit: 25 });
     if (revision !== navigation.revision) return false;
     state.filters = filters;
     renderPage(page);
@@ -789,7 +835,8 @@ window.XicUi = (() => {
       }
       state.job = null;
       status(job.message, job.status === "failed" ? "error" : "");
-      controls();
+      if (!state.restoring && serverPage !== state.page) restoreQuery(state.page, state.filters);
+      else controls();
     } catch (error) {
       status(`無法讀取工作進度：${error.message}。正在重新連線…`, "error");
       setTimeout(pollJob, 2000);
@@ -966,7 +1013,11 @@ window.XicUi = (() => {
       action(() => query(0, queryFields()), "正在更新結果…"),
     );
   }
-  $("back-to-overview").addEventListener("click", () => navigation.back(showTargetedOverview));
+  $("back-to-overview").addEventListener("click", () => navigation.back(
+    showTargetedOverview,
+    saved => saved.workspace === "review" && saved.review?.overview &&
+      saved.review.page?.source === state.page?.source,
+  ));
   $("reset-query").addEventListener("click", () =>
     action(async () => {
       $("query-form").reset();

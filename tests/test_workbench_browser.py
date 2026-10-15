@@ -945,6 +945,90 @@ def test_review_back_forward_preserves_target_and_filters(workbench, tmp_path):
     expect(page.locator("#workspace-targeted")).to_be_visible()
 
 
+@pytest.mark.parametrize("query_pending", [False, True], ids=["completed", "pending"])
+def test_review_history_restores_server_query_before_loading_xic(
+    workbench, tmp_path, monkeypatch, query_pending
+):
+    from tests.test_xic_inspector_targeted_workbook import (
+        install_targeted_raws,
+        write_rare_detection_workbook,
+    )
+
+    page = workbench
+    queried, release = threading.Event(), threading.Event()
+    if query_pending:
+        query = ReviewWorkspace.query
+
+        def hold_query_response(workspace, values):
+            result = query(workspace, values)
+            if values.get("target_id") == "ISTD":
+                queried.set()
+                assert release.wait(10)
+            return result
+
+        monkeypatch.setattr(ReviewWorkspace, "query", hold_query_response)
+    raw_dir = tmp_path / "review-raw"
+    install_targeted_raws(monkeypatch, raw_dir, {"S3": 1000}, pair_scale=1000)
+    workbook = write_rare_detection_workbook(tmp_path / "navigation.xlsx")
+    _view(page, "review")
+    page.locator("#source").fill(str(workbook))
+    page.locator("#raw-dir").fill(str(raw_dir))
+    page.locator("#dll-dir").fill(str(tmp_path))
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#targeted-overview td button", has_text="Analyte").click()
+    expect(page.locator("#item-title")).to_contain_text("Analyte")
+    analyte_xic = page.frame_locator("#inspector").get_by_role(
+        "button", name="看 S3 的 Analyte XIC", exact=True
+    )
+    expect(analyte_xic).to_be_visible()
+    _view(page, "targeted")
+    _view(page, "review")
+    page.locator("#target-id").select_option("ISTD")
+    try:
+        if query_pending:
+            assert queried.wait(10)
+        else:
+            expect(page.locator("#item-title")).to_contain_text("ISTD")
+            expect(
+                page.frame_locator("#inspector").get_by_role(
+                    "button", name="看 S3 的 ISTD XIC", exact=True
+                )
+            ).to_be_visible()
+        page.go_back()
+        expect(page.locator("#workspace-targeted")).to_be_visible()
+        page.go_back()
+    finally:
+        release.set()
+    expect(page.locator("#workspace-review")).to_be_visible()
+    expect(page.locator("#item-title")).to_contain_text("Analyte")
+    expect(page.locator("#load-curves")).to_be_enabled()
+    with page.expect_response("**/api/curves") as response:
+        analyte_xic.click()
+    assert response.value.status == 202, response.value.json()
+    expect(
+        page.frame_locator("#xic-inspector").locator(".tx-chart-title")
+    ).to_have_text(["Analyte", "ISTD"])
+
+
+def test_review_overview_button_skips_workspace_tab_history(workbench, tmp_path):
+    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+
+    page = workbench
+    workbook = write_rare_detection_workbook(tmp_path / "navigation.xlsx")
+    _view(page, "review")
+    page.locator("#source").fill(str(workbook))
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#targeted-overview td button", has_text="Analyte").click()
+    expect(page.locator("#item-title")).to_contain_text("Analyte")
+    _view(page, "targeted")
+    _view(page, "review")
+    page.locator("#back-to-overview").click()
+    expect(page.locator("#workspace-review")).to_be_visible()
+    expect(page.locator("#targeted-overview")).to_be_visible()
+    page.go_forward()
+    expect(page.locator("#item-title")).to_contain_text("Analyte")
+
+
 def test_targeted_row_xic_without_raw_points_at_the_missing_folder(workbench, tmp_path):
     from tests.test_xic_inspector_targeted_workbook import (
         write_rare_detection_workbook,
