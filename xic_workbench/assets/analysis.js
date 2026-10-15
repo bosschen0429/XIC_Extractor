@@ -982,7 +982,20 @@
   async function startJob(kind, values) {
     if (isBusy()) throw new Error("請等待目前工作完成或先停止。");
     if (kind === "untargeted") await saveUntargeted(true);
-    state.analysis = await api("/api/analysis/start", { kind, values });
+    try {
+      state.analysis = await api("/api/analysis/start", { kind, values });
+    } catch (error) {
+      if (
+        kind === "targeted" &&
+        values.targets.length === 0 &&
+        error.message.includes("at least one target row is required")
+      ) {
+        throw new Error(
+          `請先在 Targeted 清單新增至少一個 target：按「檢視與編輯」新增，或匯入目標清單。\n詳細資訊：${error.message}`,
+        );
+      }
+      throw error;
+    }
     if (kind === "targeted") {
       state.config.settings = { ...values.settings };
       state.config.targeted_method = await api("/api/targeted/method", {});
