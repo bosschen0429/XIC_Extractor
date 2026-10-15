@@ -2236,3 +2236,318 @@ def test_source_labels_explain_recorded_group_and_sample_outcome(
         assert readable["cd-02"]["summary"] == "MS1 Backfill（非直接 CID-NL 確認）"
         assert "MS1 Backfill" not in readable["cd-01"]["summary"]
     assert item["curves"][0]["raw_intensities"] == [10.0, 50.0, 1000.0, 40.0, 5.0]
+
+
+def _create_nearest_mz_db(directory, rows):
+    """Publish small matrix rows with independently chosen display coordinates."""
+    report = directory / "nearby.sqlite"
+    matrix = directory / "matrix.tsv"
+    matrix.write_text("saved matrix", encoding="utf-8")
+    with ExplanationReportWriter(report, review_only=True) as writer:
+        for row in rows:
+            rid = row["id"]
+            keys = []
+            for sid, mz, rt in row["witnesses"]:
+                cid = f"{rid}-{sid}"
+                keys.append((cid, sid))
+                writer.add_candidate(
+                    cid,
+                    sid,
+                    {
+                        "candidate_id": cid,
+                        "canonical_sample_identity_id": sid,
+                        "precursor_mz": mz,
+                        "rt_apex_min": rt,
+                    },
+                )
+            writer.add_record(
+                "rows",
+                rid,
+                {
+                    "row_key_id": rid,
+                    "group_hypothesis_id": rid,
+                    "route": {
+                        "destination": row.get("route", "matrix"),
+                        "reason": "recorded",
+                    },
+                },
+                keys,
+            )
+            writer.add_record("final_groups", rid, {"group_hypothesis_id": rid}, keys)
+            writer.add_row_cells(
+                rid,
+                rid,
+                [
+                    {
+                        "canonical_sample_identity_id": sid,
+                        "variant": "unresolved" if row.get("unresolved") else "numeric",
+                        "value": None if row.get("unresolved") else 10,
+                    }
+                    for sid in row.get(
+                        "samples", [sid for sid, _, _ in row["witnesses"]]
+                    )
+                ],
+                {"S1": 0, "S2": 1},
+            )
+        writer.finalize(
+            {
+                "matrix_path": str(matrix),
+                "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
+                "samples": [
+                    {"canonical_sample_identity_id": sid, "sample_stem": sid}
+                    for sid in ("S1", "S2")
+                ],
+                "selection_evidence_capability": "recorded_decisions",
+            }
+        )
+    return report, matrix
+
+
+def test_nearest_mz_finds_numeric_neighbors_without_rt_or_tolerance(tmp_path):
+    from xic_inspector.api import prepare_report
+
+    report, matrix = _create_nearest_mz_db(
+        tmp_path,
+        [
+            {"id": "c", "witnesses": [("S1", 123.4567, None)]},
+            {"id": "b", "witnesses": [("S1", 123.4200, 2)]},
+            {"id": "a", "witnesses": [("S1", 123.3980, None)]},
+        ],
+    )
+    original = [path.read_bytes() for path in (report, matrix)]
+    for query in (123.4, 123.4000):
+        prepared = prepare_report(
+            report,
+            SelectionRequest(strategy="query", review_scope="matrix", nearest_mz=query),
+        )
+        items = prepared.payload["items"]
+        assert [item["precursor_mz"] for item in items] == [
+            123.3980,
+            123.4200,
+            123.4567,
+        ]
+        assert [item["mz_distance"] for item in items] == pytest.approx(
+            [0.0020, 0.0200, 0.0567]
+        )
+        assert prepared.matched_count == 3
+        assert prepared.payload["selection"]["nearest_mz"] == query
+        assert prepared.payload["selection"]["missing_mz_count"] == 0
+    exact = prepare_report(
+        report,
+        SelectionRequest(strategy="query", review_scope="matrix", group_ids=("a",)),
+    )
+    assert "nearest_mz" not in exact.payload["selection"]
+    assert "missing_mz_count" not in exact.payload["selection"]
+    assert "mz_distance" not in exact.payload["items"][0]
+    assert exact.payload["items"][0]["precursor_mz"] == 123.3980
+    assert [path.read_bytes() for path in (report, matrix)] == original
+
+
+def test_nearest_mz_ranks_unrounded_display_mz_not_closest_witness(tmp_path):
+    from xic_inspector.api import prepare_report
+
+    report, _ = _create_nearest_mz_db(
+        tmp_path,
+        [
+            {"id": "multi", "witnesses": [("S1", 123.46, 1), ("S2", 123.4, 1)]},
+            {"id": "near", "witnesses": [("S1", 123.42, 1)]},
+            {"id": "round-a", "witnesses": [("S1", 123.400041, 1)]},
+            {"id": "round-b", "witnesses": [("S1", 123.400049, 1)]},
+        ],
+    )
+    prepared = prepare_report(
+        report,
+        SelectionRequest(
+            strategy="query", review_scope="matrix", nearest_mz=123.400048
+        ),
+    )
+    items = prepared.payload["items"]
+    assert [i["details"]["source"]["row_key_id"] for i in items] == [
+        "round-b",
+        "round-a",
+        "near",
+        "multi",
+    ]
+    assert [i["precursor_mz"] for i in items] == [
+        123.400049,
+        123.400041,
+        123.42,
+        123.46,
+    ]
+    assert items[-1]["mz_distance"] == pytest.approx(123.46 - 123.400048)
+
+
+def test_nearest_mz_applies_rt_eligibility_without_replacing_display_witness(tmp_path):
+    from xic_inspector.api import prepare_report
+
+    report, _ = _create_nearest_mz_db(
+        tmp_path,
+        [
+            {"id": "multi", "witnesses": [("S1", 140, 20), ("S2", 123.4, 5)]},
+            {"id": "near", "witnesses": [("S1", 125, 5)]},
+            {"id": "no-rt", "witnesses": [("S1", 123.4, None)]},
+        ],
+    )
+    prepared = prepare_report(
+        report,
+        SelectionRequest(
+            strategy="query", review_scope="matrix", nearest_mz=123.4, rt_max=10
+        ),
+    )
+    near, multi = prepared.payload["items"]
+    assert near["precursor_mz"] == 125
+    assert multi["precursor_mz"] == 140
+    assert multi["rt_apex_min"] == 20
+    assert multi["mz_distance"] == pytest.approx(16.6)
+    assert [w["canonical_sample_identity_id"] for w in multi["matched_refs"]] == ["S2"]
+    assert prepared.missing_rt_count == 1
+    scoped = prepare_report(
+        report,
+        SelectionRequest(
+            strategy="query",
+            review_scope="matrix",
+            nearest_mz=123.4,
+            sample_ids=("S2",),
+            rt_max=10,
+        ),
+    )
+    assert len(scoped.payload["items"]) == 1
+    assert scoped.payload["items"][0]["precursor_mz"] == 123.4
+    assert scoped.payload["items"][0]["mz_distance"] == 0
+
+
+def test_nearest_mz_sorts_full_population_before_stable_pagination(
+    tmp_path, monkeypatch
+):
+    from xic_inspector.api import prepare_report
+    from xic_inspector.sources import cid_nl
+
+    coordinates = {f"item-{i:02}": 200 + (30 - i) / 100 for i in range(31)}
+    coordinates.update({"tie-z": 201, "tie-a": 201})
+    report, _ = _create_nearest_mz_db(
+        tmp_path,
+        [{"id": key, "witnesses": [("S1", mz, 1)]} for key, mz in coordinates.items()],
+    )
+    expected = sorted(coordinates, key=lambda key: (abs(coordinates[key] - 200), key))
+    restored_rows = []
+    read_selection = cid_nl.read_explanation_selection
+
+    def read_page(*args, **kwargs):
+        restored_rows.append(len(kwargs["row_ids"]))
+        return read_selection(*args, **kwargs)
+
+    monkeypatch.setattr(cid_nl, "read_explanation_selection", read_page)
+    pages = []
+    for offset in (0, 25):
+        prepared = prepare_report(
+            report,
+            SelectionRequest(
+                strategy="query",
+                review_scope="matrix",
+                nearest_mz=200,
+                limit=25,
+                offset=offset,
+            ),
+        )
+        assert prepared.matched_count == 33
+        pages.extend(
+            i["details"]["source"]["row_key_id"] for i in prepared.payload["items"]
+        )
+    assert pages == expected
+    assert len(set(pages)) == 33
+    assert pages[0] == "item-30"
+    assert restored_rows == [25, 8]
+
+
+def test_nearest_mz_excludes_invalid_display_mz_and_respects_matrix_scope(tmp_path):
+    from xic_inspector.api import prepare_report
+
+    rows = [
+        {"id": "valid", "witnesses": [("S1", 124, None)], "unresolved": True},
+        {"id": "resolved", "witnesses": [("S1", 123.4, 1)]},
+        {"id": "archive", "witnesses": [("S1", 123.4, 1)], "route": "archive"},
+        {"id": "missing-first", "witnesses": [("S1", None, 1), ("S2", 123.4, 1)]},
+        {"id": "without-witness", "witnesses": [], "samples": ["S1"]},
+    ]
+    rows.extend(
+        {"id": label, "witnesses": [("S1", mz, 1)]}
+        for label, mz in (("zero", 0), ("negative", -1), ("missing", None))
+    )
+    report, _ = _create_nearest_mz_db(tmp_path, rows)
+    matrix = prepare_report(
+        report,
+        SelectionRequest(strategy="query", review_scope="matrix", nearest_mz=123.4),
+    )
+    assert [i["details"]["source"]["row_key_id"] for i in matrix.payload["items"]] == [
+        "resolved",
+        "valid",
+    ]
+    assert matrix.payload["selection"]["missing_mz_count"] == 5
+    assert matrix.matched_count == 2
+    unresolved = prepare_report(
+        report,
+        SelectionRequest(strategy="query", review_scope="unresolved", nearest_mz=123.4),
+    )
+    assert [i["precursor_mz"] for i in unresolved.payload["items"]] == [124]
+    assert unresolved.payload["selection"]["missing_mz_count"] == 0
+
+
+@pytest.mark.parametrize(
+    "value", [True, "123.4", "", 0, -1, float("nan"), float("inf")]
+)
+def test_nearest_mz_rejects_invalid_values(value):
+    with pytest.raises(InspectorError) as exc:
+        SelectionRequest(
+            strategy="query", review_scope="matrix", nearest_mz=value
+        ).validate()
+    assert exc.value.code == 2
+
+
+@pytest.mark.parametrize(
+    "conflict",
+    [
+        {"strategy": "sample"},
+        {"review_scope": "all"},
+        {"review_scope": "archive"},
+        {"review_scope": "candidates"},
+        {"mz_min": 100},
+        {"mz_max": 200},
+        {"group_ids": ("G1",)},
+        {"candidate_ids": ("C1",)},
+        {"target_ids": ("T1",)},
+        {"attention_only": True},
+    ],
+)
+def test_nearest_mz_rejects_mixed_modes(conflict):
+    values = dict(strategy="query", review_scope="matrix", nearest_mz=123.4)
+    values.update(conflict)
+    with pytest.raises(InspectorError) as exc:
+        SelectionRequest(**values).validate()
+    assert exc.value.code == 2
+
+
+def test_nearest_mz_rejects_nonindexed_evidence_without_fallback(tmp_path):
+    from xic_inspector.api import prepare_report
+
+    report, _, _ = _create_mock_db(tmp_path)
+    with pytest.raises(InspectorError, match="indexed Untargeted matrix") as exc:
+        prepare_report(
+            report,
+            SelectionRequest(strategy="query", review_scope="matrix", nearest_mz=500),
+        )
+    assert exc.value.code == 2
+
+
+def test_nearest_mz_rejects_portable_curve_bundles(tmp_path):
+    from tests.test_xic_inspector_curve_bundle import _fixture_bundle
+    from xic_inspector.api import prepare_report
+    from xic_inspector.sources.curve_bundle import write_curve_bundle
+
+    source = tmp_path / "curves.json"
+    write_curve_bundle(_fixture_bundle(), source)
+    with pytest.raises(InspectorError, match="indexed Untargeted matrix") as exc:
+        prepare_report(
+            source,
+            SelectionRequest(strategy="query", review_scope="matrix", nearest_mz=500),
+        )
+    assert exc.value.code == 2

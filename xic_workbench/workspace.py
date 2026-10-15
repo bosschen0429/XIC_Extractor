@@ -136,6 +136,7 @@ class ReviewWorkspace:
             "target_id",
             "sample_id",
             "attention_only",
+            "nearest_mz",
             "mz_min",
             "mz_max",
             "rt_min",
@@ -200,7 +201,7 @@ class ReviewWorkspace:
             artifact = self.analysis.register_artifact(page.source.workbook_path)
         elif isinstance(page.source, EvidenceLocator):
             artifact = self.analysis.register_artifact(page.source.matrix_path)
-        return {
+        response = {
             "source": str(self._report),
             "result_artifact": artifact,
             "source_kind": page.payload["summary"].get("source_kind", "evidence"),
@@ -225,6 +226,15 @@ class ReviewWorkspace:
             "limit": page.payload["selection"]["limit"],
             "items": [self._item_summary(item) for item in page.payload["items"]],
         }
+        selection = page.payload["selection"]
+        if selection.get("nearest_mz") is not None:
+            response.update(
+                {
+                    key: selection[key]
+                    for key in ("nearest_mz", "missing_mz_count", "rt_min", "rt_max")
+                }
+            )
+        return response
 
     @staticmethod
     def _item_summary(item: dict[str, Any]) -> dict[str, Any]:
@@ -253,7 +263,7 @@ class ReviewWorkspace:
             target_id = item["details"]["target"]["Label"]
             # A known Target can be inspected even when its saved result is ND.
             curve_samples = [row["SampleName"] for row in item["details"]["records"]]
-        return {
+        summary = {
             key: item.get(key)
             for key in (
                 "id",
@@ -277,6 +287,9 @@ class ReviewWorkspace:
                 for s in item.get("samples", [])
             ),
         }
+        if "mz_distance" in item:
+            summary["mz_distance"] = item["mz_distance"]
+        return summary
 
     def _item(self, item_id: Any) -> dict[str, Any]:
         if self._page is not None:

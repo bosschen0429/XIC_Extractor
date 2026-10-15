@@ -257,6 +257,43 @@ window.XicUi = (() => {
   function locked() {
     return state.busy || state.restoring || !!state.job;
   }
+  function supportsNearestSearch() {
+    return state.page?.source_kind !== "targeted_workbook" &&
+      ["matrix", "unresolved"].includes(state.page?.review_scope);
+  }
+  function nearestSearchMode() {
+    return supportsNearestSearch() && $("untargeted-search-mode").value === "nearest";
+  }
+  function validateNearestMz() {
+    const text = $("nearest-mz").value.trim();
+    const value = Number(text);
+    const invalid = nearestSearchMode() && text !== "" &&
+      (!Number.isFinite(value) || value <= 0);
+    const message = invalid ? "請輸入大於 0 的有限 m/z（例如 123.4），或留白瀏覽。" : "";
+    $("nearest-mz").setCustomValidity(message);
+    $("nearest-mz").setAttribute("aria-invalid", String(invalid));
+    $("nearest-mz-error").textContent = message;
+    $("nearest-mz-error").hidden = !invalid;
+    return !invalid;
+  }
+  function syncQueryMode() {
+    const nearest = nearestSearchMode(), busy = locked();
+    $("untargeted-search").hidden = !supportsNearestSearch();
+    $("untargeted-search-mode").disabled = busy || !supportsNearestSearch();
+    $("nearest-mz-field").hidden = !nearest;
+    $("nearest-mz").disabled = busy || !nearest;
+    $("exact-mz-range").hidden = nearest;
+    for (const id of ["mz-min", "mz-max"]) $(id).disabled = busy || nearest;
+    $("group-filter").hidden = state.page?.source_kind === "targeted_workbook" || nearest;
+    $("group-id").disabled = busy || $("group-filter").hidden;
+    $("search-mode-hint").textContent = nearest
+      ? "依 m/z 距離找候選，不代表化合物確認或通過質量容差。RT 可留白；精確 m/z 範圍與分組 ID 不生效。"
+      : "精確範圍／分組 ID 生效；約略 m/z 不生效。";
+    $("review-range-filters").querySelector("summary").textContent = nearest
+      ? "RT 範圍（選填，留白不限）" : "m/z / RT 範圍";
+    if (nearest) $("review-range-filters").open = true;
+    validateNearestMz();
+  }
   function controls() {
     const busy = locked();
     document
@@ -300,6 +337,7 @@ window.XicUi = (() => {
     $("xic-cancel").hidden = !state.job;
     $("xic-cancel").disabled = state.job?.status === "cancelling";
     $("xic-retry").disabled = busy || state.analysisBusy;
+    syncQueryMode();
     document.dispatchEvent(
       new CustomEvent("xic:review-busy", { detail: !!state.job }),
     );
@@ -515,6 +553,18 @@ window.XicUi = (() => {
   function renderPage(page) {
     state.page = page;
     const targeted = page.source_kind === "targeted_workbook";
+    const nearest = Number.isFinite(page.nearest_mz);
+    if (nearest) {
+      $("untargeted-search-mode").value = "nearest";
+      if (Number($("nearest-mz").value) !== page.nearest_mz)
+        $("nearest-mz").value = String(page.nearest_mz);
+      // Retain the applied nearest query for pagination and reading history.
+      state.filters = {nearest_mz: page.nearest_mz, review_scope: page.review_scope};
+      for (const [id, key] of [["rt-min", "rt_min"], ["rt-max", "rt_max"]]) {
+        $(id).value = page[key] == null ? "" : String(page[key]);
+        if (page[key] != null) state.filters[key] = page[key];
+      }
+    }
     // Targeted review items are targets; Untargeted items are candidates.
     const noun = targeted ? "目標" : "項目";
     $("list-title").textContent = targeted ? "目標" : "檢閱項目";
@@ -525,6 +575,7 @@ window.XicUi = (() => {
     $("targeted-filters").hidden = !targeted;
     $("group-filter").hidden = targeted;
     $("review-range-filters").open = false;
+    syncQueryMode();
     const selectedTarget = $("target-id").value;
     document.querySelector(".review-grid").classList.toggle("single-target", targeted && Boolean(selectedTarget) && page.matched_count === 1);
     $("target-id").replaceChildren(new Option("全部目標", ""), ...(page.target_names || []).map(name => new Option(name, name)));
@@ -575,6 +626,11 @@ window.XicUi = (() => {
           : "",
       }),
     );
+    $("nearest-results-note").hidden = !nearest;
+    $("nearest-results-note").textContent = nearest
+      ? `約略 m/z ${page.nearest_mz} 的候選 · 依接近程度排序（全批排序後，每頁 25 筆）。`
+        + (page.missing_mz_count ? `另有 ${count(page.missing_mz_count)} 組缺少有效 m/z，未列入排序。` : "")
+      : "";
     const list = $("item-list");
     list.replaceChildren();
     for (const item of page.items) {
@@ -586,7 +642,8 @@ window.XicUi = (() => {
       const top = document.createElement("span");
       top.className = "item-top";
       const title = document.createElement("strong");
-      title.textContent = targeted ? item.title : `m/z ${fmt(item.precursor_mz, 4)}`;
+      title.textContent = targeted ? item.title
+        : `m/z ${nearest ? String(item.precursor_mz) : fmt(item.precursor_mz, 4)}`;
       const rt = document.createElement("span");
       rt.className = "item-rt";
       rt.textContent = targeted ? `m/z ${fmt(item.precursor_mz, 4)}` : `RT ${fmt(item.rt_apex_min, 2)} min`;
@@ -602,7 +659,11 @@ window.XicUi = (() => {
       badge.className = `chip ${badgeTone[label] || ""}`;
       badge.textContent = label;
       bottom.append(summary, badge);
-      button.append(top, bottom);
+      button.append(top);
+      if (nearest) {
+        button.append(node("span", `Δm/z ${item.mz_distance}`, "item-distance"));
+      }
+      button.append(bottom);
       button.addEventListener("click", () =>
         action(() => selectItem(item), "正在準備檢閱內容…"),
       );
@@ -619,7 +680,8 @@ window.XicUi = (() => {
       ? `${count(Math.floor(page.offset / page.limit) + 1)} / ${count(Math.max(1, Math.ceil(page.matched_count / page.limit)))} 頁`
       : "0 筆";
     status(
-      filtered
+      nearest ? `已載入 ${count(page.matched_count)} 組候選，依 m/z 接近程度排序；不是科學容差判定。`
+        : filtered
         ? `找到 ${count(page.matched_count)} 個符合條件的${noun}（搜尋範圍是全批已儲存結果）。`
         : `已載入全批 ${count(page.run_total)} 個${noun}。`,
     );
@@ -770,15 +832,19 @@ window.XicUi = (() => {
     else if (page.items.length) await selectItem(page.items[0]);
   }
   function queryFields() {
+    const nearest = nearestSearchMode();
     const filters = state.page?.source_kind === "targeted_workbook"
       ? { target_id: $("target-id").value.trim(), sample_id: $("target-sample").value, attention_only: $("target-attention").checked }
-      : { group_id: $("group-id").value.trim(), review_scope: state.page.review_scope };
-    for (const [id, key] of [
-      ["mz-min", "mz_min"],
-      ["mz-max", "mz_max"],
-      ["rt-min", "rt_min"],
-      ["rt-max", "rt_max"],
-    ])
+      : { review_scope: state.page.review_scope };
+    if (nearest) {
+      if (!validateNearestMz()) throw new Error($("nearest-mz-error").textContent);
+      if ($("nearest-mz").value.trim()) filters.nearest_mz = Number($("nearest-mz").value);
+    } else {
+      if (state.page?.source_kind !== "targeted_workbook") filters.group_id = $("group-id").value.trim();
+      for (const [id, key] of [["mz-min", "mz_min"], ["mz-max", "mz_max"]])
+        if ($(id).value.trim()) filters[key] = Number($(id).value);
+    }
+    for (const [id, key] of [["rt-min", "rt_min"], ["rt-max", "rt_max"]])
       if ($(id).value.trim()) filters[key] = Number($(id).value);
     return filters;
   }
@@ -973,6 +1039,8 @@ window.XicUi = (() => {
     event.preventDefault();
     action(openBatch, "正在讀取批次結果…");
   });
+  $("untargeted-search-mode").addEventListener("change", syncQueryMode);
+  $("nearest-mz").addEventListener("input", validateNearestMz);
   $("query-form").addEventListener("submit", (event) => {
     event.preventDefault();
     action(() => query(0, queryFields()), "正在搜尋全批結果…");

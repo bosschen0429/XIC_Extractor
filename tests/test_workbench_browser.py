@@ -529,6 +529,118 @@ def test_job_progress_artifact_failure_retention_and_confirmed_stop(
     expect(result).to_have_text(previous, use_inner_text=True)
 
 
+def test_nearest_mz_search_ranks_before_paging_and_keeps_optional_rt(
+    workbench, tmp_path
+):
+    from tests.test_xic_workbench import _nearest_review_batch
+
+    page = workbench
+    report, matrix = _nearest_review_batch(tmp_path)
+    before = [path.read_bytes() for path in (report, matrix)]
+    curve_requests = []
+    page.on(
+        "request",
+        lambda request: (
+            curve_requests.append(request.url)
+            if request.url.endswith("/api/curves")
+            else None
+        ),
+    )
+    _view(page, "review")
+    page.locator("#source").fill(str(report))
+    page.locator("#raw-dir").fill("")
+    page.locator("#open-form button[type=submit]").click()
+    page.get_by_role("button", name="查看全部矩陣群組").click()
+    expect(page.locator("#untargeted-search-mode")).to_have_value("nearest")
+    expect(page.locator("#rt-min")).to_be_visible()
+    expect(page.locator("#rt-min")).to_have_value("")
+    page.locator("#nearest-mz").fill("123.4000")
+    page.locator("#query-form button[type=submit]").click()
+    titles = page.locator("#item-list .item-top strong")
+    expect(titles).to_have_count(25)
+    expect(titles.nth(0)).to_have_text("m/z 123.398")
+    expect(titles.nth(1)).to_have_text("m/z 123.42")
+    expect(titles.nth(2)).to_have_text("m/z 123.4567")
+    distance_text = page.locator("#item-list .item-distance").nth(0).inner_text()
+    assert float(distance_text.removeprefix("Δm/z ")) == abs(123.398 - 123.4)
+    expect(page.locator("#nearest-results-note")).to_contain_text("1 組缺少有效 m/z")
+    expect(page.locator("#list-summary")).to_contain_text("32")
+    page.locator("#next").click()
+    expect(titles).to_have_count(7)
+    expect(titles.last).to_have_text("m/z 350")
+    page.locator("#previous").click()
+    expect(titles.nth(0)).to_have_text("m/z 123.398")
+
+    # Optional RT narrows eligibility without changing distance order and
+    # remains applied when pagination requests the next candidate slice.
+    page.locator("#rt-min").fill("0.5")
+    page.locator("#query-form button[type=submit]").click()
+    expect(titles.nth(0)).to_have_text("m/z 123.42")
+    page.locator("#next").click()
+    expect(titles).to_have_count(6)
+    expect(titles.last).to_have_text("m/z 350")
+    page.locator("#reset-query").click()
+    expect(page.locator("#nearest-mz")).to_have_value("")
+    expect(page.locator("#rt-min")).to_have_value("")
+    expect(page.locator("#nearest-results-note")).to_be_hidden()
+    expect(page.locator("#list-summary")).to_contain_text("33")
+    expect(titles).to_have_count(25)
+    assert not curve_requests
+    assert [path.read_bytes() for path in (report, matrix)] == before
+
+
+def test_nearest_mode_ignores_exact_filters_and_rejects_invalid_input(
+    workbench, tmp_path
+):
+    from tests.test_xic_workbench import _nearest_review_batch
+
+    page = workbench
+    report, _ = _nearest_review_batch(tmp_path)
+    _view(page, "review")
+    page.locator("#source").fill(str(report))
+    page.locator("#raw-dir").fill("")
+    page.locator("#open-form button[type=submit]").click()
+    page.get_by_role("button", name="查看全部矩陣群組").click()
+    page.locator("#untargeted-search-mode").select_option("exact")
+    page.locator("#mz-min").fill("123.4")
+    page.locator("#mz-max").fill("123.4")
+    page.locator("#group-filter > summary").click()
+    page.locator("#group-id").fill("multi-witness")
+    page.locator("#query-form button[type=submit]").click()
+    expect(page.locator("#item-list button")).to_have_count(1)
+    # Exact matching still uses any eligible witness, not the displayed m/z.
+    expect(page.locator("#item-list .item-top strong")).to_have_text("m/z 350.0000")
+    expect(page.locator("#nearest-results-note")).to_be_hidden()
+    page.locator("#untargeted-search-mode").select_option("nearest")
+    expect(page.locator("#mz-min")).to_be_disabled()
+    expect(page.locator("#group-id")).to_be_disabled()
+    page.locator("#nearest-mz").fill("123.4")
+    with page.expect_request("**/api/query") as request:
+        page.locator("#query-form button[type=submit]").click()
+    assert request.value.post_data_json == {
+        "nearest_mz": 123.4,
+        "review_scope": "matrix",
+        "offset": 0,
+        "limit": 25,
+    }
+    expect(page.locator("#item-list button")).to_have_count(25)
+    expect(page.locator("#item-list .item-top strong").first).to_have_text(
+        "m/z 123.398"
+    )
+    for invalid in ("abc", "Infinity", "NaN", "0", "-1"):
+        page.locator("#nearest-mz").fill(invalid)
+        expect(page.locator("#nearest-mz-error")).to_contain_text("大於 0 的有限 m/z")
+        assert not page.locator("#query-form").evaluate("form => form.checkValidity()")
+        page.locator("#query-form button[type=submit]").click()
+        expect(page.locator("#nearest-results-note")).to_contain_text("123.4")
+    page.locator("#nearest-mz").fill("123.4000")
+    expect(page.locator("#nearest-mz-error")).to_be_hidden()
+    page.locator("#query-form button[type=submit]").click()
+    expect(page.locator("#item-list .item-top strong").first).to_have_text(
+        "m/z 123.398"
+    )
+
+
 def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
     workbench, tmp_path
 ):

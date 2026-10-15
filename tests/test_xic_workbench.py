@@ -129,6 +129,119 @@ def _review_batch(tmp_path, sample_count=2):
     return report, matrix
 
 
+def _nearest_review_batch(tmp_path):
+    """Saved matrix rows whose review order differs from numeric proximity."""
+    from xic_extractor.diagnostics.alignment_explanation import ExplanationReportWriter
+
+    matrix = tmp_path / "nearest-matrix.tsv"
+    matrix.write_text("saved near-search fixture", encoding="utf-8")
+    report = tmp_path / "nearest-review.sqlite"
+    rows = [(f"far-{i:02}", ((200.0 + i, 1.0),), False) for i in range(28)] + [
+        ("near-a", ((123.3980, None),), False),
+        ("near-b", ((123.4200, 5.0),), False),
+        ("near-c", ((123.4567, 10.0),), True),
+        ("missing-mz", ((None, 1.0),), False),
+        ("multi-witness", ((350.0, 2.0), (123.4, 2.5)), False),
+    ]
+    with ExplanationReportWriter(report, review_only=True) as writer:
+        for rid, witnesses, unresolved in rows:
+            keys = []
+            for index, (mz, rt) in enumerate(witnesses):
+                cid = f"{rid}-{index}"
+                keys.append((cid, "S1"))
+                writer.add_candidate(
+                    cid,
+                    "S1",
+                    {
+                        "candidate_id": cid,
+                        "canonical_sample_identity_id": "S1",
+                        "precursor_mz": mz,
+                        "rt_apex_min": rt,
+                    },
+                )
+            writer.add_record(
+                "rows",
+                rid,
+                {
+                    "row_key_id": rid,
+                    "group_hypothesis_id": rid,
+                    "route": {"destination": "matrix", "reason": "recorded"},
+                },
+                keys,
+            )
+            writer.add_record("final_groups", rid, {"group_hypothesis_id": rid}, keys)
+            writer.add_row_cells(
+                rid,
+                rid,
+                [
+                    {
+                        "canonical_sample_identity_id": "S1",
+                        "variant": "unresolved" if unresolved else "numeric",
+                        "value": None if unresolved else 100.0,
+                    }
+                ],
+                {"S1": 0},
+            )
+        writer.finalize(
+            {
+                "matrix_path": str(matrix),
+                "matrix_sha256": hashlib.sha256(matrix.read_bytes()).hexdigest(),
+                "samples": [
+                    {"canonical_sample_identity_id": "S1", "sample_stem": "S1"}
+                ],
+                "selection_evidence_capability": "recorded_decisions",
+            }
+        )
+    return report, matrix
+
+
+def test_nearest_review_query_exposes_owner_ranking_and_preserves_exact(tmp_path):
+    report, matrix = _nearest_review_batch(tmp_path)
+    before = [path.read_bytes() for path in (report, matrix)]
+    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
+    try:
+        workspace.open(str(report))
+        exact = workspace.query({"mz_min": 123.4, "mz_max": 123.4})
+        assert [item["group_id"] for item in exact["items"]] == ["multi-witness"]
+        assert "nearest_mz" not in exact
+        assert "mz_distance" not in exact["items"][0]
+
+        page = workspace.query({"nearest_mz": 123.4, "limit": 25})
+        assert page["matched_count"] == 32
+        assert page["selected_count"] == 25
+        assert page["nearest_mz"] == 123.4
+        assert page["missing_mz_count"] == 1
+        assert page["rt_min"] is None and page["rt_max"] is None
+        assert [item["group_id"] for item in page["items"][:3]] == [
+            "near-a",
+            "near-b",
+            "near-c",
+        ]
+        assert [item["mz_distance"] for item in page["items"][:3]] == pytest.approx(
+            [0.002, 0.02, 0.0567]
+        )
+        tail = workspace.query({"nearest_mz": 123.4, "offset": 25, "limit": 25})
+        all_ids = [item["group_id"] for item in page["items"] + tail["items"]]
+        assert all_ids == ["near-a", "near-b", "near-c"] + [
+            f"far-{i:02}" for i in range(28)
+        ] + ["multi-witness"]
+
+        scoped = workspace.query(
+            {"nearest_mz": 123.4, "review_scope": "unresolved", "rt_min": 9}
+        )
+        assert [item["group_id"] for item in scoped["items"]] == ["near-c"]
+        assert scoped["rt_min"] == 9
+        assert workspace.state()["page"]["nearest_mz"] == 123.4
+        restored_exact = workspace.query(
+            {"review_scope": "matrix", "mz_min": 123.4, "mz_max": 123.4}
+        )
+        assert restored_exact["items"] == exact["items"]
+        assert "nearest_mz" not in restored_exact
+    finally:
+        workspace.close()
+    assert [path.read_bytes() for path in (report, matrix)] == before
+
+
 def test_review_overview_separates_matrix_priority_and_internal_evidence(tmp_path):
     report, matrix = _review_batch(tmp_path)
     before = [p.read_bytes() for p in (report, matrix)]

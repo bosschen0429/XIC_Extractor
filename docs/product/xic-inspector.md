@@ -29,10 +29,19 @@ groups, groups with a numeric value in every sample, and groups containing an
 explicitly unresolved saved decision. The last group is the priority queue;
 ordinary missing values are not inferred to be abnormal or not detected.
 Archived groups and ungrouped candidates are secondary evidence, not mixed
-into the default result list. Exact group ID, m/z and RT filters search the
-selected population before pagination, in pages of 25. Reading order uses
-unresolved-cell count, then numeric sample coverage; it is not a new scientific
-score. The offline custom Inspector retains its bounded evidence-sampling view.
+into the default result list. Matrix and unresolved-group review offers a
+single approximate m/z query; RT is optional. Candidates are ranked across the
+selected population by absolute distance from the item's unrounded displayed
+precursor m/z, then canonical item ID, before pagination in pages of 25. The
+list shows the distance and counts groups excluded for missing valid m/z. It
+does not apply an implicit mass tolerance or confirm compound identity.
+
+The separate exact mode retains group ID, m/z and RT witness-chain filtering;
+its m/z bounds and group ID do not constrain approximate mode. Without an
+approximate query, reading order uses unresolved-cell count, then numeric
+sample coverage; it is not a new scientific score. Search reads saved evidence
+without RAW, while selecting a result retains the acquisition behavior below.
+The offline custom Inspector retains its bounded evidence-sampling view.
 
 Selecting an Untargeted group automatically loads all observed samples'
 XIC inline when RAW and DLL locations are configured. The sample selector can
