@@ -1,8 +1,6 @@
 """The portable curve source must survive a file handoff without RAW access."""
 
 import json
-import re
-import shutil
 import subprocess
 import sys
 from dataclasses import replace
@@ -10,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.test_xic_inspector_html import _evaluate_report_functions
 from xic_inspector.api import (
     InspectorError,
     SelectionRequest,
@@ -375,35 +374,12 @@ def test_saved_quantity_and_integration_reach_offline_readout(tmp_path, second_v
         "intensities": [0, 3, 6, 0],
     }
     assert curves["successor-s2"]["area"] is None
-    script = re.search(r"<script>(.*?)</script>", content, re.S)
-    assert script is not None
-    prefix = script[1].split("  $('record-list').addEventListener", 1)[0]
-    document = (
-        "var document={getElementById:id=>id==='inspector-data'?{textContent:"
-        + json.dumps(json.dumps(payload))
-        + "}:{dataset:{strategy:'sample'}}};"
-    )
-    js = (
-        document
-        + "console.log("
-        + prefix
-        + (
-            "state.sample='sample-1';normalize(items[0],true);"
-            "return JSON.stringify({readout:readout(items[0]),"
-            "table:sampleTable(items[0])});})());"
-        )
-    )
-    node = shutil.which("node")
-    assert node is not None, "Node.js is required to test the report JavaScript"
-    rendered = json.loads(
-        subprocess.run(
-            [node],
-            input=js,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            check=True,
-        ).stdout
+    rendered = _evaluate_report_functions(
+        content,
+        payload,
+        "state.sample='sample-1';normalize(items[0],true);"
+        "return JSON.stringify({readout:readout(items[0]),"
+        "table:sampleTable(items[0])});",
     )
     assert 'data-readout="area">120.5' in rendered["readout"]
     assert 'data-readout="raw-apex">6.100' in rendered["readout"]

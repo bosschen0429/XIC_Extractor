@@ -1,10 +1,10 @@
 # XIC Inspector
 
-XIC Inspector is the installed, read-only review surface for completed XIC
-evidence. It selects a bounded set of evidence items and writes one
-self-contained HTML workbench that can be copied and opened offline. The
-Inspector does not acquire RAW data, rerun scientific processing, change
-scientific decisions, or write Matrix values.
+The local HTML workbench is the primary interactive entry for reviewing
+completed XIC evidence. XIC Inspector supplies its read-only evidence selection
+and shared review renderer, also packaged in self-contained HTML exports that
+can be copied and opened offline. Inspector itself does not acquire RAW data,
+rerun scientific processing, change scientific decisions, or write Matrix values.
 
 ## Local HTML workspace
 
@@ -60,8 +60,16 @@ state this limitation. Missing files and mismatched content fail explicitly.
 `xic_workbench.workspace` owns the local session and jobs;
 `xic_workbench.acquisition` owns diagnostic reacquisition, shared with the
 explanation CLI. `xic_inspector.api.prepare_report` supplies selected evidence
-to both the workspace and offline report generation. The renderer loads ordinary
-HTML/JavaScript package assets and embeds them into the exported file.
+to both the workspace and offline report generation. The workspace mounts the
+shared review view directly in the page; opening results and loading curves do
+not generate intermediate HTML or load an iframe. Source selection, acquisition,
+progress and cancellation remain workspace operations, not renderer operations.
+
+Each view retains its prepared data and sample scope for the local session.
+Later queries or opening another source do not change that view's download.
+Downloading packages the captured view on demand with the same renderer's
+JavaScript and CSS; it does not reread the source. The exported single HTML file
+needs no server, RAW access, or network connection for its retained interactions.
 The transport binds only to `127.0.0.1` and serves packaged assets and this
 session's reports. It is one local analysis and review session.
 

@@ -1,12 +1,74 @@
 (() => {
-  const data=JSON.parse(document.getElementById('inspector-data').textContent);
+  let nextInstance = 0;
+  const mounted = new WeakMap();
+  const detailMarkup = `
+<main class="panel detail-panel" id="detail-panel"><div id="workspace-content"></div></main>
+`;
+  const dialogMarkup = `
+<dialog id="zoom-dialog"><div class="dialog-header"><h3 id="zoom-title">放大檢視</h3><button type="button" id="zoom-close" aria-label="關閉放大圖">×</button></div><div class="svg-container zoom-container" id="zoom-container"></div></dialog>
+<dialog id="report-info-dialog" class="report-dialog"><div class="dialog-header"><h3>關於這份報告</h3><button type="button" id="report-info-close" aria-label="關閉報告資訊">×</button></div><div id="report-info-body"></div></dialog>
+`;
+  const offlineMarkup = `
+<div class="notice" id="report-notice" hidden></div>
+  <header>
+    <div class="header-main"><div class="header-copy"><span class="brand-mark" aria-hidden="true">XIC</span><div><h1>%%REPORT_TITLE%%</h1><p class="scope-summary"><strong>%%STRATEGY_LABEL%%</strong><span>%%SELECTED_COUNT%% / %%RUN_TOTAL%% 個項目</span><span id="loaded-range"></span></p></div></div><div class="header-actions"><span class="badge badge-%%CAPABILITY_BADGE%%">%%CAPABILITY_LABEL%%</span><button id="btn-report-info" type="button">報告資訊</button></div></div>
+    <div class="filter-line"><label class="search-control" for="search"><span class="sr-only">本頁搜尋</span><input type="text" id="search" placeholder="搜尋項目、樣本、m/z 或判定"></label><details class="advanced-filters"><summary>進階篩選</summary><div class="filter-fields"><label>m/z <input type="number" id="mz-min" step="0.0001" placeholder="下限">–<input type="number" id="mz-max" step="0.0001" placeholder="上限"></label><label>RT（min）<input type="number" id="rt-min" step="0.01" placeholder="起點">–<input type="number" id="rt-max" step="0.01" placeholder="終點"></label><button type="button" id="clear">重設篩選</button></div></details><div class="active-filters" id="active-filters"></div></div>
+  </header>
+  <div class="workbench"><aside class="panel list-panel"><div class="list-header"><span>檢閱項目</span><span id="list-count">%%ITEM_COUNT%% 筆</span></div><div class="record-list" id="record-list"></div></aside>%%DETAIL_SURFACE%%</div>
+  <div id="report-info-source" data-strategy="%%STRATEGY%%" data-strategy-label="%%STRATEGY_LABEL%%" data-source-name="%%SOURCE_DB_NAME%%" data-capability-label="%%CAPABILITY_LABEL%%" data-run-total="%%RUN_TOTAL%%" data-eligible-count="%%ELIGIBLE_COUNT%%" hidden></div>
+%%DIALOG_SURFACE%%
+`;
+
+  function mount(container, data, options = {}) {
+  const mode = options.mode || 'offline';
+  if (!['offline', 'result', 'curves'].includes(mode)) throw new TypeError('Unknown Inspector mode');
+  mounted.get(container)?.destroy();
+  const root = document.createElement('div');
+  root.className = 'xic-inspector';
+  root.dataset.mode = mode;
+  const instanceId = `xic-inspector-${++nextInstance}-`;
+  // Hosts own acquisition and navigation; offline never exposes a live request.
+  const onRequestCurves = mode !== 'offline' && typeof options.onRequestCurves === 'function' ? options.onRequestCurves : null;
+  const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const $ = id => root.querySelector(`[data-inspector-id="${id}"]`);
+  let destroyed = false;
+  const cleanups = [], frames = new Set(), timers = new Set();
+  const instance = {element: root, destroy() {
+    if (destroyed) return;
+    destroyed = true;
+    cleanups.forEach(cleanup => cleanup());
+    frames.forEach(id => cancelAnimationFrame(id));
+    timers.forEach(id => clearTimeout(id));
+    root.querySelectorAll('dialog[open]').forEach(dialog => dialog.close());
+    root.remove();
+    if (mounted.get(container) === instance) mounted.delete(container);
+  }};
+  const afterPaint = callback => {
+    const id = requestAnimationFrame(() => { frames.delete(id); if (!destroyed) callback(); });
+    frames.add(id);
+  };
+  const later = (callback, delay) => {
+    const id = setTimeout(() => { timers.delete(id); if (!destroyed) callback(); }, delay);
+    timers.add(id);
+  };
+  function setHTML(element, content) {
+    // Prefix DOM and SVG reference identities at the markup boundary, not in
+    // the scientific presentation helpers that produce the same plot for both hosts.
+    element.innerHTML = String(content)
+      .replace(/\bid="([^"]+)"/g, (_, id) => `data-inspector-id="${id}" id="${instanceId}${id}"`)
+      .replace(/\bfor="([^"]+)"/g, (_, id) => `for="${instanceId}${id}"`)
+      .replace(/url\(#([^)]+)\)/g, (_, id) => `url(#${instanceId}${id})`);
+  }
+  container.append(root);
+  mounted.set(container, instance);
+
   if (data.summary?.source_kind === 'targeted_workbook') {
     renderTargetedWorkbook(data);
-    return;
+    return instance;
   }
   if (data.items?.length && data.items.every(item => item.curves?.some(curve => curve.quality_flags?.target_label))) {
     renderTargetedCurves(data);
-    return;
+    return instance;
   }
 
   function renderTargetedCurves(payload) {
@@ -21,13 +83,13 @@
     const finite = value => typeof value === 'number' && Number.isFinite(value);
     const number = value => finite(value) ? Number(value.toPrecision(4)).toLocaleString('en-US') : '—';
     const area = value => finite(value) ? value.toExponential(2) : String(value ?? '—');
-    const embedded = new URLSearchParams(location.search).has('embed');
-    const root = node('main', undefined, 'tx-review');
-    document.body.classList.add('tx-body');
-    document.body.replaceChildren(root);
+    const offline = mode === 'offline';
+    const review = node('main', undefined, 'tx-review');
+    root.classList.add('tx-body');
+    root.append(review);
     const heading = node('header', undefined, 'tx-heading');
-    if (!embedded) heading.append(node('h1', 'Targeted XIC'));
-    const sampleName = node('p', '', `tx-sample-name${embedded ? ' sr-only' : ''}`);
+    if (offline) heading.append(node('h1', 'Targeted XIC'));
+    const sampleName = node('p', '', `tx-sample-name${!offline ? ' sr-only' : ''}`);
     heading.append(sampleName);
     const itemSelect = node('select'); itemSelect.setAttribute('aria-label', '目標');
     for (const [index, item] of payload.items.entries()) {
@@ -35,7 +97,7 @@
     }
     if (payload.items.length > 1) heading.append(itemSelect);
     const sampleSelect = node('select'); sampleSelect.setAttribute('aria-label', '樣本');
-    heading.append(sampleSelect); root.append(heading);
+    heading.append(sampleSelect); review.append(heading);
     const toolbar = node('div', undefined, 'tx-toolbar');
     const legend = node('div', undefined, 'tx-legend');
     legend.append(node('span', '原始 scan 點', 'tx-raw-key'), node('span', '平滑線', 'tx-smooth-key'));
@@ -53,12 +115,12 @@
     const nearby = node('button', '峰附近'), full = node('button', '完整 RT');
     nearby.type = full.type = 'button';
     range.append(node('span', 'RT'), start, node('span', '–'), end, node('span', 'min'), apply, nearby, full);
-    root.append(toolbar, range);
-    const charts = node('div', undefined, 'tx-charts'); root.append(charts);
+    review.append(toolbar, range);
+    const charts = node('div', undefined, 'tx-charts'); review.append(charts);
     const provenance = node('details', undefined, 'tx-provenance');
     provenance.append(node('summary', '來源未驗證 · 檢視讀取設定'));
     provenance.append(node('p', '依樣本名稱讀取 RAW；工作簿沒有原始 RAW 指紋，無法驗證是否為原分析檔。這是新取得的診斷曲線，峰界與數值來自已保存結果，不重新積分。'));
-    const extraction = node('p'); provenance.append(extraction); root.append(provenance);
+    const extraction = node('p'); provenance.append(extraction); review.append(provenance);
     let item, sample, rtWindow;
     const traces = () => item.curves.filter(curve => curve.sample_id === sample);
     const extent = () => [Math.min(...traces().map(c => c.raw_rts[0])), Math.max(...traces().map(c => c.raw_rts[c.raw_rts.length - 1]))];
@@ -119,7 +181,7 @@
         }
         markup += `<polyline data-kind="smoothed" points="${points.map(([rt, intensity]) => `${x(rt)},${y(intensity)}`).join(' ')}"/>`;
         markup += rawPoints.map(([rt, intensity]) => `<circle data-kind="raw" cx="${x(rt)}" cy="${y(intensity)}" r="2.2"><title>RT ${rt.toFixed(4)} min · ${number(intensity)}</title></circle>`).join('');
-        svg.innerHTML = markup; card.append(svg); charts.append(card);
+        setHTML(svg, markup); card.append(svg); charts.append(card);
       }
       extraction.textContent = traces().map(c => `${c.quality_flags.target_label}：m/z ${c.provenance.mz} ± ${c.provenance.ppm} ppm`).join('；');
     }
@@ -147,8 +209,10 @@
     bounds.addEventListener('change', draw);
     sampleSelect.addEventListener('change', selectSample); itemSelect.addEventListener('change', selectItem);
     selectItem();
-    let previousWidth = root.clientWidth;
-    new ResizeObserver(() => { if (root.clientWidth !== previousWidth) { previousWidth = root.clientWidth; draw(); } }).observe(root);
+    let previousWidth = review.clientWidth;
+    const observer = new ResizeObserver(() => { if (review.clientWidth !== previousWidth) { previousWidth = review.clientWidth; draw(); } });
+    observer.observe(review);
+    cleanups.push(() => observer.disconnect());
   }
 
   function renderTargetedWorkbook(payload) {
@@ -176,7 +240,7 @@
       const power = Number(exponent);
       return `${mantissa}E${power < 0 ? '-' : '+'}${String(Math.abs(power)).padStart(2, '0')}`;
     };
-    const embedded = new URLSearchParams(location.search).has('embed');
+    const offline = mode === 'offline';
     const facts = pairs => {
       const grid = element('dl', undefined, 'tgt-facts');
       for (const [label, saved] of pairs) {
@@ -195,8 +259,8 @@
       }[focus.kind];
       return text ? element('p', text, 'tgt-focus-banner') : null;
     };
-    const root = element('main', undefined, 'tgt-review');
-    if (!embedded) root.append(element('h1', 'Targeted 結果'));
+    const review = element('main', undefined, 'tgt-review');
+    if (offline) review.append(element('h1', 'Targeted 結果'));
     for (const item of payload.items) {
       const target = item.details.target, focus = item.details.focus;
       const istdRecords = item.details.istd_records || {};
@@ -221,7 +285,7 @@
       const head = element('tr');
       // A paired analyte reads beside its ISTD in the same sample row.
       const paired = Object.keys(istdRecords).length > 0;
-      const canLoadCurves = embedded && window.parent !== window;
+      const canLoadCurves = Boolean(onRequestCurves);
       const titles = ['樣本', 'RT (min)', '面積', '計入偵測', ...(paired ? ['ISTD RT (min)', 'ISTD 面積'] : []), '檢閱註記', ...(canLoadCurves ? ['曲線'] : [])];
       for (const title of titles) head.append(element('th', title));
       const thead = element('thead');thead.append(head);
@@ -272,7 +336,7 @@
         if (canLoadCurves) {
           const cell = element('td'), view = element('button', '看 XIC', 'tgt-xic');
           view.type = 'button';view.setAttribute('aria-label', `看 ${record.SampleName} 的 ${item.title} XIC`);
-          view.addEventListener('click', () => window.parent.postMessage({type: 'xic-targeted-curves', item_id: item.id, sample_id: record.SampleName}, location.origin));
+          view.addEventListener('click', () => onRequestCurves({item_id: item.id, sample_id: record.SampleName, opener: view}));
           cell.append(view);row.append(cell);
         }
         button.addEventListener('click', () => {
@@ -323,22 +387,40 @@
       };
       method.append(facts(payload.summary.method_context.filter(([key]) => labels[key]).map(([key, saved]) => [labels[key], saved])));
       section.append(method);
-      root.append(section);
+      review.append(section);
     }
-    if (!payload.items.length) root.append(element('p', '沒有符合條件的目標。'));
+    if (!payload.items.length) review.append(element('p', '沒有符合條件的目標。'));
     const provenance = element('details', undefined, 'tgt-provenance');
     provenance.append(element('summary', '執行資訊'));
     const labels = {generated_at: '建立時間', app_version: '版本', config_hash: '設定識別', target_config_hash: '目標設定識別', parallel_mode: '執行模式', parallel_workers: 'Workers', limited_identity_gate: 'Limited identity gate'};
     provenance.append(facts(payload.summary.method_context.filter(([key]) => labels[key]).map(([key, saved]) => [labels[key], saved])));
-    root.append(provenance);
-    // The workbench already states this beside the embedded view.
-    if (!embedded) root.append(element('p', '唯讀結果 · 未保存逐點曲線，不重建色譜圖。', 'tgt-note'));
-    document.body.replaceChildren(root);
+    review.append(provenance);
+    // The online host states the readonly result scope beside this surface.
+    if (offline) review.append(element('p', '唯讀結果 · 未保存逐點曲線，不重建色譜圖。', 'tgt-note'));
+    root.append(review);
   }
+  const metadata = options.metadata || {};
+  const strategy = metadata.strategy ?? data.selection?.strategy ?? 'sample';
+  const capability = metadata.evidence_capability ?? data.evidence_capability ?? 'metadata_only';
+  const fields = {
+    REPORT_TITLE: metadata.title ?? 'XIC Inspector',
+    STRATEGY: strategy,
+    STRATEGY_LABEL: {sample:'抽樣檢閱',attention:'爭議聚焦',query:'指定目標查詢'}[strategy] || strategy,
+    SELECTED_COUNT: metadata.selected_count ?? data.items?.length ?? 0,
+    RUN_TOTAL: metadata.run_total ?? data.items?.length ?? 0,
+    ELIGIBLE_COUNT: metadata.eligible_count ?? data.items?.length ?? 0,
+    ITEM_COUNT: data.items?.length ?? 0,
+    SOURCE_DB_NAME: metadata.source_db_name ?? '',
+    CAPABILITY_BADGE: capability === 'retained_curves' ? 'ok' : 'null',
+    CAPABILITY_LABEL: capability === 'retained_curves' ? '含已保存曲線' : '僅有結果紀錄',
+  };
+  const chrome = mode === 'offline'
+    ? offlineMarkup.replace('%%DETAIL_SURFACE%%', detailMarkup).replace('%%DIALOG_SURFACE%%', dialogMarkup)
+    : detailMarkup + dialogMarkup;
+  setHTML(root, chrome.replace(/%%([A-Z_]+)%%/g, (_, key) => esc(fields[key] ?? '')));
   const items=Array.isArray(data.items)?data.items:[], samples=Array.isArray(data.samples)?data.samples:[];
   const colors=Array.from({length:8},(_,index)=>`var(--curve-${index+1})`);
-  const $=id=>document.getElementById(id), has=(o,k)=>Object.prototype.hasOwnProperty.call(o||{},k);
-  const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const has=(o,k)=>Object.prototype.hasOwnProperty.call(o||{},k);
   const finite=v=>typeof v==='number'&&Number.isFinite(v), fixed=(v,d)=>finite(v)?v.toFixed(d):'未提供';
   const mz=v=>fixed(v,4), rt=v=>fixed(v,2), drt=v=>fixed(v,3);
   const tickNum=v=>v===0?'0':Math.abs(v)>=1e6?v.toExponential(1):Math.abs(v)>=100?Math.round(v).toLocaleString('en-US'):num(v);
@@ -513,7 +595,7 @@
   function filterStatus(){
     const active=[];if($('search').value.trim())active.push(`搜尋「${$('search').value.trim()}」`);
     for(const [lo,hi,label] of [['mz-min','mz-max','m/z'],['rt-min','rt-max','RT']])if($(lo).value||$(hi).value)active.push(`${label} ${$(lo).value||'不限'}–${$(hi).value||'不限'}`);
-    $('active-filters').innerHTML=active.length?`<span class="active-label">本頁已套用</span>${active.map(x=>`<span class="filter-chip">${esc(x)}</span>`).join('')}<button type="button" id="clear-inline">清除</button>`:'';
+    setHTML($('active-filters'),active.length?`<span class="active-label">本頁已套用</span>${active.map(x=>`<span class="filter-chip">${esc(x)}</span>`).join('')}<button type="button" id="clear-inline">清除</button>`:'');
     const excluded=filtered.filter(isCollapsedExcluded).length;
     $('loaded-range').textContent=active.length?`符合篩選 ${filtered.length} 個${excluded?`，其中 ${excluded} 個為已排除候選`:''}`:'';
   }
@@ -525,7 +607,7 @@
     $('list-count').textContent=`${filtered.length} / ${items.length} 筆`;
     const recordButton=item=>`<button type="button" class="record-button ${item.id===state.id?'selected':''}" data-item="${esc(item.id)}" aria-current="${item.id===state.id}"><div class="record-name"><span>${esc(itemTitle(item))}</span><span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span></div><div class="record-meta">${itemName(item)} · m/z ${mz(item.precursor_mz)} · RT ${rt(item.rt_apex_min)} min</div><div class="record-reason">${esc(item.reason_label||'未記錄判定說明')}</div></button>`;
     const excludedGroup=excluded.length?`<section class="excluded-group"><button type="button" class="excluded-toggle" data-excluded-toggle aria-expanded="${showExcluded}" ${localFilterActive?'disabled title="篩選結果會保持展開"':''}><span>已排除候選</span><span>${excluded.length} 筆 ${showExcluded?'▾':'▸'}</span></button>${showExcluded?`<div class="excluded-items">${excluded.map(recordButton).join('')}</div>`:''}</section>`:'';
-    $('record-list').innerHTML=regular.map(recordButton).join('')+excludedGroup||'<p class="empty-state">這份報告沒有符合的項目。請清除篩選條件。</p>';
+    setHTML($('record-list'),regular.map(recordButton).join('')+excludedGroup||'<p class="empty-state">這份報告沒有符合的項目。請清除篩選條件。</p>');
     filterStatus();detail();
   }
   function summary(item){
@@ -654,25 +736,25 @@
     const f=item.transition_review,shown=(item.curves||[]).filter(c=>state.visible.has(c.sample_id)&&(!state.sample||state.sample===c.sample_id));
     const sharedMax=Math.max(1,...shown.flatMap(c=>differentialSeries(c).intensities.filter(finite)))*1.05;
     const roster=itemRows(item).map(r=>{const c=(item.curves||[]).find(x=>x.sample_id===r.sample_id),decision=c?.quality_flags?.successor_decision||'unclassified';return `<label class="legend-item"><input type="checkbox" data-sample-visible="${esc(r.sample_id)}" ${state.visible.has(r.sample_id)?'checked':''}><span class="legend-line" style="background:${differentialColor(c||{})}"></span>${esc(sampleName(r.sample_id))} · ${esc(decision)} · ${esc(r.status_label||'')}</label><button type="button" data-focus="${esc(r.sample_id)}" aria-label="查看 ${esc(sampleName(r.sample_id))}">查看樣本</button>`;}).join('');
-    $('workspace-content').innerHTML=`<div class="detail-top"><div><p class="detail-eyebrow">CID-NL feature inclusion / identity relationship review</p><h2>${esc(item.title)} | Candidate ${esc(f.write_authorized_count)} / Existing ${esc(f.no_write_detected_baseline_preserved_count)}</h2><p class="detail-summary">${esc(f.sample_count)} samples · ${esc(f.source_peak_hypothesis_id)} → ${esc(f.successor_peak_hypothesis_id)}</p></div><span class="badge badge-rest">診斷曲線</span></div><section class="advanced-inspection" aria-label="Source / successor differential review"><div class="inspection-heading"><h3 id="inspection-title" tabindex="-1">${state.sample?esc(sampleName(state.sample)):'所有可見樣本'}</h3>${state.sample?'<button type="button" class="return-all" id="btn-unfocus">← 返回所有樣本</button>':''}</div><div class="selection-controls"><div class="control-group"><span class="control-label">訊號種類</span><select id="signal-select"><option value="smoothed" ${state.signal==='smoothed'?'selected':''}>預先計算 Gaussian15</option><option value="raw" ${state.signal==='raw'?'selected':''}>原始訊號</option></select></div></div><div class="sample-legend" aria-label="樣本曲線顯示">${roster}</div><div class="charts-grid"><section class="plot-card"><h4>Source · ${esc(f.source_peak_hypothesis_id)} · m/z ${mz(f.source_mz)} · RT ${drt(f.source_center_rt)}</h4><div class="svg-container">${differentialPlot(item,'source',sharedMax)}</div></section><section class="plot-card"><h4>Successor · ${esc(f.successor_peak_hypothesis_id)} · m/z ${mz(f.successor_mz)} · RT ${drt(f.successor_center_rt)}</h4><div class="svg-container">${differentialPlot(item,'successor',sharedMax)}</div></section><section class="plot-card"><h4>Same-sample max relationship · log-log</h4><div class="svg-container">${differentialScatter(item)}</div></section><section class="plot-card"><h4>Review notes</h4>${differentialNotes(f)}</section></div><p class="reading-hint">兩側使用相同絕對訊號上限；黑色虛線標示各 hypothesis 中心 RT。藍色：write authorized；橘色：baseline preserved；灰色：其他。</p></section>`;
+    setHTML($('workspace-content'),`<div class="detail-top"><div><p class="detail-eyebrow">CID-NL feature inclusion / identity relationship review</p><h2>${esc(item.title)} | Candidate ${esc(f.write_authorized_count)} / Existing ${esc(f.no_write_detected_baseline_preserved_count)}</h2><p class="detail-summary">${esc(f.sample_count)} samples · ${esc(f.source_peak_hypothesis_id)} → ${esc(f.successor_peak_hypothesis_id)}</p></div><span class="badge badge-rest">診斷曲線</span></div><section class="advanced-inspection" aria-label="Source / successor differential review"><div class="inspection-heading"><h3 id="inspection-title" tabindex="-1">${state.sample?esc(sampleName(state.sample)):'所有可見樣本'}</h3>${state.sample?'<button type="button" class="return-all" id="btn-unfocus">← 返回所有樣本</button>':''}</div><div class="selection-controls"><div class="control-group"><span class="control-label">訊號種類</span><select id="signal-select"><option value="smoothed" ${state.signal==='smoothed'?'selected':''}>預先計算 Gaussian15</option><option value="raw" ${state.signal==='raw'?'selected':''}>原始訊號</option></select></div></div><div class="sample-legend" aria-label="樣本曲線顯示">${roster}</div><div class="charts-grid"><section class="plot-card"><h4>Source · ${esc(f.source_peak_hypothesis_id)} · m/z ${mz(f.source_mz)} · RT ${drt(f.source_center_rt)}</h4><div class="svg-container">${differentialPlot(item,'source',sharedMax)}</div></section><section class="plot-card"><h4>Successor · ${esc(f.successor_peak_hypothesis_id)} · m/z ${mz(f.successor_mz)} · RT ${drt(f.successor_center_rt)}</h4><div class="svg-container">${differentialPlot(item,'successor',sharedMax)}</div></section><section class="plot-card"><h4>Same-sample max relationship · log-log</h4><div class="svg-container">${differentialScatter(item)}</div></section><section class="plot-card"><h4>Review notes</h4>${differentialNotes(f)}</section></div><p class="reading-hint">兩側使用相同絕對訊號上限；黑色虛線標示各 hypothesis 中心 RT。藍色：write authorized；橘色：baseline preserved；灰色：其他。</p></section>`);
   }
   function detail(){
-    const item=items.find(i=>i.id===state.id);if(!item){const excluded=filtered.filter(isCollapsedExcluded).length;$('workspace-content').innerHTML=excluded?`<div class="empty-state"><strong>目前未選取項目</strong><p>左側有 ${excluded} 筆已排除候選；展開後可查看保存曲線與來源紀錄。</p></div>`:'<p class="empty-state">這份報告沒有符合的項目。</p>';return;}normalize(item);if(item.transition_review?.review_kind==='cid_nl_differential'){differentialDetail(item);return;}
-    if(data.selection.workspace_view==='result'){
-      $('workspace-content').innerHTML=`<section class="sample-section"><h3>已保存的樣本結果</h3><p>空值不等於未檢出；下表保留當次定量決策。</p><div class="table-scroll"><table class="sample-table"><thead><tr><th>樣本</th><th>Area</th><th>定量狀態</th><th>依據</th></tr></thead><tbody>${itemRows(item).map(r=>`<tr><td>${esc(sampleName(r.sample_id))}</td><td>${finite(r.quantitative_value)?Number(r.quantitative_value).toExponential(3):'—'}</td><td>${finite(r.quantitative_value)?'有定量值':esc(r.decision_label||'未提供定量')}</td><td>${evidenceButtons(r.decision_refs,`${sampleName(r.sample_id)} 的定量依據`,'查看依據')}</td></tr>`).join('')}</tbody></table></div></section>${evidencePanel(item)}<details><summary>進階：內部證據</summary>${internalPairSupportPanel(item)}</details>`;
+    const item=items.find(i=>i.id===state.id);if(!item){const excluded=filtered.filter(isCollapsedExcluded).length;setHTML($('workspace-content'),excluded?`<div class="empty-state"><strong>目前未選取項目</strong><p>左側有 ${excluded} 筆已排除候選；展開後可查看保存曲線與來源紀錄。</p></div>`:'<p class="empty-state">這份報告沒有符合的項目。</p>');return;}normalize(item);if(item.transition_review?.review_kind==='cid_nl_differential'){differentialDetail(item);return;}
+    if(mode==='result'){
+      setHTML($('workspace-content'),`<section class="sample-section"><h3>已保存的樣本結果</h3><p>空值不等於未檢出；下表保留當次定量決策。</p><div class="table-scroll"><table class="sample-table"><thead><tr><th>樣本</th><th>Area</th><th>定量狀態</th><th>依據</th></tr></thead><tbody>${itemRows(item).map(r=>`<tr><td>${esc(sampleName(r.sample_id))}</td><td>${finite(r.quantitative_value)?Number(r.quantitative_value).toExponential(3):'—'}</td><td>${finite(r.quantitative_value)?'有定量值':esc(r.decision_label||'未提供定量')}</td><td>${evidenceButtons(r.decision_refs,`${sampleName(r.sample_id)} 的定量依據`,'查看依據')}</td></tr>`).join('')}</tbody></table></div></section>${evidencePanel(item)}<details><summary>進階：內部證據</summary>${internalPairSupportPanel(item)}</details>`);
       return;
     }
     const graph=state.sample?`${sampleName(state.sample)} · 目前查看`:'所有可見樣本',selectedSignalLabel={raw:'原始訊號',baseline:'基線',smoothed:'平滑訊號',positive:'基線以上訊號'}[state.signal]||'訊號',signalLabel=selectedSignalLabel;
-    if(data.selection.workspace_view==='curves'){
-      $('workspace-content').innerHTML=`<section class="inspection-section"><h3>所選樣本 XIC</h3><p>本次從 RAW 讀取的檢閱曲線；不是重新定量。</p><div class="selection-controls">${signalControl(item)}</div><div class="sample-legend">${itemRows(item).map(r=>`<label><input type="checkbox" data-sample-visible="${esc(r.sample_id)}" ${state.visible.has(r.sample_id)?'checked':''}><span style="color:${color(r.sample_id)}">${esc(sampleName(r.sample_id))}</span></label>`).join('')}</div>${plotCard(item,'raw',signalLabel,true)}</section>`;
+    if(mode==='curves'){
+      setHTML($('workspace-content'),`<section class="inspection-section"><h3>所選樣本 XIC</h3><p>本次從 RAW 讀取的檢閱曲線；不是重新定量。</p><div class="selection-controls">${signalControl(item)}</div><div class="sample-legend">${itemRows(item).map(r=>`<label><input type="checkbox" data-sample-visible="${esc(r.sample_id)}" ${state.visible.has(r.sample_id)?'checked':''}><span style="color:${color(r.sample_id)}">${esc(sampleName(r.sample_id))}</span></label>`).join('')}</div>${plotCard(item,'raw',signalLabel,true)}</section>`);
       return;
     }
     const aligned=alignedAvailable(item);
-    $('workspace-content').innerHTML=`<div class="detail-top"><div><p class="detail-eyebrow">${itemName(item)}${item.method_label?` · ${esc(item.method_label)}`:''}</p><h2>${esc(itemTitle(item))}</h2><p class="detail-reason">${esc(item.reason_label||'未記錄項目判定說明。')}</p></div><span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span></div>${summary(item)}${evidencePanel(item)}<section class="advanced-inspection" aria-label="候選與積分"><section class="inspection-section" id="inspection-workspace"><div class="inspection-heading"><div class="inspection-title"><h3 id="inspection-title" tabindex="-1">${esc(graph)}</h3>${state.sample?'<button type="button" class="return-all" id="btn-unfocus">← 返回所有樣本</button>':''}</div><span class="focus-status">${state.sample?'候選與擷取':'曲線與積分'}</span></div><div class="selection-controls">${state.sample?`<div class="control-group"><span class="control-label">候選峰</span>${candidateControl(item)}</div><div class="control-group"><span class="control-label">擷取階段</span>${captureControl(item)}</div>`:''}<div class="control-group"><span class="control-label">訊號種類</span>${signalControl(item)}</div></div><div class="chart-toolbar"><div class="sample-legend" aria-label="樣本曲線顯示">${legend(item)}</div><label><input id="chk-bounds" type="checkbox" ${state.bounds?'checked':''}> 顯示積分範圍與峰頂</label></div><div class="analysis-layout ${state.evidence?'with-evidence':''}"><div class="chart-column"><div class="charts-grid ${aligned?'':'single'}">${plotCard(item,'raw',signalLabel,!aligned)}${aligned?plotCard(item,'aligned',signalLabel):''}</div>${aligned?'':plotCard(item,'aligned',signalLabel)}<section class="integration-card" id="integration-readout">${readout(item)}</section></div></div></section></section>${internalPairSupportPanel(item)}<section class="sample-section" aria-label="所有樣本的正式結果與支持紀錄"><div class="section-heading"><h3>所有樣本的正式結果與支持紀錄</h3></div>${sampleTable(item)}</section>`;
+    setHTML($('workspace-content'),`<div class="detail-top"><div><p class="detail-eyebrow">${itemName(item)}${item.method_label?` · ${esc(item.method_label)}`:''}</p><h2>${esc(itemTitle(item))}</h2><p class="detail-reason">${esc(item.reason_label||'未記錄項目判定說明。')}</p></div><span class="badge badge-${esc(item.stratum)}">${esc(badge(item))}</span></div>${summary(item)}${evidencePanel(item)}<section class="advanced-inspection" aria-label="候選與積分"><section class="inspection-section" id="inspection-workspace"><div class="inspection-heading"><div class="inspection-title"><h3 id="inspection-title" tabindex="-1">${esc(graph)}</h3>${state.sample?'<button type="button" class="return-all" id="btn-unfocus">← 返回所有樣本</button>':''}</div><span class="focus-status">${state.sample?'候選與擷取':'曲線與積分'}</span></div><div class="selection-controls">${state.sample?`<div class="control-group"><span class="control-label">候選峰</span>${candidateControl(item)}</div><div class="control-group"><span class="control-label">擷取階段</span>${captureControl(item)}</div>`:''}<div class="control-group"><span class="control-label">訊號種類</span>${signalControl(item)}</div></div><div class="chart-toolbar"><div class="sample-legend" aria-label="樣本曲線顯示">${legend(item)}</div><label><input id="chk-bounds" type="checkbox" ${state.bounds?'checked':''}> 顯示積分範圍與峰頂</label></div><div class="analysis-layout ${state.evidence?'with-evidence':''}"><div class="chart-column"><div class="charts-grid ${aligned?'':'single'}">${plotCard(item,'raw',signalLabel,!aligned)}${aligned?plotCard(item,'aligned',signalLabel):''}</div>${aligned?'':plotCard(item,'aligned',signalLabel)}<section class="integration-card" id="integration-readout">${readout(item)}</section></div></div></section></section>${internalPairSupportPanel(item)}<section class="sample-section" aria-label="所有樣本的正式結果與支持紀錄"><div class="section-heading"><h3>所有樣本的正式結果與支持紀錄</h3></div>${sampleTable(item)}</section>`);
   }
   function reset(){state.plotWindow=null;rel.node=null;rel.pair=null;rel.captures={};state.sample=null;state.candidate='';state.capture='';state.signal='smoothed';state.evidence='';state.evidenceContext='';evidenceOpener=null;}
   function clearFilters(){for(const id of ['search','mz-min','mz-max','rt-min','rt-max'])$(id).value='';list();}
-  $('record-list').addEventListener('click',event=>{const toggle=event.target.closest('[data-excluded-toggle]');if(toggle){const opening=!state.excludedOpen;state.excludedOpen=opening;list(!(opening&&!state.id));$('record-list').querySelector('[data-excluded-toggle]')?.focus();return;}const b=event.target.closest('[data-item]');if(!b)return;state.id=b.dataset.item;reset();list();$('record-list').querySelector('[aria-current="true"]')?.focus();});
+  if (mode === 'offline') $('record-list').addEventListener('click',event=>{const toggle=event.target.closest('[data-excluded-toggle]');if(toggle){const opening=!state.excludedOpen;state.excludedOpen=opening;list(!(opening&&!state.id));$('record-list').querySelector('[data-excluded-toggle]')?.focus();return;}const b=event.target.closest('[data-item]');if(!b)return;state.id=b.dataset.item;reset();list();$('record-list').querySelector('[aria-current="true"]')?.focus();});
   $('detail-panel').addEventListener('click', event => {
     const button = event.target.closest('[data-rt-view]');
     if (!button) return;
@@ -710,18 +792,24 @@
   $('detail-panel').addEventListener('keydown',event=>{if(['Enter',' '].includes(event.key)&&event.target.matches('g[data-relation-node],g[data-relation-pair]')){event.preventDefault();event.target.dispatchEvent(new MouseEvent('click',{bubbles:true}));}});
   $('detail-panel').addEventListener('change',event=>{
     const el=event.target;
-    if(el.id==='relationship-reviews'){rel.reviews=el.checked;const item=items.find(i=>i.id===state.id),pair=relationshipModel(item).pairs.find(p=>p.edge_ref===rel.pair);if(!rel.reviews&&pair?.support_kind!=='direct')rel.pair=null;}
-    else if(el.id==='relationship-signal')rel.signal=el.value;
+    if(el.dataset.inspectorId==='relationship-reviews'){rel.reviews=el.checked;const item=items.find(i=>i.id===state.id),pair=relationshipModel(item).pairs.find(p=>p.edge_ref===rel.pair);if(!rel.reviews&&pair?.support_kind!=='direct')rel.pair=null;}
+    else if(el.dataset.inspectorId==='relationship-signal')rel.signal=el.value;
     else if(el.dataset.laneCapture)rel.captures[el.dataset.laneCapture]=el.value;
     else return;event.stopImmediatePropagation();detail();
   });
-  $('detail-panel').addEventListener('change',event=>{const el=event.target,item=items.find(i=>i.id===state.id);if(!item)return;if(el.id==='plot-rt-start'||el.id==='plot-rt-end')return;if(el.id==='candidate-select'){state.candidate=el.value;state.capture='';state.evidence='';normalize(item);}if(el.id==='capture-select'){state.capture=el.value;state.evidence='';}if(el.id==='signal-select')state.signal=el.value;if(el.id==='chk-bounds')state.bounds=el.checked;if(el.dataset.sampleVisible){if(el.checked)state.visible.add(el.dataset.sampleVisible);else state.visible.delete(el.dataset.sampleVisible);}detail();});
-  $('detail-panel').addEventListener('click',async event=>{const item=items.find(i=>i.id===state.id);if(!item)return;const focus=event.target.closest('[data-focus]');if(focus){state.sample=focus.dataset.focus;state.candidate='';state.capture='';state.evidence='';state.evidenceContext='';evidenceOpener=null;normalize(item,true);detail();requestAnimationFrame(()=>{const heading=$('inspection-title');heading?.focus({preventScroll:true});heading?.scrollIntoView({behavior:'smooth',block:'start'});});return;}if(event.target.closest('#btn-unfocus')){state.sample=null;state.candidate='';state.capture='';state.evidence='';state.evidenceContext='';evidenceOpener=null;normalize(item);detail();requestAnimationFrame(()=>{const heading=$('inspection-title');heading?.focus({preventScroll:true});heading?.scrollIntoView({behavior:'smooth',block:'start'});});return;}const evidence=event.target.closest('[data-evidence-ref]');if(evidence){evidenceOpener={ref:evidence.dataset.evidenceRef,context:evidence.dataset.evidenceContext||''};state.evidence=evidenceOpener.ref;state.evidenceContext=evidenceOpener.context;detail();requestAnimationFrame(()=>{const panel=$('evidence-panel');panel?.scrollIntoView({behavior:'smooth',block:'start'});panel?.focus({preventScroll:true});});return;}const link=event.target.closest('[data-record-ref]');if(link){state.evidence=link.dataset.recordRef;detail();requestAnimationFrame(()=>{const panel=$('evidence-panel');panel?.scrollIntoView({behavior:'smooth',block:'start'});panel?.focus({preventScroll:true});});return;}if(event.target.closest('#close-evidence')){state.evidence='';state.evidenceContext='';detail();requestAnimationFrame(()=>{const opener=[...document.querySelectorAll('[data-evidence-ref]')].find(el=>el.dataset.evidenceRef===evidenceOpener?.ref&&(el.dataset.evidenceContext||'')===evidenceOpener?.context);opener?.scrollIntoView({block:'nearest'});opener?.focus({preventScroll:true});evidenceOpener=null;});return;}const copy=event.target.closest('[data-copy]');if(copy){try{await navigator.clipboard.writeText(copy.dataset.copy||'');const old=copy.textContent;copy.textContent='已複製';setTimeout(()=>copy.textContent=old,1200);}catch(_){copy.textContent='無法複製';}return;}const zoom=event.target.closest('[data-zoom]');if(zoom){dialogOpener=zoom;$('zoom-title').textContent=`${itemTitle(item)} · ${state.sample?sampleName(state.sample):'所有可見樣本'} · ${zoom.dataset.zoom==='raw'?'原始時間':'對齊時間'}`;$('zoom-container').innerHTML=plot(item,zoom.dataset.zoom);$('zoom-dialog').showModal();}});
+  $('detail-panel').addEventListener('change',event=>{const el=event.target,item=items.find(i=>i.id===state.id);if(!item)return;if(el.dataset.inspectorId==='plot-rt-start'||el.dataset.inspectorId==='plot-rt-end')return;if(el.dataset.inspectorId==='candidate-select'){state.candidate=el.value;state.capture='';state.evidence='';normalize(item);}if(el.dataset.inspectorId==='capture-select'){state.capture=el.value;state.evidence='';}if(el.dataset.inspectorId==='signal-select')state.signal=el.value;if(el.dataset.inspectorId==='chk-bounds')state.bounds=el.checked;if(el.dataset.sampleVisible){if(el.checked)state.visible.add(el.dataset.sampleVisible);else state.visible.delete(el.dataset.sampleVisible);}detail();});
+  $('detail-panel').addEventListener('click',async event=>{const item=items.find(i=>i.id===state.id);if(!item)return;const focus=event.target.closest('[data-focus]');if(focus){state.sample=focus.dataset.focus;state.candidate='';state.capture='';state.evidence='';state.evidenceContext='';evidenceOpener=null;normalize(item,true);detail();afterPaint(()=>{const heading=$('inspection-title');heading?.focus({preventScroll:true});heading?.scrollIntoView({behavior:'smooth',block:'start'});});return;}if(event.target.closest('[data-inspector-id="btn-unfocus"]')){state.sample=null;state.candidate='';state.capture='';state.evidence='';state.evidenceContext='';evidenceOpener=null;normalize(item);detail();afterPaint(()=>{const heading=$('inspection-title');heading?.focus({preventScroll:true});heading?.scrollIntoView({behavior:'smooth',block:'start'});});return;}const evidence=event.target.closest('[data-evidence-ref]');if(evidence){evidenceOpener={ref:evidence.dataset.evidenceRef,context:evidence.dataset.evidenceContext||''};state.evidence=evidenceOpener.ref;state.evidenceContext=evidenceOpener.context;detail();afterPaint(()=>{const panel=$('evidence-panel');panel?.scrollIntoView({behavior:'smooth',block:'start'});panel?.focus({preventScroll:true});});return;}const link=event.target.closest('[data-record-ref]');if(link){state.evidence=link.dataset.recordRef;detail();afterPaint(()=>{const panel=$('evidence-panel');panel?.scrollIntoView({behavior:'smooth',block:'start'});panel?.focus({preventScroll:true});});return;}if(event.target.closest('[data-inspector-id="close-evidence"]')){state.evidence='';state.evidenceContext='';detail();afterPaint(()=>{const opener=[...root.querySelectorAll('[data-evidence-ref]')].find(el=>el.dataset.evidenceRef===evidenceOpener?.ref&&(el.dataset.evidenceContext||'')===evidenceOpener?.context);opener?.scrollIntoView({block:'nearest'});opener?.focus({preventScroll:true});evidenceOpener=null;});return;}const copy=event.target.closest('[data-copy]');if(copy){try{await navigator.clipboard.writeText(copy.dataset.copy||'');if(destroyed)return;const old=copy.textContent;copy.textContent='已複製';later(()=>copy.textContent=old,1200);}catch(_){copy.textContent='無法複製';}return;}const zoom=event.target.closest('[data-zoom]');if(zoom){dialogOpener=zoom;$('zoom-title').textContent=`${itemTitle(item)} · ${state.sample?sampleName(state.sample):'所有可見樣本'} · ${zoom.dataset.zoom==='raw'?'原始時間':'對齊時間'}`;setHTML($('zoom-container'),plot(item,zoom.dataset.zoom));$('zoom-dialog').showModal();}});
+  if (mode === 'offline') {
   for(const id of ['search','mz-min','mz-max','rt-min','rt-max'])$(id).addEventListener('input',list);
-  $('clear').addEventListener('click',clearFilters);$('active-filters').addEventListener('click',event=>{if(event.target.closest('#clear-inline'))clearFilters();});
-  $('zoom-close').addEventListener('click',()=>$('zoom-dialog').close());$('zoom-dialog').addEventListener('close',()=>dialogOpener?.focus());
-  document.addEventListener('keydown',event=>{const dialog=document.querySelector('dialog[open]');if(dialog){if(event.key==='Escape'){event.preventDefault();dialog.close();}return;}if(event.key==='Escape'&&state.evidence){event.preventDefault();state.evidence='';state.evidenceContext='';detail();requestAnimationFrame(()=>{const opener=[...document.querySelectorAll('[data-evidence-ref]')].find(el=>el.dataset.evidenceRef===evidenceOpener?.ref&&(el.dataset.evidenceContext||'')===evidenceOpener?.context);opener?.scrollIntoView({block:'nearest'});opener?.focus({preventScroll:true});evidenceOpener=null;});return;}if(event.target.closest('input,textarea,select')||!['ArrowDown','ArrowUp'].includes(event.key)||!listed.length)return;event.preventDefault();const i=listed.findIndex(x=>x.id===state.id);state.id=listed[Math.max(0,Math.min(listed.length-1,i+(event.key==='ArrowDown'?1:-1)))].id;reset();list();$('record-list').querySelector('[aria-current="true"]')?.focus();});
-  $('btn-report-info').addEventListener('click',event=>{dialogOpener=event.target;const r=data.selection||{},source=$('report-info-source').dataset,range=(a,b,f)=>a==null&&b==null?'不限':`${a==null?'不限':f(a)} 至 ${b==null?'不限':f(b)}`;$('report-info-body').innerHTML=`<dl class="factlist"><dt>檢閱方式</dt><dd>${esc(source.strategyLabel)}</dd><dt>包含項目</dt><dd>${items.length} 筆（執行共 ${esc(source.runTotal)} 筆，${esc(source.eligibleCount)} 筆可供本次選取）</dd><dt>來源檔案</dt><dd>${esc(source.sourceName)}</dd><dt>可用資料</dt><dd>${esc(source.capabilityLabel)}</dd>${data.summary?.matrix_path?`<dt>Matrix 路徑</dt><dd>${esc(data.summary.matrix_path)}</dd>`:''}<dt>m/z 範圍</dt><dd>${range(r.mz_min,r.mz_max,mz)}</dd><dt>RT（min）</dt><dd>${range(r.rt_min,r.rt_max,rt)}</dd><dt>樣本</dt><dd>${r.sample_ids?.length?r.sample_ids.map(sampleName).map(esc).join('、'):'全部樣本'}</dd></dl>`;$('report-info-dialog').showModal();});
-  $('report-info-close').addEventListener('click',()=>$('report-info-dialog').close());$('report-info-dialog').addEventListener('close',()=>dialogOpener?.focus());
-  if(data.notice){$('report-notice').textContent=data.notice;$('report-notice').hidden=false;}list();
+  $('clear').addEventListener('click',clearFilters);$('active-filters').addEventListener('click',event=>{if(event.target.closest('[data-inspector-id="clear-inline"]'))clearFilters();});
+  }
+  $('zoom-close').addEventListener('click',()=>$('zoom-dialog').close());$('zoom-dialog').addEventListener('close',event=>{event.stopPropagation();if(!destroyed)dialogOpener?.focus();});
+  root.addEventListener('keydown',event=>{const dialog=root.querySelector('dialog[open]');if(dialog){if(event.key==='Escape'){event.preventDefault();event.stopPropagation();dialog.close();}return;}if(event.key==='Escape'&&state.evidence){event.preventDefault();event.stopPropagation();state.evidence='';state.evidenceContext='';detail();afterPaint(()=>{const opener=[...root.querySelectorAll('[data-evidence-ref]')].find(el=>el.dataset.evidenceRef===evidenceOpener?.ref&&(el.dataset.evidenceContext||'')===evidenceOpener?.context);opener?.scrollIntoView({block:'nearest'});opener?.focus({preventScroll:true});evidenceOpener=null;});return;}if(mode !== 'offline'||event.target.closest('input,textarea,select')||!['ArrowDown','ArrowUp'].includes(event.key)||!listed.length)return;event.preventDefault();const i=listed.findIndex(x=>x.id===state.id);state.id=listed[Math.max(0,Math.min(listed.length-1,i+(event.key==='ArrowDown'?1:-1)))].id;reset();list();$('record-list').querySelector('[aria-current="true"]')?.focus();});
+  if (mode === 'offline') $('btn-report-info').addEventListener('click',event=>{dialogOpener=event.target;const r=data.selection||{},source=$('report-info-source').dataset,range=(a,b,f)=>a==null&&b==null?'不限':`${a==null?'不限':f(a)} 至 ${b==null?'不限':f(b)}`;setHTML($('report-info-body'),`<dl class="factlist"><dt>檢閱方式</dt><dd>${esc(source.strategyLabel)}</dd><dt>包含項目</dt><dd>${items.length} 筆（執行共 ${esc(source.runTotal)} 筆，${esc(source.eligibleCount)} 筆可供本次選取）</dd><dt>來源檔案</dt><dd>${esc(source.sourceName)}</dd><dt>可用資料</dt><dd>${esc(source.capabilityLabel)}</dd>${data.summary?.matrix_path?`<dt>Matrix 路徑</dt><dd>${esc(data.summary.matrix_path)}</dd>`:''}<dt>m/z 範圍</dt><dd>${range(r.mz_min,r.mz_max,mz)}</dd><dt>RT（min）</dt><dd>${range(r.rt_min,r.rt_max,rt)}</dd><dt>樣本</dt><dd>${r.sample_ids?.length?r.sample_ids.map(sampleName).map(esc).join('、'):'全部樣本'}</dd></dl>`);$('report-info-dialog').showModal();});
+  $('report-info-close').addEventListener('click',()=>$('report-info-dialog').close());$('report-info-dialog').addEventListener('close',event=>{event.stopPropagation();if(!destroyed)dialogOpener?.focus();});
+  if(mode === 'offline'){if(data.notice){$('report-notice').textContent=data.notice;$('report-notice').hidden=false;}list();}
+  else detail();
+  return instance;
+  }
+  window.XicInspector = Object.freeze({mount});
 })();

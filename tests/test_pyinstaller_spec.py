@@ -62,8 +62,14 @@ from xic_workbench import cli as workbench_cli
 from xic_workbench.cli import main as workbench_main
 if not Path(workbench_cli.__file__).resolve().is_relative_to(target):
     raise RuntimeError("workbench was not loaded from the installed target")
-if "__WORKBENCH_JS__" in HTML_TEMPLATE or "inspector-data" not in HTML_TEMPLATE:
+tokens = ("__INSPECTOR_JS__", "__INSPECTOR_CSS__")
+if any(token in HTML_TEMPLATE for token in tokens):
     raise RuntimeError("installed Inspector did not embed its frontend")
+if "inspector-data" not in HTML_TEMPLATE:
+    raise RuntimeError("installed Inspector did not embed its frontend")
+for asset in ("inspector.html", "inspector.js", "inspector.css"):
+    if not files("xic_inspector.rendering").joinpath("assets", asset).read_bytes():
+        raise RuntimeError(f"installed Inspector asset is empty: {asset}")
 for asset in (
     "index.html", "workspace.js", "workspace.css",
     "analysis.html", "analysis.js", "analysis.css",
@@ -431,12 +437,13 @@ def test_pyinstaller_collects_inspector_frontend() -> None:
     collected = {
         (Path(source).name, Path(destination).as_posix())
         for source, destination in collect_data_files(
-            "xic_inspector.rendering", includes=["assets/*.html", "assets/*.js"]
+            "xic_inspector.rendering", includes=["assets/*"]
         )
     }
     assert collected == {
         ("inspector.html", "xic_inspector/rendering/assets"),
         ("inspector.js", "xic_inspector/rendering/assets"),
+        ("inspector.css", "xic_inspector/rendering/assets"),
     }
 
 

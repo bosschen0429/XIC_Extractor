@@ -14,8 +14,10 @@
         if (theme) document.documentElement.dataset.theme = theme;
       } catch (_) {}
     </script>
+    <link rel="stylesheet" href="/assets/inspector.css" />
     <link rel="stylesheet" href="/assets/workspace.css" />
     <link rel="stylesheet" href="/assets/analysis.css" />
+    <script src="/assets/inspector.js" defer></script>
     <script src="/assets/workspace.js" defer></script>
     <script src="/assets/analysis.js" defer></script>
   </head>
@@ -515,14 +517,9 @@
             <section id="inline-curves" hidden aria-label="群組 XIC">
               <p id="inline-curve-coverage"></p>
               <p id="inline-curve-status" role="status"></p>
-              <iframe id="inline-curve-frame" title="群組樣本 XIC" src="about:blank" hidden style="width:100%;height:700px;border:0"></iframe>
+              <div id="inline-curve-review" aria-label="群組樣本 XIC" hidden></div>
             </section>
-            <iframe
-              id="inspector"
-              title="XIC Inspector 檢閱內容"
-              src="about:blank"
-              scrolling="no"
-            ></iframe>
+            <div id="recorded-review" aria-label="XIC Inspector 檢閱內容"></div>
           </div>
         </section>
       </section>
@@ -548,7 +545,7 @@
         <button id="xic-cancel" type="button">取消載入</button>
         <button id="xic-retry" type="button" hidden>重試</button>
       </div>
-      <iframe id="xic-inspector" title="樣本 XIC 圖表" src="about:blank" hidden></iframe>
+      <div id="xic-review" aria-label="樣本 XIC 圖表" hidden></div>
       <footer class="xic-footer"><span id="xic-source-note">只載入正在查看的曲線，不變更已保存的結果。</span><span>Esc 返回結果</span></footer>
     </dialog>
 

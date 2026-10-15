@@ -263,18 +263,22 @@ class PreparedReport:
     sample_ids: tuple[str, ...]
     payload: dict[str, Any]
 
+    def render_data(self) -> dict[str, Any]:
+        """Return complete presentation inputs without rendering or source I/O."""
+        return {
+            "title": "Inspector",
+            "evidence_capability": self.evidence_capability,
+            "strategy": self.payload["selection"]["strategy"],
+            "request_id": self.payload["summary"].get("processing_request_id", ""),
+            "run_total": self.run_total,
+            "eligible_count": self.eligible_count,
+            "selected_count": self.selected_count,
+            "source_db_name": self.source_name,
+            "payload_data": self.payload,
+        }
+
     def to_html(self) -> str:
-        return build_report_html(
-            title="Inspector",
-            evidence_capability=self.evidence_capability,
-            strategy=self.payload["selection"]["strategy"],
-            request_id=self.payload["summary"].get("processing_request_id", ""),
-            run_total=self.run_total,
-            eligible_count=self.eligible_count,
-            selected_count=self.selected_count,
-            source_db_name=self.source_name,
-            payload_data=self.payload,
-        )
+        return build_report_html(**self.render_data())
 
 
 def prepare_report(

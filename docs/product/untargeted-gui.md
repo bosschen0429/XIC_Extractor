@@ -105,8 +105,13 @@ directory-level Discovery followed by Alignment.
 - A completed Alignment result can start Feature Quality export with its bound
   Matrix identity and an explicit sample-metadata file and threshold. The
   source Matrix remains unchanged.
-- A completed evidence locator can open the Inspector review view directly or
-  generate a custom standalone Inspector HTML report.
+- A completed evidence locator opens the shared Inspector review view directly
+  in the workbench, without an iframe or intermediate HTML. Saved results and
+  loaded curves use the same renderer as standalone Inspector HTML.
+- A view download packages its captured data and sample scope on demand; later
+  queries or another opened source do not replace that snapshot. The downloaded
+  single HTML file works without the server or network. Custom Inspector export
+  and the existing Inspector CLI remain available.
 - Inspector selection and rendering use `xic_inspector`. Untargeted on-demand
   XIC uses the saved observation binding. In Targeted review, each sample row's
   **看 XIC** loads only that sample's target and paired ISTD, including ND rows
@@ -149,9 +154,9 @@ directory-level Discovery followed by Alignment.
 | `xic_workbench/untargeted.py` | Untargeted mode dispatch and application adapter |
 | `xic_workbench/methods.py` | CID-NL method editing and portable preset serialization |
 | `xic_workbench/samples.py` | Sample metadata matching, role correction, and export |
-| `xic_workbench/workspace.py` | Completed evidence selection and on-demand XIC jobs |
+| `xic_workbench/workspace.py` | Completed evidence selection, session view snapshots, lazy HTML export, and on-demand XIC jobs |
 | `xic_workbench/targeted_curves.py` | Read-only Targeted and paired-ISTD RAW acquisition |
-| `xic_workbench/assets/` | Unified analysis and review HTML, JavaScript, and CSS |
+| `xic_workbench/assets/` | Unified analysis/review host and its interaction with the shared Inspector renderer |
 
 ## Boundaries
 

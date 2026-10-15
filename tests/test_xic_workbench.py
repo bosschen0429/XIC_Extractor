@@ -261,6 +261,111 @@ def test_http_query_detail_export_and_invalid_open_preserve_source(tmp_path):
     ] == before
 
 
+def test_interactive_views_keep_original_sample_snapshots_and_export_lazily(
+    tmp_path, monkeypatch
+):
+    from xic_inspector.api import PreparedReport
+    from xic_inspector.rendering.html_builder import build_report_html
+
+    report, _ = _review_batch(tmp_path)
+    rendered = []
+    to_html = PreparedReport.to_html
+
+    def record_render(prepared):
+        rendered.append(prepared.payload)
+        return to_html(prepared)
+
+    monkeypatch.setattr(PreparedReport, "to_html", record_render)
+
+    def record_snapshot_render(**data):
+        rendered.append(data["payload_data"])
+        return build_report_html(**data)
+
+    monkeypatch.setattr(
+        "xic_workbench.workspace.build_report_html", record_snapshot_render
+    )
+    with _client(ReviewWorkspace(config_dir=tmp_path / "config")) as request:
+        assert request("/api/open", {"source": str(report)})[0] == 200
+        views = []
+        for sample_id, expected_value in (("S1", 100), ("S2", 200)):
+            _, page, _ = request(
+                "/api/query", {"group_id": "a-complete", "sample_id": sample_id}
+            )
+            _, detail, _ = request("/api/detail", {"item_id": page["items"][0]["id"]})
+            assert rendered == [], "Interactive review must not render offline HTML"
+            status, payload, _ = request(f"/api/views/{detail['view_id']}")
+            assert status == 200
+            assert payload["samples"] == [{"id": sample_id, "label": sample_id}]
+            assert (
+                payload["items"][0]["samples"][0]["quantitative_value"]
+                == expected_value
+            )
+            views.append((detail["view_id"], payload))
+
+        other = tmp_path / "other"
+        other.mkdir()
+        db, _, _ = _create_mock_db(other)
+        assert request("/api/open", {"source": str(db)})[0] == 200
+        report.unlink()
+
+        def unexpected_prepare(*args, **kwargs):
+            raise AssertionError("View reads and exports must not reopen the source")
+
+        monkeypatch.setattr(
+            "xic_workbench.workspace.prepare_report", unexpected_prepare
+        )
+        for index, (view_id, original) in enumerate(views, 1):
+            assert request(f"/api/views/{view_id}")[1] == original
+            status, html, headers = request(f"/reports/{view_id}.html?download=1")
+            assert status == 200
+            assert headers["Content-Disposition"] == (
+                f'attachment; filename="xic-review-{view_id[:8]}.html"'
+            )
+            embedded = re.search(
+                rb'<script id="inspector-data" type="application/json">(.*?)</script>',
+                html,
+                re.S,
+            )
+            assert json.loads(embedded[1]) == original
+            assert len(rendered) == index
+            assert request(f"/reports/{view_id}.html?download=1")[1] == html
+            assert len(rendered) == index
+
+
+def test_view_endpoint_guards_unknown_ids_and_serves_only_packaged_assets(tmp_path):
+    from importlib.resources import files
+
+    db, _, _ = _create_mock_db(tmp_path)
+    with _client(ReviewWorkspace(config_dir=tmp_path / "config")) as request:
+        _, page, _ = request("/api/open", {"source": str(db)})
+        _, detail, _ = request("/api/detail", {"item_id": page["items"][0]["id"]})
+        url = f"/api/views/{detail['view_id']}"
+        for headers in (
+            {"Origin": "https://unrelated.example"},
+            {"Host": "unrelated.example"},
+            {"Cookie": ""},
+            {"X-XIC-Client": ""},
+        ):
+            assert request(url, headers=headers)[0] == 403
+        assert request(f"/api/views/{'0' * 32}")[0] == 400
+        assert request("/api/views/not-a-view")[0] == 404
+        assert request("/api/views/../../pyproject.toml")[0] == 404
+        for name, content_type in (
+            ("inspector.js", "text/javascript; charset=utf-8"),
+            ("inspector.css", "text/css; charset=utf-8"),
+        ):
+            status, data, headers = request(f"/assets/{name}")
+            assert status == 200
+            assert headers["Content-Type"] == content_type
+            assert (
+                data
+                == files("xic_inspector.rendering")
+                .joinpath("assets", name)
+                .read_bytes()
+            )
+        assert request("/assets/../api.py")[0] == 404
+
+
 @pytest.mark.parametrize(
     "headers",
     [
@@ -350,6 +455,8 @@ def test_http_cancel_and_failure_leave_prior_report_readable(tmp_path, monkeypat
         item_id = page["items"][0]["id"]
         _, detail, _ = request("/api/detail", {"item_id": item_id})
         report_url = f"/reports/{detail['view_id']}.html"
+        view_url = f"/api/views/{detail['view_id']}"
+        original_payload = request(view_url)[1]
         original = request(report_url)[1]
         parameters = {
             "item_id": item_id,
@@ -377,6 +484,7 @@ def test_http_cancel_and_failure_leave_prior_report_readable(tmp_path, monkeypat
         assert result["status"] == "cancelled"
         assert "view_id" not in result
         assert request(report_url)[1] == original
+        assert request(view_url)[1] == original_payload
 
         def failed_export(*args, **kwargs):
             raise FileNotFoundError("selected RAW is missing")
@@ -392,19 +500,23 @@ def test_http_cancel_and_failure_leave_prior_report_readable(tmp_path, monkeypat
         assert result["status"] == "failed"
         assert "selected RAW is missing" in result["message"]
         assert request(report_url)[1] == original
+        assert request(view_url)[1] == original_payload
 
         monkeypatch.setattr(
             acquisition, "export_explanation_curves", lambda *a, **k: {}
         )
 
+        from xic_inspector.api import SelectionRequest, prepare_report
+
+        prepared_fixture = prepare_report(db, SelectionRequest(sample_ids=("S1",)))
+
         def render_fixture(source, selection, **kwargs):
-            from types import SimpleNamespace
+            return prepared_fixture
 
-            return SimpleNamespace(
-                payload={"selection": {}},
-                to_html=lambda: "<html>diagnostic fixture</html>",
-            )
+        def unexpected_html(prepared):
+            raise AssertionError("Interactive curves must not render offline HTML")
 
+        monkeypatch.setattr(type(prepared_fixture), "to_html", unexpected_html)
         monkeypatch.setattr("xic_workbench.workspace.prepare_report", render_fixture)
         _, job, _ = request("/api/curves", parameters)
         deadline = time.monotonic() + 5
@@ -415,9 +527,10 @@ def test_http_cancel_and_failure_leave_prior_report_readable(tmp_path, monkeypat
             time.sleep(0.01)
         assert restored["job"]["status"] == "succeeded"
         assert restored["detail"] == detail
-        url = f"/reports/{restored['job']['view_id']}.html"
-        assert request(url)[1] == b"<html>diagnostic fixture</html>"
-        from xic_inspector.api import prepare_report
+        view_id = restored["job"]["view_id"]
+        _, payload, _ = request(f"/api/views/{view_id}")
+        assert payload == json.loads(json.dumps(prepared_fixture.payload))
+        assert request(f"/reports/{view_id}.html")[0] == 200
 
         monkeypatch.setattr("xic_workbench.workspace.prepare_report", prepare_report)
         request("/api/query", {})

@@ -1412,7 +1412,7 @@ th.num {
   background: var(--warn-soft);
   color: var(--warn);
 }
-#inspector {
+#recorded-review {
   display: block;
   width: 100%;
   min-height: 480px;
@@ -1634,7 +1634,7 @@ kbd {
 .xic-navigation select { width: 100%; font-weight: 600; text-overflow: ellipsis; }
 .xic-navigation > button { min-width: 36px; }
 .xic-navigation .subtle { min-width: 46px; text-align: right; font-size: 12px; }
-#xic-inspector { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--surface); }
+#xic-review { flex: 1; min-height: 0; width: 100%; overflow: auto; background: var(--surface); }
 .xic-loading { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 18px; padding: 32px; text-align: center; color: var(--muted); }
 .xic-loading > .icon { width: 40px; height: 40px; color: var(--accent); }
 .xic-loading p { max-width: 520px; overflow-wrap: anywhere; }

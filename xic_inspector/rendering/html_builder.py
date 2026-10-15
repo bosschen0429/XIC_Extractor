@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import json
 import os
+import re
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -41,39 +42,34 @@ def build_report_html(
     payload_data: dict[str, Any],
 ) -> str:
     """Build single-file self-contained HTML report with embedded data."""
-    cap_badge = "ok" if evidence_capability == "retained_curves" else "null"
     data_json = serialize_safe_inline_json(payload_data)
-
-    content = HTML_TEMPLATE
-    content = content.replace("__REPORT_TITLE__", html.escape(title))
-    content = content.replace("__CAPABILITY_BADGE__", cap_badge)
-    content = content.replace(
-        "__CAPABILITY_LABEL__",
-        "含已保存曲線" if cap_badge == "ok" else "僅有結果紀錄",
+    metadata_json = serialize_safe_inline_json(
+        {
+            "title": title,
+            "evidence_capability": evidence_capability,
+            "strategy": strategy,
+            "request_id": request_id,
+            "run_total": run_total,
+            "eligible_count": eligible_count,
+            "selected_count": selected_count,
+            "source_db_name": source_db_name,
+        }
     )
-    content = content.replace(
-        "__STRATEGY_LABEL__",
-        html.escape(
-            {
-                "sample": "抽樣檢閱",
-                "attention": "爭議聚焦",
-                "query": "指定目標查詢",
-            }.get(strategy, strategy)
-        ),
+    # A single replacement pass keeps user text from being interpreted as a
+    # second template token. Payload and host metadata remain separate contracts.
+    replacements = {
+        "__REPORT_TITLE__": html.escape(title),
+        "__EVIDENCE_CAPABILITY__": html.escape(evidence_capability),
+        "__REQUEST_ID__": html.escape(request_id),
+        "__SOURCE_DB_NAME__": html.escape(source_db_name),
+        "__INSPECTOR_DATA_JSON__": data_json,
+        "__INSPECTOR_METADATA_JSON__": metadata_json,
+    }
+    return re.sub(
+        "|".join(map(re.escape, replacements)),
+        lambda match: replacements[match.group()],
+        HTML_TEMPLATE,
     )
-    content = content.replace(
-        "__EVIDENCE_CAPABILITY__", html.escape(evidence_capability)
-    )
-    content = content.replace("__STRATEGY__", html.escape(strategy))
-    content = content.replace("__REQUEST_ID__", html.escape(request_id))
-    content = content.replace("__RUN_TOTAL__", str(run_total))
-    content = content.replace("__ELIGIBLE_COUNT__", str(eligible_count))
-    content = content.replace("__SELECTED_COUNT__", str(selected_count))
-    content = content.replace("__SOURCE_DB_NAME__", html.escape(source_db_name))
-    content = content.replace("__ITEM_COUNT__", str(selected_count))
-    content = content.replace("__INSPECTOR_DATA_JSON__", data_json)
-
-    return content
 
 
 def write_report_atomically(

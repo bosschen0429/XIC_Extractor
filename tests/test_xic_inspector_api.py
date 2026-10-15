@@ -251,9 +251,10 @@ def test_generate_report_sample_strategy_success() -> None:
 
         content = out_html.read_text(encoding="utf-8")
         title = re.search(r"<title>(.*?)</title>", content, re.S).group(1)
-        heading = re.search(r"<h1[^>]*>(.*?)</h1>", content, re.S).group(1)
-        assert title == heading == "Inspector"
-        assert res.source.processing_request_id not in title + heading
+        metadata_start = re.search(r"\bmetadata\s*:\s*(\{)", content).start(1)
+        metadata, _ = json.JSONDecoder().raw_decode(content[metadata_start:])
+        assert title == metadata["title"] == "Inspector"
+        assert res.source.processing_request_id not in title + metadata["title"]
         assert "retained_curves" in content
 
 
