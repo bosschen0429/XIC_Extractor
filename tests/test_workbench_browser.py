@@ -826,15 +826,15 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     expect(page.locator(".acquisition-panel > summary")).to_be_visible()
     expect(page.locator("#sample-list")).to_be_hidden()
     page.locator(".acquisition-panel > summary").click()
-    recorded = page.locator("#recorded-review").evaluate(
-        "container => container.dataset.viewId"
-    )
+    saved = page.locator("#recorded-review")
+    # The acquisition controls appear before the saved view's async mount.
+    expect(saved).to_have_attribute("data-view-id", re.compile(r".+"))
+    recorded = saved.get_attribute("data-view-id")
     review = page.locator("#inline-curve-review")
     expect(review.locator("[data-inspector-id='svg-raw'] polyline")).to_have_count(
         sample_count
     )
     expect(page.locator("#xic-dialog")).to_be_hidden()
-    saved = page.locator("#recorded-review")
     expect(saved.get_by_role("heading", name="已保存的樣本結果")).to_be_visible()
     expect(saved.locator("[data-inspector-id='svg-raw']")).to_have_count(0)
     assert (
