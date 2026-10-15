@@ -15,6 +15,7 @@ from xic_extractor.output.detection import (
 from xic_extractor.output.review_queue_model import _review_queue_rows
 from xic_extractor.output.schema import TARGETED_WORKBOOK_LAYOUT_VERSION
 from xic_extractor.output.sheet_area_matrix import build_area_matrix_sheet
+from xic_extractor.output.sheet_diagnostic_events import build_diagnostic_events_sheet
 from xic_extractor.output.sheet_field_guide import build_field_guide_sheet
 from xic_extractor.output.sheet_metadata import _build_metadata_sheet
 from xic_extractor.output.sheet_overview import build_overview_sheet
@@ -79,6 +80,8 @@ def write_workbook_from_rows(
         ),
     )
     build_field_guide_sheet(wb.create_sheet("欄位說明"))
+    if diagnostics:
+        build_diagnostic_events_sheet(wb.create_sheet("診斷事件"), diagnostics)
 
     if config.injection_order_source is not None:
         _embed_input_table(wb, "Sample Context", config.injection_order_source)

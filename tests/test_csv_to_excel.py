@@ -315,12 +315,9 @@ def test_run_writes_one_review_table_and_method_context(tmp_path: Path) -> None:
         ("Sample B", 456, "FALSE"),
     ]
     assert records[1]["Review Reason"].replace("\n", "") == "沒有 MS2"
-    assert (
-        {row[0]: row[2] for row in wb["Run Metadata"].values}[
-            "targeted_workbook_layout_version"
-        ]
-        == 2
-    )
+    assert {row[0]: row[2] for row in wb["Run Metadata"].values}[
+        "targeted_workbook_layout_version"
+    ] == 2
     wb.close()
 
 
@@ -564,9 +561,14 @@ def test_csv_to_excel_retains_multi_peak_selection_and_candidate_count(
     record = _sheet_records(workbook["XIC Results"])[0]
     assert record["Review"] is None
     assert record["Review Evidence"] is None
-    # An informational event explains the selection in the XIC view; it is not
-    # delivered as a worklist entry.
+    # An informational event is not a worklist entry; its full text stays on
+    # the hidden trace sheet so a past selection can still be explained.
     assert "需檢查" not in workbook.sheetnames
+    assert workbook["診斷事件"].sheet_state == "hidden"
+    assert any(
+        row[2:4] == ("MULTI_PEAK", records[0].reason)
+        for row in workbook["診斷事件"].values
+    )
     assert record["RT"] == 9.0
     assert record["Area"] == 123.0
     workbook.close()

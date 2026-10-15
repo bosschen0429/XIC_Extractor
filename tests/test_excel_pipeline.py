@@ -39,7 +39,7 @@ def test_workbook_filters_belong_to_tables_not_overlapping_worksheet_ranges(tmp_
     with ZipFile(path) as archive:
         assert (
             len([name for name in archive.namelist() if name.startswith("xl/tables/")])
-            == 4
+            == 5
         )
         for name in archive.namelist():
             if name.startswith("xl/worksheets/sheet"):
@@ -124,7 +124,9 @@ def test_write_excel_from_run_output_uses_in_memory_rows_and_metadata(
         "Targets",
         "Run Metadata",
         "欄位說明",
+        "診斷事件",
     ]
+    assert wb["診斷事件"].sheet_state == "hidden"
     assert wb.active.title == "摘要"
     ws = wb["XIC Results"]
     headers = [cell.value for cell in ws[1]]
@@ -237,6 +239,18 @@ def test_workbook_keeps_an_event_without_a_result_on_the_worklist(tmp_path):
     assert record["原因"].value == "RAW 處理失敗"
     assert record["建議檢查"].value.endswith(diagnostic.reason)
     assert record["建議檢查"].data_type != "f"
+    # The full event also stays on the hidden trace sheet, as literal text.
+    events = book["診斷事件"]
+    assert events.sheet_state == "hidden"
+    assert [cell.value for cell in events[1]] == [
+        "SampleName",
+        "Target",
+        "Issue",
+        "Reason",
+    ]
+    assert events["C2"].value == "FILE_ERROR"
+    assert events["D2"].value == "'" + diagnostic.reason
+    assert events["D2"].data_type != "f"
     book.close()
 
 

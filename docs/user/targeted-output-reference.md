@@ -119,6 +119,14 @@ Value is the last column so a long setting such as `targeted_strategy` stays rea
 
 The meaning and unit of every delivered column, in one visible table.
 
+## Hidden trace sheets
+
+A run with diagnostic events adds the hidden sheet `診斷事件`: one row per event
+with `SampleName`, `Target`, `Issue` and the full `Reason`, including events not
+attached to a result row. It preserves why a selection was made; it is not another
+review verdict. Unhide it in Excel (right-click a sheet tab → Unhide) when tracing
+a past decision.
+
 ## Embedded decision inputs
 
 A nonempty supplied `Sample Context` is a hidden technical sheet. It preserves

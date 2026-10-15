@@ -5,7 +5,7 @@ in this order: can this batch be used and which results need a look first; what
 simple calculation can be done here (means, analyte/ISTD ratios, CV); and which
 settings and version produced it. Targeted results rarely leave the workbook for
 downstream statistics; the Untargeted `matrix.tsv` owns that role. Per-peak
-inspection and diagnostic events belong to the workbench XIC view, not the XLSX.
+inspection belongs to the workbench XIC view, not the XLSX.
 
 ## Sheets
 
@@ -18,6 +18,7 @@ inspection and diagnostic events belong to the workbench XIC view, not the XLSX.
 | `Targets` | Admitted target intent | Inspector, human |
 | `Run Metadata` | `Key`, `說明`, `Value` | Inspector, workbook compare |
 | `欄位說明` | Meaning and unit of every delivered column | Human |
+| `診斷事件` | Every diagnostic event (`SampleName`, `Target`, `Issue`, `Reason`), hidden; only when nonempty | Traceability |
 | `Sample Context` | Supplied sample order table, hidden; only when supplied | Traceability |
 
 `XIC Results`, `Targets` and `Run Metadata` are reader contracts: their names,
@@ -34,7 +35,10 @@ change; they never change saved values or decisions.
   against the majority. It adds no scientific flag.
 - A diagnostic event without a delivered result (a RAW file that failed to open)
   stays on `需檢查` with its message, because no XIC view can explain it.
-- Other diagnostic events are not delivered; the XIC view shows the evidence.
+- Every diagnostic event is kept as literal text on the hidden `診斷事件` sheet.
+  The delivered XLSX is the run's only artifact, and the XIC view shows the peak
+  but not why a selection was made. The sheet is for tracing a past decision,
+  not for reading the batch.
 - `面積` projects every saved Area, including zero, ND and blank, independent of
   counted detection. It calculates no ratio.
 - Review reasons and suggested checks use plain domain words (RT, MS2, XIC, ISTD,
