@@ -266,7 +266,7 @@ def _review_why(issue: str, row: dict[str, str], evidence: str) -> str:
             return "RAW 處理失敗"
         if "target_sample_applicability:" in exclusions:
             return "不適用此樣本"
-        return "已被規則排除"
+        return "已依規則排除"
     if state == "ambiguous" or row.get("Projection Conflict Reasons"):
         return "證據衝突，身分未定"
     if row.get("Role", "").upper() == "ISTD" and "missing_positive_ms1_peak" in row.get(
@@ -288,11 +288,11 @@ def _review_why(issue: str, row: dict[str, str], evidence: str) -> str:
         ms2 = "；另無 MS2" if row.get("NL") == "NO_MS2" else ""
         return f"MS1 峰形品質不足{detail}{ms2}"
     if issue == "NL_FAIL":
-        return "CID-NL 未確認"
+        return "MS2 未見預期的中性丟失"
     if issue == "NO_MS2":
         return "沒有 MS2"
     if issue == "NL_WARN":
-        return "NL 質量誤差偏大"
+        return "中性丟失質量偏差偏大"
     if issue in {"PEAK_NOT_FOUND", "NO_SIGNAL"}:
         return "找不到峰"
     if issue == "FILE_ERROR":
@@ -302,11 +302,11 @@ def _review_why(issue: str, row: dict[str, str], evidence: str) -> str:
     if issue == "ANCHOR_RT_MISMATCH":
         return "RT 偏離定位提示"
     if issue == "NL_ANCHOR_FALLBACK":
-        return "無 NL 定位點，用備用範圍"
+        return "沒有 MS2 定位點，改用備用 RT 範圍"
     if issue in {"ISTD_CONFIDENCE", "CONFIDENCE_LOW", "CONFIDENCE_VERY_LOW"}:
         return "信心分級偏低"
     if issue == "PRODUCT_NOT_COUNTED":
-        return "未滿足計入條件"
+        return "證據不足以計入"
     if issue == "PROJECTION_FLAGGED":
         reasons = row.get("Projection Review Reasons", "")
         if "physical_shoulder_overlap" in reasons:
@@ -316,7 +316,7 @@ def _review_why(issue: str, row: dict[str, str], evidence: str) -> str:
         if "targeted_rt_review" in reasons:
             return "RT 位置需檢查"
         return "證據需檢查"
-    return "有補充診斷紀錄"
+    return "有其他檢閱註記"
 
 
 def _has_product_projection(row: dict[str, str]) -> bool:
@@ -327,32 +327,32 @@ def _has_product_projection(row: dict[str, str]) -> bool:
 
 def _suggested_action(issue: str, row: dict[str, str], evidence: str) -> str:
     if "PAIRED_POSITION_SUPPORT_REJECTED" in evidence:
-        return "比較近內標段的原始 scan 點與平滑線，不以平滑外形代替訊號支撐"
+        return "在 XIC 確認內標附近有真實的訊號點，而不只是平滑線的起伏"
     if "paired_istd_position_mismatch" in row.get("Projection Review Reasons", ""):
-        return "比較 analyte／ISTD 預期 RT 差與實際峰位置，確認是否為其他訊號"
+        return "在 XIC 比對此峰與配對 ISTD 的 RT 差，確認不是其他物質"
     if "BACKFILL" in evidence:
-        return "比較同批樣本的回填位置與峰形"
+        return "在 XIC 比較同批樣本的峰位置與峰形"
     if _unqualified_ms1_shape(row):
-        return "檢查 MS1 峰形與肩峰／重疊，不以 RT 吻合取代峰形資格"
+        return "在 XIC 看峰形是否有肩峰或重疊；RT 對得上不代表峰形合格"
     if issue in {"NL_FAIL", "NL_WARN"}:
-        return "看所選 RT 附近的 MS2"
+        return "看所選 RT 附近的 MS2 是否有預期的中性丟失"
     if issue == "NO_MS2":
-        return "看 DDA 掃描涵蓋範圍"
+        return "確認所選 RT 附近是否有觸發 MS2 掃描"
     if issue in {"PEAK_NOT_FOUND", "NO_SIGNAL"}:
-        return "看 XIC 與 RT 範圍"
+        return "在 XIC 確認 RT 範圍內是否有峰"
     if issue == "FILE_ERROR":
-        return "看原始錯誤與 RAW 路徑"
+        return "確認 RAW 檔路徑與能否開啟"
     if issue in {
         "PROJECTION_CONFLICT",
         "PRODUCT_AMBIGUOUS",
         "PRODUCT_NOT_COUNTED",
         "PROJECTION_FLAGGED",
     }:
-        return "看此峰的證據"
+        return "在 XIC 確認此峰"
     if issue == "PRODUCT_EXCLUDED":
-        return "核對適用範圍"
+        return "核對 Targets 的樣本適用範圍"
     if row.get("Confidence") in {"LOW", "VERY_LOW"}:
-        return "看峰形、RT 與 ISTD"
+        return "在 XIC 看峰形、RT 與 ISTD"
     if issue == "MULTI_PEAK":
-        return "比較候選峰"
-    return "看原始紀錄"
+        return "在 XIC 比較候選峰"
+    return "在 XIC 確認此峰"

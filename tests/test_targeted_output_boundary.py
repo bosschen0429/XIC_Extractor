@@ -351,9 +351,9 @@ def test_workbook_only_delivery_embeds_method_settings(
     publish_targeted_outputs(request, finalized, output)
 
     workbook = load_workbook(excel_path, read_only=True, data_only=True)
-    metadata = dict(
-        row[:2] for row in workbook["Run Metadata"].iter_rows(values_only=True)
-    )
+    metadata = {
+        row[0]: row[2] for row in workbook["Run Metadata"].iter_rows(values_only=True)
+    }
     workbook.close()
     assert metadata["signal_processing_method"] == config.signal_processing_method
     assert "targeted_strategy" in metadata
@@ -545,15 +545,20 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
         headers = next(rows)
         workbook_rows = {row[0]: dict(zip(headers, row)) for row in rows}
         sheet = workbook["XIC Results"]
-        for header in ("Area", "RT", "IntSmoothed", "Counted Detection"):
+        for header in (
+            "Area",
+            "RT",
+            "IntSmoothed",
+            "Counted Detection",
+            "Review",
+            "Review Reason",
+        ):
             index = headers.index(header) + 1
             assert not any(
                 dimension.hidden and dimension.min <= index <= dimension.max
                 for dimension in sheet.column_dimensions.values()
             )
         for header in (
-            "Review",
-            "Review Reason",
             "Reason",
             "NL Evidence",
             "PeakStart",
@@ -925,7 +930,7 @@ def test_concurrent_non_replacing_publications_are_collision_atomic(
             diagnostics=[
                 DiagnosticRecord(
                     sample_name="SampleA",
-                    target_label=target.label,
+                    target_label="",
                     issue="FILE_ERROR",
                     reason=marker,
                 )
@@ -957,10 +962,10 @@ def test_concurrent_non_replacing_publications_are_collision_atomic(
     assert set(winning.paths) == expected_paths
     assert all(path.is_file() for path in winning.paths)
     workbook = load_workbook(request.excel_output_path, read_only=True)
-    diagnostics_text = str(list(workbook["Diagnostics"].values))
+    worklist_text = str(list(workbook["需檢查"].values))
     workbook.close()
     assert (
-        sum(marker in diagnostics_text for marker in ("concurrent-a", "concurrent-b"))
+        sum(marker in worklist_text for marker in ("concurrent-a", "concurrent-b"))
         == 1
     )
     assert not list(config.output_csv.parent.glob(".xic-targeted-publish-*"))
@@ -1880,7 +1885,6 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
     values = iter(workbook["XIC Results"].values)
     headers = next(values)
     rows = [dict(zip(headers, row)) for row in values]
-    diagnostic_values = list(workbook["Diagnostics"].values)
     workbook.close()
     row = next(
         r for r in rows if r["SampleName"] == "SampleC" and r["Target"] == "Analyte"
@@ -1930,8 +1934,9 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
         else:
             assert "backfill" in str(row["Review Evidence"]).lower()
         assert any(
-            "SampleC" in cells and "Analyte" in cells and "BACKFILL_ACCEPTED" in cells
-            for cells in diagnostic_values
+            (record.sample_name, record.target_label, record.issue)
+            == ("SampleC", "Analyte", "BACKFILL_ACCEPTED")
+            for record in execution.active_output.diagnostics
         )
         ref = next(
             r for r in rows if r["SampleName"] == "SampleA" and r["Target"] == "Analyte"

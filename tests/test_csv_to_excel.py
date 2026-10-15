@@ -11,6 +11,7 @@ from xic_extractor.extraction.result_models import ExtractionResult
 from xic_extractor.output.detection import MissingTargetedProductProjectionError
 from xic_extractor.output.messages import build_diagnostic_records
 from xic_extractor.output.review_queue_model import _review_queue_rows
+from xic_extractor.output.sheet_field_guide import FIELD_GUIDE
 from xic_extractor.output.sheet_results import _build_data_sheet
 from xic_extractor.output.sheet_targets import _build_targets_sheet
 from xic_extractor.output.workbook_inputs import _wide_to_long_rows
@@ -35,11 +36,13 @@ def test_data_sheet_preserves_measurements_and_compact_review_fields() -> None:
     ]
     assert records[0]["NL Evidence"] == "Observed"
     assert records[1]["NL"] == "⚠ 12.3ppm"
-    assert records[1]["Review Reason"].replace("\n", "") == "NL 質量誤差偏大"
-    # RT precedes Area; intensities read as scientific notation, values centered.
-    assert ws["C2"].number_format == "0.0000"
+    assert records[1]["Review Reason"].replace("\n", "") == "中性丟失質量偏差偏大"
+    # RT precedes Area; intensities read as scientific notation. Numbers align
+    # right and text left so a column scans by magnitude.
+    assert ws["C2"].number_format == "0.00"
     assert ws["D2"].number_format == "0.00E+00"
-    assert {ws[cell].alignment.horizontal for cell in ("A2", "C2", "D2")} == {"center"}
+    assert ws["A2"].alignment.horizontal == "left"
+    assert {ws[cell].alignment.horizontal for cell in ("C2", "D2")} == {"right"}
     assert records[0]["IntSmoothed"] == 900
     assert records[0]["Int"] == 1000
     assert records[0]["PeakWidth"] == 0.4
@@ -152,8 +155,8 @@ def test_review_queue_aggregates_diagnostics_by_sample_target() -> None:
     assert review_rows[0]["Sample"] == "Tumor_1"
     assert review_rows[0]["Target"] == "Analyte"
     assert review_rows[0]["Status"] == "Review"
-    assert review_rows[0]["Why"] == "CID-NL 未確認"
-    assert review_rows[0]["Action"] == "看所選 RT 附近的 MS2"
+    assert review_rows[0]["Why"] == "MS2 未見預期的中性丟失"
+    assert review_rows[0]["Action"] == "看所選 RT 附近的 MS2 是否有預期的中性丟失"
     assert review_rows[0]["Issue Count"] == "2"
     assert review_rows[0]["Evidence"] == "NL_FAIL; ANCHOR_MISMATCH"
 
@@ -234,9 +237,8 @@ def test_targets_sheet_marks_expected_product_as_nominal_reference() -> None:
     _build_targets_sheet(ws, [_target("Analyte")])
 
     assert ws["I1"].value == "Expected product m/z"
-    assert ws["I1"].comment is not None
-    assert "設定參考值，不是實測產物" in ws["I1"].comment.text
-    assert "實測中性丟失與所選峰" in ws["I1"].comment.text
+    meaning = {field: text for _, field, text, _ in FIELD_GUIDE}
+    assert "設定參考值，不是實測產物" in meaning["Expected product m/z"]
 
 
 def test_wide_to_long_rows_classifies_qc_from_sample_name_token() -> None:
@@ -298,14 +300,15 @@ def test_run_writes_one_review_table_and_method_context(tmp_path: Path) -> None:
     _write_empty_diagnostics_csv(config.diagnostics_csv)
     wb = load_workbook(run(config, [_target("Analyte")]))
     assert wb.sheetnames == [
-        "Overview",
+        "摘要",
+        "需檢查",
+        "面積",
         "XIC Results",
-        "Area Matrix",
         "Targets",
         "Run Metadata",
-        "Diagnostics",
+        "欄位說明",
     ]
-    assert wb.active.title == "Overview"
+    assert wb.active.title == "摘要"
     records = _sheet_records(wb["XIC Results"])
     assert [(r["SampleName"], r["Area"], r["Counted Detection"]) for r in records] == [
         ("Sample A", 123, "TRUE"),
@@ -313,7 +316,7 @@ def test_run_writes_one_review_table_and_method_context(tmp_path: Path) -> None:
     ]
     assert records[1]["Review Reason"].replace("\n", "") == "沒有 MS2"
     assert (
-        dict(row[:2] for row in wb["Run Metadata"].values)[
+        {row[0]: row[2] for row in wb["Run Metadata"].values}[
             "targeted_workbook_layout_version"
         ]
         == 2
@@ -361,7 +364,8 @@ def test_review_prioritizes_unqualified_ms1_shape_over_missing_ms2(qualification
             == "MS1 峰形品質不足（肩峰／重疊）；另無 MS2"
         )
         assert (
-            queue[0]["Action"] == "檢查 MS1 峰形與肩峰／重疊，不以 RT 吻合取代峰形資格"
+            queue[0]["Action"]
+            == "在 XIC 看峰形是否有肩峰或重疊；RT 對得上不代表峰形合格"
         )
     wb.close()
 
@@ -560,10 +564,9 @@ def test_csv_to_excel_retains_multi_peak_selection_and_candidate_count(
     record = _sheet_records(workbook["XIC Results"])[0]
     assert record["Review"] is None
     assert record["Review Evidence"] is None
-    assert any(
-        row[2:4] == ("MULTI_PEAK", records[0].reason)
-        for row in workbook["Diagnostics"].values
-    )
+    # An informational event explains the selection in the XIC view; it is not
+    # delivered as a worklist entry.
+    assert "需檢查" not in workbook.sheetnames
     assert record["RT"] == 9.0
     assert record["Area"] == 123.0
     workbook.close()

@@ -1,14 +1,19 @@
+"""One quiet visual system for the delivered Targeted workbook.
+
+Text reads in two inks; numbers align right and text left. The single accent
+marks what the reader should look at first. Grey text marks a value the saved
+decision did not count; the decision itself remains a column of its own.
+"""
+
 from __future__ import annotations
 
 import re
 from unicodedata import east_asian_width
 
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
-from openpyxl.worksheet.page import PageMargins
+from openpyxl.styles import Alignment, Border, Font, Side
 from openpyxl.worksheet.table import Table, TableStyleInfo
 
-from xic_extractor.output.schema import WORKBOOK_DETAIL_HEADERS as _ADVANCED_HEADERS
 from xic_extractor.output.workbook_values import (
     ND_ERROR,
     _excel_text,
@@ -17,169 +22,156 @@ from xic_extractor.output.workbook_values import (
 )
 
 REPORT_FONT = "Microsoft JhengHei"
-INK = "24364B"
-MUTED = "63758A"
-ACCENT = "356D95"
-SUCCESS = "E8F3ED"
-CAUTION = "FFF2DC"
-_MS2_HEADER = "65778B"
-_MS2_OK = SUCCESS
-_MS2_WARN = CAUTION
-_MS2_FAIL = "F9E9E7"
-_MS2_NO_MS2 = "EDF0F4"
-_SAMPLE_HEADER = INK
-_RESULT_TAB = ACCENT
-_TECHNICAL_TAB = "A6B3C2"
-WHITE = "FFFFFF"
-GREY = "F7F9FB"
-_THIN = Side(style="thin", color="E3E8EE")
-BORDER = Border(bottom=_THIN)
-CENTER = Alignment(horizontal="center", vertical="center")
-CENTER_WRAP = Alignment(horizontal="center", vertical="center", wrap_text=True)
-_TARGETS_HEADERS = [
-    "Label",
-    "Role",
-    "ISTD Pair",
-    "m/z",
-    "RT min",
-    "RT max",
-    "ppm tol",
-    "NL (Da)",
-    "Expected product m/z",
-    "NL ppm warn",
-    "NL ppm max",
-    "Sample applicability",
-]
-
-
-def _fill(hex6: str) -> PatternFill:
-    return PatternFill("solid", fgColor=hex6)
-
-
-def _apply(cell, **kw: object) -> None:
-    if "font" not in kw:
-        cell.font = Font(name=REPORT_FONT, size=10, color=INK)
-    for key, value in kw.items():
-        setattr(cell, key, value)
-
-
-def _header_style(hex6: str) -> dict[str, object]:
-    return {
-        "font": Font(name=REPORT_FONT, bold=True, color=hex6, size=10),
-        "fill": _fill("EDF1F5"),
-        "alignment": CENTER_WRAP,
-        "border": BORDER,
-    }
-
-
-def _nl_cell_fill(value: str) -> PatternFill:
-    if value == "OK":
-        return _fill(_MS2_OK)
-    if value.startswith("WARN_"):
-        return _fill(_MS2_WARN)
-    if value == "NO_MS2":
-        return _fill(_MS2_NO_MS2)
-    return _fill(_MS2_FAIL)
-
-
-def _long_cell_value(header: str, raw_val: str) -> object:
-    if header in {
+INK = "1F2A37"
+SOFT = "5B6B7C"
+MUTED = "9AA5B1"
+FOCUS = "B45309"
+_RULE = Side(style="thin", color="E5E9EE")
+_HEAD_RULE = Side(style="thin", color="8C99A6")
+_READING_TAB = "1F2A37"
+_REFERENCE_TAB = "A6B3C2"
+READING_SHEETS = ("摘要", "需檢查", "面積", "XIC Results")
+LINE_HEIGHT = 16
+TEXT_HEADERS = frozenset(
+    {
         "SampleName",
         "Target",
-        "ISTD Pair",
-        "Confidence",
-        "Reason",
         "Review",
         "Review Reason",
-        "Supporting Evidence",
-        "Conflicts / Concerns",
-    }:
-        return _excel_text(raw_val)
-    if header == "NL":
-        return _nl_to_display(raw_val) if raw_val else ""
-    if header in {
-        "RT",
-        "Area",
-        "Int",
-        "IntSmoothed",
-        "PeakStart",
-        "PeakEnd",
-        "PeakWidth",
-    }:
-        if raw_val in ND_ERROR:
-            return raw_val
-        parsed = _safe_float(raw_val)
-        return parsed if parsed is not None else raw_val
-    if header in _ADVANCED_HEADERS:
-        return _excel_text(raw_val) if raw_val else ""
-    return raw_val
-
-
-def _long_cell_fill(header: str, raw_val: str, alt: bool) -> PatternFill:
-    if raw_val in ND_ERROR:
-        return _fill("FFE0B2" if raw_val == "ND" else "FF7043")
-    if header == "NL" and raw_val:
-        return _nl_cell_fill(raw_val)
-    if header == "Counted Detection":
-        if raw_val.upper() == "FALSE":
-            return _fill(CAUTION)
-    if header == "Review" and raw_val in {"Review", "Check"}:
-        return _fill(CAUTION)
-    if header in _ADVANCED_HEADERS:
-        return _fill("ECEFF1")
-    return _fill(GREY if alt else WHITE)
-
-
-def _long_number_format(header: str) -> str:
-    if header in {"RT", "PeakStart", "PeakEnd"}:
-        return "0.0000"
-    if header in {"Area", "Int", "IntSmoothed"}:
-        return "0.00E+00"
-    if header == "PeakWidth":
-        return "0.0000"
-    return "#,##0"
-
-
-def _long_column_width(header: str) -> int:
-    widths = {
-        "SampleName": 35,
-        "Target": 16,
-        "Area": 18,
-        "RT": 10,
-        "IntSmoothed": 18,
-        "Int": 18,
-        "PeakWidth": 14,
-        "Counted Detection": 14,
-        "Review": 10,
-        "Review Reason": 48,
-        "Review Evidence": 42,
-        "PeakStart": 14,
-        "PeakEnd": 14,
-        "NL Evidence": 34,
-        "Reason": 48,
-        "Role": 12,
-        "Group": 14,
-        "NL": 14,
-        "Confidence": 14,
+        "NL Evidence",
+        "Reason",
+        "Review Evidence",
+        "Role",
+        "Group",
+        "NL",
+        "Confidence",
+        "Counted Detection",
     }
-    return widths.get(header, 24)
+)
+_NUMBER_FORMATS = {
+    "RT": "0.00",
+    "PeakStart": "0.00",
+    "PeakEnd": "0.00",
+    "PeakWidth": "0.000",
+    "Area": "0.00E+00",
+    "Int": "0.00E+00",
+    "IntSmoothed": "0.00E+00",
+}
 
 
-def _prose_line_count(text: str, width: int) -> int:
+def _font(
+    color: str = INK, *, bold: bool = False, size: int = 10, underline=None
+) -> Font:
+    return Font(
+        name=REPORT_FONT, size=size, bold=bold, color=color, underline=underline
+    )
+
+
+def _prepare_sheet(
+    ws,
+    *,
+    landscape: bool = True,
+    fit_width: bool = True,
+    repeat_rows: str | None = None,
+    repeat_columns: str | None = None,
+) -> None:
+    ws.sheet_view.showGridLines = False
+    ws.sheet_format.defaultRowHeight = 18
+    ws.sheet_format.customHeight = True
+    ws.page_setup.orientation = "landscape" if landscape else "portrait"
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    # Wide sheets continue across pages instead of shrinking to unreadable text.
+    ws.sheet_properties.pageSetUpPr.fitToPage = fit_width
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    if repeat_rows:
+        ws.print_title_rows = repeat_rows
+    if repeat_columns:
+        ws.print_title_cols = repeat_columns
+    ws.oddFooter.right.text = "&A · &P / &N"
+    ws.oddFooter.right.size = 8
+    ws.oddFooter.right.font = REPORT_FONT
+    ws.oddFooter.right.color = SOFT
+
+
+def _write_header(ws, row: int, headers, numeric=frozenset()) -> None:
+    for column, title in enumerate(headers, 1):
+        cell = ws.cell(row, column, title)
+        cell.font = _font(SOFT, bold=True)
+        cell.alignment = Alignment(
+            horizontal="right" if title in numeric else "left", vertical="center"
+        )
+        cell.border = Border(bottom=_HEAD_RULE)
+    ws.row_dimensions[row].height = 22
+
+
+def _style_body(
+    cell, *, color: str = INK, numeric: bool = False, wrap: bool = False
+) -> None:
+    cell.font = _font(color)
+    cell.border = Border(bottom=_RULE)
+    cell.alignment = Alignment(
+        horizontal="right" if numeric else "left",
+        vertical="top" if wrap else "center",
+        wrap_text=wrap,
+    )
+
+
+def _link(cell, location: str, *, color: str = INK, bold: bool = False) -> None:
+    cell.hyperlink = f"#{location}"
+    cell.font = _font(color, bold=bold, underline="single")
+
+
+def _measurement_value(header: str, raw: object) -> object:
+    """Saved measurements become numbers; ND and other text stay literal."""
+    if header == "NL":
+        return _nl_to_display(str(raw)) if raw else ""
+    if header in _NUMBER_FORMATS and isinstance(raw, str) and raw not in ND_ERROR:
+        parsed = _safe_float(raw)
+        if parsed is not None:
+            return parsed
+    return _excel_text(raw)
+
+
+def _number_format(header: str) -> str | None:
+    return _NUMBER_FORMATS.get(header)
+
+
+def _is_number(value: object) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def _text_width(value: object) -> int:
+    return sum(2 if east_asian_width(char) in {"W", "F"} else 1 for char in str(value))
+
+
+def _prose_line_count(text: object, width: int) -> int:
     """Reserve row height without inserting line breaks into saved prose."""
     lines = 1
     used = 0
-    for token in re.findall(r"[A-Za-z0-9_./-]+|.", text, re.DOTALL):
+    for token in re.findall(r"[A-Za-z0-9_./-]+|.", str(text or ""), re.DOTALL):
         if token == "\n":
             lines += 1
             used = 0
             continue
-        size = sum(2 if east_asian_width(char) in {"W", "F"} else 1 for char in token)
+        size = _text_width(token)
         if used and used + size > width and token not in "，。；：、？！）】」》":
             lines += 1
             used = 0
         used += size
     return lines
+
+
+def _fit_columns(ws, *, minimum: int = 8, maximum: int = 40) -> None:
+    widths: dict[str, int] = {}
+    for row in ws.iter_rows():
+        for cell in row:
+            if cell.value is None:
+                continue
+            size = 10 if _is_number(cell.value) else _text_width(cell.value)
+            widths[cell.column_letter] = max(widths.get(cell.column_letter, 0), size)
+    for letter, size in widths.items():
+        ws.column_dimensions[letter].width = max(minimum, min(maximum, size + 3))
 
 
 def _add_table(ws, name: str, reference: str) -> None:
@@ -191,43 +183,8 @@ def _add_table(ws, name: str, reference: str) -> None:
     ws.auto_filter.ref = None
 
 
-def _prepare_print_view(ws, *, area: str, repeat_rows: str = "1:1") -> None:
-    ws.sheet_view.showGridLines = False
-    ws.sheet_view.zoomScale = 90
-    ws.sheet_format.defaultRowHeight = 24
-    ws.sheet_properties.pageSetUpPr.fitToPage = True
-    ws.page_setup.orientation = "landscape"
-    ws.page_setup.paperSize = ws.PAPERSIZE_A4
-    ws.page_setup.fitToWidth = 1
-    ws.page_setup.fitToHeight = 0
-    ws.print_options.horizontalCentered = True
-    ws.page_margins = PageMargins(
-        left=0.3, right=0.3, top=0.35, bottom=0.35, header=0.15, footer=0.15
-    )
-    ws.print_area = area
-    ws.print_title_rows = repeat_rows
-    ws.sheet_properties.outlinePr.summaryRight = False
-    ws.sheet_properties.outlinePr.summaryBelow = False
-    ws.oddFooter.left.text = "XIC Extractor"
-    ws.oddFooter.right.text = "&A  |  &P / &N"
-    for part in (ws.oddFooter.left, ws.oddFooter.right):
-        part.font = "Calibri,Regular"
-        part.size = 8
-        part.color = MUTED
-
-
 def _apply_sheet_role_styles(wb: Workbook) -> None:
-    role_colors = {
-        "Overview": _RESULT_TAB,
-        "XIC Results": _RESULT_TAB,
-        "Area Matrix": _RESULT_TAB,
-        "Targets": _TECHNICAL_TAB,
-        "Run Metadata": _TECHNICAL_TAB,
-        "Diagnostics": "B68434",
-        "Identity Support": _TECHNICAL_TAB,
-        "Sample Context": _TECHNICAL_TAB,
-        "Selection Approvals": _TECHNICAL_TAB,
-    }
-    for name, color in role_colors.items():
-        if name in wb.sheetnames:
-            wb[name].sheet_properties.tabColor = color
+    for sheet in wb.worksheets:
+        sheet.sheet_properties.tabColor = (
+            _READING_TAB if sheet.title in READING_SHEETS else _REFERENCE_TAB
+        )

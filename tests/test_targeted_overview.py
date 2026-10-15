@@ -1,6 +1,3 @@
-from openpyxl import Workbook, load_workbook
-
-from xic_extractor.output.sheet_overview import build_overview_sheet
 from xic_extractor.output.targeted_overview import summarize_targeted_results
 
 
@@ -78,45 +75,6 @@ def test_overview_does_not_infer_missing_legacy_decisions():
     empty = summarize_targeted_results([], [])
     assert empty.result_count == empty.counted_count == empty.review_count == 0
     assert empty.targets == ()
-
-
-def test_overview_workbook_charts_saved_counts_and_links_to_result_rows(
-    tmp_path,
-):
-    book = Workbook()
-    sheet = book.active
-    sheet.title = "Overview"
-    build_overview_sheet(sheet, _rows(), _reviews())
-    path = tmp_path / "overview.xlsx"
-    book.save(path)
-    book.close()
-    with_book = load_workbook(path)
-    sheet = with_book["Overview"]
-    assert sheet["A7"].value == 0
-    assert sheet["A2"].value == "各目標結果一致，沒有需要先看的少數結果"
-    assert sheet["E7"].value == "2 / 4"
-    assert sheet["I7"].value == "0 / 0"
-    assert sheet["A29"].value == "ISTD"
-    assert sheet["K29"].hyperlink.target == "#'XIC Results'!A2"
-    assert len(sheet._charts) == 1
-    chart = sheet._charts[0]
-    assert chart.anchor.to.col == 12
-    assert chart.x_axis.tickLblSkip == 1
-    assert chart.x_axis.scaling.orientation == "maxMin"
-    assert [sheet.cell(row, 14).value for row in (2, 3)] == ["ISTD", "Analyte"]
-    assert all(
-        not axis.delete and axis.tickLblPos == "nextTo"
-        for chart in sheet._charts
-        for axis in (chart.x_axis, chart.y_axis)
-    )
-    assert sheet.page_setup.fitToHeight == 1
-    assert [sheet.cell(row, 15).value for row in (2, 3)] == [2, 0]
-    assert [sheet.cell(row, 16).value for row in (2, 3)] == [0, 2]
-    assert [sheet.cell(row, 17).value for row in (2, 3)] == [0, 0]
-    assert any(dimension.hidden for dimension in sheet.column_dimensions.values())
-    links = [cell.hyperlink.target for row in sheet for cell in row if cell.hyperlink]
-    assert "#'Targets'!A1" in links and "#'Run Metadata'!A1" in links
-    with_book.close()
 
 
 def test_review_focus_is_the_minority_outcome_of_each_target():

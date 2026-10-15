@@ -83,11 +83,13 @@ completed workbook.
 
 | Workbook sheet | Purpose |
 | --- | --- |
-| `Overview` | First view: batch outcome, review priorities and links to detailed results |
+| `摘要` | First view: batch conclusion and one table of targets with what to look at first |
+| `需檢查` (when needed) | The results that differ from their target's majority, with reason and suggested check |
+| `面積` | Saved Area per sample and target; each analyte beside its paired ISTD |
 | `XIC Results` | Sample-target Area, RT, counted status and review reason; expand secondary columns for evidence |
 | `Targets` | Supporting reference: snapshot of the target table used for the run |
 | `Run Metadata` | Supporting reference: method settings and provenance |
-| `Diagnostics` (when nonempty) | Supporting reference: complete supplied diagnostic text |
+| `欄位說明` | Meaning and unit of every column |
 
 The normal output directory contains one XLSX only. A nonempty supplied sample
 context table remains in a hidden sheet so it can be inspected without sidecar
@@ -139,9 +141,9 @@ Execution scheduling is automatic; actual workers are recorded in run metadata.
 
 ## Validation
 
-After a run, start with `Overview` or the workbench's batch overview. Follow its
-review priorities into `XIC Results` or a sample detail; inspect saved peak/NL
-evidence and diagnostic text before rerunning.
+After a run, start with `摘要` or the workbench's batch overview. Follow 先看
+into `需檢查` or a sample detail; inspect the XIC and saved peak/NL evidence in
+the workbench before rerunning.
 See the [output reference](targeted-output-reference.md) for column meanings.
 
 For developer-level validation harness details, see
