@@ -830,11 +830,36 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     page.wait_for_function("y => Math.abs(window.scrollY - y) < 2", arg=reading_scroll)
     release.set()
     expect(page.locator("#status")).to_contain_text("診斷曲線已載入")
+    # Closing during payload loading must not mount the response into a hidden
+    # drawer; Forward can request that same completed curve snapshot again.
+    view_id = page.locator("#xic-download").get_attribute("href").split("/")[-1]
+    view_id = view_id.split(".")[0]
+    view_url = f"**/api/views/{view_id}"
+    delayed_payload = []
+
+    def delay_first_payload(route):
+        if not delayed_payload:
+            delayed_payload.append(route)
+        else:
+            route.continue_()
+
+    page.route(view_url, delay_first_payload)
+    with page.expect_request(view_url):
+        page.go_forward()
+    expect(dialog).to_be_visible()
+    review = page.locator("#xic-review")
+    expect(review.locator(".xic-inspector")).to_have_count(0)
+    page.go_back()
+    expect(dialog).to_be_hidden()
+    with page.expect_response(lambda response: response.url.endswith(view_id)):
+        delayed_payload[0].fulfill(response=delayed_payload[0].fetch())
+    page.evaluate("""() => new Promise(resolve =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)))""")
+    expect(review.locator(".xic-inspector")).to_have_count(0)
     page.go_forward()
     expect(dialog).to_be_visible()
     expect(page.locator(".acquisition-panel")).to_be_hidden()
     expect(page.locator("#xic-sample")).to_have_value("S3")
-    review = page.locator("#xic-review")
     curves = review.locator(".tx-chart polyline")
     expect(review.locator('.tx-chart circle[data-kind="raw"]')).not_to_have_count(0)
     expect(review.get_by_text("原始 scan 點", exact=True)).to_be_visible()
@@ -868,6 +893,10 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     page.go_forward()
     expect(dialog).to_be_visible()
     expect(review.locator(".tx-sample-name")).to_have_text("S3")
+    # Returning to the same XIC keeps the reader's chosen RT range, not a
+    # freshly mounted view's default zoom. Review loads must not own Back stops.
+    expect(review.get_by_label("顯示 RT 起點", exact=True)).to_have_value("0")
+    expect(review.get_by_label("顯示 RT 終點", exact=True)).to_have_value("12")
     assert len(reads) == 2
     page.keyboard.press("Escape")
     expect(dialog).to_be_hidden()

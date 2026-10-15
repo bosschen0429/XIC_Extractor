@@ -196,6 +196,10 @@ window.XicUi = (() => {
     try {
       const payload = await api(`/api/views/${view}`);
       if (reviewSlots.get(id) !== slot || state.detail !== slot.detail) return;
+      if (id === "xic-review" && !$("xic-dialog").open) {
+        clearReview(id);
+        return;
+      }
       slot.handle = window.XicInspector.mount($(id), payload, {
         mode,
         onRequestCurves: request => {
@@ -891,7 +895,10 @@ window.XicUi = (() => {
     closeCurves();
   });
   $("xic-dialog").addEventListener("close", () => {
-    clearReview("xic-review");
+    if ($("xic-dialog").open) return;
+    // Keep a completed reading view, including its RT range, across Back/Forward.
+    // Pending payloads are not reading state and must not mount after closing.
+    if (!reviewSlots.get("xic-review")?.handle) clearReview("xic-review");
     if (state.curveOpener?.isConnected) state.curveOpener.focus({preventScroll: true});
   });
   $("xic-sample").addEventListener("change", () => action(() => selectCurveSample($("xic-sample").value)));
