@@ -2515,6 +2515,7 @@ def test_nearest_mz_rejects_invalid_values(value):
         {"group_ids": ("G1",)},
         {"candidate_ids": ("C1",)},
         {"target_ids": ("T1",)},
+        {"target_role": "ISTD"},
         {"attention_only": True},
     ],
 )
@@ -2550,4 +2551,39 @@ def test_nearest_mz_rejects_portable_curve_bundles(tmp_path):
             source,
             SelectionRequest(strategy="query", review_scope="matrix", nearest_mz=500),
         )
+    assert exc.value.code == 2
+
+
+@pytest.mark.parametrize("role", ["", "analyte", "QC", 123, False, []])
+def test_target_role_rejects_noncanonical_requests(role):
+    with pytest.raises(InspectorError, match="target_role") as exc:
+        SelectionRequest(strategy="query", target_role=role).validate()
+    assert exc.value.code == 2
+
+
+@pytest.mark.parametrize("strategy", ["sample", "attention"])
+def test_target_role_requires_query_strategy(strategy):
+    with pytest.raises(InspectorError, match="query strategy"):
+        SelectionRequest(strategy=strategy, target_role="ISTD").validate()
+
+
+def test_target_role_rejects_untargeted_evidence(tmp_path):
+    from xic_inspector.api import prepare_report
+
+    report, _, _ = _create_mock_db(tmp_path)
+    with pytest.raises(InspectorError, match="Targeted XLSX") as exc:
+        prepare_report(report, SelectionRequest(strategy="query", target_role="ISTD"))
+    assert exc.value.code == 2
+
+
+
+def test_target_role_rejects_portable_curve_bundles(tmp_path):
+    from tests.test_xic_inspector_curve_bundle import _fixture_bundle
+    from xic_inspector.api import prepare_report
+    from xic_inspector.sources.curve_bundle import write_curve_bundle
+
+    source = tmp_path / "curves.json"
+    write_curve_bundle(_fixture_bundle(), source)
+    with pytest.raises(InspectorError, match="Targeted XLSX") as exc:
+        prepare_report(source, SelectionRequest(strategy="query", target_role="ISTD"))
     assert exc.value.code == 2

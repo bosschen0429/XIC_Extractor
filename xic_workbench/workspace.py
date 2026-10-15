@@ -134,6 +134,7 @@ class ReviewWorkspace:
         allowed = {
             "group_id",
             "target_id",
+            "target_role",
             "sample_id",
             "attention_only",
             "nearest_mz",
@@ -172,10 +173,20 @@ class ReviewWorkspace:
                 ),
                 group_ids=(group_id.strip(),) if group_id.strip() else (),
                 target_ids=(target_id.strip(),) if target_id.strip() else (),
+                target_role=None
+                if values.get("target_role") == ""
+                else values.get("target_role"),
                 **{
                     key: value
                     for key, value in values.items()
-                    if key not in {"group_id", "target_id", "sample_id", "review_scope"}
+                    if key
+                    not in {
+                        "group_id",
+                        "target_id",
+                        "target_role",
+                        "sample_id",
+                        "review_scope",
+                    }
                 },
             )
             page = prepare_report(
@@ -206,6 +217,7 @@ class ReviewWorkspace:
             "result_artifact": artifact,
             "source_kind": page.payload["summary"].get("source_kind", "evidence"),
             "target_names": page.payload["summary"].get("target_names", []),
+            "target_role": page.payload["selection"].get("target_role"),
             "overview": page.payload["summary"].get("overview"),
             "review_scope": page.payload["selection"].get("review_scope", "all"),
             "all_samples": [

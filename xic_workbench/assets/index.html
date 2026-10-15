@@ -365,6 +365,13 @@
               </button>
             </div>
             <div id="targeted-filters" hidden>
+              <label class="field">類別
+                <select id="target-role" data-idle>
+                  <option value="">全部類別</option>
+                  <option value="Analyte">Analyte（分析物）</option>
+                  <option value="ISTD">ISTD（內標）</option>
+                </select>
+              </label>
               <label class="field">目標<select id="target-id" data-idle></select></label>
               <label class="field">樣本<select id="target-sample" data-idle></select></label>
               <label><input id="target-attention" type="checkbox" data-idle />只列需先看的目標</label>

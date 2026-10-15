@@ -2013,6 +2013,138 @@ def test_downloaded_curve_report_keeps_snapshot_and_interacts_without_network(
         context.close()
 
 
+def test_targeted_role_groups_keep_other_filters_and_restore_through_history(
+    workbench, tmp_path
+):
+    from openpyxl import load_workbook
+
+    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+
+    page = workbench
+    workbook = write_rare_detection_workbook(tmp_path / "role-groups.xlsx")
+    book = load_workbook(workbook)
+    targets, results = book["Targets"], book["XIC Results"]
+    targets.delete_rows(2, targets.max_row - 1)
+    for row in (
+        ["Alpha", "Analyte", "Gamma", 258.1085, 8, 10],
+        ["Beta", "Analyte", "Gamma", 300, 8, 10],
+        ["Gamma", "ISTD", None, 261.127, 8, 10],
+    ):
+        targets.append(row)
+    records = list(results.values)[1:]
+    results.delete_rows(2, results.max_row - 1)
+    for analyte, standard in zip(records[::2], records[1::2], strict=True):
+        # Neutral names ensure groups come from Targets.Role, not label inference.
+        results.append([analyte[0], "Alpha", *analyte[2:]])
+        results.append([standard[0], "Beta", *standard[2:]])
+        results.append([standard[0], "Gamma", *standard[2:]])
+    book.save(workbook)
+    book.close()
+    original = workbook.read_bytes()
+    _view(page, "review")
+    page.locator("#source").fill(str(workbook))
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#targeted-overview td button", has_text="Alpha").click()
+    role = page.locator("#target-role")
+    expect(role).to_be_visible()
+    expect(role.locator("option")).to_have_text(
+        ["全部類別", "Analyte（分析物）", "ISTD（內標）"]
+    )
+    assert role.locator("option").evaluate_all(
+        "options => options.map(option => option.value)"
+    ) == ["", "Analyte", "ISTD"]
+    names = page.locator("#target-id option")
+    titles = page.locator("#item-list .item-top strong")
+    role.select_option("Analyte")
+    expect(page.locator("#target-id")).to_have_value("")
+    expect(names).to_have_text(["全部目標", "Alpha", "Beta"])
+    expect(titles).to_have_text(["Alpha", "Beta"])
+    page.locator("#target-sample").select_option("S3")
+    page.locator("#review-range-filters summary").click()
+    for field_id, value in (
+        ("mz-min", "250"),
+        ("mz-max", "400"),
+        ("rt-min", "8"),
+        ("rt-max", "10"),
+    ):
+        page.locator(f"#{field_id}").fill(value)
+    page.locator("#target-id").select_option("Alpha")
+    page.locator("#target-attention").check()
+    expect(titles).to_have_text(["Alpha"])
+    expect(names).to_have_text(["全部目標", "Alpha", "Beta"])
+    with page.expect_request("**/api/query") as grouped:
+        role.select_option("ISTD")
+    expected_filters = {
+        "target_role": "ISTD",
+        "target_id": "",
+        "sample_id": "S3",
+        "attention_only": True,
+        "mz_min": 250,
+        "mz_max": 400,
+        "rt_min": 8,
+        "rt_max": 10,
+    }
+    assert {
+        key: grouped.value.post_data_json[key] for key in expected_filters
+    } == expected_filters
+    expect(page.locator("#target-id")).to_have_value("")
+    expect(names).to_have_text(["全部目標", "Gamma"])
+    empty = page.locator("#selection-empty")
+    expect(empty.locator("h2")).to_have_text("目前篩選條件沒有符合結果")
+    expect(empty).to_contain_text("ISTD")
+    expect(page.locator("#target-sample")).to_have_value("S3")
+    expect(page.locator("#target-attention")).to_be_checked()
+    page.locator("#target-attention").uncheck()
+    expect(empty).to_be_hidden()
+    expect(titles).to_have_text(["Gamma"])
+    expect(page.locator("#item-title")).to_contain_text("Gamma")
+    expect(
+        page.locator("#recorded-review .tgt-table tbody tr:not([hidden])")
+    ).to_have_count(1)
+    page.locator("#target-id").select_option("Gamma")
+    role.select_option("Analyte")
+    expect(page.locator("#target-id")).to_have_value("")
+    expect(page.locator("#target-sample")).to_have_value("S3")
+    expect(titles).to_have_text(["Alpha", "Beta"])
+    page.locator("#target-id").select_option("Beta")
+    expect(page.locator("#item-title")).to_contain_text("Beta")
+    _view(page, "targeted")
+    _view(page, "review")
+    role.select_option("ISTD")
+    expect(titles).to_have_text(["Gamma"])
+    page.go_back()
+    expect(page.locator("#workspace-targeted")).to_be_visible()
+    page.go_back()
+    expect(page.locator("#workspace-review")).to_be_visible()
+    expect(role).to_have_value("Analyte")
+    expect(names).to_have_text(["全部目標", "Alpha", "Beta"])
+    expect(page.locator("#target-id")).to_have_value("Beta")
+    expect(page.locator("#item-title")).to_contain_text("Beta")
+    page.go_forward()
+    expect(page.locator("#workspace-targeted")).to_be_visible()
+    page.go_forward()
+    expect(page.locator("#workspace-review")).to_be_visible()
+    expect(role).to_have_value("ISTD")
+    expect(names).to_have_text(["全部目標", "Gamma"])
+    expect(page.locator("#target-id")).to_have_value("")
+    expect(titles).to_have_text(["Gamma"])
+    page.locator("#reset-query").click()
+    expect(role).to_have_value("")
+    expect(names).to_have_text(["全部目標", "Alpha", "Beta", "Gamma"])
+    expect(titles).to_have_text(["Alpha", "Beta", "Gamma"])
+    expect(page.locator("#target-sample")).to_have_value("")
+    expect(page.locator("#target-attention")).not_to_be_checked()
+    role.select_option("ISTD")
+    expect(names).to_have_text(["全部目標", "Gamma"])
+    page.locator("#back-to-overview").click()
+    page.locator("#targeted-overview td button", has_text="Alpha").click()
+    expect(role).to_have_value("")
+    expect(names).to_have_text(["全部目標", "Alpha", "Beta", "Gamma"])
+    expect(page.locator("#target-id")).to_have_value("Alpha")
+    expect(page.locator("#item-title")).to_contain_text("Alpha")
+    assert workbook.read_bytes() == original
+
+
 def test_targeted_zero_results_explain_applied_filters_and_restore_one_condition(
     workbench,
     tmp_path,

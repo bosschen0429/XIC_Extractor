@@ -400,6 +400,7 @@ window.XicUi = (() => {
       const scopes = {matrix: "矩陣群組", unresolved: "未解決定量", archive: "未採用群組", candidates: "未分組候選"};
       parts.push(`範圍：${scopes[state.page.review_scope] || "所有紀錄"}`);
     }
+    if (filters.target_role) parts.push(`類別：${filters.target_role}`);
     if (filters.target_id) parts.push(`目標：${filters.target_id}`);
     if (filters.sample_id) {
       const sample = (state.page.all_samples || state.page.samples).find(s => s.id === filters.sample_id);
@@ -465,9 +466,9 @@ window.XicUi = (() => {
   async function openTargetedResults(target = "", attentionOnly = false) {
     navigation.push();
     $("query-form").reset();
-    $("target-id").value = target;
     $("target-attention").checked = attentionOnly;
-    if (await query(0, queryFields()))
+    // The overview can open a target outside the current role's dropdown.
+    if (await query(0, {target_id: target, attention_only: attentionOnly}))
       $("targeted-review-nav").scrollIntoView({ block: "start" });
   }
     const node = (tag, text, className = "") => {
@@ -622,7 +623,8 @@ window.XicUi = (() => {
     $("group-filter").hidden = targeted;
     $("review-range-filters").open = false;
     syncQueryMode();
-    const selectedTarget = $("target-id").value;
+    const selectedTarget = state.filters.target_id || "";
+    $("target-role").value = state.filters.target_role || "";
     document.querySelector(".review-grid").classList.toggle("single-target", targeted && Boolean(selectedTarget) && page.matched_count === 1);
     $("target-id").replaceChildren(new Option("全部目標", ""), ...(page.target_names || []).map(name => new Option(name, name)));
     $("target-id").value = selectedTarget;
@@ -893,7 +895,7 @@ window.XicUi = (() => {
   function queryFields() {
     const nearest = nearestSearchMode();
     const filters = state.page?.source_kind === "targeted_workbook"
-      ? { target_id: $("target-id").value.trim(), sample_id: $("target-sample").value, attention_only: $("target-attention").checked }
+      ? { target_role: $("target-role").value, target_id: $("target-id").value.trim(), sample_id: $("target-sample").value, attention_only: $("target-attention").checked }
       : { review_scope: state.page.review_scope };
     if (nearest) {
       if (!validateNearestMz()) throw new Error($("nearest-mz-error").textContent);
@@ -1116,6 +1118,11 @@ window.XicUi = (() => {
     action(() => query(0, queryFields()), "正在搜尋全批結果…");
   });
   // Targeted filters are single choices, so each change applies immediately.
+  $("target-role").addEventListener("change", () => {
+    // Choosing a category starts at all its targets, keeping the other filters.
+    $("target-id").value = "";
+    action(() => query(0, queryFields()), "正在更新類別結果…");
+  });
   for (const id of ["target-id", "target-sample", "target-attention"]) {
     $(id).addEventListener("change", () =>
       action(() => query(0, queryFields()), "正在更新結果…"),
