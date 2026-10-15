@@ -1,6 +1,12 @@
+import itertools
+import json
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
+from _pytest.mark.expression import Expression
 from pre_commit.clientlib import load_config
 
 from tools.testing import test_shards
@@ -445,3 +451,128 @@ def test_ci_reads_relevance_rules_from_the_shard_owner() -> None:
     assert "tools.testing.test_shards --marker-expression" in workflow
     for pattern in test_shards.RELEVANCE_RULES.values():
         assert pattern.pattern[:30] not in workflow
+
+
+@pytest.mark.parametrize(
+    ("event", "changed", "failed_phase", "expected_exit"),
+    (
+        ("push", (), "", 0),
+        ("pull_request", (".github/workflows/ci.yml",), "", 0),
+        ("pull_request", ("tests/test_workbench_browser.py",), "", 0),
+        ("pull_request", ("xic_extractor/mz_search.py",), "", 0),
+        ("pull_request", ("README.md",), "", 0),
+        ("push", (), "parallel", 11),
+        ("push", (), "browser", 12),
+        ("push", (), "serial", 13),
+    ),
+)
+def test_ci_isolates_browser_work_without_losing_selection_or_failures(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    event: str,
+    changed: tuple[str, ...],
+    failed_phase: str,
+    expected_exit: int,
+) -> None:
+    pwsh = shutil.which("pwsh")
+    if pwsh is None:
+        pytest.skip("PowerShell is required to exercise the Windows CI step")
+
+    workflow = yaml.safe_load(Path(".github/workflows/ci.yml").read_text("utf-8"))
+    step = next(
+        step for step in workflow["jobs"]["test"]["steps"] if step.get("name") == "Test"
+    )
+    monkeypatch.setattr(test_shards, "changed_paths", lambda *_: changed)
+    selection = (
+        test_shards.ci_marker_expression("base", "head")
+        if event == "pull_request"
+        else test_shards.CI_BASE_MARKER_EXPRESSION
+    )
+    assert selection is not None
+    for name, value in step["env"].items():
+        monkeypatch.setenv(name, str(value))
+    calls_path = tmp_path / "calls.jsonl"
+    monkeypatch.setenv("XIC_CI_TEST_CALLS", str(calls_path))
+    monkeypatch.setenv("XIC_CI_TEST_SELECTION", selection)
+    monkeypatch.setenv("XIC_CI_TEST_FAILED_PHASE", failed_phase)
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(tmp_path / "summary.txt"))
+    (tmp_path / ".venv" / "Scripts").mkdir(parents=True)
+    # Run the actual workflow control flow; only the expensive child commands
+    # are replaced. PowerShell still owns ordering, argument quoting and exit.
+    script = r"""
+$ErrorActionPreference = 'Stop'
+function .\.venv\Scripts\python.exe {
+    ConvertTo-Json -InputObject @($args | ForEach-Object { [string]$_ }) -Compress |
+        Add-Content -LiteralPath $env:XIC_CI_TEST_CALLS
+    $global:LASTEXITCODE = 0
+    if ($args[1] -eq 'tools.testing.test_shards') {
+        Write-Output $env:XIC_CI_TEST_SELECTION
+    } elseif ($args[1] -eq 'pytest') {
+        $pytestArgs = $args | Select-Object -Skip 2
+        $phase = if ($pytestArgs -contains '4') { 'parallel' }
+            elseif ($pytestArgs -contains '-m') { 'browser' } else { 'serial' }
+        if ($phase -eq $env:XIC_CI_TEST_FAILED_PHASE) {
+            $global:LASTEXITCODE = @{ parallel = 11; browser = 12; serial = 13 }[$phase]
+        }
+    }
+}
+""" + step["run"].replace("${{ github.event_name }}", event).replace(
+        "${{ github.event.pull_request.base.sha }}", "base"
+    ).replace("${{ github.event.pull_request.head.sha }}", "head")
+    script_path = tmp_path / "ci-step.ps1"
+    script_path.write_text(script, encoding="utf-8")
+    result = subprocess.run(
+        [pwsh, "-NoProfile", "-NonInteractive", "-File", str(script_path)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == expected_exit, result.stdout + result.stderr
+    calls = [
+        json.loads(line) for line in calls_path.read_text("utf-8-sig").splitlines()
+    ]
+    pytest_calls = [call for call in calls if call[:2] == ["-m", "pytest"]]
+    browser_selected = "not browser_e2e" not in selection
+    packaging_selected = "not packaging_build" not in selection
+    assert len(pytest_calls) == 1 + browser_selected + packaging_selected
+    parallel = pytest_calls[0]
+    assert parallel[parallel.index("-n") + 1] == "4"
+    parallel_expression = Expression.compile(parallel[parallel.index("-m", 2) + 1])
+    browser_expression = None
+    if browser_selected:
+        browser = pytest_calls[1]
+        assert browser[browser.index("-n") + 1] == "0"
+        browser_expression = Expression.compile(browser[browser.index("-m", 2) + 1])
+    assert any(call[:2] == ["-m", "playwright"] for call in calls) == browser_selected
+    if packaging_selected:
+        assert "-n" not in pytest_calls[-1]
+        assert (
+            sum("tests/test_pyinstaller_spec.py::" in arg for arg in pytest_calls[-1])
+            == 3
+        )
+
+    # The original selection must be partitioned exactly once, including the
+    # browser/non-browser boundary and the existing relevance/snapshot gates.
+    selected_expression = Expression.compile(selection)
+    markers = (
+        "browser_e2e",
+        "packaging_build",
+        "product_governance",
+        "ledger_snapshot",
+        "current_repository_census",
+        "serial_ci",
+    )
+    for flags in itertools.product((False, True), repeat=len(markers)):
+        marked = {marker for marker, enabled in zip(markers, flags) if enabled}
+        in_parallel = parallel_expression.evaluate(marked.__contains__)
+        in_browser = (
+            browser_expression.evaluate(marked.__contains__)
+            if browser_expression is not None
+            else False
+        )
+        assert int(in_parallel) + int(in_browser) == int(
+            selected_expression.evaluate(marked.__contains__)
+        ), marked
+        assert not (in_parallel and "browser_e2e" in marked)
+        assert not (in_browser and "browser_e2e" not in marked)
