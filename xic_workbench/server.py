@@ -8,6 +8,7 @@ import mimetypes
 import os
 import re
 import secrets
+import socket
 import sqlite3
 import string
 import threading
@@ -104,12 +105,22 @@ def _browse(values: dict) -> dict:
     }
 
 
+class _WorkbenchHTTPServer(ThreadingHTTPServer):
+    # Browsers open parallel connections for the page's assets. The Python 3.12
+    # default backlog of five can reject that burst before the accept loop runs.
+    request_queue_size = socket.SOMAXCONN
+
+
 def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTPServer:
     """Serve only packaged frontend files and reports produced by this session."""
     session = secrets.token_urlsafe(32)
     cookie_name = f"xic_session_{secrets.token_hex(8)}"
 
     class Handler(BaseHTTPRequestHandler):
+        # Every response has a Content-Length. Reuse browser connections instead
+        # of allocating a new Windows socket for every asset and status poll.
+        protocol_version = "HTTP/1.1"
+
         def log_message(self, format, *args):
             logging.getLogger(__name__).info(format, *args)
 
@@ -124,6 +135,15 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
                 data = json.dumps(
                     json_value(data), ensure_ascii=False, allow_nan=False
                 ).encode("utf-8")
+            # Rejections may leave a request body unread. GET bodies and chunked
+            # transfer are not consumed by this transport either; never interpret
+            # their remaining bytes as a new request on a persistent connection.
+            if (
+                status >= 400
+                or self.headers.get("Transfer-Encoding")
+                or (self.command == "GET" and self.headers.get("Content-Length"))
+            ):
+                self.close_connection = True
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(data)))
@@ -131,6 +151,8 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("X-Frame-Options", "SAMEORIGIN")
             self.send_header("Referrer-Policy", "same-origin")
+            if self.close_connection:
+                self.send_header("Connection", "close")
             for key, value in headers.items():
                 self.send_header(key.replace("_", "-"), value)
             self.end_headers()
@@ -300,6 +322,7 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
                     workspace._require_idle()
                     if workspace.analysis.jobs.busy:
                         raise WorkspaceBusy("請先停止或等待目前工作完成。")
+                self.close_connection = True
                 self._send(200, {"message": "工作區已結束。"})
                 threading.Thread(target=self.server.shutdown, daemon=True).start()
                 return
@@ -329,6 +352,6 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
                 return
             self._send(200, result)
 
-    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server = _WorkbenchHTTPServer(("127.0.0.1", port), Handler)
     server.daemon_threads = True
     return server

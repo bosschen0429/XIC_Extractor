@@ -1904,9 +1904,13 @@
     document.body.classList.remove("booting");
     await act(reloadIstd);
     let tick = 0;
+    let polling = false;
     setInterval(async () => {
       tick += 1;
-      if (state.closed || (state.offlineCount >= 3 && tick % 6)) return;
+      if (polling || state.closed || (state.offlineCount >= 3 && tick % 6)) return;
+      // Slow responses must not fill the browser's connection pool with status
+      // requests and starve the user's query, report, and curve requests.
+      polling = true;
       try {
         state.analysis = await api("/api/analysis");
         state.offlineCount = 0;
@@ -1915,6 +1919,8 @@
       } catch (_) {
         state.offlineCount += 1;
         if (state.offlineCount >= 3) setOffline(true);
+      } finally {
+        polling = false;
       }
     }, 750);
   } catch (error) {
