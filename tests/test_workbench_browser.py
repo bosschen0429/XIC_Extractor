@@ -774,10 +774,14 @@ def test_targeted_nd_shows_original_points_and_support_failure(
     assert path.read_bytes() == original
 
 
+@pytest.mark.parametrize(
+    "filter_pending", [False, True], ids=["completed-reading", "pending-reading"]
+)
 def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     workbench,
     tmp_path,
     monkeypatch,
+    filter_pending,
 ):
     from contextlib import contextmanager
 
@@ -843,6 +847,12 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
         else:
             route.continue_()
 
+    if filter_pending:
+        # This history entry was captured while acquisition was still pending.
+        # Replacing live detail must not lose its eventual view ID.
+        page.locator("#target-id").select_option("ISTD")
+        expect(page.locator("#item-title")).to_contain_text("ISTD")
+        expect(page.locator("#target-id")).to_be_enabled()
     page.route(view_url, delay_first_payload)
     with page.expect_request(view_url):
         page.go_forward()
@@ -879,6 +889,17 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
             float(point.split(",")[1]) for point in line.get_attribute("points").split()
         ]
         assert min(ys) < 25 and max(ys) > 150  # Neither ion is flattened by its pair.
+    expect(review).to_have_attribute("data-view-id", view_id)
+    expect(page.locator("#target-id")).to_have_value("Analyte")
+    expect(review.locator(".tx-sample-name")).to_have_text("S3")
+    expect(review.locator(".tx-chart-meta").nth(0)).to_contain_text("面積 5.55e+1")
+    expect(review.locator(".tx-chart-meta").nth(1)).to_contain_text("面積 1.00e+3")
+    assert len(reads) == 2
+    assert workbook.read_bytes() == original
+    if filter_pending:
+        # The pending/filter scenario is complete. The other scenario keeps the
+        # original reading mounted for the same-reading focus, zoom and cache oracles.
+        return
     original_points = curves.first.get_attribute("points")
     review.get_by_label("顯示 RT 起點", exact=True).fill("8.95")
     review.get_by_label("顯示 RT 終點", exact=True).fill("9.05")
@@ -921,6 +942,29 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     expect(review.locator(".tx-sample-name")).to_have_text("S4")
     expect(page.locator("#xic-review")).to_be_visible()
     assert len(reads) == 4
+    # A result filter can replace the current detail while the closed drawer's
+    # history still names the previously acquired Analyte/S3 curve snapshot.
+    page.locator("#xic-previous").click()
+    expect(review.locator(".tx-sample-name")).to_have_text("S3")
+    previous_curve_view = review.get_attribute("data-view-id")
+    assert previous_curve_view
+    page.go_back()
+    expect(dialog).to_be_hidden()
+    page.locator("#target-id").select_option("ISTD")
+    expect(page.locator("#item-title")).to_contain_text("ISTD")
+    expect(page.locator("#target-id")).to_be_enabled()
+    page.go_forward()
+    expect(dialog).to_be_visible()
+    expect(review).to_have_attribute("data-view-id", previous_curve_view)
+    expect(page.locator("#target-id")).to_have_value("Analyte")
+    expect(page.locator("#xic-sample")).to_have_value("S3")
+    expect(review.locator(".tx-sample-name")).to_have_text("S3")
+    expect(review.locator(".tx-chart-title")).to_have_text(["Analyte", "ISTD"])
+    expect(review.locator(".tx-chart-meta").nth(0)).to_contain_text("面積 5.55e+1")
+    expect(review.locator(".tx-chart-meta").nth(1)).to_contain_text("面積 1.00e+3")
+    expect(curves).to_have_count(2)
+    expect(review.locator('.tx-chart circle[data-kind="raw"]')).not_to_have_count(0)
+    assert len(reads) == 4  # Restoring history reuses the original RAW acquisition.
     page.set_viewport_size({"width": 420, "height": 760})
     bounds = dialog.bounding_box()
     assert bounds and bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= 421

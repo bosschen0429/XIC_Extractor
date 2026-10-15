@@ -345,6 +345,7 @@ window.XicUi = (() => {
         [input.id, input.value, input.checked]),
       overview: !$("targeted-overview").hidden,
       curves: $("xic-dialog").open,
+      curveView: state.curveView,
       sample: $("xic-sample").value,
     }),
     restore(saved) {
@@ -369,7 +370,10 @@ window.XicUi = (() => {
       if (saved.curves && saved.page?.source === state.page?.source) {
         $("xic-sample").value = saved.sample;
         if (!$("xic-dialog").open) $("xic-dialog").showModal();
-        if (state.curveView) showCurveView(state.curveView);
+        // History retains the reading's receipt even if filters replace its mount.
+        // The acquisition fills in its id when it finishes while the drawer is closed.
+        const view = saved.curveView || state.curveView;
+        if (view?.id) showCurveView(view);
       } else if ($("xic-dialog").open) $("xic-dialog").close();
       restoreQuery(!saved.overview && saved.page === state.page ? saved.page : null, saved.filters);
     },
@@ -724,15 +728,15 @@ window.XicUi = (() => {
   function showCurveView(view) {
     state.curveView = view;
     if (state.page.source_kind !== "targeted_workbook") {
-      mountReview("inline-curve-review", view, "curves");
+      mountReview("inline-curve-review", view.id, "curves");
       $("inline-curve-review").hidden = false;
       $("inline-curve-status").textContent = `已載入 ${state.samples.size} 個樣本的 XIC；不改寫已保存結果。`;
       return;
     }
-    if ($("xic-dialog").open) mountReview("xic-review", view, "curves");
+    if ($("xic-dialog").open) mountReview("xic-review", view.id, "curves");
     $("xic-review").hidden = false;
     $("xic-loading").hidden = true;
-    $("xic-download").href = `/reports/${view}.html?download=1`;
+    $("xic-download").href = `/reports/${view.id}.html?download=1`;
     $("xic-download").hidden = false;
   }
   function curveMessage(message, retry = false) {
@@ -825,17 +829,18 @@ window.XicUi = (() => {
     const key = JSON.stringify([state.recorded, request]);
     state.curveRequestKey = key;
     if (state.curveCache.has(key)) {
-      showCurveView(state.curveCache.get(key));
+      showCurveView({id: state.curveCache.get(key)});
       return;
     }
     curveMessage("正在讀取所選樣本的 RAW；不會重跑整批分析。 ");
     clearReview("xic-review");
+    const view = state.curveView = {id: null};
     try {
       state.job = await api("/api/curves", request);
       $("job-progress").hidden = false;
       updateProgress(state.job);
       controls();
-      setTimeout(pollJob, 400);
+      setTimeout(() => pollJob(view), 400);
     } catch (error) {
       curveMessage(error.message, true);
       throw error;
@@ -853,7 +858,7 @@ window.XicUi = (() => {
     $("inline-curve-status").textContent = job.message;
     status(job.message, job.status === "failed" ? "error" : "working");
   }
-  async function pollJob() {
+  async function pollJob(view) {
     if (!state.job) return;
     try {
       const job = await api(`/api/jobs/${state.job.id}`);
@@ -861,13 +866,14 @@ window.XicUi = (() => {
       updateProgress(job);
       if (["running", "cancelling"].includes(job.status)) {
         controls();
-        setTimeout(pollJob, 500);
+        setTimeout(() => pollJob(view), 500);
         return;
       }
       if (job.status === "succeeded") {
         state.curveCache.set(state.curveRequestKey, job.view_id);
         if (state.curveCache.size > 8) state.curveCache.delete(state.curveCache.keys().next().value);
-        showCurveView(job.view_id);
+        view.id = job.view_id;
+        showCurveView(view);
       } else {
         curveMessage(job.message, true);
       }
@@ -877,7 +883,7 @@ window.XicUi = (() => {
       else controls();
     } catch (error) {
       status(`無法讀取工作進度：${error.message}。正在重新連線…`, "error");
-      setTimeout(pollJob, 2000);
+      setTimeout(() => pollJob(view), 2000);
     }
   }
 
@@ -1086,8 +1092,9 @@ window.XicUi = (() => {
       else if (review.detail) restoreDetail(review.detail);
       if (review.job) {
         state.job = review.job;
+        state.curveView = {id: null};
         $("job-progress").hidden = false;
-        await pollJob();
+        await pollJob(state.curveView);
       }
     } else if ($("source").value) await openBatch();
     else status("");
