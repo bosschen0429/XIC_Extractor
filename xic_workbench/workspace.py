@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -20,7 +21,10 @@ from xic_inspector.api import (
     read_evidence_summary,
     resolve_source,
 )
-from xic_inspector.rendering.html_builder import write_report_atomically
+from xic_inspector.rendering.html_builder import (
+    build_report_html,
+    write_report_atomically,
+)
 from xic_inspector.sources.targeted_workbook import TargetedWorkbookLocator
 
 
@@ -62,7 +66,7 @@ class ReviewWorkspace:
         self._page: PreparedReport | None = None
         self._job: dict[str, Any] | None = None
         self._detail: dict[str, Any] | None = None
-        self._reports: dict[str, Path] = {}
+        self._views: dict[str, Path] = {}
 
     def state(self) -> dict[str, Any]:
         """Restore the current review selection and job after a page reload."""
@@ -289,13 +293,9 @@ class ReviewWorkspace:
             payload = copy.deepcopy(self._page.payload)
             payload["items"] = [copy.deepcopy(item)]
             payload["selection"]["limit"] = 1
-            payload["selection"]["workspace_item_id"] = item["id"]
-            payload["selection"]["workspace_view"] = "result"
             prepared = replace(self._page, payload=payload, selected_count=1)
             view_id = uuid.uuid4().hex
-            path = self._folder / f"{view_id}.html"
-            write_report_atomically(prepared.to_html(), path)
-            self._reports[view_id] = path
+            self._store_view(view_id, prepared)
             self._detail = {"view_id": view_id, "item": self._item_summary(item)}
             self._job = None
             return copy.deepcopy(self._detail)
@@ -386,10 +386,7 @@ class ReviewWorkspace:
                 phase="準備檢閱頁", completed=progress.completed, total=progress.total
             )
 
-        bundle_path, html_path = (
-            self._folder / f"{job_id}.json",
-            self._folder / f"{job_id}.html",
-        )
+        bundle_path = self._folder / f"{job_id}.json"
         try:
             # Confirm the opened result still owns this request.
             prepare_report(
@@ -434,12 +431,10 @@ class ReviewWorkspace:
                 on_progress=rendered,
                 is_cancelled=cancel.is_set,
             )
-            prepared.payload["selection"]["workspace_view"] = "curves"
-            write_report_atomically(prepared.to_html(), html_path)
             with self._lock:
                 if cancel.is_set():
                     raise CurveAcquisitionCancelled("已取消曲線載入。")
-                self._reports[job_id] = html_path
+                self._store_view(job_id, prepared)
                 update(
                     status="succeeded",
                     phase="完成",
@@ -471,14 +466,40 @@ class ReviewWorkspace:
                 self._job.update(status="cancelling", message="等待目前讀取結束後停止…")
             return dict(self._job)
 
-    def report_path(self, view_id: str) -> Path:
+    def _store_view(self, view_id: str, prepared: PreparedReport) -> None:
+        # Session history stays on disk, not in an accumulating curve-payload cache.
+        path = self._folder / f"{view_id}.view.json"
+        try:
+            with path.open("w", encoding="utf-8") as stream:
+                json.dump(
+                    prepared.render_data(), stream, ensure_ascii=False, allow_nan=False
+                )
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
+        self._views[view_id] = path
+
+    def _view_snapshot(self, view_id: str) -> dict[str, Any]:
+        try:
+            path = self._views[view_id]
+        except KeyError:
+            raise FileNotFoundError("檢閱頁已不存在，請重新開啟選取項目。") from None
+        with path.open(encoding="utf-8") as stream:
+            return json.load(stream)
+
+    def view_payload(self, view_id: str) -> dict[str, Any]:
+        """Read the selected owner facts captured when this view was prepared."""
         with self._lock:
-            try:
-                return self._reports[view_id]
-            except KeyError:
-                raise FileNotFoundError(
-                    "檢閱頁已不存在，請重新開啟選取項目。"
-                ) from None
+            return self._view_snapshot(view_id)["payload_data"]
+
+    def report_path(self, view_id: str) -> Path:
+        """Package an immutable view as offline HTML only when requested."""
+        with self._lock:
+            snapshot = self._view_snapshot(view_id)
+            path = self._folder / f"{view_id}.html"
+            if not path.is_file():
+                write_report_atomically(build_report_html(**snapshot), path)
+            return path
 
     def close(self) -> None:
         self.analysis.close()

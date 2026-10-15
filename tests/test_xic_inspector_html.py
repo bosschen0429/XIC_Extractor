@@ -20,6 +20,49 @@ from xic_inspector.rendering.html_builder import (
 )
 
 
+def _evaluate_report_functions(report, payload, expression):
+    """Exercise actual plot/evidence helpers before registering DOM interaction.
+
+    The browser lane owns real DOM and lifecycle checks. This minimal surface
+    keeps the independent numerical/meaning oracles fast without copying plots.
+    """
+    script = re.search(r"<script>(.*?)</script>", report, re.S)
+    assert script is not None
+    prefix = script[1].split(
+        "  if (mode === 'offline') $('record-list').addEventListener", 1
+    )[0]
+    assert prefix != script[1]
+    document = (
+        "var document={createElement:()=>({dataset:{},"
+        "querySelector:()=>({dataset:{strategy:'sample'}})})};"
+        "var container={append(){}};"
+    )
+    node = shutil.which("node")
+    assert node is not None, "Node.js is required to test the embedded JavaScript"
+    metadata = re.search(r"metadata:(\{.*\})\}\);", script[1])
+    assert metadata is not None
+    js = (
+        document
+        + "console.log("
+        + prefix
+        + expression
+        + "} return mount(container,"
+        + json.dumps(payload, ensure_ascii=False)
+        + ",{mode:'offline',metadata:"
+        + metadata[1]
+        + "});})());"
+    )
+    result = subprocess.run(
+        [node],
+        input=js,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+    return json.loads(result.stdout)
+
+
 @pytest.fixture
 def origin_curve_payload() -> dict:
     kinds = ["discovery_support", "reacquired_support", "backfill_support"]
@@ -68,35 +111,12 @@ def test_support_origin_styles_fixture_curves_in_both_views(
         source_db_name="fixture.sqlite",
         payload_data=origin_curve_payload,
     )
-    script = re.search(r"<script>(.*?)</script>", report, re.S)
-    assert script is not None
-    # Exercise the report's actual JavaScript with its embedded fixture. Stop before
-    # DOM event registration; rendering functions need only the report data.
-    prefix = script[1].split("  $('record-list').addEventListener", 1)[0]
-    assert prefix != script[1]
-    data = json.dumps(origin_curve_payload, ensure_ascii=False)
-    document = (
-        "var document={getElementById:id=>id==='inspector-data'"
-        f"?{{textContent:{json.dumps(data)}}}:{{dataset:{{strategy:'sample'}}}}}};"
+    rendered = _evaluate_report_functions(
+        report,
+        origin_curve_payload,
+        "return JSON.stringify({plot:plot(items[0],'raw'),"
+        "legend:legend(items[0]),lanes:relationshipLanes(items[0],relationshipModel(items[0]))});",
     )
-    js = (
-        document
-        + "console.log("
-        + prefix
-        + "return JSON.stringify({plot:plot(items[0],'raw'),"
-        "legend:legend(items[0]),lanes:relationshipLanes(items[0],relationshipModel(items[0]))});})());"
-    )
-    node = shutil.which("node")
-    assert node is not None, "Node.js is required to test the embedded JavaScript"
-    result = subprocess.run(
-        [node],
-        input=js,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=True,
-    )
-    rendered = json.loads(result.stdout)
 
     chart = ET.fromstring(rendered["plot"])
     plotted = {
@@ -131,8 +151,9 @@ def test_safe_inline_json_escaping() -> None:
 
 def test_hostile_fields_stay_data_in_portable_report() -> None:
     payload = {"items": [{"id": "</sCrIpT><script>alert(1)</script>"}], "samples": []}
+    title = '<img src=x onerror="alert(2)">\\__REQUEST_ID__\n'
     report = build_report_html(
-        title='<img src=x onerror="alert(2)">',
+        title=title,
         evidence_capability="metadata_only",
         strategy="query",
         request_id="r",
@@ -152,6 +173,11 @@ def test_hostile_fields_stay_data_in_portable_report() -> None:
     assert "<img src=x" not in report
     assert len(re.findall(r"<script(?:\s|>)", report)) == 2
     assert not re.search(r"<(?:script|img|link)\b[^>]*(?:src|href)=", report)
+    markup = _evaluate_report_functions(
+        report, payload, "return JSON.stringify(root.innerHTML);"
+    )
+    assert "&lt;img" in markup
+    assert "\\__REQUEST_ID__\n" in markup
 
 
 def test_report_exposes_offline_review_workbench_for_generic_payload() -> None:
@@ -179,6 +205,12 @@ def test_report_exposes_offline_review_workbench_for_generic_payload() -> None:
         payload_data=payload,
     )
 
+    markup = _evaluate_report_functions(
+        report, payload, "return JSON.stringify(root.innerHTML);"
+    )
+    assert "Generic report" in markup
+    assert 'data-source-name="generic.sqlite"' in markup
+    assert 'for="xic-inspector-1-search"' in markup
     for required_id in (
         "active-filters",
         "record-list",
@@ -186,7 +218,8 @@ def test_report_exposes_offline_review_workbench_for_generic_payload() -> None:
         "zoom-dialog",
         "report-info-dialog",
     ):
-        assert f'id="{required_id}"' in report
+        assert f'data-inspector-id="{required_id}"' in markup
+        assert f'id="xic-inspector-1-{required_id}"' in markup
     assert "本報告未提供可讀來源紀錄" in report
     assert "對齊時間圖不可用" in report
     assert "counts·s" in report
@@ -352,27 +385,17 @@ def test_cancellation_at_commit_keeps_existing_report(tmp_path: Path) -> None:
 
 def _relationship_render(payload, expression):
     report = build_report_html(
-        title="Relationships", evidence_capability="retained_curves",
-        strategy="sample", request_id="relationships", run_total=1,
-        eligible_count=1, selected_count=1, source_db_name="source.json",
+        title="Relationships",
+        evidence_capability="retained_curves",
+        strategy="sample",
+        request_id="relationships",
+        run_total=1,
+        eligible_count=1,
+        selected_count=1,
+        source_db_name="source.json",
         payload_data=payload,
     )
-    script = re.search(r"<script>(.*?)</script>", report, re.S)
-    assert script is not None
-    prefix = script[1].split("  $('record-list').addEventListener", 1)[0]
-    assert prefix != script[1]
-    data = json.dumps(payload, ensure_ascii=False)
-    document = (
-        "var document={getElementById:id=>id==='inspector-data'"
-        f"?{{textContent:{json.dumps(data)}}}:{{dataset:{{strategy:'sample'}}}}}};"
-    )
-    node = shutil.which("node")
-    assert node is not None, "Node.js is required to test the embedded JavaScript"
-    result = subprocess.run(
-        [node], input=document + "console.log(" + prefix + expression + "})());",
-        capture_output=True, text=True, encoding="utf-8", check=True,
-    )
-    return json.loads(result.stdout)
+    return _evaluate_report_functions(report, payload, expression)
 
 
 @pytest.mark.parametrize(
@@ -386,7 +409,10 @@ def _relationship_render(payload, expression):
     ],
 )
 def test_missing_relationships_do_not_become_zero_support(
-    origin_curve_payload, availability, explicit_empty, expected,
+    origin_curve_payload,
+    availability,
+    explicit_empty,
+    expected,
 ):
     item = origin_curve_payload["items"][0]
     if availability is not None:
@@ -417,7 +443,7 @@ def test_unrecorded_origins_and_missing_alignment_keep_curves_readable(
         origin_curve_payload,
         "return JSON.stringify({plot:plot(items[0],'raw'),"
         "aligned:plotCard(items[0],'aligned','平滑訊號'),"
-        "field:fieldValue('{\"gate\":\"accepted\",\"ratio\":0.5}')});",
+        'field:fieldValue(\'{"gate":"accepted","ratio":0.5}\')});',
     )
     chart = ET.fromstring(rendered["plot"])
     dashes = [
@@ -436,13 +462,21 @@ def test_recorded_relationships_keep_pair_and_exact_capture_scope(origin_curve_p
     item = origin_curve_payload["items"][0]
     item["relationship_availability"] = "recorded"
     item["relationship_members"] = [
-        {"member_subject_id": f"M{i}", "sample_id": f"S{i}",
-         "sample_label": f"Sample {i}"} for i in range(3)
+        {
+            "member_subject_id": f"M{i}",
+            "sample_id": f"S{i}",
+            "sample_label": f"Sample {i}",
+        }
+        for i in range(3)
     ]
-    item["internal_pair_support"] = [{
-        "edge_ref": "edge-01", "left_member_subject_id": "M0",
-        "right_member_subject_id": "M1", "support_kind": "direct",
-    }]
+    item["internal_pair_support"] = [
+        {
+            "edge_ref": "edge-01",
+            "left_member_subject_id": "M0",
+            "right_member_subject_id": "M1",
+            "support_kind": "direct",
+        }
+    ]
     item["curves"].append({**item["curves"][0], "evidence_ref": "unbound-curve"})
     rendered = _relationship_render(
         origin_curve_payload,
@@ -467,5 +501,5 @@ def test_unretained_pair_graph_keeps_saved_support_curves(origin_curve_payload):
     )
     assert "來源未保存樣本配對圖" in panel
     assert "0 對直接支持" not in panel
-    assert panel.count('data-lane-member=') == 3
+    assert panel.count("data-lane-member=") == 3
     assert panel.count('class="lane-raw"') == 3

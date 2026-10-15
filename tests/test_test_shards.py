@@ -368,6 +368,7 @@ def test_snapshot_runner_rejects_malformed_marker_before_pytest(
         ("xic_workbench/workspace.py", {"packaging_build", "browser_e2e"}),
         ("xic_workbench/jobs.py", {"packaging_build", "browser_e2e"}),
         ("tests/test_workbench_browser.py", {"browser_e2e"}),
+        ("tests/test_xic_inspector_browser.py", {"browser_e2e"}),
         ("tests/test_xic_inspector_api.py", {"browser_e2e"}),
         ("tools/testing/test_shards.py", {"packaging_build", "browser_e2e"}),
         ("tools/diagnostics/targeted_istd_benchmark_loaders.py", {"packaging_build"}),

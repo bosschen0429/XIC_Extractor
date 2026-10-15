@@ -34,6 +34,10 @@ _ASSETS = {
     "/assets/analysis.css": ("analysis.css", "text/css; charset=utf-8"),
 }
 _EXAMPLES = {"/examples/targeted-method.xlsx", "/examples/targets.xlsx"}
+_INSPECTOR_ASSETS = {
+    "/assets/inspector.js": ("inspector.js", "text/javascript; charset=utf-8"),
+    "/assets/inspector.css": ("inspector.css", "text/css; charset=utf-8"),
+}
 _BROWSE_SUFFIXES = {
     "folder": (),
     "report": (".sqlite", ".db", ".xlsx"),
@@ -44,18 +48,6 @@ _BROWSE_SUFFIXES = {
     "preset": (".toml",),
     "file": (".csv", ".tsv", ".xlsx", ".json", ".toml", ".txt"),
 }
-# The workspace sizes the embedded report to its content and publishes the
-# visible part of the frame as --host-top/--host-height for dialogs.
-_EMBED_STYLE = """<style>
-html,body{background:transparent}
-body{max-width:none;padding:0}
-body>header,.list-panel{display:none}.workbench{display:block}
-.detail-panel{border:0;box-shadow:none;border-radius:0;background:transparent}
-dialog[open]{position:fixed;inset:auto 0;margin:0 auto;
-top:calc(var(--host-top,0px) + var(--host-height,100vh)*.05);
-max-height:calc(var(--host-height,100vh)*.9)}
-.zoom-container{height:calc(var(--host-height,100vh)*.7)}
-</style>"""
 
 
 def _browse(values: dict) -> dict:
@@ -196,6 +188,14 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
                 asset, content_type = _ASSETS[url.path]
                 data = files("xic_workbench").joinpath("assets", asset).read_bytes()
                 self._send(200, data, content_type)
+            elif url.path in _INSPECTOR_ASSETS:
+                asset, content_type = _INSPECTOR_ASSETS[url.path]
+                data = (
+                    files("xic_inspector.rendering")
+                    .joinpath("assets", asset)
+                    .read_bytes()
+                )
+                self._send(200, data, content_type)
             elif url.path in _EXAMPLES:
                 # Fixed public resources only; no arbitrary filesystem access.
                 name = url.path.rsplit("/", 1)[-1]
@@ -216,6 +216,8 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
                 )
             elif match := re.fullmatch(r"/api/jobs/([a-f0-9]{32})", url.path):
                 self._send(200, workspace.job(match[1]))
+            elif match := re.fullmatch(r"/api/views/([a-f0-9]{32})", url.path):
+                self._send(200, workspace.view_payload(match[1]))
             elif url.path == "/api/review":
                 self._send(200, workspace.state())
             elif url.path == "/api/config":
@@ -245,10 +247,6 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
                 if params.get("download") == ["1"]:
                     headers["Content_Disposition"] = (
                         f'attachment; filename="xic-review-{match[1][:8]}.html"'
-                    )
-                elif params.get("embed") == ["1"]:
-                    data = data.replace(
-                        b"</head>", _EMBED_STYLE.encode() + b"</head>", 1
                     )
                 self._send(200, data, "text/html; charset=utf-8", **headers)
             else:

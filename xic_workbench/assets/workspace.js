@@ -59,12 +59,6 @@ window.XicUi = (() => {
     try {
       localStorage.setItem("xic-theme", theme);
     } catch (_) {}
-    for (const frame of document.querySelectorAll("iframe")) {
-      try {
-        if (frame.contentDocument?.documentElement)
-          frame.contentDocument.documentElement.dataset.theme = theme;
-      } catch (_) {}
-    }
   }
   function formatDuration(seconds) {
     const total = Math.max(0, Math.floor(seconds || 0));
@@ -75,7 +69,7 @@ window.XicUi = (() => {
     if (m) return `${m} 分 ${String(s).padStart(2, "0")} 秒`;
     return `${s} 秒`;
   }
-  // History owns reading locations, not iframe loads or filter edits. Snapshots
+  // History owns reading locations, not view mounts or filter edits. Snapshots
   // remain in this document so refresh starts from the server's current batch.
   const locations = new Map();
   const readers = new Map();
@@ -119,7 +113,7 @@ window.XicUi = (() => {
     const location = locations.get(position);
     if (!location) return;
     const currentRevision = revision;
-    // Wait for the browser to finish restoring the joint iframe history.
+    // Restore readers after the browser completes the history transition.
     setTimeout(() => {
       if (revision !== currentRevision) return;
       restoring = true;
@@ -129,22 +123,12 @@ window.XicUi = (() => {
       } finally { restoring = false; }
     }, 0);
   });
-  const frameDestinations = new WeakMap();
-  function loadFrame(frame, url) {
-    // Frame src assignments create phantom Back stops in the top-level tab.
-    const destination = new URL(url, window.location.href).href;
-    if (frameDestinations.get(frame) === destination &&
-        frame.contentWindow.location.href === destination) return false;
-    frameDestinations.set(frame, destination);
-    frame.contentWindow.location.replace(destination);
-    return true;
-  }
-  return { icon, toast, confirm, setTheme, formatDuration, navigation, loadFrame };
+  return { icon, toast, confirm, setTheme, formatDuration, navigation };
 })();
 
 (() => {
   const $ = (id) => document.getElementById(id);
-  const { icon, navigation, loadFrame } = window.XicUi;
+  const { icon, navigation } = window.XicUi;
   const state = {
     page: null,
     item: null,
@@ -192,6 +176,40 @@ window.XicUi = (() => {
     if (!response.ok)
       throw new Error(data.error || `要求失敗（${response.status}）`);
     return data;
+  }
+  const reviewSlots = new Map();
+  function clearReview(id) {
+    const slot = reviewSlots.get(id);
+    if (slot) {
+      reviewSlots.delete(id);
+      slot.handle?.destroy();
+    }
+    $(id).replaceChildren();
+    delete $(id).dataset.viewId;
+  }
+  async function mountReview(id, view, mode) {
+    const previous = reviewSlots.get(id);
+    if (previous?.view === view && previous.handle) return;
+    clearReview(id);
+    const slot = {view, detail: state.detail, handle: null};
+    reviewSlots.set(id, slot);
+    try {
+      const payload = await api(`/api/views/${view}`);
+      if (reviewSlots.get(id) !== slot || state.detail !== slot.detail) return;
+      slot.handle = window.XicInspector.mount($(id), payload, {
+        mode,
+        onRequestCurves: request => {
+          if (reviewSlots.get(id) === slot && state.detail === slot.detail)
+            requestCurves(request);
+        },
+      });
+      $(id).dataset.viewId = view;
+    } catch (error) {
+      if (reviewSlots.get(id) !== slot || state.detail !== slot.detail) return;
+      clearReview(id);
+      if (mode === "curves") curveMessage(error.message, true);
+      else status(error.message, "error");
+    }
   }
   let serverPage = null;
   let pageRequest = Promise.resolve();
@@ -298,14 +316,17 @@ window.XicUi = (() => {
   }
   function clearSelection() {
     $("inline-curves").hidden = true;
-    loadFrame($("inline-curve-frame"), "about:blank");
+    clearReview("inline-curve-review");
     state.item = null;
     state.detail = null;
     state.recorded = null;
     state.curveCache.clear();
     $("selection").hidden = true;
     $("selection-empty").hidden = false;
-    loadFrame($("inspector"), "about:blank");
+    clearReview("recorded-review");
+    clearReview("xic-review");
+    state.curveView = null;
+    if ($("xic-dialog").open) $("xic-dialog").close();
     $("job-progress").hidden = true;
   }
   function showTargetedOverview() {
@@ -609,6 +630,9 @@ window.XicUi = (() => {
     }
   }
   function restoreDetail(detail) {
+    clearReview("inline-curve-review");
+    clearReview("xic-review");
+    state.curveView = null;
     state.detail = detail;
     const item = detail.item;
     state.item = detail.item;
@@ -689,21 +713,20 @@ window.XicUi = (() => {
     $("view-note").textContent = state.page.source_kind === "targeted_workbook"
       ? ""
       : "先看 XIC 與下方保存的 Area；可展開「查看樣本 XIC」更換樣本。內部證據收在進階內容。";
-    loadFrame($("inspector"), `/reports/${state.recorded}.html?embed=1`);
+    mountReview("recorded-review", state.recorded, "result");
     $("download").href = `/reports/${state.recorded}.html?download=1`;
     $("download").hidden = state.page.source_kind === "targeted_workbook";
   }
   function showCurveView(view) {
     state.curveView = view;
-    const url = `/reports/${view}.html?embed=1`;
     if (state.page.source_kind !== "targeted_workbook") {
-      loadFrame($("inline-curve-frame"), url);
-      $("inline-curve-frame").hidden = false;
+      mountReview("inline-curve-review", view, "curves");
+      $("inline-curve-review").hidden = false;
       $("inline-curve-status").textContent = `已載入 ${state.samples.size} 個樣本的 XIC；不改寫已保存結果。`;
       return;
     }
-    loadFrame($("xic-inspector"), url);
-    $("xic-inspector").hidden = false;
+    if ($("xic-dialog").open) mountReview("xic-review", view, "curves");
+    $("xic-review").hidden = false;
     $("xic-loading").hidden = true;
     $("xic-download").href = `/reports/${view}.html?download=1`;
     $("xic-download").hidden = false;
@@ -712,12 +735,12 @@ window.XicUi = (() => {
     if (state.page.source_kind !== "targeted_workbook") {
       $("inline-curves").hidden = false;
       $("inline-curve-status").textContent = message;
-      $("inline-curve-frame").hidden = true;
+      $("inline-curve-review").hidden = true;
     }
     state.curveView = null;
     $("xic-status").textContent = message;
     $("xic-loading").hidden = false;
-    $("xic-inspector").hidden = true;
+    $("xic-review").hidden = true;
     $("xic-download").hidden = true;
     $("xic-retry").hidden = !retry;
   }
@@ -802,7 +825,7 @@ window.XicUi = (() => {
       return;
     }
     curveMessage("正在讀取所選樣本的 RAW；不會重跑整批分析。 ");
-    loadFrame($("xic-inspector"), "about:blank");
+    clearReview("xic-review");
     try {
       state.job = await api("/api/curves", request);
       $("job-progress").hidden = false;
@@ -854,28 +877,13 @@ window.XicUi = (() => {
     }
   }
 
-  // The embedded Inspector grows with its content so the page keeps one
-  // scroll; its dialogs are placed inside the part of the frame on screen.
-  const frame = $("inspector");
-  let inlineObserver;
-  $("inline-curve-frame").addEventListener("load", () => {
-    inlineObserver?.disconnect();
-    const inline = $("inline-curve-frame"), doc = inline.contentDocument;
-    if (!doc?.body) return;
-    doc.documentElement.dataset.theme = document.documentElement.dataset.theme || "light";
-    inlineObserver = new ResizeObserver(() => {inline.style.height = `${Math.max(420, Math.ceil(doc.body.getBoundingClientRect().height) + 8)}px`;});
-    inlineObserver.observe(doc.body);
-    placeFrameDialogs();
-  });
-  window.addEventListener("message", event => {
-    if (event.origin !== location.origin || event.source !== frame.contentWindow ||
-        event.data?.type !== "xic-targeted-curves" ||
-        state.page?.source_kind !== "targeted_workbook" ||
-        event.data.item_id !== state.item?.id ||
-        !state.item.curve_sample_ids.includes(event.data.sample_id)) return;
-    state.curveOpener = frame.contentDocument?.activeElement;
-    action(() => selectCurveSample(event.data.sample_id));
-  });
+  function requestCurves({item_id, sample_id, opener}) {
+    if (state.page?.source_kind !== "targeted_workbook" ||
+        item_id !== state.item?.id ||
+        !state.item.curve_sample_ids.includes(sample_id)) return;
+    state.curveOpener = opener;
+    action(() => selectCurveSample(sample_id));
+  }
   const closeCurves = () => navigation.back(() => $("xic-dialog").close());
   $("xic-close").addEventListener("click", closeCurves);
   $("xic-dialog").addEventListener("cancel", (event) => {
@@ -883,13 +891,8 @@ window.XicUi = (() => {
     closeCurves();
   });
   $("xic-dialog").addEventListener("close", () => {
+    clearReview("xic-review");
     if (state.curveOpener?.isConnected) state.curveOpener.focus({preventScroll: true});
-  });
-  $("xic-inspector").addEventListener("load", () => {
-    if (state.curveView && $("xic-dialog").open) {
-      if (loadFrame($("xic-inspector"), `/reports/${state.curveView}.html?embed=1`)) return;
-    }
-    $("xic-inspector").contentDocument.documentElement.dataset.theme = document.documentElement.dataset.theme || "light";
   });
   $("xic-sample").addEventListener("change", () => action(() => selectCurveSample($("xic-sample").value)));
   for (const [id, step] of [["xic-previous", -1], ["xic-next", 1]]) {
@@ -899,63 +902,6 @@ window.XicUi = (() => {
     });
   }
   $("xic-retry").addEventListener("click", () => action(startCurves));
-  let frameObserver = null;
-  function frameDocument() {
-    try {
-      return frame.contentDocument;
-    } catch (_) {
-      return null;
-    }
-  }
-  function placeFrameDialogs() {
-    const topbar = document.querySelector(".topbar")?.offsetHeight || 0;
-    for (const embedded of [frame, $("inline-curve-frame")]) {
-      const doc = embedded.contentDocument;
-      if (!doc?.documentElement || embedded.offsetParent === null) continue;
-      const rect = embedded.getBoundingClientRect();
-      const visibleTop = Math.max(topbar, rect.top);
-      const visibleHeight = Math.max(0, Math.min(window.innerHeight, rect.bottom) - visibleTop);
-      doc.documentElement.style.setProperty("--host-top", `${Math.max(0, visibleTop - rect.top)}px`);
-      doc.documentElement.style.setProperty("--host-height", `${visibleHeight}px`);
-    }
-  }
-  function fitFrame() {
-    const doc = frameDocument();
-    if (!doc?.body) return;
-    const height = Math.ceil(doc.body.getBoundingClientRect().height);
-    frame.style.height = `${Math.max(height + 8, 480)}px`;
-    placeFrameDialogs();
-  }
-  frame.addEventListener("load", () => {
-    frameObserver?.disconnect();
-    frameObserver = null;
-    const doc = frameDocument();
-    if (!doc?.body || doc.URL === "about:blank") {
-      frame.style.height = "";
-      return;
-    }
-    doc.documentElement.dataset.theme =
-      document.documentElement.dataset.theme || "light";
-    const Observer = frame.contentWindow.ResizeObserver || ResizeObserver;
-    frameObserver = new Observer(fitFrame);
-    frameObserver.observe(doc.body);
-    fitFrame();
-  });
-  let placing = false;
-  const schedulePlacement = () => {
-    if (placing) return;
-    placing = true;
-    requestAnimationFrame(() => {
-      placing = false;
-      placeFrameDialogs();
-    });
-  };
-  window.addEventListener("scroll", schedulePlacement, { passive: true });
-  window.addEventListener("resize", () => {
-    schedulePlacement();
-    fitFrame();
-  });
-
   async function browse(path) {
     try {
       const data = await api("/api/browse", { path, kind: state.browser.kind });

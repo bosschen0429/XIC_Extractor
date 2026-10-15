@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import threading
 from dataclasses import asdict, dataclass, field
@@ -555,30 +556,27 @@ def test_review_search_and_saved_results_keep_one_scroll_and_visible_evidence(
     page.locator("#query-form button[type=submit]").click()
     expect(page.locator("#item-list button")).to_have_count(1)
     # Query also selects an item. Let that action finish before selecting again,
-    # otherwise two detail responses can replace the frame during a scroll.
+    # otherwise two detail responses can replace the view during a scroll.
     expect(page.locator("#query-form button[type=submit]")).to_be_enabled()
     with page.expect_response(
         lambda response: response.url.endswith("/api/detail")
     ) as detail:
         page.locator("#item-list button").first.click()
-    report_path = f"/reports/{detail.value.json()['view_id']}.html"
-    page.wait_for_function(
-        """path => document.getElementById('inspector')
-        .contentWindow.location.pathname === path""",
-        arg=report_path,
+    expect(page.locator("#recorded-review")).to_have_attribute(
+        "data-view-id", detail.value.json()["view_id"]
     )
-    frame = page.frame_locator("#inspector")
-    expect(frame.get_by_role("heading", name="已保存的樣本結果")).to_be_visible()
-    expect(frame.locator("#svg-raw")).to_have_count(0)
-    page.wait_for_function("""() => {
-        const frame = document.getElementById('inspector');
-        const doc = frame.contentDocument;
-        return doc && frame.clientHeight >= doc.documentElement.scrollHeight - 2;
-    }""")
-    frame.get_by_role("button", name="查看依據").first.click()
-    expect(frame.locator("#evidence-panel")).to_be_visible()
-    frame.locator("#close-evidence").click()
-    expect(frame.locator("#evidence-panel")).to_have_count(0)
+    review = page.locator("#recorded-review")
+    expect(review.get_by_role("heading", name="已保存的樣本結果")).to_be_visible()
+    expect(review.locator("[data-inspector-id='svg-raw']")).to_have_count(0)
+    # Mounted content participates in the host page's normal flow.
+    expect(page.locator("#review iframe, #xic-dialog iframe")).to_have_count(0)
+    assert review.evaluate(
+        "container => container.scrollHeight <= container.clientHeight + 2"
+    )
+    review.get_by_role("button", name="查看依據").first.click()
+    expect(review.locator("[data-inspector-id='evidence-panel']")).to_be_visible()
+    review.locator("[data-inspector-id='close-evidence']").click()
+    expect(review.locator("[data-inspector-id='evidence-panel']")).to_have_count(0)
 
 
 @pytest.mark.parametrize("targeted", [True, False])
@@ -628,10 +626,10 @@ def test_untargeted_review_starts_with_results_and_explains_missing_curves(
     expect(page.locator("#inline-curve-status")).to_contain_text(
         "尚未設定 RAW 或 DLL 位置"
     )
-    saved = page.frame_locator("#inspector")
+    saved = page.locator("#recorded-review")
     expect(saved.get_by_role("heading", name="已保存的樣本結果")).to_be_visible()
     expect(saved.locator(".sample-table tbody tr").first).to_contain_text("4.000e+2")
-    expect(saved.locator("#svg-raw")).to_have_count(0)
+    expect(saved.locator("[data-inspector-id='svg-raw']")).to_have_count(0)
     page.locator("#back-to-overview").click()
     expect(overview).to_be_visible()
     overview.get_by_role("button", name="查看全部矩陣群組").click()
@@ -641,7 +639,7 @@ def test_untargeted_review_starts_with_results_and_explains_missing_curves(
     overview.get_by_role("button", name="1 組未採用").click()
     expect(page.locator("#list-summary")).to_contain_text("未採用群組 · 1 組")
     expect(
-        page.frame_locator("#inspector").locator(".sample-table tbody tr").first
+        page.locator("#recorded-review").locator(".sample-table tbody tr").first
     ).to_contain_text("5.000e+2")
 
 
@@ -684,41 +682,47 @@ def test_untargeted_curves_open_beside_saved_report_and_reuse_loaded_view(
     if sample_count > 1:
         page.get_by_role("button", name="查看全部矩陣群組").click()
         expect(
-            page.frame_locator("#inline-curve-frame").locator("#svg-raw polyline")
+            page.locator("#inline-curve-review").locator(
+                "[data-inspector-id='svg-raw'] polyline"
+            )
         ).to_have_count(1)
         page.locator("#item-list button").filter(has_text="6 / 6 個樣本有值").click()
     expect(page.locator(".acquisition-panel > summary")).to_be_visible()
     expect(page.locator("#sample-list")).to_be_hidden()
     page.locator(".acquisition-panel > summary").click()
-    recorded = page.locator("#inspector").evaluate(
-        "frame => frame.contentWindow.location.href"
+    recorded = page.locator("#recorded-review").evaluate(
+        "container => container.dataset.viewId"
     )
-    frame = page.frame_locator("#inline-curve-frame")
-    expect(frame.locator("#svg-raw polyline")).to_have_count(sample_count)
+    review = page.locator("#inline-curve-review")
+    expect(review.locator("[data-inspector-id='svg-raw'] polyline")).to_have_count(
+        sample_count
+    )
     expect(page.locator("#xic-dialog")).to_be_hidden()
-    saved = page.frame_locator("#inspector")
+    saved = page.locator("#recorded-review")
     expect(saved.get_by_role("heading", name="已保存的樣本結果")).to_be_visible()
-    expect(saved.locator("#svg-raw")).to_have_count(0)
+    expect(saved.locator("[data-inspector-id='svg-raw']")).to_have_count(0)
     assert (
-        page.locator("#inspector").evaluate(
-            "frame => frame.contentWindow.location.href"
+        page.locator("#recorded-review").evaluate(
+            "container => container.dataset.viewId"
         )
         == recorded
     )
     page.locator("#load-curves").click()
-    expect(frame.locator("#svg-raw polyline")).to_have_count(sample_count)
+    expect(review.locator("[data-inspector-id='svg-raw'] polyline")).to_have_count(
+        sample_count
+    )
     assert set(calls[-1]) == {f"S{i + 1}" for i in range(sample_count)}
     assert len(calls) == (1 if sample_count == 1 else 2)
-    frame.locator("button[data-zoom]").click()
-    expect(frame.locator("#zoom-dialog")).to_be_visible()
+    review.locator("button[data-zoom]").click()
+    expect(review.locator("[data-inspector-id='zoom-dialog']")).to_be_visible()
     page.wait_for_function("""() => {
-        const frame = document.getElementById('inline-curve-frame');
-        const dialog = frame.contentDocument.getElementById('zoom-dialog');
-        const f = frame.getBoundingClientRect(), d = dialog.getBoundingClientRect();
-        return f.top + d.top >= 0 && f.top + d.bottom <= innerHeight + 2;
+        const dialog = document.querySelector(
+            "#inline-curve-review [data-inspector-id='zoom-dialog']");
+        const d = dialog.getBoundingClientRect();
+        return d.top >= 0 && d.bottom <= innerHeight + 2;
     }""")
-    frame.locator("#zoom-close").click()
-    expect(frame.locator("#zoom-dialog")).to_be_hidden()
+    review.locator("[data-inspector-id='zoom-close']").click()
+    expect(review.locator("[data-inspector-id='zoom-dialog']")).to_be_hidden()
 
 
 def test_targeted_nd_shows_original_points_and_support_failure(
@@ -748,14 +752,14 @@ def test_targeted_nd_shows_original_points_and_support_failure(
     page.locator("#dll-dir").fill(str(tmp_path))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
-    saved = page.frame_locator("#inspector")
+    saved = page.locator("#recorded-review")
     expect(saved.locator(".tgt-reason").first).to_contain_text("排除原因未記錄")
     saved.get_by_role("button", name="看 S1 的 Analyte XIC", exact=True).click()
-    frame = page.frame_locator("#xic-inspector")
-    expect(frame.locator(".tx-support-note")).to_contain_text("原始訊號支撐不足")
-    expect(frame.locator(".tx-support-note")).to_contain_text("本次讀取 XIC")
-    expect(frame.locator('.tx-chart polyline[data-kind="smoothed"]')).to_have_count(2)
-    raw_points = frame.locator(".tx-chart").first.locator('circle[data-kind="raw"]')
+    review = page.locator("#xic-review")
+    expect(review.locator(".tx-support-note")).to_contain_text("原始訊號支撐不足")
+    expect(review.locator(".tx-support-note")).to_contain_text("本次讀取 XIC")
+    expect(review.locator('.tx-chart polyline[data-kind="smoothed"]')).to_have_count(2)
+    raw_points = review.locator(".tx-chart").first.locator('circle[data-kind="raw"]')
     values = raw_points.locator("title").all_text_contents()
     assert sum(not value.endswith("· 0") for value in values) == 1
     # Raw spikes must fit the shared per-ion Y scale, not be clipped by smoothing.
@@ -765,8 +769,8 @@ def test_targeted_nd_shows_original_points_and_support_failure(
     )
     page.locator("#xic-next").click()
     expect(page.locator("#xic-sample")).to_have_value("S2")
-    expect(frame.locator(".tx-support-note")).to_have_count(0)
-    expect(frame.locator(".tx-chart polyline")).to_have_count(2)
+    expect(review.locator(".tx-support-note")).to_have_count(0)
+    expect(review.locator(".tx-chart polyline")).to_have_count(2)
     assert path.read_bytes() == original
 
 
@@ -810,13 +814,13 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     page.locator("#dll-dir").fill(str(tmp_path))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
-    recorded = page.frame_locator("#inspector")
+    recorded = page.locator("#recorded-review")
     row_button = recorded.get_by_role("button", name="看 S3 的 Analyte XIC", exact=True)
     expect(row_button).to_be_visible()
     row_button.scroll_into_view_if_needed()
     reading_scroll = page.evaluate("window.scrollY")
-    recorded_url = page.locator("#inspector").evaluate(
-        "frame => frame.contentWindow.location.href"
+    recorded_view = page.locator("#recorded-review").evaluate(
+        "container => container.dataset.viewId"
     )
     row_button.click()
     dialog = page.locator("#xic-dialog")
@@ -830,40 +834,40 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     expect(dialog).to_be_visible()
     expect(page.locator(".acquisition-panel")).to_be_hidden()
     expect(page.locator("#xic-sample")).to_have_value("S3")
-    frame = page.frame_locator("#xic-inspector")
-    curves = frame.locator(".tx-chart polyline")
-    expect(frame.locator('.tx-chart circle[data-kind="raw"]')).not_to_have_count(0)
-    expect(frame.get_by_text("原始 scan 點", exact=True)).to_be_visible()
+    review = page.locator("#xic-review")
+    curves = review.locator(".tx-chart polyline")
+    expect(review.locator('.tx-chart circle[data-kind="raw"]')).not_to_have_count(0)
+    expect(review.get_by_text("原始 scan 點", exact=True)).to_be_visible()
     expect(curves).to_have_count(2)
-    expect(frame.locator(".tx-chart-title")).to_have_text(["Analyte", "ISTD"])
-    expect(frame.locator(".tx-provenance")).to_contain_text("無法驗證是否為原分析檔")
+    expect(review.locator(".tx-chart-title")).to_have_text(["Analyte", "ISTD"])
+    expect(review.locator(".tx-provenance")).to_contain_text("無法驗證是否為原分析檔")
     # The result table never navigates away; each ion has its own y scale.
     assert (
-        page.locator("#inspector").evaluate(
-            "frame => frame.contentWindow.location.href"
+        page.locator("#recorded-review").evaluate(
+            "container => container.dataset.viewId"
         )
-        == recorded_url
+        == recorded_view
     )
-    expect(frame.locator(".tx-chart")).to_have_count(2)
+    expect(review.locator(".tx-chart")).to_have_count(2)
     for line in curves.all():
         ys = [
             float(point.split(",")[1]) for point in line.get_attribute("points").split()
         ]
         assert min(ys) < 25 and max(ys) > 150  # Neither ion is flattened by its pair.
     original_points = curves.first.get_attribute("points")
-    frame.get_by_label("顯示 RT 起點", exact=True).fill("8.95")
-    frame.get_by_label("顯示 RT 終點", exact=True).fill("9.05")
-    frame.get_by_role("button", name="套用範圍", exact=True).click()
+    review.get_by_label("顯示 RT 起點", exact=True).fill("8.95")
+    review.get_by_label("顯示 RT 終點", exact=True).fill("9.05")
+    review.get_by_role("button", name="套用範圍", exact=True).click()
     assert curves.first.get_attribute("points") != original_points
-    frame.get_by_role("button", name="完整 RT", exact=True).click()
-    expect(frame.get_by_label("顯示 RT 起點", exact=True)).to_have_value("0")
-    expect(frame.get_by_label("顯示 RT 終點", exact=True)).to_have_value("12")
+    review.get_by_role("button", name="完整 RT", exact=True).click()
+    expect(review.get_by_label("顯示 RT 起點", exact=True)).to_have_value("0")
+    expect(review.get_by_label("顯示 RT 終點", exact=True)).to_have_value("12")
     page.go_back()
     expect(dialog).to_be_hidden()
     expect(row_button).to_be_focused()
     page.go_forward()
     expect(dialog).to_be_visible()
-    expect(frame.locator(".tx-sample-name")).to_have_text("S3")
+    expect(review.locator(".tx-sample-name")).to_have_text("S3")
     assert len(reads) == 2
     page.keyboard.press("Escape")
     expect(dialog).to_be_hidden()
@@ -877,25 +881,25 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     assert len(reads) == 2  # Reopening the same sample reuses the loaded report.
     page.locator("#xic-next").click()
     expect(page.locator("#xic-sample")).to_have_value("S4")
-    expect(frame.locator(".tx-sample-name")).to_have_text("S4")
+    expect(review.locator(".tx-sample-name")).to_have_text("S4")
     expect(curves).to_have_count(2)
     assert len(reads) == 4
     page.locator("#xic-next").click()  # S5 has no RAW: keep a recoverable local error.
     expect(page.locator("#xic-status")).to_contain_text("找不到")
-    expect(page.locator("#xic-inspector")).to_be_hidden()
+    expect(page.locator("#xic-review")).to_be_hidden()
     expect(page.locator("#xic-retry")).to_be_visible()
     page.locator("#xic-previous").click()
-    expect(frame.locator(".tx-sample-name")).to_have_text("S4")
-    expect(page.locator("#xic-inspector")).to_be_visible()
+    expect(review.locator(".tx-sample-name")).to_have_text("S4")
+    expect(page.locator("#xic-review")).to_be_visible()
     assert len(reads) == 4
     page.set_viewport_size({"width": 420, "height": 760})
     bounds = dialog.bounding_box()
     assert bounds and bounds["x"] >= 0 and bounds["x"] + bounds["width"] <= 421
     assert (
-        page.locator("#inspector").evaluate(
-            "frame => frame.contentWindow.location.href"
+        page.locator("#recorded-review").evaluate(
+            "container => container.dataset.viewId"
         )
-        == recorded_url
+        == recorded_view
     )
     assert workbook.read_bytes() == original
 
@@ -936,9 +940,9 @@ def test_targeted_review_marks_the_rare_detection_and_opens_it_in_place(
     expect(page.locator("#item-list")).to_be_hidden()
     expect(page.locator("#target-id")).to_be_visible()
     expect(page.locator("#review")).to_have_class("review-grid single-target")
-    frame = page.frame_locator("#inspector")
-    expect(frame.locator(".tgt-context")).to_contain_text("預期 RT 9.25 min")
-    rows = frame.locator(".tgt-table tbody tr")
+    review = page.locator("#recorded-review")
+    expect(review.locator(".tgt-context")).to_contain_text("預期 RT 9.25 min")
+    rows = review.locator(".tgt-table tbody tr")
     # Rows stay in run order; the rare detection is marked where it ran.
     expect(rows.nth(2).locator(".tgt-sample")).to_have_text("S3")
     expect(rows.nth(2).locator(".tgt-badge")).to_have_text("與多數不同")
@@ -946,7 +950,7 @@ def test_targeted_review_marks_the_rare_detection_and_opens_it_in_place(
     expect(rows.nth(2).locator(".tgt-istd").first).to_have_text("9.2")
     rows.nth(2).locator(".tgt-sample").click()
     # The evidence is the next row, not a panel after every other sample.
-    detail = frame.locator(".tgt-table tbody tr:nth-child(4)")
+    detail = review.locator(".tgt-table tbody tr:nth-child(4)")
     expect(detail).to_have_class("tgt-detail-row")
     expect(detail).to_contain_text("積分範圍")
     # A neutral loss that was not observed is a given fact under CID: it stays
@@ -957,7 +961,7 @@ def test_targeted_review_marks_the_rare_detection_and_opens_it_in_place(
     expect(detail).not_to_contain_text("檢閱註記")
     # An observed neutral loss supports the result, so it reads up front.
     rows.nth(0).locator(".tgt-sample").click()
-    observed = frame.locator(".tgt-table tbody tr:nth-child(2)")
+    observed = review.locator(".tgt-table tbody tr:nth-child(2)")
     expect(observed).to_have_class("tgt-detail-row")
     expect(observed.locator(".tgt-facts")).to_contain_text("NL 證據")
     expect(observed.locator(".tgt-facts")).to_contain_text("已觀察到")
@@ -978,7 +982,7 @@ def test_review_back_forward_preserves_target_and_filters(workbench, tmp_path):
     expect(page.locator("#item-title")).to_contain_text("Analyte")
     page.locator("#target-attention").check()
     expect(
-        page.frame_locator("#inspector").locator(".tgt-table tbody tr:not([hidden])")
+        page.locator("#recorded-review").locator(".tgt-table tbody tr:not([hidden])")
     ).to_have_count(1)
     page.go_back()
     expect(page.locator("#targeted-overview")).to_be_visible()
@@ -987,7 +991,7 @@ def test_review_back_forward_preserves_target_and_filters(workbench, tmp_path):
     expect(page.locator("#target-id")).to_have_value("Analyte")
     expect(page.locator("#target-attention")).to_be_checked()
     expect(
-        page.frame_locator("#inspector").locator(".tgt-table tbody tr:not([hidden])")
+        page.locator("#recorded-review").locator(".tgt-table tbody tr:not([hidden])")
     ).to_have_count(1)
     page.locator("#back-to-overview").click()
     expect(page.locator("#targeted-overview")).to_be_visible()
@@ -1033,7 +1037,7 @@ def test_review_history_restores_server_query_before_loading_xic(
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
     expect(page.locator("#item-title")).to_contain_text("Analyte")
-    analyte_xic = page.frame_locator("#inspector").get_by_role(
+    analyte_xic = page.locator("#recorded-review").get_by_role(
         "button", name="看 S3 的 Analyte XIC", exact=True
     )
     expect(analyte_xic).to_be_visible()
@@ -1046,7 +1050,7 @@ def test_review_history_restores_server_query_before_loading_xic(
         else:
             expect(page.locator("#item-title")).to_contain_text("ISTD")
             expect(
-                page.frame_locator("#inspector").get_by_role(
+                page.locator("#recorded-review").get_by_role(
                     "button", name="看 S3 的 ISTD XIC", exact=True
                 )
             ).to_be_visible()
@@ -1062,7 +1066,7 @@ def test_review_history_restores_server_query_before_loading_xic(
         analyte_xic.click()
     assert response.value.status == 202, response.value.json()
     expect(
-        page.frame_locator("#xic-inspector").locator(".tx-chart-title")
+        page.locator("#xic-review").locator(".tx-chart-title")
     ).to_have_text(["Analyte", "ISTD"])
 
 
@@ -1097,7 +1101,7 @@ def test_targeted_row_xic_without_raw_points_at_the_missing_folder(workbench, tm
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview td button", has_text="Analyte").click()
-    row_button = page.frame_locator("#inspector").get_by_role(
+    row_button = page.locator("#recorded-review").get_by_role(
         "button", name="看 S5 的 Analyte XIC", exact=True
     )
     row_button.scroll_into_view_if_needed()
@@ -1122,11 +1126,11 @@ def test_read_first_opens_on_minority_rows_and_clearing_lists_all(workbench, tmp
     page.locator("#source").fill(str(workbook))
     page.locator("#open-form button[type=submit]").click()
     page.locator("#targeted-overview .overview-actions .primary").click()
-    frame = page.frame_locator("#inspector")
-    rows = frame.locator(".tgt-table tbody tr:not([hidden])")
+    review = page.locator("#recorded-review")
+    rows = review.locator(".tgt-table tbody tr:not([hidden])")
     # Reading first starts on the minority row; every sample is one click away.
     expect(rows).to_have_count(1)
-    expect(frame.locator(".tgt-filter button")).to_have_text(
+    expect(review.locator(".tgt-filter button")).to_have_text(
         ["全部（5）", "需先看（1）"]
     )
     # A filter change applies at once; no separate search press is needed.
@@ -1355,11 +1359,11 @@ def test_analysis_review_uses_run_paths_even_after_batch_edit(
     expect(page.locator("#raw-dir")).to_have_value(str(raw_dir))
     expect(page.locator("#dll-dir")).to_have_value(str(tmp_path))
     page.locator("#targeted-overview td button", has_text="Analyte").click()
-    page.frame_locator("#inspector").get_by_role(
+    page.locator("#recorded-review").get_by_role(
         "button", name="看 S1 的 Analyte XIC", exact=True
     ).click()
-    frame = page.frame_locator("#xic-inspector")
-    expect(frame.locator('.tx-chart polyline[data-kind="smoothed"]')).to_have_count(2)
+    review = page.locator("#xic-review")
+    expect(review.locator('.tx-chart polyline[data-kind="smoothed"]')).to_have_count(2)
     expect(page.locator("#status")).not_to_contain_text("請先選擇 RAW 資料夾")
 
 
@@ -1472,3 +1476,127 @@ def test_untargeted_istd_applicability_tracks_method_not_nd(workbench):
     expect(page.locator("#istd-preview")).not_to_contain_text("ND")
     page.locator("#u-preset").select_option("dna_dr")
     expect(page.locator("#istd-summary")).to_contain_text("6 個適用內標")
+
+
+def test_delayed_review_payload_cannot_replace_newer_sample_selection(
+    workbench, tmp_path
+):
+    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+
+    page = workbench
+    workbook = write_rare_detection_workbook(tmp_path / "delayed-view.xlsx")
+    delayed = []
+
+    def delay_first_view(route):
+        if not delayed:
+            delayed.append(route)
+        else:
+            route.continue_()
+
+    page.route("**/api/views/*", delay_first_view)
+    _view(page, "review")
+    page.locator("#source").fill(str(workbook))
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#targeted-overview td button", has_text="Analyte").click()
+    # Payload loading must not prevent a newer query from becoming authoritative.
+    expect(page.locator("#target-sample")).to_be_enabled()
+    page.wait_for_function(
+        "() => !document.querySelector('#recorded-review').children.length"
+    )
+    assert delayed
+    page.locator("#target-sample").select_option("S1")
+    saved = page.locator("#recorded-review")
+    rows = saved.locator(".tgt-table tbody tr:not([hidden])")
+    expect(rows).to_have_count(1)
+    expect(rows.first).to_contain_text("S1")
+    current_view = saved.get_attribute("data-view-id")
+    old_view = delayed[0].request.url.rsplit("/", 1)[-1]
+    assert current_view and old_view != current_view
+    with page.expect_response(lambda response: response.url.endswith(old_view)):
+        delayed[0].fulfill(response=delayed[0].fetch())
+    # Let the response consumer run before checking its obsolete data never mounts.
+    page.evaluate("""() => new Promise(resolve =>
+        requestAnimationFrame(() => requestAnimationFrame(resolve)))""")
+    expect(saved).to_have_attribute("data-view-id", current_view)
+    expect(rows).to_have_count(1)
+    expect(rows.first).to_contain_text("S1")
+
+
+def test_downloaded_curve_report_keeps_snapshot_and_interacts_without_network(
+    workbench, browser, tmp_path, monkeypatch
+):
+    from tests.test_xic_inspector_targeted_workbook import (
+        install_targeted_raws,
+        write_rare_detection_workbook,
+    )
+
+    page = workbench
+    raw_dir = tmp_path / "offline-raw"
+    install_targeted_raws(monkeypatch, raw_dir, {"S3": 1000, "S4": 300})
+    workbook = write_rare_detection_workbook(tmp_path / "offline-saved.xlsx")
+    original = workbook.read_bytes()
+    _view(page, "review")
+    page.locator("#source").fill(str(workbook))
+    page.locator("#raw-dir").fill(str(raw_dir))
+    page.locator("#dll-dir").fill(str(tmp_path))
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#targeted-overview td button", has_text="Analyte").click()
+    page.locator("#recorded-review").get_by_role(
+        "button", name="看 S3 的 Analyte XIC", exact=True
+    ).click()
+    mounted = page.locator("#xic-review")
+    expect(mounted.locator(".tx-chart-title")).to_have_text(["Analyte", "ISTD"])
+    expect(mounted.locator(".tx-chart-meta").first).to_contain_text("面積 5.55e+1")
+    with page.expect_download() as pending:
+        page.locator("#xic-download").click()
+    downloaded = tmp_path / "downloaded-s3.html"
+    pending.value.save_as(downloaded)
+    page.locator("#xic-next").click()
+    expect(mounted.locator(".tx-sample-name")).to_have_text("S4")
+    expect(mounted.locator(".tx-chart-meta").first).to_contain_text("面積 ND")
+
+    context = browser.new_context(viewport={"width": 1280, "height": 900})
+    context.tracing.start(screenshots=True, snapshots=True, sources=True)
+    offline = context.new_page()
+    errors, network_requests = [], []
+    offline.on("pageerror", lambda error: errors.append(str(error)))
+    offline.on(
+        "request",
+        lambda request: (
+            network_requests.append(request.url)
+            if request.url.startswith(("http://", "https://"))
+            else None
+        ),
+    )
+    context.route(re.compile(r"^https?://"), lambda route: route.abort())
+    context.set_offline(True)
+    try:
+        offline.goto(downloaded.as_uri())
+        report = offline.locator("#inspector-root")
+        expect(report.locator(".tx-sample-name")).to_have_text("S3")
+        expect(report.get_by_label("樣本", exact=True)).to_have_value("S3")
+        expect(report.locator(".tx-chart-title")).to_have_text(["Analyte", "ISTD"])
+        # The fixture has no saved bounds: preserve unavailable RT and saved Areas,
+        # rather than inventing either from the newly read RAW intensities.
+        expect(report.locator(".tx-chart-meta").nth(0)).to_contain_text(
+            "保存 RT — · 面積 5.55e+1"
+        )
+        expect(report.locator(".tx-chart-meta").nth(1)).to_contain_text(
+            "保存 RT — · 面積 1.00e+3"
+        )
+        lines = report.locator('.tx-chart polyline[data-kind="smoothed"]')
+        expect(lines).to_have_count(2)
+        initial_points = lines.first.get_attribute("points")
+        report.get_by_label("顯示 RT 起點", exact=True).fill("8.95")
+        report.get_by_label("顯示 RT 終點", exact=True).fill("9.05")
+        report.get_by_role("button", name="套用範圍", exact=True).click()
+        assert lines.first.get_attribute("points") != initial_points
+        report.get_by_role("button", name="完整 RT", exact=True).click()
+        expect(report.get_by_label("顯示 RT 起點", exact=True)).to_have_value("0")
+        expect(report.get_by_label("顯示 RT 終點", exact=True)).to_have_value("12")
+        assert not network_requests
+        assert not errors
+        assert workbook.read_bytes() == original
+    finally:
+        context.tracing.stop(path=tmp_path / "downloaded-offline-trace.zip")
+        context.close()

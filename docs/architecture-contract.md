@@ -37,7 +37,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | Untargeted Alignment 與 Matrix | [`scripts/run_alignment.py`](../scripts/run_alignment.py)、[`xic_workbench/untargeted.py`](../xic_workbench/untargeted.py) | [`run_untargeted_application`](../xic_extractor/applications/untargeted/application.py) 準備輸入；[`complete_untargeted_alignment`](../xic_extractor/untargeted_execution/alignment.py) 完成執行並綁定 Matrix／explanation 資料；[`publication`](../xic_extractor/applications/untargeted/publication.py) 消費該完成交付、發布 [`AlignmentRunOutputs`](../xic_extractor/output/alignment/pipeline_outputs.py) 並關閉暫存 |
 | 完成 Matrix 後的 feature 篩選 | [`scripts/run_feature_quality.py`](../scripts/run_feature_quality.py) | [`feature_quality.py`](../xic_extractor/feature_quality.py) 計算 availability；[`feature_quality_io.py`](../xic_extractor/feature_quality_io.py) 讀寫分析集合，保留既有值 |
 | 完成證據的只讀報告 | [`xic_inspector/cli.py`](../xic_inspector/cli.py) | [`api.generate_report`](../xic_inspector/api.py) 串起來源解讀、選擇及 HTML rendering |
-| HTML 批次檢閱與按需 XIC | [`xic_workbench/workspace.py`](../xic_workbench/workspace.py) | `acquisition.py` 共用診斷擷取；Inspector 提供完成的檢閱資料與 rendering；新曲線不改科學結果 |
+| HTML 批次檢閱與按需 XIC | [`xic_workbench/workspace.py`](../xic_workbench/workspace.py) | `acquisition.py` 共用診斷擷取；Inspector 提供完成的檢閱資料與共用可掛載視圖；workspace 保留 view snapshot、按需匯出 HTML；新曲線不改科學結果 |
 
 ### Finding The Right Owner
 
@@ -216,6 +216,16 @@ contract 沒有 ignore，並包含間接依賴。
   Source adapters own method-specific record/schema interpretation; its public
   API, selection, and renderer remain method-neutral. Scientific/core packages
   must not import or invoke the Inspector.
+- `prepare_report` produces the review facts; `PreparedReport.render_data()`
+  supplies complete presentation inputs. The workbench retains those inputs as
+  immutable session-local `.view.json` snapshots, with only paths in its view
+  registry. Its guarded `GET /api/views/<id>` serves the captured payload to
+  `XicInspector.mount`; normal review does not write HTML. The renderer owns
+  container-local presentation and emits narrow host callbacks; the workbench
+  owns sources, jobs and cancellation. An explicit `/reports/<id>.html` request
+  packages that snapshot lazily using the same CSS/JavaScript renderer and
+  atomic HTML writer, without preparing the source again. CLI report generation
+  remains a standalone entry to the same offline renderer.
 - `applications.untargeted.application.run_untargeted_application` accepts
   one `UntargetedRequest` and optional run-scoped `UntargetedExecutionContext`,
   resolves canonical config dependencies once at entry, rejects output collisions
