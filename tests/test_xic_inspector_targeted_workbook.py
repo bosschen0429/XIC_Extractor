@@ -526,3 +526,141 @@ def test_nearest_mz_does_not_extend_targeted_workbook_search(workbook):
             SelectionRequest(strategy="query", review_scope="matrix", nearest_mz=258),
         )
     assert exc.value.code == 2
+
+
+@pytest.fixture
+def role_workbook(workbook):
+    book = load_workbook(workbook)
+    targets, results = book["Targets"], book["XIC Results"]
+    targets.delete_rows(2, targets.max_row)
+    results.delete_rows(2, results.max_row)
+    for index, (label, role) in enumerate(
+        (
+            ("ISTD-looking analyte", " Analyte "),
+            ("Compound B", "analyte"),
+            ("Analyte-looking standard", "ISTD"),
+            ("Standard B", " istd "),
+            ("Legacy blank", None),
+            ("Legacy custom", "QC"),
+        )
+    ):
+        targets.append([label, role, None, 100 + index, 8, 10])
+        for sample in ("Sample A", "Sample B"):
+            results.append(
+                [
+                    sample,
+                    None,
+                    label,
+                    8 + index / 10,
+                    10 + index,
+                    8,
+                    9,
+                    "Review" if index in (0, 2) and sample == "Sample A" else None,
+                    "Inspect" if index in (0, 2) else None,
+                    None,
+                    "FALSE" if index in (0, 2) and sample == "Sample A" else "TRUE",
+                ]
+            )
+    book.save(workbook)
+    book.close()
+    return workbook
+
+
+@pytest.mark.parametrize(
+    "role, expected",
+    [
+        ("Analyte", ["ISTD-looking analyte", "Compound B"]),
+        ("ISTD", ["Analyte-looking standard", "Standard B"]),
+    ],
+)
+def test_role_query_uses_target_role_before_pagination_and_keeps_scope(
+    role_workbook, role, expected
+):
+    before = role_workbook.read_bytes()
+    baseline = prepare_report(role_workbook, SelectionRequest())
+    pages = [
+        prepare_report(
+            role_workbook,
+            SelectionRequest(strategy="query", target_role=role, offset=i, limit=1),
+        )
+        for i in (0, 1)
+    ]
+    assert [page.payload["items"][0]["title"] for page in pages] == expected
+    for page in pages:
+        assert page.run_total == page.eligible_count == 6
+        assert page.matched_count == 2 and page.selected_count == 1
+        assert page.payload["summary"]["target_names"] == expected
+        assert page.payload["selection"]["target_role"] == role
+        assert (
+            page.payload["summary"]["overview"]
+            == baseline.payload["summary"]["overview"]
+        )
+        assert [
+            row["SampleName"] for row in page.payload["items"][0]["details"]["records"]
+        ] == ["Sample A", "Sample B"]
+    assert role_workbook.read_bytes() == before
+
+
+def test_role_query_combines_filters_and_retains_role_target_options(role_workbook):
+    selected = prepare_report(
+        role_workbook,
+        SelectionRequest(
+            strategy="query",
+            target_role="Analyte",
+            sample_ids=("Sample A",),
+            mz_min=101,
+            mz_max=101,
+            rt_min=8.05,
+            rt_max=8.2,
+        ),
+    )
+    assert [item["title"] for item in selected.payload["items"]] == ["Compound B"]
+    assert [
+        row["SampleName"] for row in selected.payload["items"][0]["details"]["records"]
+    ] == ["Sample A"]
+    assert selected.payload["summary"]["target_names"] == [
+        "ISTD-looking analyte",
+        "Compound B",
+    ]
+    attention = prepare_report(
+        role_workbook,
+        SelectionRequest(strategy="query", target_role="ISTD", attention_only=True),
+    )
+    assert [item["title"] for item in attention.payload["items"]] == [
+        "Analyte-looking standard"
+    ]
+    conflict = prepare_report(
+        role_workbook,
+        SelectionRequest(
+            strategy="query", target_role="ISTD", target_ids=("Compound B",)
+        ),
+    )
+    assert conflict.matched_count == 0 and conflict.payload["items"] == []
+    assert conflict.payload["summary"]["target_names"] == [
+        "Analyte-looking standard",
+        "Standard B",
+    ]
+
+
+def test_workspace_role_query_roundtrips_and_all_restores_legacy_targets(
+    role_workbook, tmp_path
+):
+    before = role_workbook.read_bytes()
+    workspace = ReviewWorkspace(config_dir=tmp_path / "config")
+    try:
+        initial = workspace.open(str(role_workbook))
+        page = workspace.query({"target_role": "ISTD", "target_id": "Compound B"})
+        assert page["target_role"] == "ISTD"
+        assert page["target_names"] == ["Analyte-looking standard", "Standard B"]
+        assert page["matched_count"] == 0
+        restored = workspace.query({"target_role": ""})
+        assert restored["target_role"] is None
+        assert restored["target_names"] == initial["target_names"]
+        assert restored["matched_count"] == 6
+        assert restored["overview"] == initial["overview"]
+        with pytest.raises(InspectorError, match="target_role"):
+            workspace.query({"target_role": "QC"})
+        assert workspace.state()["page"] == restored
+    finally:
+        workspace.close()
+    assert role_workbook.read_bytes() == before

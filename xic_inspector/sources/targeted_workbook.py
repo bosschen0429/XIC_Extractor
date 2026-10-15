@@ -168,6 +168,17 @@ class TargetedWorkbookSource:
             ],
         }
 
+    def target_names_for_role(self, role: str | None) -> list[str]:
+        """Project role options only from recorded Targets.Role, never labels."""
+        if role is None:
+            return list(self.summary["target_names"])
+        return [
+            target["Label"]
+            for target in self.targets
+            if isinstance(target["Role"], str)
+            and target["Role"].strip().casefold() == role.casefold()
+        ]
+
     def select_items(self, sample_ids: set[str], selection):
         items = []
         for target in self.targets:
@@ -242,6 +253,9 @@ class TargetedWorkbookSource:
             # Lists the targets to read first; each keeps every sample, so the
             # minority rows are read against the majority they depart from.
             items = [item for item in items if item.is_attention]
+        if selection.target_role is not None:
+            role_targets = set(self.target_names_for_role(selection.target_role))
+            items = [item for item in items if item.identifier in role_targets]
         if selection.target_ids:
             items = [item for item in items if item.identifier in selection.target_ids]
         if selection.group_ids or selection.candidate_ids:

@@ -365,6 +365,13 @@
               </button>
             </div>
             <div id="targeted-filters" hidden>
+              <label class="field">類別
+                <select id="target-role" data-idle>
+                  <option value="">全部類別</option>
+                  <option value="Analyte">Analyte（分析物）</option>
+                  <option value="ISTD">ISTD（內標）</option>
+                </select>
+              </label>
               <label class="field">目標<select id="target-id" data-idle></select></label>
               <label class="field">樣本<select id="target-sample" data-idle></select></label>
               <label><input id="target-attention" type="checkbox" data-idle />只列需先看的目標</label>
@@ -459,8 +466,8 @@
             <span class="empty-glyph" aria-hidden="true"
               ><svg class="icon"><use href="#i-peak" /></svg
             ></span>
-            <h2>選擇一個項目開始檢閱</h2>
-            <p>查看當次分析紀錄，或為選定樣本重新取得 XIC。</p>
+            <h2 id="selection-empty-title">選擇一個項目開始檢閱</h2>
+            <p id="selection-empty-description">查看當次分析紀錄，或為選定樣本重新取得 XIC。</p>
           </div>
           <div id="selection" hidden>
             <div class="detail-heading">

@@ -103,6 +103,7 @@ class SelectionRequest:
     offset: int = 0
     review_scope: str = "all"
     nearest_mz: float | None = None
+    target_role: str | None = None
 
     def validate(self) -> None:
         """Validate request invariants per Issue #398 Section 4."""
@@ -118,6 +119,12 @@ class SelectionRequest:
             raise InspectorError(2, "Review scope requires query selection")
         if self.strategy not in ("sample", "attention", "query"):
             raise InspectorError(2, f"Invalid strategy: {self.strategy}")
+
+        if self.target_role is not None and (
+            not isinstance(self.target_role, str)
+            or self.target_role not in ("Analyte", "ISTD")
+        ):
+            raise InspectorError(2, "target_role must be Analyte, ISTD, or None")
 
         if self.nearest_mz is not None:
             if (
@@ -140,6 +147,7 @@ class SelectionRequest:
                 or self.candidate_ids
                 or self.group_ids
                 or self.target_ids
+                or self.target_role is not None
                 or self.attention_only
             ):
                 raise InspectorError(
@@ -221,6 +229,7 @@ class SelectionRequest:
                 bool(self.candidate_ids)
                 or bool(self.group_ids)
                 or bool(self.target_ids)
+                or self.target_role is not None
                 or self.attention_only
                 or self.mz_min is not None
                 or self.mz_max is not None
@@ -241,6 +250,7 @@ class SelectionRequest:
                 or self.candidate_ids
                 or self.group_ids
                 or self.target_ids
+                or self.target_role is not None
                 or self.attention_only
                 or self.mz_min is not None
                 or self.mz_max is not None
@@ -362,10 +372,18 @@ def prepare_report(
                 2, "Nearest m/z requires indexed Untargeted matrix evidence"
             )
 
-    if (selection.target_ids or selection.attention_only) and not isinstance(
-        source, TargetedWorkbookSource
-    ):
+    if (
+        selection.target_ids
+        or selection.target_role is not None
+        or selection.attention_only
+    ) and not isinstance(source, TargetedWorkbookSource):
         raise InspectorError(2, "Target filters require a Targeted XLSX source")
+
+    if isinstance(source, TargetedWorkbookSource):
+        summary = {
+            **summary,
+            "target_names": source.target_names_for_role(selection.target_role),
+        }
 
     schema_version = summary["schema_version"]
     req_id = summary.get("processing_request_id", "")
@@ -582,6 +600,7 @@ def prepare_report(
             "candidate_ids": selection.candidate_ids,
             "group_ids": selection.group_ids,
             "target_ids": selection.target_ids,
+            "target_role": selection.target_role,
             "attention_only": selection.attention_only,
             "mz_min": selection.mz_min,
             "mz_max": selection.mz_max,

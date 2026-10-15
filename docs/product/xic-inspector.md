@@ -152,8 +152,14 @@ Literal `ND`, zero and blank values remain distinct.
 The workbook is not modified, and its SHA-256 binds subsequent queries to the
 opened version; reopen the file after an external edit.
 
-Filter by full target name, sample, saved review condition, target m/z or
-saved sample RT. RT filtering matches a recorded numeric RT in the selected
+Filter first by all targets, Analyte, or ISTD, then by full target name,
+sample, saved review condition, target m/z or saved sample RT. The role comes
+from `Targets.Role`, not the target name or overview totals. Unknown or blank
+roles remain visible under all targets. Choosing a different role resets the
+individual target to all targets in that role, while retaining the other
+conditions. The target dropdown lists that role's targets independently of the
+other filters; those conditions still combine as an AND intersection.
+RT filtering matches a recorded numeric RT in the selected
 sample scope, not the target's configured search window. The focused sample
 detail shows retained peak and review evidence; absence of a review condition
 is not scientific acceptance.

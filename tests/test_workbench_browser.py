@@ -64,7 +64,12 @@ def config_dir(tmp_path):
 
 
 @pytest.fixture
-def workbench(browser, config_dir, tmp_path):
+def browser_errors():
+    return []
+
+
+@pytest.fixture
+def workbench(browser, config_dir, tmp_path, browser_errors):
     workspace = ReviewWorkspace(config_dir=config_dir)
     server = create_server(workspace, port=0)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -73,7 +78,7 @@ def workbench(browser, config_dir, tmp_path):
     context.tracing.start(screenshots=True, snapshots=True, sources=True)
     page = context.new_page()
     page.set_default_timeout(10_000)
-    errors = []
+    errors = browser_errors
     page.on("pageerror", lambda error: errors.append(str(error)))
     page.on(
         "console",
@@ -445,6 +450,40 @@ def test_saved_intent_submits_without_advanced_settings(fake_runs, workbench):
     expect(page.locator("#analysis-job-message")).to_contain_text(
         "Browser fake progress"
     )
+
+
+def test_empty_targeted_run_explains_where_to_add_a_target(workbench, browser_errors):
+    page = workbench
+    page.locator("#target-edit").click()
+    page.get_by_role("button", name="刪除第 1 列", exact=True).click()
+    page.locator("#target-editor").get_by_role(
+        "button", name="完成", exact=True
+    ).click()
+    expected_http_error = (
+        "Failed to load resource: the server responded with a status of "
+        "400 (Bad Request)"
+    )
+    with page.expect_console_message(
+        lambda message: message.type == "error" and message.text == expected_http_error
+    ):
+        with page.expect_response("**/api/analysis/start") as response:
+            _start(page, "targeted")
+    # This rejection is the contract under test; all other browser errors still fail.
+    browser_errors.remove(expected_http_error)
+    assert response.value.status == 400
+    technical_detail = (
+        "targets.csv row 2 column label value '': at least one target row is required"
+    )
+    assert response.value.json()["error"] == technical_detail
+    error = page.locator("#toasts .toast.error")
+    expect(error).to_contain_text("請先在 Targeted 清單新增至少一個 target")
+    expect(error).to_contain_text(technical_detail)
+    state = page.request.get(
+        response.value.url.replace("/start", ""),
+        headers={"X-XIC-Client": "workbench"},
+    )
+    assert state.ok
+    assert state.json()["job"] is None
 
 
 @pytest.mark.parametrize(
@@ -962,6 +1001,15 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     recorded_view = page.locator("#recorded-review").evaluate(
         "container => container.dataset.viewId"
     )
+    curve_posts = []
+    page.on(
+        "request",
+        lambda request: (
+            curve_posts.append(request)
+            if request.url.endswith("/api/curves") and request.method == "POST"
+            else None
+        ),
+    )
     row_button.click()
     dialog = page.locator("#xic-dialog")
     expect(dialog).to_be_visible()
@@ -1002,6 +1050,7 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     page.evaluate("""() => new Promise(resolve =>
         requestAnimationFrame(() => requestAnimationFrame(resolve)))""")
     expect(review.locator(".xic-inspector")).to_have_count(0)
+    expect(page.locator("#status")).not_to_have_class(re.compile(r"\bworking\b"))
     page.go_forward()
     expect(dialog).to_be_visible()
     expect(page.locator(".acquisition-panel")).to_be_hidden()
@@ -1072,20 +1121,37 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
     assert len(reads) == 4
     page.locator("#xic-next").click()  # S5 has no RAW: keep a recoverable local error.
     expect(page.locator("#xic-status")).to_contain_text("找不到")
+    expect(page.locator("#status")).to_contain_text("S5")
+    expect(page.locator("#status")).to_have_class(re.compile(r"\berror\b"))
     expect(page.locator("#xic-review")).to_be_hidden()
     expect(page.locator("#xic-retry")).to_be_visible()
     page.locator("#xic-previous").click()
     expect(review.locator(".tx-sample-name")).to_have_text("S4")
     expect(page.locator("#xic-review")).to_be_visible()
+    expect(page.locator("#xic-retry")).to_be_hidden()
+    expect(page.locator("#xic-status")).to_contain_text("診斷曲線已載入")
+    expect(page.locator("#xic-status")).to_contain_text("S4")
+    expect(page.locator("#status")).to_contain_text("診斷曲線已載入")
+    expect(page.locator("#status")).to_contain_text("S4")
+    expect(page.locator("#status")).not_to_have_class(re.compile(r"\berror\b"))
     assert len(reads) == 4
+    assert len(curve_posts) == 3
     # A result filter can replace the current detail while the closed drawer's
     # history still names the previously acquired Analyte/S3 curve snapshot.
     page.locator("#xic-previous").click()
     expect(review.locator(".tx-sample-name")).to_have_text("S3")
+    expect(page.locator("#xic-status")).to_contain_text("S3")
+    expect(page.locator("#status")).to_contain_text("S3")
+    expect(page.locator("#xic-retry")).to_be_hidden()
     previous_curve_view = review.get_attribute("data-view-id")
     assert previous_curve_view
     page.go_back()
     expect(dialog).to_be_hidden()
+    expect(page.locator("#status")).to_contain_text("診斷曲線已載入")
+    expect(page.locator("#status")).to_contain_text("S3")
+    expect(page.locator("#status")).not_to_have_class(re.compile(r"\berror\b"))
+    assert len(reads) == 4
+    assert len(curve_posts) == 3
     page.locator("#target-id").select_option("ISTD")
     expect(page.locator("#item-title")).to_contain_text("ISTD")
     expect(page.locator("#target-id")).to_be_enabled()
@@ -1111,6 +1177,142 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
         == recorded_view
     )
     assert workbook.read_bytes() == original
+
+
+@pytest.fixture
+def cached_paired_curves(workbench, tmp_path, monkeypatch):
+    from tests.test_xic_inspector_targeted_workbook import (
+        install_targeted_raws,
+        write_rare_detection_workbook,
+    )
+
+    page = workbench
+    raw_dir = tmp_path / "cached-raw"
+    reads = install_targeted_raws(
+        monkeypatch, raw_dir, {"S3": 1000, "S4": 300}, pair_scale=1000
+    )
+    workbook = write_rare_detection_workbook(tmp_path / "cached-paired.xlsx")
+    original = workbook.read_bytes()
+    posts = []
+    page.on(
+        "request",
+        lambda request: (
+            posts.append(request)
+            if request.url.endswith("/api/curves") and request.method == "POST"
+            else None
+        ),
+    )
+    _view(page, "review")
+    page.locator("#source").fill(str(workbook))
+    page.locator("#raw-dir").fill(str(raw_dir))
+    page.locator("#dll-dir").fill(str(tmp_path))
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#targeted-overview td button", has_text="Analyte").click()
+    page.get_by_role("button", name="看 S3 的 Analyte XIC", exact=True).click()
+    review = page.locator("#xic-review")
+    expect(review.locator(".tx-sample-name")).to_have_text("S3")
+    views = {"S3": review.get_attribute("data-view-id")}
+    page.locator("#xic-next").click()
+    expect(review.locator(".tx-sample-name")).to_have_text("S4")
+    views["S4"] = review.get_attribute("data-view-id")
+    assert len(reads) == 4
+    assert len(posts) == 2
+    yield page, views, reads, posts
+    assert workbook.read_bytes() == original
+
+
+def test_cached_curve_does_not_clear_a_current_query_error(
+    cached_paired_curves, browser_errors
+):
+    page, views, reads, posts = cached_paired_curves
+    page.locator("#xic-close").click()
+    failure = "Browser query failure remains actionable"
+    page.route(
+        "**/api/query",
+        lambda route: route.fulfill(status=500, json={"error": failure}),
+    )
+    expected_http_error = (
+        "Failed to load resource: the server responded with a status of "
+        "500 (Internal Server Error)"
+    )
+    with page.expect_console_message(
+        lambda message: message.type == "error" and message.text == expected_http_error
+    ):
+        page.locator("#target-attention").check()
+    browser_errors.remove(expected_http_error)
+    expect(page.locator("#status")).to_have_text(failure)
+    page.get_by_role("button", name="看 S3 的 Analyte XIC", exact=True).click()
+    review = page.locator("#xic-review")
+    expect(review.locator(".tx-sample-name")).to_have_text("S3")
+    expect(review).to_have_attribute("data-view-id", views["S3"])
+    expect(page.locator("#xic-status")).to_contain_text("診斷曲線已載入")
+    expect(page.locator("#xic-status")).to_contain_text("S3")
+    expect(page.locator("#xic-retry")).to_be_hidden()
+    expect(page.locator("#status")).to_have_text(failure)
+    expect(page.locator("#status")).to_have_class(re.compile(r"\berror\b"))
+    page.locator("#xic-close").click()
+    expect(page.locator("#status")).to_have_text(failure)
+    assert len(reads) == 4
+    assert len(posts) == 2
+
+
+@pytest.mark.parametrize("old_status", [200, 500], ids=["success", "failure"])
+def test_delayed_cached_curve_cannot_replace_current_sample_feedback(
+    cached_paired_curves, browser_errors, old_status
+):
+    page, views, reads, posts = cached_paired_curves
+    pending = []
+    old_url = f"**/api/views/{views['S3']}"
+    page.route(old_url, lambda route: pending.append(route))
+    try:
+        with page.expect_request(old_url):
+            page.locator("#xic-sample").select_option("S3")
+        expect(page.locator("#xic-status")).to_contain_text("正在")
+        expect(page.locator("#xic-loading")).to_be_visible()
+        expect(page.locator("#xic-retry")).to_be_hidden()
+        page.locator("#xic-sample").select_option("S4")
+        review = page.locator("#xic-review")
+        expect(review.locator(".tx-sample-name")).to_have_text("S4")
+        expect(review).to_have_attribute("data-view-id", views["S4"])
+        expect(page.locator("#status")).to_contain_text("診斷曲線已載入")
+        expect(page.locator("#status")).to_contain_text("S4")
+        expect(page.locator("#xic-status")).to_contain_text("S4")
+        current_global = page.locator("#status").text_content()
+        current_local = page.locator("#xic-status").text_content()
+        old = pending.pop()
+        if old_status == 500:
+            expected_http_error = (
+                "Failed to load resource: the server responded with a status of "
+                "500 (Internal Server Error)"
+            )
+            with page.expect_console_message(
+                lambda message: (
+                    message.type == "error" and message.text == expected_http_error
+                )
+            ):
+                with page.expect_response(old_url):
+                    old.fulfill(status=500, json={"error": "Obsolete S3 view failure"})
+            browser_errors.remove(expected_http_error)
+        else:
+            with page.expect_response(old_url):
+                old.fulfill(response=old.fetch())
+        # Flush the released payload's consumer before checking visible authority.
+        page.evaluate("""() => new Promise(resolve =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)))""")
+        expect(page.locator("#xic-sample")).to_have_value("S4")
+        expect(review.locator(".tx-sample-name")).to_have_text("S4")
+        expect(review).to_have_attribute("data-view-id", views["S4"])
+        expect(page.locator("#status")).to_have_text(current_global)
+        expect(page.locator("#status")).not_to_have_class(re.compile(r"\berror\b"))
+        expect(page.locator("#xic-status")).to_have_text(current_local)
+        expect(page.locator("#xic-retry")).to_be_hidden()
+        expect(page.locator("#xic-loading")).to_be_hidden()
+        assert len(reads) == 4
+        assert len(posts) == 2
+    finally:
+        for route in pending:
+            route.continue_()
+        page.unroute(old_url)
 
 
 def test_targeted_review_marks_the_rare_detection_and_opens_it_in_place(
@@ -1274,9 +1476,9 @@ def test_review_history_restores_server_query_before_loading_xic(
     with page.expect_response("**/api/curves") as response:
         analyte_xic.click()
     assert response.value.status == 202, response.value.json()
-    expect(
-        page.locator("#xic-review").locator(".tx-chart-title")
-    ).to_have_text(["Analyte", "ISTD"])
+    expect(page.locator("#xic-review").locator(".tx-chart-title")).to_have_text(
+        ["Analyte", "ISTD"]
+    )
 
 
 def test_review_overview_button_skips_workspace_tab_history(workbench, tmp_path):
@@ -1809,3 +2011,278 @@ def test_downloaded_curve_report_keeps_snapshot_and_interacts_without_network(
     finally:
         context.tracing.stop(path=tmp_path / "downloaded-offline-trace.zip")
         context.close()
+
+
+def test_targeted_role_groups_keep_other_filters_and_restore_through_history(
+    workbench, tmp_path
+):
+    from openpyxl import load_workbook
+
+    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+
+    page = workbench
+    workbook = write_rare_detection_workbook(tmp_path / "role-groups.xlsx")
+    book = load_workbook(workbook)
+    targets, results = book["Targets"], book["XIC Results"]
+    targets.delete_rows(2, targets.max_row - 1)
+    for row in (
+        ["Alpha", "Analyte", "Gamma", 258.1085, 8, 10],
+        ["Beta", "Analyte", "Gamma", 300, 8, 10],
+        ["Gamma", "ISTD", None, 261.127, 8, 10],
+    ):
+        targets.append(row)
+    records = list(results.values)[1:]
+    results.delete_rows(2, results.max_row - 1)
+    for analyte, standard in zip(records[::2], records[1::2], strict=True):
+        # Neutral names ensure groups come from Targets.Role, not label inference.
+        results.append([analyte[0], "Alpha", *analyte[2:]])
+        results.append([standard[0], "Beta", *standard[2:]])
+        results.append([standard[0], "Gamma", *standard[2:]])
+    book.save(workbook)
+    book.close()
+    original = workbook.read_bytes()
+    _view(page, "review")
+    page.locator("#source").fill(str(workbook))
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#targeted-overview td button", has_text="Alpha").click()
+    role = page.locator("#target-role")
+    expect(role).to_be_visible()
+    expect(role.locator("option")).to_have_text(
+        ["全部類別", "Analyte（分析物）", "ISTD（內標）"]
+    )
+    assert role.locator("option").evaluate_all(
+        "options => options.map(option => option.value)"
+    ) == ["", "Analyte", "ISTD"]
+    names = page.locator("#target-id option")
+    titles = page.locator("#item-list .item-top strong")
+    role.select_option("Analyte")
+    expect(page.locator("#target-id")).to_have_value("")
+    expect(names).to_have_text(["全部目標", "Alpha", "Beta"])
+    expect(titles).to_have_text(["Alpha", "Beta"])
+    page.locator("#target-sample").select_option("S3")
+    page.locator("#review-range-filters summary").click()
+    for field_id, value in (
+        ("mz-min", "250"),
+        ("mz-max", "400"),
+        ("rt-min", "8"),
+        ("rt-max", "10"),
+    ):
+        page.locator(f"#{field_id}").fill(value)
+    page.locator("#target-id").select_option("Alpha")
+    page.locator("#target-attention").check()
+    expect(titles).to_have_text(["Alpha"])
+    expect(names).to_have_text(["全部目標", "Alpha", "Beta"])
+    with page.expect_request("**/api/query") as grouped:
+        role.select_option("ISTD")
+    expected_filters = {
+        "target_role": "ISTD",
+        "target_id": "",
+        "sample_id": "S3",
+        "attention_only": True,
+        "mz_min": 250,
+        "mz_max": 400,
+        "rt_min": 8,
+        "rt_max": 10,
+    }
+    assert {
+        key: grouped.value.post_data_json[key] for key in expected_filters
+    } == expected_filters
+    expect(page.locator("#target-id")).to_have_value("")
+    expect(names).to_have_text(["全部目標", "Gamma"])
+    empty = page.locator("#selection-empty")
+    expect(empty.locator("h2")).to_have_text("目前篩選條件沒有符合結果")
+    expect(empty).to_contain_text("ISTD")
+    expect(page.locator("#target-sample")).to_have_value("S3")
+    expect(page.locator("#target-attention")).to_be_checked()
+    page.locator("#target-attention").uncheck()
+    expect(empty).to_be_hidden()
+    expect(titles).to_have_text(["Gamma"])
+    expect(page.locator("#item-title")).to_contain_text("Gamma")
+    expect(
+        page.locator("#recorded-review .tgt-table tbody tr:not([hidden])")
+    ).to_have_count(1)
+    page.locator("#target-id").select_option("Gamma")
+    role.select_option("Analyte")
+    expect(page.locator("#target-id")).to_have_value("")
+    expect(page.locator("#target-sample")).to_have_value("S3")
+    expect(titles).to_have_text(["Alpha", "Beta"])
+    page.locator("#target-id").select_option("Beta")
+    expect(page.locator("#item-title")).to_contain_text("Beta")
+    _view(page, "targeted")
+    _view(page, "review")
+    role.select_option("ISTD")
+    expect(titles).to_have_text(["Gamma"])
+    page.go_back()
+    expect(page.locator("#workspace-targeted")).to_be_visible()
+    page.go_back()
+    expect(page.locator("#workspace-review")).to_be_visible()
+    expect(role).to_have_value("Analyte")
+    expect(names).to_have_text(["全部目標", "Alpha", "Beta"])
+    expect(page.locator("#target-id")).to_have_value("Beta")
+    expect(page.locator("#item-title")).to_contain_text("Beta")
+    page.go_forward()
+    expect(page.locator("#workspace-targeted")).to_be_visible()
+    page.go_forward()
+    expect(page.locator("#workspace-review")).to_be_visible()
+    expect(role).to_have_value("ISTD")
+    expect(names).to_have_text(["全部目標", "Gamma"])
+    expect(page.locator("#target-id")).to_have_value("")
+    expect(titles).to_have_text(["Gamma"])
+    page.locator("#reset-query").click()
+    expect(role).to_have_value("")
+    expect(names).to_have_text(["全部目標", "Alpha", "Beta", "Gamma"])
+    expect(titles).to_have_text(["Alpha", "Beta", "Gamma"])
+    expect(page.locator("#target-sample")).to_have_value("")
+    expect(page.locator("#target-attention")).not_to_be_checked()
+    role.select_option("ISTD")
+    expect(names).to_have_text(["全部目標", "Gamma"])
+    page.locator("#back-to-overview").click()
+    page.locator("#targeted-overview td button", has_text="Alpha").click()
+    expect(role).to_have_value("")
+    expect(names).to_have_text(["全部目標", "Alpha", "Beta", "Gamma"])
+    expect(page.locator("#target-id")).to_have_value("Alpha")
+    expect(page.locator("#item-title")).to_contain_text("Alpha")
+    assert workbook.read_bytes() == original
+
+
+def test_targeted_zero_results_explain_applied_filters_and_restore_one_condition(
+    workbench,
+    tmp_path,
+    browser_errors,
+):
+    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+
+    page = workbench
+    workbook = write_rare_detection_workbook(tmp_path / "zero.xlsx")
+    original = workbook.read_bytes()
+    _view(page, "review")
+    page.locator("#source").fill(str(workbook))
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#targeted-overview td button", has_text="Analyte").click()
+    page.locator("#target-attention").check()
+    page.locator("#target-sample").select_option("S3")
+    page.locator("#target-id").select_option("ISTD")
+    empty = page.locator("#selection-empty")
+    expect(empty).to_be_visible()
+    expect(empty.locator("h2")).to_have_text("目前篩選條件沒有符合結果")
+    for condition in ("目標：ISTD", "樣本：S3", "優先檢閱", "清除條件"):
+        expect(empty).to_contain_text(condition)
+    expect(page.locator("#page-label")).to_have_text("0 筆")
+    expect(page.locator("#selection")).to_be_hidden()
+    _view(page, "targeted")
+    page.go_back()
+    expect(empty.locator("h2")).to_have_text("目前篩選條件沒有符合結果")
+    expect(page.locator("#target-id")).to_have_value("ISTD")
+    expect(page.locator("#target-attention")).to_be_checked()
+
+    pending = []
+    page.route("**/api/query", lambda route: pending.append(route))
+    with page.expect_request("**/api/query"):
+        page.locator("#target-id").select_option("Analyte")
+    expect(empty.locator("h2")).to_have_text("正在查詢結果…")
+    pending.pop().fulfill(status=500, json={"error": "查詢測試失敗"})
+    expect(empty.locator("h2")).to_have_text("查詢未完成")
+    expect(empty).to_contain_text("查詢測試失敗")
+    expect(page.locator("#status")).to_contain_text("查詢測試失敗")
+    browser_errors.remove(
+        "Failed to load resource: the server responded with a status of "
+        "500 (Internal Server Error)"
+    )
+    page.unroute("**/api/query")
+    page.locator("#target-id").select_option("ISTD")
+    expect(empty.locator("h2")).to_have_text("目前篩選條件沒有符合結果")
+    page.locator("#target-attention").uncheck()
+    expect(empty).to_be_hidden()
+    expect(page.locator("#item-title")).to_contain_text("ISTD")
+    expect(page.locator("#target-id")).to_have_value("ISTD")
+    expect(page.locator("#target-sample")).to_have_value("S3")
+    expect(
+        page.locator("#recorded-review .tgt-table tbody tr:not([hidden])")
+    ).to_have_count(1)
+    assert workbook.read_bytes() == original
+
+
+@pytest.mark.parametrize("mode", ["nearest", "exact"])
+def test_untargeted_zero_results_keep_search_mode_and_remaining_bounds(
+    workbench,
+    tmp_path,
+    mode,
+):
+    from tests.test_xic_workbench import _nearest_review_batch
+
+    page = workbench
+    report, matrix = _nearest_review_batch(tmp_path)
+    original = [path.read_bytes() for path in (report, matrix)]
+    _view(page, "review")
+    page.locator("#source").fill(str(report))
+    page.locator("#raw-dir").fill("")
+    page.locator("#open-form button[type=submit]").click()
+    page.get_by_role("button", name="查看全部矩陣群組").click()
+    page.locator("#untargeted-search-mode").select_option(mode)
+    if mode == "nearest":
+        page.locator("#nearest-mz").fill("123.4")
+    else:
+        page.locator("#mz-min").fill("123.4")
+        page.locator("#mz-max").fill("123.4")
+    page.locator("#rt-min").fill("20")
+    page.locator("#query-form button[type=submit]").click()
+    empty = page.locator("#selection-empty")
+    expect(empty.locator("h2")).to_have_text("目前篩選條件沒有符合結果")
+    for condition in ("矩陣群組", "123.4", "RT ≥ 20", "清除條件"):
+        expect(empty).to_contain_text(condition)
+    expect(page.locator("#page-label")).to_have_text("0 筆")
+    if mode == "exact":
+        page.locator("#review-range-filters summary").click()
+    page.locator("#rt-min").fill("")
+    page.locator("#query-form button[type=submit]").click()
+    expect(empty).to_be_hidden()
+    expect(page.locator("#untargeted-search-mode")).to_have_value(mode)
+    titles = page.locator("#item-list .item-top strong")
+    if mode == "nearest":
+        expect(page.locator("#nearest-mz")).to_have_value("123.4")
+        expect(titles).to_have_count(25)
+        expect(titles.nth(0)).to_have_text("m/z 123.398")
+        expect(titles.nth(1)).to_have_text("m/z 123.42")
+        expect(page.locator("#list-summary")).to_contain_text("32")
+    else:
+        expect(page.locator("#mz-min")).to_have_value("123.4")
+        expect(page.locator("#mz-max")).to_have_value("123.4")
+        expect(titles).to_have_text(["m/z 350.0000"])
+    assert [path.read_bytes() for path in (report, matrix)] == original
+
+
+def test_zero_result_history_discards_pending_query_feedback(
+    workbench, tmp_path, browser_errors
+):
+    from tests.test_xic_inspector_targeted_workbook import write_rare_detection_workbook
+
+    page = workbench
+    workbook = write_rare_detection_workbook(tmp_path / "zero-history.xlsx")
+    _view(page, "review")
+    page.locator("#source").fill(str(workbook))
+    page.locator("#open-form button[type=submit]").click()
+    page.locator("#targeted-overview td button", has_text="Analyte").click()
+    page.locator("#target-attention").check()
+    page.locator("#target-id").select_option("ISTD")
+    empty = page.locator("#selection-empty")
+    expect(empty.locator("h2")).to_have_text("目前篩選條件沒有符合結果")
+    pending = []
+    page.route("**/api/query", lambda route: pending.append(route))
+    with page.expect_request("**/api/query"):
+        page.locator("#target-id").select_option("Analyte")
+    expect(empty.locator("h2")).to_have_text("正在查詢結果…")
+    _view(page, "targeted")
+    page.go_back()
+    expected_http_error = (
+        "Failed to load resource: the server responded with a status of "
+        "500 (Internal Server Error)"
+    )
+    with page.expect_console_message(
+        lambda message: message.text == expected_http_error
+    ):
+        pending.pop().fulfill(status=500, json={"error": "Discarded query failure"})
+    browser_errors.remove(expected_http_error)
+    expect(empty.locator("h2")).to_have_text("目前篩選條件沒有符合結果")
+    expect(empty).to_contain_text("目標：ISTD")
+    expect(empty).to_contain_text("優先檢閱")
+    expect(page.locator("#status")).not_to_contain_text("Discarded query failure")
