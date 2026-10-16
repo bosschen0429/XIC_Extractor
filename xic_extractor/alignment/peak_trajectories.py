@@ -828,6 +828,32 @@ def _neighbor_pairs(
     return tuple((patterns[i], patterns[j]) for i, j in sorted(chosen))
 
 
+_ScoredPath = tuple[tuple[int, float, float], tuple[tuple[int, int], ...]]
+
+
+def _merge_top_two_paths(
+    left: list[_ScoredPath], right: list[_ScoredPath]
+) -> list[_ScoredPath]:
+    """Merge nonempty, descending, distinct top-two states without sorting.
+
+    DP states are never mutated after construction, so equal states can be reused.
+    """
+    if left is right or left == right:
+        return left
+    first = max(left[0], right[0])
+    second_left = left[0] if left[0] != first else (left[1] if len(left) > 1 else None)
+    second_right = (
+        right[0] if right[0] != first else (right[1] if len(right) > 1 else None)
+    )
+    if second_left is None:
+        second = second_right
+    elif second_right is None:
+        second = second_left
+    else:
+        second = max(second_left, second_right)
+    return [first] if second is None else [first, second]
+
+
 def _match_patterns(
     left: Sequence[ElutionLandmark],
     right: Sequence[ElutionLandmark],
@@ -857,20 +883,17 @@ def _match_patterns(
             )
     ordered = sorted(endpoints)
     shifts.update((a + b) / 2.0 for a, b in zip(ordered, ordered[1:]))
-    empty: tuple[tuple[int, float, float], tuple[tuple[int, int], ...]] = (
-        (0, 0.0, 0.0),
-        (),
-    )
+    empty: _ScoredPath = ((0, 0.0, 0.0), ())
     alternatives: dict[tuple[tuple[int, int], ...], tuple[int, float, float]] = {}
     for shift in sorted(shifts):
-        scores = [
-            [[empty] for _ in range(len(right) + 1)] for _ in range(len(left) + 1)
-        ]
+        previous_row = [[empty] for _ in range(len(right) + 1)]
         for i in range(len(left)):
+            row = [[empty]]
             for j in range(len(right)):
-                options = [*scores[i][j + 1], *scores[i + 1][j]]
+                upper, across = previous_row[j + 1], row[j]
                 residual = abs(deltas[i][j] - shift) / tolerances[i][j]
                 if residual <= 1.0:
+                    options = [*upper, *across]
                     options.extend(
                         (
                             (
@@ -880,13 +903,16 @@ def _match_patterns(
                             ),
                             (*pairs, (i, j)),
                         )
-                        for previous, pairs in scores[i][j]
+                        for previous, pairs in previous_row[j]
                     )
-                # Two distinct paths suffice for the downstream uniqueness
-                # check. Retaining only the tuple-order winner hides a tied
-                # correspondence; retaining all paths would be exponential.
-                scores[i + 1][j + 1] = sorted(set(options), reverse=True)[:2]
-        for score, pairs in scores[-1][-1]:
+                    # Two distinct paths suffice for the downstream uniqueness
+                    # check. Retaining only the tuple-order winner hides a tied
+                    # correspondence; retaining all paths would be exponential.
+                    row.append(sorted(set(options), reverse=True)[:2])
+                else:
+                    row.append(_merge_top_two_paths(upper, across))
+            previous_row = row
+        for score, pairs in previous_row[-1]:
             if pairs and score > alternatives.get(pairs, (-1, 0.0, 0.0)):
                 alternatives[pairs] = score
     if not alternatives:
