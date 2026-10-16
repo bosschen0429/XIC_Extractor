@@ -9,6 +9,7 @@ import re
 import socket
 import threading
 import time
+import weakref
 from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
 
@@ -242,6 +243,46 @@ def test_nearest_review_query_exposes_owner_ranking_and_preserves_exact(tmp_path
     assert [path.read_bytes() for path in (report, matrix)] == before
 
 
+def test_review_overview_does_not_retain_decoded_cells_for_the_population(
+    tmp_path, monkeypatch
+):
+    from xic_extractor.diagnostics import alignment_explanation
+    from xic_inspector.sources.untargeted_overview import review_overview
+
+    sample_count = 32
+    report, _ = _review_batch(tmp_path, sample_count=sample_count)
+    summary = alignment_explanation.read_explanation_metadata(report).summary
+    live_cells = weakref.WeakValueDictionary()
+    peak_cells = 0
+    unpack = alignment_explanation.unpack_cells
+
+    class ObservedCell(dict):
+        pass
+
+    def observe_cells(*args, **kwargs):
+        nonlocal peak_cells
+        # Run the real decoder; weak references observe retention, not its values.
+        cells = {
+            key: ObservedCell(value) for key, value in unpack(*args, **kwargs).items()
+        }
+        live_cells.update(cells)
+        peak_cells = max(peak_cells, len(live_cells))
+        return cells
+
+    monkeypatch.setattr(alignment_explanation, "unpack_cells", observe_cells)
+    overview, rows = review_overview(report, summary)
+
+    assert overview["matrix_count"] == 3
+    assert overview["complete_count"] == 1
+    assert overview["unresolved_count"] == 1
+    assert overview["archive_count"] == 1
+    assert [sample["numeric_count"] for sample in overview["samples"]] == [3] + [1] * 31
+    assert rows["z-priority"]["unresolved_count"] == 31
+    # Only the current and next row may overlap while the iterator advances.
+    assert peak_cells <= 2 * sample_count
+    assert not live_cells
+
+
 def test_review_overview_separates_matrix_priority_and_internal_evidence(tmp_path):
     report, matrix = _review_batch(tmp_path)
     before = [p.read_bytes() for p in (report, matrix)]
@@ -264,6 +305,24 @@ def test_review_overview_separates_matrix_priority_and_internal_evidence(tmp_pat
         ]
         page = workspace.query({"limit": 1, "offset": 1})
         assert page["items"][0]["group_id"] == "a-complete"
+        for scope, expected in (
+            ("matrix", ["z-priority", "a-complete", "b-missing"]),
+            ("unresolved", ["z-priority"]),
+            ("archive", ["archive"]),
+            ("candidates", ["orphan"]),
+        ):
+            identifiers = []
+            for offset in range(len(expected) + 1):
+                page = workspace.query(
+                    {"review_scope": scope, "offset": offset, "limit": 1}
+                )
+                assert page["overview"] == overview
+                assert page["matched_count"] == len(expected)
+                identifiers.extend(
+                    item["candidate_id"] if scope == "candidates" else item["group_id"]
+                    for item in page["items"]
+                )
+            assert identifiers == expected
         page = workspace.query({"review_scope": "unresolved", "offset": 0})
         assert page["matched_count"] == 1
         assert page["items"][0]["unresolved_count"] == 1

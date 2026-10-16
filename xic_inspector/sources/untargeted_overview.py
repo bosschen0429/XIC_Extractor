@@ -2,29 +2,30 @@
 
 from collections import Counter
 
-from xic_extractor.diagnostics.alignment_explanation import read_review_population
+from xic_extractor.diagnostics.alignment_explanation import open_review_population
 
 
 def review_overview(path, summary):
     rows = {}
     coverage = Counter()
     sample_count = len(summary["samples"])
-    for record in read_review_population(path, summary):
-        row, cells = record["row"], record["cells"]
-        numeric = {
-            c["canonical_sample_identity_id"]
-            for c in cells
-            if c["variant"] == "numeric"
-        }
-        unresolved = sum(c["variant"] == "unresolved" for c in cells)
-        destination = row["route"]["destination"]
-        rows[row["row_key_id"]] = {
-            "destination": destination,
-            "numeric_count": len(numeric),
-            "unresolved_count": unresolved,
-        }
-        if destination == "matrix":
-            coverage.update(numeric)
+    with open_review_population(path, summary) as population:
+        for record in population:
+            row, cells = record["row"], record["cells"]
+            numeric = {
+                c["canonical_sample_identity_id"]
+                for c in cells
+                if c["variant"] == "numeric"
+            }
+            unresolved = sum(c["variant"] == "unresolved" for c in cells)
+            destination = row["route"]["destination"]
+            rows[row["row_key_id"]] = {
+                "destination": destination,
+                "numeric_count": len(numeric),
+                "unresolved_count": unresolved,
+            }
+            if destination == "matrix":
+                coverage.update(numeric)
     matrix = [r for r in rows.values() if r["destination"] == "matrix"]
     calibration = summary.get("known_istd_reference", {}).get("calibration", {})
     return {

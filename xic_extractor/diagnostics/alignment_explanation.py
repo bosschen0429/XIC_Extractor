@@ -676,13 +676,14 @@ def open_review_cells(
         yield lambda row_id: _read_review_cells(connection, summary, (row_id,))
 
 
-def read_review_population(
+@contextmanager
+def open_review_population(
     path: Path, summary: Mapping[str, Any]
-) -> list[dict[str, Any]]:
-    """Read recorded routes and cells for result-review presentation only."""
+) -> Iterator[Iterator[dict[str, Any]]]:
+    """Stream review rows and cells within one read-only connection lifetime."""
     with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
         samples = [s["canonical_sample_identity_id"] for s in summary["samples"]]
-        return [
+        yield (
             {
                 "row": _object(record),
                 "cells": list(
@@ -695,7 +696,7 @@ def read_review_population(
                 "SELECT c.row_key_id,c.group_id,c.payload,r.payload FROM row_cells c "
                 "JOIN records r ON r.kind='rows' AND r.record_id=c.row_key_id"
             )
-        ]
+        )
 
 
 def read_review_row_samples(
