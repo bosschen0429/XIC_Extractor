@@ -15,6 +15,7 @@ from xic_extractor.alignment.peak_trajectories import (
     PeakTrajectory,
     resolve_peak_trajectories,
 )
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.peak_detection.elution_context import (
     ElutionLandmark,
     SampleElutionContext,
@@ -41,15 +42,18 @@ def test_paired_istd_localization_uses_only_confirmed_same_batch_offsets(
     result = trajectory.backfill_locations(
         ("missing",),
         reference_samples=frozenset({"ref1", "ref2", "other_batch"}),
-        injection_order={"ref1": 1, "ref2": 2, "missing": 3},
-        sample_cohorts={
-            "ref1": "batch",
-            "ref2": "batch",
-            "missing": "batch",
-            "unconfirmed": "batch",
-            "other_batch": "different",
-        },
-        rt_warp=None,
+        rt_frame=SampleRtFrame(
+            injection_order=({"ref1": 1, "ref2": 2, "missing": 3}),
+            sample_cohorts=(
+                {
+                    "ref1": "batch",
+                    "ref2": "batch",
+                    "missing": "batch",
+                    "unconfirmed": "batch",
+                    "other_batch": "different",
+                }
+            ),
+        ),
         backfill_half_window_min=0.5,
         paired_istd_rts={
             "ref1": 8.0,
@@ -93,9 +97,9 @@ def test_backfill_location_prepares_held_out_residuals_once_per_group(
     result = trajectory.backfill_locations(
         targets,
         reference_samples=frozenset(sample for sample, _ in references),
-        injection_order=orders,
-        sample_cohorts=cohorts,
-        rt_warp=None,
+        rt_frame=SampleRtFrame(
+            injection_order=(orders or {}), sample_cohorts=(cohorts or {})
+        ),
         backfill_half_window_min=half_window_min,
     )
     model_count = 2 if with_ms1_positions else 1
@@ -113,9 +117,10 @@ def test_backfill_localization_does_not_turn_row_scatter_into_unbounded_permissi
     result = PeakTrajectory((), references).backfill_locations(
         ("missing",),
         reference_samples=frozenset(sample for sample, _ in references),
-        injection_order=orders,
-        sample_cohorts={sample: "batch" for sample in orders},
-        rt_warp=None,
+        rt_frame=SampleRtFrame(
+            injection_order=(orders or {}),
+            sample_cohorts=({sample: "batch" for sample in orders}),
+        ),
         backfill_half_window_min=1.0,
     )
     assert not result["missing"].reliable
@@ -132,9 +137,9 @@ def test_forecast_requires_agreement_with_direct_reference_trajectory(pattern_of
     orders = {sample: int(sample[1:]) for sample, _ in references + pattern}
     orders["missing"] = 12
     kwargs = {
-        "injection_order": orders,
-        "sample_cohorts": dict.fromkeys(orders, "batch"),
-        "rt_warp": None,
+        "rt_frame": SampleRtFrame(
+            injection_order=orders, sample_cohorts=dict.fromkeys(orders, "batch")
+        ),
         "backfill_half_window_min": 1.0,
     }
     prediction = trajectory.locate("missing", **kwargs)
@@ -159,9 +164,10 @@ def test_sparse_reference_median_cannot_veto_a_supported_drift_forecast():
     result = PeakTrajectory((), references + pattern).backfill_locations(
         ("missing",),
         reference_samples=frozenset(sample for sample, _ in references),
-        injection_order=orders,
-        sample_cohorts=dict.fromkeys(orders, "batch"),
-        rt_warp=None,
+        rt_frame=SampleRtFrame(
+            injection_order=(orders or {}),
+            sample_cohorts=(dict.fromkeys(orders, "batch")),
+        ),
         backfill_half_window_min=1.0,
     )["missing"]
     assert result.reliable
@@ -173,9 +179,10 @@ def test_observed_peak_keeps_its_location_without_borrowing_another_batch():
     result = trajectory.backfill_locations(
         ("missing", "observed"),
         reference_samples=frozenset(("a", "b")),
-        injection_order={"a": 1, "b": 2, "observed": 3, "missing": 4},
-        sample_cohorts={"a": "A", "b": "A", "observed": "B", "missing": "B"},
-        rt_warp=None,
+        rt_frame=SampleRtFrame(
+            injection_order=({"a": 1, "b": 2, "observed": 3, "missing": 4}),
+            sample_cohorts=({"a": "A", "b": "A", "observed": "B", "missing": "B"}),
+        ),
         backfill_half_window_min=1.0,
     )
     assert not result["missing"].reliable
@@ -244,9 +251,10 @@ def test_equal_pattern_paths_do_not_authorize_observed_backfill_location(reverse
         .backfill_locations(
             ("c",),
             reference_samples=frozenset(("a", "b")),
-            injection_order=orders,
-            sample_cohorts=dict.fromkeys(orders, "batch"),
-            rt_warp=None,
+            rt_frame=SampleRtFrame(
+                injection_order=(orders or {}),
+                sample_cohorts=(dict.fromkeys(orders, "batch")),
+            ),
             backfill_half_window_min=1.0,
         )["c"]
         .location
@@ -270,9 +278,10 @@ def test_missing_position_uses_ms1_trajectory_points_not_another_rt_answer():
     trajectory = model.trajectory_for(owners)
     location = trajectory.locate(
         "s3",
-        injection_order=orders,
-        sample_cohorts=dict.fromkeys(orders, "batch"),
-        rt_warp=None,
+        rt_frame=SampleRtFrame(
+            injection_order=(orders or {}),
+            sample_cohorts=(dict.fromkeys(orders, "batch")),
+        ),
         backfill_half_window_min=0.5,
     )
     # Two supported owners alone have median 10.2. The MS1-only point in s1
@@ -403,9 +412,10 @@ def test_single_peak_continuation_is_not_an_observed_position(
     members = [owner for owner in owners if owner.owner_id.endswith(label)]
     location = model.trajectory_for(members).locate(
         "x",
-        injection_order=orders,
-        sample_cohorts=dict.fromkeys(orders, "batch"),
-        rt_warp=None,
+        rt_frame=SampleRtFrame(
+            injection_order=(orders or {}),
+            sample_cohorts=(dict.fromkeys(orders, "batch")),
+        ),
         backfill_half_window_min=0.5,
     )
     assert location.observed_rt is None
@@ -538,9 +548,10 @@ def test_backfill_rt_uses_trajectory_fit_and_target_sample_coordinates() -> None
         .locate(
             backfill_half_window_min=1.0,
             sample_stem="target",
-            injection_order={"a": 1, "b": 3, "target": 2},
-            rt_warp=warp,
-            sample_cohorts={"a": "batch", "b": "batch", "target": "batch"},
+            rt_frame=SampleRtFrame(
+                injection_order=({"a": 1, "b": 3, "target": 2}),
+                sample_cohorts=({"a": "batch", "b": "batch", "target": "batch"}),
+            ).with_warp(warp),
         )
     )
     assert prediction.query_rt == pytest.approx(10.3)
@@ -551,13 +562,28 @@ def test_backfill_rt_uses_trajectory_fit_and_target_sample_coordinates() -> None
         .locate(
             backfill_half_window_min=1.0,
             sample_stem="other",
-            injection_order={"a": 1, "b": 3, "other": 2},
-            rt_warp=warp,
-            sample_cohorts={"a": "batch", "b": "batch", "other": "different"},
+            rt_frame=SampleRtFrame(
+                injection_order=({"a": 1, "b": 3, "other": 2}),
+                sample_cohorts=({"a": "batch", "b": "batch", "other": "different"}),
+            ).with_warp(warp),
         )
     )
     assert unsupported.query_rt == 10.0
     assert unsupported.basis == "trajectory_reference"
+
+
+def test_backfill_frame_scope_does_not_borrow_an_outside_population_reference():
+    frame = SampleRtFrame(
+        injection_order={"a": 1, "target": 2, "b": 3, "outside": 4},
+        sample_cohorts=dict.fromkeys(("a", "b", "target", "outside"), "batch"),
+    ).for_sample_stems(frozenset({"a", "b", "target"}))
+    trajectory = PeakTrajectory((), (("a", 10.0), ("b", 12.0), ("outside", 30.0)))
+    location = trajectory.locate("target", rt_frame=frame, backfill_half_window_min=1.0)
+    # Only a and b belong to the original consumer population: the existing
+    # two-reference median is 11, irrespective of the outside peak's RT.
+    assert location.query_rt == 11.0
+    assert location.basis == "trajectory_fit"
+    assert not location.observed
 
 
 @pytest.mark.parametrize("target_order", [12, 40])
@@ -584,9 +610,9 @@ def test_backfill_rt_follows_steep_local_drift_beyond_the_neighbors(
         .locate(
             backfill_half_window_min=1.0,
             sample_stem="target",
-            injection_order=orders,
-            sample_cohorts=cohorts,
-            rt_warp=flat,
+            rt_frame=SampleRtFrame(
+                injection_order=(orders or {}), sample_cohorts=(cohorts or {})
+            ).with_warp(flat),
         )
     )
     uncalibrated = (
@@ -595,9 +621,9 @@ def test_backfill_rt_follows_steep_local_drift_beyond_the_neighbors(
         .locate(
             backfill_half_window_min=1.0,
             sample_stem="target",
-            injection_order=orders,
-            sample_cohorts=cohorts,
-            rt_warp=None,
+            rt_frame=SampleRtFrame(
+                injection_order=(orders or {}), sample_cohorts=(cohorts or {})
+            ),
         )
     )
     assert calibrated.query_rt == pytest.approx(10.2 + 0.1 * target_order)
@@ -632,9 +658,10 @@ def test_backfill_noisy_extrapolation_stays_at_supported_boundary(
             .locate(
                 backfill_half_window_min=1.0,
                 sample_stem=sample,
-                injection_order=orders,
-                sample_cohorts=dict.fromkeys(orders, "batch"),
-                rt_warp=warp,
+                rt_frame=SampleRtFrame(
+                    injection_order=(orders or {}),
+                    sample_cohorts=(dict.fromkeys(orders, "batch")),
+                ).with_warp(warp),
             )
         )
         offset = offsets[sample] if calibrated else 0.0
@@ -649,9 +676,10 @@ def test_backfill_noisy_extrapolation_stays_at_supported_boundary(
             .trajectory_for(members)
             .locate(
                 sample_stem=sample,
-                injection_order=orders,
-                sample_cohorts=dict.fromkeys(orders, "batch"),
-                rt_warp=warp,
+                rt_frame=SampleRtFrame(
+                    injection_order=(orders or {}),
+                    sample_cohorts=(dict.fromkeys(orders, "batch")),
+                ).with_warp(warp),
                 backfill_half_window_min=10.0,
             )
         )

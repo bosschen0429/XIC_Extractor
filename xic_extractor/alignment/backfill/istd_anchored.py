@@ -34,6 +34,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     owner_from_cid_nl_assessment_support,
 )
 from xic_extractor.alignment.peak_trajectories import PeakTrajectory
+from xic_extractor.alignment.rt_frame import RtFrame
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
@@ -69,6 +70,7 @@ def resolve_istd_anchored_backfill(
     paired_istd_observations: Callable[[], tuple[PeakObservationRef, ...]],
     rt_half_window_min: float,
     alignment_config: AlignmentConfig,
+    rt_frame: RtFrame,
 ) -> IstdAnchoredBackfill:
     """Decide Backfill for HOLD samples from their direct SUPPORT peers.
 
@@ -102,6 +104,7 @@ def resolve_istd_anchored_backfill(
         construct_cross_sample_peak_group_hypotheses(
             owners,
             config=alignment_config,
+            rt_frame=rt_frame,
             known_identity_bindings=tuple(
                 (owner.owner_id, target_identity) for owner in owners
             ),
@@ -132,6 +135,7 @@ def resolve_istd_anchored_backfill(
                 )
             ),
             config=alignment_config,
+            rt_frame=rt_frame,
             processing_attempt=processing_owners.attempt,
         )
         direct_by_sample = {
@@ -185,15 +189,7 @@ def resolve_istd_anchored_backfill(
             reference_samples=frozenset(
                 support.sample.metadata.raw_stem for support in direct_supports
             ),
-            injection_order={
-                s.metadata.raw_stem: s.metadata.injection_order
-                for s in sample_population
-                if s.metadata.injection_order is not None
-            },
-            sample_cohorts={
-                s.metadata.raw_stem: s.metadata.batch_id for s in sample_population
-            },
-            rt_warp=None,
+            rt_frame=rt_frame,
             backfill_half_window_min=rt_half_window_min,
             paired_istd_rts=pair_rts,
         )

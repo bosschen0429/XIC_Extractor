@@ -23,6 +23,7 @@ from tests.untargeted_partition_fixtures import (
     execute_dense_partition,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
@@ -328,20 +329,29 @@ def _assert_composite_labels_cannot_grant_membership(batch, runtime):
                 sample=result.job.sample, assessment=assessment, hypothesis=hypothesis
             )
         )
-    assert evaluate_owner_edge(*owners, config=AlignmentConfig()).failure_reason == ""
+    assert (
+        evaluate_owner_edge(
+            *owners, config=AlignmentConfig(), rt_frame=SampleRtFrame()
+        ).failure_reason
+        == ""
+    )
     unbound = tuple(
         replace(owner, cid_nl_composite_assessment=None) for owner in owners
     )
     assert unbound[0].neutral_loss_tag == unbound[1].neutral_loss_tag
     assert (
-        evaluate_owner_edge(*unbound, config=AlignmentConfig()).failure_reason
+        evaluate_owner_edge(
+            *unbound, config=AlignmentConfig(), rt_frame=SampleRtFrame()
+        ).failure_reason
         == "product_mz_out_of_tolerance"
     )
     crossed = replace(
         owners[1], cid_nl_composite_assessment=owners[0].cid_nl_composite_assessment
     )
     assert (
-        evaluate_owner_edge(owners[0], crossed, config=AlignmentConfig()).failure_reason
+        evaluate_owner_edge(
+            owners[0], crossed, config=AlignmentConfig(), rt_frame=SampleRtFrame()
+        ).failure_reason
         == "product_mz_out_of_tolerance"
     )
 
@@ -355,8 +365,7 @@ def _assert_composite_labels_cannot_grant_membership(batch, runtime):
         inferred = infer_feature_memberships(
             population,
             config=AlignmentConfig(anchor_min_seed_events=1),
-            injection_order=None,
-            drift_lookup=None,
+            rt_frame=SampleRtFrame(),
         )
         assert len(inferred.groups) == expected_groups
 

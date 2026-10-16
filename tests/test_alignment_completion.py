@@ -63,7 +63,7 @@ def test_workflow_forwards_exact_owner_objects_once(
         ),
         "predecessor_cell_observations": (),
         "backfill_cell_observations": (),
-        "drift_lookup": object(),
+        "rt_frame": object(),
     }
     if variant == "target":
         adapter_fields.update(sample_assessments=(), alignment_config=object())

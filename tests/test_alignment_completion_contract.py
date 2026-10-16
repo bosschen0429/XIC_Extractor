@@ -22,6 +22,7 @@ from xic_extractor.alignment.completion import (
     UntargetWorkflowAdapter,
 )
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.peak_detection.capture import capture_peak_hypotheses
 from xic_extractor.peak_detection.cid_nl_method_subject import CID_NL_PROVIDER_ID
 from xic_extractor.peak_detection.search_scope import (
@@ -132,6 +133,7 @@ def test_public_workflow_carriers_reject_non_exact_mutable_inputs() -> None:
             predecessor_cell_observations=(),
             sample_assessments=(),
             alignment_config=AlignmentConfig(),
+            rt_frame=SampleRtFrame.from_samples(tuple(sample for sample, _ in ())),
         )
 
     with pytest.raises(
@@ -142,6 +144,7 @@ def test_public_workflow_carriers_reject_non_exact_mutable_inputs() -> None:
             capture_inputs=(),
             predecessor_cell_observations=(),
             sample_assessments=(),
+            rt_frame=SampleRtFrame(),
         )
 
 
@@ -230,7 +233,7 @@ def test_workflow_rejects_incomplete_or_crossed_owner_population(
         sample_assessments=assessments,
         alignment_config=coverage.epoch.alignment_config,
         predecessor_cell_observations=spine.cells,
-        drift_lookup=None,
+        rt_frame=SampleRtFrame.from_samples(tuple(sample for sample, _ in assessments)),
     )
 
     class RuntimeReached(Exception):

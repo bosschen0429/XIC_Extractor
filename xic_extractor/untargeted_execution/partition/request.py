@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.scientific_settings import (
     SCIENTIFIC_SETTING_FIELDS,
@@ -90,6 +91,15 @@ class UntargetedPartitionContext:
     acquisition_sources_by_sample: Mapping[str, AcquisitionSourceExpectation] = field(
         default_factory=dict, repr=False, compare=False
     )
+
+    rt_frame: SampleRtFrame = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "rt_frame",
+            SampleRtFrame.from_samples(self.processing_owners.sample_resolutions),
+        )
 
     def sample(self, raw_stem: str) -> ResolvedCanonicalSampleIdentity:
         matches = tuple(
@@ -609,8 +619,8 @@ __all__ = (
     "UNTARGETED_CID_NL_PROCESSING_ALGORITHM_VERSION",
     "UNTARGETED_CID_NL_PROCESSING_CONTRACT_VERSION",
     "UNTARGETED_CID_NL_PROCESSING_INPUT_SCHEMA_VERSION",
-    'UntargetedPartitionContext',
-    'build_partition_context',
+    "UntargetedPartitionContext",
+    "build_partition_context",
     "candidate_universe_payload",
     "discovery_settings_payload",
 )

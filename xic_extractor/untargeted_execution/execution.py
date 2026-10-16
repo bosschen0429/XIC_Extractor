@@ -265,18 +265,16 @@ class UntargetedPartitionPipelineAdapter:
         self._retain_partition_spool = bool(retain_partition_spool)
         self._plan = plan
         self._alignment_config = alignment_config
+        sample_universe = frozenset(
+            sample.metadata.raw_stem for sample in plan.context.samples
+        )
+        reference_frame = plan.context.rt_frame.for_sample_stems(sample_universe)
         self._known_istd_reference = (
             None
             if known_istd_reference is None
             else known_istd_reference.prepare_batch(
-                sample_universe=frozenset(
-                    sample.metadata.raw_stem for sample in plan.context.samples
-                ),
-                injection_order={
-                    sample.metadata.raw_stem: sample.metadata.injection_order
-                    for sample in plan.context.samples
-                    if sample.metadata.injection_order is not None
-                },
+                sample_universe=sample_universe,
+                injection_order=reference_frame.injection_order,
             )
         )
         self._max_partition_jobs = max_partition_jobs

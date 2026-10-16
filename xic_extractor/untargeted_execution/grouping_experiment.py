@@ -100,7 +100,7 @@ def grouping_inputs_from_prepared(
                     ),
                     owners=tuple(owners[key] for key in sorted(owners)),
                     known_identity_bindings=bindings,
-                    rt_warp=partition.rt_warp,
+                    rt_warp=partition.rt_frame.warp_for_snapshot,
                     elution_contexts=workset.grouping_scope.peak_trajectories.source_contexts,
                 )
             )
@@ -153,17 +153,11 @@ def prepare_grouping_experiment(
     )
     compact_inputs: list[GroupingInputs] = []
     sample_stems = tuple(sample.metadata.raw_stem for sample in plan.context.samples)
-    injection_order = {
-        sample.metadata.raw_stem: sample.metadata.injection_order
-        for sample in plan.context.samples
-        if sample.metadata.injection_order is not None
-    }
+    rt_frame = plan.context.rt_frame.for_sample_stems(frozenset(sample_stems))
+    injection_order = rt_frame.injection_order
     calibration = BatchRtWarpAccumulator(
         injection_order=injection_order,
-        sample_cohorts={
-            sample.metadata.raw_stem: sample.metadata.batch_id
-            for sample in plan.context.samples
-        },
+        sample_cohorts=rt_frame.sample_cohorts,
     )
     partition_count = len(adapter.bootstrap_partitions)
     selected_keys = {partition.partition_key for partition in selected}
@@ -215,11 +209,11 @@ def prepare_grouping_experiment(
                     ).index
                 )
                 del prepared, sample_results, batch
-        rt_warp = calibration.freeze()
+        rt_frame = rt_frame.with_warp(calibration.freeze())
         for position in positions:
             retained = cast(_GroupingBootstrap, store.read(position))
             prepared = finalize_untargeted_partition_grouping(
-                retained.batch, retained.prepared, rt_warp=rt_warp
+                retained.batch, retained.prepared, rt_frame=rt_frame
             )
             compact_inputs.append(
                 grouping_inputs_from_prepared(

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from xic_extractor.alignment.backfill.completion_evidence import (
     BackfillCompletionProjection,
@@ -41,7 +41,6 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingResult,
 )
-from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
 from xic_extractor.alignment.grouping_bootstrap import (
     InitialGroupingScope,
     RetainedGroupingCandidate,
@@ -90,8 +89,6 @@ class CidNlWorksetEvidence:
         tuple[str, str, str],
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
     ]
-
-    rt_warp: BatchRtWarp | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +148,7 @@ class CidNlWorksetCompletion:
             ),
             UntargetWorkflowAdapter(
                 capture_inputs=self._capture_inputs,
+                rt_frame=self._grouping_result.rt_frame,
                 completed_grouping=self._grouping_result,
                 sample_assessments=self._sample_assessments,
                 closed_cell_coverage=coverage,
@@ -211,11 +209,10 @@ def _complete_cell_observations(
     grouping_result = grouping.grouping_result
     initial_assessments = evidence.initial_assessments
     sample_universe = frozenset(sample.metadata.raw_stem for sample in samples)
-    injection_order = {
-        sample.metadata.raw_stem: sample.metadata.injection_order
-        for sample in samples
-        if sample.metadata.injection_order is not None
-    }
+    grouping_result = replace(
+        grouping_result,
+        rt_frame=grouping_result.rt_frame.for_sample_stems(sample_universe),
+    )
     members_by_group = {
         group.group_hypothesis_id: frozenset(
             member.canonical_sample_identity_id for member in group.member_subjects
@@ -248,8 +245,6 @@ def _complete_cell_observations(
             groups=grouping_scope.groups,
             backfills=group_backfills,
             alignment_config=alignment_config,
-            injection_order=injection_order,
-            rt_warp=evidence.rt_warp,
         )
     )
     backfilled_positions = frozenset(
@@ -262,9 +257,8 @@ def _complete_cell_observations(
         groups=grouping_scope.groups,
         sample_assessments=initial_assessments,
         alignment_config=alignment_config,
-        drift_lookup=grouping_result.drift_lookup,
+        rt_frame=grouping_result.rt_frame,
         sample_universe=sample_universe,
-        injection_order=injection_order,
         backfill_assessments_by_group={
             key: pair
             for key, pair in group_backfills.items()
@@ -283,9 +277,8 @@ def _complete_cell_observations(
             groups=backfilled_groups,
             sample_assessments=initial_assessments,
             alignment_config=alignment_config,
-            drift_lookup=grouping_result.drift_lookup,
+            rt_frame=grouping_result.rt_frame,
             sample_universe=sample_universe,
-            injection_order=injection_order,
             backfill_assessments_by_group={
                 (successor_ids[group_id], sample_id, subject_id): pair
                 for (

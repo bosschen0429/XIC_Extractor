@@ -20,10 +20,10 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 )
 from xic_extractor.alignment.feature_membership_inference import (
     BatchRtWarp,
-    RtCoordinates,
 )
 from xic_extractor.alignment.grouping_experiment import GroupingInputs, GroupingWorkset
 from xic_extractor.alignment.ownership_models import IdentityEvent, SampleLocalMS1Owner
+from xic_extractor.alignment.rt_frame import RtFrame
 from xic_extractor.alignment.sample_rt_calibration import (
     BatchRtCalibration,
     CalibrationKnot,
@@ -340,7 +340,7 @@ def write_grouping_result(
     groups: Sequence[CrossSamplePeakGroupHypothesis],
     *,
     baseline: Sequence[CrossSamplePeakGroupHypothesis] = (),
-    rt_coordinates: RtCoordinates | None = None,
+    rt_coordinates: RtFrame | None = None,
 ) -> dict[str, Any]:
     before = {owner.owner_id: group for group in baseline for owner in group.owners}
     members = []

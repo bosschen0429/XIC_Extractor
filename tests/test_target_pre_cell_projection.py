@@ -49,6 +49,7 @@ from xic_extractor.alignment.result import (
     ObservedSearchSubject,
     SearchedNoObservationSubject,
 )
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CID_NL_PROVIDER_ID,
     cid_nl_method_subject_from_target,
@@ -709,4 +710,5 @@ def _final_receipt(
             lineage=(),
             reason="unchanged_membership_no_lineage",
         ),
+        rt_frame=SampleRtFrame(),
     )

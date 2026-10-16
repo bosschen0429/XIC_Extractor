@@ -15,6 +15,7 @@ from xic_extractor.alignment.backfill.istd_anchored import (
 )
 from xic_extractor.alignment.cell_observation.observations import CidNlCellGroupSupport
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.rt_frame import RtFrame
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.extraction.target_extraction import credible_istd_anchor_rt
 from xic_extractor.extraction.targeted_capture_population import (
@@ -34,6 +35,7 @@ def resolve_targeted_istd_backfill(
     *,
     config: ExtractionConfig,
     alignment_config: AlignmentConfig,
+    rt_frame: RtFrame,
 ) -> IstdAnchoredBackfill:
     """Backfill HOLD samples of an ISTD-related Target from their direct peers."""
 
@@ -71,6 +73,7 @@ def resolve_targeted_istd_backfill(
         paired_istd_observations=lambda: _paired_istd_observations(population, config),
         rt_half_window_min=alignment_config.preferred_rt_sec / 60.0,
         alignment_config=alignment_config,
+        rt_frame=rt_frame,
     )
 
 

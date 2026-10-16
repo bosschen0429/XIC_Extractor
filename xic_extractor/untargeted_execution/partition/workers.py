@@ -427,7 +427,7 @@ def _prepare_group_authorized_backfills(
         prepared.worksets,
         sample_population=tuple(job.sample for job in templates.values()),
         alignment_config=prepared.alignment_config,
-        rt_warp=prepared.rt_warp,
+        rt_frame=prepared.rt_frame,
         half_windows_by_sample={
             sample_id: job.peak_config.nl_rt_anchor_half_window_min
             for sample_id, job in templates.items()

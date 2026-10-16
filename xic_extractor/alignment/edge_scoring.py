@@ -2,16 +2,16 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Literal
 
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.drift_evidence import KnownIstdOwnerLookup
 from xic_extractor.alignment.grouping_evidence import (
     SeedSupportLevel,
     classify_seed_support,
     compatible_composite_owners,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+from xic_extractor.alignment.rt_frame import RtFrame
 
 EdgeDecision = Literal["strong_edge", "weak_edge", "blocked_edge"]
 HardGateFailureReason = Literal[
@@ -27,18 +27,8 @@ HardGateFailureReason = Literal[
 ]
 DriftPriorSource = Literal["targeted_istd_trend", "batch_istd_trend", "none"]
 RTEvidenceBasis = Literal["raw", "drift_corrected"]
-SUPPORTED_DRIFT_PRIOR_SOURCES = {"targeted_istd_trend", "batch_istd_trend", "none"}
 OwnerQuality = Literal["clean", "weak", "tail_supported", "ambiguous_nearby"]
 DuplicateContext = Literal["none", "same_owner_events", "tail_assignment"]
-
-
-class DriftLookupProtocol(Protocol):
-    @property
-    def source(self) -> DriftPriorSource: ...
-
-    def sample_delta_min(self, sample_stem: str) -> float | None: ...
-
-    def injection_order(self, sample_stem: str) -> int | None: ...
 
 
 @dataclass(frozen=True)
@@ -76,7 +66,7 @@ def evaluate_owner_edge(
     right: SampleLocalMS1Owner,
     *,
     config: AlignmentConfig,
-    drift_lookup: DriftLookupProtocol | None = None,
+    rt_frame: RtFrame,
     edge_depends_on_backfill: bool = False,
     left_detected_owner: bool = True,
     right_detected_owner: bool = True,
@@ -84,8 +74,10 @@ def evaluate_owner_edge(
     right_ambiguous_owner: bool = False,
 ) -> OwnerEdgeEvidence:
     rt_raw_delta_sec = abs(left.owner_apex_rt - right.owner_apex_rt) * 60.0
-    drift_source = _drift_source(drift_lookup)
-    injection_order_gap = _injection_order_gap(left, right, drift_lookup)
+    drift_source = rt_frame.drift_source
+    injection_order_gap = rt_frame.drift_injection_order_gap(
+        left.sample_stem, right.sample_stem
+    )
     duplicate_context = _duplicate_context(left, right, config)
     owner_quality = _owner_quality(left, right, duplicate_context)
     seed_support_level = classify_seed_support(left, right, config)
@@ -103,9 +95,11 @@ def evaluate_owner_edge(
     if failure:
         # Only these failures can be admitted by targeted-ISTD continuity.
         corrected_delta_sec = (
-            _drift_corrected_delta_sec(left, right, drift_lookup)
-            if failure in {
-                "product_mz_out_of_tolerance", "observed_loss_out_of_tolerance",
+            rt_frame.corrected_pair_delta_sec(left, right)
+            if failure
+            in {
+                "product_mz_out_of_tolerance",
+                "observed_loss_out_of_tolerance",
             }
             else None
         )
@@ -128,13 +122,8 @@ def evaluate_owner_edge(
 
     score, decision, rt_basis, reason, corrected_delta_sec = _score_and_decide(
         rt_raw_delta_sec=rt_raw_delta_sec,
-        corrected_delta_supplier=lambda: _drift_corrected_delta_sec(
-            left, right, drift_lookup,
-        ),
-        has_direct_reference=(
-            isinstance(drift_lookup, KnownIstdOwnerLookup)
-            and drift_lookup.has_direct_reference_pair(left, right)
-        ),
+        corrected_delta_supplier=lambda: rt_frame.corrected_pair_delta_sec(left, right),
+        has_direct_reference=rt_frame.has_direct_reference_pair(left, right),
         drift_prior_source=drift_source,
         config=config,
         seed_support_level=seed_support_level,
@@ -206,52 +195,6 @@ def _hard_gate_failure(
     ):
         return "observed_loss_out_of_tolerance"
     return None
-
-
-def _drift_corrected_delta_sec(
-    left: SampleLocalMS1Owner,
-    right: SampleLocalMS1Owner,
-    drift_lookup: DriftLookupProtocol | None,
-) -> float | None:
-    if drift_lookup is None:
-        return None
-    if isinstance(drift_lookup, KnownIstdOwnerLookup):
-        return drift_lookup.corrected_pair_delta_sec(left, right)
-    left_delta = drift_lookup.sample_delta_min(left.sample_stem)
-    right_delta = drift_lookup.sample_delta_min(right.sample_stem)
-    if left_delta is None or right_delta is None:
-        return None
-    left_corrected_rt = left.owner_apex_rt - left_delta
-    right_corrected_rt = right.owner_apex_rt - right_delta
-    return abs(left_corrected_rt - right_corrected_rt) * 60.0
-
-
-def _drift_source(
-    drift_lookup: DriftLookupProtocol | None,
-) -> DriftPriorSource:
-    if drift_lookup is None:
-        return "none"
-    source = drift_lookup.source
-    if source not in SUPPORTED_DRIFT_PRIOR_SOURCES:
-        expected = ", ".join(sorted(SUPPORTED_DRIFT_PRIOR_SOURCES))
-        raise ValueError(
-            f"Unsupported drift prior source: {source}. Expected one of: {expected}"
-        )
-    return source
-
-
-def _injection_order_gap(
-    left: SampleLocalMS1Owner,
-    right: SampleLocalMS1Owner,
-    drift_lookup: DriftLookupProtocol | None,
-) -> int | None:
-    if drift_lookup is None:
-        return None
-    left_order = drift_lookup.injection_order(left.sample_stem)
-    right_order = drift_lookup.injection_order(right.sample_stem)
-    if left_order is None or right_order is None:
-        return None
-    return abs(left_order - right_order)
 
 
 def _owner_quality(

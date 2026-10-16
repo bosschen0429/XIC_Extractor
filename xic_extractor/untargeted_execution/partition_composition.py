@@ -26,7 +26,6 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 )
 from xic_extractor.alignment.drift_evidence import KnownIstdReference
 from xic_extractor.alignment.feature_membership_inference import (
-    BatchRtWarp,
     BatchRtWarpAccumulator,
     FeatureInferenceOperationCounts,
 )
@@ -44,6 +43,7 @@ from xic_extractor.alignment.result.application_result import (
     UntargetedCandidateExclusion,
     finalize_alignment_result,
 )
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.configuration.execution_profile import DEFAULT_ALIGNMENT_WORKERS
 from xic_extractor.discovery.models import (
     MS1_FEATURE_BACKED_STATES,
@@ -113,25 +113,18 @@ class UntargetedBatchGroupingPreparation:
     """
 
     def __init__(self, context: UntargetedPartitionContext) -> None:
-        samples = context.processing_owners.sample_resolutions
+        self._bootstrap_frame = context.rt_frame
         self._calibration = BatchRtWarpAccumulator(
-            injection_order={
-                sample.metadata.raw_stem: sample.metadata.injection_order
-                for sample in samples
-                if sample.metadata.injection_order is not None
-            },
-            sample_cohorts={
-                sample.metadata.raw_stem: sample.metadata.batch_id
-                for sample in samples
-            },
+            injection_order=self._bootstrap_frame.injection_order,
+            sample_cohorts=self._bootstrap_frame.sample_cohorts,
         )
-        self._rt_warp: BatchRtWarp | None = None
+        self._rt_frame: SampleRtFrame | None = None
 
     def add_initial(self, prepared: UntargetedPreparedGrouping) -> None:
         self._calibration.add_groups(prepared.rt_anchor_groups)
 
     def freeze_calibration(self) -> None:
-        self._rt_warp = self._calibration.freeze()
+        self._rt_frame = self._bootstrap_frame.with_warp(self._calibration.freeze())
 
     def finalize_grouping(
         self,
@@ -140,11 +133,11 @@ class UntargetedBatchGroupingPreparation:
         *,
         progress_callback: Callable[[Mapping[str, object]], None] | None = None,
     ) -> UntargetedPreparedGrouping:
-        assert self._rt_warp is not None
+        assert self._rt_frame is not None
         return finalize_untargeted_partition_grouping(
             batch,
             prepared,
-            rt_warp=self._rt_warp,
+            rt_frame=self._rt_frame,
             progress_callback=progress_callback,
         )
 
@@ -551,16 +544,13 @@ def prepare_untargeted_partition_grouping(
         sample.metadata.raw_stem
         for sample in batch.context.processing_owners.sample_resolutions
     )
-    injection_order = {
-        sample.metadata.raw_stem: sample.metadata.injection_order
-        for sample in batch.context.processing_owners.sample_resolutions
-        if sample.metadata.injection_order is not None
-    }
+    rt_frame = batch.context.rt_frame
     if known_istd_reference is not None:
         known_istd_reference = known_istd_reference.prepare_batch(
             sample_universe=sample_universe,
-            injection_order=injection_order,
+            injection_order=rt_frame.injection_order,
         )
+    rt_frame = rt_frame.with_sources(known_istd_reference=known_istd_reference)
     active_subjects = tuple(
         subject
         for subject in batch.subject_batch.subjects
@@ -699,7 +689,7 @@ def prepare_untargeted_partition_grouping(
             sample_assessments=assessments,
             alignment_config=alignment_config,
             elution_contexts=elution_contexts,
-            known_istd_reference=known_istd_reference,
+            rt_frame=rt_frame,
             retained_hypotheses_by_assessment=(retained_hypotheses_by_assessment),
             operation_counts_sink=operation_counts,
         )
@@ -719,6 +709,7 @@ def prepare_untargeted_partition_grouping(
         worksets=tuple(prepared_worksets),
         alignment_config=alignment_config,
         known_istd_reference=requested_reference,
+        rt_frame=rt_frame,
     )
     if bootstrap_only:
         return prepared
@@ -736,15 +727,10 @@ def finalize_untargeted_partition_grouping(
     batch: UntargetedPartitionInputs,
     prepared: UntargetedPreparedGrouping,
     *,
-    rt_warp: BatchRtWarp,
+    rt_frame: SampleRtFrame,
     progress_callback: Callable[[Mapping[str, object]], None] | None = None,
 ) -> UntargetedPreparedGrouping:
     """Regroup one bounded workset collection using the frozen batch calibration."""
-    injection_order = {
-        sample.metadata.raw_stem: sample.metadata.injection_order
-        for sample in batch.context.processing_owners.sample_resolutions
-        if sample.metadata.injection_order is not None
-    }
     alignment_config = prepared.alignment_config
     final_worksets = []
     for workset in prepared.worksets:
@@ -754,8 +740,7 @@ def finalize_untargeted_partition_grouping(
             grouping_scope=workset.grouping_scope,
             grouping_result=workset.grouping_result,
             alignment_config=alignment_config,
-            injection_order=injection_order,
-            rt_warp=rt_warp,
+            rt_frame=workset.grouping_result.rt_frame.with_calibration(rt_frame),
             backfill_half_window_min=(
                 batch.context.peak_config.nl_rt_anchor_half_window_min
             ),
@@ -793,7 +778,7 @@ def finalize_untargeted_partition_grouping(
         worksets=tuple(final_worksets),
         alignment_config=alignment_config,
         known_istd_reference=prepared.known_istd_reference,
-        rt_warp=rt_warp,
+        rt_frame=prepared.rt_frame.with_calibration(rt_frame),
     )
 
 
@@ -941,7 +926,6 @@ def _build_production_composition_inputs(
                 sample_assessments=assessments,
                 initial_assessments=initial_assessments,
                 group_backfills=group_backfills,
-                rt_warp=prepared.rt_warp,
             ),
             samples=batch.context.samples,
             alignment_config=alignment_config,

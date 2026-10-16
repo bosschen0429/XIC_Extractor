@@ -17,13 +17,13 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
     construct_cross_sample_peak_group_hypotheses,
 )
-from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
     owner_from_cid_nl_assessment_support,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import BackfillPeakLocation
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
     is_cid_nl_missing_ms1_rejection,
@@ -110,22 +110,16 @@ def plan_grouped_cid_nl_backfills(
     *,
     sample_population: tuple[ResolvedCanonicalSampleIdentity, ...],
     alignment_config: AlignmentConfig,
-    rt_warp: BatchRtWarp | None,
+    rt_frame: SampleRtFrame,
     half_windows_by_sample: Mapping[str, float],
 ) -> tuple[CidNlBackfillQuestion, ...]:
     """Resolve subject, trajectory and window facts from frozen workset membership."""
     samples = {
         sample.identity.sample_identity_id: sample for sample in sample_population
     }
-    injection_order = {
-        sample.metadata.raw_stem: sample.metadata.injection_order
-        for sample in sample_population
-        if sample.metadata.injection_order is not None
-    }
-    sample_cohorts = {
-        sample.metadata.raw_stem: sample.metadata.batch_id
-        for sample in sample_population
-    }
+    rt_frame = rt_frame.for_sample_stems(
+        frozenset(sample.metadata.raw_stem for sample in sample_population)
+    )
     questions: list[CidNlBackfillQuestion] = []
     for workset in worksets:
         direct = {
@@ -166,9 +160,7 @@ def plan_grouped_cid_nl_backfills(
                     for owner in group.owners
                     if not owner.is_provisional
                 ),
-                injection_order=injection_order,
-                sample_cohorts=sample_cohorts,
-                rt_warp=rt_warp,
+                rt_frame=rt_frame,
                 backfill_half_window_min=half_windows_by_sample[min(target_ids)],
             )
             questions.extend(
@@ -211,7 +203,7 @@ def plan_subject_cid_nl_backfills(
     if not support_owners:
         return ()
     groups = construct_cross_sample_peak_group_hypotheses(
-        tuple(support_owners), config=alignment_config
+        tuple(support_owners), config=alignment_config, rt_frame=SampleRtFrame()
     )
     return tuple(
         CidNlBackfillQuestion(sample_id, group, method_subject)

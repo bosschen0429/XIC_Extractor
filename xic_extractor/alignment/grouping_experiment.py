@@ -11,13 +11,13 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 )
 from xic_extractor.alignment.feature_membership_inference import (
     BatchRtWarp,
-    RtCoordinates,
 )
 from xic_extractor.alignment.grouping_workflow import group_cid_nl_owners
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import (
     resolve_peak_trajectories,
 )
+from xic_extractor.alignment.rt_frame import RtFrame, SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import (
     BatchRtCalibration,
     RtCalibrationPolicy,
@@ -49,18 +49,26 @@ def replay_grouping(
     inputs: GroupingInputs,
     *,
     config: AlignmentConfig | None = None,
-    rt_coordinates: RtCoordinates | None = None,
+    rt_coordinates: RtFrame | None = None,
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
     """Reuse membership and post-grouping rules without acquisition or Backfill."""
+    sample_universe = frozenset(inputs.sample_stems)
+    base_frame = SampleRtFrame(
+        injection_order=inputs.injection_order, sample_universe=sample_universe
+    )
+    override = (
+        base_frame.with_coordinate_override(rt_coordinates.corrected_rt_min)
+        if rt_coordinates is not None
+        else None
+    )
     return tuple(
         group
         for workset in inputs.worksets
         for group in group_cid_nl_owners(
             workset.owners,
             config=config or inputs.alignment_config,
-            sample_universe=frozenset(inputs.sample_stems),
-            injection_order=inputs.injection_order,
-            rt_warp=rt_coordinates if rt_coordinates is not None else workset.rt_warp,
+            sample_universe=sample_universe,
+            rt_frame=override or base_frame.with_warp(workset.rt_warp),
             backfill_half_window_min=inputs.backfill_half_window_min,
             known_identity_bindings=workset.known_identity_bindings,
             peak_trajectories=resolve_peak_trajectories(

@@ -12,6 +12,8 @@ from xic_extractor.alignment.drift_evidence import (
     assess_local_trajectory,
     build_targeted_istd_identity_anchor,
 )
+from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.target_identity import mint_target_list_snapshot
 
@@ -51,6 +53,58 @@ def test_measured_istd_binding_uses_observed_peak_not_expected_rt() -> None:
     lookup = reference.bind(owners)
     assert len(lookup.bindings) == 2
     assert lookup.corrected_pair_delta_sec(*owners) == pytest.approx(0)
+
+    base = SampleRtFrame(
+        injection_order={"early": 1, "late": 2},
+        sample_cohorts={"early": "batch", "late": "batch"},
+        sample_universe=frozenset({"early", "late"}),
+    )
+    with pytest.raises(ValueError, match="cannot be combined with generic drift"):
+        base.with_sources(
+            known_istd_reference=reference, drift_lookup=DriftEvidenceLookup(())
+        )
+    bootstrap = base.with_sources(known_istd_reference=reference).bind_owners(owners)
+    frozen = bootstrap.with_warp(
+        BatchRtWarp(
+            (("early", ((7.0, 0.2), (12.0, 0.2))), ("late", ((7.0, 1.2), (12.0, 1.2)))),
+            2,
+        )
+    )
+    assert not bootstrap.has_coordinates
+    assert tuple(bootstrap.corrected_rt_min(owner) for owner in owners) == (8.0, 9.0)
+    assert frozen.has_coordinates
+    assert tuple(frozen.corrected_rt_min(owner) for owner in owners) == pytest.approx(
+        (7.8, 7.8)
+    )
+    for frame in (bootstrap, frozen):
+        assert set(frame.known_identity_bindings) == {
+            (owner.owner_id, "ISTD") for owner in owners
+        }
+        assert frame.has_direct_reference_pair(*owners)
+        assert frame.corrected_pair_delta_sec(*owners) == pytest.approx(0)
+        # The identity source supplies no order-gap evidence; metadata must not
+        # silently replace that absence when the two contexts are consolidated.
+        assert frame.drift_injection_order_gap("early", "late") is None
+    assert tuple(owner.owner_apex_rt for owner in owners) == (8.0, 9.0)
+
+
+def test_zero_rt_calibration_is_available_without_becoming_drift_pair_evidence():
+    from tests.test_alignment_edge_scoring import _owner
+
+    owner = _owner("measured", owner_apex_rt=8.0)
+    raw = SampleRtFrame()
+    measured_zero = raw.with_warp(
+        BatchRtWarp((("measured", ((7.0, 0.0), (12.0, 0.0))),), 1)
+    )
+    assert raw.corrected_rt_min(owner) == measured_zero.corrected_rt_min(owner) == 8.0
+    assert not raw.has_coordinates
+    assert measured_zero.has_coordinates
+    assert not raw.has_support("measured")
+    assert measured_zero.has_support("measured")
+    assert not measured_zero.has_support("unmeasured")
+    assert not measured_zero.has_drift
+    assert measured_zero.drift_source == "none"
+    assert measured_zero.corrected_pair_delta_sec(owner, _owner("other")) is None
 
 
 def _known_reference_workbook(path: Path) -> Workbook:
@@ -225,7 +279,12 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
     )
     lookup = reference.bind((early, late, other))
     config = AlignmentConfig()
-    edge = evaluate_owner_edge(early, late, config=config, drift_lookup=lookup)
+    edge = evaluate_owner_edge(
+        early,
+        late,
+        config=config,
+        rt_frame=SampleRtFrame().with_sources(drift_lookup=lookup),
+    )
     assert edge.rt_drift_corrected_delta_sec == pytest.approx(0)
     assert edge.decision == "strong_edge"
     assert lookup.sample_delta_min("early") is None
@@ -246,7 +305,7 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
         # Lookup provenance is retained even when the trigger skips querying it.
         # Prove its unavailable binding separately, then pin every edge field.
         assert unavailable_lookup.corrected_pair_delta_sec(early, right) is None
-        raw = evaluate_owner_edge(early, right, config=config)
+        raw = evaluate_owner_edge(early, right, config=config, rt_frame=SampleRtFrame())
         suffix = (
             ";drift=raw_sufficient"
             if raw.decision == "strong_edge"
@@ -256,7 +315,7 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
             early,
             right,
             config=config,
-            drift_lookup=unavailable_lookup,
+            rt_frame=SampleRtFrame().with_sources(drift_lookup=unavailable_lookup),
         ) == replace(
             raw,
             drift_prior_source="targeted_istd_trend",
@@ -310,7 +369,7 @@ def test_known_reference_grouping_preserves_main_peak_against_closer_competitor(
         owners,
         config=AlignmentConfig(),
         sample_universe=frozenset({"early", "late"}),
-        drift_lookup=lookup,
+        rt_frame=SampleRtFrame().with_sources(drift_lookup=lookup),
     )
     paired = early if use_reference else competitor
     separate = competitor if use_reference else early
@@ -394,8 +453,9 @@ def test_batch_reference_corrects_bootstrap_unknowns_without_merging_distinct_pe
         owners,
         config=AlignmentConfig(),
         sample_universe=universe,
-        injection_order=order,
-        drift_lookup=lookup,
+        rt_frame=SampleRtFrame(injection_order=(order or {})).with_sources(
+            drift_lookup=lookup
+        ),
         bootstrap=True,
     )
     assert {frozenset(group.owner_ids) for group in groups} == {
