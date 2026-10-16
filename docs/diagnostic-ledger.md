@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-10-02
+**Last updated:** 2026-10-16
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -1597,3 +1597,46 @@ Receipts and the producing probe are under `output/overview-memory/`, including
 `run-1792083976451789500/paired-results.json`. Reopen for changed reader/overview
 semantics or a broader memory claim, not merely another code reader. Follow-up
 resource limits and caching remain separate work under Issue #781.
+
+### 2026-10-16 Dense Peak Patterns Reuse Top-Two DP States
+
+Baseline `776e2f776534c83dcdb2c6ed591857aae1b6ea2f`; measured candidate
+`peak_trajectories.py` SHA-256
+`e0632a5d5b0444527d06d2a0b785dd612d0f84fec259cf1d02b5effa24d95c7e`.
+The matcher retains only the previous/current DP rows. Cells without an eligible
+correspondence merge their already-ranked, distinct top-two states, reusing
+equal states instead of constructing and sorting a set. Eligible cells retain
+the original scoring and ranking. Candidate shifts, float accumulation, both
+ambiguity witnesses, tie epsilon and single-peak continuation are unchanged.
+This changes only the matcher owner; grouping and Backfill consume the same
+completed trajectory result, without learning a new DP representation.
+
+The paired in-memory resolver probe fixes two samples and one mass family,
+with 16/24/32 narrow landmarks per sample. Worktree-local Python 3.12.13 runs
+one warmup per variant and four interleaved BC/CB measurements on identical
+inputs/configuration. Median baseline/candidate seconds are 0.1800/0.0774,
+0.9194/0.3677 and 3.5778/1.1796 (2.33x/2.50x/3.03x). At 32 peaks, ranges are
+3.4060-3.7319 s versus 1.1322-1.2775 s. A six-sample, 16-peak case changes from
+2.6182 to 1.1429 s. Separate profiling at 24 peaks records 971,806 versus
+17,789 `sorted` calls; the 971,712 DP cell visits and 1,687 shifts are unchanged.
+Setup, imports, RAW, ordinary grouping, Backfill and publication are not timed.
+
+All 708 matcher boundary/tie/random cases and 100 full resolver cases are
+exactly equal, including scores, owner identities and private indexes. Every
+timed case and retained R02/R05 workset (14 owners/contexts) also matches.
+The 200-workset, 1,948-owner contextless input preserves its empty result;
+it supplies negative parity, not dense-pattern evidence. Existing semantic
+and downstream grouping/Backfill tests remain the independent behavior oracle.
+
+Evidence: `diagnostic_only`; oracle: `exact_safe`; disposition: `optimized`
+for the bounded dense-peak workload. Near-fully eligible grids and small
+retained cases do not establish a material general speedup. The algorithm
+still visits every shift/grid cell and retains path payloads and alternatives;
+this is not a total-linear-memory or resource-cap claim. Sparse DP, scientific
+rules and writer authority are unchanged. Real dense-pattern prevalence and
+whole-RAW throughput remain unmeasured.
+
+Producing probes and receipts are under `output/trajectory-dp/`, including
+`verify.py`, `fixtures.py` and `run-1792121555778898700/results.json`. Reopen for
+changed matching semantics, a newly representative density regime or a broader
+performance claim; do not repeat RAW validation merely for this storage change.
