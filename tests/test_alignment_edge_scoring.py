@@ -10,6 +10,7 @@ from xic_extractor.alignment.ownership_models import (
     IdentityEvent,
     SampleLocalMS1Owner,
 )
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 
 
@@ -91,6 +92,7 @@ def test_blocked_edge_reports_neutral_loss_reason() -> None:
         _owner("s1", neutral_loss_tag="DNA_dR"),
         _owner("s2", neutral_loss_tag="DNA_base_loss"),
         config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(),
     )
 
     assert edge.decision == "blocked_edge"
@@ -125,7 +127,9 @@ def test_numeric_and_sample_hard_gates(
     right: SampleLocalMS1Owner,
     expected_reason: str,
 ) -> None:
-    edge = evaluate_owner_edge(left, right, config=AlignmentConfig())
+    edge = evaluate_owner_edge(
+        left, right, config=AlignmentConfig(), rt_frame=SampleRtFrame()
+    )
 
     assert edge.decision == "blocked_edge"
     assert edge.failure_reason == expected_reason
@@ -138,6 +142,7 @@ def test_non_detected_owner_blocks_edge() -> None:
         _owner("s2"),
         config=AlignmentConfig(),
         right_detected_owner=False,
+        rt_frame=SampleRtFrame(),
     )
 
     assert edge.decision == "blocked_edge"
@@ -150,6 +155,7 @@ def test_ambiguous_owner_blocks_edge() -> None:
         _owner("s2"),
         config=AlignmentConfig(),
         left_ambiguous_owner=True,
+        rt_frame=SampleRtFrame(),
     )
 
     assert edge.decision == "blocked_edge"
@@ -161,6 +167,7 @@ def test_missing_drift_and_raw_over_strict_window_is_weak() -> None:
         _owner("s1", owner_apex_rt=10.00),
         _owner("s2", owner_apex_rt=10.75),
         config=AlignmentConfig(preferred_rt_sec=30.0, max_rt_sec=120.0),
+        rt_frame=SampleRtFrame(),
     )
 
     assert edge.decision == "weak_edge"
@@ -175,7 +182,7 @@ def test_missing_drift_and_raw_close_edge_is_strong() -> None:
         _owner("s1", owner_apex_rt=10.00),
         _owner("s2", owner_apex_rt=10.25),
         config=AlignmentConfig(preferred_rt_sec=30.0, max_rt_sec=120.0),
-        drift_lookup=None,
+        rt_frame=SampleRtFrame(),
     )
 
     assert edge.decision == "strong_edge"
@@ -194,9 +201,11 @@ def test_drift_corrected_close_edge_is_strong_even_when_raw_exceeds_strict() -> 
         _owner("s1", owner_apex_rt=10.00),
         _owner("s2", owner_apex_rt=10.75),
         config=AlignmentConfig(preferred_rt_sec=30.0, max_rt_sec=120.0),
-        drift_lookup=_DriftLookup(
-            deltas={"s1": 0.00, "s2": 0.50},
-            orders={"s1": 10, "s2": 13},
+        rt_frame=SampleRtFrame().with_sources(
+            drift_lookup=_DriftLookup(
+                deltas={"s1": 0.00, "s2": 0.50},
+                orders={"s1": 10, "s2": 13},
+            )
         ),
     )
 
@@ -223,10 +232,12 @@ def test_invalid_drift_prior_source_raises_before_evidence_is_produced() -> None
             _owner("s1", owner_apex_rt=10.00),
             _owner("s2", owner_apex_rt=10.75),
             config=AlignmentConfig(preferred_rt_sec=30.0, max_rt_sec=120.0),
-            drift_lookup=_DriftLookup(
-                deltas={"s1": 0.00, "s2": 0.50},
-                orders={"s1": 10, "s2": 13},
-                source="typo_source",
+            rt_frame=SampleRtFrame().with_sources(
+                drift_lookup=_DriftLookup(
+                    deltas={"s1": 0.00, "s2": 0.50},
+                    orders={"s1": 10, "s2": 13},
+                    source="typo_source",
+                )
             ),
         )
 
@@ -243,9 +254,11 @@ def test_sufficient_raw_edge_is_preserved_before_applying_drift() -> None:
         _owner("s1", owner_apex_rt=10.00),
         _owner("s2", owner_apex_rt=10.10),
         config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=120.0),
-        drift_lookup=CountingDrift(
-            deltas={"s1": 0.00, "s2": -0.30},
-            orders={"s1": 1, "s2": 2},
+        rt_frame=SampleRtFrame().with_sources(
+            drift_lookup=CountingDrift(
+                deltas={"s1": 0.00, "s2": -0.30},
+                orders={"s1": 1, "s2": 2},
+            )
         ),
     )
 
@@ -271,15 +284,21 @@ def test_degraded_drift_falls_back_without_keeping_prior_bonus(
     config = AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=120.0)
     left = _owner("s1", evidence_score=45, seed_event_count=1)
     right = _owner(
-        "s2", owner_apex_rt=10.0 + raw_sec / 60.0,
-        evidence_score=45, seed_event_count=1,
+        "s2",
+        owner_apex_rt=10.0 + raw_sec / 60.0,
+        evidence_score=45,
+        seed_event_count=1,
     )
-    raw = evaluate_owner_edge(left, right, config=config)
+    raw = evaluate_owner_edge(left, right, config=config, rt_frame=SampleRtFrame())
     edge = evaluate_owner_edge(
-        left, right, config=config,
-        drift_lookup=_DriftLookup(
-            deltas={"s1": 0.0, "s2": (raw_sec - corrected_sec) / 60.0},
-            orders={"s1": 1, "s2": 2},
+        left,
+        right,
+        config=config,
+        rt_frame=SampleRtFrame().with_sources(
+            drift_lookup=_DriftLookup(
+                deltas={"s1": 0.0, "s2": (raw_sec - corrected_sec) / 60.0},
+                orders={"s1": 1, "s2": 2},
+            )
         ),
     )
 
@@ -289,12 +308,22 @@ def test_degraded_drift_falls_back_without_keeping_prior_bonus(
     assert edge.rt_drift_corrected_delta_sec == pytest.approx(corrected_sec)
     assert edge.score == raw.score == 45
     assert edge.decision == raw.decision == "weak_edge"
-    assert classify_cross_sample_initial_edge(
-        edge, context="full_batch_continuity", config=config,
-    ) == "eligible"
-    assert classify_cross_sample_initial_edge(
-        edge, context="complete_link", config=config,
-    ) == "eligible"
+    assert (
+        classify_cross_sample_initial_edge(
+            edge,
+            context="full_batch_continuity",
+            config=config,
+        )
+        == "eligible"
+    )
+    assert (
+        classify_cross_sample_initial_edge(
+            edge,
+            context="complete_link",
+            config=config,
+        )
+        == "eligible"
+    )
 
 
 def test_insufficient_raw_keeps_helpful_drift() -> None:
@@ -302,8 +331,11 @@ def test_insufficient_raw_keeps_helpful_drift() -> None:
         _owner("s1", evidence_score=45, seed_event_count=1),
         _owner("s2", owner_apex_rt=11.5, evidence_score=45, seed_event_count=1),
         config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=120.0),
-        drift_lookup=_DriftLookup(
-            deltas={"s1": 0.0, "s2": 1.0}, orders={"s1": 1, "s2": 2},
+        rt_frame=SampleRtFrame().with_sources(
+            drift_lookup=_DriftLookup(
+                deltas={"s1": 0.0, "s2": 1.0},
+                orders={"s1": 1, "s2": 2},
+            )
         ),
     )
 
@@ -325,15 +357,20 @@ def test_insufficient_raw_keeps_helpful_drift() -> None:
     ],
 )
 def test_drift_is_not_queried_when_it_cannot_admit_the_pair(
-    right: SampleLocalMS1Owner, expected_decision: str,
+    right: SampleLocalMS1Owner,
+    expected_decision: str,
 ) -> None:
     class UnneededDrift(_DriftLookup):
         def sample_delta_min(self, sample_stem: str) -> float | None:
             pytest.fail("RT correction cannot overcome this non-RT failure")
 
     edge = evaluate_owner_edge(
-        _owner("s1"), right, config=AlignmentConfig(),
-        drift_lookup=UnneededDrift(deltas={}, orders={}),
+        _owner("s1"),
+        right,
+        config=AlignmentConfig(),
+        rt_frame=SampleRtFrame().with_sources(
+            drift_lookup=UnneededDrift(deltas={}, orders={})
+        ),
     )
     assert edge.decision == expected_decision
     assert edge.rt_basis == "raw"
@@ -348,23 +385,39 @@ def test_targeted_istd_hard_gate_exception_retains_its_rt_query(failure: str) ->
 
     edge = evaluate_owner_edge(
         _owner("s1"),
-        _owner("s2", owner_apex_rt=11.5,
-               product_mz=155.0 if failure == "product" else 150.0,
-               observed_neutral_loss_da=105.0 if failure == "loss" else 100.0),
+        _owner(
+            "s2",
+            owner_apex_rt=11.5,
+            product_mz=155.0 if failure == "product" else 150.0,
+            observed_neutral_loss_da=105.0 if failure == "loss" else 100.0,
+        ),
         config=AlignmentConfig(),
-        drift_lookup=_DriftLookup(
-            deltas={"s1": 0.0, "s2": 1.0}, orders={},
+        rt_frame=SampleRtFrame().with_sources(
+            drift_lookup=_DriftLookup(
+                deltas={"s1": 0.0, "s2": 1.0},
+                orders={},
+            )
         ),
     )
     assert edge.decision == "blocked_edge"
     assert edge.rt_basis == "drift_corrected"
     assert edge.rt_drift_corrected_delta_sec == pytest.approx(30.0)
-    assert classify_cross_sample_initial_edge(
-        edge, context="targeted_istd_continuity", config=AlignmentConfig(),
-    ) == "eligible"
-    assert classify_cross_sample_initial_edge(
-        edge, context="complete_link", config=AlignmentConfig(),
-    ) == "excluded"
+    assert (
+        classify_cross_sample_initial_edge(
+            edge,
+            context="targeted_istd_continuity",
+            config=AlignmentConfig(),
+        )
+        == "eligible"
+    )
+    assert (
+        classify_cross_sample_initial_edge(
+            edge,
+            context="complete_link",
+            config=AlignmentConfig(),
+        )
+        == "excluded"
+    )
 
 
 def test_weak_seed_support_keeps_hard_pass_edge_weak() -> None:
@@ -372,6 +425,7 @@ def test_weak_seed_support_keeps_hard_pass_edge_weak() -> None:
         _owner("s1", evidence_score=35, seed_event_count=1),
         _owner("s2", evidence_score=35, seed_event_count=1),
         config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(),
     )
 
     assert edge.decision == "weak_edge"
@@ -396,6 +450,7 @@ def test_seed_support_uses_anchor_min_evidence_score_threshold(
         _owner("s1", evidence_score=evidence_score, seed_event_count=2),
         _owner("s2", evidence_score=evidence_score, seed_event_count=2),
         config=AlignmentConfig(anchor_min_evidence_score=60),
+        rt_frame=SampleRtFrame(),
     )
 
     assert edge.seed_support_level == expected_support
@@ -407,6 +462,7 @@ def test_identity_conflict_blocks_edge() -> None:
         _owner("s1", identity_conflict=True),
         _owner("s2"),
         config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(),
     )
 
     assert edge.decision == "blocked_edge"
@@ -420,6 +476,7 @@ def test_backfill_bridge_precedes_non_detected_owner() -> None:
         config=AlignmentConfig(),
         edge_depends_on_backfill=True,
         right_detected_owner=False,
+        rt_frame=SampleRtFrame(),
     )
 
     assert edge.decision == "blocked_edge"
@@ -433,6 +490,7 @@ def test_non_detected_owner_precedes_ambiguous_and_identity_conflict() -> None:
         config=AlignmentConfig(),
         left_detected_owner=False,
         left_ambiguous_owner=True,
+        rt_frame=SampleRtFrame(),
     )
 
     assert edge.decision == "blocked_edge"
@@ -503,6 +561,7 @@ def test_adjacent_hard_gate_precedence_edges(
         left,
         right,
         config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(),
         **call_kwargs,
     )
 
@@ -546,6 +605,7 @@ def test_resolved_peak_snr_admits_owners_discovery_scored_low() -> None:
         _resolved_owner("s1", snr=50.0),
         _resolved_owner("s2", snr=50.0, owner_apex_rt=10.10),
         config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(),
     )
 
     assert edge.seed_support_level == "strong"
@@ -557,6 +617,7 @@ def test_resolved_peak_snr_between_lod_and_loq_is_moderate() -> None:
         _resolved_owner("s1", snr=5.0),
         _resolved_owner("s2", snr=5.0, owner_apex_rt=10.10),
         config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(),
     )
 
     assert edge.seed_support_level == "moderate"
@@ -567,6 +628,7 @@ def test_resolved_peak_below_detection_limit_stays_weak() -> None:
         _resolved_owner("s1", snr=50.0),
         _resolved_owner("s2", snr=1.5, owner_apex_rt=10.10),
         config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(),
     )
 
     assert edge.seed_support_level == "weak"
@@ -578,6 +640,7 @@ def test_owner_without_baseline_residual_keeps_discovery_rating() -> None:
         _owner("s1", evidence_score=18),
         _owner("s2", evidence_score=18, owner_apex_rt=10.10),
         config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(),
     )
 
     assert edge.seed_support_level == "weak"

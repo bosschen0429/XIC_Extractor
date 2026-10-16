@@ -19,11 +19,11 @@ from xic_extractor.alignment.cross_sample.identity_models import (
     validate_cross_sample_group_population,
 )
 from xic_extractor.alignment.edge_scoring import (
-    DriftLookupProtocol,
     OwnerEdgeEvidence,
     evaluate_owner_edge,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+from xic_extractor.alignment.rt_frame import RtFrame
 from xic_extractor.processing_identity import (
     PROCESSING_REQUEST_ID_PREFIX,
     canonical_identity_basis_bytes,
@@ -50,8 +50,7 @@ class CrossSampleNeighborhoodEdge:
     config: AlignmentConfig
     left_owner: SampleLocalMS1Owner
     right_owner: SampleLocalMS1Owner
-    drift_lookup: DriftLookupProtocol | None = field(
-        default=None,
+    rt_frame: RtFrame = field(
         repr=False,
         compare=False,
     )
@@ -93,7 +92,7 @@ class CrossSampleNeighborhoodEdge:
                 self.left_owner,
                 self.right_owner,
                 config=self.config,
-                drift_lookup=self.drift_lookup,
+                rt_frame=self.rt_frame,
             )
         if self.initial_evidence != exact_evidence:
             raise CrossSampleContractError(

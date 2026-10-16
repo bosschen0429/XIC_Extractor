@@ -21,6 +21,7 @@ from xic_extractor.alignment.ownership_models import IdentityEvent, SampleLocalM
 from xic_extractor.alignment.peak_trajectories import (
     resolve_peak_trajectories,
 )
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.peak_detection.elution_context import (
     ElutionLandmark,
     SampleElutionContext,
@@ -157,8 +158,7 @@ def test_pattern_and_unobserved_context_samples_extend_one_trajectory(reverse) -
     result = infer_feature_memberships(
         owners,
         config=AlignmentConfig(),
-        injection_order=orders,
-        drift_lookup=None,
+        rt_frame=SampleRtFrame(injection_order=(orders or {})),
         peak_trajectories=trajectories,
     )
     assert {frozenset(group.owner_ids) for group in result.groups} == {
@@ -198,8 +198,7 @@ def test_bootstrap_pattern_seed_extends_to_an_unobserved_context_sample() -> Non
     result = infer_feature_memberships(
         owners,
         config=AlignmentConfig(),
-        injection_order=orders,
-        drift_lookup=None,
+        rt_frame=SampleRtFrame(injection_order=(orders or {})),
         bootstrap=True,
         peak_trajectories=trajectories,
     )
@@ -237,8 +236,7 @@ def test_single_sample_pattern_does_not_split_a_bootstrap_band() -> None:
         result = infer_feature_memberships(
             owners,
             config=AlignmentConfig(),
-            injection_order=orders,
-            drift_lookup=None,
+            rt_frame=SampleRtFrame(injection_order=(orders or {})),
             bootstrap=bootstrap,
             peak_trajectories=trajectories,
         )
@@ -275,8 +273,7 @@ def test_directional_extension_disagreement_keeps_the_pattern_seed() -> None:
     result = infer_feature_memberships(
         owners,
         config=AlignmentConfig(),
-        injection_order=orders,
-        drift_lookup=None,
+        rt_frame=SampleRtFrame(injection_order=(orders or {})),
         bootstrap=True,
         peak_trajectories=trajectories,
     )
@@ -318,8 +315,7 @@ def test_directional_competition_does_not_demote_an_assigned_pattern_seed(
     result = infer_feature_memberships(
         owners,
         config=config,
-        injection_order=orders,
-        drift_lookup=None,
+        rt_frame=SampleRtFrame(injection_order=(orders or {})),
         bootstrap=True,
         peak_trajectories=trajectories,
     )
@@ -370,8 +366,7 @@ def test_alternating_direct_peaks_follow_ms1_pattern_not_nearest_absolute_rt() -
     result = infer_feature_memberships(
         owners,
         config=AlignmentConfig(),
-        injection_order=orders,
-        drift_lookup=None,
+        rt_frame=SampleRtFrame(injection_order=(orders or {})),
         peak_trajectories=correspondence,
     )
     assert {group.owner_ids for group in result.groups} == {
@@ -414,8 +409,7 @@ def test_never_compared_pattern_observations_do_not_split_one_band(
     result = infer_feature_memberships(
         owners,
         config=AlignmentConfig(),
-        injection_order=orders,
-        drift_lookup=None,
+        rt_frame=SampleRtFrame(injection_order=(orders or {})),
         peak_trajectories=trajectories,
     )
     assert [(group.owner_ids, group.disposition) for group in result.groups] == [
@@ -456,8 +450,7 @@ def test_single_peak_owner_keeps_ordinary_rt_gate(
     result = infer_feature_memberships(
         owners,
         config=AlignmentConfig(),
-        injection_order=orders,
-        drift_lookup=None,
+        rt_frame=SampleRtFrame(injection_order=(orders or {})),
         bootstrap=bootstrap,
         peak_trajectories=resolve_peak_trajectories(
             owners, contexts, config=AlignmentConfig(), injection_order=orders
@@ -474,8 +467,7 @@ def test_full85_clean_band_is_one_assigned_group(case: str) -> None:
     old = infer_feature_memberships(
         owners,
         config=AlignmentConfig(),
-        injection_order=orders,
-        drift_lookup=None,
+        rt_frame=SampleRtFrame(injection_order=(orders or {})),
         bootstrap=True,
     )
     assert not any(
@@ -486,9 +478,7 @@ def test_full85_clean_band_is_one_assigned_group(case: str) -> None:
     result = infer_feature_memberships(
         tuple(reversed(owners)),
         config=AlignmentConfig(),
-        injection_order=orders,
-        drift_lookup=None,
-        rt_warp=_warp(),
+        rt_frame=SampleRtFrame(injection_order=(orders or {})).with_warp(_warp()),
     )
     for group in result.groups:
         stems = [
@@ -583,9 +573,9 @@ def test_nearby_mass_outlier_cannot_cut_a_clean_band() -> None:
     result = infer_feature_memberships(
         (*owners, outlier),
         config=CID_NL_ALIGNMENT_CONFIG,
-        injection_order={**orders, "mass-window-outlier": 0},
-        drift_lookup=None,
-        rt_warp=_warp(),
+        rt_frame=SampleRtFrame(
+            injection_order=({**orders, "mass-window-outlier": 0})
+        ).with_warp(_warp()),
     )
     assert any(
         group.disposition == "assigned"
@@ -614,9 +604,7 @@ def test_local_trend_recovers_full85_326_mz_owner_under_warp_uncertainty() -> No
     result = infer_feature_memberships(
         owners,
         config=CID_NL_ALIGNMENT_CONFIG,
-        injection_order=orders,
-        drift_lookup=None,
-        rt_warp=shifted,
+        rt_frame=SampleRtFrame(injection_order=(orders or {})).with_warp(shifted),
     )
     assert len(result.groups) == 1
     assert result.groups[0].disposition == "assigned"
@@ -659,8 +647,7 @@ def test_equal_band_competition_marks_only_the_bridge_undecided() -> None:
     result = infer_feature_memberships(
         (left, bridge, right),
         config=AlignmentConfig(),
-        injection_order={"a": 1, "b": 2},
-        drift_lookup=None,
+        rt_frame=SampleRtFrame(injection_order=({"a": 1, "b": 2})),
     )
     assert len(result.groups) == 3
     assert all(group.disposition == "undecided" for group in result.groups)
@@ -705,9 +692,9 @@ def test_sparse_feature_uses_warp_only_across_distant_injections() -> None:
     result = infer_feature_memberships(
         owners,
         config=AlignmentConfig(),
-        injection_order={"first": 1, "middle": 31, "last": 61},
-        drift_lookup=None,
-        rt_warp=BatchRtWarp((), 0),
+        rt_frame=SampleRtFrame(
+            injection_order=({"first": 1, "middle": 31, "last": 61})
+        ).with_warp(BatchRtWarp((), 0)),
     )
     assert len(result.groups) == 1
     assert result.groups[0].disposition == "assigned"
@@ -722,9 +709,9 @@ def test_one_sample_doublet_does_not_split_the_other_seventy_nine() -> None:
     result = infer_feature_memberships(
         (*clean, doublet),
         config=AlignmentConfig(),
-        injection_order={f"s{order:02d}": order for order in range(1, 81)},
-        drift_lookup=None,
-        rt_warp=BatchRtWarp((), 0),
+        rt_frame=SampleRtFrame(
+            injection_order=({f"s{order:02d}": order for order in range(1, 81)})
+        ).with_warp(BatchRtWarp((), 0)),
     )
     assert any(
         group.disposition == "assigned"
@@ -759,9 +746,9 @@ def test_mass_resolved_coeluting_bands_survive_smooth_rt_drift(reverse: bool) ->
     result = infer_feature_memberships(
         tuple(reversed(owners)) if reverse else owners,
         config=CID_NL_ALIGNMENT_CONFIG,
-        injection_order={f"s{order:02d}": order for order in range(1, 86)},
-        drift_lookup=None,
-        rt_warp=BatchRtWarp((), 0),
+        rt_frame=SampleRtFrame(
+            injection_order=({f"s{order:02d}": order for order in range(1, 86)})
+        ).with_warp(BatchRtWarp((), 0)),
     )
     assert {frozenset(group.owner_ids) for group in result.groups} == {
         frozenset(owner.owner_id for owner in band) for band in bands
@@ -795,9 +782,9 @@ def test_ambiguous_distant_pair_does_not_erase_independent_local_support() -> No
     result = infer_feature_memberships(
         (*local, *distant),
         config=CID_NL_ALIGNMENT_CONFIG,
-        injection_order={"first": 1, "second": 2, "later": 17},
-        drift_lookup=None,
-        rt_warp=BatchRtWarp((), 0),
+        rt_frame=SampleRtFrame(
+            injection_order=({"first": 1, "second": 2, "later": 17})
+        ).with_warp(BatchRtWarp((), 0)),
     )
     assert any(
         group.disposition == "assigned"
@@ -826,9 +813,9 @@ def test_sparse_band_remains_warp_only_beside_an_unrelated_dense_band() -> None:
     result = infer_feature_memberships(
         (*sparse, *dense),
         config=AlignmentConfig(),
-        injection_order={f"s{order:02d}": order for order in range(1, 82)},
-        drift_lookup=None,
-        rt_warp=BatchRtWarp((), 0),
+        rt_frame=SampleRtFrame(
+            injection_order=({f"s{order:02d}": order for order in range(1, 82)})
+        ).with_warp(BatchRtWarp((), 0)),
     )
     assert any(
         group.disposition == "assigned"
@@ -860,9 +847,9 @@ def test_dense_band_survives_a_long_absence_in_injection_order(
     result = infer_feature_memberships(
         tuple(reversed(owners)),
         config=AlignmentConfig(),
-        injection_order={f"s{order:02d}": order for order in range(1, 42)},
-        drift_lookup=None,
-        rt_warp=warp,
+        rt_frame=SampleRtFrame(
+            injection_order=({f"s{order:02d}": order for order in range(1, 42)})
+        ).with_warp(warp),
     )
 
     assert len(result.groups) == 1
@@ -882,9 +869,9 @@ def test_long_gap_does_not_bridge_distinct_dense_rt_bands() -> None:
     result = infer_feature_memberships(
         (*early, *late),
         config=AlignmentConfig(),
-        injection_order={f"s{order:02d}": order for order in range(1, 42)},
-        drift_lookup=None,
-        rt_warp=BatchRtWarp((), 0),
+        rt_frame=SampleRtFrame(
+            injection_order=({f"s{order:02d}": order for order in range(1, 42)})
+        ).with_warp(BatchRtWarp((), 0)),
     )
 
     assert {frozenset(group.owner_ids) for group in result.groups} == {
@@ -902,9 +889,9 @@ def test_product_scatter_is_scored_within_the_precursor_search_window() -> None:
     result = infer_feature_memberships(
         owners,
         config=AlignmentConfig(),
-        injection_order={"first": 1, "second": 2},
-        drift_lookup=None,
-        rt_warp=BatchRtWarp((), 0),
+        rt_frame=SampleRtFrame(injection_order=({"first": 1, "second": 2})).with_warp(
+            BatchRtWarp((), 0)
+        ),
     )
     assert len(result.groups) == 1
     assert result.groups[0].disposition == "assigned"
@@ -920,8 +907,8 @@ def test_precursor_lookup_bound_is_independent_of_injection_order() -> None:
     result = infer_feature_memberships(
         owners,
         config=AlignmentConfig(),
-        injection_order={"first": 1, "middle": 2, "last": 3},
-        drift_lookup=None,
-        rt_warp=BatchRtWarp((), 0),
+        rt_frame=SampleRtFrame(
+            injection_order=({"first": 1, "middle": 2, "last": 3})
+        ).with_warp(BatchRtWarp((), 0)),
     )
     assert all(group.disposition == "undecided" for group in result.groups)

@@ -23,12 +23,9 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     construct_cross_sample_peak_group_hypotheses,
     validate_cross_sample_peak_group_identity,
 )
-from xic_extractor.alignment.drift_evidence import KnownIstdReference
-from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.feature_membership_inference import (
     FeatureInferenceOperationCounts,
     FeatureMembershipGroup,
-    RtCoordinates,
     rt_trend_supports_union,
     supports_existing_feature,
 )
@@ -45,6 +42,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import PeakTrajectories
+from xic_extractor.alignment.rt_frame import RtFrame, SampleRtFrame
 from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
@@ -72,7 +70,7 @@ def build_targeted_cross_sample_groups(
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...
     ],
     alignment_config: AlignmentConfig,
-    drift_lookup: DriftLookupProtocol | None = None,
+    rt_frame: SampleRtFrame,
 ) -> CrossSampleGroupingResult:
     """Close Targeted membership from the exact selected capture in each cell."""
 
@@ -142,12 +140,7 @@ def build_targeted_cross_sample_groups(
         sample_universe=frozenset(
             sample.metadata.raw_stem for sample in processing_owners.sample_resolutions
         ),
-        injection_order={
-            sample.metadata.raw_stem: sample.metadata.injection_order
-            for sample in processing_owners.sample_resolutions
-            if sample.metadata.injection_order is not None
-        },
-        drift_lookup=drift_lookup,
+        rt_frame=rt_frame,
     )
     identities = tuple(
         validate_cross_sample_peak_group_identity(group, require_canonical=True)
@@ -171,7 +164,7 @@ def build_targeted_cross_sample_groups(
             predecessors=population,
             successors=population,
         ),
-        drift_lookup=drift_lookup,
+        rt_frame=rt_frame,
     )
 
 
@@ -184,8 +177,7 @@ def build_initial_cid_nl_cross_sample_groups(
     ],
     alignment_config: AlignmentConfig,
     elution_contexts: Sequence[SampleElutionContext] = (),
-    drift_lookup: DriftLookupProtocol | None = None,
-    known_istd_reference: KnownIstdReference | None = None,
+    rt_frame: SampleRtFrame,
     operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
     retained_hypotheses_by_assessment: Mapping[
         tuple[str, str], tuple[PeakHypothesis, ...]
@@ -198,26 +190,16 @@ def build_initial_cid_nl_cross_sample_groups(
 ]:
     """Infer stable CID-NL groups without producing unused RT trajectories."""
     batch_samples = processing_owners.sample_resolutions
-    grouping_scope, retained_candidates, drift_lookup = (
-        bootstrap_cid_nl_initial_population(
-            processing_owners=processing_owners,
-            sample_assessments=sample_assessments,
-            alignment_config=alignment_config,
-            sample_universe=frozenset(
-                sample.metadata.raw_stem for sample in batch_samples
-            ),
-            injection_order={
-                sample.metadata.raw_stem: sample.metadata.injection_order
-                for sample in batch_samples
-                if sample.metadata.injection_order is not None
-            },
-            drift_lookup=drift_lookup,
-            retain_observation_only_candidates=True,
-            elution_contexts=elution_contexts,
-            known_istd_reference=known_istd_reference,
-            operation_counts_sink=operation_counts_sink,
-            retained_hypotheses_by_assessment=retained_hypotheses_by_assessment,
-        )
+    grouping_scope, retained_candidates, rt_frame = bootstrap_cid_nl_initial_population(
+        processing_owners=processing_owners,
+        sample_assessments=sample_assessments,
+        alignment_config=alignment_config,
+        sample_universe=frozenset(sample.metadata.raw_stem for sample in batch_samples),
+        rt_frame=rt_frame,
+        retain_observation_only_candidates=True,
+        elution_contexts=elution_contexts,
+        operation_counts_sink=operation_counts_sink,
+        retained_hypotheses_by_assessment=retained_hypotheses_by_assessment,
     )
     groups = grouping_scope.groups
     _validate_capture_owner_hypotheses(
@@ -247,7 +229,7 @@ def build_initial_cid_nl_cross_sample_groups(
         partition_transition=_partition_transition(
             predecessors=population, successors=population
         ),
-        drift_lookup=drift_lookup,
+        rt_frame=rt_frame,
     )
     return grouping_scope, result, retained_candidates
 
@@ -258,8 +240,7 @@ def regroup_cid_nl_cross_sample_groups(
     grouping_scope: InitialGroupingScope,
     grouping_result: CrossSampleGroupingResult,
     alignment_config: AlignmentConfig,
-    injection_order: Mapping[str, int],
-    rt_warp: RtCoordinates,
+    rt_frame: SampleRtFrame,
     backfill_half_window_min: float,
     operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
 ) -> tuple[InitialGroupingScope, CrossSampleGroupingResult]:
@@ -271,9 +252,7 @@ def regroup_cid_nl_cross_sample_groups(
         sample_universe=frozenset(
             sample.metadata.raw_stem for sample in processing_owners.sample_resolutions
         ),
-        injection_order=injection_order,
-        drift_lookup=grouping_result.drift_lookup,
-        rt_warp=rt_warp,
+        rt_frame=rt_frame,
         backfill_half_window_min=backfill_half_window_min,
         operation_counts_sink=operation_counts_sink,
         peak_trajectories=grouping_scope.peak_trajectories,
@@ -298,7 +277,7 @@ def regroup_cid_nl_cross_sample_groups(
         partition_transition=_partition_transition(
             predecessors=population, successors=population
         ),
-        drift_lookup=grouping_result.drift_lookup,
+        rt_frame=rt_frame,
     )
     return scope, result
 
@@ -308,10 +287,8 @@ def group_cid_nl_owners(
     *,
     config: AlignmentConfig,
     sample_universe: frozenset[str],
-    injection_order: Mapping[str, int],
-    rt_warp: RtCoordinates | None,
+    rt_frame: RtFrame,
     backfill_half_window_min: float,
-    drift_lookup: DriftLookupProtocol | None = None,
     known_identity_bindings: Sequence[tuple[str, str]] = (),
     operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
     peak_trajectories: PeakTrajectories | None = None,
@@ -321,10 +298,8 @@ def group_cid_nl_owners(
         tuple(owners),
         config=config,
         sample_universe=sample_universe,
-        injection_order=injection_order,
-        drift_lookup=drift_lookup,
+        rt_frame=rt_frame,
         known_identity_bindings=known_identity_bindings,
-        rt_warp=rt_warp,
         operation_counts_sink=operation_counts_sink,
         peak_trajectories=peak_trajectories,
     )
@@ -333,8 +308,7 @@ def group_cid_nl_owners(
             groups,
             config=config,
             backfill_half_window_min=backfill_half_window_min,
-            injection_order=injection_order,
-            rt_warp=rt_warp,
+            rt_frame=rt_frame,
             peak_trajectories=peak_trajectories,
         ),
         config=config,
@@ -350,8 +324,6 @@ def admit_cid_nl_group_backfills(
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
     ],
     alignment_config: AlignmentConfig,
-    injection_order: Mapping[str, int] | None = None,
-    rt_warp: RtCoordinates | None = None,
 ) -> tuple[
     CrossSampleGroupingResult,
     tuple[CrossSamplePeakGroupHypothesis, ...],
@@ -413,9 +385,7 @@ def admit_cid_nl_group_backfills(
             owner,
             group.owners,
             config=alignment_config,
-            drift_lookup=result.drift_lookup,
-            injection_order=injection_order,
-            rt_warp=rt_warp,
+            rt_frame=result.rt_frame,
         ):
             continue
         claims[physical_key].add(group_id)
@@ -570,8 +540,7 @@ def merge_sample_disjoint_groups(
     *,
     config: AlignmentConfig,
     backfill_half_window_min: float,
-    injection_order: Mapping[str, int],
-    rt_warp: RtCoordinates | None,
+    rt_frame: RtFrame,
     peak_trajectories: PeakTrajectories | None = None,
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
     """Merge nearby sample-disjoint rows only when their union supports one band.
@@ -638,9 +607,7 @@ def merge_sample_disjoint_groups(
         members[find(group.group_hypothesis_id)].append(group)
     merged = []
     corrected_rt = {
-        owner.owner_id: (
-            rt_warp.corrected_rt_min(owner) if rt_warp else owner.owner_apex_rt
-        )
+        owner.owner_id: (rt_frame.corrected_rt_min(owner))
         for group in groups
         for owner in group.owners
     }
@@ -652,7 +619,7 @@ def merge_sample_disjoint_groups(
         if not rt_trend_supports_union(
             parts[0].owners,
             tuple(owner for group in parts[1:] for owner in group.owners),
-            orders=injection_order,
+            orders=rt_frame.injection_order,
             corrected_rt=corrected_rt,
             max_rt_sec=config.max_rt_sec,
         ):

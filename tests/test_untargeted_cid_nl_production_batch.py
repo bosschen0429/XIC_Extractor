@@ -46,6 +46,7 @@ from xic_extractor.alignment.production_decisions import ProductionDecisionSet
 from xic_extractor.alignment.result.scientific_alignment import (
     ObservedSearchSubject,
 )
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
@@ -4067,9 +4068,7 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
     assert membership_counts["input_owner_rows"] == supported_samples
     assert membership_counts["unique_owners"] == supported_samples
     assert membership_counts["owner_edge_evaluations"] > 0
-    complete_dense_partition(
-        batch, runtime, alignment_config=AlignmentConfig()
-    )
+    complete_dense_partition(batch, runtime, alignment_config=AlignmentConfig())
     (context,) = initial_contexts
     (group,) = context.groups
     assert {owner.sample_stem for owner in group.owners} == set(
@@ -4086,16 +4085,12 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
     assert cell_contexts
     for cell_context in cell_contexts:
         assert cell_context.sample_universe == frozenset(stems)
-        assert dict(cell_context.injection_order) == dict(zip(stems, (1, 2, 3)))
-        if supported_samples == 2:
-            for order in (None, tuple((stem, 1) for stem in stems)):
-                rebound = replace(cell_context, injection_order=order)
-                assert rebound.group is cell_context.group
-                assert rebound.supports is cell_context.supports
-        else:
-            rebound = replace(cell_context, injection_order=None)
-            assert rebound.group is cell_context.group
-            assert rebound.supports is cell_context.supports
+        assert dict(cell_context.rt_frame.injection_order) == dict(
+            zip(stems, (1, 2, 3))
+        )
+        rebound = replace(cell_context, rt_frame=SampleRtFrame())
+        assert rebound.group is cell_context.group
+        assert rebound.supports is cell_context.supports
 
 
 def test_known_istd_reference_closes_drifting_group_and_cell_proof(
@@ -4262,10 +4257,19 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
         for source in cell.predecessor_cells
     )
     assert contexts
-    assert all(context.drift_lookup is contexts[0].drift_lookup for context in contexts)
-    without_drift_lookup = replace(contexts[0], drift_lookup=None)
-    assert without_drift_lookup.group is contexts[0].group
-    assert without_drift_lookup.supports is contexts[0].supports
+    for context in contexts:
+        assert context.rt_frame.drift_source == "targeted_istd_trend"
+        assert set(context.rt_frame.known_identity_bindings) == {
+            (owner_id, "known") for owner_id in context.group.owner_ids
+        }
+        left, right = context.group.owners
+        assert context.rt_frame.has_direct_reference_pair(left, right)
+        assert context.rt_frame.corrected_pair_delta_sec(left, right) == pytest.approx(
+            0
+        )
+    without_rt_context = replace(contexts[0], rt_frame=SampleRtFrame())
+    assert without_rt_context.group is contexts[0].group
+    assert without_rt_context.supports is contexts[0].supports
 
 
 def _assert_conservative_coverage_handoff(

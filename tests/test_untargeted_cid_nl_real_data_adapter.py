@@ -25,6 +25,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     bind_retained_peak_hypotheses_to_assessment_universe,
     compose_peak_hypotheses_from_assessment_universe,
 )
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportPolicy,
@@ -2273,6 +2274,7 @@ def test_adapter_preserves_supported_and_observation_only_physical_peaks(
         processing_owners=fixture.owners,
         sample_assessments=((fixture.sample("S1"), assessment),),
         alignment_config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(),
     )
     assert sorted(group.owner_ids for group in grouping_scope.groups) == sorted(
         (hypothesis.hypothesis_id,) for hypothesis in hypotheses

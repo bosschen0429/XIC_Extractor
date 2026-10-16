@@ -22,6 +22,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     owner_from_cid_nl_assessment_support,
     validate_cid_nl_assessment_hypothesis_closure,
 )
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceRef,
@@ -130,6 +131,7 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
         processing_owners=fixture.owners,
         sample_assessments=((sample, assessment),),
         alignment_config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(),
     )
 
     assert sorted(group.owner_ids for group in grouping_scope.groups) == sorted(
@@ -165,6 +167,7 @@ def test_identity_membership_is_geometry_not_group_center_reclassification(
         processing_owners=fixture.owners,
         sample_assessments=sample_assessments,
         alignment_config=AlignmentConfig(anchor_min_seed_events=1),
+        rt_frame=SampleRtFrame(),
     )
 
     direct_ids = frozenset(

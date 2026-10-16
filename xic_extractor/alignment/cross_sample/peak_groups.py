@@ -12,7 +12,7 @@ decisions within the pipeline.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 
@@ -38,7 +38,6 @@ from xic_extractor.alignment.cross_sample.neighborhood_graph import (
     classify_cross_sample_initial_edge,
 )
 from xic_extractor.alignment.edge_scoring import (
-    DriftLookupProtocol,
     DriftPriorSource,
     EdgeDecision,
     HardGateFailureReason,
@@ -48,7 +47,6 @@ from xic_extractor.alignment.edge_scoring import (
 from xic_extractor.alignment.feature_membership_inference import (
     FeatureInferenceOperationCounts,
     FeatureMembershipGroup,
-    RtCoordinates,
     SparseFeatureDecision,
     infer_feature_memberships,
 )
@@ -57,6 +55,7 @@ from xic_extractor.alignment.ownership_models import (
     SampleLocalMS1Owner,
 )
 from xic_extractor.alignment.peak_trajectories import PeakTrajectories
+from xic_extractor.alignment.rt_frame import RtFrame
 
 if TYPE_CHECKING:
     pass
@@ -274,14 +273,12 @@ def construct_cross_sample_peak_group_hypotheses(
     *,
     config: AlignmentConfig,
     sample_universe: frozenset[str] | None = None,
-    injection_order: Mapping[str, int] | None = None,
-    drift_lookup: DriftLookupProtocol | None = None,
+    rt_frame: RtFrame,
     edge_evidence_sink: list[OwnerEdgeEvidence] | None = None,
     processing_request_id: str | None = None,
     known_identity_bindings: Sequence[tuple[str, str]] = (),
     operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
     bootstrap: bool = False,
-    rt_warp: RtCoordinates | None = None,
     peak_trajectories: PeakTrajectories | None = None,
 ) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
     """Infer feature membership and mint its canonical CrossSample identity.
@@ -312,11 +309,9 @@ def construct_cross_sample_peak_group_hypotheses(
     inference = infer_feature_memberships(
         owners,
         config=config,
-        injection_order=injection_order,
-        drift_lookup=drift_lookup,
+        rt_frame=rt_frame,
         known_identity_bindings=known_identity_bindings,
         bootstrap=bootstrap,
-        rt_warp=rt_warp,
         peak_trajectories=peak_trajectories,
     )
     if operation_counts_sink is not None:

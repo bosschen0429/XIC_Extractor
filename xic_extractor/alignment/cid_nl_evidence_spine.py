@@ -20,6 +20,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     HypothesisOwnerAdapterError,
     owner_from_cid_nl_assessment_support,
 )
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
 from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
     CidNlChromatographicSupportContractError,
@@ -351,9 +352,11 @@ def build_cid_nl_reference_spine(
     except HypothesisOwnerAdapterError as exc:
         raise CidNlEvidenceSpineError(str(exc)) from exc
     effective_config = config or AlignmentConfig()
+    rt_frame = SampleRtFrame()
     groups = construct_cross_sample_peak_group_hypotheses(
         owners,
         config=effective_config,
+        rt_frame=rt_frame,
     )
     if len(groups) != 1:
         raise CidNlEvidenceSpineError(
@@ -373,6 +376,7 @@ def build_cid_nl_reference_spine(
                 for sample, assessment, _, hypothesis in support_inputs
             ),
             config=effective_config,
+            rt_frame=rt_frame,
             processing_attempt=processing_owners.attempt,
         )
     except CellObservationContractError as exc:

@@ -22,6 +22,7 @@ from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import (
     resolve_peak_trajectories,
 )
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.peak_detection.elution_context import (
     ElutionLandmark,
     SampleElutionContext,
@@ -71,8 +72,7 @@ def test_ms1_patterns_prevent_remerging_sample_disjoint_direct_rows() -> None:
         owners,
         config=_CONFIG,
         sample_universe=frozenset(orders),
-        injection_order=orders,
-        rt_warp=None,
+        rt_frame=SampleRtFrame(injection_order=(orders or {})),
         backfill_half_window_min=1.0,
         peak_trajectories=correspondence,
     )
@@ -123,6 +123,7 @@ def _groups(owners: tuple[SampleLocalMS1Owner, ...]):
         owners,
         config=_CONFIG,
         sample_universe=frozenset(owner.sample_stem for owner in owners),
+        rt_frame=SampleRtFrame(),
     )
     by_rt = {round(group.family_center_rt, 1): group for group in groups}
     assert set(by_rt) == {8.6, 9.0}
@@ -211,7 +212,10 @@ def test_backfill_peak_of_another_rows_member_is_contested() -> None:
 
     owners = tuple(_main(f"S{index}") for index in range(1, 4))
     (group,) = construct_cross_sample_peak_group_hypotheses(
-        owners, config=_CONFIG, sample_universe=frozenset({"S1", "S2", "S3", "S4"})
+        owners,
+        config=_CONFIG,
+        sample_universe=frozenset({"S1", "S2", "S3", "S4"}),
+        rt_frame=SampleRtFrame(),
     )
     s1 = _sample_id(owners[0])
     s4 = "test-sample:S4"
@@ -237,7 +241,10 @@ def test_backfill_peak_held_only_by_an_archived_group_is_not_contested() -> None
 
     owners = tuple(_main(f"S{index}") for index in range(1, 4))
     (group,) = construct_cross_sample_peak_group_hypotheses(
-        owners, config=_CONFIG, sample_universe=frozenset({"S1", "S2", "S3"})
+        owners,
+        config=_CONFIG,
+        sample_universe=frozenset({"S1", "S2", "S3"}),
+        rt_frame=SampleRtFrame(),
     )
     s1 = _sample_id(owners[0])
     backfills = {
@@ -260,7 +267,10 @@ def test_backfill_peak_held_only_by_an_archived_group_is_not_contested() -> None
 def test_backfill_peak_at_another_apex_or_mass_is_not_contested() -> None:
     owners = tuple(_main(f"S{index}") for index in range(1, 4))
     (group,) = construct_cross_sample_peak_group_hypotheses(
-        owners, config=_CONFIG, sample_universe=frozenset({"S1", "S2", "S3"})
+        owners,
+        config=_CONFIG,
+        sample_universe=frozenset({"S1", "S2", "S3"}),
+        rt_frame=SampleRtFrame(),
     )
     s1 = _sample_id(owners[0])
     backfills = {
@@ -293,6 +303,7 @@ def _two_bands(early: tuple[str, ...], late: tuple[str, ...], *, gap: float):
         owners,
         config=_CONFIG,
         sample_universe=frozenset(owner.sample_stem for owner in owners),
+        rt_frame=SampleRtFrame(),
     )
     assert len(groups) == 2
     assert all(group.disposition == "established" for group in groups)
@@ -308,8 +319,7 @@ def test_sample_disjoint_rows_within_one_backfill_window_merge() -> None:
         groups,
         config=_CONFIG,
         backfill_half_window_min=2.0,
-        injection_order={f"S{i}": i for i in range(12)},
-        rt_warp=None,
+        rt_frame=SampleRtFrame(injection_order=({f"S{i}": i for i in range(12)})),
     )
 
     assert merged.disposition == "established"
@@ -335,8 +345,9 @@ def test_rows_with_a_shared_sample_or_beyond_the_window_stay_apart() -> None:
                 groups,
                 config=_CONFIG,
                 backfill_half_window_min=2.0,
-                injection_order={f"S{i}": i for i in range(12)},
-                rt_warp=None,
+                rt_frame=SampleRtFrame(
+                    injection_order=({f"S{i}": i for i in range(12)})
+                ),
             )
             == groups
         )
@@ -362,8 +373,9 @@ def test_sample_disjoint_merge_uses_the_whole_union_rt_trend(
         groups,
         config=_CONFIG,
         backfill_half_window_min=2.0,
-        injection_order={f"S{i}": i for i in range(12)},
-        rt_warp=CorrectedCoordinates() if calibrated else None,
+        rt_frame=SampleRtFrame(
+            injection_order=({f"S{i}": i for i in range(12)})
+        ).with_warp(CorrectedCoordinates() if calibrated else None),
     )
     if calibrated:
         assert len(result) == 1

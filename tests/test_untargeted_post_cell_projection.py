@@ -29,6 +29,7 @@ from xic_extractor.alignment.projection.untarget import (
     project_untarget_pre_cell,
     validate_untarget_post_cell_projection,
 )
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 
 
 def _completed_projection(
@@ -140,15 +141,22 @@ def test_moderate_group_disposition_controls_current_untarget_route(
     moderate_group = construct_cross_sample_peak_group_hypotheses(
         (
             _owner(
-                "sample-a", "moderate-a", apex_rt=10.0,
-                evidence_score=45, seed_event_count=1,
+                "sample-a",
+                "moderate-a",
+                apex_rt=10.0,
+                evidence_score=45,
+                seed_event_count=1,
             ),
             _owner(
-                "sample-b", "moderate-b", apex_rt=10.1,
-                evidence_score=45, seed_event_count=1,
+                "sample-b",
+                "moderate-b",
+                apex_rt=10.1,
+                evidence_score=45,
+                seed_event_count=1,
             ),
         ),
         config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(),
     )[0]
     strong_group = construct_cross_sample_peak_group_hypotheses(
         (
@@ -156,6 +164,7 @@ def test_moderate_group_disposition_controls_current_untarget_route(
             _owner("sample-b", "strong-b", apex_rt=10.1),
         ),
         config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(),
     )[0]
 
     assert moderate_group.evidence.startswith("owner_feature_inference;assigned;")

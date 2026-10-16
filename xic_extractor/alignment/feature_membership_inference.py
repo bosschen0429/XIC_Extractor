@@ -6,18 +6,15 @@ from bisect import bisect_left, bisect_right, insort
 from collections import Counter, defaultdict
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal, Protocol, cast
+from typing import Literal, cast
 
 import numpy as np
 from scipy.optimize import linear_sum_assignment
 
 from xic_extractor.alignment.config import AlignmentConfig
-from xic_extractor.alignment.drift_evidence import KnownIstdOwnerLookup
 from xic_extractor.alignment.edge_scoring import (
-    DriftLookupProtocol,
     OwnerEdgeEvidence,
     RTEvidenceBasis,
-    _drift_corrected_delta_sec,
     evaluate_owner_edge,
 )
 from xic_extractor.alignment.grouping_evidence import (
@@ -28,6 +25,7 @@ from xic_extractor.alignment.grouping_evidence import (
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import PeakTrajectories
+from xic_extractor.alignment.rt_frame import RtFrame
 from xic_extractor.mass_accuracy import (
     absolute_ppm_error,
     mz_tolerance_da,
@@ -196,12 +194,6 @@ def _interpolated_offset(
     right_rt, right_offset = knots[right]
     fraction = (rt_min - left_rt) / (right_rt - left_rt)
     return left_offset + fraction * (right_offset - left_offset)
-
-
-class RtCoordinates(Protocol):
-    """Supply comparison coordinates while retaining measured peak positions."""
-
-    def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float: ...
 
 
 def estimate_batch_rt_warp(
@@ -567,11 +559,9 @@ def infer_feature_memberships(
     owners: Sequence[SampleLocalMS1Owner],
     *,
     config: AlignmentConfig,
-    injection_order: Mapping[str, int] | None,
-    drift_lookup: DriftLookupProtocol | None,
+    rt_frame: RtFrame,
     known_identity_bindings: Sequence[tuple[str, str]] = (),
     bootstrap: bool = False,
-    rt_warp: RtCoordinates | None = None,
     peak_trajectories: PeakTrajectories | None = None,
 ) -> FeatureMembershipInferenceResult:
     """Infer ordinary whole-window bands, preserving exact known identities.
@@ -592,7 +582,7 @@ def infer_feature_memberships(
         constrained_owner_ids,
     ) = _known_identity_groups(
         owner_by_id,
-        drift_lookup,
+        rt_frame,
         counts,
         known_identity_bindings,
     )
@@ -618,8 +608,7 @@ def infer_feature_memberships(
             ordinary,
             direction="forward",
             config=config,
-            injection_order=injection_order,
-            drift_lookup=drift_lookup,
+            rt_frame=rt_frame,
             counts=counts,
             seed_by_owner=seed_by_owner,
             trajectories=trajectories,
@@ -628,8 +617,7 @@ def infer_feature_memberships(
             ordinary,
             direction="reverse",
             config=config,
-            injection_order=injection_order,
-            drift_lookup=drift_lookup,
+            rt_frame=rt_frame,
             counts=counts,
             seed_by_owner=seed_by_owner,
             trajectories=trajectories,
@@ -645,8 +633,7 @@ def infer_feature_memberships(
         inferred_groups, decisions = _window_inference(
             ordinary,
             config=config,
-            injection_order=injection_order or {},
-            rt_warp=rt_warp,
+            rt_frame=rt_frame,
             counts=counts,
             trajectory_seeds=trajectory_seeds,
             trajectories=trajectories,
@@ -742,7 +729,7 @@ def _unique_owners(
 
 def _known_identity_groups(
     owner_by_id: Mapping[str, SampleLocalMS1Owner],
-    drift_lookup: DriftLookupProtocol | None,
+    rt_frame: RtFrame,
     counts: Counter[str],
     known_identity_bindings: Sequence[tuple[str, str]],
 ) -> tuple[
@@ -750,11 +737,7 @@ def _known_identity_groups(
     tuple[KnownIdentityMembershipConstraint, ...],
     frozenset[str],
 ]:
-    retained_bindings = (
-        tuple((owner_id, label) for owner_id, label, _ in drift_lookup.bindings)
-        if isinstance(drift_lookup, KnownIstdOwnerLookup)
-        else ()
-    )
+    retained_bindings = rt_frame.known_identity_bindings
     bindings = tuple(dict.fromkeys((*known_identity_bindings, *retained_bindings)))
     counts["known_identity_bindings"] = len(bindings)
     by_label: dict[str, set[str]] = defaultdict(set)
@@ -837,8 +820,7 @@ def _directional_inference(
     *,
     direction: DecisionDirection,
     config: AlignmentConfig,
-    injection_order: Mapping[str, int] | None,
-    drift_lookup: DriftLookupProtocol | None,
+    rt_frame: RtFrame,
     counts: Counter[str],
     seed_by_owner: Mapping[str, int],
     trajectories: PeakTrajectories,
@@ -850,6 +832,7 @@ def _directional_inference(
     feature. Unbound owners can extend the feature; owners bound to distinct
     trajectories cannot share one.
     """
+    injection_order = rt_frame.injection_order
     counts["directional_passes"] += 1
     by_sample: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
     for owner in owners:
@@ -931,7 +914,7 @@ def _directional_inference(
             feasible_keys = {
                 key
                 for key in feature_keys
-                if _feature_rt_may_support(owner, tracks[key], config, drift_lookup)
+                if _feature_rt_may_support(owner, tracks[key], config, rt_frame)
                 and trajectories.permits_membership(
                     (owner.owner_id, *feature_members[key])
                 )
@@ -946,7 +929,7 @@ def _directional_inference(
                     owner,
                     tracks[feature_key],
                     config=config,
-                    drift_lookup=drift_lookup,
+                    rt_frame=rt_frame,
                     counts=counts,
                 )
                 for feature_key in sorted(feature_keys)
@@ -1049,8 +1032,7 @@ def _window_inference(
     owners: tuple[SampleLocalMS1Owner, ...],
     *,
     config: AlignmentConfig,
-    injection_order: Mapping[str, int],
-    rt_warp: RtCoordinates | None,
+    rt_frame: RtFrame,
     counts: Counter[str],
     trajectory_seeds: Sequence[FeatureMembershipGroup],
     trajectories: PeakTrajectories,
@@ -1065,6 +1047,7 @@ def _window_inference(
     After local bands settle, separated dense bands can bridge on whole-band
     evidence without treating missing injections as contrary identity evidence.
     """
+    injection_order = rt_frame.injection_order
     if not owners:
         return (), ()
     samples = {owner.sample_stem for owner in owners}
@@ -1077,12 +1060,7 @@ def _window_inference(
         orders[sample] = next_order
         next_order += 1
     corrected_rt = {
-        owner.owner_id: (
-            rt_warp.corrected_rt_min(owner)
-            if rt_warp is not None
-            else owner.owner_apex_rt
-        )
-        for owner in owners
+        owner.owner_id: rt_frame.corrected_rt_min(owner) for owner in owners
     }
     ordinary_by_id = {owner.owner_id: owner for owner in owners}
     track_indices = trajectories.owner_track_indices()
@@ -1196,7 +1174,7 @@ def _window_inference(
                 counts=counts,
                 trajectories=trajectories,
             )
-            if rt_warp is not None and len(known_orders) == len(samples):
+            if rt_frame.has_coordinates and len(known_orders) == len(samples):
                 _bridge_separated_window_bands(
                     members,
                     weak=weak,
@@ -1217,7 +1195,7 @@ def _window_inference(
         weak=weak,
         orders=orders,
         corrected_rt=corrected_rt,
-        rt_basis="drift_corrected" if rt_warp is not None else "raw",
+        rt_basis="drift_corrected" if rt_frame.has_coordinates else "raw",
     )
     counts["samples_processed"] = len(samples)
     counts["births"] = len(groups)
@@ -1755,15 +1733,15 @@ def _feature_rt_may_support(
     owner: SampleLocalMS1Owner,
     track: _FeatureTrack,
     config: AlignmentConfig,
-    drift_lookup: DriftLookupProtocol | None,
+    rt_frame: RtFrame,
 ) -> bool:
     """Exclude only tracks whose seed AND last cannot support either RT basis."""
     for witness in track.witness_owners:
         raw_delta = abs(owner.owner_apex_rt - witness.owner_apex_rt) * 60.0
         if not math.isfinite(raw_delta) or raw_delta <= config.preferred_rt_sec:
             return True
-        if drift_lookup is not None:
-            corrected = _drift_corrected_delta_sec(owner, witness, drift_lookup)
+        if rt_frame.has_drift:
+            corrected = rt_frame.corrected_pair_delta_sec(owner, witness)
             if (
                 corrected is None
                 or not math.isfinite(corrected)
@@ -1778,19 +1756,15 @@ def supports_existing_feature(
     members: tuple[SampleLocalMS1Owner, ...],
     *,
     config: AlignmentConfig,
-    drift_lookup: DriftLookupProtocol | None,
-    injection_order: Mapping[str, int] | None = None,
-    rt_warp: RtCoordinates | None = None,
+    rt_frame: RtFrame,
 ) -> bool:
     """Apply the same feature evidence rule without fitting or assigning again."""
+    injection_order = rt_frame.injection_order
     if injection_order and all(
         item.sample_stem in injection_order for item in (owner, *members)
     ):
         corrected_rt = {
-            item.owner_id: rt_warp.corrected_rt_min(item)
-            if rt_warp is not None
-            else item.owner_apex_rt
-            for item in (owner, *members)
+            item.owner_id: rt_frame.corrected_rt_min(item) for item in (owner, *members)
         }
         return (
             _window_band_candidate(
@@ -1808,7 +1782,7 @@ def supports_existing_feature(
     for member in ordered[1:]:
         track.add(member)
     candidate = _compare_owner_to_feature(
-        owner, track, config=config, drift_lookup=drift_lookup, counts=Counter()
+        owner, track, config=config, rt_frame=rt_frame, counts=Counter()
     )
     return candidate.cost is not None and candidate.cost < _UNASSIGNED_COST
 
@@ -1818,7 +1792,7 @@ def _compare_owner_to_feature(
     track: _FeatureTrack,
     *,
     config: AlignmentConfig,
-    drift_lookup: DriftLookupProtocol | None,
+    rt_frame: RtFrame,
     counts: Counter[str],
 ) -> _Candidate:
     counts["feature_summary_comparisons"] += 1
@@ -1834,7 +1808,7 @@ def _compare_owner_to_feature(
     for witness in witnesses:
         left, right = sorted((owner, witness), key=lambda item: item.owner_id)
         evidence.append(
-            evaluate_owner_edge(left, right, config=config, drift_lookup=drift_lookup)
+            evaluate_owner_edge(left, right, config=config, rt_frame=rt_frame)
         )
         counts["owner_edge_evaluations"] += 1
     supported = tuple(

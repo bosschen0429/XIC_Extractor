@@ -67,6 +67,7 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
     owner_from_cid_nl_assessment_support,
 )
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     mint_cid_nl_method_assessment_ref,
 )
@@ -125,7 +126,7 @@ def _outside_group_fixture(
         )
     )
     groups = construct_cross_sample_peak_group_hypotheses(
-        owners, config=CID_NL_ALIGNMENT_CONFIG
+        owners, config=CID_NL_ALIGNMENT_CONFIG, rt_frame=SampleRtFrame()
     )
     assert len(groups) == len(support_centers) + 1
     return fixture, tuple(assessments), groups
@@ -144,6 +145,7 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
             groups=ordered_groups,
             sample_assessments=tuple(assessments),
             alignment_config=CID_NL_ALIGNMENT_CONFIG,
+            rt_frame=SampleRtFrame(),
         )
         assert len(cells) == len(groups) * len(assessments)
         payloads = [
@@ -217,6 +219,7 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
             groups=(third_group,),
             sample_assessments=tuple(assessments),
             alignment_config=CID_NL_ALIGNMENT_CONFIG,
+            rt_frame=SampleRtFrame(),
         )
 
 
@@ -227,6 +230,7 @@ def _outside_population_handoff(tmp_path: Path):
         groups=groups,
         sample_assessments=assessments,
         alignment_config=CID_NL_ALIGNMENT_CONFIG,
+        rt_frame=SampleRtFrame(),
     )
     identities = tuple(
         validate_cross_sample_peak_group_identity(group, require_canonical=True)
@@ -345,6 +349,7 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
             ): (recovered_sample, backfill_assessment)
         },
         alignment_config=CID_NL_ALIGNMENT_CONFIG,
+        rt_frame=SampleRtFrame(),
     )
     assert len(cells) == 3
     recovered_cells = tuple(

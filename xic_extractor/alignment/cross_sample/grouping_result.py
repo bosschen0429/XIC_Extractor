@@ -8,7 +8,7 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupIdentity,
     CrossSamplePartitionTransition,
 )
-from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
     canonical_identity_basis_bytes,
@@ -32,7 +32,7 @@ class CrossSampleGroupingResult:
 
     processing_owners: ProcessingOwnerReferences
     partition_transition: CrossSamplePartitionTransition
-    drift_lookup: DriftLookupProtocol | None = field(default=None, compare=False)
+    rt_frame: SampleRtFrame = field(compare=False)
     receipt_id: str = field(init=False)
     basis_bytes: bytes = field(init=False, repr=False)
 

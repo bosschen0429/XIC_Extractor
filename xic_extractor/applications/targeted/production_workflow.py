@@ -25,6 +25,7 @@ from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
 )
 from xic_extractor.alignment.result.scientific_alignment import ObservedSearchSubject
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.applications.targeted.application import (
     FinalizedTargetProductionResult,
     TargetedApplicationError,
@@ -167,6 +168,7 @@ class _PreparedTargetedProductionWorkflow:
     """Owner-local acquisition population for per-Target scientific completion."""
 
     owners: ProcessingOwnerReferences
+    rt_frame: SampleRtFrame
     samples: tuple[ResolvedCanonicalSampleIdentity, ...]
     targets: tuple[ResolvedTargetDefinition, ...]
     results_by_sample: tuple[tuple[ResolvedCanonicalSampleIdentity, FileResult], ...]
@@ -902,6 +904,7 @@ def _prepare_targeted_production_workflow(
     )
     return _PreparedTargetedProductionWorkflow(
         owners=owners,
+        rt_frame=SampleRtFrame.from_samples(samples),
         samples=samples,
         targets=resolved_targets,
         results_by_sample=tuple(
@@ -1066,6 +1069,7 @@ def _execute_target(
         assessments,
         config=request.config,
         alignment_config=alignment_config,
+        rt_frame=context.rt_frame,
     )
     population = population.rebind_to_recovery(backfill.recovery_observations)
     assessment_tuple = tuple(
@@ -1112,6 +1116,7 @@ def _execute_target(
         ),
         TargetWorkflowAdapter(
             capture_inputs=capture_inputs,
+            rt_frame=context.rt_frame,
             sample_assessments=assessment_tuple,
             alignment_config=alignment_config,
             predecessor_cell_observations=(),

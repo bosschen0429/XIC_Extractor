@@ -275,8 +275,9 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
                 assert acquired.succeeded
                 prepared = acquired.result[1].prepared_grouping
                 assert prepared is not None
-                if prepared.rt_warp is not None:
-                    warps.append(prepared.rt_warp)
+                warp = prepared.rt_frame.warp_for_snapshot
+                if warp is not None:
+                    warps.append(warp)
                     memberships.extend(
                         tuple(group.owner_ids)
                         for workset in prepared.worksets

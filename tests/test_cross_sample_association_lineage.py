@@ -45,6 +45,7 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePartitionTransition,
     mint_cross_sample_group_identity,
 )
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.processing_identity import (
     canonical_identity_basis_bytes,
@@ -575,4 +576,5 @@ def _final_receipt(
     return CrossSampleGroupingResult(
         processing_owners=fixture.context.processing_owners,
         partition_transition=application,
+        rt_frame=SampleRtFrame(),
     )

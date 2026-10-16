@@ -22,6 +22,7 @@ from xic_extractor.alignment.ownership_models import (
     IdentityEvent,
     SampleLocalMS1Owner,
 )
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
 
 
@@ -159,8 +160,7 @@ def test_ms1_only_owner_requires_physical_signal_quality() -> None:
     result = infer_feature_memberships(
         (strong, missing_quality),
         config=AlignmentConfig(),
-        injection_order={"a": 1, "b": 2},
-        drift_lookup=None,
+        rt_frame=SampleRtFrame(injection_order=({"a": 1, "b": 2})),
     )
     assert _memberships(result) == {
         frozenset((strong.owner_id,)),
@@ -194,8 +194,7 @@ def test_ms1_only_and_cid_evidence_do_not_form_a_mixed_group() -> None:
     result = infer_feature_memberships(
         (ms1, cid),
         config=AlignmentConfig(),
-        injection_order={"a": 1, "b": 2},
-        drift_lookup=None,
+        rt_frame=SampleRtFrame(injection_order=({"a": 1, "b": 2})),
     )
     assert _memberships(result) == {
         frozenset((ms1.owner_id,)),
@@ -212,14 +211,12 @@ def test_true_drift_is_stable_without_requiring_distant_pair_edges() -> None:
     first = infer_feature_memberships(
         owners,
         config=AlignmentConfig(preferred_rt_sec=60.0),
-        injection_order=order,
-        drift_lookup=None,
+        rt_frame=SampleRtFrame(injection_order=(order or {})),
     )
     permuted = infer_feature_memberships(
         tuple(reversed(owners)),
         config=AlignmentConfig(preferred_rt_sec=60.0),
-        injection_order=order,
-        drift_lookup=None,
+        rt_frame=SampleRtFrame(injection_order=(order or {})),
     )
 
     assert first.groups == permuted.groups
@@ -248,8 +245,9 @@ def test_exact_known_identity_is_indivisible_and_does_not_absorb_unbound_owner()
     result = infer_feature_memberships(
         (bound_a, bound_b, unbound),
         config=AlignmentConfig(),
-        injection_order={"a": 1, "b": 2, "c": 3},
-        drift_lookup=lookup,
+        rt_frame=SampleRtFrame(injection_order=({"a": 1, "b": 2, "c": 3})).with_sources(
+            drift_lookup=lookup
+        ),
     )
 
     known = next(group for group in result.groups if group.known_identity_label)
@@ -277,8 +275,9 @@ def test_known_identity_sample_conflict_is_reported_without_selection() -> None:
     result = infer_feature_memberships(
         (left, right),
         config=AlignmentConfig(),
-        injection_order={"same": 1},
-        drift_lookup=lookup,
+        rt_frame=SampleRtFrame(injection_order=({"same": 1})).with_sources(
+            drift_lookup=lookup
+        ),
     )
 
     assert len(result.groups) == 1
@@ -299,8 +298,7 @@ def test_bridge_with_equal_competing_tracks_remains_undecided() -> None:
     result = infer_feature_memberships(
         (left, bridge, right),
         config=AlignmentConfig(preferred_rt_sec=60.0),
-        injection_order={"a": 1, "b": 2},
-        drift_lookup=None,
+        rt_frame=SampleRtFrame(injection_order=({"a": 1, "b": 2})),
     )
 
     assert all(group.disposition == "undecided" for group in result.groups)
@@ -393,10 +391,11 @@ def test_sparse_long_rt_same_mass_without_drift_is_undecided() -> None:
     result = infer_feature_memberships(
         owners,
         config=_long_rt_config(),
-        injection_order={
-            owner.sample_stem: index for index, owner in enumerate(owners)
-        },
-        drift_lookup=None,
+        rt_frame=SampleRtFrame(
+            injection_order=(
+                {owner.sample_stem: index for index, owner in enumerate(owners)}
+            )
+        ),
     )
 
     assert {
@@ -425,12 +424,15 @@ def test_sparse_long_rt_same_mass_uses_drift_corrected_support() -> None:
     result = infer_feature_memberships(
         owners,
         config=_long_rt_config(),
-        injection_order={
-            owner.sample_stem: index for index, owner in enumerate(owners)
-        },
-        drift_lookup=_DriftLookup(
-            deltas={"s0": 0.0, "s1": 0.5, "s2": 1.0},
-            orders={"s0": 1, "s1": 2, "s2": 3},
+        rt_frame=SampleRtFrame(
+            injection_order=(
+                {owner.sample_stem: index for index, owner in enumerate(owners)}
+            )
+        ).with_sources(
+            drift_lookup=_DriftLookup(
+                deltas={"s0": 0.0, "s1": 0.5, "s2": 1.0},
+                orders={"s0": 1, "s1": 2, "s2": 3},
+            )
         ),
     )
 
@@ -458,9 +460,10 @@ def test_sparse_same_mass_raw_fallback_remains_assignable() -> None:
     result = infer_feature_memberships(
         owners,
         config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=120.0),
-        injection_order={"s0": 1, "s1": 2},
-        drift_lookup=_DriftLookup(
-            deltas={"s0": 0.0, "s1": -0.3}, orders={"s0": 1, "s1": 2}
+        rt_frame=SampleRtFrame(injection_order=({"s0": 1, "s1": 2})).with_sources(
+            drift_lookup=_DriftLookup(
+                deltas={"s0": 0.0, "s1": -0.3}, orders={"s0": 1, "s1": 2}
+            )
         ),
     )
 
@@ -486,12 +489,15 @@ def test_assigned_sparse_decisions_record_the_witness_and_rt_basis_used() -> Non
     corrected = infer_feature_memberships(
         owners,
         config=_long_rt_config(),
-        injection_order={
-            owner.sample_stem: index for index, owner in enumerate(owners)
-        },
-        drift_lookup=_DriftLookup(
-            deltas={"s0": 0.0, "s1": 0.5, "s2": 1.0},
-            orders={"s0": 1, "s1": 2, "s2": 3},
+        rt_frame=SampleRtFrame(
+            injection_order=(
+                {owner.sample_stem: index for index, owner in enumerate(owners)}
+            )
+        ).with_sources(
+            drift_lookup=_DriftLookup(
+                deltas={"s0": 0.0, "s1": 0.5, "s2": 1.0},
+                orders={"s0": 1, "s1": 2, "s2": 3},
+            )
         ),
     )
     owner_ids = {owner.owner_id for owner in owners}
@@ -538,9 +544,10 @@ def test_assigned_sparse_decisions_record_the_witness_and_rt_basis_used() -> Non
             ),
         ),
         config=AlignmentConfig(preferred_rt_sec=60.0, max_rt_sec=120.0),
-        injection_order={"s0": 1, "s1": 2},
-        drift_lookup=_DriftLookup(
-            deltas={"s0": 0.0, "s1": -0.3}, orders={"s0": 1, "s1": 2}
+        rt_frame=SampleRtFrame(injection_order=({"s0": 1, "s1": 2})).with_sources(
+            drift_lookup=_DriftLookup(
+                deltas={"s0": 0.0, "s1": -0.3}, orders={"s0": 1, "s1": 2}
+            )
         ),
     )
     raw_assigned = [
@@ -560,9 +567,10 @@ def test_sparse_long_rt_missing_drift_is_unassessable() -> None:
     result = infer_feature_memberships(
         owners,
         config=_long_rt_config(),
-        injection_order={"s0": 1, "s1": 2},
-        drift_lookup=_DriftLookup(
-            deltas={"s0": 0.0, "s1": None}, orders={"s0": 1, "s1": 2}
+        rt_frame=SampleRtFrame(injection_order=({"s0": 1, "s1": 2})).with_sources(
+            drift_lookup=_DriftLookup(
+                deltas={"s0": 0.0, "s1": None}, orders={"s0": 1, "s1": 2}
+            )
         ),
     )
 
@@ -596,14 +604,12 @@ def test_repeated_wrappers_and_duplicate_owner_rows_do_not_add_support() -> None
     one = infer_feature_memberships(
         (first, one_wrapper),
         config=AlignmentConfig(),
-        injection_order={"a": 1, "b": 2},
-        drift_lookup=None,
+        rt_frame=SampleRtFrame(injection_order=({"a": 1, "b": 2})),
     )
     repeated = infer_feature_memberships(
         (first, first, repeated_wrappers),
         config=AlignmentConfig(),
-        injection_order={"a": 1, "b": 2},
-        drift_lookup=None,
+        rt_frame=SampleRtFrame(injection_order=({"a": 1, "b": 2})),
     )
 
     assert _memberships(one) == _memberships(repeated)
@@ -629,8 +635,7 @@ def test_weak_evidence_is_not_promoted_by_nearby_strong_owner() -> None:
     result = infer_feature_memberships(
         (strong, weak),
         config=AlignmentConfig(),
-        injection_order={"a": 1, "b": 2},
-        drift_lookup=None,
+        rt_frame=SampleRtFrame(injection_order=({"a": 1, "b": 2})),
     )
 
     assert _memberships(result) == {
@@ -656,14 +661,12 @@ def test_irrelevant_sample_in_order_map_does_not_change_membership() -> None:
     base = infer_feature_memberships(
         owners,
         config=AlignmentConfig(),
-        injection_order={"a": 1, "b": 3},
-        drift_lookup=None,
+        rt_frame=SampleRtFrame(injection_order=({"a": 1, "b": 3})),
     )
     with_irrelevant = infer_feature_memberships(
         owners,
         config=AlignmentConfig(),
-        injection_order={"a": 1, "irrelevant": 2, "b": 3},
-        drift_lookup=None,
+        rt_frame=SampleRtFrame(injection_order=({"a": 1, "irrelevant": 2, "b": 3})),
     )
 
     assert base.groups == with_irrelevant.groups
@@ -682,10 +685,11 @@ def test_candidate_comparisons_scale_with_features_instead_of_owner_pairs() -> N
     result = infer_feature_memberships(
         owners,
         config=AlignmentConfig(),
-        injection_order={
-            owner.sample_stem: index for index, owner in enumerate(owners)
-        },
-        drift_lookup=None,
+        rt_frame=SampleRtFrame(
+            injection_order=(
+                {owner.sample_stem: index for index, owner in enumerate(owners)}
+            )
+        ),
     )
 
     assert len(result.groups) == 1

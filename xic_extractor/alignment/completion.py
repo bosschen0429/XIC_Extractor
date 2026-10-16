@@ -20,7 +20,6 @@ from xic_extractor.alignment.cross_sample.association import (
 from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingResult,
 )
-from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.grouping_workflow import (
     build_targeted_cross_sample_groups,
 )
@@ -51,6 +50,7 @@ from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
     finalize_scientific_alignment,
 )
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.peak_detection.capture import (
     SampleLocalCapture,
     bind_owner_backed_capture_hypothesis,
@@ -176,7 +176,7 @@ WorkflowRequest: TypeAlias = TargetWorkflowRequest | UntargetWorkflowComposition
 class _WorkflowAdapterFields:
     capture_inputs: tuple[CaptureWorkflowArguments, ...]
     predecessor_cell_observations: tuple[CellObservationRef, ...]
-    drift_lookup: DriftLookupProtocol | None = None
+    rt_frame: SampleRtFrame
     backfill_cell_observations: tuple[CellObservationRef, ...] = ()
 
     def __post_init__(self) -> None:
@@ -408,7 +408,7 @@ def _compose_application_result(
                 captures=captures,
                 sample_assessments=adapter.sample_assessments,
                 alignment_config=adapter.alignment_config,
-                drift_lookup=adapter.drift_lookup,
+                rt_frame=adapter.rt_frame,
             )
         else:
             untarget_adapter = cast(UntargetWorkflowAdapter, adapter)

@@ -12,12 +12,6 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
     construct_cross_sample_peak_group_hypotheses,
 )
-from xic_extractor.alignment.drift_evidence import (
-    KnownIstdReference,
-)
-from xic_extractor.alignment.edge_scoring import (
-    DriftLookupProtocol,
-)
 from xic_extractor.alignment.feature_membership_inference import (
     FeatureInferenceOperationCounts,
 )
@@ -32,6 +26,7 @@ from xic_extractor.alignment.peak_trajectories import (
     PeakTrajectories,
     resolve_peak_trajectories,
 )
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
@@ -104,9 +99,7 @@ def bootstrap_cid_nl_initial_population(
     ],
     alignment_config: AlignmentConfig,
     sample_universe: frozenset[str] | None = None,
-    injection_order: Mapping[str, int] | None = None,
-    drift_lookup: DriftLookupProtocol | None = None,
-    known_istd_reference: KnownIstdReference | None = None,
+    rt_frame: SampleRtFrame,
     operation_counts_sink: list[FeatureInferenceOperationCounts] | None = None,
     retain_observation_only_candidates: bool = False,
     elution_contexts: Sequence[SampleElutionContext] = (),
@@ -117,7 +110,7 @@ def bootstrap_cid_nl_initial_population(
 ) -> tuple[
     InitialGroupingScope,
     tuple[RetainedGroupingCandidate, ...],
-    DriftLookupProtocol | None,
+    SampleRtFrame,
 ]:
     """Build initial groups and their physical candidate bindings."""
 
@@ -227,35 +220,19 @@ def bootstrap_cid_nl_initial_population(
     )
     if not owners and not searched_no_observation:
         raise GroupingBootstrapError("bootstrap assessments have no peak observations")
-    if known_istd_reference is not None:
-        if drift_lookup is not None:
-            raise ValueError(
-                "known ISTD reference cannot be combined with generic drift"
-            )
-        # The reference is a measured RAW-level identity constraint.  It must
-        # be allowed to bind every physical MS1 owner in the retained
-        # assessment universe, including MS1-only observations.  Restricting
-        # this lookup to DDA SUPPORT owners made the known-ISTD constraint
-        # disappear exactly where Discovery had an MS1 peak but no qualifying
-        # MS2 relation, leaving those owners ambiguous or outside the known
-        # group.
-        drift_lookup = known_istd_reference.bind(
-            tuple(owners),
-            sample_universe=sample_universe,
-            injection_order=injection_order,
-        )
+    # Bind every retained physical owner, including MS1-only observations.
+    rt_frame = rt_frame.bind_owners(tuple(owners))
     correspondence = resolve_peak_trajectories(
         owners,
         elution_contexts,
         config=alignment_config,
-        injection_order=injection_order or {},
+        injection_order=rt_frame.injection_order,
     )
     provisional_groups = construct_cross_sample_peak_group_hypotheses(
         tuple(owners),
         config=alignment_config,
         sample_universe=sample_universe,
-        injection_order=injection_order,
-        drift_lookup=drift_lookup,
+        rt_frame=rt_frame,
         operation_counts_sink=operation_counts_sink,
         bootstrap=True,
         peak_trajectories=correspondence,
@@ -338,7 +315,7 @@ def bootstrap_cid_nl_initial_population(
         for sample_id in sorted(hypotheses_by_sample)
         for hypothesis in hypotheses_by_sample[sample_id]
     )
-    return grouping_scope, retained_candidates, drift_lookup
+    return grouping_scope, retained_candidates, rt_frame
 
 
 def _canonical_groups(

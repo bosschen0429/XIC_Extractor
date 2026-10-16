@@ -12,11 +12,11 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
     validate_cross_sample_peak_group_identity,
 )
-from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     HypothesisOwnerAdapterError,
     validate_cid_nl_assessment_hypothesis_closure,
 )
+from xic_extractor.alignment.rt_frame import RtFrame
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
     mint_artifact_semantic_contract_ref,
@@ -119,9 +119,8 @@ class CidNlCellGroupContext:
     supports: tuple[CidNlCellGroupSupport, ...]
     config: AlignmentConfig
     processing_attempt: ProcessingAttemptIdentity
+    rt_frame: RtFrame
     sample_universe: frozenset[str] | None = None
-    injection_order: tuple[tuple[str, int], ...] | None = None
-    drift_lookup: DriftLookupProtocol | None = None
     _group_identity: CrossSampleGroupIdentity = field(
         init=False, repr=False, compare=False
     )
@@ -130,9 +129,7 @@ class CidNlCellGroupContext:
     )
     _method_subject: CidNlMethodSubject = field(init=False, repr=False, compare=False)
     _owner_ids: tuple[str, ...] = field(init=False, repr=False, compare=False)
-    _support_content_ids: tuple[str, ...] = field(
-        init=False, repr=False, compare=False
-    )
+    _support_content_ids: tuple[str, ...] = field(init=False, repr=False, compare=False)
     _support_artifacts: tuple[EvidenceArtifactRef, ...] = field(
         init=False, repr=False, compare=False
     )
@@ -143,17 +140,6 @@ class CidNlCellGroupContext:
         ):
             raise CellObservationContractError(
                 "group sample universe must be immutable"
-            )
-        if self.injection_order is not None and (
-            not isinstance(self.injection_order, tuple)
-            or any(
-                not isinstance(item, tuple) or len(item) != 2
-                for item in self.injection_order
-            )
-            or len(dict(self.injection_order)) != len(self.injection_order)
-        ):
-            raise CellObservationContractError(
-                "group injection order must be immutable and unique"
             )
         if not isinstance(self.group, CrossSamplePeakGroupHypothesis) or not (
             self.group.owner_ids

@@ -15,6 +15,7 @@ from xic_extractor.alignment.grouping_experiment import (
     calibrate_grouping,
     replay_grouping,
 )
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import RtCalibrationPolicy
 from xic_extractor.configuration.cid_nl_profile import DEFAULT_CID_NL_MASS_POLICY
 from xic_extractor.configuration.models import ExtractionConfig
@@ -243,14 +244,19 @@ def main(argv: list[str] | None = None) -> int:
                 write_rt_calibration(
                     args.output_dir / "rt-calibration.json", calibration
                 )
-            groups = replay_grouping(inputs, config=config, rt_coordinates=calibration)
+            rt_frame = (
+                SampleRtFrame().with_coordinate_override(calibration.corrected_rt_min)
+                if calibration is not None
+                else None
+            )
+            groups = replay_grouping(inputs, config=config, rt_coordinates=rt_frame)
             summary = {
                 **write_grouping_result(
                     args.output_dir,
                     inputs,
                     groups,
                     baseline=baseline,
-                    rt_coordinates=calibration,
+                    rt_coordinates=rt_frame,
                 ),
                 "source": provenance,
                 "overrides": overrides,

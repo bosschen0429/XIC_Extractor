@@ -16,12 +16,12 @@ from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Protocol
 
 import numpy as np
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
+from xic_extractor.alignment.rt_frame import RtFrame
 from xic_extractor.mass_accuracy import (
     PPM_BOUNDARY_EPSILON,
     absolute_ppm_error,
@@ -38,16 +38,6 @@ _TRAJECTORY_NEIGHBORS = 12
 _TIE_EPSILON = 1e-9
 _TREND_SCALE_FLOOR_MIN = 0.5 / 60.0
 _TREND_TOLERANCE_MIN = 1e-8 / 60.0
-
-
-class RtCalibration(Protocol):
-    """The shared batch coordinate transform, including MS1-only observations."""
-
-    def has_support(self, sample_stem: str) -> bool: ...
-
-    def common_rt_min(self, sample_stem: str, observed_rt: float) -> float: ...
-
-    def offset_min(self, sample_stem: str, rt_min: float) -> float: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,9 +78,7 @@ class PeakTrajectory:
         sample_stems: Sequence[str],
         *,
         reference_samples: frozenset[str],
-        injection_order: Mapping[str, int],
-        sample_cohorts: Mapping[str, str],
-        rt_warp: RtCalibration | None,
+        rt_frame: RtFrame,
         backfill_half_window_min: float,
         paired_istd_rts: Mapping[str, float] | None = None,
     ) -> Mapping[str, BackfillPeakLocation]:
@@ -107,24 +95,20 @@ class PeakTrajectory:
         locations = {
             sample: self.locate(
                 sample,
-                injection_order=injection_order,
-                sample_cohorts=sample_cohorts,
-                rt_warp=rt_warp,
+                rt_frame=rt_frame,
                 backfill_half_window_min=backfill_half_window_min,
             )
             for sample in sample_stems
         }
         needed_cohorts = {
-            sample_cohorts[sample]
+            rt_frame.sample_cohorts[sample]
             for sample, location in locations.items()
-            if not location.observed and sample in sample_cohorts
+            if not location.observed and sample in rt_frame.sample_cohorts
         }
         tolerance_by_cohort = self._empirical_tolerances(
             reference_samples=reference_samples,
             needed_cohorts=needed_cohorts,
-            injection_order=injection_order,
-            sample_cohorts=sample_cohorts,
-            rt_warp=rt_warp,
+            rt_frame=rt_frame,
             backfill_half_window_min=backfill_half_window_min,
         )
         result = {
@@ -132,7 +116,7 @@ class PeakTrajectory:
                 location,
                 min(12.0, backfill_half_window_min * 60.0)
                 if location.observed
-                else tolerance_by_cohort.get(sample_cohorts.get(sample, "")),
+                else tolerance_by_cohort.get(rt_frame.sample_cohorts.get(sample, "")),
             )
             for sample, location in locations.items()
         }
@@ -141,16 +125,16 @@ class PeakTrajectory:
         )
         if len(reference_points) < len(self.sample_apices):
             forecast_cohorts = {
-                sample_cohorts[sample]
+                rt_frame.sample_cohorts[sample]
                 for sample, localized in result.items()
                 if localized.reliable
                 and not localized.location.observed
-                and sample in sample_cohorts
+                and sample in rt_frame.sample_cohorts
             }
             reference_orders: dict[str, set[int]] = defaultdict(set)
             for sample, _ in reference_points:
-                cohort = sample_cohorts.get(sample)
-                order = injection_order.get(sample)
+                cohort = rt_frame.sample_cohorts.get(sample)
+                order = rt_frame.injection_order.get(sample)
                 if cohort in forecast_cohorts and order is not None:
                     assert cohort is not None
                     reference_orders[cohort].add(order)
@@ -165,14 +149,12 @@ class PeakTrajectory:
             reference_tolerances = reference._empirical_tolerances(
                 reference_samples=reference_samples,
                 needed_cohorts=comparable_cohorts,
-                injection_order=injection_order,
-                sample_cohorts=sample_cohorts,
-                rt_warp=rt_warp,
+                rt_frame=rt_frame,
                 backfill_half_window_min=backfill_half_window_min,
             )
             for sample, localized in result.items():
                 reference_tolerance = reference_tolerances.get(
-                    sample_cohorts.get(sample, "")
+                    rt_frame.sample_cohorts.get(sample, "")
                 )
                 if (
                     localized.location.observed
@@ -182,9 +164,7 @@ class PeakTrajectory:
                     continue
                 direct = reference.locate(
                     sample,
-                    injection_order=injection_order,
-                    sample_cohorts=sample_cohorts,
-                    rt_warp=rt_warp,
+                    rt_frame=rt_frame,
                     backfill_half_window_min=backfill_half_window_min,
                 )
                 # Both estimates use the same scientific owner and empirical
@@ -205,7 +185,8 @@ class PeakTrajectory:
                     for peer, rt in self.sample_apices
                     if peer in reference_samples
                     and peer in paired_istd_rts
-                    and sample_cohorts.get(peer) == sample_cohorts.get(sample)
+                    and rt_frame.sample_cohorts.get(peer)
+                    == rt_frame.sample_cohorts.get(sample)
                 ]
                 if len(offsets) < 2:
                     continue
@@ -231,29 +212,26 @@ class PeakTrajectory:
         *,
         reference_samples: frozenset[str],
         needed_cohorts: set[str],
-        injection_order: Mapping[str, int],
-        sample_cohorts: Mapping[str, str],
-        rt_warp: RtCalibration | None,
+        rt_frame: RtFrame,
         backfill_half_window_min: float,
     ) -> dict[str, float]:
         """Bound each cohort once using held-out direct-reference residuals."""
         residuals: dict[str, list[float]] = defaultdict(list)
         for sample, observed_rt in self.sample_apices:
-            cohort = sample_cohorts.get(sample)
+            cohort = rt_frame.sample_cohorts.get(sample)
             if sample not in reference_samples or cohort not in needed_cohorts:
                 continue
             peers = tuple(
                 point
                 for point in self.sample_apices
-                if point[0] != sample and sample_cohorts.get(point[0]) == cohort
+                if point[0] != sample
+                and rt_frame.sample_cohorts.get(point[0]) == cohort
             )
             if not peers:
                 continue
             held_out = PeakTrajectory((), peers).locate(
                 sample,
-                injection_order=injection_order,
-                sample_cohorts=sample_cohorts,
-                rt_warp=rt_warp,
+                rt_frame=rt_frame,
                 backfill_half_window_min=backfill_half_window_min,
             )
             assert cohort is not None
@@ -272,9 +250,7 @@ class PeakTrajectory:
         self,
         sample_stem: str,
         *,
-        injection_order: Mapping[str, int],
-        sample_cohorts: Mapping[str, str],
-        rt_warp: RtCalibration | None,
+        rt_frame: RtFrame,
         backfill_half_window_min: float,
     ) -> PeakLocation:
         """Use an observed point or fit the unobserved part of this trajectory.
@@ -289,9 +265,7 @@ class PeakTrajectory:
             )
         return self._estimate(
             sample_stem,
-            injection_order=injection_order,
-            sample_cohorts=sample_cohorts,
-            rt_warp=rt_warp,
+            rt_frame=rt_frame,
             backfill_half_window_min=backfill_half_window_min,
         )
 
@@ -299,25 +273,23 @@ class PeakTrajectory:
         self,
         sample_stem: str,
         *,
-        injection_order: Mapping[str, int],
-        sample_cohorts: Mapping[str, str],
-        rt_warp: RtCalibration | None,
+        rt_frame: RtFrame,
         backfill_half_window_min: float,
     ) -> PeakLocation:
-        order = injection_order.get(sample_stem)
-        cohort = sample_cohorts.get(sample_stem)
+        order = rt_frame.injection_order.get(sample_stem)
+        cohort = rt_frame.sample_cohorts.get(sample_stem)
         nearest = sorted(
             (
                 (sample, rt)
                 for sample, rt in self.sample_apices
                 if order is not None
                 and cohort is not None
-                and sample in injection_order
-                and sample_cohorts.get(sample) == cohort
+                and sample in rt_frame.injection_order
+                and rt_frame.sample_cohorts.get(sample) == cohort
             ),
             key=lambda point: (
-                abs(injection_order[point[0]] - (order or 0)),
-                injection_order[point[0]],
+                abs(rt_frame.injection_order[point[0]] - (order or 0)),
+                rt_frame.injection_order[point[0]],
                 point[0],
             ),
         )[:_TRAJECTORY_NEIGHBORS]
@@ -329,27 +301,25 @@ class PeakTrajectory:
                 "trajectory_reference",
             )
         calibrated = (
-            rt_warp is not None
-            and rt_warp.has_support(sample_stem)
-            and all(rt_warp.has_support(sample) for sample, _ in nearest)
+            rt_frame.has_coordinates
+            and rt_frame.has_support(sample_stem)
+            and all(rt_frame.has_support(sample) for sample, _ in nearest)
         )
         coordinates = [
-            rt_warp.common_rt_min(sample, rt)
-            if calibrated and rt_warp is not None
-            else rt
+            rt_frame.common_rt_min(sample, rt) if calibrated else rt
             for sample, rt in nearest
         ]
         fitted = _fit_rt_trajectory(
-            [injection_order[sample] for sample, _ in nearest],
+            [rt_frame.injection_order[sample] for sample, _ in nearest],
             coordinates,
             order,
             backfill_half_window_min=backfill_half_window_min,
         )
-        if calibrated and rt_warp is not None:
+        if calibrated:
             return PeakLocation(
                 max(
                     0.0,
-                    fitted.query_rt + rt_warp.offset_min(sample_stem, fitted.query_rt),
+                    fitted.query_rt + rt_frame.offset_min(sample_stem, fitted.query_rt),
                 ),
                 f"calibrated_{fitted.basis}",
             )

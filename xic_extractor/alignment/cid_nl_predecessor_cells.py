@@ -17,10 +17,10 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
 )
-from xic_extractor.alignment.edge_scoring import DriftLookupProtocol
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
 )
+from xic_extractor.alignment.rt_frame import RtFrame
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
     is_ms1_only_cid_nl_backfill_assessment,
@@ -39,8 +39,7 @@ def compose_cid_nl_predecessor_cells(
     ],
     alignment_config: AlignmentConfig,
     sample_universe: frozenset[str] | None = None,
-    drift_lookup: DriftLookupProtocol | None = None,
-    injection_order: Mapping[str, int] | None = None,
+    rt_frame: RtFrame,
     backfill_assessments_by_group: Mapping[
         tuple[str, str, str],
         tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef],
@@ -176,12 +175,7 @@ def compose_cid_nl_predecessor_cells(
             config=alignment_config,
             processing_attempt=processing_owners.attempt,
             sample_universe=sample_universe,
-            drift_lookup=drift_lookup,
-            injection_order=(
-                None
-                if injection_order is None
-                else tuple(sorted(injection_order.items()))
-            ),
+            rt_frame=rt_frame,
         )
         for group in groups
     )

@@ -32,6 +32,7 @@ from xic_extractor.alignment.cross_sample.neighborhood_graph import (
 from xic_extractor.alignment.grouping_workflow import (
     admit_cid_nl_group_backfills,
 )
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
 )
@@ -128,7 +129,9 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
             alignment_config=config,
             bootstrap_only=True,
         )
-        return finalize_untargeted_partition_grouping(batch, bootstrap, rt_warp=warp)
+        return finalize_untargeted_partition_grouping(
+            batch, bootstrap, rt_frame=SampleRtFrame().with_warp(warp)
+        )
 
     runtime = start_runtime_attempt(
         attempt=batch.context.processing_owners.attempt,
@@ -696,7 +699,11 @@ def test_runtime_recovers_every_authorized_rt_group(
             initial_result = CrossSampleGroupingResult(
                 processing_owners=scientific.grouping_result.processing_owners,
                 partition_transition=initial_transition,
-                drift_lookup=scientific.grouping_result.drift_lookup,
+                rt_frame=replace(
+                    scientific.grouping_result.rt_frame,
+                    injection_order={},
+                    sample_cohorts={},
+                ).with_warp(None),
             )
             bound_recoveries = {
                 (
@@ -1021,6 +1028,7 @@ def test_runtime_recovers_every_authorized_rt_group(
             )
             options = dict(
                 processing_owners=context.processing_owners,
+                rt_frame=SampleRtFrame(),
                 alignment_config=AlignmentConfig(anchor_min_seed_events=1),
                 retain_observation_only_candidates=True,
             )
