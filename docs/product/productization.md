@@ -125,8 +125,9 @@ Closeout does three things:
 
 ## Promotion Inputs
 
-A product-surface change must route to the promotion contract when the change
-can alter any of these:
+A product-surface change must route to the
+[promotion packet contract](../agent/product-validation-contract.md#promotion-packet-contract)
+when the change can alter any of these:
 
 - selected values;
 - counted detections;
@@ -135,10 +136,6 @@ can alter any of these:
 - CLI/config/HTML behavior;
 - review/replay behavior;
 - writer authority.
-
-The promotion packet records the proposed behavior delta, required
-non-changes, evidence, expected diff, replay, downstream smoke, stop
-condition, and rollback.
 
 Stable implementation priorities remain:
 

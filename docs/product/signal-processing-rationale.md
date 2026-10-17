@@ -286,9 +286,7 @@ a method-appropriate area-ratio and smoothing-duration review per
   "gaussian15_smoothed_trace"` constant.
 - Scoring layer: `ScoringContext.intensity_array` is Gaussian15-smoothed; all
   severity and confidence computations use smoothed values.
-- Canonical area differences are an authorized quantitative expected diff.
-  Apex, boundary, height, scan-support, and relative-shape differences are
-  qualitative and require the bounded real-RAW/manual EIC gate. Selected
-  hypothesis, stage status, activation, row/cell identity, and write/blank
-  decisions must remain unchanged. Until that gate and the registered
-  selected-area authority scope pass, construction is not production-ready.
+- Canonical signal migration follows the
+  [quantitative, qualitative, and required non-change gates](../lc-msms-evidence-rules.md#ms1-morphology-and-area-owner).
+  Until the required evidence gate and the registered selected-area authority
+  scope pass, construction is not production-ready.

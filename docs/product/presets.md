@@ -7,8 +7,9 @@ surfaces. Presets are not product authority by themselves.
 ## Contract
 
 - Changing a default preset or silent resolver behavior changes public
-  behavior. Such a change needs expected-diff framing, focused tests, and
-  relevant evidence.
+  behavior. Such a change needs
+  [expected-diff framing](../agent/product-validation-contract.md#promotion-packet-contract),
+  focused tests, and relevant evidence.
 - Targeted and profile-bound Untargeted processing use the shared physical
   signal owner.
 - Direct resolver-based diagnostic callers retain their explicit `local_minimum` or
@@ -189,7 +190,6 @@ Rules:
 Before changing preset behavior, require the relevant subset of:
 
 - Focused tests for preset loading and default selection.
-- Expected-diff framing for default or silent behavior changes.
 - Runner smoke check for documented CLI/config surfaces.
 - Product-ready preset checker when a preset claims product-readiness support.
 - Productization owner update if preset behavior changes matrix authority,
@@ -198,7 +198,6 @@ Before changing preset behavior, require the relevant subset of:
 ## Pitfalls
 
 - Replacing documented preset surfaces with branch-local command recipes.
-- Silently changing resolver defaults without expected-diff evidence.
 - Assuming Backfill expansion replay is included just because a preset is
   product-facing.
 

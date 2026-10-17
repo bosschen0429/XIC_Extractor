@@ -46,8 +46,9 @@ not whenever a provider field, threshold, or implementation changes.
 
 [Productization](../../product/productization.md) locates the current structured
 status index, writer-scope manifest, and activation contracts.
-[Product Validation](../../agent/product-validation-contract.md) owns evidence
-labels and method-appropriate validation requirements. Neither this map nor its
+[Product Topic Index](../../product/README.md#shared-conventions) owns Evidence
+labels. [Product Validation](../../agent/product-validation-contract.md) owns
+method-appropriate validation requirements. Neither this map nor its
 [HTML reading guide](evidence_chain_status_guide.html) replaces those surfaces.
 
 - Live Alignment cell decisions and finalized workflow projections own ordinary
