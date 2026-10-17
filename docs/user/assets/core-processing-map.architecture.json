@@ -5,7 +5,7 @@
     "title": "從峰證據到格值：共用核心怎麼判斷",
     "locale": "zh-TW",
     "quality_profile": "showcase",
-    "output": "docs/user/assets/core-processing-map.html",
+    "output": "output/core-map-review/core-processing-map.html",
     "repository": {
       "url": "https://github.com/Chao-hu-Lab/XIC_Extractor.git",
       "revision": "6d8cd57b920abc465f1b1e6a80d983d2c0b355ae",

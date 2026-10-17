@@ -5,7 +5,7 @@
     "title": "Untargeted：依模式選擇 Discovery 與 Alignment",
     "locale": "zh-TW",
     "quality_profile": "showcase",
-    "output": "docs/user/assets/untargeted-modes.html",
+    "output": "output/core-map-review/untargeted-modes.html",
     "repository": {
       "url": "https://github.com/Chao-hu-Lab/XIC_Extractor.git",
       "revision": "6d8cd57b920abc465f1b1e6a80d983d2c0b355ae",

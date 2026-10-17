@@ -5,7 +5,7 @@
     "title": "系統分工：判斷、執行資源與發布各有邊界",
     "locale": "zh-TW",
     "quality_profile": "showcase",
-    "output": "docs/user/assets/execution-boundaries.html",
+    "output": "output/core-map-review/execution-boundaries.html",
     "repository": {
       "url": "https://github.com/Chao-hu-Lab/XIC_Extractor.git",
       "revision": "6d8cd57b920abc465f1b1e6a80d983d2c0b355ae",

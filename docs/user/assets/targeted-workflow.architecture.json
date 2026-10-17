@@ -5,7 +5,7 @@
     "title": "Targeted：準備清單、完成分析，再檢閱 workbook",
     "locale": "zh-TW",
     "quality_profile": "showcase",
-    "output": "docs/user/assets/targeted-workflow.html",
+    "output": "output/core-map-review/targeted-workflow.html",
     "repository": {
       "url": "https://github.com/Chao-hu-Lab/XIC_Extractor.git",
       "revision": "6d8cd57b920abc465f1b1e6a80d983d2c0b355ae",
