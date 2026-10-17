@@ -5,7 +5,7 @@
 /docs/superpowers/validation/**/*.md text eol=lf
 /docs/superpowers/validation/**/*.tsv text eol=lf
 /docs/superpowers/validation/*.html text eol=lf
-/docs/user/assets/*.html text eol=lf whitespace=cr-at-eol,-blank-at-eol linguist-generated=true
+/docs/user/assets/*.svg text eol=lf
 /docs/user/assets/*.architecture.json text eol=lf
 /tests/*.py text eol=lf
 /xic_extractor/**/*.py text eol=lf

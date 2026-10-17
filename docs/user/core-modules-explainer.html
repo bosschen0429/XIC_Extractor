@@ -85,7 +85,7 @@
     .map-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 14px; }
     .map-toolbar p { margin: 0; color: var(--muted); font-size: .92rem; }
     .map-toolbar a { font-weight: 700; }
-    .map-frame { display: block; width: 100%; height: 960px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+    .map-frame { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
     .map-caption { margin: 13px 0 0; color: var(--muted); font-size: .9rem; }
     .map-takeaways { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 20px 0 0; padding: 0; list-style: none; }
     .map-takeaways li { padding: 17px 19px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
@@ -212,9 +212,8 @@
       .stage-body { padding: 0 17px 18px; }
       .expand { font-size: .72rem; }
       .reading { grid-template-columns: 1fr; }
-      .map-frame { height: 760px; }
     }
-    @media print { .map-frame { display: none; } .map-toolbar { display: block; } }
+    @media print { .map-toolbar { display: block; } }
     @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
   </style>
 </head>
@@ -248,11 +247,11 @@
         <h2 id="overview-heading">共用核心做判斷，兩種模式各自交付</h2>
         <p class="section-intro">中央展開「看見什麼峰、哪些觀察屬於同一群、缺格能否補證、最後能寫什麼值」。左側是搜尋政策，右側是交付上下文；方塊依問題與責任分組，不照 module 一個個切。</p>
         <div class="map-toolbar">
-          <p>可點節點查看來源，或用圖內的縮放與路徑工具探索。</p>
-          <a href="assets/core-processing-map.html" target="_blank" rel="noopener">另開完整互動圖與說明 ↗</a>
+          <p>先看共用判斷與交付的關係，再沿下方說明閱讀。</p>
+          <a href="assets/core-processing-map.svg" target="_blank" rel="noopener">另開 SVG 大圖 ↗</a>
         </div>
-        <iframe class="map-frame" src="assets/core-processing-map.html?present=1" title="XIC 共用核心：從峰證據、群組與補證到每格答案的互動流程圖" allowfullscreen></iframe>
-        <p class="map-caption">這是科學責任與資料交接圖，不是每個函式的執行時序。若小螢幕不易閱讀，可另開完整圖；不使用互動圖也能沿下方<a href="#core">逐步說明</a>讀完同一條流程。</p>
+        <img class="map-frame" src="assets/core-processing-map.svg" alt="XIC 共用核心：從峰證據、群組與補證到每格答案的流程圖" loading="lazy">
+        <p class="map-caption">這是科學責任與資料交接圖，不是每個函式的執行時序。若小螢幕不易閱讀，可另開完整圖；也能沿下方<a href="#core">逐步說明</a>讀完同一條流程。</p>
         <ul class="map-takeaways" aria-label="讀圖時記住三件事">
           <li><strong>共用，不等於方法盲目一致</strong><span>共享觀察、群組與格值的責任；搜尋與解讀仍可採用明確的方法策略。</span></li>
           <li><strong>補到觀察，不等於可寫值</strong><span>補證、群組成員資格與數值判斷各有依據，不能把其中一步當成全部完成。</span></li>
