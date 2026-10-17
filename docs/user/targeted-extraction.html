@@ -81,6 +81,7 @@
     @media (max-width:540px) { .page { width:min(100% - 28px,1100px); } .hero { padding-top:34px; } .steps li { min-height:0; } }
     @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
   </style>
+  <link rel="stylesheet" href="assets/guide-maps.css">
 </head>
 <body>
   <div class="page">
@@ -91,8 +92,16 @@
         <aside class="hero-aside" aria-label="快速掌握"><strong>這批工作要準備</strong><p>RAW 資料夾、Thermo RawFileReader DLL 資料夾、目標表。主要輸出是 <code>output/</code> 中的 workbook。</p></aside>
       </div>
     </header>
-    <nav class="jump" aria-label="頁內導覽"><a href="#workflow">操作步驟</a><a href="#inputs">輸入與設定</a><a href="#outputs">輸出檔案</a><a href="#review">判讀與檢視</a><a href="#cli">CLI</a><a href="#troubleshooting">常見問題</a></nav>
+    <nav class="jump" aria-label="頁內導覽">
+      <a href="#flow-map">先看互動路線圖</a><a href="#workflow">操作步驟</a><a href="#inputs">輸入與設定</a><a href="#outputs">輸出檔案</a><a href="#review">判讀與檢視</a><a href="#cli">CLI</a><a href="#troubleshooting">常見問題</a></nav>
     <main>
+<section class="guide-map" id="flow-map" aria-labelledby="flow-map-title">
+<h2 id="flow-map-title">從清單確認走到完成結果</h2>
+<p class="guide-map-intro">先確認這一批的 RAW、方法與目標清單，再執行分析；只有完成的答案才交付成 workbook。</p>
+<div class="guide-map-toolbar"><p>點節點核對來源；可縮放、追蹤圖中的路徑。</p><a href="assets/targeted-workflow.html" target="_blank" rel="noopener">另開完整互動圖與說明 ↗</a></div>
+<iframe class="guide-map-frame" style="--guide-map-height: 960px" src="assets/targeted-workflow.html?present=1" title="從清單確認走到完成結果：互動流程圖" allowfullscreen></iframe>
+<p class="guide-map-caption">這是概念與責任導覽，不是逐函式執行時序。若圖不易閱讀或無法載入，可另開完整圖，或直接讀<a href="#workflow">操作步驟</a>。</p>
+</section>
       <section id="workflow" aria-labelledby="workflow-heading">
         <p class="eyebrow">01 · 跑一個批次</p><h2 id="workflow-heading">先設定，再執行</h2><p class="intro">下列流程適用 GUI。封裝版直接開啟 <code>XIC_Extractor.exe</code>；開發 checkout 可執行 <code>uv run xic-workbench</code>。</p>
         <figure class="snapshot"><img src="../../assets/screenshots/targeted-workspace.png" alt="Targeted Extraction 工作區畫面"><figcaption>Targeted Extraction 工作區：設定批次、編輯目標、執行與檢視結果。</figcaption></figure>

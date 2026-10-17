@@ -77,6 +77,7 @@
     @media (max-width: 610px) { .page { width: min(100% - 28px, 1100px); } .hero { padding-top: 35px; } .topic-head { gap: 12px; } .intro, .grid, .terms-grid, .owner { margin-left: 0; } .grid, .terms-grid { grid-template-columns: 1fr; } .story { padding: 19px; } .card { padding: 18px; } }
     @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
   </style>
+  <link rel="stylesheet" href="assets/guide-maps.css">
 </head>
 <body>
   <main class="page">
@@ -92,6 +93,7 @@
     </header>
 
     <nav class="jump" aria-label="頁面章節">
+      <a href="#flow-map">先看互動路線圖</a>
       <a href="#discovery">Discovery</a>
       <a href="#peak">峰與定量脈絡</a>
       <a href="#alignment">Alignment</a>
@@ -102,6 +104,13 @@
       <a href="#terms">詞彙速查</a>
     </nav>
 
+<section class="guide-map" id="flow-map" aria-labelledby="flow-map-title">
+<h2 id="flow-map-title">看見峰、成為成員、得到數值，是三個問題</h2>
+<p class="guide-map-intro">沿證據交接看每個判斷：候選先形成峰證據，再判斷跨樣本關係，最後決定每格能交付的數值或不寫入理由。</p>
+<div class="guide-map-toolbar"><p>點節點核對來源；可縮放、追蹤圖中的路徑。</p><a href="assets/evidence-decisions.html" target="_blank" rel="noopener">另開完整互動圖與說明 ↗</a></div>
+<iframe class="guide-map-frame" style="--guide-map-height: 1080px" src="assets/evidence-decisions.html?present=1" title="看見峰、成為成員、得到數值，是三個問題：互動流程圖" allowfullscreen></iframe>
+<p class="guide-map-caption">這是概念與責任導覽，不是逐函式執行時序。若圖不易閱讀或無法載入，可另開完整圖，或直接讀<a href="#decisions">證據與格值說明</a>。</p>
+</section>
     <div class="story">
       <h2>跟著這個例子讀</h2>
       <p>樣本 A、B 有相近的候選峰；樣本 C 的同一列目前沒有可用數值。問題不是立刻補一個面積，而是先確認 A、B 是否屬於同一個跨樣本群組，再問 C 能否依該群組脈絡找回可信的本地觀察。</p>

@@ -1,0 +1,319 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "RAW 到 Matrix：正式證據旅程與診斷支線",
+    "locale": "zh-TW",
+    "quality_profile": "showcase",
+    "output": "docs/user/assets/raw-matrix-journey.html",
+    "repository": {
+      "url": "https://github.com/Chao-hu-Lab/XIC_Extractor.git",
+      "revision": "6d8cd57b920abc465f1b1e6a80d983d2c0b355ae",
+      "link_mode": "web"
+    }
+  },
+  "components": [
+    {
+      "id": "raw",
+      "type": "database",
+      "label": "Thermo RAW 量測",
+      "sublabel": "DNA adductomics 應用情境",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "README.md",
+          "line": 1,
+          "end_line": 7
+        },
+        {
+          "path": "docs/user/raw-to-final-matrix-product-story.html",
+          "line": 380,
+          "end_line": 394
+        }
+      ]
+    },
+    {
+      "id": "candidate",
+      "type": "backend",
+      "label": "CID-NL 候選與來源證據",
+      "sublabel": "Discovery 提供候選，不直接交付格值",
+      "pos": [
+        440,
+        40
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/product/discovery.md",
+          "line": 710,
+          "end_line": 719
+        },
+        {
+          "path": "docs/product/shared-processing-kernel.md",
+          "line": 123,
+          "end_line": 138
+        }
+      ]
+    },
+    {
+      "id": "trace",
+      "type": "backend",
+      "label": "取得候選的局部 XIC",
+      "sublabel": "保留查詢、樣本與量測來源",
+      "pos": [
+        440,
+        240
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/architecture-contract.md",
+          "line": 49,
+          "end_line": 73
+        },
+        {
+          "path": "xic_extractor/peak_detection/capture.py",
+          "line": 126,
+          "end_line": 160
+        }
+      ]
+    },
+    {
+      "id": "physical",
+      "type": "backend",
+      "label": "建立峰假說與積分證據",
+      "sublabel": "候選不等於已選峰或可定量值",
+      "pos": [
+        440,
+        440
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "xic_extractor/peak_detection/capture.py",
+          "line": 164,
+          "end_line": 215
+        },
+        {
+          "path": "docs/product/shared-processing-kernel.md",
+          "line": 89,
+          "end_line": 104
+        }
+      ]
+    },
+    {
+      "id": "groups",
+      "type": "backend",
+      "label": "跨樣本群組與必要的補證",
+      "sublabel": "先有群組脈絡，再依准入重訪缺格",
+      "pos": [
+        440,
+        640
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/product/shared-processing-kernel.md",
+          "line": 132,
+          "end_line": 173
+        }
+      ]
+    },
+    {
+      "id": "cells",
+      "type": "backend",
+      "label": "科學閉合後完成格值答案",
+      "sublabel": "保留數值或不寫入理由",
+      "pos": [
+        440,
+        840
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/product/shared-processing-kernel.md",
+          "line": 175,
+          "end_line": 193
+        },
+        {
+          "path": "xic_extractor/alignment/completion.py",
+          "line": 841,
+          "end_line": 865
+        }
+      ]
+    },
+    {
+      "id": "matrix",
+      "type": "database",
+      "label": "Final Matrix 與保存證據",
+      "sublabel": "Untargeted 投影完成後才發布",
+      "pos": [
+        840,
+        840
+      ],
+      "size": [
+        260,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/user/untargeted-discovery.md",
+          "line": 80,
+          "end_line": 109
+        },
+        {
+          "path": "docs/product/quant-matrix.md",
+          "line": 26,
+          "end_line": 35
+        }
+      ]
+    },
+    {
+      "id": "pt",
+      "type": "external",
+      "label": "Pt pattern 方法開發",
+      "sublabel": "診斷候選、局部 trace 與人工檢閱",
+      "pos": [
+        40,
+        280
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/product/discovery.md",
+          "line": 410,
+          "end_line": 424
+        },
+        {
+          "path": "docs/product/discovery.md",
+          "line": 674,
+          "end_line": 684
+        }
+      ]
+    },
+    {
+      "id": "diagnostic",
+      "type": "external",
+      "label": "診斷證據在此停下",
+      "sublabel": "不接入正式 Alignment／Matrix",
+      "pos": [
+        40,
+        520
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/product/discovery.md",
+          "line": 418,
+          "end_line": 421
+        },
+        {
+          "path": "docs/user/raw-to-final-matrix-product-story.html",
+          "line": 475,
+          "end_line": 483
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "raw-to-candidate",
+      "from": "raw",
+      "to": "candidate",
+      "label": "CID-NL"
+    },
+    {
+      "id": "candidate-to-trace",
+      "from": "candidate",
+      "to": "trace",
+      "label": "候選查詢"
+    },
+    {
+      "id": "trace-to-physical",
+      "from": "trace",
+      "to": "physical",
+      "label": "局部訊號"
+    },
+    {
+      "id": "physical-to-groups",
+      "from": "physical",
+      "to": "groups",
+      "label": "觀察與假說"
+    },
+    {
+      "id": "groups-to-cells",
+      "from": "groups",
+      "to": "cells",
+      "label": "科學閉合"
+    },
+    {
+      "id": "cells-to-matrix",
+      "from": "cells",
+      "to": "matrix",
+      "label": "完成投影"
+    },
+    {
+      "id": "raw-to-pt",
+      "from": "raw",
+      "to": "pt",
+      "label": "Pt 支線"
+    },
+    {
+      "id": "pt-to-diagnostic",
+      "from": "pt",
+      "to": "diagnostic",
+      "label": "diagnostic_only"
+    }
+  ],
+  "cards": [
+    {
+      "title": "概念旅程，不是量測結果",
+      "items": [
+        "圖中的 DNA adductomics 是應用情境，沒有新增樣本、數值或科學驗證；各步的實作以固定版本來源為準。"
+      ],
+      "dot": "cyan"
+    },
+    {
+      "title": "兩條支線不能混為一談",
+      "items": [
+        "Pt pattern 的候選、trace 支持與人工 review 不能單憑診斷產物取得產品寫入權；此圖不將它連到正式 Matrix。"
+      ],
+      "dot": "amber"
+    },
+    {
+      "title": "Untargeted 先完成格值，再投影列",
+      "items": [
+        "行列身分與計數消費已完成的 Feature × Sample 答案，writer 不再重新挑值。"
+      ],
+      "dot": "cyan"
+    }
+  ]
+}

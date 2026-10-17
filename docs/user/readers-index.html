@@ -61,6 +61,7 @@
     @media (max-width: 850px) { .routes { grid-template-columns: 1fr; } .route { min-height: 0; } }
     @media (max-width: 600px) { .page { width: min(100% - 28px, 1060px); } .hero { padding-top: 35px; } .questions { grid-template-columns: 1fr; } .questions a { flex-wrap: wrap; } .questions span { white-space: normal; } .story { grid-template-columns: 1fr; } }
   </style>
+  <link rel="stylesheet" href="assets/guide-maps.css">
 </head>
 <body>
   <div class="page">
@@ -70,12 +71,20 @@
       <p>依你眼前的問題選一條閱讀路線。這裡把目前核心模組導覽所提到的操作、科學流程與系統分工，接成連續的 HTML 閱讀體驗。</p>
     </header>
     <nav class="nav" aria-label="頁面導覽">
+      <a href="#flow-map">先看互動路線圖</a>
       <a href="core-modules-explainer.html">回核心模組導覽</a>
       <a href="#routes">三條閱讀路線</a>
       <a href="#questions">依問題找段落</a>
       <a href="#example">看具體故事</a>
     </nav>
     <main>
+<section class="guide-map" id="flow-map" aria-labelledby="flow-map-title">
+<h2 id="flow-map-title">先按問題選路線，再開指南</h2>
+<p class="guide-map-intro">操作、處理原理與系統維護是不同閱讀目的。圖先幫你選方向，下面的連結再帶你進入對應頁面。</p>
+<div class="guide-map-toolbar"><p>點節點核對來源；可縮放、追蹤圖中的路徑。</p><a href="assets/reading-routes.html" target="_blank" rel="noopener">另開完整互動圖與說明 ↗</a></div>
+<iframe class="guide-map-frame" style="--guide-map-height: 540px" src="assets/reading-routes.html?present=1" title="先按問題選路線，再開指南：互動流程圖" allowfullscreen></iframe>
+<p class="guide-map-caption">這是概念與責任導覽，不是逐函式執行時序。若圖不易閱讀或無法載入，可另開完整圖，或直接讀<a href="#routes">下方閱讀路線</a>。</p>
+</section>
       <section id="routes" aria-labelledby="routes-heading">
         <p class="eyebrow">01 · 選一條路</p>
         <h2 id="routes-heading">從操作、原理或系統開始</h2>

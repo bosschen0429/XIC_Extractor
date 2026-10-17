@@ -1,0 +1,241 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Untargeted：依模式選擇 Discovery 與 Alignment",
+    "locale": "zh-TW",
+    "quality_profile": "showcase",
+    "output": "docs/user/assets/untargeted-modes.html",
+    "repository": {
+      "url": "https://github.com/Chao-hu-Lab/XIC_Extractor.git",
+      "revision": "6d8cd57b920abc465f1b1e6a80d983d2c0b355ae",
+      "link_mode": "web"
+    }
+  },
+  "components": [
+    {
+      "id": "mode",
+      "type": "frontend",
+      "label": "先選這次要做的工作",
+      "sublabel": "full／discovery_only／align_only",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/user/untargeted-discovery.md",
+          "line": 36,
+          "end_line": 45
+        }
+      ]
+    },
+    {
+      "id": "discover",
+      "type": "backend",
+      "label": "Discovery 找樣本內候選",
+      "sublabel": "依方法產生候選與來源證據",
+      "pos": [
+        440,
+        40
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/product/shared-processing-kernel.md",
+          "line": 123,
+          "end_line": 138
+        },
+        {
+          "path": "docs/product/discovery.md",
+          "line": 710,
+          "end_line": 719
+        }
+      ]
+    },
+    {
+      "id": "index",
+      "type": "database",
+      "label": "保存候選與 batch index",
+      "sublabel": "供後續 Alignment 讀取的交接",
+      "pos": [
+        440,
+        240
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/user/untargeted-discovery.md",
+          "line": 80,
+          "end_line": 99
+        }
+      ]
+    },
+    {
+      "id": "align",
+      "type": "backend",
+      "label": "Alignment 完成跨樣本答案",
+      "sublabel": "群組、補證准入、格值與投影",
+      "pos": [
+        440,
+        440
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/product/shared-processing-kernel.md",
+          "line": 37,
+          "end_line": 51
+        },
+        {
+          "path": "docs/product/shared-processing-kernel.md",
+          "line": 175,
+          "end_line": 193
+        }
+      ]
+    },
+    {
+      "id": "matrix",
+      "type": "database",
+      "label": "發布 Matrix 與保存證據",
+      "sublabel": "額外 review／gallery 依選項開啟",
+      "pos": [
+        440,
+        640
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/user/untargeted-discovery.md",
+          "line": 80,
+          "end_line": 109
+        }
+      ]
+    },
+    {
+      "id": "review",
+      "type": "frontend",
+      "label": "檢閱完成結果",
+      "sublabel": "工作區讀保存證據；按需取得 XIC",
+      "pos": [
+        440,
+        840
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/product/xic-inspector.md",
+          "line": 22,
+          "end_line": 62
+        }
+      ]
+    },
+    {
+      "id": "discovery-stop",
+      "type": "external",
+      "label": "只探索時先檢查候選",
+      "sublabel": "此模式不交付跨樣本 Matrix",
+      "pos": [
+        840,
+        240
+      ],
+      "size": [
+        260,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/user/untargeted-discovery.md",
+          "line": 36,
+          "end_line": 45
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "mode-to-discover",
+      "from": "mode",
+      "to": "discover",
+      "label": "探索模式"
+    },
+    {
+      "id": "discover-to-index",
+      "from": "discover",
+      "to": "index",
+      "label": "保存"
+    },
+    {
+      "id": "index-to-align",
+      "from": "index",
+      "to": "align",
+      "label": "full"
+    },
+    {
+      "id": "mode-to-align",
+      "from": "mode",
+      "to": "align",
+      "label": "既有 index"
+    },
+    {
+      "id": "index-to-discovery-stop",
+      "from": "index",
+      "to": "discovery-stop",
+      "label": "discovery_only"
+    },
+    {
+      "id": "align-to-matrix",
+      "from": "align",
+      "to": "matrix",
+      "label": "完成才發布"
+    },
+    {
+      "id": "matrix-to-review",
+      "from": "matrix",
+      "to": "review",
+      "label": "檢閱"
+    }
+  ],
+  "cards": [
+    {
+      "title": "三種模式的輸入不同",
+      "items": [
+        "full 從 RAW 目錄開始；discovery_only 選單一 RAW；align_only 需要 RAW 目錄與既有 discovery_batch_index.csv。"
+      ],
+      "dot": "cyan"
+    },
+    {
+      "title": "候選不是最終數值",
+      "items": [
+        "Discovery 輸出不能直接當 Matrix。只有完成跨樣本與格值判斷後，才進入正式投影與發布。"
+      ],
+      "dot": "amber"
+    },
+    {
+      "title": "曲線與保存值不同",
+      "items": [
+        "工作區按需取得診斷 XIC 不會重選峰、重積分或替換 Matrix 值。"
+      ],
+      "dot": "cyan"
+    }
+  ]
+}

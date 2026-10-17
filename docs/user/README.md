@@ -51,28 +51,45 @@ the opt-in 85RAW stop rule. Untargeted Alignment validation uses
 `scripts.run_alignment` and the route in
 [`docs/agent/parameter-settings.md`](../agent/parameter-settings.md).
 
-## Maintain The Core Map
+## Maintain The Embedded Maps
 
-The core guide embeds [`assets/core-processing-map.html`](assets/core-processing-map.html),
-generated with [Archify 3.1.0](https://github.com/tt-a1i/archify) from
-[`assets/core-processing-map.architecture.json`](assets/core-processing-map.architecture.json).
-The HTML includes the viewer, so readers need no Node.js, server, or external
-assets. It supplements the guide, not a second product contract. The bundled
+Each human-facing HTML guide embeds its own topic map. The diagrams supplement
+the existing explanations and links; they are not separate product contracts.
+The reading index uses a navigation map, not an analysis execution flow.
+
+| Guide | Diagram asset stem | Question |
+| --- | --- | --- |
+| Reading index | `reading-routes` | Which guide should I read next? |
+| Core guide | `core-processing-map` | What processing and decisions are shared? |
+| Targeted | `targeted-workflow` | How do I prepare, run, and review a batch? |
+| Untargeted | `untargeted-modes` | Where does each run mode start and stop? |
+| Processing | `evidence-decisions` | How do peak evidence, membership, and numeric answers differ? |
+| System | `execution-boundaries` | Who coordinates, decides, publishes, and reads? |
+| RAW story | `raw-matrix-journey` | How does evidence reach Matrix, and where does a diagnostic branch stop? |
+
+Each `assets/<stem>.html` is generated with
+[Archify 3.1.0](https://github.com/tt-a1i/archify) from the adjacent
+`<stem>.architecture.json`. The HTML includes the viewer; reading the local
+guides requires no Node.js, server, or remote runtime assets. The bundled
 viewer is covered by [`assets/archify-LICENSE.txt`](assets/archify-LICENSE.txt).
+[`assets/guide-maps.css`](assets/guide-maps.css) styles the additional embeds.
 
 Edit the JSON, not the generated HTML. When a represented responsibility
 changes, recheck its source ranges and set `meta.repository.revision` to the
-committed source revision being described. From the repository root, with
+committed source revision being described. For web source links, use a
+revision already published to the remote; otherwise
+select `link_mode: "local-only"`. From the repository root, with
 `ARCHIFY_ROOT` pointing to an installed Archify 3.1.0 skill package, generate
 and verify in ignored storage before publishing the HTML:
 
 ```powershell
+$map = 'core-processing-map' # Choose a stem from the table above.
 node "$env:ARCHIFY_ROOT/bin/archify.mjs" finalize architecture `
-  docs/user/assets/core-processing-map.architecture.json `
-  output/core-map-review/core-processing-map.html `
+  "docs/user/assets/$map.architecture.json" `
+  "output/core-map-review/$map.html" `
   --repo-root . --quality showcase --out-dir output/core-map-review --json
 if ($LASTEXITCODE -ne 0) { throw 'Archify verification failed' }
-Copy-Item output/core-map-review/core-processing-map.html docs/user/assets/core-processing-map.html
+Copy-Item "output/core-map-review/$map.html" "docs/user/assets/$map.html"
 ```
 
 Commit the JSON and generated HTML together. Keep receipts and screenshots

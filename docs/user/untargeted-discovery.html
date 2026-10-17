@@ -82,6 +82,7 @@
     @media (max-width:540px) { .page { width:min(100% - 28px,1100px); } .hero { padding-top:34px; } .steps li { min-height:0; } }
     @media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
   </style>
+  <link rel="stylesheet" href="assets/guide-maps.css">
 </head>
 <body>
   <div class="page">
@@ -89,8 +90,16 @@
       <nav class="breadcrumbs" aria-label="相關頁面"><a href="core-modules-explainer.html#modes">核心模組導覽</a><span>／</span><span>Untargeted Discovery 操作指南</span></nav>
       <div class="hero-inner"><div><p class="eyebrow">XIC Extractor · 探索特徵</p><h1>從 RAW 探索候選，<br>對齊各個樣本</h1><p class="lead">當你沒有預先列好的目標清單，用 Untargeted Discovery 從 RAW 找候選特徵，依需要跨樣本對齊，並從 GUI 開啟可檢視的輸出。</p></div><aside class="hero-aside" aria-label="快速掌握"><strong>先做三個選擇</strong><p>選 run mode、指定 RAW / DLL / output，確認上機資訊與 CID-NL 方法。預設跨樣本輸出是 <code>alignment_matrix.tsv</code>。</p></aside></div>
     </header>
-    <nav class="jump" aria-label="頁內導覽"><a href="#workflow">操作步驟</a><a href="#modes">模式選擇</a><a href="#inputs">輸入與方法</a><a href="#outputs">輸出與檢視</a><a href="#troubleshooting">常見問題</a></nav>
+    <nav class="jump" aria-label="頁內導覽">
+      <a href="#flow-map">先看互動路線圖</a><a href="#workflow">操作步驟</a><a href="#modes">模式選擇</a><a href="#inputs">輸入與方法</a><a href="#outputs">輸出與檢視</a><a href="#troubleshooting">常見問題</a></nav>
     <main>
+<section class="guide-map" id="flow-map" aria-labelledby="flow-map-title">
+<h2 id="flow-map-title">選對模式，就知道流程在哪裡開始與停下</h2>
+<p class="guide-map-intro">full 會串接 Discovery 與 Alignment；只探索停在候選；已有 batch index 時可以直接對齊。</p>
+<div class="guide-map-toolbar"><p>點節點核對來源；可縮放、追蹤圖中的路徑。</p><a href="assets/untargeted-modes.html" target="_blank" rel="noopener">另開完整互動圖與說明 ↗</a></div>
+<iframe class="guide-map-frame" style="--guide-map-height: 960px" src="assets/untargeted-modes.html?present=1" title="選對模式，就知道流程在哪裡開始與停下：互動流程圖" allowfullscreen></iframe>
+<p class="guide-map-caption">這是概念與責任導覽，不是逐函式執行時序。若圖不易閱讀或無法載入，可另開完整圖，或直接讀<a href="#modes">模式與輸入說明</a>。</p>
+</section>
       <section id="workflow" aria-labelledby="workflow-heading">
         <p class="eyebrow">01 · 跑一次探索</p><h2 id="workflow-heading">在 GUI 中完成這八步</h2><p class="intro">封裝版開啟 <code>XIC_Extractor.exe</code>；開發 checkout 可執行 <code>uv run python -m gui.main</code>。</p>
         <figure class="snapshot"><img src="../../assets/screenshots/untargeted-workspace.png" alt="Untargeted Discovery 工作區畫面"><figcaption>Untargeted Discovery 工作區：模式、資料路徑、上機資訊、內標與方法設定。</figcaption></figure>

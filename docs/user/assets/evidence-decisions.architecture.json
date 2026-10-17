@@ -1,0 +1,279 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "從觀察到格值：三種判斷不能混在一起",
+    "locale": "zh-TW",
+    "quality_profile": "showcase",
+    "output": "docs/user/assets/evidence-decisions.html",
+    "repository": {
+      "url": "https://github.com/Chao-hu-Lab/XIC_Extractor.git",
+      "revision": "6d8cd57b920abc465f1b1e6a80d983d2c0b355ae",
+      "link_mode": "web"
+    }
+  },
+  "components": [
+    {
+      "id": "peak",
+      "type": "backend",
+      "label": "這段訊號有什麼峰證據？",
+      "sublabel": "峰界、積分、候選假說與來源",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/product/shared-processing-kernel.md",
+          "line": 89,
+          "end_line": 104
+        },
+        {
+          "path": "xic_extractor/peak_detection/capture.py",
+          "line": 126,
+          "end_line": 215
+        }
+      ]
+    },
+    {
+      "id": "group",
+      "type": "backend",
+      "label": "哪些觀察屬於同一群？",
+      "sublabel": "CrossSample 決定成員與群組身分",
+      "pos": [
+        440,
+        40
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/product/shared-processing-kernel.md",
+          "line": 132,
+          "end_line": 144
+        }
+      ]
+    },
+    {
+      "id": "revisit",
+      "type": "backend",
+      "label": "缺格能否在脈絡下補搜？",
+      "sublabel": "通過准入才補證，不自行選值",
+      "pos": [
+        840,
+        40
+      ],
+      "size": [
+        260,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/product/shared-processing-kernel.md",
+          "line": 154,
+          "end_line": 173
+        }
+      ]
+    },
+    {
+      "id": "closed",
+      "type": "backend",
+      "label": "把原始與補搜證據閉合",
+      "sublabel": "保留群組權威結果與觀察終態",
+      "pos": [
+        440,
+        260
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/product/shared-processing-kernel.md",
+          "line": 105,
+          "end_line": 119
+        },
+        {
+          "path": "xic_extractor/alignment/completion.py",
+          "line": 432,
+          "end_line": 460
+        }
+      ]
+    },
+    {
+      "id": "decision",
+      "type": "backend",
+      "label": "這一格能交付什麼？",
+      "sublabel": "cell decision 保留選定積分與答案",
+      "pos": [
+        440,
+        480
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/product/shared-processing-kernel.md",
+          "line": 175,
+          "end_line": 193
+        },
+        {
+          "path": "xic_extractor/alignment/cell_decision/owner.py",
+          "line": 294,
+          "end_line": 375
+        }
+      ]
+    },
+    {
+      "id": "numeric",
+      "type": "backend",
+      "label": "有可交付的數值",
+      "sublabel": "數值答案不等同 counted detection",
+      "pos": [
+        40,
+        700
+      ],
+      "size": [
+        260,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/product/quant-matrix.md",
+          "line": 11,
+          "end_line": 35
+        }
+      ]
+    },
+    {
+      "id": "no-write",
+      "type": "backend",
+      "label": "保留不寫入理由",
+      "sublabel": "未搜尋／無觀察／未解決等終態",
+      "pos": [
+        840,
+        700
+      ],
+      "size": [
+        260,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/product/shared-processing-kernel.md",
+          "line": 109,
+          "end_line": 119
+        }
+      ]
+    },
+    {
+      "id": "projection",
+      "type": "backend",
+      "label": "各自投影，再由 writer 交付",
+      "sublabel": "保留既有答案，不重新選值",
+      "pos": [
+        440,
+        920
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/product/shared-processing-kernel.md",
+          "line": 175,
+          "end_line": 204
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "peak-to-group",
+      "from": "peak",
+      "to": "group",
+      "label": "觀察與假說"
+    },
+    {
+      "id": "group-to-revisit",
+      "from": "group",
+      "to": "revisit",
+      "label": "缺格准入"
+    },
+    {
+      "id": "group-to-closed",
+      "from": "group",
+      "to": "closed",
+      "label": "既有證據"
+    },
+    {
+      "id": "revisit-to-closed",
+      "from": "revisit",
+      "to": "closed",
+      "label": "補搜結果"
+    },
+    {
+      "id": "closed-to-decision",
+      "from": "closed",
+      "to": "decision",
+      "label": "科學閉合"
+    },
+    {
+      "id": "decision-to-numeric",
+      "from": "decision",
+      "to": "numeric",
+      "label": "有效數值"
+    },
+    {
+      "id": "decision-to-no-write",
+      "from": "decision",
+      "to": "no-write",
+      "label": "其他終態"
+    },
+    {
+      "id": "numeric-to-projection",
+      "from": "numeric",
+      "to": "projection",
+      "label": "數值答案"
+    },
+    {
+      "id": "no-write-to-projection",
+      "from": "no-write",
+      "to": "projection",
+      "label": "理由與證據"
+    }
+  ],
+  "cards": [
+    {
+      "title": "三件事分開回答",
+      "items": [
+        "峰證據、群組成員資格與可寫數值是不同問題。補到觀察、成為群組成員，都不自動代表可以寫值。"
+      ],
+      "dot": "amber"
+    },
+    {
+      "title": "兩種工作模式的順序",
+      "items": [
+        "Targeted 在格值判斷前先綁定固定列 subject；Untargeted 先完成 Feature × Sample 答案，再投影輸出身分。"
+      ],
+      "dot": "cyan"
+    },
+    {
+      "title": "不寫入不是統一填零",
+      "items": [
+        "失敗、不可取得與無正向證據，不應無條件轉成化學不存在；no-write 保留 typed 理由。"
+      ],
+      "dot": "cyan"
+    }
+  ]
+}

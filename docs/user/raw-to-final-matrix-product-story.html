@@ -371,6 +371,7 @@
       .source-list { columns: 1; }
     }
   </style>
+  <link rel="stylesheet" href="assets/guide-maps.css">
 </head>
 <body>
   <div class="page">
@@ -414,11 +415,17 @@
           <h2>一張圖看完整條路</h2>
           <p class="section-intro">
             產品流程分成兩層：<strong>單樣本層</strong>負責從 RAW 中找出候選特徵、抽取色譜圖、選峰、
-            積分面積；<strong>跨樣本層</strong>負責把多支樣本的觀察對齊成同一個 matrix row，
-            在既有群組下補證據，最後決定哪些定量值可以進 primary matrix。
+            積分面積；<strong>跨樣本層</strong>先判斷哪些觀察屬於同一群組，
+            必要時在既有群組下補證據。完成每格答案後，才投影 Matrix 的列與樣本欄並發布。
           </p>
 
-          <div class="flow" aria-label="Raw to final matrix flow">
+          <div class="guide-map">
+<div class="guide-map-toolbar"><p>點節點核對來源；可縮放、追蹤圖中的路徑。</p><a href="assets/raw-matrix-journey.html" target="_blank" rel="noopener">另開完整互動圖與說明 ↗</a></div>
+<iframe class="guide-map-frame" style="--guide-map-height: 1040px" src="assets/raw-matrix-journey.html?present=1" title="RAW 到 Matrix 的資料旅程：互動流程圖" allowfullscreen></iframe>
+<p class="guide-map-caption">CID-NL 正式路徑與 Pt 診斷支線分開呈現，不能把診斷候選直接交給 Matrix。 這是概念與責任導覽，不是逐函式執行時序。若圖不易閱讀或無法載入，可另開完整圖，或直接讀<a href="#discovery">逐步資料故事</a>。</p>
+</div>
+<details class="guide-map-text"><summary>展開逐步文字版流程</summary>
+<div class="flow" aria-label="Raw to final matrix flow">
             <div class="flow-row wide">
               <div class="flow-node accent">
                 <strong>1. Discovery evidence providers</strong>
@@ -451,12 +458,12 @@
 <span>群組的直接支援達門檻後，對缺格進行有限度的觀察重訪。</span>
               </div>
               <div class="flow-node">
-                <strong>8. 明確的群組與樣本格</strong>
-                <span>把已完成的科學結果綁到 row/sample；Backfill 本身不重建群組或選值。</span>
+                <strong>8. 完成群組與樣本格證據</strong>
+                <span>把原始與補搜觀察收完整；Backfill 本身不重建群組或選值。</span>
               </div>
               <div class="flow-node">
-                <strong>9. Production 決策</strong>
-                <span>逐 row/cell 決定是否寫入 primary matrix，留空或標記為 review。</span>
+                <strong>9. 格值決策與投影</strong>
+                <span>先完成 Feature × Sample 的數值或不寫入答案，再投影 Matrix 列與身分。</span>
               </div>
               <div class="flow-node accent">
                 <strong>10. Final Matrix</strong>
@@ -464,12 +471,13 @@
               </div>
             </div>
           </div>
+</details>
 
           <div class="callout">
             <strong>白話版：</strong>
             不是「找到 pattern 或峰就填入矩陣」。每個候選要先成為帶 provenance 的
             evidence / hypothesis，再於樣本內通過 model selection 與 integration，
-            再完成跨樣本 grouping 與必要的 Backfill；projection 建立明確的樣本格，cell decision 選值或不寫，writer 才呈現完成結果。
+            再完成跨樣本 grouping 與必要的 Backfill；Untargeted cell decision 先完成格值答案，projection 再建立輸出身分，writer 才呈現完成結果。
           </div>
 
           <div class="callout warning">
