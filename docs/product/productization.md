@@ -30,15 +30,17 @@ be corrected.
 
 ## Writer Authority
 
-ProductWriter is the only path that writes product matrix, workbook, or cell
-values. It consumes only scopes registered in the authority manifest and never
-derives authority from evidence, diagnostics, or its own implementation. The
-manifest `authority_policy` owns the exact write requirements and the sources
-that can never grant authority.
+Normal Targeted workbook and Untargeted Matrix publication retain their
+existing workflow writers and publication mechanics under
+[Writer Transaction Authority](../agent/architecture-public-contracts.md#writer-transaction-authority).
+The activation-scope registration requirement below does not gate these normal
+publication paths.
 
-For Backfill and other explicit matrix activations, write authority is granted
-only through the authority manifest, status index, expected diff, and the
-promotion contract. A `ProductionAcceptanceManifest`
+For explicit diagnostic or Backfill matrix activations, ProductWriter consumes
+only scopes registered in the authority manifest. Activation authority requires
+the authority manifest, status index, expected diff, and promotion contract;
+the manifest `authority_policy` owns the exact write requirements and the sources
+that can never grant authority. A `ProductionAcceptanceManifest`
 ([checker](../../xic_extractor/diagnostics/quant_matrix/acceptance.py)) can
 grant per-cell write authority only when the later activation path binds it to
 expected diff, provenance, and the current authority scope.
@@ -46,8 +48,8 @@ expected diff, provenance, and the current authority scope.
 
 Evidence providers, candidate rows, `write_ready` labels, quality blockers,
 sidecars, replays, review packets, galleries, and diagnostics can explain or
-gate a decision. Outside that activation chain, none of them is writer
-authority. Topic pages link here instead of restating this rule.
+gate a decision, but none independently grants writer authority. Topic pages
+link here instead of restating this rule.
 
 ## Capability Map
 
