@@ -37,9 +37,9 @@ owner for product documentation.
 | Vendor RAW Evidence Model | [`vendor-raw-evidence-model.md`](vendor-raw-evidence-model.md) | Qual Browser-derived RAW evidence-query concepts, scan-filter lineage, trace-type boundaries |
 | Peak Anchor And Group Boundary | [`family-hypothesis-boundary.md`](family-hypothesis-boundary.md) | Discovery peak anchors, cross-sample groups, PeakHypothesis, and projection authority |
 | Backfill | [`backfill.md`](backfill.md) | Bounded owner-backed ObservationRevisit; explicitly separate from membership, selected value, and writer authority |
-| Run Provenance | [`run-provenance.md`](run-provenance.md) | Method manifests, run metadata, replay context |
-| Result Traceability | [`processing-lineage.md`](processing-lineage.md) | Stable request/attempt/artifact/delivery identity, plot-ready retention, retry/supersession, and two-phase delivery sealing |
-| Run Lifecycle Management | [`execution-runtime.md`](execution-runtime.md) | Attempt scheduling, cancellation, retry/resume, cleanup, cache lifecycle, failure aggregation, and runtime observability |
+| Run Provenance | [`run-provenance.md`](run-provenance.md) | Targeted workbook run metadata and input snapshots; not a replay archive or delivery seal |
+| Result Traceability | [`processing-lineage.md`](processing-lineage.md) | Current request/attempt/artifact identity and bindings; separately labeled reserved delivery and retention contracts |
+| Run Lifecycle Management | [`execution-runtime.md`](execution-runtime.md) | Current attempt execution, workflow coverage, cancellation, cleanup, and observability; reserved dependency-reuse contract |
 
 ### Quality and Review
 

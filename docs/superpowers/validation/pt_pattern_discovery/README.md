@@ -70,6 +70,25 @@ real MS1 peak detector emitting this exact schema), that source should be
 used directly instead and this section updated to name it, with
 `detected_feature_source` changed accordingly.
 
+## Acquisition comparison scope
+
+For the current 20251210 Pt validation pair, the Fullscan RAW is the Discovery
+authority because it was acquired as high-resolution MS1 specifically to find
+Pt-pattern candidates. The DDMS2 RAW has lower MS1 resolution and targeted/DDA
+fragmentation coverage; it is useful as support evidence for Fullscan seeds,
+but not as a global Pt-only denominator. A Fullscan-seeded DDMS2 support replay
+therefore starts from Fullscan `accept` rows and asks whether the DDMS2 local
+feature table contains matching base / `+1.002111` / `+2.002271` / `+4.005213`
+feature evidence within explicit m/z and RT windows. Until the historical
+DDMS2 target/inclusion list is available, missing DDMS2 or MS2 evidence means
+`not_evaluable_without_target_list`, not `reject`.
+
+The DDMS2 support replay is intentionally `diagnostic_only`. RT window choice
+can strongly change support counts across different acquisition methods, so
+these rows can explain support or coverage, but they must not promote or demote
+Fullscan detections, write Matrix/Backfill surfaces, count detections, or
+activate export behavior.
+
 ## Current Results
 
 Sample used: the Dec 2025 CSMU delta-mass Fullscan sample (a real

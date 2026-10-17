@@ -255,7 +255,7 @@ contract 沒有 ignore，並包含間接依賴。
   compacts acquisition facts after scientific results have been stored.
 - `alignment.completion` completes pure owner-bound inputs and returns the
   existing finalized application results; the
-  [Targeted acquisition handoff](product/execution-runtime.md#current-implementation-gaps) owns pre-acknowledgement population validation.
+  [Targeted acquisition handoff](product/execution-runtime.md#targeted-application-coverage) owns pre-acknowledgement population validation.
   Untargeted execution combines the same completion with partition persistence;
   its `untargeted_execution.execution_result` carrier binds runtime success to the
   finalized batch and owns the close action. Application publication consumes
