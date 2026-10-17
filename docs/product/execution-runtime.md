@@ -580,10 +580,9 @@ staging:
 or projection layer may validate the artifact. It does not mean lineage
 acceptance, delivery `staged`, or sealing eligibility.
 
-The runtime must not delete an immutable artifact referenced by a delivery
-seal, active review, lockbox, expected diff, or retained audit claim. Physical
-deletion is limited to owner-supplied actions on registered temporary
-resources.
+The runtime must not delete immutable artifacts pinned by the
+[lineage retention contract](processing-lineage.md#delivery-retention). Physical
+deletion is limited to owner-supplied actions on registered temporary resources.
 
 ## Minimum Observability
 

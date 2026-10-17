@@ -59,10 +59,8 @@ approved product changes.
 - The registry snapshot has its own content-derived ID and canonical record
   ordering. Therefore omission or substitution produces a different bound
   snapshot.
-- Lineage accepts a `ResolvedReviewRecordRef` plus its exact registry
-  snapshot. Lineage
-  does not accept a freshly minted unresolved record or a tuple of
-  caller-selected records.
+- Lineage consumes the resolved reference and snapshot under its
+  [owner-reference composition contract](processing-lineage.md#owner-reference-composition).
 - Within one registry snapshot, every review subject has exactly one decision
   root and at most one current head.
 - A second same-subject root is an ambiguous competing chain. A second root is

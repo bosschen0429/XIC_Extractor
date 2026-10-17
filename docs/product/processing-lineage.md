@@ -84,8 +84,8 @@ labels until an adapter binds them to the contract above.
 | `target_list_snapshot_id` | Owner namespace + exact ordered target definitions + target-list schema/version | Mutable `list[Target]`, file path, truncated config hash, or unordered membership |
 | `processing_request_id` | Identified acquisition sources; normalized evidence queries and method constraints; algorithm/schema/contract versions | Output path, wall-clock time, worker count, cache hit/miss, or product publication result |
 | `processing_attempt_id` | A unique execution identity referencing exactly one request; optional retry/predecessor reference | Request digest alone or a reused timestamp |
-| `canonical_sample_identity` | Owner-minted stable namespace + `sample_metadata` identity schema/version + owner-stable primary sample key | Acquisition source, filename/path, row order, display alias, injection order, role, batch, or exclusion state |
-| `immutable_review_record_ref` | Review-owner subject from canonical sample + stable target key; exact target definition + processing request; schema/version; canonical content digest; exact artifact bindings; optional same-subject predecessor and supersession reason | Bare sample/target labels, caller-provided ID/digest, mutable latest row, private rationale, or review truth inferred by lineage |
+| `canonical_sample_identity` | Owner-minted identity under the [Sample Metadata contract](sample-metadata-qc.md#contract) | Reconstructing sample identity from acquisition sources or display/projection fields |
+| `immutable_review_record_ref` | Owner-resolved reference under [Review record identity](review-roundtrip.md#review-record-identity) and [Resolution](review-roundtrip.md#resolution) | Unresolved, superseded, or caller-reconstructed records; review truth inferred by lineage |
 | `evidence_artifact_id` | Producer attempt + semantic role + schema version + content digest | Filename, directory, row count, or generated timestamp alone |
 | owner-backed CID-NL `peak_hypothesis_id` | Hypothesis method + canonical sample identity + physical peak content ID + chromatographic-support artifact content ID | Target label, ISTD role/pairing, trace-group ID, selection status, attempt token, or output position |
 | kernel object reference | Request identity plus the normalized sample-local or cross-sample scientific identity | A bare ID whose meaning can change across requests |
@@ -139,11 +139,8 @@ namespace explicitly. A different controller, acquisition adapter, or
 observation namespace therefore creates a different source identity rather
 than silently reusing a bare scan number. The resolver performs one sequential
 full-file read per source, but opens no vendor RAW handle and makes no XIC call.
-Production Targeted execution already uses this resolver:
-`TargetedApplicationService.execute_application` snapshots its inputs through
-`snapshot_targeted_production_inputs` and
-`build_targeted_processing_request_identity` before acquisition. This source
-fingerprinting does not imply that product delivery sealing is implemented.
+
+### Owner-reference composition
 
 This freezes the acquisition-source -> processing-request ->
 processing-attempt boundary plus the sample, target-list, and review owner APIs.
@@ -197,9 +194,12 @@ Automatic cross-request same/split/merge continuity is not implemented.
 ## Current bindings and storage limits
 
 - [Targeted application](../../xic_extractor/applications/targeted/application.py)
-  snapshots source content and the exact request before acquisition. Its normal
-  output is the workbook described by [Run Provenance](run-provenance.md), not
-  a persisted delivery revision or seal.
+  snapshots source content and the exact request before acquisition through
+  `TargetedApplicationService.execute_application`,
+  `snapshot_targeted_production_inputs`, and
+  `build_targeted_processing_request_identity`. Its normal output is the
+  workbook described by [Run Provenance](run-provenance.md), not a persisted
+  delivery revision or seal.
 - Pt and Targeted MS1-shape adapters bind diagnostic artifacts to exact bytes,
   roles, schemas, requests, and attempts. This does not grant publication.
 - Current Untargeted output retains `alignment_cells.tsv` for per-cell tracing.
@@ -242,7 +242,8 @@ publication capabilities:
 
 Rules:
 
-- A failed attempt does not mean a sample is `absent`.
+- Missing evidence, a failed attempt, or a missing artifact cannot silently
+  become scientific `absent` or numeric zero.
 - A missing/corrupt evidence artifact blocks sealing; it does not change the
   scientific observation.
 - `missing` means no completed scientific evaluation result; `absent` means a
@@ -252,32 +253,35 @@ Rules:
 - Staleness is a relationship between an immutable artifact and the request,
   contract, or input identity now being evaluated. Do not mutate the artifact
   to call it fresh again.
-- Targeted supersession changes which sealed revision is current; Untargeted
-  supersession changes which complete output-level seal is current. Neither
-  erases or rewrites the prior delivery.
+- Supersession changes which sealed delivery is current through an explicit
+  supersession edge and the authorized writer. It never erases or rewrites the
+  prior delivery; its granularity follows [workflow-specific delivery](#workflow-specific-delivery).
 
 ## Reserved delivery contract
 
 The following preserves the accepted delivery and retention design from
 [Issue #123](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/123).
-Targeted delivery revisions/stages/seals and the Untargeted output-level seal
-are not implemented. These requirements neither add a current writer gate nor
-authorize a new output surface. Existing output transactions remain authoritative.
+Its implementation status is recorded in [Current Status](#current-status).
+These reserved requirements neither add a current writer gate nor authorize a
+new output surface. Existing output transactions remain authoritative.
 
 ### Workflow-specific delivery
 
-Targeted uses immutable per-cell revisions: each delivered value or explicit
-null traces to its attempt, selected hypothesis/integration or non-observation
-decision, evidence artifacts, and source observations.
+Targeted uses immutable per-cell revisions. Each revision references exactly
+one `DeliveryCellKey` and producing attempt. An observed numeric revision
+references its selected hypothesis or `CellObservation`, `IntegrationResult`,
+selection/audit record, evidence artifacts, and source observations. An explicit
+null revision records the underlying non-observation state and reason.
 
 Untargeted uses one output-level seal binding the complete Matrix, retained cell
-ledger, processing attempt, input sources, and output hashes. It does not use
-per-cell delivery revisions or require per-cell retained plots. This keeps
-retention proportional to review needs; per-cell tracing uses the ledger or
-replay. An explicitly promised offline review must still retain its own evidence.
+ledger, processing attempt, input sources, and output hashes. The ledger
+preserves each cell's observation state and reason; per-cell tracing uses the
+ledger or replay, not per-cell delivery revisions.
 
-Retries create new attempts. Supersession never overwrites old identities or
-evidence and requires the owning projection and writer authority.
+Both delivery forms can reference the same kernel decisions and evidence
+artifacts. [Plot-ready evidence](#source-observation-and-plot-ready-evidence)
+defines which evidence each workflow must retain, keeping storage proportional
+to delivery and review needs.
 
 ### Delivery identities
 
@@ -311,50 +315,23 @@ flowchart LR
     UL --> UO["complete Untargeted Matrix"]
 ```
 
-Required invariants:
+The [identity contract](#identity-contract) and
+[failure, null, stale, and supersession rules](#failure-null-stale-and-supersession)
+apply to this graph. Delivery also requires:
 
-1. A `ProcessingAttempt` references exactly one `ProcessingRequest`.
-2. Every evidence artifact references one producer attempt, declares its
-   semantic role and schema, and names any upstream evidence-artifact
-   dependencies.
-3. Artifacts are immutable. Rebuilding under a new attempt creates a new
-   artifact identity; matching content digests may prove byte equivalence but
-   never collapse the producer-attempt lineage.
-4. An attempt may consume an artifact from an earlier attempt only through an
+1. An attempt may consume an artifact from an earlier attempt only through an
    explicit immutable dependency reference. It must not copy or relabel that
    artifact as though the later attempt produced it.
-5. Every selected hypothesis, integration, group observation, review action,
+2. Every selected hypothesis, integration, group observation, review action,
    Targeted delivery revision, and retained Untargeted cell-ledger decision can
-   identify the attempt and artifacts it used. A
-   retained human-review conclusion additionally references one immutable,
-   typed review record owned by the review-roundtrip contract. That reference
-   is lineage-valid only when the record has a stable identity, schema/version,
-   content digest, exact artifact bindings, and any predecessor/supersession
-   reference plus reason. This does not transfer review authority or private
-   rationale ownership into the lineage layer.
-6. A Targeted delivery revision references exactly one Targeted delivery cell
-   and producing attempt. Its upstream evidence may come from other producer
-   attempts through declared artifact-dependency edges.
-7. An observed numeric Targeted revision references its selected hypothesis or
-   `CellObservation`, `IntegrationResult`, selection/audit record, and the
-   evidence needed to explain and plot it. An Untargeted Matrix cell is traced
-   through the sealed attempt's retained cell ledger or replay, without a
-   retained per-cell revision or plot bundle.
-8. A Targeted null revision records the underlying non-observation state and
-   reason. Untargeted cell-ledger decisions preserve the corresponding state.
-   Missing evidence, a failed attempt, or a missing artifact cannot silently
-   become scientific `absent` or numeric zero.
-9. A planned seal is valid only when referenced artifacts exist and match
-   their content identities and the owning projection's authority gate passes.
-   Targeted validates its revision set; Untargeted validates the complete
-   Matrix, retained cell ledger, attempt, and source bindings.
-10. Sealing a successor does not mutate the prior seal. It records an explicit
-   supersession edge and changes the current delivery only through the
-   authorized writer.
-11. Targeted uses per-cell `DeliveryCellKey` and `DeliveryRevision` values.
-    Untargeted uses `UntargetRowKey` and a planned output-level seal (see
-    [workflow-specific delivery](#workflow-specific-delivery)). Both can
-    still reference the same kernel decision and evidence artifacts.
+   identify the attempt and artifacts it used. A retained human-review
+   conclusion uses an owner-resolved immutable review record under
+   [Review Roundtrip](review-roundtrip.md#review-record-identity) and the
+   [owner-reference composition contract](#owner-reference-composition).
+   This does not transfer review authority or private rationale ownership into
+   the lineage layer.
+
+Publication validation belongs to [Two-Phase Delivery Seal](#two-phase-delivery-seal).
 
 ### Source-Observation And Plot-Ready Evidence
 
@@ -390,8 +367,8 @@ source and reusable-artifact capabilities, fidelity, size, and rebuild cost.
 | Class | Logical rule |
 | --- | --- |
 | Sealed Targeted delivery lineage | The seal, per-cell revision records, output hashes, decision/audit references, and source identities remain immutable for as long as that delivery can be cited |
-| Sealed Untargeted delivery lineage (planned) | The output-level seal, complete Matrix artifact hashes, attempt and source bindings, and retained `alignment_cells.tsv` remain addressable for as long as that delivery can be cited; individual cell traces use that ledger or replay |
-| Current delivered Targeted plot-ready evidence | Pinned; it cannot depend on a future source reopen |
+| Sealed Untargeted delivery lineage (planned) | The output-level seal, complete Matrix artifact hashes, attempt and source bindings, and retained `alignment_cells.tsv` remain addressable for as long as that delivery can be cited |
+| Current delivered Targeted plot-ready evidence | Pinned under the [plot-ready evidence contract](#source-observation-and-plot-ready-evidence) |
 | Superseded delivered Targeted evidence | The immutable seal/revision/decision lineage remains audit-addressable; plot-ready evidence stays pinned while the old delivery remains a supported claim or is referenced by an active review, lockbox, expected diff, or retained audit claim |
 | Active manual-review evidence | Pinned while waiting for a conclusion; the review binds to exact artifact identities and then moves to the completed-review class |
 | Completed human-review evidence | The typed review record and exact evidence promised to that review stay pinned until the conclusion is explicitly superseded or retired and no active dependency still references it |
@@ -402,21 +379,15 @@ source and reusable-artifact capabilities, fidelity, size, and rebuild cost.
 
 Previously delivered or human-reviewed decisions are comparators, not
 immutable scientific truth. New evidence may explicitly supersede them, but a
-refactor or rerun must not silently overwrite them. Targeted and any explicitly
-retained offline-review evidence must remain reproducible with zero
-acquisition-source reopens until the decision is explicitly superseded or
-retired; Untargeted Matrix cell tracing uses the retained ledger or replay,
-without per-cell evidence retention. Completion of a refactor alone is not
-retirement.
+refactor or rerun must not silently overwrite them. Completion of a refactor
+alone is not retirement.
 
 Here, `audit-addressable` includes the immutable seal, source references, and
 artifact identities; Targeted also includes revisions and decision/review
-records, while Untargeted includes the retained cell ledger. Targeted plot-ready
-inputs remain available whenever the historical decision is a supported claim
-or has another active dependency. Retirement requires a durable record
-of the subject, owning policy or actor, reason, and time; it is invalid while a
-seal, active review, lockbox, expected diff, or supported audit claim still
-depends on that evidence.
+records, while Untargeted includes the retained cell ledger. Retirement requires
+a durable record of the subject, owning policy or actor, reason, and time; it is
+invalid while a seal, active review, lockbox, expected diff, or supported audit
+claim still depends on that evidence.
 
 No numeric retention period or eviction technology is selected here. A
 retention policy must never advertise “rebuildable” if the required source,
@@ -427,10 +398,11 @@ adapter, method contract, or fidelity is unavailable.
 The reserved delivery contract uses two phases:
 
 1. **Stage** — write proposed output artifacts and a lineage manifest outside
-   the final delivery location. Validate schemas, hashes, artifact closure,
-   and the owning projection's authority. Targeted also validates delivery-cell
-   uniqueness and revision-to-kernel-decision references. Untargeted validates
-   the complete Matrix, retained ledger, attempt, and source bindings.
+   the final delivery location. Validate schemas, artifact existence and content
+   identities, closure, and the owning projection's authority against the
+   [workflow-specific delivery contract](#workflow-specific-delivery). Targeted
+   also validates delivery-cell uniqueness and revision-to-kernel-decision
+   references.
 2. **Seal and publish** — create the immutable `DeliverySeal`, then atomically
    expose that sealed bundle or current-delivery pointer. Only sealed content
    is deliverable.
@@ -445,9 +417,8 @@ If staging, validation, sealing, or publication fails:
 
 For Targeted, an exact duplicate retry does not require a new revision when
 the existing sealed revision remains authoritative. A new sealed revision
-references its producing attempt and any superseded revision. For Untargeted,
-an authorized successor seals a complete output; it does not create per-cell
-delivery revisions.
+references its producing attempt and any superseded revision. Untargeted
+successors follow the [output-level delivery contract](#workflow-specific-delivery).
 
 ### Validation boundary
 

@@ -70,8 +70,9 @@ quantification-authority guard, not a new peak-selection or Backfill route.
   or product-ready closeout chain.
 - `QuantMatrixVersion` remains an internal diagnostic result used by the no-RAW golden path. Its presence does not grant a
   standalone file-based matrix-writing capability.
-- The productization registry grants no standalone file-activation writer
-  scope. Historical validation packets cannot authorize current values.
+- Consult the [authority manifest](../superpowers/productization/status/productization_authority_manifest.json)
+  for current registered writer scopes. Historical validation packets cannot
+  authorize current values.
 - Changes to selected values still require the owning product contract and
   method-appropriate evidence; deleting a historical validation workflow does
   not change the scientific selection policy.

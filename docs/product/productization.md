@@ -19,7 +19,7 @@ scopes, or promotion verdicts.
 | Historical chronology and retired reasoning | Git history plus the private source copy keyed by `source_repo_path` |
 
 The [dependent-effect reader](../../xic_extractor/alignment/quantitative_projection_authority.py)
-accepts the current HOLD manifest and rejects ACTIVE; ACTIVE has no usable
+accepts HOLD manifests and rejects ACTIVE; ACTIVE has no usable
 product authority.
 
 Narrative owners must not restate mutable status-index fields or
@@ -66,10 +66,9 @@ authority. Topic pages link here instead of restating this rule.
 
 ## Boundaries
 
-The registry currently grants no standalone file-activation writer scope.
 Normal Alignment output remains owned by its live cell-decision and projection
-owners. The dependent quantitative projection remains HOLD; its package scope
-allowlist does not register a writer or authorize any cell.
+owners. The dependent quantitative projection's package scope allowlist does
+not register a writer or authorize any cell.
 
 - **Owns:** stable capability descriptions, topic-owner routing, the
   field-level authority partition, and the writer-authority rule above.
