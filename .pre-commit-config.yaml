@@ -29,10 +29,3 @@ repos:
         language: system
         files: ^tests/(.*/)?test_[^/]*\.py$
         types: [python]
-
-      - id: test-shard-coverage
-        name: Test shard coverage
-        entry: uv run --cache-dir .uv-cache python -m tools.testing.test_shards --check
-        language: system
-        files: ^(tests/.*\.py|tools/testing/test_shards\.py)$
-        pass_filenames: false

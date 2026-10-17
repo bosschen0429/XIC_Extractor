@@ -77,20 +77,22 @@ function-scoped fixtures by default, and tests/fixtures for reusable payloads.
 Split a file when it accumulates unrelated responsibilities; line count alone
 is not the contract.
 
-## CI Shards
+## Affected-Test Selection
 
-tools.testing.test_shards owns ordinary-CI discovery, assignment, exclusions,
-and the pre-commit coverage check. Add a new test file to that owner and run:
+tools.testing.test_selection derives which tests a change can affect from the
+import graph and the paths tests and code name; a new test file needs no
+registration. Pull-request CI runs that selection, master runs every test, and
+anything the derivation cannot place runs every test. Locally:
 
-    .venv\Scripts\python.exe -m tools.testing.test_shards --check
+    .venv\Scripts\python.exe -m tools.testing.test_selection
+    .venv\Scripts\python.exe -m tools.testing.test_selection --all
 
-Do not copy shard globs into another hook or document. Hosted CI is the final
-remote backstop.
+Do not copy its rules into another hook or document.
 
 Tests marked ledger_snapshot pin recorded validation values and are excluded
 individually from default CI. Run that lane with:
 
-    .venv\Scripts\python.exe -m tools.testing.test_shards --snapshots
+    .venv\Scripts\python.exe -m tools.testing.test_selection --snapshots
 
 A legitimate re-analysis may change a snapshot. Keep rejection behavior and
 dependency-failure checks in ordinary CI when their oracle is still current.
@@ -107,8 +109,8 @@ analysis. After bootstrap, install the locked Chromium once and run the lane:
 CI uses bundled Chromium; `XIC_PLAYWRIGHT_CHANNEL=chrome` (or `msedge`) is an
 explicit local opt-in. Failed tests retain `browser-trace.zip` under their
 `tmp_runtime/` test directory; CI uploads those traces. Successful traces are
-cleaned with pytest's temporary files. `tools.testing.test_shards` owns change
-relevance; master runs the lane.
+cleaned with pytest's temporary files. `tools.testing.test_selection` owns
+change relevance; master runs the lane.
 
 ## RAW And Scientific Validation
 

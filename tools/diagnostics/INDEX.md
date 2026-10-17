@@ -37,7 +37,7 @@ workflow owner rather than chaining similarly named commands.
 | Build a solvent-blank background library | `scripts.extract_blank_library`; `xic_extractor.discovery.blank_qualification` owns extraction and serialization |
 | Run tissue validation | `scripts.run_tissue_validation`; [execution settings](../../docs/agent/parameter-settings.md#validation-scale) own prerequisites |
 | Query Discovery or experiment with grouping / RT calibration | `tools.diagnostics.grouping_experiment query/prepare/replay`; [Grouping experiments](#grouping_experimentpy) describes the input and output boundary |
-| Maintain CI or command safety | `tools.testing.test_shards` and `tools.command_policy` serve CI/hooks; they have no GUI workflow |
+| Maintain CI or command safety | `tools.testing.test_selection` and `tools.command_policy` serve CI/hooks; they have no GUI workflow |
 
 The sections below index maintained diagnostics. Retired tools are recovered
 from Git history; retained historical evidence does not make them current
