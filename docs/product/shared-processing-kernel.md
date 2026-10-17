@@ -140,7 +140,7 @@ fixed Target row is not group identity.
 CrossSample alone may change membership and mint a successor group. A trajectory
 prediction does not replace a measured local observation. Cross-sample
 correspondences still require the joint evidence described in
-[Alignment](alignment.md#對應必須共同成立); this is not an automatic priority
+[Alignment](alignment.md#jointly-consistent-correspondences); this is not an automatic priority
 between competing correspondences. No universal monotonic trend is assumed.
 
 ### ObservationRevisit

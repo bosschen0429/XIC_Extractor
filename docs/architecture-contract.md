@@ -189,7 +189,7 @@ writer contracts are defined in the [Shared Processing Kernel](product/shared-pr
 Provider-specific evidence handling must not create a parallel downstream
 decision core.
 
-Grouping and RT bootstrap are described in [Alignment](product/alignment.md#目前實作).
+Grouping and RT bootstrap are described in [Alignment](product/alignment.md#current-implementation).
 Immutable-result handoffs are defined in the [Shared Processing Kernel](product/shared-processing-kernel.md#deep-interfaces).
 A revisit does not reopen grouping, replace the partition, or mint a second
 grouping owner. `CrossSamplePartitionTransition` owns only the mathematical before/after
@@ -198,7 +198,7 @@ m/z/RT-bounds-plus-groups handoff with no separate domain identity or persisted
 contract.
 
 CID-NL provenance, workset compatibility, and bounded recovery subjects are
-owned by the [Alignment comparison scope](product/alignment.md#輸入與比較範圍) and
+owned by the [Alignment comparison scope](product/alignment.md#inputs-and-comparison-scope) and
 [Backfill](product/backfill.md#untargeted-route).
 A scheduling partition or subject center cannot become a feature boundary;
 result writers consume the completed groups and cells.

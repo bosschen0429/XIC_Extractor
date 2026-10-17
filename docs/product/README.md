@@ -21,7 +21,7 @@ owner for product documentation.
 | Discovery | [`discovery.md`](discovery.md) | Shared candidate-discovery stage; broad Untargeted search and constrained Targeted search, candidate/review outputs, seed evidence handoff |
 | Shared Processing Kernel | [`shared-processing-kernel.md`](shared-processing-kernel.md) | Frozen workflow-neutral capture, CrossSample, ObservationRevisit, cell-decision, final-result, and Targeted/Untargeted projection seams |
 | Untargeted Method | [`untargeted-method.md`](untargeted-method.md) | Durable method boundary for Untargeted LC-MS recovery, hygiene, and historical report absorption |
-| Alignment | [`alignment.md`](alignment.md) | 跨樣本對應的方法原則、目前實作與未解問題 |
+| Alignment | [`alignment.md`](alignment.md) | Cross-sample correspondence: method principles, current implementation, and open questions |
 | Targeted Selection | [`targeted-selection.md`](targeted-selection.md) | Targeted behavior, selected hypotheses, region/boundary gates, reasons |
 | Decision Policy | [`decision-policy.md`](decision-policy.md) | Typed evidence, workflow gates, score boundaries, and projection authority |
 | Quantitation Context | [`quantitation-context.md`](quantitation-context.md) | Bounded trace context, morphology evidence, area-impacting gates |

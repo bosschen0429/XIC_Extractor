@@ -98,7 +98,7 @@ supported, fit a robust local linear trend over injection order so steep drift
 is followed rather than lagged, then apply the target sample's frozen batch warp. Both XIC bounds
 and preferred-peak selection use this query RT. Insufficient calibration and
 missing-context fallbacks have explicit bases; neither means measured zero
-shift. See [Alignment RT coordinates](alignment.md#準備-rt-座標).
+shift. See [Alignment RT coordinates](alignment.md#prepare-rt-coordinates).
 
 Forecast acceptance is narrower than the acquired context: same-cohort direct
 reference samples are held out one at a time using that same trajectory
