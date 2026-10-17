@@ -221,7 +221,7 @@ Untargeted-specific rules to keep explicit:
 - A Backfill observation can write only after row identity passes and
   `ProductionCellDecision` independently selects a quantifiable value. If
   revisit evidence is required, the exact owner-backed ObservationRevisit receipt
-  must be present; a revisit never grants membership or writer authority itself.
+  must be present; a revisit never grants membership itself.
 - Same-peak support is not the same as group membership. It needs selected peak
   geometry, RT or drift-supported compatibility, no MS1 pattern conflict, no
   hypothesis or claim blocker, and product-authorized trace or pattern support.
@@ -231,9 +231,6 @@ Untargeted-specific rules to keep explicit:
 - `feature_family_id` and `public_family_id` remain compatibility/display
   labels. `group_hypothesis_id` and `peak_hypothesis_id` are the
   authority-ready identity handles when available.
-- Owner-centered MS1 Backfill can change alignment cell status during alignment
-  construction. That is still not broad ProductWriter authority unless the
-  relevant matrix/activation contract grants it.
 - Broad Backfill remains gated. Diagnostic sidecars and visual overlay
   evidence are not production readiness by themselves.
 
@@ -275,7 +272,7 @@ Names that contain `score` need extra care:
   `select_candidate_by_evidence`; public confidence and reason fields do not
   authorize a parallel selector.
 - Alignment `evidence_score` is a seed-quality score feature, not same-peak
-  identity proof and not ProductWriter authority.
+  identity proof.
 - `legacy_peak_scoring_current_oracle` is a parity baseline, not a product
   owner.
 

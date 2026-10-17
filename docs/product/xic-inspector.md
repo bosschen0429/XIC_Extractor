@@ -601,7 +601,7 @@ Inspector.
 ## Authority
 
 The workbench is a review projection. Its charts, explanations, and diagnostic
-states do not grant selected-value, Matrix-writing, activation, or
-ProductWriter authority. Missing evidence remains visibly unavailable or
+states do not grant selected-value, Matrix-writing, or activation
+authority. Missing evidence remains visibly unavailable or
 limited according to the source capability; the Inspector does not synthesize
 replacement scientific values.

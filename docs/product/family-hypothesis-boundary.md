@@ -47,7 +47,7 @@ to regrouping and Backfill planning.
   candidate, selected integration, typed evidence, and selected-hypothesis
   decision semantics.
 - Backfill can return one independently traceable observation from a revisit.
-  That observation cannot imply group membership or writer authority.
+  That observation cannot imply group membership.
 
 ### Group identity and disposition
 
@@ -99,9 +99,9 @@ standalone product truth.
 | --- | --- | --- |
 | Discovery `peak_anchor_id` / output `feature_family_id` | Per-sample MS1 peak identity and review grouping | Cross-sample identity, Backfill promotion, selected-peak truth |
 | Alignment `public_family_id` (display label) | Stable public row label for output compatibility | Canonical identity proof - use `group_hypothesis_id` instead |
-| Internal `InitialGroupingScope` | m/z/RT evidence bounds and exact initial groups for the bootstrap-to-regroup handoff | Standalone identity, persistence, chemical identity, public row identity, same-peak truth, or writer authority |
-| `CrossSampleGroupingResult` | One immutable processing-owner-bound grouping result, accepted complete-partition transition, and prepared drift lookup | Regrouping after Backfill, selected values, or writer authority |
-| `CrossSamplePeakGroupHypothesis` | Cross-sample owner/group identity, membership, disposition, and lineage via `group_hypothesis_id` | Per-peak integration truth, Backfill, or ProductWriter authority |
+| Internal `InitialGroupingScope` | m/z/RT evidence bounds and exact initial groups for the bootstrap-to-regroup handoff | Standalone identity, persistence, chemical identity, public row identity, or same-peak truth |
+| `CrossSampleGroupingResult` | One immutable processing-owner-bound grouping result, accepted complete-partition transition, and prepared drift lookup | Regrouping after Backfill or selected values |
+| `CrossSamplePeakGroupHypothesis` | Cross-sample owner/group identity, membership, disposition, and lineage via `group_hypothesis_id` | Per-peak integration truth or Backfill |
 | `PeakHypothesis` | Candidate peak identity, evidence context, selected hypothesis semantics | Cross-sample grouping policy or final matrix writing |
 | ObservationRevisit | Retained typed receipt for a bounded local revisit result or no-result | Membership, selected value, group origin, or recursive support |
 | Cell decision / ProductionCellDecision | Selects value or typed no-write from a Target subject or completed group/sample evidence; packages the answer for output | RAW access, grouping, or rendering; output identity cannot be a prerequisite for Untarget value selection |

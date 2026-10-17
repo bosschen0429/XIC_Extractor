@@ -23,7 +23,7 @@ linked owner pages.
   Targeted retains only configured `TargetKey` rows.
 - Product-facing `Matrix` output stays conservative. Backfill-only (`rescue_only`), ambiguous,
   diagnostic, and review-only evidence belongs in Review/Audit surfaces until a
-  ProductWriter authority record and expected-diff packet explicitly promote it.
+  [Writer Authority](productization.md#writer-authority) activation chain explicitly promotes it.
 - Untargeted projection derives a typed `UntargetRowKey` from each finalized
   canonical group. Standard Matrix rows require `established` disposition.
   `provisional` groups stay in a compact machine archive/review surface;

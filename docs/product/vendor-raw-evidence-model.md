@@ -31,9 +31,8 @@ decisions.
 - Manual review and overrides are review-layer facts. Manual review and
   overrides must not silently rewrite automatic Discovery, Alignment, Backfill,
   or ProductWriter rules.
-- Evidence providers create typed facts. Evidence providers do not write
-  matrices directly unless a separate activation/export contract grants
-  ProductWriter authority.
+- Evidence providers create typed facts and do not write matrices directly;
+  see [Writer Authority](productization.md#writer-authority).
 
 ## Concept Mapping
 

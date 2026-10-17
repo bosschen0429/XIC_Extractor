@@ -47,7 +47,7 @@ integration bounds. The entire search window does not supply them.
 ## Boundaries
 
 - **Owns:** candidate-to-observed-context mapping and `ChromPeakSegment` boundary semantics.
-- **Does not own:** the selected area for any specific row, whether a candidate segment is production-ready, Backfill writer authority, or matrix activation.
+- **Does not own:** the selected area for any specific row, whether a candidate segment is production-ready, or matrix activation.
 - The Discovery candidate interval is not the whole final trace context.
 - The full search window is not the quantitation context.
 

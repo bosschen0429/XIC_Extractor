@@ -578,7 +578,7 @@ staging:
 
 `offered_to_owner` means only that execution completed and the owning lineage
 or projection layer may validate the artifact. It does not mean lineage
-acceptance, delivery `staged`, sealing eligibility, or writer authority.
+acceptance, delivery `staged`, or sealing eligibility.
 
 The runtime must not delete an immutable artifact referenced by a delivery
 seal, active review, lockbox, expected diff, or retained audit claim. Physical

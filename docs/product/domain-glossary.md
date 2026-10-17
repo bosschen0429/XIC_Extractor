@@ -59,8 +59,8 @@ return an observation or typed no-observation result. The current Untargeted
 CID-NL production route uses the conservative Backfill decision and completed
 cell evidence. Backfill may
 produce the first usable observation for that cell,
-but it cannot originate the Target/group, mint membership, select a product
-value, or grant writer authority.
+but it cannot originate the Target/group, mint membership, or select a
+product value.
 The workflow-owned projection first creates typed Target/Group row bindings and
 cell subjects; `ProductionCellDecision` alone selects the value or no-write
 result; the same projection then owns row inclusion, counts/reasons, Review
@@ -84,7 +84,7 @@ Use these terms consistently:
   integration basis.
 - `selected hypothesis`: the chosen `PeakHypothesis` and its audit context.
   Selection identifies the candidate used by a workflow projection; it does
-  not by itself grant counted-detection, Matrix, workbook, or writer authority.
+  not by itself grant counted-detection or writer authority.
 - `EvidenceVector`: structured evidence used for scoring or model selection.
 - `EvidenceDecisionSemantics`: typed interpretation of evidence support,
   conflict, exclusion, ambiguity, or review meaning. It is not product-write
@@ -176,7 +176,7 @@ Related evidence and analysis terms:
   Non-feature `product_plus_neutral_loss` observations, including ambiguous
   co-isolation observations, are classified in memory but are not persisted.
 - `sidecar`: accompanying TSV, JSON, or similar metadata that explains or
-  audits a primary output without inheriting its writer authority.
+  audits a primary output.
 - `provenance`: the inputs, effective settings, runtime, and decision path
   needed to identify or reproduce how an artifact or decision was produced.
 - `seed evidence`: initial MS1/MS2 evidence that triggers candidate generation
@@ -223,8 +223,7 @@ concerns explain ambiguity and review priority, not the detected call itself.
 - `Delta Mass`: Discovery strategy family for configured MS1 mass-difference
   patterns.
 - `Pt pattern`: the first built-in `delta_mass` pattern for Pt-related MS1
-  feature discovery. It creates candidates and review evidence, not direct
-  Matrix-write authority.
+  feature discovery. It creates candidates and review evidence.
 - `HCD`: Higher-energy Collision Dissociation. Its product-ion audit is a review
   surface unless a separate contract grants stronger decision meaning.
 - `DDA`: Data-Dependent Acquisition, where MS2 scan triggering depends on MS1
@@ -254,7 +253,10 @@ concerns explain ambiguity and review priority, not the detected call itself.
 
 - `candidate/audit universe`: rows that are visible for review, audit, or
   diagnosis. This is not the same as writable product output.
-- `write_ready`: a scope with explicit current product write authority.
+- `write_ready`: a row-level `policy_decision` value in the Backfill
+  generated-policy artifact. It names rows a writer scope may cover; the
+  label grants no write authority unless that scope is registered in the
+  authority manifest.
 - `authority`: the permission boundary for matrix/workbook/value writes;
   [Writer Authority](productization.md#writer-authority) owns how it is granted.
 - `authority manifest`: machine-checkable record of the exact ProductWriter
@@ -285,7 +287,7 @@ concerns explain ambiguity and review priority, not the detected call itself.
 - `adjudication`: machine classification of a candidate. It can route work, but
   it is not by itself permission to write product output.
 - `review packet`: a structured human-review surface. It is not free-form value
-  entry and does not automatically grant writer authority.
+  entry.
 - `truth lockbox` (`lockbox`): independent peak-choice or area labels used to
   evaluate future automation. Lockbox labels do not automatically mutate
   product output.

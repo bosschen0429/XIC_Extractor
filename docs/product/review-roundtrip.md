@@ -120,7 +120,7 @@ grant the parked peak-switch or area-writer lanes product authority.
 - Owns: review queue generation, typed action import/validation, and dry-run
   planning.
 - Does not own: whether a reviewer action is approved for product mutation,
-  Backfill writer authority, matrix activation scope, or HTML review UX details.
+  matrix activation scope, or HTML review UX details.
 - Dataset-run queues, templates, labels, and rendered packets default to ignored
   output. Git tracks only an active compact verdict or contract with an enduring
   product or scientific consumer.

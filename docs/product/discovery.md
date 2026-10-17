@@ -6,8 +6,8 @@ space; Targeted supplies a `TargetSearchScope` that retains only configured
 targets. Both may inspect a broad evidence policy such as dR, R, or MeR through
 the same scientific task. Discovery turns seed evidence and MS1 traces into
 reviewable candidates. Discovery does not directly publish product outputs.
-Publication requires closed cell decisions and the relevant workflow
-projection/writer authority.
+Publication requires closed cell decisions, the relevant workflow
+projection, and [Writer Authority](productization.md#writer-authority).
 
 Discovery is provider-specific at its input and initial-interpretation seam.
 CID-NL, HCD-PI, Delta Mass, and future providers may consume different evidence
@@ -40,9 +40,9 @@ The intended product flow is:
    or workflow reasons.
    Backfill still requires provenance-valid evidence; it is not blind
    imputation and it does not create counted Discovery detections.
-4. Product outputs are usable only after the relevant projection,
-   Backfill/ProductWriter authority, expected-diff, and schema contracts are
-   satisfied.
+4. Product outputs are usable only after the relevant projection and schema
+   contracts and the [Writer Authority](productization.md#writer-authority)
+   activation chain are satisfied.
 
 Targeted applies this flow to a bounded target universe and ends in its own
 delivery projection. Untargeted is the general form and ends in the analytical
@@ -63,8 +63,8 @@ Discovery strategy unless a successor design intentionally replaces the
 strategy-family model.
 
 Discovery evidence providers create candidates and typed review evidence.
-Discovery evidence providers must not directly grant ProductWriter authority,
-Backfill promotion, counted detection, or Matrix changes.
+Discovery evidence providers must not directly grant Backfill promotion,
+counted detection, or Matrix changes.
 
 ### Composite methods
 
@@ -711,7 +711,7 @@ behavior.
 
 - **Owns**: candidate generation, per-sample review surfaces, seed evidence
   handoff, batch index for downstream alignment.
-- **Does not own**: ProductWriter authority or Backfill promotion (see
+- **Does not own**: Backfill promotion (see
   [backfill.md](backfill.md)), final evidence truth for a candidate feature
   (see [evidence rules](../lc-msms-evidence-rules.md)), or release-slice
   readiness (see [productization.md](productization.md)).
@@ -745,8 +745,6 @@ Before changing discovery behavior, require the relevant subset of:
   Discovery methods whose evidence and sample design are not comparable.
 - Depending on old worktree output directories instead of explicit batch index.
 - Hiding discovery output-contract changes in dated implementation notes.
-- Treating a new evidence provider as ProductWriter authority without Backfill
-  activation.
 - Dragging CID-NL Discovery decisions into the Backfill lane.
 - Starting Untargeted performance work before timing/locality evidence
   identifies the bottleneck and correctness gate.

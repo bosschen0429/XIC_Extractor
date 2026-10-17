@@ -179,7 +179,7 @@ Rules:
 - **Owns**: preset loading, resolver/alignment preset behavior definitions,
   immutable CID-NL recipe binding, TOML resource format, and reproducibility
   guarantees for preset-backed runs.
-- **Does not own**: ProductWriter authority or accepted publication scope (see
+- **Does not own**: accepted publication scope (see
   [productization.md](productization.md)), exact command recipes for every
   validation run (see runner docs), release readiness (see status index and
   product validation contract).
@@ -197,7 +197,6 @@ Before changing preset behavior, require the relevant subset of:
 
 ## Pitfalls
 
-- Treating a preset as ProductWriter authority.
 - Replacing documented preset surfaces with branch-local command recipes.
 - Silently changing resolver defaults without expected-diff evidence.
 - Assuming Backfill expansion replay is included just because a preset is

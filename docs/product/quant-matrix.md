@@ -236,7 +236,6 @@ it does not establish production readiness by itself.
   `ProductionCellDecision`.
 - Passing the pre-final owner Matrix or loose `AlignedCell` collection directly
   to a writer.
-- Treating review-only labels or diagnostic sidecars as writer authority.
 - Adding diagnostic evidence columns to the primary matrix.
 - Treating historical AsLS-vs-raw policy as current area authority.
 - Reopening retired AsLS/linear-edge comparison gates instead of using current
