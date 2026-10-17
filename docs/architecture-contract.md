@@ -189,8 +189,8 @@ writer contracts are defined in the [Shared Processing Kernel](product/shared-pr
 Provider-specific evidence handling must not create a parallel downstream
 decision core.
 
-Grouping, RT bootstrap, and immutable-result handoffs are defined in the
-[Alignment grouping contract](product/alignment.md#cross-sample-grouping-and-batch-finalization).
+Grouping and RT bootstrap are described in [Alignment](product/alignment.md#目前實作).
+Immutable-result handoffs are defined in the [Shared Processing Kernel](product/shared-processing-kernel.md#deep-interfaces).
 A revisit does not reopen grouping, replace the partition, or mint a second
 grouping owner. `CrossSamplePartitionTransition` owns only the mathematical before/after
 complete-partition transition; `InitialGroupingScope` is a plain immutable
@@ -198,7 +198,8 @@ m/z/RT-bounds-plus-groups handoff with no separate domain identity or persisted
 contract.
 
 CID-NL provenance, workset compatibility, and bounded recovery subjects are
-owned by the [Alignment method-subject contract](product/alignment.md#method-subjects).
+owned by the [Alignment comparison scope](product/alignment.md#輸入與比較範圍) and
+[Backfill](product/backfill.md#untargeted-route).
 A scheduling partition or subject center cannot become a feature boundary;
 result writers consume the completed groups and cells.
 
@@ -234,7 +235,7 @@ contract 沒有 ignore，並包含間接依賴。
   CID-NL execution in `untargeted_execution/`. Its publication boundary consumes the
   completed typed batch, delegates Matrix publishing to `output/alignment/`,
   and closes its private stores on every exit;
-  [Alignment outputs](product/alignment.md#surfaces) owns streaming/materialization policy.
+  [Matrix publication](product/quant-matrix.md#matrix-publication) owns streaming/materialization policy.
   CLI and HTML workbench receive only
   published output paths and durable evidence locators. Alignment owns neither
   this application lifecycle nor a duplicate runtime or writer transaction.

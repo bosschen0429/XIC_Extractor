@@ -63,6 +63,20 @@ its method settings do not change the Untargeted method. There is no separate
 Untargeted list to maintain. A supplied file with no internal standards shows an
 error; clearing the field runs without an internal-standard list.
 
+### Alignment CLI inputs
+
+The Alignment CLI resolves ISTD input before RAW acquisition. An explicit
+targets CSV or reference workbook takes precedence; otherwise it uses the same
+[bundled target template](../../xic_extractor/configuration/data/targets.csv) as the HTML workbench's fresh default and prints the
+resolved source and ISTD count. Missing or invalid input fails before RAW work.
+An intentional uncorrected CLI run requires `--allow-uncorrected`, which cannot
+be combined with either ISTD input. The Python API retains its explicit optional
+input contract.
+
+Sample metadata is supplied to Alignment separately from Discovery; see
+[Alignment sample input](../product/sample-metadata-qc.md#alignment-input).
+Use current CLI help for the complete option list.
+
 ## Outputs
 
 GUI Alignment writes `alignment_matrix.tsv` with its bound identity and the

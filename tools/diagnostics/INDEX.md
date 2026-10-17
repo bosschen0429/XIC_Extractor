@@ -37,7 +37,7 @@ workflow owner rather than chaining similarly named commands.
 | Build a solvent-blank background library | `scripts.extract_blank_library`; `xic_extractor.discovery.blank_qualification` owns extraction and serialization |
 | Prepare targeted review actions | [Review Roundtrip commands](../../docs/product/review-roundtrip.md#operator-commands) distinguish candidate verification, copy-state edits, and peak-editing authority |
 | Run tissue validation | `scripts.run_tissue_validation`; [execution settings](../../docs/agent/parameter-settings.md#validation-scale) own prerequisites |
-| Query Discovery or experiment with grouping / RT calibration | `tools.diagnostics.grouping_experiment query/prepare/replay`; [Alignment experiments](../../docs/product/alignment.md#grouping-experiments) owns the input and output boundary |
+| Query Discovery or experiment with grouping / RT calibration | `tools.diagnostics.grouping_experiment query/prepare/replay`; [Grouping experiments](#grouping_experimentpy) describes the input and output boundary |
 | Maintain CI or command safety | `tools.testing.test_shards` and `tools.command_policy` serve CI/hooks; they have no GUI workflow |
 
 The sections below index maintained diagnostics. Retired tools are recovered
@@ -53,10 +53,9 @@ commands.
 5. [Targeted Benchmarks & Reviews](#targeted-benchmarks--reviews)
 6. [Instrument QC](#instrument-qc)
 7. [Peak-Group / Overlay Visualization](#peak-group--overlay-visualization)
-8. [Area / Region Audits](#area--region-audits)
-9. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery)
-10. [Agent / Docs Workflow Guards](#agent--docs-workflow-guards)
-11. [Surface Population And Reachability](#surface-population-and-reachability)
+8. [Delta Mass / Pt Pattern Discovery](#delta-mass--pt-pattern-discovery)
+9. [Agent / Docs Workflow Guards](#agent--docs-workflow-guards)
+10. [Surface Population And Reachability](#surface-population-and-reachability)
 
 ---
 
@@ -105,7 +104,7 @@ models because their output schemas are intentionally different; see
 
 **Purpose**: Read the normal CID-NL execution explanation artifact and return a
 compact summary or exact candidate details without reading RAW.
-**Owner**: [Alignment execution explanations](../../docs/product/alignment.md#cid-nl-execution-explanations).
+**Owner**: [CID-NL execution explanations](../../docs/product/xic-inspector.md#cid-nl-execution-explanations).
 **Input**: `cid_nl_explanation.sqlite`, optionally an exact candidate ID.
 **Output**: Readable text or JSON; `--compact-to` writes compact review from an
 existing full report; `--index-query-to` copies an older compact review with an
@@ -181,14 +180,55 @@ authority.
 ### `build_sample_rt_calibration.py`
 
 - **Role:** evidence producer; maintained operator interface.
-- **Owner:** `xic_extractor.alignment.sample_rt_calibration`; contract in
-  [`alignment.md`](../../docs/product/alignment.md#sample-rt-calibration-diagnostic).
+- **Owner:** `xic_extractor.alignment.sample_rt_calibration`; the model and evidence scope are described below.
 - **Use:** `python -m tools.diagnostics.build_sample_rt_calibration --help`.
 - **Outputs:** calibration JSON, sample TSV, and held-out TSV from
   `alignment_cells.tsv` plus an optional injection timeline JSON. It does not
   read RAW.
 - **Authority:** `diagnostic_only`; no grouping, selection, RT, or value
   authority. Keep until a correspondence owner adopts the same model.
+
+`python -m tools.diagnostics.build_sample_rt_calibration` places every sample
+on a common RT coordinate. CLI help owns the arguments. Anchors are
+`alignment_cells.tsv` features with `detected` status in at least the
+configured fraction of the batch's samples, not only ISTDs; backfilled or
+inferred cells never become anchors. `alignment.sample_rt_calibration` owns the
+model and has no RAW, file, or Matrix access.
+
+- Anchors whose median RT lies within the merge tolerance collapse into one
+  knot. Isotope, adduct, and fragment families of one compound share its RT;
+  kept separate, their per-sample order inverts and the piecewise model fails.
+- Each sample's knots pair its observed RT with the knot's cross-sample median.
+  They must increase strictly on both axes and reuse the formal drift owner's
+  `interpolate_calibrated_rt_min`. A calibrated RT exists only inside that
+  sample's first and last knot; outside that span it is unavailable, never
+  extrapolated. Fewer than two knots, or crossing knots, leave the sample
+  uncalibrated.
+- Measured data decides a perturbation; the
+  [injection timeline](../../docs/product/sample-metadata-qc.md#injection-timeline-diagnostic)
+  explains it. The front shift is the median shift at the batch's earliest
+  knots. It is an outlier when it differs from the batch median, in either
+  direction, by more than max(k × batch MAD, a minimum shift). An outlier is
+  `confirmed` when the sample is pre-flagged, follows a short method, or is the
+  first full-length run after a method change. A short method uses the
+  timeline's persisted run-length limits without the idle limit, because a
+  short method can leave the gradient unsettled after a long idle. A method
+  change compares the instrument method with the latest earlier run longer than
+  the persisted length fraction, skipping blanks and SDO/LEK, whose own methods
+  always differ. Any other outlier is `unexplained_outlier`, such as a matrix
+  effect, and one without a timeline row is `outlier_without_timeline`.
+  A pre-flagged sample within tolerance is `flagged_unconfirmed`; a missing
+  front knot is `unmeasured`. Sample rows carry the previous injection, its run
+  length, the idle time, and the compared full-length run. Confirmation does not remove a sample's own
+  calibration; no current consumer reads the status.
+- Held-out validation compares non-anchor features before and after
+  calibration on the same observations: those inside each sample's anchor span,
+  for features with at least the configured fraction of such observations.
+
+Outputs are a JSON sidecar with the policy, knots, per-band knot counts, and
+per-sample knots, plus sample and held-out TSVs. Evidence is `diagnostic_only`.
+The diagnostic does not change grouping, peak selection, drift-corrected edge
+scoring, or values.
 
 ---
 
@@ -905,9 +945,52 @@ preparation; `xic_extractor.alignment.grouping_experiment` delegates replay to
 the formal grouping owner. Snapshot and table I/O live in
 `xic_extractor.diagnostics.grouping_experiment_io`.
 
-**Usage and artifacts:** [Grouping experiments](../../docs/product/alignment.md#grouping-experiments).
-Run `python -m tools.diagnostics.grouping_experiment --help` for the three commands.
-Results stay under ignored task-specific `output/` directories.
+**Usage and artifacts:** CLI help owns the arguments. Results stay under ignored task-specific `output/` directories.
+
+`python -m tools.diagnostics.grouping_experiment` provides a developer feedback
+loop over saved Discovery candidates for scalar CID-NL presets:
+
+```powershell
+.venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment query --discovery-batch-index <index.csv> --mz-range 242.12:242.13 --output-dir output/query
+.venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment prepare --discovery-batch-index <index.csv> --mz-range 396.19:396.21 --raw-dir <raw-directory> --dll-dir <dll-directory> --acquisition-cache-dir <cache-directory> --output-dir output/grouping
+.venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment replay --inputs output/grouping/grouping-inputs.json.gz --set preferred_rt_sec=30 --output-dir output/grouping-tight
+.venv/Scripts/python.exe -m tools.diagnostics.grouping_experiment replay --inputs output/grouping/grouping-inputs.json.gz --calibrate --output-dir output/grouping-calibrated
+```
+
+Repeat `--mz-range LOWER:UPPER` for several regions. Query reads Discovery only
+and reports measured-mass candidates plus every sample, including zero-match
+samples. A query is a lookup in the saved Discovery population, not a fresh
+extraction at that mass.
+
+Prepare retains the complete sample population and selects **whole original
+partitions** intersecting the requested intervals for comparison. Calibration
+uses bootstrap evidence from **all** partitions, not only the selected masses.
+It runs the formal initial assessment and grouping owners, then stops before
+Backfill. Its summary reports selected versus total partition counts; initial
+job count includes the full calibration scope. Initial preparation requires the matching
+RAW files and current Discovery owner-closure artifacts. `--sample-metadata`
+and `--known-istd-reference` accept existing metadata and reference artifacts.
+
+The compressed `grouping-inputs.json.gz` retains scalar observations, exact
+member identities, baseline warp, compact elution contexts and configuration.
+It omits chromatogram arrays. Prepare checks snapshot replay against the formal initial grouping.
+Replay needs only that snapshot, with no RAW, DLL, acquisition or Backfill.
+`--set FIELD=JSON` changes an `AlignmentConfig` value; only fields consumed by
+grouping affect replay. Owner detection and integration changes require prepare.
+
+`--calibrate` fits the existing sample RT calibration model from established
+baseline groups (default anchor presence: 94% of samples). Use
+`--anchor-min-sample-fraction` to change that selection, or `--rt-calibration`
+to supply an existing `sample_rt_calibration` JSON. Coordinates outside a
+sample's calibrated span retain their observed RT. Calibration changes the
+comparison coordinate, not measured RT or area.
+
+`groups.tsv` and `members.tsv` report grouping and observed/comparison RT;
+`decisions.tsv` exposes the grouping decisions when present. `changes.tsv`
+compares each observation's membership and disposition with baseline;
+`samples.tsv` retains zero-observation samples. `summary.json` records counts,
+parameters and elapsed time. These are initial-grouping experiment results;
+the full workflow remains the owner of final Backfill and Matrix output.
 
 **Status:** Maintained scalar CID-NL developer workflow. Existing RT calibration
 tools produce coordinates; this tool makes those coordinates consumable by

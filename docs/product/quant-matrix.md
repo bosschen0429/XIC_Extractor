@@ -28,11 +28,21 @@ delivery seam as if they were already final.
 - Direct observations and Backfill observations are different evidence
   states.
 - Backfill supplies an observation under an established Target or group.
-- The owning projection first constructs the explicit Target/Group cell
-  subject.
-- `ProductionCellDecision` then independently selects the final numeric value
-  or a typed no-write result. Only after that selection can the same
-  projection include the cell.
+- Target projection constructs its explicit subject before cell decision.
+- Untarget cell decision consumes completed Feature × Sample evidence first.
+  Matrix projection then assigns output identities and wraps the unchanged
+  value/no-write payload and selected integration in `ProductionCellDecision`.
+- Inclusion and counting consume those completed answers, not raw cells.
+
+Owner quantification is eligible only when the selected integration apex is
+strictly inside its selected left/right bounds. An endpoint apex remains an
+owner and remains visible in diagnostics, but its Matrix cell is
+`unchecked` with no area or selected integration, and it does not count as a
+detected owner for the Backfill sample-quorum gate. A Backfill observation may
+replace that censored owner only when its scalar and selected-integration
+boundaries are both interior and its primary Matrix area is valid; an
+endpoint or incomplete observation is censored by the same rule. This is a
+quantification-authority guard, not a new peak-selection or Backfill route.
 
 ### Acceptance authority
 
@@ -66,6 +76,30 @@ delivery seam as if they were already final.
   method-appropriate evidence; deleting a historical validation workflow does
   not change the scientific selection policy.
 
+Writer projection checks sample completeness per finalized row without building
+a second global row-by-sample key set. Cell and integration-audit TSV writers
+consume formatted rows incrementally instead of retaining a second complete
+population of cell dictionaries.
+
+The default `production` Matrix artifact is `alignment_matrix.tsv`. Retained
+CID-NL runs also emit `cid_nl_explanation.sqlite` after successful Matrix
+publication, alongside their runtime marker; see
+[execution explanations](xic-inspector.md#cid-nl-execution-explanations).
+Identity, review, provenance, Backfill evidence, HTML, and workbook artifacts
+remain explicit machine, validation, diagnostic, or compatibility outputs;
+their schemas and value policies are unchanged. TSV-only `production` and
+`validation-minimal` publication consumes finalized rows in one pass, retaining
+the identity census rather than the complete cell and decision populations.
+Public row numbering and identity hashes span that complete ordered stream.
+Workbook, HTML and additional whole-matrix consumers retain the materialized
+projection API. Both routes use the same atomic publication and rollback owner.
+
+TSV, XLSX and HTML share the existing multi-file temp-write, replace,
+fingerprint and rollback transaction. The live handoff does not define persisted
+owner rehydration, cross-version replay or run/attempt identity. Diagnostic
+sidecars may preserve raw evidence, but do not supply competing production
+decisions.
+
 ### Renderer input
 
 - Shared-peak explanation and PeakHypothesis selection sidecars are
@@ -92,8 +126,12 @@ delivery seam as if they were already final.
 - The legacy matrix-based `build_production_decisions` still builds a
   `ProductionDecisionSet` as the fallback in `output/alignment/product_matrix.py` and
   for diagnostics and provenance replay.
-- The structural migration must preserve current values, states, counts, row
-  inclusion, and renderer bytes before any behavior promotion.
+- This writer-input projection preserves selected values, statuses, counts,
+  inclusion and renderer bytes; output compatibility is not a second
+  scientific decision.
+
+The writer maps retained provenance to its legacy candidate-ID field without
+revalidating assessment/hypothesis closure.
 
 ### No-RAW golden path
 
@@ -105,6 +143,31 @@ delivery seam as if they were already final.
   then can that cell be rendered.
 - This fixture is opt-in `production_candidate` evidence only. The fixture
   does not register a current/default lane or change writer scope.
+
+### Row identity and display
+
+Targeted retains a typed empty fixed row when no group qualifies. Qualified
+groups with disjoint sample membership bind the same fixed `TargetKey` row;
+only groups competing for the same sample keep that row unresolved. Untargeted
+standard Matrix includes established groups only.
+Provisional groups belong in a compact machine archive/review surface;
+unresolved and rejected groups remain AuditTrail facts.
+
+A Matrix row's m/z is the mean of its members' observed m/z
+(`center_mz_basis = cross_sample_owner_arithmetic_mean`). When any direct
+member's Discovery candidate carries an apex MS1 reading (`ms1_apex_mz`), the
+row reports the mean of those readings instead
+(`center_mz_basis = discovery_ms1_apex_mean`). An inferred precursor's
+observed m/z is product + loss and can sit 15–20 ppm from the MS1 ion; the
+reading changes only the reported value, not grouping, traces, Backfill or
+cell values.
+
+Legacy `feature_family_id` / `public_family_id` are public row labels, not
+canonical group identity. Existing public Matrix, decision and identity TSVs
+may key by those labels for compatibility. A change to public keys, filenames,
+ordering, columns or schema versions is a public-contract change, with the
+existing expected-diff and downstream checks. Review tokens and diagnostic
+risk flags do not independently authorize a value or row.
 
 ## Retained Validation Anchors
 
@@ -135,9 +198,17 @@ validation notes are not matrix authority by themselves.
 | `expected_diff_summary` | Review gate for behavior-changing activation |
 | `ProductionAcceptanceManifest` | Accepted Backfill authority record |
 | `ProductionDecisionSet` | One live Alignment-owned decision set consumed by all activated renderers |
-| `ProductionCellDecision` | Successor sole owner of selected value or typed no-write for a Target/Group cell subject |
+| `ProductionCellDecision` | Published value/no-write decision retaining the selected integration and workflow-specific subject |
 | `QuantMatrixVersion` | Internal accepted-value result for the diagnostic golden path |
 | Productization status index / authority manifest | Current state and writer scope |
+
+Alignment additionally exposes `alignment_review.tsv` for review,
+`alignment_matrix_identity.tsv` for identity/owner traceability,
+`alignment_backfill_cell_evidence.tsv` for Backfill evidence, conditional
+`alignment_run_metadata.json`, and versioned `alignment-results` metadata.
+These are public schema surfaces, not independent scientific authority.
+The standard fast public validation profile remains `validation-minimal`;
+it does not establish production readiness by itself.
 
 ## Boundaries
 

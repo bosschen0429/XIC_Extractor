@@ -45,6 +45,19 @@ interpretation, and future activation gates.
 - Sample metadata is part of run provenance. Sample metadata does not replace
   method manifests or output schemas.
 
+### Alignment input
+
+Sample metadata is an explicit Alignment input; it is not inherited from a
+previous Discovery invocation. `--sample-metadata` loads the existing metadata
+format and passes its batch IDs, injection order, sample roles and exclusions
+to the workflow. The CLI reports the source and sample/batch counts before
+execution. The request owner retains responsibility for sample coverage.
+
+Without this input, the existing RAW-header/default derivation treats the RAW
+directory as one cohort. A flattened directory containing several acquisition
+batches therefore needs explicit metadata; it does not acquire separate batch
+identities merely because its files were measured on different dates.
+
 ## Surfaces
 
 | Surface | Role |
@@ -74,7 +87,7 @@ the arguments. `raw_reader` acquires header facts; `injection_timeline` owns
 deduplication, chronological previous-injection links, and the pre-flag policy.
 This producer does not change sample metadata identity, analysis-set membership,
 RT, selected peaks, or values. Evidence is `diagnostic_only`; the
-[sample RT calibration diagnostic](alignment.md#sample-rt-calibration-diagnostic)
+[sample RT calibration diagnostic](../../tools/diagnostics/INDEX.md#build_sample_rt_calibrationpy)
 confirms a perturbation from the measured data.
 
 The producer recursively reads all RAW files under the supplied batch root,

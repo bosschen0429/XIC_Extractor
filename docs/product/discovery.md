@@ -117,6 +117,13 @@ Producing a library alone does not enable qualification.
   eligibility; it does not undo the physical trace-shape result or change the
   selected peak's boundaries, apex, or integrated area.
 
+Alignment selects MS1-feature-backed persisted candidates before minting method
+subjects. Review-only observations do not choose feature query centers or receive
+a second RAW XIC search. Direct/mixed precursor NL observations can contribute
+local scan evidence through `load_review_support`, but their physical facts are
+not persisted. Physical-fact replay uses only feature-backed records;
+non-feature `product_plus_neutral_loss` rows are absent from Discovery artifacts.
+
 ### Precursor inference
 
 - CID-NL Discovery runs in this order: acquire MS2 search seeds, group nearby

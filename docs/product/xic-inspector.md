@@ -317,6 +317,59 @@ They do not rerun Backfill, choose peaks, integrate areas or replace recorded
 quantification. Unobserved samples are not acquired implicitly. The Inspector
 itself remains acquisition-free.
 
+### CID-NL execution explanations
+
+Normal retained CID-NL execution preserves effective method assessments and the
+initial CrossSample groups and classified edges already used by composition.
+The completed batch carries these existing owner values for diagnostics; they
+grant no additional completion, identity, eligibility or Matrix authority.
+
+The diagnostic projection joins exact candidate, canonical sample, hypothesis,
+physical observation and member identities. It records configured subjects,
+assessment states/reasons, exclusions, initial edge scores/reasons, group
+dispositions and final row/cell decisions. Multiple group relationships remain
+explicit. It does not infer membership from m/z or RT or recalculate a score.
+
+The SQLite artifact stores compact, indexed candidate records and deduplicated
+details. A summary does not load every candidate's details; a candidate lookup
+does not load unrelated records. The default compact report does not copy RAW traces, spectra or the live runtime
+object graph. Explicit curve retention follows the options above. The read-only interface is:
+
+```text
+python -m tools.diagnostics.explain_cid_nl_run --report <output>/cid_nl_explanation.sqlite
+python -m tools.diagnostics.explain_cid_nl_run --report <output>/cid_nl_explanation.sqlite --candidate-id <id> --json
+```
+
+The query needs only the retained diagnostic artifact, without RAW or Thermo DLL
+access. Missing reports mean explanation unavailable, including runs interrupted
+before publication. Missing decision evidence is not converted into rejection or
+zero; an unknown candidate and an unsupported/corrupt report are explicit errors.
+The artifact records request/attempt provenance, configuration and the published
+Matrix hash/count. Its `diagnostic_only` content cannot authorize a scientific
+writer or prove readiness.
+
+The owned output collision guard reserves this artifact and its temporary/backup
+names before acquisition. Matrix publication still uses its existing atomic
+writer. Explanation publication follows successful Matrix writing; if explanation
+IO fails, the command fails and the Matrix may remain, without a complete report.
+This diagnostic is outside the Matrix writer's artifact-fingerprint receipt.
+
+Explanation summaries publish `initial_edge_coverage`
+with the versioned sparse-pair policy (`absence_means_not_evaluated`), so an empty retained edge set is not missing audit
+evidence. Inspector forwards that coverage with item details. Older explanation
+files remain readable with `legacy-unspecified` coverage and are not reclassified.
+
+Edge evidence and its audit projections record `rt_basis` as `raw` or
+`drift_corrected`. `drift_prior_source` identifies the supplied lookup, not proof
+that correction was applied. Unqueried or unavailable corrected RT is absent;
+the reason distinguishes raw sufficiency, insufficient non-RT evidence,
+unavailability and post-query fallback. Historical explanation records remain readable as recorded, without reclassification.
+The explanation also retains the prepared RT map's sample knots, supported domains,
+measurements, input fingerprint, target snapshot, policy and source provenance.
+Review consumes that map instead of refitting it. Display correction cannot validate
+a saved group built without the intended ISTD input; grouping must be rebuilt by
+the Alignment owner.
+
 ## Source and ownership boundary
 
 The common API, selection model, and renderer consume canonical review items,
