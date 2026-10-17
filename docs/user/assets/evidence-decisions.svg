@@ -1,69 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg viewBox="0 0 1140 1078" role="img" lang="zh-TW" aria-labelledby="archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="showcase" data-node-ui="" data-reader-fit="intrinsic-height" data-reader-min-text="7.5" data-reader-primary-text="14" xmlns="http://www.w3.org/2000/svg" data-theme="light" width="1140" height="1078" style="background: #fff; font-family: Consolas, 'Microsoft JhengHei', monospace">
-        <style>
-svg { --bg: #f4f5f7;
-      --grid: #e9edf2;
-      --canvas-dot: #e2e7ec;
-      --text: #111827;
-      --text-muted: #5b6474;
-      --text-dim: #9aa3b2;
-      --text-faint: #6b7280;
-
-      --panel: #ffffff;
-      --panel-border: #e5e7eb;
-      --lane-fill: rgba(248, 250, 252, 0.65);
-      --lane-stroke: #cbd5e1;
-
-      --arrow: #64748b;
-      --arrow-emphasis: #059669;
-
-      --mask: #ffffff;
-
-      --frontend-fill: rgba(34, 211, 238, 0.15);
-      --frontend-stroke: #0891b2;
-      --backend-fill: rgba(52, 211, 153, 0.18);
-      --backend-stroke: #059669;
-      --database-fill: rgba(167, 139, 250, 0.2);
-      --database-stroke: #7c3aed;
-      --cloud-fill: rgba(251, 191, 36, 0.18);
-      --cloud-stroke: #d97706;
-      --security-fill: rgba(251, 113, 133, 0.15);
-      --security-stroke: #e11d48;
-      --messagebus-fill: rgba(251, 146, 60, 0.15);
-      --messagebus-stroke: #ea580c;
-      --external-fill: rgba(148, 163, 184, 0.18);
-      --external-stroke: #64748b;
-
-      --toolbar-bg:       rgba(255, 255, 255, 0.92);
-      --toolbar-border:   #cbd5e1;
-      --toolbar-text:     #334155;
-      --toolbar-hover:    #ffffff;
-      --toolbar-menu-bg:  #ffffff; }
+<svg viewBox="0 0 1140 1078" role="img" lang="zh-TW" aria-labelledby="archify-diagram-title archify-diagram-description" xmlns="http://www.w3.org/2000/svg" width="1140" height="1078" style="background: #fff; font-family: Consolas, 'Microsoft JhengHei', monospace">
+  <style>
+svg {
+  --grid: #e9edf2;
+  --text: #111827;
+  --text-muted: #5b6474;
+  --lane-stroke: #cbd5e1;
+  --arrow: #64748b;
+  --mask: #ffffff;
+  --backend-fill: rgba(52, 211, 153, 0.18);
+  --backend-stroke: #059669;
+}
 .c-grid { stroke: var(--grid); fill: none; }
 .c-mask { fill: var(--mask); stroke: none; }
-.c-lane-rule { stroke: var(--lane-stroke); fill: none; opacity: 0.7; }
-.c-lane-wash { fill: var(--lane-fill); stroke: none; }
-.c-frontend { fill: var(--frontend-fill);   stroke: var(--frontend-stroke); }
 .c-backend { fill: var(--backend-fill);    stroke: var(--backend-stroke); }
-.c-database { fill: var(--database-fill);   stroke: var(--database-stroke); }
-.c-cloud { fill: var(--cloud-fill);      stroke: var(--cloud-stroke); }
-.c-security { fill: var(--security-fill);   stroke: var(--security-stroke); }
-.c-messagebus { fill: var(--messagebus-fill); stroke: var(--messagebus-stroke); }
-.c-external { fill: var(--external-fill);   stroke: var(--external-stroke); }
 .t-primary { fill: var(--text); }
 .t-muted { fill: var(--text-muted); }
-.t-dim { fill: var(--text-dim); }
-.t-frontend { fill: var(--frontend-stroke); }
-.t-backend { fill: var(--backend-stroke); }
-.t-database { fill: var(--database-stroke); }
-.t-cloud { fill: var(--cloud-stroke); }
-.t-security { fill: var(--security-stroke); }
-.t-messagebus { fill: var(--messagebus-stroke); }
-.t-external { fill: var(--external-stroke); }
 .t-edge-default { fill: var(--arrow); }
-.t-edge-emphasis { fill: var(--arrow-emphasis); }
-.t-edge-security { fill: var(--security-stroke); }
-.t-edge-dashed { fill: var(--database-stroke); }
 svg .semantic-sigil { fill: none;
       stroke: currentColor;
       stroke-width: 1.35;
@@ -72,247 +25,179 @@ svg .semantic-sigil { fill: none;
       opacity: 0.76;
       pointer-events: none; }
 svg .semantic-sigil &gt; * { vector-effect: non-scaling-stroke; }
-svg .semantic-sigil .sigil-fill { fill: currentColor; stroke: none; }
-svg .s-frontend { color: var(--frontend-stroke); }
 svg .s-backend { color: var(--backend-stroke); }
-svg .s-database { color: var(--database-stroke); }
-svg .s-cloud { color: var(--cloud-stroke); }
-svg .s-security { color: var(--security-stroke); }
-svg .s-messagebus { color: var(--messagebus-stroke); }
-svg .s-external { color: var(--external-stroke); }
 .a-default { stroke: var(--arrow); fill: none; }
-.a-emphasis { stroke: var(--arrow-emphasis); fill: none; }
-.a-security { stroke: var(--security-stroke); fill: none; stroke-dasharray: 5,5; }
-.a-dashed { stroke: var(--database-stroke); fill: none; stroke-dasharray: 4,4; }
 .m-default { fill: var(--arrow); }
-.m-emphasis { fill: var(--arrow-emphasis); }
-.m-security { fill: var(--security-stroke); }
-.m-dashed { fill: var(--database-stroke); }
-.c-security-group { fill: transparent; stroke: var(--security-stroke); stroke-dasharray: 4,4; }
-.c-region { fill: rgba(251, 191, 36, 0.05); stroke: var(--cloud-stroke); stroke-dasharray: 8,4; }
-.c-lane { fill: var(--lane-fill); stroke: var(--lane-stroke); stroke-dasharray: 6,6; }
-</style><title id="archify-diagram-title">從觀察到格值：三種判斷不能混在一起</title>
-        <desc id="archify-diagram-description">由 Archify 產生的架構圖。</desc>
-
-        <defs>
-          <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-            <polygon points="0 0, 10 3.5, 0 7" class="m-default" />
-          </marker>
-          <marker id="arrowhead-emphasis" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-            <polygon points="0 0, 10 3.5, 0 7" class="m-emphasis" />
-          </marker>
-          <marker id="arrowhead-security" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-            <polygon points="0 0, 10 3.5, 0 7" class="m-security" />
-          </marker>
-          <marker id="arrowhead-dashed" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-            <polygon points="0 0, 10 3.5, 0 7" class="m-dashed" />
-          </marker>
-          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-            <path d="M 40 0 L 0 0 0 40" class="c-grid" stroke-width="0.5" />
-          </pattern>
-        </defs>
-        <style>
-          svg[data-node-ui] [data-node-id] &gt; rect:not(.c-mask) { stroke-width: 1.25px; }
-          :is([data-theme="dark"] svg[data-node-ui], svg[data-node-ui][data-theme="dark"]) [data-node-id] &gt; rect:not(.c-mask).c-frontend { fill: color-mix(in srgb, var(--frontend-stroke) 13%, var(--mask)); stroke: color-mix(in srgb, var(--frontend-stroke) 72%, var(--mask)); }
-          :is([data-theme="dark"] svg[data-node-ui], svg[data-node-ui][data-theme="dark"]) [data-node-id] &gt; rect:not(.c-mask).c-backend { fill: color-mix(in srgb, var(--backend-stroke) 13%, var(--mask)); stroke: color-mix(in srgb, var(--backend-stroke) 72%, var(--mask)); }
-          :is([data-theme="dark"] svg[data-node-ui], svg[data-node-ui][data-theme="dark"]) [data-node-id] &gt; rect:not(.c-mask).c-database { fill: color-mix(in srgb, var(--database-stroke) 13%, var(--mask)); stroke: color-mix(in srgb, var(--database-stroke) 72%, var(--mask)); }
-          :is([data-theme="dark"] svg[data-node-ui], svg[data-node-ui][data-theme="dark"]) [data-node-id] &gt; rect:not(.c-mask).c-cloud { fill: color-mix(in srgb, var(--cloud-stroke) 13%, var(--mask)); stroke: color-mix(in srgb, var(--cloud-stroke) 72%, var(--mask)); }
-          :is([data-theme="dark"] svg[data-node-ui], svg[data-node-ui][data-theme="dark"]) [data-node-id] &gt; rect:not(.c-mask).c-security { fill: color-mix(in srgb, var(--security-stroke) 13%, var(--mask)); stroke: color-mix(in srgb, var(--security-stroke) 72%, var(--mask)); }
-          :is([data-theme="dark"] svg[data-node-ui], svg[data-node-ui][data-theme="dark"]) [data-node-id] &gt; rect:not(.c-mask).c-messagebus { fill: color-mix(in srgb, var(--messagebus-stroke) 13%, var(--mask)); stroke: color-mix(in srgb, var(--messagebus-stroke) 72%, var(--mask)); }
-          :is([data-theme="dark"] svg[data-node-ui], svg[data-node-ui][data-theme="dark"]) [data-node-id] &gt; rect:not(.c-mask).c-external { fill: color-mix(in srgb, var(--external-stroke) 13%, var(--mask)); stroke: color-mix(in srgb, var(--external-stroke) 72%, var(--mask)); }
-          svg[data-node-ui]:is([data-preset="classic"], [data-preset="signal-flow"], [data-preset="editorial"]) .c-region { fill: color-mix(in srgb, var(--cloud-stroke) 3%, transparent); stroke: color-mix(in srgb, var(--cloud-stroke) 42%, var(--lane-stroke)); stroke-dasharray: none; }
-          svg[data-node-ui] .c-security-group { stroke: color-mix(in srgb, var(--security-stroke) 58%, var(--lane-stroke)); }
-          svg[data-node-ui]:is([data-preset="classic"], [data-preset="signal-flow"], [data-preset="editorial"]) .c-security-group { stroke-dasharray: 4 3; }
-          svg[data-node-ui]:is([data-preset="classic"], [data-preset="signal-flow"], [data-preset="editorial"]) .c-lane { stroke: var(--lane-stroke); stroke-dasharray: none; }
-          svg[data-node-ui] [data-graph-role="structural-frame-label-mask"] { rx: 5px; fill: color-mix(in srgb, var(--cloud-stroke) 10%, var(--mask)); stroke: color-mix(in srgb, var(--cloud-stroke) 38%, var(--mask)); stroke-width: .8px; }
-          svg[data-node-ui] [data-composition-frame-kind="security-group"] &gt; [data-graph-role="structural-frame-label-mask"] { fill: color-mix(in srgb, var(--security-stroke) 9%, var(--mask)); stroke: color-mix(in srgb, var(--security-stroke) 36%, var(--mask)); }
-          svg[data-node-ui] .phase-rule { opacity: .5; stroke-dasharray: none; }
-          svg[data-node-ui] .phase-chip { stroke: var(--lane-stroke); stroke-width: .75px; }
-          svg[data-node-ui] g[data-edge-from] &gt; rect.c-mask { rx: 7px; stroke: var(--lane-stroke); stroke-width: .75px; }
-          svg[data-node-ui][data-preset="blueprint"] :is([data-graph-role="structural-frame-label-mask"], g[data-edge-from] &gt; rect.c-mask, .phase-chip) { rx: 2px; }
-          svg[data-node-ui][data-preset="editorial"] :is([data-graph-role="structural-frame-label-mask"], g[data-edge-from] &gt; rect.c-mask, .phase-chip) { rx: 3px; }
-        </style>
-
-
-        <rect width="100%" height="100%" fill="url(#grid)" />
-
-
-
-
-
-        <g data-graph-role="automatic-crossover" style="--step:0">
-          <path data-graph-role="automatic-crossover-underlay" d="M 320 85 L 440 85" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
-          <path data-edge-from="peak" data-edge-to="group" data-edge-label="觀察與假說" data-edge-key="0" data-edge-id="peak-to-group" data-composition-points="320,85;440,85" data-composition-crossover="halo" data-composition-independent="true" d="M 320 85 L 440 85" class="a-default" style="--step:0" stroke-width="1.5" marker-end="url(#arrowhead)" />
-        </g>
-        <g data-graph-role="automatic-crossover" style="--step:1">
-          <path data-graph-role="automatic-crossover-underlay" d="M 720 78 L 840 78" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
-          <path data-edge-from="group" data-edge-to="revisit" data-edge-label="缺格准入" data-edge-key="1" data-edge-id="group-to-revisit" data-composition-points="720,78;840,78" data-composition-crossover="halo" data-composition-independent="true" d="M 720 78 L 840 78" class="a-default" style="--step:1" stroke-width="1.5" marker-end="url(#arrowhead)" />
-        </g>
-        <g data-graph-role="automatic-crossover" style="--step:2">
-          <path data-graph-role="automatic-crossover-underlay" d="M 580 130 L 580 260" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
-          <path data-edge-from="group" data-edge-to="closed" data-edge-label="既有證據" data-edge-key="2" data-edge-id="group-to-closed" data-composition-points="580,130;580,260" data-composition-crossover="halo" data-composition-independent="true" d="M 580 130 L 580 260" class="a-default" style="--step:2" stroke-width="1.5" marker-end="url(#arrowhead)" />
-        </g>
-        <g data-graph-role="automatic-crossover" style="--step:3">
-          <path data-graph-role="automatic-crossover-underlay" d="M 856 130 L 856 268 Q 856 276 848 276 L 720 276" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
-          <path data-edge-from="revisit" data-edge-to="closed" data-edge-label="補搜結果" data-edge-key="3" data-edge-id="revisit-to-closed" data-composition-points="856,130;856,276;720,276" data-composition-crossover="halo" data-composition-independent="true" d="M 856 130 L 856 268 Q 856 276 848 276 L 720 276" class="a-default" style="--step:3" stroke-width="1.5" marker-end="url(#arrowhead)" />
-        </g>
-        <g data-graph-role="automatic-crossover" style="--step:4">
-          <path data-graph-role="automatic-crossover-underlay" d="M 580 350 L 580 480" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
-          <path data-edge-from="closed" data-edge-to="decision" data-edge-label="科學閉合" data-edge-key="4" data-edge-id="closed-to-decision" data-composition-points="580,350;580,480" data-composition-crossover="halo" data-composition-independent="true" d="M 580 350 L 580 480" class="a-default" style="--step:4" stroke-width="1.5" marker-end="url(#arrowhead)" />
-        </g>
-        <g data-graph-role="automatic-crossover" style="--step:5">
-          <path data-graph-role="automatic-crossover-underlay" d="M 440 554 L 292 554 Q 284 554 284 562 L 284 700" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
-          <path data-edge-from="decision" data-edge-to="numeric" data-edge-label="有效數值" data-edge-key="5" data-edge-id="decision-to-numeric" data-composition-points="440,554;284,554;284,700" data-composition-crossover="halo" data-composition-independent="true" d="M 440 554 L 292 554 Q 284 554 284 562 L 284 700" class="a-default" style="--step:5" stroke-width="1.5" marker-end="url(#arrowhead)" />
-        </g>
-        <g data-graph-role="automatic-crossover" style="--step:6">
-          <path data-graph-role="automatic-crossover-underlay" d="M 720 554 L 848 554 Q 856 554 856 562 L 856 700" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
-          <path data-edge-from="decision" data-edge-to="no-write" data-edge-label="其他終態" data-edge-key="6" data-edge-id="decision-to-no-write" data-composition-points="720,554;856,554;856,700" data-composition-crossover="halo" data-composition-independent="true" d="M 720 554 L 848 554 Q 856 554 856 562 L 856 700" class="a-default" style="--step:6" stroke-width="1.5" marker-end="url(#arrowhead)" />
-        </g>
-        <g data-graph-role="automatic-crossover" style="--step:7">
-          <path data-graph-role="automatic-crossover-underlay" d="M 284 790 L 284 928 Q 284 936 292 936 L 440 936" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
-          <path data-edge-from="numeric" data-edge-to="projection" data-edge-label="數值答案" data-edge-key="7" data-edge-id="numeric-to-projection" data-composition-points="284,790;284,936;440,936" data-composition-crossover="halo" data-composition-independent="true" d="M 284 790 L 284 928 Q 284 936 292 936 L 440 936" class="a-default" style="--step:7" stroke-width="1.5" marker-end="url(#arrowhead)" />
-        </g>
-        <g data-graph-role="automatic-crossover" style="--step:8">
-          <path data-graph-role="automatic-crossover-underlay" d="M 856 790 L 856 928 Q 856 936 848 936 L 720 936" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
-          <path data-edge-from="no-write" data-edge-to="projection" data-edge-label="理由與證據" data-edge-key="8" data-edge-id="no-write-to-projection" data-composition-points="856,790;856,936;720,936" data-composition-crossover="halo" data-composition-independent="true" d="M 856 790 L 856 928 Q 856 936 848 936 L 720 936" class="a-default" style="--step:8" stroke-width="1.5" marker-end="url(#arrowhead)" />
-        </g>
-
-
-        <g id="node-peak" data-node-id="peak" data-node-label="這段訊號有什麼峰證據？" aria-label="聚焦這段訊號有什麼峰證據？，峰界、積分、候選假說與來源, 架構元件" data-node-kind="backend" data-node-sublabel="峰界、積分、候選假說與來源" data-node-context="架構元件">
-          <title>這段訊號有什麼峰證據？ · 峰界、積分、候選假說與來源 · 架構元件</title>
-          <rect x="40" y="40" width="280" height="90" rx="8" class="c-mask" />
-          <rect x="40" y="40" width="280" height="90" rx="8" class="c-backend" style="--step:0" stroke-width="1.5" />
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(46 46) scale(0.6875)">
-            <path d="M6 3 3 8l3 5M10 3l3 5-3 5" />
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="180" y="83" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">這段訊號有什麼峰證據？</text>
-        <text data-detail="context" x="180" y="99" class="t-muted" font-size="9" text-anchor="middle">峰界、積分、候選假說與來源</text>
-        </g>
-
-        <g id="node-group" data-node-id="group" data-node-label="哪些觀察屬於同一群？" aria-label="聚焦哪些觀察屬於同一群？，CrossSample 決定成員與群組身分, 架構元件" data-node-kind="backend" data-node-sublabel="CrossSample 決定成員與群組身分" data-node-context="架構元件">
-          <title>哪些觀察屬於同一群？ · CrossSample 決定成員與群組身分 · 架構元件</title>
-          <rect x="440" y="40" width="280" height="90" rx="8" class="c-mask" />
-          <rect x="440" y="40" width="280" height="90" rx="8" class="c-backend" style="--step:1" stroke-width="1.5" />
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(446 46) scale(0.6875)">
-            <path d="M6 3 3 8l3 5M10 3l3 5-3 5" />
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="580" y="83" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">哪些觀察屬於同一群？</text>
-        <text data-detail="context" x="580" y="99" class="t-muted" font-size="9" text-anchor="middle">CrossSample 決定成員與群組身分</text>
-        </g>
-
-        <g id="node-revisit" data-node-id="revisit" data-node-label="缺格能否在脈絡下補搜？" aria-label="聚焦缺格能否在脈絡下補搜？，通過准入才補證，不自行選值, 架構元件" data-node-kind="backend" data-node-sublabel="通過准入才補證，不自行選值" data-node-context="架構元件">
-          <title>缺格能否在脈絡下補搜？ · 通過准入才補證，不自行選值 · 架構元件</title>
-          <rect x="840" y="40" width="260" height="90" rx="8" class="c-mask" />
-          <rect x="840" y="40" width="260" height="90" rx="8" class="c-backend" style="--step:2" stroke-width="1.5" />
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(846 46) scale(0.6875)">
-            <path d="M6 3 3 8l3 5M10 3l3 5-3 5" />
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="970" y="83" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">缺格能否在脈絡下補搜？</text>
-        <text data-detail="context" x="970" y="99" class="t-muted" font-size="9" text-anchor="middle">通過准入才補證，不自行選值</text>
-        </g>
-
-        <g id="node-closed" data-node-id="closed" data-node-label="把原始與補搜證據閉合" aria-label="聚焦把原始與補搜證據閉合，保留群組權威結果與觀察終態, 架構元件" data-node-kind="backend" data-node-sublabel="保留群組權威結果與觀察終態" data-node-context="架構元件">
-          <title>把原始與補搜證據閉合 · 保留群組權威結果與觀察終態 · 架構元件</title>
-          <rect x="440" y="260" width="280" height="90" rx="8" class="c-mask" />
-          <rect x="440" y="260" width="280" height="90" rx="8" class="c-backend" style="--step:3" stroke-width="1.5" />
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(446 266) scale(0.6875)">
-            <path d="M6 3 3 8l3 5M10 3l3 5-3 5" />
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="580" y="303" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">把原始與補搜證據閉合</text>
-        <text data-detail="context" x="580" y="319" class="t-muted" font-size="9" text-anchor="middle">保留群組權威結果與觀察終態</text>
-        </g>
-
-        <g id="node-decision" data-node-id="decision" data-node-label="這一格能交付什麼？" aria-label="聚焦這一格能交付什麼？，cell decision 保留選定積分與答案, 架構元件" data-node-kind="backend" data-node-sublabel="cell decision 保留選定積分與答案" data-node-context="架構元件">
-          <title>這一格能交付什麼？ · cell decision 保留選定積分與答案 · 架構元件</title>
-          <rect x="440" y="480" width="280" height="90" rx="8" class="c-mask" />
-          <rect x="440" y="480" width="280" height="90" rx="8" class="c-backend" style="--step:5" stroke-width="1.5" />
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(446 486) scale(0.6875)">
-            <path d="M6 3 3 8l3 5M10 3l3 5-3 5" />
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="580" y="523" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">這一格能交付什麼？</text>
-        <text data-detail="context" x="580" y="539" class="t-muted" font-size="9" text-anchor="middle">cell decision 保留選定積分與答案</text>
-        </g>
-
-        <g id="node-numeric" data-node-id="numeric" data-node-label="有可交付的數值" aria-label="聚焦有可交付的數值，數值答案不等同 counted detection, 架構元件" data-node-kind="backend" data-node-sublabel="數值答案不等同 counted detection" data-node-context="架構元件">
-          <title>有可交付的數值 · 數值答案不等同 counted detection · 架構元件</title>
-          <rect x="40" y="700" width="260" height="90" rx="8" class="c-mask" />
-          <rect x="40" y="700" width="260" height="90" rx="8" class="c-backend" style="--step:6" stroke-width="1.5" />
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(46 706) scale(0.6875)">
-            <path d="M6 3 3 8l3 5M10 3l3 5-3 5" />
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="170" y="743" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">有可交付的數值</text>
-        <text data-detail="context" x="170" y="759" class="t-muted" font-size="9" text-anchor="middle">數值答案不等同 counted detection</text>
-        </g>
-
-        <g id="node-no-write" data-node-id="no-write" data-node-label="保留不寫入理由" aria-label="聚焦保留不寫入理由，未搜尋／無觀察／未解決等終態, 架構元件" data-node-kind="backend" data-node-sublabel="未搜尋／無觀察／未解決等終態" data-node-context="架構元件">
-          <title>保留不寫入理由 · 未搜尋／無觀察／未解決等終態 · 架構元件</title>
-          <rect x="840" y="700" width="260" height="90" rx="8" class="c-mask" />
-          <rect x="840" y="700" width="260" height="90" rx="8" class="c-backend" style="--step:7" stroke-width="1.5" />
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(846 706) scale(0.6875)">
-            <path d="M6 3 3 8l3 5M10 3l3 5-3 5" />
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="970" y="743" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">保留不寫入理由</text>
-        <text data-detail="context" x="970" y="759" class="t-muted" font-size="9" text-anchor="middle">未搜尋／無觀察／未解決等終態</text>
-        </g>
-
-        <g id="node-projection" data-node-id="projection" data-node-label="各自投影，再由 writer 交付" aria-label="聚焦各自投影，再由 writer 交付，保留既有答案，不重新選值, 架構元件" data-node-kind="backend" data-node-sublabel="保留既有答案，不重新選值" data-node-context="架構元件">
-          <title>各自投影，再由 writer 交付 · 保留既有答案，不重新選值 · 架構元件</title>
-          <rect x="440" y="920" width="280" height="90" rx="8" class="c-mask" />
-          <rect x="440" y="920" width="280" height="90" rx="8" class="c-backend" style="--step:8" stroke-width="1.5" />
-          <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(446 926) scale(0.6875)">
-            <path d="M6 3 3 8l3 5M10 3l3 5-3 5" />
-          </g>
-          <text data-node-label="" data-detail-anchor="" x="580" y="963" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">各自投影，再由 writer 交付</text>
-        <text data-detail="context" x="580" y="979" class="t-muted" font-size="9" text-anchor="middle">保留既有答案，不重新選值</text>
-        </g>
-
-
-        <g data-detail="context" data-edge-from="peak" data-edge-to="group" data-edge-label="觀察與假說" data-edge-key="0" data-edge-id="peak-to-group">
-          <rect x="351" y="65" width="58" height="14" rx="3" class="c-mask" />
-          <text x="380" y="75" class="t-edge-default" font-size="8" text-anchor="middle">觀察與假說</text>
-        </g>
-        <g data-detail="context" data-edge-from="group" data-edge-to="revisit" data-edge-label="缺格准入" data-edge-key="1" data-edge-id="group-to-revisit">
-          <rect x="755.8" y="58" width="48.4" height="14" rx="3" class="c-mask" />
-          <text x="780" y="68" class="t-edge-default" font-size="8" text-anchor="middle">缺格准入</text>
-        </g>
-        <g data-detail="context" data-edge-from="group" data-edge-to="closed" data-edge-label="既有證據" data-edge-key="2" data-edge-id="group-to-closed">
-          <rect x="525.5999999999999" y="188" width="48.4" height="14" rx="3" class="c-mask" />
-          <text x="549.8" y="198" class="t-edge-default" font-size="8" text-anchor="middle">既有證據</text>
-        </g>
-        <g data-detail="context" data-edge-from="revisit" data-edge-to="closed" data-edge-label="補搜結果" data-edge-key="3" data-edge-id="revisit-to-closed">
-          <rect x="763.8" y="256" width="48.4" height="14" rx="3" class="c-mask" />
-          <text x="788" y="266" class="t-edge-default" font-size="8" text-anchor="middle">補搜結果</text>
-        </g>
-        <g data-detail="context" data-edge-from="closed" data-edge-to="decision" data-edge-label="科學閉合" data-edge-key="4" data-edge-id="closed-to-decision">
-          <rect x="525.5999999999999" y="408" width="48.4" height="14" rx="3" class="c-mask" />
-          <text x="549.8" y="418" class="t-edge-default" font-size="8" text-anchor="middle">科學閉合</text>
-        </g>
-        <g data-detail="context" data-edge-from="decision" data-edge-to="numeric" data-edge-label="有效數值" data-edge-key="5" data-edge-id="decision-to-numeric">
-          <rect x="259.8" y="607" width="48.4" height="14" rx="3" class="c-mask" />
-          <text x="284" y="617" class="t-edge-default" font-size="8" text-anchor="middle">有效數值</text>
-        </g>
-        <g data-detail="context" data-edge-from="decision" data-edge-to="no-write" data-edge-label="其他終態" data-edge-key="6" data-edge-id="decision-to-no-write">
-          <rect x="831.8" y="607" width="48.4" height="14" rx="3" class="c-mask" />
-          <text x="856" y="617" class="t-edge-default" font-size="8" text-anchor="middle">其他終態</text>
-        </g>
-        <g data-detail="context" data-edge-from="numeric" data-edge-to="projection" data-edge-label="數值答案" data-edge-key="7" data-edge-id="numeric-to-projection">
-          <rect x="337.8" y="916" width="48.4" height="14" rx="3" class="c-mask" />
-          <text x="362" y="926" class="t-edge-default" font-size="8" text-anchor="middle">數值答案</text>
-        </g>
-        <g data-detail="context" data-edge-from="no-write" data-edge-to="projection" data-edge-label="理由與證據" data-edge-key="8" data-edge-id="no-write-to-projection">
-          <rect x="759" y="916" width="58" height="14" rx="3" class="c-mask" />
-          <text x="788" y="926" class="t-edge-default" font-size="8" text-anchor="middle">理由與證據</text>
-        </g>
-
-
-
-
-
-        <g data-legend="" data-legend-bridge="">
-          <text x="40" y="1042" class="t-primary" font-size="12" font-weight="650">圖例</text>
-          <g data-legend-semantic-kind="backend" data-legend-kind="backend" data-legend-label="後端" data-legend-x="40" data-legend-baseline="1062" data-legend-width="68">
-            <rect x="40" y="1053" width="16" height="10" rx="2.5" class="c-backend" stroke-width="1" />
-            <text x="62" y="1062" class="t-muted" font-size="10" font-weight="500">後端</text>
-          </g>
-        </g>
-      </svg>
+.c-mask.edge-label { rx: 7px; stroke: var(--lane-stroke); stroke-width: .75px; }
+</style>
+  <title id="archify-diagram-title">從觀察到格值：三種判斷不能混在一起</title>
+  <desc id="archify-diagram-description">由 Archify 產生的架構圖。</desc>
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" class="m-default" />
+    </marker>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" class="c-grid" stroke-width="0.5" />
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#grid)" />
+  <g>
+    <path d="M 320 85 L 440 85" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
+    <path d="M 320 85 L 440 85" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)" />
+  </g>
+  <g>
+    <path d="M 720 78 L 840 78" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
+    <path d="M 720 78 L 840 78" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)" />
+  </g>
+  <g>
+    <path d="M 580 130 L 580 260" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
+    <path d="M 580 130 L 580 260" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)" />
+  </g>
+  <g>
+    <path d="M 856 130 L 856 268 Q 856 276 848 276 L 720 276" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
+    <path d="M 856 130 L 856 268 Q 856 276 848 276 L 720 276" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)" />
+  </g>
+  <g>
+    <path d="M 580 350 L 580 480" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
+    <path d="M 580 350 L 580 480" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)" />
+  </g>
+  <g>
+    <path d="M 440 554 L 292 554 Q 284 554 284 562 L 284 700" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
+    <path d="M 440 554 L 292 554 Q 284 554 284 562 L 284 700" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)" />
+  </g>
+  <g>
+    <path d="M 720 554 L 848 554 Q 856 554 856 562 L 856 700" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
+    <path d="M 720 554 L 848 554 Q 856 554 856 562 L 856 700" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)" />
+  </g>
+  <g>
+    <path d="M 284 790 L 284 928 Q 284 936 292 936 L 440 936" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
+    <path d="M 284 790 L 284 928 Q 284 936 292 936 L 440 936" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)" />
+  </g>
+  <g>
+    <path d="M 856 790 L 856 928 Q 856 936 848 936 L 720 936" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
+    <path d="M 856 790 L 856 928 Q 856 936 848 936 L 720 936" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)" />
+  </g>
+  <g>
+    <title>這段訊號有什麼峰證據？ · 峰界、積分、候選假說與來源 · 架構元件</title>
+    <rect x="40" y="40" width="280" height="90" rx="8" class="c-mask" />
+    <rect x="40" y="40" width="280" height="90" rx="8" class="c-backend" stroke-width="1.25px" />
+    <g aria-hidden="true" class="semantic-sigil s-backend" transform="translate(46 46) scale(0.6875)">
+      <path d="M6 3 3 8l3 5M10 3l3 5-3 5" />
+    </g>
+    <text x="180" y="83" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">這段訊號有什麼峰證據？</text>
+    <text x="180" y="99" class="t-muted" font-size="9" text-anchor="middle">峰界、積分、候選假說與來源</text>
+  </g>
+  <g>
+    <title>哪些觀察屬於同一群？ · CrossSample 決定成員與群組身分 · 架構元件</title>
+    <rect x="440" y="40" width="280" height="90" rx="8" class="c-mask" />
+    <rect x="440" y="40" width="280" height="90" rx="8" class="c-backend" stroke-width="1.25px" />
+    <g aria-hidden="true" class="semantic-sigil s-backend" transform="translate(446 46) scale(0.6875)">
+      <path d="M6 3 3 8l3 5M10 3l3 5-3 5" />
+    </g>
+    <text x="580" y="83" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">哪些觀察屬於同一群？</text>
+    <text x="580" y="99" class="t-muted" font-size="9" text-anchor="middle">CrossSample 決定成員與群組身分</text>
+  </g>
+  <g>
+    <title>缺格能否在脈絡下補搜？ · 通過准入才補證，不自行選值 · 架構元件</title>
+    <rect x="840" y="40" width="260" height="90" rx="8" class="c-mask" />
+    <rect x="840" y="40" width="260" height="90" rx="8" class="c-backend" stroke-width="1.25px" />
+    <g aria-hidden="true" class="semantic-sigil s-backend" transform="translate(846 46) scale(0.6875)">
+      <path d="M6 3 3 8l3 5M10 3l3 5-3 5" />
+    </g>
+    <text x="970" y="83" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">缺格能否在脈絡下補搜？</text>
+    <text x="970" y="99" class="t-muted" font-size="9" text-anchor="middle">通過准入才補證，不自行選值</text>
+  </g>
+  <g>
+    <title>把原始與補搜證據閉合 · 保留群組權威結果與觀察終態 · 架構元件</title>
+    <rect x="440" y="260" width="280" height="90" rx="8" class="c-mask" />
+    <rect x="440" y="260" width="280" height="90" rx="8" class="c-backend" stroke-width="1.25px" />
+    <g aria-hidden="true" class="semantic-sigil s-backend" transform="translate(446 266) scale(0.6875)">
+      <path d="M6 3 3 8l3 5M10 3l3 5-3 5" />
+    </g>
+    <text x="580" y="303" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">把原始與補搜證據閉合</text>
+    <text x="580" y="319" class="t-muted" font-size="9" text-anchor="middle">保留群組權威結果與觀察終態</text>
+  </g>
+  <g>
+    <title>這一格能交付什麼？ · cell decision 保留選定積分與答案 · 架構元件</title>
+    <rect x="440" y="480" width="280" height="90" rx="8" class="c-mask" />
+    <rect x="440" y="480" width="280" height="90" rx="8" class="c-backend" stroke-width="1.25px" />
+    <g aria-hidden="true" class="semantic-sigil s-backend" transform="translate(446 486) scale(0.6875)">
+      <path d="M6 3 3 8l3 5M10 3l3 5-3 5" />
+    </g>
+    <text x="580" y="523" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">這一格能交付什麼？</text>
+    <text x="580" y="539" class="t-muted" font-size="9" text-anchor="middle">cell decision 保留選定積分與答案</text>
+  </g>
+  <g>
+    <title>有可交付的數值 · 數值答案不等同 counted detection · 架構元件</title>
+    <rect x="40" y="700" width="260" height="90" rx="8" class="c-mask" />
+    <rect x="40" y="700" width="260" height="90" rx="8" class="c-backend" stroke-width="1.25px" />
+    <g aria-hidden="true" class="semantic-sigil s-backend" transform="translate(46 706) scale(0.6875)">
+      <path d="M6 3 3 8l3 5M10 3l3 5-3 5" />
+    </g>
+    <text x="170" y="743" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">有可交付的數值</text>
+    <text x="170" y="759" class="t-muted" font-size="9" text-anchor="middle">數值答案不等同 counted detection</text>
+  </g>
+  <g>
+    <title>保留不寫入理由 · 未搜尋／無觀察／未解決等終態 · 架構元件</title>
+    <rect x="840" y="700" width="260" height="90" rx="8" class="c-mask" />
+    <rect x="840" y="700" width="260" height="90" rx="8" class="c-backend" stroke-width="1.25px" />
+    <g aria-hidden="true" class="semantic-sigil s-backend" transform="translate(846 706) scale(0.6875)">
+      <path d="M6 3 3 8l3 5M10 3l3 5-3 5" />
+    </g>
+    <text x="970" y="743" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">保留不寫入理由</text>
+    <text x="970" y="759" class="t-muted" font-size="9" text-anchor="middle">未搜尋／無觀察／未解決等終態</text>
+  </g>
+  <g>
+    <title>各自投影，再由 writer 交付 · 保留既有答案，不重新選值 · 架構元件</title>
+    <rect x="440" y="920" width="280" height="90" rx="8" class="c-mask" />
+    <rect x="440" y="920" width="280" height="90" rx="8" class="c-backend" stroke-width="1.25px" />
+    <g aria-hidden="true" class="semantic-sigil s-backend" transform="translate(446 926) scale(0.6875)">
+      <path d="M6 3 3 8l3 5M10 3l3 5-3 5" />
+    </g>
+    <text x="580" y="963" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">各自投影，再由 writer 交付</text>
+    <text x="580" y="979" class="t-muted" font-size="9" text-anchor="middle">保留既有答案，不重新選值</text>
+  </g>
+  <g>
+    <rect x="351" y="65" width="58" height="14" rx="3" class="c-mask edge-label" />
+    <text x="380" y="75" class="t-edge-default" font-size="8" text-anchor="middle">觀察與假說</text>
+  </g>
+  <g>
+    <rect x="755.8" y="58" width="48.4" height="14" rx="3" class="c-mask edge-label" />
+    <text x="780" y="68" class="t-edge-default" font-size="8" text-anchor="middle">缺格准入</text>
+  </g>
+  <g>
+    <rect x="525.5999999999999" y="188" width="48.4" height="14" rx="3" class="c-mask edge-label" />
+    <text x="549.8" y="198" class="t-edge-default" font-size="8" text-anchor="middle">既有證據</text>
+  </g>
+  <g>
+    <rect x="763.8" y="256" width="48.4" height="14" rx="3" class="c-mask edge-label" />
+    <text x="788" y="266" class="t-edge-default" font-size="8" text-anchor="middle">補搜結果</text>
+  </g>
+  <g>
+    <rect x="525.5999999999999" y="408" width="48.4" height="14" rx="3" class="c-mask edge-label" />
+    <text x="549.8" y="418" class="t-edge-default" font-size="8" text-anchor="middle">科學閉合</text>
+  </g>
+  <g>
+    <rect x="259.8" y="607" width="48.4" height="14" rx="3" class="c-mask edge-label" />
+    <text x="284" y="617" class="t-edge-default" font-size="8" text-anchor="middle">有效數值</text>
+  </g>
+  <g>
+    <rect x="831.8" y="607" width="48.4" height="14" rx="3" class="c-mask edge-label" />
+    <text x="856" y="617" class="t-edge-default" font-size="8" text-anchor="middle">其他終態</text>
+  </g>
+  <g>
+    <rect x="337.8" y="916" width="48.4" height="14" rx="3" class="c-mask edge-label" />
+    <text x="362" y="926" class="t-edge-default" font-size="8" text-anchor="middle">數值答案</text>
+  </g>
+  <g>
+    <rect x="759" y="916" width="58" height="14" rx="3" class="c-mask edge-label" />
+    <text x="788" y="926" class="t-edge-default" font-size="8" text-anchor="middle">理由與證據</text>
+  </g>
+  <g>
+    <text x="40" y="1042" class="t-primary" font-size="12" font-weight="650">圖例</text>
+    <g>
+      <rect x="40" y="1053" width="16" height="10" rx="2.5" class="c-backend" stroke-width="1" />
+      <text x="62" y="1062" class="t-muted" font-size="10" font-weight="500">後端</text>
+    </g>
+  </g>
+</svg>

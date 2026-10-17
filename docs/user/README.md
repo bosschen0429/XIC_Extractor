@@ -100,8 +100,12 @@ if ($LASTEXITCODE -ne 0) { throw 'SVG export failed' }
 ```
 
 The documentation-only exporter supports the classic Architecture preset in
-Archify 3.1.0. It retains the authored SVG geometry, semantic colors, labels,
-and node/frame paint, but omits viewer controls, animation, and embedded fonts.
+Archify 3.1.0 for the current node-and-edge maps. It retains authored geometry,
+colors, labels, tooltips and static paint, but removes viewer metadata,
+animation steps, unused styles/variables/definitions and embedded fonts. Node
+outlines and edge-label masks keep their static paint without viewer selectors.
+Structural-frame layouts require an exporter update and are rejected rather
+than silently losing their context-sensitive paint.
 The SVG is not an interactive source inspector; source references remain in
 the JSON and local full HTML. Check the tool's format assumptions before
 upgrading Archify.
