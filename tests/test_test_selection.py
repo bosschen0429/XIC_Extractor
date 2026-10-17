@@ -50,11 +50,18 @@ def selection_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "seltests/test_register.py": "REGISTER = 'registers/catalog.tsv'\n",
         "resources/presets/rna_case.toml": "name = 'rna'\n",
         "selpkg/resource_loader.py": (
-            "NAME = BASE / 'presets' / ('rna_case' + '.toml')\n"
+            '"""See docs/guide.md."""\n'
+            "NAME = BASE / 'presets' / ('rna_case' + '.toml')  # docs/guide.md\n"
+            "class Guide:\n"
+            '    """See docs/guide.md."""\n'
+            "def describe():\n"
+            '    """See docs/guide.md."""\n'
         ),
         "seltests/test_resource.py": "from selpkg.resource_loader import NAME\n",
         "config/settings.toml": "mode = 'default'\n",
         "seltests/test_settings.py": "SETTINGS = 'config/settings.toml'\n",
+        ".importlinter": "[importlinter]\nroot_package = selpkg\n",
+        "seltests/test_dependency_contract.py": "CONTRACT = '.importlinter'\n",
     }
     for relative, text in files.items():
         path = tmp_path / relative
@@ -112,6 +119,8 @@ def test_path_named_by_a_test_or_a_register_is_selected_without_an_import(
         ("seltests/fixtures/case.json", ("seltests/test_fixture.py",)),
         ("selpkg/data/preset.toml", ("seltests/test_loader.py",)),
         ("resources/presets/rna_case.toml", ("seltests/test_resource.py",)),
+        ("config/settings.toml", ("seltests/test_settings.py",)),
+        (".importlinter", ("seltests/test_dependency_contract.py",)),
     ),
 )
 def test_data_file_selects_tests_reading_it(
@@ -131,7 +140,6 @@ def test_relevant_marker_selects_every_test_carrying_it(selection_repo: Path) ->
     "changed",
     (
         "assets/unreferenced.bin",
-        "config/settings.toml",
         "pyproject.toml",
         "uv.lock",
         "seltests/conftest.py",
@@ -152,16 +160,6 @@ def test_snapshot_marker_cannot_grow_without_a_recorded_decision() -> None:
     # The marker removes a test from CI, so marking a test without recording it
     # here fails.
     assert discover_snapshot_tests() == SNAPSHOT_TESTS
-
-
-def test_recorded_snapshot_tests_still_exist() -> None:
-    # A registry entry for a renamed or deleted test would silently stop
-    # protecting anything.
-    discovered = discover_snapshot_tests()
-    for path, names in SNAPSHOT_TESTS.items():
-        assert path in discovered, path
-        for name in names:
-            assert name in discovered[path], f"{path}::{name}"
 
 
 @pytest.mark.parametrize(
@@ -351,7 +349,7 @@ def test_snapshot_runner_rejects_malformed_marker_before_pytest(
         ("xic_extractor.spec", {"packaging_build"}),
         (".github/workflows/build.yml", {"packaging_build"}),
         (".github/workflows/ci.yml", {"packaging_build", "browser_e2e"}),
-        ("tests/test_test_selection.py", {"packaging_build", "browser_e2e"}),
+        ("tests/test_test_selection.py", set()),
         ("tests/test_pyinstaller_spec.py", {"packaging_build"}),
         (
             "xic_extractor/discovery/data/default_background_library_15min.json.gz",
@@ -439,6 +437,14 @@ def test_ci_reads_the_plan_from_the_selection_owner() -> None:
     (
         ("push", (), None, "", 0, 0),
         ("pull_request", (".github/workflows/ci.yml",), None, "", 0, 0),
+        (
+            "pull_request",
+            ("tests/test_test_selection.py",),
+            ("tests/test_test_selection.py",),
+            "",
+            0,
+            0,
+        ),
         (
             "pull_request",
             ("tests/test_workbench_browser.py",),

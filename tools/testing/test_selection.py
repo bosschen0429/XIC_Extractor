@@ -16,10 +16,12 @@ from __future__ import annotations
 
 import argparse
 import ast
+import io
 import re
 import shutil
 import subprocess
 import sys
+import tokenize
 from dataclasses import dataclass
 from importlib.util import find_spec
 from pathlib import Path
@@ -38,8 +40,8 @@ FIRST_PARTY_PACKAGES = (
 
 # Inputs that configure every test session. A change here runs the whole suite.
 FULL_RUN_INPUTS = re.compile(
-    r"^(pyproject\.toml|uv\.lock|\.importlinter|(.*/)?conftest\.py"
-    r"|tools/testing/test_selection\.py|config/.*)$"
+    r"^(pyproject\.toml|uv\.lock|(.*/)?conftest\.py"
+    r"|tools/testing/test_selection\.py)$"
 )
 # Text files a register-reading test can open; one that lists a changed path
 # links that path to the tests reading it.
@@ -75,7 +77,7 @@ SNAPSHOT_MARKER = "ledger_snapshot"
 RELEVANCE_RULES: dict[str, re.Pattern[str]] = {
     "browser_e2e": re.compile(
         r"^(xic_workbench/|xic_inspector/"
-        r"|tests/test_(workbench_browser|xic_inspector_browser|xic_inspector_api|test_selection)\.py$"
+        r"|tests/test_(workbench_browser|xic_inspector_browser|xic_inspector_api)\.py$"
         r"|tools/testing/test_selection\.py$|\.github/workflows/ci\.yml$"
         r"|pyproject\.toml$|uv\.lock$)"
     ),
@@ -85,7 +87,7 @@ RELEVANCE_RULES: dict[str, re.Pattern[str]] = {
     "packaging_build": re.compile(
         r"^((pyproject\.toml|uv\.lock|xic_extractor\.spec)$"
         r"|\.github/workflows/(build|ci)\.yml$"
-        r"|tests/test_(pyinstaller_spec|test_selection)\.py$"
+        r"|tests/test_pyinstaller_spec\.py$"
         r"|(xic_extractor|xic_inspector|xic_workbench|scripts|tools|assets|config)/)"
     ),
     "product_governance": re.compile(
@@ -184,7 +186,7 @@ class _Repository:
         # Test files that name a path are matched directly; counting them as
         # owners would also select every test that imports their helpers.
         self.module_sources = {
-            module: _read(path)
+            module: _dependency_source(path)
             for package in packages
             for path in (root / package).rglob("*.py")
             if (module := _module_name(path.relative_to(root).as_posix()))
@@ -278,6 +280,39 @@ def _tracked_files(root: Path) -> list[str]:
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
+
+
+def _dependency_source(path: Path) -> str:
+    """Keep executable source spellings, not paths mentioned only in prose."""
+    source = _read(path)
+    docstrings = []
+    for node in ast.walk(ast.parse(source)):
+        if (
+            isinstance(
+                node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+            )
+            and ast.get_docstring(node, clean=False) is not None
+        ):
+            value = node.body[0].value
+            docstrings.append(
+                (
+                    (value.lineno, value.col_offset),
+                    (value.end_lineno, value.end_col_offset),
+                )
+            )
+    lines = source.splitlines()
+    tokens = []
+    for token in tokenize.generate_tokens(io.StringIO(source).readline):
+        if token.type == tokenize.COMMENT:
+            continue
+        if token.type == tokenize.STRING:
+            line, column = token.start
+            # AST columns count UTF-8 bytes; tokenize columns count characters.
+            position = (line, len(lines[line - 1][:column].encode("utf-8")))
+            if any(start <= position < end for start, end in docstrings):
+                continue
+        tokens.append(token)
+    return tokenize.untokenize(tokens)
 
 
 def _module_name(path: str) -> str:
