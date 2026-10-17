@@ -81,9 +81,10 @@ delivery seam as if they were already final.
 - This in-process handoff does not define a durable decision carrier by
   itself. File-backed acceptance used by the golden path remains governed by
   the Acceptance authority contract.
-- The live cell-decision owner is `ProductionCellDecision` in
-  `alignment/cell_decision/owner.py`. Target and Untarget post-cell
-  projections consume its decisions.
+- The live cell-decision owner is `alignment/cell_decision/owner.py`. Target
+  retains its fixed-row decision path. Untarget completes payload and selected
+  integration from group/sample evidence before its single Matrix projection
+  wraps them in `ProductionCellDecision` with the published row/cell identity.
 - `ProductionDecisionSet` in `alignment/production_decisions.py` is the
   writer-input projection of those finalized decisions for the existing TSV,
   XLSX, and HTML writers. `ProductionDecisionSet` holds a separate

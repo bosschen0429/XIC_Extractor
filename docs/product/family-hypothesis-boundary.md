@@ -73,8 +73,8 @@ standalone product truth.
 | `CrossSamplePeakGroupHypothesis` | Cross-sample owner/group identity, membership, disposition, and lineage via `group_hypothesis_id` | Per-peak integration truth, Backfill, or ProductWriter authority |
 | `PeakHypothesis` | Candidate peak identity, evidence context, selected hypothesis semantics | Cross-sample grouping policy or final matrix writing |
 | ObservationRevisit | Retained typed receipt for a bounded local revisit result or no-result | Membership, selected value, group origin, or recursive support |
-| ProductionCellDecision | Selected value or typed no-write for an explicit Target/Group subject | Row identity, RAW access, grouping, or rendering |
-| Product projection / ProductWriter | Pre-cell row binding/subject construction; post-cell inclusion, counted detection, product state, routing, delivery shape, and authorized rendering | Low-level evidence extraction, grouping, Backfill, or value recomputation |
+| Cell decision / ProductionCellDecision | Selects value or typed no-write from a Target subject or completed group/sample evidence; packages the answer for output | RAW access, grouping, or rendering; output identity cannot be a prerequisite for Untarget value selection |
+| Product projection / ProductWriter | Target fixed-row binding; Untarget row/cell identity after completed Feature × Sample answers; inclusion, counted detection, product state, routing, delivery shape, and authorized rendering | Low-level evidence extraction, grouping, Backfill, or value recomputation |
 
 ## Migration Rule
 

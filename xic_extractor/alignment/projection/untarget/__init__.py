@@ -1,37 +1,33 @@
 """Untargeted workflow projection contracts."""
 
-from xic_extractor.alignment.projection.untarget.post_cell import (
+from xic_extractor.alignment.projection.untarget.identity import (
+    GroupCellSubject,
+    UntargetProjectionContractError,
+    UntargetRowKey,
+)
+from xic_extractor.alignment.projection.untarget.matrix import (
     UntargetDecisionVariant,
     UntargetDecisionVariantCount,
-    UntargetPostCellProjection,
-    UntargetPostCellRow,
+    UntargetMatrixProjection,
+    UntargetMatrixRow,
     UntargetRowDecisionCounts,
     UntargetRowDestination,
     UntargetRowRoute,
-    project_untarget_post_cell,
-    validate_untarget_post_cell_projection,
-)
-from xic_extractor.alignment.projection.untarget.pre_cell import (
-    GroupCellSubject,
-    UntargetPreCellProjection,
-    UntargetProjectionContractError,
-    UntargetRowKey,
-    project_untarget_pre_cell,
+    project_untarget_matrix,
+    validate_untarget_matrix_projection,
 )
 
 __all__ = (
     "GroupCellSubject",
     "UntargetDecisionVariant",
     "UntargetDecisionVariantCount",
-    "UntargetPostCellProjection",
-    "UntargetPostCellRow",
-    "UntargetPreCellProjection",
+    "UntargetMatrixProjection",
+    "UntargetMatrixRow",
     "UntargetProjectionContractError",
     "UntargetRowDecisionCounts",
     "UntargetRowDestination",
     "UntargetRowKey",
     "UntargetRowRoute",
-    "project_untarget_post_cell",
-    "project_untarget_pre_cell",
-    "validate_untarget_post_cell_projection",
+    "project_untarget_matrix",
+    "validate_untarget_matrix_projection",
 )

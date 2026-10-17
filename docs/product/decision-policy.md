@@ -52,15 +52,16 @@ baseline for proving behavior, not the owner of product truth.
 | Typed evidence facts | Observed RT, shape, boundary, MS2, NL, isotope/adduct, standards, library, paired-context, and provenance facts | Product state, counted detection, matrix value |
 | Decision semantics | Accepted/review/not-counted/ambiguous/excluded classes, support reasons, conflict reasons, blocker reasons | Workflow-specific writer authority |
 | Model selection / ranking | Choosing among comparable `PeakHypothesis` candidates after typed gates | Overriding hard gates or granting matrix writes |
-| Cell decision | Selected value or typed no-write for explicit Target/Group subjects | Row identity, grouping, RAW access, or rendering |
-| Workflow projection | Pre-cell row identity/binding and explicit cell subjects; post-cell inclusion, counted detection, product state, reasons, Review Queue/archive routing, and ProductWriter gates | Low-level evidence extraction, Backfill revisit, or value recomputation |
+| Cell decision | Selected value or typed no-write for a Target subject or completed Feature × Sample observation | Row identity, grouping, RAW access, or rendering |
+| Workflow projection | Row identity/binding and output cell subjects; inclusion, counted detection, product state, reasons, Review Queue/archive routing, and ProductWriter gates | Low-level evidence extraction, Backfill revisit, or value recomputation |
 | Audit trail | Human-readable explanation, review queue, expected-diff evidence | Silent product behavior |
 
-The pre-cell and post-cell projection steps are two ordered operations of the
-same Target or Untarget projection owner. A projection must first mint/bind the
-row and construct the typed cell subject; only then may
-`ProductionCellDecision` select a value/no-write. The same projection consumes
-that decision afterward to close inclusion, counts, reasons, and routing.
+Target projection binds its fixed row and constructs `TargetCellSubject` before
+value selection, then closes inclusion, counts, reasons, and routing. Untarget
+value selection consumes completed `FinalGroupCellObservation` evidence first,
+without row identities. One Matrix projection then packages the existing payload
+and selected integration as `ProductionCellDecision`, assigns row/cell IDs, and
+closes sample order, counts and routing without repeating scientific decisions.
 
 ## Common Decision Shape
 

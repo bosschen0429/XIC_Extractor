@@ -1204,15 +1204,13 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         captured_batches.append(batch)
         return batch
 
-    monkeypatch.setattr(
-        bounded_owner, "materialize_untargeted_partition", retain_batch
-    )
+    monkeypatch.setattr(bounded_owner, "materialize_untargeted_partition", retain_batch)
     from xic_extractor.alignment import (
         cid_nl_predecessor_cells as predecessor_cell_owner,
     )
     from xic_extractor.alignment import completion as workflow_owner
     from xic_extractor.alignment import grouping_bootstrap as bootstrap_owner
-    from xic_extractor.alignment.projection.untarget import post_cell as post_cell_owner
+    from xic_extractor.alignment.projection.untarget import matrix as matrix_owner
     from xic_extractor.alignment.result import application_result as result_owner
     from xic_extractor.peak_detection import observations as observation_owner
     from xic_extractor.untargeted_execution import partition_composition as production
@@ -1271,15 +1269,14 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
 
     from xic_extractor.alignment.cell_decision import owner as decision_owner
-    from xic_extractor.alignment.projection.untarget import pre_cell as pre_cell_owner
 
     projection_builds = []
     decision_rechecks = []
-    build_subjects = pre_cell_owner._build_cell_subjects
+    project_matrix = workflow_owner.project_untarget_matrix
     validate_decision = decision_owner.validate_production_cell_decision
 
-    def record_subject_build(**kwargs):
-        result = build_subjects(**kwargs)
+    def record_matrix_projection(*args):
+        result = project_matrix(*args)
         projection_builds.append(result)
         return result
 
@@ -1287,12 +1284,14 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         decision_rechecks.append(value)
         return validate_decision(value)
 
-    monkeypatch.setattr(pre_cell_owner, "_build_cell_subjects", record_subject_build)
+    monkeypatch.setattr(
+        workflow_owner, "project_untarget_matrix", record_matrix_projection
+    )
     monkeypatch.setattr(
         decision_owner, "validate_production_cell_decision", record_decision_recheck
     )
 
-    completion_checks = {"scientific": [], "post_cell": []}
+    completion_checks = {"scientific": [], "matrix": []}
     scientific_check = (
         result_owner._validate_finalized_scientific_alignment_completion_receipt
     )
@@ -1301,11 +1300,11 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         completion_checks["scientific"].append(value)
         return scientific_check(value)
 
-    post_cell_check = post_cell_owner.validate_untarget_post_cell_completion_receipt
+    matrix_check = matrix_owner.validate_untarget_matrix_completion_receipt
 
-    def record_post_cell_check(value):
-        completion_checks["post_cell"].append(value)
-        return post_cell_check(value)
+    def record_matrix_check(value):
+        completion_checks["matrix"].append(value)
+        return matrix_check(value)
 
     monkeypatch.setattr(
         result_owner,
@@ -1313,9 +1312,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         record_scientific_check,
     )
     monkeypatch.setattr(
-        post_cell_owner,
-        "validate_untarget_post_cell_completion_receipt",
-        record_post_cell_check,
+        matrix_owner,
+        "validate_untarget_matrix_completion_receipt",
+        record_matrix_check,
     )
 
     bind_capture = capture_owner.bind_owner_backed_capture_hypothesis
@@ -1810,9 +1809,9 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     assert not completion_checks["scientific"]
     # Post-cell checks close each owner result before spool publication.
     expected_projections = tuple(child.completed_projection for child in children)
-    assert tuple(completion_checks["post_cell"]) == expected_projections
-    assert len({id(value) for value in completion_checks["post_cell"]}) == len(
-        completion_checks["post_cell"]
+    assert tuple(completion_checks["matrix"]) == expected_projections
+    assert len({id(value) for value in completion_checks["matrix"]}) == len(
+        completion_checks["matrix"]
     )
     # Binding consumes the closed capture; it must not repeat physical selection.
     assert not any(binding_rechecks)
@@ -2138,9 +2137,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 }
             )
         )
-    with pytest.raises(
-        CidNlAcquisitionError, match="lost its request-bound profile"
-    ):
+    with pytest.raises(CidNlAcquisitionError, match="lost its request-bound profile"):
         backfill_untargeted_cid_nl_sample_subject(
             **(recovery_args | {"signal_processing_profile": None})
         )
@@ -2266,9 +2263,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         UntargetedPartitionError,
     )
 
-    with pytest.raises(
-        UntargetedPartitionError, match="profile is not request-bound"
-    ):
+    with pytest.raises(UntargetedPartitionError, match="profile is not request-bound"):
         replace(
             batch.jobs[0],
             signal_processing_profile=SignalProcessingProfile(window_points=21),
@@ -2590,7 +2585,7 @@ def test_proven_subject_unit_is_not_split_by_lower_fixed_anchor(
 
     monkeypatch.setattr(
         planning_owner,
-        'build_partition_context',
+        "build_partition_context",
         capture_subject_batch,
     )
     with pytest.raises(ExpectedStop):
@@ -2875,9 +2870,7 @@ def test_production_batch_preserves_bounded_subject_membership(
         sample_identity_namespace="study:production-batch",
     )
 
-    batch = build_dense_partition(
-        **arguments, candidates_by_sample={"S1": candidates}
-    )
+    batch = build_dense_partition(**arguments, candidates_by_sample={"S1": candidates})
     from xic_extractor.peak_detection.cid_nl_method_subject import (
         mint_untargeted_cid_nl_method_subject,
     )
@@ -3184,12 +3177,7 @@ def test_sample_job_builder_rejects_changed_request_bound_inputs(
     }
     work_units = tuple((job.method_subject, job.work_unit_key) for job in batch.jobs)
     assert len(work_units) == 2
-    assert (
-        build_sample_jobs(
-            **shared, subject_work_units=work_units
-        )
-        == batch.jobs
-    )
+    assert build_sample_jobs(**shared, subject_work_units=work_units) == batch.jobs
     other_dir = tmp_path / "other-request"
     other_dir.mkdir()
     other = build_processing_identity_no_raw_fixture(other_dir, sample_stems=("Other",))
@@ -3225,9 +3213,7 @@ def test_sample_job_builder_rejects_changed_request_bound_inputs(
         ),
     ):
         with pytest.raises(UntargetedPartitionError, match=message):
-            build_sample_jobs(
-                **(shared | changed), subject_work_units=work_units
-            )
+            build_sample_jobs(**(shared | changed), subject_work_units=work_units)
 
 
 def test_alignment_adapter_prepares_and_executes_bounded_once(
@@ -3383,7 +3369,6 @@ def test_production_batch_executes_one_atomic_sample_phase(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    import xic_extractor.alignment.cell_decision.owner as cell_decision_owner
 
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"production-batch:S1")
@@ -3450,31 +3435,6 @@ def test_production_batch_executes_one_atomic_sample_phase(
         "_validate_untarget_batch_request",
         record_batch_validation,
     )
-    projected_pre_cells = []
-    validated_observation_populations = []
-    project_pre_cell = cell_decision_owner.project_untarget_pre_cell
-    validate_observation_population = (
-        cell_decision_owner.validate_final_group_cell_observation_population
-    )
-
-    def record_pre_cell_projection(finalized_alignment):
-        projected_pre_cells.append(finalized_alignment)
-        return project_pre_cell(finalized_alignment)
-
-    def record_observation_population_validation(**kwargs):
-        validated_observation_populations.append(kwargs)
-        return validate_observation_population(**kwargs)
-
-    monkeypatch.setattr(
-        cell_decision_owner,
-        "project_untarget_pre_cell",
-        record_pre_cell_projection,
-    )
-    monkeypatch.setattr(
-        cell_decision_owner,
-        "validate_final_group_cell_observation_population",
-        record_observation_population_validation,
-    )
     alignment_config = AlignmentConfig(anchor_min_seed_events=1)
     completed = complete_dense_partition(
         batch,
@@ -3538,8 +3498,6 @@ def test_production_batch_executes_one_atomic_sample_phase(
         is not None
         for cell in writer_inputs.matrix.cells
     )
-    assert projected_pre_cells == []
-    assert validated_observation_populations == []
     writer_dir = tmp_path / "writer"
     outputs = output_paths(
         writer_dir,
@@ -4546,9 +4504,7 @@ def _assert_conservative_proof_seals(
         if item.job.sample is proof.sample
     )
     context = proof.decision.group_facts.group_context
-    original_result_bytes = canonical_sample_result_bytes(
-        result.result_ref
-    )
+    original_result_bytes = canonical_sample_result_bytes(result.result_ref)
     with pytest.raises(ValueError, match="not a backfill"):
         project_completed_backfill(
             replace(result, backfill_attempts=()), group_context=context
@@ -4557,10 +4513,7 @@ def _assert_conservative_proof_seals(
         completion = proof.completion
         with pytest.raises(ValueError):
             replace(proof, completion=None)
-        assert (
-            project_completed_backfill(result, group_context=context)
-            == completion
-        )
+        assert project_completed_backfill(result, group_context=context) == completion
         other_coordinate = next(
             item.adapter_result.acquisition.traces[0].coordinate
             for item in runtime_result.sample_results
@@ -4605,10 +4558,7 @@ def _assert_conservative_proof_seals(
                     ),
                     group_context=context,
                 )
-    assert (
-        canonical_sample_result_bytes(result.result_ref)
-        == original_result_bytes
-    )
+    assert canonical_sample_result_bytes(result.result_ref) == original_result_bytes
 
 
 @pytest.mark.parametrize("recovery_case", ("positive", "threshold", "completed_empty"))

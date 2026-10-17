@@ -29,11 +29,8 @@ from xic_extractor.alignment.projection.target.post_cell import (
 from xic_extractor.alignment.projection.target.pre_cell import (
     project_target_pre_cell,
 )
-from xic_extractor.alignment.projection.untarget.post_cell import (
-    project_untarget_post_cell,
-)
-from xic_extractor.alignment.projection.untarget.pre_cell import (
-    project_untarget_pre_cell,
+from xic_extractor.alignment.projection.untarget.matrix import (
+    project_untarget_matrix,
 )
 from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
@@ -841,21 +838,14 @@ def _finish_variant(
                     "application_result returned a crossed Target result"
                 )
             return result
-        untarget_pre_cell = project_untarget_pre_cell(scientific)
         stage = WorkflowStage.CELL_DECISION
         from xic_extractor.alignment.cell_decision.owner import (
-            _decide_fresh_group_cell_population,
+            decide_group_cell_population,
         )
 
-        untarget_decisions = _decide_fresh_group_cell_population(
-            untarget_pre_cell,
-            scientific,
-        )
+        untarget_decisions = decide_group_cell_population(scientific)
         stage = WorkflowStage.POST_CELL_PROJECTION
-        untarget_projection = project_untarget_post_cell(
-            untarget_pre_cell,
-            untarget_decisions,
-        )
+        untarget_projection = project_untarget_matrix(scientific, untarget_decisions)
         stage = WorkflowStage.APPLICATION_RESULT
         # No adapter callback intervenes between these owner completions.
         result = _finalize_fresh_untarget_result(

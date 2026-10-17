@@ -36,7 +36,12 @@ provider-supplied strategy.
 
 XIC has one shared scientific processing lifecycle:
 
-`SearchScope -> provider-specific Discovery/capture -> shared observation/evidence contract -> PeakHypothesis -> CrossSample grouping -> CrossSampleGroupingResult -> optional bounded Backfill -> FinalizedScientificAlignment -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer`
+`SearchScope -> provider-specific Discovery/capture -> shared observation/evidence contract -> PeakHypothesis -> CrossSample grouping -> CrossSampleGroupingResult -> optional bounded Backfill -> FinalizedScientificAlignment`
+
+Target then binds its fixed-row subjects, completes cell decisions, and closes
+projection. Untarget first completes Feature × Sample payloads and selected
+integrations, then projects Matrix rows/cells once. Both hand their completed
+projection to the existing result finalizer.
 
 A configured Target constrains search and fixes a projection row. A
 configured Target does not prove a sample-local observation, group
@@ -57,14 +62,15 @@ but callers cannot bypass the semantic owner.
 | CrossSample | owner-backed hypotheses/observations -> canonical groups, dispositions, membership, lineage | Sole group/membership authority; does not integrate traces or select values |
 | Backfill | one missing cell plus established Target/group context -> bounded revisit result | May produce the first usable observation for that cell; cannot originate the Target/group, mint membership, or select a value |
 | Scientific alignment closure | closed request/group/membership/refinement and completed cell evidence -> `FinalizedScientificAlignment` | Validates shared scientific closure; does not construct workflow rows or render outputs |
-| Projection binding/subjects | finalized core + typed Target/Untarget scope -> row identity/binding + explicit cell subjects | Constructs subjects only; no value, count, or inclusion decision |
-| ProductionCellDecision | explicit subject + closed observations/receipts -> typed write or no-write | Sole selected-value owner; cannot create row or group identity |
-| Projection completion | same projection owner + cell decisions -> inclusion, counts/reasons, review/archive routing | Does not recompute evidence or selected values |
+| Target projection binding/subjects | finalized core + Target scope -> fixed row binding + explicit cell subjects | Constructs subjects only; no value, count, or inclusion decision |
+| Cell decision | Target subject or completed Feature × Sample observation -> numeric/no-write payload + selected integration | Sole selected-value owner; no row identity prerequisite for Untarget |
+| Projection completion | completed cell answers -> output identities, inclusion, counts/reasons, review/archive routing | Untarget projects once and wraps `ProductionCellDecision`; does not recompute evidence or selected values |
 | Result finalizer | discriminated request + shared core + completed projection -> immutable workflow result | Validates closure only; no RAW, regrouping, revisit, selection, or rendering |
 
 `TargetCellSubject` binds one stable `TargetKey`, exact `TargetDefinition`,
 canonical sample, `TargetRowBinding`, and optional finalized group.
-`GroupCellSubject` binds one finalized canonical group and canonical sample.
+`GroupCellSubject` binds one finalized canonical group and canonical sample at
+Untarget output projection, after the cell answer is complete.
 Membership and value selection remain independent: member/value, member/null,
 nonmember/Target-local-value, and nonmember/null are all valid outcomes.
 
@@ -189,7 +195,7 @@ policy. One projection is never the other projection's oracle.
 | Physical observations and hypotheses | `peak_detection` owners | Supplies constrained requests | Supplies general requests |
 | Cross-sample identity | CrossSample group/membership/disposition/lineage | Target identity constrains search/binding only | Group identity is inferred from evidence |
 | Missing-cell Backfill | Backfill owns the bounded revisit | Supplies Target Backfill context | Supplies Group Backfill context |
-| Selected value | `ProductionCellDecision` | Uses `TargetCellSubject` | Uses `GroupCellSubject` |
+| Selected value | `cell_decision` | Uses `TargetCellSubject` | Uses completed `FinalGroupCellObservation` before output identity |
 | Row/count/output policy | Does not own | Targeted projection/writer | Untargeted projection/writer |
 
 ## Module Boundaries
