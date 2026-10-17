@@ -56,6 +56,7 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 | 版本化 Matrix 的 artifact projection 與 acceptance | `diagnostics/quant_matrix/` | `golden_path.py` 組合 owner facts；`acceptance.py` 驗 manifest snapshot／source hashes 並 mint checked receipt；`version.py` 投影 table rows；不改 default product authority |
 | Packaged quantitative-effect promotion authority | `alignment/quantitative_projection_authority.py` | 封住 packaged resource、strict manifest rehydration 與 canonical rendering；是 promotion contract boundary，不是數值算法或 active application guard |
 | 缺格補證及格值 | `alignment/backfill/`、`alignment/cell_observation/`、`alignment/cell_decision/` | 新觀察、科學決策與檔案 writer 各自有 owner |
+| Untargeted 完成答案到 Matrix | `alignment/projection/untarget/matrix.py`；公開 row/cell identity 在同 package 的 `identity.py` | 先由 cell decision 完成 Feature × Sample 的 payload 與 selected integration，再一次投影 ID、順序、計數與 route；writer 只作既有格式相容轉換 |
 | RAW 讀取或 DLL | `raw_reader.py` 及使用它的 acquisition adapter | 讀入量測資料；不因此取得群組、格值或發布決定權 |
 | Discovery sample 發布與 batch 交付 | `discovery/output_publication.py` | 統一 persisted candidates、CSV 發布及 receipt／index 綁定；serial／worker 只交出完整 publication，receipt 合法性仍由 `batch_contract.py` 負責 |
 | Discovery 已保存輸入 | `discovery/csv_reader.py`、`discovery/input_source.py` | 依 Discovery receipt 讀取 batch/candidate CSV，提供整批或有界 row loading；Alignment 只消費候選 |

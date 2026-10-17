@@ -26,7 +26,11 @@ XIC has one shared scientific processing lifecycle. Untargeted extraction is
 its general application; Targeted extraction is a constrained application,
 not a second peer core:
 
-`SearchScope -> provider-specific Discovery/capture -> shared observation/evidence contract -> PeakHypothesis/owner evidence -> constrained CrossSample grouping -> stable CrossSampleGroupingResult -> optional bounded Backfill/ObservationRevisit -> projection binding/subjects -> ProductionCellDecision -> projection completion -> result finalizer`
+`SearchScope -> provider-specific Discovery/capture -> shared observation/evidence contract -> PeakHypothesis/owner evidence -> constrained CrossSample grouping -> stable CrossSampleGroupingResult -> optional bounded Backfill/ObservationRevisit -> FinalizedScientificAlignment`
+
+Target then binds its fixed row, selects cell answers and completes projection.
+Untarget selects Feature × Sample answers before projecting rows/cells. Both
+finish through the existing result finalizer.
 
 - Both applications may use a broad candidate-discovery policy. Here, `broad`
   describes which evidence relationships the method may inspect, such as dR,
@@ -119,10 +123,11 @@ Use these terms consistently:
   revisit of a pre-existing Target or group cell. The revisit may produce its
   first usable observation.
   It is not imputation, group membership, or product-value authority.
-- `ProductionCellDecision`: the sole core owner of the selected numeric value
-  or typed no-write result for one `TargetCellSubject` or `GroupCellSubject`.
-  Observations retain measurement facts; they do not select the delivered
-  value themselves.
+- `ProductionCellDecision`: the output representation of the cell-decision
+  owner's numeric value or typed no-write, selected integration and provenance.
+  Target decisions use `TargetCellSubject`; Untarget decisions are completed
+  from `FinalGroupCellObservation` before projection adds `GroupCellSubject`
+  and the published ID. Observations do not select delivered values themselves.
 - `FinalizedScientificAlignment`: immutable shared core containing the stable
   grouping result, dispositions, membership/lineage, and completed cell evidence
   needed by a workflow projection. It is not an output artifact or mutable
@@ -131,10 +136,10 @@ Use these terms consistently:
   `TargetKey` row to the eligible finalized groups needed by its sample cells.
   Multiple groups are unresolved only when they compete for the same sample
   cell. It does not rescan RAW or rank peaks.
-- `workflow projection`: the Target or Untarget owner with two ordered
-  operations: pre-cell row binding/key plus cell-subject construction, then
-  post-cell inclusion/count/reason and Review Queue/archive routing. It is not
-  two owners and does not select the cell value.
+- `workflow projection`: the workflow owner of output row/cell identities,
+  inclusion/count/reason and Review Queue/archive routing. Target binds its fixed
+  row before cell decisions; Untarget projects completed Feature × Sample
+  answers once. Neither projection selects the cell value.
 - `UntargetRowKey`: Untargeted projection-owned row identity derived from one
   finalized canonical group. It is distinct from `group_hypothesis_id` and
   from legacy `FAM...` display labels.
@@ -177,13 +182,11 @@ Related evidence and analysis terms:
   in Discovery. A seed is not same-peak proof or counted detection.
 - `family`: legacy review/search container for related candidate or aligned
   evidence. Family membership is not same-peak proof or product authority.
-- `canonical projection`: one workflow owner with two ordered mappings. Its
-  pre-cell operation maps `FinalizedScientificAlignment` to workflow row
-  identity/binding and explicit cell subjects; after
-  `ProductionCellDecision`, its post-cell operation maps typed cell decisions to
-  inclusion, counts/reasons, routing, and product output. Targeted and
-  Untargeted keep separate projections; neither projection is the other's
-  oracle.
+- `canonical projection`: the workflow-specific mapping from completed owners
+  to output identities, inclusion, counts/reasons, routing, and product output.
+  Target retains its fixed-row binding before cell decisions; Untarget completes
+  Feature × Sample answers before assigning row/cell identities. Their
+  projections remain separate; neither is the other's oracle.
 - `morphology`: peak-shape characteristics such as width, symmetry, boundaries,
   and quality flags used as evidence for selection or integration.
 - `evidence-chain packet`: structured source evidence assembled for review,

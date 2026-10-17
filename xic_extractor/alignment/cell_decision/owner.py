@@ -1,4 +1,4 @@
-"""Exact Target/Group subject to production-cell decision owner."""
+"""Target and completed Feature x Sample value decisions and output packaging."""
 
 from __future__ import annotations
 
@@ -9,12 +9,7 @@ from dataclasses import InitVar, dataclass, field, fields
 from typing import Literal, TypeAlias, cast
 
 from xic_extractor.alignment.cell_observation.observations import (
-    CellObservationContractError,
     FinalGroupCellObservation,
-    validate_final_group_cell_observation_population,
-)
-from xic_extractor.alignment.cross_sample.association import (
-    CrossSampleAssociationLineageHandoff,
 )
 from xic_extractor.alignment.primary_matrix_area import (
     primary_matrix_area_from_integration,
@@ -25,10 +20,8 @@ from xic_extractor.alignment.projection.target.pre_cell import (
     TargetRowBinding,
     validate_target_row_binding,
 )
-from xic_extractor.alignment.projection.untarget.pre_cell import (
+from xic_extractor.alignment.projection.untarget.identity import (
     GroupCellSubject,
-    UntargetPreCellProjection,
-    project_untarget_pre_cell,
 )
 from xic_extractor.alignment.result import (
     FinalizedScientificAlignment,
@@ -163,20 +156,14 @@ class ProductionCellDecision:
 
 
 def decide_production_cell(
-    subject: CellSubject,
+    subject: TargetCellSubject,
     *,
     target_projection: TargetPreCellProjection | None = None,
-    group_handoff: CrossSampleAssociationLineageHandoff | None = None,
-    group_observations: Sequence[FinalGroupCellObservation] | None = None,
 ) -> ProductionCellDecision:
     """Decide one explicit subject through its complete owner population."""
 
     if type(subject) is TargetCellSubject:
-        if (
-            target_projection is None
-            or group_handoff is not None
-            or group_observations is not None
-        ):
+        if target_projection is None:
             raise CellDecisionContractError(
                 "Target decision requires only its exact Target projection"
             )
@@ -189,40 +176,9 @@ def decide_production_cell(
             subject,
             evidence=subject.terminal_subject,
         )
-    elif type(subject) is GroupCellSubject:
-        if target_projection is not None or group_handoff is None:
-            raise CellDecisionContractError(
-                "Group decision requires only its exact observation handoff population"
-            )
-        if group_observations is None:
-            raise CellDecisionContractError(
-                "Group decision requires the complete observation handoff population"
-            )
-        try:
-            owner_observations = validate_final_group_cell_observation_population(
-                handoff=group_handoff,
-                cell_observations=group_observations,
-            )
-        except (CellObservationContractError, TypeError, ValueError) as exc:
-            raise CellDecisionContractError(str(exc)) from exc
-        observation_by_key = {
-            _group_observation_key(item): item for item in owner_observations
-        }
-        key = _group_subject_key(subject)
-        evidence = observation_by_key.get(key)
-        if evidence is None:
-            raise CellDecisionContractError(
-                "explicit Group subject is absent from the "
-                "observation handoff owner population"
-            )
-        _validate_group_binding(subject, evidence)
-        return _decide_sealed_subject(
-            subject,
-            evidence=evidence,
-        )
     else:
         raise CellDecisionContractError(
-            "cell decision requires an exact TargetCellSubject or GroupCellSubject"
+            "explicit subject decision requires an exact TargetCellSubject"
         )
 
 
@@ -252,154 +208,29 @@ def decide_target_cell_population(
 
 
 def decide_group_cell_population(
-    projection: UntargetPreCellProjection,
     finalized_alignment: FinalizedScientificAlignment,
-    *,
-    subjects: Sequence[GroupCellSubject] | None = None,
-    observations: Sequence[FinalGroupCellObservation] | None = None,
-) -> tuple[ProductionCellDecision, ...]:
-    """Decide the complete Group x sample population from the exact
-    observation handoff closure.
+) -> dict[str, tuple[CellDecisionPayload, IntegrationResult | None]]:
+    """Complete values/blank reasons keyed by the authoritative cell observation.
+
+    Scientific completion already closed the group/sample population and its
+    provenance. Row identities are not inputs to this decision. The existing
+    payload and selected integration pass unchanged to output packaging.
     """
 
-    ordered_subjects, observation_by_key = _validate_group_population_inputs(
-        projection,
-        finalized_alignment,
-        subjects=subjects,
-        observations=observations,
-    )
-    return _decide_validated_group_cell_population(
-        ordered_subjects,
-        observation_by_key,
-    )
-
-
-def _decide_fresh_group_cell_population(
-    projection: UntargetPreCellProjection,
-    finalized_alignment: FinalizedScientificAlignment,
-) -> tuple[ProductionCellDecision, ...]:
-    """Decide owners completed immediately upstream by the shared workflow."""
-
-    ordered_subjects, observation_by_key = _validate_group_population_inputs(
-        projection,
-        finalized_alignment,
-        fresh=True,
-    )
-    return _decide_validated_group_cell_population(
-        ordered_subjects,
-        observation_by_key,
-    )
-
-
-def _decide_validated_group_cell_population(
-    ordered_subjects: tuple[GroupCellSubject, ...],
-    observation_by_key: dict[tuple[str, str], FinalGroupCellObservation],
-) -> tuple[ProductionCellDecision, ...]:
-    decisions = tuple(
-        _decide_sealed_subject(
-            subject,
-            evidence=observation_by_key[_group_subject_key(subject)],
-        )
-        for subject in ordered_subjects
-    )
-    return tuple(sorted(decisions, key=_decision_sort_key))
-
-
-def _validate_group_population_inputs(
-    projection: UntargetPreCellProjection,
-    finalized_alignment: FinalizedScientificAlignment,
-    *,
-    subjects: Sequence[GroupCellSubject] | None = None,
-    observations: Sequence[FinalGroupCellObservation] | None = None,
-    fresh: bool = False,
-) -> tuple[
-    tuple[GroupCellSubject, ...],
-    dict[tuple[str, str], FinalGroupCellObservation],
-]:
-    if type(projection) is not UntargetPreCellProjection:
-        raise CellDecisionContractError(
-            "Group population requires an exact UntargetPreCellProjection"
-        )
-    if type(finalized_alignment) is not FinalizedScientificAlignment:
-        raise CellDecisionContractError(
-            "Group population requires an exact FinalizedScientificAlignment"
-        )
-    if projection.finalized_alignment is not finalized_alignment:
-        raise CellDecisionContractError(
-            "Group projection crossed its exact finalized alignment"
-        )
-    if fresh:
-        if projection.processing_request is not finalized_alignment.processing_request:
-            raise CellDecisionContractError(
-                "Group projection crossed its exact processing request"
-            )
-        if (
-            type(projection.cell_subjects) is not tuple
-            or type(finalized_alignment.cell_observations) is not tuple
-        ):
-            raise CellDecisionContractError(
-                "fresh Group populations require exact immutable tuples"
-            )
-    else:
-        expected_projection = project_untarget_pre_cell(finalized_alignment)
-        if projection != expected_projection:
-            raise CellDecisionContractError(
-                "Group projection is partial, crossed, reordered, or substituted"
-            )
-    owner_subjects = projection.cell_subjects
-    requested_subjects = owner_subjects if subjects is None else tuple(subjects)
-    ordered_subjects = cast(
-        tuple[GroupCellSubject, ...],
-        _bind_complete_subject_population(
-            requested_subjects,
-            owner_subjects=owner_subjects,
-            expected_type=GroupCellSubject,
-            label="Group",
-        ),
-    )
-    handoff = finalized_alignment.cell_observation_handoff
-    if handoff is None:
-        raise CellDecisionContractError(
-            "Group population requires its Backfill association handoff"
-        )
-    if fresh:
-        owner_observations = finalized_alignment.cell_observations
-    else:
-        try:
-            owner_observations = validate_final_group_cell_observation_population(
-                handoff=handoff,
-                cell_observations=finalized_alignment.cell_observations,
-            )
-        except (CellObservationContractError, TypeError, ValueError) as exc:
-            raise CellDecisionContractError(str(exc)) from exc
-    requested_observations = (
-        owner_observations if observations is None else tuple(observations)
-    )
-    ordered_observations = _bind_complete_observation_population(
-        requested_observations,
-        owner_observations=owner_observations,
-    )
-    if fresh:
-        subject_keys = tuple(_group_subject_key(item) for item in ordered_subjects)
-        observation_keys = tuple(
-            _group_observation_key(item) for item in ordered_observations
-        )
-        if len(subject_keys) != len(set(subject_keys)):
-            raise CellDecisionContractError(
-                "fresh Group subject population contains a duplicate position"
-            )
-        if len(observation_keys) != len(set(observation_keys)):
-            raise CellDecisionContractError(
-                "fresh Group observation population contains a duplicate position"
-            )
-        if set(subject_keys) != set(observation_keys):
-            raise CellDecisionContractError(
-                "fresh Group subject and observation populations do not match"
-            )
-    observation_by_key = {
-        _group_observation_key(item): item for item in ordered_observations
+    member_samples = {
+        group.group_hypothesis_id: {
+            member.canonical_sample_identity_id for member in group.member_subjects
+        }
+        for group in finalized_alignment.final_population
     }
-    return ordered_subjects, observation_by_key
+    return {
+        observation.cell_observation_id: _decide_group(
+            observation,
+            is_member=observation.canonical_sample_identity_id
+            in member_samples[observation.group_hypothesis_id],
+        )
+        for observation in finalized_alignment.cell_observations
+    }
 
 
 def validate_production_cell_decision(decision: ProductionCellDecision) -> None:
@@ -440,7 +271,14 @@ def _decide_sealed_subject(
                 "Group decision requires an exact final cell observation"
             )
         _validate_group_binding(subject, evidence)
-        payload, integration = _decide_group(subject, evidence)
+        payload, integration = _decide_group(
+            evidence,
+            is_member=any(
+                member.canonical_sample_identity_id
+                == evidence.canonical_sample_identity_id
+                for member in evidence.group.member_subjects
+            ),
+        )
     else:
         raise CellDecisionContractError(
             "cell decision requires an exact TargetCellSubject or GroupCellSubject"
@@ -478,13 +316,14 @@ def _decide_target(
 
 
 def _decide_group(
-    subject: GroupCellSubject,
     observation: FinalGroupCellObservation,
+    *,
+    is_member: bool,
 ) -> tuple[CellDecisionPayload, IntegrationResult | None]:
     state = observation.evidence_state
     states = observation.evidence_states
     value_state_count = sum(item in _GROUP_VALUE_STATES for item in states)
-    if subject.member_subject is not None:
+    if is_member:
         allowed_states = _GROUP_VALUE_STATES | _GROUP_TERMINAL_COMPANION_STATES
         if value_state_count == 1 and all(item in allowed_states for item in states):
             integrations = observation.integrations
@@ -635,31 +474,6 @@ def _bind_complete_subject_population(
     if set(requested_ids) != set(owner_ids):
         raise CellDecisionContractError(
             f"{label} population is missing, extra, or substituted"
-        )
-    return requested
-
-
-def _bind_complete_observation_population(
-    observations: Sequence[FinalGroupCellObservation],
-    *,
-    owner_observations: tuple[FinalGroupCellObservation, ...],
-) -> tuple[FinalGroupCellObservation, ...]:
-    if isinstance(observations, (str, bytes)):
-        raise CellDecisionContractError("Group observations must be a finite sequence")
-    requested = tuple(observations)
-    if any(type(item) is not FinalGroupCellObservation for item in requested):
-        raise CellDecisionContractError(
-            "Group observation population contains a non-owner closure"
-        )
-    requested_ids = tuple(id(item) for item in requested)
-    owner_ids = tuple(id(item) for item in owner_observations)
-    if len(requested_ids) != len(set(requested_ids)):
-        raise CellDecisionContractError(
-            "Group observation population contains a duplicate closure"
-        )
-    if set(requested_ids) != set(owner_ids):
-        raise CellDecisionContractError(
-            "Group observation population is missing, extra, or substituted"
         )
     return requested
 
@@ -829,28 +643,12 @@ def _decision_basis(
     }
 
 
-def _group_subject_key(subject: GroupCellSubject) -> tuple[str, str]:
-    return (
-        subject.group_hypothesis_id,
-        subject.canonical_sample.identity.sample_identity_id,
-    )
-
-
 def _integration_identity(integration: IntegrationResult) -> dict[str, object]:
     if type(integration) is not IntegrationResult:
         raise CellDecisionContractError(
             "decision basis requires an exact IntegrationResult"
         )
     return {item.name: getattr(integration, item.name) for item in fields(integration)}
-
-
-def _group_observation_key(
-    observation: FinalGroupCellObservation,
-) -> tuple[str, str]:
-    return (
-        observation.group_hypothesis_id,
-        observation.canonical_sample_identity_id,
-    )
 
 
 def _decision_sort_key(decision: ProductionCellDecision) -> tuple[str, ...]:

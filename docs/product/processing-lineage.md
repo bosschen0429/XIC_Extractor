@@ -15,7 +15,7 @@ planned seal changes the current product writer.
 | Processing identity (`xic_extractor/processing_identity.py`) | Which request and attempt ran, over which RAW sources | Implemented; production Alignment, Backfill, and Discovery modules use it |
 | Target identity (`TargetKey`, `TargetListSnapshot` in `xic_extractor/configuration/target_identity.py`) | Which exact target list a run used | Implemented; production Targeted modules use it |
 | Targeted delivery lineage | Per-cell Targeted revisions, stages, and seals | Planned; no current implementation or product publication authority |
-| Untargeted row identity (`UntargetRowKey`) | A stable identity for one Untargeted Matrix row | Implemented in `alignment/projection/untarget/pre_cell.py` |
+| Untargeted row identity (`UntargetRowKey`) | A stable identity for one Untargeted Matrix row | Implemented in `alignment/projection/untarget/identity.py` |
 | Untargeted per-cell delivery lineage | A retained revision/evidence bundle for each Matrix cell | Not planned; see [Untargeted delivery decision](#untargeted-delivery-decision) |
 | Untargeted output-level seal | One sealed manifest for one complete Untargeted Matrix delivery | Planned; not implemented |
 
@@ -575,7 +575,7 @@ The model fails and must be narrowed or redrawn if:
   not publish a product seal. Future delivery integration must reuse the
   target-identity owner rather than mint parallel Targeted IDs.
 - Alignment already mints request-scoped `UntargetRowKey` values from finalized
-  canonical groups in `alignment/projection/untarget/pre_cell.py`. The ordinal
+  canonical groups in `alignment/projection/untarget/identity.py`. The ordinal
   `FAM000...` label is not that key. Untargeted output-level sealing remains
   planned; the existing `alignment_cells.tsv` ledger is the per-cell tracing
   source, not a set of retained delivery revisions or plots.

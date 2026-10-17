@@ -34,7 +34,7 @@ XIC_Extractor/
 │   │   ├── backfill/           有限度的 observation revisit
 │   │   ├── cell_observation/   每個樣本格的 observation 紀錄與群組脈絡
 │   │   ├── cell_decision/      每個樣本格的科學決策
-│   │   ├── projection/         Targeted／Untargeted 的前後投影
+│   │   ├── projection/         Targeted 固定列前後投影／Untargeted 完成格值的 Matrix 投影
 │   │   └── result/             科學結果與 application 結果
 │   ├── execution/             attempt、工作分區、workers、結果暫存與終局記錄
 │   ├── output/                CSV／workbook／HTML 等輸出程式

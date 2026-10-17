@@ -494,31 +494,10 @@ def _selected_cell_source(
         decision.subject.canonical_sample.identity.sample_identity_id,
         hypothesis_ids[0],
     )
-    try:
-        return direct_candidate_ids[key]
-    except KeyError as exc:
-        # A completed recovery can supply direct CID-NL support
-        # outside the closed Discovery candidate universe. Keep its physical
-        # identity and explicit absent candidate instead of inventing one.
-        assessments = evidence.method_assessments
-        if len(assessments) == 1 and (
-            assessments[0].content.method_subject.composition is not None
-            or assessments[0].content.detector_invocation_id
-            == "untargeted-cid-nl-backfill"
-        ):
-            from xic_extractor.alignment.hypothesis_owner_adapter import (
-                validate_cid_nl_assessment_hypothesis_closure,
-            )
-
-            validate_cid_nl_assessment_hypothesis_closure(
-                sample=decision.subject.canonical_sample,
-                assessment=assessments[0],
-                hypothesis=evidence.direct_hypotheses[0],
-            )
-            return None
-        raise ValueError(
-            "direct writer cell lacks its terminal Discovery candidate identity"
-        ) from exc
+    # Recovery provenance is already closed by the observation/hypothesis owners.
+    # A source outside Discovery has no candidate ID; the physical source remains
+    # retained on the completed observation.
+    return direct_candidate_ids.get(key)
 
 
 def _direct_candidate_ids(

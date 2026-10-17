@@ -345,9 +345,9 @@ authorize a separate downstream decision pipeline.
 | CrossSample grouping workflow | Constrained initial grouping, membership, group identity, disposition, lineage, and application of an accepted complete-partition transition | One immutable `CrossSampleGroupingResult` |
 | Backfill | One bounded local revisit under an established group | Observation or typed no-result decision |
 | Scientific alignment closure | Validate request/group/disposition/membership/refinement/revisit closure | `FinalizedScientificAlignment` |
-| Workflow projection: binding/subject operation | Target fixed-row binding or Untarget group-row identity, followed by explicit Target/Group cell-subject construction | `TargetRowBinding` + `TargetCellSubject`, or `UntargetRowKey` + `GroupCellSubject` |
-| ProductionCellDecision | Selected value or typed no-write result for one explicit Target/Group subject | Immutable cell decision with evidence refs |
-| Workflow projection: completion operation | Consume cell decisions to close row inclusion, counted-detection/count/reason fields, Review Queue refs, and archive routing | Closed typed projection decisions |
+| Target projection: binding/subject operation | Target fixed-row binding and cell-subject construction | `TargetRowBinding` + `TargetCellSubject` |
+| Cell decision | Selected value or typed no-write from a Target subject or completed Feature × Sample observation | Existing payload and selected integration, retaining the authoritative evidence |
+| Workflow projection: completion operation | Consume completed answers to assign output identities and close row inclusion, counted-detection/count/reason fields, Review Queue refs, and archive routing | Closed typed projection decisions; Untarget creates `UntargetRowKey`, `GroupCellSubject` and the `ProductionCellDecision` output wrapper here |
 | Result finalizer | Closure validation over the core, completed projection, and cell decisions | Discriminated immutable Targeted or Untargeted result |
 
 The grouping workflow alone may mint or supersede a group and apply the
@@ -355,10 +355,11 @@ accepted `CrossSamplePartitionTransition`. Backfill cannot turn a revisited
 observation into implicit membership. The finalizer cannot rerun RAW access,
 grouping, Backfill, integration, or selection.
 
-The two workflow-projection rows above are ordered operations of the same
-Target or Untarget projection owner, not two owners. Binding and cell-subject
-construction must close before `ProductionCellDecision`; inclusion, counts,
-reasons, Review Queue/archive routing, and result finalization close afterward.
+Target's fixed-row binding precedes cell decisions. Untarget completes values,
+blank reasons and selected integrations before its single Matrix projection;
+row/cell identities are not scientific decision inputs. Inclusion, counts,
+reasons, Review Queue/archive routing and result finalization consume those
+completed answers.
 
 ### Group identity and disposition
 
@@ -435,13 +436,16 @@ reasons, Review Queue/archive routing, and result finalization close afterward.
 ### Final result and projections
 
 `FinalizedScientificAlignment` closes the request, canonical groups,
-dispositions, membership/lineage, and refinement/revisit receipts. Before cell
-decision, Targeted adds fixed `TargetKey` rows, typed `TargetRowBinding`, and
-`TargetCellSubject`; Untargeted adds projection-owned
-`UntargetRowKey` and `GroupCellSubject`. After cell decision, the same projection
-owner closes inclusion, counts/reasons, Target Review Queue references, or
-Untarget archive routing. Only then may the result finalizer return the matching
-immutable workflow result.
+dispositions, membership/lineage, and refinement/revisit receipts. Targeted adds
+fixed `TargetKey` rows, typed `TargetRowBinding` and `TargetCellSubject` before
+cell decision. Untargeted cell decision consumes the completed
+`FinalGroupCellObservation` population directly, keyed by observation identity.
+Its existing numeric/no-write payload and selected integration then pass to
+`project_untarget_matrix`, which assigns `UntargetRowKey`/`GroupCellSubject` and
+packages the unchanged public decision ID. The projection closes inclusion,
+counts/reasons and routing before the existing result finalizer returns the
+immutable workflow result. The writer maps retained provenance to its legacy
+candidate-ID field without revalidating assessment/hypothesis closure.
 
 Targeted retains a typed empty fixed row when no group qualifies. Qualified
 groups with disjoint sample membership bind the same fixed `TargetKey` row;
@@ -639,7 +643,7 @@ write a value.
   caller cannot inject a replacement partition or trajectory after Backfill.
 - Batch finalization consumes completed immutable children and checks their
   parent request, attempt, sample coverage, and cross-child uniqueness. It does
-  not rerun each child's scientific and post-cell completion checks. Explicit
+  not rerun each child's scientific and Matrix completion checks. Explicit
   finalization and private-spool publication retain their own boundary checks.
 
 ### Edge support, RT reference map, and quantification

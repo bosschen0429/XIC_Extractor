@@ -1,9 +1,9 @@
-"""Untarget projection closure after owner-sealed Group cell decisions."""
+"""Pure Matrix projection of completed Feature x Sample answers."""
 
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import InitVar, dataclass, field, fields
 from typing import TYPE_CHECKING, Literal, TypeAlias, cast
 
@@ -11,16 +11,24 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupDisposition,
     CrossSampleLineageEdge,
 )
-from xic_extractor.alignment.projection.untarget.pre_cell import (
+from xic_extractor.alignment.projection.untarget.identity import (
+    _PROJECTION_MINT_TOKEN,
     GroupCellSubject,
-    UntargetPreCellProjection,
     UntargetProjectionContractError,
     UntargetRowKey,
-    project_untarget_pre_cell,
+    _mint_untarget_row_key,
+    _validate_row_key_population,
 )
+from xic_extractor.alignment.result.scientific_alignment import (
+    FinalizedScientificAlignment,
+    FinalizedScientificAlignmentContractError,
+    _validate_finalized_scientific_alignment_completion_receipt,
+)
+from xic_extractor.peak_detection.integration_result import IntegrationResult
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.cell_decision.owner import (
+        CellDecisionPayload,
         ProductionCellDecision,
     )
 
@@ -46,11 +54,11 @@ _DECISION_VARIANTS: tuple[UntargetDecisionVariant, ...] = (
     "unavailable",
 )
 _DECISION_VARIANT_SET = frozenset(_DECISION_VARIANTS)
-_POST_CELL_MINT_TOKEN = object()
+_MATRIX_MINT_TOKEN = object()
 
 
 def _decision_contract() -> tuple[type[object], Callable[[object], None]]:
-    """Import #308 lazily so its import of ``untarget.pre_cell`` stays acyclic."""
+    """Load the decision audit without coupling identity packaging to projection."""
 
     from xic_extractor.alignment.cell_decision.owner import (
         ProductionCellDecision,
@@ -70,13 +78,13 @@ def _route_for_disposition(
     if disposition in {"provisional", "unresolved", "rejected"}:
         return "archive"
     raise UntargetProjectionContractError(
-        "Untarget post-cell projection received an unsupported group disposition"
+        "Untarget Matrix projection received an unsupported group disposition"
     )
 
 
 @dataclass(frozen=True, slots=True)
 class UntargetDecisionVariantCount:
-    """Count for one closed #308 decision variant."""
+    """Count for one closed cell decision variant."""
 
     variant: UntargetDecisionVariant
     count: int
@@ -94,7 +102,7 @@ class UntargetDecisionVariantCount:
 
 @dataclass(frozen=True, slots=True)
 class UntargetRowDecisionCounts:
-    """Complete, ordered counts for the closed #308 variant universe."""
+    """Complete, ordered counts for the closed cell decision variant universe."""
 
     by_variant: tuple[UntargetDecisionVariantCount, ...]
 
@@ -145,7 +153,7 @@ class UntargetRowRoute:
 
 
 @dataclass(frozen=True, slots=True)
-class UntargetPostCellRow:
+class UntargetMatrixRow:
     """One exact Untarget row closed over every canonical-sample decision."""
 
     row_key: UntargetRowKey
@@ -155,18 +163,18 @@ class UntargetPostCellRow:
     _mint_token: InitVar[object] = field(kw_only=True, repr=False)
 
     def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _POST_CELL_MINT_TOKEN:
+        if _mint_token is not _MATRIX_MINT_TOKEN:
             raise UntargetProjectionContractError(
-                "post-cell row must be minted by its owner entry point"
+                "Matrix row must be minted by its owner entry point"
             )
 
 
 @dataclass(frozen=True, slots=True)
-class UntargetPostCellProjection:
+class UntargetMatrixProjection:
     """Immutable Untarget completion handoff for result finalization."""
 
-    pre_cell_projection: UntargetPreCellProjection
-    rows: tuple[UntargetPostCellRow, ...]
+    finalized_alignment: FinalizedScientificAlignment
+    rows: tuple[UntargetMatrixRow, ...]
     _completion_seal: tuple[object, ...] = field(
         init=False,
         repr=False,
@@ -175,9 +183,9 @@ class UntargetPostCellProjection:
     _mint_token: InitVar[object] = field(kw_only=True, repr=False)
 
     def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _POST_CELL_MINT_TOKEN:
+        if _mint_token is not _MATRIX_MINT_TOKEN:
             raise UntargetProjectionContractError(
-                "post-cell projection must be minted by its owner entry point"
+                "Matrix projection must be minted by its owner entry point"
             )
         object.__setattr__(
             self,
@@ -185,7 +193,7 @@ class UntargetPostCellProjection:
             _untarget_completion_state(self),
         )
 
-    def __copy__(self) -> UntargetPostCellProjection:
+    def __copy__(self) -> UntargetMatrixProjection:
         # Preserve the live-substitution oracle independently of spool restoration.
         clone = object.__new__(type(self))
         for owner_field in fields(self):
@@ -196,8 +204,8 @@ class UntargetPostCellProjection:
         """Export a verified completion for private same-process storage."""
         if not hasattr(self, "_completion_seal"):
             raise UntargetProjectionContractError("Untarget projection is unsealed")
-        validate_untarget_post_cell_completion_receipt(self)
-        return (self.pre_cell_projection, self.rows)
+        validate_untarget_matrix_completion_receipt(self)
+        return (self.finalized_alignment, self.rows)
 
     def __setstate__(self, state: tuple[object, ...]) -> None:
         """Restore direct bindings from the private same-process spool."""
@@ -209,24 +217,24 @@ class UntargetPostCellProjection:
             raise UntargetProjectionContractError(
                 "invalid Untarget projection restoration"
             )
-        object.__setattr__(self, "pre_cell_projection", state[0])
+        object.__setattr__(self, "finalized_alignment", state[0])
         object.__setattr__(self, "rows", state[1])
         object.__setattr__(self, "_completion_seal", _untarget_completion_state(self))
 
     @property
     def lineage(self) -> tuple[CrossSampleLineageEdge, ...]:
-        return self.pre_cell_projection.lineage
+        return self.finalized_alignment.lineage
 
     @property
     def decisions(self) -> tuple[ProductionCellDecision, ...]:
         return tuple(decision for row in self.rows for decision in row.decisions)
 
     @property
-    def included_rows(self) -> tuple[UntargetPostCellRow, ...]:
+    def included_rows(self) -> tuple[UntargetMatrixRow, ...]:
         return tuple(row for row in self.rows if row.route.destination == "matrix")
 
     @property
-    def archive_rows(self) -> tuple[UntargetPostCellRow, ...]:
+    def archive_rows(self) -> tuple[UntargetMatrixRow, ...]:
         return tuple(row for row in self.rows if row.route.destination == "archive")
 
     @property
@@ -234,70 +242,99 @@ class UntargetPostCellProjection:
         return tuple(row.row_key for row in self.archive_rows)
 
 
-def project_untarget_post_cell(
-    pre_cell_projection: UntargetPreCellProjection,
-    decisions: Sequence[ProductionCellDecision],
-) -> UntargetPostCellProjection:
-    """Bind owner decisions once to their exact projection subjects and rows.
+def project_untarget_matrix(
+    finalized_alignment: FinalizedScientificAlignment,
+    decisions: Mapping[str, tuple[CellDecisionPayload, IntegrationResult | None]],
+) -> UntargetMatrixProjection:
+    """Assign output identities, sample order, routes and counts exactly once."""
 
-    The decision owner has already selected and sealed each payload. Deep
-    reconstruction is reserved for the explicit projection audit entry point.
-    """
+    from xic_extractor.alignment.cell_decision.owner import _mint_decision
 
-    if type(pre_cell_projection) is not UntargetPreCellProjection:
+    observations = finalized_alignment.cell_observations
+    if set(decisions) != {item.cell_observation_id for item in observations}:
         raise UntargetProjectionContractError(
-            "post-cell projection requires an exact UntargetPreCellProjection"
+            "Group decision population is missing, extra, or crossed"
         )
-    ordered_decisions = _bind_exact_decisions(
-        pre_cell_projection,
-        decisions=decisions,
-    )
-    decisions_by_row: dict[str, list[ProductionCellDecision]] = {}
-    for decision in ordered_decisions:
-        row_id = cast(GroupCellSubject, decision.subject).row_key.untarget_row_key_id
-        decisions_by_row.setdefault(row_id, []).append(decision)
-    rows = tuple(
-        _mint_post_cell_row(
-            row_key,
-            decisions=tuple(decisions_by_row.get(row_key.untarget_row_key_id, ())),
+    by_position = {
+        (item.group_hypothesis_id, item.canonical_sample_identity_id): item
+        for item in observations
+    }
+    row_keys = tuple(
+        _mint_untarget_row_key(group)
+        for group in sorted(
+            finalized_alignment.final_population,
+            key=lambda group: group.group_hypothesis_id,
         )
-        for row_key in pre_cell_projection.row_keys
     )
-    return UntargetPostCellProjection(
-        pre_cell_projection=pre_cell_projection,
-        rows=rows,
-        _mint_token=_POST_CELL_MINT_TOKEN,
+    _validate_row_key_population(row_keys)
+    rows = []
+    for row_key in row_keys:
+        members = {
+            member.canonical_sample_identity_id: member
+            for member in row_key.group.member_subjects
+        }
+        projected = []
+        for sample in finalized_alignment.canonical_samples:
+            sample_id = sample.identity.sample_identity_id
+            observation = by_position[row_key.group_hypothesis_id, sample_id]
+            payload, integration = decisions[observation.cell_observation_id]
+            projected.append(
+                _mint_decision(
+                    subject=GroupCellSubject(
+                        row_key,
+                        sample,
+                        members.get(sample_id),
+                        _mint_token=_PROJECTION_MINT_TOKEN,
+                    ),
+                    evidence=observation,
+                    payload=payload,
+                    selected_integration=integration,
+                )
+            )
+        rows.append(_mint_matrix_row(row_key, decisions=tuple(projected)))
+    return UntargetMatrixProjection(
+        finalized_alignment=finalized_alignment,
+        rows=tuple(rows),
+        _mint_token=_MATRIX_MINT_TOKEN,
     )
 
 
-def validate_untarget_post_cell_projection(
-    projection: UntargetPostCellProjection,
+def validate_untarget_matrix_projection(
+    projection: UntargetMatrixProjection,
 ) -> None:
     """Revalidate one completion against its retained exact owner inputs."""
 
-    if type(projection) is not UntargetPostCellProjection:
+    if type(projection) is not UntargetMatrixProjection:
         raise UntargetProjectionContractError(
-            "completed projection must be an exact UntargetPostCellProjection"
+            "completed projection must be an exact UntargetMatrixProjection"
         )
-    _validate_post_cell_projection(projection)
-    expected = project_untarget_post_cell(
-        projection.pre_cell_projection,
-        projection.decisions,
+    from xic_extractor.alignment.cell_decision.owner import decide_group_cell_population
+
+    try:
+        _validate_finalized_scientific_alignment_completion_receipt(
+            projection.finalized_alignment
+        )
+    except FinalizedScientificAlignmentContractError as exc:
+        raise UntargetProjectionContractError(str(exc)) from exc
+    _validate_matrix_projection(projection)
+    expected = project_untarget_matrix(
+        projection.finalized_alignment,
+        decide_group_cell_population(projection.finalized_alignment),
     )
     if projection != expected:
         raise UntargetProjectionContractError(
-            "Untarget post-cell projection was substituted"
+            "Untarget Matrix projection was substituted"
         )
 
 
-def validate_untarget_post_cell_completion_receipt(
-    projection: UntargetPostCellProjection,
+def validate_untarget_matrix_completion_receipt(
+    projection: UntargetMatrixProjection,
 ) -> None:
     """Verify retained completion fields without reopening projection policy."""
 
-    if type(projection) is not UntargetPostCellProjection:
+    if type(projection) is not UntargetMatrixProjection:
         raise UntargetProjectionContractError(
-            "completed Untarget receipt requires an exact UntargetPostCellProjection"
+            "completed Untarget receipt requires an exact UntargetMatrixProjection"
         )
     try:
         current_state = _untarget_completion_state(projection)
@@ -315,80 +352,21 @@ def validate_untarget_post_cell_completion_receipt(
 
 
 def _untarget_completion_state(
-    projection: UntargetPostCellProjection,
+    projection: UntargetMatrixProjection,
 ) -> tuple[object, ...]:
     return (
         id(projection),
-        id(projection.pre_cell_projection),
+        id(projection.finalized_alignment),
         id(projection.rows),
     )
 
 
-def _validate_pre_cell_projection(
-    projection: UntargetPreCellProjection,
-) -> None:
-    if type(projection) is not UntargetPreCellProjection:
-        raise UntargetProjectionContractError(
-            "post-cell projection requires an exact UntargetPreCellProjection"
-        )
-    expected = project_untarget_pre_cell(projection.finalized_alignment)
-    if projection != expected:
-        raise UntargetProjectionContractError(
-            "Untarget pre-cell projection is partial, crossed, or substituted"
-        )
-
-
-def _bind_exact_decisions(
-    projection: UntargetPreCellProjection,
-    *,
-    decisions: Sequence[ProductionCellDecision],
-) -> tuple[ProductionCellDecision, ...]:
-    try:
-        requested = tuple(decisions)
-    except TypeError as exc:
-        raise UntargetProjectionContractError(
-            "Group decisions must be one finite complete population"
-        ) from exc
-    # Subjects are private-minted by pre_cell. Exact object binding is sufficient;
-    # reserializing their semantic IDs would repeat the upstream identity work.
-    owner_subjects = projection.cell_subjects
-    owner_ids = {id(item) for item in owner_subjects}
-    decision_type, _validate_decision = _decision_contract()
-    by_subject: dict[int, ProductionCellDecision] = {}
-    for decision in requested:
-        if type(decision) is not decision_type:
-            raise UntargetProjectionContractError(
-                "post-cell projection requires exact ProductionCellDecision values"
-            )
-        subject = decision.subject
-        if type(subject) is not GroupCellSubject:
-            raise UntargetProjectionContractError(
-                "Untarget post-cell decision crossed the Target subject lane"
-            )
-        owner_id = id(subject)
-        if owner_id not in owner_ids:
-            raise UntargetProjectionContractError(
-                "Group decision crossed or substituted its exact projection subject"
-            )
-        if owner_id in by_subject:
-            raise UntargetProjectionContractError(
-                "Group decision population contains a duplicate subject"
-            )
-        by_subject[owner_id] = decision
-
-    if len(requested) != len(owner_subjects):
-        raise UntargetProjectionContractError(
-            "Group decision population is missing, partial, or extra"
-        )
-    return tuple(by_subject[id(item)] for item in owner_subjects)
-
-
-def _mint_post_cell_row(
+def _mint_matrix_row(
     row_key: UntargetRowKey,
     *,
     decisions: tuple[ProductionCellDecision, ...],
-) -> UntargetPostCellRow:
-    return UntargetPostCellRow(
+) -> UntargetMatrixRow:
+    return UntargetMatrixRow(
         row_key=row_key,
         decisions=decisions,
         counts=_counts_for_decisions(decisions),
@@ -396,7 +374,7 @@ def _mint_post_cell_row(
             destination=_route_for_disposition(row_key.group.disposition),
             reason=row_key.group.disposition,
         ),
-        _mint_token=_POST_CELL_MINT_TOKEN,
+        _mint_token=_MATRIX_MINT_TOKEN,
     )
 
 
@@ -416,21 +394,21 @@ def _counts_for_decisions(
     )
 
 
-def _validate_post_cell_row(row: UntargetPostCellRow) -> None:
+def _validate_matrix_row(row: UntargetMatrixRow) -> None:
     if type(row.row_key) is not UntargetRowKey:
         raise UntargetProjectionContractError(
-            "post-cell row requires an exact UntargetRowKey"
+            "Matrix row requires an exact UntargetRowKey"
         )
     if type(row.decisions) is not tuple:
         raise UntargetProjectionContractError(
-            "post-cell row decisions must be one immutable population"
+            "Matrix row decisions must be one immutable population"
         )
     decision_type, validate_decision = _decision_contract()
     sample_ids: set[str] = set()
     for decision in row.decisions:
         if type(decision) is not decision_type:
             raise UntargetProjectionContractError(
-                "post-cell row requires exact ProductionCellDecision values"
+                "Matrix row requires exact ProductionCellDecision values"
             )
         try:
             validate_decision(decision)
@@ -439,56 +417,55 @@ def _validate_post_cell_row(row: UntargetPostCellRow) -> None:
         subject = decision.subject
         if type(subject) is not GroupCellSubject or subject.row_key is not row.row_key:
             raise UntargetProjectionContractError(
-                "post-cell row decision crossed its exact row subject"
+                "Matrix row decision crossed its exact row subject"
             )
         sample_id = subject.canonical_sample.identity.sample_identity_id
         if sample_id in sample_ids:
             raise UntargetProjectionContractError(
-                "post-cell row contains a duplicate canonical sample decision"
+                "Matrix row contains a duplicate canonical sample decision"
             )
         sample_ids.add(sample_id)
     if type(row.counts) is not UntargetRowDecisionCounts or row.counts != (
         _counts_for_decisions(row.decisions)
     ):
-        raise UntargetProjectionContractError("post-cell row counts were substituted")
+        raise UntargetProjectionContractError("Matrix row counts were substituted")
     if type(row.route) is not UntargetRowRoute or row.route != UntargetRowRoute(
         destination=_route_for_disposition(row.row_key.group.disposition),
         reason=row.row_key.group.disposition,
     ):
-        raise UntargetProjectionContractError("post-cell row route was substituted")
+        raise UntargetProjectionContractError("Matrix row route was substituted")
 
 
-def _validate_post_cell_projection(
-    projection: UntargetPostCellProjection,
+def _validate_matrix_projection(
+    projection: UntargetMatrixProjection,
 ) -> None:
-    _validate_pre_cell_projection(projection.pre_cell_projection)
     if type(projection.rows) is not tuple or any(
-        type(row) is not UntargetPostCellRow for row in projection.rows
+        type(row) is not UntargetMatrixRow for row in projection.rows
     ):
         raise UntargetProjectionContractError(
-            "completed projection requires exact immutable post-cell rows"
+            "completed projection requires exact immutable Matrix rows"
         )
-    row_keys = projection.pre_cell_projection.row_keys
-    if len(projection.rows) != len(row_keys):
+    groups = sorted(
+        projection.finalized_alignment.final_population,
+        key=lambda group: group.group_hypothesis_id,
+    )
+    if len(projection.rows) != len(groups):
         raise UntargetProjectionContractError(
             "completed projection has missing or extra rows"
         )
-    for row, row_key in zip(projection.rows, row_keys, strict=True):
-        if row.row_key is not row_key:
+    for row, group in zip(projection.rows, groups, strict=True):
+        if row.row_key.group is not group:
             raise UntargetProjectionContractError(
-                "completed projection crossed or substituted an exact row key"
+                "completed projection crossed its exact group"
             )
-        _validate_post_cell_row(row)
-        expected_subjects = tuple(
-            subject
-            for subject in projection.pre_cell_projection.cell_subjects
-            if subject.row_key is row_key
-        )
-        if tuple(item.subject for item in row.decisions) != expected_subjects:
+        _validate_matrix_row(row)
+        if tuple(item.subject.canonical_sample for item in row.decisions) != (
+            projection.finalized_alignment.canonical_samples
+        ):
             raise UntargetProjectionContractError(
                 "completed row is missing, crossed, reordered, or partial"
             )
-        if len(row.decisions) != len(projection.pre_cell_projection.canonical_samples):
+        if len(row.decisions) != len(projection.finalized_alignment.canonical_samples):
             raise UntargetProjectionContractError(
                 "completed row lacks one decision per canonical sample"
             )

@@ -52,8 +52,8 @@ if TYPE_CHECKING:
     from xic_extractor.alignment.projection.target.post_cell import (
         TargetPostCellProjection,
     )
-    from xic_extractor.alignment.projection.untarget.post_cell import (
-        UntargetPostCellProjection,
+    from xic_extractor.alignment.projection.untarget.matrix import (
+        UntargetMatrixProjection,
     )
 
 
@@ -208,7 +208,7 @@ class TargetApplicationResultRequest:
 @dataclass(frozen=True, slots=True)
 class UntargetApplicationResultRequest:
     scientific_core: FinalizedScientificAlignment
-    completed_projection: UntargetPostCellProjection
+    completed_projection: UntargetMatrixProjection
 
     def __post_init__(self) -> None:
         _validate_untarget_request(self)
@@ -286,7 +286,7 @@ class FinalizedTargetApplicationResult:
 @dataclass(frozen=True, slots=True)
 class FinalizedUntargetApplicationResult:
     scientific_core: FinalizedScientificAlignment
-    completed_projection: UntargetPostCellProjection
+    completed_projection: UntargetMatrixProjection
     _mint_token: InitVar[object] = field(kw_only=True, repr=False)
 
     def __post_init__(self, _mint_token: object) -> None:
@@ -310,7 +310,7 @@ class FinalizedUntargetApplicationResult:
     @property
     def completion_receipts(
         self,
-    ) -> tuple[CrossSampleGroupingResult, UntargetPostCellProjection]:
+    ) -> tuple[CrossSampleGroupingResult, UntargetMatrixProjection]:
         return (
             self.scientific_core.grouping_result,
             self.completed_projection,
@@ -505,15 +505,15 @@ def _validate_target_request(request: TargetApplicationResultRequest) -> None:
 
 
 def _validate_untarget_request(request: UntargetApplicationResultRequest) -> None:
-    from xic_extractor.alignment.projection.untarget.post_cell import (
-        UntargetPostCellProjection,
+    from xic_extractor.alignment.projection.untarget.matrix import (
+        UntargetMatrixProjection,
     )
 
     if type(request.scientific_core) is not FinalizedScientificAlignment:
         raise ApplicationResultContractError(
             "Untarget application-result request requires an exact scientific core"
         )
-    if type(request.completed_projection) is not UntargetPostCellProjection:
+    if type(request.completed_projection) is not UntargetMatrixProjection:
         raise ApplicationResultContractError(
             "Untarget application-result request requires an exact Untarget projection"
         )
@@ -603,12 +603,12 @@ def _validate_untarget_result(
     *,
     _reuse_fresh_completion: bool = False,
 ) -> None:
-    from xic_extractor.alignment.projection.untarget.post_cell import (
-        UntargetPostCellProjection,
-        validate_untarget_post_cell_completion_receipt,
-    )
-    from xic_extractor.alignment.projection.untarget.pre_cell import (
+    from xic_extractor.alignment.projection.untarget.identity import (
         UntargetProjectionContractError,
+    )
+    from xic_extractor.alignment.projection.untarget.matrix import (
+        UntargetMatrixProjection,
+        validate_untarget_matrix_completion_receipt,
     )
 
     _validate_common_result(
@@ -619,41 +619,21 @@ def _validate_untarget_result(
         raise ApplicationResultContractError(
             "Untarget application result requires an Untargeted scientific core"
         )
-    if type(result.completed_projection) is not UntargetPostCellProjection:
+    if type(result.completed_projection) is not UntargetMatrixProjection:
         raise ApplicationResultContractError(
             "Untarget application result requires an exact completed "
             "Untarget projection"
         )
     if not _reuse_fresh_completion:
         try:
-            validate_untarget_post_cell_completion_receipt(result.completed_projection)
+            validate_untarget_matrix_completion_receipt(result.completed_projection)
         except UntargetProjectionContractError as exc:
             raise ApplicationResultContractError(str(exc)) from exc
     projection = result.completed_projection
-    pre_cell = projection.pre_cell_projection
-    if pre_cell.finalized_alignment is not result.scientific_core:
+    if projection.finalized_alignment is not result.scientific_core:
         raise ApplicationResultContractError(
             "Untarget completed projection crossed or substituted its scientific core"
         )
-    if pre_cell.processing_request is not result.scientific_core.processing_request:
-        raise ApplicationResultContractError(
-            "Untarget completed projection substituted its processing request"
-        )
-    _validate_exact_owner_population(
-        actual=pre_cell.canonical_samples,
-        expected=result.scientific_core.canonical_samples,
-        label="canonical sample universe",
-    )
-    _validate_exact_owner_population(
-        actual=pre_cell.final_population,
-        expected=result.scientific_core.final_population,
-        label="final population",
-    )
-    _validate_exact_owner_population(
-        actual=pre_cell.lineage,
-        expected=result.scientific_core.lineage,
-        label="lineage",
-    )
 
 
 def _validate_untarget_batch_request(

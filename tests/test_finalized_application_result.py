@@ -13,7 +13,7 @@ from typing import Any, cast
 import pytest
 
 from tests.test_target_pre_cell_projection import _finalized_case
-from tests.test_untargeted_post_cell_projection import _completed_projection
+from tests.test_untargeted_matrix_projection import _completed_projection
 from xic_extractor.alignment.cell_decision.owner import decide_target_cell_population
 from xic_extractor.alignment.projection.target import post_cell as target_post_cell
 from xic_extractor.alignment.projection.target.post_cell import (
@@ -21,8 +21,8 @@ from xic_extractor.alignment.projection.target.post_cell import (
     project_target_post_cell,
 )
 from xic_extractor.alignment.projection.target.pre_cell import project_target_pre_cell
-from xic_extractor.alignment.projection.untarget import UntargetPostCellProjection
-from xic_extractor.alignment.projection.untarget import post_cell as untarget_post_cell
+from xic_extractor.alignment.projection.untarget import UntargetMatrixProjection
+from xic_extractor.alignment.projection.untarget import matrix as untarget_matrix
 from xic_extractor.alignment.result import (
     ApplicationResultContractError,
     FinalizedTargetApplicationResult,
@@ -58,13 +58,13 @@ def _target_completion(
 def _untarget_completion(
     root: Path,
     monkeypatch: pytest.MonkeyPatch,
-) -> tuple[object, UntargetPostCellProjection]:
+) -> tuple[object, UntargetMatrixProjection]:
     pre_cell, _decisions, completed = _completed_projection(
         root,
         monkeypatch,
         disposition="established",
     )
-    return pre_cell.finalized_alignment, completed
+    return pre_cell, completed
 
 
 def test_target_result_binds_exact_owner_graph_and_completion_receipts(
@@ -203,13 +203,8 @@ def test_untarget_result_consumes_projection_without_recomputing_it(
         )
 
     monkeypatch.setattr(
-        untarget_post_cell,
-        "project_untarget_pre_cell",
-        reject_recomputation,
-    )
-    monkeypatch.setattr(
-        untarget_post_cell,
-        "project_untarget_post_cell",
+        untarget_matrix,
+        "project_untarget_matrix",
         reject_recomputation,
     )
 
@@ -265,23 +260,6 @@ def test_untarget_result_rejects_a_substituted_completed_route(
                 scientific_core=cast(Any, scientific_core),
                 completed_projection=substituted_projection,
             )
-        )
-
-
-def test_untarget_projection_rejects_a_partial_subject_population(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _scientific_core, projection = _untarget_completion(
-        tmp_path / "untarget",
-        monkeypatch,
-    )
-    object.__setattr__(projection.pre_cell_projection, "cell_subjects", ())
-
-    with pytest.raises(ValueError, match="population|subject"):
-        untarget_post_cell.project_untarget_post_cell(
-            projection.pre_cell_projection,
-            projection.decisions,
         )
 
 
@@ -428,7 +406,7 @@ def test_untarget_owner_pickle_rebinds_completion_and_still_rejects_substitution
     restored_core, restored_projection = _pickle_completed_owner((core, projection))
     assert restored_core is not core
     assert restored_projection is not projection
-    assert restored_projection.pre_cell_projection.finalized_alignment is restored_core
+    assert restored_projection.finalized_alignment is restored_core
     result = finalize_alignment_result(
         UntargetApplicationResultRequest(
             scientific_core=restored_core,

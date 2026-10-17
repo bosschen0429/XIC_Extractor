@@ -21,8 +21,8 @@ from xic_extractor.alignment.cross_sample.grouping_result import (
 from xic_extractor.alignment.projection.target.post_cell import (
     TargetPostCellProjection,
 )
-from xic_extractor.alignment.projection.untarget.post_cell import (
-    UntargetPostCellProjection,
+from xic_extractor.alignment.projection.untarget.matrix import (
+    UntargetMatrixProjection,
 )
 from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
@@ -85,7 +85,7 @@ def test_workflow_forwards_exact_owner_objects_once(
     pre_cell = object()
     decisions = object()
     projection = _exact_uninitialized(
-        TargetPostCellProjection if variant == "target" else UntargetPostCellProjection
+        TargetPostCellProjection if variant == "target" else UntargetMatrixProjection
     )
     application_result = _exact_uninitialized(
         FinalizedTargetApplicationResult
@@ -133,19 +133,14 @@ def test_workflow_forwards_exact_owner_objects_once(
         lambda value: pre_cell,
     )
     monkeypatch.setattr(
-        workflow_owner,
-        "project_untarget_pre_cell",
-        lambda value: pre_cell,
-    )
-    monkeypatch.setattr(
         decision_owner,
         "decide_target_cell_population",
         lambda value: decisions,
     )
     monkeypatch.setattr(
         decision_owner,
-        "_decide_fresh_group_cell_population",
-        lambda before, scientific_core: decisions,
+        "decide_group_cell_population",
+        lambda scientific_core: decisions,
     )
     monkeypatch.setattr(
         workflow_owner,
@@ -154,7 +149,7 @@ def test_workflow_forwards_exact_owner_objects_once(
     )
     monkeypatch.setattr(
         workflow_owner,
-        "project_untarget_post_cell",
+        "project_untarget_matrix",
         lambda before, after: projection,
     )
     monkeypatch.setattr(

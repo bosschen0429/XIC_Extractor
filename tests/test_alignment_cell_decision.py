@@ -12,7 +12,6 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
-import xic_extractor.alignment.projection.untarget.pre_cell as untarget_owner
 from tests.cid_nl_peak_support_no_raw_fixture import PRECURSOR_MZ
 from tests.processing_identity_no_raw_fixture import (
     build_processing_identity_no_raw_fixture,
@@ -28,7 +27,7 @@ from tests.test_cell_observations import (
 )
 from tests.test_cid_nl_evidence_spine import _completed_receipt
 from tests.test_target_pre_cell_projection import _finalized_case
-from tests.test_untargeted_pre_cell_projection import (
+from tests.test_untargeted_matrix_projection import (
     _untarget_projection_inputs,
 )
 from xic_extractor.alignment.backfill.evaluation_coverage import (
@@ -49,9 +48,9 @@ from xic_extractor.alignment.cell_decision.owner import (
 )
 from xic_extractor.alignment.cell_observation.observations import (
     CellObservationContractError,
-    FinalGroupCellObservation,
     compose_final_group_cell_observation_population,
     mint_cell_observation_ref,
+    validate_final_group_cell_observation_population,
 )
 from xic_extractor.alignment.cid_nl_evidence_spine import (
     build_cid_nl_reference_spine,
@@ -65,8 +64,7 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 )
 from xic_extractor.alignment.projection.target.pre_cell import project_target_pre_cell
 from xic_extractor.alignment.projection.untarget import (
-    GroupCellSubject,
-    project_untarget_pre_cell,
+    project_untarget_matrix,
 )
 from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
@@ -228,180 +226,79 @@ def test_target_population_rejects_incomplete_or_competing_subjects(
 
 
 def test_group_population_preserves_complete_member_and_nonmember_positions(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _scope, _captures, _receipt, alignment = _untarget_projection_inputs(
-        tmp_path,
-        monkeypatch,
-    )
-    projection = project_untarget_pre_cell(alignment)
-
-    decisions = decide_group_cell_population(projection, alignment)
-    reordered = decide_group_cell_population(
-        projection,
-        alignment,
-        subjects=tuple(reversed(projection.cell_subjects)),
-        observations=tuple(reversed(alignment.cell_observations)),
-    )
-
-    assert len(decisions) == len(projection.cell_subjects)
-    assert tuple(item.decision_id for item in reordered) == tuple(
-        item.decision_id for item in decisions
-    )
-    assert {item.variant for item in decisions} == {
+    tmp_path, monkeypatch
+):
+    _, _, _, alignment = _untarget_projection_inputs(tmp_path, monkeypatch)
+    answers = decide_group_cell_population(alignment)
+    assert set(answers) == {
+        item.cell_observation_id for item in alignment.cell_observations
+    }
+    assert {payload.variant for payload, _ in answers.values()} == {
         "not_quantifiable",
         "unavailable",
     }
-    by_member = {
-        cast(GroupCellSubject, item.subject).member_subject is not None: item
-        for item in decisions
-    }
-    assert by_member[True].variant == "not_quantifiable"
-    assert by_member[False].variant == "unavailable"
-    assert (
-        decide_production_cell(
-            projection.cell_subjects[0],
-            group_handoff=alignment.cell_observation_handoff,
-            group_observations=alignment.cell_observations,
-        )
-        == decisions[0]
+    for observation in alignment.cell_observations:
+        payload, integration = answers[observation.cell_observation_id]
+        if observation.evidence_state == "direct_observation":
+            assert payload.variant == "not_quantifiable"
+            assert integration is observation.integrations[0]
+        else:
+            assert payload.variant == "unavailable"
+            assert integration is None
+    projection = project_untarget_matrix(alignment, answers)
+    member = next(
+        d for d in projection.decisions if d.subject.member_subject is not None
     )
-    evidence = cast(FinalGroupCellObservation, by_member[True].evidence)
-    integration = evidence.integrations[0]
-    assert by_member[True].selected_integration is integration
-    assert by_member[False].selected_integration is None
+    integration = member.selected_integration
     original_area = integration.area_raw_counts_seconds
     object.__setattr__(integration, "area_raw_counts_seconds", original_area + 1.0)
     with pytest.raises(CellDecisionContractError, match="basis|substituted"):
-        validate_production_cell_decision(by_member[True])
+        validate_production_cell_decision(member)
     object.__setattr__(integration, "area_raw_counts_seconds", original_area)
 
 
-def test_group_numeric_uses_real_primary_matrix_area(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_group_numeric_uses_real_primary_matrix_area(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        "tests.test_untargeted_cid_nl_golden_path.cid_nl_peak",
-        _numeric_peak,
+        "tests.test_untargeted_cid_nl_golden_path.cid_nl_peak", _numeric_peak
     )
-    _scope, _captures, _receipt, alignment = _untarget_projection_inputs(
-        tmp_path,
-        monkeypatch,
-    )
-    projection = project_untarget_pre_cell(alignment)
-
-    decisions = decide_group_cell_population(projection, alignment)
-
+    _, _, _, alignment = _untarget_projection_inputs(tmp_path, monkeypatch)
+    answers = decide_group_cell_population(alignment)
     numeric = next(
-        item
-        for item in decisions
-        if cast(GroupCellSubject, item.subject).member_subject
+        payload for payload, _ in answers.values() if payload.variant == "numeric"
     )
-    assert numeric.variant == "numeric"
-    assert numeric.value is not None and numeric.value > 0
+    assert numeric.value > 0
     assert numeric.source
 
 
-@pytest.mark.parametrize("input_name", ["subjects", "observations"])
-@pytest.mark.parametrize("variant", ["missing", "duplicate", "substituted"])
-def test_group_population_rejects_missing_duplicate_or_substituted_inputs(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    input_name: str,
-    variant: str,
-) -> None:
-    _scope, _captures, _receipt, alignment = _untarget_projection_inputs(
-        tmp_path,
-        monkeypatch,
-    )
-    projection = project_untarget_pre_cell(alignment)
-    source = (
-        projection.cell_subjects
-        if input_name == "subjects"
-        else alignment.cell_observations
-    )
-    if variant == "missing":
-        changed = source[:-1]
-    elif variant == "duplicate":
-        changed = source + (source[0],)
-    else:
-        changed = (copy(source[0]),) + source[1:]
-    with pytest.raises(CellDecisionContractError, match="duplicate|missing|extra"):
-        if input_name == "subjects":
-            decide_group_cell_population(
-                projection,
-                alignment,
-                subjects=cast(Any, changed),
-            )
-        else:
-            decide_group_cell_population(
-                projection,
-                alignment,
-                observations=cast(Any, changed),
-            )
-
-
 def test_group_closed_state_table_maps_owner_observations_without_reason_parsing(
-    tmp_path: Path,
-) -> None:
-    _fixture, _spine, handoff = _owner_handoff(tmp_path)
+    tmp_path,
+):
+    _, spine, handoff = _owner_handoff(tmp_path)
     observations = compose_final_group_cell_observation_population(
-        handoff=handoff,
-        predecessor_cells=_spine.cells,
+        handoff=handoff, predecessor_cells=spine.cells
     )
-    decisions = []
-    for observation in observations:
-        row = untarget_owner._mint_untarget_row_key(observation.group)
-        member = next(
-            (
-                item
-                for item in observation.group.member_subjects
-                if item.canonical_sample_identity_id
+    answers = tuple(
+        decision_owner._decide_group(
+            observation,
+            is_member=any(
+                member.canonical_sample_identity_id
                 == observation.canonical_sample_identity_id
+                for member in observation.group.member_subjects
             ),
-            None,
         )
-        subject = GroupCellSubject(
-            row_key=row,
-            canonical_sample=observation.canonical_sample,
-            member_subject=member,
-        )
-        decisions.append(
-            decide_production_cell(
-                subject,
-                group_handoff=handoff,
-                group_observations=observations,
-            )
-        )
-
-    assert {item.variant for item in decisions} == {
+        for observation in observations
+    )
+    assert {payload.variant for payload, _ in answers} == {
         "not_quantifiable",
         "unresolved",
         "rejected_observation",
         "unavailable",
     }
-    for decision in decisions:
-        if decision.variant == "not_quantifiable":
-            assert decision.selected_integration is decision.evidence.integrations[0]
+    for observation, (payload, integration) in zip(observations, answers, strict=True):
+        if payload.variant == "not_quantifiable":
+            assert integration is observation.integrations[0]
         else:
-            assert decision.selected_integration is None
-
-    direct = next(
-        item for item in observations if item.evidence_state == "direct_observation"
-    )
-    nonmember = GroupCellSubject(
-        untarget_owner._mint_untarget_row_key(direct.group),
-        direct.canonical_sample,
-        None,
-    )
-    with pytest.raises(CellDecisionContractError, match="nonmember"):
-        decide_production_cell(
-            nonmember,
-            group_handoff=handoff,
-            group_observations=observations,
-        )
+            assert integration is None
 
 
 def test_group_hold_counterexample_distinguishes_observed_and_zero_candidate(
@@ -414,17 +311,8 @@ def test_group_hold_counterexample_distinguishes_observed_and_zero_candidate(
     )
     sample = fixture.sample("s4")
     observed = next(item for item in observed_cells if item.canonical_sample is sample)
-    observed_subject = GroupCellSubject(
-        untarget_owner._mint_untarget_row_key(observed.group),
-        sample,
-        None,
-    )
     assert (
-        decide_production_cell(
-            observed_subject,
-            group_handoff=handoff,
-            group_observations=observed_cells,
-        ).variant
+        decision_owner._decide_group(observed, is_member=False)[0].variant
         == "unresolved"
     )
 
@@ -456,17 +344,8 @@ def test_group_hold_counterexample_distinguishes_observed_and_zero_candidate(
         predecessor_cells=predecessor_cells,
     )
     negative = next(item for item in negative_cells if item.canonical_sample is sample)
-    negative_subject = GroupCellSubject(
-        untarget_owner._mint_untarget_row_key(negative.group),
-        sample,
-        None,
-    )
     assert (
-        decide_production_cell(
-            negative_subject,
-            group_handoff=handoff,
-            group_observations=negative_cells,
-        ).variant
+        decision_owner._decide_group(negative, is_member=False)[0].variant
         == "searched_no_observation"
     )
 
@@ -482,17 +361,8 @@ def test_group_reject_precedes_fallback_and_evaluated_coverage_terminals(
     fallback_reject = next(
         item for item in fallback_cells if item.evidence_state == "rejected_observation"
     )
-    fallback_subject = GroupCellSubject(
-        untarget_owner._mint_untarget_row_key(fallback_reject.group),
-        fallback_reject.canonical_sample,
-        None,
-    )
     assert (
-        decide_production_cell(
-            fallback_subject,
-            group_handoff=fallback_handoff,
-            group_observations=fallback_cells,
-        ).variant
+        decision_owner._decide_group(fallback_reject, is_member=False)[0].variant
         == "rejected_observation"
     )
 
@@ -509,17 +379,8 @@ def test_group_reject_precedes_fallback_and_evaluated_coverage_terminals(
         for item in evaluated_cells
         if item.canonical_sample is fallback_reject.canonical_sample
     )
-    evaluated_subject = GroupCellSubject(
-        untarget_owner._mint_untarget_row_key(evaluated_reject.group),
-        evaluated_reject.canonical_sample,
-        None,
-    )
     assert (
-        decide_production_cell(
-            evaluated_subject,
-            group_handoff=evaluated_handoff,
-            group_observations=evaluated_cells,
-        ).variant
+        decision_owner._decide_group(evaluated_reject, is_member=False)[0].variant
         == "rejected_observation"
     )
 
@@ -564,24 +425,9 @@ def test_group_crossed_terminal_and_candidate_combinations_fail_before_decision(
     )
     original_terminals = target.coverage_terminals
     object.__setattr__(target, "coverage_terminals", (foreign_terminal,))
-    member = next(
-        (
-            item
-            for item in target.group.member_subjects
-            if item.canonical_sample_identity_id == target.canonical_sample_identity_id
-        ),
-        None,
-    )
-    subject = GroupCellSubject(
-        untarget_owner._mint_untarget_row_key(target.group),
-        target.canonical_sample,
-        member,
-    )
-    with pytest.raises(CellDecisionContractError, match="position|owner-composed"):
-        decide_production_cell(
-            subject,
-            group_handoff=handoff,
-            group_observations=cells,
+    with pytest.raises(CellObservationContractError, match="position|owner-composed"):
+        validate_final_group_cell_observation_population(
+            handoff=handoff, cell_observations=cells
         )
     object.__setattr__(target, "coverage_terminals", original_terminals)
 
@@ -672,27 +518,13 @@ def test_group_merge_selects_one_direct_integration_among_terminal_lanes(
         for item in observations
     )
     decisions = tuple(
-        decide_production_cell(
-            GroupCellSubject(
-                untarget_owner._mint_untarget_row_key(item.group),
-                item.canonical_sample,
-                next(
-                    member
-                    for member in item.group.member_subjects
-                    if member.canonical_sample_identity_id
-                    == item.canonical_sample_identity_id
-                ),
-            ),
-            group_handoff=handoff,
-            group_observations=observations,
-        )
-        for item in observations
+        decision_owner._decide_group(item, is_member=True) for item in observations
     )
-
-    assert all(
-        item.variant == "numeric" and item.value is not None and item.value > 0
-        for item in decisions
-    )
+    for observation, (payload, integration) in zip(
+        observations, decisions, strict=True
+    ):
+        assert payload.variant == "numeric" and payload.value > 0
+        assert integration is observation.integrations[0]
 
 
 def test_group_split_nonmember_maps_exact_not_searched_closure(
@@ -751,18 +583,8 @@ def test_group_split_nonmember_maps_exact_not_searched_closure(
         predecessor_cells=spine.cells,
     )
     not_searched = next(item for item in cells if item.evidence_state == "not_searched")
-    subject = GroupCellSubject(
-        untarget_owner._mint_untarget_row_key(not_searched.group),
-        not_searched.canonical_sample,
-        None,
-    )
-
     assert (
-        decide_production_cell(
-            subject,
-            group_handoff=handoff,
-            group_observations=cells,
-        ).variant
+        decision_owner._decide_group(not_searched, is_member=False)[0].variant
         == "not_searched"
     )
 
@@ -824,43 +646,9 @@ def test_target_population_revalidates_row_terminal_and_integration_axes(
         decide_target_cell_population(projection)
 
 
-def test_group_population_rejects_crossed_member_and_partial_closure(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _scope, _captures, _receipt, alignment = _untarget_projection_inputs(
-        tmp_path,
-        monkeypatch,
-    )
-    projection = project_untarget_pre_cell(alignment)
-    member_subject = next(
-        item for item in projection.cell_subjects if item.member_subject is not None
-    )
-    nonmember_subject = next(
-        item for item in projection.cell_subjects if item.member_subject is None
-    )
-
-    object.__setattr__(
-        nonmember_subject,
-        "member_subject",
-        member_subject.member_subject,
-    )
-    with pytest.raises(CellDecisionContractError, match="projection"):
-        decide_group_cell_population(projection, alignment)
-    object.__setattr__(nonmember_subject, "member_subject", None)
-
-    object.__setattr__(alignment.cell_observations[0], "evidence_states", ())
-    with pytest.raises(CellDecisionContractError, match="exact owner-composed"):
-        decide_group_cell_population(projection, alignment)
-
-
 def test_no_write_payload_rejects_unknown_variant() -> None:
     with pytest.raises(CellDecisionContractError, match="unsupported"):
         NoWriteCellDecision("missing")  # type: ignore[arg-type]
-
-
-
-
 
 
 def test_decision_is_immutable_sealed_and_invalidates_payload_substitution(
