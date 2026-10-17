@@ -1,0 +1,240 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Targeted：準備清單、完成分析，再檢閱 workbook",
+    "locale": "zh-TW",
+    "quality_profile": "showcase",
+    "output": "output/core-map-review/targeted-workflow.html",
+    "repository": {
+      "url": "https://github.com/Chao-hu-Lab/XIC_Extractor.git",
+      "revision": "6d8cd57b920abc465f1b1e6a80d983d2c0b355ae",
+      "link_mode": "web"
+    }
+  },
+  "components": [
+    {
+      "id": "inputs",
+      "type": "frontend",
+      "label": "準備這一批的輸入",
+      "sublabel": "RAW／DLL 路徑與目標方法",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/user/targeted-extraction.md",
+          "line": 8,
+          "end_line": 18
+        }
+      ]
+    },
+    {
+      "id": "confirm",
+      "type": "frontend",
+      "label": "確認目標與內標配對",
+      "sublabel": "匯入先預覽，確認後才取代清單",
+      "pos": [
+        440,
+        40
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/user/targeted-extraction.md",
+          "line": 25,
+          "end_line": 35
+        }
+      ]
+    },
+    {
+      "id": "run",
+      "type": "backend",
+      "label": "開始 Targeted 分析",
+      "sublabel": "由正式 application 協調本次工作",
+      "pos": [
+        440,
+        240
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/user/targeted-extraction.md",
+          "line": 8,
+          "end_line": 18
+        },
+        {
+          "path": "xic_extractor/applications/targeted/application.py",
+          "line": 86,
+          "end_line": 139
+        }
+      ]
+    },
+    {
+      "id": "science",
+      "type": "backend",
+      "label": "共用核心完成格值",
+      "sublabel": "峰證據、跨樣本判斷與固定列投影",
+      "pos": [
+        440,
+        440
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/product/shared-processing-kernel.md",
+          "line": 37,
+          "end_line": 51
+        },
+        {
+          "path": "xic_extractor/alignment/completion.py",
+          "line": 805,
+          "end_line": 840
+        }
+      ]
+    },
+    {
+      "id": "workbook",
+      "type": "database",
+      "label": "完成才發布 Excel",
+      "sublabel": "結果、摘要與必要的待檢查項目",
+      "pos": [
+        440,
+        640
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/user/targeted-extraction.md",
+          "line": 75,
+          "end_line": 101
+        }
+      ]
+    },
+    {
+      "id": "review",
+      "type": "frontend",
+      "label": "從總覽選擇要看的結果",
+      "sublabel": "workbook 或工作區只讀檢閱",
+      "pos": [
+        440,
+        840
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/user/targeted-extraction.md",
+          "line": 84,
+          "end_line": 111
+        },
+        {
+          "path": "docs/product/xic-inspector.md",
+          "line": 1,
+          "end_line": 25
+        }
+      ]
+    },
+    {
+      "id": "stopped",
+      "type": "external",
+      "label": "取消或失敗",
+      "sublabel": "不當成完成的 workbook 交付",
+      "pos": [
+        840,
+        240
+      ],
+      "size": [
+        260,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/user/targeted-extraction.md",
+          "line": 75,
+          "end_line": 82
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "inputs-to-confirm",
+      "from": "inputs",
+      "to": "confirm",
+      "label": "準備"
+    },
+    {
+      "id": "confirm-to-run",
+      "from": "confirm",
+      "to": "run",
+      "label": "確認後執行"
+    },
+    {
+      "id": "run-to-science",
+      "from": "run",
+      "to": "science",
+      "label": "分析"
+    },
+    {
+      "id": "science-to-workbook",
+      "from": "science",
+      "to": "workbook",
+      "label": "完成答案"
+    },
+    {
+      "id": "workbook-to-review",
+      "from": "workbook",
+      "to": "review",
+      "label": "先看總覽"
+    },
+    {
+      "id": "run-to-stopped",
+      "from": "run",
+      "to": "stopped",
+      "label": "取消／失敗"
+    }
+  ],
+  "cards": [
+    {
+      "title": "操作圖，不是每個函式的時序",
+      "items": [
+        "完整輸入、清單確認、分析與檢閱是使用者旅程；具體 worker 和 acquisition 交接仍以正式 owner 為準。"
+      ],
+      "dot": "cyan"
+    },
+    {
+      "title": "下一批與先前結果",
+      "items": [
+        "開始新批次保留方法與機器設定，但清除 RAW、上機資訊來源及顯示結果。改設定後，舊結果不能代表新設定。"
+      ],
+      "dot": "amber"
+    },
+    {
+      "title": "檢閱不改值",
+      "items": [
+        "Targeted workbook 可直接供 Inspector 讀取保存值，不需要 RAW 或 DLL；workbook 本身不含色譜曲線。"
+      ],
+      "dot": "cyan"
+    }
+  ]
+}

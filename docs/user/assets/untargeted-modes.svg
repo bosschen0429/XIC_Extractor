@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1140 998" role="img" lang="zh-TW" aria-labelledby="archify-diagram-title archify-diagram-description" xmlns="http://www.w3.org/2000/svg" width="1140" height="998" style="background: #fff; font-family: Consolas, 'Microsoft JhengHei', monospace">
+  <style>
+svg {
+  --grid: #e9edf2;
+  --text: #111827;
+  --text-muted: #5b6474;
+  --lane-stroke: #cbd5e1;
+  --arrow: #64748b;
+  --mask: #ffffff;
+  --frontend-fill: rgba(34, 211, 238, 0.15);
+  --frontend-stroke: #0891b2;
+  --backend-fill: rgba(52, 211, 153, 0.18);
+  --backend-stroke: #059669;
+  --database-fill: rgba(167, 139, 250, 0.2);
+  --database-stroke: #7c3aed;
+  --external-fill: rgba(148, 163, 184, 0.18);
+  --external-stroke: #64748b;
+}
+.c-grid { stroke: var(--grid); fill: none; }
+.c-mask { fill: var(--mask); stroke: none; }
+.c-frontend { fill: var(--frontend-fill);   stroke: var(--frontend-stroke); }
+.c-backend { fill: var(--backend-fill);    stroke: var(--backend-stroke); }
+.c-database { fill: var(--database-fill);   stroke: var(--database-stroke); }
+.c-external { fill: var(--external-fill);   stroke: var(--external-stroke); }
+.t-primary { fill: var(--text); }
+.t-muted { fill: var(--text-muted); }
+.t-edge-default { fill: var(--arrow); }
+svg .semantic-sigil { fill: none;
+      stroke: currentColor;
+      stroke-width: 1.35;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      opacity: 0.76;
+      pointer-events: none; }
+svg .semantic-sigil &gt; * { vector-effect: non-scaling-stroke; }
+svg .semantic-sigil .sigil-fill { fill: currentColor; stroke: none; }
+svg .s-frontend { color: var(--frontend-stroke); }
+svg .s-backend { color: var(--backend-stroke); }
+svg .s-database { color: var(--database-stroke); }
+svg .s-external { color: var(--external-stroke); }
+.a-default { stroke: var(--arrow); fill: none; }
+.m-default { fill: var(--arrow); }
+.c-mask.edge-label { rx: 7px; stroke: var(--lane-stroke); stroke-width: .75px; }
+</style>
+  <title id="archify-diagram-title">Untargeted：依模式選擇 Discovery 與 Alignment</title>
+  <desc id="archify-diagram-description">由 Archify 產生的架構圖。</desc>
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" class="m-default" />
+    </marker>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" class="c-grid" stroke-width="0.5" />
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#grid)" />
+  <g>
+    <path d="M 320 78 L 440 78" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
+    <path d="M 320 78 L 440 78" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)" />
+  </g>
+  <g>
+    <path d="M 580 130 L 580 240" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
+    <path d="M 580 130 L 580 240" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)" />
+  </g>
+  <g>
+    <path d="M 580 330 L 580 440" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
+    <path d="M 580 330 L 580 440" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)" />
+  </g>
+  <g>
+    <path d="M 304 130 L 304 448 Q 304 456 312 456 L 440 456" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
+    <path d="M 304 130 L 304 448 Q 304 456 312 456 L 440 456" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)" />
+  </g>
+  <g>
+    <path d="M 720 285 L 840 285" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
+    <path d="M 720 285 L 840 285" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)" />
+  </g>
+  <g>
+    <path d="M 580 530 L 580 640" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
+    <path d="M 580 530 L 580 640" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)" />
+  </g>
+  <g>
+    <path d="M 580 730 L 580 840" fill="none" stroke="var(--mask)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" pointer-events="none" />
+    <path d="M 580 730 L 580 840" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)" />
+  </g>
+  <g>
+    <title>先選這次要做的工作 · full／discovery_only／align_only · 架構元件</title>
+    <rect x="40" y="40" width="280" height="90" rx="8" class="c-mask" />
+    <rect x="40" y="40" width="280" height="90" rx="8" class="c-frontend" stroke-width="1.25px" />
+    <g aria-hidden="true" class="semantic-sigil s-frontend" transform="translate(46 46) scale(0.6875)">
+      <rect x="2" y="3" width="12" height="10" rx="2" />
+      <path d="M2 6.5h12" />
+      <circle cx="4.1" cy="4.8" r=".7" class="sigil-fill" />
+      <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill" />
+    </g>
+    <text x="180" y="83" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">先選這次要做的工作</text>
+    <text x="180" y="99" class="t-muted" font-size="9" text-anchor="middle">full／discovery_only／align_only</text>
+  </g>
+  <g>
+    <title>Discovery 找樣本內候選 · 依方法產生候選與來源證據 · 架構元件</title>
+    <rect x="440" y="40" width="280" height="90" rx="8" class="c-mask" />
+    <rect x="440" y="40" width="280" height="90" rx="8" class="c-backend" stroke-width="1.25px" />
+    <g aria-hidden="true" class="semantic-sigil s-backend" transform="translate(446 46) scale(0.6875)">
+      <path d="M6 3 3 8l3 5M10 3l3 5-3 5" />
+    </g>
+    <text x="580" y="83" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Discovery 找樣本內候選</text>
+    <text x="580" y="99" class="t-muted" font-size="9" text-anchor="middle">依方法產生候選與來源證據</text>
+  </g>
+  <g>
+    <title>保存候選與 batch index · 供後續 Alignment 讀取的交接 · 架構元件</title>
+    <rect x="440" y="240" width="280" height="90" rx="8" class="c-mask" />
+    <rect x="440" y="240" width="280" height="90" rx="8" class="c-database" stroke-width="1.25px" />
+    <g aria-hidden="true" class="semantic-sigil s-database" transform="translate(446 246) scale(0.6875)">
+      <ellipse cx="8" cy="4" rx="5" ry="2" />
+      <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2" />
+    </g>
+    <text x="580" y="283" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">保存候選與 batch index</text>
+    <text x="580" y="299" class="t-muted" font-size="9" text-anchor="middle">供後續 Alignment 讀取的交接</text>
+  </g>
+  <g>
+    <title>Alignment 完成跨樣本答案 · 群組、補證准入、格值與投影 · 架構元件</title>
+    <rect x="440" y="440" width="280" height="90" rx="8" class="c-mask" />
+    <rect x="440" y="440" width="280" height="90" rx="8" class="c-backend" stroke-width="1.25px" />
+    <g aria-hidden="true" class="semantic-sigil s-backend" transform="translate(446 446) scale(0.6875)">
+      <path d="M6 3 3 8l3 5M10 3l3 5-3 5" />
+    </g>
+    <text x="580" y="483" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Alignment 完成跨樣本答案</text>
+    <text x="580" y="499" class="t-muted" font-size="9" text-anchor="middle">群組、補證准入、格值與投影</text>
+  </g>
+  <g>
+    <title>發布 Matrix 與保存證據 · 額外 review／gallery 依選項開啟 · 架構元件</title>
+    <rect x="440" y="640" width="280" height="90" rx="8" class="c-mask" />
+    <rect x="440" y="640" width="280" height="90" rx="8" class="c-database" stroke-width="1.25px" />
+    <g aria-hidden="true" class="semantic-sigil s-database" transform="translate(446 646) scale(0.6875)">
+      <ellipse cx="8" cy="4" rx="5" ry="2" />
+      <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2" />
+    </g>
+    <text x="580" y="683" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">發布 Matrix 與保存證據</text>
+    <text x="580" y="699" class="t-muted" font-size="9" text-anchor="middle">額外 review／gallery 依選項開啟</text>
+  </g>
+  <g>
+    <title>檢閱完成結果 · 工作區讀保存證據；按需取得 XIC · 架構元件</title>
+    <rect x="440" y="840" width="280" height="90" rx="8" class="c-mask" />
+    <rect x="440" y="840" width="280" height="90" rx="8" class="c-frontend" stroke-width="1.25px" />
+    <g aria-hidden="true" class="semantic-sigil s-frontend" transform="translate(446 846) scale(0.6875)">
+      <rect x="2" y="3" width="12" height="10" rx="2" />
+      <path d="M2 6.5h12" />
+      <circle cx="4.1" cy="4.8" r=".7" class="sigil-fill" />
+      <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill" />
+    </g>
+    <text x="580" y="883" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">檢閱完成結果</text>
+    <text x="580" y="899" class="t-muted" font-size="9" text-anchor="middle">工作區讀保存證據；按需取得 XIC</text>
+  </g>
+  <g>
+    <title>只探索時先檢查候選 · 此模式不交付跨樣本 Matrix · 架構元件</title>
+    <rect x="840" y="240" width="260" height="90" rx="8" class="c-mask" />
+    <rect x="840" y="240" width="260" height="90" rx="8" class="c-external" stroke-width="1.25px" />
+    <g aria-hidden="true" class="semantic-sigil s-external" transform="translate(846 246) scale(0.6875)">
+      <rect x="2.5" y="5" width="8.5" height="8" rx="1.5" />
+      <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5" />
+    </g>
+    <text x="970" y="283" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">只探索時先檢查候選</text>
+    <text x="970" y="299" class="t-muted" font-size="9" text-anchor="middle">此模式不交付跨樣本 Matrix</text>
+  </g>
+  <g>
+    <rect x="355.8" y="58" width="48.4" height="14" rx="3" class="c-mask edge-label" />
+    <text x="380" y="68" class="t-edge-default" font-size="8" text-anchor="middle">探索模式</text>
+  </g>
+  <g>
+    <rect x="544" y="178" width="30" height="14" rx="3" class="c-mask edge-label" />
+    <text x="559" y="188" class="t-edge-default" font-size="8" text-anchor="middle">保存</text>
+  </g>
+  <g>
+    <rect x="544" y="378" width="30" height="14" rx="3" class="c-mask edge-label" />
+    <text x="559" y="388" class="t-edge-default" font-size="8" text-anchor="middle">full</text>
+  </g>
+  <g>
+    <rect x="343" y="436" width="58" height="14" rx="3" class="c-mask edge-label" />
+    <text x="372" y="446" class="t-edge-default" font-size="8" text-anchor="middle">既有 index</text>
+  </g>
+  <g>
+    <rect x="741.4" y="265" width="77.2" height="14" rx="3" class="c-mask edge-label" />
+    <text x="780" y="275" class="t-edge-default" font-size="8" text-anchor="middle">discovery_only</text>
+  </g>
+  <g>
+    <rect x="516" y="578" width="58" height="14" rx="3" class="c-mask edge-label" />
+    <text x="545" y="588" class="t-edge-default" font-size="8" text-anchor="middle">完成才發布</text>
+  </g>
+  <g>
+    <rect x="544" y="778" width="30" height="14" rx="3" class="c-mask edge-label" />
+    <text x="559" y="788" class="t-edge-default" font-size="8" text-anchor="middle">檢閱</text>
+  </g>
+  <g>
+    <text x="40" y="962" class="t-primary" font-size="12" font-weight="650">圖例</text>
+    <g>
+      <rect x="40" y="973" width="16" height="10" rx="2.5" class="c-frontend" stroke-width="1" />
+      <text x="62" y="982" class="t-muted" font-size="10" font-weight="500">前端</text>
+    </g>
+    <g>
+      <rect x="130" y="973" width="16" height="10" rx="2.5" class="c-backend" stroke-width="1" />
+      <text x="152" y="982" class="t-muted" font-size="10" font-weight="500">後端</text>
+    </g>
+    <g>
+      <rect x="220" y="973" width="16" height="10" rx="2.5" class="c-database" stroke-width="1" />
+      <text x="242" y="982" class="t-muted" font-size="10" font-weight="500">資料庫</text>
+    </g>
+    <g>
+      <rect x="323" y="973" width="16" height="10" rx="2.5" class="c-external" stroke-width="1" />
+      <text x="345" y="982" class="t-muted" font-size="10" font-weight="500">外部系統</text>
+    </g>
+  </g>
+</svg>

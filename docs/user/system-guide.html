@@ -101,6 +101,7 @@
     @media (max-width: 540px) { .page { width: min(100% - 28px, 1120px); } .hero { padding-top: 34px; } .panel { padding: 19px; } .pipeline { grid-template-columns: 1fr; } .pipeline li::after { display: none; } .inspector-path { grid-template-columns: 1fr; } .path-arrow { line-height: 1; transform: rotate(90deg); } .state-line li:not(:last-child)::after { display: none; } }
     @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
   </style>
+  <link rel="stylesheet" href="assets/guide-maps.css">
 </head>
 <body>
   <div class="page">
@@ -119,6 +120,7 @@
     </header>
 
     <nav class="jump" aria-label="頁面導覽">
+      <a href="#flow-map">先看流程圖</a>
       <a href="#architecture">模組與依賴</a>
       <a href="#runtime">執行生命週期</a>
       <a href="#inspector">完成證據檢視</a>
@@ -126,6 +128,13 @@
     </nav>
 
     <main>
+<section class="guide-map" id="flow-map" aria-labelledby="flow-map-title">
+<h2 id="flow-map-title">分清楚誰判斷、誰執行、誰發布</h2>
+<p class="guide-map-intro">入口負責協調，科學 owner 完成答案；runtime 管資源與收尾，不因此取得選峰或 writer 權限。</p>
+<div class="guide-map-toolbar"><p>先看處理與判斷的關係，再沿下方說明閱讀。</p><a href="assets/execution-boundaries.svg" target="_blank" rel="noopener">另開 SVG 大圖 ↗</a></div>
+<img class="guide-map-frame" src="assets/execution-boundaries.svg" alt="分清楚誰判斷、誰執行、誰發布：流程圖" loading="lazy">
+<p class="guide-map-caption">這是概念與責任導覽，不是逐函式執行時序。若圖不易閱讀或無法載入，可另開完整圖，或直接讀<a href="#runtime">執行生命週期說明</a>。</p>
+</section>
       <section id="architecture" aria-labelledby="architecture-heading">
         <p class="eyebrow">01 · 系統形狀</p>
         <h2 id="architecture-heading">資料往前走，依賴往核心靠</h2>

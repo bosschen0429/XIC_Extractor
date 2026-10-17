@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="看懂 XIC Extractor 的兩種工作模式、共用核心模組與結果檢視路徑。">
-  <title>XIC Extractor 核心模組導覽</title>
+  <meta name="description" content="先用互動流程圖看懂 XIC Extractor 的共用處理與判斷，再展開兩種工作模式、輸出與結果檢視的說明。">
+  <title>XIC Extractor 核心流程導覽</title>
   <style>
     :root {
       color-scheme: light;
@@ -82,6 +82,15 @@
     .section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; }
     h2 { margin: 0; font-size: clamp(1.5rem, 2.5vw, 2.25rem); line-height: 1.28; letter-spacing: -.02em; }
     .section-intro { max-width: 780px; margin: 9px 0 24px; color: var(--muted); }
+    .map-toolbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+    .map-toolbar p { margin: 0; color: var(--muted); font-size: .92rem; }
+    .map-toolbar a { font-weight: 700; }
+    .map-frame { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+    .map-caption { margin: 13px 0 0; color: var(--muted); font-size: .9rem; }
+    .map-takeaways { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 20px 0 0; padding: 0; list-style: none; }
+    .map-takeaways li { padding: 17px 19px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+    .map-takeaways strong { display: block; margin-bottom: 5px; color: var(--teal); }
+    .map-takeaways span { color: var(--muted); font-size: .93rem; }
     .mode-switch {
       display: inline-flex;
       flex-wrap: wrap;
@@ -190,7 +199,7 @@
       .hero-inner, .mode-card, .stage-body { grid-template-columns: 1fr; }
       .hero-aside { max-width: 570px; }
       .mode-card .mode-output { border-left: 0; border-top: 1px solid var(--line); padding: 17px 0 0; }
-      .support-grid { grid-template-columns: 1fr; }
+      .support-grid, .map-takeaways { grid-template-columns: 1fr; }
     }
     @media (max-width: 540px) {
       .page { width: min(100% - 28px, 1120px); }
@@ -204,6 +213,7 @@
       .expand { font-size: .72rem; }
       .reading { grid-template-columns: 1fr; }
     }
+    @media print { .map-toolbar { display: block; } }
     @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
   </style>
 </head>
@@ -212,18 +222,19 @@
     <header class="hero">
       <div class="hero-inner">
         <div>
-          <p class="eyebrow">XIC Extractor · 核心模組導覽</p>
+          <p class="eyebrow">XIC Extractor · 核心流程導覽</p>
           <h1>RAW 進來之後，<br>誰接手？</h1>
-          <p class="lead">先選你要「查已知目標」或「找未知特徵」。兩種工作模式使用同一套科學處理核心，最後把證據整理成可審閱的結果。</p>
+          <p class="lead">先看流程圖，掌握訊號怎麼變成峰證據、群組與每格答案。Targeted 和 Untargeted 共用科學核心，但保留不同的搜尋範圍與交付方式。</p>
         </div>
         <aside class="hero-aside" aria-label="閱讀重點">
           <strong>讀圖的順序</strong>
-          <p>看入口差異 → 沿共同核心走一遍 → 到輸出與檢視。每張卡片都能展開，並連到更深入的人讀版說明。</p>
+          <p>先沿中央的綠色處理往下讀，再看兩側的搜尋與交付。想知道原因或實作時，再展開下方說明、核對來源。</p>
         </aside>
       </div>
     </header>
 
     <nav class="jump" aria-label="頁面導覽">
+      <a href="#overview">先看流程圖</a>
       <a href="#modes">兩種入口</a>
       <a href="#core">共同核心</a>
       <a href="#support">支援與檢視</a>
@@ -231,8 +242,25 @@
     </nav>
 
     <main>
+      <section id="overview" aria-labelledby="overview-heading">
+        <p class="eyebrow">01 · 先看全貌</p>
+        <h2 id="overview-heading">共用核心做判斷，兩種模式各自交付</h2>
+        <p class="section-intro">中央展開「看見什麼峰、哪些觀察屬於同一群、缺格能否補證、最後能寫什麼值」。左側是搜尋政策，右側是交付上下文；方塊依問題與責任分組，不照 module 一個個切。</p>
+        <div class="map-toolbar">
+          <p>先看共用判斷與交付的關係，再沿下方說明閱讀。</p>
+          <a href="assets/core-processing-map.svg" target="_blank" rel="noopener">另開 SVG 大圖 ↗</a>
+        </div>
+        <img class="map-frame" src="assets/core-processing-map.svg" alt="XIC 共用核心：從峰證據、群組與補證到每格答案的流程圖" loading="lazy">
+        <p class="map-caption">這是科學責任與資料交接圖，不是每個函式的執行時序。若小螢幕不易閱讀，可另開完整圖；也能沿下方<a href="#core">逐步說明</a>讀完同一條流程。</p>
+        <ul class="map-takeaways" aria-label="讀圖時記住三件事">
+          <li><strong>共用，不等於方法盲目一致</strong><span>共享觀察、群組與格值的責任；搜尋與解讀仍可採用明確的方法策略。</span></li>
+          <li><strong>補到觀察，不等於可寫值</strong><span>補證、群組成員資格與數值判斷各有依據，不能把其中一步當成全部完成。</span></li>
+          <li><strong>輸出只消費完成答案</strong><span>Targeted 與 Untargeted 各自投影和發布，不由 writer 重讀 RAW、分組或重選格值。</span></li>
+        </ul>
+      </section>
+
       <section id="modes" aria-labelledby="modes-heading">
-        <p class="eyebrow">01 · 選擇工作方式</p>
+        <p class="eyebrow">02 · 選擇工作方式</p>
         <h2 id="modes-heading">入口不同，核心相同</h2>
         <p class="section-intro">差別在搜尋範圍，以及最後要交付哪些列與欄。下面切換模式，就能對照你提供的資料和拿到的結果。</p>
         <div class="mode-switch" role="group" aria-label="工作模式">
@@ -275,13 +303,13 @@
       </section>
 
       <section id="core" aria-labelledby="core-heading">
-        <p class="eyebrow">02 · 沿著共同核心</p>
+        <p class="eyebrow">03 · 需要時展開細節</p>
         <h2 id="core-heading">從候選訊號到可交付的格值</h2>
-        <p class="section-intro">產品流程的主軸是 Discovery → Alignment → 必要時 Backfill。下面把中間的峰觀察和最後的輸出決策一起標出，讓模組分工更容易看懂。</p>
+        <p class="section-intro">沿同一條證據路徑，逐步看每個判斷的輸入與交付。下列說明不要求你先認識程式目錄；需要改實作時，再追到各步的正式 owner。</p>
         <ol class="flow" aria-label="共同處理路徑">
           <li>
             <span class="step-marker" aria-hidden="true">1</span>
-            <details class="stage" open>
+            <details class="stage">
               <summary><span><span class="stage-label">Discovery · 找候選</span><span class="stage-title">依搜尋範圍讀 RAW，找可能的訊號</span><span class="stage-summary">從儀器資料取得候選特徵與色譜訊號，保留它們從哪裡來的證據。</span></span><span class="expand" aria-hidden="true"></span></summary>
               <div class="stage-body">
                 <div><p>Targeted 從目標清單限定要交付的目標；Untargeted 在設定的證據空間中探索。Discovery 產生候選和來源事實，Extraction 負責 Targeted 執行協調與抽取工作。</p><ul><li>進來：RAW、設定、搜尋範圍。</li><li>交出：候選訊號與帶來源的觀察資料。</li></ul></div>
@@ -314,7 +342,7 @@
             <details class="stage conditional">
               <summary><span><span class="stage-label">Backfill · 有需要才回填</span><span class="stage-title">某個格的證據不足時，有限度地再查一次</span><span class="stage-summary">已經有目標或群組 owner，才對缺漏的樣本格做 bounded revisit。</span></span><span class="expand" aria-hidden="true"></span></summary>
               <div class="stage-body">
-                <div><p>Backfill 可能補出新觀察，也可能回報無法修復。它不憑空建立新群組，也不自行挑選輸出值；證據足夠的格不需要這一步。</p><ul><li>進來：已建立的目標／群組與不足的樣本格。</li><li>交出：補充觀察或明確的無修復結果。</li></ul></div>
+                <div><p>Backfill 只在啟用與准入條件成立時補搜，可能補出新觀察，也可能回報無法修復。它不建立新群組、不自行改成員或挑選輸出值；只有 CrossSample 能接納合格觀察並記錄群組演變。原始與補搜證據會一起閉合，保留群組和觀察終態，再交給格值決策。</p><ul><li>進來：已建立的目標／群組與不足的樣本格。</li><li>交出：補充觀察或明確的無修復結果。</li></ul></div>
                 <aside class="owner-box"><p><code>alignment/backfill/</code></p><p>繼續閱讀：<a href="processing-guide.html#backfill">Backfill</a>、<a href="processing-guide.html#terms">產品用語</a></p></aside>
               </div>
             </details>
@@ -324,7 +352,7 @@
             <details class="stage">
               <summary><span><span class="stage-label">Cell decision &amp; output · 交付</span><span class="stage-title">決定每個結果格要寫值，還是留空</span><span class="stage-summary">先完成格值決策，再依工作模式寫成 workbook 或 matrix。</span></span><span class="expand" aria-hidden="true"></span></summary>
               <div class="stage-body">
-                <div><p>共享的 cell decision 決定值或 no-write；Targeted 和 Untargeted 各自決定要保留哪些列、怎麼呈現。Output renderer 只把已完成的結果寫成檔案，不重算科學證據。</p><ul><li>進來：對齊完成的證據與補缺結果。</li><li>交出：可審閱的 Excel workbook、TSV 或明確選用的報告。</li></ul></div>
+                <div><p>共享的 cell decision 決定數值或不寫入理由，並保留選定的積分證據。Targeted 先綁定固定列 subjects 再決定格值；Untargeted 先完成 Feature × Sample 答案，再投影群組列。兩者各自決定呈現與計數，經結果封存後，writer 只把完成答案寫成檔案。</p><ul><li>進來：閉合的科學證據；Targeted 另有固定列 subject 綁定。</li><li>交出：可審閱的 Excel workbook、TSV 或明確選用的報告。</li><li>未搜尋、無觀察或不可定量等情形保留不寫入理由，不一律當成零或化學不存在。</li></ul></div>
                 <aside class="owner-box"><p><code>alignment/cell_decision/</code>、<code>output/</code></p><p>繼續閱讀：<a href="processing-guide.html#decisions">格值決策</a>、<a href="processing-guide.html#matrix">Matrix</a></p></aside>
               </div>
             </details>
@@ -333,22 +361,22 @@
       </section>
 
       <section id="support" aria-labelledby="support-heading">
-        <p class="eyebrow">03 · 讓流程跑起來，再看結果</p>
+        <p class="eyebrow">04 · 讓流程跑起來，再看結果</p>
         <h2 id="support-heading">支援模組與只讀檢視</h2>
         <p class="section-intro">下面的模組負責接人、讀檔或安排執行；它們支援共同核心，沒有另立一套科學判斷。</p>
         <div class="support-grid">
-          <article class="support-card"><h3>GUI / CLI 與設定</h3><p>接收使用者選項、載入目標清單或 preset，將工作交給對應流程。</p><code>gui/ · scripts/ · configuration/</code></article>
+          <article class="support-card"><h3>HTML 工作區 / CLI 與設定</h3><p>接收使用者選項、載入目標清單或 preset，將工作交給對應流程。</p><code>xic_workbench/ · scripts/ · configuration/</code></article>
           <article class="support-card"><h3>RAW 資料入口</h3><p>對儀器資料提供讀取介面，讓 Discovery 和 Extraction 取得所需訊號。</p><code>raw_reader.py</code></article>
           <article class="support-card"><h3>執行引擎</h3><p>安排工作、管理 worker 和已完成結果的暫存；不挑選峰，也不決定輸出格值。</p><code>execution/</code></article>
         </div>
         <div class="review-card">
           <span class="review-icon" aria-hidden="true">↗</span>
-          <div class="review-content"><h3>pure Untargeted CID-NL 完成後，用 XIC Inspector 看證據</h3><p>Inspector 可讀已完成的 CID-NL feature-evidence SQLite report，也可讀診斷工具保存的 curve-bundle JSON，產生離線檢視頁。Untargeted GUI 可在成功後手動匯出。它不改變 RAW、峰選擇或 matrix 值；能檢視診斷曲線不等於該方法已取得產品寫入權。</p><p class="links"><code>xic_inspector/</code> · <a href="system-guide.html#inspector">看 Inspector 的白話導覽</a> · <a href="system-guide.html#runtime">看執行生命週期</a></p></div>
+          <div class="review-content"><h3>分析完成後，用 XIC Inspector 看證據</h3><p>Inspector 可讀 Targeted workbook、完成的 CID-NL 證據 report，以及診斷工具保存的 curve-bundle JSON。HTML 工作區可檢閱完成結果、按需取得 XIC，並匯出離線報告。RAW 擷取由工作區的 acquisition 負責；只讀檢閱不改變既有峰選擇或格值，能檢視診斷曲線也不代表該方法已取得產品寫入權。</p><p class="links"><code>xic_inspector/</code> · <a href="system-guide.html#inspector">看 Inspector 的白話導覽</a> · <a href="system-guide.html#runtime">看執行生命週期</a></p></div>
         </div>
       </section>
 
       <section id="reading" aria-labelledby="reading-heading">
-        <p class="eyebrow">04 · 繼續深入</p>
+        <p class="eyebrow">05 · 繼續深入</p>
         <h2 id="reading-heading">看故事，或選一篇深入讀</h2>
         <div class="reading">
           <a href="raw-to-final-matrix-product-story.html"><strong>RAW 到 Final Matrix 的產品故事 →</strong><span>以一個具體例子，沿 Discovery、XIC、峰和 Alignment 看結果怎麼形成。</span></a>

@@ -1,0 +1,366 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "從峰證據到格值：共用核心怎麼判斷",
+    "locale": "zh-TW",
+    "quality_profile": "showcase",
+    "output": "output/core-map-review/core-processing-map.html",
+    "repository": {
+      "url": "https://github.com/Chao-hu-Lab/XIC_Extractor.git",
+      "revision": "6d8cd57b920abc465f1b1e6a80d983d2c0b355ae",
+      "link_mode": "web"
+    },
+    "legend": {
+      "entries": {
+        "backend": {
+          "label": "共享處理與判斷"
+        },
+        "frontend": {
+          "label": "搜尋政策上下文"
+        },
+        "database": {
+          "label": "投影與交付上下文"
+        }
+      }
+    }
+  },
+  "components": [
+    {
+      "id": "target-input",
+      "label": "Targeted：查已知目標",
+      "sublabel": "以目標清單、m/z 與 RT 限定搜尋",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        250,
+        88
+      ],
+      "type": "frontend",
+      "sources": [
+        {
+          "path": "docs/product/shared-processing-kernel.md",
+          "line": 18,
+          "end_line": 33
+        },
+        {
+          "path": "xic_extractor/applications/targeted/application.py",
+          "line": 86,
+          "end_line": 139
+        }
+      ]
+    },
+    {
+      "id": "untarget-input",
+      "label": "Untargeted：探索特徵",
+      "sublabel": "依方法搜尋，交出候選與來源證據",
+      "pos": [
+        40,
+        220
+      ],
+      "size": [
+        250,
+        88
+      ],
+      "type": "frontend",
+      "sources": [
+        {
+          "path": "docs/product/shared-processing-kernel.md",
+          "line": 123,
+          "end_line": 138
+        }
+      ]
+    },
+    {
+      "id": "local-evidence",
+      "label": "把訊號變成峰證據",
+      "sublabel": "辨認峰界、積分，保留候選假說與來源",
+      "pos": [
+        400,
+        40
+      ],
+      "size": [
+        330,
+        100
+      ],
+      "type": "backend",
+      "sources": [
+        {
+          "path": "xic_extractor/peak_detection/capture.py",
+          "line": 126,
+          "end_line": 215
+        },
+        {
+          "path": "xic_extractor/peak_detection/capture.py",
+          "line": 285,
+          "end_line": 334
+        },
+        {
+          "path": "docs/product/shared-processing-kernel.md",
+          "line": 89,
+          "end_line": 104
+        }
+      ]
+    },
+    {
+      "id": "cross-sample",
+      "label": "哪些觀察屬於同一群？",
+      "sublabel": "跨樣本對應、成員資格與群組演變",
+      "pos": [
+        400,
+        240
+      ],
+      "size": [
+        330,
+        100
+      ],
+      "type": "backend",
+      "sources": [
+        {
+          "path": "docs/product/shared-processing-kernel.md",
+          "line": 132,
+          "end_line": 144
+        },
+        {
+          "path": "xic_extractor/alignment/completion.py",
+          "line": 400,
+          "end_line": 415
+        }
+      ]
+    },
+    {
+      "id": "revisit",
+      "label": "證據不足時，能否再查？",
+      "sublabel": "符合啟用條件，才在既有目標／群組下補搜",
+      "pos": [
+        40,
+        440
+      ],
+      "size": [
+        280,
+        100
+      ],
+      "type": "backend",
+      "sources": [
+        {
+          "path": "docs/product/shared-processing-kernel.md",
+          "line": 146,
+          "end_line": 173
+        },
+        {
+          "path": "xic_extractor/alignment/backfill/cid_nl_planning.py",
+          "line": 1,
+          "end_line": 65
+        }
+      ]
+    },
+    {
+      "id": "closure",
+      "label": "把原始與補搜證據收完整",
+      "sublabel": "保留群組與觀察終態，不先決定輸出值",
+      "pos": [
+        400,
+        440
+      ],
+      "size": [
+        330,
+        100
+      ],
+      "type": "backend",
+      "sources": [
+        {
+          "path": "xic_extractor/alignment/cell_observation/observations.py",
+          "line": 262,
+          "end_line": 317
+        },
+        {
+          "path": "xic_extractor/alignment/result/scientific_alignment.py",
+          "line": 186,
+          "end_line": 245
+        },
+        {
+          "path": "xic_extractor/alignment/completion.py",
+          "line": 432,
+          "end_line": 460
+        }
+      ]
+    },
+    {
+      "id": "cell-answer",
+      "label": "這一格能交付什麼答案？",
+      "sublabel": "數值或不寫入理由，連同選定的積分證據",
+      "pos": [
+        400,
+        640
+      ],
+      "size": [
+        330,
+        100
+      ],
+      "type": "backend",
+      "sources": [
+        {
+          "path": "xic_extractor/alignment/cell_decision/owner.py",
+          "line": 294,
+          "end_line": 375
+        },
+        {
+          "path": "xic_extractor/alignment/completion.py",
+          "line": 805,
+          "end_line": 865
+        },
+        {
+          "path": "docs/product/shared-processing-kernel.md",
+          "line": 175,
+          "end_line": 193
+        }
+      ]
+    },
+    {
+      "id": "target-delivery",
+      "label": "Targeted：按目標交付",
+      "sublabel": "固定列投影 → 結果封存 → Excel",
+      "pos": [
+        840,
+        570
+      ],
+      "size": [
+        270,
+        100
+      ],
+      "type": "database",
+      "sources": [
+        {
+          "path": "xic_extractor/alignment/completion.py",
+          "line": 812,
+          "end_line": 840
+        },
+        {
+          "path": "xic_extractor/applications/targeted/output_boundary.py",
+          "line": 40,
+          "end_line": 78
+        }
+      ]
+    },
+    {
+      "id": "untarget-delivery",
+      "label": "Untargeted：按群組交付",
+      "sublabel": "群組列投影 → 結果封存 → Matrix／證據",
+      "pos": [
+        840,
+        790
+      ],
+      "size": [
+        270,
+        100
+      ],
+      "type": "database",
+      "sources": [
+        {
+          "path": "xic_extractor/alignment/completion.py",
+          "line": 841,
+          "end_line": 865
+        },
+        {
+          "path": "xic_extractor/applications/untargeted/publication.py",
+          "line": 62,
+          "end_line": 151
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "target-input-to-local-evidence",
+      "from": "target-input",
+      "to": "local-evidence",
+      "label": "受限搜尋"
+    },
+    {
+      "id": "untarget-input-to-local-evidence",
+      "from": "untarget-input",
+      "to": "local-evidence",
+      "label": "一般候選"
+    },
+    {
+      "id": "local-evidence-to-cross-sample",
+      "from": "local-evidence",
+      "to": "cross-sample",
+      "label": "觀察與假說"
+    },
+    {
+      "id": "cross-sample-to-closure",
+      "from": "cross-sample",
+      "to": "closure",
+      "label": "群組與原始證據"
+    },
+    {
+      "id": "cross-sample-to-revisit",
+      "from": "cross-sample",
+      "to": "revisit",
+      "label": "缺格且准入"
+    },
+    {
+      "id": "revisit-to-closure",
+      "from": "revisit",
+      "to": "closure",
+      "label": "補搜結果"
+    },
+    {
+      "id": "closure-to-cell-answer",
+      "from": "closure",
+      "to": "cell-answer",
+      "label": "完成科學結果"
+    },
+    {
+      "id": "cell-answer-to-target-delivery",
+      "from": "cell-answer",
+      "to": "target-delivery",
+      "label": "格值答案"
+    },
+    {
+      "id": "cell-answer-to-untarget-delivery",
+      "from": "cell-answer",
+      "to": "untarget-delivery",
+      "label": "格值答案"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "先讀中央的共同判斷",
+      "items": [
+        "從峰證據、跨樣本群組到每格答案；同一格整合協作 owners，不等於一個 module 或固定函式執行順序。",
+        "兩種模式共享科學責任與證據契約，但保留方法所需的搜尋、解讀及積分策略。"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "補出觀察，不代表已入群或可寫值",
+      "items": [
+        "Backfill 只在准入條件成立時做有界補搜；它不創立新群組，也不自行改成員或選最終值。",
+        "只有 CrossSample 可接納合格補搜觀察並記錄群組演變；格值決策仍由 cell decision 完成。"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "左右兩側保留工作模式差異",
+      "items": [
+        "Targeted：科學閉合後先綁定固定列 subjects，再完成格值決策與投影。",
+        "Untargeted：先完成 Feature × Sample 格值答案，再一次投影群組列與輸出身分。",
+        "右側合併呈現投影、封存與各自 writer。Writer 只消費完成答案，不重讀 RAW、不分組、不重算值。"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "維護者可核對來源",
+      "items": [
+        "節點保留固定版本的 source 引用；搜尋範圍不是觀察證明，群組成員資格也不保證可定量。",
+        "未搜尋、無觀察、未解決、被拒、不可定量與不可取得，都不應無條件轉成零或化學不存在。",
+        "這是概念導覽，不列出 runtime、worker、取消重試或全部例外；正式行為以產品文件與 source 為準。"
+      ]
+    }
+  ]
+}

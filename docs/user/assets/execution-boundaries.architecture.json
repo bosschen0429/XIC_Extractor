@@ -1,0 +1,250 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "系統分工：判斷、執行資源與發布各有邊界",
+    "locale": "zh-TW",
+    "quality_profile": "showcase",
+    "output": "output/core-map-review/execution-boundaries.html",
+    "repository": {
+      "url": "https://github.com/Chao-hu-Lab/XIC_Extractor.git",
+      "revision": "6d8cd57b920abc465f1b1e6a80d983d2c0b355ae",
+      "link_mode": "web"
+    }
+  },
+  "components": [
+    {
+      "id": "application",
+      "type": "frontend",
+      "label": "入口與工作協調",
+      "sublabel": "HTML／CLI 將請求交給正式 owners",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/architecture-contract.md",
+          "line": 26,
+          "end_line": 43
+        },
+        {
+          "path": "docs/product/execution-runtime.md",
+          "line": 114,
+          "end_line": 128
+        }
+      ]
+    },
+    {
+      "id": "science",
+      "type": "backend",
+      "label": "科學 owner 做判斷",
+      "sublabel": "觀察、群組、格值與完成結果",
+      "pos": [
+        440,
+        40
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/product/shared-processing-kernel.md",
+          "line": 18,
+          "end_line": 33
+        },
+        {
+          "path": "docs/product/shared-processing-kernel.md",
+          "line": 58,
+          "end_line": 68
+        }
+      ]
+    },
+    {
+      "id": "publication",
+      "type": "backend",
+      "label": "完成模型才進入發布",
+      "sublabel": "結果封存、staging 與各自 writer",
+      "pos": [
+        840,
+        40
+      ],
+      "size": [
+        260,
+        90
+      ],
+      "sources": [
+        {
+          "path": "xic_extractor/applications/targeted/output_boundary.py",
+          "line": 40,
+          "end_line": 78
+        },
+        {
+          "path": "xic_extractor/applications/untargeted/publication.py",
+          "line": 62,
+          "end_line": 116
+        }
+      ]
+    },
+    {
+      "id": "runtime",
+      "type": "backend",
+      "label": "執行資源與排程",
+      "sublabel": "worker、取消、失敗聚合與清理",
+      "pos": [
+        40,
+        280
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/product/execution-runtime.md",
+          "line": 22,
+          "end_line": 65
+        }
+      ]
+    },
+    {
+      "id": "terminal",
+      "type": "external",
+      "label": "中斷也要有終態與收尾",
+      "sublabel": "取消或失敗不等於完成交付",
+      "pos": [
+        40,
+        520
+      ],
+      "size": [
+        280,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/product/execution-runtime.md",
+          "line": 22,
+          "end_line": 47
+        },
+        {
+          "path": "docs/product/execution-runtime.md",
+          "line": 114,
+          "end_line": 128
+        }
+      ]
+    },
+    {
+      "id": "saved",
+      "type": "database",
+      "label": "保存的 workbook／Matrix／證據",
+      "sublabel": "完成產物保留自己的來源與身分",
+      "pos": [
+        840,
+        280
+      ],
+      "size": [
+        260,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/user/targeted-extraction.md",
+          "line": 75,
+          "end_line": 101
+        },
+        {
+          "path": "docs/user/untargeted-discovery.md",
+          "line": 80,
+          "end_line": 109
+        }
+      ]
+    },
+    {
+      "id": "inspector",
+      "type": "frontend",
+      "label": "Inspector 只讀檢閱",
+      "sublabel": "按需 XIC 仍由 acquisition 取得",
+      "pos": [
+        840,
+        520
+      ],
+      "size": [
+        260,
+        90
+      ],
+      "sources": [
+        {
+          "path": "docs/product/xic-inspector.md",
+          "line": 22,
+          "end_line": 62
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "application-to-science",
+      "from": "application",
+      "to": "science",
+      "label": "委派判斷"
+    },
+    {
+      "id": "science-to-publication",
+      "from": "science",
+      "to": "publication",
+      "label": "完成答案"
+    },
+    {
+      "id": "application-to-runtime",
+      "from": "application",
+      "to": "runtime",
+      "label": "安排執行"
+    },
+    {
+      "id": "runtime-to-terminal",
+      "from": "runtime",
+      "to": "terminal",
+      "label": "終態收尾"
+    },
+    {
+      "id": "publication-to-saved",
+      "from": "publication",
+      "to": "saved",
+      "label": "發布"
+    },
+    {
+      "id": "saved-to-inspector",
+      "from": "saved",
+      "to": "inspector",
+      "label": "讀取"
+    }
+  ],
+  "cards": [
+    {
+      "title": "這是責任關係，不是單一 supervisor 的時序",
+      "items": [
+        "Foreground acquisition、科學組合與發布不全由同一 runtime receipt 覆蓋；不同路徑保留其正式交接。"
+      ],
+      "dot": "cyan"
+    },
+    {
+      "title": "Runtime 不挑選峰或格值",
+      "items": [
+        "執行 owner 管排程與資源，不取得科學判斷、writer 或產品化權限。"
+      ],
+      "dot": "amber"
+    },
+    {
+      "title": "可讀曲線，不代表能改結果",
+      "items": [
+        "Inspector 讀保存證據；工作區取得的新診斷曲線不替換原本的峰、積分或 Matrix。"
+      ],
+      "dot": "cyan"
+    }
+  ]
+}
