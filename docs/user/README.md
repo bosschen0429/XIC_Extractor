@@ -63,13 +63,16 @@ viewer is covered by [`assets/archify-LICENSE.txt`](assets/archify-LICENSE.txt).
 Edit the JSON, not the generated HTML. When a represented responsibility
 changes, recheck its source ranges and set `meta.repository.revision` to the
 committed source revision being described. From the repository root, with
-`ARCHIFY_ROOT` pointing to an installed Archify 3.1.0 skill package, regenerate:
+`ARCHIFY_ROOT` pointing to an installed Archify 3.1.0 skill package, generate
+and verify in ignored storage before publishing the HTML:
 
 ```powershell
 node "$env:ARCHIFY_ROOT/bin/archify.mjs" finalize architecture `
   docs/user/assets/core-processing-map.architecture.json `
-  docs/user/assets/core-processing-map.html `
+  output/core-map-review/core-processing-map.html `
   --repo-root . --quality showcase --out-dir output/core-map-review --json
+if ($LASTEXITCODE -ne 0) { throw 'Archify verification failed' }
+Copy-Item output/core-map-review/core-processing-map.html docs/user/assets/core-processing-map.html
 ```
 
 Commit the JSON and generated HTML together. Keep receipts and screenshots
