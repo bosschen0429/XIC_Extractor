@@ -78,13 +78,37 @@
       <a href="#example">看具體故事</a>
     </nav>
     <main>
-<section class="guide-map" id="flow-map" aria-labelledby="flow-map-title">
-<h2 id="flow-map-title">先按問題選路線，再開指南</h2>
-<p class="guide-map-intro">操作、處理原理與系統維護是不同閱讀目的。圖先幫你選方向，下面的連結再帶你進入對應頁面。</p>
-<div class="guide-map-toolbar"><p>點節點核對來源；可縮放、追蹤圖中的路徑。</p><a href="assets/reading-routes.html" target="_blank" rel="noopener">另開完整互動圖與說明 ↗</a></div>
-<iframe class="guide-map-frame" style="--guide-map-height: 540px" src="assets/reading-routes.html?present=1" title="先按問題選路線，再開指南：互動流程圖" allowfullscreen></iframe>
-<p class="guide-map-caption">這是概念與責任導覽，不是逐函式執行時序。若圖不易閱讀或無法載入，可另開完整圖，或直接讀<a href="#routes">下方閱讀路線</a>。</p>
-</section>
+      <section class="guide-map" id="flow-map" aria-labelledby="flow-map-title">
+        <h2 id="flow-map-title">先按問題選路線，再開指南</h2>
+        <p class="guide-map-intro">每個節點都是一份 HTML 導覽。直接點選即可開啟，不會跳到原始碼；也可用 Tab 選取，再按 Enter。</p>
+        <nav class="reading-map" aria-label="依問題開啟 HTML 導覽">
+          <p class="reading-map-prompt">你現在想完成什麼？</p>
+          <div class="reading-map-groups">
+            <div class="reading-map-group" data-lane="operate">
+              <h3>我要跑分析、看結果</h3>
+              <ul>
+                <li><a class="reading-map-node" href="targeted-extraction.html"><strong>Targeted 操作指南</strong><span>已知目標：準備清單、執行與檢閱。</span></a></li>
+                <li><a class="reading-map-node" href="untargeted-discovery.html"><strong>Untargeted 操作指南</strong><span>探索候選：選模式，再對齊樣本。</span></a></li>
+              </ul>
+            </div>
+            <div class="reading-map-group" data-lane="understand">
+              <h3>我要理解證據與格值</h3>
+              <ul>
+                <li><a class="reading-map-node" href="core-modules-explainer.html"><strong>核心流程導覽</strong><span>先掌握共用核心與兩種交付方式。</span></a></li>
+                <li><a class="reading-map-node" href="processing-guide.html"><strong>處理原理</strong><span>看峰證據、群組與每格答案的關係。</span></a></li>
+                <li><a class="reading-map-node" href="raw-to-final-matrix-product-story.html"><strong>RAW 到 Matrix 故事</strong><span>沿一個例子，看完整資料旅程。</span></a></li>
+              </ul>
+            </div>
+            <div class="reading-map-group" data-lane="maintain">
+              <h3>我要理解分工與收尾</h3>
+              <ul>
+                <li><a class="reading-map-node" href="system-guide.html"><strong>系統與檢視導覽</strong><span>分清楚誰判斷、誰執行、誰發布。</span></a></li>
+              </ul>
+            </div>
+          </div>
+        </nav>
+        <p class="guide-map-caption">這是閱讀路線，不是分析執行順序。選一份指南開始即可，不必把全部頁面讀完。</p>
+      </section>
       <section id="routes" aria-labelledby="routes-heading">
         <p class="eyebrow">01 · 選一條路</p>
         <h2 id="routes-heading">從操作、原理或系統開始</h2>

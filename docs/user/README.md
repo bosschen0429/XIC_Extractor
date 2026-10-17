@@ -53,13 +53,15 @@ the opt-in 85RAW stop rule. Untargeted Alignment validation uses
 
 ## Maintain The Embedded Maps
 
-Each human-facing HTML guide embeds its own topic map. The diagrams supplement
-the existing explanations and links; they are not separate product contracts.
-The reading index uses a navigation map, not an analysis execution flow.
+The human-facing HTML guides use topic maps to supplement their explanations;
+they are not separate product contracts. The reading index has a native HTML
+navigation map: each page node is a relative link to that guide, usable by mouse
+or keyboard without JavaScript. Edit those links in `readers-index.html`, not
+in an Archify specification. Other guides keep the Archify source inspector.
 
 | Guide | Diagram asset stem | Question |
 | --- | --- | --- |
-| Reading index | `reading-routes` | Which guide should I read next? |
+| Reading index | Native links in `readers-index.html` | Which guide should I read next? |
 | Core guide | `core-processing-map` | What processing and decisions are shared? |
 | Targeted | `targeted-workflow` | How do I prepare, run, and review a batch? |
 | Untargeted | `untargeted-modes` | Where does each run mode start and stop? |

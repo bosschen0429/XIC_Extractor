@@ -1,4 +1,4 @@
-/* Shared host styles; diagrams keep the self-contained Archify viewer. */
+/* Shared host styles for the reading map and embedded Archify diagrams. */
 .guide-map { min-width: 0; margin: 28px 0; scroll-margin-top: 20px; }
 .guide-map h2 { margin: 0 0 10px; }
 .guide-map-intro { max-width: 820px; margin: 0 0 18px; color: #53676e; line-height: 1.7; }
@@ -9,6 +9,30 @@
 .guide-map-caption { margin: 12px 0 0; color: #53676e; font-size: .9rem; line-height: 1.7; }
 .guide-map-text { margin-top: 20px; }
 .guide-map-text > summary { cursor: pointer; font-weight: 700; padding: 12px 0; }
+.reading-map { padding: 24px; border: 1px solid #d4e0de; border-radius: 16px; background: #fff; }
+.reading-map-prompt { position: relative; margin: 0; padding-bottom: 22px; text-align: center; font-weight: 800; }
+.reading-map-prompt::after { content: ""; position: absolute; bottom: 0; left: 50%; height: 16px; border-left: 2px solid #c4d6d1; }
+.reading-map-groups { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; padding-top: 24px; }
+.reading-map-groups::before { content: ""; position: absolute; top: 0; left: 16.666%; right: 16.666%; border-top: 2px solid #c4d6d1; }
+.reading-map-group { position: relative; min-width: 0; --node-fill: #eef9fc; --node-line: #71bdce; }
+.reading-map-group::before { content: ""; position: absolute; top: -24px; left: 50%; height: 18px; border-left: 2px solid #c4d6d1; }
+.reading-map-group[data-lane="understand"] { --node-fill: #edf9f3; --node-line: #72bca2; }
+.reading-map-group[data-lane="maintain"] { --node-fill: #f5f0fc; --node-line: #b8a1d7; }
+.reading-map-group h3 { margin: 0 0 16px; text-align: center; font-size: 1rem; }
+.reading-map-group ul { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.reading-map-node { display: block; position: relative; padding: 16px 28px 16px 16px; border: 1px solid var(--node-line); border-radius: 12px; background: var(--node-fill); color: #1d3037; text-decoration: none; }
+.reading-map-node::after { content: "→"; position: absolute; right: 12px; top: 16px; }
+.reading-map-node strong { display: block; font-size: 1rem; }
+.reading-map-node span { display: block; margin-top: 6px; color: #53676e; font-size: .88rem; line-height: 1.65; }
+.reading-map-node:hover { border-color: #0c6969; text-decoration: underline; text-underline-offset: .2em; }
+.reading-map-node:focus-visible { outline: 3px solid #8b5a16; outline-offset: 3px; }
+@media (max-width: 760px) {
+  .reading-map { padding: 18px; }
+  .reading-map-groups { grid-template-columns: 1fr; gap: 24px; padding-top: 0; }
+  .reading-map-prompt { padding-bottom: 18px; text-align: left; }
+  .reading-map-prompt::after, .reading-map-groups::before, .reading-map-group::before { display: none; }
+  .reading-map-group h3 { text-align: left; margin-bottom: 12px; }
+}
 @media (max-width: 600px) {
   .guide-map-frame { height: min(var(--guide-map-height, 920px), 720px); }
   .guide-map-toolbar { display: grid; }
