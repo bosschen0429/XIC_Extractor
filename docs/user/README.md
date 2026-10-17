@@ -17,7 +17,7 @@ with the [architecture reading guide](../architecture-contract.md#reading-the-co
 | [Reading index](readers-index.html) | Choose operation, processing, or system explanations |
 | [Targeted Extraction](targeted-extraction.html) | Steps, inputs, workbook, and review starting points |
 | [Untargeted Discovery](untargeted-discovery.html) | Steps, preset, candidate outputs, and alignment matrix |
-| [Core modules](core-modules-explainer.html) | Visual overview of both workflows and their shared processing core |
+| [Core modules](core-modules-explainer.html) | Interactive shared-processing map, followed by expandable workflow and evidence explanations |
 | [Processing guide](processing-guide.html) | Discovery, peaks, Alignment, Backfill, and matrix decisions |
 | [System guide](system-guide.html) | Module responsibilities, execution lifecycle, and read-only review |
 | [RAW to Final Matrix](raw-to-final-matrix-product-story.html) | A worked explanation of the evidence-to-result flow |
@@ -50,3 +50,30 @@ The command owns suite selection, dry-run, baseline comparison, outputs, and
 the opt-in 85RAW stop rule. Untargeted Alignment validation uses
 `scripts.run_alignment` and the route in
 [`docs/agent/parameter-settings.md`](../agent/parameter-settings.md).
+
+## Maintain The Core Map
+
+The core guide embeds [`assets/core-processing-map.html`](assets/core-processing-map.html),
+generated with [Archify 3.1.0](https://github.com/tt-a1i/archify) from
+[`assets/core-processing-map.architecture.json`](assets/core-processing-map.architecture.json).
+The HTML includes the viewer, so readers need no Node.js, server, or external
+assets. It supplements the guide, not a second product contract. The bundled
+viewer is covered by [`assets/archify-LICENSE.txt`](assets/archify-LICENSE.txt).
+
+Edit the JSON, not the generated HTML. When a represented responsibility
+changes, recheck its source ranges and set `meta.repository.revision` to the
+committed source revision being described. From the repository root, with
+`ARCHIFY_ROOT` pointing to an installed Archify 3.1.0 skill package, regenerate:
+
+```powershell
+node "$env:ARCHIFY_ROOT/bin/archify.mjs" finalize architecture `
+  docs/user/assets/core-processing-map.architecture.json `
+  docs/user/assets/core-processing-map.html `
+  --repo-root . --quality showcase --out-dir output/core-map-review --json
+```
+
+Commit the JSON and generated HTML together. Keep receipts and screenshots
+under ignored `output/`; use a fresh `--out-dir` for a later candidate. Check
+the embedded guide and standalone viewer in a browser, including source links,
+mode switching, keyboard navigation, and narrow-screen containment. The text
+explanation remains readable when the iframe or JavaScript is unavailable.
