@@ -99,11 +99,13 @@ Use these terms consistently:
   does not own per-peak integration truth or product projection.
 - `CrossSampleGroupingResult`: one immutable request-bound result containing
   the exact processing owners, accepted complete-partition transition, and
-  prepared drift lookup. Its groups stay fixed through bounded Backfill,
-  ObservationRevisit, cell decisions, and finalization.
+  prepared drift lookup. Initial members stay fixed through bounded Backfill;
+  CrossSample alone can admit unique missing-sample SUPPORT and return the
+  successor result used for cell decisions and finalization.
 - `CrossSamplePartitionTransition`: the CrossSample-owned mathematical
   before/after transition between two complete group partitions. It is the
-  application record for an accepted initial refinement, not a mutable
+  application record for accepted initial refinement or bounded membership
+  admission, not a mutable
   successor context or a second grouping lifecycle.
 - `CID-NL method subject`: the exact method-specific acquisition/assessment
   question retained in an assessment's provenance. It is not a cross-sample

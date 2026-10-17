@@ -147,6 +147,82 @@ It does not own:
   owner-supplied lifecycle actions for registered temporary resources and
   caches while respecting lineage pins.
 
+### CID-NL Alignment execution
+
+The bounded production entry schedules initial jobs only for sample/subject
+pairs with Discovery candidates. Shared sample templates retain the complete
+population and acquisition settings. Missing jobs are created only after the
+direct-SUPPORT group passes the Backfill population gate; unsearched cells
+receive their assessment at final composition without worker dispatch.
+The direct batch interface retains its declared complete manifest.
+
+Worksets remain indivisible. Scheduling packs them by 100 Da ownership and a
+1,024-candidate budget; a workset may cross either bound. Partitions do not
+restrict scientific comparison or RT calibration. SearchScope preserves the
+upstream workset rather than re-partitioning it by resolver intervals.
+Initial assessments and grouping inputs are spooled; only compact anchor RT
+pairs accumulate globally. All bootstrap partitions finish before the batch
+warp is frozen. Failure or cancellation before that point prevents Backfill
+admission and final publication.
+
+Each final partition restores its spooled inputs and acquisition records,
+regroups once with the frozen warp, and runs Backfill without reacquiring its
+initial traces or reading another partition's grouping. Direct and bounded
+execution share in-memory preparation; only the bounded adapter owns spool I/O.
+The opt-in grouping experiment prepares comparison inputs separately and stops
+before production Backfill.
+
+Acquisition planning counts direct-SUPPORT membership without constructing a
+dense group-by-sample cell population. Backfill process requests include only
+scheduled subjects; responses update those work-unit keys and retain the other
+initial results. Distinct groups can share one acquired trace while retaining
+their own group-bound attempts. Repeated or unordered complete XIC queries,
+including mass, are canonicalized at acquisition. Combining overlapping RT
+contexts retains each candidate's extraction m/z and ppm; only identical
+resulting requests share acquisition.
+
+The bounded Untargeted runtime keeps exact source-bound XIC and MS2 acquisition
+facts in the output directory's private `.cid_nl_acquisition_cache`, or in the
+directory given by `--acquisition-cache-dir`. That directory belongs to no
+single run: runs into different output directories share it, and it is never
+removed. Entries are keyed by acquisition source and request and verified on
+read, so sharing cannot reuse another RAW file's or request's facts. A retry
+uses a new processing attempt and recomputes scientific decisions; matching
+queries reuse acquisition facts without repeating the vendor query. Source or
+query changes require acquisition for the affected entries. Sample batches with
+an input-owner-verified source check its current path identity before replay;
+they open a native RAW handle only when a missing query or metadata needs it.
+Runtime resource receipts report whether that native open actually occurred.
+Cache entries are closed before atomic replacement and validated on read, but
+are not individually forced to stable storage. Power loss can require
+reacquisition of recent entries; this cache does not provide durable runtime
+acknowledgements.
+Without a verified source expectation, the existing native-open source check
+remains in force. This cache does
+not preserve completed grouping graphs or turn an old failed attempt into a
+successful result. The Alignment entry point archives a finalized failed or
+cancelled runtime marker before launching a new attempt in the same directory.
+
+Targeted and Untargeted CID-NL close through the shared scientific workflow.
+`applications.untargeted.application.run_untargeted_application` adapts pure CID-NL inputs to that workflow
+and renders its finalized result. It requires explicit pure CID-NL discovery
+settings; the Alignment CLI supplies them through a bound preset. Unsupported
+discovery settings are rejected before acquisition or output creation.
+
+Process workers project peak-fact observations through the provenance owner
+before IPC. They send typed physical rows, bounded selected-integration data,
+and feature/sample order binding, not raw traces or prepared-signal graphs.
+The parent validates those delivery bindings. Completion order does not change
+canonical subject, Matrix or sidecar ordering; failed runs do not publish
+partial results.
+
+Initial inference retains operation counts for candidate lookup, RT pruning,
+edge evaluations, index updates and assignment solver calls. Index axes update
+only when their extrema or composition key change. Single-owner/single-feature
+competitions use the analytical optimum and next-best cost, including the
+unassigned option; general components use the joint solver. A stable ID only
+selects the diagnostic representative of an exact tie.
+
 ## Minimal Runtime Vocabulary
 
 These concepts are internal mechanics, not user-visible review tags.

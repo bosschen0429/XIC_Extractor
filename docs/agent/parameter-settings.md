@@ -96,7 +96,8 @@ The current command surface is:
 
     .venv\Scripts\python.exe -m scripts.run_alignment --help
 
-Output and handoff semantics live in docs/product/alignment.md; preset
+Output semantics live in docs/product/quant-matrix.md; workflow handoffs live in
+docs/product/shared-processing-kernel.md; preset
 compatibility lives in docs/product/presets.md. Task-specific paths and accepted
 parameter values stay in the Issue or validation owner.
 

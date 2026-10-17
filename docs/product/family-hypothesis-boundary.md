@@ -38,8 +38,9 @@ to regrouping and Backfill planning.
 - The CrossSample grouping workflow returns one immutable
   `CrossSampleGroupingResult(processing_owners, partition_transition,
   drift_lookup)`.
-- The same `CrossSampleGroupingResult` is used before bounded Backfill and
-  through finalization. A revisit does not reopen grouping.
+- Initial members remain fixed during bounded Backfill. CrossSample alone can
+  admit unique missing-sample SUPPORT and return the successor result consumed
+  by finalization; a revisit does not reopen ordinary grouping.
 - `CrossSamplePartitionTransition` records the complete group partition before
   and after an accepted membership change.
 - `PeakHypothesis` owns candidate chromatographic identity: the physical peak
@@ -48,15 +49,45 @@ to regrouping and Backfill planning.
 - Backfill can return one independently traceable observation from a revisit.
   That observation cannot imply group membership or writer authority.
 
+### Group identity and disposition
+
+- `group_hypothesis_id` is a typed digest over the group identity schema, exact
+  `processing_request_id`, and canonical-sorted identity-bearing members. Each
+  member combines canonical sample identity with an owner-backed
+  `PeakHypothesis` identity and the physical observations it binds; the
+  `peak_hypothesis` kind tag remains in the identity basis. Equivalent
+  hypothesis wrappers over the same physical observation canonicalize to the
+  same member subject.
+- Ordinal `FAM...`, row order, sample stem, m/z/RT display coordinates, and
+  area are compatibility/display facts, not identity bases.
+- A group contains at most one identity-bearing member per canonical sample.
+  Same-sample distinguishable peaks remain separate; unresolved ambiguity does
+  not choose an arbitrary winner.
+- Any accepted initial membership change or split/merge appears in the one
+  complete before/after `CrossSamplePartitionTransition`, mints the resulting
+  group identity and immutable lineage, and closes before bounded Backfill. A
+  new processing request creates new group identity; this contract does not
+  infer cross-request continuity.
+- `CrossSampleGroupDisposition` is exactly one of `established`, `provisional`,
+  `unresolved`, or `rejected`. Established requires accepted identity-bearing
+  members from at least two distinct canonical samples under the applicable
+  inference route; a singleton is always provisional. Low support alone is not rejection.
+  Disposition and output inclusion are separate.
+
+Bounded CID-NL admission can add a missing sample's unique SUPPORT observation
+without moving initial members. CrossSample records the successor identity and
+lineage; Backfill itself does not mint membership. See
+[membership admission](backfill.md#membership-admission).
+
 ### Decision order
 
-1. Workflow projection owns Target/Untarget row identity/binding and the
-   explicit Target/Group cell subject.
-2. `ProductionCellDecision` owns the selected value or the typed no-write
-   result.
-3. The same projection then closes inclusion, counted detection, Review
-   Queue/archive routing, and output shape.
-4. ProductWriter renders only an authorized finalized result.
+1. Target projection constructs fixed-row bindings and Target cell subjects
+   before cell decision. Untarget cell decision consumes completed Feature × Sample
+   evidence before any output row/cell identity exists.
+2. Cell decision selects the value or typed no-write result and integration.
+3. Projection consumes those answers, assigns Untarget output identities and
+   `ProductionCellDecision` wrappers, and closes inclusion, counts and routing.
+4. ProductWriter renders only the finalized result.
 
 Legacy score, confidence, family role, and review tokens can rank, annotate,
 or preserve compatibility behavior. These legacy signals must not become

@@ -63,6 +63,15 @@ expand the acquired trace or silently search another RAW window.
 4. The Untargeted route does not execute the retained `ObservationRevisit`
    transaction.
 
+Cross-subject groups retain each SUPPORT cell's exact assessment and hypothesis
+binding. The supporting subject nearest the formal group center is the canonical
+Backfill subject, with subject ID breaking ties. Missing/non-support cells use
+that subject; another subject supplies support only through an exact owner binding.
+Eligibility counts distinct supporting samples across the compatible workset,
+not separately per method subject. Attempts bind group ID, sample and subject;
+RT bounds describe the query, not the destination identity. Execution supplies
+the grouping configuration and known-ISTD context; composition cannot replace it.
+
 ### Group support gate
 
 The active decision uses one fixed group and the direct SUPPORT closure of
@@ -82,14 +91,14 @@ that group.
 
 ### Query RT versus group RT
 
-The frozen group center remains the group's identity/evidence coordinate.
+The frozen group center remains its reference/display coordinate, not an identity key.
 The request center is sample-specific: take up to twelve same-cohort
 injection neighbors, convert their measured RTs to common coordinates when
 supported, fit a robust local linear trend over injection order so steep drift
 is followed rather than lagged, then apply the target sample's frozen batch warp. Both XIC bounds
 and preferred-peak selection use this query RT. Insufficient calibration and
 missing-context fallbacks have explicit bases; neither means measured zero
-shift. See the [RT mechanism table](alignment.md#rt-mechanisms-and-their-consumers).
+shift. See [Alignment RT coordinates](alignment.md#prepare-rt-coordinates).
 
 Forecast acceptance is narrower than the acquired context: same-cohort direct
 reference samples are held out one at a time using that same trajectory
@@ -118,6 +127,48 @@ Completed-empty evidence binds both the original group center and actual query
 RT. It validates the acquired query, not containment of the group center in a
 shifted window. Supported Backfill admission uses the same frozen coordinates
 and owner-to-band trend rule as final grouping; it does not refit the warp.
+
+Missing-position estimates use the trajectory's same-cohort observations. With
+calibrated target and neighbor support the basis is `calibrated_trajectory_fit`;
+otherwise it is `trajectory_fit` in measured coordinates. Observed positions
+retain their measured value and use `trajectory_observed`.
+For extrapolation, the fit's residual scale amplified by prediction leverage
+is compared with the configured Backfill half-window. If that risk proxy exceeds
+the window, the query uses the fitted RT at the nearest supported injection and
+its basis includes `at_support_boundary`; target-sample coordinate conversion
+still applies. Interpolation and lower-risk extrapolation retain the local line.
+This guard is not a calibrated confidence interval or an identity decision.
+Missing injection order or same-cohort observations leaves only the median
+reference position of the trajectory (`trajectory_reference`). None of these
+search-coordinate descriptions establishes zero perturbation or permission to
+write a value.
+
+For an unobserved sample, a forecast extended by MS1-only positions must agree
+with the same-cohort direct-reference trend when that trend has at least three
+distinct injection positions and bounded held-out residuals. Disagreement beyond
+the larger empirical RT tolerance leaves localization unreliable: it does not
+select either predicted peak or widen the search. Observed correspondence and
+independently measured paired-ISTD localization retain their existing rules.
+
+### Search context
+
+A matched MS1-only context peak supplies a trajectory position, not CID-NL
+support, chemical identity or a selected integral. An existing HOLD is reusable
+only if it contains that location; otherwise the physical owner evaluates the
+requested location. A trajectory without matched context still contains its
+direct owners.
+
+Physical Backfill keeps candidate search bounds separate from MS1 signal
+context. The existing query half-window bounds eligible peak apices and the
+method-evidence search. The acquisition phase also prefetches one additional
+half-window per flank, in the same sample-local batch. Only an
+`incomplete_peak_context` answer permits evaluation of that wider trace;
+complete search-eligible observations retain their original boundaries and
+integral. This bounded fallback does not expand candidate eligibility, reopen RAW, or grant
+membership. Multiple eligible peaks still follow the physical owner's
+ambiguity rule. The persisted `bounded_physical_peak_question` binds the
+search interval independently of its measured context; legacy questions
+retain their original interpretation.
 
 ### Cell outcome
 
@@ -156,6 +207,21 @@ continuity; smoothing it into a peak does not supply missing acquired support.
    `REJECT`, the Backfill assessment retains the initial `REJECT`. The Backfill
    assessment must earn SUPPORT through the normal relation owner before the
    cell can hold a numeric value.
+
+### Membership admission
+
+Initial members stay in their original groups through bounded Backfill.
+A group-bound Backfill with unique SUPPORT may add a missing sample member
+when it passes the existing feature evidence rule. The grouping owner records
+the admitted member and exact predecessor/successor lineage; it does not refit,
+move original members, split known ISTD bindings, or create new groups.
+Competing claims on the same physical content remain unresolved and supply no
+numeric value. Final cells retain the original cell for provenance and the
+completed Backfill assessment/observation for the final decision and integral.
+Cell evidence uses `cell_observation` and final-cell canonical bases use
+`final_group_cell_observation` to bind unresolved SUPPORT and Backfill
+provenance explicitly. Old diagnostic evidence remains historical; acquisition
+cache facts do not depend on these cell schemas.
 
 ### Final cell evidence
 

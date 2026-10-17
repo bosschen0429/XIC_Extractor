@@ -137,9 +137,11 @@ grouping, membership, canonical group identity, disposition, and split/merge
 lineage. A configured Target identity may constrain search or binding, but a
 fixed Target row is not group identity.
 
-CrossSample alone may change membership and mint a successor group. Direct
-local evidence wins over a trajectory prior; no universal monotonic trend is
-assumed.
+CrossSample alone may change membership and mint a successor group. A trajectory
+prediction does not replace a measured local observation. Cross-sample
+correspondences still require the joint evidence described in
+[Alignment](alignment.md#jointly-consistent-correspondences); this is not an automatic priority
+between competing correspondences. No universal monotonic trend is assumed.
 
 ### ObservationRevisit
 
@@ -165,15 +167,18 @@ Backfill can produce the first usable observation for that cell. Backfill
 cannot bootstrap a Target/group that has no prior owner-backed context.
 
 An accepted Backfill result enters the cell-observation contract as cell
-evidence. The existing `CrossSampleGroupingResult` keeps membership fixed;
-`ProductionCellDecision` decides value/no-write. Backfill does not rebuild
-the grouping result or trigger another grouping pass.
+evidence. Initial members stay fixed; only CrossSample can admit a unique
+missing-sample SUPPORT observation and record its successor result and lineage.
+Cell decision decides value/no-write. Backfill itself does not change membership
+or trigger another grouping pass. See [membership admission](backfill.md#membership-admission).
 
 ### Cell Decision And Projection
 
-`ProductionCellDecision` consumes finalized evidence for one explicit Target or
-Group subject and is the sole selected-value owner. A Backfill observation is
-not automatically group membership or a writable value.
+Target cell decision consumes an explicit Target subject. Untarget cell decision
+consumes completed `FinalGroupCellObservation` evidence before output identities
+exist; its unchanged payload and selected integration are then wrapped in
+`ProductionCellDecision` by Matrix projection. A Backfill observation is not
+automatically group membership or a writable value.
 
 The decision retains its selected `IntegrationResult` for downstream peak
 coordinates and shape fields, including when that observation is not
@@ -218,6 +223,12 @@ policy. One projection is never the other projection's oracle.
 
 ## Verification And Failure Boundaries
 
+Batch finalization consumes completed immutable children and checks parent
+request, attempt, sample coverage and cross-child uniqueness. It does not rerun
+each child's scientific or Matrix completion checks. Finalization and private
+spool publication retain their own boundary checks; the finalizer does not
+reopen RAW, grouping, Backfill, integration or selection.
+
 Changes to this contract must prove that the affected current entry reaches the
 named owner, failures remain fail-closed, and the workflow-specific output
 oracle is unchanged unless an expected difference is separately approved.
@@ -235,8 +246,8 @@ oracle is unchanged unless an expected difference is separately approved.
 ## Related Contracts
 
 - [`discovery.md`](discovery.md) owns Discovery provider behavior.
-- [`alignment.md`](alignment.md) owns CrossSample, repair, and
-  finalized-alignment behavior.
+- [`alignment.md`](alignment.md) describes cross-sample correspondence, current
+  grouping and unresolved method questions.
 - [`backfill.md`](backfill.md) owns missing-cell Backfill details.
 - [`decision-policy.md`](decision-policy.md) owns selected-value resolution.
 - [`processing-lineage.md`](processing-lineage.md) owns processing and delivery
