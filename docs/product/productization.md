@@ -19,7 +19,7 @@ scopes, or promotion verdicts.
 | Historical chronology and retired reasoning | Git history plus the private source copy keyed by `source_repo_path` |
 
 The [dependent-effect reader](../../xic_extractor/alignment/quantitative_projection_authority.py)
-accepts the current HOLD manifest and rejects ACTIVE; ACTIVE has no usable
+accepts HOLD manifests and rejects ACTIVE; ACTIVE has no usable
 product authority.
 
 Narrative owners must not restate mutable status-index fields or
@@ -27,6 +27,29 @@ authority-manifest values. The dependent-effect manifest does not extend the
 registered ProductWriter scopes. If narrative wording conflicts with an
 unchanged structured owner, the structured owner wins. The narrative must then
 be corrected.
+
+## Writer Authority
+
+Normal Targeted workbook and Untargeted Matrix publication retain their
+existing workflow writers and publication mechanics under
+[Writer Transaction Authority](../agent/architecture-public-contracts.md#writer-transaction-authority).
+The activation-scope registration requirement below does not gate these normal
+publication paths.
+
+For explicit diagnostic or Backfill matrix activations, ProductWriter consumes
+only scopes registered in the authority manifest. Activation authority requires
+the authority manifest, status index, expected diff, and promotion contract;
+the manifest `authority_policy` owns the exact write requirements and the sources
+that can never grant authority. A `ProductionAcceptanceManifest`
+([checker](../../xic_extractor/diagnostics/quant_matrix/acceptance.py)) can
+grant per-cell write authority only when the later activation path binds it to
+expected diff, provenance, and the current authority scope.
+`QuantMatrixVersion` / default activation outputs are the writer surface.
+
+Evidence providers, candidate rows, `write_ready` labels, quality blockers,
+sidecars, replays, review packets, galleries, and diagnostics can explain or
+gate a decision, but none independently grants writer authority. Topic pages
+link here instead of restating this rule.
 
 ## Capability Map
 
@@ -45,13 +68,12 @@ be corrected.
 
 ## Boundaries
 
-The registry currently grants no standalone file-activation writer scope.
 Normal Alignment output remains owned by its live cell-decision and projection
-owners. The dependent quantitative projection remains HOLD; its package scope
-allowlist does not register a writer or authorize any cell.
+owners. The dependent quantitative projection's package scope allowlist does
+not register a writer or authorize any cell.
 
-- **Owns:** stable capability descriptions, topic-owner routing, and the
-  field-level authority partition above.
+- **Owns:** stable capability descriptions, topic-owner routing, the
+  field-level authority partition, and the writer-authority rule above.
 - **Does not own:** current lane state or counts, ProductWriter scopes, active
   WIP, or a specific promotion verdict.
 - Validation packets and diagnostics support a decision. Validation packets
@@ -104,8 +126,9 @@ Closeout does three things:
 
 ## Promotion Inputs
 
-A product-surface change must route to the promotion contract when the change
-can alter any of these:
+A product-surface change must route to the
+[promotion packet contract](../agent/product-validation-contract.md#promotion-packet-contract)
+when the change can alter any of these:
 
 - selected values;
 - counted detections;
@@ -114,10 +137,6 @@ can alter any of these:
 - CLI/config/HTML behavior;
 - review/replay behavior;
 - writer authority.
-
-The promotion packet records the proposed behavior delta, required
-non-changes, evidence, expected diff, replay, downstream smoke, stop
-condition, and rollback.
 
 Stable implementation priorities remain:
 

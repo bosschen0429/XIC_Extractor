@@ -25,45 +25,24 @@ feature-by-sample Matrix。兩者共用科學判斷，但保留不同搜尋政�
 ### Entry Points And Handoffs
 
 以下列出閱讀起點，不是完整 export 清單；安裝後的命令由
-[`pyproject.toml`](../pyproject.toml) 的 `project.scripts` 宣告。
+[`pyproject.toml`](../pyproject.toml) 的 `project.scripts` 宣告。從入口往下的
+交接由入口檔與它呼叫的 application owner 說明，這裡不重述。
 
-| 要追的行為 | 從哪裡讀 | 下一個負責的 module／交接 |
-| --- | --- | --- |
-| HTML 工作區啟動與工作 | [`xic_workbench/cli.py`](../xic_workbench/cli.py)、[`xic_workbench/server.py`](../xic_workbench/server.py) | `analysis_workspace.py` 管設定與檔案操作；`jobs.py` 將 HTML request 交給既有 application／export owner；`workspace.py` 管完成證據檢閱 |
-| Targeted 分析與交付 | [`xic_workbench/targeted.py`](../xic_workbench/targeted.py)、[`scripts/run_extraction.py`](../scripts/run_extraction.py) | [`TargetedApplicationService.execute_application`](../xic_extractor/applications/targeted/application.py) 協調單次 acquisition 與發布；[`production_workflow`](../xic_extractor/applications/targeted/production_workflow.py) 封閉輸入綁定、Target 族群完成與公開結果模型，`extraction/targeted_capture_population.py` 統一管理 recovery 後的 scope／binding／capture，completion arguments 由同一份 capture 狀態衍生；[`output_boundary`](../xic_extractor/applications/targeted/output_boundary.py) 只消費隔離的完成視圖，負責 workbook staging 與原子發布 |
-| 既有 Python Targeted 入口 | [`extractor.run`](../xic_extractor/extractor.py) | 進入同一 application；`extractor.acquire` 是它使用的 acquisition 入口；結果模型在 `extraction/result_models.py` |
-| Discovery 候選產生 | [`scripts/run_discovery.py`](../scripts/run_discovery.py) | [`discovery/pipeline.py`](../xic_extractor/discovery/pipeline.py) 的 `run_discovery`／`run_discovery_batch`，交出候選檔與 batch index |
-| Untargeted HTML 全流程 | [`xic_workbench/untargeted.py`](../xic_workbench/untargeted.py) | `full` 呼叫 Discovery 再交接 Alignment；`discovery_only` 與 `align_only` 保留各自輸入契約 |
-| Untargeted Alignment 與 Matrix | [`scripts/run_alignment.py`](../scripts/run_alignment.py)、[`xic_workbench/untargeted.py`](../xic_workbench/untargeted.py) | [`run_untargeted_application`](../xic_extractor/applications/untargeted/application.py) 準備輸入；[`complete_untargeted_alignment`](../xic_extractor/untargeted_execution/alignment.py) 完成執行並綁定 Matrix／explanation 資料；[`publication`](../xic_extractor/applications/untargeted/publication.py) 消費該完成交付、發布 [`AlignmentRunOutputs`](../xic_extractor/output/alignment/pipeline_outputs.py) 並關閉暫存 |
-| 完成 Matrix 後的 feature 篩選 | [`scripts/run_feature_quality.py`](../scripts/run_feature_quality.py) | [`feature_quality.py`](../xic_extractor/feature_quality.py) 計算 availability；[`feature_quality_io.py`](../xic_extractor/feature_quality_io.py) 讀寫分析集合，保留既有值 |
-| 完成證據的只讀報告 | [`xic_inspector/cli.py`](../xic_inspector/cli.py) | [`api.generate_report`](../xic_inspector/api.py) 串起來源解讀、選擇及 HTML rendering |
-| HTML 批次檢閱與按需 XIC | [`xic_workbench/workspace.py`](../xic_workbench/workspace.py) | `acquisition.py` 共用診斷擷取；Inspector 提供完成的檢閱資料與共用可掛載視圖；workspace 保留 view snapshot、按需匯出 HTML；新曲線不改科學結果 |
+| 要追的行為 | 從哪裡讀 |
+| --- | --- |
+| HTML 工作區啟動、工作與檢閱 | [`xic_workbench/cli.py`](../xic_workbench/cli.py)、[`xic_workbench/server.py`](../xic_workbench/server.py) |
+| Targeted 分析與交付 | [`xic_workbench/targeted.py`](../xic_workbench/targeted.py)、[`scripts/run_extraction.py`](../scripts/run_extraction.py) → [`applications/targeted/application.py`](../xic_extractor/applications/targeted/application.py) |
+| 既有 Python Targeted 入口 | [`extractor.run`](../xic_extractor/extractor.py)，進入同一 Targeted application |
+| Discovery 候選產生 | [`scripts/run_discovery.py`](../scripts/run_discovery.py) → [`discovery/pipeline.py`](../xic_extractor/discovery/pipeline.py) |
+| Untargeted 全流程、Alignment 與 Matrix | [`xic_workbench/untargeted.py`](../xic_workbench/untargeted.py)、[`scripts/run_alignment.py`](../scripts/run_alignment.py) → [`applications/untargeted/application.py`](../xic_extractor/applications/untargeted/application.py) |
+| 完成 Matrix 後的 feature 篩選 | [`scripts/run_feature_quality.py`](../scripts/run_feature_quality.py) → [`feature_quality.py`](../xic_extractor/feature_quality.py) |
+| 完成證據的只讀報告 | [`xic_inspector/cli.py`](../xic_inspector/cli.py) → [`xic_inspector/api.py`](../xic_inspector/api.py) |
 
 ### Finding The Right Owner
 
-| 想改什麼 | 先找哪裡 | 交接時要分清的責任 |
-| --- | --- | --- |
-| 峰選擇、邊界、面積 | `peak_detection/`（`signal_processing.py` 只保留公開的 `find_peak_and_area` 入口） | 單峰／單次觀察的答案；跨樣本群組在 Alignment |
-| Targeted 候選評估與選峰完成 | `extraction/targeted_peak_selection.py` | 固定 candidate population、exact-precursor evidence 與 support 關聯，協調初次排名並同步 physical answer／選峰事實／retained result；完成階段不重新排名，acquisition 不自行重建 selected index；[Targeted selection](product/targeted-selection.md#physical-evaluation) 定義完成責任，單峰演算法仍在 `peak_detection/` |
-| Targeted 輸入轉成共用峰假設 | `extraction/targeted_peak_hypotheses.py` | 選峰、candidate table 與 boundary callers 共用同一 translation；audit callers 不依賴正式選峰政策 |
-| Targeted 計數、角色例外與 review 原因 | `extraction/targeted_product_projection.py` | 消費已完成的科學結果，決定產品狀態；純結果模型在 `output/targeted_product_model.py`，writer 只呈現它 |
-| Untargeted 保留批次執行 | `untargeted_execution/` | execution adapter 管排程與封存交付；`partition_composition.py` 統一 partition／batch scope、canonical ordering 與完成請求；科學驗證仍由 Alignment，發布由 application／output 負責 |
-| 跨樣本配對、RT 漂移、群組 | `alignment/grouping_workflow.py`、`alignment/cross_sample/` | 群組決定先完成，Backfill 與格值決策消費同一結果 |
-| 從已取得的 evidence 完成科學結果 | `alignment/completion.py` | Targeted／Untargeted 共用 capture、grouping、cell 與 projection；不執行 runtime 或保存暫存 |
-| Untargeted CID-NL 群組到完整格值結果 | `alignment/cid_nl_completion.py` | 接納 Backfill、同步群組 identity、組裝格值觀察及完成 coverage；只向 runtime 要求已完成查詢的 receipt，再交回完整 application result |
-| Untargeted CID-NL 補搜計畫 | `alignment/backfill/cid_nl_planning.py` | 從 frozen groups 決定 subject、sample-local query 與 reuse／search／skip；runtime 只補齊 sparse initial assessment、轉接 acquisition contract 與排程 |
-| Untargeted CID-NL 的 sample assessment／Backfill inputs | `alignment/cid_nl_inputs.py` | 正式 partition 與 diagnostic projection 共用相同 input types、payload validation 和 method default；不依賴 artifact rendering |
-| 版本化 Matrix 的 artifact projection 與 acceptance | `diagnostics/quant_matrix/` | `golden_path.py` 組合 owner facts；`acceptance.py` 驗 manifest snapshot／source hashes 並 mint checked receipt；`version.py` 投影 table rows；不改 default product authority |
-| Packaged quantitative-effect promotion authority | `alignment/quantitative_projection_authority.py` | 封住 packaged resource、strict manifest rehydration 與 canonical rendering；是 promotion contract boundary，不是數值算法或 active application guard |
-| 缺格補證及格值 | `alignment/backfill/`、`alignment/cell_observation/`、`alignment/cell_decision/` | 新觀察、科學決策與檔案 writer 各自有 owner |
-| Untargeted 完成答案到 Matrix | `alignment/projection/untarget/matrix.py`；公開 row/cell identity 在同 package 的 `identity.py` | 先由 cell decision 完成 Feature × Sample 的 payload 與 selected integration，再一次投影 ID、順序、計數與 route；writer 只作既有格式相容轉換 |
-| RAW 讀取或 DLL | `raw_reader.py` 及使用它的 acquisition adapter | 讀入量測資料；不因此取得群組、格值或發布決定權 |
-| Discovery sample 發布與 batch 交付 | `discovery/output_publication.py` | 統一 persisted candidates、CSV 發布及 receipt／index 綁定；serial／worker 只交出完整 publication，receipt 合法性仍由 `batch_contract.py` 負責 |
-| Discovery 已保存輸入 | `discovery/csv_reader.py`、`discovery/input_source.py` | 依 Discovery receipt 讀取 batch/candidate CSV，提供整批或有界 row loading；Alignment 只消費候選 |
-| 樣本 RAW 檔案定位 | `acquisition/raw_paths.py` | 依宣告的 sample/raw 路徑與既有 fallback 規則定位檔案；不做科學判定 |
-| Targeted／Alignment RT-window MS2 擷取與 NL 解讀 | `acquisition/ms2_windows.py` 擷取單一樣本的有界視窗；`evidence/neutral_loss.py` 解讀已擷取事件 | 前者持有 reader 呼叫，後者只處理 `Ms2Window` 與候選幾何；Discovery 宣告 scan 的 strict receipt 保留原 owner |
-| Untargeted ISTD 參考資料取得 | `acquisition/istd_reference.py` | 讀取 workbook，或呼叫 Targeted 正式抽取與可信內標 anchor 判定；只將選定實測 RT 交由 Alignment 的 drift evidence owner 建立 reference，不另行選峰，科學 owner 不開檔 |
-| 欄位、workbook 或 Matrix 格式 | `output/`；Alignment Matrix 的 schema、格式及 atomic publishing 在 `output/alignment/` | 呈現 owner 的答案；不要從格式變更反向改變選峰或計數 |
+先用[模組責任表](#ownership-map)找 package 層級的 owner。檔案層級的 owner、
+函式與交接以現行 source 為準：用 CBM 查 callers 與 consumers，再讀該 module
+的 docstring。這裡不維護檔案清單，以免它隨每次重構失效。
 
 Package 名稱不是可強制的分層證明：`alignment/` 包含科學與外層 adapter，
 `extraction/` 只負責 Targeted 抽取；`untargeted_execution/` 擁有保留的 Untargeted
@@ -192,10 +171,7 @@ decision core.
 Grouping and RT bootstrap are described in [Alignment](product/alignment.md#current-implementation).
 Immutable-result handoffs are defined in the [Shared Processing Kernel](product/shared-processing-kernel.md#deep-interfaces).
 A revisit does not reopen grouping, replace the partition, or mint a second
-grouping owner. `CrossSamplePartitionTransition` owns only the mathematical before/after
-complete-partition transition; `InitialGroupingScope` is a plain immutable
-m/z/RT-bounds-plus-groups handoff with no separate domain identity or persisted
-contract.
+grouping owner.
 
 CID-NL provenance, workset compatibility, and bounded recovery subjects are
 owned by the [Alignment comparison scope](product/alignment.md#inputs-and-comparison-scope) and
@@ -218,48 +194,18 @@ contract 沒有 ignore，並包含間接依賴。
   Source adapters own method-specific record/schema interpretation; its public
   API, selection, and renderer remain method-neutral. Scientific/core packages
   must not import or invoke the Inspector.
-- `prepare_report` produces the review facts; `PreparedReport.render_data()`
-  supplies complete presentation inputs. The workbench retains those inputs as
-  immutable session-local `.view.json` snapshots, with only paths in its view
-  registry. Its guarded `GET /api/views/<id>` serves the captured payload to
-  `XicInspector.mount`; normal review does not write HTML. The renderer owns
-  container-local presentation and emits narrow host callbacks; the workbench
-  owns sources, jobs and cancellation. An explicit `/reports/<id>.html` request
-  packages that snapshot lazily using the same CSS/JavaScript renderer and
-  atomic HTML writer, without preparing the source again. CLI report generation
-  remains a standalone entry to the same offline renderer.
-- `applications.untargeted.application.run_untargeted_application` accepts
-  one `UntargetedRequest` and optional run-scoped `UntargetedExecutionContext`,
-  resolves canonical config dependencies once at entry, rejects output collisions
-  before acquisition, and invokes retained
-  CID-NL execution in `untargeted_execution/`. Its publication boundary consumes the
-  completed typed batch, delegates Matrix publishing to `output/alignment/`,
-  and closes its private stores on every exit;
-  [Matrix publication](product/quant-matrix.md#matrix-publication) owns streaming/materialization policy.
-  CLI and HTML workbench receive only
-  published output paths and durable evidence locators. Alignment owns neither
-  this application lifecycle nor a duplicate runtime or writer transaction.
-  The request reuses `AlignmentConfig`, `ExtractionConfig`, and `DiscoverySettings`;
-  resource options belong to `configuration.execution_profile`, public artifact
-  options to `applications.untargeted.publication`, and retained advanced overrides
-  to `applications.untargeted.request`. Callers supply intent, not flattened execution
-  and publication kwargs.
-- Retained CID-NL execution partitions complete subjects across the sample cohort
-  under one runtime attempt. It adapts method acquisition and composition to the
-  generic execution engine in `execution/`. The engine's private result store
-  spools completed scientific results for same-version process transport and preserved
-  read-only reopen; it grants no scientific,
-  activation, or writer authority. Scientific and Untarget projection owners
-  restore their own process-local completion seals. Target projection retains its
-  validated immutable decisions without graph serialization. The runtime owner
-  compacts acquisition facts after scientific results have been stored.
-- `alignment.completion` completes pure owner-bound inputs and returns the
-  existing finalized application results; the
-  [Targeted acquisition handoff](product/execution-runtime.md#current-implementation-gaps) owns pre-acknowledgement population validation.
-  Untargeted execution combines the same completion with partition persistence;
-  its `untargeted_execution.execution_result` carrier binds runtime success to the
-  finalized batch and owns the close action. Application publication consumes
-  that carrier, while Matrix projection receives only the pure finalized batch.
+- The workbench hosts Inspector views: the renderer owns presentation, and the
+  workbench owns sources, jobs and cancellation. The
+  [local HTML workspace](product/xic-inspector.md#local-html-workspace)
+  defines review and export behavior.
+- Entry points pass typed intent to an application, not flattened execution
+  and publication arguments. The application owns the run from configuration to
+  publication; Alignment owns neither that lifetime nor a second runtime or
+  writer transaction. [Execution Runtime](product/execution-runtime.md#workflow-integration)
+  defines execution, spooling and resource ownership.
+- Scientific completion is pure over owner-bound inputs. Runtime and persistence
+  wrap it without changing its result, and Matrix projection receives only the
+  finalized result.
 - `diagnostics/` is an outer layer. Inner packages (`acquisition`, `alignment`,
   `configuration`, `discovery`, `evidence`, `execution`, `extraction`,
   `untargeted_execution`, `output`, `peak_detection`) never import it; applications may compose its
@@ -294,17 +240,17 @@ Use this map to choose the reason a package changes. File placement is owned by
 | Surface | Owns | Does not own |
 | --- | --- | --- |
 | `configuration/` | settings, target/config loading, validation, typed runtime settings | extraction or rendering |
-| `applications/targeted/` | Formal Targeted composition and request/result interface; production workflow owns admitted input bindings, finalized population validation and the sealed public result view; output boundary owns publication transactions | scientific peak selection, numeric cell decisions, RAW acquisition or workbook formatting |
-| `applications/untargeted/` | Untargeted input preparation, Discovery-to-provisional-Matrix composition, execution-to-publication orchestration, cancellation and explanation lifetime; closes the completed result at the publication boundary and delegates Matrix publishing to `output/alignment/` | scientific grouping, cell decisions, private-store retention policy, a second runtime owner or writer algorithm |
-| `discovery/` | general candidate discovery, seed generation, workflow-neutral discovery facts, receipt-bound CSV reading and bounded candidate loading | matrix decisions or target-list policy |
-| `execution/` | generic attempt execution/finalization, partition scheduling, worker execution, cancellation, cleanup, reusable worker admission pools, one-shot process jobs, streamed result storage, recovery, and runtime timing/process-memory measurement | method-specific science, subject splitting, or writer authority |
-| `extraction/` | Targeted acquisition adapters, result models and product projection (product state, role/applicability policy, counted detection and reason overlays), jobs, windowing, drift, backend coordination, output dispatch, Targeted input binding, and the per-Target capture population, CID-NL assessment and ISTD-backfill inputs read from retained acquisition results | application composition, UI, or Alignment decisions |
-| `untargeted_execution/` | retained Untargeted input planning, acquisition cache, partition execution/composition, completion with bound lazy publication inputs, private result-resource lifetime and retention, and provisional run manifests | Targeted extraction policy, application composition, Matrix writing or a second runtime owner |
+| `applications/targeted/` | Targeted composition, request/result interface, input binding and publication | peak selection, cell decisions, RAW acquisition or workbook formatting |
+| `applications/untargeted/` | Untargeted composition from Discovery to published Matrix, run lifetime and cancellation | grouping, cell decisions, a second runtime owner or writer algorithm |
+| `discovery/` | candidate discovery, seed generation, workflow-neutral discovery facts and receipt-bound candidate reading | matrix decisions or target-list policy |
+| `execution/` | generic attempt lifecycle, scheduling, workers, cancellation, cleanup, result storage and runtime metrics | method-specific science, subject splitting, or writer authority |
+| `extraction/` | Targeted acquisition, result models, product projection, input binding and capture population | application composition, UI, or Alignment decisions |
+| `untargeted_execution/` | retained Untargeted planning, acquisition cache, partition execution and private result lifetime | Targeted policy, application composition, Matrix writing or a second runtime owner |
 | `peak_detection/` | physical observations, hypotheses, resolvers, boundaries, integration, evidence composition | cross-sample grouping, workflow policy, or writers |
-| `alignment/` | cross-sample grouping, refinement/repair composition, conservative and ISTD-anchored Backfill, Alignment adapters and renderers | a second runtime owner, mutable transport authority, or reading Targeted acquisition results |
-| `output/` | workbook/TSV/HTML schema rendering and the pure Targeted product result model they render; `output/alignment/` owns Matrix artifact selection, streaming/materialization coordination, atomic writes and fingerprint receipts | evidence recomputation, application store lifetime or RAW access |
-| `diagnostics/` | reusable diagnostic models, summaries, classification, and alignment explanation persistence (`alignment_explanation`) | CLI parsing, production mutation, or domain recomputation |
-| `xic_inspector/` | installed read-only review API/CLI, source adapters, canonical selection, and self-contained offline HTML rendering | RAW acquisition, scientific recomputation, identity/Matrix decisions, or write authority |
+| `alignment/` | cross-sample grouping, repair composition, Backfill and Alignment adapters | a second runtime owner, transport authority, or reading Targeted acquisition results |
+| `output/` | schema rendering and the Targeted product result model; `output/alignment/` writes Matrix artifacts | evidence recomputation, application store lifetime or RAW access |
+| `diagnostics/` | reusable diagnostic models, summaries, classification and explanation persistence | CLI parsing, production mutation, or domain recomputation |
+| `xic_inspector/` | read-only review API/CLI, source adapters, selection and offline HTML rendering | RAW acquisition, scientific recomputation, identity/Matrix decisions, or write authority |
 | `xic_workbench/` and `scripts/` | HTML interaction, local transport, and thin orchestration | reusable domain behavior or scientific authority |
 | root facades | current public compatibility and thin orchestration | new implementation detail |
 
@@ -313,11 +259,11 @@ Cross-cutting owners remain focused:
 | Owner | Responsibility |
 | --- | --- |
 | `sample_metadata.py` | canonical sample identity and immutable metadata snapshots |
-| `feature_quality.py` / `feature_quality_io.py` | post-finalization feature availability/selection and its bound analysis-set export; never Alignment decisions or normalization |
+| `feature_quality.py` / `feature_quality_io.py` | post-finalization feature availability and analysis-set export; never Alignment decisions or normalization |
 | `review_records.py` | review subject/action identity and supersession |
 | `evidence_artifacts.py` / `artifact_lineage.py` | exact-byte artifact identity, completed-evidence locators, and supplied-lineage validation |
 | `processing_identity.py` | request, attempt, source, and retry-predecessor identity |
-| `execution/attempt.py` | sole attempt construction, execution, settlement and finalization authority; private lifecycle/receipt/observability companions support it |
+| `execution/attempt.py` | sole attempt construction, execution, settlement and finalization authority |
 | `acquisition_contract.py` | capability-bound acquisition batches and mechanical call/point facts |
 
 Exact model fields, companion modules, public exports, and allowed construction

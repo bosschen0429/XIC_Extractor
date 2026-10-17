@@ -6,8 +6,8 @@ space; Targeted supplies a `TargetSearchScope` that retains only configured
 targets. Both may inspect a broad evidence policy such as dR, R, or MeR through
 the same scientific task. Discovery turns seed evidence and MS1 traces into
 reviewable candidates. Discovery does not directly publish product outputs.
-Publication requires closed cell decisions and the relevant workflow
-projection/writer authority.
+Publication requires closed cell decisions, the relevant workflow
+projection, and [Writer Authority](productization.md#writer-authority).
 
 Discovery is provider-specific at its input and initial-interpretation seam.
 CID-NL, HCD-PI, Delta Mass, and future providers may consume different evidence
@@ -16,13 +16,77 @@ observations and hypotheses through the shared evidence contract so downstream
 Alignment, ObservationRevisit, and Backfill owners do not require a parallel
 lifecycle for each provider.
 
+This page owns candidate-generation and method evidence. For execution and
+review commands use the [Untargeted guide](../user/untargeted-discovery.md) and
+[Diagnostics Index](../../tools/diagnostics/INDEX.md). Dataset-specific Pt
+results and acquisition limitations are retained with the
+[Pt validation evidence](../superpowers/validation/pt_pattern_discovery/README.md),
+not as universal Discovery requirements.
+
+
+## Core Product Flow
+
+The intended product flow is:
+
+1. Discovery finds sample-local feature candidates that satisfy configured
+   method evidence such as CID-NL, HCD-PI, Delta Mass, or explicit composites.
+2. Alignment establishes cross-sample correspondence using evidence.
+   Untargeted constructs owners or groups; Targeted may begin with configured
+   target identity but still tests whether each sample-local hypothesis belongs
+   to it. A Discovery hit is a candidate anchor, not cross-sample truth by
+   itself.
+3. Backfill revisits accepted candidates, aligned groups, or configured target
+   cells to find results that were not counted for normal signal, threshold,
+   or workflow reasons.
+   Backfill still requires provenance-valid evidence; it is not blind
+   imputation and it does not create counted Discovery detections.
+4. Product outputs are usable only after the relevant projection and schema
+   contracts and the [Writer Authority](productization.md#writer-authority)
+   activation chain are satisfied.
+
+Targeted applies this flow to a bounded target universe and ends in its own
+delivery projection. Untargeted is the general form and ends in the analytical
+feature-by-sample Matrix. Different projections do not create different
+Discovery, Alignment, or Backfill cores.
+
+## Evidence Provider Naming
+
+Discovery strategy families name reusable evidence-provider classes. Current
+and planned families include `neutral_loss` for CID-NL-style methods and
+`delta_mass` for MS1 delta-pattern methods.
+
+Concrete patterns or tags live under a family. `DNA_dR` is a neutral-loss tag;
+`pt` is the first built-in delta-mass pattern. `Pt pattern` is the human-facing
+method name, and `pt_pattern` may be used as a method or preset label for
+`delta_mass(pattern_id=pt)`. Do not add `pt_pattern` as a separate primitive
+Discovery strategy unless a successor design intentionally replaces the
+strategy-family model.
+
+Discovery evidence providers create candidates and typed review evidence.
+Discovery evidence providers must not directly grant Backfill promotion,
+counted detection, or Matrix changes.
+
+### Composite methods
+
+Composite methods combine providers by explicit set operations, not by creating
+new primitive strategies. The planned first composite is
+`pt_pattern + cid_nl(dR)`, defined as `delta_mass(pattern_id=pt)` intersected
+with existing `neutral_loss(tag=DNA_dR)` evidence on the same base peak. Union
+or OR modes are out of scope until separately designed.
+
+When an intersection method has a natural base seed, implement it seed-first
+instead of running a broad provider over every possible anchor and filtering
+afterward. For `pt_pattern + cid_nl(dR)`, CID-NL(dR) base candidates seed the
+base feature IDs, then Pt pattern evidence checks only those bases for
+`+1.002111`, `+2.002271`, and `+4.005213`.
+
+## CID-NL candidate contract
+
 For CID-NL, `nl_tolerance_ppm` (default 20) is a per-ion m/z tolerance. A
 direct product matches the configured loss when its absolute loss error is at
 most `sqrt((precursor_mz × tol)^2 + (observed_product_mz × tol)^2)` Da, where
 `tol = nl_tolerance_ppm × 1e-6`. The reported loss-error ppm still describes
 the error relative to the configured loss mass; it is not the acceptance gate.
-
-## Contract
 
 ### Scope and candidate state
 
@@ -245,51 +309,6 @@ non-feature `product_plus_neutral_loss` rows are absent from Discovery artifacts
   assessment and cell-decision policy. CrossSample and cell-decision owners decide
   identity, Backfill, and Matrix publication. Candidate eligibility alone
   grants none of these authorities.
-
-### Methods and validation
-
-- CID-NL, HCD-PI, Delta Mass, and future configured methods are Discovery
-  methods when they are used to find features matching method-specific evidence
-  settings. They produce feature candidates plus typed evidence, not
-  cross-sample identity or matrix writes by themselves.
-- Discovery validation is method-specific. CID-NL 8RAW/85RAW fixtures are not
-  universal Discovery gates. The 8RAW fixture is a bounded subset of the 85RAW
-  fixture and uses the same processing recipe, not a separate blank-qualification
-  profile. Pt pattern work should use Pt-method real samples, trace/co-elution
-  evidence, no-write authority checks, and independent human adjudication unless
-  a later Pt owner explicitly names a different fixture. Reviewed Pt labels are
-  method-development evidence, not ground truth or an accuracy oracle by default.
-
-### CID-NL oracle formats
-
-CID-NL/NL116 oracle inputs carry `diagnostic_only` evidence. The Python
-validators own their exact fields, version tokens, and rejection rules.
-The formats below separate tracer proposals, independent references, blinded
-human judgments, and the gate decision.
-
-| Format | Meaning and required boundary | Executable owner |
-| --- | --- | --- |
-| Tested-tracer proposal manifest | Freeze every candidate and its Targeted/Untargeted decision from one tracer attempt before holdout review. `select_value` rows define proposal precision; independent references define recovery. Blank candidate metrics do not remove a candidate from the frozen universe. | [`validate_proposal_row`, `validate_proposal_manifest_rows`](../../xic_extractor/discovery/cid_nl_oracle_contract.py) |
-| Formal-holdout sampling manifest | Freeze blinded case and presentation assignments before review. `case_id` is the analysis unit, with exactly one primary presentation. Hidden duplicates measure repeatability only; adaptive supplemental cases are descriptive only. Probability samples retain inclusion probabilities, inverse-probability weights, and dependency groups. | [`validate_sampling_row`, `validate_sampling_manifest_rows`, `validate_sampling_statistical_binding`](../../xic_extractor/discovery/cid_nl_oracle_contract.py) |
-| Oracle lineage binding | Bind proposals, cases, immutable review events, and gate results to canonical request, attempt, and evidence-artifact identities. Paths, display names, timestamps, row order, and case locators cannot replace lineage identity. Missing source bytes are `not_replayable`; missing required bindings yield `inconclusive`. | [`validate_lineage_binding_row`, `validate_lineage_binding_rows`](../../xic_extractor/discovery/cid_nl_oracle_contract.py); [Result Traceability](processing-lineage.md) |
-| Review and adjudication events | Seal blinded sample-local identity, peak, and boundary labels before cross-sample policy review. Policy context cannot rewrite those labels. `unassessable` is a completed scientific judgment. Hidden duplicates use the same reviewer within each phase. Adjudication is append-only; unblinded taxonomy cannot change confirmatory labels. | [`validate_review_event`, `validate_review_event_set`, `validate_adjudication_event`, `validate_adjudication_event_set`](../../xic_extractor/discovery/cid_nl_oracle_review.py) |
-| Independent reference universe | Use independent, sample-local, method-matched evidence for expected controls and supported positives. Tracer proposals, legacy calls, and library membership cannot establish sample presence or the recovery denominator. Declare shared enumeration dependencies; shared candidate or decision logic cannot claim independent recovery. ISTD presence does not establish its paired analyte. Out-of-scope and unassessable rows do not enter eligible denominators. Incomplete frames downgrade recovery claims. | [`validate_reference_row`, `validate_reference_manifest_rows`](../../xic_extractor/discovery/cid_nl_oracle_contract.py) |
-| Narrow-scope manifest | Freeze scope precedence, exact case membership hashes, required gates, and allowed overall failures before reveal. Membership binds existing primary holdout rows and must agree with the structured scope. Derive `NARROW` from sealed membership and raw gate results; do not select a passing scope after reveal. | [`validate_narrow_scope_row`](../../xic_extractor/discovery/cid_nl_oracle_contract.py), [`reduce_oracle_verdict`](../../xic_extractor/discovery/cid_nl_oracle_verdict.py) |
-| Statistical-design manifest | Preregister estimands, thresholds, planning inputs, grouping keys, review budget, and uncertainty routes before reveal. A finite census describes its frame; sampled inference follows the probability and dependency design. Nonprobability challenges remain descriptive. Incomplete frames require partial bounds or a known-reference claim. Machine `hold` remains in unconditional recovery denominators; human unassessable cases are reported separately. | [`validate_statistical_design_row`, `validate_sampling_statistical_binding`](../../xic_extractor/discovery/cid_nl_oracle_contract.py) |
-
-Seals bind the actual artifact bytes, canonical rows, derived counts, and
-required identity coverage. Sealed rows remain append-only. Corrections require
-a new manifest or packet with a supersession edge. Post-reveal integrity incidents
-yield `inconclusive`; they do not authorize case removal, relabeling, or
-denominator recomputation. `validate_manifest_seal` and
-`validate_review_label_seal` enforce the supplied seal contract and byte bindings.
-
-These inputs grant no compound-identification, selected-area, counted-detection,
-Matrix, Backfill-write, workbook, UI, activation, or export authority.
-[Product Validation](../agent/product-validation-contract.md) owns readiness and
-promotion semantics; [Result Traceability](processing-lineage.md) owns the
-canonical lineage identities.
-
 ### Outputs, peak anchors, and batch handoff
 
 - Standard per-sample outputs: `discovery_candidates.csv` (archival/alignment
@@ -317,11 +336,10 @@ canonical lineage identities.
   MS1 centroids read at the two apexes, each within its own window, agree within
   the tolerance (one ion). The merged candidate keeps the higher candidate's
   m/z, peak and area.
-- The peak-anchor schema migration intentionally removed legacy
+- Current candidate/review outputs do not contain
   `family_context`, `feature_superfamily_id`, `feature_superfamily_size`,
   `feature_superfamily_role`, `feature_superfamily_confidence`, and
-  `feature_superfamily_evidence` columns from `discovery_candidates.csv` and
-  `discovery_review.csv`. There is no compatibility adapter for those columns;
+  `feature_superfamily_evidence` columns. There is no compatibility adapter for those columns;
   downstream consumers must read the current column constants or tolerate the
   missing legacy fields.
 - Batch discovery handoff uses `discovery_batch_index`. For every sample,
@@ -362,62 +380,6 @@ canonical lineage identities.
   surfaces. Do not judge the lane by exact equality to old upstream feature
   tables when the accepted contract is matrix hygiene plus Targeted benchmark
   recall.
-
-## Core Product Flow
-
-The intended product flow is:
-
-1. Discovery finds sample-local feature candidates that satisfy configured
-   method evidence such as CID-NL, HCD-PI, Delta Mass, or explicit composites.
-2. Alignment establishes cross-sample correspondence using evidence.
-   Untargeted constructs owners or groups; Targeted may begin with configured
-   target identity but still tests whether each sample-local hypothesis belongs
-   to it. A Discovery hit is a candidate anchor, not cross-sample truth by
-   itself.
-3. Backfill revisits accepted candidates, aligned groups, or configured target
-   cells to find results that were not counted for normal signal, threshold,
-   or workflow reasons.
-   Backfill still requires provenance-valid evidence; it is not blind
-   imputation and it does not create counted Discovery detections.
-4. Product outputs are usable only after the relevant projection,
-   Backfill/ProductWriter authority, expected-diff, and schema contracts are
-   satisfied.
-
-Targeted applies this flow to a bounded target universe and ends in its own
-delivery projection. Untargeted is the general form and ends in the analytical
-feature-by-sample Matrix. Different projections do not create different
-Discovery, Alignment, or Backfill cores.
-
-## Evidence Provider Naming
-
-Discovery strategy families name reusable evidence-provider classes. Current
-and planned families include `neutral_loss` for CID-NL-style methods and
-`delta_mass` for MS1 delta-pattern methods.
-
-Concrete patterns or tags live under a family. `DNA_dR` is a neutral-loss tag;
-`pt` is the first built-in delta-mass pattern. `Pt pattern` is the human-facing
-method name, and `pt_pattern` may be used as a method or preset label for
-`delta_mass(pattern_id=pt)`. Do not add `pt_pattern` as a separate primitive
-Discovery strategy unless a successor design intentionally replaces the
-strategy-family model.
-
-Discovery evidence providers create candidates and typed review evidence.
-Discovery evidence providers must not directly grant ProductWriter authority,
-Backfill promotion, counted detection, or Matrix changes.
-
-### Composite methods
-
-Composite methods combine providers by explicit set operations, not by creating
-new primitive strategies. The planned first composite is
-`pt_pattern + cid_nl(dR)`, defined as `delta_mass(pattern_id=pt)` intersected
-with existing `neutral_loss(tag=DNA_dR)` evidence on the same base peak. Union
-or OR modes are out of scope until separately designed.
-
-When an intersection method has a natural base seed, implement it seed-first
-instead of running a broad provider over every possible anchor and filtering
-afterward. For `pt_pattern + cid_nl(dR)`, CID-NL(dR) base candidates seed the
-base feature IDs, then Pt pattern evidence checks only those bases for
-`+1.002111`, `+2.002271`, and `+4.005213`.
 
 ## Pt Pattern Diagnostic Evidence
 
@@ -560,66 +522,41 @@ review must all be explicitly `clear`; any missing, unknown, or review-required
 state returns `uncertain` rather than becoming a threshold reject or final
 detector decision.
 
-### Artifact lineage and joins
+### Diagnostic artifact identity
 
-Current Pt trace/review artifacts are sealed as a lineage chain. Full-context
-trace summary/metrics/points use `pt_pattern_trace_diagnosis`; anchor-local
-trace artifacts use `pt_pattern_anchor_local_trace_diagnosis`. Every row
-carries a candidate-assignment SHA-256, a shared extraction SHA-256, and an
-exact `full_context` or `anchor_local` role. The trace manifest binds those
-identities to the candidate CSV, RAW hash, candidate slice, extraction
-settings, decision/smoothing contracts, and every emitted trace artifact.
-Current review packets use full or anchor-local v5; blind-overlay summaries
-and sealed machine rows use full or anchor-local. Current consumers fail
-closed on blank/historical schemas, missing manifests, stale fingerprints,
-artifact swaps, role/schema conflicts, or full/anchor mixtures across files.
+Pt trace and review consumers distinguish `full_context` from `anchor_local`.
+A manifest binds the exact candidate population, RAW content, extraction and
+decision settings, and emitted artifacts. Mixed roles, stale fingerprints,
+missing manifests, or substituted bytes fail closed. A bounded review subset
+does not narrow validation of the source trace bundle: validate the complete
+bundle before selecting rows.
 
-Trace-point validation remains bundle-scoped even when a review packet is a
-bounded subset selected from that bundle. Blind-overlay writers and verified
-loaders first validate every primary/context trace row against the complete
-manifest-verified summary/metric identity set. Only after that validation may
-they filter trace rows to packet candidates for rendering and accept-completeness
-checks. Non-packet candidates therefore cannot escape integrity validation, and
-their presence in the source trace bundle is not itself an error.
+Joins validate identity before filtering:
+- A candidate has zero or one trace-summary row, with matching normalized
+  `candidate_id`, `sample_stem`, `base_mz`, and `base_rt_apex_min`.
+- Candidate/evidence joins also bind `method_label` and `pattern_id`, require
+  the complete one-to-one key set, and validate rejected rows too.
+- Equivalent numeric serializations are accepted; discarded precision cannot
+  be inferred, and mismatched older artifacts must be regenerated.
 
-Human adjudication is bound to the exact review bundle, not just a logical row
-ID. The blind-overlay summary hashes the review packet, primary/context traces,
-gallery, and sealed calls. The historically named promotion step re-reads those
-artifacts, requires the recorded machine call to equal the sealed row, and
-emits `oracle_detection_status = not_asserted`. Threshold calibration and
-reviewed-label gate replay must then match the promotion row back to the actual
-review-packet SHA and candidate/sample identity. Legacy labels without that
-chain stay pending/stale diagnostic context.
+Human labels bind to the exact review packet, traces, gallery, and sealed
+machine calls. The historically named promotion operation retains
+`oracle_detection_status = not_asserted`. Calibration and replay require that
+same packet SHA and candidate/sample identity; labels without the chain remain
+pending or stale, not truth.
 
-Candidate-to-trace-summary joins are one-to-zero-or-one by normalized
-`candidate_id`. A matched row must also preserve `sample_stem`, `base_mz`, and
-`base_rt_apex_min`; blank, non-finite, or conflicting identity fields fail
-closed before Discovery evidence or a manual-review packet is built. Numeric
-serialization differences such as `500` versus `500.0` are equivalent. Trace
-summaries produced before round-trip identity serialization are stale when
-their stored coordinates no longer match the candidate and must be regenerated;
-the consumer does not infer precision that the old artifact discarded.
+An omitted optional artifact is unavailable. Malformed supplied evidence is
+an error, not zero/false: counts are exact non-negative integers, recall is in
+`0..1`, booleans are recognized, identity masses are finite and positive,
+subset counts fit their parent, and empty populations have no quantiles.
 
-Candidate-to-Discovery-evidence joins use the same fail-closed principle across
-ratio profiling, same-scan replay, and DDMS2 support replay. The evidence CSV
-therefore carries `sample_stem`, `method_label`, `pattern_id`, `candidate_id`,
-`base_mz`, and `base_rt_apex_min`. A reused ID is not sufficient: all six fields
-must identify the same candidate payload. Version 2 consumers require an exact
-one-to-one candidate/evidence key set and validate every pair before filtering
-on `trace_rule_call`; rejected or otherwise non-selected rows cannot hide stale
-identity. Evidence produced before those identity coordinates were written is
-stale for these consumers and must be regenerated from the matching candidate
-CSV.
+The executable schema/role and bundle contracts are owned by
+[review bundle loaders](../../xic_extractor/discovery/pt_pattern_review_bundle.py)
+and [replay binding](../../xic_extractor/discovery/pt_pattern_oracle_replay_contract.py).
+Older trace summaries may omit optional shifted-shape columns: they cannot
+support shifted-shape acceptance, but do not invalidate otherwise valid
+close-apex evidence. This does not relax required identity or manifest checks.
 
-Diagnostic synthesis treats an omitted optional artifact as unavailable, but it
-does not treat malformed values inside a supplied artifact as missing evidence.
-Counts must be exact non-negative integers, recall fractions must stay within
-`0..1`, booleans must use recognized true/false values, identity m/z values must
-be finite and positive, and subset counts cannot exceed their parent
-population. An empty ratio population cannot carry non-empty quantiles.
-JSON/CSV structures used by the synthesis must satisfy these input contracts;
-invalid supplied evidence fails closed instead of being truncated or silently
-replaced with zero/false.
 
 ### Gaussian15 time width
 
@@ -647,93 +584,84 @@ to use the packet's trace-decision metrics.
 
 ### Intensity ratios and RT shifts
 
-Intensity ratios are useful Pt-pattern evidence but are not a machine gate yet.
-Treat base/+1/+2/+4 ratios as ambiguity and review-priority signals until an
-independent truth set shows they separate physical Pt envelopes from false
-patterns beyond the close-apex co-elution metrics. Ratio is a future hard-gate candidate and
-should be studied with explicit experiment design, starting from the current
-Fullscan close-apex accepted set. Until that evidence exists, ratio fields only
-support human review, hypothesis generation, and outlier explanation. The first
-ratio profiling pass must not emit machine pass/fail decisions; it should emit
-values, distribution summaries, data-driven outlier/review flags, and RT/mz
-context. RT context must preserve the existing scan-aware close-apex semantics;
-do not use coarse RT bins such as 0.25 min for Pt ratio profiling. If RT
-sensitivity views are added, the upper exploratory bin/window should be
-0.05 min / 3 sec. RT binning may be explored in a later hypothesis slice, but it
-is out of scope for the first ratio profile. First-pass ratio outliers should be
-based on quantiles/IQR within the
-observed accepted set, not fixed FeatureHunter or theoretical thresholds. The
-first profile should focus on the Fullscan close-apex accepted rows and use
-rejected rows only as a background distribution summary; rejected rows must not
-be treated as ratio-training truth in this slice. First-pass flags should stay
-column-level, with only a thin candidate summary such as outlier count, extreme
-columns, and review note. Do not emit ratio scores, ratio confidence, ratio pass,
-or ratio fail. The first profile may include a static diagnostic HTML surface for
-distribution plots, RT/mz scatter views, and outlier tables. That HTML is a
-review/visualization artifact only: it must be labelled `diagnostic_only`, avoid
-accept/reject/pass/fail language, and must not become an interactive product UI
-or detector gate. First-pass ratio rows should carry references back to existing
-trace/evidence/overlay artifacts, but the ratio profiler itself should stay
-no-RAW: it must not reopen RAW files, re-extract XIC traces, or redraw overlay
-evidence. The
-preferred next evidence shape separates smoothed apex-height ratio, local
-apex-window area ratio, and full-window area ratio: apex height highlights crest
-distortion, local apex-window area describes the co-eluting core, and full-window
-area is report-only context for tail, shoulder, or background enrichment. A
-Pt-only reference envelope may be recorded as a loose reference, not as a hard
-threshold; molecular isotope composition, adducts, co-eluting species,
-saturation, and feature-picking artifacts can all distort the observed ratios.
-FeatureHunter category-3 intensity ratio is a pairwise
-`Precursor ion / Precursor ion'` formula. In the manual's positive delta-mass
-figure, `Precursor ion` is the lower-m/z member and `Precursor ion'` is the
-higher-m/z member, so historical positive-delta thresholds for `+1`, `+2`, and
-`+4` correspond to `base/+1`, `base/+2`, and `base/+4`. If `+1` is used as the
-Pt isotope-envelope reference because it is expected to be the strongest
-position, then `+1/base`, `+1/+2`, and `+1/+4` are derived review ratios rather
-than the raw FeatureHunter pairwise formula. The FeatureHunter formula is a
-historical comparator and possible failure source, not a Pt-pattern authority:
-ratio profiling should test whether FH-compatible `base/+delta` thresholds,
-`+1`-normalized ratios, or some other bounded ratio family better explains the
-human-adjudicated Pt candidates. Those labels may remain `uncertain` and are not
-ground truth unless a later evidence contract establishes that status.
-Smoothed-trace ratios must be labelled as decision-trace ratios, not raw
-abundance ratios: smoothing stabilizes apex/shape decisions but can attenuate
-or redistribute signal, especially when the effective smoothing window is short
-or trace density is high. Raw trace ratios and raw bounded-area ratios may be
-recorded as audit context, but raw traces do not become the default shape
-decision basis unless a later independent truth set shows that they improve
-discrimination.
+Ratios are review and ambiguity evidence, not a machine gate or independent
+truth. Profiling uses Fullscan close-apex accepted rows; rejected rows provide
+background distributions, not training truth. Outliers use quantiles/IQR from
+that population, not fixed theoretical or FeatureHunter thresholds. Keep flags
+column-level with a thin candidate summary, never ratio score/confidence/pass/fail.
 
-Small RT/apex shifts just beyond the close-apex threshold may be review evidence
-when expressed with `median_rt_step_sec`, apex-delta scan steps, and effective
-smoothing-window context. They must not become a product detection without a
-later independent truth set showing improved discrimination without
-nearby-coeluter or tail-following failures.
+The profiler consumes retained artifacts without reopening RAW, extracting XIC,
+or redrawing overlays. A diagnostic HTML view may show distributions, RT/mz
+scatter, and outlier tables; it is not an interactive product UI or detector.
+Preserve scan-aware close-apex context. The current profile does not use RT bins;
+any separately designed sensitivity view is bounded at 0.05 min / 3 sec, not
+coarse 0.25-minute bins.
 
-### Current Pt validation pair
+Keep smoothed apex-height, local apex-window area, and full-window area ratios
+distinct: they describe crest distortion, the co-eluting core, and report-only
+tail/shoulder/background context respectively. A Pt-only envelope is a loose
+reference, not a hard threshold; composition, adducts, co-elution, saturation,
+and feature picking can distort it.
 
-For the current 20251210 Pt validation pair, the Fullscan RAW is the Discovery
-authority because it was acquired as high-resolution MS1 specifically to find
-Pt-pattern candidates. The DDMS2 RAW has lower MS1 resolution and targeted/DDA
-fragmentation coverage; it is useful as support evidence for Fullscan seeds,
-but not as a global Pt-only denominator. A Fullscan-seeded DDMS2 support replay
-therefore starts from Fullscan `accept` rows and asks whether the DDMS2 local
-feature table contains matching base / `+1.002111` / `+2.002271` / `+4.005213`
-feature evidence within explicit m/z and RT windows. Until the historical
-DDMS2 target/inclusion list is available, missing DDMS2 or MS2 evidence means
-`not_evaluable_without_target_list`, not `reject`.
+FeatureHunter category-3 uses `Precursor ion / Precursor ion'`. In its positive
+delta-mass convention, the numerator is the lower-m/z member, so its historical
++1/+2/+4 thresholds correspond to base/+1, base/+2, and base/+4. Using +1 as a
+reference instead produces derived review ratios (+1/base, +1/+2, +1/+4), not
+the same formula. These are comparators to study against adjudicated candidates,
+whose labels may remain uncertain; none grants Pt-pattern authority.
 
-The DDMS2 support replay is intentionally `diagnostic_only`. RT window choice
-can strongly change support counts across different acquisition methods, so
-these rows can explain support or coverage, but they must not promote or demote
-Fullscan detections, write Matrix/Backfill surfaces, count detections, or
-activate export behavior.
+Smoothed ratios must be labeled decision-trace ratios, not raw abundance.
+Raw trace and bounded-area ratios may be audit context, but do not replace the
+shape decision basis without independent evidence of improved discrimination.
+Small RT shifts beyond the close-apex threshold likewise remain review evidence
+expressed in scan steps and smoothing-width context. Turning ratios or shifts
+into detection requires independent evidence that they improve discrimination
+without nearby-coeluter or tail-following failures.
 
-`pt_pattern_evidence.csv` can join older trace-summary artifacts that predate
-shifted-shape and ambiguity columns. Missing shifted-shape columns are treated
-as blank optional evidence: they cannot support the shifted-shape accept path,
-but they also do not invalidate close-apex trace evidence. This is backwards
-compatibility for existing diagnostic artifacts, not a weaker detection rule.
+
+## Method-specific validation
+
+- CID-NL, HCD-PI, Delta Mass, and future configured methods are Discovery
+  methods when they are used to find features matching method-specific evidence
+  settings. They produce feature candidates plus typed evidence, not
+  cross-sample identity or matrix writes by themselves.
+- Discovery validation is method-specific. CID-NL 8RAW/85RAW fixtures are not
+  universal Discovery gates. The 8RAW fixture is a bounded subset of the 85RAW
+  fixture and uses the same processing recipe, not a separate blank-qualification
+  profile. Pt pattern work should use Pt-method real samples, trace/co-elution
+  evidence, no-write authority checks, and independent human adjudication unless
+  a later Pt owner explicitly names a different fixture. Reviewed Pt labels are
+  method-development evidence, not ground truth or an accuracy oracle by default.
+
+### CID-NL oracle formats
+
+CID-NL/NL116 oracle inputs carry `diagnostic_only` evidence. The Python
+validators own their exact fields, version tokens, and rejection rules.
+The formats below separate tracer proposals, independent references, blinded
+human judgments, and the gate decision.
+
+| Format | Meaning and required boundary | Executable owner |
+| --- | --- | --- |
+| Tested-tracer proposal manifest | Freeze every candidate and its Targeted/Untargeted decision from one tracer attempt before holdout review. `select_value` rows define proposal precision; independent references define recovery. Blank candidate metrics do not remove a candidate from the frozen universe. | [`validate_proposal_row`, `validate_proposal_manifest_rows`](../../xic_extractor/discovery/cid_nl_oracle_contract.py) |
+| Formal-holdout sampling manifest | Freeze blinded case and presentation assignments before review. `case_id` is the analysis unit, with exactly one primary presentation. Hidden duplicates measure repeatability only; adaptive supplemental cases are descriptive only. Probability samples retain inclusion probabilities, inverse-probability weights, and dependency groups. | [`validate_sampling_row`, `validate_sampling_manifest_rows`, `validate_sampling_statistical_binding`](../../xic_extractor/discovery/cid_nl_oracle_contract.py) |
+| Oracle lineage binding | Bind proposals, cases, immutable review events, and gate results to canonical request, attempt, and evidence-artifact identities. Paths, display names, timestamps, row order, and case locators cannot replace lineage identity. Missing source bytes are `not_replayable`; missing required bindings yield `inconclusive`. | [`validate_lineage_binding_row`, `validate_lineage_binding_rows`](../../xic_extractor/discovery/cid_nl_oracle_contract.py); [Result Traceability](processing-lineage.md) |
+| Review and adjudication events | Seal blinded sample-local identity, peak, and boundary labels before cross-sample policy review. Policy context cannot rewrite those labels. `unassessable` is a completed scientific judgment. Hidden duplicates use the same reviewer within each phase. Adjudication is append-only; unblinded taxonomy cannot change confirmatory labels. | [`validate_review_event`, `validate_review_event_set`, `validate_adjudication_event`, `validate_adjudication_event_set`](../../xic_extractor/discovery/cid_nl_oracle_review.py) |
+| Independent reference universe | Use independent, sample-local, method-matched evidence for expected controls and supported positives. Tracer proposals, legacy calls, and library membership cannot establish sample presence or the recovery denominator. Declare shared enumeration dependencies; shared candidate or decision logic cannot claim independent recovery. ISTD presence does not establish its paired analyte. Out-of-scope and unassessable rows do not enter eligible denominators. Incomplete frames downgrade recovery claims. | [`validate_reference_row`, `validate_reference_manifest_rows`](../../xic_extractor/discovery/cid_nl_oracle_contract.py) |
+| Narrow-scope manifest | Freeze scope precedence, exact case membership hashes, required gates, and allowed overall failures before reveal. Membership binds existing primary holdout rows and must agree with the structured scope. Derive `NARROW` from sealed membership and raw gate results; do not select a passing scope after reveal. | [`validate_narrow_scope_row`](../../xic_extractor/discovery/cid_nl_oracle_contract.py), [`reduce_oracle_verdict`](../../xic_extractor/discovery/cid_nl_oracle_verdict.py) |
+| Statistical-design manifest | Preregister estimands, thresholds, planning inputs, grouping keys, review budget, and uncertainty routes before reveal. A finite census describes its frame; sampled inference follows the probability and dependency design. Nonprobability challenges remain descriptive. Incomplete frames require partial bounds or a known-reference claim. Machine `hold` remains in unconditional recovery denominators; human unassessable cases are reported separately. | [`validate_statistical_design_row`, `validate_sampling_statistical_binding`](../../xic_extractor/discovery/cid_nl_oracle_contract.py) |
+
+Seals bind the actual artifact bytes, canonical rows, derived counts, and
+required identity coverage. Sealed rows remain append-only. Corrections require
+a new manifest or packet with a supersession edge. Post-reveal integrity incidents
+yield `inconclusive`; they do not authorize case removal, relabeling, or
+denominator recomputation. `validate_manifest_seal` and
+`validate_review_label_seal` enforce the supplied seal contract and byte bindings.
+
+These inputs grant no compound-identification, selected-area, counted-detection,
+Matrix, Backfill-write, workbook, UI, activation, or export authority.
+[Product Validation](../agent/product-validation-contract.md) owns readiness and
+promotion semantics; [Result Traceability](processing-lineage.md) owns the
+canonical lineage identities.
 
 ## Surfaces
 
@@ -783,7 +711,7 @@ behavior.
 
 - **Owns**: candidate generation, per-sample review surfaces, seed evidence
   handoff, batch index for downstream alignment.
-- **Does not own**: ProductWriter authority or Backfill promotion (see
+- **Does not own**: Backfill promotion (see
   [backfill.md](backfill.md)), final evidence truth for a candidate feature
   (see [evidence rules](../lc-msms-evidence-rules.md)), or release-slice
   readiness (see [productization.md](productization.md)).
@@ -817,8 +745,6 @@ Before changing discovery behavior, require the relevant subset of:
   Discovery methods whose evidence and sample design are not comparable.
 - Depending on old worktree output directories instead of explicit batch index.
 - Hiding discovery output-contract changes in dated implementation notes.
-- Treating a new evidence provider as ProductWriter authority without Backfill
-  activation.
 - Dragging CID-NL Discovery decisions into the Backfill lane.
 - Starting Untargeted performance work before timing/locality evidence
   identifies the bottleneck and correctness gate.

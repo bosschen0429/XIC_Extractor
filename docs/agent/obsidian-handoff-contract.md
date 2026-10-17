@@ -25,6 +25,16 @@ Update the canonical document when its method or behavior changes. Git preserves
 previous versions; routine maintenance does not require document archival,
 historical copies, a retirement packet, or a separate approval.
 
+Keep current behavior, reserved but unimplemented contracts, and unresolved
+questions visibly distinct. A frozen design is not an implementation claim.
+When implementation lands, reconcile its status and remove superseded
+construction instructions in the same change.
+
+A rule has one detailed owner. Consuming guides keep only the local boundary
+needed to avoid misuse and link to that owner; they do not require synchronized
+copies of field lists, thresholds, or implementation status. Update an overview
+when its navigation or ownership changes, not for every change in a linked topic.
+
 For a merge or removal, use the normal task diff:
 
 1. Identify the current canonical owner.

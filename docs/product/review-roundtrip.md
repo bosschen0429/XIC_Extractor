@@ -59,10 +59,8 @@ approved product changes.
 - The registry snapshot has its own content-derived ID and canonical record
   ordering. Therefore omission or substitution produces a different bound
   snapshot.
-- Lineage accepts a `ResolvedReviewRecordRef` plus its exact registry
-  snapshot. Lineage
-  does not accept a freshly minted unresolved record or a tuple of
-  caller-selected records.
+- Lineage consumes the resolved reference and snapshot under its
+  [owner-reference composition contract](processing-lineage.md#owner-reference-composition).
 - Within one registry snapshot, every review subject has exactly one decision
   root and at most one current head.
 - A second same-subject root is an ambiguous competing chain. A second root is
@@ -120,7 +118,7 @@ grant the parked peak-switch or area-writer lanes product authority.
 - Owns: review queue generation, typed action import/validation, and dry-run
   planning.
 - Does not own: whether a reviewer action is approved for product mutation,
-  Backfill writer authority, matrix activation scope, or HTML review UX details.
+  matrix activation scope, or HTML review UX details.
 - Dataset-run queues, templates, labels, and rendered packets default to ignored
   output. Git tracks only an active compact verdict or contract with an enduring
   product or scientific consumer.

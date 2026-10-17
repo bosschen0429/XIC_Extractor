@@ -36,10 +36,10 @@ owner for product documentation.
 | Evidence Spine | [`evidence-spine.md`](evidence-spine.md) | Shared evidence carriers, peak hypotheses, projection boundaries |
 | Vendor RAW Evidence Model | [`vendor-raw-evidence-model.md`](vendor-raw-evidence-model.md) | Qual Browser-derived RAW evidence-query concepts, scan-filter lineage, trace-type boundaries |
 | Peak Anchor And Group Boundary | [`family-hypothesis-boundary.md`](family-hypothesis-boundary.md) | Discovery peak anchors, cross-sample groups, PeakHypothesis, and projection authority |
-| Backfill | [`backfill.md`](backfill.md) | Bounded owner-backed ObservationRevisit; explicitly separate from membership, selected value, and writer authority |
-| Run Provenance | [`run-provenance.md`](run-provenance.md) | Method manifests, run metadata, replay context |
-| Result Traceability | [`processing-lineage.md`](processing-lineage.md) | Stable request/attempt/artifact/delivery identity, plot-ready retention, retry/supersession, and two-phase delivery sealing |
-| Run Lifecycle Management | [`execution-runtime.md`](execution-runtime.md) | Attempt scheduling, cancellation, retry/resume, cleanup, cache lifecycle, failure aggregation, and runtime observability |
+| Backfill | [`backfill.md`](backfill.md) | Bounded owner-backed ObservationRevisit; explicitly separate from membership and selected value |
+| Run Provenance | [`run-provenance.md`](run-provenance.md) | Targeted workbook run metadata and input snapshots; not a replay archive or delivery seal |
+| Result Traceability | [`processing-lineage.md`](processing-lineage.md) | Current request/attempt/artifact identity and bindings; separately labeled reserved delivery and retention contracts |
+| Run Lifecycle Management | [`execution-runtime.md`](execution-runtime.md) | Current attempt execution, workflow coverage, cancellation, cleanup, and observability; reserved dependency-reuse contract |
 
 ### Quality and Review
 
@@ -95,10 +95,8 @@ These apply to all topic pages and do not need to be restated in each file:
   a stronger claim; it grants no authority. Evidence labels are not inherent
   properties of a topic page and are not persisted lane state in the
   productization status index.
-- **ProductWriter authority** is the only path that writes product matrices.
-  Sidecars, review surfaces, galleries, and diagnostics can explain or gate a
-  decision, but they do not write product values unless the authority manifest
-  explicitly grants that role.
+- **ProductWriter authority**: see
+  [Writer Authority](productization.md#writer-authority).
 - **Cleanup policy**: dated plans, command transcripts, and sample-level
   investigation can move to private notes after their stable public claims
   are represented in the relevant topic page or source owner.

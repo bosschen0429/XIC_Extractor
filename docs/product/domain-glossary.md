@@ -59,8 +59,8 @@ return an observation or typed no-observation result. The current Untargeted
 CID-NL production route uses the conservative Backfill decision and completed
 cell evidence. Backfill may
 produce the first usable observation for that cell,
-but it cannot originate the Target/group, mint membership, select a product
-value, or grant writer authority.
+but it cannot originate the Target/group, mint membership, or select a
+product value.
 The workflow-owned projection first creates typed Target/Group row bindings and
 cell subjects; `ProductionCellDecision` alone selects the value or no-write
 result; the same projection then owns row inclusion, counts/reasons, Review
@@ -84,7 +84,7 @@ Use these terms consistently:
   integration basis.
 - `selected hypothesis`: the chosen `PeakHypothesis` and its audit context.
   Selection identifies the candidate used by a workflow projection; it does
-  not by itself grant counted-detection, Matrix, workbook, or writer authority.
+  not by itself grant counted-detection or writer authority.
 - `EvidenceVector`: structured evidence used for scoring or model selection.
 - `EvidenceDecisionSemantics`: typed interpretation of evidence support,
   conflict, exclusion, ambiguity, or review meaning. It is not product-write
@@ -151,12 +151,11 @@ Use these terms consistently:
 - `ChromPeakSegment`: scoped product-candidate boundary unit used by
   quantitation-context decisions.
 - `ProductWriter`: the exclusive approved code path for product-matrix
-  mutations. It consumes only explicitly authorized scopes and never derives
-  writer authority from evidence, diagnostics, or its own implementation.
+  mutations; see [Writer Authority](productization.md#writer-authority).
 
 Evidence providers can include CID-NL, HCD-PI, Delta Mass, RT/iRT, MS1 shape,
 standards, library matches, trace overlays, review labels, and future models.
-They feed the evidence spine; they do not directly become matrix write authority.
+They feed the evidence spine.
 
 Related evidence and analysis terms:
 
@@ -177,7 +176,7 @@ Related evidence and analysis terms:
   Non-feature `product_plus_neutral_loss` observations, including ambiguous
   co-isolation observations, are classified in memory but are not persisted.
 - `sidecar`: accompanying TSV, JSON, or similar metadata that explains or
-  audits a primary output without inheriting its writer authority.
+  audits a primary output.
 - `provenance`: the inputs, effective settings, runtime, and decision path
   needed to identify or reproduce how an artifact or decision was produced.
 - `seed evidence`: initial MS1/MS2 evidence that triggers candidate generation
@@ -224,8 +223,7 @@ concerns explain ambiguity and review priority, not the detected call itself.
 - `Delta Mass`: Discovery strategy family for configured MS1 mass-difference
   patterns.
 - `Pt pattern`: the first built-in `delta_mass` pattern for Pt-related MS1
-  feature discovery. It creates candidates and review evidence, not direct
-  Matrix-write authority.
+  feature discovery. It creates candidates and review evidence.
 - `HCD`: Higher-energy Collision Dissociation. Its product-ion audit is a review
   surface unless a separate contract grants stronger decision meaning.
 - `DDA`: Data-Dependent Acquisition, where MS2 scan triggering depends on MS1
@@ -255,8 +253,12 @@ concerns explain ambiguity and review priority, not the detected call itself.
 
 - `candidate/audit universe`: rows that are visible for review, audit, or
   diagnosis. This is not the same as writable product output.
-- `write_ready`: a scope with explicit current product write authority.
-- `authority`: the permission boundary for matrix/workbook/value writes.
+- `write_ready`: a row-level `policy_decision` value in the Backfill
+  generated-policy artifact. It names rows a writer scope may cover; the
+  label grants no write authority unless that scope is registered in the
+  authority manifest.
+- `authority`: the permission boundary for matrix/workbook/value writes;
+  [Writer Authority](productization.md#writer-authority) owns how it is granted.
 - `authority manifest`: machine-checkable record of the exact ProductWriter
   scopes and cells currently authorized to write.
 - `maturity tier` (preferred term: `lane readiness status`): persisted current
@@ -285,7 +287,7 @@ concerns explain ambiguity and review priority, not the detected call itself.
 - `adjudication`: machine classification of a candidate. It can route work, but
   it is not by itself permission to write product output.
 - `review packet`: a structured human-review surface. It is not free-form value
-  entry and does not automatically grant writer authority.
+  entry.
 - `truth lockbox` (`lockbox`): independent peak-choice or area labels used to
   evaluate future automation. Lockbox labels do not automatically mutate
   product output.
@@ -307,6 +309,10 @@ contract says otherwise.
 
 ## Processing Lineage Terms
 
+These names describe both current identity models and reserved delivery
+contracts. See [Result Traceability](processing-lineage.md#current-status) for
+implementation status; defining a term does not establish product capability.
+
 - `AcquisitionSource`: immutable identity for one RAW, mzML, or other
   acquisition source and its native observation namespace. A path or sample
   display name is not sufficient identity.
@@ -317,22 +323,19 @@ contract says otherwise.
   new attempts and never overwrite earlier attempt identity.
 - `EvidenceArtifact`: one immutable typed evidence instance identified by its
   producer attempt, semantic role, schema, and content digest.
-- `DeliveryCellKey`: projection-owned stable position for one sample and
-  Targeted target or Untargeted matrix row. It is not a kernel observation or
-  an ordinal group label.
-- `TargetedDeliveryCellKey`: canonical sample identity plus `TargetKey`. Exact
+- `DeliveryCellKey`: projection-owned stable Targeted cell position under the
+  [delivery identity contract](processing-lineage.md#delivery-identities), not
+  a kernel observation or an ordinal group label.
+- `TargetedDeliveryCellKey`: Targeted name for `DeliveryCellKey`. Exact
   target-definition and projection-policy versions belong to the delivery
   revision, not the stable cell position.
-- `UntargetedDeliveryCellKey`: canonical sample identity plus
-  `UntargetRowKey`. A legacy family label, m/z/RT display text, or current row
-  number is not this identity. Not planned: Untargeted delivery uses one
-  output-level seal instead; see the
-  [Untargeted delivery decision](processing-lineage.md#untargeted-delivery-decision).
-- `DeliveryRevision`: immutable proposed or sealed value/null for one delivery
-  cell, linked to the producing attempt and kernel decision.
-- `DeliverySeal`: immutable manifest proving that a complete delivery revision
-  set and its output artifacts passed lineage closure and the owning writer
-  authority.
+- `UntargetedDeliveryCellKey`: not part of the planned delivery contract; see the
+  [Untargeted delivery decision](processing-lineage.md#workflow-specific-delivery).
+- `DeliveryRevision`: immutable proposed or sealed Targeted value/null, linked
+  to the producing attempt and kernel decision.
+- `DeliverySeal`: immutable authority-approved manifest for Targeted revisions
+  or a complete Untargeted Matrix and retained ledger; see
+  [delivery identities](processing-lineage.md#delivery-identities).
 
 These terms are internal lineage identities, not extra user-visible review
 states. Avoid the overloaded term `run_id` when the intended meaning is

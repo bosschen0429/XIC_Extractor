@@ -81,4 +81,4 @@ lineage seal.
 - [Review roundtrip](review-roundtrip.md)
 - [Processing identity, lineage, and retention](processing-lineage.md)
 - [Productization](productization.md)
-- [Validation harness](../validation/harness.md)
+- [Product Validation](../agent/product-validation-contract.md)

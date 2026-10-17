@@ -51,7 +51,7 @@ before assigning ordinals. These are diagnostic positions, not selected peaks.
 Missing RAW evidence remains unavailable. CLI help owns policy defaults and
 acquisition bounds; the JSON preserves the effective policy and input provenance.
 These outputs have `diagnostic_only` evidence status and no selected-peak,
-reference-editing, quantitation, or ProductWriter authority.
+reference-editing, or quantitation authority.
 
 ### Selected-hypothesis grouping
 
@@ -380,7 +380,7 @@ inputs. A different sample cannot replace missing current-sample identity suppor
 | `Product State` / `Counted Detection` / `Review State` | Advanced product-policy fields; do not veto a retained numeric value |
 | Confidence | Advanced review context rendered from typed projection decisions |
 | Region and selected-envelope candidates | Boundary and candidate-evaluation evidence |
-| Current-sample paired RT reference | Method offset transferred by a credible observed ISTD; no additional writer authority |
+| Current-sample paired RT reference | Method offset transferred by a credible observed ISTD |
 | Expected-diff packets | Required gate for output-changing behavior |
 
 ## Boundaries

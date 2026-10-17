@@ -7,7 +7,7 @@ Repo owner: docs/diagnostic-ledger.md
 Doc exit rule: Keep active while expensive RAW rerun memory is needed; retire only after durable diagnostic memory moves to a replacement canonical owner.
 
 **Status:** maintained repo-local diagnostic memory
-**Last updated:** 2026-10-16
+**Last updated:** 2026-10-17
 
 This ledger records diagnostic conclusions that should survive branch and
 worktree changes. Use it before rerunning expensive RAW validation or treating a
@@ -70,6 +70,13 @@ dated productization control-plane path is compatibility lookup only.
 | Targeted GT 8RAW default workbook | `local_validation_artifacts/targeted_gt_workbooks/8raw/xic_results_20260512_1151.xlsx`, SHA256 `788892188C8419C82DC4618C98E160B90AC6C44C38676C53609248AA529889F7` |
 | RAW root | `$env:XIC_RAW_ROOT` |
 | Thermo DLL dir | `$env:THERMO_RAWFILE_READER_DLL_DIR` |
+
+## Reading the conclusions
+
+Each dated entry is bounded by its producing code, inputs, and method. Its
+numbers do not become today's baseline or readiness state merely because the
+entry remains useful. Retain the conclusion, decisive comparison, evidence
+locator, and reason to rerun; construction chronology stays in the Issue/PR.
 
 ## Known Diagnostic Conclusions
 
@@ -144,392 +151,114 @@ or the RAW reader changes.
 
 ### 2026-09-25 Process RAW Workers Halve Full85 Runtime With Identical Outputs
 
-Issue #470. Alignment's RAW worker default changes from `thread` to `process`
-(`execution_settings.DEFAULT_ALIGNMENT_WORKER_BACKEND`).
+Issue #470; `diagnostic_only`. At `5f841191`, the four-process full85
+Alignment run reused #463 Discovery with a cold acquisition cache and completed
+49/49 partitions. Runtime was 2,264.1 s versus 4,460.1 s with four threads;
+summed acquisition was 4,124.3 versus 8,414.5 s, composition 625.3 versus
+718.5 s. Matrix, identity, review, and cells were byte-identical. Peak tree
+RSS rose from 3.22 to 6.33 GB (process private bytes 10.06 GB).
+This supported adopting the process backend; it is not a universal speed/RSS bound.
 
-- Cause: within one process, Thermo reads do not scale across threads. On one
-  RAW, 200 requests take 0.818 s on one thread. Four threads each running the
-  same 200 take 1.72-1.77 s apiece (2.39 s wall), about 1.8x throughput.
-  Converting .NET arrays is not the cost: `np.asarray` takes 0.015 s of that.
-  pythonnet 3.0.5 is in use. Its maintainers state that Python-to-.NET calls
-  run without the GIL held, so the ceiling sits in the DLL or runtime and is
-  not identified. `RawFileReaderAdapter.ThreadedFileFactory` (4.0.19) exists
-  for sharing one file across threads, but each worker already opens its own.
-- 8RAW inventory (thread, 4 workers, one run): 1,304 `extract_xic_many` calls
-  carry 8,068 requests, a mean of 6.2 per call, and almost every call uses one
-  RT window. They take 248.9 thread-s in a 198.2 s runtime, so effective
-  concurrency is about 1.3.
-- 8RAW, 4 workers: process runtimes 135.2, 114.0, 97.6 and 94.3 s against
-  thread 146.9 s in the same session, and 191.5-222.5 s earlier. Matrix,
-  identity, review and cells are byte-identical across all runs. Peak RSS is
-  2.4-2.7 GB against 1.5-1.6 GB.
-- Worker count on 8RAW (process): 6, 8 and 11 workers give 120.3, 97.1 and
-  108.0 s, and RSS 3.1, 4.2 and 5.0 GB. There is no gain, because 8 samples
-  bound the per-partition parallelism. Full85 partition 0 alone (process)
-  acquires in 50.7 and 68.3 s with 4 workers, 41.4 s with 8 and 44.9 s with 11
-  (96.8 s with 4 threads). Its peak RSS is 5.5-5.7, 7.1 and 8.9 GB. A gain at
-  8 workers is suggested by one run and not established.
-- Full85 at `5f841191` (process, 4 workers, the #463 Discovery, cold
-  acquisition cache): 49/49 partitions complete. Runtime stage 2,264.1 s
-  against 4,460.1 s with threads (#463), summed acquisition 4,124.3 s against
-  8,414.5 s, and composition 625.3 s against 718.5 s. Peak tree RSS is
-  6.33 GB (private 10.06 GB) against 3.22 GB. Matrix, identity, review and
-  cells are byte-identical to the #463 thread run.
-- RAW open/close cost under the process backend. The probe covers full85
-  partition 0 with 4 workers. A `sitecustomize` hook logs every
-  `open_raw`/`__exit__` in every process.
-  - Each worker opens 41-44 RAWs: 2 per sample per partition, 83 ms per open
-    and 10 ms per close. That is about 15.8 worker-s per partition, or
-    roughly 190 s of full85's 2,264 s runtime at 49 partitions (inference).
-  - Once per run, the parent's main thread opens every RAW twice: 85 for
-    `extract_batch_known_istd_reference` and 85 for `read_raw_sample_header`.
-    That takes 8.4 s to open and 37.2 s to close (219 ms per close), serially.
-  - `__exit__` is only Thermo `Dispose()` (`raw_reader.py:110`). A standalone
-    close takes a median of 288 ms, and a standalone open 25 ms.
-- Remaining #470 items were measured and not pursued:
-  - **RAW content hashing** runs once per run in `verify_acquisition_sources`,
-    10.6 s on full85 (0.4%). Workers compare path identity only
-    (`raw_reader.py:432`).
-  - **Parallel parent setup.** Reading 85 headers takes 27.2/26.1 s serially
-    and 19.4/19.3 s with 4 threads (1.37x). Threading both setup passes
-    would save about 15 s (0.6%).
-  - **Worker-held RAW handles.** An open handle holds about 59 MB private:
-    40 open handles take 2,370 MB, still 2,332 MB after closing. A worker
-    would need to hold all 85 RAWs (about 20 GB for 4 workers) for cache hits,
-    because samples are not pinned to workers. Pinning them would cost about
-    5 GB for the ~8% open/close share, and would change the handle-lifetime
-    contract.
-  - **Writing during the runtime.** On 8RAW, 13.1 of the 15.3 s writing
-    outputs goes to `iter_completed_untarget_batch_writer_inputs` re-reading
-    the spool, and 2.5 s to formatting. Full85 `write_outputs` is 106 s
-    (about 4%). Rows cannot be written as partitions finish, because
-    `public_family_id` is numbered in global candidate order at finalization
-    (`untargeted_finalized_matrix.py`). Writing rows early would change row
-    order and IDs.
-  - **On-demand explanation** saves about 276 s and 6.3 GB, but only on runs
-    that request the explanation. Production and `validation-minimal` do not
-    write it.
-  - The live-timing `mkdir` takes 75 µs standalone. Its 1 s per call in the
-    profile is GIL waiting.
-- Unmeasured: 8 workers on full85, and machines with less than 32 GB. The
-  thread backend stays selectable for low-memory use.
-- Evidence is local and untracked, moved to `D:\XIC_output\i470-inventory\`
-  (probes `inventory_probe.py`, `conversion_bench.py`, `p0/p0_only.py`),
-  `D:\XIC_output\i470-full85\` and `D:\XIC_output\i470-remaining\`
-  (`probe_site/sitecustomize.py` open/close hook, `prof8/` cProfile,
-  `p0-opens/` and `p0-stack/` events).
+The retained cost exclusions explain when to reopen the question:
+
+- Thread throughput was limited without an identified DLL/runtime cause;
+  .NET-array conversion was only 0.015 s in the bounded 200-request probe.
+- Each partition opened a RAW twice per sample. Parent ISTD/header setup added
+  two opens per source once per run, not per partition. Process partition-0
+  opens/closes averaged 83/10 ms; extrapolated partition open/close cost was
+  roughly 190 s of full85, an inference rather than a full-run measurement.
+- Full85 source hashing cost 10.6 s (0.4%); threading parent setup suggested
+  only about 15 s (0.6%) savings.
+- Retaining handles cost about 59 MB private per handle; source pinning would
+  trade roughly 5 GB for the measured ~8% open/close share.
+- Early Matrix writes would change globally finalized row order/IDs.
+  Full85 output writing was 106 s (~4%); explanation work applied only to
+  runs requesting that diagnostic output.
+- 8RAW worker-count trials did not establish a general gain beyond four workers.
+  Eight-worker full85 and hosts below 32 GB were not measured in this receipt;
+  later worker evidence has its own producing code state.
+
+Historical local receipt sets: `i470-inventory` (inventory, conversion and
+partition-0 probes), `i470-full85`, and `i470-remaining` (open/close events and
+profiles), linked by [Issue #470](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/470).
+They are not tracked reusable inputs. Reopen only for changed acquisition
+locality, handle lifetime, workload, backend, or memory constraints; do not use
+these old timings as a current baseline without that compatibility check.
 
 ### 2026-09-24 Partition Sizing: An 8RAW Win That Full85 Does Not Inherit
 
-Issue #463. At `9ba3a5b1` the bounded CID-NL constants (100 Da mass bin,
-1,024-membership budget, `untargeted_cid_nl_bounded_runtime.py:175,194`) stay
-unchanged: one setting wins clearly on 8RAW, but the full85 partition shape
-differs, and one full85 run cannot show output parity for a new default.
+Issue #463, producing code `9ba3a5b1`; `diagnostic_only`.
+The 100 Da bin / 1,024-membership budget was not changed by this experiment.
 
-- Machine and runner: i5-12400 (6C/12T), 32 GB, Windows 11, RAW and outputs on
-  internal C:. Alignment is the tissue runner's own command (`thread` backend,
-  4 raw workers, `validation-minimal` plus `--emit-alignment-cells`), with no
-  retained acquisition cache, so every run acquires cold. A driver replaces
-  the two literals at import and does not change product source. Its
-  1024/100 output hashes equal the unpatched runner's.
-- 8RAW grid, from one Discovery at head. Runtime-stage seconds, partitions,
-  summed acquisition, peak tree RSS:
+- On 8RAW, four threads, cold acquisition cache, one frozen Discovery:
+  1024/100 runtime was 191.5/206.4/222.5 s; 2048/no-bin was
+  121.9/107.6/118.4 s (means 206.8 versus 116.0 s, 44% gain).
+  All twelve grid runs had byte-identical Matrix, identity, review, and cells.
+- The mechanism did not transfer directly to full85: its 43,652 memberships
+  made the budget, not the mass bin, dominant. At budget 1024, removing the
+  bin changed 49 partitions to 45; budget 2048 gave 25/22 and 4096 gave 14/11
+  with/without the bin. A current-shape full85 partition had about 87k sample
+  jobs versus 16k in the winning 8RAW setting.
+- The single full85 reference run took 4,460.1 s in the runtime, 8,414.5 s
+  summed acquisition, 718.5 s composition, and 3.22 GB peak tree RSS.
+  It did not test the alternative setting and is not comparable to the
+  process12 warm-cache result.
+- Correct open accounting is two opens per sample per partition plus two
+  parent setup opens per source per run; the superseded four-per-partition
+  interpretation is not a cost basis.
 
-  | budget / bin | runtime s (n) | partitions | acquire sum s | peak RSS GB |
-  | --- | --- | --- | --- | --- |
-  | 1024 / 100 (current) | 191.5, 206.4, 222.5 (3) | 10 | 337-391 | 1.51-1.64 |
-  | 512 / 100 | 211.9 (1) | 14 | 373.5 | 1.19 |
-  | 2048 / 100 | 213.5 (1) | 8 | 385.8 | 1.40 |
-  | 4096 / 100 | 164.1 (1) | 8 | 296.3 | 1.36 |
-  | 512 / none | 186.5 (1) | 10 | 331.0 | 1.91 |
-  | 1024 / none | 198.4 (1) | 5 | 303.8 | 1.50 |
-  | 2048 / none | 121.9, 107.6, 118.4 (3) | 3 | 175-202 | 1.23-1.46 |
-  | 4096 / none | 160.2 (1) | 2 | 161.5 | 1.26 |
+The same dated run recorded six DNA ISTD rows at 85/85 non-blank, matching
+Discovery bounds in 496/508 detected ISTD cells, and median cell/Discovery
+area ratio 1.000. It also recorded 145 MS1-only Backfill peaks accepted in more
+than one row (#469); those are historical observations, not a current
+duplicate rate. The #466 Targeted NL 1.6/1.1 Da comparison failed before output
+with a retained-selected-hypothesis capture error and answered no NL question.
 
-  Matrix, identity, review and cells are byte-identical across all 12 grid
-  runs, and the first three also match the unpatched runner's own 8RAW run.
-  2048/none is 44% faster than current (means 116.0 vs 206.8 s, ranges
-  disjoint). The single-run rows sit inside the ±8% noise band that the
-  repeats show, and 2048/100 and 4096/100 produce the same 8 partitions yet
-  differ by 49 s.
-- Mechanism. Each partition acquires every sample again, so summed acquisition
-  follows partition count. Below about three partitions, acquisition can no
-  longer overlap composition: 4096/none waits 113.4 s against 1.0-2.2 s for
-  2048/none. On 8RAW the mass bin sets the partition count, because memberships
-  per bin rarely reach the budget.
-- Full85 shape does not match that. An offline replay of the partition loop
-  over the full85 worksets reproduces the observed partition count exactly
-  (49 at 1024/100; the 8RAW replay also matches all eight observed counts):
+Local receipt set `i463-partition-sizing` contains `grid8/`,
+`full85-head-9ba3a5b1/`, workset snapshots, and parity checks; `i463-fixed-cost`
+contains the open/close and batch probes.
+[Issue #463](https://github.com/Chao-hu-Lab/XIC_Extractor/issues/463) owns the
+experiment. Any renewed default change needs a compatible full85 candidate,
+peak-RSS measurement, and output parity, not extrapolation from the 8RAW win.
 
-  | budget | 100 Da bin | no bin |
-  | --- | --- | --- |
-  | 512 | 96 | 93 |
-  | 1024 | 49 | 45 |
-  | 2048 | 25 | 22 |
-  | 4096 | 14 | 11 |
+### 2026-09-22 Explanation Materialization And On-Demand Read Bounds
 
-  Full85 has 3,590 worksets, 4,712 subjects and 43,652 memberships (largest
-  workset 424 memberships and 12 subjects). The 1,176-subject cap never binds.
-  The budget sets the count, and dropping the bin saves only 4 of 49
-  partitions. A current full85 partition already carries about 87k sample
-  jobs, against about 16k in the winning 8RAW setting, so the 8RAW gain is not
-  evidence for full85.
-- One full85 run at head (Discovery 977.6 s; Alignment 5,133.5 s with
-  explanation): 49 partitions, runtime 4,460.1 s, summed acquisition 8,414.5 s
-  (mean 172 s per partition), summed serial composition 718.5 s, wait
-  158.4 s, peak tree RSS 3.22 GB, explanation SQLite 6.29 GB. An unrelated
-  `du` scan overlapped Discovery and the first 36 minutes of Alignment.
-  Partitions acquired before and after it stopped have medians of 168.2 and
-  179.1 s, so no Alignment slowdown is visible. Treat the times as reference
-  only; they are not comparable with the process12 warm-cache 1,613 s above.
-- Per-partition fixed cost. A probe that keeps only full85 partition 0 (85
-  samples, 4 threads, acquire wall 96.8 s, composition 5.9 s) times, summed
-  over threads: 340 `open_raw` 22.3 s, 340 handle closes 29.9 s, 968
-  `extract_xic_many` 266.8 s, scan-window/RT/MS2 lookups about 12.7 s.
-  Corrected on 2026-09-25 (#470): only 170 of those opens belong to the
-  partition. That is 2 per sample, one in the initial pass and one in
-  Backfill (`untargeted_real_data_runtime.py:815-900`). The other 170 happen
-  once per run in the parent: `extract_batch_known_istd_reference` and
-  `read_raw_sample_header`, 85 each. The earlier figures here, "4 per
-  sample", "about 196 opens per RAW" and "about 640 s, 13.5%", were wrong.
-  See the 2026-09-25 entry for the per-partition cost under the process
-  backend.
-- `extract_xic_many` merges only requests with identical RT windows
-  (`raw_reader.py:165-195`). On `NormalBC2259_DNA`, candidate m/z with ±1 min
-  windows take 0.29 s for 200 requests called one by one, against 0.08 s in
-  one whole-run call (1,000: 1.83 vs 0.51 s). The merged call grows about
-  0.5 ms per m/z. At 3,000 requests it matches one call over local windows,
-  because the cycled candidate list repeats windows. Requests per production
-  call were not recorded, so the full85 extraction saving is unknown.
-- Next evidence, if full85 wall time still matters: one full85 Alignment at
-  budget 2048 or 4096 against this run's retained Discovery, reading peak RSS
-  (three resident partitions at up to 4x the current size) and full85
-  matrix/review/cells parity. Change the default only after that.
-- Carried checks from the same full85 run:
-  - #461: each of the six DNA ISTDs has a matrix row with 85/85 non-blank
-    samples.
-  - #468: detected cells integrate over their Discovery segment. Bounds are
-    identical for 496 of 508 detected ISTD cells, and the median cell/Discovery
-    area ratio is 1.000 (range 0.859-1.021). In the 1,571 rows that hold both
-    detected and backfilled cells, median widths are 0.829 and 0.814 min.
-  - #469: d3-5-hmdC still has two families, FAM005496 (85/85) and FAM005494
-    (77 non-blank, 72 of them backfilled, median apex 9.012 against 9.025). In
-    21 samples, apex and bounds are identical across the two rows. Run-wide,
-    145 same-m/z MS1-only Backfill peaks are `accepted` in more than one row.
-    d3-N6-medA's second family (FAM000832) is not a matrix row.
-  - #466 targeted NL A/B (1.6 vs 1.1 Da): both arms fail before output with
-    `SampleLocalCaptureError: retained selected hypothesis is absent from the
-    captured trace` (`peak_detection/capture.py:530`), with or without targeted
-    MS1 shape identity. That failure is owned by #435; this A/B is unanswered.
-- Evidence is `diagnostic_only`. Artifacts: `output/i463-partition-sizing/`,
-  moved off the checkout to `D:\XIC_output\i463-partition-sizing\` (`grid8/`, `full85-head-9ba3a5b1/`, `*-worksets.json`, `full85-*.txt`),
-  probes `partition_sizing_driver.py`, `grid.py`, `summarize.py`,
-  `partition_plan.py`, `istd_check.py` and `cells_468_469.py`; the
-  fixed-cost probe and benchmark are under `D:\XIC_output\i463-fixed-cost\`
-  (`fixed_cost_probe.py`, `xic_batch_bench.py`, `stats.json`).
+`diagnostic_only` evidence from the retained `alignment85-process12`
+SQLite and `set-scan-1` partition; no new RAW run was used for this analysis.
+It explains the cost of the then-eager report, not the current reporting default.
 
-### 2026-09-22 The Three Open Questions, Answered
+- All data in the 9,389,572,096-byte SQLite could be recovered from partition
+  files, including assessments and initial groups. The earlier claim of a
+  separate 586 MB source was disproved. Links were a materialized join.
+- One-row SQLite reads had a 12.8 ms median over 10 candidates. Cold partition
+  record restore had a 5.3 ms median, 53.2 ms p90, and 257.4 ms maximum over
+  51 records. These are different units/populations and exclude complete
+  explanation projection; they are not an acceptance bound for full85.
+- Rebuilding a 115 MB partition's offset table cost 4.489 s, with 1.685 s
+  first-import cost. On-demand readers need a retained offset table and an
+  explicit lifetime, not only a retained data file.
+- Projection plus JSON encoding measured 4.2 microseconds per cell on 400
+  restored cells. A full eager-pass estimate of 3–19 s was extrapolation,
+  not a measured 85-sample pass.
+- Estimated retained spool size was ~8.2 GB versus the 9.39 GB report. The
+  proposed gain was avoiding a second write/projection and releasing resident
+  data, not a large reduction in retained disk occupancy.
+- Constructor work, not total graph-node count or pickle restore, was the
+  relevant object cost: reconstructing 225,892 dataclasses took 2.237 s
+  versus 1.325 s serialization; trivial float nodes dominated graph counts.
+  Evidence/identity construction was 58% of the measured constructor cost.
+- A four-partition run spent 29.548 of 49.208 s in serial composition. The
+  earlier one-worker offload comparison measured transport/rebuild overhead,
+  not the benefit or limits of parallel composition.
 
-Closes the open questions about replacing the diagnostic report with an index, before implementation.
-
-- On-demand rebuild is not slower at the median; it is slower in the tail.
-  Reading one candidate from the 9.39 GB SQLite is a 12.8 ms median over 10
-  sampled candidates (7.0 min, 22.7 max), and the summary-only read is 0.126 s.
-  Opening a partition file cold, seeking and restoring one record is a **5.3 ms
-  median** over 51 records (2.3 min, 53.2 at p90, 257.4 max). The tail follows
-  record size, which runs 41,475 to 17,047,800 bytes at a 777,756-byte median.
-  Three things are not equal in that comparison and must be closed before the
-  numbers are used as an acceptance bound: one record is one feature across all
-  samples while one SQLite read is one candidate; projecting a restored record
-  into the explanation shape is not included; and the measured partition is the
-  150-feature cache-only one, not an 85-sample partition. Reuse
-  `output/issue423-object-graph-census-20260922/scripts/ondemand.py`.
-- A reader in another process needs the record offset table, not just the file.
-  Rebuilding it by scanning 115,074,919 bytes takes 4.489 s, and the first
-  restore costs 1.685 s importing owner modules. Both are one-off per process,
-  but the offset table has to be persisted beside the partition or every reader
-  pays 4.5 s.
-- The partition files are deleted the moment the explanation finishes, which is
-  why the report copies everything. The spool is
-  `mkdtemp(prefix=".partition_spool-", dir=output_dir)`
-  (`partition_pipeline_scheduler.py:104`) and the success path attaches
-  `cleanup_action` (`untargeted_alignment.py:478-489`), which calls
-  `StreamedResultStore.cleanup` and `shutil.rmtree`s the directory
-  (`streamed_result_store.py:480`). Explanation lives in the same output stack,
-  so its source disappears as soon as it is written. **The SQLite is 9.39 GB
-  because the data it points at does not survive.**
-- Retention is already implemented, on the failure path only.
-  `preserve_failed_results` (`streamed_result_store.py:453`) keeps the written
-  partitions and pickles the store itself, offset table included, as
-  `failed-results.pickle`, documented as read-only and private. Making the
-  success path do the same is a lifetime decision, not new machinery.
-- Most of the report is a projection of children that are already on disk. By
-  `kind`, `records` splits into `cell_observations` 678,470 rows /
-  2,415,594,687 bytes, `method_assessments` 141,130 / 486,055,268,
-  `cell_decisions` 678,470 / 418,556,569, `initial_groups` 7,982 / 99,057,061,
-  `capture_evidence` 187,092 / 81,428,878, `terminal_subjects` 41,739 /
-  33,721,921, `final_groups` 7,982 / 21,987,642, `rows` 7,982 / 2,218,996,
-  `method_subjects` 4,819 / 1,314,921, `exclusions` 2 / 1,040. Everything
-  emitted inside `consume_child`
-  (`alignment_explanation_projection.py:620-752`) comes from a partition child:
-  that is **about 2.97 GB, 79% of the table**, plus all 592,768,173 bytes of
-  `curve_payloads`. Only `method_assessments` and `initial_groups`, about
-  586 MB (16%), come from `completed` rather than from a child -- **corrected
-  below**: `completed` reads them straight out of the same store.
-- `links` stores nothing that is not derivable. Its 7,168,235 rows are
-  3,419,380 `cell_observations` and 3,419,380 `cell_decisions` edges, which is
-  exactly one per cell per kind for 678,470 cells over 85 samples and 7,982
-  features, plus small tails. It is a materialised join, 1,654,902,908 bytes of
-  it.
-- Scale of what eager materialisation buys. 678,470 cells produce about
-  4,200 bytes of diagnostic record each while `alignment_matrix.tsv` is 392,354
-  bytes for the same grid, and the `rows` kind, which is the Matrix itself, is
-  2,218,996 bytes of the 9.39 GB.
-- **Both remaining unknowns are now closed, and the first one corrects the
-  bullet above.** `method_assessments` and `initial_groups` are not outside the
-  store. The bounded runtime builds the workflow result with
-  `method_assessments=store.sequence("method_assessments")` and
-  `initial_groups=store.sequence("initial_groups")`
-  (`untargeted_cid_nl_bounded_runtime.py:640-654`), and a partition payload's
-  own field list is `children`, `excluded_candidates`, `capture_bindings`,
-  `method_assessments`, `initial_groups`, `initial_edges`, `capture_evidence` --
-  all seven streamed into the partition file
-  (`UntargetedCidNlPartitionComposition`). The same call site passes
-  `cleanup_action=store.cleanup`, so the deletion and the data have one owner.
-  **Nothing in the 9,389,572,096-byte report is absent from the partition
-  files.** The earlier "about 586 MB with no child counterpart" is withdrawn:
-  those rows come from a different store field, not from a different source.
-- Projection is microseconds per row, so it only matters in bulk. Running the
-  real helpers (`_fields`, `_cell_observation_content_payload`, `_artifact`)
-  over 400 restored `FinalGroupCellObservation` values costs 0.8 us each, and
-  JSON-encoding the result 3.4 us, for **4.2 us per cell** at a 540-byte mean
-  payload. The 85-sample report's mean `cell_observations` payload is 3,560
-  bytes; scaling by payload size puts a full eager pass at roughly 3 to 19 s of
-  CPU, a range rather than a measurement because the measured partition is the
-  150-feature cache-only one. On the on-demand path the same work is tens of
-  microseconds for one row and disappears next to the 5.3 ms restore.
-- Projected floor, with both unknowns closed: what must persist is the partition
-  files plus their offset table, and the report becomes an index over them. The
-  materialised join (1,654,902,908 bytes), the child projections (about
-  2.97 GB), every curve payload (592,768,173 bytes), the store-backed
-  assessments and groups (about 586 MB) and SQLite's own 35.8% overhead are all
-  reconstructible or unnecessary. Reuse
-  `output/issue423-object-graph-census-20260922/scripts/projection_cost.py`.
-- **The saving is a second write, not disk space.** A retained spool is not
-  small: the measured partition holds 9,520 cells in 115,074,919 bytes, or
-  12,088 bytes per cell, against the report's 13,839 bytes per cell over its
-  678,470 cells. Projecting the same density onto that run puts its spool near
-  **8.2 GB** beside a 9.39 GB report. Both are written today and only the spool
-  is then deleted, so the run produces about 17.6 GB and keeps the larger,
-  slower copy. Replacing the report with an index removes the second full write
-  and its projection pass; it takes occupancy from 9.39 GB to roughly 8.2 GB,
-  which is close to nothing. The reason to do it is the write, the CPU, and the
-  release it allows upstream: once the report no longer consumes children as
-  they compose, nothing forces the retained signal and the artifact chain to
-  stay resident to the end of the run. That release, not the disk, is what makes
-  parallel composition reachable.
-- Evidence is `diagnostic_only` and grants no Matrix, writer, activation or
-  scientific authority. No new 8RAW or 85RAW run was launched; the SQLite facts
-  come from the retained `alignment85-process12` output and the latency facts
-  from the retained `set-scan-1` partition.
-
-### 2026-09-22 An Unread Output Sets The Shape Of Everything Upstream
-
-Supersedes the earlier partition object-graph interpretation. Growing the object graph is
-the cost, not moving it, and the graph exists to feed one report nobody reads.
-
-- Pickle restore prices the wrong thing. Protocol 5 reduces a frozen/slots
-  dataclass to `object.__new__` plus state, so restoring a partition never runs
-  `__post_init__`: no contract validation, no digest recomputation. Re-running
-  each type's real constructor on its own field values costs **2.237 s** for one
-  partition against **1.325 s** to serialise it, covering 225,892 of its 281,250
-  dataclass instances (80.3%). The mint path is close to the validation path, so
-  that figure is not an underestimate: `mint_evidence_artifact_ref` is
-  19.11 us/call against 16.41 us to reconstruct the same type,
-  `_build_artifact_content_identity` 9.98 us, `_typed_digest` 3.39 us, over a
-  1,371-byte median artifact payload. Reuse
-  `output/issue423-object-graph-census-20260922/scripts/construct_cost.py` and
-  `mint_cost.py`.
-- Cost scales with dataclass nodes, not with graph nodes. Of the partition's
-  3,767,316 nodes, 2,617,369 are floats that cost nothing to construct; only
-  281,250 are dataclasses, at roughly 8 us each. That is why dropping
-  `retained_prepared_signal`, which is 52.5% of the nodes, still recovered
-  almost nothing.
-- Construction is 58% evidence. Identity types take 0.699 s
-  (`EvidenceArtifactRef` 0.476, `ArtifactContentIdentity` 0.185,
-  `ArtifactSemanticContractRef` 0.038) and the `*Ref` wrappers another 0.606 s
-  (`PeakObservationRef` 0.214, `CidNlMethodAssessmentRef` 0.162,
-  `DdaCidNlPeakSupportRef` 0.161, `CidNlEvidenceRef` 0.053,
-  `CidNlChromatographicSupportRef` 0.016). Scientific validation is 0.239 s, in
-  `PeakObservationContent.__post_init__`, which walks every trace point.
-- Composition is 60% of the run and strictly serial. The `run-3-overlap` event
-  log gives four partitions composing at 10.053, 10.543, 4.939 and 4.013 s,
-  **29.548 s of a 49.208 s run**, each starting exactly when the previous one
-  released. No composition runs at all for the first 19.660 s. Perfect
-  parallelism would put 29.548 s on the wall as 10.543 s. Reuse
-  `output/issue423-evidence-duplication-20260922/run-3-overlap/events.json`.
-- The serial chain is not memory and not determinism. One partition's restored
-  graph holds **305,823,196 bytes** (2.7x its file); four resident would be
-  1.22 GB, and the recorded 10.73 GB process-tree figure belongs to the eight
-  workers, not to partitions. Determinism is already solved in the store:
-  `reserve_partition` claims the index and path before any bytes exist
-  (`xic_extractor/execution_engine/streamed_result_store.py:292`), so parallel
-  writers cannot reorder output. What actually forbids parallelism is the GIL:
-  composition is pure-Python construction of 281,250 objects, so threads cannot
-  help and `partition_pipeline_scheduler.py:420` runs one consumer thread that
-  also enforces index order.
-- The earlier offload verdict cannot be read as a verdict on parallelism. That
-  run sized its executor to one and reported a single worker pid, so its
-  22.46 s against 18.0 s was serial against serial. It bounds the transport and
-  rebuild cost, not the parallel case.
-- The report nobody reads is 920x the product. One 85-sample run writes
-  `cid_nl_explanation.sqlite` at **9,389,572,096 bytes** beside about 10.2 MB of
-  actual product: `alignment_matrix.tsv` 392,354, `alignment_matrix_identity.tsv`
-  923,163, `alignment_review.tsv` 8,904,641, and two files under 2 KB. Inside
-  it, `records` holds 1,755,668 rows for 3,748,162,033 bytes (39.9%), `links`
-  7,168,235 rows of four text columns for 1,654,902,908 bytes (17.6%),
-  `curve_payloads` 187,092 rows for 592,768,173 bytes (6.3%), `candidates`
-  30,859,685 bytes, and the remaining 35.8% is SQLite's own index and page
-  overhead. **Scientific signal is 6.3% of it.** Reuse
-  `output/issue422-bounded-worksets-20260921/alignment85-process12/`.
-- It is materialised eagerly for a reader that takes one row at a time.
-  `read_cid_nl_explanation(path, candidate_id=...)` documents itself as reading
-  "only records linked to one exact candidate ID"
-  (`xic_extractor/diagnostics/alignment_explanation.py:589`), and `xic_inspector`
-  is its only consumer. The run expands all 41,741 candidates in advance to
-  serve that.
-- The causal direction runs backwards, from the output to the pipeline.
-  `curve_payloads` needs `prepared.baseline`, `.smoothed` and
-  `.positive_signal`, which is the only alignment consumer of
-  `retained_prepared_signal`
-  (`xic_extractor/diagnostics/alignment_explanation_projection.py:175-178`); that
-  keeps 1,979,050 float objects alive through the whole pipeline. `links` needs
-  the full artifact chain; that is the 58% of construction above. Explanation
-  consumes children as they compose (`alignment/pipeline.py:498`), so nothing
-  can be released early. One unread report sets the resident shape of every
-  stage upstream of it.
-- Every mechanism a fix would need already exists and is unused for this.
-  `read_selected(index, field_name, positions)` already reads one record from a
-  partition file by position (`streamed_result_store.py:373`);
-  `reserve_partition`/`adopt_partition` already allow parallel, order-stable
-  writes; the partition files already contain the evidence the SQLite copies.
-  The gap is a decision not to materialise eagerly, not a missing capability.
-- Prior work on this file optimised the representation without questioning the
-  volume. `output/issue422-bounded-worksets-20260921/fusion-ab/explanation-cost/`
-  measured link factorization at 76.4% smaller with 1.44x slower queries, and a
-  `WITHOUT ROWID` variant at 50% smaller. Both answer "how do we shrink
-  9.39 GB", neither asks why it is produced.
-- Disposition. Treat the explanation materialisation strategy as the root, not
-  the evidence graph and not the scheduler. Cutting eager materialisation
-  removes the SQLite write, releases the retained signal and the artifact chain
-  from the resident graph, and shrinks the transport that makes parallel
-  composition expensive, in one change rather than four. Open questions before
-  any implementation: per-candidate latency when rebuilt on demand; partition
-  files are currently temporary (`mkdtemp(prefix=".partition_spool-")`) and
-  would need a retained lifetime; and how much of the 3.75 GB `records` table
-  has no counterpart in the partition files. Evidence is `diagnostic_only` and
-  grants no Matrix, writer, activation or scientific authority. No new 8RAW or
-  85RAW run was launched.
+Receipts: `output/issue423-object-graph-census-20260922/scripts/`
+(`ondemand.py`, `projection_cost.py`, `construct_cost.py`, `mint_cost.py`),
+`output/issue423-evidence-duplication-20260922/run-3-overlap/events.json`, and
+`output/issue422-bounded-worksets-20260921/alignment85-process12/`.
+These are historical local locators, not durable input guarantees.
+Reopen only when the current report consumer, retained-store lifetime, or
+materialization strategy makes this cost model applicable again; measure
+end-to-end candidate latency and tail behavior before using the numbers.
 
 ### 2026-09-22 Composing A Partition In A Worker Costs More Than It Saves
 
@@ -779,122 +508,37 @@ misses because the group-center query is materially displaced. No full urine,
 
 ### 2026-08-11 CID-NL Discovery MS1 Native Batching Decision
 
-On 2026-08-11 the GitHub Issue #234 body and maintainer receipt were refrozen so
-that a positive exact-window opportunity below 20% may proceed to a bounded
-candidate. Paired 2RAW must beat observed noise with exact parity before paired
-8RAW; Terminal B still requires the complete three-pair 8RAW oracle. The
-production candidate changes only the internal Discovery MS1 batch maximum from
-1 to 256 at commit `8beebe46`. Revision `bf5fd79e` additionally applies the
-existing bounded Windows atomic-replace retry pattern to `TimingRecorder` after
-two excluded runs independently reproduced `PermissionError: [WinError 5]`
-while updating a live timing sidecar. That runtime fix changes neither the
-candidate nor scalar acquisition path.
+Issue #234; `diagnostic_only`; disposition **`RETAIN_NATIVE_BATCHING`**.
+The bounded change was the private Discovery MS1 batch maximum 1 -> 256.
+No super-window, cache, public setting, scientific rule, or writer behavior was
+part of this comparison.
 
-The scalar and candidate variants used the same clean `bf5fd79e` code,
-environment, Thermo RawFileReader 4.0.19.0, DLL SHA-256
-`ca452149b7fd4a7dd99b1b86daea4b23485ec87c43fda213e9f9ab97bbcf240d`,
-default `scripts.run_discovery` CID-NL/peak settings, sequential worker budget,
-full Discovery candidate/review CSV output, and no application XIC cache. A
-task-local diagnostic wrapper changed only the private batch maximum to 1 for
-scalar and 256 for candidate. One scalar and one candidate warmup were excluded
-at each tier; the three recorded scalar/candidate observations were interleaved.
-OS filesystem cache remained externally uncontrolled after warmup. Each run had
-a 600-second foreground timeout and used the live/final `timing.json` sidecar.
+| Producing code / scope | Median wall, scalar -> candidate | Gain / scalar noise | MS1 stage, scalar -> candidate |
+| --- | --- | --- | --- |
+| `bf5fd79e`, sequential 2RAW, three pairs | 32.512 -> 31.471 s | 3.204% / 3.155% | 11.093 -> 9.713 s |
+| `bf5fd79e`, sequential 8RAW, three pairs | 160.238 -> 146.829 s | 8.368% / 5.071% | 62.603 -> 49.556 s |
+| `29d02d0a`, two-process 2RAW, three pairs | 21.797 -> 20.796 s | 4.594% / 3.303% | 6.360 -> 5.648 s (maximum per-sample span) |
 
-Paired 2RAW reused `NormalBC2312_DNA.raw` and `TumorBC2312_DNA.raw` through the
-same task-local hardlinks. Recorded wall seconds were scalar
-`32.720, 31.695, 32.512` and candidate `31.471, 34.572, 30.729`. Scalar wall
-median was `32.512 s`, candidate median was `31.471 s`, scalar wall noise was
-`3.155%`, and integrated gain was `3.204%`. The `discover.ms1_backfill` median
-was `11.093 -> 9.713 s`: `12.440%` gain against `5.165%` scalar stage noise.
-Every run preserved 7,150 logical requests and 108,738 trace points; calls were
-`7,150 -> 6,605`. The same five Discovery CSV hashes were byte-identical in all
-six runs. The paired 2RAW gate therefore passed, narrowly on whole-run wall and
-more clearly on the isolated MS1 stage.
-
-Paired 8RAW used the documented validation directory's eight files:
-`BenignfatBC1055_DNA.raw`, `BenignfatBC1151_DNA.raw`,
-`Breast_Cancer_Tissue_pooled_QC3.raw`,
-`Breast_Cancer_Tissue_pooled_QC5.raw`, `NormalBC2263_DNA.raw`,
-`NormalBC2312_DNA.raw`, `TumorBC2263_DNA.raw`, and
-`TumorBC2312_DNA.raw`, totaling 1,601,282,569 bytes.
-
-| Pair | Scalar wall (s) | Candidate wall (s) | Scalar MS1 (s) | Candidate MS1 (s) |
-| --- | ---: | ---: | ---: | ---: |
-| 1 | 158.494 | 146.622 | 61.147 | 49.327 |
-| 2 | 166.620 | 149.663 | 66.300 | 51.634 |
-| 3 | 160.238 | 146.829 | 62.603 | 49.556 |
-
-Scalar wall median was `160.238 s`, candidate wall median was `146.829 s`,
-scalar wall noise was `5.071%`, and integrated gain was `8.368%`. The
-`discover.ms1_backfill` median was `62.603 -> 49.556 s`: `20.840%` gain against
-`8.232%` scalar stage noise. Every candidate repetition was faster than its
-paired scalar repetition. Logical requests remained 31,819 and trace points
-remained 454,223. Mechanical batches changed `31,819 -> 128`; physical vendor
-calls changed `31,819 -> 29,148`, a reduction of 2,671 calls (`8.394%`).
-
-All 17 Discovery CSV artifacts were byte-identical across all six recorded
-8RAW runs. The common batch-index SHA-256 was
+Warmups were excluded, variants interleaved, application XIC cache disabled,
+and OS cache uncontrolled. Python/DLL and exact corrective-smoke identities
+are recorded below. Sequential 8RAW preserved 31,819 logical requests and
+454,223 points; batches changed 31,819 -> 128 and vendor calls
+31,819 -> 29,148. All 17 Discovery CSVs were byte-identical across the six runs;
+batch-index SHA-256:
 `1a634ab3648bb26f1b96fe8e85078fae62ed9edaf3fe77741fa3adc7d489fbbf`.
-The sequential runner emits no process IPC metric. Worker and process-tree RSS
-remained explicitly unavailable with the unchanged truthful reason
-`unsupported: Discovery runner has no owner-bound RSS sampler`; no measured RSS
-claim is made. No super-window, cache, public tuning/configuration, Matrix,
-writer, scientific-rule, Pt/composite, Alignment, or Backfill change occurred.
 
-The exact-safe correctness oracle and the integrated noise rule both pass.
-Superseding disposition: **`RETAIN_NATIVE_BATCHING`** (Terminal B). Validation
-status remains `diagnostic_only`; this performance result grants no new Matrix,
-writer, activation, publication, or scientific authority. No 85RAW run was
-launched.
+The two-process 2RAW comparison preserved 7,150 requests, 108,738 points, and
+five CSV hashes; batches changed 7,150 -> 29 and calls 7,150 -> 6,605.
+Worker observations confirmed the intended variant reached both processes.
+The 3,722,849 -> 3,566,259-byte payload observations excluded executor framing
+and are not measured transport bytes. RSS remained unavailable:
+`unsupported: Discovery runner has no owner-bound RSS sampler`.
 
-#### Two-worker process confirmation
+#### Owner-bound RAW-open receipt
 
-The highest-value residual evidence loop fixed both variants to the current
-two-worker Windows process backend at clean revision `29d02d0a`. It reused the
-same two RAW hardlinks, Python 3.12.13, DLL identity, default Discovery settings,
-full CSV outputs, and foreground timing contract. A task-local ignored wrapper
-applied the scalar `1` or candidate `256` batch maximum at module import so the
-override executed inside each spawned RAW-owning worker, not only in the parent.
-One warmup per variant was excluded. The formal order was
-`S1 C1 / C2 S2 / S3 C3`; OS filesystem cache remained uncontrolled.
-
-| Pair | Scalar wall (s) | Candidate wall (s) | Paired gain |
-| --- | ---: | ---: | ---: |
-| 1 | 22.149 | 20.654 | 6.753% |
-| 2 | 21.797 | 21.203 | 2.726% |
-| 3 | 21.429 | 20.796 | 2.956% |
-
-Scalar wall median was `21.797 s`, candidate wall median was `20.796 s`, and
-the median gain was `4.594%` against `3.303%` scalar range-over-median noise.
-Every paired candidate was faster. Because samples execute concurrently, the
-process-stage decision metric is the maximum per-sample
-`discover.ms1_backfill` span per run rather than the sum: its median was
-`6.360 -> 5.648 s`, an `11.195%` gain against `4.194%` scalar stage noise.
-
-All six formal runs preserved 7,150 logical requests, 108,738 trace points, and
-the five byte-identical Discovery CSV hashes listed in the corrective receipt below. Mechanical
-batches changed `7,150 -> 29`; physical vendor calls changed `7,150 -> 6,605`.
-The worker-emitted batch-maximum observations summed to 2 for scalar and 512 for
-candidate, confirming that the intended variant reached both spawned workers.
-Partial pickled request/result payload observations changed
-`3,722,849 -> 3,566,259 bytes`; they still exclude executor framing and confirmed
-transport bytes. Worker and process-tree RSS remain unavailable with the owner
-reason `unsupported: Discovery runner has no owner-bound RSS sampler`.
-
-This confirmation closes the process-backend uncertainty for the bounded 2RAW
-lane and strengthens, but does not broaden, Terminal B. It does not establish a
-universal dataset gain, an RSS bound, or product/scientific authority. No
-additional 8RAW or 85RAW run was launched for this loop.
-
-#### Corrective owner-bound RAW-open receipt confirmation
-
-The review-corrective receipt seam was validated in one fresh two-worker 2RAW
-process smoke at clean producing revision `633c4d80`. The final #234 delivery
-keeps that acquisition/runtime/Discovery code unchanged; it only removes the
-separable `TimingRecorder` retry into follow-up #236 and adds this durable
-receipt. The smoke used Python 3.12.13, Thermo RawFileReader 4.0.19.0, and DLL
-SHA-256
+A fresh two-process 2RAW smoke at `633c4d80` used the retained batch maximum 256
+and the same defaults. It verified receipt/parity only, not a new timing gain.
+The environment was Python 3.12.13 and Thermo RawFileReader 4.0.19.0, with DLL SHA-256
 `ca452149b7fd4a7dd99b1b86daea4b23485ec87c43fda213e9f9ab97bbcf240d`.
 
 Inputs were the same task-local hardlinks used by the earlier 2RAW lane:
@@ -934,7 +578,7 @@ oracle:
 
 `run_ok` and the owner-receipt/parity gate both passed. This closes only the
 review-found RAW-open observability gap: it does not repeat or broaden the
-paired performance evidence, and the Terminal B disposition remains
+paired performance evidence, and the batching decision remains
 **`RETAIN_NATIVE_BATCHING`** with `diagnostic_only` evidence status. No new
 8RAW or 85RAW run was launched.
 
@@ -1003,154 +647,6 @@ locality, removes duplicated exact work, changes the complete Standard Peak
 stage cost, or new evidence contradicts these measurements. Any public-output
 change remains an expected-diff product decision, not a performance-only edit.
 
-### 2026-06-16/17 5-hmdC Own-Max Support Limited Rescue Smoke
-
-Historical evidence for a retired workflow. These artifacts are not a current
-activation or readiness claim; the current single-pass behavior is owned by
-[Targeted selection](product/targeted-selection.md#counting-and-product-selection).
-
-Historical verdict: `production_ready` for three headless workflows: explicit reviewed
-`targeted_ms1_shape_identity_support_tsv`, explicit
-`xic-extractor-cli --targeted-ms1-shape-identity-auto-limited-default`, and the
-canonical no-flag normal CLI default. The ready claim is limited to
-`limited_5hmdc_5medc`, `5-hmdC + 5-medC`, and `detected_flagged` output.
-GUI is not connected, and broader targets need separate expected-diff evidence.
-
-Update on the same date: the original five-row TSV was a handpicked review
-surface, not a product limitation. A generic RAW-backed support producer now
-finds all eligible baseline rows that are analyte `NL_FAIL` / `NO_MS2`, blocked
-only by `analyte_nl_fail_requires_policy`, already supported by paired RT/area
-ratio, and then passes Gaussian-smoothed own-max same-peak identity.
-
-Generic producer smoke:
-`output/ms1_shape_identity_generic_support_85raw_20260616/`
-
-2026-06-17 support key-set gate update: the limited expected-diff gate now reads
-the actual `targeted_ms1_shape_identity.tsv` with `--support-tsv` and fails
-closed unless accepted support keys exactly match product long-row diff keys.
-The existing 85RAW generic artifact rerun passed with `long_changed_rows=11`,
-`matrix_changed_cells=66`, and `support_tsv_supported_rows=11`.
-
-2026-06-17 auto-limited CLI update: `scripts/run_extraction.py` now has
-`--targeted-ms1-shape-identity-auto-limited-default`. It runs baseline CSV,
-builds a limited RAW-backed support TSV, reruns final extraction with that TSV,
-and writes `expected_diff_summary.tsv`, `matrix_diff_summary.tsv`, and
-`limited_default_expected_diff_gate_summary.tsv` under the auto output root.
-The 8RAW auto smoke passed with `1` support row, `1` changed long row, and
-`6` matrix cells. A single 85RAW auto smoke passed with `11` support rows,
-`11` changed long rows, `66` matrix cells, and wall-clock `369.2 s`.
-
-2026-06-17 no-flag default update: canonical settings defaults now use
-`targeted_ms1_shape_identity_activation_policy=limited_5hmdc_5medc`. The
-headless CLI dispatches the same auto-limited workflow when no support TSV is
-configured, so no-flag normal CLI output is still gated by support TSV key-set
-expected-diff before `final/output` is published. Reused 85RAW artifact gate:
-`output/ms1_shape_identity_default_no_flag_existing_85raw_gate_20260617/limited_default_expected_diff_gate_summary.tsv`
-passed with 11 changed long rows, 66 matrix cells, and 11 support TSV supported
-rows. GUI and targets beyond `5-hmdC` / `5-medC` remain out of scope.
-
-Current 8RAW smoke:
-`output/ms1_shape_identity_optin_8raw_20260616/`
-
-Current 85RAW smoke:
-`output/ms1_shape_identity_optin_85raw_20260616/`
-
-Current auto-limited 8RAW smoke:
-`output/ms1_shape_identity_auto_limited_8raw_20260617/`
-
-Current auto-limited 85RAW smoke:
-`output/ms1_shape_identity_auto_limited_85raw_20260617/`
-
-Key facts:
-
-- Baseline and opt-in runs both used
-  `$env:XIC_RAW_VALIDATION_DIR` for 8RAW and
-  `$env:XIC_RAW_ROOT` for 85RAW; all runs used
-  CSV-only output.
-- Opt-in runs used
-  `output/ms1_rescue_5hmdc_own_max_similarity_20260616/targeted_ms1_shape_identity.tsv`.
-- 8RAW `expected_diff_summary.tsv` found exactly one changed row:
-  `TumorBC2263_DNA / 5-hmdC`.
-- That row changed from `Product State=not_counted`,
-  `Counted Detection=FALSE`, `RT=ND`, `Area=ND` to
-  `Product State=detected_flagged`, `Counted Detection=TRUE`, `RT=9.1705`,
-  `Area=145695.76`.
-- 85RAW `expected_diff_summary.tsv` found exactly five changed rows, exactly
-  matching the reviewed support TSV keys:
-  `BenignfatBC1028_DNA / 5-hmdC`,
-  `BenignfatBC1108_DNA / 5-hmdC`,
-  `NormalBC2302_DNA / 5-hmdC`,
-  `TumorBC2263_DNA / 5-hmdC`, and
-  `TumorBC2294_DNA / 5-hmdC`.
-- All five changed from `not_counted / FALSE` to `detected_flagged / TRUE`.
-  Unexpected changed rows = `0`; support rows not changed = `0`.
-- The 85RAW wide matrix changed `30` value cells, only those five samples'
-  `5-hmdC_RT`, `5-hmdC_Int`, `5-hmdC_Area`, `5-hmdC_PeakStart`,
-  `5-hmdC_PeakEnd`, and `5-hmdC_PeakWidth`.
-- In both 8RAW and 85RAW, support reasons gained
-  `own_max_same_peak_support` and `analyte_nl_fail_requires_policy` was
-  removed.
-- The generic producer read the existing 85RAW baseline long CSV and emitted
-  `11` diagnostic support rows: `10` for `5-hmdC` and `1` for `5-medC`.
-  All `11` were `own_max_same_peak_supported`.
-- The auto-limited 8RAW workflow emitted one support row for
-  `TumorBC2263_DNA / 5-hmdC`, changed exactly that long row from
-  `not_counted / FALSE` to `detected_flagged / TRUE`, and wrote only the six
-  expected `5-hmdC` matrix measurement cells.
-- A new 85RAW opt-in run using that generic TSV changed exactly `11` rows:
-  `BenignfatBC0980_DNA / 5-hmdC`,
-  `BenignfatBC1028_DNA / 5-hmdC`,
-  `BenignfatBC1108_DNA / 5-hmdC`,
-  `NormalBC2259_DNA / 5-hmdC`,
-  `NormalBC2264_DNA / 5-medC`,
-  `NormalBC2270_DNA / 5-hmdC`,
-  `NormalBC2272_DNA / 5-hmdC`,
-  `NormalBC2294_DNA / 5-hmdC`,
-  `NormalBC2302_DNA / 5-hmdC`,
-  `TumorBC2263_DNA / 5-hmdC`, and
-  `TumorBC2294_DNA / 5-hmdC`.
-- All `11` changed from `not_counted / FALSE` to
-  `detected_flagged / TRUE`. The wide matrix changed `66` value cells
-  (`11` rows x `RT/Int/Area/PeakStart/PeakEnd/PeakWidth`). Baseline and
-  generic opt-in `xic_diagnostics.csv` SHA256 values were identical.
-- The auto-limited 85RAW workflow generated the same support TSV SHA256 as the
-  existing generic artifact:
-  `0556026CFD22CD178C6686F76C83C7ED8CDFC3D0CAA7BAA0BA22811BD84BE104`.
-  Its expected-diff key set matched the existing generic artifact `11/11`,
-  its matrix-diff key set matched `66/66`, and baseline/final diagnostics CSV
-  SHA256 values were identical:
-  `59D3572A85F0F2596388C9374D34628320DF1660FBF722AAFCBB4934A34FC135`.
-
-Do not rerun 85RAW again for this path unless current code changes product
-projection, support TSV parsing/production, auto CLI orchestration,
-selected-candidate semantics, matrix writing, or the cited artifacts become
-stale. If only the human review wording changes, reuse the 85RAW artifacts
-above.
-
-### 2026-06-15 Replay Executor Validation
-
-Verdict: `run_ok` and `gate_ok` for targeted CLI CSV/workbook replay parity on
-the reviewed 8RAW and 85RAW replay surfaces. This validates replayed analytical
-output equivalence for the named contract; it is not a full exact artifact
-replay, GUI parity proof, or timestamped workbook hash guarantee.
-
-Durable closeout:
-retired private-history replay note; the current durable facts are the verdict,
-key facts, and rerun rule in this ledger section.
-
-Key facts:
-
-- CSV replay parity passed for the reviewed 8RAW and 85RAW surfaces.
-- Workbook analytical parity passed for the reviewed 8RAW and 85RAW surfaces.
-- Replay validation intentionally excluded full byte-identical artifact replay
-  where timestamped workbook metadata makes exact hashes unsuitable.
-- GUI replay parity was not part of the accepted gate.
-
-Do not rerun replay validation just to re-prove these surfaces. Rerun only after
-current code changes method-manifest binding, replay CLI behavior,
-settings/targets artifact resolution, CSV/workbook writer semantics, or the
-cited artifacts become stale or contradictory.
-
 ### 2026-06-05 Gaussian15 MS1 Morphology Primary Area Owner
 
 Verdict: `production_ready` for the Gaussian15 MS1 morphology ownership
@@ -1216,113 +712,57 @@ are stale or contradictory.
 
 ### 2026-05-28 d3-N6-medA
 
-**Current classification:** known RT-drift / same-surface case; not a standalone
-RT blocker.
+This is a **dated diagnostic case**, not today's readiness verdict or a
+standing blocker. Absolute RT drift and mixed-surface area comparisons alone
+were not valid reasons to reject `d3-N6-medA`.
 
-Known facts:
+The 85RAW target-only audit measured a 2.1538-minute RT range, global-median
+absolute delta p95 1.4571 min, but local rolling-median p95 0.0483 min and
+0/85 local moderate/severe rows. Same-surface checks matched 8/8 non-missing
+rows, with reviewed area ratio about 1.000001375.
 
-- `d3-N6-medA` has severe biological-matrix RT drift. The 85RAW target-only RT
-  trend audit recorded target-only RT range `2.1538 min`,
-  global-median absolute RT delta p95 `1.4571 min`, local rolling-median p95
-  `0.0483 min`, and local moderate/severe drift rows `0 / 85`.
-- The `d3-N6-medA` evidence-spine mismatch was reclassified as mixed-surface
-  diagnostic artifact after same-surface probes. Same-surface comparison had
-  `8/8` non-missing rows consistent and reviewed row area ratio about
-  `1.000001375`.
-- Area mismatch alone must not block P2B or handoff progression for this target
-  when identity, local RT coherence, selected peak, boundary ownership, and
-  matrix delivery are accepted.
-- Absolute RT delta alone must not prove absence for this target. Use local RT
-  coherence and same-surface evidence.
+The historical 8RAW primary-delivery change produced `FAM000264` with
+8/8 present (3 detected, 5 MS1 backfilled), 22 event clusters and 24 members,
+including apex RT 25.4204. It also promoted 13 weak-seed rows. The later
+hardened gate reclassified all 13 (and 5 in the retained 85RAW population) as
+`risky_weak_seed_backfill`: the audited implementation's verdict was
+`NO_GO_FIX_SELECTION_OR_BOUNDARY_FIRST`. That failure was the promotion policy,
+not proof that drift or area difference means absence. Do not reuse the earlier
+zero-blocker result as though the hardened gate had accepted it.
 
-Post-fix 8RAW primary-delivery conclusion:
-
-- The prior blocker was primary delivery / ownership-consolidation, not absence
-  of a plausible peak, RT drift, or area mismatch.
-- `FAM000264` is the consolidated delivery family in the post-fix 8RAW run:
-  `DNA_dR`, `owner_complete_link`, `include_in_primary_matrix=TRUE`,
-  `8/8 present`, `3 detected`, `5 MS1 backfilled`, `22` event clusters,
-  and `24` event members.
-- `FAM000264` contains a detected representative and a rescued companion cell
-  at RT `25.4204`, matching the strong target-derived MS1 apex RT.
-- `FAM000264` is now present in `alignment_matrix.tsv`; the row carries
-  `row_flags=rescue_heavy;weak_seed_tolerated` so the warning remains visible.
-- The post-fix row-level gate has `GO blocker count: 0`. The `d3-N6-medA`
-  representative resolves by an equivalent current artifact because the strong
-  source candidate was an ambiguous owner row, while the primary `FAM000264`
-  cell has the same sample class, target m/z class, and apex RT `25.4204`.
-- A broad rule that promotes every `weak_seed_backfill_dependency` row with
-  `q_detected >= 3` remains unacceptable. The accepted fix promoted 13
-  additional `DNA_dR` rows, all flagged `rescue_heavy;weak_seed_tolerated`, and
-  records the collateral table below.
-
-Post-fix 85RAW primary-delivery conclusion before implementation-review
-hardening:
-
-- Foreground 85RAW `validation-minimal` completed with the canonical
-  production-equivalent, audit-off, validation-fast, super-window, heartbeat
-  command shape.
-- `alignment_matrix.tsv` contains `597` primary rows. The primary warning
-  surface is `376` `rescue_heavy` rows plus `5`
-  `rescue_heavy;weak_seed_tolerated` rows.
-- Original `single_dr_production_gate_decision_report.py` found `0` risky
-  extreme-backfill rows, `0` risky weak-seed rows, and `0` duplicate
-  rescue-pressure rows.
-- After implementation-review hardening of the trusted-seed contract, the same
-  committed artifacts reclassify the prior weak-seed tolerated rows as
-  `risky_weak_seed_backfill`: 8RAW has `13` such primary rows, including
-  `FAM000264`; 85RAW has `5`.
-- `targeted_istd_benchmark.py` still reports strict `AREA_MISMATCH` for
-  `d4-N6-2HE-dA` and `d3-N6-medA`. Treat this as a known quantitative /
-  baseline follow-up surface, not a qualitative delivery blocker, because all
-  active ISTDs have one selected primary family and `85/85` untargeted
-  positives.
-- Current qualitative classification is `NO_GO_FIX_SELECTION_OR_BOUNDARY_FIRST`
-  for the production behavior as written. `d3-N6-medA` drift and area mismatch
-  are not the blocker; the blocker is the weak-seed promotion contract.
-
-Evidence notes and retained artifacts for this diagnostic conclusion:
+The 85RAW snapshot retained 597 primary rows and one selected primary family
+for every active ISTD at 85/85 positives. Its area mismatches were a separate
+quantitative follow-up, not independent identity proof. The retained artifacts,
+not historical `FAM*` labels, bind these observations:
 
 | Evidence | Path / fact |
 | --- | --- |
-| P2B area-mismatch triage | retired private-history note; current facts summarized above |
-| Resolver default hotfix / same-surface d3 finding | retired private-history note; current facts summarized above |
-| 85RAW super-window runtime acceptance | retired private-history note; current facts summarized above |
-| Product-priority gate | retired private-history note; current facts summarized above |
-| Current 8RAW resolved matrix snapshot | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/phase1_review_matrix_resolved.tsv`, SHA256 `9A63FC81C811CF92925853884837B623878B644A26311799FAF64FA4947548E8` |
-| Post-fix 8RAW resolved matrix snapshot | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/phase1_review_matrix_resolved_primary_delivery_fix.tsv`, SHA256 `B38EC06D01714B4AACA6825B1C003C9BB724264689FCD78FBCB8DD2F9AB0CE9D` |
-| Current 8RAW row triage snapshot | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/target_derived_review_row_triage.tsv`, SHA256 `73601AE36C879CE827AEA5816F6E690DF023F8DEB59B63F97ED8BBDEE635A3F9` |
-| Post-fix 8RAW row triage snapshot | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/target_derived_review_row_triage_primary_delivery_fix.tsv`, SHA256 `73601AE36C879CE827AEA5816F6E690DF023F8DEB59B63F97ED8BBDEE635A3F9` |
-| Post-fix collateral promotion table | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/collateral_promoted_primary_rows_primary_delivery_fix.csv`, SHA256 `9CFD07DBDD067748DEFEA883086894E481E947C157C15727E7BACC6DDCB71296` |
-| Post-fix 85RAW validation summary | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/85raw_primary_delivery_fix_summary.tsv`, SHA256 `4CF19B045F850B205E23888F1B3C5A6E3AF1C0BEC0C516E4447B61738CEAC24B` |
-| Post-fix 85RAW weak-seed watch rows | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/85raw_weak_seed_tolerated_watch_rows.tsv`, SHA256 `E003FDEAC97E1DAE6E0D6AF929CDD7EA3A004BC9873A0340EF8A7B2E099683E4` |
-| Post-review hardened single-dR gate summary | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/post_review_hardened_single_dr_gate_summary.tsv`, SHA256 `43FE4E4BCFF9DD20CA6B16F183F7A414EE89DCF1657A7E2E3B20559E32DE48E3` |
-| Current 8RAW diagnostic tool usage snapshot | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/diagnostic_tool_usage_current_8raw.tsv` |
-| Current 8RAW targeted GT default checkpoint | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/targeted_gt_alignment_audit_default_5medc_current_8raw_comparison.csv`, SHA256 `DB05B546B99CB9567D7873216906181FB20F57BA021BEFC3A503CC3128BE77D8`; interpretation follows this table |
-| Post-fix 8RAW targeted GT default checkpoint | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/targeted_gt_alignment_audit_default_5medc_primary_delivery_fix_comparison.csv`, SHA256 `DB05B546B99CB9567D7873216906181FB20F57BA021BEFC3A503CC3128BE77D8`; interpretation follows this table |
+| Baseline 8RAW resolved matrix snapshot | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/phase1_review_matrix_resolved.tsv`, SHA256 `9A63FC81C811CF92925853884837B623878B644A26311799FAF64FA4947548E8`; source bytes: CRLF |
+| Post-fix 8RAW resolved matrix snapshot | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/phase1_review_matrix_resolved_primary_delivery_fix.tsv`, SHA256 `B38EC06D01714B4AACA6825B1C003C9BB724264689FCD78FBCB8DD2F9AB0CE9D`; source bytes: CRLF |
+| Baseline 8RAW row triage snapshot | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/target_derived_review_row_triage.tsv`, SHA256 `73601AE36C879CE827AEA5816F6E690DF023F8DEB59B63F97ED8BBDEE635A3F9`; source bytes: CRLF |
+| Post-fix 8RAW row triage snapshot | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/target_derived_review_row_triage_primary_delivery_fix.tsv`, SHA256 `73601AE36C879CE827AEA5816F6E690DF023F8DEB59B63F97ED8BBDEE635A3F9`; source bytes: CRLF |
+| Post-fix collateral promotion table | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/collateral_promoted_primary_rows_primary_delivery_fix.csv`, SHA256 `9CFD07DBDD067748DEFEA883086894E481E947C157C15727E7BACC6DDCB71296`; source bytes: CRLF |
+| Post-fix 85RAW validation summary | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/85raw_primary_delivery_fix_summary.tsv`, SHA256 `4CF19B045F850B205E23888F1B3C5A6E3AF1C0BEC0C516E4447B61738CEAC24B`; source bytes: LF |
+| Post-fix 85RAW weak-seed watch rows | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/85raw_weak_seed_tolerated_watch_rows.tsv`, SHA256 `E003FDEAC97E1DAE6E0D6AF929CDD7EA3A004BC9873A0340EF8A7B2E099683E4`; source bytes: LF |
+| Post-review hardened single-dR gate summary | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/post_review_hardened_single_dr_gate_summary.tsv`, SHA256 `43FE4E4BCFF9DD20CA6B16F183F7A414EE89DCF1657A7E2E3B20559E32DE48E3`; source bytes: LF |
+| Baseline 8RAW diagnostic tool usage snapshot | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/diagnostic_tool_usage_current_8raw.tsv` |
+| Baseline 8RAW targeted GT default checkpoint | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/targeted_gt_alignment_audit_default_5medc_current_8raw_comparison.csv`, SHA256 `DB05B546B99CB9567D7873216906181FB20F57BA021BEFC3A503CC3128BE77D8`; interpretation follows this table; source bytes: CRLF |
+| Post-fix 8RAW targeted GT default checkpoint | `docs/superpowers/fixtures/diagnostic_ledger_2026_05_28/targeted_gt_alignment_audit_default_5medc_primary_delivery_fix_comparison.csv`, SHA256 `DB05B546B99CB9567D7873216906181FB20F57BA021BEFC3A503CC3128BE77D8`; interpretation follows this table; source bytes: CRLF |
 
-The two 2026-05-28 Targeted GT alignment audits for `5-medC` each recorded
-`PASS 8/8`, with zero `SPLIT`, `DRIFT`, `DUPLICATE`, and `MISS` against the
-Targeted GT RT rows. These are diagnostic anchors for the audited 8RAW
-validation-minimal and primary-delivery-fix slices, not evidence of current
-85RAW readiness or ProductWriter authority. Historical `FAM*` labels preserve
-that run's traceability; they are not canonical cross-sample identity proof.
+Snapshot hashes use the indicated original line endings; Git checkout may
+normalize these text files. Compare in the recorded serialization rather than
+interpreting an EOL-only checkout difference as changed analytical content.
 
-Source worktree output for the snapshots above was
-`output/product_priority_reset_phase1/`. The committed fixture copies are the
-durable reference; do not require the original worktree output to exist before
-using the ledger.
+The two retained 5-medC Targeted-GT comparisons both reported PASS 8/8 with
+zero SPLIT/DRIFT/DUPLICATE/MISS. This is only the audited 8RAW slice, not current
+85RAW readiness or ProductWriter authority. The committed fixtures remain
+usable without the original `output/product_priority_reset_phase1/` checkout.
 
-Recommended next check:
-
-1. Do not rerun RT drift diagnostics just to re-prove drift.
-2. Do not treat `d3-N6-medA` area shift or absolute RT delta as a blocker.
-3. Do treat the current weak-seed promotion contract as the active blocker until
-   a new reviewed production identity policy replaces it.
-4. If production behavior changes again, rerun 8RAW validation-minimal first.
-5. Do not rerun 85RAW just to re-prove this fix. Rerun 85RAW only after a new
-   production behavior change or if a current artifact contradicts the 85RAW
-   summary fixture.
+Reuse the local-RT and same-surface lesson rather than re-proving drift.
+A new selection, boundary, membership, or promotion question needs evidence
+for its current code and method; begin with the bounded 8RAW question before
+any justified 85RAW escalation. Neither the old pass nor the old failure is
+automatically the current result.
 
 ### 2026-10-02 Discovery Early Precursor Rejection Reduces Merge Cost
 

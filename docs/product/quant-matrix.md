@@ -70,8 +70,9 @@ quantification-authority guard, not a new peak-selection or Backfill route.
   or product-ready closeout chain.
 - `QuantMatrixVersion` remains an internal diagnostic result used by the no-RAW golden path. Its presence does not grant a
   standalone file-based matrix-writing capability.
-- The productization registry grants no standalone file-activation writer
-  scope. Historical validation packets cannot authorize current values.
+- Consult the [authority manifest](../superpowers/productization/status/productization_authority_manifest.json)
+  for current registered writer scopes. Historical validation packets cannot
+  authorize current values.
 - Changes to selected values still require the owning product contract and
   method-appropriate evidence; deleting a historical validation workflow does
   not change the scientific selection policy.
@@ -236,7 +237,6 @@ it does not establish production readiness by itself.
   `ProductionCellDecision`.
 - Passing the pre-final owner Matrix or loose `AlignedCell` collection directly
   to a writer.
-- Treating review-only labels or diagnostic sidecars as writer authority.
 - Adding diagnostic evidence columns to the primary matrix.
 - Treating historical AsLS-vs-raw policy as current area authority.
 - Reopening retired AsLS/linear-edge comparison gates instead of using current

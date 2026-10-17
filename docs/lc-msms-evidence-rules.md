@@ -25,15 +25,8 @@ contract, machine-readable reason/status fields, and regression tests.
 Evidence providers do not write the product matrix directly. Backfill, MS2/NL,
 RT, morphology, standards, library matches, and future learned models are inputs
 to evidence, hypothesis, model-selection, audit, or activation contracts.
-
-For Backfill and other explicit matrix activations, current write authority is
-granted only through the authority manifest, status index, expected diff, and
-promotion contract. In current terminology, a `ProductionAcceptanceManifest`
-can grant per-cell write authority only when the later activation path binds it
-to expected diff, provenance, and the current productization authority scope.
-`QuantMatrixVersion` / default activation outputs are the writer surface. A
-candidate row, `write_ready` label, quality blocker, sidecar, replay, or review
-packet outside that activation chain is not matrix authority by itself.
+[Writer Authority](product/productization.md#writer-authority) owns how write
+authority is granted.
 
 This document owns durable evidence semantics, not live maturity tier, active
 lane, or current writer counts. Read lane/readiness from

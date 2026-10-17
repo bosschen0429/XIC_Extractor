@@ -381,7 +381,7 @@ the exact current method-assessment artifact, not merely the same sample/target
 subject. Both adapters are internal, no-write, and carry
 `product_authority="none"`. Current CID-NL execution consumes their evidence
 through the retained shared batch; canonical writers alone project finalized
-values. An assessment or cell reference does not itself grant writer authority.
+values.
 
 When CrossSample grouping retains multiple provisional groups for one method
 subject, the
@@ -439,7 +439,7 @@ unlabeled tuple must not be guessed into method semantics.
 ## Pitfalls
 
 - Treating shared evidence as shared product authority.
-- Treating family membership as same-peak proof or ProductWriter authority.
+- Treating family membership as same-peak proof.
 - Letting Untargeted Backfill rules silently become Targeted rescue rules (or vice versa).
 - Counting multiple typed facts as independent observations when they describe the same physical evidence.
 - Promoting diagnostic-only or shadow evidence into matrix values.
