@@ -151,12 +151,11 @@ Use these terms consistently:
 - `ChromPeakSegment`: scoped product-candidate boundary unit used by
   quantitation-context decisions.
 - `ProductWriter`: the exclusive approved code path for product-matrix
-  mutations. It consumes only explicitly authorized scopes and never derives
-  writer authority from evidence, diagnostics, or its own implementation.
+  mutations; see [Writer Authority](productization.md#writer-authority).
 
 Evidence providers can include CID-NL, HCD-PI, Delta Mass, RT/iRT, MS1 shape,
 standards, library matches, trace overlays, review labels, and future models.
-They feed the evidence spine; they do not directly become matrix write authority.
+They feed the evidence spine.
 
 Related evidence and analysis terms:
 
@@ -256,7 +255,8 @@ concerns explain ambiguity and review priority, not the detected call itself.
 - `candidate/audit universe`: rows that are visible for review, audit, or
   diagnosis. This is not the same as writable product output.
 - `write_ready`: a scope with explicit current product write authority.
-- `authority`: the permission boundary for matrix/workbook/value writes.
+- `authority`: the permission boundary for matrix/workbook/value writes;
+  [Writer Authority](productization.md#writer-authority) owns how it is granted.
 - `authority manifest`: machine-checkable record of the exact ProductWriter
   scopes and cells currently authorized to write.
 - `maturity tier` (preferred term: `lane readiness status`): persisted current

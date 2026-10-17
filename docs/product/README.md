@@ -95,10 +95,8 @@ These apply to all topic pages and do not need to be restated in each file:
   a stronger claim; it grants no authority. Evidence labels are not inherent
   properties of a topic page and are not persisted lane state in the
   productization status index.
-- **ProductWriter authority** is the only path that writes product matrices.
-  Sidecars, review surfaces, galleries, and diagnostics can explain or gate a
-  decision, but they do not write product values unless the authority manifest
-  explicitly grants that role.
+- **ProductWriter authority**: see
+  [Writer Authority](productization.md#writer-authority).
 - **Cleanup policy**: dated plans, command transcripts, and sample-level
   investigation can move to private notes after their stable public claims
   are represented in the relevant topic page or source owner.

@@ -28,6 +28,27 @@ registered ProductWriter scopes. If narrative wording conflicts with an
 unchanged structured owner, the structured owner wins. The narrative must then
 be corrected.
 
+## Writer Authority
+
+ProductWriter is the only path that writes product matrix, workbook, or cell
+values. It consumes only scopes registered in the authority manifest and never
+derives authority from evidence, diagnostics, or its own implementation. The
+manifest `authority_policy` owns the exact write requirements and the sources
+that can never grant authority.
+
+For Backfill and other explicit matrix activations, write authority is granted
+only through the authority manifest, status index, expected diff, and the
+promotion contract. A `ProductionAcceptanceManifest`
+([checker](../../xic_extractor/diagnostics/quant_matrix/acceptance.py)) can
+grant per-cell write authority only when the later activation path binds it to
+expected diff, provenance, and the current authority scope.
+`QuantMatrixVersion` / default activation outputs are the writer surface.
+
+Evidence providers, candidate rows, `write_ready` labels, quality blockers,
+sidecars, replays, review packets, galleries, and diagnostics can explain or
+gate a decision. Outside that activation chain, none of them is writer
+authority. Topic pages link here instead of restating this rule.
+
 ## Capability Map
 
 | Area | Stable capability | Canonical topic owner |
@@ -50,8 +71,8 @@ Normal Alignment output remains owned by its live cell-decision and projection
 owners. The dependent quantitative projection remains HOLD; its package scope
 allowlist does not register a writer or authorize any cell.
 
-- **Owns:** stable capability descriptions, topic-owner routing, and the
-  field-level authority partition above.
+- **Owns:** stable capability descriptions, topic-owner routing, the
+  field-level authority partition, and the writer-authority rule above.
 - **Does not own:** current lane state or counts, ProductWriter scopes, active
   WIP, or a specific promotion verdict.
 - Validation packets and diagnostics support a decision. Validation packets
