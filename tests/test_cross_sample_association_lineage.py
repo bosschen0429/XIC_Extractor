@@ -536,7 +536,6 @@ def _coverage(
     )
     epoch = build_backfill_planning_epoch(
         context,
-        selected_features=(),
         request_plan=request_plan,
     )
     return build_backfill_evaluation_coverage(epoch, ())

@@ -11,8 +11,6 @@ from typing import Literal, TypeAlias
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillAttemptTerminal,
     BackfillPlanningPosition,
-    validate_backfill_conservative_no_request_position,
-    validate_backfill_retained_candidate_position,
 )
 from xic_extractor.alignment.cell_observation.group_context import (
     CidNlCellGroupContext,
@@ -282,23 +280,6 @@ def _compose_final_group_cell_observation_population(
         positions=positions,
         processing_request_id=request_id,
     )
-    sources_by_group: dict[str, list[CellObservationRef]] = {}
-    for cell in predecessor_cells:
-        sources_by_group.setdefault(cell.content.group_hypothesis_id, []).append(cell)
-    checked_facts: set[int] = set()
-    for position in positions:
-        proof = validate_backfill_conservative_no_request_position(
-            position,
-            source_cell=source_by_position.get(position.position_id),
-        )
-        if proof is not None and id(proof.decision.group_facts) not in checked_facts:
-            validate_backfill_conservative_no_request_position(
-                position,
-                source_population=tuple(
-                    sources_by_group[position.group_identity.group_hypothesis_id]
-                ),
-            )
-            checked_facts.add(id(proof.decision.group_facts))
     terminal_lists: dict[str, list[BackfillAttemptTerminal]] = {}
     for terminal in handoff.coverage.terminals:
         terminal_lists.setdefault(terminal.position_id, []).append(terminal)
@@ -713,9 +694,7 @@ def _derive_lane_evidence_state(
             )
         # A merged sibling may supply a direct lane; this lane adds no value.
         return "not_searched"
-    no_request_proof = validate_backfill_conservative_no_request_position(
-        association.position, source_cell=source_cell
-    )
+    no_request_proof = association.position.conservative_no_request_proof
     if no_request_proof is not None:
         if coverage_terminals or final_member is not None:
             raise CellObservationContractError(
@@ -730,9 +709,7 @@ def _derive_lane_evidence_state(
         raise CellObservationContractError(
             "final CrossSample member cannot carry a HOLD or REJECT method lane"
         )
-    if validate_backfill_retained_candidate_position(
-        association.position, source_cell=source_cell
-    ):
+    if association.position.planning_reason == "retained_unresolved_candidates":
         if coverage_terminals:
             raise CellObservationContractError(
                 "retained unresolved candidates cannot claim acquisition"

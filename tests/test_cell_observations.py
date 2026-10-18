@@ -430,7 +430,6 @@ def _owner_handoff(tmp_path: Path):
     )
     epoch = build_backfill_planning_epoch(
         context,
-        selected_features=(feature,),
         request_plan=request_plan,
     )
     terminals = []
@@ -583,7 +582,6 @@ def _coverage_for_groups(
     )
     epoch = build_backfill_planning_epoch(
         context,
-        selected_features=features if planned else (),
         request_plan=request_plan,
     )
     terminals = tuple(

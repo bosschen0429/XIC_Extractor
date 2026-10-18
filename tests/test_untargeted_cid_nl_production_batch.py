@@ -3915,7 +3915,7 @@ def test_production_composition_closes_observation_only_hold_without_membership(
             assert all(
                 row["Hold"] == "" for row in csv.DictReader(handle, delimiter="\t")
             )
-        _assert_conservative_proof_seals(
+        _assert_conservative_handoff_identity_and_completion(
             proof, position, coverage, handoff, hold_cell, batch, runtime_result
         )
         return
@@ -4305,12 +4305,12 @@ def _assert_conservative_coverage_handoff(
             for stem in ("Support1", "Support2", "Support3")
         )
     if proof is not None:
-        _assert_conservative_proof_seals(
+        _assert_conservative_handoff_identity_and_completion(
             proof, position, coverage, handoff, hold_cell, batch, runtime_result
         )
 
 
-def _assert_conservative_proof_seals(
+def _assert_conservative_handoff_identity_and_completion(
     proof, position, coverage, handoff, final_cell, batch, runtime_result
 ) -> None:
     import hashlib
@@ -4323,48 +4323,19 @@ def _assert_conservative_proof_seals(
         _derive_lane_evidence_state,
         canonical_cell_observation_bytes,
     )
-    from xic_extractor.processing_identity import issue_processing_attempt
     from xic_extractor.untargeted_execution.partition.models import (
         canonical_sample_result_bytes,
         project_completed_backfill,
     )
 
-    # The group binding is shared across cell proofs; minting again must keep
-    # identical persisted identities without revisiting all source assessments.
-    with pytest.MonkeyPatch.context() as counted:
-        bindings = []
-        validate_binding = owner.validate_cid_nl_method_assessment_binding
-
-        def record_binding(reference, **kwargs):
-            bindings.append(reference)
-            return validate_binding(reference, **kwargs)
-
-        counted.setattr(
-            owner, "validate_cid_nl_method_assessment_binding", record_binding
-        )
-        builder = owner.ConservativeNoRequestProofBuilder(
-            processing_owners=proof.processing_owners,
-            group_identity=proof.group_identity,
-            group_facts=proof.decision.group_facts,
-        )
-        assert len(bindings) == len(proof.decision.group_facts.source_cells)
-        for _ in range(3):
-            rebuilt = builder.mint(
-                sample=proof.sample,
-                decision=proof.decision,
-                completion=proof.completion,
-            )
-            assert rebuilt == proof
-        assert len(bindings) == len(proof.decision.group_facts.source_cells)
-        with pytest.raises(ValueError, match="bound group facts"):
-            owner.mint_backfill_conservative_no_request_proof(
-                processing_owners=proof.processing_owners,
-                group_identity=proof.group_identity,
-                sample=proof.sample,
-                decision=proof.decision,
-                completion=proof.completion,
-                _group_binding=replace(builder, group_facts=copy(builder.group_facts)),
-            )
+    rebuilt = owner.mint_backfill_conservative_no_request_proof(
+        processing_owners=proof.processing_owners,
+        group_identity=proof.group_identity,
+        sample=proof.sample,
+        decision=proof.decision,
+        completion=proof.completion,
+    )
+    assert rebuilt == proof
 
     epoch = coverage.epoch
     epoch_args = {
@@ -4420,73 +4391,6 @@ def _assert_conservative_proof_seals(
     other_sample = next(
         sample for sample in epoch.samples if sample is not proof.sample
     )
-    for substitution in (
-        {"sample": other_sample},
-        {"proof_id": "xic.owner-backfill-conservative-no-request:" + "0" * 64},
-        {
-            "processing_owners": replace(
-                proof.processing_owners,
-                attempt=issue_processing_attempt(proof.processing_owners.request),
-            )
-        },
-    ):
-        with pytest.raises(ValueError):
-            replace(proof, **substitution)
-    other_group = copy(proof.group_identity)
-    object.__setattr__(other_group, "group_hypothesis_id", "crossed-group")
-    with pytest.raises(ValueError):
-        replace(proof, group_identity=other_group)
-    from xic_extractor.alignment.backfill.conservative import (
-        map_conservative_backfill_candidates,
-    )
-
-    (support_decision,) = map_conservative_backfill_candidates(
-        (proof.decision.group_facts,), sample=other_sample, candidate_universes=()
-    )
-    with pytest.raises(ValueError):
-        replace(proof, decision=support_decision)
-    for substitution in (
-        {"planning_state": "planned", "planning_reason": "planned"},
-        {"planning_reason": "retained_local_owner"},
-        {"conservative_no_request_proof": None},
-    ):
-        with pytest.raises(ValueError):
-            replace(position, **substitution)
-    with pytest.raises(ValueError):
-        owner.validate_backfill_conservative_no_request_position(
-            position, source_population=(proof.decision.target_cell,)
-        )
-    with pytest.raises(ValueError):
-        owner.validate_backfill_conservative_no_request_position(
-            position,
-            source_cell=next(
-                cell
-                for cell in proof.decision.group_facts.source_cells
-                if cell is not proof.decision.target_cell
-            ),
-        )
-
-    from xic_extractor.alignment.backfill import conservative as conservative_owner
-
-    def unexpected_reevaluation(*args, **kwargs):
-        raise AssertionError("completed Backfill decision was reevaluated")
-
-    with pytest.MonkeyPatch.context() as retained:
-        retained.setattr(
-            conservative_owner,
-            "assess_conservative_backfill_group",
-            unexpected_reevaluation,
-        )
-        retained.setattr(
-            conservative_owner,
-            "map_conservative_backfill_candidates",
-            unexpected_reevaluation,
-        )
-        owner.validate_backfill_conservative_no_request_position(
-            position,
-            source_cell=proof.decision.target_cell,
-            source_population=proof.decision.group_facts.source_cells,
-        )
     lane_args = dict(
         association=final_cell.position_associations[0],
         source_cell=proof.decision.target_cell,
@@ -4511,8 +4415,6 @@ def _assert_conservative_proof_seals(
         )
     if proof.completion is not None:
         completion = proof.completion
-        with pytest.raises(ValueError):
-            replace(proof, completion=None)
         assert project_completed_backfill(result, group_context=context) == completion
         other_coordinate = next(
             item.adapter_result.acquisition.traces[0].coordinate

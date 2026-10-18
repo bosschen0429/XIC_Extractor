@@ -199,7 +199,6 @@ def build_backfill_result(
     evaluation_epoch = (
         build_backfill_planning_epoch(
             evaluation_coverage_context,
-            selected_features=features,
             request_plan=request_plan,
         )
         if evaluation_coverage_context is not None

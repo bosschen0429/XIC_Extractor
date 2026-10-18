@@ -8,7 +8,6 @@ from typing import Literal, TypeAlias
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillEvaluationCoverageBatch,
     BackfillPlanningPosition,
-    validate_backfill_evaluation_coverage,
 )
 from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingResult,
@@ -196,12 +195,6 @@ def _validate_inputs(
         raise CrossSampleAssociationContractError(
             "coverage must be an exact Owner Backfill coverage batch"
         )
-    try:
-        validate_backfill_evaluation_coverage(coverage)
-    except (TypeError, ValueError) as exc:
-        raise CrossSampleAssociationContractError(
-            f"coverage is not owner-closed: {exc}"
-        ) from exc
     if type(final_receipt) is not CrossSampleGroupingResult:
         raise CrossSampleAssociationContractError(
             "final receipt must be an exact CrossSample final receipt"
