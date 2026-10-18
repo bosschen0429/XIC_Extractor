@@ -331,8 +331,9 @@ class PeakTrajectories:
     """Physical correspondence only; unbound or ambiguous owners are omitted.
 
     Separate tracks are not evidence of separate peaks: their observations may
-    never have been compared. Two tracks are distinct only when one sample
-    observed both, necessarily at different landmarks.
+    never have been compared. Co-observed landmarks distinguish tracks, and
+    their directed elution order can distinguish tracks through an intermediate
+    track: A < B < C forbids A/C membership, whereas A < B > C does not.
     """
 
     tracks: tuple[PeakTrajectory, ...] = ()
@@ -354,26 +355,40 @@ class PeakTrajectories:
                 for owner_id in track.owner_ids
             },
         )
-        by_sample: dict[str, list[int]] = defaultdict(list)
+        by_sample: dict[str, list[tuple[int, float]]] = defaultdict(list)
         for index, track in enumerate(self.tracks):
-            for sample, _ in track.sample_apices:
-                by_sample[sample].append(index)
-        object.__setattr__(
-            self,
-            "_distinct",
-            frozenset(
-                (first, second)
-                for indices in by_sample.values()
-                for position, first in enumerate(indices)
-                for second in indices[position + 1 :]
-            ),
-        )
+            for sample, rt in track.sample_apices:
+                by_sample[sample].append((index, rt))
+        distinct: set[tuple[int, int]] = set()
+        later: dict[int, set[int]] = defaultdict(set)
+        for positions in by_sample.values():
+            for position, (first, first_rt) in enumerate(positions):
+                for second, second_rt in positions[position + 1 :]:
+                    distinct.add((first, second))
+                    if first_rt < second_rt:
+                        later[first].add(second)
+                    elif second_rt < first_rt:
+                        later[second].add(first)
+        # Prepare ordered separation once, not during every membership/bridge
+        # proposal. Closing the undirected distinct relation would wrongly veto
+        # tracks that merely lie on the same side of a shared reference peak.
+        for first in range(len(self.tracks)):
+            pending = set(later.get(first, ()))
+            reached = {first}
+            while pending:
+                second = pending.pop()
+                if second in reached:
+                    continue
+                reached.add(second)
+                distinct.add((min(first, second), max(first, second)))
+                pending.update(later.get(second, set()) - reached)
+        object.__setattr__(self, "_distinct", frozenset(distinct))
 
     def trajectory_for(self, owners: Sequence[SampleLocalMS1Owner]) -> PeakTrajectory:
         """Bind a finalized group to its direct and compatible context points.
 
-        Unmatched owners can extend a pattern-supported trajectory, and tracks
-        never observed together contribute their disjoint positions. Conversely,
+        Unmatched owners can extend a pattern-supported trajectory, and
+        order-compatible tracks contribute their disjoint positions. Conversely,
         a known-identity group spanning distinct physical peaks supplies only
         its own observations; a physical pattern cannot override identity.
         Same-sample direct bindings can also contradict a borrowed branch.

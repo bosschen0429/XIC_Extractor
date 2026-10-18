@@ -170,7 +170,12 @@ not treated as two peaks that cause the entire component to be discarded.
 Accepted pattern matches form tracks and bind eligible owners. Tracks are not
 considered distinct merely because they are unconnected. The current
 implementation establishes incompatibility between two tracks when distinct
-landmarks from both tracks are observed in the same sample.
+landmarks from both tracks are observed in the same sample, or their measured
+elution order connects them through other retained tracks. For example,
+`A < B < C` prevents merging A with C even without a sample containing both.
+Sharing a reference on the same side (`A < B > C`) does not establish that
+A and C differ. Membership and separated-band bridges consume this prepared
+compatibility decision; RT proximity or shape agreement cannot override it.
 
 Trajectories are then used as seeds for ordinary membership, for compatibility
 decisions, and for Backfill localization. These uses share the same source and
