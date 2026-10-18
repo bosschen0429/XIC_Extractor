@@ -1,6 +1,10 @@
 """The experiment replays formal initial grouping and never schedules Backfill."""
 
+import gzip
+import json
 from dataclasses import replace
+
+import pytest
 
 from tests.alignment_pipeline_helpers import _owner
 from tests.test_untargeted_cid_nl_bounded_runtime import _plan
@@ -25,7 +29,10 @@ from xic_extractor.untargeted_execution.grouping_experiment import (
 )
 
 
-def test_snapshot_retains_elution_inputs_and_replays_separated_rows(tmp_path):
+@pytest.mark.parametrize("saved_acquisition_window", [None, 1.0, 2.0])
+def test_snapshot_retains_elution_inputs_and_replays_separated_rows(
+    tmp_path, saved_acquisition_window
+):
     owners = []
     contexts = []
     for sample, shift, selected in (
@@ -60,7 +67,6 @@ def test_snapshot_retains_elution_inputs_and_replays_separated_rows(tmp_path):
         sample_stems=("A", "B", "C", "D"),
         injection_order={"A": 1, "B": 2, "C": 3, "D": 4},
         alignment_config=AlignmentConfig(),
-        backfill_half_window_min=1.0,
         worksets=(
             GroupingWorkset("crowded", tuple(owners), (), None, tuple(contexts)),
         ),
@@ -72,7 +78,17 @@ def test_snapshot_retains_elution_inputs_and_replays_separated_rows(tmp_path):
     }
     path = tmp_path / "context.json.gz"
     write_grouping_inputs(path, inputs, provenance={"evidence": "synthetic"})
+    with gzip.open(path, "rt", encoding="utf-8") as stream:
+        payload = json.load(stream)
+    assert "backfill_half_window_min" not in payload
+    if saved_acquisition_window is not None:
+        # Retained diagnostic snapshots carry acquisition metadata. It is not
+        # membership evidence and must not alter the restored grouping inputs.
+        payload["backfill_half_window_min"] = saved_acquisition_window
+        with gzip.open(path, "wt", encoding="utf-8") as stream:
+            json.dump(payload, stream)
     restored, _ = read_grouping_inputs(path)
+    assert restored == inputs
     assert restored.worksets[0].elution_contexts == tuple(contexts)
     assert {
         frozenset(group.owner_ids) for group in replay_grouping(restored)

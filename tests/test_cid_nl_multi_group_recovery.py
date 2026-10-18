@@ -57,9 +57,112 @@ from xic_extractor.untargeted_execution.partition.request import (
 )
 
 
+def test_backfill_window_does_not_change_initial_owner_partition(tmp_path, monkeypatch):
+    from xic_extractor.untargeted_execution.partition_composition import (
+        finalize_untargeted_partition_grouping,
+        prepare_untargeted_partition_grouping,
+    )
+
+    settings = replace(_settings(), rt_min=8.4, rt_max=11.5)
+    peak_config = _peak_config(tmp_path)
+    paths = tuple(tmp_path / f"S{i}.synthetic" for i in range(6))
+    raws, candidates = {}, {}
+    for index, path in enumerate(paths):
+        path.write_bytes(path.stem.encode())
+        raw = _FakeRaw((8.0,))
+        shift = 1.0 if index < 3 else 2.8
+        raw.rt += shift
+        raw.scans = tuple(replace(scan, rt=scan.rt + shift) for scan in raw.scans)
+        raws[path] = raw
+        candidates[path.stem] = _current_candidates(
+            raw, raw_file=path, settings=settings, peak_config=peak_config
+        )
+    batch = build_dense_partition(
+        raw_paths=paths,
+        sample_metadata=tuple(
+            SampleMetadata(sample_name=path.stem, raw_stem=path.stem, injection_order=i)
+            for i, path in enumerate(paths, 1)
+        ),
+        settings=settings,
+        peak_config=peak_config,
+        candidates_by_sample=candidates,
+        discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
+        dll_dir=tmp_path,
+        sample_identity_namespace="study:grouping-window-invariance",
+    )
+    _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
+    config = AlignmentConfig(anchor_min_seed_events=1)
+    observed = []
+
+    def prepare(initial):
+        bootstrap = prepare_untargeted_partition_grouping(
+            batch, initial, alignment_config=config, bootstrap_only=True
+        )
+        # Reuse identical captures, owners and RT frame; the shared acquisition
+        # setting must not change detection inputs in this grouping comparison.
+        for half_window in (1.0, 2.0):
+            variant = replace(
+                batch,
+                context=replace(
+                    batch.context,
+                    peak_config=replace(
+                        peak_config, nl_rt_anchor_half_window_min=half_window
+                    ),
+                ),
+            )
+            final = finalize_untargeted_partition_grouping(
+                variant, bootstrap, rt_frame=SampleRtFrame()
+            )
+            observed.append(
+                tuple(
+                    group
+                    for workset in final.worksets
+                    for group in workset.grouping_scope.groups
+                )
+            )
+        return final
+
+    runtime = start_runtime_attempt(
+        attempt=batch.context.processing_owners.attempt,
+        work_unit_keys=tuple(job.work_unit_key for job in batch.jobs),
+        owner_completeness_attestation="grouping-window-invariance",
+    )
+    result = execute_attempt(
+        runtime,
+        batch.jobs,
+        alignment_config=config,
+        prepare_grouping=prepare,
+        telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+        recovery_marker=OwnerPathRuntimeMarker(tmp_path / "runtime.json", "window"),
+    )
+    assert result.succeeded
+    assert len(observed) == 2
+
+    def partition(groups):
+        return {(frozenset(group.owner_ids), group.disposition) for group in groups}
+
+    assert partition(observed[0]) == partition(observed[1])
+    for groups in observed:
+        assert {
+            frozenset(owner.sample_stem for owner in group.owners) for group in groups
+        } == {
+            frozenset(("S0", "S1", "S2")),
+            frozenset(("S3", "S4", "S5")),
+        }
+        assert all(group.disposition == "established" for group in groups)
+        assert all(
+            len(group.owners) == len({owner.sample_stem for owner in group.owners})
+            for group in groups
+        )
+    assert {group.group_hypothesis_id for group in observed[0]} == {
+        group.group_hypothesis_id for group in observed[1]
+    }
+
+
 @pytest.mark.parametrize("empty", [False, True])
+@pytest.mark.parametrize("half_window", [0.10, 0.15])
 def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
-    tmp_path, monkeypatch, empty
+    tmp_path, monkeypatch, empty, half_window
 ):
     import csv
 
@@ -77,7 +180,9 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
 
     shifts = {"S1": 0.0, "S2": 0.0, "Late": 0.4, "Early": -0.4}
     settings = _settings()
-    peak_config = replace(_peak_config(tmp_path), nl_rt_anchor_half_window_min=0.15)
+    peak_config = replace(
+        _peak_config(tmp_path), nl_rt_anchor_half_window_min=half_window
+    )
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in shifts)
     raws, candidates = {}, {}
     for path in paths:
@@ -159,7 +264,7 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
         assert attempt.query_rt_basis == "calibrated_trajectory_fit"
         receipt = attempt.assessment.content.evaluation_receipt
         assert (receipt.query_rt_min, receipt.query_rt_max) == pytest.approx(
-            (expected - 0.15, expected + 0.15)
+            (expected - half_window, expected + half_window)
         )
         assert not receipt.query_rt_min <= 8.0 <= receipt.query_rt_max
         assert len(attempt.assessment.candidate_peaks) == (0 if empty else 1)
@@ -174,10 +279,10 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
     for cell in writer.matrix.cells:
         if cell.sample_stem in {"Early", "Late"}:
             assert cell.backfill_request_rt_min == pytest.approx(
-                8.0 + shifts[cell.sample_stem] - 0.15
+                8.0 + shifts[cell.sample_stem] - half_window
             )
             assert cell.backfill_request_rt_max == pytest.approx(
-                8.0 + shifts[cell.sample_stem] + 0.15
+                8.0 + shifts[cell.sample_stem] + half_window
             )
     path = write_alignment_backfill_cell_evidence_tsv(
         tmp_path / "queries.tsv",
@@ -190,7 +295,7 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
         for row in rows:
             if row["sample_stem"] in {"Early", "Late"}:
                 assert float(row["backfill_query_rt_min"]) == pytest.approx(
-                    8.0 + shifts[row["sample_stem"]] - 0.15
+                    8.0 + shifts[row["sample_stem"]] - half_window
                 )
         assert len(tuple(iter_backfill_evidence_tsv(path))) == len(rows)
 

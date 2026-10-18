@@ -974,6 +974,9 @@ and `--known-istd-reference` accept existing metadata and reference artifacts.
 The compressed `grouping-inputs.json.gz` retains scalar observations, exact
 member identities, baseline warp, compact elution contexts and configuration.
 It omits chromatogram arrays. Prepare checks snapshot replay against the formal initial grouping.
+Backfill acquisition windows are not grouping inputs. The snapshot reader also
+accepts retained snapshots carrying that extra metadata, without using it for
+membership; new snapshots omit it.
 Replay needs only that snapshot, with no RAW, DLL, acquisition or Backfill.
 `--set FIELD=JSON` changes an `AlignmentConfig` value; only fields consumed by
 grouping affect replay. Owner detection and integration changes require prepare.

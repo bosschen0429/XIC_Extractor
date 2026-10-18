@@ -102,7 +102,6 @@ def write_grouping_inputs(
         "sample_stems": inputs.sample_stems,
         "injection_order": dict(inputs.injection_order),
         "alignment_config": asdict(inputs.alignment_config),
-        "backfill_half_window_min": inputs.backfill_half_window_min,
         "candidate_ids_by_owner": dict(inputs.candidate_ids_by_owner),
         "worksets": [
             {
@@ -172,7 +171,6 @@ def read_grouping_inputs(path: Path) -> tuple[GroupingInputs, dict[str, Any]]:
         sample_stems=tuple(payload["sample_stems"]),
         injection_order=payload["injection_order"],
         alignment_config=AlignmentConfig(**config),
-        backfill_half_window_min=float(payload["backfill_half_window_min"]),
         worksets=tuple(worksets),
         candidate_ids_by_owner={
             key: tuple(ids) for key, ids in payload["candidate_ids_by_owner"].items()
