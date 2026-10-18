@@ -1409,14 +1409,43 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
     )
 
 
+@pytest.mark.parametrize("mz_separation_ppm", [0.0, 12.0, 21.1])
+@pytest.mark.parametrize("reverse", [False, True])
 def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, mz_separation_ppm, reverse
 ):
-    """One MS1-only peak two group windows both found stays unresolved."""
+    """Overlapping extraction windows cannot supply one peak to two rows."""
 
     ms1_centers = {"S1": (8.0, 8.12), "S2": (8.0, 8.12), "Missing": (8.06,)}
     nl_centers = {"S1": (8.0, 8.12), "S2": (8.0, 8.12), "Missing": ()}
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in ms1_centers)
+    if reverse:
+        paths = tuple(reversed(paths))
+    first_mz = 500.0
+    second_mz = first_mz * (1 + mz_separation_ppm * 1e-6)
+    physical_mz = (first_mz + second_mz) / 2
+
+    class MassAwareRaw(_FakeRaw):
+        def __init__(self, centers):
+            super().__init__(centers)
+            self.scans = tuple(
+                replace(
+                    scan,
+                    precursor_mz=second_mz if scan.rt > 8.06 else first_mz,
+                    masses=scan.masses + (
+                        second_mz - first_mz if scan.rt > 8.06 else 0.0
+                    ),
+                )
+                for scan in self.scans
+            )
+
+        def _trace(self, request):
+            trace = super()._trace(request)
+            # The fixture contains one ion, not one independent signal per query.
+            if abs(physical_mz - request.mz) > request.mz * request.ppm_tol * 1e-6:
+                return replace(trace, intensity=np.zeros_like(trace.intensity))
+            return trace
+
     settings, peak_config = (
         replace(
             _settings(), neutral_loss_profile=None, rt_max=8.6, seed_rt_gap_min=0.1
@@ -1426,7 +1455,7 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
     raws, candidates = {}, {}
     for path in paths:
         path.write_bytes(path.stem.encode())
-        raw = _FakeRaw(nl_centers[path.stem])
+        raw = MassAwareRaw(nl_centers[path.stem])
         raw.rt = np.linspace(7.4, 8.7, 521)
         raw.intensity = sum(
             (
@@ -1447,6 +1476,8 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
             if path.stem != "Missing"
             else ()
         )
+        if reverse:
+            candidates[path.stem] = tuple(reversed(candidates[path.stem]))
     batch = build_dense_partition(
         raw_paths=paths,
         sample_metadata=tuple(
@@ -1480,21 +1511,30 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         ),
     )
     assert result.succeeded
-    missing = next(
-        item
+    missing_attempts = tuple(
+        attempt
         for item in result.sample_results
         if item.job.sample.metadata.raw_stem == "Missing"
+        for attempt in item.backfill_attempts
     )
-    assert len(missing.backfill_attempts) == 2
+    assert len(missing_attempts) == 2
     assert all(
         is_ms1_only_cid_nl_backfill_assessment(attempt.assessment)
-        for attempt in missing.backfill_attempts
+        for attempt in missing_attempts
     )
-    physical_ids = {
-        attempt.assessment.candidate_peaks[0].content.peak_observation_content_id
-        for attempt in missing.backfill_attempts
-    }
-    assert len(physical_ids) == 1
+    first, second = (
+        attempt.assessment.candidate_peaks[0] for attempt in missing_attempts
+    )
+    assert first.content.rt == second.content.rt
+    assert first.content.intensity == second.content.intensity
+    assert first.content.integration == second.content.integration
+    assert first.generation_provenance.acquisition_source_id == (
+        second.generation_provenance.acquisition_source_id
+    )
+    assert len({
+        first.content.peak_observation_content_id,
+        second.content.peak_observation_content_id,
+    }) == (1 if mz_separation_ppm == 0.0 else 2)
 
     completed = complete_dense_partition(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
@@ -1506,7 +1546,6 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         if cell.canonical_sample.metadata.raw_stem == "Missing"
     )
     assert len(missing_cells) == 2
-    assert all(cell.evidence_states == ("unresolved",) for cell in missing_cells)
     writer = project_completed_untarget_batch_writer_inputs(
         completed.application_result
     )
@@ -1520,6 +1559,10 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         not decision.write_matrix_value and decision.matrix_value is None
         for decision in missing_decisions
     )
+    assert all(
+        row.detected_count == 2 for row in writer.production_decisions.rows.values()
+    )
+    assert all(cell.evidence_states == ("unresolved",) for cell in missing_cells)
 
 
 @pytest.mark.parametrize(

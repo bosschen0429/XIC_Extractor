@@ -200,9 +200,14 @@ continuity; smoothing it into a peak does not supply missing acquired support.
 5. A member of an archive row writes no value and does not hold the peak.
 6. If the windows of two rows resolve the same peak, the cell stays unresolved
    in both rows. The peak does not supply one value twice.
-7. Each window traces the peak again with its own bounds. Therefore one peak
-   means one apex scan in one sample within the preferred m/z tolerance, as in
-   Discovery. One peak does not mean one peak-observation content ID.
+7. Each window traces the peak again with its own bounds. Backfills from different
+   rows compete at the same apex in the same sample when their actual extraction
+   m/z intervals overlap, including a shared endpoint. Each interval uses that
+   observation's query center and query ppm, not the global preferred tolerance;
+   centers farther apart than the preferred tolerance can still capture one ion.
+   Direct-member occupancy retains its preferred m/z tolerance. One peak does
+   not mean one peak-observation content ID, and no RT epsilon joins distinct
+   apices.
 8. When Backfill independently assesses a cell with an initial missing-MS1
    `REJECT`, the Backfill assessment retains the initial `REJECT`. The Backfill
    assessment must earn SUPPORT through the normal relation owner before the
