@@ -3,7 +3,7 @@
 Order and a shared, width-bounded RT displacement establish correspondence.
 Missing landmarks are allowed. Relative height only breaks ties between equally
 complete patterns; it cannot replace a two-peak pattern with one tall peak.
-Single-peak links are not pattern evidence: they bind no owner and no position.
+Single-pair matches are not pattern evidence and cannot connect tracks.
 
 The resulting sample positions are observations of the same trajectory used to
 locate missing samples. MS1 landmarks never grant method support.
@@ -679,21 +679,17 @@ def resolve_peak_trajectories(
                 proposed = [keep if root == absorbed else root for root in proposed]
         if changed and not _preserves_order(proposed, region.patterns):
             continue
-        # Already-connected multi-pair matches still authorize locations.
-        # Singleton contractions do not, and cannot independently rescue a
-        # contradicted location. Neither changes the existing track policy.
-        if len(match.pairs) >= 2:
-            for i, j in match.pairs:
-                first, second = left.nodes[i], right.nodes[j]
-                neighbors[first].add(second)
-                neighbors[second].add(first)
+        # Already-connected matches still authorize locations.
+        for i, j in match.pairs:
+            first, second = left.nodes[i], right.nodes[j]
+            neighbors[first].add(second)
+            neighbors[second].add(first)
         if not changed:
             continue
         for index, root in zip(region.nodes, proposed, strict=True):
             roots[index] = root
-        if len(match.pairs) >= 2:
-            supported_nodes.update(left.nodes[i] for i, _ in match.pairs)
-            supported_nodes.update(right.nodes[j] for _, j in match.pairs)
+        supported_nodes.update(left.nodes[i] for i, _ in match.pairs)
+        supported_nodes.update(right.nodes[j] for _, j in match.pairs)
     supported_roots = {roots[index] for index in supported_nodes}
     members: dict[int, list[int]] = defaultdict(list)
     bound: dict[int, list[str]] = defaultdict(list)
@@ -701,9 +697,8 @@ def resolve_peak_trajectories(
         if root in supported_roots:
             members[root].append(index)
     for owner_id, node in owner_nodes.items():
-        # A single-peak link has no second landmark to witness which ordered
-        # peak it observed. Its owner stays outside the track, so ordinary RT
-        # and mass evidence decide its membership.
+        # An unmatched peak has no second landmark to witness which ordered
+        # peak it observed. Ordinary RT and mass evidence decide its membership.
         if node in supported_nodes:
             bound[roots[node]].append(owner_id)
     tracks = []
@@ -712,8 +707,6 @@ def resolve_peak_trajectories(
         # sample is still not a usable location or membership assertion.
         if len({nodes[i].sample for i in members[root]}) != len(members[root]):
             continue
-        # For the same reason a single-peak link is neither a located
-        # position nor an input to fitting other samples.
         locations = tuple(
             sorted(
                 (nodes[i].sample, nodes[i].landmark.apex_rt)
@@ -1034,19 +1027,7 @@ def _match_patterns(
     )
     pairs, score = ranked[0]
     if score[0] == 1:
-        # With no multi-peak witness, retain only the nearest RT continuation.
-        singles = sorted(
-            (abs(deltas[i][j]), i, j)
-            for i in range(len(left))
-            for j in range(len(right))
-            if abs(deltas[i][j]) <= max_shift
-        )
-        if not singles or (
-            len(singles) > 1 and abs(singles[0][0] - singles[1][0]) <= _TIE_EPSILON
-        ):
-            return None
-        distance, i, j = singles[0]
-        return _Match(((i, j),), 0.0, distance)
+        return None
     if len(ranked) > 1:
         second = ranked[1][1]
         if (
