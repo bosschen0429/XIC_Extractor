@@ -18,7 +18,6 @@ from xic_extractor.alignment.cell_observation.observations import (
 )
 from xic_extractor.alignment.cross_sample.association import (
     CrossSampleAssociationLineageHandoff,
-    validate_cross_sample_association_lineage_handoff,
 )
 from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingResult,
@@ -566,10 +565,12 @@ def _validate_cell_observation_handoff(
     canonical_samples: tuple[ResolvedCanonicalSampleIdentity, ...],
     processing_request_id: str,
 ) -> None:
-    try:
-        validate_cross_sample_association_lineage_handoff(handoff)
-    except (TypeError, ValueError) as exc:
-        raise FinalizedScientificAlignmentContractError(str(exc)) from exc
+    # The final-cell composer/auditor validates the handoff's full lineage.
+    # This owner binds that handoff to the current finalization context only.
+    if type(handoff) is not CrossSampleAssociationLineageHandoff:
+        raise FinalizedScientificAlignmentContractError(
+            "handoff must be an exact CrossSample association handoff"
+        )
     if handoff.final_receipt is not grouping_result:
         raise FinalizedScientificAlignmentContractError(
             "cell-observation handoff substituted the final CrossSample receipt"
