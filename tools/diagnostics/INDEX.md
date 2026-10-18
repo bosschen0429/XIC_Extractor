@@ -256,15 +256,10 @@ claim/Matrix/writer authority, PR E artifact streaming, or PR F recovery.
 
 ## Backfill Reviews
 
-Three overlapping review axes (seed-level / family-level /
-row-classifier-level), 2 owner-backfill economics tools, 1 reconciliation
-gallery/index surface, 1 MS1+RT shadow-policy report, 1 Tier 2 RAW trace
-producer, 1 high-signal clean activation scope audit, 1 `diagnostic_only`
-provisional candidate-gate sidecar, and 1
-`diagnostic_only` product-retained backfill evidence-gate sidecar. The sidecars
-are not economics axes; they emit source-hashed support/blocker/missing-evidence
-rows while the existing review/economics axes remain pending cleanup per
-audit-note Cluster 2.
+Four Backfill review tools: a Parquet shadow bundle of the Backfill evidence
+TSV projections, a `diagnostic_only` evidence-gate sidecar for product-retained
+Backfill, a fast-mode expected-diff packet against exact `dna_dr_product_ready`
+output, and a PeakHypothesis Backfill transfer-readiness summary.
 
 ### `backfill_evidence_parquet_shadow.py`
 
@@ -342,17 +337,6 @@ and moves the remaining blocker to `full_cohort_consolidation_policy_not_product
 Winner-remap summaries are optional legacy context and no longer override the
 hypothesis-anchor next action. It deliberately keeps `production_ready=FALSE`
 until an explicit product-transfer decision and consolidation policy exist.
-
----
-
-### CID-NL differential evidence producer helpers
-
-### `tier2_raw_trace_reread_producer.py`
-
-**Purpose**: Produce paired `diagnostic_only` Tier 2 RAW trace evidence and RAW manifest sidecars for retained provisional backfill candidates.
-**Topic group**: `tier2_raw_trace_reread_producer.py` + `xic_extractor/alignment/tier2_trace_producer.py` + `xic_extractor/alignment/production_candidate_gate.py`
-**Originating spec/plan**: `retired-provenance:443a0af82ac4`; follows the sidecar provenance gate checkpoint in `retired-provenance:d3d707f162f6`; diagnostic criteria review in `retired-provenance:38373345f4da` and `retired-provenance:e509e2788bf2`.
-**Status note**: Writes diagnostic-only Tier 2 RAW trace evidence and RAW manifest sidecars. The criteria expose scan availability, signal/noise, shape, boundary-reference, apex-span, and neighbor-interference context, but do not provide positive Tier 2 support or change `alignment_matrix.tsv`. FULL COHORT is out of scope until a reviewed follow-up plan is approved after a successful 8RAW diagnostic rerun.
 
 ---
 

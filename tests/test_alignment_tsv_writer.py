@@ -1526,69 +1526,6 @@ def test_one_detected_provisional_retention_stays_out_of_primary_matrix(
     assert matrix_rows == []
 
 
-def test_direct_tier2_review_token_does_not_change_matrix_writer(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.alignment.production_candidate_gate import (
-        evaluate_production_candidate_gate,
-        source_context_for_artifacts,
-    )
-    from xic_extractor.output.alignment.tsv_writer import (
-        write_alignment_cells_tsv,
-        write_alignment_matrix_tsv,
-        write_alignment_review_tsv,
-    )
-
-    matrix = AlignmentMatrix(
-        clusters=(
-            _cluster(
-                fold_evidence="owner_complete_link;owner_count=1",
-            ),
-        ),
-        cells=(
-            _cell("sample-a", "detected", area=100.0, candidate_id="sample-a#1"),
-            _cell("sample-b", "backfilled", area=90.0),
-            _cell("sample-c", "backfilled", area=80.0),
-        ),
-        sample_order=("sample-a", "sample-b", "sample-c"),
-    )
-    review_path = write_alignment_review_tsv(
-        tmp_path / "alignment_review.tsv",
-        matrix,
-        production_decisions=_production_decisions(matrix),
-    )
-    cells_path = write_alignment_cells_tsv(
-        tmp_path / "alignment_cells.tsv",
-        matrix,
-    )
-    matrix_path = write_alignment_matrix_tsv(
-        tmp_path / "alignment_matrix.tsv",
-        matrix,
-        production_decisions=_production_decisions(matrix),
-    )
-    review_rows = _read_tsv(review_path)
-    cell_rows = _read_tsv(cells_path)
-
-    sidecar_review_row = {
-        **review_rows[0],
-        "independent_tier2_support_components": ("validated_tier2_trace_evidence"),
-    }
-    decision = evaluate_production_candidate_gate(
-        sidecar_review_row,
-        cell_rows,
-        source_context=source_context_for_artifacts(
-            review_path=review_path,
-            cell_path=cells_path,
-            matrix_path=matrix_path,
-        ),
-    )
-
-    assert decision.candidate_gate_status == "audit"
-    assert decision.support_components == ()
-    assert decision.challenge_blockers == ("not_retention_candidate",)
-    assert _read_tsv(matrix_path) == []
-
-
 def test_write_alignment_status_matrix_tsv_preserves_duplicate_assigned(
     tmp_path: Path,
 ):
