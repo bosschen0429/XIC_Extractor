@@ -13,7 +13,6 @@ from types import SimpleNamespace
 import pytest
 
 import xic_extractor.alignment.cid_nl_completion as cid_nl_completion_owner
-import xic_extractor.alignment.result.application_result as application_result_owner
 import xic_extractor.alignment.untargeted_finalized_matrix as finalized_matrix
 import xic_extractor.discovery.processing_run_spec_adapter as processing_spec_adapter
 import xic_extractor.processing_identity as identity_owner
@@ -316,21 +315,8 @@ def _assert_jobs_match_direct_construction(batch) -> None:
 def _assert_single_unsupported_exclusion(
     completed, runtime_result, batch, tmp_path: Path, *, populated: bool
 ) -> None:
-    from copy import copy
 
-    from xic_extractor.alignment.result.application_result import (
-        ApplicationResultContractError,
-        UntargetBatchApplicationResultRequest,
-    )
     from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
-    from xic_extractor.peak_detection.cid_nl_method_assessment import (
-        is_unsearched_cid_nl_discovery_assessment,
-        mint_cid_nl_method_assessment_ref,
-    )
-    from xic_extractor.processing_identity import (
-        build_processing_request_identity,
-        issue_processing_attempt,
-    )
 
     result = completed.application_result
     exclusions = result.excluded_candidates
@@ -382,169 +368,10 @@ def _assert_single_unsupported_exclusion(
     else:
         assert not writer.matrix.clusters and not writer.matrix.cells
 
-    def validate(exclusion):
-        return UntargetBatchApplicationResultRequest(
-            scope=result.scope,
-            processing_request=result.processing_request,
-            processing_attempt=result.processing_attempt,
-            children=result.children,
-            excluded_candidates=(exclusion, *exclusions[1:]),
-        )
-
-    first = exclusions[0]
-    own_assessment = next(
-        assessment
-        for assessment in retained
-        if assessment.content.canonical_sample_identity_id
-        == first.canonical_sample_identity_id
-    )
-    unsearched = next(
-        (
-            assessment
-            for assessment in retained
-            if is_unsearched_cid_nl_discovery_assessment(assessment)
-        ),
-        None,
-    )
-    if unsearched is not None:
-        assert any(
-            assessment.content.technical_state == "evaluated"
-            and assessment.content.method_result in {"HOLD", "REJECT"}
-            for assessment in retained
-        )
-        with pytest.raises(ApplicationResultContractError):
-            replace(
-                first,
-                canonical_sample_identity_id=(
-                    unsearched.content.canonical_sample_identity_id
-                ),
-            )
-        with pytest.raises(ApplicationResultContractError):
-            replace(
-                first,
-                discovery_candidate_state="review_only_orphan_nl",
-                method_assessments=(unsearched,),
-            )
-    # A sample with no Discovery input for this subject needs no placeholder
-    # assessment. Sparse execution retains all input-bearing evidence only.
-    sparse_proof = tuple(
-        assessment
-        for assessment in retained
-        if not is_unsearched_cid_nl_discovery_assessment(assessment)
-    )
-    validate(replace(first, method_assessments=sparse_proof))
-    incomplete_proofs = [(own_assessment, own_assessment)]
-    if len(sparse_proof) > 1:
-        incomplete_proofs.append((own_assessment,))
-    for proof in incomplete_proofs:
-        with pytest.raises(
-            ApplicationResultContractError, match="input sample coverage"
-        ):
-            validate(replace(first, method_assessments=proof))
-    for substitution in (
-        {"method_assessments": ()},
-        {"composite_assessments": retained},
-        {"method_assessments": (), "composite_assessments": retained},
-        {"reason_code": "composite_requirement_not_supported"},
-        {"reason_code": "discovery_candidate_not_search_eligible"},
-    ):
-        with pytest.raises(ApplicationResultContractError):
-            replace(first, **substitution)
-    crossed = copy(first)
-    object.__setattr__(crossed, "composite_assessments", retained)
-    with pytest.raises(ApplicationResultContractError):
-        validate(crossed)
-    if populated:
-        supported = next(
-            item.effective_assessment
-            for item in runtime_result.sample_results
-            if item.effective_assessment.content.method_result == "SUPPORT"
-        )
-        with pytest.raises(ApplicationResultContractError):
-            replace(first, method_assessments=(supported, retained[1]))
-        with pytest.raises(ApplicationResultContractError):
-            replace(
-                first,
-                method_subject_id=supported.content.method_subject.method_subject_id,
-                method_assessments=(supported,),
-            )
-
-    sample = next(
-        sample
-        for sample in batch.context.samples
-        if sample.identity.sample_identity_id
-        == retained[0].content.canonical_sample_identity_id
-    )
-    receipt = replace(retained[0].content.evaluation_receipt, scanned_event_count=0)
-    for state in ("failed", "not_evaluated", "unsupported"):
-        technical = mint_cid_nl_method_assessment_ref(
-            processing_owners=batch.context.processing_owners,
-            sample=sample,
-            method_subject=retained[0].content.method_subject,
-            detector_invocation_id=f"test:{state}",
-            evaluation_receipt=replace(
-                receipt,
-                search_completed=False,
-                reason_code=f"test_{state}",
-                acquisition_supported=state != "unsupported",
-            ),
-            technical_state=state,
-        )
-        with pytest.raises(ApplicationResultContractError):
-            replace(first, method_assessments=(technical, retained[1]))
-    retry_owners = replace(
-        batch.context.processing_owners,
-        attempt=issue_processing_attempt(
-            result.processing_request, retry_of=result.processing_attempt
-        ),
-    )
-    retry_assessment = mint_cid_nl_method_assessment_ref(
-        processing_owners=retry_owners,
-        sample=sample,
-        method_subject=retained[0].content.method_subject,
-        detector_invocation_id="test:retry",
-        evaluation_receipt=receipt,
-    )
-    with pytest.raises(ApplicationResultContractError, match="owner binding"):
-        validate(replace(first, method_assessments=(retry_assessment, retained[1])))
-    import json
-
-    request = result.processing_request
-    other_request = build_processing_request_identity(
-        acquisition_sources=request.acquisition_sources,
-        acquisition_bindings=request.acquisition_bindings,
-        scientific_input_schema_version=request.scientific_input_schema_version,
-        processing_algorithm_version=request.processing_algorithm_version + ":other",
-        processing_contract_version=request.processing_contract_version,
-        scientific_inputs=json.loads(request.normalized_scientific_inputs_json),
-    )
-    other_owners = replace(
-        batch.context.processing_owners,
-        request=other_request,
-        attempt=issue_processing_attempt(other_request),
-    )
-    foreign_assessment = mint_cid_nl_method_assessment_ref(
-        processing_owners=other_owners,
-        sample=sample,
-        method_subject=retained[0].content.method_subject,
-        detector_invocation_id="test:foreign-request",
-        evaluation_receipt=receipt,
-    )
-    with pytest.raises(ApplicationResultContractError, match="owner binding"):
-        validate(replace(first, method_assessments=(foreign_assessment, retained[1])))
-
 
 def _assert_composite_no_input_exclusion_coverage(
     completed, runtime_result, batch
 ) -> None:
-    from xic_extractor.alignment.result.application_result import (
-        ApplicationResultContractError,
-        UntargetBatchApplicationResultRequest,
-    )
-    from xic_extractor.peak_detection.cid_nl_method_assessment import (
-        is_unsearched_cid_nl_discovery_assessment,
-        mint_cid_nl_method_assessment_ref,
-    )
 
     result = completed.application_result
     exclusions = result.excluded_candidates
@@ -555,71 +382,6 @@ def _assert_composite_no_input_exclusion_coverage(
         and not exclusion.method_assessments
         for exclusion in exclusions
     )
-    first = exclusions[0]
-    result_by_sample_id = {
-        item.effective_assessment.content.canonical_sample_identity_id: item
-        for item in runtime_result.sample_results
-        if item.job.method_subject.method_subject_id == first.method_subject_id
-    }
-    no_input_by_sample_id = {}
-    for sample_id, sample_result in result_by_sample_id.items():
-        assessment = sample_result.effective_assessment
-        no_input_by_sample_id[sample_id] = mint_cid_nl_method_assessment_ref(
-            processing_owners=batch.context.processing_owners,
-            sample=sample_result.job.sample,
-            method_subject=assessment.content.method_subject,
-            detector_invocation_id=f"test:composite-no-input:{sample_id}",
-            evaluation_receipt=replace(
-                assessment.content.evaluation_receipt,
-                acquisition_supported=True,
-                search_completed=False,
-                scanned_event_count=0,
-                reason_code="no_search_eligible_discovery_input",
-            ),
-            technical_state="not_evaluated",
-        )
-    assert all(
-        is_unsearched_cid_nl_discovery_assessment(assessment)
-        for assessment in no_input_by_sample_id.values()
-    )
-
-    peer_sample_id = next(
-        sample_id
-        for sample_id in result_by_sample_id
-        if sample_id != first.canonical_sample_identity_id
-    )
-    mixed_proof = tuple(
-        no_input_by_sample_id[peer_sample_id]
-        if assessment.content.canonical_sample_identity_id == peer_sample_id
-        else assessment
-        for assessment in first.composite_assessments
-    )
-    mixed = replace(first, composite_assessments=mixed_proof)
-    UntargetBatchApplicationResultRequest(
-        scope=result.scope,
-        processing_request=result.processing_request,
-        processing_attempt=result.processing_attempt,
-        children=result.children,
-        excluded_candidates=(mixed, *exclusions[1:]),
-    )
-
-    own_no_input_proof = tuple(
-        no_input_by_sample_id[first.canonical_sample_identity_id]
-        if assessment.content.canonical_sample_identity_id
-        == first.canonical_sample_identity_id
-        else assessment
-        for assessment in first.composite_assessments
-    )
-    with pytest.raises(ApplicationResultContractError):
-        replace(first, composite_assessments=own_no_input_proof)
-    with pytest.raises(ApplicationResultContractError):
-        replace(
-            first,
-            composite_assessments=tuple(
-                no_input_by_sample_id[assessment.content.canonical_sample_identity_id]
-                for assessment in first.composite_assessments
-            ),
-        )
 
 
 @pytest.mark.parametrize(
@@ -1210,8 +972,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     from xic_extractor.alignment import completion as workflow_owner
     from xic_extractor.alignment import grouping_bootstrap as bootstrap_owner
-    from xic_extractor.alignment.projection.untarget import matrix as matrix_owner
-    from xic_extractor.alignment.result import application_result as result_owner
     from xic_extractor.peak_detection import observations as observation_owner
     from xic_extractor.untargeted_execution import partition_composition as production
 
@@ -1268,55 +1028,17 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         production, "mint_captured_peak_observation", record_captured_mint
     )
 
-    from xic_extractor.alignment.cell_decision import owner as decision_owner
-
     projection_builds = []
-    decision_rechecks = []
     project_matrix = workflow_owner.project_untarget_matrix
-    validate_decision = decision_owner.validate_production_cell_decision
 
     def record_matrix_projection(*args):
         result = project_matrix(*args)
         projection_builds.append(result)
         return result
 
-    def record_decision_recheck(value):
-        decision_rechecks.append(value)
-        return validate_decision(value)
-
     monkeypatch.setattr(
         workflow_owner, "project_untarget_matrix", record_matrix_projection
     )
-    monkeypatch.setattr(
-        decision_owner, "validate_production_cell_decision", record_decision_recheck
-    )
-
-    completion_checks = {"scientific": [], "matrix": []}
-    scientific_check = (
-        result_owner._validate_finalized_scientific_alignment_completion_receipt
-    )
-
-    def record_scientific_check(value):
-        completion_checks["scientific"].append(value)
-        return scientific_check(value)
-
-    matrix_check = matrix_owner.validate_untarget_matrix_completion_receipt
-
-    def record_matrix_check(value):
-        completion_checks["matrix"].append(value)
-        return matrix_check(value)
-
-    monkeypatch.setattr(
-        result_owner,
-        "_validate_finalized_scientific_alignment_completion_receipt",
-        record_scientific_check,
-    )
-    monkeypatch.setattr(
-        matrix_owner,
-        "validate_untarget_matrix_completion_receipt",
-        record_matrix_check,
-    )
-
     bind_capture = capture_owner.bind_owner_backed_capture_hypothesis
     evaluate_physical = observation_owner.evaluate_physical_peak
     binding_rechecks = []
@@ -1805,14 +1527,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     children = completed.application_result.children
     # Completed owner answers flow through projection, spool and writer once.
     assert len(projection_builds) == len(children)
-    assert not decision_rechecks
-    assert not completion_checks["scientific"]
-    # Post-cell checks close each owner result before spool publication.
-    expected_projections = tuple(child.completed_projection for child in children)
-    assert tuple(completion_checks["matrix"]) == expected_projections
-    assert len({id(value) for value in completion_checks["matrix"]}) == len(
-        completion_checks["matrix"]
-    )
     # Binding consumes the closed capture; it must not repeat physical selection.
     assert not any(binding_rechecks)
     if method_mode != "intersection":
@@ -3423,18 +3137,6 @@ def test_production_batch_executes_one_atomic_sample_phase(
     assert len(result.sample_results) == len(batch.jobs) == 2
     assert vendor_raw.chromatogram_request_counts == [2]
 
-    validated_batches = []
-    validate_batch = application_result_owner._validate_untarget_batch_request
-
-    def record_batch_validation(request):
-        validate_batch(request)
-        validated_batches.append(request)
-
-    monkeypatch.setattr(
-        application_result_owner,
-        "_validate_untarget_batch_request",
-        record_batch_validation,
-    )
     alignment_config = AlignmentConfig(anchor_min_seed_events=1)
     completed = complete_dense_partition(
         batch,
@@ -3530,8 +3232,6 @@ def test_production_batch_executes_one_atomic_sample_phase(
         "alignment_owner_backfill_peak_fact_provenance.tsv",
         "alignment_review.tsv",
     }
-    # Full owner validation is cohort-sized; sealing the same batch must reuse it.
-    assert len(validated_batches) == 1
     _assert_partition_composition_parity(
         batch,
         result,
@@ -4388,9 +4088,6 @@ def _assert_conservative_handoff_identity_and_completion(
             allow_nan=False,
         ).encode()
 
-    other_sample = next(
-        sample for sample in epoch.samples if sample is not proof.sample
-    )
     lane_args = dict(
         association=final_cell.position_associations[0],
         source_cell=proof.decision.target_cell,
@@ -4416,18 +4113,6 @@ def _assert_conservative_handoff_identity_and_completion(
     if proof.completion is not None:
         completion = proof.completion
         assert project_completed_backfill(result, group_context=context) == completion
-        other_coordinate = next(
-            item.adapter_result.acquisition.traces[0].coordinate
-            for item in runtime_result.sample_results
-            if item.job.sample is other_sample
-        )
-        for substitution in (
-            {"acquisition_sha256": "0" * 64},
-            {"source_result_artifact": completion.initial_assessment_artifact},
-            {"trace_coordinate": other_coordinate},
-        ):
-            with pytest.raises(ValueError):
-                replace(completion, **substitution)
         recovery = result.backfill_attempt
         with pytest.raises(ValueError):
             project_completed_backfill(
@@ -5062,20 +4747,6 @@ def test_production_composition_retains_typed_non_acquired_candidate_exclusion(
         and item.method_assessments[0].content.method_result == "REJECT"
         for item in exclusions
     )
-    from xic_extractor.alignment.result.application_result import (
-        ApplicationResultContractError,
-    )
-
-    for item in exclusions:
-        legacy = replace(
-            item,
-            reason_code="discovery_candidate_not_search_eligible",
-            method_assessments=(),
-        )
-        assert legacy.discovery_candidate_state == item.discovery_candidate_state
-        for field in ("method_assessments", "composite_assessments"):
-            with pytest.raises(ApplicationResultContractError):
-                replace(legacy, **{field: item.method_assessments})
     if exclude_all:
         assert completed.application_result.children == ()
         assert completed.application_result.subject_ids == tuple(

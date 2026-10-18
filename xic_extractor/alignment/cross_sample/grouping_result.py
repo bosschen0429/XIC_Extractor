@@ -37,22 +37,7 @@ class CrossSampleGroupingResult:
     basis_bytes: bytes = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        if type(self.processing_owners) is not ProcessingOwnerReferences:
-            raise CrossSampleGroupingContractError(
-                "grouping requires processing owners"
-            )
-        if type(self.partition_transition) is not CrossSamplePartitionTransition:
-            raise CrossSampleGroupingContractError(
-                "grouping requires an owned partition"
-            )
         partition = self.partition_transition
-        if partition.status != "assessable" or any(
-            group.processing_request_id != self.processing_request_id
-            for group in (*partition.predecessors, *partition.successors)
-        ):
-            raise CrossSampleGroupingContractError(
-                "grouping partition crossed its request"
-            )
         basis = canonical_identity_basis_bytes(
             {
                 "schema_version": "cross_sample_grouping_result",

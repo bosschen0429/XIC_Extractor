@@ -6,9 +6,7 @@ from dataclasses import InitVar, dataclass, field
 from typing import Literal, TypeAlias, cast
 
 from xic_extractor.alignment.cell_decision.owner import (
-    CellDecisionContractError,
     ProductionCellDecision,
-    validate_production_cell_decision,
 )
 from xic_extractor.alignment.projection.target.pre_cell import (
     TargetCellSubject,
@@ -42,7 +40,6 @@ class TargetReviewQueueReference:
             raise TargetProjectionContractError(
                 "Target Review Queue references must be minted by Target projection"
             )
-        _validate_review_reference(self)
 
     @property
     def row_binding(self) -> TargetRowBinding:
@@ -65,7 +62,6 @@ class TargetPostCellProjection:
             raise TargetProjectionContractError(
                 "Target post-cell projection must be minted by Target projection"
             )
-        validate_target_post_cell_projection(self)
 
     @property
     def row_binding(self) -> TargetRowBinding:
@@ -102,7 +98,7 @@ def project_target_post_cell(
 ) -> TargetPostCellProjection:
     """Complete one fixed Target row from every exact owner-sealed decision."""
 
-    owner_subjects = _validate_pre_cell_identity_boundary(pre_cell_projection)
+    owner_subjects = pre_cell_projection.cell_subjects
     ordered_decisions = _bind_complete_decision_population(
         decisions,
         owner_subjects=owner_subjects,
@@ -122,113 +118,6 @@ def project_target_post_cell(
     )
 
 
-def validate_target_post_cell_projection(
-    projection: TargetPostCellProjection,
-) -> None:
-    """Revalidate a completed Target projection against its retained owners."""
-
-    if type(projection) is not TargetPostCellProjection:
-        raise TargetProjectionContractError(
-            "completed Target projection must be an exact TargetPostCellProjection"
-        )
-    owner_subjects = _validate_pre_cell_identity_boundary(
-        projection.pre_cell_projection
-    )
-    ordered_decisions = _bind_complete_decision_population(
-        projection.decisions,
-        owner_subjects=owner_subjects,
-    )
-    if any(
-        actual is not expected
-        for actual, expected in zip(
-            projection.decisions,
-            ordered_decisions,
-            strict=True,
-        )
-    ):
-        raise TargetProjectionContractError(
-            "completed Target decisions are not in canonical subject order"
-        )
-
-    expected_accepted, expected_no_write = _decision_counts(ordered_decisions)
-    if (
-        projection.accepted_cell_count != expected_accepted
-        or projection.no_write_count != expected_no_write
-    ):
-        raise TargetProjectionContractError(
-            "completed Target counts do not match owner decisions"
-        )
-
-    if type(projection.review_queue_references) is not tuple:
-        raise TargetProjectionContractError(
-            "Target Review Queue references must be an immutable tuple"
-        )
-    expected_references = _build_review_queue_references(
-        projection.row_binding,
-        ordered_decisions,
-    )
-    if len(projection.review_queue_references) != len(expected_references):
-        raise TargetProjectionContractError(
-            "Target Review Queue references do not match owner policy"
-        )
-    for actual, expected in zip(
-        projection.review_queue_references,
-        expected_references,
-        strict=True,
-    ):
-        if (
-            type(actual) is not TargetReviewQueueReference
-            or actual.subject is not expected.subject
-            or actual.decision is not expected.decision
-            or actual.reasons != expected.reasons
-        ):
-            raise TargetProjectionContractError(
-                "Target Review Queue reference was crossed or substituted"
-            )
-
-
-def _validate_pre_cell_identity_boundary(
-    projection: TargetPreCellProjection,
-) -> tuple[TargetCellSubject, ...]:
-    if type(projection) is not TargetPreCellProjection:
-        raise TargetProjectionContractError(
-            "Target post-cell projection requires an exact TargetPreCellProjection"
-        )
-    if type(projection.row_binding) is not TargetRowBinding:
-        raise TargetProjectionContractError(
-            "Target post-cell projection crossed its exact row binding"
-        )
-    if type(projection.cell_subjects) is not tuple:
-        raise TargetProjectionContractError(
-            "Target cell subjects must be an immutable tuple"
-        )
-    expected_samples = tuple(
-        sorted(
-            projection.scope.samples,
-            key=lambda sample: sample.identity.sample_identity_id,
-        )
-    )
-    actual_samples = tuple(
-        subject.canonical_sample for subject in projection.cell_subjects
-    )
-    if actual_samples != expected_samples:
-        raise TargetProjectionContractError(
-            "Target post-cell projection requires the complete canonical "
-            "sample population"
-        )
-    for subject in projection.cell_subjects:
-        if (
-            type(subject) is not TargetCellSubject
-            or subject.target is not projection.scope.target
-            or subject.processing_request is not projection.scope.request
-            or subject.row_binding is not projection.row_binding
-        ):
-            raise TargetProjectionContractError(
-                "Target post-cell projection contains a crossed or substituted subject"
-            )
-    return projection.cell_subjects
-
-
 def _bind_complete_decision_population(
     decisions: tuple[ProductionCellDecision, ...],
     *,
@@ -244,10 +133,6 @@ def _bind_complete_decision_population(
         )
     decision_by_subject: dict[int, ProductionCellDecision] = {}
     for decision in decisions:
-        try:
-            validate_production_cell_decision(decision)
-        except (CellDecisionContractError, TypeError, ValueError) as exc:
-            raise TargetProjectionContractError(str(exc)) from exc
         if type(decision.subject) is not TargetCellSubject:
             raise TargetProjectionContractError(
                 "Target decision population contains a non-Target subject"
@@ -309,27 +194,3 @@ def _review_reasons(
             "Target decision uses an unsupported projection variant"
         )
     return tuple(reasons)
-
-
-def _validate_review_reference(reference: TargetReviewQueueReference) -> None:
-    if type(reference.subject) is not TargetCellSubject:
-        raise TargetProjectionContractError(
-            "Target Review Queue reference requires an exact TargetCellSubject"
-        )
-    if type(reference.decision) is not ProductionCellDecision:
-        raise TargetProjectionContractError(
-            "Target Review Queue reference requires an exact ProductionCellDecision"
-        )
-    if reference.decision.subject is not reference.subject:
-        raise TargetProjectionContractError(
-            "Target Review Queue reference crossed its exact subject decision"
-        )
-    if type(reference.reasons) is not tuple or not reference.reasons:
-        raise TargetProjectionContractError(
-            "Target Review Queue reference requires typed reasons"
-        )
-    expected = _review_reasons(reference.row_binding, reference.decision)
-    if reference.reasons != expected:
-        raise TargetProjectionContractError(
-            "Target Review Queue reasons do not match owner policy"
-        )

@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 
 from tests.raw_header_fakes import install_fake_raw_headers
-from xic_extractor.alignment.completion import CaptureWorkflowArguments
 from xic_extractor.alignment.result.application_result import (
     FinalizedTargetApplicationResult,
 )
@@ -1347,7 +1346,7 @@ def _retained_completion_boundary(monkeypatch):
         history=SimpleNamespace(attempt=attempt),
     )
     monkeypatch.setattr(
-        production_workflow, "validate_completion_inputs", lambda *_: object()
+        production_workflow, "resolve_workflow_processing_owners", lambda *_: object()
     )
 
     def run():
@@ -1480,12 +1479,7 @@ def test_acquired_target_inputs_complete_without_runtime(tmp_path, monkeypatch):
     # the frozen Trace's ndarray payload is deeply immutable.
     for item in adapter.capture_inputs:
         item.trace.intensity.fill(0.0)
-    for value_type in (
-        type(request),
-        type(adapter),
-        CaptureWorkflowArguments,
-        capture_owner.SampleLocalCapture,
-    ):
+    for value_type in (capture_owner.SampleLocalCapture,):
         monkeypatch.setattr(
             value_type,
             "__post_init__",

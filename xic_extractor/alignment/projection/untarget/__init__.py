@@ -14,7 +14,6 @@ from xic_extractor.alignment.projection.untarget.matrix import (
     UntargetRowDestination,
     UntargetRowRoute,
     project_untarget_matrix,
-    validate_untarget_matrix_projection,
 )
 
 __all__ = (
@@ -29,5 +28,4 @@ __all__ = (
     "UntargetRowKey",
     "UntargetRowRoute",
     "project_untarget_matrix",
-    "validate_untarget_matrix_projection",
 )

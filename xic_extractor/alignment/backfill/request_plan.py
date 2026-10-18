@@ -16,7 +16,6 @@ from xic_extractor.alignment.backfill.runtime_projection import (
     BackfillRuntimeFeatureProjection,
     BackfillRuntimeFeatures,
     mint_backfill_runtime_feature,
-    validate_backfill_runtime_feature,
 )
 from xic_extractor.alignment.backfill.scope import (
     backfill_request_sample_stems,
@@ -65,19 +64,6 @@ class BackfillSampleRequestProjection:
     features: tuple[BackfillRuntimeFeature, ...]
     logical_request_count: int
 
-    def __post_init__(self) -> None:
-        _required_text(self.sample_stem, "sample_stem")
-        if not isinstance(self.features, tuple):
-            raise TypeError("sample request projection features must be a tuple")
-        if (
-            isinstance(self.logical_request_count, bool)
-            or not isinstance(self.logical_request_count, int)
-            or self.logical_request_count < 1
-        ):
-            raise ValueError(
-                "sample request projection count must be a positive integer"
-            )
-
 
 @dataclass(frozen=True, slots=True)
 class BackfillSampleRuntimeProjection:
@@ -91,67 +77,6 @@ class BackfillSampleRuntimeProjection:
     validation_request_offset: int
     canonical_sample: ResolvedCanonicalSampleIdentity | None = None
 
-    def __post_init__(self) -> None:
-        sample_stem = _required_text(self.sample_stem, "sample_stem")
-        if not isinstance(self.features, tuple) or not self.features:
-            raise ValueError(
-                "runtime sample projection features must be a non-empty tuple"
-            )
-        if any(
-            not isinstance(feature, BackfillRuntimeFeatureProjection)
-            for feature in self.features
-        ):
-            raise TypeError(
-                "runtime sample projection features must be compact owner projections"
-            )
-        if (
-            isinstance(self.logical_request_count, bool)
-            or not isinstance(self.logical_request_count, int)
-            or self.logical_request_count < 1
-        ):
-            raise ValueError(
-                "runtime sample projection count must be a positive integer"
-            )
-        if (
-            isinstance(self.logical_request_offset, bool)
-            or not isinstance(self.logical_request_offset, int)
-            or self.logical_request_offset < 0
-        ):
-            raise ValueError(
-                "runtime sample projection offset must be a non-negative integer"
-            )
-        if (
-            isinstance(self.validation_request_offset, bool)
-            or not isinstance(self.validation_request_offset, int)
-            or self.validation_request_offset < 0
-        ):
-            raise ValueError(
-                "runtime sample validation offset must be a non-negative integer"
-            )
-        if self.canonical_sample is not None:
-            if not isinstance(
-                self.canonical_sample,
-                ResolvedCanonicalSampleIdentity,
-            ):
-                raise TypeError("canonical_sample must be owner-resolved")
-            if self.canonical_sample.lookup_token != sample_stem:
-                raise ValueError("runtime projection crossed canonical sample identity")
-        expected = _typed_id(
-            _RUNTIME_SAMPLE_PROJECTION_PREFIX,
-            _runtime_sample_projection_basis(
-                sample_stem=sample_stem,
-                features=self.features,
-                logical_request_count=self.logical_request_count,
-                logical_request_offset=self.logical_request_offset,
-                validation_request_offset=self.validation_request_offset,
-                canonical_sample=self.canonical_sample,
-            ),
-        )
-        if self.runtime_projection_id != expected:
-            raise ValueError(
-                "runtime_projection_id mismatches sample-bound Backfill semantics"
-            )
-
 
 @dataclass(frozen=True, slots=True)
 class BackfillRequestEquivalenceContext:
@@ -163,34 +88,11 @@ class BackfillRequestEquivalenceContext:
     result_semantics: str = BACKFILL_TRACE_RESULT_SEMANTICS
 
     def __post_init__(self) -> None:
-        if not isinstance(self.acquisition_sources, Mapping):
-            raise TypeError("acquisition_sources must be a mapping")
-        acquisition_sources = dict(self.acquisition_sources)
-        for sample_stem, source in acquisition_sources.items():
-            _required_text(sample_stem, "sample_stem")
-            if not isinstance(source, AcquisitionSourceIdentity):
-                raise TypeError(
-                    "acquisition_sources must contain owner-minted identities"
-                )
         object.__setattr__(
             self,
             "acquisition_sources",
-            MappingProxyType(acquisition_sources),
+            MappingProxyType(dict(self.acquisition_sources)),
         )
-        if self.backend not in BACKFILL_XIC_BACKENDS:
-            raise ValueError("unsupported owner Backfill XIC backend")
-        if self.window_strategy not in BACKFILL_WINDOW_STRATEGIES:
-            raise ValueError("unsupported owner Backfill window strategy")
-        if (
-            isinstance(self.superwindow_span_factor, bool)
-            or not isinstance(self.superwindow_span_factor, int)
-            or self.superwindow_span_factor < 1
-        ):
-            raise ValueError("superwindow_span_factor must be a positive integer")
-        if self.validation_mode not in BACKFILL_VALIDATION_MODES:
-            raise ValueError("unsupported owner Backfill validation mode")
-        if self.result_semantics != BACKFILL_TRACE_RESULT_SEMANTICS:
-            raise ValueError("unsupported owner Backfill result semantics")
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,35 +107,6 @@ class BackfillRequestIdentity:
     validation_mode: BackfillValidationMode
     result_semantics: str
 
-    def __post_init__(self) -> None:
-        sample_stem = _required_text(self.sample_stem, "sample_stem")
-        if not isinstance(self.acquisition_source, AcquisitionSourceIdentity):
-            raise TypeError("acquisition_source must be an owner-minted identity")
-        if not isinstance(self.request, XICRequest):
-            raise TypeError("request must be an XICRequest")
-        _validate_request_coordinates(self.request)
-        context = BackfillRequestEquivalenceContext(
-            acquisition_sources={sample_stem: self.acquisition_source},
-            backend=self.backend,
-            window_strategy=self.window_strategy,
-            superwindow_span_factor=self.superwindow_span_factor,
-            validation_mode=self.validation_mode,
-            result_semantics=self.result_semantics,
-        )
-        expected = _typed_id(
-            _REQUEST_IDENTITY_PREFIX,
-            _request_identity_basis(
-                sample_stem=sample_stem,
-                acquisition_source=self.acquisition_source,
-                request=self.request,
-                context=context,
-            ),
-        )
-        if self.request_identity_id != expected:
-            raise ValueError(
-                "request_identity_id mismatches complete owner request semantics"
-            )
-
 
 @dataclass(frozen=True, slots=True)
 class BackfillLogicalRequestMember:
@@ -242,63 +115,11 @@ class BackfillLogicalRequestMember:
     group_hypothesis_id: str
     item: BackfillRequestItem
 
-    def __post_init__(self) -> None:
-        if (
-            isinstance(self.logical_index, bool)
-            or not isinstance(self.logical_index, int)
-            or self.logical_index < 0
-        ):
-            raise ValueError("logical_index must be a non-negative integer")
-        group_hypothesis_id = _required_text(
-            self.group_hypothesis_id,
-            "group_hypothesis_id",
-        )
-        if not isinstance(self.item, BackfillRequestItem):
-            raise TypeError("item must be an BackfillRequestItem")
-        if group_hypothesis_id != _required_text(
-            getattr(self.item.feature, "group_hypothesis_id", None),
-            "feature.group_hypothesis_id",
-        ):
-            raise ValueError("group_hypothesis_id mismatches the owner feature")
-        expected = _typed_id(
-            _LOGICAL_REQUEST_PREFIX,
-            {
-                "schema": "owner_backfill_logical_request",
-                "logical_index": self.logical_index,
-                "group_hypothesis_id": group_hypothesis_id,
-                "sample_stem": self.item.sample_stem,
-                "request": _request_basis(self.item.request),
-                "preferred_rt": self.item.preferred_rt,
-            },
-        )
-        if self.logical_request_id != expected:
-            raise ValueError(
-                "logical_request_id mismatches the hypothesis-bound request"
-            )
-
 
 @dataclass(frozen=True, slots=True)
 class BackfillRequestEquivalenceClass:
     identity: BackfillRequestIdentity
     members: tuple[BackfillLogicalRequestMember, ...]
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.identity, BackfillRequestIdentity):
-            raise TypeError("identity must be an BackfillRequestIdentity")
-        if not isinstance(self.members, tuple) or not self.members:
-            raise ValueError("equivalence class members must be a non-empty tuple")
-        indices = tuple(member.logical_index for member in self.members)
-        if indices != tuple(sorted(indices)) or len(set(indices)) != len(indices):
-            raise ValueError(
-                "equivalence class logical indices must be unique and ordered"
-            )
-        for member in self.members:
-            if not isinstance(member, BackfillLogicalRequestMember):
-                raise TypeError("equivalence class contains an invalid member")
-            if member.item.sample_stem != self.identity.sample_stem:
-                raise ValueError("equivalence class crosses canonical samples")
-            if member.item.request != self.identity.request:
-                raise ValueError("equivalence class crosses XIC request semantics")
 
     @property
     def class_id(self) -> str:
@@ -319,101 +140,15 @@ class BackfillRequestPlan:
     equivalence_unavailable_reason: str = "owner_equivalence_context_not_supplied"
 
     def __post_init__(self) -> None:
-        if not isinstance(self.requests_by_sample, Mapping):
-            raise TypeError("requests_by_sample must be a mapping")
-        requests_by_sample = dict(self.requests_by_sample)
-        for sample_stem, requests in requests_by_sample.items():
-            _required_text(sample_stem, "sample_stem")
-            if not isinstance(requests, tuple) or any(
-                not isinstance(item, BackfillRequestItem) for item in requests
-            ):
-                raise TypeError("requests_by_sample must contain request tuples")
-            if any(item.sample_stem != sample_stem for item in requests):
-                raise ValueError("request plan sample bucket is inconsistent")
         object.__setattr__(
-            self,
-            "requests_by_sample",
-            MappingProxyType(requests_by_sample),
+            self, "requests_by_sample", MappingProxyType(dict(self.requests_by_sample))
         )
-        if self.equivalence_classes_by_sample is None:
-            if self.equivalence_context is not None:
-                raise ValueError(
-                    "equivalence context requires a complete request partition"
-                )
-            _required_text(
-                self.equivalence_unavailable_reason,
-                "equivalence_unavailable_reason",
+        if self.equivalence_classes_by_sample is not None:
+            object.__setattr__(
+                self,
+                "equivalence_classes_by_sample",
+                MappingProxyType(dict(self.equivalence_classes_by_sample)),
             )
-            return
-        if not isinstance(
-            self.equivalence_context,
-            BackfillRequestEquivalenceContext,
-        ):
-            raise ValueError(
-                "available equivalence partition requires its owner context"
-            )
-        if not isinstance(self.equivalence_classes_by_sample, Mapping):
-            raise TypeError("equivalence_classes_by_sample must be a mapping")
-        equivalence_classes_by_sample = dict(self.equivalence_classes_by_sample)
-        for classes in equivalence_classes_by_sample.values():
-            if not isinstance(classes, tuple) or any(
-                not isinstance(item, BackfillRequestEquivalenceClass)
-                for item in classes
-            ):
-                raise TypeError(
-                    "equivalence_classes_by_sample must contain class tuples"
-                )
-        object.__setattr__(
-            self,
-            "equivalence_classes_by_sample",
-            MappingProxyType(equivalence_classes_by_sample),
-        )
-        if self.equivalence_unavailable_reason:
-            raise ValueError(
-                "available equivalence partition cannot have an unavailable reason"
-            )
-        if set(self.equivalence_classes_by_sample) != set(self.requests_by_sample):
-            raise ValueError("equivalence partition must cover every request sample")
-        for sample_stem, requests in self.requests_by_sample.items():
-            classes = self.equivalence_classes_by_sample[sample_stem]
-            first_indices = tuple(item.members[0].logical_index for item in classes)
-            if first_indices != tuple(sorted(first_indices)):
-                raise ValueError(
-                    "equivalence classes must follow first logical occurrence"
-                )
-            members = tuple(member for item in classes for member in item.members)
-            indices = tuple(member.logical_index for member in members)
-            if tuple(sorted(indices)) != tuple(range(len(requests))):
-                raise ValueError(
-                    "equivalence partition must cover each logical request once"
-                )
-            for member in members:
-                if member.item != requests[member.logical_index]:
-                    raise ValueError(
-                        "equivalence member is not bound to its logical request"
-                    )
-            for equivalence_class in classes:
-                source = self.equivalence_context.acquisition_sources.get(sample_stem)
-                if not isinstance(source, AcquisitionSourceIdentity):
-                    raise ValueError(
-                        "equivalence context does not bind every request sample"
-                    )
-                expected_identity = mint_backfill_request_identity(
-                    sample_stem=sample_stem,
-                    acquisition_source=source,
-                    request=equivalence_class.identity.request,
-                    backend=self.equivalence_context.backend,
-                    window_strategy=self.equivalence_context.window_strategy,
-                    superwindow_span_factor=(
-                        self.equivalence_context.superwindow_span_factor
-                    ),
-                    validation_mode=self.equivalence_context.validation_mode,
-                    result_semantics=self.equivalence_context.result_semantics,
-                )
-                if equivalence_class.identity != expected_identity:
-                    raise ValueError(
-                        "equivalence class identity mismatches its owner context"
-                    )
 
     @property
     def exact_equivalence_available(self) -> bool:
@@ -613,42 +348,22 @@ def build_backfill_sample_runtime_projections(
                 compact_feature = mint_backfill_runtime_feature(feature)
                 runtime_features_by_object_id[feature_object_id] = compact_feature
             compact_features.append(compact_feature)
-        runtime_projections[sample_stem] = (
-            _mint_backfill_sample_runtime_projection(
-                sample_stem=sample_stem,
-                features=tuple(compact_features),
-                logical_request_count=projection.logical_request_count,
-                logical_request_offset=logical_request_offset,
-                validation_request_offset=(
-                    total_logical_request_count + logical_request_offset
-                ),
-                canonical_sample=(
-                    canonical_samples_by_stem.get(sample_stem)
-                    if canonical_samples_by_stem is not None
-                    else None
-                ),
-            )
+        runtime_projections[sample_stem] = _mint_backfill_sample_runtime_projection(
+            sample_stem=sample_stem,
+            features=tuple(compact_features),
+            logical_request_count=projection.logical_request_count,
+            logical_request_offset=logical_request_offset,
+            validation_request_offset=(
+                total_logical_request_count + logical_request_offset
+            ),
+            canonical_sample=(
+                canonical_samples_by_stem.get(sample_stem)
+                if canonical_samples_by_stem is not None
+                else None
+            ),
         )
         logical_request_offset += projection.logical_request_count
     return MappingProxyType(runtime_projections)
-
-
-def validate_backfill_sample_runtime_projection(
-    projection: BackfillSampleRuntimeProjection,
-) -> None:
-    validate_backfill_sample_runtime_projection_shape(projection)
-    for feature in projection.features:
-        validate_backfill_runtime_feature(feature)
-
-
-def validate_backfill_sample_runtime_projection_shape(
-    projection: BackfillSampleRuntimeProjection,
-) -> None:
-    """Validate the parent-safe envelope without rehashing every feature."""
-
-    if not isinstance(projection, BackfillSampleRuntimeProjection):
-        raise TypeError("Backfill sample runtime projection must be owner-minted")
-    projection.__post_init__()
 
 
 def _mint_backfill_sample_runtime_projection(

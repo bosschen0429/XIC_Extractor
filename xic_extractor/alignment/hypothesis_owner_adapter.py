@@ -28,7 +28,6 @@ from xic_extractor.peak_detection.peak_hypothesis_identity import (
     HYPOTHESIS_METHOD_MS1_OBSERVATION,
     compose_cid_nl_peak_hypothesis,
     compose_ms1_observation_peak_hypothesis,
-    validate_ms1_observation_peak_hypothesis_binding,
 )
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
@@ -322,7 +321,8 @@ def owner_from_cid_nl_assessment_support(
         else None,
         selected_integration=integration,
         peak_shape=prepare_local_peak_shape(
-            observation.content.rt, observation.content.intensity,
+            observation.content.rt,
+            observation.content.intensity,
             apex_rt_min=integration.rt_apex_min,
         ),
         cross_sample_member_subject=group_member_subject_from_peak_hypothesis(
@@ -351,15 +351,6 @@ def owner_from_cid_nl_assessment_observation(
         raise HypothesisOwnerAdapterError(
             "observation-only hypothesis is outside the assessment universe"
         )
-    try:
-        validate_ms1_observation_peak_hypothesis_binding(
-            hypothesis,
-            processing_owners=processing_owners,
-            sample=sample,
-            peak_observation=observation,
-        )
-    except ValueError as exc:
-        raise HypothesisOwnerAdapterError(str(exc)) from exc
     sample_id = sample.identity.sample_identity_id
     if (
         assessment.content.canonical_sample_identity_id != sample_id
@@ -402,7 +393,8 @@ def owner_from_cid_nl_assessment_observation(
         assignment_reason="cid_nl_method_assessment_observation_only",
         selected_integration=integration,
         peak_shape=prepare_local_peak_shape(
-            observation.content.rt, observation.content.intensity,
+            observation.content.rt,
+            observation.content.intensity,
             apex_rt_min=integration.rt_apex_min,
         ),
         cross_sample_member_subject=group_member_subject_from_peak_hypothesis(
@@ -430,15 +422,6 @@ def owner_from_ms1_observation_hypothesis(
             "MS1 owner projection requires one physical observation"
         )
     observation = hypothesis.peak_observation_refs[0]
-    try:
-        validate_ms1_observation_peak_hypothesis_binding(
-            hypothesis,
-            processing_owners=processing_owners,
-            sample=sample,
-            peak_observation=observation,
-        )
-    except ValueError as exc:
-        raise HypothesisOwnerAdapterError(str(exc)) from exc
     integration = observation.content.integration
     return SampleLocalMS1Owner(
         owner_id=hypothesis.hypothesis_id,
@@ -456,7 +439,8 @@ def owner_from_ms1_observation_hypothesis(
         assignment_reason="ms1_observation_hypothesis",
         selected_integration=integration,
         peak_shape=prepare_local_peak_shape(
-            observation.content.rt, observation.content.intensity,
+            observation.content.rt,
+            observation.content.intensity,
             apex_rt_min=integration.rt_apex_min,
         ),
         cross_sample_member_subject=group_member_subject_from_peak_hypothesis(
@@ -464,21 +448,6 @@ def owner_from_ms1_observation_hypothesis(
             sample=sample,
             hypothesis=hypothesis,
         ),
-    )
-
-
-def validate_cid_nl_assessment_hypothesis_closure(
-    *,
-    sample: ResolvedCanonicalSampleIdentity,
-    assessment: CidNlMethodAssessmentRef,
-    hypothesis: PeakHypothesis,
-) -> None:
-    """Reject crossed assessment, individual-relation, or hypothesis joins."""
-
-    _assessment_hypothesis_components(
-        sample=sample,
-        assessment=assessment,
-        hypothesis=hypothesis,
     )
 
 
@@ -581,5 +550,4 @@ __all__ = [
     "owner_from_cid_nl_assessment_observation",
     "owner_from_cid_nl_assessment_support",
     "owner_from_ms1_observation_hypothesis",
-    "validate_cid_nl_assessment_hypothesis_closure",
 ]

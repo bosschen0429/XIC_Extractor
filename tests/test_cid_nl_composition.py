@@ -262,10 +262,6 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
 
 
 def _assert_unsupported_exclusion_closes_exact_coverage(completed):
-    from xic_extractor.alignment.result.application_result import (
-        ApplicationResultContractError,
-        UntargetBatchApplicationResultRequest,
-    )
 
     result = completed.application_result
     assert not result.children
@@ -276,34 +272,6 @@ def _assert_unsupported_exclusion_closes_exact_coverage(completed):
         and len(item.composite_assessments) == 2
         for item in exclusions
     )
-    with pytest.raises(ApplicationResultContractError, match="unsupported assessments"):
-        replace(exclusions[0], composite_assessments=())
-    with pytest.raises(ApplicationResultContractError, match="non-feature-backed"):
-        replace(
-            exclusions[0],
-            reason_code="discovery_candidate_not_search_eligible",
-            composite_assessments=(),
-        )
-    with pytest.raises(ApplicationResultContractError, match="input sample coverage"):
-        UntargetBatchApplicationResultRequest(
-            scope=result.scope,
-            processing_request=result.processing_request,
-            processing_attempt=result.processing_attempt,
-            children=(),
-            excluded_candidates=(
-                replace(
-                    exclusions[0],
-                    # Preserve the candidate's own proof; remove peer coverage.
-                    composite_assessments=tuple(
-                        assessment
-                        for assessment in exclusions[0].composite_assessments
-                        if assessment.content.canonical_sample_identity_id
-                        == exclusions[0].canonical_sample_identity_id
-                    ),
-                ),
-                *exclusions[1:],
-            ),
-        )
 
 
 def _assert_composite_labels_cannot_grant_membership(batch, runtime):

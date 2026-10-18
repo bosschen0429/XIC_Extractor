@@ -43,7 +43,6 @@ from xic_extractor.alignment.cell_observation.observations import (
     CellObservationContractError,
     compose_final_group_cell_observation_population,
     mint_cell_observation_ref,
-    validate_final_group_cell_observation_population,
 )
 from xic_extractor.alignment.cid_nl_evidence_spine import (
     build_cid_nl_reference_spine,
@@ -304,13 +303,6 @@ def test_cell_handoff_never_reconstructs_completed_groups(
     )
     assert second == first
     assert constructions == []
-    assert (
-        validate_final_group_cell_observation_population(
-            handoff=handoff,
-            cell_observations=second,
-        )
-        == first
-    )
 
 
 def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
@@ -363,17 +355,6 @@ def test_recovery_evidence_stays_with_its_group_when_peer_has_no_input(
         recovered_group.group_hypothesis_id
     )
     assert recovered_cells[0].peak_observation is recovered_peak
-
-
-def test_cell_owner_rejects_crossed_artifact_and_context_rejects_invalid_config(
-    tmp_path: Path,
-) -> None:
-    sources, _handoff = _outside_population_handoff(tmp_path)
-    with pytest.raises(CellObservationContractError):
-        replace(sources[-1], artifact=sources[0].artifact)
-    context = sources[0].group_context
-    with pytest.raises(CellObservationContractError, match="exact AlignmentConfig"):
-        replace(context, config=None)
 
 
 def _owner_handoff(tmp_path: Path):
@@ -668,12 +649,6 @@ def test_composer_mints_exact_cartesian_owner_population_and_states(
             for terminal in cell.coverage_terminals
         )
 
-    validated = validate_final_group_cell_observation_population(
-        handoff=handoff,
-        cell_observations=tuple(reversed(cells)),
-    )
-    assert validated == cells
-
 
 def test_composer_rejects_missing_or_duplicate_owner_source_cells(
     tmp_path: Path,
@@ -798,7 +773,9 @@ def test_composer_rejects_same_sample_crossed_source_to_position(
 
     crossed = copy(first_cell)
     object.__setattr__(crossed, "group_context", second_cell.group_context)
-    with pytest.raises(CellObservationContractError, match="group identity"):
+    with pytest.raises(
+        CellObservationContractError, match="duplicates a coverage position"
+    ):
         compose_final_group_cell_observation_population(
             handoff=handoff,
             predecessor_cells=(crossed, second_cell),

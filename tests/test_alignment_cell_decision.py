@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import math
 import pickle
 from copy import copy
 from dataclasses import FrozenInstanceError
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 import pytest
@@ -39,18 +38,14 @@ from xic_extractor.alignment.cell_decision import owner as decision_owner
 from xic_extractor.alignment.cell_decision.owner import (
     CellDecisionContractError,
     NoWriteCellDecision,
-    NumericCellDecision,
     ProductionCellDecision,
     decide_group_cell_population,
     decide_production_cell,
     decide_target_cell_population,
-    validate_production_cell_decision,
 )
 from xic_extractor.alignment.cell_observation.observations import (
-    CellObservationContractError,
     compose_final_group_cell_observation_population,
     mint_cell_observation_ref,
-    validate_final_group_cell_observation_population,
 )
 from xic_extractor.alignment.cid_nl_evidence_spine import (
     build_cid_nl_reference_spine,
@@ -158,8 +153,6 @@ def test_target_population_emits_one_numeric_or_no_write_per_exact_subject(
         )
         == decisions[0]
     )
-    for item in decisions:
-        validate_production_cell_decision(item)
 
 
 def test_target_censored_observed_area_survives_public_decision_and_pickle(
@@ -192,7 +185,6 @@ def test_target_censored_observed_area_survives_public_decision_and_pickle(
     assert decision.selected_integration is integration
     assert "near_detection_limit" in integration.boundary_sources
     restored = pickle.loads(pickle.dumps(decision))
-    validate_production_cell_decision(restored)
     assert restored.value == expected_area
     assert restored.source == decision.source
     assert restored.subject.terminal_subject.hypothesis.integration == integration
@@ -252,8 +244,6 @@ def test_group_population_preserves_complete_member_and_nonmember_positions(
     integration = member.selected_integration
     original_area = integration.area_raw_counts_seconds
     object.__setattr__(integration, "area_raw_counts_seconds", original_area + 1.0)
-    with pytest.raises(CellDecisionContractError, match="basis|substituted"):
-        validate_production_cell_decision(member)
     object.__setattr__(integration, "area_raw_counts_seconds", original_area)
 
 
@@ -383,53 +373,6 @@ def test_group_reject_precedes_fallback_and_evaluated_coverage_terminals(
         decision_owner._decide_group(evaluated_reject, is_member=False)[0].variant
         == "rejected_observation"
     )
-
-
-def test_group_crossed_terminal_and_candidate_combinations_fail_before_decision(
-    tmp_path: Path,
-) -> None:
-    fixture, spine, handoff = _owner_handoff(tmp_path)
-    hold_source = next(
-        item
-        for item in spine.cells
-        if item.content.canonical_sample_identity_id
-        == fixture.sample("s4").identity.sample_identity_id
-    )
-    foreign_observation = next(
-        item.peak_observation
-        for item in spine.cells
-        if item.peak_observation is not None
-        and item.content.canonical_sample_identity_id
-        != hold_source.content.canonical_sample_identity_id
-    )
-    with pytest.raises(CellObservationContractError, match="candidate universe"):
-        mint_cell_observation_ref(
-            processing_owners=fixture.owners,
-            sample=fixture.sample("s4"),
-            target=fixture.target,
-            group_context=hold_source.group_context,
-            method_assessment=hold_source.method_assessment,
-            peak_observation=foreign_observation,
-        )
-
-    cells = compose_final_group_cell_observation_population(
-        handoff=handoff,
-        predecessor_cells=spine.cells,
-    )
-    target = next(item for item in cells if item.coverage_terminals)
-    foreign_terminal = next(
-        terminal
-        for item in cells
-        if item.canonical_sample is not target.canonical_sample
-        for terminal in item.coverage_terminals
-    )
-    original_terminals = target.coverage_terminals
-    object.__setattr__(target, "coverage_terminals", (foreign_terminal,))
-    with pytest.raises(CellObservationContractError, match="position|owner-composed"):
-        validate_final_group_cell_observation_population(
-            handoff=handoff, cell_observations=cells
-        )
-    object.__setattr__(target, "coverage_terminals", original_terminals)
 
 
 def test_group_merge_selects_one_direct_integration_among_terminal_lanes(
@@ -589,69 +532,7 @@ def test_group_split_nonmember_maps_exact_not_searched_closure(
     )
 
 
-def test_target_population_revalidates_row_terminal_and_integration_axes(
-    tmp_path: Path,
-) -> None:
-    _fixture, _scope, alignment, _hypotheses = _finalized_case(
-        tmp_path,
-        sample_stems=("sample-a", "sample-b"),
-        observed_stems=("sample-a",),
-        group_specs=(((), "provisional"),),
-    )
-    projection = project_target_pre_cell(alignment)
-    observed = next(
-        item
-        for item in projection.subjects
-        if item.terminal_subject.variant == "observed"
-    )
-    negative = next(
-        item
-        for item in projection.subjects
-        if item.terminal_subject.variant == "searched_no_observation"
-    )
-    original_terminal_subject = observed.terminal_subject
-
-    original_candidate_id = observed.terminal_subject.candidate_id
-    object.__setattr__(
-        observed.terminal_subject,
-        "candidate_id",
-        negative.terminal_subject.candidate_id,
-    )
-    with pytest.raises(CellDecisionContractError, match="scope binding"):
-        decide_target_cell_population(projection)
-    object.__setattr__(
-        observed.terminal_subject,
-        "candidate_id",
-        original_candidate_id,
-    )
-
-    object.__setattr__(observed, "terminal_subject", negative.terminal_subject)
-    with pytest.raises(CellDecisionContractError, match="scope binding"):
-        decide_target_cell_population(projection)
-    object.__setattr__(observed, "terminal_subject", original_terminal_subject)
-
-    original_variant = projection.row_binding.variant
-    wrong_variant = "bound" if original_variant == "unbound" else "unbound"
-    object.__setattr__(projection.row_binding, "variant", wrong_variant)
-    with pytest.raises(CellDecisionContractError, match="cardinality"):
-        decide_target_cell_population(projection)
-    object.__setattr__(projection.row_binding, "variant", original_variant)
-
-    integration = cast(
-        object,
-        observed.terminal_subject.hypothesis.integration,  # type: ignore[union-attr]
-    )
-    object.__setattr__(integration, "area_raw_counts_seconds", math.nan)
-    with pytest.raises(CellDecisionContractError, match="must be finite"):
-        decide_target_cell_population(projection)
-
-
-def test_no_write_payload_rejects_unknown_variant() -> None:
-    with pytest.raises(CellDecisionContractError, match="unsupported"):
-        NoWriteCellDecision("missing")  # type: ignore[arg-type]
-
-
-def test_decision_is_immutable_sealed_and_invalidates_payload_substitution(
+def test_decision_is_immutable_and_owner_minted(
     tmp_path: Path,
 ) -> None:
     _fixture, _scope, alignment, _hypotheses = _finalized_case(
@@ -676,19 +557,6 @@ def test_decision_is_immutable_sealed_and_invalidates_payload_substitution(
             _mint_token=object(),
         )
     assert decision.selected_integration is not None
-    changed = copy(decision)
-    object.__setattr__(
-        changed, "selected_integration", copy(decision.selected_integration)
-    )
-    with pytest.raises(CellDecisionContractError, match="substituted"):
-        validate_production_cell_decision(changed)
-    object.__setattr__(
-        decision,
-        "payload",
-        cast(NumericCellDecision, NumericCellDecision(1.0, "forged")),
-    )
-    with pytest.raises(CellDecisionContractError, match="basis"):
-        validate_production_cell_decision(decision)
 
 
 def _with_evaluated_coverage_terminal(

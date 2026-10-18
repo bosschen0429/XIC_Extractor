@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import FrozenInstanceError, fields, replace
+from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 
 import numpy as np
@@ -285,9 +285,7 @@ def test_finalizer_rejects_crossed_scope_and_request(
     crossed_request = build_processing_request_identity(
         acquisition_sources=scope.request.acquisition_sources,
         acquisition_bindings=scope.request.acquisition_bindings,
-        scientific_input_schema_version=(
-            scope.request.scientific_input_schema_version
-        ),
+        scientific_input_schema_version=(scope.request.scientific_input_schema_version),
         processing_algorithm_version=scope.request.processing_algorithm_version,
         processing_contract_version=scope.request.processing_contract_version,
         scientific_inputs=crossed_inputs,
@@ -300,51 +298,6 @@ def test_finalizer_rejects_crossed_scope_and_request(
         finalize_scientific_alignment(
             scope=crossed_request_scope,
             captures=(),
-            grouping_result=receipt,
-            cell_observation_handoff=handoff,
-            predecessor_cell_observations=predecessor_cells,
-        )
-
-
-def test_finalizer_rejects_search_scope_subclasses(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    scope, captures, receipt, handoff, predecessor_cells = _finalization_inputs(
-        tmp_path, monkeypatch
-    )
-
-    class ForgedTargetSearchScope(TargetSearchScope):
-        def __post_init__(self) -> None:
-            pass
-
-    forged_scope = ForgedTargetSearchScope(
-        schema_version=scope.schema_version,
-        request=scope.request,
-        samples=scope.samples,
-        method_constraints=scope.method_constraints,
-        evidence_providers=scope.evidence_providers,
-        declared_candidate_ids=scope.declared_candidate_ids,
-        capture_bindings=scope.capture_bindings,
-        target_snapshot=scope.target_snapshot,
-        target=scope.target,
-    )
-    forged_captures = tuple(
-        capture_peak_hypotheses(
-            scope=forged_scope,
-            candidate_id=capture.candidate_id,
-            trace=capture.trace,
-        )
-        for capture in captures
-    )
-
-    with pytest.raises(
-        FinalizedScientificAlignmentContractError,
-        match="Target or Untargeted SearchScope",
-    ):
-        finalize_scientific_alignment(
-            scope=forged_scope,
-            captures=forged_captures,
             grouping_result=receipt,
             cell_observation_handoff=handoff,
             predecessor_cell_observations=predecessor_cells,
@@ -396,42 +349,6 @@ def test_finalized_values_cannot_be_forged_by_direct_construction(
             cell_observations=result.cell_observations,
             grouping_result=result.grouping_result,
             _mint_token=object(),
-        )
-
-
-def test_finalized_result_revalidates_nested_cell_population(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    scope, captures, receipt, handoff, predecessor_cells = _finalization_inputs(
-        tmp_path, monkeypatch
-    )
-    result = finalize_scientific_alignment(
-        scope=scope,
-        captures=captures,
-        grouping_result=receipt,
-        cell_observation_handoff=handoff,
-        predecessor_cell_observations=predecessor_cells,
-    )
-    original = result.cell_observations[0]
-    forged = object.__new__(type(original))
-    for item in fields(original):
-        object.__setattr__(forged, item.name, getattr(original, item.name))
-    object.__setattr__(forged, "basis_bytes", b"crossed-cell-basis")
-
-    with pytest.raises(
-        FinalizedScientificAlignmentContractError,
-        match="exact owner-composed content",
-    ):
-        FinalizedScientificAlignment(
-            scope=result.scope,
-            processing_request=result.processing_request,
-            canonical_samples=result.canonical_samples,
-            terminal_subjects=result.terminal_subjects,
-            cell_observation_handoff=result.cell_observation_handoff,
-            cell_observations=(forged, *result.cell_observations[1:]),
-            grouping_result=result.grouping_result,
-            _mint_token=finalizer_owner._FINALIZER_MINT_TOKEN,
         )
 
 

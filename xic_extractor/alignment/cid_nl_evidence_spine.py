@@ -27,10 +27,8 @@ from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
     compose_cid_nl_chromatographic_support_ref,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    CidNlMethodAssessmentContractError,
     CidNlMethodAssessmentRef,
     supported_cid_nl_peak_ids,
-    validate_cid_nl_method_assessment_binding,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
@@ -64,17 +62,6 @@ class TargetedCellObservationReferenceProjection:
     validation_status: str = VALIDATION_STATUS
     product_authority: str = PRODUCT_AUTHORITY
 
-    def __post_init__(self) -> None:
-        _validate_projection(self.cell, self.group)
-        if self.validation_status != VALIDATION_STATUS:
-            raise CidNlEvidenceSpineError(
-                f"validation_status must be {VALIDATION_STATUS!r}"
-            )
-        if self.product_authority != PRODUCT_AUTHORITY:
-            raise CidNlEvidenceSpineError(
-                "diagnostic reference projection cannot grant product authority"
-            )
-
 
 @dataclass(frozen=True, slots=True)
 class UntargetedCellObservationReferenceProjection:
@@ -84,17 +71,6 @@ class UntargetedCellObservationReferenceProjection:
     group: CrossSamplePeakGroupHypothesis
     validation_status: str = VALIDATION_STATUS
     product_authority: str = PRODUCT_AUTHORITY
-
-    def __post_init__(self) -> None:
-        _validate_projection(self.cell, self.group)
-        if self.validation_status != VALIDATION_STATUS:
-            raise CidNlEvidenceSpineError(
-                f"validation_status must be {VALIDATION_STATUS!r}"
-            )
-        if self.product_authority != PRODUCT_AUTHORITY:
-            raise CidNlEvidenceSpineError(
-                "diagnostic reference projection cannot grant product authority"
-            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,123 +86,6 @@ class CidNlReferenceSpine:
         UntargetedCellObservationReferenceProjection,
         ...,
     ]
-
-    def __post_init__(self) -> None:
-        if (
-            not isinstance(self.assessments, tuple)
-            or not self.assessments
-            or any(
-                not isinstance(item, CidNlMethodAssessmentRef)
-                for item in self.assessments
-            )
-        ):
-            raise CidNlEvidenceSpineError(
-                "reference spine requires owner-backed assessments"
-            )
-        assessment_sample_ids = tuple(
-            assessment.content.canonical_sample_identity_id
-            for assessment in self.assessments
-        )
-        if assessment_sample_ids != tuple(sorted(set(assessment_sample_ids))):
-            raise CidNlEvidenceSpineError(
-                "reference spine assessments must be unique and canonical-sorted"
-            )
-        if not isinstance(self.support_hypotheses, tuple) or any(
-            not isinstance(item, PeakHypothesis) or not item.is_owner_backed
-            for item in self.support_hypotheses
-        ):
-            raise CidNlEvidenceSpineError(
-                "reference spine support hypotheses must be owner-backed"
-            )
-        hypothesis_ids = tuple(
-            hypothesis.hypothesis_id for hypothesis in self.support_hypotheses
-        )
-        if len(set(hypothesis_ids)) != len(hypothesis_ids):
-            raise CidNlEvidenceSpineError(
-                "reference spine support hypotheses must be unique"
-            )
-        if self.group is None:
-            if (
-                self.support_hypotheses
-                or self.cells
-                or self.targeted_projections
-                or self.untargeted_projections
-            ):
-                raise CidNlEvidenceSpineError(
-                    "group-less assessments cannot invent hypotheses, cells, or "
-                    "projections"
-                )
-            return
-        if not isinstance(self.group, CrossSamplePeakGroupHypothesis):
-            raise CidNlEvidenceSpineError(
-                "reference spine group must be an existing provisional group"
-            )
-        if set(self.group.owner_ids) != set(hypothesis_ids):
-            raise CidNlEvidenceSpineError(
-                "reference spine group and support hypotheses do not close"
-            )
-        canonical_group_owner_ids = tuple(sorted(self.group.owner_ids))
-        if (
-            not isinstance(self.cells, tuple)
-            or any(not isinstance(item, CellObservationRef) for item in self.cells)
-            or len(self.cells) != len(self.assessments)
-        ):
-            raise CidNlEvidenceSpineError(
-                "reference spine requires one cell per assessment"
-            )
-        for assessment, cell in zip(self.assessments, self.cells, strict=True):
-            if cell.method_assessment is not assessment:
-                raise CidNlEvidenceSpineError(
-                    "reference spine cell remints or crosses its assessment"
-                )
-            if cell.content.group_hypothesis_id != self.group.group_hypothesis_id:
-                raise CidNlEvidenceSpineError(
-                    "reference spine cell belongs to a different group"
-                )
-            if cell.content.group_owner_ids != canonical_group_owner_ids:
-                raise CidNlEvidenceSpineError(
-                    "reference spine cell group membership was substituted"
-                )
-            if cell.group_context.group is not self.group:
-                raise CidNlEvidenceSpineError(
-                    "reference spine cell does not reuse the exact group context"
-                )
-        cell_hypotheses = tuple(
-            cell.peak_hypothesis
-            for cell in self.cells
-            if cell.peak_hypothesis is not None
-        )
-        if len(cell_hypotheses) != len(self.support_hypotheses) or any(
-            cell_hypothesis is not support_hypothesis
-            for cell_hypothesis, support_hypothesis in zip(
-                cell_hypotheses,
-                self.support_hypotheses,
-                strict=True,
-            )
-        ):
-            raise CidNlEvidenceSpineError(
-                "reference spine cells and support hypotheses do not close"
-            )
-        if len(self.cells) != len(self.targeted_projections) or len(self.cells) != len(
-            self.untargeted_projections
-        ):
-            raise CidNlEvidenceSpineError(
-                "dual reference projections must cover each cell exactly once"
-            )
-        for cell, targeted, untargeted in zip(
-            self.cells,
-            self.targeted_projections,
-            self.untargeted_projections,
-            strict=True,
-        ):
-            if targeted.cell is not cell or untargeted.cell is not cell:
-                raise CidNlEvidenceSpineError(
-                    "dual projections must fan out the same exact cell reference"
-                )
-            if targeted.group is not self.group or untargeted.group is not self.group:
-                raise CidNlEvidenceSpineError(
-                    "dual projections must fan out the same exact group reference"
-                )
 
 
 def build_cid_nl_reference_spine(
@@ -265,11 +124,8 @@ def build_cid_nl_reference_spine(
         )
     if config is not None and not isinstance(config, AlignmentConfig):
         raise CidNlEvidenceSpineError("config must be AlignmentConfig")
-    ordered = _validate_sample_assessments(
-        processing_owners=processing_owners,
-        target=target,
-        method_subject=subject,
-        sample_assessments=sample_assessments,
+    ordered = tuple(
+        sorted(sample_assessments, key=lambda item: item[0].identity.sample_identity_id)
     )
     support_inputs: list[
         tuple[
@@ -427,81 +283,6 @@ def build_cid_nl_reference_spine(
         targeted_projections=targeted,
         untargeted_projections=untargeted,
     )
-
-
-def _validate_sample_assessments(
-    *,
-    processing_owners: ProcessingOwnerReferences,
-    target: ResolvedTargetDefinition | None,
-    method_subject: CidNlMethodSubject,
-    sample_assessments: object,
-) -> tuple[tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef], ...]:
-    if not isinstance(sample_assessments, tuple):
-        raise CidNlEvidenceSpineError("sample_assessments must be a tuple")
-    typed: list[tuple[ResolvedCanonicalSampleIdentity, CidNlMethodAssessmentRef]] = []
-    sample_ids: set[str] = set()
-    for item in sample_assessments:
-        if (
-            not isinstance(item, tuple)
-            or len(item) != 2
-            or not isinstance(item[0], ResolvedCanonicalSampleIdentity)
-            or not isinstance(item[1], CidNlMethodAssessmentRef)
-        ):
-            raise CidNlEvidenceSpineError(
-                "sample_assessments must contain exact sample/assessment pairs"
-            )
-        sample, assessment = item
-        sample_id = sample.identity.sample_identity_id
-        if sample_id in sample_ids:
-            raise CidNlEvidenceSpineError(
-                "sample_assessments contains a duplicate sample cell"
-            )
-        sample_ids.add(sample_id)
-        try:
-            if target is None:
-                validate_cid_nl_method_assessment_binding(
-                    assessment,
-                    processing_owners=processing_owners,
-                    sample=sample,
-                    method_subject=method_subject,
-                )
-            else:
-                validate_cid_nl_method_assessment_binding(
-                    assessment,
-                    processing_owners=processing_owners,
-                    sample=sample,
-                    target=target,
-                )
-        except CidNlMethodAssessmentContractError as exc:
-            raise CidNlEvidenceSpineError(str(exc)) from exc
-        typed.append((sample, assessment))
-    return tuple(sorted(typed, key=lambda item: item[0].identity.sample_identity_id))
-
-
-def _validate_projection(
-    cell: object,
-    group: object,
-) -> None:
-    if not isinstance(cell, CellObservationRef):
-        raise CidNlEvidenceSpineError(
-            "reference projection requires an owner-backed CellObservation"
-        )
-    if not isinstance(group, CrossSamplePeakGroupHypothesis):
-        raise CidNlEvidenceSpineError(
-            "reference projection requires an existing provisional group"
-        )
-    if cell.group_context.group is not group:
-        raise CidNlEvidenceSpineError(
-            "reference projection must reuse the cell's exact group context"
-        )
-    if cell.content.group_hypothesis_id != group.group_hypothesis_id:
-        raise CidNlEvidenceSpineError(
-            "reference projection cell belongs to a different group"
-        )
-    if cell.content.group_owner_ids != tuple(sorted(group.owner_ids)):
-        raise CidNlEvidenceSpineError(
-            "reference projection cell group membership was substituted"
-        )
 
 
 __all__ = [

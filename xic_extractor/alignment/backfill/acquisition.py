@@ -24,7 +24,6 @@ from xic_extractor.alignment.backfill.result import (
     BackfillSource,
     _ExtractionRequestItem,
     _WindowedRequestItem,
-    validate_backfill_peak_fact_observation,  # noqa: F401
 )
 from xic_extractor.alignment.config import BackfillXicBackend
 from xic_extractor.alignment.scan_retention_times import (
@@ -48,7 +47,6 @@ _RequestItem = BackfillRequestItem
 # recycled id() can never alias a different trace.
 _ChunkPreparedSignalCache: TypeAlias = dict[int, tuple[XICTrace, PreparedSignalResult]]
 _RequestGroupKey = tuple[str, int | float, int | float]
-
 
 
 def _request_equivalence_context(
@@ -165,6 +163,7 @@ def _iter_extracted_request_traces(
         extraction_items,
         chunk_size,
     )
+
 
 def _iter_exact_request_traces(
     source: BackfillSource,
@@ -451,6 +450,7 @@ def _source_retention_time_for_scan(
         scan_number,
         retention_time_by_scan=retention_time_by_scan,
     )
+
 
 def _extract_many(
     source: BackfillSource,

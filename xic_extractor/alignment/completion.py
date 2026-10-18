@@ -56,10 +56,6 @@ from xic_extractor.peak_detection.capture import (
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
-from xic_extractor.peak_detection.cid_nl_method_subject import (
-    CidNlMethodSubjectContractError,
-    cid_nl_method_subject_batch_from_request,
-)
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.observations import (
     PeakObservationRef,
@@ -67,7 +63,6 @@ from xic_extractor.peak_detection.observations import (
 from xic_extractor.peak_detection.search_scope import (
     TargetSearchScope,
     UntargetedSearchScope,
-    validate_scope_owner_binding,
 )
 from xic_extractor.peak_detection.traces import Trace
 from xic_extractor.processing_identity import (
@@ -110,36 +105,12 @@ class CaptureWorkflowArguments:
     owner_observation: PeakObservationRef | None = None
     owner_hypothesis: PeakHypothesis | None = None
 
-    def __post_init__(self) -> None:
-        if type(self.candidate_id) is not str or not self.candidate_id.strip():
-            raise AlignmentWorkflowContractError(
-                "capture candidate_id must be exact text"
-            )
-        if type(self.trace) is not Trace:
-            raise AlignmentWorkflowContractError("capture trace must be exact")
-        if (self.owner_observation is None) != (self.owner_hypothesis is None):
-            raise AlignmentWorkflowContractError(
-                "capture owner observation and hypothesis must propagate together"
-            )
-        if self.owner_observation is not None and (
-            type(self.owner_observation) is not PeakObservationRef
-            or type(self.owner_hypothesis) is not PeakHypothesis
-        ):
-            raise AlignmentWorkflowContractError(
-                "capture owner binding must use exact immutable values"
-            )
-
 
 @dataclass(frozen=True, slots=True)
 class TargetWorkflowRequest:
     scope: TargetSearchScope
     processing_request: ProcessingRequestIdentity
     processing_attempt: ProcessingAttemptIdentity
-
-    def __post_init__(self) -> None:
-        if type(self.scope) is not TargetSearchScope:
-            raise AlignmentWorkflowContractError("Target request scope must be exact")
-        _validate_processing_fields(self)
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,20 +121,6 @@ class UntargetWorkflowCompositionRequest:
     processing_request: ProcessingRequestIdentity
     processing_attempt: ProcessingAttemptIdentity
     excluded_candidates: tuple[UntargetedCandidateExclusion, ...] = ()
-
-    def __post_init__(self) -> None:
-        if type(self.scope) is not UntargetedSearchScope:
-            raise AlignmentWorkflowContractError("Untarget request scope must be exact")
-        _validate_processing_fields(self)
-
-
-def _validate_processing_fields(
-    request: (TargetWorkflowRequest | UntargetWorkflowCompositionRequest),
-) -> None:
-    if type(request.processing_request) is not ProcessingRequestIdentity:
-        raise AlignmentWorkflowContractError("processing request must be exact")
-    if type(request.processing_attempt) is not ProcessingAttemptIdentity:
-        raise AlignmentWorkflowContractError("processing attempt must be exact")
 
 
 WorkflowRequest: TypeAlias = TargetWorkflowRequest | UntargetWorkflowCompositionRequest
@@ -176,21 +133,6 @@ class _WorkflowAdapterFields:
     rt_frame: SampleRtFrame
     backfill_cell_observations: tuple[CellObservationRef, ...] = ()
 
-    def __post_init__(self) -> None:
-        if type(self.capture_inputs) is not tuple or any(
-            type(item) is not CaptureWorkflowArguments for item in self.capture_inputs
-        ):
-            raise AlignmentWorkflowContractError(
-                "adapter capture inputs must be an immutable typed tuple"
-            )
-        if type(self.predecessor_cell_observations) is not tuple or any(
-            type(item) is not CellObservationRef
-            for item in self.predecessor_cell_observations
-        ):
-            raise AlignmentWorkflowContractError(
-                "predecessor cells must be exact immutable references"
-            )
-
 
 @dataclass(frozen=True)
 class TargetWorkflowAdapter(_WorkflowAdapterFields):
@@ -202,29 +144,8 @@ class TargetWorkflowAdapter(_WorkflowAdapterFields):
     targeted_backfill_decisions: tuple[ConservativeBackfillCellDecision, ...] = ()
 
     def __post_init__(
-        self,
-        completed_capture_handoff: tuple[SampleLocalCapture, ...] | None = None,
+        self, completed_capture_handoff: tuple[SampleLocalCapture, ...] | None = None
     ) -> None:
-        super(TargetWorkflowAdapter, self).__post_init__()
-        if type(self.sample_assessments) is not tuple or any(
-            type(item) is not tuple
-            or len(item) != 2
-            or type(item[0]) is not ResolvedCanonicalSampleIdentity
-            or type(item[1]) is not CidNlMethodAssessmentRef
-            for item in self.sample_assessments
-        ):
-            raise AlignmentWorkflowContractError(
-                "Target assessments must be exact sample/assessment pairs"
-            )
-        if type(self.alignment_config) is not AlignmentConfig:
-            raise AlignmentWorkflowContractError("alignment_config must be exact")
-        if (
-            completed_capture_handoff is not None
-            and type(completed_capture_handoff) is not tuple
-        ):
-            raise AlignmentWorkflowContractError(
-                "completed captures require an immutable owner population"
-            )
         object.__setattr__(self, "_completed_captures", completed_capture_handoff)
 
     @property
@@ -240,56 +161,6 @@ class UntargetWorkflowAdapter(_WorkflowAdapterFields):
     completed_grouping: CrossSampleGroupingResult | None = None
     closed_cell_coverage: BackfillEvaluationCoverageBatch | None = None
 
-    def __post_init__(self) -> None:
-        super(UntargetWorkflowAdapter, self).__post_init__()
-        if type(self.sample_assessments) is not tuple or any(
-            type(item) is not tuple
-            or len(item) != 2
-            or type(item[0]) is not ResolvedCanonicalSampleIdentity
-            or type(item[1]) is not CidNlMethodAssessmentRef
-            for item in self.sample_assessments
-        ):
-            raise AlignmentWorkflowContractError(
-                "Untarget assessments must be exact sample/assessment pairs"
-            )
-        if self.closed_cell_coverage is None:
-            raise AlignmentWorkflowContractError(
-                "Untarget adapter requires closed cell coverage"
-            )
-        if self.closed_cell_coverage is not None:
-            coverage = self.closed_cell_coverage
-            if type(coverage) is not BackfillEvaluationCoverageBatch:
-                raise AlignmentWorkflowContractError(
-                    "closed cell coverage must be exact"
-                )
-            if self.completed_grouping is None:
-                raise AlignmentWorkflowContractError(
-                    "closed cell coverage requires completed CrossSample"
-                )
-            if coverage.terminals or any(
-                position.planning_state != "not_planned"
-                for position in coverage.epoch.positions
-            ):
-                raise AlignmentWorkflowContractError(
-                    "closed cell coverage must contain only unplanned positions"
-                )
-        if self.completed_grouping is not None:
-            if type(self.completed_grouping) is not CrossSampleGroupingResult:
-                raise AlignmentWorkflowContractError(
-                    "completed CrossSample requires its exact owner context"
-                )
-            if self.closed_cell_coverage is None:
-                raise AlignmentWorkflowContractError(
-                    "completed CrossSample requires closed cell coverage"
-                )
-            if (
-                self.completed_grouping.processing_owners
-                is not self.closed_cell_coverage.epoch.processing_owners
-            ):
-                raise AlignmentWorkflowContractError(
-                    "completed CrossSample crossed its closed cell coverage owners"
-                )
-
 
 WorkflowAdapter: TypeAlias = TargetWorkflowAdapter | UntargetWorkflowAdapter
 
@@ -300,16 +171,6 @@ class UntargetWorkflowBundle:
 
     request: UntargetWorkflowCompositionRequest
     adapter: UntargetWorkflowAdapter
-
-    def __post_init__(self) -> None:
-        if type(self.request) is not UntargetWorkflowCompositionRequest:
-            raise AlignmentWorkflowContractError(
-                "Untarget workflow bundle requires an exact request"
-            )
-        if type(self.adapter) is not UntargetWorkflowAdapter:
-            raise AlignmentWorkflowContractError(
-                "Untarget workflow bundle requires an exact adapter"
-            )
 
 
 def compose_untarget_subject(
@@ -323,7 +184,7 @@ def compose_untarget_subject(
         raise AlignmentWorkflowContractError(
             "Subject composition requires exact inputs"
         )
-    owners = validate_completion_inputs(request, adapter)
+    owners = resolve_workflow_processing_owners(request, adapter)
     subjects = set(_untarget_scope_memberships(request.scope).values())
     provider_subjects = {
         provider.method_subject_id for provider in request.scope.evidence_providers
@@ -486,187 +347,6 @@ def _capture_workflow_input(
     )
 
 
-def _validate_untarget_batch_composition_request(
-    request: UntargetWorkflowCompositionRequest,
-) -> None:
-    if type(request) is not UntargetWorkflowCompositionRequest:
-        raise AlignmentWorkflowContractError(
-            "Untarget batch composition requires an exact completed request"
-        )
-    if request.processing_request is not request.scope.request:
-        raise AlignmentWorkflowContractError(
-            "Untarget batch request crossed its processing request"
-        )
-    _validate_untarget_batch_fields(request)
-
-
-def _validate_untarget_batch_fields(
-    request: UntargetWorkflowCompositionRequest,
-) -> None:
-    candidate_ids = tuple(request.scope.declared_candidate_ids)
-    if not candidate_ids or len(candidate_ids) != len(set(candidate_ids)):
-        raise AlignmentWorkflowContractError(
-            "Untarget batch request requires one complete candidate universe"
-        )
-    subject_ids = tuple(
-        provider.method_subject_id for provider in request.scope.evidence_providers
-    )
-    if not subject_ids or len(subject_ids) != len(set(subject_ids)):
-        raise AlignmentWorkflowContractError(
-            "Untarget batch request requires unique method subjects"
-        )
-    try:
-        subject_batch = cid_nl_method_subject_batch_from_request(
-            request.processing_request
-        )
-    except CidNlMethodSubjectContractError as exc:
-        raise AlignmentWorkflowContractError(
-            "Untarget batch request is not pinned to a CID-NL subject batch"
-        ) from exc
-    if candidate_ids != tuple(
-        candidate_id
-        for candidate_id, _method_subject_id in subject_batch.candidate_memberships
-    ) or subject_ids != tuple(
-        subject.method_subject_id for subject in subject_batch.subjects
-    ):
-        raise AlignmentWorkflowContractError(
-            "Untarget batch request scope is not the complete request universe"
-        )
-    exclusions = request.excluded_candidates
-    if type(exclusions) is not tuple or any(
-        type(item) is not UntargetedCandidateExclusion for item in exclusions
-    ):
-        raise AlignmentWorkflowContractError(
-            "Untarget batch exclusions must be an immutable typed tuple"
-        )
-    excluded_ids = tuple(item.candidate_id for item in exclusions)
-    capture_ids = tuple(request.scope.capture_bindings)
-    capture_candidate_ids = tuple(item.candidate_id for item in capture_ids)
-    if sorted((*capture_candidate_ids, *excluded_ids)) != sorted(candidate_ids):
-        raise AlignmentWorkflowContractError(
-            "Untarget batch capture/exclusion universe is incomplete"
-        )
-
-
-def _validate_untarget_batch_bundles(
-    request: UntargetWorkflowCompositionRequest,
-    bundles: object,
-) -> None:
-    if type(bundles) is not tuple:
-        raise AlignmentWorkflowContractError(
-            "Untarget batch provider must return an immutable typed tuple"
-        )
-    parent_candidates = tuple(request.scope.declared_candidate_ids)
-    subject_batch = cid_nl_method_subject_batch_from_request(request.processing_request)
-    parent_memberships = dict(subject_batch.candidate_memberships)
-    parent_samples = tuple(request.scope.samples)
-    parent_sample_ids = tuple(
-        sample.identity.sample_identity_id for sample in parent_samples
-    )
-    if len(parent_sample_ids) != len(set(parent_sample_ids)):
-        raise AlignmentWorkflowContractError(
-            "Untarget batch request sample universe contains duplicates"
-        )
-    parent_subject_ids = {
-        provider.method_subject_id for provider in request.scope.evidence_providers
-    }
-    child_candidates: list[str] = []
-    child_subject_ids: list[str] = []
-    for bundle in bundles:
-        if type(bundle) is not UntargetWorkflowBundle:
-            raise AlignmentWorkflowContractError(
-                "Untarget batch provider returned a non-owner bundle"
-            )
-        child_request = bundle.request
-        child_scope = child_request.scope
-        if (
-            type(child_request) is not type(request)
-            or child_request.processing_request is not request.processing_request
-            or child_request.processing_attempt is not request.processing_attempt
-        ):
-            raise AlignmentWorkflowContractError(
-                "Untarget batch child crossed request, attempt, or runtime"
-            )
-        child_sample_ids = tuple(
-            sample.identity.sample_identity_id for sample in child_scope.samples
-        )
-        if child_sample_ids != parent_sample_ids or any(
-            sample is not parent
-            for sample, parent in zip(
-                child_scope.samples,
-                parent_samples,
-                strict=True,
-            )
-        ):
-            raise AlignmentWorkflowContractError(
-                "Untarget batch children must share the exact sample universe"
-            )
-        memberships = _untarget_scope_memberships(child_scope)
-        candidate_ids = tuple(child_scope.declared_candidate_ids)
-        if set(memberships) != set(candidate_ids):
-            raise AlignmentWorkflowContractError(
-                "Untarget batch child has incomplete subject membership"
-            )
-        if any(
-            parent_memberships.get(candidate_id) != method_subject_id
-            for candidate_id, method_subject_id in memberships.items()
-        ):
-            raise AlignmentWorkflowContractError(
-                "Untarget batch child subject membership crossed its parent"
-            )
-        child_provider_ids = tuple(
-            provider.method_subject_id for provider in child_scope.evidence_providers
-        )
-        if (
-            not child_provider_ids
-            or len(child_provider_ids) != len(set(child_provider_ids))
-            or set(memberships.values()) != set(child_provider_ids)
-        ):
-            raise AlignmentWorkflowContractError(
-                "Untarget batch child must close one exact subject workset"
-            )
-        if any(
-            subject_id not in parent_subject_ids for subject_id in child_provider_ids
-        ):
-            raise AlignmentWorkflowContractError(
-                "Untarget batch child references an undeclared method subject"
-            )
-        if any(subject_id in child_subject_ids for subject_id in child_provider_ids):
-            raise AlignmentWorkflowContractError(
-                "Untarget batch provider duplicated a method subject"
-            )
-        child_candidates.extend(candidate_ids)
-        child_subject_ids.extend(child_provider_ids)
-        validate_completion_inputs(child_request, bundle.adapter)
-
-    excluded_ids = (
-        tuple(item.candidate_id for item in request.excluded_candidates)
-        if type(request) is UntargetWorkflowCompositionRequest
-        else ()
-    )
-    if len(child_candidates) != len(set(child_candidates)) or sorted(
-        (*child_candidates, *excluded_ids)
-    ) != sorted(parent_candidates):
-        raise AlignmentWorkflowContractError(
-            "Untarget batch child/exclusion candidate union is not exactly once"
-        )
-    excluded_id_set = set(excluded_ids)
-    included_subject_ids = {
-        method_subject_id
-        for candidate_id, method_subject_id in parent_memberships.items()
-        if candidate_id not in excluded_id_set
-    }
-    expected_child_subject_ids = tuple(
-        provider.method_subject_id
-        for provider in request.scope.evidence_providers
-        if provider.method_subject_id in included_subject_ids
-    )
-    if tuple(child_subject_ids) != expected_child_subject_ids:
-        raise AlignmentWorkflowContractError(
-            "Untarget batch children are not in canonical subject order"
-        )
-
-
 def _untarget_scope_memberships(scope: UntargetedSearchScope) -> dict[str, str]:
     memberships: dict[str, str] = {}
     for binding in scope.capture_bindings:
@@ -684,122 +364,20 @@ def _untarget_scope_memberships(scope: UntargetedSearchScope) -> dict[str, str]:
     return memberships
 
 
-def validate_completion_inputs(
-    request: WorkflowRequest,
-    adapter: WorkflowAdapter,
+def resolve_workflow_processing_owners(
+    request: WorkflowRequest, adapter: WorkflowAdapter
 ) -> ProcessingOwnerReferences:
-    """Bind constructed workflow inputs without replaying upstream validation."""
-    variants = {
-        TargetWorkflowRequest: (TargetWorkflowAdapter, TargetSearchScope),
-        UntargetWorkflowCompositionRequest: (
-            UntargetWorkflowAdapter,
-            UntargetedSearchScope,
-        ),
-    }
-    expected = variants.get(type(request))
-    if (
-        expected is None
-        or type(adapter) is not expected[0]
-        or type(request.scope) is not expected[1]
-    ):
-        raise AlignmentWorkflowContractError(
-            "workflow request, adapter, and scope variants must match exactly"
-        )
-    if (
-        request.processing_request is not request.scope.request
-        or request.processing_attempt.processing_request_id
-        != request.processing_request.processing_request_id
-    ):
-        raise AlignmentWorkflowContractError(
-            "workflow request crossed processing request or attempt"
-        )
-    if (
-        type(adapter) is UntargetWorkflowAdapter
-        and adapter.closed_cell_coverage is not None
-    ):
-        owners = adapter.closed_cell_coverage.epoch.processing_owners
-    elif type(request) is TargetWorkflowRequest:
-        owners = compose_processing_owner_references(
-            request=request.processing_request,
-            attempt=request.processing_attempt,
-            sample_snapshot=request.scope.samples[0].snapshot,
-            sample_resolutions=request.scope.samples,
-            target_snapshot=request.scope.target_snapshot,
-        )
-    else:
-        raise AlignmentWorkflowContractError(
-            "workflow adapter lost its processing owners"
-        )
-    if (
-        type(owners) is not ProcessingOwnerReferences
-        or owners.request is not request.processing_request
-        or owners.attempt is not request.processing_attempt
-    ):
-        raise AlignmentWorkflowContractError(
-            "workflow population crossed exact processing owners"
-        )
-    if (
-        type(adapter) is UntargetWorkflowAdapter
-        and adapter.completed_grouping is not None
-        and adapter.completed_grouping.processing_owners is not owners
-    ):
-        raise AlignmentWorkflowContractError(
-            "completed CrossSample crossed the workflow processing owners"
-        )
-    for sample in request.scope.samples:
-        validate_scope_owner_binding(
-            request.scope,
-            processing_owners=owners,
-            sample=sample,
-        )
-    candidate_ids = tuple(item.candidate_id for item in adapter.capture_inputs)
-    declared_candidate_ids = request.scope.declared_candidate_ids
-    if candidate_ids != declared_candidate_ids or len(candidate_ids) != len(
-        set(candidate_ids)
-    ):
-        raise AlignmentWorkflowContractError(
-            "capture inputs must exactly preserve declared candidate order"
-        )
-    assessments = adapter.sample_assessments
-    assessment_samples = tuple(sample for sample, _ in assessments)
-    expected_samples = tuple(
-        sorted(request.scope.samples, key=lambda item: item.identity.sample_identity_id)
+    """Resolve the owners already established by the selected workflow."""
+    if isinstance(adapter, UntargetWorkflowAdapter):
+        assert adapter.closed_cell_coverage is not None
+        return adapter.closed_cell_coverage.epoch.processing_owners
+    return compose_processing_owner_references(
+        request=request.processing_request,
+        attempt=request.processing_attempt,
+        sample_snapshot=request.scope.samples[0].snapshot,
+        sample_resolutions=request.scope.samples,
+        target_snapshot=cast(TargetSearchScope, request.scope).target_snapshot,
     )
-    if assessment_samples:
-        ordered_ids = tuple(
-            sample.identity.sample_identity_id for sample in assessment_samples
-        )
-        expected_by_id = {
-            sample.identity.sample_identity_id: sample for sample in expected_samples
-        }
-        # Completed Untarget grouping already carries the cohort and coverage.
-        # Its assessments contain real searches, not placeholders for no input.
-        completed_grouping = (
-            type(adapter) is UntargetWorkflowAdapter
-            and adapter.completed_grouping is not None
-        )
-        if (
-            ordered_ids != tuple(sorted(ordered_ids))
-            or (
-                not completed_grouping
-                and tuple(dict.fromkeys(ordered_ids)) != tuple(expected_by_id)
-            )
-            or any(
-                sample is not expected_by_id.get(sample.identity.sample_identity_id)
-                for sample in assessment_samples
-            )
-        ):
-            raise AlignmentWorkflowContractError(
-                "method assessments do not close the exact scope samples"
-            )
-    elif (
-        type(request) is not TargetWorkflowRequest
-        or request.scope.target.definition.target.neutral_loss_da is not None
-    ):
-        raise AlignmentWorkflowContractError(
-            "only an MS1-only Target may use captured owner facts without assessments"
-        )
-    return owners
 
 
 def _finish_variant(
@@ -876,11 +454,11 @@ def complete_analysis(
 ) -> FinalizedTargetApplicationResult | FinalizedUntargetApplicationResult:
     """Complete acquired evidence without invoking runtime or persistence.
 
-    Execution may validate immutable inputs before runtime and forward those
-    exact processing owners here after success. Other callers validate here.
+    Execution may forward its processing owners after runtime success. Other
+    callers resolve the same owners from the admitted workflow inputs.
     """
     owners = (
-        validate_completion_inputs(request, adapter)
+        resolve_workflow_processing_owners(request, adapter)
         if processing_owners is None
         else processing_owners
     )
@@ -901,9 +479,7 @@ def complete_untarget_batch(
     bundles: tuple[UntargetWorkflowBundle, ...],
 ) -> FinalizedUntargetBatchApplicationResult:
     """Close the exact subject population without a runtime terminal wrapper."""
-    _validate_untarget_batch_composition_request(request)
     try:
-        _validate_untarget_batch_bundles(request, bundles)
         children: list[FinalizedUntargetApplicationResult] = []
         for bundle in bundles:
             child = complete_analysis(bundle.request, bundle.adapter)
@@ -947,5 +523,5 @@ __all__ = (
     "complete_analysis",
     "complete_untarget_batch",
     "compose_untarget_subject",
-    "validate_completion_inputs",
+    "resolve_workflow_processing_owners",
 )

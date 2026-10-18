@@ -12,7 +12,6 @@ from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
     canonical_identity_basis_bytes,
     typed_identity_digest,
-    validate_typed_identity_basis,
     validate_typed_identity_id,
 )
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
@@ -61,47 +60,6 @@ class CrossSampleGroupMemberSubject:
     subject_id: str
     physical_observation_ids: tuple[str, ...]
     basis_bytes: bytes
-
-    def __post_init__(self) -> None:
-        request_id = validate_typed_identity_id(
-            self.processing_request_id,
-            prefix=PROCESSING_REQUEST_ID_PREFIX,
-            field="processing_request_id",
-        )
-        sample_id = _required_text(
-            self.canonical_sample_identity_id,
-            field="canonical_sample_identity_id",
-        )
-        subject_id = _required_text(self.subject_id, field="subject_id")
-        if self.subject_kind != "peak_hypothesis":
-            raise CrossSampleContractError("subject_kind is not a closed variant")
-        if not subject_id.startswith("xic.peak-hypothesis:"):
-            raise CrossSampleContractError("member subject is not owner-backed")
-        physical_ids = tuple(self.physical_observation_ids)
-        if not physical_ids or tuple(sorted(set(physical_ids))) != physical_ids:
-            raise CrossSampleContractError(
-                "physical_observation_ids must be unique and canonical-sorted"
-            )
-        basis = canonical_identity_basis_bytes(
-            {
-                "schema_version": "group_member_subject",
-                "processing_request_id": request_id,
-                "canonical_sample_identity_id": sample_id,
-                "subject": {"kind": self.subject_kind, "id": subject_id},
-                "physical_observation_ids": list(physical_ids),
-            }
-        )
-        if self.basis_bytes != basis:
-            raise CrossSampleContractError("member subject basis bytes are not exact")
-        try:
-            validate_typed_identity_basis(
-                self.member_subject_id,
-                prefix=_GROUP_MEMBER_SUBJECT_PREFIX,
-                basis_bytes=basis,
-                field="member_subject_id",
-            )
-        except ValueError as exc:
-            raise CrossSampleContractError(str(exc)) from exc
 
 
 def _request_id(
@@ -237,46 +195,6 @@ class CrossSampleGroupIdentity:
     basis_bytes: bytes
     disposition: CrossSampleGroupDisposition
 
-    def __post_init__(self) -> None:
-        request_id = validate_typed_identity_id(
-            self.processing_request_id,
-            prefix=PROCESSING_REQUEST_ID_PREFIX,
-            field="processing_request_id",
-        )
-        members = _canonical_members(
-            self.member_subjects,
-            processing_request_id=request_id,
-        )
-        if members != self.member_subjects:
-            raise CrossSampleContractError("group members are not canonical-sorted")
-        if self.disposition not in {
-            "established",
-            "provisional",
-            "unresolved",
-            "rejected",
-        }:
-            raise CrossSampleContractError("group disposition is not closed")
-        if len(members) == 1 and self.disposition == "established":
-            raise CrossSampleContractError("singleton group cannot be established")
-        basis = canonical_identity_basis_bytes(
-            {
-                "schema_version": "cross_sample_group",
-                "processing_request_id": request_id,
-                "member_subject_ids": [item.member_subject_id for item in members],
-            }
-        )
-        if self.basis_bytes != basis:
-            raise CrossSampleContractError("group identity basis bytes are not exact")
-        try:
-            validate_typed_identity_basis(
-                self.group_hypothesis_id,
-                prefix=_CROSS_SAMPLE_GROUP_PREFIX,
-                basis_bytes=basis,
-                field="group_hypothesis_id",
-            )
-        except ValueError as exc:
-            raise CrossSampleContractError(str(exc)) from exc
-
 
 def mint_cross_sample_group_identity(
     *,
@@ -309,35 +227,6 @@ def mint_cross_sample_group_identity(
     )
 
 
-def validate_cross_sample_group_population(
-    groups: Sequence[CrossSampleGroupIdentity],
-) -> tuple[CrossSampleGroupIdentity, ...]:
-    canonical = tuple(groups)
-    if not canonical:
-        return canonical
-    if len({group.processing_request_id for group in canonical}) != 1:
-        raise CrossSampleContractError("population crossed processing request")
-    group_ids: set[str] = set()
-    members: set[str] = set()
-    physical: set[str] = set()
-    for group in canonical:
-        if group.group_hypothesis_id in group_ids:
-            raise CrossSampleContractError("population duplicates a group identity")
-        for member in group.member_subjects:
-            if member.member_subject_id in members:
-                raise CrossSampleContractError(
-                    "population duplicates a canonical member across groups"
-                )
-            if physical.intersection(member.physical_observation_ids):
-                raise CrossSampleContractError(
-                    "population duplicates a physical observation across groups"
-                )
-            members.add(member.member_subject_id)
-            physical.update(member.physical_observation_ids)
-        group_ids.add(group.group_hypothesis_id)
-    return canonical
-
-
 __all__ = (
     "CrossSampleContractError",
     "CrossSampleEdgeDisposition",
@@ -354,5 +243,4 @@ __all__ = (
     "_required_text",
     "group_member_subject_from_peak_hypothesis",
     "mint_cross_sample_group_identity",
-    "validate_cross_sample_group_population",
 )

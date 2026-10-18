@@ -190,9 +190,12 @@ def test_group_exists_below_threshold_but_cannot_trigger_recovery(
     assert facts.direct_support_count_s == 1
     assert facts.minimum_support_k == 2
     assert facts.may_attempt_backfill is False
-    assert plan_conservative_backfill_targets(
-        (spine.group,), sample_population=fixture.samples
-    ) == ()
+    assert (
+        plan_conservative_backfill_targets(
+            (spine.group,), sample_population=fixture.samples
+        )
+        == ()
+    )
     assert decision.disposition == "hold"
     assert decision.matched_candidate is None
     assert decision.reason_codes == ("direct_support_threshold_not_met",)
@@ -596,12 +599,6 @@ def test_recovery_evidence_cannot_create_first_group_or_become_support(
         candidate_universe=universe,
         peak_observation=universe.candidate_peaks[0],
     )
-
-    with pytest.raises(
-        ConservativeBackfillContractError,
-        match="cannot claim a direct-support source",
-    ):
-        replace(candidate, evidence_source="direct_support")
 
     assert facts.direct_support_count_s == 2
     assert candidate.peak_observation not in facts.support_trace_refs

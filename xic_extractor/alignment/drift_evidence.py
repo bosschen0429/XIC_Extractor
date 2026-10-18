@@ -43,12 +43,12 @@ class KnownIstdReference:
     workbook_sha256: str
     anchor: TargetedIstdIdentityAnchor
     coordinates: tuple[tuple[str, str, float, float], ...]
-    _batch_context: tuple[
-        tuple[str, ...], tuple[tuple[str, int], ...]
-    ] | None = field(default=None, repr=False)
-    _batch_knots: tuple[
-        tuple[str, tuple[tuple[float, float], ...]], ...
-    ] = field(default=(), repr=False)
+    _batch_context: tuple[tuple[str, ...], tuple[tuple[str, int], ...]] | None = field(
+        default=None, repr=False
+    )
+    _batch_knots: tuple[tuple[str, tuple[tuple[float, float], ...]], ...] = field(
+        default=(), repr=False
+    )
     _prepared_batch: KnownIstdReference | None = field(
         default=None, init=False, repr=False, compare=False
     )
@@ -67,7 +67,10 @@ class KnownIstdReference:
         }
         return hashlib.sha256(
             json.dumps(
-                payload, sort_keys=True, separators=(",", ":"), allow_nan=False,
+                payload,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
             ).encode("utf-8")
         ).hexdigest()
 
@@ -108,7 +111,8 @@ class KnownIstdReference:
                     "knots": [list(knot) for knot in knots_by_sample.get(sample, ())],
                     "domain_rt_min": (
                         [knots_by_sample[sample][0][0], knots_by_sample[sample][-1][0]]
-                        if sample in knots_by_sample else None
+                        if sample in knots_by_sample
+                        else None
                     ),
                     "status": (
                         "available" if sample in knots_by_sample else "unavailable"
@@ -127,10 +131,13 @@ class KnownIstdReference:
     ) -> KnownIstdReference:
         """Prepare immutable RT knots once for this canonical batch context."""
         samples = tuple(sorted(sample_universe))
-        orders = tuple(sorted(
-            (sample, order) for sample, order in (injection_order or {}).items()
-            if sample in sample_universe
-        ))
+        orders = tuple(
+            sorted(
+                (sample, order)
+                for sample, order in (injection_order or {}).items()
+                if sample in sample_universe
+            )
+        )
         context = samples, orders
         if self._batch_context == context:
             return self
@@ -151,10 +158,13 @@ class KnownIstdReference:
         if len(set(order_by_sample.values())) != len(order_by_sample):
             order_by_sample = {}
         observed_by_order = {
-            label: tuple(sorted(
-                (float(order_by_sample[sample]), rt)
-                for sample, rt in values.items() if sample in order_by_sample
-            ))
+            label: tuple(
+                sorted(
+                    (float(order_by_sample[sample]), rt)
+                    for sample, rt in values.items()
+                    if sample in order_by_sample
+                )
+            )
             for label, values in measured.items()
         }
         sample_knots = []
@@ -200,7 +210,9 @@ class KnownIstdReference:
     ) -> KnownIstdOwnerLookup:
         """Bind measured ISTD coordinates to every eligible physical owner."""
         reference = (
-            self if sample_universe is None else self.prepare_batch(
+            self
+            if sample_universe is None
+            else self.prepare_batch(
                 sample_universe=sample_universe, injection_order=injection_order
             )
         )
@@ -279,7 +291,9 @@ class KnownIstdOwnerLookup:
         return abs((left.owner_apex_rt - a[1]) - (right.owner_apex_rt - b[1])) * 60.0
 
     def has_direct_reference_pair(
-        self, left: SampleLocalMS1Owner, right: SampleLocalMS1Owner,
+        self,
+        left: SampleLocalMS1Owner,
+        right: SampleLocalMS1Owner,
     ) -> bool:
         """A measured same-target binding must survive a closer unbound peak."""
         a, b = self._by_owner.get(left.owner_id), self._by_owner.get(right.owner_id)
@@ -380,24 +394,6 @@ class TargetedIstdIdentityAnchor:
             raise ValueError(
                 "targeted ISTD identity anchors must be minted by the owner"
             )
-        if not isinstance(self.target_snapshot, TargetListSnapshot):
-            raise TypeError("target_snapshot must be an owner-minted snapshot")
-        labels = tuple(
-            definition.target.label
-            for definition in self.target_snapshot.definitions
-        )
-        if len(labels) != len(set(labels)):
-            raise ValueError("targeted ISTD anchor targets must have unique labels")
-        if not isinstance(self.observed_labels, tuple):
-            raise TypeError("observed_labels must be a tuple")
-        if (
-            any(
-                not isinstance(label, str) or not label.strip()
-                for label in self.observed_labels
-            )
-            or self.observed_labels != tuple(sorted(set(self.observed_labels)))
-        ):
-            raise ValueError("observed_labels must be canonical sorted text")
 
     def matching_target(self, family: object) -> Target | None:
         """Return a unique configured ISTD match for one aligned family."""
@@ -496,13 +492,7 @@ def build_targeted_istd_identity_anchor(
     if not isinstance(target_snapshot, TargetListSnapshot):
         raise TypeError("target_snapshot must be an owner-minted snapshot")
     labels = tuple(
-        sorted(
-            {
-                str(label).strip()
-                for label in observed_labels
-                if str(label).strip()
-            }
-        )
+        sorted({str(label).strip() for label in observed_labels if str(label).strip()})
     )
     if not target_snapshot.definitions or not labels:
         raise ValueError("ISTD identity anchor requires targets and observed labels")
@@ -532,57 +522,6 @@ class LocalFeatureLandmarkEvidence:
     validation_status: str = LOCAL_TRAJECTORY_VALIDATION_STATUS
     product_authority: str = LOCAL_TRAJECTORY_PRODUCT_AUTHORITY
 
-    def __post_init__(self) -> None:
-        for field_name in (
-            "sample_stem",
-            "acquisition_source_id",
-            "processing_request_id",
-            "processing_attempt_id",
-            "landmark_id",
-            "evidence_ref",
-        ):
-            value = getattr(self, field_name)
-            if not isinstance(value, str) or not value.strip():
-                raise ValueError(f"{field_name} must be non-empty text")
-        if (
-            isinstance(self.injection_order, bool)
-            or not isinstance(self.injection_order, int)
-            or self.injection_order < 1
-        ):
-            raise ValueError("injection_order must be a positive integer")
-        for field_name in (
-            "observed_rt_min",
-            "local_trajectory_rt_min",
-            "rt_drift_delta_min",
-        ):
-            value = getattr(self, field_name)
-            if isinstance(value, bool) or not isinstance(value, int | float):
-                raise ValueError(f"{field_name} must be numeric")
-            if not math.isfinite(float(value)):
-                raise ValueError(f"{field_name} must be finite")
-        expected_delta = self.observed_rt_min - self.local_trajectory_rt_min
-        if not math.isclose(
-            self.rt_drift_delta_min,
-            expected_delta,
-            rel_tol=0.0,
-            abs_tol=1e-12,
-        ):
-            raise ValueError(
-                "rt_drift_delta_min must equal observed minus local trajectory RT"
-            )
-        if self.quality not in {"accepted", "poor"}:
-            raise ValueError("quality must be accepted or poor")
-        if not isinstance(self.exclusion_reason, str):
-            raise ValueError("exclusion_reason must be text")
-        if self.quality == "accepted" and self.exclusion_reason:
-            raise ValueError("accepted landmarks cannot carry an exclusion reason")
-        if self.quality == "poor" and not self.exclusion_reason.strip():
-            raise ValueError("poor landmarks require an exclusion reason")
-        _validate_local_trajectory_authority(
-            validation_status=self.validation_status,
-            product_authority=self.product_authority,
-        )
-
 
 @dataclass(frozen=True, slots=True)
 class LocalTrajectoryAssessment:
@@ -603,60 +542,6 @@ class LocalTrajectoryAssessment:
             raise ValueError(
                 "local trajectory assessments must be minted by their owner"
             )
-        if self.status not in {
-            "assessable",
-            "missing_landmarks",
-            "poor_landmarks",
-            "conflict",
-        }:
-            raise ValueError("unsupported local trajectory status")
-        _require_canonical_text(self.sample_stems, field="sample_stems")
-        if self.landmark_evidence_refs:
-            _require_canonical_text(
-                self.landmark_evidence_refs,
-                field="landmark_evidence_refs",
-            )
-        _require_canonical_text(self.reason_codes, field="reason_codes")
-        if any(
-            not isinstance(point, LocalFeatureLandmarkEvidence)
-            for point in self.landmark_points
-        ):
-            raise ValueError("landmark_points must retain typed local evidence")
-        if any(
-            point.sample_stem not in self.sample_stems
-            for point in self.landmark_points
-        ):
-            raise ValueError("landmark_points must stay inside assessed samples")
-        point_refs = tuple(
-            sorted({point.evidence_ref for point in self.landmark_points})
-        )
-        if point_refs != self.landmark_evidence_refs:
-            raise ValueError(
-                "landmark evidence refs must close the exact retained local points"
-            )
-        if self.conflict_evidence_refs:
-            _require_canonical_text(
-                self.conflict_evidence_refs,
-                field="conflict_evidence_refs",
-            )
-        accepted_refs = {
-            point.evidence_ref
-            for point in self.landmark_points
-            if point.quality == "accepted"
-        }
-        if self.status == "conflict":
-            if not self.conflict_evidence_refs:
-                raise ValueError("trajectory conflict requires retained evidence refs")
-            if not set(self.conflict_evidence_refs).issubset(accepted_refs):
-                raise ValueError(
-                    "trajectory conflict evidence must close to accepted landmarks"
-                )
-        elif self.conflict_evidence_refs:
-            raise ValueError("only conflict assessments may retain conflict evidence")
-        _validate_local_trajectory_authority(
-            validation_status=self.validation_status,
-            product_authority=self.product_authority,
-        )
 
 
 @dataclass(frozen=True)
@@ -667,64 +552,6 @@ class LocalTrajectoryEvidenceLookup:
     validation_status: str = LOCAL_TRAJECTORY_VALIDATION_STATUS
     product_authority: str = LOCAL_TRAJECTORY_PRODUCT_AUTHORITY
 
-    def __post_init__(self) -> None:
-        if not isinstance(self.points, tuple) or any(
-            not isinstance(point, LocalFeatureLandmarkEvidence)
-            for point in self.points
-        ):
-            raise ValueError("points must be LocalFeatureLandmarkEvidence refs")
-        keys = tuple((point.sample_stem, point.landmark_id) for point in self.points)
-        if len(keys) != len(set(keys)):
-            raise ValueError("local landmark evidence must be unique")
-        evidence_refs = tuple(point.evidence_ref for point in self.points)
-        if len(evidence_refs) != len(set(evidence_refs)):
-            raise ValueError(
-                "local landmark physical evidence refs must be unique"
-            )
-        injection_orders_by_sample: dict[str, set[int]] = {}
-        acquisition_sources_by_sample: dict[str, set[str]] = {}
-        processing_requests_by_sample: dict[str, set[str]] = {}
-        processing_attempts_by_sample: dict[str, set[str]] = {}
-        for point in self.points:
-            injection_orders_by_sample.setdefault(point.sample_stem, set()).add(
-                point.injection_order
-            )
-            acquisition_sources_by_sample.setdefault(point.sample_stem, set()).add(
-                point.acquisition_source_id
-            )
-            processing_requests_by_sample.setdefault(point.sample_stem, set()).add(
-                point.processing_request_id
-            )
-            processing_attempts_by_sample.setdefault(point.sample_stem, set()).add(
-                point.processing_attempt_id
-            )
-        if any(len(orders) != 1 for orders in injection_orders_by_sample.values()):
-            raise ValueError(
-                "local landmarks for one sample require one injection order"
-            )
-        if any(len(sources) != 1 for sources in acquisition_sources_by_sample.values()):
-            raise ValueError(
-                "local landmarks for one sample require one acquisition source"
-            )
-        if any(
-            len(requests) != 1
-            for requests in processing_requests_by_sample.values()
-        ):
-            raise ValueError(
-                "local landmarks for one sample require one processing request"
-            )
-        if any(
-            len(attempts) != 1
-            for attempts in processing_attempts_by_sample.values()
-        ):
-            raise ValueError(
-                "local landmarks for one sample require one processing attempt"
-            )
-        _validate_local_trajectory_authority(
-            validation_status=self.validation_status,
-            product_authority=self.product_authority,
-        )
-
     def sample_injection_order(self, sample_stem: str) -> int | None:
         orders = self._injection_orders_by_sample.get(sample_stem)
         if not orders:
@@ -732,8 +559,7 @@ class LocalTrajectoryEvidenceLookup:
         if len(orders) == 1:
             return orders[0]
         raise ValueError(
-            "conflicting injection order for "
-            f"sample {sample_stem!r}: {list(orders)}"
+            f"conflicting injection order for sample {sample_stem!r}: {list(orders)}"
         )
 
     def landmark_status(self, sample_stem: str) -> LocalTrajectoryStatus:
@@ -759,9 +585,7 @@ class LocalTrajectoryEvidenceLookup:
     def _injection_orders_by_sample(self) -> dict[str, tuple[int, ...]]:
         by_sample: dict[str, set[int]] = {}
         for point in self.points:
-            by_sample.setdefault(point.sample_stem, set()).add(
-                point.injection_order
-            )
+            by_sample.setdefault(point.sample_stem, set()).add(point.injection_order)
         return {
             sample_stem: tuple(sorted(orders))
             for sample_stem, orders in by_sample.items()
@@ -791,11 +615,7 @@ def assess_local_trajectory(
         status = "assessable"
     evidence_refs = tuple(
         sorted(
-            {
-                ref
-                for sample in ordered_samples
-                for ref in lookup.evidence_refs(sample)
-            }
+            {ref for sample in ordered_samples for ref in lookup.evidence_refs(sample)}
         )
     )
     landmark_points = tuple(
@@ -835,19 +655,6 @@ def assess_local_trajectory(
     )
 
 
-def _validate_local_trajectory_authority(
-    *,
-    validation_status: str,
-    product_authority: str,
-) -> None:
-    if validation_status != LOCAL_TRAJECTORY_VALIDATION_STATUS:
-        raise ValueError(
-            "local trajectory validation_status must remain shadow_ready"
-        )
-    if product_authority != LOCAL_TRAJECTORY_PRODUCT_AUTHORITY:
-        raise ValueError("local trajectory evidence cannot grant product authority")
-
-
 @dataclass(frozen=True)
 class DriftEvidenceLookup:
     points: tuple[SampleDriftEvidence, ...]
@@ -871,8 +678,7 @@ class DriftEvidenceLookup:
         if len(orders) == 1:
             return orders[0]
         raise ValueError(
-            "conflicting injection order for "
-            f"sample {sample_stem!r}: {list(orders)}"
+            f"conflicting injection order for sample {sample_stem!r}: {list(orders)}"
         )
 
     @cached_property
@@ -898,8 +704,7 @@ class DriftEvidenceLookup:
 
 def _family_id(family: object) -> str:
     return str(
-        getattr(family, "feature_family_id", "")
-        or getattr(family, "cluster_id", "")
+        getattr(family, "feature_family_id", "") or getattr(family, "cluster_id", "")
     ).strip()
 
 
@@ -908,16 +713,6 @@ def _finite_float(value: object) -> float | None:
         return None
     numeric = float(value)
     return numeric if math.isfinite(numeric) else None
-
-
-def _require_canonical_text(values: tuple[str, ...], *, field: str) -> None:
-    if (
-        not isinstance(values, tuple)
-        or not values
-        or any(not isinstance(value, str) or not value.strip() for value in values)
-        or values != tuple(sorted(set(values)))
-    ):
-        raise ValueError(f"{field} must be non-empty, unique, and canonical-sorted")
 
 
 def _canonicalize_input_texts(

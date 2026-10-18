@@ -17,7 +17,6 @@ from xic_extractor.alignment.cell_decision.owner import (
 from xic_extractor.alignment.projection.target.post_cell import (
     TargetPostCellProjection,
     project_target_post_cell,
-    validate_target_post_cell_projection,
 )
 from xic_extractor.alignment.projection.target.pre_cell import (
     TargetProjectionContractError,
@@ -68,7 +67,6 @@ def test_target_post_cell_projection_closes_fixed_row_counts_and_review_routing(
     assert review_ref.decision is no_write
     assert review_ref.row_binding is pre_cell.row_binding
     assert review_ref.reasons == ("searched_no_observation",)
-    validate_target_post_cell_projection(completed)
 
 
 def test_disjoint_internal_groups_bind_one_fixed_target_row(
@@ -178,24 +176,3 @@ def test_target_post_cell_requires_immutable_decision_population(
 
     with pytest.raises(TargetProjectionContractError, match="immutable tuple"):
         project_target_post_cell(pre_cell, cast(Any, list(decisions)))
-
-
-def test_target_post_cell_validation_rejects_derived_count_substitution(
-    tmp_path: Path,
-) -> None:
-    _fixture, _scope, alignment, _hypotheses = _finalized_case(
-        tmp_path,
-        sample_stems=("sample-a",),
-        observed_stems=(),
-        group_specs=(((), "provisional"),),
-    )
-    pre_cell = project_target_pre_cell(alignment)
-    completed = project_target_post_cell(
-        pre_cell,
-        decide_target_cell_population(pre_cell),
-    )
-
-    object.__setattr__(completed, "accepted_cell_count", 1)
-
-    with pytest.raises(TargetProjectionContractError, match="counts"):
-        validate_target_post_cell_projection(completed)

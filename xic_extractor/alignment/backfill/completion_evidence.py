@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import json
-import math
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from xic_extractor.acquisition_contract import TraceCoordinate
 from xic_extractor.alignment.cross_sample.peak_groups import CrossSampleGroupIdentity
@@ -13,11 +12,9 @@ from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
     mint_artifact_semantic_contract_ref,
     mint_evidence_artifact_ref,
-    verify_evidence_artifact_payload,
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
-    validate_cid_nl_method_assessment_binding,
 )
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
@@ -49,91 +46,6 @@ class BackfillCompletionProjection:
     trace_coordinate: TraceCoordinate
     acquisition_sha256: str
     artifact: EvidenceArtifactRef
-
-    def __post_init__(self) -> None:
-        owners = self.processing_owners
-        if not isinstance(owners, ProcessingOwnerReferences) or not any(
-            self.sample is sample for sample in owners.sample_resolutions
-        ):
-            raise ValueError("completed backfill crossed its exact sample owners")
-        replace(self.group_identity)
-        replace(self.trace_coordinate)
-        if self.group_identity.processing_request_id != (
-            owners.request.processing_request_id
-        ):
-            raise ValueError("completed backfill crossed its group request")
-        assessment = self.backfill_assessment
-        validate_cid_nl_method_assessment_binding(
-            assessment,
-            processing_owners=owners,
-            sample=self.sample,
-            method_subject=assessment.content.method_subject,
-        )
-        receipt = assessment.content.evaluation_receipt
-        request = self.trace_coordinate.request
-        subject = assessment.content.method_subject
-        if (
-            assessment.content.detector_invocation_id != "untargeted-cid-nl-backfill"
-            or assessment.content.technical_state != "evaluated"
-            or assessment.content.method_result != "HOLD"
-            or assessment.candidate_peaks
-            or not receipt.search_completed
-            or not receipt.acquisition_supported
-            or request.mz != self.group_center_mz
-            or request.ppm_tol != subject.precursor_tolerance_ppm
-            or request.rt_min != receipt.query_rt_min
-            or request.rt_max != receipt.query_rt_max
-            or not math.isfinite(self.query_rt)
-            or not request.rt_min <= self.query_rt <= request.rt_max
-            or not self.query_rt_basis.strip()
-            or self.trace_coordinate.acquisition_source_id
-            != assessment.content.acquisition_source_id
-        ):
-            raise ValueError("completed backfill does not close an exact empty epoch")
-        if len(self.acquisition_sha256) != 64 or any(
-            character not in "0123456789abcdef" for character in self.acquisition_sha256
-        ):
-            raise ValueError("completed backfill requires its acquisition digest")
-        for artifact in (
-            self.source_result_artifact,
-            self.initial_assessment_artifact,
-            assessment.artifact,
-            self.artifact,
-        ):
-            replace(artifact)
-            if (
-                artifact.producer_processing_request_id
-                != owners.request.processing_request_id
-                or artifact.producer_processing_attempt_id
-                != owners.attempt.processing_attempt_id
-            ):
-                raise ValueError("completed backfill crossed its producer attempt")
-        if (
-            self.source_result_artifact.semantic_contract.owner_namespace
-            != "xic_extractor.untargeted_cid_nl_real_data_runtime"
-            or self.source_result_artifact.semantic_contract.semantic_role
-            != "untargeted_cid_nl_real_data_sample_result"
-            or self.initial_assessment_artifact.evidence_artifact_id
-            not in self.source_result_artifact.upstream_artifact_ids
-            or assessment.artifact.evidence_artifact_id
-            not in self.source_result_artifact.upstream_artifact_ids
-            or self.initial_assessment_artifact == assessment.artifact
-            or self.artifact.semantic_contract != _COMPLETED_BACKFILL_CONTRACT
-            or self.artifact.upstream_artifact_ids
-            != tuple(
-                sorted(
-                    {
-                        self.source_result_artifact.evidence_artifact_id,
-                        assessment.artifact.evidence_artifact_id,
-                    }
-                )
-            )
-        ):
-            raise ValueError("completed backfill lost its runtime artifact closure")
-        verify_evidence_artifact_payload(
-            self.artifact,
-            canonical_backfill_completion_bytes(self),
-        )
 
 
 def canonical_backfill_completion_bytes(

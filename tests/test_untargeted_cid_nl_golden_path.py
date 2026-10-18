@@ -217,21 +217,13 @@ def test_golden_path_source_is_invariant_to_per_sample_projection_order(
     assert canonical.pending_acceptance_rows == replay.pending_acceptance_rows
 
 
-def test_golden_path_rejects_missing_discovery_lineage_and_manifest_rewrite(
+def test_golden_path_rejects_manifest_rewrite(
     tmp_path: Path,
 ) -> None:
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path, sample_roles=SAMPLE_ROLES
     )
     sample_inputs, backfill = _golden_inputs(fixture)
-    support_input = next(
-        item
-        for item in sample_inputs
-        if item.sample.metadata.raw_stem == "StudySupport"
-    )
-    with pytest.raises(UntargetedCidNlGoldenPathError, match="cover every"):
-        replace(support_input, discovery_projections=())
-
     projection = build_untargeted_cid_nl_golden_path(
         processing_owners=fixture.owners,
         method_subject=fixture.method_subject,

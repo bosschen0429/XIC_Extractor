@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import replace
 
 import pytest
 
@@ -79,11 +78,6 @@ def test_group_rejects_two_identity_members_for_one_canonical_sample(tmp_path) -
     first = _member(fixture, "sample-a", apex_rt=8.0)
     second = _member(fixture, "sample-a", apex_rt=8.03)
     assert first.member_subject_id != second.member_subject_id
-    with pytest.raises(CrossSampleContractError, match="basis bytes are not exact"):
-        replace(
-            first,
-            physical_observation_ids=second.physical_observation_ids,
-        )
 
     with pytest.raises(CrossSampleContractError, match="canonical sample"):
         mint_cross_sample_group_identity(
@@ -147,11 +141,10 @@ def test_equivalent_hypothesis_wrappers_share_member_identity(tmp_path) -> None:
     )
 
 
-def test_group_and_population_reject_crossed_or_duplicate_membership(tmp_path) -> None:
+def test_group_mint_rejects_crossed_processing_request(tmp_path) -> None:
     from xic_extractor.alignment.cross_sample.peak_groups import (
         CrossSampleContractError,
         mint_cross_sample_group_identity,
-        validate_cross_sample_group_population,
     )
 
     fixture, members = _subjects(tmp_path, "sample-a", "sample-b")
@@ -160,39 +153,6 @@ def test_group_and_population_reject_crossed_or_duplicate_membership(tmp_path) -
         mint_cross_sample_group_identity(
             processing_request_id=other.request.processing_request_id,
             member_subjects=(members[0],),
-        )
-
-    singleton = mint_cross_sample_group_identity(
-        processing_request_id=fixture.request.processing_request_id,
-        member_subjects=(members[0],),
-    )
-    overlapping = mint_cross_sample_group_identity(
-        processing_request_id=fixture.request.processing_request_id,
-        member_subjects=members,
-    )
-    with pytest.raises(CrossSampleContractError, match="across groups"):
-        validate_cross_sample_group_population((singleton, overlapping))
-
-
-def test_successor_application_rejects_mutable_closure_containers(tmp_path) -> None:
-    from xic_extractor.alignment.cross_sample.peak_groups import (
-        CrossSampleContractError,
-        CrossSamplePartitionTransition,
-        mint_cross_sample_group_identity,
-    )
-
-    fixture, (member,) = _subjects(tmp_path, "sample-a")
-    predecessor = mint_cross_sample_group_identity(
-        processing_request_id=fixture.request.processing_request_id,
-        member_subjects=(member,),
-    )
-    with pytest.raises(CrossSampleContractError, match="immutable tuples"):
-        CrossSamplePartitionTransition(
-            status="unassessable",
-            predecessors=[predecessor],  # type: ignore[arg-type]
-            successors=[],  # type: ignore[arg-type]
-            lineage=[],  # type: ignore[arg-type]
-            reason="eligible_neighborhood_exceeds_budget",
         )
 
 

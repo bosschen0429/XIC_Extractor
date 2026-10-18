@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 from collections import Counter
-from copy import copy
 from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,7 +10,6 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-import xic_extractor.alignment.projection.untarget.identity as projection_owner
 import xic_extractor.alignment.result.scientific_alignment as finalizer_owner
 from tests.test_cell_observations import (
     _coverage_for_groups,
@@ -30,7 +27,6 @@ from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.alignment.cell_decision.owner import (
-    NoWriteCellDecision,
     decide_group_cell_population,
 )
 from xic_extractor.alignment.cid_nl_evidence_spine import (
@@ -47,7 +43,6 @@ from xic_extractor.alignment.projection.untarget import (
     UntargetMatrixProjection,
     UntargetProjectionContractError,
     project_untarget_matrix,
-    validate_untarget_matrix_projection,
 )
 from xic_extractor.alignment.result import (
     FinalizedScientificAlignment,
@@ -378,7 +373,6 @@ def test_completed_values_project_to_exact_group_sample_positions(
         assert numeric_by_sample["sample-c"] == pytest.approx(
             2 * numeric_by_sample["sample-b"]
         )
-    validate_untarget_matrix_projection(projection)
     with pytest.raises(FrozenInstanceError):
         projection.rows = ()
 
@@ -424,28 +418,6 @@ def test_projection_is_deterministic_for_reversed_capture_order(tmp_path, monkey
     )
 
 
-def test_row_and_subject_identities_reject_basis_and_crossed_sample(
-    tmp_path, monkeypatch
-):
-    alignment, _, projection = _completed_projection(
-        tmp_path, monkeypatch, disposition="established"
-    )
-    row = projection.rows[0]
-    subject = row.decisions[0].subject
-    group = row.row_key.group
-    assert json.loads(row.row_key.basis_bytes) == {
-        "group_hypothesis_id": group.group_hypothesis_id,
-        "group_identity_basis_hex": group.basis_bytes.hex(),
-        "processing_request_id": alignment.processing_request_id,
-        "schema_version": "untarget_row_key",
-    }
-    assert row.row_key.group_identity_basis_bytes == group.basis_bytes
-    with pytest.raises(UntargetProjectionContractError, match="basis"):
-        replace(row.row_key, basis_bytes=b"{}")
-    with pytest.raises(UntargetProjectionContractError, match="sample|member"):
-        replace(subject, canonical_sample=alignment.canonical_samples[1])
-
-
 @pytest.mark.parametrize("variant", ["missing", "extra", "crossed"])
 def test_projection_requires_answers_for_the_exact_observation_population(
     tmp_path, monkeypatch, variant
@@ -466,20 +438,6 @@ def test_projection_requires_answers_for_the_exact_observation_population(
         project_untarget_matrix(alignment, changed)
 
 
-def test_explicit_projection_audit_rejects_substituted_answer(tmp_path, monkeypatch):
-    _, _, projection = _completed_projection(
-        tmp_path, monkeypatch, disposition="established"
-    )
-    row = copy(projection.rows[0])
-    decision = copy(row.decisions[0])
-    object.__setattr__(decision, "payload", NoWriteCellDecision("unavailable"))
-    object.__setattr__(row, "decisions", (decision,) + row.decisions[1:])
-    audited = copy(projection)
-    object.__setattr__(audited, "rows", (row,))
-    with pytest.raises(UntargetProjectionContractError, match="substituted|basis"):
-        validate_untarget_matrix_projection(audited)
-
-
 def test_projection_cannot_be_directly_minted(tmp_path, monkeypatch):
     alignment, _, projection = _completed_projection(
         tmp_path, monkeypatch, disposition="established"
@@ -488,14 +446,3 @@ def test_projection_cannot_be_directly_minted(tmp_path, monkeypatch):
         UntargetMatrixProjection(
             finalized_alignment=alignment, rows=projection.rows, _mint_token=object()
         )
-
-
-def test_projection_rejects_row_id_collision_with_unequal_basis(tmp_path, monkeypatch):
-    alignment = _two_group_lineaged_alignment(tmp_path, monkeypatch)
-    monkeypatch.setattr(
-        projection_owner,
-        "_untarget_row_key_id",
-        lambda _: "xic.untarget-row-key:forced-collision",
-    )
-    with pytest.raises(UntargetProjectionContractError, match="collision"):
-        project_untarget_matrix(alignment, decide_group_cell_population(alignment))

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from copy import copy
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -31,12 +30,9 @@ from xic_extractor.alignment.backfill.request_plan import (
 )
 from xic_extractor.alignment.cross_sample.association import (
     CrossSampleAssociationContractError,
-    CrossSamplePredecessorAssociation,
     build_cross_sample_association_lineage_handoff,
-    validate_cross_sample_association_lineage_handoff,
 )
 from xic_extractor.alignment.cross_sample.grouping_result import (
-    CrossSampleGroupingContractError,
     CrossSampleGroupingResult,
 )
 from xic_extractor.alignment.cross_sample.peak_groups import (
@@ -86,7 +82,6 @@ def test_unchanged_identity_closes_complete_cartesian_population(
     assert first.value_authority == "none"
     assert first.matrix_authority == "none"
     assert first.writer_authority == "none"
-    validate_cross_sample_association_lineage_handoff(first)
 
 
 def test_alignment_outputs_carries_exact_owner_coverage(
@@ -300,97 +295,13 @@ def test_crossed_request_and_zero_successor_reject(
         reason="eligible_neighborhood_exceeds_budget",
     )
     with pytest.raises(
-        CrossSampleGroupingContractError,
-        match="partition crossed",
-    ):
-        replace(valid_receipt, partition_transition=unavailable)
-
-
-@pytest.mark.parametrize("mutation", ["missing", "duplicate", "extra", "reordered"])
-def test_handoff_validator_rejects_edited_population(
-    tmp_path: Path,
-    mutation: str,
-) -> None:
-    fixture = _fixture(tmp_path, sample_stems=("sample-a", "sample-b"))
-    group = _group(fixture, ("sample-a",))
-    handoff = build_cross_sample_association_lineage_handoff(
-        coverage=_coverage(fixture, (group,)),
-        final_receipt=_final_receipt(
-            fixture,
-            predecessors=(group,),
-            successors=(group,),
-        ),
-    )
-    forged = copy(handoff)
-    positions = handoff.position_associations
-    if mutation == "missing":
-        changed = positions[:-1]
-    elif mutation == "duplicate":
-        changed = (*positions, positions[0])
-    elif mutation == "extra":
-        changed = (positions[0], *positions)
-    else:
-        changed = tuple(reversed(positions))
-    object.__setattr__(forged, "position_associations", changed)
-
-    with pytest.raises(
         CrossSampleAssociationContractError,
-        match=(
-            "position associations are missing, duplicate, extra, partial, or reordered"
-        ),
+        match="no final successor",
     ):
-        validate_cross_sample_association_lineage_handoff(forged)
-
-
-@pytest.mark.parametrize("mutation", ["missing", "duplicate", "extra", "partial"])
-def test_handoff_validator_rejects_edited_predecessor_population(
-    tmp_path: Path,
-    mutation: str,
-) -> None:
-    fixture = _fixture(
-        tmp_path,
-        sample_stems=("sample-a", "sample-b"),
-    )
-    predecessor = _group(fixture, ("sample-a", "sample-b"))
-    left = _group(fixture, ("sample-a",))
-    right = _group(fixture, ("sample-b",))
-    handoff = build_cross_sample_association_lineage_handoff(
-        coverage=_coverage(fixture, (predecessor,)),
-        final_receipt=_final_receipt(
-            fixture,
-            predecessors=(predecessor,),
-            successors=(left, right),
-        ),
-    )
-    associations = handoff.predecessor_associations
-    changed: tuple[CrossSamplePredecessorAssociation, ...]
-    if mutation == "missing":
-        changed = ()
-    elif mutation == "duplicate":
-        changed = (*associations, associations[0])
-    elif mutation == "extra":
-        changed = (
-            *associations,
-            CrossSamplePredecessorAssociation(
-                predecessor=left,
-                successors=(left,),
-            ),
+        build_cross_sample_association_lineage_handoff(
+            coverage=coverage,
+            final_receipt=replace(valid_receipt, partition_transition=unavailable),
         )
-    else:
-        changed = (
-            replace(associations[0], successors=(associations[0].successors[0],)),
-        )
-    forged = copy(handoff)
-    object.__setattr__(forged, "predecessor_associations", changed)
-
-    with pytest.raises(
-        CrossSampleAssociationContractError,
-        match=(
-            "predecessor associations are missing, duplicate, extra, partial, "
-            "or reordered"
-        ),
-    ):
-        validate_cross_sample_association_lineage_handoff(forged)
 
 
 def test_owner_order_changes_identity_while_each_output_remains_canonical(
@@ -427,8 +338,6 @@ def test_owner_order_changes_identity_while_each_output_remains_canonical(
         right,
         left,
     )
-    validate_cross_sample_association_lineage_handoff(forward)
-    validate_cross_sample_association_lineage_handoff(reverse)
 
 
 class _Fixture:

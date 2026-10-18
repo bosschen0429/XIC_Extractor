@@ -28,7 +28,6 @@ from xic_extractor.alignment.cell_observation.records import (
 from xic_extractor.alignment.cross_sample.association import (
     CrossSampleAssociationLineageHandoff,
     CrossSampleCoveragePositionAssociation,
-    validate_cross_sample_association_lineage_handoff,
 )
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupIdentity,
@@ -263,10 +262,9 @@ def _compose_final_group_cell_observation_population(
     predecessor_cells: tuple[CellObservationRef, ...],
     backfill_cells: tuple[CellObservationRef, ...] = (),
 ) -> tuple[FinalGroupCellObservation, ...]:
-    request_id = _validate_final_handoff(handoff)
+    request_id = handoff.coverage.epoch.processing_owners.request.processing_request_id
     backfilled_by_key: dict[tuple[str, str], CellObservationRef] = {}
     for backfill_ref in backfill_cells:
-        _validate_source_cell(backfill_ref, processing_request_id=request_id)
         key = (
             backfill_ref.content.group_hypothesis_id,
             backfill_ref.content.canonical_sample_identity_id,
@@ -391,128 +389,6 @@ def _compose_final_group_cell_observation_population(
     return tuple(sorted(cells, key=_final_cell_sort_key))
 
 
-def validate_final_group_cell_observation_population(
-    *,
-    handoff: CrossSampleAssociationLineageHandoff,
-    cell_observations: Sequence[FinalGroupCellObservation],
-) -> tuple[FinalGroupCellObservation, ...]:
-    """Revalidate exact handoff, source population, lanes, and final keys."""
-
-    _validate_final_handoff(handoff)
-    if isinstance(cell_observations, (str, bytes)):
-        raise CellObservationContractError(
-            "cell population must be a finite owner-sealed sequence"
-        )
-    observations = tuple(cell_observations)
-    if any(type(item) is not FinalGroupCellObservation for item in observations):
-        raise CellObservationContractError(
-            "cell population contains a non-owner observation"
-        )
-    expected_keys = tuple(
-        (group.group_hypothesis_id, sample.identity.sample_identity_id)
-        for group in handoff.final_population
-        for sample in handoff.coverage.epoch.samples
-    )
-    actual_keys = tuple(
-        (item.group_hypothesis_id, item.canonical_sample_identity_id)
-        for item in observations
-    )
-    if len(actual_keys) != len(set(actual_keys)):
-        raise CellObservationContractError(
-            "final cell population contains a duplicate Group x sample position"
-        )
-    if set(actual_keys) != set(expected_keys):
-        raise CellObservationContractError(
-            "final cell population is missing or contains an extra Group x sample"
-        )
-    groups_by_id = {
-        group.group_hypothesis_id: group for group in handoff.final_population
-    }
-    samples_by_id = {
-        sample.identity.sample_identity_id: sample
-        for sample in handoff.coverage.epoch.samples
-    }
-    source_cells = tuple(
-        cell for item in observations for cell in item.predecessor_cells
-    )
-    expected = compose_final_group_cell_observation_population(
-        handoff=handoff,
-        predecessor_cells=source_cells,
-        backfill_cells=tuple(
-            item.backfill_cell
-            for item in observations
-            if item.backfill_cell is not None
-        ),
-    )
-    expected_by_key = {
-        (item.group_hypothesis_id, item.canonical_sample_identity_id): item
-        for item in expected
-    }
-    ordered = tuple(sorted(observations, key=_final_cell_sort_key))
-    for item in ordered:
-        key = (item.group_hypothesis_id, item.canonical_sample_identity_id)
-        expected_item = expected_by_key[key]
-        _validate_final_cell_handoff_refs(item, handoff=handoff)
-        if item != expected_item:
-            raise CellObservationContractError(
-                "final cell does not retain the exact owner-composed content"
-            )
-        _require_same_refs(item, expected_item)
-        if item.group is not groups_by_id[item.group_hypothesis_id]:
-            raise CellObservationContractError(
-                "final cell substituted an equivalent final group"
-            )
-        if (
-            item.canonical_sample
-            is not samples_by_id[item.canonical_sample_identity_id]
-        ):
-            raise CellObservationContractError(
-                "final cell substituted an equivalent canonical sample"
-            )
-    return ordered
-
-
-def _validate_final_handoff(
-    handoff: CrossSampleAssociationLineageHandoff,
-) -> str:
-    if type(handoff) is not CrossSampleAssociationLineageHandoff:
-        raise CellObservationContractError(
-            "final closure requires an exact CrossSample association handoff"
-        )
-    try:
-        validate_cross_sample_association_lineage_handoff(handoff)
-    except (TypeError, ValueError) as exc:
-        raise CellObservationContractError(str(exc)) from exc
-    if handoff.final_population is not handoff.final_receipt.final_population:
-        raise CellObservationContractError(
-            "handoff final population is not the exact retained CrossSample receipt"
-        )
-    if not handoff.final_population:
-        raise CellObservationContractError("handoff final population is empty")
-    final_groups = {id(group) for group in handoff.final_population}
-    epoch_groups = {id(group) for group in handoff.coverage.epoch.group_identities}
-    epoch_samples = {id(sample) for sample in handoff.coverage.epoch.samples}
-    for position_association in handoff.position_associations:
-        if id(position_association.final_successor) not in final_groups:
-            raise CellObservationContractError(
-                "handoff position association substituted its final group"
-            )
-        if id(position_association.position.group_identity) not in epoch_groups:
-            raise CellObservationContractError(
-                "handoff position association substituted its predecessor group"
-            )
-        if id(position_association.position.sample) not in epoch_samples:
-            raise CellObservationContractError(
-                "handoff position association substituted its canonical sample"
-            )
-    request_id = handoff.coverage.epoch.processing_owners.request.processing_request_id
-    if handoff.final_receipt.processing_request_id != request_id:
-        raise CellObservationContractError(
-            "handoff crossed its owner processing request"
-        )
-    return request_id
-
-
 def _index_predecessor_cells(
     predecessor_cells: Sequence[CellObservationRef],
     *,
@@ -537,7 +413,6 @@ def _index_predecessor_cells(
         )
         positions_by_key.setdefault(key, []).append(position)
     for cell in cells:
-        _validate_source_cell(cell, processing_request_id=processing_request_id)
         source_identity = cell.group_context.group_identity
         matches = tuple(
             position
@@ -572,27 +447,6 @@ def _index_predecessor_cells(
             "predecessor CellObservationRef population is incomplete or extra"
         )
     return result
-
-
-def _validate_source_cell(
-    cell: CellObservationRef,
-    *,
-    processing_request_id: str,
-) -> None:
-    if type(cell) is not CellObservationRef:
-        raise CellObservationContractError(
-            "predecessor population contains a non-owner CellObservationRef"
-        )
-    # CellObservationRef validated its immutable content at construction. This
-    # consumer checks the new request/group/sample join, not that owner again.
-    if cell.content.group_hypothesis_id != cell.group_context.group.group_hypothesis_id:
-        raise CellObservationContractError(
-            "predecessor CellObservationRef crossed its group identity"
-        )
-    if cell.group_context.group.processing_request_id != processing_request_id:
-        raise CellObservationContractError(
-            "predecessor CellObservationRef crossed its processing request"
-        )
 
 
 def _canonical_terminal_subset(
@@ -644,7 +498,6 @@ def _derive_lane_evidence_state(
                 "missing source cell requires exact no-input coverage"
             )
         return "not_searched"
-    _validate_source_cell(source_cell, processing_request_id=processing_request_id)
     source_identity = source_cell.group_context.group_identity
     if source_identity != association.position.group_identity:
         raise CellObservationContractError(
@@ -955,40 +808,6 @@ def _final_cell_sort_key(
     return cell.group_hypothesis_id, cell.canonical_sample_identity_id
 
 
-def _validate_final_cell_handoff_refs(
-    cell: FinalGroupCellObservation,
-    *,
-    handoff: CrossSampleAssociationLineageHandoff,
-) -> None:
-    groups = {group.group_hypothesis_id: group for group in handoff.final_population}
-    samples = {
-        sample.identity.sample_identity_id: sample
-        for sample in handoff.coverage.epoch.samples
-    }
-    group = groups.get(cell.group_hypothesis_id)
-    sample = samples.get(cell.canonical_sample_identity_id)
-    if group is None or sample is None:
-        raise CellObservationContractError(
-            "final cell key is outside the exact handoff population"
-        )
-    if cell.group is not group or cell.canonical_sample is not sample:
-        raise CellObservationContractError(
-            "final cell substituted an equivalent handoff group or sample"
-        )
-    handoff_associations = handoff.position_associations
-    handoff_terminals = handoff.coverage.terminals
-    for association in cell.position_associations:
-        if not any(association is item for item in handoff_associations):
-            raise CellObservationContractError(
-                "final cell position association is not the exact handoff object"
-            )
-    for terminal in cell.coverage_terminals:
-        if not any(terminal is item for item in handoff_terminals):
-            raise CellObservationContractError(
-                "final cell terminal is not the exact coverage object"
-            )
-
-
 def _require_same_refs(
     actual: FinalGroupCellObservation,
     expected: FinalGroupCellObservation,
@@ -1051,5 +870,4 @@ __all__ = [
     "canonical_cell_observation_bytes",
     "compose_final_group_cell_observation_population",
     "mint_cell_observation_ref",
-    "validate_final_group_cell_observation_population",
 ]

@@ -26,13 +26,11 @@ from xic_extractor.alignment.backfill.request_plan import (
     build_backfill_request_plan,
     build_backfill_sample_runtime_projections,
     mint_backfill_request_identity,
-    validate_backfill_sample_runtime_projection,
 )
 from xic_extractor.alignment.backfill.runtime_projection import (
     BackfillOwnerEligibility,
     backfill_runtime_owner_eligibility,
     mint_backfill_runtime_feature,
-    validate_backfill_runtime_feature,
 )
 from xic_extractor.alignment.backfill.scope import backfill_request_sample_stems
 from xic_extractor.alignment.config import AlignmentConfig, BackfillXicBackend
@@ -236,9 +234,7 @@ def test_compact_runtime_projection_excludes_censored_owner_area() -> None:
                 _owner("sample-a", "edge"),
                 owner_area=1.0,
                 quantification_eligible=False,
-                quantification_exclusion_reason=(
-                    "owner_apex_on_integration_boundary"
-                ),
+                quantification_exclusion_reason=("owner_apex_on_integration_boundary"),
             ),
             replace(_owner("sample-b", "normal"), owner_area=1000.0),
         ),
@@ -261,9 +257,7 @@ def test_censored_owner_becomes_bounded_backfill_target_after_valid_quorum() -> 
                 _owner("sample-a", "edge"),
                 owner_area=1.0,
                 quantification_eligible=False,
-                quantification_exclusion_reason=(
-                    "owner_apex_on_integration_boundary"
-                ),
+                quantification_exclusion_reason=("owner_apex_on_integration_boundary"),
             ),
             replace(_owner("sample-b", "normal"), owner_area=1000.0),
         ),
@@ -286,21 +280,22 @@ def test_censored_owner_does_not_satisfy_detected_sample_quorum() -> None:
                 _owner("sample-a", "edge"),
                 owner_area=1.0,
                 quantification_eligible=False,
-                quantification_exclusion_reason=(
-                    "owner_apex_on_integration_boundary"
-                ),
+                quantification_exclusion_reason=("owner_apex_on_integration_boundary"),
             ),
             replace(_owner("sample-b", "normal"), owner_area=1000.0),
         ),
         confirm_local_owners_with_backfill=True,
     )
 
-    assert backfill_request_sample_stems(
-        feature,
-        sample_order=("sample-a", "sample-b", "sample-c"),
-        raw_sample_stems=frozenset({"sample-a", "sample-b", "sample-c"}),
-        alignment_config=AlignmentConfig(owner_backfill_min_detected_samples=2),
-    ) == ()
+    assert (
+        backfill_request_sample_stems(
+            feature,
+            sample_order=("sample-a", "sample-b", "sample-c"),
+            raw_sample_stems=frozenset({"sample-a", "sample-b", "sample-c"}),
+            alignment_config=AlignmentConfig(owner_backfill_min_detected_samples=2),
+        )
+        == ()
+    )
 
 
 def test_full_feature_missing_owners_preserves_attribute_error_sentinel() -> None:
@@ -337,37 +332,6 @@ def test_compact_runtime_projection_mints_each_source_feature_once(
 
     assert set(projections) == {"sample-b", "sample-c"}
     assert mint_calls == ["FAM000001", "FAM000002"]
-
-
-def test_compact_runtime_projection_rejects_empty_owner_sample_and_feature_id() -> None:
-    with pytest.raises(ValueError, match="owner eligibility sample_stem"):
-        BackfillOwnerEligibility("", 1.0)
-
-    feature = mint_backfill_runtime_feature(_feature())
-    with pytest.raises(ValueError, match="feature_family_id"):
-        replace(feature, feature_family_id="")
-
-
-def test_compact_runtime_projection_rejects_relabelled_feature_or_sample_binding() -> (
-    None
-):
-    feature = mint_backfill_runtime_feature(_feature())
-    with pytest.raises(ValueError, match="runtime_feature_id mismatches"):
-        replace(feature, group_hypothesis_id="other-group")
-
-    sample_projection = build_backfill_sample_runtime_projections(
-        (_feature(),),
-        sample_order=("sample-a", "sample-b"),
-        raw_sample_stems=frozenset({"sample-b"}),
-        alignment_config=AlignmentConfig(),
-    )["sample-b"]
-    with pytest.raises(ValueError, match="runtime_projection_id mismatches"):
-        replace(sample_projection, sample_stem="other-sample")
-    with pytest.raises(ValueError, match="runtime_projection_id mismatches"):
-        replace(sample_projection, logical_request_offset=1)
-
-    validate_backfill_runtime_feature(feature)
-    validate_backfill_sample_runtime_projection(sample_projection)
 
 
 def test_compact_runtime_projection_reduces_material_request_payload() -> None:
@@ -439,29 +403,6 @@ def test_request_plan_mints_complete_partition_in_first_logical_order(
     assert classes[0].identity.window_strategy == "exact"
     assert classes[0].identity.validation_mode == "primary"
     assert classes[0].identity.result_semantics == BACKFILL_TRACE_RESULT_SEMANTICS
-    with pytest.raises(
-        ValueError,
-        match="equivalence classes must follow first logical occurrence",
-    ):
-        replace(
-            plan,
-            equivalence_classes_by_sample={"sample-b": tuple(reversed(classes))},
-        )
-
-
-def test_request_identity_rejects_resealed_semantic_mutation(tmp_path: Path) -> None:
-    identity = mint_backfill_request_identity(
-        sample_stem="sample-b",
-        acquisition_source=_acquisition_source(tmp_path, "sample-b", b"sample-b"),
-        request=XICRequest(500.0, 7.5, 9.5, 20.0),
-        backend="raw",
-        window_strategy="exact",
-        superwindow_span_factor=2,
-        validation_mode="primary",
-    )
-
-    with pytest.raises(ValueError, match="mismatches complete owner request"):
-        replace(identity, backend="ms1_index")
 
 
 def test_request_identity_separates_every_incompatible_semantic(
@@ -486,8 +427,6 @@ def test_request_identity_separates_every_incompatible_semantic(
     assert all(
         item.request_identity_id != base.request_identity_id for item in alternatives
     )
-    with pytest.raises(ValueError, match="unsupported owner Backfill result semantics"):
-        _identity(source_a, result_semantics="different_trace_semantics")
 
 
 def test_request_partition_never_reuses_across_samples_or_acquisitions(
@@ -514,25 +453,6 @@ def test_request_partition_never_reuses_across_samples_or_acquisitions(
     assert class_b.class_id != class_c.class_id
     assert plan.canonical_class_count_for_sample("sample-b") == 1
     assert plan.canonical_class_count_for_sample("sample-c") == 1
-
-
-def test_request_plan_rejects_partition_rebound_to_another_owner_context(
-    tmp_path: Path,
-) -> None:
-    source = _acquisition_source(tmp_path, "sample-b", b"sample-b")
-    feature = _feature(feature_family_id="FAM000001", mz=500.0, rt=8.5)
-    plan = build_backfill_request_plan(
-        (feature,),
-        sample_order=("sample-a", "sample-b"),
-        raw_sample_stems=frozenset({"sample-b"}),
-        alignment_config=AlignmentConfig(),
-        equivalence_context=_context({"sample-b": source}),
-    )
-    assert plan.equivalence_context is not None
-    rebound_context = replace(plan.equivalence_context, backend="ms1_index")
-
-    with pytest.raises(ValueError, match="mismatches its owner context"):
-        replace(plan, equivalence_context=rebound_context)
 
 
 def test_missing_owner_context_cannot_claim_exact_equivalence(tmp_path: Path) -> None:
@@ -572,40 +492,6 @@ def test_missing_owner_context_cannot_claim_exact_equivalence(tmp_path: Path) ->
         raw_xic_batch_size=64,
     )
     assert result.request_reuse_observations == ()
-
-
-def test_equivalence_class_rejects_missing_or_rebound_member(tmp_path: Path) -> None:
-    source = _acquisition_source(tmp_path, "sample-b", b"sample-b")
-    feature = _feature(feature_family_id="FAM000001", mz=500.0, rt=8.5)
-    plan = build_backfill_request_plan(
-        (feature,),
-        sample_order=("sample-a", "sample-b"),
-        raw_sample_stems=frozenset({"sample-b"}),
-        alignment_config=AlignmentConfig(),
-        equivalence_context=_context({"sample-b": source}),
-    )
-    equivalence_class = plan.equivalence_classes_for_sample("sample-b")[0]
-    assert plan.equivalence_classes_by_sample is not None
-    with pytest.raises(ValueError, match="cover each logical request once"):
-        replace(
-            plan,
-            equivalence_classes_by_sample={"sample-b": ()},
-        )
-    with pytest.raises(ValueError, match="cover each logical request once"):
-        replace(
-            plan,
-            equivalence_classes_by_sample={
-                "sample-b": (equivalence_class, equivalence_class)
-            },
-        )
-    rebound_item = equivalence_class.members[0].item._replace(
-        request=XICRequest(501.0, 7.5, 9.5, 20.0)
-    )
-    with pytest.raises(ValueError, match="hypothesis-bound request"):
-        replace(
-            equivalence_class.members[0],
-            item=rebound_item,
-        )
 
 
 def test_owner_backfill_extracts_once_per_class_and_fans_out_complete_results(

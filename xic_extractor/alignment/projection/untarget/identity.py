@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import InitVar, dataclass, field
 
 from xic_extractor.alignment.cross_sample.peak_groups import (
@@ -41,14 +40,6 @@ def _request_id(value: object, *, field_name: str) -> str:
         raise UntargetProjectionContractError(str(exc)) from exc
 
 
-def _require_owner_group(group: object) -> CrossSampleGroupIdentity:
-    if type(group) is not CrossSampleGroupIdentity:
-        raise UntargetProjectionContractError(
-            "row identity requires exact owner CrossSample groups"
-        )
-    return group
-
-
 def _untarget_row_key_basis(
     *,
     processing_request_id: str,
@@ -76,29 +67,6 @@ class UntargetRowKey:
     group: CrossSampleGroupIdentity
     basis_bytes: bytes
 
-    def __post_init__(self) -> None:
-        group = _require_owner_group(self.group)
-        request_id = _request_id(
-            group.processing_request_id,
-            field_name="group.processing_request_id",
-        )
-        expected_basis = _untarget_row_key_basis(
-            processing_request_id=request_id,
-            group=group,
-        )
-        if self.basis_bytes != expected_basis:
-            raise UntargetProjectionContractError(
-                "UntargetRowKey basis bytes are not exact"
-            )
-        try:
-            expected_id = _untarget_row_key_id(expected_basis)
-        except (TypeError, ValueError) as exc:
-            raise UntargetProjectionContractError(str(exc)) from exc
-        if self.untarget_row_key_id != expected_id:
-            raise UntargetProjectionContractError(
-                "untarget row key ID mismatches its exact basis bytes"
-            )
-
     @property
     def processing_request_id(self) -> str:
         return self.group.processing_request_id
@@ -115,7 +83,6 @@ class UntargetRowKey:
 def _mint_untarget_row_key(group: CrossSampleGroupIdentity) -> UntargetRowKey:
     """Mint the row key from an owner-validated canonical group."""
 
-    group = _require_owner_group(group)
     request_id = _request_id(
         group.processing_request_id,
         field_name="group.processing_request_id",
@@ -144,40 +111,6 @@ class GroupCellSubject:
     member_subject: CrossSampleGroupMemberSubject | None
     _mint_token: InitVar[object | None] = field(default=None, kw_only=True, repr=False)
 
-    def __post_init__(self, _mint_token: object | None) -> None:
-        if type(self.row_key) is not UntargetRowKey:
-            raise UntargetProjectionContractError(
-                "GroupCellSubject requires an exact UntargetRowKey"
-            )
-        if type(self.canonical_sample) is not ResolvedCanonicalSampleIdentity:
-            raise UntargetProjectionContractError(
-                "GroupCellSubject requires an owner-resolved canonical sample"
-            )
-        group = self.row_key.group
-        if self.member_subject is None:
-            return
-        if type(self.member_subject) is not CrossSampleGroupMemberSubject:
-            raise UntargetProjectionContractError(
-                "GroupCellSubject member must be an exact CrossSample subject"
-            )
-        if (
-            _mint_token is not _PROJECTION_MINT_TOKEN
-            and self.member_subject not in group.member_subjects
-        ):
-            raise UntargetProjectionContractError(
-                "GroupCellSubject member is absent from its group"
-            )
-        if self.member_subject.processing_request_id != (group.processing_request_id):
-            raise UntargetProjectionContractError(
-                "GroupCellSubject member crossed the processing request"
-            )
-        if self.member_subject.canonical_sample_identity_id != (
-            self.canonical_sample.identity.sample_identity_id
-        ):
-            raise UntargetProjectionContractError(
-                "GroupCellSubject member crossed the canonical sample"
-            )
-
     @property
     def group(self) -> CrossSampleGroupIdentity:
         return self.row_key.group
@@ -203,20 +136,3 @@ class GroupCellSubject:
             },
         )
         return identity
-
-
-def _validate_row_key_population(
-    row_keys: Sequence[UntargetRowKey],
-) -> None:
-    basis_by_id: dict[str, bytes] = {}
-    for row_key in row_keys:
-        if type(row_key) is not UntargetRowKey:
-            raise UntargetProjectionContractError(
-                "row-key population contains a non-owner row key"
-            )
-        prior_basis = basis_by_id.get(row_key.untarget_row_key_id)
-        if prior_basis is not None and prior_basis != row_key.basis_bytes:
-            raise UntargetProjectionContractError(
-                "row-key identity collision has unequal basis bytes"
-            )
-        basis_by_id[row_key.untarget_row_key_id] = row_key.basis_bytes
