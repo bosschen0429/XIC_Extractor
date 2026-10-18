@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from dataclasses import InitVar, dataclass, field
 from typing import TYPE_CHECKING, Literal, TypeAlias
 
@@ -15,9 +14,7 @@ from xic_extractor.alignment.result.scientific_alignment import (
     _validate_finalized_scientific_alignment_completion_receipt,
 )
 from xic_extractor.discovery.batch_contract import (
-    ALIGNMENT_FEATURE_INPUT_KEY,
-    CANDIDATE_UNIVERSE_INPUT_KEY,
-    validate_candidate_universe_payload,
+    candidate_sample_stems_from_request,
 )
 from xic_extractor.discovery.models import (
     DISCOVERY_CANDIDATE_STATE_VALUES,
@@ -1008,54 +1005,29 @@ def _candidate_sample_ids_from_request(
     *,
     samples: tuple[ResolvedCanonicalSampleIdentity, ...],
 ) -> dict[str, str]:
-    request_inputs = json.loads(request.normalized_scientific_inputs_json)
     try:
-        entries = validate_candidate_universe_payload(
-            request_inputs[CANDIDATE_UNIVERSE_INPUT_KEY],
+        candidate_stems, feature_ids = candidate_sample_stems_from_request(
+            request,
             expected_sample_stems=tuple(sample.metadata.raw_stem for sample in samples),
         )
-    except (IdentityContractError, KeyError) as exc:
+    except IdentityContractError as exc:
         raise ApplicationResultContractError(
-            "Untarget batch requires its owner-validated candidate/sample universe"
+            "Untarget batch requires its owner-validated candidate/sample universe: "
+            f"{exc}"
         ) from exc
     sample_id_by_stem = {
         sample.metadata.raw_stem: sample.identity.sample_identity_id
         for sample in samples
     }
-    candidate_sample_ids: dict[str, str] = {}
-    for entry in entries:
-        sample_stem = entry["sample_stem"]
-        candidate_ids = entry["candidate_ids"]
-        assert isinstance(sample_stem, str)
-        assert isinstance(candidate_ids, list)
-        sample_id = sample_id_by_stem[sample_stem]
-        for candidate_id in candidate_ids:
-            assert isinstance(candidate_id, str)
-            if candidate_id in candidate_sample_ids:
-                raise ApplicationResultContractError(
-                    "Untarget batch candidate/sample universe is not unique"
-                )
-            candidate_sample_ids[candidate_id] = sample_id
-    feature_ids = request_inputs.get(ALIGNMENT_FEATURE_INPUT_KEY)
     if feature_ids is not None:
-        if (
-            not isinstance(feature_ids, list)
-            or any(not isinstance(cid, str) for cid in feature_ids)
-            or feature_ids != sorted(set(feature_ids))
-            or not set(feature_ids).issubset(candidate_sample_ids)
-        ):
-            raise ApplicationResultContractError(
-                "Alignment feature selection is invalid"
-            )
         subject_batch = cid_nl_method_subject_batch_from_request(request)
-        if tuple(feature_ids) != tuple(
+        if feature_ids != tuple(
             cid for cid, _ in subject_batch.candidate_memberships
         ):
             raise ApplicationResultContractError(
                 "Alignment feature selection crossed subject membership"
             )
-        return {cid: candidate_sample_ids[cid] for cid in feature_ids}
-    return candidate_sample_ids
+    return {cid: sample_id_by_stem[stem] for cid, stem in candidate_stems.items()}
 
 
 def _sample_sort_key(sample: ResolvedCanonicalSampleIdentity) -> str:

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,6 +25,7 @@ from xic_extractor.discovery.physical_fact_record import (
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     IdentityContractError,
+    ProcessingRequestIdentity,
     fingerprint_file_content,
 )
 from xic_extractor.processing_run_spec import ProcessingRunSpec
@@ -564,6 +565,60 @@ def validate_candidate_universe_payload(
     return tuple(typed)
 
 
+def validate_alignment_feature_selection(
+    payload: object,
+    *,
+    candidate_ids: Iterable[str],
+) -> tuple[str, ...] | None:
+    """Read an optional canonical feature subset without choosing its members."""
+    if payload is None:
+        return None
+    if (
+        not isinstance(payload, list)
+        or any(not isinstance(item, str) or not item for item in payload)
+        or payload != sorted(set(payload))
+    ):
+        raise IdentityContractError("alignment feature candidate IDs are malformed")
+    if not set(payload).issubset(candidate_ids):
+        raise IdentityContractError(
+            "alignment feature candidates are outside the Discovery universe"
+        )
+    return tuple(payload)
+
+
+def candidate_sample_stems_from_request(
+    request: ProcessingRequestIdentity,
+    *,
+    expected_sample_stems: Sequence[str],
+) -> tuple[dict[str, str], tuple[str, ...] | None]:
+    """Decode selected candidate/sample facts and the optional feature selection.
+
+    Sample identity and method-subject binding remain with the consumer. A
+    missing selection retains the full universe; an empty selection retains none.
+    """
+    values = json.loads(request.normalized_scientific_inputs_json)
+    entries = validate_candidate_universe_payload(
+        values.get(CANDIDATE_UNIVERSE_INPUT_KEY),
+        expected_sample_stems=expected_sample_stems,
+    )
+    sample_stems: dict[str, str] = {}
+    for entry in entries:
+        stem = entry["sample_stem"]
+        ids = entry["candidate_ids"]
+        assert isinstance(stem, str)
+        assert isinstance(ids, list)
+        for candidate_id in ids:
+            if candidate_id in sample_stems:
+                raise IdentityContractError("candidate/sample universe is not unique")
+            sample_stems[candidate_id] = stem
+    feature_ids = validate_alignment_feature_selection(
+        values.get(ALIGNMENT_FEATURE_INPUT_KEY), candidate_ids=sample_stems
+    )
+    if feature_ids is not None:
+        sample_stems = {cid: sample_stems[cid] for cid in feature_ids}
+    return sample_stems, feature_ids
+
+
 def canonical_sample_stems(values: Sequence[str]) -> tuple[str, ...]:
     if isinstance(values, (str, bytes)):
         raise IdentityContractError("sample stems must be a sequence")
@@ -592,6 +647,8 @@ __all__ = (
     "mint_discovery_candidate_universe_receipt",
     "validate_discovery_candidate_artifact",
     "canonical_sample_stems",
+    "candidate_sample_stems_from_request",
+    "validate_alignment_feature_selection",
     "validate_candidate_universe_payload",
     "validate_discovery_candidate_universe",
 )

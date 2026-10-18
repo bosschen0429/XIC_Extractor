@@ -43,6 +43,7 @@ from xic_extractor.discovery.batch_contract import (
     ALIGNMENT_FEATURE_INPUT_KEY,
     CANDIDATE_UNIVERSE_INPUT_KEY,
     DiscoveryCandidateUniverseReceipt,
+    validate_alignment_feature_selection,
     validate_candidate_universe_payload,
 )
 from xic_extractor.discovery.models import DiscoveryCandidate, DiscoverySettings
@@ -1031,27 +1032,13 @@ def _request_input_index(
     by_sample = MappingProxyType(
         {str(entry["sample_stem"]): entry for entry in entries}
     )
-    raw_feature_ids = values.get(ALIGNMENT_FEATURE_INPUT_KEY)
-    feature_ids: frozenset[str] | None = None
-    if raw_feature_ids is not None:
-        if (
-            not isinstance(raw_feature_ids, list)
-            or any(not isinstance(item, str) or not item for item in raw_feature_ids)
-            or raw_feature_ids != sorted(set(raw_feature_ids))
-        ):
-            raise UntargetedPartitionError(
-                "alignment feature candidate IDs are malformed"
-            )
-        universe_ids: set[str] = set()
-        for entry in entries:
-            entry_ids = entry["candidate_ids"]
-            assert isinstance(entry_ids, list)
-            universe_ids.update(entry_ids)
-        if not set(raw_feature_ids).issubset(universe_ids):
-            raise UntargetedPartitionError(
-                "alignment feature candidates are outside the Discovery universe"
-            )
-        feature_ids = frozenset(raw_feature_ids)
+    selected_ids = validate_alignment_feature_selection(
+        values.get(ALIGNMENT_FEATURE_INPUT_KEY),
+        candidate_ids=(
+            cid for entry in entries for cid in cast(list[str], entry["candidate_ids"])
+        ),
+    )
+    feature_ids = None if selected_ids is None else frozenset(selected_ids)
     return values, by_sample, feature_ids
 
 
