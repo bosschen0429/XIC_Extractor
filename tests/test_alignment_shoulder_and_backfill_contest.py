@@ -15,7 +15,6 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 from xic_extractor.alignment.grouping_workflow import (
     contested_backfill_peaks,
     group_cid_nl_owners,
-    merge_sample_disjoint_groups,
     reject_shoulder_groups,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
@@ -73,7 +72,6 @@ def test_ms1_patterns_prevent_remerging_sample_disjoint_direct_rows() -> None:
         config=_CONFIG,
         sample_universe=frozenset(orders),
         rt_frame=SampleRtFrame(injection_order=(orders or {})),
-        backfill_half_window_min=1.0,
         peak_trajectories=correspondence,
     )
     assert {frozenset(group.owner_ids) for group in result} == {
@@ -310,51 +308,8 @@ def _two_bands(early: tuple[str, ...], late: tuple[str, ...], *, gap: float):
     return groups
 
 
-def test_sample_disjoint_rows_within_one_backfill_window_merge() -> None:
-    """Sparse bands retain the existing trend gate's permissive behavior."""
-
-    groups = _two_bands(("S1", "S2", "S3"), ("S4", "S5", "S6"), gap=1.8)
-
-    (merged,) = merge_sample_disjoint_groups(
-        groups,
-        config=_CONFIG,
-        backfill_half_window_min=2.0,
-        rt_frame=SampleRtFrame(injection_order=({f"S{i}": i for i in range(12)})),
-    )
-
-    assert merged.disposition == "established"
-    assert merged.inference_basis is not None
-    assert merged.inference_basis.basis == "window_level_rt_band"
-    assert sorted(merged.owner_ids) == sorted(
-        owner_id for group in groups for owner_id in group.owner_ids
-    )
-    assert merged.public_family_id == min(group.public_family_id for group in groups)
-    assert (
-        len({member.canonical_sample_identity_id for member in merged.member_subjects})
-        == 6
-    )
-
-
-def test_rows_with_a_shared_sample_or_beyond_the_window_stay_apart() -> None:
-    shared = _two_bands(("S1", "S2", "S3"), ("S3", "S4", "S5"), gap=1.8)
-    distant = _two_bands(("S1", "S2", "S3"), ("S4", "S5", "S6"), gap=3.0)
-
-    for groups in (shared, distant):
-        assert (
-            merge_sample_disjoint_groups(
-                groups,
-                config=_CONFIG,
-                backfill_half_window_min=2.0,
-                rt_frame=SampleRtFrame(
-                    injection_order=({f"S{i}": i for i in range(12)})
-                ),
-            )
-            == groups
-        )
-
-
 @pytest.mark.parametrize("calibrated", [False, True])
-def test_sample_disjoint_merge_uses_the_whole_union_rt_trend(
+def test_grouping_uses_corrected_coordinates_for_separated_bands(
     calibrated: bool,
 ) -> None:
     # Alternating injections at 9.0 and 10.8 min contradict one local band,
@@ -369,10 +324,10 @@ def test_sample_disjoint_merge_uses_the_whole_union_rt_trend(
         def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
             return 9.0
 
-    result = merge_sample_disjoint_groups(
-        groups,
+    result = group_cid_nl_owners(
+        tuple(owner for group in groups for owner in group.owners),
         config=_CONFIG,
-        backfill_half_window_min=2.0,
+        sample_universe=frozenset(f"S{i}" for i in range(12)),
         rt_frame=SampleRtFrame(
             injection_order=({f"S{i}": i for i in range(12)})
         ).with_warp(CorrectedCoordinates() if calibrated else None),

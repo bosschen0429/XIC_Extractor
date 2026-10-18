@@ -39,6 +39,87 @@ class ShapeSimilarityResult:
 
 
 @dataclass(frozen=True)
+class LocalPeakShape:
+    """Apex-relative, own-max signal samples; missing context stays missing.
+
+    This is correspondence evidence, not a new baseline, peak selection or
+    integration. Prepare it once per observation, before comparing owners.
+    """
+
+    half_window_min: float
+    intensity: tuple[float | None, ...]
+    source_point_count: int
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.half_window_min, bool)
+            or not math.isfinite(self.half_window_min) or self.half_window_min <= 0
+            or type(self.intensity) is not tuple
+            or len(self.intensity) < 5
+            or type(self.source_point_count) is not int or self.source_point_count < 0
+            or any(
+                value is not None and (
+                    isinstance(value, bool) or not math.isfinite(value) or value > 1.0
+                )
+                for value in self.intensity
+            )
+        ):
+            raise ValueError("local peak shape requires a finite normalized RT grid")
+
+
+def prepare_local_peak_shape(
+    rt: Sequence[float | int | None],
+    intensity: Sequence[float | int | None],
+    *,
+    apex_rt_min: float,
+    half_window_min: float = DEFAULT_LOCAL_HALF_WINDOW_MIN,
+    grid_size: int = DEFAULT_LOCAL_GRID_SIZE,
+    smooth_points: int = DEFAULT_OWN_MAX_SMOOTH_POINTS,
+) -> LocalPeakShape:
+    """Translate RT, but never stretch peak width or subtract local background."""
+    if grid_size < 5 or not math.isfinite(half_window_min) or half_window_min <= 0:
+        raise ValueError("local peak shape requires a positive window and >=5 points")
+    grid = np.linspace(-half_window_min, half_window_min, grid_size)
+    values, source_count = _local_own_max_curve(
+        rt, intensity, apex_rt_min=apex_rt_min, grid=grid,
+        smooth_points=smooth_points,
+    )
+    return LocalPeakShape(
+        half_window_min,
+        tuple(float(value) if math.isfinite(value) else None for value in values),
+        int(source_count),
+    )
+
+
+def compare_local_peak_shapes(
+    left: LocalPeakShape, right: LocalPeakShape,
+) -> ShapeSimilarityResult:
+    """Compare only jointly observed points on the same relative RT grid."""
+    if (
+        left.half_window_min != right.half_window_min
+        or len(left.intensity) != len(right.intensity)
+    ):
+        return ShapeSimilarityResult("inconclusive", "shape_grid_mismatch")
+    if min(left.source_point_count, right.source_point_count) < 5:
+        return ShapeSimilarityResult("inconclusive", "too_few_acquired_shape_points")
+    similarity, count = _pearson_similarity(
+        np.asarray(left.intensity, dtype=float),
+        np.asarray(right.intensity, dtype=float),
+    )
+    if 0 < count < (len(left.intensity) + 1) // 2:
+        return ShapeSimilarityResult(
+            "inconclusive", "insufficient_shared_shape_context", None, count,
+        )
+    return ShapeSimilarityResult(
+        "ok" if similarity is not None else "inconclusive",
+        "local_own_max_shape_similarity" if similarity is not None
+        else "similarity_unavailable",
+        similarity,
+        count,
+    )
+
+
+@dataclass(frozen=True)
 class CompetingPeakSummary:
     status: str
     reason: str
@@ -125,35 +206,23 @@ def local_own_max_shape_similarity(
 ) -> ShapeSimilarityResult:
     if grid_size < 5:
         return ShapeSimilarityResult("inconclusive", "grid_too_small")
-    grid = np.linspace(-half_window_min, half_window_min, grid_size)
-    candidate = _local_own_max_curve(
+    candidate = prepare_local_peak_shape(
         candidate_rt,
         candidate_intensity,
         apex_rt_min=candidate_rt_min,
-        grid=grid,
+        half_window_min=half_window_min,
+        grid_size=grid_size,
         smooth_points=smooth_points,
     )
-    reference = _local_own_max_curve(
+    reference = prepare_local_peak_shape(
         reference_rt,
         reference_intensity,
         apex_rt_min=reference_rt_min,
-        grid=grid,
+        half_window_min=half_window_min,
+        grid_size=grid_size,
         smooth_points=smooth_points,
     )
-    similarity, count = _pearson_similarity(candidate, reference)
-    if similarity is None:
-        return ShapeSimilarityResult(
-            "inconclusive",
-            "similarity_unavailable",
-            None,
-            count,
-        )
-    return ShapeSimilarityResult(
-        "ok",
-        "local_own_max_shape_similarity",
-        similarity,
-        count,
-    )
+    return compare_local_peak_shapes(candidate, reference)
 
 
 def competing_peak_summary(
@@ -205,11 +274,11 @@ def _local_own_max_curve(
     apex_rt_min: float,
     grid: np.ndarray,
     smooth_points: int,
-) -> np.ndarray:
+) -> tuple[np.ndarray, int]:
     rt_array = _float_array(rt)
     intensity_array = _float_array(intensity)
     if rt_array.size != intensity_array.size or rt_array.size < 3:
-        return np.full_like(grid, np.nan, dtype=float)
+        return np.full_like(grid, np.nan, dtype=float), 0
     relative_rt = rt_array - apex_rt_min
     mask = (
         np.isfinite(relative_rt)
@@ -218,7 +287,7 @@ def _local_own_max_curve(
         & (relative_rt <= float(grid[-1]))
     )
     if int(np.sum(mask)) < 3:
-        return np.full_like(grid, np.nan, dtype=float)
+        return np.full_like(grid, np.nan, dtype=float), int(np.sum(mask))
     relative_rt = relative_rt[mask]
     intensity_array = intensity_array[mask]
     order = np.argsort(relative_rt)
@@ -229,14 +298,14 @@ def _local_own_max_curve(
     )
     max_intensity = float(np.max(smoothed)) if smoothed.size else 0.0
     if max_intensity <= 0:
-        return np.full_like(grid, np.nan, dtype=float)
+        return np.full_like(grid, np.nan, dtype=float), len(relative_rt)
     return np.interp(
         grid,
         relative_rt,
         smoothed / max_intensity,
         left=np.nan,
         right=np.nan,
-    )
+    ), len(relative_rt)
 
 
 def _local_maxima(

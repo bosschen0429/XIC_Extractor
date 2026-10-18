@@ -40,7 +40,6 @@ class GroupingInputs:
     sample_stems: tuple[str, ...]
     injection_order: Mapping[str, int]
     alignment_config: AlignmentConfig
-    backfill_half_window_min: float
     worksets: tuple[GroupingWorkset, ...]
     candidate_ids_by_owner: Mapping[str, tuple[str, ...]]
 
@@ -69,7 +68,6 @@ def replay_grouping(
             config=config or inputs.alignment_config,
             sample_universe=sample_universe,
             rt_frame=override or base_frame.with_warp(workset.rt_warp),
-            backfill_half_window_min=inputs.backfill_half_window_min,
             known_identity_bindings=workset.known_identity_bindings,
             peak_trajectories=resolve_peak_trajectories(
                 workset.owners,

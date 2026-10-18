@@ -228,6 +228,21 @@ mass, and product mass, and handles competition within each sample. Currently:
 - Pairwise precursor tolerance limits candidates; product deviation is a soft
   cost, observed loss is not a separate veto, and a cumulative min-max envelope
   does not independently veto membership.
+- Measured peak shape is independent correspondence evidence. The owner adapter
+  retains an apex-relative, own-max Gaussian-smoothed shape from the selected
+  raw MS1 subtrace, without changing its baseline, bounds, apex or area. Comparison
+  translates RT but does not stretch width. A local Pearson similarity below
+  `min_peak_shape_similarity` (default 0.80) prevents ordinary membership.
+  At least five acquired points per trace and half of the shared +/-0.35-minute
+  grid are required; insufficient context or flat traces remain unassessed.
+  Shape agreement alone does not establish membership. A measured contradiction
+  applies to the entire proposed union, including trajectory seeds, singleton
+  admission and separated-band bridges; intermediate members cannot hide it.
+  Directional assignment and Backfill admission consume the same shape rule.
+  Simultaneous Backfill candidates are also compared with each other after
+  claim resolution. Both endpoints of a shape conflict remain unassigned;
+  independent compatible additions can still join, without an ordering winner.
+  Explicit known-identity constraints remain separate from inferred membership.
 - Dense bands use their own trend over six neighboring injections; sparse bands
   use broader warp-only RT comparisons. This is not another Backfill localization.
 - A band cannot contain two owners from the same sample.
@@ -256,14 +271,13 @@ injection order, bands separated by unobserved injections may connect based on
 mass, corrected RT trend, sample disjointness, and mutual unique-best decisions.
 An injection gap alone is not evidence of distinct Features.
 
-The subsequent
-[sample-disjoint merge](../../xic_extractor/alignment/grouping_workflow.py)
-proposes candidates using preferred m/z tolerance, raw group-center RT, and the
-Backfill half-window; it combines them by distance while checking sample
-overlap, trajectory compatibility, and the union RT trend. Known-identity groups
-retain their own membership. Its candidate and competition policies differ
-from the internal bridge and cannot be summarized as "merge because no sample
-distinguishes them."
+Initial membership is decided only by `infer_feature_memberships`, including
+local grouping, singleton assignment, and this internal bridge. The workflow
+consumes that result without a second merge. With owners, pattern evidence and
+RT frame fixed, Backfill search windows do not change initial membership;
+widening acquisition may change recovery, not the initial Feature boundary.
+Known-identity and bootstrap/composite
+directional rules remain within inference.
 
 Shoulder rejection is a separate action. Current conditions require both groups
 to be established, more than half of the smaller group's members to share
@@ -301,7 +315,6 @@ execution rules.
 | --- | --- | --- |
 | Pattern acceptance conditions | Eligible seeds connect directly; sharing a track also affects cost and ambiguity handling. | What evidence is sufficient to accept a correspondence? Do later steps consume an accepted result or repeat the decision? |
 | Indirect effects of single-peak continuation | It does not directly emit its owner/position, but still participates in root contraction and may change other supported tracks. | What evidence supports this effect? How is it consistent with the boundary that it cannot independently establish a pattern? |
-| Two group-merging policies | The internal bridge and later merge use different candidate, ordering, and competition rules. | When does the later merge cover unevaluated candidates, and when does it reconsider existing competition? How can it avoid treating unconnected groups as directly mergeable? |
 | Conflict between a borrowed position and a direct owner | Localization lets the direct owner override the borrowed position in the same sample, while other borrowed positions may remain. | If they represent different peaks, which correspondences still hold? Does overwriting only RT hide an unresolved conflict? |
 | Granularity of landmarks and physical peaks | Distinct landmarks may establish distinct-track constraints; landmarks may also include shoulders. | When is this sufficient to rule out the same Feature, and when is it only structure within one peak or a segmentation difference? |
 | Overgeneralized decision reasons | Assigned window groups are uniformly labeled as supported by RT trend; unions with fewer than 10 owners may pass the trend check directly. | How should explanations distinguish actually measured support, a pattern seed, and merely not being ruled out by a check? |

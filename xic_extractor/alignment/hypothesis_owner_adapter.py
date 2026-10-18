@@ -21,6 +21,7 @@ from xic_extractor.peak_detection.cid_nl_peak_support import (
     DdaCidNlPeakSupportRef,
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
+from xic_extractor.peak_detection.ms1_shape_identity import prepare_local_peak_shape
 from xic_extractor.peak_detection.observations import PeakObservationRef
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     HYPOTHESIS_METHOD_DDA_CID_NL,
@@ -320,6 +321,10 @@ def owner_from_cid_nl_assessment_support(
         if assessment.content.method_subject.composition
         else None,
         selected_integration=integration,
+        peak_shape=prepare_local_peak_shape(
+            observation.content.rt, observation.content.intensity,
+            apex_rt_min=integration.rt_apex_min,
+        ),
         cross_sample_member_subject=group_member_subject_from_peak_hypothesis(
             processing_request_id=(assessment.artifact.producer_processing_request_id),
             sample=sample,
@@ -396,6 +401,10 @@ def owner_from_cid_nl_assessment_observation(
         identity_conflict=False,
         assignment_reason="cid_nl_method_assessment_observation_only",
         selected_integration=integration,
+        peak_shape=prepare_local_peak_shape(
+            observation.content.rt, observation.content.intensity,
+            apex_rt_min=integration.rt_apex_min,
+        ),
         cross_sample_member_subject=group_member_subject_from_peak_hypothesis(
             processing_owners=processing_owners,
             sample=sample,
@@ -446,6 +455,10 @@ def owner_from_ms1_observation_hypothesis(
         identity_conflict=False,
         assignment_reason="ms1_observation_hypothesis",
         selected_integration=integration,
+        peak_shape=prepare_local_peak_shape(
+            observation.content.rt, observation.content.intensity,
+            apex_rt_min=integration.rt_apex_min,
+        ),
         cross_sample_member_subject=group_member_subject_from_peak_hypothesis(
             processing_owners=processing_owners,
             sample=sample,

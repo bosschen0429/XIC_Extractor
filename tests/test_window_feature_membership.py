@@ -6,6 +6,7 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from xic_extractor.alignment.cid_nl_inputs import (
@@ -16,9 +17,12 @@ from xic_extractor.alignment.feature_membership_inference import (
     BatchRtWarp,
     estimate_batch_rt_warp,
     infer_feature_memberships,
+    supports_existing_feature,
 )
 from xic_extractor.alignment.ownership_models import IdentityEvent, SampleLocalMS1Owner
 from xic_extractor.alignment.peak_trajectories import (
+    PeakTrajectories,
+    PeakTrajectory,
     resolve_peak_trajectories,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
@@ -26,6 +30,7 @@ from xic_extractor.peak_detection.elution_context import (
     ElutionLandmark,
     SampleElutionContext,
 )
+from xic_extractor.peak_detection.ms1_shape_identity import prepare_local_peak_shape
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _DATA = json.loads((_FIXTURES / "window_feature_regression_cases.json").read_text())
@@ -124,6 +129,163 @@ def _synthetic_owner(
         identity_conflict=False,
         assignment_reason="same_apex_window",
     )
+
+
+@pytest.mark.parametrize("bootstrap", [False, True])
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("pattern_seed", [False, True])
+def test_peak_shape_contradiction_cannot_join_matching_mass_and_rt(
+    bootstrap: bool, reverse: bool, pattern_seed: bool,
+) -> None:
+    offsets = np.linspace(-0.6, 0.6, 121)
+    peak = np.exp(-0.5 * (offsets / 0.07) ** 2)
+    background = 3.0 - offsets + 0.15 * np.cos(offsets * 35)
+    owners = []
+    for sample, apex, values in (
+        ("clean-a", 10.0, peak),
+        ("clean-b", 10.1, peak * 250),
+        ("background", 10.2, background),
+    ):
+        owners.append(replace(
+            _synthetic_owner(sample, sample, apex),
+            peak_shape=prepare_local_peak_shape(
+                offsets + apex, values, apex_rt_min=apex,
+            ),
+        ))
+    if reverse:
+        owners.reverse()
+    result = infer_feature_memberships(
+        owners, config=AlignmentConfig(), bootstrap=bootstrap,
+        rt_frame=SampleRtFrame(injection_order={
+            "clean-a": 1, "clean-b": 2, "background": 3,
+        }),
+        peak_trajectories=PeakTrajectories(tracks=(PeakTrajectory(
+            tuple(owner.owner_id for owner in owners),
+            tuple((owner.sample_stem, owner.owner_apex_rt) for owner in owners),
+        ),)) if pattern_seed else None,
+    )
+    assert {frozenset(group.owner_ids) for group in result.groups} == {
+        frozenset(("clean-a", "clean-b")), frozenset(("background",)),
+    }
+
+
+@pytest.mark.parametrize("bootstrap", [False, True])
+def test_intermediate_shape_does_not_transitively_merge_incompatible_peaks(
+    bootstrap: bool,
+) -> None:
+    offsets = np.linspace(-0.6, 0.6, 121)
+    owners = tuple(
+        replace(
+            _synthetic_owner(name, name, 10.0),
+            peak_shape=prepare_local_peak_shape(
+                offsets + 10.0, np.exp(-0.5 * (offsets / width) ** 2),
+                apex_rt_min=10.0,
+            ),
+        )
+        for name, width in (("narrow", .03), ("middle", .07), ("wide", .25))
+    )
+    result = infer_feature_memberships(
+        owners, config=AlignmentConfig(), bootstrap=bootstrap,
+        rt_frame=SampleRtFrame(injection_order={
+            "narrow": 1, "middle": 2, "wide": 3,
+        }),
+    )
+    assert sorted(len(group.owner_ids) for group in result.groups) == (
+        [1, 1, 1] if bootstrap else [1, 2]
+    )
+    assert not any(
+        {"narrow", "wide"}.issubset(group.owner_ids) for group in result.groups
+    )
+
+
+def test_singleton_extensions_check_shapes_of_previously_admitted_samples() -> None:
+    offsets = np.linspace(-0.6, 0.6, 121)
+    widths = {**{f"seed-{i}": .07 for i in range(1, 15)}, "wide": .25, "narrow": .03}
+    orders = {**{f"seed-{i}": i for i in range(1, 15)}, "wide": 40, "narrow": 70}
+    owners = tuple(
+        replace(
+            _synthetic_owner(name, name, 10.0),
+            peak_shape=prepare_local_peak_shape(
+                offsets + 10, np.exp(-0.5 * (offsets / width) ** 2),
+                apex_rt_min=10,
+            ),
+        )
+        for name, width in widths.items()
+    )
+    result = infer_feature_memberships(
+        owners, config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(injection_order=orders),
+    )
+    assert sorted(len(group.owner_ids) for group in result.groups) == [1, 15]
+    assert not any({"wide", "narrow"}.issubset(g.owner_ids) for g in result.groups)
+
+
+@pytest.mark.parametrize("with_order", [False, True])
+def test_existing_feature_admission_requires_compatible_peak_shape(with_order) -> None:
+    offsets = np.linspace(-.6, .6, 121)
+    reference = replace(
+        _synthetic_owner("reference", "reference", 10),
+        peak_shape=prepare_local_peak_shape(
+            offsets + 10, np.exp(-.5 * (offsets / .07) ** 2), apex_rt_min=10,
+        ),
+    )
+    candidate = replace(reference, owner_id="candidate", sample_stem="candidate")
+    frame = (
+        SampleRtFrame(injection_order={"reference": 1, "candidate": 2})
+        if with_order else SampleRtFrame()
+    )
+    assert supports_existing_feature(
+        candidate, (reference,), config=AlignmentConfig(), rt_frame=frame,
+    )
+    candidate = replace(candidate, peak_shape=prepare_local_peak_shape(
+        offsets + 10, 3 - offsets, apex_rt_min=10,
+    ))
+    assert not supports_existing_feature(
+        candidate, (reference,), config=AlignmentConfig(), rt_frame=frame,
+    )
+
+
+def test_tissue_background_observation_does_not_join_four_localized_peaks() -> None:
+    evidence = json.loads((_FIXTURES / "tissue_247_peak_shapes.json").read_text())
+    owners = tuple(
+        replace(
+            _synthetic_owner(
+                row["sample"], row["owner_id"], row["apex_rt"],
+                precursor_mz=row["mz"], product_mz=row["product_mz"],
+            ),
+            owner_peak_start_rt=row["bounds"][0],
+            owner_peak_end_rt=row["bounds"][1],
+            peak_shape=prepare_local_peak_shape(
+                row["rt"], row["intensity"], apex_rt_min=row["apex_rt"],
+            ),
+        )
+        for row in evidence["owners"]
+    )
+    frame = SampleRtFrame(injection_order={
+        row["sample"]: row["injection_order"] for row in evidence["owners"]
+    }).with_warp(BatchRtWarp(tuple(
+        (row["sample"], ((row["corrected_rt"], row["apex_rt"] - row["corrected_rt"]),))
+        for row in evidence["owners"]
+    ), 0))
+    result = infer_feature_memberships(owners, config=AlignmentConfig(), rt_frame=frame)
+    by_id = {owner.owner_id: owner for owner in owners}
+    assert {
+        frozenset(by_id[owner_id].sample_stem for owner_id in group.owner_ids)
+        for group in result.groups
+    } == {
+        frozenset((
+            "NormalBC2272_DNA", "NormalBC2281_DNA",
+            "NormalBC2283_DNA", "NormalBC2303_DNA",
+        )),
+        frozenset(("NormalBC2302_DNA",)),
+    }
+    rejected = next(
+        decision for decision in result.sparse_decisions
+        if decision.sample_stem == "NormalBC2302_DNA"
+    )
+    assert rejected.state == "proven_incompatible"
+    assert rejected.reason == "peak_shape_mismatch"
+    assert rejected.witness_owner_ids
 
 
 @pytest.mark.parametrize("reverse", [False, True])
@@ -825,8 +987,9 @@ def test_sparse_band_remains_warp_only_beside_an_unrelated_dense_band() -> None:
 
 
 @pytest.mark.parametrize("late_shift_min", (0.0, 0.8))
+@pytest.mark.parametrize("different_shape", (False, True))
 def test_dense_band_survives_a_long_absence_in_injection_order(
-    late_shift_min: float,
+    late_shift_min: float, different_shape: bool,
 ) -> None:
     orders = (*range(1, 8), *range(35, 42))
     owners = tuple(
@@ -837,6 +1000,16 @@ def test_dense_band_survives_a_long_absence_in_injection_order(
         )
         for order in orders
     )
+    offsets = np.linspace(-.6, .6, 121)
+    owners = tuple(replace(
+        owner,
+        peak_shape=prepare_local_peak_shape(
+            offsets + owner.owner_apex_rt,
+            3 - offsets if different_shape and order >= 35
+            else np.exp(-.5 * (offsets / .07) ** 2),
+            apex_rt_min=owner.owner_apex_rt,
+        ),
+    ) for owner, order in zip(owners, orders, strict=True))
     warp = BatchRtWarp(
         tuple(
             (f"s{order:02d}", ((7.0, late_shift_min), (11.0, late_shift_min)))
@@ -852,9 +1025,15 @@ def test_dense_band_survives_a_long_absence_in_injection_order(
         ).with_warp(warp),
     )
 
-    assert len(result.groups) == 1
-    assert result.groups[0].disposition == "assigned"
-    assert set(result.groups[0].owner_ids) == {owner.owner_id for owner in owners}
+    assert all(group.disposition == "assigned" for group in result.groups)
+    if different_shape:
+        assert {frozenset(group.owner_ids) for group in result.groups} == {
+            frozenset(owner.owner_id for owner in owners[:7]),
+            frozenset(owner.owner_id for owner in owners[7:]),
+        }
+    else:
+        assert len(result.groups) == 1
+        assert set(result.groups[0].owner_ids) == {owner.owner_id for owner in owners}
 
 
 def test_long_gap_does_not_bridge_distinct_dense_rt_bands() -> None:

@@ -741,9 +741,6 @@ def finalize_untargeted_partition_grouping(
             grouping_result=workset.grouping_result,
             alignment_config=alignment_config,
             rt_frame=workset.grouping_result.rt_frame.with_calibration(rt_frame),
-            backfill_half_window_min=(
-                batch.context.peak_config.nl_rt_anchor_half_window_min
-            ),
             operation_counts_sink=operation_counts,
         )
         final_worksets.append(

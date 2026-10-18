@@ -6,9 +6,11 @@ import numpy as np
 import pytest
 
 from xic_extractor.peak_detection.ms1_shape_identity import (
+    compare_local_peak_shapes,
     competing_peak_summary,
     local_own_max_shape_similarity,
     own_max_normalized_trace,
+    prepare_local_peak_shape,
 )
 
 
@@ -61,6 +63,24 @@ def test_local_own_max_similarity_reports_inconclusive_for_flat_trace() -> None:
 
     assert result.status == "inconclusive"
     assert result.reason == "similarity_unavailable"
+    assert result.similarity is None
+
+
+def test_shape_comparison_requires_acquired_points_and_shared_context() -> None:
+    complete = prepare_local_peak_shape(
+        np.linspace(9.5, 10.5, 101),
+        np.exp(-.5 * (np.linspace(-.5, .5, 101) / .07) ** 2),
+        apex_rt_min=10,
+    )
+    sparse = prepare_local_peak_shape([9.7, 10, 10.3], [0, 1, 0], apex_rt_min=10)
+    clipped = prepare_local_peak_shape(
+        np.linspace(9.95, 10.05, 11), np.linspace(1, 0, 11), apex_rt_min=10,
+    )
+    assert compare_local_peak_shapes(complete, sparse).reason == (
+        "too_few_acquired_shape_points"
+    )
+    result = compare_local_peak_shapes(complete, clipped)
+    assert result.reason == "insufficient_shared_shape_context"
     assert result.similarity is None
 
 

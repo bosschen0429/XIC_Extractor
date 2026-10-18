@@ -126,6 +126,12 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
             hypothesis=hypothesis,
         )
         assert owner.owner_id == hypothesis.hypothesis_id
+        assert owner.peak_shape is not None
+        observation = hypothesis.peak_observation_refs[0].content
+        assert owner.peak_shape.source_point_count == sum(
+            abs(rt - observation.integration.rt_apex_min) <= .35
+            for rt in observation.rt
+        )
 
     grouping_scope, _candidates, _drift = bootstrap_cid_nl_initial_population(
         processing_owners=fixture.owners,

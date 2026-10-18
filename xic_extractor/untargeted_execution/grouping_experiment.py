@@ -64,7 +64,6 @@ def grouping_inputs_from_prepared(
     sample_stems: tuple[str, ...],
     injection_order: Mapping[str, int],
     alignment_config: AlignmentConfig,
-    backfill_half_window_min: float,
 ) -> GroupingInputs:
     worksets = []
     candidates: dict[str, set[str]] = defaultdict(set)
@@ -108,7 +107,6 @@ def grouping_inputs_from_prepared(
         sample_stems=sample_stems,
         injection_order=dict(injection_order),
         alignment_config=alignment_config,
-        backfill_half_window_min=backfill_half_window_min,
         worksets=tuple(worksets),
         candidate_ids_by_owner={
             key: tuple(sorted(value)) for key, value in candidates.items()
@@ -221,7 +219,6 @@ def prepare_grouping_experiment(
                     sample_stems=sample_stems,
                     injection_order=injection_order,
                     alignment_config=alignment_config,
-                    backfill_half_window_min=plan.context.peak_config.nl_rt_anchor_half_window_min,
                 )
             )
             groups.extend(
@@ -237,7 +234,6 @@ def prepare_grouping_experiment(
         sample_stems=sample_stems,
         injection_order=injection_order,
         alignment_config=alignment_config,
-        backfill_half_window_min=plan.context.peak_config.nl_rt_anchor_half_window_min,
         worksets=tuple(
             workset for compact in compact_inputs for workset in compact.worksets
         ),
