@@ -215,6 +215,11 @@ def _read_owner(value: dict[str, Any]) -> SampleLocalMS1Owner:
             half_window_min=shape["half_window_min"],
             intensity=tuple(shape["intensity"]),
             source_point_count=shape["source_point_count"],
+            half_height_point_count=shape.get("half_height_point_count"),
+            edge_intensity_ratio=(
+                tuple(shape["edge_intensity_ratio"])
+                if shape.get("edge_intensity_ratio") is not None else None
+            ),
         )
     value["primary_identity_event"] = (
         IdentityEvent(**value["primary_identity_event"])

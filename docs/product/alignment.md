@@ -260,10 +260,21 @@ mass, and product mass, and handles competition within each sample. Currently:
 - Measured peak shape is independent correspondence evidence. The owner adapter
   retains an apex-relative, own-max Gaussian-smoothed shape from the selected
   raw MS1 subtrace, without changing its baseline, bounds, apex or area. Comparison
-  translates RT but does not stretch width. A local Pearson similarity below
+  translates RT but does not stretch width. Only in this private derivative,
+  an observed nonpositive gap separates the selected apex's positive signal
+  island from neighboring signal; continuous background is not subtracted.
+  This does not reselect the peak or change the measured observation.
+  A local Pearson similarity below
   `min_peak_shape_similarity` (default 0.80) prevents ordinary membership.
   At least five acquired points per trace and half of the shared +/-0.35-minute
-  grid are required; insufficient context or flat traces remain unassessed.
+  grid are required. Fine-shape comparison also requires five measured points
+  at or above half height in each retained primary signal; zeros, smoothing and
+  interpolation do not supply that resolution. With fewer points, only the
+  coarse contrast between a localized signal (both observed edges below half
+  height) and a sustained signal (both edges at or above half height) can supply
+  a shape veto, still using the same Pearson threshold. Insufficient context,
+  unresolved primary shape, missing legacy resolution metadata and flat traces
+  remain unassessed, not positive evidence of identity.
   Shape agreement alone does not establish membership. A measured contradiction
   applies to the entire proposed union, including trajectory seeds, singleton
   admission and separated-band bridges; intermediate members cannot hide it.
