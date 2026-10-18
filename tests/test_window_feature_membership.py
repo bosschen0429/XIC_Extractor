@@ -1167,6 +1167,51 @@ def test_dense_band_survives_a_long_absence_in_injection_order(
         assert set(result.groups[0].owner_ids) == {owner.owner_id for owner in owners}
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("ordered_chain", [False, True])
+def test_separated_band_bridge_respects_indirect_peak_order(
+    reverse: bool, ordered_chain: bool,
+) -> None:
+    # A and C never co-occur. A < B < C forbids their union; A < B > C
+    # does not. Distinctness itself must not become a transitive relation.
+    middle_rt = 10.4 if ordered_chain else 11.3
+    owners = tuple(
+        _synthetic_owner(f"{band}{i}", f"{band}{i}", rt)
+        for band, rt in (("a", 10.0), ("b", middle_rt), ("c", 10.8))
+        for i in (1, 2)
+    )
+    tracks = (
+        PeakTrajectory(("a1", "a2"), (
+            ("a1", 10.0), ("a2", 10.0), ("left_context", 10.0),
+        )),
+        PeakTrajectory(("b1", "b2"), (
+            ("b1", middle_rt), ("b2", middle_rt),
+            ("left_context", middle_rt), ("right_context", middle_rt),
+        )),
+        PeakTrajectory(("c1", "c2"), (
+            ("c1", 10.8), ("c2", 10.8), ("right_context", 10.8),
+        )),
+    )
+    orders = {"a1": 1, "a2": 2, "b1": 40, "b2": 41, "c1": 100, "c2": 101}
+    result = infer_feature_memberships(
+        tuple(reversed(owners)) if reverse else owners,
+        config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(injection_order=orders).with_warp(
+            BatchRtWarp(tuple((s, ((0.0, 0.0), (20.0, 0.0))) for s in orders), 12)
+        ),
+        peak_trajectories=PeakTrajectories(
+            tuple(reversed(tracks)) if reverse else tracks,
+        ),
+    )
+    expected = {frozenset({"b1", "b2"})}
+    if ordered_chain:
+        expected.update((frozenset({"a1", "a2"}), frozenset({"c1", "c2"})))
+    else:
+        expected.add(frozenset({"a1", "a2", "c1", "c2"}))
+    assert {frozenset(g.owner_ids) for g in result.groups} == expected
+    assert all(g.disposition == "assigned" for g in result.groups)
+
+
 def test_long_gap_does_not_bridge_distinct_dense_rt_bands() -> None:
     early = tuple(
         _synthetic_owner(f"s{order:02d}", f"early-{order}", 10.0)

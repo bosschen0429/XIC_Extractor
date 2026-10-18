@@ -49,6 +49,8 @@ class LocalPeakShape:
     half_window_min: float
     intensity: tuple[float | None, ...]
     source_point_count: int
+    half_height_point_count: int | None = None
+    edge_intensity_ratio: tuple[float, float] | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -57,6 +59,18 @@ class LocalPeakShape:
             or type(self.intensity) is not tuple
             or len(self.intensity) < 5
             or type(self.source_point_count) is not int or self.source_point_count < 0
+            or (self.half_height_point_count is not None and (
+                type(self.half_height_point_count) is not int
+                or not 0 <= self.half_height_point_count <= self.source_point_count
+            ))
+            or (self.edge_intensity_ratio is not None and (
+                type(self.edge_intensity_ratio) is not tuple
+                or len(self.edge_intensity_ratio) != 2
+                or any(
+                    isinstance(value, bool) or not math.isfinite(value) or value > 1
+                    for value in self.edge_intensity_ratio
+                )
+            ))
             or any(
                 value is not None and (
                     isinstance(value, bool) or not math.isfinite(value) or value > 1.0
@@ -76,18 +90,60 @@ def prepare_local_peak_shape(
     grid_size: int = DEFAULT_LOCAL_GRID_SIZE,
     smooth_points: int = DEFAULT_OWN_MAX_SMOOTH_POINTS,
 ) -> LocalPeakShape:
-    """Translate RT, but never stretch peak width or subtract local background."""
+    """Prepare selected-primary evidence without changing the observation.
+
+    Only an observed nonpositive gap separates a neighboring signal island.
+    Continuous background is retained; no baseline subtraction, width scaling,
+    apex reselection or shift search is performed. Resolution counts measured
+    half-height samples, never the zeros or interpolated/smoothed grid points.
+    """
     if grid_size < 5 or not math.isfinite(half_window_min) or half_window_min <= 0:
         raise ValueError("local peak shape requires a positive window and >=5 points")
     grid = np.linspace(-half_window_min, half_window_min, grid_size)
-    values, source_count = _local_own_max_curve(
-        rt, intensity, apex_rt_min=apex_rt_min, grid=grid,
-        smooth_points=smooth_points,
+    rt_array = _float_array(rt)
+    intensity_array = _float_array(intensity)
+    if rt_array.size != intensity_array.size:
+        return LocalPeakShape(half_window_min, (None,) * grid_size, 0)
+    relative_rt = rt_array - apex_rt_min
+    mask = (
+        np.isfinite(relative_rt) & np.isfinite(intensity_array)
+        & (relative_rt >= -half_window_min) & (relative_rt <= half_window_min)
+    )
+    source_count = int(np.sum(mask))
+    if source_count < 3:
+        return LocalPeakShape(half_window_min, (None,) * grid_size, source_count)
+    order = np.argsort(relative_rt[mask])
+    relative_rt = relative_rt[mask][order]
+    primary = intensity_array[mask][order].copy()
+    apex_index = int(np.argmin(abs(relative_rt)))
+    half_height_count = None
+    edges = None
+    if primary[apex_index] > 0:
+        start = stop = apex_index
+        while start > 0 and primary[start - 1] > 0:
+            start -= 1
+        while stop + 1 < source_count and primary[stop + 1] > 0:
+            stop += 1
+        # Keep the original RT support, but exclude disconnected signal only
+        # from this private correspondence derivative, not from quantitation.
+        primary[:start] = 0
+        primary[stop + 1:] = 0
+        peak_height = float(np.max(primary))
+        half_height_count = int(np.sum(primary >= .5 * peak_height))
+        edges = (float(primary[0] / peak_height), float(primary[-1] / peak_height))
+    smoothed = np.asarray(gaussian_smooth_values(primary, points=smooth_points))
+    max_intensity = float(np.max(smoothed))
+    if max_intensity <= 0:
+        return LocalPeakShape(half_window_min, (None,) * grid_size, source_count)
+    values = np.interp(
+        grid, relative_rt, smoothed / max_intensity, left=np.nan, right=np.nan,
     )
     return LocalPeakShape(
         half_window_min,
         tuple(float(value) if math.isfinite(value) else None for value in values),
-        int(source_count),
+        source_count,
+        half_height_count,
+        edges,
     )
 
 
@@ -110,6 +166,29 @@ def compare_local_peak_shapes(
         return ShapeSimilarityResult(
             "inconclusive", "insufficient_shared_shape_context", None, count,
         )
+    if similarity is not None:
+        if (
+            left.half_height_point_count is None
+            or right.half_height_point_count is None
+        ):
+            return ShapeSimilarityResult(
+                "inconclusive", "unassessed_shape_resolution", None, count,
+            )
+        if min(left.half_height_point_count, right.half_height_point_count) < 5:
+            # Sparse primary peaks cannot support fine-shape disagreement. A
+            # localized peak versus signal sustained at BOTH observed edges
+            # is a coarser contrast that does not require resolving peak width.
+            edges = (left.edge_intensity_ratio, right.edge_intensity_ratio)
+            localized = any(edge is not None and max(edge) < .5 for edge in edges)
+            sustained = any(edge is not None and min(edge) >= .5 for edge in edges)
+            if not (localized and sustained):
+                return ShapeSimilarityResult(
+                    "inconclusive", "insufficient_primary_shape_resolution",
+                    None, count,
+                )
+            return ShapeSimilarityResult(
+                "ok", "localized_vs_sustained_shape_contrast", similarity, count,
+            )
     return ShapeSimilarityResult(
         "ok" if similarity is not None else "inconclusive",
         "local_own_max_shape_similarity" if similarity is not None
@@ -265,47 +344,6 @@ def competing_peak_summary(
             None if competing is None else competing[1]
         ),
     )
-
-
-def _local_own_max_curve(
-    rt: Sequence[float | int | None],
-    intensity: Sequence[float | int | None],
-    *,
-    apex_rt_min: float,
-    grid: np.ndarray,
-    smooth_points: int,
-) -> tuple[np.ndarray, int]:
-    rt_array = _float_array(rt)
-    intensity_array = _float_array(intensity)
-    if rt_array.size != intensity_array.size or rt_array.size < 3:
-        return np.full_like(grid, np.nan, dtype=float), 0
-    relative_rt = rt_array - apex_rt_min
-    mask = (
-        np.isfinite(relative_rt)
-        & np.isfinite(intensity_array)
-        & (relative_rt >= float(grid[0]))
-        & (relative_rt <= float(grid[-1]))
-    )
-    if int(np.sum(mask)) < 3:
-        return np.full_like(grid, np.nan, dtype=float), int(np.sum(mask))
-    relative_rt = relative_rt[mask]
-    intensity_array = intensity_array[mask]
-    order = np.argsort(relative_rt)
-    relative_rt = relative_rt[order]
-    smoothed = np.asarray(
-        gaussian_smooth_values(intensity_array[order], points=smooth_points),
-        dtype=float,
-    )
-    max_intensity = float(np.max(smoothed)) if smoothed.size else 0.0
-    if max_intensity <= 0:
-        return np.full_like(grid, np.nan, dtype=float), len(relative_rt)
-    return np.interp(
-        grid,
-        relative_rt,
-        smoothed / max_intensity,
-        left=np.nan,
-        right=np.nan,
-    ), len(relative_rt)
 
 
 def _local_maxima(

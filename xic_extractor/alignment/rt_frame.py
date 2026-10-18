@@ -22,6 +22,7 @@ from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
+    from xic_extractor.alignment.sample_rt_calibration import BatchRtCalibration
 
 
 class RtFrame(Protocol):
@@ -86,6 +87,7 @@ class SampleRtFrame:
     )
     _reference: KnownIstdReference | None = field(default=None, repr=False)
     _warp: BatchRtWarp | None = field(default=None, repr=False)
+    _sample_calibration: BatchRtCalibration | None = field(default=None, repr=False)
     _coordinate_override: Callable[[SampleLocalMS1Owner], float] | None = field(
         default=None,
         repr=False,
@@ -138,7 +140,16 @@ class SampleRtFrame:
         )
 
     def with_warp(self, warp: BatchRtWarp | None) -> SampleRtFrame:
-        return replace(self, _warp=warp, _coordinate_override=None)
+        return replace(
+            self, _warp=warp, _sample_calibration=None, _coordinate_override=None,
+        )
+
+    def with_sample_calibration(self, calibration: BatchRtCalibration) -> SampleRtFrame:
+        """Retain bounded diagnostic calibration, not just its owner callback."""
+        return replace(
+            self, _sample_calibration=calibration,
+            _warp=None, _coordinate_override=None,
+        )
 
     def for_sample_stems(self, samples: frozenset[str]) -> SampleRtFrame:
         """Restrict a consumer's population without reconstructing sample metadata."""
@@ -165,6 +176,7 @@ class SampleRtFrame:
         return replace(
             self,
             _warp=frozen._warp,
+            _sample_calibration=frozen._sample_calibration,
             _coordinate_override=frozen._coordinate_override,
         )
 
@@ -177,7 +189,10 @@ class SampleRtFrame:
 
     @property
     def has_coordinates(self) -> bool:
-        return self._warp is not None or self._coordinate_override is not None
+        return (
+            self._warp is not None or self._sample_calibration is not None
+            or self._coordinate_override is not None
+        )
 
     @property
     def has_drift(self) -> bool:
@@ -243,23 +258,28 @@ class SampleRtFrame:
     def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
         if self._coordinate_override is not None:
             return self._coordinate_override(owner)
+        source = self._sample_calibration or self._warp
         return (
-            self._warp.corrected_rt_min(owner)
-            if self._warp is not None
+            source.corrected_rt_min(owner)
+            if source is not None
             else owner.owner_apex_rt
         )
 
     def has_support(self, sample_stem: str) -> bool:
-        return self._warp is not None and self._warp.has_support(sample_stem)
+        source = self._sample_calibration or self._warp
+        return source is not None and source.has_support(sample_stem)
 
     def common_rt_min(self, sample_stem: str, observed_rt: float) -> float:
+        source = self._sample_calibration or self._warp
         return (
-            self._warp.common_rt_min(sample_stem, observed_rt)
-            if self._warp is not None
+            source.common_rt_min(sample_stem, observed_rt)
+            if source is not None
             else observed_rt
         )
 
     def offset_min(self, sample_stem: str, rt_min: float) -> float:
+        if self._sample_calibration is not None:
+            return self._sample_calibration.offset_min(sample_stem, rt_min)
         return (
             self._warp.offset_min(sample_stem, rt_min)
             if self._warp is not None

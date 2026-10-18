@@ -152,6 +152,21 @@ complete matches; patterns without a unique resolution do not directly provide
 correspondences. A single-pair match cannot connect tracks, bind owners, or
 supply positions; it lacks a second landmark to establish an ordered pattern.
 
+When both compared samples have measured batch-warp support, matching uses their
+common-RT apices and transforms peak widths into that same frame. The calibration
+already supplies the displacement: matching permits width-bounded residuals, not
+a second free shift onto neighboring peaks. Cross-sample context selection and
+neighbor pruning/ranking use the same supported common coordinates before the
+match; local owner-to-landmark binding remains in measured coordinates.
+Initial grouping retains supplied contexts so calibrated regroup can reconsider
+candidates excluded by raw-RT pruning.
+Diagnostic replay retains full calibration support and arbitrary-landmark RT
+mapping, including bounded sample calibration loaded from a file or fitted by
+the replay command. An owner-only coordinate callback does not supply those
+facts. If either sample lacks support, the
+pair retains raw-RT pattern matching; missing support is not measured zero drift.
+These comparison coordinates do not replace measured landmarks or owner values.
+
 Different seed windows may produce slightly different apices for the same peak.
 Current doublet detection uses the narrower peak's width and the
 owner_apex_close_sec lower bound, rather than absolute apex or seed RT distance
@@ -163,7 +178,12 @@ not treated as two peaks that cause the entire component to be discarded.
 Accepted pattern matches form tracks and bind eligible owners. Tracks are not
 considered distinct merely because they are unconnected. The current
 implementation establishes incompatibility between two tracks when distinct
-landmarks from both tracks are observed in the same sample.
+landmarks from both tracks are observed in the same sample, or their measured
+elution order connects them through other retained tracks. For example,
+`A < B < C` prevents merging A with C even without a sample containing both.
+Sharing a reference on the same side (`A < B > C`) does not establish that
+A and C differ. Membership and separated-band bridges consume this prepared
+compatibility decision; RT proximity or shape agreement cannot override it.
 
 Trajectories are then used as seeds for ordinary membership, for compatibility
 decisions, and for Backfill localization. These uses share the same source and
@@ -228,7 +248,8 @@ shared by every grouping stage.
 After batch warp is prepared, final grouping reconsiders ordinary owners.
 Samples without a usable correction retain observed RT, so comparisons may mix
 corrected and observed coordinates; this does not mean zero drift was measured.
-Trajectories built from raw context are currently reused by subsequent grouping.
+Final grouping rebuilds correspondence from retained context in the frozen
+calibration frame, and carries those trajectories forward to localization.
 Residual neighbors do not cross declared batches; empty batch IDs share an
 unspecified cohort, and sample role does not define the calibration cohort.
 Non-monotone sample mappings provide no correction.
@@ -247,10 +268,21 @@ mass, and product mass, and handles competition within each sample. Currently:
 - Measured peak shape is independent correspondence evidence. The owner adapter
   retains an apex-relative, own-max Gaussian-smoothed shape from the selected
   raw MS1 subtrace, without changing its baseline, bounds, apex or area. Comparison
-  translates RT but does not stretch width. A local Pearson similarity below
+  translates RT but does not stretch width. Only in this private derivative,
+  an observed nonpositive gap separates the selected apex's positive signal
+  island from neighboring signal; continuous background is not subtracted.
+  This does not reselect the peak or change the measured observation.
+  A local Pearson similarity below
   `min_peak_shape_similarity` (default 0.80) prevents ordinary membership.
   At least five acquired points per trace and half of the shared +/-0.35-minute
-  grid are required; insufficient context or flat traces remain unassessed.
+  grid are required. Fine-shape comparison also requires five measured points
+  at or above half height in each retained primary signal; zeros, smoothing and
+  interpolation do not supply that resolution. With fewer points, only the
+  coarse contrast between a localized signal (both observed edges below half
+  height) and a sustained signal (both edges at or above half height) can supply
+  a shape veto, still using the same Pearson threshold. Insufficient context,
+  unresolved primary shape, missing legacy resolution metadata and flat traces
+  remain unassessed, not positive evidence of identity.
   Shape agreement alone does not establish membership. A measured contradiction
   applies to the entire proposed union, including trajectory seeds, singleton
   admission and separated-band bridges; intermediate members cannot hide it.

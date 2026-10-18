@@ -331,8 +331,9 @@ class PeakTrajectories:
     """Physical correspondence only; unbound or ambiguous owners are omitted.
 
     Separate tracks are not evidence of separate peaks: their observations may
-    never have been compared. Two tracks are distinct only when one sample
-    observed both, necessarily at different landmarks.
+    never have been compared. Co-observed landmarks distinguish tracks, and
+    their directed elution order can distinguish tracks through an intermediate
+    track: A < B < C forbids A/C membership, whereas A < B > C does not.
     """
 
     tracks: tuple[PeakTrajectory, ...] = ()
@@ -354,26 +355,40 @@ class PeakTrajectories:
                 for owner_id in track.owner_ids
             },
         )
-        by_sample: dict[str, list[int]] = defaultdict(list)
+        by_sample: dict[str, list[tuple[int, float]]] = defaultdict(list)
         for index, track in enumerate(self.tracks):
-            for sample, _ in track.sample_apices:
-                by_sample[sample].append(index)
-        object.__setattr__(
-            self,
-            "_distinct",
-            frozenset(
-                (first, second)
-                for indices in by_sample.values()
-                for position, first in enumerate(indices)
-                for second in indices[position + 1 :]
-            ),
-        )
+            for sample, rt in track.sample_apices:
+                by_sample[sample].append((index, rt))
+        distinct: set[tuple[int, int]] = set()
+        later: dict[int, set[int]] = defaultdict(set)
+        for positions in by_sample.values():
+            for position, (first, first_rt) in enumerate(positions):
+                for second, second_rt in positions[position + 1 :]:
+                    distinct.add((first, second))
+                    if first_rt < second_rt:
+                        later[first].add(second)
+                    elif second_rt < first_rt:
+                        later[second].add(first)
+        # Prepare ordered separation once, not during every membership/bridge
+        # proposal. Closing the undirected distinct relation would wrongly veto
+        # tracks that merely lie on the same side of a shared reference peak.
+        for first in range(len(self.tracks)):
+            pending = set(later.get(first, ()))
+            reached = {first}
+            while pending:
+                second = pending.pop()
+                if second in reached:
+                    continue
+                reached.add(second)
+                distinct.add((min(first, second), max(first, second)))
+                pending.update(later.get(second, set()) - reached)
+        object.__setattr__(self, "_distinct", frozenset(distinct))
 
     def trajectory_for(self, owners: Sequence[SampleLocalMS1Owner]) -> PeakTrajectory:
         """Bind a finalized group to its direct and compatible context points.
 
-        Unmatched owners can extend a pattern-supported trajectory, and tracks
-        never observed together contribute their disjoint positions. Conversely,
+        Unmatched owners can extend a pattern-supported trajectory, and
+        order-compatible tracks contribute their disjoint positions. Conversely,
         a known-identity group spanning distinct physical peaks supplies only
         its own observations; a physical pattern cannot override identity.
         Same-sample direct bindings can also contradict a borrowed branch.
@@ -523,6 +538,39 @@ class _Match:
     residual: float
 
 
+@dataclass(frozen=True, slots=True)
+class _CommonRtPeak:
+    """Comparison coordinates, not a replacement measured landmark."""
+
+    apex_rt: float
+    height: float
+    width: float
+
+
+@dataclass(frozen=True, slots=True)
+class _PatternCenter:
+    observed: float
+    common: float | None
+
+    def distance_to(self, other: _PatternCenter) -> float:
+        if self.common is not None and other.common is not None:
+            return abs(self.common - other.common)
+        return abs(self.observed - other.observed)
+
+
+def _pattern_center(
+    sample: str, peaks: Sequence[ElutionLandmark], rt_frame: RtFrame | None,
+) -> _PatternCenter:
+    return _PatternCenter(
+        sum(peak.apex_rt for peak in peaks) / len(peaks),
+        (
+            sum(rt_frame.common_rt_min(sample, peak.apex_rt) for peak in peaks)
+            / len(peaks)
+            if rt_frame is not None and rt_frame.has_support(sample) else None
+        ),
+    )
+
+
 class _MassIndex:
     """A broad candidate window; the existing directional ppm test decides links."""
 
@@ -614,6 +662,7 @@ def resolve_peak_trajectories(
     *,
     config: AlignmentConfig,
     injection_order: Mapping[str, int],
+    rt_frame: RtFrame | None = None,
 ) -> PeakTrajectories:
     """Bind existing owners and MS1-only locations to consistent local patterns.
 
@@ -623,19 +672,53 @@ def resolve_peak_trajectories(
     """
     if not contexts or not owners:
         return PeakTrajectories()
-    nodes, patterns, owner_nodes, retained_contexts = _local_patterns(
-        owners, contexts, config
+    nodes, patterns, owner_nodes = _local_patterns(
+        owners, contexts, config, rt_frame,
     )
+    # Calibration arrives after initial grouping. Preserve the supplied context
+    # even when raw-RT pruning cannot yet use it, so regroup can reconsider it.
+    retained_contexts = tuple(contexts)
     if not patterns:
         return PeakTrajectories(source_contexts=retained_contexts)
+    calibrated_samples = {
+        sample for sample in {node.sample for node in nodes}
+        if rt_frame is not None and rt_frame.has_support(sample)
+    }
+    common_peaks = {}
+    if rt_frame is not None:
+        for index, observed_node in enumerate(nodes):
+            if observed_node.sample not in calibrated_samples:
+                continue
+            peak = observed_node.landmark
+            half_width = peak.width / 2.0
+            common_peaks[index] = _CommonRtPeak(
+                rt_frame.common_rt_min(observed_node.sample, peak.apex_rt),
+                peak.height,
+                rt_frame.common_rt_min(observed_node.sample, peak.apex_rt + half_width)
+                - rt_frame.common_rt_min(
+                    observed_node.sample, peak.apex_rt - half_width,
+                ),
+            )
     matches = []
     comparisons = 0
-    for left, right in _neighbor_pairs(patterns, nodes, config, injection_order):
+    for left, right in _neighbor_pairs(
+        patterns, nodes, config, injection_order, rt_frame,
+    ):
         comparisons += 1
+        calibrated = {left.sample, right.sample} <= calibrated_samples
+        # A measured map already supplies the displacement. Fit the residual
+        # within the transformed peak widths; a second free shift could match
+        # a neighboring pattern instead. Unsupported pairs retain raw matching.
         match = _match_patterns(
-            [nodes[index].landmark for index in left.nodes],
-            [nodes[index].landmark for index in right.nodes],
-            max_shift=config.max_rt_sec / 60.0,
+            [
+                common_peaks[index] if calibrated else nodes[index].landmark
+                for index in left.nodes
+            ],
+            [
+                common_peaks[index] if calibrated else nodes[index].landmark
+                for index in right.nodes
+            ],
+            max_shift=0.0 if calibrated else config.max_rt_sec / 60.0,
         )
         if match is not None:
             gap = abs(
@@ -738,11 +821,11 @@ def _local_patterns(
     owners: Sequence[SampleLocalMS1Owner],
     contexts: Sequence[SampleElutionContext],
     config: AlignmentConfig,
+    rt_frame: RtFrame | None,
 ) -> tuple[
     list[_Node],
     tuple[_Pattern, ...],
     dict[str, int],
-    tuple[SampleElutionContext, ...],
 ]:
     by_sample: dict[str, list[SampleElutionContext]] = defaultdict(list)
     for context in contexts:
@@ -841,7 +924,7 @@ def _local_patterns(
     seeds = tuple(patterns.values())
     seed_index = _MassIndex([seed.mz for seed in seeds], config.preferred_ppm)
     seed_centers = [
-        sum(nodes[i].landmark.apex_rt for i in seed.nodes) / len(seed.nodes)
+        _pattern_center(seed.sample, [nodes[i].landmark for i in seed.nodes], rt_frame)
         for seed in seeds
     ]
     for context in sorted(
@@ -872,9 +955,11 @@ def _local_patterns(
                 <= config.preferred_rt_sec / 60.0
             ):
                 continue
-            center = (peaks[start].apex_rt + peaks[end - 1].apex_rt) / 2.0
+            center = _pattern_center(
+                context.sample_stem, (peaks[start], peaks[end - 1]), rt_frame,
+            )
             if any(
-                abs(center - seed_centers[index]) * 60.0 <= config.max_rt_sec
+                center.distance_to(seed_centers[index]) * 60.0 <= config.max_rt_sec
                 for index in compatible
             ):
                 add_pattern(context, start, end)
@@ -884,7 +969,6 @@ def _local_patterns(
         nodes,
         tuple(sorted(patterns.values(), key=lambda item: (item.sample, item.nodes))),
         owner_nodes,
-        tuple(retained[key] for key in sorted(retained)),
     )
 
 
@@ -893,11 +977,14 @@ def _neighbor_pairs(
     nodes: list[_Node],
     config: AlignmentConfig,
     injection_order: Mapping[str, int],
+    rt_frame: RtFrame | None,
 ) -> tuple[tuple[_Pattern, _Pattern], ...]:
     chosen: set[tuple[int, int]] = set()
     mass_index = _MassIndex([pattern.mz for pattern in patterns], config.preferred_ppm)
     centers = [
-        sum(nodes[i].landmark.apex_rt for i in pattern.nodes) / len(pattern.nodes)
+        _pattern_center(
+            pattern.sample, [nodes[i].landmark for i in pattern.nodes], rt_frame,
+        )
         for pattern in patterns
     ]
     for index, pattern in enumerate(patterns):
@@ -909,8 +996,8 @@ def _neighbor_pairs(
                 pattern.mz, other.mz, config.preferred_ppm
             ):
                 continue
-            other_center = centers[other_index]
-            if abs(center - other_center) * 60.0 > config.max_rt_sec:
+            distance = center.distance_to(centers[other_index])
+            if distance * 60.0 > config.max_rt_sec:
                 continue
             candidates.append(
                 (
@@ -918,7 +1005,7 @@ def _neighbor_pairs(
                         injection_order.get(pattern.sample, 0)
                         - injection_order.get(other.sample, 0)
                     ),
-                    abs(center - other_center),
+                    distance,
                     other.sample,
                     other_index,
                 )
@@ -960,8 +1047,8 @@ def _merge_top_two_paths(
 
 
 def _match_patterns(
-    left: Sequence[ElutionLandmark],
-    right: Sequence[ElutionLandmark],
+    left: Sequence[ElutionLandmark | _CommonRtPeak],
+    right: Sequence[ElutionLandmark | _CommonRtPeak],
     *,
     max_shift: float,
 ) -> _Match | None:
