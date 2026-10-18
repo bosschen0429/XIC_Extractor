@@ -40,7 +40,10 @@ from xic_extractor.alignment.hypothesis_owner_adapter import (
     owner_from_ms1_observation_hypothesis,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
-from xic_extractor.alignment.peak_trajectories import PeakTrajectories
+from xic_extractor.alignment.peak_trajectories import (
+    PeakTrajectories,
+    resolve_peak_trajectories,
+)
 from xic_extractor.alignment.rt_frame import RtFrame, SampleRtFrame
 from xic_extractor.mass_accuracy import within_ppm
 from xic_extractor.peak_detection.capture import SampleLocalCapture
@@ -244,6 +247,15 @@ def regroup_cid_nl_cross_sample_groups(
 ) -> tuple[InitialGroupingScope, CrossSampleGroupingResult]:
     """Reconsider every ordinary owner after the batch anchor warp is known."""
     owners = tuple(owner for group in grouping_scope.groups for owner in group.owners)
+    trajectories = grouping_scope.peak_trajectories
+    if rt_frame.has_coordinates:
+        trajectories = resolve_peak_trajectories(
+            owners,
+            trajectories.source_contexts,
+            config=alignment_config,
+            injection_order=rt_frame.injection_order,
+            rt_frame=rt_frame,
+        )
     groups = group_cid_nl_owners(
         owners,
         config=alignment_config,
@@ -252,7 +264,7 @@ def regroup_cid_nl_cross_sample_groups(
         ),
         rt_frame=rt_frame,
         operation_counts_sink=operation_counts_sink,
-        peak_trajectories=grouping_scope.peak_trajectories,
+        peak_trajectories=trajectories,
     )
     identities = tuple(
         validate_cross_sample_peak_group_identity(group, require_canonical=True)
@@ -268,7 +280,7 @@ def regroup_cid_nl_cross_sample_groups(
             key=lambda group: group.group_hypothesis_id,
         )
     )
-    scope = replace(grouping_scope, groups=groups)
+    scope = replace(grouping_scope, groups=groups, peak_trajectories=trajectories)
     result = CrossSampleGroupingResult(
         processing_owners=processing_owners,
         partition_transition=_partition_transition(

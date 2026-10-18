@@ -152,6 +152,13 @@ complete matches; patterns without a unique resolution do not directly provide
 correspondences. A single-pair match cannot connect tracks, bind owners, or
 supply positions; it lacks a second landmark to establish an ordered pattern.
 
+When both compared samples have measured batch-warp support, matching uses their
+common-RT apices and transforms peak widths into that same frame. The calibration
+already supplies the displacement: matching permits width-bounded residuals, not
+a second free shift onto neighboring peaks. If either sample lacks support, the
+pair retains raw-RT pattern matching; missing support is not measured zero drift.
+These comparison coordinates do not replace measured landmarks or owner values.
+
 Different seed windows may produce slightly different apices for the same peak.
 Current doublet detection uses the narrower peak's width and the
 owner_apex_close_sec lower bound, rather than absolute apex or seed RT distance
@@ -228,7 +235,8 @@ shared by every grouping stage.
 After batch warp is prepared, final grouping reconsiders ordinary owners.
 Samples without a usable correction retain observed RT, so comparisons may mix
 corrected and observed coordinates; this does not mean zero drift was measured.
-Trajectories built from raw context are currently reused by subsequent grouping.
+Final grouping rebuilds correspondence from retained context in the frozen
+calibration frame, and carries those trajectories forward to localization.
 Residual neighbors do not cross declared batches; empty batch IDs share an
 unspecified cohort, and sample role does not define the calibration cohort.
 Non-monotone sample mappings provide no correction.

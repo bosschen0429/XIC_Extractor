@@ -246,6 +246,7 @@ def bootstrap_cid_nl_initial_population(
         elution_contexts,
         config=alignment_config,
         injection_order=rt_frame.injection_order,
+        rt_frame=rt_frame,
     )
     provisional_groups = construct_cross_sample_peak_group_hypotheses(
         tuple(owners),

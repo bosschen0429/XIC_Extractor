@@ -60,23 +60,27 @@ def replay_grouping(
         if rt_coordinates is not None
         else None
     )
-    return tuple(
-        group
-        for workset in inputs.worksets
-        for group in group_cid_nl_owners(
+    groups: list[CrossSamplePeakGroupHypothesis] = []
+    for workset in inputs.worksets:
+        frame = override or base_frame.with_warp(workset.rt_warp)
+        trajectories = resolve_peak_trajectories(
             workset.owners,
+            workset.elution_contexts,
             config=config or inputs.alignment_config,
-            sample_universe=sample_universe,
-            rt_frame=override or base_frame.with_warp(workset.rt_warp),
-            known_identity_bindings=workset.known_identity_bindings,
-            peak_trajectories=resolve_peak_trajectories(
-                workset.owners,
-                workset.elution_contexts,
-                config=config or inputs.alignment_config,
-                injection_order=inputs.injection_order,
-            ),
+            injection_order=inputs.injection_order,
+            rt_frame=frame,
         )
-    )
+        groups.extend(
+            group_cid_nl_owners(
+                workset.owners,
+                config=config or inputs.alignment_config,
+                sample_universe=sample_universe,
+                rt_frame=frame,
+                known_identity_bindings=workset.known_identity_bindings,
+                peak_trajectories=trajectories,
+            )
+        )
+    return tuple(groups)
 
 
 def calibrate_grouping(

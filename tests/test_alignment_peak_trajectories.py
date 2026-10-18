@@ -362,6 +362,35 @@ def test_order_survives_height_reversal_and_overlapping_absolute_rts(
     }
 
 
+@pytest.mark.parametrize("second_sample_supported", [False, True])
+def test_pattern_calibration_requires_support_for_both_samples(second_sample_supported):
+    owners = [_owner("a", "early", 10.0), _owner("b", "early", 11.6)]
+    contexts = [
+        _context("a", ((10.0, 30.0), (10.6, 100.0))),
+        _context("b", ((11.6, 30.0), (12.2, 100.0))),
+    ]
+    knots = [("a", ((8.0, 0.0), (15.0, 0.0)))]
+    if second_sample_supported:
+        knots.append(("b", ((8.0, 0.0), (15.0, 0.0))))
+    frame = SampleRtFrame(injection_order={"a": 1, "b": 2}).with_warp(
+        BatchRtWarp(tuple(knots), 12)
+    )
+    result = resolve_peak_trajectories(
+        owners, contexts, config=AlignmentConfig(),
+        injection_order=frame.injection_order, rt_frame=frame,
+    )
+    if second_sample_supported:
+        # A measured zero correction is incompatible with a 1.6-minute pattern
+        # displacement. It cannot authorize an observed cross-sample location.
+        assert result.tracks == ()
+    else:
+        # An absent correction is not measured zero. The uncalibrated doublet
+        # still supplies its rigid displacement, without rewriting observations.
+        assert [(track.owner_ids, track.sample_apices) for track in result.tracks] == [
+            (("a:early", "b:early"), (("a", 10.0), ("b", 11.6)))
+        ]
+
+
 def test_missing_and_extra_neighbors_provide_locations_not_new_owners() -> None:
     contexts = [
         _context("a", ((10.0, 20.0), (10.7, 100.0), (11.3, 60.0))),

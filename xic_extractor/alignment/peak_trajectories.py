@@ -523,6 +523,15 @@ class _Match:
     residual: float
 
 
+@dataclass(frozen=True, slots=True)
+class _CommonRtPeak:
+    """Comparison coordinates, not a replacement measured landmark."""
+
+    apex_rt: float
+    height: float
+    width: float
+
+
 class _MassIndex:
     """A broad candidate window; the existing directional ppm test decides links."""
 
@@ -614,6 +623,7 @@ def resolve_peak_trajectories(
     *,
     config: AlignmentConfig,
     injection_order: Mapping[str, int],
+    rt_frame: RtFrame | None = None,
 ) -> PeakTrajectories:
     """Bind existing owners and MS1-only locations to consistent local patterns.
 
@@ -628,14 +638,43 @@ def resolve_peak_trajectories(
     )
     if not patterns:
         return PeakTrajectories(source_contexts=retained_contexts)
+    calibrated_samples = {
+        sample for sample in {node.sample for node in nodes}
+        if rt_frame is not None and rt_frame.has_support(sample)
+    }
+    common_peaks = {}
+    if rt_frame is not None:
+        for index, observed_node in enumerate(nodes):
+            if observed_node.sample not in calibrated_samples:
+                continue
+            peak = observed_node.landmark
+            half_width = peak.width / 2.0
+            common_peaks[index] = _CommonRtPeak(
+                rt_frame.common_rt_min(observed_node.sample, peak.apex_rt),
+                peak.height,
+                rt_frame.common_rt_min(observed_node.sample, peak.apex_rt + half_width)
+                - rt_frame.common_rt_min(
+                    observed_node.sample, peak.apex_rt - half_width,
+                ),
+            )
     matches = []
     comparisons = 0
     for left, right in _neighbor_pairs(patterns, nodes, config, injection_order):
         comparisons += 1
+        calibrated = {left.sample, right.sample} <= calibrated_samples
+        # A measured map already supplies the displacement. Fit the residual
+        # within the transformed peak widths; a second free shift could match
+        # a neighboring pattern instead. Unsupported pairs retain raw matching.
         match = _match_patterns(
-            [nodes[index].landmark for index in left.nodes],
-            [nodes[index].landmark for index in right.nodes],
-            max_shift=config.max_rt_sec / 60.0,
+            [
+                common_peaks[index] if calibrated else nodes[index].landmark
+                for index in left.nodes
+            ],
+            [
+                common_peaks[index] if calibrated else nodes[index].landmark
+                for index in right.nodes
+            ],
+            max_shift=0.0 if calibrated else config.max_rt_sec / 60.0,
         )
         if match is not None:
             gap = abs(
@@ -960,8 +999,8 @@ def _merge_top_two_paths(
 
 
 def _match_patterns(
-    left: Sequence[ElutionLandmark],
-    right: Sequence[ElutionLandmark],
+    left: Sequence[ElutionLandmark | _CommonRtPeak],
+    right: Sequence[ElutionLandmark | _CommonRtPeak],
     *,
     max_shift: float,
 ) -> _Match | None:
