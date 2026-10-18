@@ -91,9 +91,23 @@ class BatchRtCalibration:
 
     def corrected_rt_min(self, owner: SampleLocalMS1Owner) -> float:
         """Use a bounded sample calibration, retaining raw RT outside its span."""
-        sample = self.samples.get(owner.sample_stem)
-        calibrated = sample.calibrated_rt(owner.owner_apex_rt) if sample else None
-        return owner.owner_apex_rt if calibrated is None else calibrated
+        return self.common_rt_min(owner.sample_stem, owner.owner_apex_rt)
+
+    def has_support(self, sample_stem: str) -> bool:
+        sample = self.samples.get(sample_stem)
+        return sample is not None and bool(sample.knots)
+
+    def common_rt_min(self, sample_stem: str, observed_rt: float) -> float:
+        sample = self.samples.get(sample_stem)
+        calibrated = sample.calibrated_rt(observed_rt) if sample else None
+        return observed_rt if calibrated is None else calibrated
+
+    def offset_min(self, sample_stem: str, common_rt: float) -> float:
+        sample = self.samples.get(sample_stem)
+        observed = interpolate_calibrated_rt_min(
+            common_rt, tuple((reference, rt) for rt, reference in sample.knots),
+        ) if sample else None
+        return 0.0 if observed is None else observed - common_rt
 
 
 def build_batch_rt_calibration(

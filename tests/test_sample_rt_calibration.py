@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from tools.diagnostics.build_sample_rt_calibration import main
+from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import (
     PriorInjection,
     RtCalibrationPolicy,
@@ -66,6 +67,15 @@ def test_calibrated_rt_corrects_local_shift_inside_span_only() -> None:
     assert sample.calibrated_rt(20.0) == pytest.approx(20.0, abs=0.01)
     assert sample.calibrated_rt(6.0) is None
     assert sample.calibrated_rt(33.0) is None
+    frame = SampleRtFrame().with_sample_calibration(calibration)
+    assert frame.has_support("S01")
+    assert not frame.has_support("missing")
+    common_rt = frame.common_rt_min("S01", 9.65)
+    assert common_rt == pytest.approx(sample.calibrated_rt(9.65))
+    assert common_rt + frame.offset_min("S01", common_rt) == pytest.approx(9.65)
+    assert frame.common_rt_min("S01", 6.0) == 6.0
+    assert frame.offset_min("S01", 6.0) == 0.0
+    assert frame.common_rt_min("missing", 9.65) == 9.65
 
 
 def test_rare_features_are_not_anchors() -> None:

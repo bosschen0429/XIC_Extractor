@@ -245,7 +245,7 @@ def main(argv: list[str] | None = None) -> int:
                     args.output_dir / "rt-calibration.json", calibration
                 )
             rt_frame = (
-                SampleRtFrame().with_coordinate_override(calibration.corrected_rt_min)
+                SampleRtFrame().with_sample_calibration(calibration)
                 if calibration is not None
                 else None
             )

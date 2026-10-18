@@ -55,11 +55,13 @@ def replay_grouping(
     base_frame = SampleRtFrame(
         injection_order=inputs.injection_order, sample_universe=sample_universe
     )
-    override = (
-        base_frame.with_coordinate_override(rt_coordinates.corrected_rt_min)
-        if rt_coordinates is not None
-        else None
-    )
+    if isinstance(rt_coordinates, SampleRtFrame):
+        override = base_frame.with_calibration(rt_coordinates)
+    elif rt_coordinates is not None:
+        # Legacy owner-only diagnostics do not imply measured landmark support.
+        override = base_frame.with_coordinate_override(rt_coordinates.corrected_rt_min)
+    else:
+        override = None
     groups: list[CrossSamplePeakGroupHypothesis] = []
     for workset in inputs.worksets:
         frame = override or base_frame.with_warp(workset.rt_warp)

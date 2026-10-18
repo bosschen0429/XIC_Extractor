@@ -219,7 +219,9 @@ def test_rt_coordinate_override_changes_membership_without_rewriting_measurement
 
 @pytest.mark.parametrize("reverse", [False, True])
 @pytest.mark.parametrize("shift", [0.05, 1.65])
-@pytest.mark.parametrize("entry", ["replay", "regroup"])
+@pytest.mark.parametrize(
+    "entry", ["replay", "regroup", "replay_override", "cli_calibration"],
+)
 def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
     tmp_path, reverse, shift, entry,
 ):
@@ -322,6 +324,47 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
     )
     if entry == "replay":
         groups = replay_grouping(inputs)
+    elif entry == "replay_override":
+        groups = replay_grouping(
+            inputs, rt_coordinates=SampleRtFrame().with_warp(warp),
+        )
+    elif entry == "cli_calibration":
+        import csv
+        from collections import defaultdict
+
+        from xic_extractor.alignment.sample_rt_calibration import (
+            BatchRtCalibration,
+            RtCalibrationPolicy,
+            SampleRtCalibration,
+        )
+        from xic_extractor.diagnostics.grouping_experiment_io import (
+            write_rt_calibration,
+        )
+
+        calibration = BatchRtCalibration(
+            RtCalibrationPolicy(), (), {
+                sample: SampleRtCalibration(
+                    sample, "calibrated", ((8 + offset, 8), (15 + offset, 15)),
+                    None, None, "not_evaluated",
+                ) for sample, offset in offsets.items()
+            }, None, None, None,
+        )
+        snapshot, calibration_path = tmp_path / "inputs.gz", tmp_path / "rt.json"
+        write_grouping_inputs(snapshot, inputs, provenance={"evidence": "synthetic"})
+        write_rt_calibration(calibration_path, calibration)
+        output = tmp_path / "calibrated"
+        assert main([
+            "replay", "--inputs", str(snapshot), "--output-dir", str(output),
+            "--rt-calibration", str(calibration_path),
+        ]) == 0
+        members = defaultdict(set)
+        with (output / "members.tsv").open(encoding="utf-8-sig", newline="") as stream:
+            for row in csv.DictReader(stream, delimiter="\t"):
+                members[row["group_id"]].add(row["sample_stem"])
+        assert {frozenset(samples) for samples in members.values()} == {
+            frozenset(("a", "b")), frozenset(("c", "d")),
+        }
+        return
     else:
         workset = inputs.worksets[0]
         raw_frame = SampleRtFrame(injection_order=inputs.injection_order)

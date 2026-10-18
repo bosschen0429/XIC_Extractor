@@ -155,7 +155,15 @@ supply positions; it lacks a second landmark to establish an ordered pattern.
 When both compared samples have measured batch-warp support, matching uses their
 common-RT apices and transforms peak widths into that same frame. The calibration
 already supplies the displacement: matching permits width-bounded residuals, not
-a second free shift onto neighboring peaks. If either sample lacks support, the
+a second free shift onto neighboring peaks. Cross-sample context selection and
+neighbor pruning/ranking use the same supported common coordinates before the
+match; local owner-to-landmark binding remains in measured coordinates.
+Initial grouping retains supplied contexts so calibrated regroup can reconsider
+candidates excluded by raw-RT pruning.
+Diagnostic replay retains full calibration support and arbitrary-landmark RT
+mapping, including bounded sample calibration loaded from a file or fitted by
+the replay command. An owner-only coordinate callback does not supply those
+facts. If either sample lacks support, the
 pair retains raw-RT pattern matching; missing support is not measured zero drift.
 These comparison coordinates do not replace measured landmarks or owner values.
 
