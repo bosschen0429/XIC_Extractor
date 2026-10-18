@@ -1,0 +1,244 @@
+{
+  "evidence": "diagnostic_only",
+  "description": "Retained 247.138 context and selected direct bounds. BC1228 has a contradictory 13.119-min borrowed point, while BC1117 and BC2282 have independently supported 12.44/12.47-min locations. This fixture protects localization retention, not universal chemical identity.",
+  "source_baseline": "b63b3e1b63ab0d6fd540711af0819ce1d71fd9b8",
+  "source_issue": "https://github.com/Chao-hu-Lab/XIC_Extractor/issues/793",
+  "owners": [
+    {
+      "sample_stem": "BenignfatBC1228_DNA",
+      "precursor_mz": 247.13860110519437,
+      "owner_apex_rt": 12.505830475733335,
+      "owner_peak_start_rt": 12.305033354666667,
+      "owner_peak_end_rt": 12.889055568783334
+    },
+    {
+      "sample_stem": "BenignfatBC1108_DNA",
+      "precursor_mz": 247.13823384000852,
+      "owner_apex_rt": 12.541894421616666,
+      "owner_peak_start_rt": 12.307538368283334,
+      "owner_peak_end_rt": 12.898258531466666
+    },
+    {
+      "sample_stem": "NormalBC2289_DNA",
+      "precursor_mz": 247.13812292026248,
+      "owner_apex_rt": 12.526563289316666,
+      "owner_peak_start_rt": 12.216361605316667,
+      "owner_peak_end_rt": 12.876296467183332
+    },
+    {
+      "sample_stem": "Breast_Cancer_Tissue_pooled_QC5",
+      "precursor_mz": 247.1378846191406,
+      "owner_apex_rt": 12.239137091183332,
+      "owner_peak_start_rt": 11.94081287625,
+      "owner_peak_end_rt": 12.569781551183333
+    },
+    {
+      "sample_stem": "BenignfatBC1067_DNA",
+      "precursor_mz": 247.13872457620982,
+      "owner_apex_rt": 12.508849926149999,
+      "owner_peak_start_rt": 12.216765001083333,
+      "owner_peak_end_rt": 12.8804439224
+    }
+  ],
+  "contexts": [
+    {
+      "sample_stem": "BenignfatBC1067_DNA",
+      "mz": 247.13872457620982,
+      "rt_start": 10.8757421576,
+      "rt_end": 14.14061482455,
+      "landmarks": [
+        {
+          "apex_rt": 11.344575799733333,
+          "height": 2068.5728088356454,
+          "width": 0.13307162162172226
+        },
+        {
+          "apex_rt": 12.508849926149999,
+          "height": 6896.067914648183,
+          "width": 0.24570950225739807
+        }
+      ],
+      "trace_content_id": "trace-content:e8b67a53973fc236309ebb3d9451b812ca3203ee152e871d645fe5cf324e1030",
+      "profile_id": "signal-profile:9269b4c8fc6ed9fee09d9aa5059345a331a0e233dc3f30d6102011a7d0c330a0"
+    },
+    {
+      "sample_stem": "BenignfatBC1108_DNA",
+      "mz": 247.13823384000852,
+      "rt_start": 10.976199472,
+      "rt_end": 14.12982450775,
+      "landmarks": [
+        {
+          "apex_rt": 12.541894421616666,
+          "height": 9103.767434496696,
+          "width": 0.23953560384429018
+        },
+        {
+          "apex_rt": 13.11068025625,
+          "height": 2351.785230407969,
+          "width": 0.1811855525830044
+        }
+      ],
+      "trace_content_id": "trace-content:af76b1153fd5d3b2a5f6a058c7584c69f7e40e83e89139f13541ac950f9f6cca",
+      "profile_id": "signal-profile:9269b4c8fc6ed9fee09d9aa5059345a331a0e233dc3f30d6102011a7d0c330a0"
+    },
+    {
+      "sample_stem": "BenignfatBC1117_DNA",
+      "mz": 247.13823557128904,
+      "rt_start": 10.900969364533333,
+      "rt_end": 14.1136323064,
+      "landmarks": [
+        {
+          "apex_rt": 11.228623830133333,
+          "height": 2930.0974055223305,
+          "width": 0.22274458918609596
+        },
+        {
+          "apex_rt": 12.437577116016666,
+          "height": 4858.671855827418,
+          "width": 0.13595423657049288
+        },
+        {
+          "apex_rt": 12.7471389568,
+          "height": 2092.0177970365376,
+          "width": 0.1068302375230239
+        },
+        {
+          "apex_rt": 13.327044463733333,
+          "height": 3701.781457745703,
+          "width": 0.3762948396664729
+        }
+      ],
+      "trace_content_id": "trace-content:fb89418515f3f1c84c0da05c852ba0a3f9ad901e26df300f827612ad6de63b3d",
+      "profile_id": "signal-profile:9269b4c8fc6ed9fee09d9aa5059345a331a0e233dc3f30d6102011a7d0c330a0"
+    },
+    {
+      "sample_stem": "BenignfatBC1228_DNA",
+      "mz": 247.13860110519437,
+      "rt_start": 10.351044055183333,
+      "rt_end": 14.731943611716668,
+      "landmarks": [
+        {
+          "apex_rt": 10.564475180783335,
+          "height": 1115.0269375687403,
+          "width": 0.14786921955703036
+        },
+        {
+          "apex_rt": 11.187346377583333,
+          "height": 3317.594984898517,
+          "width": 0.09371327979966715
+        },
+        {
+          "apex_rt": 11.439078616249999,
+          "height": 1867.3566667958369,
+          "width": 0.10777486635387667
+        },
+        {
+          "apex_rt": 11.773276584783334,
+          "height": 1349.2541338554363,
+          "width": 0.11356511670449443
+        },
+        {
+          "apex_rt": 11.965402441316666,
+          "height": 1740.5008514530132,
+          "width": 0.07875554849257327
+        },
+        {
+          "apex_rt": 12.505830475733335,
+          "height": 4513.185088793216,
+          "width": 0.20270159938366383
+        },
+        {
+          "apex_rt": 13.119102411466667,
+          "height": 5350.562723632807,
+          "width": 0.2482053466003844
+        },
+        {
+          "apex_rt": 13.491853292533333,
+          "height": 3490.2331840283623,
+          "width": 0.0892312294388713
+        },
+        {
+          "apex_rt": 13.657143394383333,
+          "height": 3562.1093543883476,
+          "width": 0.3651553885840393
+        }
+      ],
+      "trace_content_id": "trace-content:ac7c228c1a5ade083c8f122aaa2b2961e5fe6c3a2bf853aca64dd8ade09432e8",
+      "profile_id": "signal-profile:9269b4c8fc6ed9fee09d9aa5059345a331a0e233dc3f30d6102011a7d0c330a0"
+    },
+    {
+      "sample_stem": "Breast_Cancer_Tissue_pooled_QC5",
+      "mz": 247.1378846191406,
+      "rt_start": 10.641528077583333,
+      "rt_end": 13.903061126133334,
+      "landmarks": [
+        {
+          "apex_rt": 10.93455239785,
+          "height": 4484.3515475501445,
+          "width": 0.11349582904128397
+        },
+        {
+          "apex_rt": 12.239137091183332,
+          "height": 5270.226457693867,
+          "width": 0.22890191722442133
+        },
+        {
+          "apex_rt": 13.15673092825,
+          "height": 2638.315861345468,
+          "width": 0.2434696154241216
+        }
+      ],
+      "trace_content_id": "trace-content:672a9538de587b59193a31f8aff992ef1caec4ca59aeffd09afad6c7d36c5052",
+      "profile_id": "signal-profile:9269b4c8fc6ed9fee09d9aa5059345a331a0e233dc3f30d6102011a7d0c330a0"
+    },
+    {
+      "sample_stem": "NormalBC2282_DNA",
+      "mz": 247.13860782257234,
+      "rt_start": 10.956834862116667,
+      "rt_end": 14.118605123450001,
+      "landmarks": [
+        {
+          "apex_rt": 12.46524381305,
+          "height": 4430.537459705633,
+          "width": 0.16794700220700776
+        },
+        {
+          "apex_rt": 12.999162468266666,
+          "height": 1595.4376243633499,
+          "width": 0.21460321384936343
+        }
+      ],
+      "trace_content_id": "trace-content:85c2e48c4e677fee46d1af38b18e7e03cd0d8b1f3ba4e9e51331e4bf2ad2f72b",
+      "profile_id": "signal-profile:9269b4c8fc6ed9fee09d9aa5059345a331a0e233dc3f30d6102011a7d0c330a0"
+    },
+    {
+      "sample_stem": "NormalBC2289_DNA",
+      "mz": 247.13812292026248,
+      "rt_start": 10.98661870215,
+      "rt_end": 14.17241904135,
+      "landmarks": [
+        {
+          "apex_rt": 12.526563289316666,
+          "height": 10766.237122064818,
+          "width": 0.27247940023423567
+        },
+        {
+          "apex_rt": 13.040536286933333,
+          "height": 2932.263099085802,
+          "width": 0.11061693741675604
+        }
+      ],
+      "trace_content_id": "trace-content:e64d073702105be895a32e2bbb08aba096e9cc582b945fae6d732bbf4206ef42",
+      "profile_id": "signal-profile:9269b4c8fc6ed9fee09d9aa5059345a331a0e233dc3f30d6102011a7d0c330a0"
+    }
+  ],
+  "injection_order": {
+    "BenignfatBC1067_DNA": 97,
+    "BenignfatBC1108_DNA": 100,
+    "BenignfatBC1117_DNA": 106,
+    "BenignfatBC1228_DNA": 112,
+    "Breast_Cancer_Tissue_pooled_QC5": 82,
+    "NormalBC2282_DNA": 66,
+    "NormalBC2289_DNA": 70
+  }
+}
