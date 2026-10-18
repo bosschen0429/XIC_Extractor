@@ -28,8 +28,10 @@ from xic_extractor.alignment.result.application_result import (
     finalize_alignment_result,
 )
 from xic_extractor.discovery.batch_contract import (
+    ALIGNMENT_FEATURE_INPUT_KEY,
     CANDIDATE_UNIVERSE_INPUT_KEY,
     CANDIDATE_UNIVERSE_SCHEMA_VERSION,
+    candidate_sample_stems_from_request,
     validate_candidate_universe_payload,
 )
 from xic_extractor.execution._lifecycle import AttemptTerminalOutcome
@@ -737,6 +739,80 @@ def test_candidate_universe_payload_rejects_non_lowercase_sha256(
 
     with pytest.raises(IdentityContractError, match=message):
         validate_candidate_universe_payload(payload, expected_sample_stems=["S1"])
+
+
+@pytest.mark.parametrize(
+    ("selection_inputs", "expected_stems", "expected_selection"),
+    [
+        ({}, {"c1": "S1", "c2": "S2"}, None),
+        ({ALIGNMENT_FEATURE_INPUT_KEY: None}, {"c1": "S1", "c2": "S2"}, None),
+        ({ALIGNMENT_FEATURE_INPUT_KEY: []}, {}, ()),
+        ({ALIGNMENT_FEATURE_INPUT_KEY: ["c2"]}, {"c2": "S2"}, ("c2",)),
+    ],
+)
+def test_request_candidate_selection_preserves_sample_and_empty_semantics(
+    tmp_path, selection_inputs, expected_stems, expected_selection
+) -> None:
+    request = _candidate_selection_request(tmp_path, selection_inputs)
+    assert candidate_sample_stems_from_request(
+        request, expected_sample_stems=("S1", "S2")
+    ) == (expected_stems, expected_selection)
+
+
+@pytest.mark.parametrize(
+    "selection", ["c1", [1], [""], ["c2", "c1"], ["c1", "c1"], ["outside"]]
+)
+def test_request_candidate_selection_rejects_noncanonical_or_foreign_ids(
+    tmp_path, selection
+) -> None:
+    request = _candidate_selection_request(
+        tmp_path, {ALIGNMENT_FEATURE_INPUT_KEY: selection}
+    )
+    with pytest.raises(IdentityContractError, match="alignment feature"):
+        candidate_sample_stems_from_request(
+            request, expected_sample_stems=("S1", "S2")
+        )
+
+
+@pytest.mark.parametrize("selection", [None, []])
+def test_request_candidate_selection_rejects_cross_sample_duplicates_before_filtering(
+    tmp_path, selection
+) -> None:
+    request = _candidate_selection_request(
+        tmp_path, {ALIGNMENT_FEATURE_INPUT_KEY: selection}, second_candidate_id="c1"
+    )
+    with pytest.raises(IdentityContractError, match="universe is not unique"):
+        candidate_sample_stems_from_request(
+            request, expected_sample_stems=("S1", "S2")
+        )
+
+
+def _candidate_selection_request(
+    tmp_path, selection_inputs, *, second_candidate_id="c2"
+):
+    fixture = build_untargeted_cid_nl_no_raw_fixture(
+        tmp_path, sample_roles={"S1": "qc", "S2": "qc"}
+    )
+    base = fixture.owners.request
+    return build_processing_request_identity(
+        acquisition_sources=base.acquisition_sources,
+        acquisition_bindings=base.acquisition_bindings,
+        scientific_input_schema_version=base.scientific_input_schema_version,
+        processing_algorithm_version=base.processing_algorithm_version,
+        processing_contract_version=base.processing_contract_version,
+        scientific_inputs={
+            CANDIDATE_UNIVERSE_INPUT_KEY: {
+                "schema_version": CANDIDATE_UNIVERSE_SCHEMA_VERSION,
+                "samples": [
+                    _universe_entry(sample_stem="S1", candidate_ids=["c1"]),
+                    _universe_entry(
+                        sample_stem="S2", candidate_ids=[second_candidate_id]
+                    ),
+                ],
+            },
+            **selection_inputs,
+        },
+    )
 
 
 def test_batch_child_failure_keeps_stage_and_never_finalizes_partial_results(
