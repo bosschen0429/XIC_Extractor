@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -685,3 +687,338 @@ def test_backfill_noisy_extrapolation_stays_at_supported_boundary(
         )
         assert "support_boundary" not in wide_search.basis
         assert not bounds[0] + offset <= wide_search.query_rt <= bounds[1] + offset
+
+
+def _direct_conflict_case(second_owner_rt, *, independent_branch=False):
+    # Same-sample early/late evidence from the reduced 659.346 case. Cross-sample
+    # shifts of 160-175 s are deliberately valid, not a distinct-peak oracle.
+    owners = [
+        replace(
+            _owner("BC1095", "reference", 32.988294154916666),
+            precursor_mz=659.3459114397047,
+        ),
+        replace(
+            _owner("BC1165", "reference", second_owner_rt),
+            precursor_mz=659.346488450235,
+        ),
+    ]
+    contexts = [
+        SampleElutionContext(
+            sample_stem=sample,
+            mz=mz,
+            rt_start=start,
+            rt_end=end,
+            landmarks=tuple(ElutionLandmark(*peak) for peak in peaks),
+        )
+        for sample, mz, start, end, peaks in (
+            (
+                "BC1095",
+                659.3459114397047,
+                31.5,
+                33.5,
+                (
+                    (32.03510181145, 29381.2, 0.500014),
+                    (32.988294154916666, 198375.1, 0.412684),
+                ),
+            ),
+            (
+                "BC1165",
+                659.346488450235,
+                32.5,
+                33.6,
+                ((33.103192714116666, 199026.6, 0.307684),),
+            ),
+            (
+                "BC1165",
+                659.3398,
+                34.3,
+                36.0,
+                (
+                    (34.55277475815, 299779.3, 0.264601),
+                    (35.09108621948334, 68458.4, 0.240920),
+                    (35.79459419948333, 165240.8, 0.274382),
+                ),
+            ),
+            (
+                "BC1116",
+                659.3397,
+                34.7,
+                36.0,
+                ((34.95264327655, 81293.8, 0.202269), (35.7000614, 201354.1, 0.269027)),
+            ),
+        )
+    ]
+    orders = {"BC1095": 99, "BC1116": 105, "BC1165": 109}
+    if independent_branch:
+        contexts.append(
+            SampleElutionContext(
+                sample_stem="independent",
+                mz=659.3459114397047,
+                rt_start=28.5,
+                rt_end=30.6,
+                landmarks=(
+                    ElutionLandmark(32.03510181145 - 2.9, 29381.2, 0.500014),
+                    ElutionLandmark(32.988294154916666 - 2.9, 198375.1, 0.412684),
+                ),
+            )
+        )
+        orders["independent"] = 98
+    return owners, contexts, orders
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("independent_branch", [False, True])
+def test_direct_conflict_withdraws_only_dependent_locations(
+    reverse, independent_branch
+):
+    owners, contexts, orders = _direct_conflict_case(
+        33.103192714116666, independent_branch=independent_branch
+    )
+    if reverse:
+        owners.reverse()
+        contexts.reverse()
+    model = resolve_peak_trajectories(
+        owners, contexts, config=AlignmentConfig(), injection_order=orders
+    )
+    original_tracks = model.tracks
+    assert model.permits_membership(owner.owner_id for owner in owners)
+    # The pattern itself still has the late points: localization cannot rewrite
+    # matching, membership, or the selected direct observations.
+    assert any(
+        dict(track.sample_apices).get("BC1165") == 35.79459419948333
+        for track in original_tracks
+    )
+    trajectory = model.trajectory_for(owners)
+    expected = {owner.sample_stem: owner.owner_apex_rt for owner in owners}
+    if independent_branch:
+        expected["independent"] = 32.988294154916666 - 2.9
+    assert dict(trajectory.sample_apices) == pytest.approx(expected)
+    assert model.tracks == original_tracks
+    # Forecasts must consume the filtered points, not just relabel a bad point.
+    frame = SampleRtFrame(injection_order=orders)
+    locations = trajectory.backfill_locations(
+        ("BC1116", "independent"),
+        reference_samples=frozenset(owner.sample_stem for owner in owners),
+        rt_frame=frame,
+        backfill_half_window_min=1.0,
+    )
+    bad = locations["BC1116"]
+    assert not bad.location.observed
+    assert not bad.reliable
+    assert bad.location.basis == "trajectory_reference"
+    assert bad.location.query_rt == pytest.approx(
+        float(np.median(list(expected.values())))
+    )
+    if independent_branch:
+        good = locations["independent"]
+        assert good.location.observed and good.reliable
+        assert good.location.basis == "trajectory_observed"
+        assert good.location.query_rt == pytest.approx(expected["independent"])
+
+
+@pytest.mark.parametrize(
+    "second_owner_rt", [35.79459419948333, 35.81459419948333, 36.4]
+)
+def test_direct_binding_does_not_invent_conflict_from_drift_offset_or_missing_binding(
+    second_owner_rt,
+):
+    owners, contexts, orders = _direct_conflict_case(second_owner_rt)
+    model = resolve_peak_trajectories(
+        owners, contexts, config=AlignmentConfig(), injection_order=orders
+    )
+    trajectory = model.trajectory_for(owners)
+    assert dict(trajectory.sample_apices) == pytest.approx(
+        {**{o.sample_stem: o.owner_apex_rt for o in owners}, "BC1116": 35.7000614}
+    )
+    location = trajectory.backfill_locations(
+        ("BC1116",),
+        reference_samples=frozenset(owner.sample_stem for owner in owners),
+        rt_frame=SampleRtFrame(injection_order=orders),
+        backfill_half_window_min=1.0,
+    )["BC1116"]
+    assert location.location.observed and location.reliable
+    assert location.location.query_rt == pytest.approx(35.7000614)
+
+
+def test_same_selected_segment_does_not_make_two_landmarks_distinct_peaks():
+    owners, contexts, orders = _direct_conflict_case(33.103192714116666)
+    # Two maxima inside one selected segment do not establish distinct peaks.
+    owners[1] = replace(owners[1], owner_peak_end_rt=35.9)
+    model = resolve_peak_trajectories(
+        owners, contexts, config=AlignmentConfig(), injection_order=orders
+    )
+    assert dict(model.trajectory_for(owners).sample_apices)["BC1116"] == 35.7000614
+
+
+def test_retained_247_locations_survive_a_separate_contradicted_link():
+    data = json.loads(
+        (
+            Path(__file__).parent / "fixtures/trajectory_localization_247.json"
+        ).read_text()
+    )
+    owners = [
+        replace(_owner(row["sample_stem"], "reference", row["owner_apex_rt"]), **row)
+        for row in data["owners"]
+    ]
+    contexts = [
+        SampleElutionContext(
+            **{key: value for key, value in row.items() if key != "landmarks"},
+            landmarks=tuple(ElutionLandmark(**peak) for peak in row["landmarks"]),
+        )
+        for row in data["contexts"]
+    ]
+    model = resolve_peak_trajectories(
+        owners,
+        contexts,
+        config=AlignmentConfig(),
+        injection_order=data["injection_order"],
+    )
+    # There is a real same-sample contradiction, not an already-clean track.
+    assert any(
+        dict(track.sample_apices).get("BenignfatBC1228_DNA") == 13.119102411466667
+        for track in model.tracks
+    )
+    trajectory = model.trajectory_for(owners)
+    expected = {
+        "BenignfatBC1117_DNA": 12.437577116016666,
+        "NormalBC2282_DNA": 12.46524381305,
+    }
+    assert dict(trajectory.sample_apices) == pytest.approx(
+        {**{o.sample_stem: o.owner_apex_rt for o in owners}, **expected}
+    )
+    locations = trajectory.backfill_locations(
+        tuple(expected),
+        reference_samples=frozenset(o.sample_stem for o in owners),
+        rt_frame=SampleRtFrame(injection_order=data["injection_order"]),
+        backfill_half_window_min=1.0,
+    )
+    for sample, rt in expected.items():
+        assert locations[sample].location.observed and locations[sample].reliable
+        assert locations[sample].location.query_rt == pytest.approx(rt)
+
+
+def test_backfill_planning_consumes_filtered_locations_with_sample_attribution(
+    tmp_path,
+):
+    from types import SimpleNamespace
+
+    from tests.cid_nl_peak_support_no_raw_fixture import (
+        cid_nl_evidence,
+        cid_nl_peak,
+        cid_nl_support_policy,
+        cid_nl_unique_support,
+    )
+    from tests.processing_identity_no_raw_fixture import (
+        build_processing_identity_no_raw_fixture,
+    )
+    from xic_extractor.alignment.backfill.cid_nl_planning import (
+        plan_grouped_cid_nl_backfills,
+    )
+    from xic_extractor.alignment.grouping_bootstrap import (
+        InitialGroupingScope,
+        RetainedGroupingCandidate,
+    )
+    from xic_extractor.alignment.grouping_workflow import group_cid_nl_owners
+    from xic_extractor.alignment.hypothesis_owner_adapter import (
+        compose_cid_nl_peak_hypotheses_from_assessment,
+        owner_from_cid_nl_assessment_support,
+    )
+    from xic_extractor.peak_detection.cid_nl_method_assessment import (
+        CidNlEvaluationReceipt,
+        mint_cid_nl_method_assessment_ref,
+    )
+
+    original, contexts, orders = _direct_conflict_case(
+        33.103192714116666, independent_branch=True
+    )
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path,
+        sample_stems=tuple(orders),
+        sample_roles={sample: "study_sample" for sample in orders},
+    )
+    owners, retained = [], []
+    for original_owner in original:
+        name, rt = original_owner.sample_stem, original_owner.owner_apex_rt
+        sample = fixture.sample(name)
+        peak = cid_nl_peak(
+            fixture, name, apex_rt=rt, rt_left_min=rt - 0.1, rt_right_min=rt + 0.1
+        )
+        evidence = cid_nl_evidence(fixture, name, scan_number=1, scan_rt_min=rt)
+        support = cid_nl_unique_support(fixture, name, peak=peak, evidence=evidence)
+        assessment = mint_cid_nl_method_assessment_ref(
+            processing_owners=fixture.owners,
+            sample=sample,
+            target=fixture.target,
+            detector_invocation_id=f"direct:{name}",
+            evaluation_receipt=CidNlEvaluationReceipt(
+                query_rt_min=rt - 0.1,
+                query_rt_max=rt + 0.1,
+                support_policy=cid_nl_support_policy(),
+                acquisition_supported=True,
+                search_completed=True,
+                scanned_event_count=1,
+                reason_code=None,
+            ),
+            candidate_peaks=(peak,),
+            evidence_refs=(evidence,),
+            individual_support_refs=(support,),
+        )
+        (hypothesis,) = compose_cid_nl_peak_hypotheses_from_assessment(
+            processing_owners=fixture.owners,
+            sample=sample,
+            assessment=assessment,
+        )
+        owners.append(
+            owner_from_cid_nl_assessment_support(
+                sample=sample,
+                assessment=assessment,
+                hypothesis=hypothesis,
+            )
+        )
+        retained.append(RetainedGroupingCandidate(sample, hypothesis, assessment))
+    # Keep the correspondence geometry while using the canonical no-RAW
+    # fixture's m/z and genuine method-support/member identities.
+    contexts = [
+        replace(context, mz=context.mz - 659.3459114397047 + 500.0)
+        for context in contexts
+    ]
+    config = AlignmentConfig()
+    frame = SampleRtFrame(injection_order=orders)
+    model = resolve_peak_trajectories(
+        owners, contexts, config=config, injection_order=orders
+    )
+    (group,) = group_cid_nl_owners(
+        owners,
+        config=config,
+        sample_universe=frozenset(orders),
+        rt_frame=frame,
+        peak_trajectories=model,
+    )
+    scope = InitialGroupingScope((499.0, 501.0), (28.0, 37.0), (group,), model)
+    # The planner reads only this frozen scope and retained support, not the
+    # acquisition/capture envelope of a runtime workset.
+    workset = SimpleNamespace(grouping_scope=scope, retained_candidates=tuple(retained))
+    questions = plan_grouped_cid_nl_backfills(
+        (workset,),
+        sample_population=fixture.samples,
+        alignment_config=config,
+        rt_frame=frame,
+        half_windows_by_sample={
+            s.identity.sample_identity_id: 1.0 for s in fixture.samples
+        },
+    )
+    by_id = {q.sample_identity_id: q for q in questions}
+    assert set(by_id) == {
+        fixture.sample(name).identity.sample_identity_id
+        for name in ("BC1116", "independent")
+    }
+    bad = by_id[fixture.sample("BC1116").identity.sample_identity_id].localization
+    good = by_id[fixture.sample("independent").identity.sample_identity_id].localization
+    assert not bad.location.observed and not bad.reliable
+    assert bad.location.basis == "trajectory_reference"
+    assert bad.location.query_rt == pytest.approx(32.988294154916666)
+    assert good.location.observed and good.reliable
+    assert good.location.basis == "trajectory_observed"
+    assert good.location.query_rt == pytest.approx(32.988294154916666 - 2.9)
+    assert all(q.group == group for q in questions)
+    assert group.owners == tuple(sorted(owners, key=lambda owner: owner.owner_id))

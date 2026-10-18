@@ -338,6 +338,9 @@ class PeakTrajectories:
     tracks: tuple[PeakTrajectory, ...] = ()
     pattern_comparisons: int = 0
     source_contexts: tuple[SampleElutionContext, ...] = ()
+    _localization_links: _LocalizationLinks | None = field(
+        default=None, repr=False, compare=False
+    )
     _track_by_owner: Mapping[str, int] = field(init=False, repr=False, compare=False)
     _distinct: frozenset[tuple[int, int]] = field(init=False, repr=False, compare=False)
 
@@ -373,18 +376,23 @@ class PeakTrajectories:
         never observed together contribute their disjoint positions. Conversely,
         a known-identity group spanning distinct physical peaks supplies only
         its own observations; a physical pattern cannot override identity.
+        Same-sample direct bindings can also contradict a borrowed branch.
+        Withdraw that branch before fitting, stopping at independent direct
+        anchors rather than discarding every location in the group.
         """
         requested = {owner.owner_id for owner in owners}
         indices = self._indices(requested)
-        points = (
-            {
-                sample: rt
-                for index in sorted(indices)
-                for sample, rt in self.tracks[index].sample_apices
-            }
-            if self._compatible(indices)
-            else {}
-        )
+        points = {}
+        if self._compatible(indices):
+            points = (
+                self._localization_links.positions_for(owners, indices)
+                if self._localization_links is not None
+                else {
+                    sample: rt
+                    for index in sorted(indices)
+                    for sample, rt in self.tracks[index].sample_apices
+                }
+            )
         points.update((owner.sample_stem, owner.owner_apex_rt) for owner in owners)
         return PeakTrajectory(tuple(sorted(requested)), tuple(sorted(points.items())))
 
@@ -416,6 +424,89 @@ class _Node:
     sample: str
     mz: float
     landmark: ElutionLandmark
+
+
+@dataclass(frozen=True, slots=True)
+class _LocalizationLinks:
+    """Accepted correspondence evidence, separate from membership tracks.
+
+    A contradicted branch cannot authorize its dependent points. A separate
+    direct anchor can still corroborate a borrowed point if that anchor does
+    not itself endorse a contradicted point. This is independent evidence, not
+    a vote among links. Direct selected peaks are never withdrawn.
+    """
+
+    nodes: tuple[_Node, ...]
+    owner_nodes: Mapping[str, int]
+    track_nodes: tuple[tuple[int, ...], ...]
+    neighbors: tuple[frozenset[int], ...]
+
+    def positions_for(
+        self, owners: Sequence[SampleLocalMS1Owner], indices: set[int]
+    ) -> dict[str, float]:
+        selected = {node for index in indices for node in self.track_nodes[index]}
+        anchors = {
+            self.owner_nodes[owner.owner_id]
+            for owner in owners
+            if owner.owner_id in self.owner_nodes
+        }
+        by_sample: dict[str, list[int]] = defaultdict(list)
+        for node in selected:
+            by_sample[self.nodes[node].sample].append(node)
+        contradicted: set[int] = set()
+        for owner in owners:
+            bound = self.owner_nodes.get(owner.owner_id)
+            if bound is None:
+                continue
+            integration = owner.selected_integration
+            left = (
+                integration.rt_left_min
+                if integration is not None
+                else owner.owner_peak_start_rt
+            )
+            right = (
+                integration.rt_right_min
+                if integration is not None
+                else owner.owner_peak_end_rt
+            )
+            # A nearby landmark alone does not establish a physical binding.
+            # Both the direct binding and its selected segment must witness
+            # that the borrowed point is outside this same-sample peak.
+            if not left <= self.nodes[bound].landmark.apex_rt <= right:
+                continue
+            contradicted.update(
+                node
+                for node in by_sample[owner.sample_stem]
+                if node != bound
+                and not left <= self.nodes[node].landmark.apex_rt <= right
+            )
+        # An anchor that also endorses a contradicted point cannot independently
+        # rescue another point on that branch. Other anchors' accepted pattern
+        # links remain evidence; do not discard them merely because the point
+        # was also linked to the contradicted branch.
+        independent_anchors = {
+            anchor for anchor in anchors if not self.neighbors[anchor] & contradicted
+        }
+        independent: set[int] = set()
+        pending = list(independent_anchors)
+        while pending:
+            node = pending.pop()
+            if node in independent:
+                continue
+            independent.add(node)
+            pending.extend(self.neighbors[node] - independent - contradicted - anchors)
+        withdrawn: set[int] = set()
+        pending = list(contradicted - anchors)
+        while pending:
+            node = pending.pop()
+            if node in withdrawn or node in independent or node in anchors:
+                continue
+            withdrawn.add(node)
+            pending.extend(self.neighbors[node] - withdrawn - anchors)
+        return {
+            self.nodes[node].sample: self.nodes[node].landmark.apex_rt
+            for node in sorted(selected - withdrawn)
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -571,6 +662,7 @@ def resolve_peak_trajectories(
         return PeakTrajectories((), comparisons, retained_contexts)
     regions = _comparison_regions(patterns, matches)
     supported_nodes: set[int] = set()
+    neighbors: list[set[int]] = [set() for _ in nodes]
     for left, right, match, _ in matches:
         region = regions[left.nodes[0]]
         proposed = [roots[index] for index in region.nodes]
@@ -585,9 +677,17 @@ def resolve_peak_trajectories(
             if keep != absorbed:
                 changed = True
                 proposed = [keep if root == absorbed else root for root in proposed]
-        if not changed:
+        if changed and not _preserves_order(proposed, region.patterns):
             continue
-        if not _preserves_order(proposed, region.patterns):
+        # Already-connected multi-pair matches still authorize locations.
+        # Singleton contractions do not, and cannot independently rescue a
+        # contradicted location. Neither changes the existing track policy.
+        if len(match.pairs) >= 2:
+            for i, j in match.pairs:
+                first, second = left.nodes[i], right.nodes[j]
+                neighbors[first].add(second)
+                neighbors[second].add(first)
+        if not changed:
             continue
         for index, root in zip(region.nodes, proposed, strict=True):
             roots[index] = root
@@ -621,11 +721,23 @@ def resolve_peak_trajectories(
                 if i in supported_nodes
             )
         )
-        tracks.append(PeakTrajectory(tuple(sorted(owner_ids)), locations))
+        tracks.append(
+            (
+                PeakTrajectory(tuple(sorted(owner_ids)), locations),
+                tuple(i for i in members[root] if i in supported_nodes),
+            )
+        )
+    tracks.sort(key=lambda item: item[0].owner_ids)
     return PeakTrajectories(
-        tuple(sorted(tracks, key=lambda track: track.owner_ids)),
+        tuple(track for track, _ in tracks),
         comparisons,
         retained_contexts,
+        _LocalizationLinks(
+            tuple(nodes),
+            owner_nodes,
+            tuple(indices for _, indices in tracks),
+            tuple(frozenset(adjacent) for adjacent in neighbors),
+        ),
     )
 
 

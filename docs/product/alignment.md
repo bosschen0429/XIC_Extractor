@@ -296,9 +296,16 @@ MS1-only positions without creating CID-NL support.
 
 Insufficient temporal support, bounded extrapolation, and localization
 reliability each have explicit handling; detailed conditions are owned by
-[Backfill](backfill.md#query-rt-versus-group-rt). A direct owner currently
-overrides a borrowed position in the same sample. This does not mean the
-conflict has been resolved; see the next section.
+[Backfill](backfill.md#query-rt-versus-group-rt). Direct owner positions always
+remain authoritative. A same-sample borrowed position is contradicted only when
+the direct owner is bound to a landmark within its selected peak segment and
+the borrowed landmark lies outside that segment. Before fitting, localization
+withdraws that position and its dependent branch along accepted pattern links.
+Withdrawal stops at direct anchors and preserves positions supported by an
+independent direct anchor that does not itself endorse a contradicted position.
+Unrelated positions remain available; a conflict does not discard the entire
+trajectory. These localization decisions do not change initial membership or
+the owners' selected peaks and integrations.
 
 Backfill returns observations or reasons for no result. Existing members are not
 reassigned by this search; membership and cell decisions still determine
@@ -315,7 +322,6 @@ execution rules.
 | --- | --- | --- |
 | Pattern acceptance conditions | Eligible seeds connect directly; sharing a track also affects cost and ambiguity handling. | What evidence is sufficient to accept a correspondence? Do later steps consume an accepted result or repeat the decision? |
 | Indirect effects of single-peak continuation | It does not directly emit its owner/position, but still participates in root contraction and may change other supported tracks. | What evidence supports this effect? How is it consistent with the boundary that it cannot independently establish a pattern? |
-| Conflict between a borrowed position and a direct owner | Localization lets the direct owner override the borrowed position in the same sample, while other borrowed positions may remain. | If they represent different peaks, which correspondences still hold? Does overwriting only RT hide an unresolved conflict? |
 | Granularity of landmarks and physical peaks | Distinct landmarks may establish distinct-track constraints; landmarks may also include shoulders. | When is this sufficient to rule out the same Feature, and when is it only structure within one peak or a segmentation difference? |
 | Overgeneralized decision reasons | Assigned window groups are uniformly labeled as supported by RT trend; unions with fewer than 10 owners may pass the trend check directly. | How should explanations distinguish actually measured support, a pattern seed, and merely not being ruled out by a check? |
 
