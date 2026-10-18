@@ -186,13 +186,16 @@ def test_a_shoulder_separated_by_a_gap_is_not_split_from_the_peak() -> None:
     assert reject_shoulder_groups(groups, config=_CONFIG) == groups
 
 
-def _candidate(content_id: str, *, apex: float, mz: float = _MZ):
+def _candidate(
+    content_id: str, *, apex: float, mz: float = _MZ, query_ppm: float = 20.0
+):
     return SimpleNamespace(
         content=SimpleNamespace(
             peak_observation_content_id=content_id,
             mz=mz,
             integration=SimpleNamespace(rt_apex_min=apex),
-        )
+        ),
+        generation_provenance=SimpleNamespace(query_ppm_tol=query_ppm),
     )
 
 
@@ -284,6 +287,61 @@ def test_backfill_peak_at_another_apex_or_mass_is_not_contested() -> None:
         )
         == frozenset()
     )
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize(
+    ("first_mz", "first_ppm", "second_mz", "second_ppm", "competing"),
+    [
+        (500.0, 20.0, 500.01055, 20.0, True),
+        (500.0, 5.0, 500.0075, 5.0, False),
+        (500.0, 5.0, 500.01055, 20.0, True),
+        (500.0, 20.0, 500.025, 20.0, False),
+        # Exact windows [999, 1001] and [1001, 1003] share their endpoint.
+        (1000.0, 1000.0, 1002.0, 1e6 / 1002.0, True),
+        (1000.0, 1000.0, 1002.0, 0.5e6 / 1002.0, False),
+    ],
+    ids=["overlap", "narrow-disjoint", "unequal-widths", "disjoint", "touch", "gap"],
+)
+def test_backfill_contest_uses_each_extraction_window(
+    first_mz, first_ppm, second_mz, second_ppm, competing, reverse
+) -> None:
+    backfills = {
+        ("row-a", "sample", "subject-a"): _backfill(
+            _candidate("a", apex=9.0, mz=first_mz, query_ppm=first_ppm)
+        ),
+        ("row-b", "sample", "subject-b"): _backfill(
+            _candidate("b", apex=9.0, mz=second_mz, query_ppm=second_ppm)
+        ),
+    }
+    if reverse:
+        backfills = dict(reversed(tuple(backfills.items())))
+    assert contested_backfill_peaks(
+        groups=(), backfills=backfills, alignment_config=_CONFIG
+    ) == (frozenset({("sample", "a"), ("sample", "b")}) if competing else frozenset())
+
+
+@pytest.mark.parametrize(
+    ("second_group", "second_sample", "second_apex"),
+    [
+        ("row-b", "other-sample", 9.0),
+        ("row-b", "sample", 9.1),
+        ("row-a", "sample", 9.0),
+    ],
+    ids=["different-sample", "different-apex", "same-group"],
+)
+def test_backfill_contest_keeps_sample_apex_and_group_boundaries(
+    second_group, second_sample, second_apex
+) -> None:
+    backfills = {
+        ("row-a", "sample", "subject-a"): _backfill(_candidate("a", apex=9.0)),
+        (second_group, second_sample, "subject-b"): _backfill(
+            _candidate("b", apex=second_apex)
+        ),
+    }
+    assert contested_backfill_peaks(
+        groups=(), backfills=backfills, alignment_config=_CONFIG
+    ) == frozenset()
 
 
 def _feature(sample: str, apex: float, suffix: str = "f") -> SampleLocalMS1Owner:

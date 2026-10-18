@@ -45,13 +45,14 @@ from xic_extractor.alignment.peak_trajectories import (
     resolve_peak_trajectories,
 )
 from xic_extractor.alignment.rt_frame import RtFrame, SampleRtFrame
-from xic_extractor.mass_accuracy import within_ppm
+from xic_extractor.mass_accuracy import mz_window, within_ppm
 from xic_extractor.peak_detection.capture import SampleLocalCapture
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
 from xic_extractor.peak_detection.elution_context import SampleElutionContext
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
+from xic_extractor.peak_detection.observations import PeakObservationRef
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     HYPOTHESIS_METHOD_DDA_CID_NL,
     HYPOTHESIS_METHOD_MS1_OBSERVATION,
@@ -585,17 +586,26 @@ def contested_backfill_peaks(
     A peak several groups' Backfills found, or one a group member already
     holds, belongs to no single row. ``groups`` are the admitted successors.
     Each group-bounded window traces the peak again, so its content ID differs
-    from a member's or another window's; as in Discovery, one apex scan within
-    the m/z tolerance in one sample is one peak.
+    from a member's or another window's. Backfills at one sample/apex compete
+    when their actual extraction windows overlap, even if their request centers
+    are farther apart than the preferred m/z tolerance. Direct-member occupancy
+    retains its preferred-tolerance rule.
     """
     claims: dict[tuple[str, str], set[str]] = defaultdict(set)
-    at_apex: dict[tuple[str, float], list[tuple[float, str]]] = defaultdict(list)
+    backfills_at_apex: dict[
+        tuple[str, float],
+        list[tuple[str, PeakObservationRef, tuple[float, float]]],
+    ] = defaultdict(list)
     for (group_id, sample_id, _), (_, assessment) in backfills.items():
         for peak in assessment.candidate_peaks:
             content = peak.content
             claims[(sample_id, content.peak_observation_content_id)].add(group_id)
-            at_apex[(sample_id, content.integration.rt_apex_min)].append(
-                (content.mz, group_id)
+            backfills_at_apex[(sample_id, content.integration.rt_apex_min)].append(
+                (
+                    group_id,
+                    peak,
+                    mz_window(content.mz, peak.generation_provenance.query_ppm_tol),
+                )
             )
     occupied = {
         (member.canonical_sample_identity_id, observation_id)
@@ -603,6 +613,7 @@ def contested_backfill_peaks(
         for member in group.member_subjects
         for observation_id in member.physical_observation_ids
     }
+    members_at_apex: dict[tuple[str, float], list[float]] = defaultdict(list)
     # An archive row writes no value, so only a Matrix row's member holds a peak.
     for group in groups:
         if group.disposition != "established":
@@ -611,12 +622,12 @@ def contested_backfill_peaks(
             subject = owner.cross_sample_member_subject
             if subject is None:
                 continue
-            at_apex[(subject.canonical_sample_identity_id, owner.owner_apex_rt)].append(
-                (owner.precursor_mz, "")
-            )
+            members_at_apex[
+                (subject.canonical_sample_identity_id, owner.owner_apex_rt)
+            ].append(owner.precursor_mz)
     contested = set()
-    for (group_id, sample_id, _), (_, assessment) in backfills.items():
-        for peak in assessment.candidate_peaks:
+    for (sample_id, apex), entries in backfills_at_apex.items():
+        for group_id, peak, (lower, upper) in entries:
             content = peak.content
             key = (sample_id, content.peak_observation_content_id)
             if (
@@ -624,10 +635,13 @@ def contested_backfill_peaks(
                 or key in occupied
                 or any(
                     holder != group_id
-                    and within_ppm(content.mz, mz, alignment_config.preferred_ppm)
-                    for mz, holder in at_apex[
-                        (sample_id, content.integration.rt_apex_min)
-                    ]
+                    and lower <= other_upper
+                    and other_lower <= upper
+                    for holder, _, (other_lower, other_upper) in entries
+                )
+                or any(
+                    within_ppm(content.mz, mz, alignment_config.preferred_ppm)
+                    for mz in members_at_apex[(sample_id, apex)]
                 )
             ):
                 contested.add(key)
