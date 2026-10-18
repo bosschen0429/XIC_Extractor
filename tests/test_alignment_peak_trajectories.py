@@ -223,6 +223,44 @@ def _context(
 
 
 @pytest.mark.parametrize("reverse", [False, True])
+def test_single_landmark_cannot_join_disconnected_ordered_patterns(reverse):
+    patterns = {
+        "a": ((10.0, 30.0), (10.3, 100.0)),
+        "b": ((10.0, 30.0), (10.3, 100.0)),
+        "c": ((10.4, 100.0), (11.2, 30.0)),
+        "d": ((10.4, 100.0), (11.2, 30.0)),
+        "x": ((10.35, 100.0),),
+    }
+    owners = [
+        _owner(sample, str(index), rt)
+        for sample, peaks in patterns.items()
+        for index, (rt, _) in enumerate(peaks)
+    ]
+    contexts = [
+        replace(
+            _context(sample, peaks),
+            landmarks=tuple(ElutionLandmark(rt, height, 0.05) for rt, height in peaks),
+        )
+        for sample, peaks in patterns.items()
+    ]
+    result = resolve_peak_trajectories(
+        owners[::-1] if reverse else owners,
+        contexts[::-1] if reverse else contexts,
+        config=AlignmentConfig(),
+        injection_order={sample: index for index, sample in enumerate(patterns)},
+    )
+    assert {frozenset(track.owner_ids) for track in result.tracks} == {
+        frozenset(("a:0", "b:0")),
+        frozenset(("a:1", "b:1")),
+        frozenset(("c:0", "d:0")),
+        frozenset(("c:1", "d:1")),
+    }
+    assert result.trajectory_for([owners[1], owners[3]]).sample_apices == (
+        ("a", 10.3), ("b", 10.3),
+    )
+
+
+@pytest.mark.parametrize("reverse", [False, True])
 @pytest.mark.parametrize("tied", [True, False])
 def test_equal_pattern_paths_do_not_authorize_observed_backfill_location(reverse, tied):
     owners = [_owner(sample, "late", 10.75) for sample in ("a", "b")]

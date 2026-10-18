@@ -30,6 +30,7 @@ from xic_extractor.peak_detection.elution_context import (
     ElutionLandmark,
     SampleElutionContext,
 )
+from xic_extractor.peak_detection.hypotheses import IntegrationResult
 from xic_extractor.peak_detection.ms1_shape_identity import prepare_local_peak_shape
 
 _FIXTURES = Path(__file__).parent / "fixtures"
@@ -368,6 +369,136 @@ def test_bootstrap_pattern_seed_extends_to_an_unobserved_context_sample() -> Non
         (("a:early", "b:early", "c:early"), "assigned"),
         (("a:late", "b:late"), "assigned"),
     }
+
+
+def _method_disambiguated_pattern_conflict():
+    # The sample a doublet distinguishes two method envelopes. A shifted
+    # pattern incorrectly links b's early owner to c's late owner, and its
+    # borrowed a position makes that track distinct from the valid late track.
+    owners = [
+        _synthetic_owner("a", "a:early", 10.0),
+        _synthetic_owner("a", "a:late", 11.5, product_mz=383.9726),
+        _synthetic_owner("b", "b:early", 10.05),
+        _synthetic_owner("c", "c:late", 11.55, product_mz=383.9726),
+        _synthetic_owner("d", "d:late", 11.45, product_mz=383.9726),
+        _synthetic_owner("u", "u:independent", 20.0),
+        _synthetic_owner("v", "v:independent", 22.8),
+    ]
+    geometry = PeakTrajectories((
+        PeakTrajectory(
+            ("b:early", "c:late"), (("a", 13.0), ("b", 10.05), ("c", 11.55))
+        ),
+        PeakTrajectory(("a:late", "d:late"), (("a", 11.5), ("d", 11.45))),
+        PeakTrajectory(("u:independent", "v:independent"), (("u", 20.0), ("v", 22.8))),
+    ))
+    return owners, geometry
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("bootstrap", [False, True])
+def test_coobserved_method_witness_withdraws_only_contradicted_membership(
+    reverse, bootstrap,
+):
+    owners, geometry = _method_disambiguated_pattern_conflict()
+    before = geometry.trajectory_for(owners[2:4])
+    result = infer_feature_memberships(
+        owners[::-1] if reverse else owners,
+        config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(injection_order={s: i for i, s in enumerate("abcduv")}),
+        peak_trajectories=geometry,
+        bootstrap=bootstrap,
+    )
+    assert {frozenset(group.owner_ids) for group in result.groups} == {
+        frozenset(("a:early", "b:early")),
+        frozenset(("a:late", "c:late", "d:late")),
+        frozenset(("u:independent", "v:independent")),
+    }
+    assert all(group.disposition == "assigned" for group in result.groups)
+    # Membership qualification must not mutate geometry used by localization.
+    assert geometry.trajectory_for(owners[2:4]) == before
+    assert dict(before.sample_apices)["a"] == 13.0
+
+
+@pytest.mark.parametrize("control", [
+    "missing_second_peak", "overlapping_peaks", "ambiguous_method",
+    "provisional_anchor", "weak_anchor", "provisional_member", "weak_member",
+])
+def test_incomplete_coobserved_witness_does_not_veto_a_pattern(control):
+    owners, geometry = _method_disambiguated_pattern_conflict()
+    # Isolate the claimed correspondence; no competing valid late seed.
+    geometry = PeakTrajectories((geometry.tracks[0],))
+    owners = owners[:4]
+    if control == "missing_second_peak":
+        owners.pop(1)
+    elif control == "overlapping_peaks":
+        owners[0] = replace(owners[0], owner_peak_end_rt=12.0)
+    elif control == "ambiguous_method":
+        owners = [
+            replace(owner, primary_identity_event=replace(
+                owner.primary_identity_event,
+                product_mz=383.9526, observed_neutral_loss_da=116.0474,
+            )) for owner in owners
+        ]
+    elif control.startswith("provisional"):
+        index = 1 if control.endswith("anchor") else 3
+        owners[index] = replace(owners[index], is_provisional=True)
+    else:
+        index = 1 if control.endswith("anchor") else 3
+        owners[index] = replace(owners[index], primary_identity_event=replace(
+            owners[index].primary_identity_event, evidence_score=1, seed_event_count=0,
+        ))
+    result = infer_feature_memberships(
+        owners, config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(injection_order={s: i for i, s in enumerate("abcd")}),
+        peak_trajectories=geometry,
+    )
+    if control.endswith("member"):
+        # Weak members cannot seed an assigned Feature in the first place.
+        # Compare the full result to the same input without the second anchor:
+        # neither can authorize the new witness-based withdrawal.
+        without_anchor = infer_feature_memberships(
+            [o for o in owners if o.owner_id != "a:late"], config=AlignmentConfig(),
+            rt_frame=SampleRtFrame(
+                injection_order={s: i for i, s in enumerate("abcd")}
+            ),
+            peak_trajectories=geometry,
+        )
+        assert next(g for g in result.groups if "c:late" in g.owner_ids) == next(
+            g for g in without_anchor.groups if "c:late" in g.owner_ids
+        )
+    else:
+        assert any({"b:early", "c:late"} <= set(g.owner_ids) for g in result.groups)
+
+
+@pytest.mark.parametrize("overlap", [False, True])
+def test_coobserved_witness_uses_selected_integration_segments(overlap):
+    owners, geometry = _method_disambiguated_pattern_conflict()
+    for index in (0, 1):
+        owner = owners[index]
+        left = owner.owner_apex_rt - 0.05
+        right = 12.0 if overlap and index == 0 else owner.owner_apex_rt + 0.05
+        owners[index] = replace(
+            owner,
+            # The original search bounds deliberately suggest the opposite.
+            owner_peak_start_rt=left if overlap else 9.0,
+            owner_peak_end_rt=owner.owner_apex_rt + 0.05 if overlap else 12.0,
+            selected_integration=IntegrationResult(
+                rt_left_min=left, rt_apex_min=owner.owner_apex_rt,
+                rt_right_min=right, raw_apex_rt_min=owner.owner_apex_rt,
+                rt_width_min=right - left, height_raw=100.0,
+                height_smoothed=100.0, area_raw_counts_seconds=1000.0,
+            ),
+        )
+    result = infer_feature_memberships(
+        owners, config=AlignmentConfig(),
+        rt_frame=SampleRtFrame(injection_order={s: i for i, s in enumerate("abcduv")}),
+        peak_trajectories=geometry,
+    )
+    containing_late = next(g for g in result.groups if "c:late" in g.owner_ids)
+    if overlap:
+        assert {"b:early", "c:late"} <= set(containing_late.owner_ids)
+    else:
+        assert set(containing_late.owner_ids) == {"a:late", "c:late", "d:late"}
 
 
 def test_single_sample_pattern_does_not_split_a_bootstrap_band() -> None:

@@ -149,8 +149,8 @@ Current [pattern matching](../../xic_extractor/alignment/peak_trajectories.py)
 preserves peak order, permits missing and extra maxima, and pairs them using a
 shared RT shift and peak-width constraints. Relative heights distinguish equally
 complete matches; patterns without a unique resolution do not directly provide
-correspondences. See [Open questions](#open-questions) for the actual effects of
-single-peak continuation.
+correspondences. A single-pair match cannot connect tracks, bind owners, or
+supply positions; it lacks a second landmark to establish an ordered pattern.
 
 Different seed windows may produce slightly different apices for the same peak.
 Current doublet detection uses the narrower peak's width and the
@@ -168,6 +168,22 @@ landmarks from both tracks are observed in the same sample.
 Trajectories are then used as seeds for ordinary membership, for compatibility
 decisions, and for Backfill localization. These uses share the same source and
 do not independently validate one another.
+
+Membership inference withdraws a track's membership authority when co-observed
+direct peaks contradict its common-Feature claim. The witness requires two
+nonprovisional scalar CID-NL owners from one sample, with usable method evidence,
+matching chemistry, and precursors within the configured comparison tolerance.
+Their selected integration segments must be disjoint; owner bounds apply only
+when selected integrations are unavailable. Existing method compatibility must
+place track members exclusively on opposite sides of that pair.
+Product/loss envelope mismatches disambiguate that witness; a mismatch alone
+does not revoke a track's membership authority.
+
+Withdrawal removes the track's seeds, same-track RT benefit, and derived
+distinct-track exclusions together. Other tracks and the original localization
+geometry remain available. Missing, weak, overlapping, or method-ambiguous
+witnesses do not authorize withdrawal. RT distance and shape similarity do not
+disambiguate the witness. Known-identity constraints retain their separate path.
 
 ### Prepare RT coordinates
 
@@ -321,7 +337,6 @@ execution rules.
 | Question | Known behavior | Still to clarify |
 | --- | --- | --- |
 | Pattern acceptance conditions | Eligible seeds connect directly; sharing a track also affects cost and ambiguity handling. | What evidence is sufficient to accept a correspondence? Do later steps consume an accepted result or repeat the decision? |
-| Indirect effects of single-peak continuation | It does not directly emit its owner/position, but still participates in root contraction and may change other supported tracks. | What evidence supports this effect? How is it consistent with the boundary that it cannot independently establish a pattern? |
 | Granularity of landmarks and physical peaks | Distinct landmarks may establish distinct-track constraints; landmarks may also include shoulders. | When is this sufficient to rule out the same Feature, and when is it only structure within one peak or a segmentation difference? |
 | Overgeneralized decision reasons | Assigned window groups are uniformly labeled as supported by RT trend; unions with fewer than 10 owners may pass the trend check directly. | How should explanations distinguish actually measured support, a pattern seed, and merely not being ruled out by a check? |
 

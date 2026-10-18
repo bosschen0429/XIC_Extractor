@@ -5,7 +5,8 @@ import statistics
 from bisect import bisect_left, bisect_right, insort
 from collections import Counter, defaultdict
 from collections.abc import Collection, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from itertools import combinations
 from typing import Literal, cast
 
 import numpy as np
@@ -594,8 +595,10 @@ def infer_feature_memberships(
     ordinary = tuple(
         owner for owner in unique_owners if owner.owner_id not in constrained_owner_ids
     )
-    trajectory_seeds = _trajectory_seeds(ordinary, peak_trajectories, config)
-    trajectories = peak_trajectories or PeakTrajectories()
+    trajectories = _membership_trajectories(
+        ordinary, peak_trajectories or PeakTrajectories(), config
+    )
+    trajectory_seeds = _trajectory_seeds(ordinary, trajectories, config)
 
     # Composition can bridge scalar neutral-loss tags and retains its separate
     # membership contract.
@@ -667,6 +670,100 @@ def infer_feature_memberships(
             else "bounded_window_edges;absence_means_not_evaluated"
         ),
     )
+
+
+def _membership_trajectories(
+    owners: Sequence[SampleLocalMS1Owner],
+    geometry: PeakTrajectories,
+    config: AlignmentConfig,
+) -> PeakTrajectories:
+    """Withdraw only pattern membership claims contradicted by direct peaks.
+
+    Two disjoint, co-observed scalar owners can distinguish method envelopes.
+    If a track spans members compatible exclusively with opposite sides, that
+    track cannot authorize a common Feature. Missing or ambiguous evidence is
+    not a contradiction; RT distance and shape similarity do not decide it.
+
+    This projection is private to inference: seeds, same-track cost and derived
+    distinctness all consume it. The caller retains the original geometry and
+    localization links for the finalized groups.
+    """
+    if not geometry.tracks:
+        return geometry
+    supported = {
+        owner.owner_id: owner
+        for owner in owners
+        if owner.primary_identity_event is not None
+        and owner.cid_nl_composite_assessment is None
+        and not owner_uncertainty_reason(owner, config)
+    }
+    by_sample_chemistry: dict[
+        tuple[str, tuple[str, str]], list[SampleLocalMS1Owner]
+    ] = defaultdict(list)
+    for owner in supported.values():
+        key = owner.sample_stem, grouping_chemistry_key(owner)
+        by_sample_chemistry[key].append(owner)
+    witnesses = []
+    for sample_owners in by_sample_chemistry.values():
+        for first, second in combinations(sample_owners, 2):
+            if not within_ppm(
+                max(first.precursor_mz, second.precursor_mz),
+                min(first.precursor_mz, second.precursor_mz),
+                config.max_ppm,
+            ):
+                continue
+            first_bounds = _selected_peak_bounds(first)
+            second_bounds = _selected_peak_bounds(second)
+            if first_bounds[1] < second_bounds[0] or second_bounds[1] < first_bounds[0]:
+                witnesses.append((first.owner_id, second.owner_id))
+    if not witnesses:
+        return geometry
+
+    # Prepare shared method envelopes once. Shape has its own membership gate;
+    # it cannot disambiguate the two direct peaks for this witness rule.
+    anchors = {
+        owner_id: _FeatureTrack.from_owner(
+            replace(supported[owner_id], peak_shape=None), direction="window"
+        )
+        for owner_id in {owner_id for pair in witnesses for owner_id in pair}
+    }
+    compatibility: dict[tuple[str, str], bool] = {}
+
+    def compatible(member_id: str, anchor_id: str) -> bool:
+        key = member_id, anchor_id
+        if key not in compatibility:
+            compatibility[key] = member_id == anchor_id or not _feature_hard_reason(
+                supported[member_id], anchors[anchor_id], config
+            )[0]
+        return compatibility[key]
+
+    retained = []
+    for track in geometry.tracks:
+        members = tuple(
+            owner_id for owner_id in track.owner_ids if owner_id in supported
+        )
+        contradicted = False
+        if len(members) >= 2:
+            for first_id, second_id in witnesses:
+                sides = {
+                    (compatible(member_id, first_id), compatible(member_id, second_id))
+                    for member_id in members
+                }
+                if (True, False) in sides and (False, True) in sides:
+                    contradicted = True
+                    break
+        if not contradicted:
+            retained.append(track)
+    if len(retained) == len(geometry.tracks):
+        return geometry
+    return PeakTrajectories(tuple(retained))
+
+
+def _selected_peak_bounds(owner: SampleLocalMS1Owner) -> tuple[float, float]:
+    integration = owner.selected_integration
+    if integration is not None:
+        return integration.rt_left_min, integration.rt_right_min
+    return owner.owner_peak_start_rt, owner.owner_peak_end_rt
 
 
 def _trajectory_seeds(
