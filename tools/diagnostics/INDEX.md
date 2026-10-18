@@ -345,17 +345,6 @@ until an explicit product-transfer decision and consolidation policy exist.
 
 ---
 
-### CID-NL differential evidence producer helpers
-
-### `tier2_raw_trace_reread_producer.py`
-
-**Purpose**: Produce paired `diagnostic_only` Tier 2 RAW trace evidence and RAW manifest sidecars for retained provisional backfill candidates.
-**Topic group**: `tier2_raw_trace_reread_producer.py` + `xic_extractor/alignment/tier2_trace_producer.py` + `xic_extractor/alignment/production_candidate_gate.py`
-**Originating spec/plan**: `retired-provenance:443a0af82ac4`; follows the sidecar provenance gate checkpoint in `retired-provenance:d3d707f162f6`; diagnostic criteria review in `retired-provenance:38373345f4da` and `retired-provenance:e509e2788bf2`.
-**Status note**: Writes diagnostic-only Tier 2 RAW trace evidence and RAW manifest sidecars. The criteria expose scan availability, signal/noise, shape, boundary-reference, apex-span, and neighbor-interference context, but do not provide positive Tier 2 support or change `alignment_matrix.tsv`. FULL COHORT is out of scope until a reviewed follow-up plan is approved after a successful 8RAW diagnostic rerun.
-
----
-
 ## Peak / Candidate Audits
 
 ---
