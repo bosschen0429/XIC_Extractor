@@ -4,11 +4,19 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
+from tests.cid_nl_peak_support_no_raw_fixture import (
+    cid_nl_evidence,
+    cid_nl_support_policy,
+    cid_nl_unique_support,
+)
 from tests.cid_nl_raw_fixture import (
     _current_candidates,
     _FakeRaw,
     _peak_config,
     _settings,
+)
+from tests.processing_identity_no_raw_fixture import (
+    build_processing_identity_no_raw_fixture,
 )
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
@@ -29,8 +37,19 @@ from xic_extractor.alignment.cross_sample.grouping_result import (
 from xic_extractor.alignment.cross_sample.neighborhood_graph import (
     CrossSamplePartitionTransition,
 )
+from xic_extractor.alignment.cross_sample.peak_groups import (
+    validate_cross_sample_peak_group_identity,
+)
+from xic_extractor.alignment.feature_membership_inference import (
+    supports_existing_feature,
+)
 from xic_extractor.alignment.grouping_workflow import (
     admit_cid_nl_group_backfills,
+    group_cid_nl_owners,
+)
+from xic_extractor.alignment.hypothesis_owner_adapter import (
+    compose_cid_nl_peak_hypotheses_from_assessment,
+    owner_from_cid_nl_assessment_support,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.untargeted_finalized_matrix import (
@@ -39,11 +58,17 @@ from xic_extractor.alignment.untargeted_finalized_matrix import (
 from xic_extractor.execution.attempt import start_runtime_attempt
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlEvaluationReceipt,
     is_ms1_only_cid_nl_backfill_assessment,
+    mint_cid_nl_method_assessment_ref,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     mint_untargeted_cid_nl_method_subject,
 )
+from xic_extractor.peak_detection.hypotheses import IntegrationResult
+from xic_extractor.peak_detection.observations import mint_peak_observation_ref
+from xic_extractor.peak_detection.traces import Trace
+from xic_extractor.processing_identity import resolve_request_acquisition_source
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.partition import cid_nl_acquisition
 from xic_extractor.untargeted_execution.partition import models as partition_models
@@ -55,6 +80,121 @@ from xic_extractor.untargeted_execution.partition.models import (
 from xic_extractor.untargeted_execution.partition.request import (
     build_partition_context,
 )
+
+
+@pytest.mark.parametrize("conflicting", [False, True])
+@pytest.mark.parametrize("with_order", [False, True])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_backfill_batch_preserves_shape_compatibility_without_arbitrary_winners(
+    tmp_path, conflicting, with_order, reverse,
+):
+    widths = {
+        "reference1": .07, "reference2": .07,
+        "narrow": .03, "other": .25 if conflicting else .05, "compatible": .07,
+    }
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=tuple(widths),
+    )
+    owners, assessments = {}, {}
+    offsets = np.linspace(-.6, .6, 121)
+    for name, width in widths.items():
+        sample = fixture.sample(name)
+        values = 1000 * np.exp(-.5 * (offsets / width) ** 2)
+        source = resolve_request_acquisition_source(
+            processing_owners=fixture.owners, sample=sample,
+        )
+        trace = Trace.from_arrays(
+            sample_name=name, mz=500., rt=offsets + 8, intensity=values,
+            rt_min=7.4, rt_max=8.6, ppm_tol=10., source="synthetic_gaussian",
+            acquisition_source_id=source.acquisition_source_id,
+        )
+        peak = mint_peak_observation_ref(
+            processing_owners=fixture.owners, sample=sample, trace=trace,
+            integration=IntegrationResult(
+                rt_left_min=7.4, rt_apex_min=8., rt_right_min=8.6,
+                raw_apex_rt_min=8., rt_width_min=1.2,
+                height_raw=1000., height_smoothed=1000.,
+                area_raw_counts_seconds=float(np.trapezoid(values, offsets) * 60),
+                integration_method="raw_trapezoid",
+                boundary_sources=("candidate_interval", "gaussian15"),
+                raw_scan_indices=tuple(range(len(offsets))),
+            ),
+            resolver_mode="local_minimum",
+            proposal_sources=("local_minimum", "gaussian15"),
+        )
+        evidence = cid_nl_evidence(fixture, name, scan_number=101, scan_rt_min=8.)
+        support = cid_nl_unique_support(fixture, name, peak=peak, evidence=evidence)
+        assessment = mint_cid_nl_method_assessment_ref(
+            processing_owners=fixture.owners, sample=sample, target=fixture.target,
+            detector_invocation_id=f"gaussian15:{name}",
+            evaluation_receipt=CidNlEvaluationReceipt(
+                query_rt_min=7.4, query_rt_max=8.6,
+                support_policy=cid_nl_support_policy(), acquisition_supported=True,
+                search_completed=True, scanned_event_count=1, reason_code=None,
+            ),
+            candidate_peaks=(peak,), evidence_refs=(evidence,),
+            individual_support_refs=(support,),
+        )
+        assert assessment.content.method_result == "SUPPORT"
+        (hypothesis,) = compose_cid_nl_peak_hypotheses_from_assessment(
+            processing_owners=fixture.owners, sample=sample, assessment=assessment,
+        )
+        owners[name] = owner_from_cid_nl_assessment_support(
+            sample=sample, assessment=assessment, hypothesis=hypothesis,
+        )
+        assessments[name] = assessment
+
+    config = AlignmentConfig()
+    frame = SampleRtFrame(injection_order={
+        name: index for index, name in enumerate(widths, 1)
+    } if with_order else {})
+    references = (owners["reference1"], owners["reference2"])
+    (group,) = group_cid_nl_owners(
+        references, config=config, sample_universe=frozenset(widths), rt_frame=frame,
+    )
+    assert group.disposition == "established"
+    identity = validate_cross_sample_peak_group_identity(group, require_canonical=True)
+    initial = CrossSampleGroupingResult(
+        processing_owners=fixture.owners, rt_frame=frame,
+        partition_transition=CrossSamplePartitionTransition(
+            status="assessable", predecessors=(identity,), successors=(identity,),
+            lineage=(), reason="unchanged_membership_no_lineage",
+        ),
+    )
+    backfills = {}
+    for name in ("narrow", "other", "compatible"):
+        # Both conflicting shapes pass individually against the references:
+        # r(narrow, reference)=.898, r(wide, reference)=.818, but r(narrow, wide)=.597.
+        assert supports_existing_feature(
+            owners[name], group.owners, config=config, rt_frame=frame,
+        )
+        backfills[(
+            group.group_hypothesis_id, fixture.sample(name).identity.sample_identity_id,
+            assessments[name].content.method_subject.method_subject_id,
+        )] = (fixture.sample(name), assessments[name])
+    if reverse:
+        backfills = dict(reversed(tuple(backfills.items())))
+    grouping, (successor,), successor_ids, retained = admit_cid_nl_group_backfills(
+        result=initial, groups=(group,), backfills=backfills, alignment_config=config,
+    )
+    accepted = {"compatible"} if conflicting else {"narrow", "other", "compatible"}
+    assert {owner.sample_stem for owner in successor.owners} == (
+        {"reference1", "reference2"} | accepted
+    )
+    assert set(references).issubset(successor.owners)
+    assert successor_ids == {group.group_hypothesis_id: successor.group_hypothesis_id}
+    assert set(grouping.partition_transition.admitted_members) == {
+        owners[name].cross_sample_member_subject for name in accepted
+    }
+    assert set(retained) == {
+        (fixture.sample(name).identity.sample_identity_id,
+         assessments[name].artifact.content_identity.artifact_content_id)
+        for name in accepted
+    }
+    assert {
+        hypothesis.hypothesis_id
+        for values in retained.values() for hypothesis in values
+    } == {owners[name].owner_id for name in accepted}
 
 
 def test_backfill_window_does_not_change_initial_owner_partition(tmp_path, monkeypatch):

@@ -32,6 +32,7 @@ from xic_extractor.alignment.grouping_bootstrap import (
     RetainedGroupingCandidate,
     bootstrap_cid_nl_initial_population,
 )
+from xic_extractor.alignment.grouping_evidence import peak_shape_union_conflict
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_peak_hypotheses_from_assessment_universe,
     owner_from_cid_nl_assessment_observation,
@@ -376,15 +377,36 @@ def admit_cid_nl_group_backfills(
             continue
         claims[physical_key].add(group_id)
         proposals.append((group_id, physical_key, owner, hypothesis, assessment))
-    additions: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
     cell_claims: dict[tuple[str, str], int] = defaultdict(int)
     for group_id, physical_key, *_ in proposals:
         cell_claims[(group_id, physical_key[0])] += 1
-    for group_id, physical_key, owner, hypothesis, assessment in proposals:
+    eligible = []
+    candidates_by_group: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
+    for proposal in proposals:
+        group_id, physical_key, owner, *_ = proposal
         if (
             len(claims[physical_key]) != 1
             or cell_claims[(group_id, physical_key[0])] != 1
         ):
+            continue
+        eligible.append(proposal)
+        candidates_by_group[group_id].append(owner)
+    # Each proposal already agrees with the original members, but shape
+    # compatibility is not transitive. Check simultaneous additions only after
+    # claim resolution; an inadmissible proposal cannot veto a valid recovery.
+    # Neither endpoint of a conflict wins by sample/owner ordering. Independent
+    # compatible additions remain eligible rather than rejecting the whole batch.
+    conflicted: set[str] = set()
+    for candidates in candidates_by_group.values():
+        for index, owner in enumerate(candidates):
+            for other in candidates[:index]:
+                if conflict := peak_shape_union_conflict(
+                    (owner,), (other,), alignment_config,
+                ):
+                    conflicted.update(conflict)
+    additions: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
+    for group_id, physical_key, owner, hypothesis, assessment in eligible:
+        if owner.owner_id in conflicted:
             continue
         additions[group_id].append(owner)
         retained[

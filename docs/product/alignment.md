@@ -239,6 +239,9 @@ mass, and product mass, and handles competition within each sample. Currently:
   applies to the entire proposed union, including trajectory seeds, singleton
   admission and separated-band bridges; intermediate members cannot hide it.
   Directional assignment and Backfill admission consume the same shape rule.
+  Simultaneous Backfill candidates are also compared with each other after
+  claim resolution. Both endpoints of a shape conflict remain unassigned;
+  independent compatible additions can still join, without an ordering winner.
   Explicit known-identity constraints remain separate from inferred membership.
 - Dense bands use their own trend over six neighboring injections; sparse bands
   use broader warp-only RT comparisons. This is not another Backfill localization.
