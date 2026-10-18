@@ -9,6 +9,7 @@ from xic_extractor.alignment.grouping_evidence import (
     SeedSupportLevel,
     classify_seed_support,
     compatible_composite_owners,
+    peak_shape_union_conflict,
 )
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.rt_frame import RtFrame
@@ -24,6 +25,7 @@ HardGateFailureReason = Literal[
     "ambiguous_owner",
     "identity_conflict",
     "backfill_bridge",
+    "peak_shape_mismatch",
 ]
 DriftPriorSource = Literal["targeted_istd_trend", "batch_istd_trend", "none"]
 RTEvidenceBasis = Literal["raw", "drift_corrected"]
@@ -178,6 +180,8 @@ def _hard_gate_failure(
         return "neutral_loss_tag_mismatch"
     if _ppm(left.precursor_mz, right.precursor_mz) > config.max_ppm:
         return "precursor_mz_out_of_tolerance"
+    if peak_shape_union_conflict((left,), (right,), config) is not None:
+        return "peak_shape_mismatch"
 
     if left_event is None or composite_compatible:
         return None

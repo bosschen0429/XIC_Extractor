@@ -123,6 +123,16 @@ def test_prepare_snapshot_and_cli_replay_preserve_formal_grouping(
     )
     restored, provenance = read_grouping_inputs(snapshot)
     assert provenance == {"case": "cross-subject"}
+    original_shapes = {
+        owner.owner_id: owner.peak_shape
+        for workset in prepared.inputs.worksets for owner in workset.owners
+    }
+    assert original_shapes
+    assert all(shape is not None for shape in original_shapes.values())
+    assert {
+        owner.owner_id: owner.peak_shape
+        for workset in restored.worksets for owner in workset.owners
+    } == original_shapes
     assert group_signature(replay_grouping(restored)) == group_signature(
         prepared.groups
     )

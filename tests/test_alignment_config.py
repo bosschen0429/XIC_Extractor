@@ -152,6 +152,7 @@ def test_default_config_matches_alignment_contract():
     assert config.max_rt_sec == 180.0
     assert config.product_mz_tolerance_ppm == 20.0
     assert config.observed_loss_tolerance_ppm == 20.0
+    assert config.min_peak_shape_similarity == 0.80
     assert config.mz_bucket_neighbor_radius == 2
     assert config.anchor_priorities == ("HIGH",)
     assert config.anchor_min_evidence_score == 60
@@ -222,6 +223,10 @@ def test_alignment_config_owner_gate_validation(field, value):
         {"preferred_rt_sec": 181.0, "max_rt_sec": 180.0},
         {"product_mz_tolerance_ppm": 0.0},
         {"observed_loss_tolerance_ppm": -1.0},
+        {"min_peak_shape_similarity": -0.1},
+        {"min_peak_shape_similarity": 1.1},
+        {"min_peak_shape_similarity": math.nan},
+        {"min_peak_shape_similarity": True},
     ],
 )
 def test_invalid_tolerance_windows_are_rejected(kwargs):

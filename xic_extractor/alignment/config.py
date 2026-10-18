@@ -17,6 +17,7 @@ class AlignmentConfig:
     max_rt_sec: float = 180.0
     product_mz_tolerance_ppm: float = 20.0
     observed_loss_tolerance_ppm: float = 20.0
+    min_peak_shape_similarity: float = 0.80
     mz_bucket_neighbor_radius: int = 2
     anchor_priorities: tuple[ReviewPriority, ...] = ("HIGH",)
     anchor_min_evidence_score: int = 60
@@ -52,6 +53,9 @@ class AlignmentConfig:
             self.max_rt_sec,
         )
         _require_positive("product_mz_tolerance_ppm", self.product_mz_tolerance_ppm)
+        _require_numeric_range(
+            "min_peak_shape_similarity", self.min_peak_shape_similarity, 0, 1,
+        )
         _require_positive(
             "observed_loss_tolerance_ppm",
             self.observed_loss_tolerance_ppm,

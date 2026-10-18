@@ -7,6 +7,7 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
+from xic_extractor.peak_detection.ms1_shape_identity import LocalPeakShape
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.cross_sample.peak_groups import (
@@ -51,6 +52,7 @@ class SampleLocalMS1Owner:
     cross_sample_member_subject: CrossSampleGroupMemberSubject | None = None
     cid_nl_composite_assessment: CidNlMethodAssessmentRef | None = None
     is_provisional: bool = False
+    peak_shape: LocalPeakShape | None = None
 
     def __post_init__(self) -> None:
         integration = self.selected_integration

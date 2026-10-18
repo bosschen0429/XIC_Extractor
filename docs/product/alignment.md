@@ -228,6 +228,18 @@ mass, and product mass, and handles competition within each sample. Currently:
 - Pairwise precursor tolerance limits candidates; product deviation is a soft
   cost, observed loss is not a separate veto, and a cumulative min-max envelope
   does not independently veto membership.
+- Measured peak shape is independent correspondence evidence. The owner adapter
+  retains an apex-relative, own-max Gaussian-smoothed shape from the selected
+  raw MS1 subtrace, without changing its baseline, bounds, apex or area. Comparison
+  translates RT but does not stretch width. A local Pearson similarity below
+  `min_peak_shape_similarity` (default 0.80) prevents ordinary membership.
+  At least five acquired points per trace and half of the shared +/-0.35-minute
+  grid are required; insufficient context or flat traces remain unassessed.
+  Shape agreement alone does not establish membership. A measured contradiction
+  applies to the entire proposed union, including trajectory seeds, singleton
+  admission and separated-band bridges; intermediate members cannot hide it.
+  Directional assignment and Backfill admission consume the same shape rule.
+  Explicit known-identity constraints remain separate from inferred membership.
 - Dense bands use their own trend over six neighboring injections; sparse bands
   use broader warp-only RT comparisons. This is not another Backfill localization.
 - A band cannot contain two owners from the same sample.

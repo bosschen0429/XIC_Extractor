@@ -5,6 +5,7 @@ without unpacking CID-NL assessment/physical membership bindings themselves.
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Literal
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -14,12 +15,39 @@ from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
     supported_cid_nl_peak_ids,
 )
+from xic_extractor.peak_detection.ms1_shape_identity import compare_local_peak_shapes
 
 SeedSupportLevel = Literal["strong", "moderate", "weak"]
 
 _DETECTION_LIMIT_SNR = 3.0
 _QUANTITATION_LIMIT_SNR = 10.0
 _DISCOVERY_MODERATE_EVIDENCE_SCORE = 40
+
+
+def peak_shape_union_conflict(
+    left: Sequence[SampleLocalMS1Owner],
+    right: Sequence[SampleLocalMS1Owner],
+    config: AlignmentConfig,
+) -> tuple[str, str] | None:
+    """A measured shape contradiction cannot be repaired by a mass/RT bridge.
+
+    Check the members, not just the joining edge: otherwise an intermediate
+    shape can transitively reunite two incompatible peaks. Missing/flat/short
+    traces supply no shape evidence, rather than a fabricated match or veto.
+    """
+    for first in left:
+        if first.peak_shape is None:
+            continue
+        for second in right:
+            if second.peak_shape is None or first.owner_id == second.owner_id:
+                continue
+            evidence = compare_local_peak_shapes(first.peak_shape, second.peak_shape)
+            if (
+                evidence.similarity is not None
+                and evidence.similarity < config.min_peak_shape_similarity
+            ):
+                return first.owner_id, second.owner_id
+    return None
 
 
 def compatible_composite_owners(

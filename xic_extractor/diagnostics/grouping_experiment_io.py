@@ -1,4 +1,4 @@
-"""Compact grouping snapshots and tabular experiment answers, without curves."""
+"""Compact grouping facts and shape descriptors, without full chromatograms."""
 
 from __future__ import annotations
 
@@ -37,6 +37,7 @@ from xic_extractor.peak_detection.elution_context import (
     SampleElutionContext,
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
+from xic_extractor.peak_detection.ms1_shape_identity import LocalPeakShape
 from xic_extractor.tabular_io import write_delimited_rows
 
 
@@ -95,7 +96,7 @@ def write_json(path: Path, value: object) -> None:
 def write_grouping_inputs(
     path: Path, inputs: GroupingInputs, *, provenance: Mapping[str, Any]
 ) -> None:
-    """Persist grouping facts once; traces and scan arrays have no replay consumer."""
+    """Persist grouping facts and shape evidence, excluding full acquisition traces."""
     payload = {
         "schema": "grouping_experiment_inputs",
         "provenance": dict(provenance),
@@ -209,6 +210,12 @@ def _owner_payload(owner: SampleLocalMS1Owner) -> dict[str, Any]:
 
 def _read_owner(value: dict[str, Any]) -> SampleLocalMS1Owner:
     value = dict(value)
+    if (shape := value.get("peak_shape")) is not None:
+        value["peak_shape"] = LocalPeakShape(
+            half_window_min=shape["half_window_min"],
+            intensity=tuple(shape["intensity"]),
+            source_point_count=shape["source_point_count"],
+        )
     value["primary_identity_event"] = (
         IdentityEvent(**value["primary_identity_event"])
         if value["primary_identity_event"]
