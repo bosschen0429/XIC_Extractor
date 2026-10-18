@@ -256,15 +256,10 @@ claim/Matrix/writer authority, PR E artifact streaming, or PR F recovery.
 
 ## Backfill Reviews
 
-Three overlapping review axes (seed-level / family-level /
-row-classifier-level), 2 owner-backfill economics tools, 1 reconciliation
-gallery/index surface, 1 MS1+RT shadow-policy report, 1 Tier 2 RAW trace
-producer, 1 high-signal clean activation scope audit, 1 `diagnostic_only`
-provisional candidate-gate sidecar, and 1
-`diagnostic_only` product-retained backfill evidence-gate sidecar. The sidecars
-are not economics axes; they emit source-hashed support/blocker/missing-evidence
-rows while the existing review/economics axes remain pending cleanup per
-audit-note Cluster 2.
+Four Backfill review tools: a Parquet shadow bundle of the Backfill evidence
+TSV projections, a `diagnostic_only` evidence-gate sidecar for product-retained
+Backfill, a fast-mode expected-diff packet against exact `dna_dr_product_ready`
+output, and a PeakHypothesis Backfill transfer-readiness summary.
 
 ### `backfill_evidence_parquet_shadow.py`
 
