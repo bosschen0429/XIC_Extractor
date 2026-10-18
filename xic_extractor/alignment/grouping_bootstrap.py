@@ -14,6 +14,7 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 )
 from xic_extractor.alignment.feature_membership_inference import (
     FeatureInferenceOperationCounts,
+    FeatureMembershipBasis,
 )
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     bind_retained_peak_hypotheses_to_assessment_universe,
@@ -43,6 +44,14 @@ from xic_extractor.peak_detection.peak_hypothesis_identity import (
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
+_CALIBRATION_ANCHOR_BASES: frozenset[FeatureMembershipBasis] = frozenset(
+    {
+        "bidirectional_membership_agreement",
+        "known_identity_constraint",
+        "peak_trajectory",
+    }
+)
+
 
 class GroupingBootstrapError(ValueError):
     """Raised when assessment support cannot close the initial population."""
@@ -71,6 +80,16 @@ class InitialGroupingScope:
         object.__setattr__(self, "mz_interval", mz_interval)
         object.__setattr__(self, "rt_interval", rt_interval)
         object.__setattr__(self, "groups", groups)
+
+    @property
+    def calibration_anchor_groups(self) -> tuple[tuple[SampleLocalMS1Owner, ...], ...]:
+        """Only agreed bootstrap groups can contribute calibration observations."""
+        return tuple(
+            group.owners
+            for group in self.groups
+            if group.inference_basis is not None
+            and group.inference_basis.basis in _CALIBRATION_ANCHOR_BASES
+        )
 
 
 @final

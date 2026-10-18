@@ -438,18 +438,10 @@ class UntargetedPreparedGrouping:
 
     @property
     def rt_anchor_groups(self) -> tuple[tuple[SampleLocalMS1Owner, ...], ...]:
-        """Only agreed bootstrap groups can contribute calibration observations."""
         return tuple(
-            group.owners
+            owners
             for workset in self.worksets
-            for group in workset.grouping_scope.groups
-            if group.inference_basis is not None
-            and group.inference_basis.basis
-            in {
-                "bidirectional_membership_agreement",
-                "known_identity_constraint",
-                "peak_trajectory",
-            }
+            for owners in workset.grouping_scope.calibration_anchor_groups
         )
 
 
