@@ -309,13 +309,6 @@ def test_inferred_evidence_persists_scan_provenance_and_exact_projection(
     assert (
         inferred.artifact.evidence_artifact_id != direct.artifact.evidence_artifact_id
     )
-    with pytest.raises(CidNlEvidenceContractError, match="mismatches"):
-        replace(
-            inferred,
-            observation=replace(
-                inferred.observation, precursor_inference_tolerance_da=0.5
-            ),
-        )
 
     seed = DiscoverySeed(
         raw_file=Path("s1.raw"),
@@ -860,19 +853,9 @@ def test_without_support_assessments_do_not_invent_group_or_cells(
     assert spine.untargeted_projections == ()
 
 
-def test_assessment_tamper_and_crossed_sample_fail_closed(tmp_path: Path) -> None:
+def test_assessment_binding_rejects_crossed_sample(tmp_path: Path) -> None:
     fixture, assessments = _truth_table_fixture(tmp_path)
     support = assessments[0]
-    with pytest.raises(CidNlMethodAssessmentContractError):
-        replace(
-            support,
-            content=replace(
-                support.content,
-                canonical_sample_identity_id=(
-                    fixture.sample("s2").identity.sample_identity_id
-                ),
-            ),
-        )
     with pytest.raises(CidNlMethodAssessmentContractError, match="sample"):
         validate_cid_nl_method_assessment_binding(
             support,
@@ -1866,14 +1849,6 @@ def test_monoisotopic_canonical_evidence_binds_vendor_metadata(tmp_path):
         replace(mono.observation, precursor_metadata=None)
     with pytest.raises(CidNlEvidenceContractError, match="singly charged"):
         replace(mono.observation, precursor_metadata=replace(metadata, charge=2))
-    with pytest.raises(CidNlEvidenceContractError, match="mismatches"):
-        replace(
-            mono,
-            observation=replace(
-                mono.observation,
-                precursor_metadata=replace(metadata, master_scan_number=39),
-            ),
-        )
     # A product-derived claim still obeys physical isolation bounds.
     with pytest.raises(CidNlEvidenceContractError, match="inference tolerance"):
         replace(

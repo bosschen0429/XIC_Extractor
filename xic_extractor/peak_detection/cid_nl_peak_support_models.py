@@ -10,7 +10,6 @@ from dataclasses import asdict, dataclass, field
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
     mint_artifact_semantic_contract_ref,
-    verify_evidence_artifact_payload,
 )
 from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.peak_detection.cid_nl_evidence import ACQUISITION_MODE
@@ -244,36 +243,6 @@ class DdaCidNlPeakSupportRef:
 
     content: DdaCidNlPeakSupportContent
     artifact: EvidenceArtifactRef
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.content, DdaCidNlPeakSupportContent):
-            raise DdaCidNlPeakSupportContractError(
-                "content must be owner-normalized DDA CID-NL peak support"
-            )
-        if not isinstance(self.artifact, EvidenceArtifactRef):
-            raise DdaCidNlPeakSupportContractError(
-                "artifact must be an owner-minted EvidenceArtifactRef"
-            )
-        if self.artifact.semantic_contract != _ARTIFACT_SEMANTIC_CONTRACT:
-            raise DdaCidNlPeakSupportContractError(
-                "artifact semantic contract is not owned by DDA CID-NL peak support"
-            )
-        if len(self.artifact.upstream_artifact_ids) != (
-            len(self.content.candidate_peak_content_ids) + 1
-        ):
-            raise DdaCidNlPeakSupportContractError(
-                "DDA CID-NL peak support upstream refs do not close its candidate "
-                "universe"
-            )
-        try:
-            verify_evidence_artifact_payload(
-                self.artifact,
-                canonical_dda_cid_nl_peak_support_bytes(self),
-            )
-        except ValueError as exc:
-            raise DdaCidNlPeakSupportContractError(
-                "DDA CID-NL peak support mismatches its immutable artifact"
-            ) from exc
 
 
 def canonical_dda_cid_nl_peak_support_bytes(

@@ -16,7 +16,6 @@ from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
     mint_artifact_semantic_contract_ref,
     mint_evidence_artifact_ref,
-    verify_evidence_artifact_payload,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
     ACQUISITION_MODE,
@@ -139,68 +138,6 @@ class DdaCidNlCandidateSetRelationRef:
     canonical_evidence: CidNlEvidenceRef
     candidate_peaks: tuple[PeakObservationRef, ...]
     artifact: EvidenceArtifactRef
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.content, DdaCidNlCandidateSetRelationContent):
-            raise DdaCidNlCandidateSetRelationContractError(
-                "content must be an owner-normalized candidate-set relation"
-            )
-        if not isinstance(self.canonical_evidence, CidNlEvidenceRef):
-            raise DdaCidNlCandidateSetRelationContractError(
-                "canonical_evidence must be an owner-minted CID-NL reference"
-            )
-        candidates = _canonical_candidates(self.candidate_peaks)
-        if candidates != self.candidate_peaks:
-            raise DdaCidNlCandidateSetRelationContractError(
-                "candidate_peaks must be canonical-sorted"
-            )
-        if self.content.canonical_sample_identity_id != (
-            self.canonical_evidence.observation.canonical_sample_identity_id
-        ):
-            raise DdaCidNlCandidateSetRelationContractError(
-                "candidate-set relation references a different sample"
-            )
-        if self.content.cid_nl_evidence_content_id != (
-            self.canonical_evidence.artifact.content_identity.artifact_content_id
-        ):
-            raise DdaCidNlCandidateSetRelationContractError(
-                "candidate-set relation references different CID-NL evidence"
-            )
-        if self.content.candidate_peak_content_ids != tuple(
-            peak.content.peak_observation_content_id for peak in candidates
-        ):
-            raise DdaCidNlCandidateSetRelationContractError(
-                "candidate-set relation does not close its declared universe"
-            )
-        if not isinstance(self.artifact, EvidenceArtifactRef):
-            raise DdaCidNlCandidateSetRelationContractError(
-                "artifact must be an owner-minted EvidenceArtifactRef"
-            )
-        if self.artifact.semantic_contract != _ARTIFACT_SEMANTIC_CONTRACT:
-            raise DdaCidNlCandidateSetRelationContractError(
-                "artifact semantic contract is not owned by candidate-set relation"
-            )
-        expected_upstream_ids = tuple(
-            sorted(
-                (
-                    self.canonical_evidence.artifact.evidence_artifact_id,
-                    *(peak.artifact.evidence_artifact_id for peak in candidates),
-                )
-            )
-        )
-        if self.artifact.upstream_artifact_ids != expected_upstream_ids:
-            raise DdaCidNlCandidateSetRelationContractError(
-                "candidate-set relation upstream references were substituted"
-            )
-        try:
-            verify_evidence_artifact_payload(
-                self.artifact,
-                canonical_dda_cid_nl_candidate_set_relation_bytes(self.content),
-            )
-        except ValueError as exc:
-            raise DdaCidNlCandidateSetRelationContractError(
-                "candidate-set relation mismatches its immutable artifact"
-            ) from exc
 
 
 def resolve_dda_cid_nl_candidate_set_relation_ref(

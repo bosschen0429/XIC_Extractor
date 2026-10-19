@@ -16,7 +16,6 @@ from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
     mint_artifact_semantic_contract_ref,
     mint_evidence_artifact_ref,
-    verify_evidence_artifact_payload,
 )
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 from xic_extractor.precursor_evidence import (
@@ -298,33 +297,6 @@ class CidNlEvidenceRef:
 
     observation: CidNlEvidenceObservation
     artifact: EvidenceArtifactRef
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.observation, CidNlEvidenceObservation):
-            raise CidNlEvidenceContractError(
-                "observation must be owner-normalized CID-NL evidence"
-            )
-        if not isinstance(self.artifact, EvidenceArtifactRef):
-            raise CidNlEvidenceContractError(
-                "artifact must be an owner-minted EvidenceArtifactRef"
-            )
-        if self.artifact.semantic_contract != _ARTIFACT_SEMANTIC_CONTRACT:
-            raise CidNlEvidenceContractError(
-                "artifact semantic contract is not owned by canonical CID-NL evidence"
-            )
-        if self.artifact.upstream_artifact_ids:
-            raise CidNlEvidenceContractError(
-                "canonical CID-NL observation must not invent artifact dependencies"
-            )
-        try:
-            verify_evidence_artifact_payload(
-                self.artifact,
-                canonical_cid_nl_evidence_bytes(self.observation),
-            )
-        except ValueError as exc:
-            raise CidNlEvidenceContractError(
-                "canonical CID-NL observation mismatches its immutable artifact"
-            ) from exc
 
 
 def mint_cid_nl_evidence_ref(

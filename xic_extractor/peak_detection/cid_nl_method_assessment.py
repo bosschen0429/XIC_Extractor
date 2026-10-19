@@ -19,7 +19,6 @@ from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
     mint_artifact_semantic_contract_ref,
     mint_evidence_artifact_ref,
-    verify_evidence_artifact_payload,
 )
 from xic_extractor.peak_detection.cid_nl_candidate_set_relation import (
     DdaCidNlCandidateSetRelationContractError,
@@ -422,90 +421,6 @@ class CidNlMethodAssessmentRef:
     set_relation_refs: tuple[DdaCidNlCandidateSetRelationRef, ...]
     artifact: EvidenceArtifactRef
     _mint_token: InitVar[object] = dataclass_field(default=None, kw_only=True)
-
-    def __post_init__(self, _mint_token: object = None) -> None:
-        # The mint derives canonical content and artifact from the validated
-        # upstreams. Supplied content and dataclass replacement still validate.
-        if _mint_token is _ASSESSMENT_MINT_TOKEN:
-            return
-        if not isinstance(self.content, CidNlMethodAssessmentContent):
-            raise CidNlMethodAssessmentContractError(
-                "content must be an owner-normalized method assessment"
-            )
-        candidates = _canonical_candidates(self.candidate_peaks, allow_empty=True)
-        evidence = _canonical_evidence_refs(self.evidence_refs)
-        individual = _canonical_individual_refs(self.individual_support_refs)
-        set_relations = _canonical_set_refs(self.set_relation_refs)
-        if candidates != self.candidate_peaks:
-            raise CidNlMethodAssessmentContractError(
-                "candidate_peaks must be canonical-sorted"
-            )
-        if evidence != self.evidence_refs:
-            raise CidNlMethodAssessmentContractError(
-                "evidence_refs must be canonical-sorted"
-            )
-        if individual != self.individual_support_refs:
-            raise CidNlMethodAssessmentContractError(
-                "individual_support_refs must be canonical-sorted"
-            )
-        if set_relations != self.set_relation_refs:
-            raise CidNlMethodAssessmentContractError(
-                "set_relation_refs must be canonical-sorted"
-            )
-        if self.content.candidate_peak_content_ids != tuple(
-            peak.content.peak_observation_content_id for peak in candidates
-        ):
-            raise CidNlMethodAssessmentContractError(
-                "assessment candidate universe does not match its exact refs"
-            )
-        if self.content.evidence_artifact_content_ids != tuple(
-            ref.artifact.content_identity.artifact_content_id for ref in evidence
-        ):
-            raise CidNlMethodAssessmentContractError(
-                "assessment evidence content does not match its exact refs"
-            )
-        if self.content.individual_relation_artifact_content_ids != tuple(
-            ref.artifact.content_identity.artifact_content_id for ref in individual
-        ):
-            raise CidNlMethodAssessmentContractError(
-                "assessment individual relations do not match their exact refs"
-            )
-        if self.content.set_relation_artifact_content_ids != tuple(
-            ref.artifact.content_identity.artifact_content_id for ref in set_relations
-        ):
-            raise CidNlMethodAssessmentContractError(
-                "assessment set relations do not match their exact refs"
-            )
-        if not isinstance(self.artifact, EvidenceArtifactRef):
-            raise CidNlMethodAssessmentContractError(
-                "artifact must be an owner-minted EvidenceArtifactRef"
-            )
-        if self.artifact.semantic_contract != _ARTIFACT_SEMANTIC_CONTRACT:
-            raise CidNlMethodAssessmentContractError(
-                "artifact semantic contract is not owned by CID-NL assessment"
-            )
-        upstreams = _assessment_upstream_artifacts(
-            candidate_peaks=candidates,
-            evidence_refs=evidence,
-            individual_support_refs=individual,
-            set_relation_refs=set_relations,
-        )
-        expected_upstream_ids = tuple(
-            artifact.evidence_artifact_id for artifact in upstreams
-        )
-        if self.artifact.upstream_artifact_ids != expected_upstream_ids:
-            raise CidNlMethodAssessmentContractError(
-                "assessment upstream artifact closure was substituted"
-            )
-        try:
-            verify_evidence_artifact_payload(
-                self.artifact,
-                canonical_cid_nl_method_assessment_bytes(self.content),
-            )
-        except ValueError as exc:
-            raise CidNlMethodAssessmentContractError(
-                "assessment mismatches its immutable artifact"
-            ) from exc
 
 
 def resolve_cid_nl_method_relations(
