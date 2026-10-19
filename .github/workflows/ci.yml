@@ -102,6 +102,9 @@ jobs:
           # xdist owns parallelism; native BLAS pools must not multiply its
           # worker budget and starve browser actions or subprocess deadlines.
           OPENBLAS_NUM_THREADS: "1"
+          # Runner VMs stall for several seconds; browser deadlines are hang
+          # watchdogs, so CI widens all of them by one factor.
+          XIC_BROWSER_DEADLINE_SCALE: "3"
         run: |
           $venvScripts = (Resolve-Path .\.venv\Scripts).Path
           $env:PATH = "$venvScripts;$env:PATH"
@@ -181,6 +184,13 @@ jobs:
           if ($parallelExitCode -ne 0) { exit $parallelExitCode }
           if ($browserExitCode -ne 0) { exit $browserExitCode }
           exit $serialExitCode
+      - name: Runner load on failure
+        # Name the processes and socket states behind a machine stall.
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-Process | Sort-Object CPU -Descending | Select-Object -First 15 Name, Id, CPU, WorkingSet64 | Format-Table -AutoSize
+          Get-NetTCPConnection | Group-Object State | Select-Object Name, Count | Format-Table -AutoSize
       - name: Browser failure traces
         if: failure()
         uses: actions/upload-artifact@v4

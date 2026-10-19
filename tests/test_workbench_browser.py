@@ -22,9 +22,19 @@ from xic_workbench.workspace import ReviewWorkspace
 
 pytestmark = pytest.mark.browser_e2e
 
+# Deadlines are hang watchdogs, not latency requirements. Hosted CI VMs can
+# stall for several seconds at a time, so CI scales every browser wait by one
+# factor; local runs keep Playwright's defaults.
+DEADLINE_SCALE = int(os.environ.get("XIC_BROWSER_DEADLINE_SCALE", "1"))
+EXPECT_TIMEOUT_MS = 5_000 * DEADLINE_SCALE
+ACTION_TIMEOUT_MS = 10_000 * DEADLINE_SCALE
 # Background jobs include server work and polling before UI content is ready.
-# Keep content assertions at Playwright's default deadline after this boundary.
-BACKGROUND_JOB_TIMEOUT_MS = 30_000
+# Keep content assertions at the expect deadline after this boundary.
+BACKGROUND_JOB_TIMEOUT_MS = 30_000 * DEADLINE_SCALE
+# A test thread holding a server request until the browser reaches a state.
+HANDSHAKE_TIMEOUT_S = 10 * DEADLINE_SCALE
+
+expect.set_options(timeout=EXPECT_TIMEOUT_MS)
 
 
 @pytest.fixture(scope="module")
@@ -79,9 +89,10 @@ def workbench(browser, config_dir, tmp_path, browser_errors):
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     context = browser.new_context(viewport={"width": 1280, "height": 800})
-    context.tracing.start(screenshots=True, snapshots=True, sources=True)
+    # DOM snapshots carry the failure state; screencast frames add renderer load.
+    context.tracing.start(snapshots=True, sources=True)
     page = context.new_page()
-    page.set_default_timeout(10_000)
+    page.set_default_timeout(ACTION_TIMEOUT_MS)
     errors = browser_errors
     page.on("pageerror", lambda error: errors.append(str(error)))
     page.on(
@@ -309,7 +320,7 @@ def test_targeted_reports_sequence_warnings_before_analysis_and_after_reload(
 
     class Service:
         def execute_application(self, request):
-            assert release.wait(30)
+            assert release.wait(BACKGROUND_JOB_TIMEOUT_MS / 1000)
             return SimpleNamespace(
                 active_output=SimpleNamespace(file_results=[], diagnostics=[]),
                 published_paths=(),
@@ -995,7 +1006,7 @@ def test_targeted_row_loads_paired_xic_and_zoom_reuses_curves(
 
     @contextmanager
     def delayed_raw(*args, **kwargs):
-        assert release.wait(10)
+        assert release.wait(HANDSHAKE_TIMEOUT_S)
         with open_raw(*args, **kwargs) as raw:
             yield raw
 
@@ -1460,7 +1471,7 @@ def test_review_history_restores_server_query_before_loading_xic(
             result = query(workspace, values)
             if values.get("target_id") == "ISTD":
                 queried.set()
-                assert release.wait(10)
+                assert release.wait(HANDSHAKE_TIMEOUT_S)
             return result
 
         monkeypatch.setattr(ReviewWorkspace, "query", hold_query_response)
@@ -1483,7 +1494,7 @@ def test_review_history_restores_server_query_before_loading_xic(
     page.locator("#target-id").select_option("ISTD")
     try:
         if query_pending:
-            assert queried.wait(10)
+            assert queried.wait(HANDSHAKE_TIMEOUT_S)
         else:
             expect(page.locator("#item-title")).to_contain_text("ISTD")
             expect(
@@ -1997,7 +2008,7 @@ def test_downloaded_curve_report_keeps_snapshot_and_interacts_without_network(
     expect(mounted.locator(".tx-chart-meta").first).to_contain_text("面積 ND")
 
     context = browser.new_context(viewport={"width": 1280, "height": 900})
-    context.tracing.start(screenshots=True, snapshots=True, sources=True)
+    context.tracing.start(snapshots=True, sources=True)
     offline = context.new_page()
     errors, network_requests = [], []
     offline.on("pageerror", lambda error: errors.append(str(error)))
