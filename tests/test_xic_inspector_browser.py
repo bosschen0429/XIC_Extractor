@@ -28,7 +28,7 @@ pytestmark = pytest.mark.browser_e2e
 @pytest.fixture
 def review_page(browser, tmp_path):
     context = browser.new_context(viewport={"width": 1280, "height": 900})
-    context.tracing.start(screenshots=True, snapshots=True, sources=True)
+    context.tracing.start(snapshots=True, sources=True)
     page = context.new_page()
     errors = []
     page.on("pageerror", lambda error: errors.append(str(error)))

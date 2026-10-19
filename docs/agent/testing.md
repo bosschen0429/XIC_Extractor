@@ -105,7 +105,9 @@ analysis. After bootstrap, install the locked Chromium once and run the lane:
     .venv\Scripts\python.exe -m pytest tests/test_workbench_browser.py -q
 
 CI uses bundled Chromium; `XIC_PLAYWRIGHT_CHANNEL=chrome` (or `msedge`) is an
-explicit local opt-in. Failed tests retain `browser-trace.zip` under their
+explicit local opt-in. Browser deadlines are hang watchdogs: CI sets
+`XIC_BROWSER_DEADLINE_SCALE=3` to widen every one of them for runner stalls,
+while local runs keep Playwright's defaults. Failed tests retain `browser-trace.zip` under their
 `tmp_runtime/` test directory; CI uploads those traces. Successful traces are
 cleaned with pytest's temporary files. `tools.testing.test_shards` owns change
 relevance; master runs the lane.
