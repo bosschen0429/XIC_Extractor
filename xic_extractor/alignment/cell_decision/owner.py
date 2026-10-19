@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass, fields
@@ -104,6 +103,7 @@ class ProductionCellDecision:
     basis_bytes: bytes
     # Retain the chosen observation even when its area is not quantifiable.
     selected_integration: IntegrationResult | None
+
     @property
     def variant(self) -> Literal["numeric"] | NoWriteState:
         return self.payload.variant
@@ -433,14 +433,9 @@ def _decision_basis(
         }
         evidence_identity = {
             "cell_observation_id": evidence.cell_observation_id,
-            "basis_sha256": hashlib.sha256(evidence.basis_bytes).hexdigest(),
             "evidence_states": evidence.evidence_states,
-            "position_ids": evidence.position_ids,
+            "position_keys": evidence.position_keys,
             "source_cell_artifact_ids": evidence.source_cell_artifact_ids,
-            # Preserve the canonical decision identity for published artifacts.
-            "coverage_terminal_ids": (),
-            "repair_receipt_ids": (),
-            "repaired_observation_keys": (),
             "integrations": tuple(
                 _integration_identity(item) for item in evidence.integrations
             ),

@@ -73,7 +73,7 @@ def test_workflow_forwards_exact_owner_objects_once(
         TargetWorkflowAdapter if variant == "target" else UntargetWorkflowAdapter,
         **adapter_fields,
     )
-    closed_coverage = SimpleNamespace(epoch=SimpleNamespace(processing_owners=owners))
+    closed_coverage = SimpleNamespace(processing_owners=owners)
     if variant != "target":
         object.__setattr__(adapter, "closed_cell_coverage", closed_coverage)
     capture = object()

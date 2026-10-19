@@ -16,17 +16,10 @@ from xic_extractor.alignment.backfill.conservative import (
     mint_conservative_backfill_candidate_universe,
 )
 from xic_extractor.alignment.backfill.evaluation_coverage import (
-    BackfillConservativeNoRequestProof,
     BackfillEvaluationCoverageBatch,
+    BackfillNoRequestDecision,
     BackfillPlanningPosition,
     BackfillPlanningReason,
-    build_backfill_evaluation_coverage,
-    mint_backfill_conservative_no_request_proof,
-    mint_backfill_planning_epoch,
-    mint_backfill_position_id,
-)
-from xic_extractor.alignment.backfill.request_plan import (
-    BACKFILL_TRACE_RESULT_SEMANTICS,
 )
 from xic_extractor.alignment.cell_observation.group_context import CidNlCellGroupContext
 from xic_extractor.alignment.cell_observation.observations import CellObservationRef
@@ -96,7 +89,7 @@ class CidNlWorksetEvidence:
 @dataclass(frozen=True, slots=True)
 class _CellCoveragePlan:
     cells: Mapping[tuple[str, str], CellObservationRef]
-    proof_positions: tuple[
+    conservative_positions: tuple[
         tuple[ResolvedCanonicalSampleIdentity, ConservativeBackfillGroupFacts], ...
     ]
 
@@ -116,8 +109,6 @@ class CidNlWorksetCompletion:
     _backfill_cells: tuple[CellObservationRef, ...]
     _coverage_plan: _CellCoveragePlan
     _samples: tuple[ResolvedCanonicalSampleIdentity, ...]
-    _alignment_config: AlignmentConfig
-    _raw_sample_stems: frozenset[str]
 
     @property
     def completion_requests(
@@ -126,7 +117,7 @@ class CidNlWorksetCompletion:
         """Exact group contexts that need an already-completed runtime query."""
         return tuple(
             (sample, facts.group_context)
-            for sample, facts in self._coverage_plan.proof_positions
+            for sample, facts in self._coverage_plan.conservative_positions
             if facts.may_attempt_backfill
         )
 
@@ -138,8 +129,6 @@ class CidNlWorksetCompletion:
             self._coverage_plan,
             completed_empty_backfills,
             samples=self._samples,
-            alignment_config=self._alignment_config,
-            raw_sample_stems=self._raw_sample_stems,
         )
         owners = self._grouping_result.processing_owners
         return compose_untarget_subject(
@@ -167,7 +156,6 @@ def prepare_cid_nl_workset(
     *,
     samples: tuple[ResolvedCanonicalSampleIdentity, ...],
     alignment_config: AlignmentConfig,
-    raw_sample_stems: frozenset[str],
 ) -> CidNlWorksetCompletion:
     """Complete grouping and cells, then request exact runtime completion facts."""
     grouping_result, predecessor_cells, backfill_cells, backfilled_positions = (
@@ -190,8 +178,6 @@ def prepare_cid_nl_workset(
         _backfill_cells=backfill_cells,
         _coverage_plan=coverage_plan,
         _samples=samples,
-        _alignment_config=alignment_config,
-        _raw_sample_stems=raw_sample_stems,
     )
 
 
@@ -326,7 +312,7 @@ def _prepare_cell_coverage(
     ordered_samples = tuple(
         sorted(samples, key=lambda sample: sample.identity.sample_identity_id)
     )
-    proof_positions = []
+    conservative_positions = []
     for group in grouping_result.initial_population:
         group_cells = tuple(cells_by_group[group.group_hypothesis_id])
         searched_sample_ids = {
@@ -362,18 +348,18 @@ def _prepare_cell_coverage(
                     or (*key, method_subject_id) not in group_backfills
                 ):
                     continue
-            proof_positions.append((sample, facts))
-    return _CellCoveragePlan(cell_by_key, tuple(proof_positions))
+            conservative_positions.append((sample, facts))
+    return _CellCoveragePlan(cell_by_key, tuple(conservative_positions))
 
 
 def _cell_planning_reason(
     cell: CellObservationRef | None,
-    proof: BackfillConservativeNoRequestProof | None = None,
+    no_request: BackfillNoRequestDecision | None = None,
 ) -> BackfillPlanningReason:
     if cell is None:
         return "no_discovery_input"
-    if proof is not None:
-        return proof.planning_reason
+    if no_request is not None:
+        return no_request.planning_reason
     if cell.content.outside_group is not None:
         return "local_owner_not_supersedable"
     if (
@@ -392,8 +378,6 @@ def _close_cell_coverage(
     completed_empty_backfills: tuple[BackfillCompletionProjection, ...],
     *,
     samples: tuple[ResolvedCanonicalSampleIdentity, ...],
-    alignment_config: AlignmentConfig,
-    raw_sample_stems: frozenset[str],
 ) -> BackfillEvaluationCoverageBatch:
     owners = grouping_result.processing_owners
     repair_groups = grouping_result.initial_population
@@ -406,8 +390,8 @@ def _close_cell_coverage(
         ): item
         for item in completed_empty_backfills
     }
-    no_request_proofs = {}
-    for sample, facts in plan.proof_positions:
+    no_request_decisions = {}
+    for sample, facts in plan.conservative_positions:
         group = facts.group_context.group_identity
         key = (group.group_hypothesis_id, sample.identity.sample_identity_id)
         completion = None
@@ -425,24 +409,16 @@ def _close_cell_coverage(
         (decision,) = map_conservative_backfill_candidates(
             (facts,), sample=sample, candidate_universes=universes
         )
-        no_request_proofs[key] = mint_backfill_conservative_no_request_proof(
-            processing_owners=owners,
-            group_identity=group,
-            sample=sample,
+        no_request_decisions[key] = BackfillNoRequestDecision(
             decision=decision,
             completion=completion,
         )
     positions = tuple(
         BackfillPlanningPosition(
-            position_id=mint_backfill_position_id(
-                processing_request_id=group.processing_request_id,
-                group_hypothesis_id=group.group_hypothesis_id,
-                sample_identity_id=sample.identity.sample_identity_id,
-            ),
             group_identity=group,
             sample=sample,
-            planning_reason=_cell_planning_reason(cell, proof),
-            conservative_no_request_proof=proof,
+            planning_reason=_cell_planning_reason(cell, no_request),
+            no_request_decision=no_request,
         )
         for group in repair_groups
         for sample in samples
@@ -451,25 +427,15 @@ def _close_cell_coverage(
                 (group.group_hypothesis_id, sample.identity.sample_identity_id)
             ),
         )
-        for proof in (
-            no_request_proofs.get(
+        for no_request in (
+            no_request_decisions.get(
                 (group.group_hypothesis_id, sample.identity.sample_identity_id)
             ),
         )
     )
-    epoch = mint_backfill_planning_epoch(
+    return BackfillEvaluationCoverageBatch(
         processing_owners=owners,
         group_identities=repair_groups,
         samples=samples,
-        raw_sample_stems=raw_sample_stems,
-        alignment_config=alignment_config,
-        backend="raw",
-        window_strategy="exact",
-        superwindow_span_factor=2,
-        validation_mode="primary",
-        result_semantics=BACKFILL_TRACE_RESULT_SEMANTICS,
-        scope="full-audit",
-        selected_family_ids=frozenset(),
         positions=positions,
     )
-    return build_backfill_evaluation_coverage(epoch)

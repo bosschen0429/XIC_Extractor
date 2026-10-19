@@ -324,7 +324,7 @@ def test_group_hold_counterexample_distinguishes_observed_and_zero_candidate(
     )
     handoff = _owner_handoff_for_cells(
         fixture,
-        handoff.coverage.epoch.group_identities[0],
+        handoff.coverage.group_identities[0],
         predecessor_cells,
     )
     negative_cells = compose_final_group_cell_observation_population(

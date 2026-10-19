@@ -14,12 +14,6 @@ from tests.alignment_pipeline_helpers import _owner
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillEvaluationCoverageBatch,
     BackfillPlanningPosition,
-    build_backfill_evaluation_coverage,
-    mint_backfill_planning_epoch,
-    mint_backfill_position_id,
-)
-from xic_extractor.alignment.backfill.request_plan import (
-    BACKFILL_TRACE_RESULT_SEMANTICS,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.association import (
@@ -76,8 +70,8 @@ def test_unchanged_identity_closes_complete_cartesian_population(
     assert first.coverage is coverage
     assert first.predecessor_associations[0].successors == (group,)
     assert len(first.position_associations) == 2
-    assert {item.position.position_id for item in first.position_associations} == {
-        item.position_id for item in coverage.epoch.positions
+    assert {item.position.key for item in first.position_associations} == {
+        item.key for item in coverage.positions
     }
     assert all(
         item.final_successor is group and item.resolution == "unchanged_identity"
@@ -159,7 +153,7 @@ def test_merge_retains_each_predecessor_and_position(
 
     assert (
         tuple(item.predecessor for item in handoff.predecessor_associations)
-        == coverage.epoch.group_identities
+        == coverage.group_identities
     )
     assert all(
         item.successors == (merged,) for item in handoff.predecessor_associations
@@ -299,7 +293,7 @@ def test_crossed_request_and_zero_successor_reject(
         )
 
 
-def test_owner_order_changes_identity_while_each_output_remains_canonical(
+def test_predecessor_order_preserves_each_exact_association_population(
     tmp_path: Path,
 ) -> None:
     fixture = _fixture(tmp_path, sample_stems=("sample-a", "sample-b"))
@@ -323,8 +317,9 @@ def test_owner_order_changes_identity_while_each_output_remains_canonical(
         final_receipt=receipt,
     )
 
-    assert forward_coverage.coverage_id != reverse_coverage.coverage_id
-    assert forward.handoff_id != reverse.handoff_id
+    assert {item.position.key for item in forward.position_associations} == {
+        item.position.key for item in reverse.position_associations
+    }
     assert tuple(item.predecessor for item in forward.predecessor_associations) == (
         left,
         right,
@@ -463,11 +458,6 @@ def _coverage(
     context = fixture.context
     positions = tuple(
         BackfillPlanningPosition(
-            position_id=mint_backfill_position_id(
-                processing_request_id=group.processing_request_id,
-                group_hypothesis_id=group.group_hypothesis_id,
-                sample_identity_id=sample.identity.sample_identity_id,
-            ),
             group_identity=group,
             sample=sample,
             planning_reason="no_discovery_input",
@@ -475,22 +465,12 @@ def _coverage(
         for group in groups
         for sample in context.samples
     )
-    epoch = mint_backfill_planning_epoch(
+    return BackfillEvaluationCoverageBatch(
         processing_owners=context.processing_owners,
         group_identities=groups,
         samples=context.samples,
-        raw_sample_stems=context.raw_sample_stems,
-        alignment_config=context.alignment_config,
-        backend="raw",
-        window_strategy="exact",
-        superwindow_span_factor=2,
-        validation_mode="primary",
-        result_semantics=BACKFILL_TRACE_RESULT_SEMANTICS,
-        scope="full-audit",
-        selected_family_ids=frozenset(),
         positions=positions,
     )
-    return build_backfill_evaluation_coverage(epoch)
 
 
 def _final_receipt(

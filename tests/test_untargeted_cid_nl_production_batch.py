@@ -2492,13 +2492,13 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
     position = next(
         position
         for position in (
-            child.scientific_core.cell_observation_handoff.coverage.epoch.positions
+            child.scientific_core.cell_observation_handoff.coverage.positions
         )
         if position.sample.metadata.raw_stem == "Missing"
         and position.group_identity.group_hypothesis_id == group.group_hypothesis_id
     )
-    assert position.conservative_no_request_proof is not None
-    assert position.conservative_no_request_proof.variant == "completed_backfill_empty"
+    assert position.no_request_decision is not None
+    assert position.no_request_decision.variant == "completed_backfill_empty"
 
 
 @pytest.mark.parametrize(
@@ -3516,10 +3516,10 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         assert source.peak_observation is source.peak_hypothesis is None
         position = next(
             item
-            for item in scientific.cell_observation_handoff.coverage.epoch.positions
+            for item in scientific.cell_observation_handoff.coverage.positions
             if item.sample.metadata.raw_stem == "Hold"
         )
-        assert position.conservative_no_request_proof is None
+        assert position.no_request_decision is None
         assert all(
             not result.backfill_attempts for result in runtime_result.sample_results
         )
@@ -3556,10 +3556,10 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         coverage = handoff.coverage
         position = next(
             item
-            for item in coverage.epoch.positions
+            for item in coverage.positions
             if item.sample.metadata.raw_stem == "Hold"
         )
-        proof = position.conservative_no_request_proof
+        proof = position.no_request_decision
         assert proof.variant == "threshold_not_met"
         assert proof.completion is None
         assert proof.decision.group_facts.direct_support_count_s == 1
@@ -3597,7 +3597,7 @@ def test_production_composition_closes_observation_only_hold_without_membership(
             assert all(
                 row["Hold"] == "" for row in csv.DictReader(handle, delimiter="\t")
             )
-        _assert_conservative_handoff_identity_and_completion(
+        _assert_conservative_completion_projection(
             proof, position, coverage, handoff, hold_cell, batch, runtime_result
         )
         return
@@ -3924,10 +3924,10 @@ def _assert_conservative_coverage_handoff(
     coverage = handoff.coverage
     (position,) = tuple(
         position
-        for position in coverage.epoch.positions
+        for position in coverage.positions
         if position.sample.metadata.raw_stem == "Hold"
     )
-    proof = position.conservative_no_request_proof
+    proof = position.no_request_decision
     if threshold:
         assert proof is None
         assert position.planning_reason == "no_discovery_input"
@@ -3984,20 +3984,17 @@ def _assert_conservative_coverage_handoff(
             for stem in ("Support1", "Support2", "Support3")
         )
     if proof is not None:
-        _assert_conservative_handoff_identity_and_completion(
+        _assert_conservative_completion_projection(
             proof, position, coverage, handoff, hold_cell, batch, runtime_result
         )
 
 
-def _assert_conservative_handoff_identity_and_completion(
+def _assert_conservative_completion_projection(
     proof, position, coverage, handoff, final_cell, batch, runtime_result
 ) -> None:
-    import hashlib
     import json
     from copy import copy
-    from dataclasses import fields
 
-    from xic_extractor.alignment.backfill import evaluation_coverage as owner
     from xic_extractor.alignment.cell_observation.observations import (
         canonical_cell_observation_bytes,
     )
@@ -4006,50 +4003,11 @@ def _assert_conservative_handoff_identity_and_completion(
         project_completed_backfill,
     )
 
-    rebuilt = owner.mint_backfill_conservative_no_request_proof(
-        processing_owners=proof.processing_owners,
-        group_identity=proof.group_identity,
-        sample=proof.sample,
-        decision=proof.decision,
-        completion=proof.completion,
-    )
-    assert rebuilt == proof
-
-    epoch = coverage.epoch
-    epoch_args = {
-        field.name: getattr(epoch, field.name)
-        for field in fields(epoch)
-        if field.name != "epoch_id"
-    }
-    basis_args = {
-        key: value
-        for key, value in epoch_args.items()
-        if key not in {"processing_owners", "group_identities"}
-    } | {
-        "processing_request_id": epoch.processing_owners.request.processing_request_id,
-        "groups": epoch.group_identities,
-    }
-    epoch_basis = owner._epoch_basis(**basis_args)
-    assert epoch_basis["schema"] == "owner_backfill_planning_epoch"
-    assert proof.proof_id in {
-        row["conservative_no_request_proof_id"] for row in epoch_basis["positions"]
-    }
-    assert epoch.epoch_id == owner._typed_id(owner._EPOCH_PREFIX, epoch_basis)
-    assert coverage.coverage_id == owner._typed_id(
-        owner._BATCH_PREFIX,
-        {
-            "schema": "owner_backfill_evaluation_coverage",
-            "epoch_id": epoch.epoch_id,
-            "terminal_ids": [],
-            "terminal_evaluations": [],
-        },
-    )
-    assert json.loads(handoff.basis_bytes)["coverage_id"] == coverage.coverage_id
-    assert handoff.handoff_id.endswith(hashlib.sha256(handoff.basis_bytes).hexdigest())
-    assert json.loads(final_cell.basis_bytes)["handoff_id"] == handoff.handoff_id
-    assert final_cell.cell_observation_id.endswith(
-        hashlib.sha256(final_cell.basis_bytes).hexdigest()
-    )
+    assert position.no_request_decision is proof
+    assert position in coverage.positions
+    assert position.planning_reason == proof.planning_reason
+    assert final_cell.canonical_sample is position.sample
+    assert any(item.position is position for item in handoff.position_associations)
     assert (
         json.loads(
             canonical_cell_observation_bytes(proof.decision.target_cell.content)
@@ -4069,7 +4027,7 @@ def _assert_conservative_handoff_identity_and_completion(
     result = next(
         item
         for item in runtime_result.sample_results
-        if item.job.sample is proof.sample
+        if item.job.sample is position.sample
     )
     context = proof.decision.group_facts.group_context
     original_result_bytes = canonical_sample_result_bytes(result.result_ref)
@@ -4513,8 +4471,8 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     }
     assert recovered["MS1Only"].backfill_attempt is not None
     assert recovered["NoPeak"].backfill_attempt is not None
-    assert fixture_assessment(recovered['MS1Only']).content.method_result == "HOLD"
-    assert fixture_assessment(recovered['NoPeak']).content.method_result == "HOLD"
+    assert fixture_assessment(recovered["MS1Only"]).content.method_result == "HOLD"
+    assert fixture_assessment(recovered["NoPeak"]).content.method_result == "HOLD"
     alignment_config = AlignmentConfig(anchor_min_seed_events=1)
     completed = complete_dense_partition(
         batch, runtime, alignment_config=alignment_config

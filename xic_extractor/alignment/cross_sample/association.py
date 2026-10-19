@@ -16,18 +16,12 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleContractError,
     CrossSampleGroupIdentity,
 )
-from xic_extractor.processing_identity import (
-    canonical_identity_basis_bytes,
-    typed_identity_digest,
-)
 
 CrossSamplePositionResolution: TypeAlias = Literal[
     "unchanged_identity",
     "unique_successor",
     "exact_sample_member_successor",
 ]
-
-_HANDOFF_PREFIX = "xic.cross-sample-association-lineage:"
 
 
 class CrossSampleAssociationContractError(CrossSampleContractError):
@@ -55,12 +49,10 @@ class CrossSampleCoveragePositionAssociation:
 class CrossSampleAssociationLineageHandoff:
     """Immutable owner handoff from exact coverage to exact final group lineage."""
 
-    handoff_id: str
     coverage: BackfillEvaluationCoverageBatch
     predecessor_associations: tuple[CrossSamplePredecessorAssociation, ...]
     position_associations: tuple[CrossSampleCoveragePositionAssociation, ...]
     final_population: tuple[CrossSampleGroupIdentity, ...]
-    basis_bytes: bytes
 
 
 def build_cross_sample_association_lineage_handoff(
@@ -70,7 +62,7 @@ def build_cross_sample_association_lineage_handoff(
 ) -> CrossSampleAssociationLineageHandoff:
     """Compile exact coverage positions onto exact final CrossSample groups."""
 
-    if coverage.epoch.processing_owners.request.processing_request_id != (
+    if coverage.processing_owners.request.processing_request_id != (
         final_receipt.processing_request_id
     ):
         raise CrossSampleAssociationContractError(
@@ -81,21 +73,11 @@ def build_cross_sample_association_lineage_handoff(
         final_receipt=final_receipt,
     )
     final_population = final_receipt.final_population
-    basis = _handoff_basis(
-        coverage=coverage,
-        final_receipt=final_receipt,
-        predecessor_associations=predecessor_associations,
-        position_associations=position_associations,
-        final_population=final_population,
-    )
     return CrossSampleAssociationLineageHandoff(
-        handoff_id=typed_identity_digest(_HANDOFF_PREFIX, basis),
         coverage=coverage,
-
         predecessor_associations=predecessor_associations,
         position_associations=position_associations,
         final_population=final_population,
-        basis_bytes=basis,
     )
 
 
@@ -110,7 +92,7 @@ def _compile_associations(
     final_population = final_receipt.final_population
     predecessor_associations = tuple(
         _associate_predecessor(predecessor=group, final_population=final_population)
-        for group in coverage.epoch.group_identities
+        for group in coverage.group_identities
     )
     predecessor_by_id = {
         item.predecessor.group_hypothesis_id: item for item in predecessor_associations
@@ -126,10 +108,10 @@ def _compile_associations(
                 position.group_identity.group_hypothesis_id
             ),
         )
-        for position in coverage.epoch.positions
+        for position in coverage.positions
     )
-    if len({item.position.position_id for item in position_associations}) != len(
-        coverage.epoch.positions
+    if len({item.position.key for item in position_associations}) != len(
+        coverage.positions
     ):
         raise CrossSampleAssociationContractError(
             "compiled position population is missing, duplicate, or extra"
@@ -198,7 +180,7 @@ def _associate_position(
     )
     if len(matching_members) != 1:
         raise CrossSampleAssociationContractError(
-            f"ambiguous split position {position.position_id}: "
+            f"ambiguous split position {position.key}: "
             "canonical sample has no exact unique predecessor member"
         )
     member = matching_members[0]
@@ -207,54 +189,13 @@ def _associate_position(
     )
     if len(matching_successors) != 1:
         raise CrossSampleAssociationContractError(
-            f"ambiguous split position {position.position_id}: "
+            f"ambiguous split position {position.key}: "
             "member does not select one exact final successor"
         )
     return CrossSampleCoveragePositionAssociation(
         position,
         matching_successors[0],
         "exact_sample_member_successor",
-    )
-
-
-def _handoff_basis(
-    *,
-    coverage: BackfillEvaluationCoverageBatch,
-    final_receipt: CrossSampleGroupingResult,
-    predecessor_associations: tuple[CrossSamplePredecessorAssociation, ...],
-    position_associations: tuple[CrossSampleCoveragePositionAssociation, ...],
-    final_population: tuple[CrossSampleGroupIdentity, ...],
-) -> bytes:
-    return canonical_identity_basis_bytes(
-        {
-            "schema_version": "cross_sample_association_lineage",
-            "coverage_id": coverage.coverage_id,
-            "final_receipt_id": final_receipt.receipt_id,
-            "predecessor_associations": [
-                {
-                    "predecessor_group_hypothesis_id": (
-                        item.predecessor.group_hypothesis_id
-                    ),
-                    "final_successor_group_hypothesis_ids": [
-                        successor.group_hypothesis_id for successor in item.successors
-                    ],
-                }
-                for item in predecessor_associations
-            ],
-            "position_associations": [
-                {
-                    "position_id": item.position.position_id,
-                    "final_successor_group_hypothesis_id": (
-                        item.final_successor.group_hypothesis_id
-                    ),
-                    "resolution": item.resolution,
-                }
-                for item in position_associations
-            ],
-            "final_population_group_hypothesis_ids": [
-                group.group_hypothesis_id for group in final_population
-            ],
-        }
     )
 
 

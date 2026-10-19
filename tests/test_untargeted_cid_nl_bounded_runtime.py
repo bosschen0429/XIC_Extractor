@@ -1169,7 +1169,7 @@ def test_bounded_runtime_matches_eager_after_disk_owner_round_trip(
     for child in actual.children:
         assert child.processing_request is owners.request
         assert (
-            child.scientific_core.cell_observation_handoff.coverage.epoch.processing_owners
+            child.scientific_core.cell_observation_handoff.coverage.processing_owners
             is owners
         )
         assert all(
