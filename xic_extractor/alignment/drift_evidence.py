@@ -6,11 +6,10 @@ import math
 import statistics
 from bisect import bisect_right
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import InitVar, dataclass, field, replace
+from dataclasses import dataclass, field, replace
 from functools import cached_property
 from typing import Literal
 
-from xic_extractor.alignment.identity_gates import is_dr_neutral_loss_tag
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.target_identity import (
@@ -20,19 +19,8 @@ from xic_extractor.configuration.target_identity import (
 from xic_extractor.mass_accuracy import neutral_loss_match
 
 DriftPriorSource = Literal["targeted_istd_trend", "batch_istd_trend", "none"]
-LocalLandmarkQuality = Literal["accepted", "poor"]
-LocalTrajectoryStatus = Literal[
-    "assessable",
-    "missing_landmarks",
-    "poor_landmarks",
-    "conflict",
-]
 
-LOCAL_TRAJECTORY_VALIDATION_STATUS = "shadow_ready"
-LOCAL_TRAJECTORY_PRODUCT_AUTHORITY = "none"
-_LOCAL_TRAJECTORY_ASSESSMENT_MINT_TOKEN = object()
 _TARGETED_ISTD_ANCHOR_MINT_TOKEN = object()
-_DNA_DR_NEUTRAL_LOSS_DA = 116.0474
 
 
 @dataclass(frozen=True)
@@ -369,7 +357,6 @@ def mint_known_istd_reference_from_measurements(
 class SampleDriftEvidence:
     sample_stem: str
     injection_order: int
-    trend_id: str
     istd_rt_min: float
     local_trend_rt_min: float
     rt_drift_delta_min: float
@@ -395,86 +382,6 @@ class TargetedIstdIdentityAnchor:
                 "targeted ISTD identity anchors must be minted by the owner"
             )
 
-    def matching_target(self, family: object) -> Target | None:
-        """Return a unique configured ISTD match for one aligned family."""
-
-        if not is_dr_neutral_loss_tag(str(getattr(family, "neutral_loss_tag", ""))):
-            return None
-        family_mz = _finite_float(getattr(family, "family_center_mz", None))
-        if family_mz is None:
-            family_mz = _finite_float(getattr(family, "cluster_center_mz", None))
-        if family_mz is None:
-            return None
-        family_rt = _finite_float(getattr(family, "family_center_rt", None))
-        if family_rt is None:
-            family_rt = _finite_float(getattr(family, "cluster_center_rt", None))
-        if family_rt is None:
-            return None
-        candidates = tuple(
-            target
-            for target in self.targets
-            if target.label in self.observed_labels
-            and self.matches_observation(
-                target,
-                neutral_loss_tag=str(getattr(family, "neutral_loss_tag", "")),
-                precursor_mz=family_mz,
-                apex_rt=family_rt,
-            )
-        )
-        return candidates[0] if len(candidates) == 1 else None
-
-    def matches_observation(
-        self,
-        target: Target,
-        *,
-        neutral_loss_tag: str,
-        precursor_mz: float,
-        apex_rt: float,
-    ) -> bool:
-        """Check one owner observation against the matched target envelope."""
-
-        return (
-            target.is_istd
-            and target.label in self.observed_labels
-            and target.neutral_loss_da is not None
-            and math.isclose(
-                target.neutral_loss_da,
-                _DNA_DR_NEUTRAL_LOSS_DA,
-                rel_tol=0.0,
-                abs_tol=1e-6,
-            )
-            and target.rt_min <= apex_rt <= target.rt_max
-            and abs(precursor_mz - target.mz)
-            <= target.mz * target.ppm_tol / 1_000_000.0
-            and is_dr_neutral_loss_tag(neutral_loss_tag)
-        )
-
-    def matching_family_ids(self, families: Iterable[object]) -> frozenset[str]:
-        return frozenset(
-            family_id
-            for family in families
-            if (family_id := _family_id(family))
-            and self.matching_target(family) is not None
-        )
-
-    @property
-    def target_config_identity(self) -> str:
-        """Stable identity of the owner-validated target snapshot."""
-
-        payload = {
-            "snapshot_id": self.target_snapshot.snapshot_id,
-            "observed_labels": list(self.observed_labels),
-        }
-        return hashlib.sha256(
-            json.dumps(
-                payload,
-                ensure_ascii=False,
-                allow_nan=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode("utf-8")
-        ).hexdigest()
-
     @property
     def targets(self) -> tuple[Target, ...]:
         return tuple(
@@ -489,8 +396,6 @@ def build_targeted_istd_identity_anchor(
 ) -> TargetedIstdIdentityAnchor:
     """Mint a bounded target anchor from existing owner inputs."""
 
-    if not isinstance(target_snapshot, TargetListSnapshot):
-        raise TypeError("target_snapshot must be an owner-minted snapshot")
     labels = tuple(
         sorted({str(label).strip() for label in observed_labels if str(label).strip()})
     )
@@ -500,158 +405,6 @@ def build_targeted_istd_identity_anchor(
         target_snapshot=target_snapshot,
         observed_labels=labels,
         _mint_token=_TARGETED_ISTD_ANCHOR_MINT_TOKEN,
-    )
-
-
-@dataclass(frozen=True, slots=True)
-class LocalFeatureLandmarkEvidence:
-    """One preregistered local landmark retained on its injection trajectory."""
-
-    sample_stem: str
-    injection_order: int
-    acquisition_source_id: str
-    processing_request_id: str
-    processing_attempt_id: str
-    landmark_id: str
-    observed_rt_min: float
-    local_trajectory_rt_min: float
-    rt_drift_delta_min: float
-    quality: LocalLandmarkQuality
-    evidence_ref: str
-    exclusion_reason: str = ""
-    validation_status: str = LOCAL_TRAJECTORY_VALIDATION_STATUS
-    product_authority: str = LOCAL_TRAJECTORY_PRODUCT_AUTHORITY
-
-
-@dataclass(frozen=True, slots=True)
-class LocalTrajectoryAssessment:
-    """Shadow-only assessability/conflict result; never a SUPPORT vote."""
-
-    status: LocalTrajectoryStatus
-    sample_stems: tuple[str, ...]
-    landmark_evidence_refs: tuple[str, ...]
-    reason_codes: tuple[str, ...]
-    landmark_points: tuple[LocalFeatureLandmarkEvidence, ...] = ()
-    conflict_evidence_refs: tuple[str, ...] = ()
-    validation_status: str = LOCAL_TRAJECTORY_VALIDATION_STATUS
-    product_authority: str = LOCAL_TRAJECTORY_PRODUCT_AUTHORITY
-    _mint_token: InitVar[object] = field(kw_only=True)
-
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _LOCAL_TRAJECTORY_ASSESSMENT_MINT_TOKEN:
-            raise ValueError(
-                "local trajectory assessments must be minted by their owner"
-            )
-
-
-@dataclass(frozen=True)
-class LocalTrajectoryEvidenceLookup:
-    """Full local-landmark set for identity-trajectory shadow assessment only."""
-
-    points: tuple[LocalFeatureLandmarkEvidence, ...]
-    validation_status: str = LOCAL_TRAJECTORY_VALIDATION_STATUS
-    product_authority: str = LOCAL_TRAJECTORY_PRODUCT_AUTHORITY
-
-    def sample_injection_order(self, sample_stem: str) -> int | None:
-        orders = self._injection_orders_by_sample.get(sample_stem)
-        if not orders:
-            return None
-        if len(orders) == 1:
-            return orders[0]
-        raise ValueError(
-            f"conflicting injection order for sample {sample_stem!r}: {list(orders)}"
-        )
-
-    def landmark_status(self, sample_stem: str) -> LocalTrajectoryStatus:
-        sample_points = tuple(
-            point for point in self.points if point.sample_stem == sample_stem
-        )
-        if not sample_points:
-            return "missing_landmarks"
-        if not any(point.quality == "accepted" for point in sample_points):
-            return "poor_landmarks"
-        return "assessable"
-
-    def evidence_refs(self, sample_stem: str) -> tuple[str, ...]:
-        return tuple(
-            sorted(
-                point.evidence_ref
-                for point in self.points
-                if point.sample_stem == sample_stem
-            )
-        )
-
-    @cached_property
-    def _injection_orders_by_sample(self) -> dict[str, tuple[int, ...]]:
-        by_sample: dict[str, set[int]] = {}
-        for point in self.points:
-            by_sample.setdefault(point.sample_stem, set()).add(point.injection_order)
-        return {
-            sample_stem: tuple(sorted(orders))
-            for sample_stem, orders in by_sample.items()
-        }
-
-
-def assess_local_trajectory(
-    lookup: LocalTrajectoryEvidenceLookup,
-    sample_stems: tuple[str, ...],
-    *,
-    conflict_evidence_refs: tuple[str, ...] = (),
-) -> LocalTrajectoryAssessment:
-    """Classify availability only; conflict must arrive as explicit evidence."""
-
-    if not isinstance(lookup, LocalTrajectoryEvidenceLookup):
-        raise TypeError("local trajectory assessment requires local feature landmarks")
-    ordered_samples = _canonicalize_input_texts(
-        sample_stems,
-        field="sample_stems",
-    )
-    statuses = tuple(lookup.landmark_status(sample) for sample in ordered_samples)
-    if "missing_landmarks" in statuses:
-        status: LocalTrajectoryStatus = "missing_landmarks"
-    elif "poor_landmarks" in statuses:
-        status = "poor_landmarks"
-    else:
-        status = "assessable"
-    evidence_refs = tuple(
-        sorted(
-            {ref for sample in ordered_samples for ref in lookup.evidence_refs(sample)}
-        )
-    )
-    landmark_points = tuple(
-        point for point in lookup.points if point.sample_stem in ordered_samples
-    )
-    ordered_conflicts = _canonicalize_input_texts(
-        conflict_evidence_refs,
-        field="conflict_evidence_refs",
-        allow_empty=True,
-    )
-    if status == "assessable" and ordered_conflicts:
-        accepted_refs = {
-            point.evidence_ref
-            for point in landmark_points
-            if point.quality == "accepted"
-        }
-        if not set(ordered_conflicts).issubset(accepted_refs):
-            raise ValueError(
-                "trajectory conflict refs must come from retained accepted landmarks"
-            )
-        return LocalTrajectoryAssessment(
-            status="conflict",
-            sample_stems=ordered_samples,
-            landmark_evidence_refs=evidence_refs,
-            reason_codes=("trajectory_conflict",),
-            landmark_points=landmark_points,
-            conflict_evidence_refs=ordered_conflicts,
-            _mint_token=_LOCAL_TRAJECTORY_ASSESSMENT_MINT_TOKEN,
-        )
-    return LocalTrajectoryAssessment(
-        status=status,
-        sample_stems=ordered_samples,
-        landmark_evidence_refs=evidence_refs,
-        reason_codes=(f"trajectory_{status}",),
-        landmark_points=landmark_points,
-        _mint_token=_LOCAL_TRAJECTORY_ASSESSMENT_MINT_TOKEN,
     )
 
 
@@ -700,33 +453,3 @@ class DriftEvidenceLookup:
             sample_stem: tuple(sorted(orders))
             for sample_stem, orders in by_sample.items()
         }
-
-
-def _family_id(family: object) -> str:
-    return str(
-        getattr(family, "feature_family_id", "") or getattr(family, "cluster_id", "")
-    ).strip()
-
-
-def _finite_float(value: object) -> float | None:
-    if isinstance(value, bool) or not isinstance(value, int | float):
-        return None
-    numeric = float(value)
-    return numeric if math.isfinite(numeric) else None
-
-
-def _canonicalize_input_texts(
-    values: tuple[str, ...],
-    *,
-    field: str,
-    allow_empty: bool = False,
-) -> tuple[str, ...]:
-    if (
-        not isinstance(values, tuple)
-        or (not allow_empty and not values)
-        or any(not isinstance(value, str) or not value.strip() for value in values)
-    ):
-        raise ValueError(f"{field} must contain canonical non-empty text")
-    if len(values) != len(set(values)):
-        raise ValueError(f"{field} must not contain duplicates")
-    return tuple(sorted(values))

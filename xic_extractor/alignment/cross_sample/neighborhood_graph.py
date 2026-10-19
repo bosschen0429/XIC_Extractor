@@ -130,7 +130,6 @@ class CrossSampleLineageEdge:
     predecessor_group_hypothesis_id: str
     successor_group_hypothesis_id: str
     processing_request_id: str
-    predecessor_identity_basis_bytes: bytes
     predecessor_group_hypothesis_ids: tuple[str, ...]
     member_subject_ids: tuple[str, ...]
     basis_bytes: bytes
@@ -195,7 +194,7 @@ def _mint_cross_sample_lineage_edge(
         predecessor_group_hypothesis_id=predecessor.group_hypothesis_id,
         successor_group_hypothesis_id=successor.group_hypothesis_id,
         processing_request_id=predecessor.processing_request_id,
-        predecessor_identity_basis_bytes=predecessor.basis_bytes,
+
         predecessor_group_hypothesis_ids=predecessor_group_hypothesis_ids,
         member_subject_ids=member_subject_ids,
         basis_bytes=basis,

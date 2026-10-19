@@ -587,26 +587,6 @@ def validate_cid_nl_alignment_subject_compatibility(
     return subjects
 
 
-def validate_cid_nl_alignment_subject_workset(
-    subjects: tuple[CidNlMethodSubject, ...],
-) -> tuple[CidNlMethodSubject, ...]:
-    """Validate one overlap-connected, method-compatible Alignment workset."""
-
-    validate_cid_nl_alignment_subject_compatibility(subjects)
-    ordered_intervals = sorted(
-        (cid_nl_method_subject_resolver_interval(subject) for subject in subjects),
-        key=lambda interval: (interval[0], interval[1]),
-    )
-    upper = ordered_intervals[0][1]
-    for lower, next_upper in ordered_intervals[1:]:
-        if lower > upper:
-            raise CidNlMethodSubjectContractError(
-                "alignment workset resolver intervals are not overlap-connected"
-            )
-        upper = max(upper, next_upper)
-    return subjects
-
-
 def cid_nl_alignment_subject_worksets(
     subjects: tuple[CidNlMethodSubject, ...],
     *,
@@ -1250,6 +1230,5 @@ __all__ = [
     "mint_untargeted_cid_nl_method_subject",
     "mint_untargeted_cid_nl_method_subject_batch",
     "validate_cid_nl_alignment_subject_compatibility",
-    "validate_cid_nl_alignment_subject_workset",
     "validate_cid_nl_method_subject_binding",
 ]

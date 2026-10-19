@@ -44,19 +44,6 @@ def iter_backfill_evidence_tsv(
         yield record
 
 
-def iter_owner_bound_backfill_evidence_tsv(
-    path: Path,
-    *,
-    owner_bindings: BackfillEvidenceOwnerBindings,
-) -> Iterator[BackfillEvidenceOwnerResult]:
-    for _record, owner_result in _iter_backfill_evidence_tsv_results(
-        path,
-        owner_bindings=owner_bindings,
-    ):
-        assert owner_result is not None
-        yield owner_result
-
-
 def _iter_backfill_evidence_tsv_results(
     path: Path,
     *,
@@ -231,7 +218,6 @@ def _require_lookup_key(field_name: str, value: str) -> None:
 
 __all__ = (
     "iter_backfill_evidence_tsv",
-    "iter_owner_bound_backfill_evidence_tsv",
     "iter_skipped_evidence_tsv",
     "lookup_backfill_evidence_tsv",
     "lookup_skipped_evidence_tsv",

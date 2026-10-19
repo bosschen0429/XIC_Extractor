@@ -2335,7 +2335,6 @@ def test_alignment_subject_worksets_preserve_only_compatible_overlap() -> None:
         CidNlMethodSubjectContractError,
         cid_nl_alignment_subject_worksets,
         mint_untargeted_cid_nl_method_subject,
-        validate_cid_nl_alignment_subject_workset,
     )
 
     first = mint_untargeted_cid_nl_method_subject(
@@ -2387,24 +2386,9 @@ def test_alignment_subject_worksets_preserve_only_compatible_overlap() -> None:
     )
     with pytest.raises(
         CidNlMethodSubjectContractError,
-        match="not overlap-connected",
+        match="duplicate method subjects",
     ):
-        validate_cid_nl_alignment_subject_workset((first, disconnected))
-    with pytest.raises(
-        CidNlMethodSubjectContractError,
-        match="cannot cross configured neutral losses",
-    ):
-        validate_cid_nl_alignment_subject_workset((first, different_loss))
-    with pytest.raises(
-        CidNlMethodSubjectContractError,
-        match="scalar Untargeted",
-    ):
-        validate_cid_nl_alignment_subject_workset((first, composite))
-    with pytest.raises(
-        CidNlMethodSubjectContractError,
-        match="unique method subject identities",
-    ):
-        validate_cid_nl_alignment_subject_workset((first, first))
+        cid_nl_alignment_subject_worksets((first, first))
 
 
 def test_completed_empty_recovery_preserves_each_compatible_source_subject(
@@ -3470,7 +3454,6 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         assert cells["Hold"].integrations == ()
         (association,) = cells["Hold"].position_associations
         assert association.position.planning_reason == "no_discovery_input"
-        assert association.position.primary_logical_requests == ()
         for decision in writer_inputs.production_decisions.cells.values():
             assert decision.write_matrix_value is (decision.sample_stem == "Support")
             assert (decision.matrix_value is None) is (decision.sample_stem == "Hold")
@@ -3537,7 +3520,6 @@ def test_production_composition_closes_observation_only_hold_without_membership(
             if item.sample.metadata.raw_stem == "Hold"
         )
         assert position.conservative_no_request_proof is None
-        assert position.primary_logical_requests == ()
         assert all(
             not result.backfill_attempts for result in runtime_result.sample_results
         )
@@ -3584,7 +3566,6 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         assert proof.decision.group_facts.minimum_support_k == 2
         assert not proof.decision.group_facts.may_attempt_backfill
         assert proof.decision.reason_codes == ("direct_support_threshold_not_met",)
-        assert position.primary_logical_requests == coverage.terminals == ()
         hold_cell = next(
             cell
             for cell in scientific.cell_observations
@@ -3955,9 +3936,6 @@ def _assert_conservative_coverage_handoff(
         assert proof.variant == "completed_backfill_empty"
         assert proof.decision.group_facts.direct_support_count_s == 3
         assert proof.decision.group_facts.minimum_support_k == 2
-    assert position.planning_state == "not_planned"
-    assert position.primary_logical_requests == ()
-    assert coverage.terminals == ()
     (hold_cell,) = tuple(
         cell
         for cell in scientific.cell_observations
@@ -4021,7 +3999,6 @@ def _assert_conservative_handoff_identity_and_completion(
 
     from xic_extractor.alignment.backfill import evaluation_coverage as owner
     from xic_extractor.alignment.cell_observation.observations import (
-        _derive_lane_evidence_state,
         canonical_cell_observation_bytes,
     )
     from xic_extractor.untargeted_execution.partition.models import (
@@ -4088,17 +4065,6 @@ def _assert_conservative_handoff_identity_and_completion(
             separators=(",", ":"),
             allow_nan=False,
         ).encode()
-
-    lane_args = dict(
-        association=final_cell.position_associations[0],
-        source_cell=proof.decision.target_cell,
-        coverage_terminals=(),
-        final_group=final_cell.group,
-        canonical_sample=proof.sample,
-        processing_request_id=epoch.processing_owners.request.processing_request_id,
-    )
-    with pytest.raises(ValueError, match="physical evidence"):
-        _derive_lane_evidence_state(**(lane_args | {"coverage_terminals": (object(),)}))
 
     result = next(
         item

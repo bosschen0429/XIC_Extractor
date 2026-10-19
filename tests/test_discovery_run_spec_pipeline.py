@@ -22,9 +22,7 @@ from xic_extractor.acquisition_contract import (
     mint_raw_acquisition_session_capability,
     serialize_acquired_trace,
 )
-from xic_extractor.discovery.batch_contract import (
-    validate_discovery_candidate_physical_bindings,
-)
+from xic_extractor.discovery.batch_contract import discovery_candidate_payload_sha256
 from xic_extractor.discovery.csv_reader import (
     read_discovery_batch_index,
     read_owner_bound_discovery_candidates_csv,
@@ -180,7 +178,7 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
             )
 
 
-def test_physical_binding_validation_joins_canonical_candidates_by_id(
+def test_physical_bindings_match_published_candidates_by_id(
     tmp_path: Path,
 ) -> None:
     raw_path = tmp_path / "sample.raw"
@@ -233,14 +231,11 @@ def test_physical_binding_validation_joins_canonical_candidates_by_id(
         candidate.candidate_id for candidate in reordered_candidates
     )
 
-    validated = validate_discovery_candidate_physical_bindings(
-        run_spec=spec,
-        sample_stem=raw_path.stem,
-        candidates=reordered_candidates,
-        bindings=bindings,
+    assert discovery_candidate_payload_sha256(
+        reordered_candidates
+    ) == discovery_candidate_payload_sha256(
+        tuple(binding.candidate for binding in bindings)
     )
-
-    assert validated == bindings
 
 
 def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
@@ -358,89 +353,6 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
     assert first_bindings[0].acquisition_source == (
         spec.acquisition_inputs[0].acquisition_source
     )
-    first_candidates = tuple(binding.candidate for binding in first_bindings)
-    with pytest.raises(ValueError, match="cardinality mismatch"):
-        validate_discovery_candidate_physical_bindings(
-            run_spec=spec,
-            sample_stem=raw_paths[0].stem,
-            candidates=first_candidates,
-            bindings=(),
-        )
-    with pytest.raises(ValueError, match="order is not contiguous"):
-        validate_discovery_candidate_physical_bindings(
-            run_spec=spec,
-            sample_stem=raw_paths[0].stem,
-            candidates=first_candidates,
-            bindings=(replace(first_bindings[0], final_ordinal=1),),
-        )
-    with pytest.raises(ValueError, match="crosses sample identity"):
-        validate_discovery_candidate_physical_bindings(
-            run_spec=spec,
-            sample_stem=raw_paths[1].stem,
-            candidates=first_candidates,
-            bindings=first_bindings,
-        )
-
-    crossed_binding = replace(
-        serial.per_sample[0].physical_bindings[0],
-        candidate=replace(
-            serial.per_sample[0].physical_bindings[0].candidate,
-            ms2_product_max_intensity=(
-                serial.per_sample[0]
-                .physical_bindings[0]
-                .candidate.ms2_product_max_intensity
-                + 1.0
-            ),
-        ),
-    )
-    with pytest.raises(ValueError, match="crosses candidate content"):
-        validate_discovery_candidate_physical_bindings(
-            run_spec=spec,
-            sample_stem=raw_paths[0].stem,
-            candidates=first_candidates,
-            bindings=(crossed_binding,),
-        )
-
-    foreign_dir = tmp_path / "foreign"
-    foreign_dir.mkdir()
-    foreign_paths = tuple(foreign_dir / path.name for path in raw_paths)
-    for foreign_path in foreign_paths:
-        foreign_path.write_bytes(f"foreign-{foreign_path.stem}".encode())
-    foreign_spec = compile_discovery_processing_run_spec(
-        foreign_paths,
-        discovery_settings=settings,
-    )
-    foreign_binding = replace(
-        first_bindings[0],
-        run_spec_id=foreign_spec.run_spec_id,
-    )
-    with pytest.raises(ValueError, match="crosses processing run"):
-        validate_discovery_candidate_physical_bindings(
-            run_spec=spec,
-            sample_stem=raw_paths[0].stem,
-            candidates=first_candidates,
-            bindings=(foreign_binding,),
-        )
-
-    with pytest.raises(ValueError, match="crosses acquisition record"):
-        replace(
-            first_bindings[0],
-            acquisition_source=foreign_spec.acquisition_inputs[0].acquisition_source,
-        )
-    acquisition_crossed_binding = pickle.loads(pickle.dumps(first_bindings[0]))
-    object.__setattr__(
-        acquisition_crossed_binding,
-        "acquisition_source",
-        foreign_spec.acquisition_inputs[0].acquisition_source,
-    )
-    with pytest.raises(ValueError, match="crosses acquisition source"):
-        validate_discovery_candidate_physical_bindings(
-            run_spec=spec,
-            sample_stem=raw_paths[0].stem,
-            candidates=first_candidates,
-            bindings=(acquisition_crossed_binding,),
-        )
-
 
 def test_real_spawn_rejects_full_mismatched_process_job_with_exact_identity(
     tmp_path: Path,

@@ -9,7 +9,6 @@ from dataclasses import InitVar, dataclass, field
 from typing import Literal, TypeAlias
 
 from xic_extractor.alignment.backfill.evaluation_coverage import (
-    BackfillAttemptTerminal,
     BackfillPlanningPosition,
 )
 from xic_extractor.alignment.cell_observation.group_context import (
@@ -119,7 +118,6 @@ class FinalGroupCellObservation:
     canonical_sample: ResolvedCanonicalSampleIdentity
     position_associations: tuple[CrossSampleCoveragePositionAssociation, ...]
     predecessor_cells: tuple[CellObservationRef, ...]
-    coverage_terminals: tuple[BackfillAttemptTerminal, ...]
     evidence_states: tuple[FinalCellEvidenceState, ...]
     basis_bytes: bytes
     backfill_cell: CellObservationRef | None = None
@@ -272,13 +270,6 @@ def _compose_final_group_cell_observation_population(
         positions=positions,
         processing_request_id=request_id,
     )
-    terminal_lists: dict[str, list[BackfillAttemptTerminal]] = {}
-    for terminal in handoff.coverage.terminals:
-        terminal_lists.setdefault(terminal.position_id, []).append(terminal)
-    terminals_by_position = {
-        position.position_id: tuple(terminal_lists.get(position.position_id, ()))
-        for position in positions
-    }
     associations_by_key: dict[
         tuple[int, int], list[CrossSampleCoveragePositionAssociation]
     ] = {}
@@ -299,10 +290,6 @@ def _compose_final_group_cell_observation_population(
                 source_by_position[item.position.position_id]
                 for item in associations
                 if item.position.position_id in source_by_position
-            )
-            coverage_lanes = _canonical_terminal_subset(
-                associations,
-                terminals_by_position,
             )
             states: tuple[FinalCellEvidenceState, ...]
             recovered = backfilled_by_key.pop(
@@ -354,9 +341,6 @@ def _compose_final_group_cell_observation_population(
                         source_cell=source_by_position.get(
                             association.position.position_id
                         ),
-                        coverage_terminals=terminals_by_position[
-                            association.position.position_id
-                        ],
                         final_group=group,
                         canonical_sample=sample,
                         processing_request_id=request_id,
@@ -371,7 +355,6 @@ def _compose_final_group_cell_observation_population(
                     canonical_sample=sample,
                     position_associations=associations,
                     predecessor_cells=source_lanes,
-                    coverage_terminals=coverage_lanes,
                     evidence_states=states,
                     backfill_cell=recovered,
                 )
@@ -443,39 +426,10 @@ def _index_predecessor_cells(
     return result
 
 
-def _canonical_terminal_subset(
-    associations: tuple[CrossSampleCoveragePositionAssociation, ...],
-    terminals_by_position: dict[str, tuple[BackfillAttemptTerminal, ...]],
-) -> tuple[BackfillAttemptTerminal, ...]:
-    position_rank = {
-        association.position.position_id: index
-        for index, association in enumerate(associations)
-    }
-    terminals = tuple(
-        terminal
-        for association in associations
-        for terminal in terminals_by_position.get(association.position.position_id, ())
-    )
-    return tuple(
-        sorted(
-            terminals,
-            key=lambda item: (
-                position_rank.get(item.position_id, len(position_rank)),
-                item.candidate_phase,
-                item.candidate_index,
-                item.logical_request.logical_request_id,
-                item.request_identity.request_identity_id,
-                item.terminal_id,
-            ),
-        )
-    )
-
-
 def _derive_lane_evidence_state(
     *,
     association: CrossSampleCoveragePositionAssociation,
     source_cell: CellObservationRef | None,
-    coverage_terminals: tuple[BackfillAttemptTerminal, ...],
     final_group: CrossSampleGroupIdentity,
     canonical_sample: ResolvedCanonicalSampleIdentity,
     processing_request_id: str,
@@ -483,10 +437,8 @@ def _derive_lane_evidence_state(
     if source_cell is None:
         if (
             association.position.planning_reason != "no_discovery_input"
-            or association.position.planning_state != "not_planned"
             or association.position.sample is not canonical_sample
             or association.final_successor is not final_group
-            or coverage_terminals
         ):
             raise CellObservationContractError(
                 "missing source cell requires exact no-input coverage"
@@ -532,8 +484,6 @@ def _derive_lane_evidence_state(
             source_member is not None
             or source_cell.peak_observation is not None
             or source_cell.peak_hypothesis is not None
-            or coverage_terminals
-            or association.position.planning_state != "not_planned"
             or association.position.planning_reason != "local_owner_not_supersedable"
         ):
             raise CellObservationContractError(
@@ -543,7 +493,7 @@ def _derive_lane_evidence_state(
         return "not_searched"
     no_request_proof = association.position.conservative_no_request_proof
     if no_request_proof is not None:
-        if coverage_terminals or final_member is not None:
+        if final_member is not None:
             raise CellObservationContractError(
                 "conservative no-request lane cannot carry physical evidence"
             )
@@ -557,43 +507,7 @@ def _derive_lane_evidence_state(
             "final CrossSample member cannot carry a HOLD or REJECT method lane"
         )
     if association.position.planning_reason == "retained_unresolved_candidates":
-        if coverage_terminals:
-            raise CellObservationContractError(
-                "retained unresolved candidates cannot claim acquisition"
-            )
         return "unresolved"
-    retained_local_owner = (
-        association.position.planning_state == "not_planned"
-        and association.position.planning_reason == "retained_local_owner"
-    )
-    if (
-        association.position.planning_state == "not_planned"
-        and not retained_local_owner
-    ):
-        if source_cell.peak_observation is not None or source_cell.peak_hypothesis:
-            raise CellObservationContractError(
-                "not-planned lane cannot carry direct observation evidence"
-            )
-        if technical_state in {"unsupported", "failed"}:
-            return "unavailable"
-        if technical_state != "not_evaluated" or method_result is not None:
-            raise CellObservationContractError(
-                "not-planned coverage position crossed an evaluated source cell"
-            )
-        return "not_searched"
-    if not retained_local_owner and not coverage_terminals:
-        raise CellObservationContractError(
-            "planned coverage position has no exact retained terminal"
-        )
-    coverage_unavailable = any(
-        terminal.candidate_phase
-        in {"primary_fallback", "validation_unavailable", "validation_fallback"}
-        or (
-            terminal.physical_evaluation is not None
-            and terminal.physical_evaluation.state in {"unavailable", "failed"}
-        )
-        for terminal in coverage_terminals
-    )
     if technical_state in {"unsupported", "failed"}:
         if source_cell.peak_observation is not None or source_cell.peak_hypothesis:
             raise CellObservationContractError(
@@ -601,11 +515,9 @@ def _derive_lane_evidence_state(
             )
         return "unavailable"
     if technical_state == "not_evaluated":
-        if not coverage_unavailable:
-            raise CellObservationContractError(
-                "evaluated Backfill coverage contradicts a not-evaluated source cell"
-            )
-        return "unavailable"
+        raise CellObservationContractError(
+            "retained local owner contradicts a not-evaluated source cell"
+        )
     if method_result == "SUPPORT":
         if final_member is None:
             raise CellObservationContractError(
@@ -681,7 +593,6 @@ def _mint_final_group_cell_observation(
     canonical_sample: ResolvedCanonicalSampleIdentity,
     position_associations: tuple[CrossSampleCoveragePositionAssociation, ...],
     predecessor_cells: tuple[CellObservationRef, ...],
-    coverage_terminals: tuple[BackfillAttemptTerminal, ...],
     evidence_states: tuple[FinalCellEvidenceState, ...],
     backfill_cell: CellObservationRef | None = None,
 ) -> FinalGroupCellObservation:
@@ -692,7 +603,6 @@ def _mint_final_group_cell_observation(
         canonical_sample=canonical_sample,
         position_associations=position_associations,
         predecessor_cells=predecessor_cells,
-        coverage_terminals=coverage_terminals,
         evidence_states=evidence_states,
         backfill_cell=backfill_cell,
     )
@@ -704,7 +614,6 @@ def _mint_final_group_cell_observation(
         canonical_sample=canonical_sample,
         position_associations=position_associations,
         predecessor_cells=predecessor_cells,
-        coverage_terminals=coverage_terminals,
         evidence_states=evidence_states,
         basis_bytes=basis,
         backfill_cell=backfill_cell,
@@ -721,7 +630,6 @@ def _final_closure_basis(
     canonical_sample: ResolvedCanonicalSampleIdentity,
     position_associations: tuple[CrossSampleCoveragePositionAssociation, ...],
     predecessor_cells: tuple[CellObservationRef, ...],
-    coverage_terminals: tuple[BackfillAttemptTerminal, ...],
     evidence_states: tuple[FinalCellEvidenceState, ...],
     backfill_cell: CellObservationRef | None = None,
 ) -> dict[str, object]:
@@ -783,8 +691,8 @@ def _final_closure_basis(
             }
             for cell in predecessor_cells
         ],
-        "coverage_terminals": [item.terminal_id for item in coverage_terminals],
         # Keep the canonical identity encoding stable for existing artifacts.
+        "coverage_terminals": [],
         "repair_receipts": [],
         "repaired_observations": [],
         "evidence_states": list(evidence_states),

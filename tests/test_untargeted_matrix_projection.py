@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import FrozenInstanceError, replace
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,7 +15,6 @@ from tests.test_cell_observations import (
     _coverage_for_groups,
     _receipt_fixture,
 )
-from tests.test_cid_nl_evidence_spine import _completed_receipt
 from tests.test_cross_sample_association_lineage import (
     _final_receipt as _lineage_final_receipt,
 )
@@ -48,9 +47,6 @@ from xic_extractor.alignment.result import (
     FinalizedScientificAlignment,
 )
 from xic_extractor.peak_detection.capture import capture_peak_hypotheses
-from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    mint_cid_nl_method_assessment_ref,
-)
 from xic_extractor.peak_detection.cid_nl_method_subject import CID_NL_PROVIDER_ID
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
@@ -98,22 +94,6 @@ def _predecessor_cells(base: FinalizedScientificAlignment):
     return tuple(predecessor_cells)
 
 
-def _not_evaluated_assessment(fixture, sample):
-    receipt = replace(
-        _completed_receipt(scanned_event_count=0),
-        search_completed=False,
-        reason_code="search_not_evaluated",
-    )
-    return mint_cid_nl_method_assessment_ref(
-        processing_owners=fixture.owners,
-        sample=sample,
-        method_subject=fixture.method_subject,
-        detector_invocation_id=(f"gaussian15:{sample.lookup_token}:not-evaluated"),
-        evaluation_receipt=receipt,
-        technical_state="not_evaluated",
-    )
-
-
 def _untarget_projection_inputs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -131,19 +111,22 @@ def _untarget_projection_inputs(
         sample_roles={"sample-b": "qc", "sample-c": "study_sample"},
     )
     request = fixture.owners.request
-    assessments = (
-        _support_input(
-            fixture,
-            fixture.samples[0].lookup_token,
-            scan_number=90,
-            height=100.0,
-        ).assessment,
-        _not_evaluated_assessment(fixture, fixture.samples[1]),
-    )
+    # CID-NL composition leaves unsearched samples out of the spine; their
+    # coverage positions carry no discovery input.
     spine = build_cid_nl_reference_spine(
         processing_owners=fixture.owners,
         method_subject=fixture.method_subject,
-        sample_assessments=tuple(zip(fixture.samples, assessments, strict=True)),
+        sample_assessments=(
+            (
+                fixture.samples[0],
+                _support_input(
+                    fixture,
+                    fixture.samples[0].lookup_token,
+                    scan_number=90,
+                    height=100.0,
+                ).assessment,
+            ),
+        ),
     )
     predecessor = validate_cross_sample_peak_group_identity(
         spine.group,
@@ -153,20 +136,19 @@ def _untarget_projection_inputs(
     predecessor_cells = spine.cells
     successors = predecessor_groups
     if group_mode in {"two", "merged"}:
-        right_assessments = (
-            _not_evaluated_assessment(fixture, fixture.samples[0]),
-            _support_input(
-                fixture,
-                fixture.samples[1].lookup_token,
-                scan_number=92,
-                height=200.0,
-            ).assessment,
-        )
         right_spine = build_cid_nl_reference_spine(
             processing_owners=fixture.owners,
             method_subject=fixture.method_subject,
-            sample_assessments=tuple(
-                zip(fixture.samples, right_assessments, strict=True)
+            sample_assessments=(
+                (
+                    fixture.samples[1],
+                    _support_input(
+                        fixture,
+                        fixture.samples[1].lookup_token,
+                        scan_number=92,
+                        height=200.0,
+                    ).assessment,
+                ),
             ),
         )
         right = validate_cross_sample_peak_group_identity(
@@ -221,7 +203,7 @@ def _untarget_projection_inputs(
         cell_fixture,
         predecessor_groups,
         fixture.samples,
-        planned=True,
+        predecessor_cells=predecessor_cells,
     )
     handoff = build_cross_sample_association_lineage_handoff(
         coverage=coverage,
@@ -357,7 +339,7 @@ def test_completed_values_project_to_exact_group_sample_positions(
             assert decision.payload is payload
             assert decision.selected_integration is integration
             if subject.member_subject is None:
-                assert decision.variant == "unavailable"
+                assert decision.variant == "not_searched"
                 assert integration is None
             else:
                 assert decision.variant == "numeric"

@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 import xic_extractor.alignment.result.scientific_alignment as finalizer_owner
 from tests.test_cell_observations import _owner_handoff
+from tests.test_cross_sample_association_lineage import _final_receipt
 from tests.test_search_scope_capture import _capture_binding, _peak_config
 from xic_extractor.alignment.result import (
     FinalizedScientificAlignment,
@@ -360,7 +362,11 @@ def _finalization_inputs(
     tmp_path.mkdir(parents=True, exist_ok=True)
     fixture, spine, handoff = _owner_handoff(tmp_path)
     request = fixture.owners.request
-    receipt = handoff.final_receipt
+    receipt = _final_receipt(
+        SimpleNamespace(context=SimpleNamespace(processing_owners=fixture.owners)),
+        predecessors=handoff.coverage.epoch.group_identities,
+        successors=handoff.final_population,
+    )
     method_subject = spine.cells[0].group_context.method_subject
 
     rt = np.linspace(7.7, 8.3, 61)

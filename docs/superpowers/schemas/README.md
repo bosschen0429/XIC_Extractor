@@ -42,9 +42,6 @@ these authority instances are not schemas.
   for productization lane state, maturity, authority rules, the stable
   compatibility-anchor registry, and dependent-effect lane authority.
 
-The [CID-NL oracle formats](../../product/discovery.md#cid-nl-oracle-formats)
-describe proposal, sampling, lineage, review, reference, narrow-scope, and
-statistical-design inputs and link to their executable validators.
 The [Matrix publication contract](../../product/quant-matrix.md#matrix-publication)
 describes current numeric publication and its retained acceptance owners.
 
@@ -53,6 +50,3 @@ describes current numeric publication and its retained acceptance owners.
 If a schema conflicts with its structured state/authority owner, the current
 handoff, or the current Backfill quant-matrix product blueprint, stop and
 resolve the conflict instead of silently following the older schema.
-
-CID-NL oracle fields and checks are owned by the Python validators linked from
-Discovery. Focused negative tests exercise invalid rows, seals, and verdicts.

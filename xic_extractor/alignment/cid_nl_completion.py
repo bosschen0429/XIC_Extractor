@@ -16,8 +16,10 @@ from xic_extractor.alignment.backfill.conservative import (
     mint_conservative_backfill_candidate_universe,
 )
 from xic_extractor.alignment.backfill.evaluation_coverage import (
+    BackfillConservativeNoRequestProof,
     BackfillEvaluationCoverageBatch,
     BackfillPlanningPosition,
+    BackfillPlanningReason,
     build_backfill_evaluation_coverage,
     mint_backfill_conservative_no_request_proof,
     mint_backfill_planning_epoch,
@@ -364,6 +366,26 @@ def _prepare_cell_coverage(
     return _CellCoveragePlan(cell_by_key, tuple(proof_positions))
 
 
+def _cell_planning_reason(
+    cell: CellObservationRef | None,
+    proof: BackfillConservativeNoRequestProof | None = None,
+) -> BackfillPlanningReason:
+    if cell is None:
+        return "no_discovery_input"
+    if proof is not None:
+        return proof.planning_reason
+    if cell.content.outside_group is not None:
+        return "local_owner_not_supersedable"
+    if (
+        cell.content.technical_state == "evaluated"
+        and cell.content.method_result == "HOLD"
+        and cell.peak_observation is None
+        and len(cell.method_assessment.candidate_peaks) >= 2
+    ):
+        return "retained_unresolved_candidates"
+    return "retained_local_owner"
+
+
 def _close_cell_coverage(
     grouping_result: CrossSampleGroupingResult,
     plan: _CellCoveragePlan,
@@ -419,35 +441,18 @@ def _close_cell_coverage(
             ),
             group_identity=group,
             sample=sample,
-            planning_state="not_planned",
-            planning_reason=(
-                "no_discovery_input"
-                if cell is None
-                else no_request_proofs[
-                    (group.group_hypothesis_id, sample.identity.sample_identity_id)
-                ].planning_reason
-                if (group.group_hypothesis_id, sample.identity.sample_identity_id)
-                in no_request_proofs
-                else "local_owner_not_supersedable"
-                if cell.content.outside_group is not None
-                else "retained_unresolved_candidates"
-                if (
-                    cell.content.technical_state == "evaluated"
-                    and cell.content.method_result == "HOLD"
-                    and cell.peak_observation is None
-                    and len(cell.method_assessment.candidate_peaks) >= 2
-                )
-                else "retained_local_owner"
-            ),
-            primary_logical_requests=(),
-            conservative_no_request_proof=no_request_proofs.get(
-                (group.group_hypothesis_id, sample.identity.sample_identity_id)
-            ),
+            planning_reason=_cell_planning_reason(cell, proof),
+            conservative_no_request_proof=proof,
         )
         for group in repair_groups
         for sample in samples
         for cell in (
             cell_by_key.get(
+                (group.group_hypothesis_id, sample.identity.sample_identity_id)
+            ),
+        )
+        for proof in (
+            no_request_proofs.get(
                 (group.group_hypothesis_id, sample.identity.sample_identity_id)
             ),
         )
@@ -467,4 +472,4 @@ def _close_cell_coverage(
         selected_family_ids=frozenset(),
         positions=positions,
     )
-    return build_backfill_evaluation_coverage(epoch, ())
+    return build_backfill_evaluation_coverage(epoch)

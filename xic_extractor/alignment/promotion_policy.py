@@ -59,14 +59,6 @@ _TRACE_CONTINUITY_LABELS = {
     "good",
     "family_centered",
 }
-_CHEMICAL_MARKERS = (
-    "neutral_loss",
-    "nl_match",
-    "product",
-    "fragment",
-    "chemical",
-    "ms2",
-)
 _INTERFERENCE_MARKERS = ("neighbor", "interference")
 _INTERFERENCE_NOT_ASSESSED_MARKERS = (
     "neighbor_interference_not_assessed",
@@ -599,11 +591,6 @@ def _cell_from_tsv(row: Mapping[str, str]) -> BackfillCellEvidence:
         reason=row.get("reason", ""),
         group_hypothesis_id=row.get("group_hypothesis_id", ""),
     )
-
-
-def _contains_marker(value: str, markers: Sequence[str]) -> bool:
-    text = value.lower()
-    return any(marker in text for marker in markers)
 
 
 def _normalize(value: str) -> str:

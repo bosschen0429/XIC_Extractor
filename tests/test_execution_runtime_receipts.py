@@ -27,10 +27,6 @@ def test_reexport_identity() -> None:
         "RuntimeExecutionPhaseError",
         "RuntimeFinalizationPersister",
         "RuntimeFinalizationReceipt",
-        "RuntimePeakFactCostMetrics",
-        "RuntimePeakFactIdentityStatus",
-        "RuntimePeakFactOperation",
-        "RuntimePeakFactWorkReceipt",
         "RuntimeProcessTreePeakRssSample",
         "RuntimeRawOpenMetrics",
         "RuntimeResourceSettlementReceipt",
@@ -42,7 +38,6 @@ def test_reexport_identity() -> None:
         "accept_runtime_finalization_receipt",
         "compact_runtime_acquisition_receipt",
         "derive_runtime_acquisition_metrics",
-        "derive_runtime_peak_fact_cost_metrics",
         "derive_runtime_raw_open_metrics",
     )
     for sym in exported_symbols:

@@ -12,7 +12,6 @@ from xic_extractor.extraction.result_models import ExtractionResult
 from xic_extractor.peak_detection.cid_nl_chromatographic_support import (
     CidNlChromatographicSupportContractError,
     compose_cid_nl_chromatographic_support_ref,
-    validate_cid_nl_chromatographic_support_binding,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceContractError,
@@ -40,7 +39,6 @@ from xic_extractor.peak_detection.observations import (
 from xic_extractor.peak_detection.peak_hypothesis_identity import (
     PeakHypothesisContractError,
     compose_cid_nl_peak_hypothesis,
-    validate_cid_nl_peak_hypothesis_binding,
 )
 from xic_extractor.peak_detection.selection_decision import (
     PeakHypothesisSelectionDecision,
@@ -675,71 +673,6 @@ def test_signed_zero_support_content_has_one_canonical_identity(
     )
 
 
-def test_chromatographic_event_binding_rejects_missing_and_owner_substitution(
-    tmp_path: Path,
-) -> None:
-    fixture = _identity_fixture(tmp_path)
-    foreign = _identity_fixture(tmp_path, sample_key="sample-b")
-    peak = _peak(fixture.owners, fixture.sample)
-    first = _resolve(
-        fixture,
-        _evidence(fixture.owners, fixture.sample, scan_number=42),
-        peak,
-    )
-    second = _resolve(
-        fixture,
-        _evidence(fixture.owners, fixture.sample, scan_number=43),
-        peak,
-    )
-    event = compose_cid_nl_chromatographic_support_ref(
-        processing_owners=fixture.owners,
-        sample=fixture.sample,
-        scan_support_refs=(first, second),
-    )
-
-    with pytest.raises(
-        CidNlChromatographicSupportContractError,
-        match="support set",
-    ):
-        validate_cid_nl_chromatographic_support_binding(
-            event,
-            processing_owners=fixture.owners,
-            sample=fixture.sample,
-            scan_support_refs=(first,),
-        )
-
-    retry = issue_processing_attempt(fixture.request, retry_of=fixture.attempt)
-    retry_owners = _processing_owners(fixture.request, retry, fixture.sample)
-    with pytest.raises(
-        CidNlChromatographicSupportContractError,
-        match="processing attempt",
-    ):
-        validate_cid_nl_chromatographic_support_binding(
-            event,
-            processing_owners=retry_owners,
-            sample=fixture.sample,
-            scan_support_refs=(first, second),
-        )
-
-    with pytest.raises(CidNlChromatographicSupportContractError, match="sample"):
-        validate_cid_nl_chromatographic_support_binding(
-            event,
-            processing_owners=fixture.owners,
-            sample=foreign.sample,
-            scan_support_refs=(first, second),
-        )
-    with pytest.raises(
-        CidNlChromatographicSupportContractError,
-        match="processing request",
-    ):
-        validate_cid_nl_chromatographic_support_binding(
-            event,
-            processing_owners=foreign.owners,
-            sample=foreign.sample,
-            scan_support_refs=(first, second),
-        )
-
-
 def test_scan_mutation_invalidates_chromatographic_event_content(
     tmp_path: Path,
 ) -> None:
@@ -960,44 +893,6 @@ def test_cid_nl_hypothesis_missing_and_stale_applicability_fail_closed(
             processing_owners=retry_owners,
             sample=fixture.sample,
             peak_observation=retry_peak,
-            chromatographic_support=event,
-        )
-
-
-def test_cid_nl_hypothesis_binding_rejects_event_and_owner_substitution(
-    tmp_path: Path,
-) -> None:
-    fixture = _identity_fixture(tmp_path)
-    foreign = _identity_fixture(tmp_path, sample_key="sample-b")
-    peak = _peak(fixture.owners, fixture.sample)
-    event = _event(fixture.owners, fixture.sample, peak, scan_numbers=(42, 43))
-    substituted_event = _event(
-        fixture.owners,
-        fixture.sample,
-        peak,
-        scan_numbers=(42, 44),
-    )
-    hypothesis = compose_cid_nl_peak_hypothesis(
-        processing_owners=fixture.owners,
-        sample=fixture.sample,
-        peak_observation=peak,
-        chromatographic_support=event,
-    )
-
-    with pytest.raises(PeakHypothesisContractError, match="binding"):
-        validate_cid_nl_peak_hypothesis_binding(
-            hypothesis,
-            processing_owners=fixture.owners,
-            sample=fixture.sample,
-            peak_observation=peak,
-            chromatographic_support=substituted_event,
-        )
-    with pytest.raises(PeakHypothesisContractError, match="sample"):
-        validate_cid_nl_peak_hypothesis_binding(
-            hypothesis,
-            processing_owners=fixture.owners,
-            sample=foreign.sample,
-            peak_observation=peak,
             chromatographic_support=event,
         )
 
@@ -1278,3 +1173,61 @@ def _processing_owners(
         sample_snapshot=sample.snapshot,
         sample_resolutions=(sample,),
     )
+
+
+def test_chromatographic_support_producer_binds_request_attempt_and_sample(
+    tmp_path: Path,
+) -> None:
+    from xic_extractor.processing_identity import issue_processing_attempt
+
+    fixture = _identity_fixture(tmp_path)
+    foreign = _identity_fixture(tmp_path, sample_key="sample-b")
+    peak = _peak(fixture.owners, fixture.sample)
+    supports = tuple(
+        _resolve(
+            fixture,
+            _evidence(fixture.owners, fixture.sample, scan_number=scan),
+            peak,
+        )
+        for scan in (42, 43)
+    )
+    retry = issue_processing_attempt(fixture.request, retry_of=fixture.attempt)
+    retry_owners = _processing_owners(fixture.request, retry, fixture.sample)
+    for owners, sample, reason in (
+        (retry_owners, fixture.sample, "processing attempt"),
+        (fixture.owners, foreign.sample, "sample"),
+        (foreign.owners, foreign.sample, "processing request"),
+    ):
+        with pytest.raises(CidNlChromatographicSupportContractError, match=reason):
+            compose_cid_nl_chromatographic_support_ref(
+                processing_owners=owners,
+                sample=sample,
+                scan_support_refs=supports,
+            )
+
+
+def test_cid_nl_hypothesis_producer_keeps_event_and_sample_binding(
+    tmp_path: Path,
+) -> None:
+    fixture = _identity_fixture(tmp_path)
+    foreign = _identity_fixture(tmp_path, sample_key="sample-b")
+    peak = _peak(fixture.owners, fixture.sample)
+    first_event = _event(fixture.owners, fixture.sample, peak, scan_numbers=(42, 43))
+    second_event = _event(fixture.owners, fixture.sample, peak, scan_numbers=(42, 44))
+    hypotheses = tuple(
+        compose_cid_nl_peak_hypothesis(
+            processing_owners=fixture.owners,
+            sample=fixture.sample,
+            peak_observation=peak,
+            chromatographic_support=event,
+        )
+        for event in (first_event, second_event)
+    )
+    assert hypotheses[0].hypothesis_id != hypotheses[1].hypothesis_id
+    with pytest.raises(PeakHypothesisContractError, match="sample"):
+        compose_cid_nl_peak_hypothesis(
+            processing_owners=fixture.owners,
+            sample=foreign.sample,
+            peak_observation=peak,
+            chromatographic_support=first_event,
+        )

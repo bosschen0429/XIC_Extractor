@@ -9,6 +9,7 @@ from xic_extractor.alignment.matrix_identity import (
     build_matrix_identity_decisions,
     matrix_identity_row_decision_record,
 )
+from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.alignment.promotion_policy import (
     BACKFILL_ONLY_BLOCKED_REASON,
     HIGH_BACKFILL_CAPPED_FLAG,
@@ -1036,9 +1037,21 @@ def _quantitation_owner(
     *,
     snr: float,
     apex_on_left_boundary: bool = False,
-) -> SimpleNamespace:
-    return SimpleNamespace(
+) -> SampleLocalMS1Owner:
+    return SampleLocalMS1Owner(
+        owner_id=f"owner:{sample_stem}",
         sample_stem=sample_stem,
+        raw_file=f"{sample_stem}.raw",
+        precursor_mz=500.0,
+        owner_apex_rt=8.45 if apex_on_left_boundary else 8.5,
+        owner_peak_start_rt=8.45,
+        owner_peak_end_rt=8.55,
+        owner_area=1000.0,
+        owner_height=snr * 10.0,
+        primary_identity_event=None,
+        supporting_events=(),
+        identity_conflict=False,
+        assignment_reason="",
         selected_integration=IntegrationResult(
             rt_left_min=8.45,
             rt_apex_min=8.45 if apex_on_left_boundary else 8.5,

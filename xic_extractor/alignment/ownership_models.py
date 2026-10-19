@@ -87,16 +87,3 @@ class SampleLocalMS1Owner:
     @property
     def event_candidate_ids(self) -> tuple[str, ...]:
         return tuple(event.candidate_id for event in self.all_events)
-
-
-@dataclass(frozen=True)
-class AmbiguousOwnerRecord:
-    ambiguity_id: str
-    sample_stem: str
-    candidate_ids: tuple[str, ...]
-    reason: str
-    neutral_loss_tag: str | None = None
-    precursor_mz: float | None = None
-    apex_rt: float | None = None
-    product_mz: float | None = None
-    observed_neutral_loss_da: float | None = None

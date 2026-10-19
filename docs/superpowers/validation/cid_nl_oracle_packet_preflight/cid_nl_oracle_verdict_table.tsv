@@ -1,9 +1,0 @@
-schema_version	rule_id	precedence	packet_integrity_state	required_input_state	hard_blocker_state	required_nonhard_gate_state	derived_preregistered_narrow_scope_state	performance_state	verdict	rule_explanation
-cid_nl_oracle_verdict_table	integrity_invalid_or_unknown	1	not_pass	any	any	any	any	any	inconclusive	Invalid, corrupt, prematurely revealed, or unsealed oracle evidence cannot judge the tracer.
-cid_nl_oracle_verdict_table	required_input_missing_or_unknown	2	pass	not_pass	any	any	any	any	inconclusive	Missing manifests, lineage, parameters, independent units, or gate inputs block a quantitative verdict.
-cid_nl_oracle_verdict_table	valid_packet_hard_blocker_failed	3	pass	pass	fail	any	any	any	REDRAW	Authority, state, lineage, or determinism defects cannot be averaged away or narrowed by a weaker metric.
-cid_nl_oracle_verdict_table	nonhard_failure_with_passing_narrow_scope	4	pass	pass	pass	fail	pass	any	NARROW	A narrower claim survives only when the sealed pre-reveal scope manifest, exact membership, and its required raw gate results independently pass.
-cid_nl_oracle_verdict_table	nonhard_failure_without_passing_narrow_scope	5	pass	pass	pass	fail	not_pass	any	REDRAW	Failure without a positive passing narrower scope requires redesign.
-cid_nl_oracle_verdict_table	performance_failure_after_scientific_pass	6	pass	pass	pass	pass	pass	fail	NARROW	Scientific evaluation may pass while operational use remains blocked for optimization under Issue #128.
-cid_nl_oracle_verdict_table	all_required_gates_pass	7	pass	pass	pass	pass	any	pass	GO	Every required gate and external operational dependency passes under the frozen scope.
-cid_nl_oracle_verdict_table	fail_closed_fallback	99	any	any	any	any	any	any	inconclusive	Any state not matched above is invalid or incomplete and fails closed.

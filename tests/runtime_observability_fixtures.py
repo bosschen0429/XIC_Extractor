@@ -1,6 +1,18 @@
 from __future__ import annotations
 
-from xic_extractor.execution._finalization import RuntimeResourceKind
+from typing import Any
+
+from xic_extractor.execution._finalization import (
+    RuntimeResourceKind,
+    _record_runtime_resource_cleanups,
+    _record_runtime_resource_opens,
+    _register_runtime_artifacts,
+    _reserve_runtime_resources,
+)
+from xic_extractor.execution._lifecycle import (
+    _settle_work_units,
+    mint_work_unit_settlement,
+)
 from xic_extractor.execution._observability import (
     REQUIRED_RUNTIME_METRIC_NAMES,
     RuntimeMetricAvailability,
@@ -225,3 +237,41 @@ def build_runtime_observability_ledger(
         events=events,
         metrics=tuple(metrics),
     )
+
+
+def reserve_runtime_resource(state: Any, reservation: Any) -> Any:
+    return _reserve_runtime_resources(state, (reservation,))
+
+
+def record_runtime_resource_open(
+    state: Any, *, resource_key: str, outcome: Any
+) -> Any:
+    return _record_runtime_resource_opens(state, ((resource_key, outcome),))
+
+
+def record_runtime_resource_cleanup(
+    state: Any, *, resource_key: str, outcome: Any
+) -> Any:
+    return _record_runtime_resource_cleanups(state, ((resource_key, outcome),))
+
+
+def settle_runtime_resource(
+    state: Any, *, resource_key: str, open_outcome: Any, cleanup_outcome: Any
+) -> Any:
+    opened = _record_runtime_resource_opens(state, ((resource_key, open_outcome),))
+    return _record_runtime_resource_cleanups(
+        opened, ((resource_key, cleanup_outcome),)
+    )
+
+
+def register_runtime_artifact(
+    state: Any, *, work_unit_key: str, artifact: Any
+) -> Any:
+    return _register_runtime_artifacts(state, ((work_unit_key, artifact),))
+
+
+def settle_work_unit(runtime: Any, **kwargs: Any) -> Any:
+    settlement = mint_work_unit_settlement(
+        attempt=runtime.manifest.attempt, **kwargs
+    )
+    return _settle_work_units(runtime, (settlement,))

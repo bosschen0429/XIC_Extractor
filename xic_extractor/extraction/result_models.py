@@ -97,10 +97,6 @@ class ExtractionResult:
         return None
 
     @property
-    def total_severity(self) -> int:
-        return sum(severity for severity, _ in self.severities) + self.quality_penalty
-
-    @property
     def _selected_integration(self) -> IntegrationResult | None:
         if self.selected_hypothesis is None:
             return None

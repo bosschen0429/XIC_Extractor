@@ -48,13 +48,6 @@ class ApplicationResultContractError(ValueError):
 _APPLICATION_RESULT_MINT_TOKEN = object()
 
 
-def _is_evaluated_unsupported_assessment(ref: CidNlMethodAssessmentRef) -> bool:
-    return ref.content.technical_state == "evaluated" and ref.content.method_result in {
-        "HOLD",
-        "REJECT",
-    }
-
-
 @dataclass(frozen=True, slots=True)
 class UntargetedCandidateExclusion:
     """One declared Discovery candidate intentionally excluded from owner-build."""

@@ -4,6 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
+import numpy as np
 import pytest
 
 from tests.cid_nl_raw_fixture import (
@@ -41,6 +42,7 @@ from xic_extractor.peak_detection.cid_nl_method_subject import (
 from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses
 from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
 from xic_extractor.peak_detection.peak_integration import find_peak_and_area
+from xic_extractor.peak_detection.trace_quality import trace_continuity_score
 from xic_extractor.processing_identity import build_acquisition_source_identity
 from xic_extractor.raw_reader import (
     THERMO_RAW_ACQUISITION_FORMAT,
@@ -374,3 +376,34 @@ def _adapter_integration(raw, candidate, *, settings, peak_config):
     selected = tuple(item for item in hypotheses if item.audit.selected)
     assert len(selected) == 1
     return selected[0].integration
+
+
+@pytest.mark.parametrize(
+    ("rt", "intensity"),
+    [
+        ((10.0,), ()),
+        ((10.0,), (float("nan"),)),
+        (((10.0,),), ((100.0,),)),
+    ],
+)
+def test_invalid_acquired_ms1_trace_is_unassessable(
+    tmp_path: Path, rt: object, intensity: object
+) -> None:
+    detection = detect_ms1_trace_peak(
+        rt,
+        intensity,
+        peak_config=_peak_config(tmp_path),
+        preferred_rt=10.0,
+        peak_finder=find_peak_and_area,
+    )
+
+    assert detection.status == "unassessable_trace"
+    assert detection.result is detection.peak is None
+    assert detection.rt.size == detection.intensity.size == 0
+
+
+def test_short_ms1_region_has_no_trace_continuity_score() -> None:
+    intensity = np.asarray([10.0, 20.0, 30.0, 20.0, 10.0])
+
+    assert trace_continuity_score(intensity, left=0, right=4) is None
+    assert trace_continuity_score(intensity, left=0, right=5) == pytest.approx(2 / 3)

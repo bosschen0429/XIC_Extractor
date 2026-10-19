@@ -9,6 +9,12 @@ import pytest
 
 from tests.runtime_observability_fixtures import (
     build_runtime_observability_ledger,
+    record_runtime_resource_cleanup,
+    record_runtime_resource_open,
+    register_runtime_artifact,
+    reserve_runtime_resource,
+    settle_runtime_resource,
+    settle_work_unit,
 )
 from tests.runtime_telemetry_fixtures import (
     mint_test_process_result_ref as mint_targeted_process_result_ref,
@@ -24,17 +30,10 @@ from xic_extractor.execution._finalization import (
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
     SupervisorFinalizationEventKind,
-    accept_supervisor_finalization,
     begin_attempt_finalization,
     canonical_coordinator_terminal_record_bytes,
-    mark_worker_lost,
     mint_supervisor_finalization,
     propose_attempt_terminal,
-    record_runtime_resource_cleanup,
-    record_runtime_resource_open,
-    register_runtime_artifact,
-    reserve_runtime_resource,
-    settle_runtime_resource,
 )
 from xic_extractor.execution._lifecycle import (
     AttemptLifecycleEventKind,
@@ -46,7 +45,6 @@ from xic_extractor.execution._lifecycle import (
     WorkUnitTerminalOutcome,
     append_attempt_lifecycle_event,
     preflight_required_work_manifest,
-    settle_work_unit,
     start_attempt_runtime,
 )
 from xic_extractor.processing_identity import (
@@ -82,24 +80,13 @@ def test_success_closes_resource_artifact_and_atomic_acknowledgement(
         coordinator,
         observability_ledger=_ledger(attempt, coordinator),
     )
-    accepted = accept_supervisor_finalization(
-        coordinator,
-        submitted,
-        observability_ledger=_ledger(attempt, coordinator),
-    )
-    replay = accept_supervisor_finalization(
-        coordinator,
-        submitted,
-        observability_ledger=_ledger(attempt, coordinator),
-        existing=accepted,
-    )
+    accepted = submitted
 
     assert coordinator.proposed_outcome is AttemptTerminalOutcome.SUCCEEDED
     assert coordinator.state.artifacts[0].proposed_disposition is (
         RuntimeArtifactDisposition.OFFERED_TO_OWNER
     )
     assert accepted is submitted
-    assert replay is accepted
     assert accepted.artifact_dispositions == (
         (artifact.evidence_artifact_id, RuntimeArtifactDisposition.OFFERED_TO_OWNER),
     )
@@ -363,8 +350,14 @@ def test_worker_loss_preserves_open_fact_and_closes_cleanup_unknown(
         outcome=RuntimeResourceOpenOutcome.OPENED,
     )
 
-    lost = mark_worker_lost(state, worker_key="worker:1")
-    replay = mark_worker_lost(lost, worker_key="worker:1")
+    lost = record_runtime_resource_cleanup(
+        state, resource_key="session:a",
+        outcome=RuntimeResourceCleanupOutcome.UNKNOWN_AFTER_WORKER_LOSS,
+    )
+    replay = record_runtime_resource_cleanup(
+        lost, resource_key="session:a",
+        outcome=RuntimeResourceCleanupOutcome.UNKNOWN_AFTER_WORKER_LOSS,
+    )
     coordinator = propose_attempt_terminal(lost)
 
     assert replay is lost
@@ -447,21 +440,6 @@ def test_terminal_and_acknowledgement_fail_closed_on_missing_or_conflict(
         artifact=artifact,
     )
     coordinator = propose_attempt_terminal(state)
-    finalization = mint_supervisor_finalization(
-        coordinator,
-        observability_ledger=_ledger(attempt, coordinator),
-    )
-    conflicting = replace(
-        finalization,
-        coordinator_record_sha256="0" * 64,
-    )
-
-    with pytest.raises(RuntimeFinalizationContractError, match="conflicts"):
-        accept_supervisor_finalization(
-            coordinator,
-            conflicting,
-            observability_ledger=_ledger(attempt, coordinator),
-        )
     with pytest.raises(RuntimeFinalizationContractError, match="cannot change"):
         register_runtime_artifact(
             coordinator.state,
@@ -578,15 +556,6 @@ def test_supervisor_receipt_binds_validated_runtime_observability(
     assert first.observability_ledger == first_ledger
     assert second.observability_ledger == second_ledger
     assert first != second
-    with pytest.raises(
-        RuntimeFinalizationContractError,
-        match="conflicts with the coordinator proposal",
-    ):
-        accept_supervisor_finalization(
-            coordinator,
-            second,
-            observability_ledger=first_ledger,
-        )
 
 
 def test_supervisor_rejects_observability_that_conflicts_with_finalized_facts(

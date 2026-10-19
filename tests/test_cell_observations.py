@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from copy import copy
-from dataclasses import fields, replace
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -23,27 +24,26 @@ from tests.test_cid_nl_evidence_spine import (
     _completed_receipt,
     _truth_table_fixture,
 )
-from tests.test_cross_sample_association_lineage import _final_receipt, _runtime_feature
+from tests.test_cross_sample_association_lineage import _final_receipt
 from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.alignment.backfill.evaluation_coverage import (
-    BackfillEvaluationCoverageContext,
+    BackfillPlanningPosition,
+    BackfillPlanningReason,
     build_backfill_evaluation_coverage,
-    build_backfill_planning_epoch,
-    mint_backfill_attempt_terminal,
     mint_backfill_planning_epoch,
+    mint_backfill_position_id,
 )
 from xic_extractor.alignment.backfill.request_plan import (
     BACKFILL_TRACE_RESULT_SEMANTICS,
-    BackfillRequestEquivalenceContext,
-    build_backfill_request_plan,
 )
 from xic_extractor.alignment.cell_observation.observations import (
     CellObservationContractError,
     compose_final_group_cell_observation_population,
     mint_cell_observation_ref,
 )
+from xic_extractor.alignment.cid_nl_completion import _cell_planning_reason
 from xic_extractor.alignment.cid_nl_evidence_spine import (
     build_cid_nl_reference_spine,
 )
@@ -238,32 +238,8 @@ def _outside_population_handoff(tmp_path: Path):
     binding = SimpleNamespace(
         samples=fixture.samples, owners=fixture.owners, request=fixture.owners.request
     )
-    coverage = _coverage_for_groups(binding, identities, fixture.samples, planned=False)
-    epoch = coverage.epoch
-    coverage = build_backfill_evaluation_coverage(
-        mint_backfill_planning_epoch(
-            **{
-                item.name: getattr(epoch, item.name)
-                for item in fields(epoch)
-                if item.name not in {"epoch_id", "positions"}
-            },
-            positions=tuple(
-                replace(
-                    position,
-                    planning_reason=(
-                        "retained_local_owner"
-                        if any(
-                            member.canonical_sample_identity_id
-                            == position.sample.identity.sample_identity_id
-                            for member in position.group_identity.member_subjects
-                        )
-                        else "local_owner_not_supersedable"
-                    ),
-                )
-                for position in epoch.positions
-            ),
-        ),
-        (),
+    coverage = _coverage_for_groups(
+        binding, identities, fixture.samples, predecessor_cells=cells
     )
     receipt = _final_receipt(
         _receipt_fixture(binding, fixture.samples),
@@ -369,81 +345,25 @@ def _owner_handoff(tmp_path: Path):
         spine.group,
         require_canonical=True,
     )
-    feature = _runtime_feature(group)
-    sample_order = tuple(sample.lookup_token for sample in fixture.samples)
-    context = BackfillEvaluationCoverageContext(
-        processing_owners=fixture.owners,
-        input_features=(feature,),
-        samples=fixture.samples,
-        sample_order=sample_order,
-        raw_sample_stems=frozenset(sample_order),
-        alignment_config=AlignmentConfig(owner_backfill_min_detected_samples=1),
-        backend="raw",
-        window_strategy="exact",
-        superwindow_span_factor=2,
-        validation_mode="primary",
-        result_semantics=BACKFILL_TRACE_RESULT_SEMANTICS,
-        scope="full-audit",
-        selected_family_ids=frozenset(),
-    )
-    acquisition_sources = {
-        sample.lookup_token: source
-        for sample, source in zip(
-            fixture.samples,
-            fixture.request.acquisition_sources,
-            strict=True,
-        )
-    }
-    equivalence = BackfillRequestEquivalenceContext(
-        acquisition_sources=acquisition_sources,
-        backend=context.backend,
-        window_strategy=context.window_strategy,
-        superwindow_span_factor=context.superwindow_span_factor,
-        validation_mode=context.validation_mode,
-        result_semantics=context.result_semantics,
-    )
-    request_plan = build_backfill_request_plan(
-        (feature,),
-        sample_order=context.sample_order,
-        raw_sample_stems=context.raw_sample_stems,
-        alignment_config=context.alignment_config,
-        equivalence_context=equivalence,
-    )
-    epoch = build_backfill_planning_epoch(
-        context,
-        request_plan=request_plan,
-    )
-    terminals = []
-    for position in epoch.positions:
-        for planned in position.primary_logical_requests:
-            terminals.append(
-                mint_backfill_attempt_terminal(
-                    position_id=position.position_id,
-                    logical_request=planned.logical_request,
-                    request_identity=planned.request_identity,
-                    candidate_phase="primary_fallback",
-                    candidate_index=1,
-                    trace_evaluated=False,
-                    selected_for_output=False,
-                    terminal_reason="primary_unassessable",
-                    physical_evaluation=None,
-                )
-            )
-    coverage = build_backfill_evaluation_coverage(epoch, tuple(terminals))
-    receipt_fixture = SimpleNamespace(
-        context=context,
-        acquisitions=acquisition_sources,
+    return fixture, spine, _owner_handoff_for_cells(fixture, group, spine.cells)
+
+
+def _owner_handoff_for_cells(fixture: Any, group: Any, cells: tuple[Any, ...]):
+    coverage = _coverage_for_groups(
+        fixture,
+        (group,),
+        fixture.samples,
+        predecessor_cells=cells,
     )
     receipt = _final_receipt(
-        receipt_fixture,
+        SimpleNamespace(context=SimpleNamespace(processing_owners=fixture.owners)),
         predecessors=(group,),
         successors=(group,),
     )
-    handoff = build_cross_sample_association_lineage_handoff(
+    return build_cross_sample_association_lineage_handoff(
         coverage=coverage,
         final_receipt=receipt,
     )
-    return fixture, spine, handoff
 
 
 def _support_assessment(
@@ -492,25 +412,44 @@ def _support_assessment(
     )
 
 
-def _not_evaluated_assessment(
-    fixture: Any,
-    sample_stem: str,
+def _not_planned_coverage(
+    owners: Any,
+    groups: tuple[Any, ...],
+    samples: tuple[Any, ...],
     *,
-    suffix: str,
+    planning_reason: Callable[[Any, Any], BackfillPlanningReason],
 ):
-    receipt = replace(
-        _completed_receipt(scanned_event_count=0),
-        search_completed=False,
-        reason_code="search_not_evaluated",
+    """Coverage shaped like CID-NL completion: no planned requests or terminals."""
+    positions = tuple(
+        BackfillPlanningPosition(
+            position_id=mint_backfill_position_id(
+                processing_request_id=group.processing_request_id,
+                group_hypothesis_id=group.group_hypothesis_id,
+                sample_identity_id=sample.identity.sample_identity_id,
+            ),
+            group_identity=group,
+            sample=sample,
+            planning_reason=planning_reason(group, sample),
+        )
+        for group in groups
+        for sample in samples
     )
-    return mint_cid_nl_method_assessment_ref(
-        processing_owners=fixture.owners,
-        sample=fixture.sample(sample_stem),
-        target=fixture.target,
-        detector_invocation_id=f"gaussian15:{sample_stem}:{suffix}",
-        evaluation_receipt=receipt,
-        technical_state="not_evaluated",
+    epoch = mint_backfill_planning_epoch(
+        processing_owners=owners,
+        group_identities=groups,
+        samples=samples,
+        raw_sample_stems=frozenset(sample.lookup_token for sample in samples),
+        alignment_config=AlignmentConfig(owner_backfill_min_detected_samples=1),
+        backend="raw",
+        window_strategy="exact",
+        superwindow_span_factor=2,
+        validation_mode="primary",
+        result_semantics=BACKFILL_TRACE_RESULT_SEMANTICS,
+        scope="full-audit",
+        selected_family_ids=frozenset(),
+        positions=positions,
     )
+    return build_backfill_evaluation_coverage(epoch)
 
 
 def _coverage_for_groups(
@@ -518,69 +457,23 @@ def _coverage_for_groups(
     groups: tuple[Any, ...],
     samples: tuple[Any, ...],
     *,
-    planned: bool,
+    predecessor_cells: tuple[Any, ...],
 ):
-    features = tuple(_runtime_feature(group) for group in groups)
-    sample_order = tuple(sample.lookup_token for sample in samples)
-    all_acquisitions = {
-        sample.lookup_token: source
-        for sample, source in zip(
-            fixture.samples,
-            fixture.request.acquisition_sources,
-            strict=True,
-        )
+    cells = {
+        (
+            cell.group_context.group_identity.group_hypothesis_id,
+            cell.content.canonical_sample_identity_id,
+        ): cell
+        for cell in predecessor_cells
     }
-    acquisition_sources = {stem: all_acquisitions[stem] for stem in sample_order}
-    context = BackfillEvaluationCoverageContext(
-        processing_owners=fixture.owners,
-        input_features=features,
-        samples=samples,
-        sample_order=sample_order,
-        raw_sample_stems=frozenset(sample_order),
-        alignment_config=AlignmentConfig(owner_backfill_min_detected_samples=1),
-        backend="raw",
-        window_strategy="exact",
-        superwindow_span_factor=2,
-        validation_mode="primary",
-        result_semantics=BACKFILL_TRACE_RESULT_SEMANTICS,
-        scope="full-audit" if planned else "selected-families",
-        selected_family_ids=frozenset() if planned else frozenset({"not-this-family"}),
+    return _not_planned_coverage(
+        fixture.owners,
+        groups,
+        samples,
+        planning_reason=lambda group, sample: _cell_planning_reason(
+            cells.get((group.group_hypothesis_id, sample.identity.sample_identity_id))
+        ),
     )
-    equivalence = BackfillRequestEquivalenceContext(
-        acquisition_sources=acquisition_sources,
-        backend=context.backend,
-        window_strategy=context.window_strategy,
-        superwindow_span_factor=context.superwindow_span_factor,
-        validation_mode=context.validation_mode,
-        result_semantics=context.result_semantics,
-    )
-    request_plan = build_backfill_request_plan(
-        features if planned else (),
-        sample_order=sample_order,
-        raw_sample_stems=frozenset(sample_order),
-        alignment_config=context.alignment_config,
-        equivalence_context=equivalence,
-    )
-    epoch = build_backfill_planning_epoch(
-        context,
-        request_plan=request_plan,
-    )
-    terminals = tuple(
-        mint_backfill_attempt_terminal(
-            position_id=position.position_id,
-            logical_request=planned_request.logical_request,
-            request_identity=planned_request.request_identity,
-            candidate_phase="primary_fallback",
-            candidate_index=1,
-            trace_evaluated=False,
-            selected_for_output=False,
-            terminal_reason="primary_unassessable",
-            physical_evaluation=None,
-        )
-        for position in epoch.positions
-        for planned_request in position.primary_logical_requests
-    )
-    return build_backfill_evaluation_coverage(epoch, terminals)
 
 
 def _receipt_fixture(fixture: Any, samples: tuple[Any, ...]):
@@ -599,21 +492,6 @@ def _receipt_fixture(fixture: Any, samples: tuple[Any, ...]):
             processing_owners=fixture.owners,
         ),
         acquisitions=acquisitions,
-    )
-
-
-def _source_cell(
-    fixture: Any,
-    sample: Any,
-    group_spine: Any,
-    assessment: Any,
-):
-    return mint_cell_observation_ref(
-        processing_owners=fixture.owners,
-        sample=sample,
-        target=fixture.target,
-        group_context=group_spine.cells[0].group_context,
-        method_assessment=assessment,
     )
 
 
@@ -643,10 +521,6 @@ def test_composer_mints_exact_cartesian_owner_population_and_states(
         assert all(
             any(association is item for item in handoff.position_associations)
             for association in cell.position_associations
-        )
-        assert all(
-            any(terminal is item for item in handoff.coverage.terminals)
-            for terminal in cell.coverage_terminals
         )
 
 
@@ -693,6 +567,11 @@ def test_composer_distinguishes_completed_negative_search(
         == sample.identity.sample_identity_id
         else cell
         for cell in spine.cells
+    )
+    handoff = _owner_handoff_for_cells(
+        fixture,
+        handoff.coverage.epoch.group_identities[0],
+        predecessor_cells,
     )
 
     cells = compose_final_group_cell_observation_population(
@@ -743,11 +622,13 @@ def test_composer_rejects_same_sample_crossed_source_to_position(
     )
     assert first_group != second_group
     samples = (sample,)
+    first_cell = first_spine.cells[0]
+    second_cell = second_spine.cells[0]
     coverage = _coverage_for_groups(
         fixture,
         (first_group, second_group),
         samples,
-        planned=False,
+        predecessor_cells=(first_cell, second_cell),
     )
     receipt = _final_receipt(
         _receipt_fixture(fixture, samples),
@@ -758,13 +639,6 @@ def test_composer_rejects_same_sample_crossed_source_to_position(
         coverage=coverage,
         final_receipt=receipt,
     )
-    not_evaluated = _not_evaluated_assessment(
-        fixture,
-        "s1",
-        suffix="a3",
-    )
-    first_cell = _source_cell(fixture, sample, first_spine, not_evaluated)
-    second_cell = _source_cell(fixture, sample, second_spine, not_evaluated)
     composed = compose_final_group_cell_observation_population(
         handoff=handoff,
         predecessor_cells=(first_cell, second_cell),
@@ -828,61 +702,6 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
         processing_request_id=left.processing_request_id,
         member_subjects=left.member_subjects + right.member_subjects,
     )
-    coverage = _coverage_for_groups(
-        fixture,
-        (left, right),
-        samples,
-        planned=False,
-    )
-    if outside_support:
-        epoch = coverage.epoch
-        coverage = build_backfill_evaluation_coverage(
-            mint_backfill_planning_epoch(
-                **{
-                    item.name: getattr(epoch, item.name)
-                    for item in fields(epoch)
-                    if item.name not in {"epoch_id", "positions"}
-                },
-                positions=tuple(
-                    replace(
-                        position,
-                        planning_reason=(
-                            "retained_local_owner"
-                            if any(
-                                member.canonical_sample_identity_id
-                                == position.sample.identity.sample_identity_id
-                                for member in position.group_identity.member_subjects
-                            )
-                            else "local_owner_not_supersedable"
-                        ),
-                    )
-                    for position in epoch.positions
-                ),
-            ),
-            (),
-        )
-    receipt = _final_receipt(
-        _receipt_fixture(fixture, samples),
-        predecessors=(left, right),
-        successors=(merged,),
-    )
-    handoff = build_cross_sample_association_lineage_handoff(
-        coverage=coverage,
-        final_receipt=receipt,
-    )
-    not_evaluated = {
-        sample.lookup_token: _not_evaluated_assessment(
-            fixture,
-            sample.lookup_token,
-            suffix="a5",
-        )
-        for sample in samples
-    }
-    predecessor_cells = tuple(
-        _source_cell(fixture, sample, group_spine, not_evaluated[sample.lookup_token])
-        for group_spine in (left_spine, right_spine)
-        for sample in samples
-    )
     if outside_support:
         predecessor_cells = tuple(
             group_spine.cells[0]
@@ -900,6 +719,23 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
                 samples, (left_spine, right_spine), strict=True
             )
         )
+    else:
+        predecessor_cells = (left_spine.cells[0], right_spine.cells[0])
+    coverage = _coverage_for_groups(
+        fixture,
+        (left, right),
+        samples,
+        predecessor_cells=predecessor_cells,
+    )
+    receipt = _final_receipt(
+        _receipt_fixture(fixture, samples),
+        predecessors=(left, right),
+        successors=(merged,),
+    )
+    handoff = build_cross_sample_association_lineage_handoff(
+        coverage=coverage,
+        final_receipt=receipt,
+    )
     forward = compose_final_group_cell_observation_population(
         handoff=handoff,
         predecessor_cells=predecessor_cells,
@@ -913,13 +749,9 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
     assert all(
         item.group is merged
         and len(item.position_associations) == 2
-        and len(item.predecessor_cells) == 2
-        and sorted(item.evidence_states)
-        == (
-            ["direct_observation", "not_searched"]
-            if outside_support
-            else ["not_searched", "not_searched"]
-        )
+        # A lane without discovery input keeps its position but has no cell.
+        and len(item.predecessor_cells) == (2 if outside_support else 1)
+        and sorted(item.evidence_states) == ["direct_observation", "not_searched"]
         for item in forward
     )
     expected_positions_by_sample = {
@@ -991,7 +823,7 @@ def test_composer_split_keeps_cartesian_not_searched_remainder(
         fixture,
         (predecessor,),
         samples,
-        planned=True,
+        predecessor_cells=predecessor_spine.cells,
     )
     receipt = _final_receipt(
         _receipt_fixture(fixture, samples),

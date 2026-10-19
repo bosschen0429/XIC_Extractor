@@ -79,9 +79,6 @@ class ExtractionResultLike(Protocol):
     def reported_peak_width(self) -> float | None: ...
 
     @property
-    def total_severity(self) -> int: ...
-
-    @property
     def targeted_product_projection(self) -> TargetedProductProjection | None: ...
 
 

@@ -162,53 +162,6 @@ def compose_ms1_observation_peak_hypothesis(
     )
 
 
-def validate_cid_nl_peak_hypothesis_binding(
-    hypothesis: PeakHypothesis,
-    *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
-    peak_observation: PeakObservationRef,
-    chromatographic_support: CidNlChromatographicSupportRef,
-) -> None:
-    """Reject owner, observation, event, or attempt substitution."""
-
-    if not isinstance(hypothesis, PeakHypothesis):
-        raise PeakHypothesisContractError(
-            "hypothesis must be the existing owner-backed PeakHypothesis"
-        )
-    validate_owner_backed_peak_hypothesis_instance(hypothesis)
-    expected = compose_cid_nl_peak_hypothesis(
-        processing_owners=processing_owners,
-        sample=sample,
-        peak_observation=peak_observation,
-        chromatographic_support=chromatographic_support,
-    )
-    if hypothesis != expected:
-        raise PeakHypothesisContractError(
-            "owner-backed PeakHypothesis binding was substituted"
-        )
-
-
-def validate_ms1_observation_peak_hypothesis_binding(
-    hypothesis: PeakHypothesis,
-    *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
-    peak_observation: PeakObservationRef,
-) -> None:
-    """Reject owner, observation, request, attempt, or sample substitution."""
-
-    expected = compose_ms1_observation_peak_hypothesis(
-        processing_owners=processing_owners,
-        sample=sample,
-        peak_observation=peak_observation,
-    )
-    if hypothesis != expected:
-        raise PeakHypothesisContractError(
-            "MS1 observation PeakHypothesis binding was substituted"
-        )
-
-
 def validate_owner_backed_peak_hypothesis_instance(
     hypothesis: PeakHypothesis,
 ) -> None:
@@ -692,6 +645,4 @@ __all__ = [
     "canonical_ms1_observation_peak_hypothesis_bytes",
     "compose_cid_nl_peak_hypothesis",
     "compose_ms1_observation_peak_hypothesis",
-    "validate_cid_nl_peak_hypothesis_binding",
-    "validate_ms1_observation_peak_hypothesis_binding",
 ]

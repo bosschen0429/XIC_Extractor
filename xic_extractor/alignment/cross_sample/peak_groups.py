@@ -37,11 +37,7 @@ from xic_extractor.alignment.cross_sample.neighborhood_graph import (
     classify_cross_sample_initial_edge,
 )
 from xic_extractor.alignment.edge_scoring import (
-    DriftPriorSource,
-    EdgeDecision,
-    HardGateFailureReason,
     OwnerEdgeEvidence,
-    RTEvidenceBasis,
 )
 from xic_extractor.alignment.feature_membership_inference import (
     FeatureInferenceOperationCounts,
@@ -50,79 +46,15 @@ from xic_extractor.alignment.feature_membership_inference import (
     infer_feature_memberships,
 )
 from xic_extractor.alignment.ownership_models import (
-    AmbiguousOwnerRecord,
     SampleLocalMS1Owner,
 )
 from xic_extractor.alignment.peak_trajectories import PeakTrajectories
 from xic_extractor.alignment.rt_frame import RtFrame
 
-CrossSamplePeakGroupEdgeRole: TypeAlias = Literal[
-    "membership_support",
-    "membership_challenge",
-]
-CrossSamplePeakGroupConstructionPolicy: TypeAlias = Literal[
-    "none",
-    "construction_time_hard_gate_observed",
-]
-CrossSamplePeakGroupReviewReason: TypeAlias = Literal[
-    "identity_conflict",
-    "ambiguous_owner",
-    "review_only",
-]
-CrossSamplePeakGroupReviewRole: TypeAlias = Literal["review_only_challenge"]
-CrossSamplePeakGroupHardGateRole: TypeAlias = Literal["split_gate_challenge"]
 CrossSamplePeakGroupConstructionRole: TypeAlias = Literal[
     "owner_aligned_feature_shadow",
     "successor_constructor",
 ]
-
-
-@dataclass(frozen=True)
-class CrossSamplePeakGroupEdgeFact:
-    left_owner_id: str
-    right_owner_id: str
-    owner_pair_ids: tuple[str, str]
-    decision: EdgeDecision
-    role: CrossSamplePeakGroupEdgeRole
-    failure_reason: HardGateFailureReason | Literal[""]
-    rt_raw_delta_sec: float
-    rt_drift_corrected_delta_sec: float | None
-    drift_prior_source: DriftPriorSource
-    rt_basis: RTEvidenceBasis
-    injection_order_gap: int | None
-    score: int
-    reason: str
-    construction_policy: CrossSamplePeakGroupConstructionPolicy = "none"
-    source: str = "owner_edge_evidence_shadow"
-
-
-@dataclass(frozen=True)
-class CrossSamplePeakGroupReviewFact:
-    feature_family_id: str
-    public_family_id: str
-    review_only: bool
-    identity_conflict: bool
-    ambiguous_sample_stem: str | None
-    ambiguous_candidate_ids: tuple[str, ...]
-    evidence: str
-    reason: CrossSamplePeakGroupReviewReason
-    role: CrossSamplePeakGroupReviewRole = "review_only_challenge"
-    source: str = "owner_aligned_feature_review_shadow"
-
-
-@dataclass(frozen=True)
-class CrossSamplePeakGroupHardGateChallengeFact:
-    left_owner_id: str
-    right_owner_id: str
-    owner_pair_ids: tuple[str, str]
-    decision: EdgeDecision
-    role: CrossSamplePeakGroupHardGateRole
-    failure_reason: HardGateFailureReason | Literal[""]
-    reason: str
-    construction_policy: CrossSamplePeakGroupConstructionPolicy = (
-        "construction_time_hard_gate_observed"
-    )
-    source: str = "owner_edge_hard_gate_shadow"
 
 
 @dataclass(frozen=True)
@@ -139,7 +71,6 @@ class CrossSamplePeakGroupHypothesis:
     group_hypothesis_id: str
     public_family_id: str
     owner_ids: tuple[str, ...]
-    event_ids: tuple[str, ...]
     event_member_count: int
     processing_request_id: str = ""
     member_subjects: tuple[CrossSampleGroupMemberSubject, ...] = ()
@@ -158,22 +89,11 @@ class CrossSamplePeakGroupHypothesis:
     review_only: bool = False
     confirm_local_owners_with_backfill: bool = False
     backfill_seed_centers: tuple[tuple[float, float], ...] = ()
-    ambiguous_sample_stem: str | None = None
-    ambiguous_candidate_ids: tuple[str, ...] = ()
     construction_role: CrossSamplePeakGroupConstructionRole = (
         "owner_aligned_feature_shadow"
     )
-    edge_facts: tuple[CrossSamplePeakGroupEdgeFact, ...] = ()
-    review_facts: tuple[CrossSamplePeakGroupReviewFact, ...] = ()
-    hard_gate_challenge_facts: tuple[
-        CrossSamplePeakGroupHardGateChallengeFact, ...
-    ] = ()
     inference_basis: FeatureMembershipGroup | None = None
     inference_decisions: tuple[SparseFeatureDecision, ...] = ()
-
-    @property
-    def feature_family_id(self) -> str:
-        return self.public_family_id
 
     @property
     def cluster_id(self) -> str:
@@ -192,39 +112,12 @@ class CrossSamplePeakGroupHypothesis:
         return self.group_center_rt
 
     @property
-    def family_product_mz(self) -> float:
-        if self.group_product_mz is None:
-            raise ValueError("cross-sample peak group is missing product m/z")
-        return self.group_product_mz
-
-    @property
-    def family_observed_neutral_loss_da(self) -> float:
-        if self.group_observed_neutral_loss_da is None:
-            raise ValueError("cross-sample peak group is missing observed neutral loss")
-        return self.group_observed_neutral_loss_da
-
-    @property
     def members(self) -> tuple[SampleLocalMS1Owner, ...]:
         return self.owners
 
     @property
     def event_cluster_ids(self) -> tuple[str, ...]:
         return self.owner_ids
-
-    @property
-    def group_construction_role(self) -> str:
-        if self.construction_role == "successor_constructor":
-            return "successor_constructor"
-        return "successor_projection_adapter"
-
-    @property
-    def group_delivery_role(self) -> str:
-        return "successor_delivery_protocol"
-
-    @property
-    def group_membership_source(self) -> str:
-        return "cross_sample_peak_group_hypothesis"
-
 
 def validate_cross_sample_peak_group_identity(
     group: CrossSamplePeakGroupHypothesis,
@@ -354,47 +247,6 @@ def construct_cross_sample_peak_group_hypotheses(
     return tuple(hypotheses)
 
 
-def review_only_peak_group_hypotheses_from_ambiguous_records(
-    records: tuple[AmbiguousOwnerRecord, ...],
-    *,
-    start_index: int,
-) -> tuple[CrossSamplePeakGroupHypothesis, ...]:
-    hypotheses: list[CrossSamplePeakGroupHypothesis] = []
-    for offset, record in enumerate(records):
-        if (
-            record.neutral_loss_tag is None
-            or record.precursor_mz is None
-            or record.apex_rt is None
-            or record.product_mz is None
-            or record.observed_neutral_loss_da is None
-        ):
-            continue
-        family_id = f"FAM{start_index + offset:06d}"
-        hypotheses.append(
-            CrossSamplePeakGroupHypothesis(
-                group_hypothesis_id=family_id,
-                public_family_id=family_id,
-                owner_ids=(),
-                event_ids=(),
-                event_member_count=0,
-                source="cross_sample_peak_group_successor_constructor",
-                neutral_loss_tag=record.neutral_loss_tag,
-                group_center_mz=record.precursor_mz,
-                group_center_rt=record.apex_rt,
-                group_product_mz=record.product_mz,
-                group_observed_neutral_loss_da=record.observed_neutral_loss_da,
-                has_anchor=False,
-                owners=(),
-                evidence="ambiguous_ms1_owner_review_only",
-                review_only=True,
-                ambiguous_sample_stem=record.sample_stem,
-                ambiguous_candidate_ids=record.candidate_ids,
-                construction_role="successor_constructor",
-            ),
-        )
-    return tuple(hypotheses)
-
-
 def _hypothesis_from_owner_group(
     group: tuple[SampleLocalMS1Owner, ...],
     *,
@@ -419,9 +271,6 @@ def _hypothesis_from_owner_group(
         if not events
         else sum(event.observed_neutral_loss_da for event in events) / len(events)
     )
-    event_ids = tuple(
-        event_id for owner in group for event_id in owner.event_candidate_ids
-    )
     is_singleton = len(group) == 1
     has_definitive = any(not getattr(owner, "is_provisional", False) for owner in group)
     has_anchor = has_definitive or not is_singleton
@@ -436,7 +285,7 @@ def _hypothesis_from_owner_group(
         group_hypothesis_id=group_identity.group_hypothesis_id,
         public_family_id=public_family_id,
         owner_ids=tuple(owner.owner_id for owner in group),
-        event_ids=event_ids,
+
         event_member_count=sum(len(owner.all_events) for owner in group),
         processing_request_id=group_identity.processing_request_id,
         member_subjects=group_identity.member_subjects,
@@ -485,21 +334,12 @@ __all__ = (
     "CrossSampleNeighborhoodEdge",
     "CrossSampleNeighborhoodStatus",
     "_expected_cross_sample_lineage",
-    "CrossSamplePeakGroupConstructionPolicy",
     "CrossSamplePeakGroupConstructionRole",
-    "CrossSamplePeakGroupEdgeFact",
-    "CrossSamplePeakGroupEdgeRole",
-    "CrossSamplePeakGroupHardGateChallengeFact",
-    "CrossSamplePeakGroupHardGateRole",
     "CrossSamplePeakGroupHypothesis",
-    "CrossSamplePeakGroupReviewFact",
-    "CrossSamplePeakGroupReviewReason",
-    "CrossSamplePeakGroupReviewRole",
     "CrossSamplePartitionTransition",
     "classify_cross_sample_initial_edge",
     "construct_cross_sample_peak_group_hypotheses",
     "group_member_subject_from_peak_hypothesis",
     "mint_cross_sample_group_identity",
-    "review_only_peak_group_hypotheses_from_ambiguous_records",
     "validate_cross_sample_peak_group_identity",
 )
