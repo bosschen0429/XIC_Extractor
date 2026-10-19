@@ -88,9 +88,6 @@ CI_BASE_MARKER_EXPRESSION = (
 # docs/superpowers/validation/. A rejection path, a monkeypatched dependency, or
 # an invariant that survives a consistent re-analysis belongs in CI unmarked.
 SNAPSHOT_TESTS: dict[str, tuple[str, ...]] = {
-    "tests/test_bounded_product_lanes_contract.py": (
-        "test_bounded_product_lanes_accept_current_artifacts",
-    ),
     "tests/test_check_productization_authority.py": (
         "test_productization_authority_checker_accepts_repo_artifacts",
     ),
@@ -109,7 +106,6 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
         "docs-config": (
             "tests/test_agent_sandbox_doctor.py",
             "tests/test_bootstrap_worktree.py",
-            "tests/test_bounded_product_lanes_contract.py",
             "tests/test_check_productization_authority.py",
             "tests/test_config*.py",
             "tests/test_docs_*.py",

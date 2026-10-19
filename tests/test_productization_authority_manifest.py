@@ -13,7 +13,6 @@ MANIFEST_PATH = (
     "productization_authority_manifest.json"
 )
 
-PARKED_SCOPE = "broad_backfill"
 NEGATIVE_SCOPE_IDS = {
     "all_stability",
     "apex_delta_clean",
@@ -37,10 +36,6 @@ def test_manifest_has_no_registered_file_activation_writer() -> None:
     )
 
     assert manifest["current_authority"] == {}
-
-    broad_backfill = manifest["parked_lanes"][PARKED_SCOPE]
-    assert broad_backfill["status"] == "parked"
-    assert broad_backfill["may_grant_write_authority"] is False
 
     explanation_sources = manifest["explanation_only_sources"]
     assert explanation_sources

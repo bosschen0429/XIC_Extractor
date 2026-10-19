@@ -7,8 +7,8 @@ interpretation, and future activation gates.
 
 ## Contract
 
-- The accepted `sample_metadata` contract covers no-output-change sample
-  identity, injection-order projection, and lookup parity. Current lane readiness lives in the status index.
+- `sample_metadata` owns sample identity, injection-order projection, role,
+  batch and exclusion inputs. The status index owns lane readiness.
 - Within `sample_metadata`, `sample_name` is the owner-stable,
   case-sensitive primary sample key.
 - `raw_stem` is a lookup alias only.
@@ -37,11 +37,20 @@ interpretation, and future activation gates.
   without reconstructing sample identity.
 - Sample metadata can act as an injection-order and sample-identity projection
   surface when sample metadata preserves existing output values.
-- Role, batch, `matrix_type`, exclusion, calibrator, blank, QC, or
-  normalization behavior must not alter extraction, QC, alignment, counted,
-  workbook, or matrix values without an explicit activation/export contract.
-- Instrument-QC and calibration sidecars are evidence and observability
-  surfaces unless productization authority promotes these sidecars.
+- `AnalysisSet` uses role and explicit exclusion to choose analysis members;
+  other injections remain context rather than analysis inputs.
+- Conservative Backfill uses study/QC roles and exclusion to derive its
+  eligible support population. The RT frame uses batch membership as cohort
+  context.
+- Feature Quality uses explicit study-sample and exclusion metadata for the
+  availability denominator and a separate analysis-set export. It does not
+  mutate the source Matrix.
+- Role-based blank subtraction, QC weighting, response correction and
+  normalization are not implemented. Metadata alone cannot authorize these
+  value transformations; they require an explicit product contract and
+  expected-diff review.
+- Instrument-QC sidecars are evidence and observability surfaces, not
+  authorization to change selected values.
 - Sample metadata is part of run provenance. Sample metadata does not replace
   method manifests or output schemas.
 
@@ -67,7 +76,6 @@ identities merely because its files were measured on different dates.
 | `mint_canonical_sample_identity` / `resolve_canonical_sample_identity` | Owner-only namespaced identity minting and self-validating fail-closed lookup resolution |
 | `injection_order_source` | Optional sequence annotations; RAW chronology owns resolved injection order |
 | Instrument-QC sidecars | QC context and trend evidence |
-| Calibration/normalization previews | Shadow or gated evidence surfaces |
 | Run metadata / method manifest | Provenance links to sample metadata inputs |
 
 ## Boundaries
@@ -76,8 +84,9 @@ identities merely because its files were measured on different dates.
   exclusion field definitions, and QC sidecar structure.
 - Does not own: a specific sample's role or exclusion decision,
   normalization/calibration activation policy, or matrix activation scope.
-- Any value-changing role behavior requires a separate activation contract
-  and expected-diff review.
+- New role-driven value transformations require a separate product contract
+  and expected-diff review; existing analysis-membership and support rules
+  remain with their current owners.
 
 ## Injection timeline diagnostic
 

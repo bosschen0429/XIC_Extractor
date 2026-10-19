@@ -34,7 +34,6 @@ from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
     retry_predecessor_attempt_ids,
 )
-from xic_extractor.review_records import ResolvedReviewRecordRef
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 
@@ -65,7 +64,6 @@ class CellObservationContent:
     method_assessment_artifact_content_id: str
     evidence_artifact_ids: tuple[str, ...]
     reason_codes: tuple[str, ...]
-    human_disposition_ref_id: str | None
     outside_group: OutsideGroupCellRelation | None = None
     unassigned_support: bool = False
 
@@ -79,7 +77,6 @@ class CellObservationRef:
     method_assessment: CidNlMethodAssessmentRef
     peak_observation: PeakObservationRef | None
     peak_hypothesis: PeakHypothesis | None
-    human_disposition: ResolvedReviewRecordRef | None
     artifact: EvidenceArtifactRef
     outside_group_context: CidNlCellGroupContext | None = None
 
@@ -208,7 +205,6 @@ def mint_cell_observation_ref(
     method_assessment: CidNlMethodAssessmentRef,
     peak_observation: PeakObservationRef | None = None,
     peak_hypothesis: PeakHypothesis | None = None,
-    human_disposition: ResolvedReviewRecordRef | None = None,
     outside_group_context: CidNlCellGroupContext | None = None,
     unassigned_support: bool = False,
 ) -> CellObservationRef:
@@ -255,24 +251,6 @@ def mint_cell_observation_ref(
         raise CellObservationContractError(
             "assessment relations do not bind the group SUPPORT hypothesis"
         )
-    if human_disposition is not None:
-        reference = human_disposition.reference
-        if reference.canonical_sample_identity_id != sample.identity.sample_identity_id:
-            raise CellObservationContractError(
-                "human disposition references a different sample"
-            )
-        if (
-            target is None
-            or reference.processing_request_id
-            != processing_owners.request.processing_request_id
-            or reference.target_key_id != target.definition.target_key.target_key_id
-            or reference.target_definition_id != target.definition.target_definition_id
-            or method_assessment.artifact.evidence_artifact_id
-            not in reference.evidence_artifact_ids
-        ):
-            raise CellObservationContractError(
-                "human disposition is not bound to the current target evidence"
-            )
     outside_group = _outside_group_relation(
         group_context=group_context,
         method_assessment=method_assessment,
@@ -309,11 +287,6 @@ def mint_cell_observation_ref(
         ),
         evidence_artifact_ids=evidence_artifact_ids,
         reason_codes=method_assessment.content.reason_codes,
-        human_disposition_ref_id=(
-            None
-            if human_disposition is None
-            else human_disposition.reference.review_record_id
-        ),
         outside_group=outside_group,
         unassigned_support=unassigned_support,
     )
@@ -337,7 +310,6 @@ def mint_cell_observation_ref(
         method_assessment=method_assessment,
         peak_observation=peak_observation,
         peak_hypothesis=peak_hypothesis,
-        human_disposition=human_disposition,
         artifact=artifact,
         outside_group_context=outside_group_context,
     )
@@ -351,6 +323,8 @@ def canonical_cell_observation_bytes(content: CellObservationContent) -> bytes:
     # JSON reads immutable tuples directly; copying every group-support ID for
     # every sample adds a second population traversal without changing bytes.
     values = {item.name: getattr(content, item.name) for item in fields(content)}
+    # This null slot is part of the persisted content/identity encoding.
+    values["human_disposition_ref_id"] = None
     if content.outside_group is not None:
         values["outside_group"] = asdict(content.outside_group)
     payload = {

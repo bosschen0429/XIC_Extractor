@@ -22,14 +22,12 @@ activation contract promotes a correction or gate.
     method.
 - Architecture convergence must not replace these method choices with a
   universal CID-NL or QC rule.
-- Level 3 RT calibration remains `NO-GO`. Leave-one-anchor-out residuals,
-  transfer support, extrapolated rows, and blocked rows do not yet support
-  production correction.
-- RT-aware midterm preview artifacts are shadow/readiness evidence only.
-  Preview artifacts do not activate RT correction, response correction,
-  normalization, matrix mutation, or default gating.
-- The next safe calibration direction is shadow/readiness evidence, not
-  value mutation.
+- Instrument-QC trends do not apply RT, response or normalization corrections
+  to the Matrix. Clean-standard evidence alone does not establish transfer to
+  biological samples.
+- Production ISTD RT correspondence belongs to `alignment.drift_evidence`.
+  Sample-RT calibration from detected features remains a separate diagnostic
+  and grouping-experiment input under `alignment.sample_rt_calibration`.
 - `scripts/add_istd_rt_trend.py` is a maintained operator diagnostic for
   visualizing measured ISTD RT drift. The observed ISTD trend does not justify
   inferring, correcting, or gating other-feature RT behavior.
@@ -54,14 +52,11 @@ activation contract promotes a correction or gate.
 | `run_instrument_qc.py` method-document outputs | Sequence manifest, injection-order projection, and additive sample metadata |
 | `add_istd_rt_trend.py` visualization | Direct ISTD drift review; not an other-feature RT model |
 | HCD audit TSV/JSON/workbook sheet | Product-ion audit evidence |
-| Calibration maturity gate | Readiness and blocker summary |
-| Biological ISTD transfer audit | Biological sample-matrix transfer evidence |
-| Calibration preview outputs | Shadow or diagnostic evidence only |
 
 ## Boundaries
 
 - Owns: clean-vs-biological QC evidence roles, HCD audit output format,
-  calibration maturity gate classification, and transfer audit structure.
+  and instrument trend interpretation.
 - Does not own: a specific run's QC acceptance, RT/response/normalization
   activation, DNP or downstream normalization behavior, or matrix activation.
 - Dated QC/calibration notes and specs become history stubs after this page
@@ -77,7 +72,6 @@ activation contract promotes a correction or gate.
 
 - Schema tests for QC and HCD audit outputs.
 - Parity tests when adding metadata or sidecars.
-- Blocker/readiness tests for calibration gates.
 - Expected-diff packet for value-changing corrections.
 
 ## Pitfalls
@@ -85,7 +79,6 @@ activation contract promotes a correction or gate.
 - Treating clean-standard behavior as proof of biological sample-matrix
   performance.
 - Making HCD support a hard gate from audit evidence alone.
-- Applying Level 3 RT correction while the maturity gate remains `NO-GO`.
 - Treating a global LOESS/ISTD trend as identity or fill authority for every
   unknown feature.
 - Hiding calibration assumptions in private notes without a repo owner.
@@ -95,6 +88,5 @@ activation contract promotes a correction or gate.
 - [Sample metadata and QC](sample-metadata-qc.md)
 - [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md)
 - [Evidence spine](evidence-spine.md)
-- [Review roundtrip](review-roundtrip.md)
 - [Productization](productization.md)
 - [Historical compatibility index](../superpowers/plans/2026-06-15-productization-control-plane.md)

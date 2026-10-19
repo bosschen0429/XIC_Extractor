@@ -95,19 +95,12 @@ EXPECTED_SCHEMA_PURPOSE = (
     "the status index and writer scope lives in the authority manifest."
 )
 REQUIRED_CONTROL_PLANE_ANCHORS = {
-    "broad_backfill_autowrite": "park_broad_backfill",
     "productization_authority_firewall": "productization_authority_manifest",
     "quality_explanation_sidecar": (
         "quality_explanations and quality_blockers are explanation and triage "
         "inputs only"
     ),
     "sample_metadata_order_projection": "sample_metadata cross-module parity",
-    "sample_metadata_role_value_behavior": "role/value behavior remains blocked",
-    "review_action_selected_candidate_switch": (
-        "selected candidate / manual boundary writer parked"
-    ),
-    "review_action_manual_boundary_area_writer": "manual-boundary area writer parked",
-    "calibration_normalization_activation": "calibration/normalization activation",
     "gui_replay_parity": "GUI replay / GUI parity is out of scope",
 }
 REQUIRED_LANE_IDS = tuple(REQUIRED_CONTROL_PLANE_ANCHORS)
@@ -160,11 +153,11 @@ PRODUCT_TOPIC_BY_LANE_GROUP = {
     "calibration": "instrument-qc-calibration.md",
     "cid_nl": "discovery.md",
     "gui": "untargeted-gui.md",
-    "review": "review-roundtrip.md",
-    "review_action": "review-roundtrip.md",
+    "review": "productization.md",
+    "review_action": "productization.md",
     "sample_metadata": "sample-metadata-qc.md",
     "targeted_ms1": "targeted-selection.md",
-    "truth": "review-roundtrip.md",
+    "truth": "productization.md",
 }
 ADDITIONAL_PRODUCTIZATION_NARRATIVE_OWNER_PATHS = (
     "docs/superpowers/validation/evidence_chain_source_of_truth.md",
@@ -543,11 +536,6 @@ def _check_authority_boundaries(
             problems.append(f"row {index}: {lane_group} lane grants authority")
         if scope and scope not in allowed_scopes:
             problems.append(f"row {index}: unregistered authority scope {scope!r}")
-        if row.get("lane_id") == "broad_backfill_autowrite":
-            if status != "parked" or write or scope:
-                problems.append(
-                    "broad_backfill_autowrite must stay parked/no authority"
-                )
         if row.get("lane_id") == "quality_explanation_sidecar":
             if status != "diagnostic_only" or write or scope:
                 problems.append("quality_explanation_sidecar must be diagnostic only")

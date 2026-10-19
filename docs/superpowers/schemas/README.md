@@ -31,8 +31,6 @@ Current ProductWriter state lives in the
 [writer manifest](../productization/status/productization_authority_manifest.json);
 this authority instance is not a schema.
 
-- `bounded_non_broad_product_lanes.json`: bounded product-lane contract for
-  non-broad activation lanes and review scope.
 - `production_acceptance_manifest_schema.json`: Backfill
   `ProductionAcceptanceManifest v1` contract. This defines/checks the only
   future Backfill row artifact that may grant `write_authority=true`; it does

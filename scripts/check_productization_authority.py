@@ -32,7 +32,6 @@ WRITER_MANIFEST_FIELDS = (
     "updated",
     "authority_policy",
     "current_authority",
-    "parked_lanes",
     "explanation_only_sources",
     "blocked_or_negative_evidence_scopes",
 )
@@ -43,7 +42,6 @@ WRITER_AUTHORITY_POLICY_FIELDS = (
     "forbidden_authority_sources",
 )
 WRITER_CURRENT_AUTHORITY_FIELDS: tuple[str, ...] = ()
-PARKED_BROAD_BACKFILL = "broad_backfill"
 RETIRED_SCOPE_IDS = {
     "backfill_expansion_raw_trace_expected_diff_666_cells",
     "backfill_expansion_clean_target_selective_activation_84_cells",
@@ -110,15 +108,6 @@ def _check_manifest(manifest: Mapping[str, Any], problems: list[str]) -> None:
             "lanes"
         )
 
-    parked = _mapping_path(manifest, "parked_lanes", PARKED_BROAD_BACKFILL)
-    if parked is None:
-        problems.append("manifest missing parked broad_backfill lane")
-    else:
-        if parked.get("status") != "parked":
-            problems.append("broad_backfill status must be parked")
-        if parked.get("may_grant_write_authority") is not False:
-            problems.append("broad_backfill may_grant_write_authority must be false")
-
     explanation_sources = manifest.get("explanation_only_sources")
     if not isinstance(explanation_sources, list) or not explanation_sources:
         problems.append("manifest must list explanation_only_sources")
@@ -138,8 +127,7 @@ def _check_manifest(manifest: Mapping[str, Any], problems: list[str]) -> None:
     missing_negative = sorted(NEGATIVE_SCOPE_IDS - negative_scope_ids)
     if missing_negative:
         problems.append(
-            "manifest missing negative-evidence scopes: "
-            + ", ".join(missing_negative)
+            "manifest missing negative-evidence scopes: " + ", ".join(missing_negative)
         )
     for scope_id in RETIRED_SCOPE_IDS:
         scope = negative_scopes.get(scope_id)
@@ -162,18 +150,6 @@ def _check_explanation_sources(
             problems.append(f"explanation compact artifact is missing: {relative}")
         elif artifact_sha256(path) != source.get("artifact_sha256"):
             problems.append("explanation compact artifact hash does not match manifest")
-
-
-def _mapping_path(
-    root: Mapping[str, Any],
-    *keys: str,
-) -> Mapping[str, Any] | None:
-    current: Any = root
-    for key in keys:
-        if not isinstance(current, Mapping):
-            return None
-        current = current.get(key)
-    return current if isinstance(current, Mapping) else None
 
 
 class _DuplicateJsonKeyError(ValueError):

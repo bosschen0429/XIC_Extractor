@@ -92,7 +92,7 @@ DOC_ROUTING_TOPIC_RULES = (
     (
         "targeted selection",
         ("targeted", "expected-diff", "selected hypothesis"),
-        "docs/product/targeted-selection.md; docs/product/review-roundtrip.md",
+        "docs/product/targeted-selection.md",
     ),
     (
         "sample metadata and qc",
@@ -224,12 +224,7 @@ DOC_ROUTING_OWNER_TOPIC_RULES = (
     (
         "docs/product/targeted-selection.md",
         "targeted selection",
-        "docs/product/targeted-selection.md; docs/product/review-roundtrip.md",
-    ),
-    (
-        "docs/product/review-roundtrip.md",
-        "targeted selection",
-        "docs/product/targeted-selection.md; docs/product/review-roundtrip.md",
+        "docs/product/targeted-selection.md",
     ),
     (
         "docs/product/sample-metadata-qc.md",
