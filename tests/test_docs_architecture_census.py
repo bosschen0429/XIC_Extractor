@@ -49,12 +49,13 @@ def _defense_gate_repo(tmp_path: Path, source: str) -> Path:
         (
             "",
             "class Ref:\n def __post_init__(self):\n  verify(self.artifact)\n",
-            "pure-validator",
+            "reference-validator",
         ),
         (
-            "def validate(value):\n assert value\n",
-            "def validate(value):\n assert value\n assert value.id == remint(value)\n",
-            "pure-validator",
+            "class Ref:\n def validate(self):\n  assert self.artifact\n",
+            "class Ref:\n def validate(self):\n"
+            "  assert self.artifact\n  assert self.id == remint(self)\n",
+            "reference-validator",
         ),
         ("", "_OWNER_MINT_TOKEN = object()\n", "mint-token"),
         ("", "class Ref:\n _mint_token: object\n", "mint-token"),
@@ -96,10 +97,11 @@ def test_internal_defense_growth_is_rejected(
             "def validate_manifest(keys):\n assert len(keys) == len(set(keys))\n",
             "def validate_manifest(keys):\n assert len(keys) == len(set(keys))\n",
         ),
-        ("def validate(value):\n assert value\n", ""),
+        ("class Ref:\n def validate(self):\n  assert self.artifact\n", ""),
         (
-            "def validate(value):\n assert value\n assert value.id\n",
-            "def validate(value):\n assert value\n",
+            "class Ref:\n def validate(self):\n"
+            "  assert self.artifact\n  assert self.id\n",
+            "class Ref:\n def validate(self):\n  assert self.artifact\n",
         ),
         (
             "",
@@ -107,8 +109,9 @@ def test_internal_defense_growth_is_rejected(
             "  object.__setattr__(self, 'value', float(self.value))\n",
         ),
         (
-            "def validate(value):\n assert value\n",
-            'def validate(value):\n """Updated explanation."""\n assert value\n',
+            "class Ref:\n def validate(self):\n  assert self.artifact\n",
+            "class Ref:\n def validate(self):\n"
+            '  """Updated explanation."""\n  assert self.artifact\n',
         ),
     ),
 )
@@ -121,6 +124,135 @@ def test_internal_defense_gate_preserves_existing_boundaries_and_cleanup(
     path.write_text(after, encoding="utf-8")
 
     assert census.validate_internal_defense_growth(tmp_path, "HEAD") == []
+
+
+@pytest.mark.parametrize(
+    "algorithm", ("sha3_224", "sha3_384", "shake_128", "shake_256")
+)
+@pytest.mark.parametrize("imported", (False, True))
+def test_internal_defense_gate_covers_hashlib_calls(
+    tmp_path: Path, algorithm: str, imported: bool
+) -> None:
+    path = _defense_gate_repo(tmp_path, "")
+    source = (
+        f"from hashlib import {algorithm} as digest\ndigest(b'input')\n"
+        if imported
+        else f"import hashlib as h\nh.{algorithm}(b'input')\n"
+    )
+    path.write_text(source, encoding="utf-8")
+    assert any(
+        "hashing" in p
+        for p in census.validate_internal_defense_growth(tmp_path, "HEAD")
+    )
+
+
+@pytest.mark.parametrize("staged", (False, True))
+@pytest.mark.parametrize("growth", (False, True))
+def test_internal_defense_gate_tracks_module_renames(
+    tmp_path: Path, staged: bool, growth: bool
+) -> None:
+    path = _defense_gate_repo(tmp_path, "import hashlib\nhashlib.sha256(b'input')\n")
+    destination = path.with_name("renamed.py")
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "mv", str(path), str(destination)],
+        check=True,
+        capture_output=True,
+        env=census._git_subprocess_environment(),
+    )
+    if growth:
+        destination.write_text(destination.read_text() + "hashlib.shake_256(b'new')\n")
+        subprocess.run(
+            ["git", "-C", str(tmp_path), "add", "."],
+            check=True,
+            capture_output=True,
+            env=census._git_subprocess_environment(),
+        )
+    assert (
+        bool(census.validate_internal_defense_growth(tmp_path, "HEAD", staged=staged))
+        is growth
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    (
+        "class AlignmentConfig:\n def __post_init__(self):\n"
+        "  assert 0 <= self.probability <= 1\n",
+        "def _validate_target_relationships(rows):\n"
+        " assert all(row.parent in rows for row in rows)\n",
+        "class LocalPeakShape:\n def __post_init__(self):\n  assert self.width > 0\n",
+        "class Ref:\n def __post_init__(self):\n"
+        "  object.__setattr__(self, 'value', float(self.value))\n",
+    ),
+)
+def test_internal_defense_gate_allows_boundary_and_numeric_validation(
+    tmp_path: Path, source: str
+) -> None:
+    path = _defense_gate_repo(tmp_path, "")
+    path.write_text(source, encoding="utf-8")
+    assert census.validate_internal_defense_growth(tmp_path, "HEAD") == []
+
+
+@pytest.mark.parametrize(
+    "before,source",
+    (
+        (
+            "",
+            "class ArtifactRef:\n def __post_init__(self):\n"
+            "  setattr(self, 'artifact', self.artifact)\n  verify(self.artifact)\n",
+        ),
+        (
+            "class ArtifactRef:\n def validate(self):\n  pass\n"
+            "if condition:\n class ArtifactRef:\n  def validate(self):\n   pass\n",
+            "class ArtifactRef:\n def validate(self):\n  assert self.artifact\n"
+            "if condition:\n class ArtifactRef:\n  def validate(self):\n   pass\n",
+        ),
+    ),
+)
+def test_internal_defense_gate_does_not_hide_checks_behind_setters_or_duplicate_scopes(
+    tmp_path: Path, before: str, source: str
+) -> None:
+    path = _defense_gate_repo(tmp_path, before)
+    path.write_text(source, encoding="utf-8")
+    assert any(
+        "reference-validator" in p
+        for p in census.validate_internal_defense_growth(tmp_path, "HEAD")
+    )
+
+
+@pytest.mark.parametrize(
+    ("before", "after", "growth"),
+    (
+        (
+            "def _mint_ref(data):\n import hashlib\n return hashlib.sha256(data)\n",
+            "def mint_ref(data):\n import hashlib\n return hashlib.sha256(data)\n",
+            False,
+        ),
+        (
+            "class OldRef:\n def validate(self):\n  assert self.artifact\n",
+            "class NewRef:\n def validate(self):\n  assert self.artifact\n",
+            False,
+        ),
+        (
+            "def mint_ref(data):\n import hashlib\n return hashlib.sha256(data)\n",
+            "def mint_ref(data):\n import hashlib\n return hashlib.sha256(data)\n"
+            "def copy_ref(data):\n import hashlib\n return hashlib.sha256(data)\n",
+            True,
+        ),
+        (
+            "def old(data):\n import hashlib\n return hashlib.sha256(data)\n",
+            "def first(data):\n import hashlib\n return hashlib.sha256(data)\n"
+            "def second(data):\n import hashlib\n return hashlib.sha256(data)\n",
+            True,
+        ),
+    ),
+)
+def test_internal_defense_gate_preserves_renamed_but_not_copied_scopes(
+    tmp_path: Path, before: str, after: str, growth: bool
+) -> None:
+    path = _defense_gate_repo(tmp_path, before)
+    path.write_text(after, encoding="utf-8")
+    assert bool(census.validate_internal_defense_growth(tmp_path, "HEAD")) is growth
 
 
 def test_internal_defense_gate_uses_index_not_unstaged_source(tmp_path: Path) -> None:

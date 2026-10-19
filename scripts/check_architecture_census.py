@@ -1545,22 +1545,17 @@ def write_architecture_census_json(
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
-def _internal_defense_profile(source: str) -> dict[tuple[str, str], tuple[int, int]]:
-    """Count syntactic growth signals, not semantic validity or trust."""
+@dataclass
+class _DefenseScope:
+    name: str
+    fingerprint: str
+    line: int
+    counts: dict[str, int]
+
+
+def _internal_defense_profile(source: str) -> list[_DefenseScope]:
+    """Collect bounded syntax signals; this is not a semantic trust analysis."""
     tree = ast.parse(source)
-    hash_names = {
-        "sha1",
-        "sha224",
-        "sha256",
-        "sha384",
-        "sha512",
-        "md5",
-        "blake2b",
-        "blake2s",
-        "sha3_256",
-        "sha3_512",
-        "new",
-    }
     hash_modules = {"hashlib"}
     hash_functions: set[str] = set()
     for node in ast.walk(tree):
@@ -1571,16 +1566,13 @@ def _internal_defense_profile(source: str) -> dict[tuple[str, str], tuple[int, i
                 if item.name == "hashlib"
             )
         elif isinstance(node, ast.ImportFrom) and node.module == "hashlib":
-            hash_functions.update(
-                item.asname or item.name
-                for item in node.names
-                if item.name in hash_names
-            )
-    result: dict[tuple[str, str], tuple[int, int]] = {}
+            hash_functions.update(item.asname or item.name for item in node.names)
+    result: list[_DefenseScope] = []
 
-    def scan(scope: Any, name: str) -> None:
+    def scan(scope: Any, name: str, envelope: bool = False) -> None:
         nodes: list[ast.AST] = []
         children: list[Any] = []
+        body: list[ast.stmt] = []
 
         def collect(node: ast.AST) -> None:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
@@ -1597,70 +1589,124 @@ def _internal_defense_profile(source: str) -> dict[tuple[str, str], tuple[int, i
                 and isinstance(statement.value.value, str)
             ):
                 continue
+            body.append(statement)
             collect(statement)
-        line = getattr(scope, "lineno", 1)
         token_nodes = nodes
+        signature = ""
         if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
             token_nodes = [*nodes, *ast.walk(scope.args)]
-        tokens = sum(
-            isinstance(label, str) and label.lower().endswith("mint_token")
-            for node in token_nodes
-            for label in [
-                getattr(
-                    node,
-                    "id",
+            signature = ast.dump(scope.args)
+        counts = {
+            "mint-token": sum(
+                isinstance(label, str) and label.lower().endswith("mint_token")
+                for node in token_nodes
+                for label in [
                     getattr(
-                        node, "attr", getattr(node, "arg", getattr(node, "value", None))
-                    ),
-                )
-            ]
-        )
-        hashes = sum(
-            isinstance(node, ast.Call)
-            and (
-                isinstance(node.func, ast.Name)
-                and node.func.id in hash_functions
-                or isinstance(node.func, ast.Attribute)
-                and isinstance(node.func.value, ast.Name)
-                and node.func.value.id in hash_modules
-                and node.func.attr in hash_names
-            )
-            for node in nodes
-        )
-        result[name, "mint-token"] = (tokens, line)
-        result[name, "hashing"] = (hashes, line)
-        if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
-            scope.name == "__post_init__"
-            or scope.name.lstrip("_").startswith(("validate", "verify", "require"))
-        ):
-            mutates = any(
-                isinstance(node, ast.Attribute)
-                and isinstance(node.ctx, (ast.Store, ast.Del))
-                or isinstance(node, ast.Call)
+                        node,
+                        "id",
+                        getattr(
+                            node,
+                            "attr",
+                            getattr(node, "arg", getattr(node, "value", None)),
+                        ),
+                    )
+                ]
+            ),
+            "hashing": sum(
+                isinstance(node, ast.Call)
                 and (
-                    isinstance(node.func, ast.Attribute)
-                    and node.func.attr in {"__setattr__", "__delattr__"}
-                    or isinstance(node.func, ast.Name)
-                    and node.func.id in {"setattr", "delattr"}
+                    isinstance(node.func, ast.Name)
+                    and node.func.id in hash_functions
+                    or isinstance(node.func, ast.Attribute)
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id in hash_modules
                 )
                 for node in nodes
+            ),
+        }
+        if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            args = scope.args
+            receiver_only = (
+                len(args.posonlyargs) + len(args.args) == 1
+                and not args.kwonlyargs
+                and args.vararg is None
+                and args.kwarg is None
+                and (args.posonlyargs + args.args)[0].arg == "self"
             )
-            returns_value = any(
-                isinstance(node, (ast.Yield, ast.YieldFrom))
-                or isinstance(node, ast.Return)
-                and node.value is not None
-                and not (
-                    isinstance(node.value, ast.Constant) and node.value.value is None
+            if (
+                envelope
+                and receiver_only
+                and (
+                    scope.name == "__post_init__"
+                    or scope.name.lstrip("_").startswith(
+                        ("validate", "verify", "require")
+                    )
                 )
-                for node in nodes
+            ):
+                # Count checks, not method size. Normalization neither adds a
+                # check nor exempts neighboring checks (including no-op setters).
+                counts["reference-validator"] = sum(
+                    isinstance(node, (ast.Assert, ast.Raise))
+                    or isinstance(node, ast.Call)
+                    and isinstance(node.func, (ast.Name, ast.Attribute))
+                    and (
+                        node.func.id
+                        if isinstance(node.func, ast.Name)
+                        else node.func.attr
+                    )
+                    .lstrip("_")
+                    .startswith(("validate", "verify", "require"))
+                    for node in nodes
+                )
+        result.append(
+            _DefenseScope(
+                name=name,
+                fingerprint=type(scope).__name__
+                + signature
+                + "".join(ast.dump(n) for n in body),
+                line=getattr(scope, "lineno", 1),
+                counts=counts,
             )
-            if not mutates and not returns_value:
-                result[name, "pure-validator"] = (len(nodes), line)
+        )
         for child in children:
-            scan(child, child.name if name == "<module>" else name + "." + child.name)
+            scan(
+                child,
+                child.name if name == "<module>" else name + "." + child.name,
+                envelope=(
+                    isinstance(scope, ast.ClassDef)
+                    and scope.name.endswith(("Ref", "State", "Runtime", "Aggregate"))
+                ),
+            )
 
     scan(tree, "<module>")
     return result
+
+
+def _match_defense_scopes(
+    previous: list[_DefenseScope], current: list[_DefenseScope]
+) -> dict[int, _DefenseScope]:
+    """Match occurrences, then unambiguous exact-body renames, never copies."""
+    remaining = list(previous)
+    matched: dict[int, _DefenseScope] = {}
+    for index, scope in enumerate(current):
+        for old in remaining:
+            if old.name == scope.name:
+                matched[index] = old
+                remaining.remove(old)
+                break
+    for index, scope in enumerate(current):
+        if index in matched:
+            continue
+        candidates = [old for old in remaining if old.fingerprint == scope.fingerprint]
+        peers = [
+            other
+            for i, other in enumerate(current)
+            if i not in matched and other.fingerprint == scope.fingerprint
+        ]
+        if len(candidates) == len(peers) == 1:
+            matched[index] = candidates[0]
+            remaining.remove(candidates[0])
+    return matched
 
 
 def validate_internal_defense_growth(
@@ -1682,17 +1728,13 @@ def validate_internal_defense_growth(
         commit = git("rev-parse", "--verify", base + "^{commit}").decode().strip()
     except subprocess.CalledProcessError as exc:
         raise ValueError(f"internal-defense baseline is unavailable: {base}") from exc
-    old_paths = set(
-        git("ls-tree", "-r", "--name-only", "-z", commit, "--", "xic_extractor")
-        .decode()
-        .split("\0")
-    )
     flags = ("--cached",) if staged else ()
-    paths = (
+    changes = iter(
         git(
             "diff",
             *flags,
-            "--name-only",
+            "-M",
+            "--name-status",
             "-z",
             "--diff-filter=AMRT",
             commit,
@@ -1700,27 +1742,34 @@ def validate_internal_defense_growth(
             "xic_extractor",
         )
         .decode()
-        .split("\0")
+        .split("\0")[:-1]
     )
     problems = []
-    for relative in paths:
+    for status in changes:
+        original = next(changes)
+        relative = next(changes) if status.startswith("R") else original
         if not relative.endswith(".py"):
             continue
         path = (repo_root / relative).resolve()
         if not path.is_relative_to(repo_root.resolve()):
             raise ValueError("internal-defense source escapes repository")
-        before = git("show", commit + ":" + relative) if relative in old_paths else b""
+        before = b"" if status == "A" else git("show", commit + ":" + original)
         after = git("show", ":" + relative) if staged else path.read_bytes()
         previous = _internal_defense_profile(before.decode("utf-8-sig"))
         current = _internal_defense_profile(after.decode("utf-8-sig"))
-        for (name, rule), (count, line) in current.items():
-            old_count = previous.get((name, rule), (0, 0))[0]
-            if count > old_count:
-                problems.append(
-                    f"{relative}:{line}: internal-defense {rule} growth in {name} "
-                    f"({old_count} -> {count}); remove unnecessary machinery or seek "
-                    "a maintainer decision on the gate scope"
-                )
+        matched = _match_defense_scopes(previous, current)
+        for index, scope in enumerate(current):
+            old_counts = matched[index].counts if index in matched else {}
+            for rule, count in scope.counts.items():
+                old_count = old_counts.get(rule, 0)
+                if count > old_count:
+                    problems.append(
+                        f"{relative}:{scope.line}: internal-defense {rule} growth "
+                        f"in {scope.name} "
+                        f"({old_count} -> {count}); remove unnecessary machinery "
+                        "or seek "
+                        "a maintainer decision on the gate scope"
+                    )
     return problems
 
 

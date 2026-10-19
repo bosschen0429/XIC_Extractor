@@ -122,19 +122,35 @@ the affected flow, not a whole-repository audit.
 ### Internal Defense Growth Gate
 
 `scripts/check_architecture_census.py --internal-defense-base REF` blocks
-syntactic growth in pure-by-syntax validators, mint-token uses, and cryptographic
-hashing in changed `xic_extractor` source. The existing pre-commit hook compares
-HEAD to staged source; CI compares against the event's base commit. A missing
-baseline or unreadable source fails closed. Existing unchanged scopes are not
-re-certified, and no generated baseline registry is maintained.
+syntactic growth in mint-token uses, direct `hashlib` calls (including imported
+aliases), and receiver-only reference/state validation in changed
+`xic_extractor` source. The pre-commit hook compares HEAD to staged source;
+CI compares against the event's base commit. A missing baseline or unreadable
+source fails closed. Existing unchanged scopes are not re-certified, and no
+generated baseline registry is maintained.
 
-This conservative gate triggers review; it does not decide semantic necessity.
-It can block a legitimate new boundary, and it cannot detect every renamed,
-value-returning, indirect, or same-size replacement defense. There is no inline
-suppression or pass-anyway flag. A blocked change needs removal of unnecessary
-machinery or an explicit maintainer decision to adjust the gate's scope; the
-agent does not authorize its own exception. Preserve the existing product
-boundary while resolving a block.
+The `reference-validator` signal is deliberately narrow: methods named
+`__post_init__` or beginning with `validate`, `verify`, or `require` (after leading
+underscores), taking only `self`, on classes ending in `Ref`, `State`, `Runtime`,
+or `Aggregate`. It counts assertions, raises, and validation-named calls, not
+whole-method AST size. Normalization is not a check and does not exempt adjacent
+checks. General config/CSV admission helpers and numeric domain models outside
+these envelope names are not subject to this signal; their actual boundary
+validation remains required. Duplicate scope definitions are compared by
+occurrence rather than silently overwriting one another.
+
+Git-detected file renames use the original blob as baseline. An unambiguous,
+exact-body scope rename can retain a removed scope's baseline; a copied scope
+cannot reuse a still-present scope's allowance. Rename plus substantive edits,
+ambiguous moves, or moves Git does not recognize can still require a maintainer
+decision. This is a syntactic review trigger, not semantic necessity analysis:
+class/method naming, indirect calls, argument-taking helpers, alias rebinding,
+and same-count replacements limit coverage. In particular, a real boundary in
+an envelope-named class may still be blocked. There is no inline suppression or
+pass-anyway flag. A blocked change needs removal of unnecessary machinery or an
+explicit maintainer decision to adjust the gate's scope; the agent does not
+authorize its own exception. Preserve the existing product boundary while
+resolving a block.
 
 Local hooks can be bypassed, and repository code cannot prevent an actor with
 permission from editing the checker or workflow. Required remote checks and
