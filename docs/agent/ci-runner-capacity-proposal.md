@@ -41,7 +41,7 @@ Windows environment. Keep those separate from engineering regression claims.
 - Architecture census runs once in lint and is excluded from the main test pass.
 - Serial packaging tests are excluded from the parallel pass and run afterward.
 - PR relevance selection already skips unrelated browser, packaging-build and
-  product-governance tests. `tools/testing/test_shards.py` remains the sole owner.
+  product-governance tests. `tools/testing/test_selection.py` remains the sole owner.
 - Per-ref concurrency already cancels superseded runs. It must not be made global:
   one PR must not cancel another PR's required checks.
 - Keep main-branch CI. PRs may omit relevance-gated tests, and the merged commit

@@ -42,9 +42,6 @@ jobs:
       - name: Architecture census
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: uv run pytest tests/test_docs_architecture_census.py -m current_repository_census --noconftest -o addopts= --basetemp=${{ runner.temp }}/xic-architecture-census -q
-      - name: Test shard coverage
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
-        run: uv run python -m tools.testing.test_shards --check
       - name: Diagnostics index in sync
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: uv run python scripts/check_diagnostics_index.py
@@ -110,16 +107,29 @@ jobs:
           $env:PATH = "$venvScripts;$env:PATH"
           $markerExpression = "not ledger_snapshot and not current_repository_census and not serial_ci"
           $runPackagingBuild = $true
+          # An empty target list runs every test; a selected subset passes paths.
+          $testTargets = @()
+          $selectedSubset = $false
           if ("${{ github.event_name }}" -eq "pull_request") {
             $baseSha = "${{ github.event.pull_request.base.sha }}"
             $headSha = "${{ github.event.pull_request.head.sha }}"
-            # tools.testing.test_shards owns which gated markers this change needs.
-            $markerExpression = & .\.venv\Scripts\python.exe -m tools.testing.test_shards --marker-expression --base $baseSha --head $headSha
+            # tools.testing.test_selection owns which tests and gated markers this change needs.
+            $plan = @(& .\.venv\Scripts\python.exe -m tools.testing.test_selection --ci-plan --base $baseSha --head $headSha)
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $markerExpression = $plan[0]
+            $selectedFiles = @($plan | Select-Object -Skip 1)
+            if ($selectedFiles -notcontains 'ALL') {
+              $testTargets = $selectedFiles
+              $selectedSubset = $true
+            }
             $runPackagingBuild = $markerExpression -notmatch 'not packaging_build'
           }
+          $selectionSummary = if ($selectedSubset) { $testTargets.Count } else { 'all' }
+          "- selected_test_files=$selectionSummary" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          $runSelected = -not $selectedSubset -or $testTargets.Count -gt 0
           $started = Get-Date
-          if ($markerExpression -notmatch 'not browser_e2e') {
+          $runBrowser = $runSelected -and $markerExpression -notmatch 'not browser_e2e'
+          if ($runBrowser) {
             $browserStarted = Get-Date
             & .\.venv\Scripts\python.exe -m playwright install chromium
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -128,8 +138,13 @@ jobs:
           }
           $parallelStarted = Get-Date
           $parallelMarkers = "($markerExpression) and not browser_e2e"
-          & .\.venv\Scripts\python.exe -m pytest -m $parallelMarkers -n 4 --dist loadfile -v --tb=short --durations=10
-          $parallelExitCode = $LASTEXITCODE
+          $parallelExitCode = 0
+          if ($runSelected) {
+            & .\.venv\Scripts\python.exe -m pytest -m $parallelMarkers -n 4 --dist loadfile -v --tb=short --durations=10 @testTargets
+            $parallelExitCode = $LASTEXITCODE
+            # Exit 5: the selected files hold no test these markers keep.
+            if ($selectedSubset -and $parallelExitCode -eq 5) { $parallelExitCode = 0 }
+          }
           $parallelElapsed = [math]::Round(((Get-Date) - $parallelStarted).TotalSeconds, 1)
           "- marker_expression=$markerExpression" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           "- parallel_test_seconds=$parallelElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
@@ -138,10 +153,11 @@ jobs:
           # Give them a fresh process without competing scientific-test workers.
           $browserStarted = Get-Date
           $browserExitCode = 0
-          if ($markerExpression -notmatch 'not browser_e2e') {
+          if ($runBrowser) {
             $browserMarkers = "($markerExpression) and browser_e2e"
-            & .\.venv\Scripts\python.exe -m pytest -m $browserMarkers -n 0 -v --tb=short --durations=10
+            & .\.venv\Scripts\python.exe -m pytest -m $browserMarkers -n 0 -v --tb=short --durations=10 @testTargets
             $browserExitCode = $LASTEXITCODE
+            if ($selectedSubset -and $browserExitCode -eq 5) { $browserExitCode = 0 }
           }
           $browserElapsed = [math]::Round(((Get-Date) - $browserStarted).TotalSeconds, 1)
           "- browser_test_seconds=$browserElapsed" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
