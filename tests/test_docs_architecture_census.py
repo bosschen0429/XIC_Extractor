@@ -46,17 +46,6 @@ def _defense_gate_repo(tmp_path: Path, source: str) -> Path:
 @pytest.mark.parametrize(
     ("before", "after", "rule"),
     (
-        (
-            "",
-            "class Ref:\n def __post_init__(self):\n  verify(self.artifact)\n",
-            "reference-validator",
-        ),
-        (
-            "class Ref:\n def validate(self):\n  assert self.artifact\n",
-            "class Ref:\n def validate(self):\n"
-            "  assert self.artifact\n  assert self.id == remint(self)\n",
-            "reference-validator",
-        ),
         ("", "_OWNER_MINT_TOKEN = object()\n", "mint-token"),
         ("", "class Ref:\n _mint_token: object\n", "mint-token"),
         (
@@ -94,24 +83,19 @@ def test_internal_defense_growth_is_rejected(
     ("before", "after"),
     (
         (
-            "def validate_manifest(keys):\n assert len(keys) == len(set(keys))\n",
-            "def validate_manifest(keys):\n assert len(keys) == len(set(keys))\n",
+            "import hashlib\ndef digest(data):\n return hashlib.sha256(data)\n",
+            "import hashlib\ndef digest(data):\n return hashlib.sha256(data)\n",
         ),
-        ("class Ref:\n def validate(self):\n  assert self.artifact\n", ""),
+        ("import hashlib\ndef digest(data):\n return hashlib.sha256(data)\n", ""),
         (
-            "class Ref:\n def validate(self):\n"
-            "  assert self.artifact\n  assert self.id\n",
-            "class Ref:\n def validate(self):\n  assert self.artifact\n",
-        ),
-        (
-            "",
-            "class Value:\n def __post_init__(self):\n"
-            "  object.__setattr__(self, 'value', float(self.value))\n",
+            "class Ref:\n _mint_token: object\n def check(self):\n"
+            "  return self._mint_token is _MINT_TOKEN\n",
+            "class Ref:\n _mint_token: object\n",
         ),
         (
-            "class Ref:\n def validate(self):\n  assert self.artifact\n",
-            "class Ref:\n def validate(self):\n"
-            '  """Updated explanation."""\n  assert self.artifact\n',
+            "import hashlib\ndef digest(data):\n return hashlib.sha256(data)\n",
+            "import hashlib\ndef digest(data):\n"
+            ' """Updated explanation."""\n return hashlib.sha256(data)\n',
         ),
     ),
 )
@@ -181,8 +165,7 @@ def test_internal_defense_gate_tracks_module_renames(
         "def _validate_target_relationships(rows):\n"
         " assert all(row.parent in rows for row in rows)\n",
         "class LocalPeakShape:\n def __post_init__(self):\n  assert self.width > 0\n",
-        "class Ref:\n def __post_init__(self):\n"
-        "  object.__setattr__(self, 'value', float(self.value))\n",
+        "class ArtifactRef:\n def __post_init__(self):\n  verify(self.artifact)\n",
     ),
 )
 def test_internal_defense_gate_allows_boundary_and_numeric_validation(
@@ -193,29 +176,21 @@ def test_internal_defense_gate_allows_boundary_and_numeric_validation(
     assert census.validate_internal_defense_growth(tmp_path, "HEAD") == []
 
 
-@pytest.mark.parametrize(
-    "before,source",
-    (
-        (
-            "",
-            "class ArtifactRef:\n def __post_init__(self):\n"
-            "  setattr(self, 'artifact', self.artifact)\n  verify(self.artifact)\n",
-        ),
-        (
-            "class ArtifactRef:\n def validate(self):\n  pass\n"
-            "if condition:\n class ArtifactRef:\n  def validate(self):\n   pass\n",
-            "class ArtifactRef:\n def validate(self):\n  assert self.artifact\n"
-            "if condition:\n class ArtifactRef:\n  def validate(self):\n   pass\n",
-        ),
-    ),
-)
-def test_internal_defense_gate_does_not_hide_checks_behind_setters_or_duplicate_scopes(
-    tmp_path: Path, before: str, source: str
+def test_internal_defense_gate_compares_duplicate_scopes_by_occurrence(
+    tmp_path: Path,
 ) -> None:
-    path = _defense_gate_repo(tmp_path, before)
-    path.write_text(source, encoding="utf-8")
+    path = _defense_gate_repo(
+        tmp_path,
+        "import hashlib\ndef digest(data):\n pass\n"
+        "if condition:\n def digest(data):\n  pass\n",
+    )
+    path.write_text(
+        "import hashlib\ndef digest(data):\n return hashlib.sha256(data)\n"
+        "if condition:\n def digest(data):\n  pass\n",
+        encoding="utf-8",
+    )
     assert any(
-        "reference-validator" in p
+        "hashing" in p
         for p in census.validate_internal_defense_growth(tmp_path, "HEAD")
     )
 
@@ -229,8 +204,8 @@ def test_internal_defense_gate_does_not_hide_checks_behind_setters_or_duplicate_
             False,
         ),
         (
-            "class OldRef:\n def validate(self):\n  assert self.artifact\n",
-            "class NewRef:\n def validate(self):\n  assert self.artifact\n",
+            "class OldRef:\n _mint_token: object\n",
+            "class NewRef:\n _mint_token: object\n",
             False,
         ),
         (

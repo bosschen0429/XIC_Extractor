@@ -1569,7 +1569,7 @@ def _internal_defense_profile(source: str) -> list[_DefenseScope]:
             hash_functions.update(item.asname or item.name for item in node.names)
     result: list[_DefenseScope] = []
 
-    def scan(scope: Any, name: str, envelope: bool = False) -> None:
+    def scan(scope: Any, name: str) -> None:
         nodes: list[ast.AST] = []
         children: list[Any] = []
         body: list[ast.stmt] = []
@@ -1624,40 +1624,6 @@ def _internal_defense_profile(source: str) -> list[_DefenseScope]:
                 for node in nodes
             ),
         }
-        if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            args = scope.args
-            receiver_only = (
-                len(args.posonlyargs) + len(args.args) == 1
-                and not args.kwonlyargs
-                and args.vararg is None
-                and args.kwarg is None
-                and (args.posonlyargs + args.args)[0].arg == "self"
-            )
-            if (
-                envelope
-                and receiver_only
-                and (
-                    scope.name == "__post_init__"
-                    or scope.name.lstrip("_").startswith(
-                        ("validate", "verify", "require")
-                    )
-                )
-            ):
-                # Count checks, not method size. Normalization neither adds a
-                # check nor exempts neighboring checks (including no-op setters).
-                counts["reference-validator"] = sum(
-                    isinstance(node, (ast.Assert, ast.Raise))
-                    or isinstance(node, ast.Call)
-                    and isinstance(node.func, (ast.Name, ast.Attribute))
-                    and (
-                        node.func.id
-                        if isinstance(node.func, ast.Name)
-                        else node.func.attr
-                    )
-                    .lstrip("_")
-                    .startswith(("validate", "verify", "require"))
-                    for node in nodes
-                )
         result.append(
             _DefenseScope(
                 name=name,
@@ -1669,14 +1635,7 @@ def _internal_defense_profile(source: str) -> list[_DefenseScope]:
             )
         )
         for child in children:
-            scan(
-                child,
-                child.name if name == "<module>" else name + "." + child.name,
-                envelope=(
-                    isinstance(scope, ast.ClassDef)
-                    and scope.name.endswith(("Ref", "State", "Runtime", "Aggregate"))
-                ),
-            )
+            scan(child, child.name if name == "<module>" else name + "." + child.name)
 
     scan(tree, "<module>")
     return result
