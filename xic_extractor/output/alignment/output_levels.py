@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal, cast
+from typing import Literal
 
 # The explanation report is a per-cell projection of results already written
 # elsewhere. It is diagnostic, so only the diagnostic levels produce it.
@@ -50,13 +50,6 @@ _ARTIFACTS: dict[AlignmentOutputLevel, tuple[str, ...]] = {
 }
 
 
-def parse_alignment_output_level(value: str) -> AlignmentOutputLevel:
-    if value not in _ARTIFACTS:
-        raise ValueError(
-            "output_level must be one of production, machine, debug, "
-            "validation, validation-minimal",
-        )
-    return cast(AlignmentOutputLevel, value)
 
 
 def artifact_names_for_output_level(

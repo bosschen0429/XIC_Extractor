@@ -255,22 +255,6 @@ def canonical_physical_peak_facts_bytes(
     )
 
 
-def validate_physical_peak_facts_identity(
-    facts: PhysicalPeakFacts,
-    *,
-    relative_shape_values: Sequence[float],
-) -> None:
-    expected = _typed_physical_id(
-        "physical-facts:",
-        canonical_physical_peak_facts_bytes(
-            facts,
-            relative_shape_values=relative_shape_values,
-        ),
-    )
-    if facts.fact_content_id != expected:
-        raise ValueError("fact_content_id does not match complete live fact")
-
-
 def _physical_segment_basis(segment: PhysicalSegment) -> dict[str, object]:
     return {
         "schema_version": "physical_segment",

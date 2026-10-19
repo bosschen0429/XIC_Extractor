@@ -21,14 +21,12 @@ from xic_extractor.review_actions.rows import (
     review_action_expected_diff_template_to_row,
     summarize_review_action_applications,
     summarize_review_action_apply_changeset_plan,
-    summarize_review_action_apply_readiness_plan,
     summarize_review_actions,
 )
 from xic_extractor.review_actions.schema import (
     REVIEW_ACTION_APPLICATION_PLAN_SCHEMA_VERSION,
     REVIEW_ACTION_APPLY_AUDIT_SCHEMA_VERSION,
     REVIEW_ACTION_APPLY_CHANGESET_SCHEMA_VERSION,
-    REVIEW_ACTION_APPLY_READINESS_SCHEMA_VERSION,
     REVIEW_ACTION_COLUMNS,
     REVIEW_ACTION_EXPECTED_DIFF_COLUMNS,
     REVIEW_ACTION_EXPECTED_DIFF_SCHEMA_VERSION,
@@ -504,87 +502,6 @@ def test_validate_review_action_expected_diffs_cli_rejects_template(
 
     assert validate_review_actions.main([str(template_path), "--expected-diff"]) == 2
     assert "evidence_sources is required" in capsys.readouterr().err
-
-
-def test_review_action_apply_readiness_consumes_approved_expected_diff(
-    tmp_path: Path,
-) -> None:
-    actions = parse_review_actions(
-        [
-            _row(
-                sample_name="S1.raw",
-                target_label="5-mdC",
-                action_type="accept_current",
-            ),
-            _row(
-                sample_name="S1.raw",
-                target_label="5-mdC-mutating",
-                action_type="select_candidate",
-                candidate_id="S1.raw|5-mdC-mutating|candidate-a",
-                expected_diff_required="TRUE",
-                reviewer="analyst",
-                reviewed_at="2026-06-15T10:00:00",
-            ),
-            _row(
-                sample_name="S1.raw",
-                target_label="5-hmdC",
-                action_type="mark_unresolved",
-            ),
-        ]
-    )
-    applications = build_review_action_application_plan(
-        actions,
-        [
-            _target_state("S1.raw", "5-mdC", product_state="counted"),
-            _target_state(
-                "S1.raw",
-                "5-mdC-mutating",
-                product_state="review_required",
-                counted_detection="FALSE",
-                review_state="manual",
-            ),
-            _target_state("S1.raw", "5-hmdC", product_state="review_required"),
-        ],
-    )
-    approval_path = tmp_path / "review_action_expected_diff.tsv"
-    _write_expected_diff_tsv(
-        approval_path,
-        [
-            _approved_expected_diff_row_for_action(
-                actions[1],
-                _target_state(
-                    "S1.raw",
-                    "5-mdC-mutating",
-                    product_state="review_required",
-                    counted_detection="FALSE",
-                    review_state="manual",
-                ),
-            )
-        ],
-    )
-    approvals = load_review_action_expected_diff_approvals(approval_path)
-
-    plan = build_review_action_apply_readiness(applications, approvals)
-    rows = [review_action_apply_readiness_to_row(row) for row in plan.rows]
-
-    assert rows[0]["apply_readiness_status"] == "ready_no_output_change"
-    assert rows[1]["apply_readiness_status"] == "ready_expected_diff_approved"
-    assert rows[1]["expected_diff_approval_status"] == "approved"
-    assert rows[1]["expected_diff_validation_tier"] == "fixture_cohort"
-    assert rows[2]["apply_readiness_status"] == "ready_review_state_only"
-    assert plan.unused_expected_diff_approvals == ()
-    assert summarize_review_action_apply_readiness_plan(plan) == {
-        "schema_version": REVIEW_ACTION_APPLY_READINESS_SCHEMA_VERSION,
-        "row_count": 3,
-        "ready_count": 3,
-        "blocked_count": 0,
-        "unused_expected_diff_approval_count": 0,
-        "counts_by_status": {
-            "ready_expected_diff_approved": 1,
-            "ready_no_output_change": 1,
-            "ready_review_state_only": 1,
-        },
-    }
 
 
 def test_review_action_apply_readiness_blocks_stale_expected_diff_baseline(

@@ -39,6 +39,7 @@ from tests.untargeted_partition_fixtures import (
     build_dense_partition,
     complete_dense_partition,
     execute_dense_partition,
+    fixture_assessment,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.production_decisions import ProductionDecisionSet
@@ -331,7 +332,7 @@ def _assert_single_unsupported_exclusion(
     retained = tuple(
         sorted(
             (
-                item.effective_assessment
+                fixture_assessment(item)
                 for item in runtime_result.sample_results
                 if item.job.method_subject.method_subject_id in subject_ids
             ),
@@ -1622,7 +1623,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             assert record.work_item.precursor_mz == candidate.precursor_mz
             assert record.acquired_trace.coordinate.request.mz == candidate.precursor_mz
             assert record.evaluation.facts == physical_facts[stem]
-            assert result.effective_assessment.content.method_result == (
+            assert fixture_assessment(result).content.method_result == (
                 "HOLD" if method_mode == "intersection" else "SUPPORT"
             )
         if method_mode == "intersection":
@@ -1630,7 +1631,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             assert writer.matrix.clusters == ()
             assert all(
                 "incomplete_composite_requirement"
-                in result.effective_assessment.content.reason_codes
+                in fixture_assessment(result).content.reason_codes
                 for result in runtime_results[0].sample_results
             )
             _assert_composite_no_input_exclusion_coverage(
@@ -3395,8 +3396,8 @@ def test_production_composition_closes_observation_only_hold_without_membership(
     hold_observation_ids = tuple(
         peak.content.peak_observation_content_id
         for result in runtime_result.sample_results
-        for peak in result.effective_assessment.candidate_peaks
-        if result.effective_assessment.content.method_result == "HOLD"
+        for peak in fixture_assessment(result).candidate_peaks
+        if fixture_assessment(result).content.method_result == "HOLD"
     )
     assert runtime_result.succeeded
     assert (
@@ -3415,7 +3416,7 @@ def test_production_composition_closes_observation_only_hold_without_membership(
     )
     if scenario in {"hold_no_input", "support_no_input"}:
         assessments_by_stem = {
-            result.job.sample.metadata.raw_stem: result.effective_assessment
+            result.job.sample.metadata.raw_stem: fixture_assessment(result)
             for result in runtime_result.sample_results
         }
         assert assessments_by_stem["Support"].content.technical_state == "evaluated"
@@ -3522,7 +3523,7 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         )
         (source,) = hold_cell.predecessor_cells
         assessment = next(
-            result.effective_assessment
+            fixture_assessment(result)
             for result in runtime_result.sample_results
             if result.job.sample.metadata.raw_stem == "Hold"
         )
@@ -3972,7 +3973,7 @@ def _assert_conservative_coverage_handoff(
         (source,) = hold_cell.predecessor_cells
         assert source is proof.decision.target_cell
         assert source.method_assessment is next(
-            result.effective_assessment
+            fixture_assessment(result)
             for result in runtime_result.sample_results
             if result.job.sample is position.sample
         )
@@ -4229,7 +4230,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     )
     assert len(recovered) == 1
     assert (recovered[0].backfill_attempt is not None) == (recovery_case != "threshold")
-    assert len(recovered[0].effective_assessment.candidate_peaks) == (
+    assert len(fixture_assessment(recovered[0]).candidate_peaks) == (
         recovery_case == "positive"
     )
     opens_before_composition = sum(map(len, opened.values()))
@@ -4274,7 +4275,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         source
         for cell in child.scientific_core.cell_observations
         for source in cell.predecessor_cells
-        if source.method_assessment is recovered[0].effective_assessment
+        if source.method_assessment is fixture_assessment(recovered[0])
     )
     with pytest.raises(ValueError, match="completed empty epoch"):
         project_completed_backfill(
@@ -4546,8 +4547,8 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     }
     assert recovered["MS1Only"].backfill_attempt is not None
     assert recovered["NoPeak"].backfill_attempt is not None
-    assert recovered["MS1Only"].effective_assessment.content.method_result == "HOLD"
-    assert recovered["NoPeak"].effective_assessment.content.method_result == "HOLD"
+    assert fixture_assessment(recovered['MS1Only']).content.method_result == "HOLD"
+    assert fixture_assessment(recovered['NoPeak']).content.method_result == "HOLD"
     alignment_config = AlignmentConfig(anchor_min_seed_events=1)
     completed = complete_dense_partition(
         batch, runtime, alignment_config=alignment_config

@@ -229,14 +229,12 @@ def test_unreliable_location_preserves_nearest_peak_without_minting_a_value() ->
     )
     assert result.state == "unavailable"
     assert result.reason == "sample_localization_unreliable"
-    assert result.nearest_candidate_rt_min == pytest.approx(0.4)
     assert result.facts is None
     payload = serialize_physical_peak_evaluation(
         rt, raw, profile=SignalProcessingProfile(), evaluation=result,
     )
     restored = deserialize_physical_peak_evaluation(payload)[-1]
     assert restored == result
-    assert restored.nearest_candidate_rt_min == result.nearest_candidate_rt_min
 
 
 def test_unavailable_prepared_signal_keeps_live_asls_intermediate(monkeypatch) -> None:
@@ -954,8 +952,11 @@ def test_whole_trend_has_matching_target_and_discovery_facts(
 @pytest.mark.parametrize("pattern", ["alternating", "random", "random_amplitude"])
 @pytest.mark.parametrize(
     "policy",
-    [PHYSICAL_PEAK_POINT_POLICY, PHYSICAL_PEAK_WINDOW_POLICY,
-     DISCOVERY_PHYSICAL_PEAK_POINT_POLICY],
+    [
+        PHYSICAL_PEAK_POINT_POLICY,
+        PHYSICAL_PEAK_WINDOW_POLICY,
+        DISCOVERY_PHYSICAL_PEAK_POINT_POLICY,
+    ],
 )
 @pytest.mark.parametrize("points", [101, 301])
 def test_sparse_stationary_background_is_not_a_peak(

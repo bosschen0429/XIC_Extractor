@@ -58,12 +58,6 @@ class OwnerGroupDeliveryFeature(Protocol):
     def backfill_seed_centers(self) -> tuple[tuple[float, float], ...]: ...
 
     @property
-    def ambiguous_sample_stem(self) -> str | None: ...
-
-    @property
-    def ambiguous_candidate_ids(self) -> tuple[str, ...]: ...
-
-    @property
     def group_hypothesis_id(self) -> str: ...
 
     @property
@@ -94,6 +88,7 @@ class CellGroupProjection(GroupProjection):
     gap_fill_state: str
     gap_fill_reason: str
     missing_observation_state: str
+
 
 GROUP_REVIEW_PROJECTION_COLUMNS = (
     "group_hypothesis_id",

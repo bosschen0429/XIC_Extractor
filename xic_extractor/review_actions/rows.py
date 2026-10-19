@@ -9,7 +9,6 @@ from xic_extractor.review_actions.models import (
     ReviewActionApplyChangesetPlan,
     ReviewActionApplyOutput,
     ReviewActionApplyReadiness,
-    ReviewActionApplyReadinessPlan,
     ReviewActionExpectedDiffApproval,
     ReviewActionExpectedDiffTemplate,
 )
@@ -94,32 +93,6 @@ def summarize_review_action_expected_diff_approvals(
         "counts_by_matrix_value_impact": dict(
             sorted(counts_by_matrix_value_impact.items())
         ),
-    }
-
-
-def summarize_review_action_apply_readiness_plan(
-    plan: ReviewActionApplyReadinessPlan,
-) -> dict[str, object]:
-    counts_by_status: dict[str, int] = {}
-    ready_count = 0
-    blocked_count = 0
-    for row in plan.rows:
-        counts_by_status[row.apply_readiness_status] = (
-            counts_by_status.get(row.apply_readiness_status, 0) + 1
-        )
-        if row.apply_readiness_status.startswith("ready"):
-            ready_count += 1
-        if row.apply_readiness_status.startswith("blocked"):
-            blocked_count += 1
-    return {
-        "schema_version": REVIEW_ACTION_APPLY_READINESS_SCHEMA_VERSION,
-        "row_count": len(plan.rows),
-        "ready_count": ready_count,
-        "blocked_count": blocked_count,
-        "unused_expected_diff_approval_count": len(
-            plan.unused_expected_diff_approvals
-        ),
-        "counts_by_status": dict(sorted(counts_by_status.items())),
     }
 
 

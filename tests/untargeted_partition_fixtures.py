@@ -180,3 +180,10 @@ def complete_dense_partition(
         initial_edges=partition.initial_edges,
         capture_evidence=partition.capture_evidence,
     )
+
+
+def fixture_assessment(result):
+    """Inspect retained sample facts for scientific fixture expectations."""
+    if result.backfill_attempt is not None:
+        return result.backfill_attempt.assessment
+    return result.adapter_result.assessment_input.assessment

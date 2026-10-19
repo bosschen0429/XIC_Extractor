@@ -54,7 +54,6 @@ class ChromPeakSegmentPolicy:
 
 @dataclass(frozen=True)
 class ChromPeakSegment:
-    segment_id: str
     interval: TraceInterval
     apex_index: int
     apex_rt_min: float
@@ -240,14 +239,15 @@ def enumerate_chrom_peak_segments(
             baseline,
             morphology_trace,
             context_interval,
-            seed=max(seeds[start:end + 1], key=lambda item: (item.height, -item.index)),
-            seed_index=group_index,
+            seed=max(
+                seeds[start : end + 1], key=lambda item: (item.height, -item.index)
+            ),
             left_relation=relations[start - 1] if start > 0 else None,
             right_relation=relations[end] if end < len(relations) else None,
             policy=active_policy,
-            envelope_seeds=seeds[start:end + 1],
+            envelope_seeds=seeds[start : end + 1],
         )
-        for group_index, (start, end) in enumerate(seed_groups)
+        for start, end in seed_groups
     )
     return ChromPeakSegmentEnumeration(
         status="OK",
@@ -258,16 +258,6 @@ def enumerate_chrom_peak_segments(
         morphology_trace_effective_points=morphology_effective_points,
         morphology_trace_values=tuple(float(value) for value in morphology_trace),
     )
-
-
-def select_segment_by_apex_rt(
-    segments: Sequence[ChromPeakSegment],
-    apex_rt_min: float,
-) -> ChromPeakSegment | None:
-    if not segments:
-        return None
-    target = float(apex_rt_min)
-    return min(segments, key=lambda segment: abs(segment.apex_rt_min - target))
 
 
 def segments_containing_rt(
@@ -767,7 +757,6 @@ def _segment_from_seed(
     context_interval: TraceInterval,
     *,
     seed: _ApexSeed,
-    seed_index: int,
     left_relation: _AdjacentPeakRelation | None,
     right_relation: _AdjacentPeakRelation | None,
     policy: ChromPeakSegmentPolicy,
@@ -833,7 +822,6 @@ def _segment_from_seed(
         else float(morphology_trace[apex_index])
     )
     return ChromPeakSegment(
-        segment_id=f"chrom_peak_segment_{seed_index + 1:03d}",
         interval=interval,
         apex_index=apex_index,
         apex_rt_min=float(rt[apex_index]),

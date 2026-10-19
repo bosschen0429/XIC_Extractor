@@ -5,7 +5,6 @@ from xic_extractor.peak_detection.chrom_peak_segments import (
     ChromPeakSegmentPolicy,
     enumerate_chrom_peak_segments,
     segments_containing_rt,
-    select_segment_by_apex_rt,
 )
 
 
@@ -72,20 +71,6 @@ def test_segment_enumeration_marks_high_valley_shoulder_for_review() -> None:
     assert all(
         "shoulder_overlap" in segment.evidence_sources for segment in result.segments
     )
-
-
-def test_select_segment_by_apex_rt_keeps_targeted_choice_separate() -> None:
-    rt, intensity, baseline = _trace([0, 0, 8, 60, 8, 0, 0, 20, 80, 20, 0, 0])
-    result = enumerate_chrom_peak_segments(rt, intensity, baseline)
-
-    selected = select_segment_by_apex_rt(result.segments, 3.0)
-    stronger_context = select_segment_by_apex_rt(result.segments, 8.0)
-
-    assert selected is not None
-    assert stronger_context is not None
-    assert selected.apex_rt_min == pytest.approx(3.0)
-    assert stronger_context.apex_rt_min == pytest.approx(8.0)
-    assert selected.segment_id != stronger_context.segment_id
 
 
 def test_segments_containing_rt_does_not_fall_back_to_nearest_peak() -> None:
@@ -218,7 +203,6 @@ def test_overlapping_lobes_preserve_partitioned_mass_and_weak_isolated_peak() ->
     assert "shoulder_overlap" not in isolated.evidence_sources
 
 
-
 @pytest.mark.parametrize("reverse", (False, True))
 def test_remote_small_pulses_preserve_supported_overlapping_doublet(
     reverse: bool,
@@ -267,7 +251,6 @@ def test_remote_small_pulses_preserve_supported_overlapping_doublet(
     assert sum(s.area_baseline_corrected for s in principal) == pytest.approx(
         known_area, rel=0.01
     )
-
 
 
 def test_rt_envelope_peak_count_and_apex_are_stable_across_rt_density() -> None:

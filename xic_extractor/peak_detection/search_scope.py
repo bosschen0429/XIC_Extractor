@@ -279,10 +279,6 @@ class UntargetedSearchScope:
     def variant(self) -> Literal["untargeted"]:
         return "untargeted"
 
-    @property
-    def method_context_id(self) -> str:
-        return self.evidence_providers[0].method_subject_id
-
 
 SearchScope: TypeAlias = TargetSearchScope | UntargetedSearchScope
 

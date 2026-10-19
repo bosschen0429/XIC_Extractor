@@ -85,26 +85,9 @@ class PhysicalFactSource:
         return copy.deepcopy(self._header)
 
     @property
-    def manifest_count(self) -> int:
-        self._ensure_current()
-        return len(self._manifest_spans)
-
-    @property
     def record_count(self) -> int:
         self._ensure_current()
         return len(self._record_spans)
-
-    @property
-    def retained_record_count(self) -> int:
-        self._ensure_current()
-        return sum(span is not None for span in self._record_spans)
-
-    def iter_manifest(self) -> Iterator[dict]:
-        return self._iter_indexed(self._manifest_spans, label="work_manifest")
-
-    def iter_records(self) -> Iterator[dict]:
-        """Iterate retained records in their original persisted order."""
-        return self._iter_indexed(self._record_spans, label="records")
 
     def read_manifest(self, index: int) -> dict:
         return self._read_indexed(self._manifest_spans, index, label="work_manifest")

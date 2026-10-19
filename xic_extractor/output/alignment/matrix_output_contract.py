@@ -113,22 +113,6 @@ def serialize_public_matrix_table(
     )
 
 
-def matrix_mz_binding_matches(display_mz: object, canonical_mz: object) -> bool:
-    """Report whether text is the current public projection.
-
-    Persisted consumers must use :func:`validate_matrix_identity_rows`, which
-    validates the current identity schema and complete row binding.
-    """
-
-    display_text = str(display_mz).strip()
-    canonical_input = str(canonical_mz).strip()
-    try:
-        canonical_text = canonical_mz_text(canonical_input)
-    except ValueError:
-        return False
-    if not display_text or not canonical_text:
-        return False
-    return display_text == public_matrix_mz_text(canonical_text)
 
 
 def bind_matrix_identity_rows(

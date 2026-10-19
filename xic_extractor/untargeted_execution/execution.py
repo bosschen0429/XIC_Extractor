@@ -49,7 +49,7 @@ from xic_extractor.execution.partitions import (
 )
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
 from xic_extractor.execution.result_store import SealedPartition, StreamedResultStore
-from xic_extractor.execution.workers import WorkerAdmissionPool, WorkerTransportMetrics
+from xic_extractor.execution.workers import WorkerAdmissionPool
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     CidNlMethodSubject,
     UntargetedCidNlMethodSubjectBatch,
@@ -507,16 +507,6 @@ class UntargetedPartitionPipelineAdapter:
     @property
     def acquisition_workers(self) -> int:
         return self._acquisition_workers
-
-    @property
-    def partition_raw_workers(self) -> int:
-        return self._partition_raw_workers
-
-    @property
-    def process_pool_transport_metrics(
-        self,
-    ) -> tuple[WorkerTransportMetrics | None, ...]:
-        return tuple(pool.transport_metrics for pool in self._process_pools)
 
     def close_process_worker_pools(self) -> None:
         """Close attempt-scoped process workers before terminal acknowledgement."""

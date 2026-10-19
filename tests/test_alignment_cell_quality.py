@@ -142,7 +142,6 @@ def test_duplicate_and_ambiguous_cells_do_not_support_identity() -> None:
 
     assert decisions[("FAM001", "s1")].quality_status == "duplicate_loser"
     assert decisions[("FAM001", "s2")].quality_status == "ambiguous_owner"
-    assert not decisions[("FAM001", "s1")].is_quantifiable_cell
     assert not decisions[("FAM001", "s2")].is_detected_identity_support
 
 

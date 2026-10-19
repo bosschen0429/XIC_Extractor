@@ -76,20 +76,8 @@ class TargetPostCellProjection:
         return self.cell_subjects
 
     @property
-    def include_row(self) -> Literal[True]:
-        return True
-
-    @property
-    def inclusion_reason(self) -> TargetInclusionReason:
-        return "fixed_target_row"
-
-    @property
     def decision_count(self) -> int:
         return len(self.decisions)
-
-    @property
-    def review_queue_count(self) -> int:
-        return len(self.review_queue_references)
 
 
 def project_target_post_cell(

@@ -89,19 +89,6 @@ def sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
-def sha256_utf8_text_normalized_to_lf(value: bytes) -> str:
-    """Hash UTF-8 text after normalizing platform line endings to LF."""
-
-    try:
-        text = value.decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise OracleContractError(
-            "normalized text hash input must be UTF-8"
-        ) from exc
-    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
-    return sha256_bytes(normalized.encode("utf-8"))
-
-
 def canonical_tsv_bytes(rows: Sequence[Mapping[str, Any]]) -> bytes:
     if not rows:
         return b""

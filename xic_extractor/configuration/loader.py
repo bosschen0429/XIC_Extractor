@@ -17,10 +17,6 @@ from xic_extractor.configuration.settings import (
     build_extraction_config,
     resolve_settings,
 )
-from xic_extractor.configuration.target_identity import (
-    TargetListSnapshot,
-    mint_target_list_snapshot,
-)
 from xic_extractor.configuration.targeted_method_files import (
     apply_targeted_method,
     load_targeted_method,
@@ -127,20 +123,6 @@ def prepare_targeted_config(
     except BaseException:
         workspace.cleanup()
         raise
-
-
-def load_target_list_snapshot(
-    config_dir: Path,
-    *,
-    identity_namespace: str,
-) -> TargetListSnapshot:
-    """Load and owner-mint the exact target-list snapshot for one run."""
-
-    targets_path = config_dir / "targets.csv"
-    return mint_target_list_snapshot(
-        tuple(_read_targets(targets_path)),
-        identity_namespace=identity_namespace,
-    )
 
 
 def load_config_snapshot(

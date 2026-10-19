@@ -56,7 +56,6 @@ class FinalizedUntargetMatrixRow:
     family_center_mz: float
     family_center_rt: float
     physical_observation_ids: tuple[str, ...]
-    lineage_edge_ids: tuple[str, ...]
     family_product_mz: float | None = None
     family_observed_neutral_loss_da: float | None = None
     neutral_loss_tag: str = ""
@@ -76,10 +75,6 @@ class FinalizedUntargetMatrixRow:
     @property
     def source_feature_family_ids(self) -> tuple[str, ...]:
         return (self.feature_family_id,)
-
-    @property
-    def presentation_formula_version(self) -> str:
-        return PRESENTATION_FORMULA_VERSION
 
     @property
     def event_cluster_ids(self) -> tuple[str, ...]:
@@ -265,13 +260,6 @@ def iter_completed_untarget_batch_writer_inputs(
                 family_observed_neutral_loss_da=family_observed_neutral_loss_da,
                 neutral_loss_tag=neutral_loss_tag,
                 has_anchor=has_anchor,
-                lineage_edge_ids=tuple(
-                    sorted(
-                        edge.lineage_edge_id
-                        for edge in child.scientific_core.lineage
-                        if edge.successor_group_hypothesis_id == group_id
-                    )
-                ),
             )
             projected_cells = tuple(
                 _aligned_cell(

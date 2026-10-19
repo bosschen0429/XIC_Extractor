@@ -69,7 +69,6 @@ from xic_extractor.raw_reader import (
     THERMO_RAW_OBSERVATION_NAMESPACE,
     RawReaderError,
     open_raw,
-    reset_reader_state,
 )
 from xic_extractor.sample_metadata import SampleMetadata
 from xic_extractor.untargeted_execution.acquisition_cache import (
@@ -1950,7 +1949,6 @@ def _install_runtime_raw(
     tmp_path: Path,
 ) -> _FakeThermoRaw:
     monkeypatch.setattr(runtime_module, "ensure_assemblies_loaded", lambda *_: None)
-    reset_reader_state()
     for filename in EXPECTED_THERMO_DLLS:
         (tmp_path / filename).write_bytes(b"dll")
     vendor_raw = _FakeThermoRaw(source_raw)
@@ -2001,7 +1999,6 @@ def _install_runtime_raws(
     # This fixture supplies spectra, not vendor headers; the analysis-set owner
     # still orders the synthetic files without opening fake bytes natively.
     install_fake_raw_headers(monkeypatch)
-    reset_reader_state()
     for filename in EXPECTED_THERMO_DLLS:
         (tmp_path / filename).write_bytes(b"dll")
     opened: dict[Path, list[_FakeThermoRaw]] = {}

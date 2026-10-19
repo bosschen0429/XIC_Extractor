@@ -690,7 +690,6 @@ def test_physical_fact_source_indexes_existing_canonical_sidecar(
     assert source.header == {
         key: expected[key] for key in ("schema_version", "run_spec", "sample")
     }
-    assert list(source.iter_manifest()) == expected["work_manifest"]
     assert source.read_record(2) == expected["records"][2]
 
 
@@ -710,8 +709,6 @@ def test_physical_fact_source_recovers_unicode_nested_items_and_random_subset(
             "run_spec": {"name": "規格", "nested": [1, {"escaped": 'a\\"b'}]},
             "sample": {"sample_stem": "樣本-α"},
         }
-        assert source.manifest_count == source.record_count == 5
-        assert [item["ordinal"] for item in source.iter_manifest()] == list(range(5))
         assert source.read_record(4) == {
             "ordinal": 4,
             "text": "訊號-4",
@@ -736,11 +733,9 @@ def test_physical_fact_source_visits_each_item_once_and_iterates_records(
         manifest_visitor=lambda index, item: manifest_visits.append(
             (index, item["ordinal"])
         ),
-        record_visitor=lambda index, item: record_visits.append(
-            (index, item["text"])
-        ),
-    ) as source:
-        assert [item["ordinal"] for item in source.iter_records()] == list(range(5))
+        record_visitor=lambda index, item: record_visits.append((index, item["text"])),
+    ):
+        pass
 
     assert manifest_visits == [(index, index) for index in range(5)]
     assert record_visits == [(index, f"訊號-{index}") for index in range(5)]
@@ -759,8 +754,6 @@ def test_physical_fact_source_retains_selected_records_without_hiding_visits(
         retain_record=lambda _index, item: item["ordinal"] % 2 == 0,
     ) as source:
         assert source.record_count == 5
-        assert source.retained_record_count == 3
-        assert [item["ordinal"] for item in source.iter_records()] == [0, 2, 4]
         assert source.read_record(4)["ordinal"] == 4
         with pytest.raises(LookupError, match="records index 1 was not retained"):
             source.read_record(1)

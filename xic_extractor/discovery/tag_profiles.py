@@ -12,7 +12,6 @@ _CsvRow = dict[str | None, object]
 
 @dataclass(frozen=True)
 class FeatureTagProfile:
-    tag_id: str
     tag_kind: TagKind
     tag_label: str
     tag_name: str
@@ -36,9 +35,9 @@ def load_feature_tag_profiles(path: Path) -> list[FeatureTagProfile]:
             )
 
         label = _extract_label(row)
+        _required(row, "Tag No.", row_number)
         profiles.append(
             FeatureTagProfile(
-                tag_id=_required(row, "Tag No.", row_number),
                 tag_kind="neutral_loss",
                 tag_label=label,
                 tag_name=_normalize_tag_name(label),

@@ -107,24 +107,6 @@ def build_level0_calibration_bundle(
     )
 
 
-def build_level1_rt_calibration_preview(
-    *,
-    instrument_qc_dir: Path,
-    matrix_input: Path,
-    matrix_input_role: str,
-    output_dir: Path,
-    generation_command: str,
-) -> CalibrationBundleResult:
-    return build_level1_calibration_preview(
-        instrument_qc_dir=instrument_qc_dir,
-        matrix_input=matrix_input,
-        matrix_input_role=matrix_input_role,
-        preview_kind="rt",
-        output_dir=output_dir,
-        generation_command=generation_command,
-    )
-
-
 def build_level1_calibration_preview(
     *,
     instrument_qc_dir: Path,

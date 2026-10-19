@@ -611,10 +611,6 @@ class RuntimePeakFactCostMetrics:
     def measurement_source(self) -> str:
         return _RUNTIME_OWNER_MEASUREMENT_SOURCE
 
-    @property
-    def count_scope(self) -> str:
-        return "owner_backfill_worker_peak_fact_runtime"
-
 
 def derive_runtime_peak_fact_cost_metrics(
     *,

@@ -6,7 +6,7 @@ import pytest
 
 from xic_extractor.instrument_qc.calibration_product_preview import (
     build_level0_calibration_bundle,
-    build_level1_rt_calibration_preview,
+    build_level1_calibration_preview,
 )
 
 TREND_COLUMNS = [
@@ -305,7 +305,8 @@ def test_build_level1_rt_preview_writes_rejoinable_sidecar(tmp_path: Path) -> No
     )
     before = matrix_input.read_bytes()
 
-    result = build_level1_rt_calibration_preview(
+    result = build_level1_calibration_preview(
+        preview_kind="rt",
         instrument_qc_dir=instrument_qc_dir,
         matrix_input=matrix_input,
         matrix_input_role="untargeted_cell_table",
@@ -397,7 +398,8 @@ def test_build_level1_rt_preview_blocks_without_injection_order(
         encoding="utf-8",
     )
 
-    result = build_level1_rt_calibration_preview(
+    result = build_level1_calibration_preview(
+        preview_kind="rt",
         instrument_qc_dir=instrument_qc_dir,
         matrix_input=matrix_input,
         matrix_input_role="untargeted_cell_table",
@@ -419,7 +421,8 @@ def test_build_level1_rt_preview_rejects_unsupported_matrix_role(
     tmp_path: Path,
 ) -> None:
     with pytest.raises(ValueError, match="unsupported matrix input role"):
-        build_level1_rt_calibration_preview(
+        build_level1_calibration_preview(
+            preview_kind="rt",
             instrument_qc_dir=tmp_path,
             matrix_input=tmp_path / "alignment_cells.tsv",
             matrix_input_role="external_matrix",

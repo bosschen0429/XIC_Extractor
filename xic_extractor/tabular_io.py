@@ -400,14 +400,6 @@ def optional_int(value: object) -> int | None:
     return int(parsed)
 
 
-def positive_int(value: object) -> int | None:
-    try:
-        parsed = int(text_value(value))
-    except ValueError:
-        return None
-    return parsed if parsed > 0 else None
-
-
 def required_float(value: object, field: str, label: str) -> float:
     parsed = optional_float(value)
     if parsed is None:
@@ -438,10 +430,6 @@ def text_value(value: object) -> str:
     return str(value).strip()
 
 
-def has_semicolon_token(value: object, token: str) -> bool:
-    return token in set(split_semicolon_labels(value))
-
-
 def rows_by_text_field(
     rows: Iterable[Mapping[str, str]],
     field: str,
@@ -452,12 +440,6 @@ def rows_by_text_field(
         if key:
             grouped.setdefault(key, []).append(row)
     return {key: tuple(items) for key, items in grouped.items()}
-
-
-def identity_family_keys(identity: Mapping[str, str]) -> tuple[str, ...]:
-    keys = [text_value(identity.get("peak_hypothesis_id"))]
-    keys.extend(split_semicolon_labels(identity.get("source_feature_family_ids")))
-    return tuple(dict.fromkeys(key for key in keys if key))
 
 
 def split_semicolon_labels(value: object) -> list[str]:

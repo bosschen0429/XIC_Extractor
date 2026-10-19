@@ -21,6 +21,7 @@ from tests.untargeted_partition_fixtures import (
     build_dense_partition,
     complete_dense_partition,
     execute_dense_partition,
+    fixture_assessment,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.rt_frame import SampleRtFrame
@@ -133,7 +134,7 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         ),
     )
     by_sample = {
-        result.job.sample.metadata.raw_stem: result.effective_assessment
+        result.job.sample.metadata.raw_stem: fixture_assessment(result)
         for result in runtime.sample_results
     }
     assert {
@@ -148,13 +149,13 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         )
         assert recovered.backfill_attempt is not None
         assert (
-            recovered.effective_assessment.content.method_subject
+            fixture_assessment(recovered).content.method_subject
             == batch.subject_batch.subjects[0]
         )
-        assert recovered.effective_assessment.content.method_result == (
+        assert fixture_assessment(recovered).content.method_result == (
             "SUPPORT" if scenario == "recovery_complete" else "HOLD"
         )
-        assert len(recovered.effective_assessment.evidence_refs) == (
+        assert len(fixture_assessment(recovered).evidence_refs) == (
             2 if scenario == "recovery_complete" else 1
         )
     if scenario in {"missing", "disjoint"}:
@@ -237,12 +238,11 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
             if cell.canonical_sample.metadata.raw_stem == "S4"
         )
         assert recovered_cell.backfill_cell is not None
-        assert (
-            recovered_cell.backfill_cell.method_assessment
-            is recovered.effective_assessment
+        assert recovered_cell.backfill_cell.method_assessment is fixture_assessment(
+            recovered
         )
         assert recovered_cell.integrations == (
-            recovered.effective_assessment.candidate_peaks[0].content.integration,
+            fixture_assessment(recovered).candidate_peaks[0].content.integration,
         )
         assert recovered_cell.predecessor_cells == ()
         assert [
@@ -286,7 +286,7 @@ def _assert_composite_labels_cannot_grant_membership(batch, runtime):
 
     owners = []
     for result in runtime.sample_results:
-        assessment = result.effective_assessment
+        assessment = fixture_assessment(result)
         (hypothesis,) = compose_cid_nl_peak_hypotheses_from_assessment(
             processing_owners=batch.context.processing_owners,
             sample=result.job.sample,
@@ -346,7 +346,7 @@ def _assert_duplicate_loss_evidence_rejected(batch, runtime):
     )
 
     result = runtime.sample_results[0]
-    assessment = result.effective_assessment
+    assessment = fixture_assessment(result)
     measured = assessment.evidence_refs[0].observation
     duplicate = mint_cid_nl_evidence_ref(
         processing_owners=batch.context.processing_owners,

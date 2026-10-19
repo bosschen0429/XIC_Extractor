@@ -1476,13 +1476,6 @@ def _int(row: Mapping[str, object], field: str) -> int:
     return _required_nonnegative_int(row, field, label="assembly row")
 
 
-def _inline_json(value: object) -> str:
-    text = json.dumps(value, sort_keys=True)
-    if len(text) <= 360:
-        return text
-    return text[:357] + "..."
-
-
 def format_value(value: object) -> str:
     """Public value formatter for tests and wrappers."""
 

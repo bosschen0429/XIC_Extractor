@@ -217,29 +217,6 @@ class UntargetedCidNlMethodSubjectBatch:
     def schema_version(self) -> str:
         return BATCH_SCHEMA_VERSION
 
-    def subject_for_candidate(self, candidate_id: str) -> CidNlMethodSubject:
-        """Return the owner subject bound to one exact candidate ID."""
-
-        candidate = _normalized_text(candidate_id, field="candidate_id")
-        membership = next(
-            (
-                (member_candidate, method_subject_id)
-                for member_candidate, method_subject_id in self.candidate_memberships
-                if member_candidate == candidate
-            ),
-            None,
-        )
-        if membership is None:
-            raise CidNlMethodSubjectContractError(
-                f"candidate {candidate!r} is not declared by the CID-NL subject batch"
-            )
-        _member_candidate, method_subject_id = membership
-        return next(
-            subject
-            for subject in self.subjects
-            if subject.method_subject_id == method_subject_id
-        )
-
     def request_payload(self) -> dict[str, object]:
         """Return the canonical batch value pinned under ``REQUEST_INPUT_KEY``."""
 

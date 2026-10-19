@@ -6,9 +6,6 @@ from collections import Counter
 from dataclasses import InitVar, dataclass, field
 from typing import TYPE_CHECKING, Literal, TypeAlias
 
-from xic_extractor.alignment.cross_sample.grouping_result import (
-    CrossSampleGroupingResult,
-)
 from xic_extractor.alignment.result.scientific_alignment import (
     FinalizedScientificAlignment,
 )
@@ -21,7 +18,6 @@ from xic_extractor.discovery.models import (
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
-    is_unsearched_cid_nl_discovery_assessment,
 )
 from xic_extractor.peak_detection.cid_nl_method_subject import (
     cid_nl_method_subject_batch_from_request,
@@ -57,12 +53,6 @@ def _is_evaluated_unsupported_assessment(ref: CidNlMethodAssessmentRef) -> bool:
         "HOLD",
         "REJECT",
     }
-
-
-def _is_method_exclusion_coverage(ref: CidNlMethodAssessmentRef) -> bool:
-    return _is_evaluated_unsupported_assessment(
-        ref
-    ) or is_unsearched_cid_nl_discovery_assessment(ref)
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,15 +146,6 @@ class FinalizedTargetApplicationResult:
     ) -> tuple[ResolvedCanonicalSampleIdentity, ...]:
         return self.scientific_core.canonical_samples
 
-    @property
-    def completion_receipts(
-        self,
-    ) -> tuple[CrossSampleGroupingResult, TargetPostCellProjection]:
-        return (
-            self.scientific_core.grouping_result,
-            self.completed_projection,
-        )
-
 
 @dataclass(frozen=True, slots=True)
 class FinalizedUntargetApplicationResult:
@@ -188,15 +169,6 @@ class FinalizedUntargetApplicationResult:
         self,
     ) -> tuple[ResolvedCanonicalSampleIdentity, ...]:
         return self.scientific_core.canonical_samples
-
-    @property
-    def completion_receipts(
-        self,
-    ) -> tuple[CrossSampleGroupingResult, UntargetMatrixProjection]:
-        return (
-            self.scientific_core.grouping_result,
-            self.completed_projection,
-        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,15 +199,6 @@ class FinalizedUntargetBatchApplicationResult:
     @property
     def variant(self) -> Literal["untargeted_batch"]:
         return "untargeted_batch"
-
-    @property
-    def application_results(
-        self,
-    ) -> (
-        tuple[FinalizedUntargetApplicationResult, ...]
-        | ImmutableSequence[FinalizedUntargetApplicationResult]
-    ):
-        return self.children
 
     @property
     def canonical_samples(
@@ -277,14 +240,6 @@ class FinalizedUntargetBatchApplicationResult:
     def rows(self) -> tuple[object, ...]:
         return tuple(
             row for child in self.children for row in child.completed_projection.rows
-        )
-
-    @property
-    def included_rows(self) -> tuple[object, ...]:
-        return tuple(
-            row
-            for child in self.children
-            for row in child.completed_projection.included_rows
         )
 
     @property

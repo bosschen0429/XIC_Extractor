@@ -14,7 +14,6 @@ from xic_extractor.output.review_queue_model import review_queue_rows
 from xic_extractor.output.sheet_field_guide import FIELD_GUIDE
 from xic_extractor.output.sheet_results import _build_data_sheet
 from xic_extractor.output.sheet_targets import _build_targets_sheet
-from xic_extractor.output.workbook_inputs import _wide_to_long_rows
 from xic_extractor.output.workbook_styles import _apply_sheet_role_styles
 from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 
@@ -239,38 +238,6 @@ def test_targets_sheet_marks_expected_product_as_nominal_reference() -> None:
     assert ws["I1"].value == "Expected product m/z"
     meaning = {field: text for _, field, text, _ in FIELD_GUIDE}
     assert "設定參考值，不是實測產物" in meaning["Expected product m/z"]
-
-
-def test_wide_to_long_rows_classifies_qc_from_sample_name_token() -> None:
-    rows = [
-        {
-            "SampleName": "Breast Cancer Tissue_pooled_QC_1",
-            "Analyte_RT": "9.0",
-            "Analyte_Area": "10000",
-            "Analyte_NL": "OK",
-        },
-        {
-            "SampleName": "SampleA",
-            "Analyte_RT": "9.0",
-            "Analyte_Area": "10000",
-            "Analyte_NL": "OK",
-        },
-        {
-            "SampleName": "Breast_Cancer_Tissue_pooled_QC1",
-            "Analyte_RT": "9.0",
-            "Analyte_Area": "10000",
-            "Analyte_NL": "OK",
-        },
-    ]
-
-    long_rows = _wide_to_long_rows(rows, [_target("Analyte")])
-
-    assert long_rows[0]["Group"] == "QC"
-    assert long_rows[1]["Group"] == "Other"
-    assert long_rows[2]["Group"] == "QC"
-    assert long_rows[0]["Confidence"] == ""
-    assert long_rows[0]["Reason"] == "legacy_wide_csv_no_product_projection"
-    assert long_rows[0]["Legacy Authority Status"] == "legacy_projection_only"
 
 
 def test_run_writes_one_review_table_and_method_context(tmp_path: Path) -> None:

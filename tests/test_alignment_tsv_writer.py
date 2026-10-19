@@ -756,18 +756,6 @@ def test_alignment_matrix_binding_uses_exact_persisted_rt_and_header_tokens(
     )
 
 
-def test_alignment_matrix_mz_binding_accepts_only_current_text() -> None:
-    from xic_extractor.output.alignment.matrix_output_contract import (
-        matrix_mz_binding_matches,
-    )
-
-    assert matrix_mz_binding_matches("500.1235", "500.123456")
-    assert not matrix_mz_binding_matches("500.123", "500.123")
-    assert not matrix_mz_binding_matches("500.1234", "500.123456")
-    assert not matrix_mz_binding_matches("not-an-mz", "500.123456")
-    assert not matrix_mz_binding_matches("500.1235", "not-an-mz")
-
-
 @pytest.mark.parametrize("center_mz", [math.nan, math.inf, -math.inf])
 def test_alignment_matrix_mz_format_preserves_nonfinite_blank_semantics(
     tmp_path: Path,

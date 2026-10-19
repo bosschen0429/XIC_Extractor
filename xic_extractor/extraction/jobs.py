@@ -199,10 +199,6 @@ def extract_raw_file_job(job: RawFileJob) -> WorkerResult:
         )
 
 
-def spawn_smoke_worker(job: SpawnSmokeJob) -> str:
-    return f"{job.raw_index}:{job.raw_name}"
-
-
 def _validate_payload_value(value: Any, *, path: str) -> None:
     if callable(value):
         raise TypeError(f"{path} contains callable value")
