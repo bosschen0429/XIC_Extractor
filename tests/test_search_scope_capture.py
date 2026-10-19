@@ -207,7 +207,7 @@ def test_no_raw_scopes_share_capture_observation_and_hypothesis_owner(
     )
     targeted_common = asdict(targeted_capture.selected_hypothesis.evidence.common)
     untargeted_common = asdict(untargeted_capture.selected_hypothesis.evidence.common)
-    for workflow_field in ("source", "source_id", "provenance"):
+    for workflow_field in ("source", "provenance"):
         targeted_common.pop(workflow_field)
         untargeted_common.pop(workflow_field)
     assert targeted_common == untargeted_common
@@ -951,13 +951,13 @@ def test_untargeted_batch_scope_accepts_known_comparison_bridged_workset(
             subject = cid_nl_method_subject_from_request(
                 request, method_subject_id=binding.method_subject_id
             )
-            label, role, pair, source_label = capture_owner._hypothesis_context(
+            label, role, pair = capture_owner._hypothesis_context(
                 workset_scope,
                 query_mz=binding.query_mz,
                 method_subject_id=binding.method_subject_id,
             )
             assert label == f"untargeted:{binding.query_mz:.8g}:{subject.label}"
-            assert (role, pair, source_label) == ("Analyte", "", label)
+            assert (role, pair) == ("Analyte", "")
         with pytest.raises(CidNlMethodSubjectContractError, match="not pinned"):
             cid_nl_method_subject_from_request(request, method_subject_id="missing")
     finally:
