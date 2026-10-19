@@ -5,12 +5,10 @@ from pathlib import Path
 import pytest
 
 from tools.diagnostics.docs_policy import (
-    DOC_ROUTING_AUTHORITY_REFERRER_PATHS,
     DOC_ROUTING_SCHEMAS_INDEX_PATH,
     PERMANENT_ROOT_DOC_CONTRACTS,
     PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
     PRODUCTIZATION_SCHEMA_REL,
-    QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL,
     classify_doc,
     classify_doc_path,
     is_productization_compatibility_index_text,
@@ -580,24 +578,16 @@ def test_superpowers_schema_index_constant_matches_case_sensitive_path() -> None
     assert Path(DOC_ROUTING_SCHEMAS_INDEX_PATH).exists()
 
 
-def test_productization_owner_route_uses_and_dependent_manifest_contracts() -> None:
+def test_productization_owner_route_uses_schema_and_writer_manifest() -> None:
     assert PRODUCTIZATION_SCHEMA_REL == (
         "docs/superpowers/schemas/productization_control_plane_schema.json"
     )
     assert PRODUCTIZATION_AUTHORITY_MANIFEST_REL == (
         "docs/superpowers/productization/status/productization_authority_manifest.json"
     )
-    assert QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL == (
-        "docs/superpowers/productization/status/quantitative_projection_authority_manifest.json"
-    )
     for path in (
         PRODUCTIZATION_SCHEMA_REL,
         PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
-        QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL,
     ):
         assert Path(path).is_file()
         assert path in PRODUCTIZATION_OWNER_ROUTE
-    assert (
-        QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL
-        in DOC_ROUTING_AUTHORITY_REFERRER_PATHS
-    )

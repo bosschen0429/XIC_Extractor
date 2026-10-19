@@ -9,9 +9,6 @@ import threading
 import uuid
 from pathlib import Path
 
-from xic_extractor.alignment.quantitative_projection_authority import (
-    load_quantitative_projection_authority_for_diagnostic,
-)
 from xic_extractor.discovery.blank_qualification import get_default_background_library
 from xic_extractor.presets import bind_cid_nl_recipe, load_preset
 from xic_workbench.server import create_server
@@ -84,14 +81,12 @@ def run_smoke(report_path: Path) -> int:
             raise RuntimeError("Bundled settings or targets are empty")
         report["server_started"] = True
         report["stage"] = "bundled_resources"
-        authority = load_quantitative_projection_authority_for_diagnostic()
         background = get_default_background_library()
         if background is None or not background.ions:
             raise RuntimeError("Bundled background library is empty")
         report["resources"] = {
             "settings_keys": len(config["settings"]),
             "target_rows": len(config["targets"]),
-            "authority_id": authority.authority_id,
             "background_ions": len(background.ions),
         }
         report["stage"] = "method_roundtrip"

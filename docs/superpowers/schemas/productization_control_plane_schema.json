@@ -44,8 +44,7 @@
     "review_action_selected_candidate_switch": "selected candidate / manual boundary writer parked",
     "review_action_manual_boundary_area_writer": "manual-boundary area writer parked",
     "calibration_normalization_activation": "calibration/normalization activation",
-    "gui_replay_parity": "GUI replay / GUI parity is out of scope",
-    "untargeted_owner_backfill_canonical_quantitative_projection": "Untargeted Owner Backfill Canonical Quantitative Projection"
+    "gui_replay_parity": "GUI replay / GUI parity is out of scope"
   },
   "authority_rules": {
     "unregistered_scope_policy": "fail_closed",
@@ -76,20 +75,6 @@
     "review_action_selected_candidate_switch",
     "review_action_manual_boundary_area_writer",
     "calibration_normalization_activation",
-    "gui_replay_parity",
-    "untargeted_owner_backfill_canonical_quantitative_projection"
-  ],
-  "dependent_effect_lane_authority": {
-    "untargeted_owner_backfill_canonical_quantitative_projection": {
-      "lane_id": "untargeted_owner_backfill_canonical_quantitative_projection",
-      "authority_manifest_schema_version": "quantitative_projection_authority_manifest",
-      "package_authority_schema_version": "quantitative_projection_authority",
-      "required_signal_processing_profile_id": "signal-profile:bcefd76d05bc26a0ec9f333fdb76427ccb2133c1946f5ec711916e85efc06de2",
-      "requires_registered_writer_membership": true,
-      "may_add_write_rows": false,
-      "write_authority": false,
-      "product_authority_scope": "",
-      "unregistered_or_cross_cell_policy": "fail_closed"
-    }
-  }
+    "gui_replay_parity"
+  ]
 }

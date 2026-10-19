@@ -48,9 +48,6 @@ schema versions, and command flags. Do not copy those inventories here.
 - Formal Untargeted partitions consume the pure CID-NL input contract in
   `alignment/cid_nl_inputs.py`. Golden Path artifacts, checked acceptance and
   versioned table projection belong to `diagnostics/quant_matrix/`.
-  `alignment/quantitative_projection_authority.py` encapsulates the packaged
-  promotion contract; its resource registration and HOLD policy remain its
-  authority. It is not a numerical algorithm or an active application guard.
 - Separate real-data validation from normal unit tests.
 
 ## Boundary Projection Closure

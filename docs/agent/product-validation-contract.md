@@ -11,10 +11,6 @@ language and product-surface discipline; it does not own active maturity tier,
 active lane, current writer counts, or promotion-packet status. Those live in
 `docs/superpowers/validation/productization_status_index.tsv`, and
 `docs/superpowers/productization/status/productization_authority_manifest.json`.
-Dependent canonical quantitative-effect status and its package/activation
-binding live separately in
-`docs/superpowers/productization/status/quantitative_projection_authority_manifest.json`;
-that manifest does not add a ProductWriter scope.
 The schema at
 `docs/superpowers/schemas/productization_control_plane_schema.json` owns the
 machine field and allowed-value contract. The dated control-plane path is a
@@ -37,14 +33,6 @@ ISTD comparisons, and review packets are evidence or routing inputs. They do
 not create ProductWriter or matrix-writing authority unless a separate
 activation/export contract, expected-diff gate, and current structured lane entry
 say so.
-
-A dependent quantitative effect remains non-writing while its authority
-manifest is `HOLD_PENDING_VALIDATION`. A future `ACTIVE` manifest would still
-require exact owner-rehydrated membership in one existing registered writer
-scope for every affected cell; it cannot add write rows, selected-peak authority,
-or counted-detection authority. That transition requires a separately reviewed
-authority change and cannot be inferred from diagnostic evidence or lane
-readiness.
 
 ## Lane Readiness And Promotion Semantics
 

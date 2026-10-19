@@ -34,7 +34,6 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
     PRODUCTIZATION_SCHEMA_REL,
     PRODUCTIZATION_STATUS_ANCHOR_PATH,
     PRODUCTIZATION_STATUS_INDEX_REL,
-    QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL,
 )
 
 DEFAULT_SCHEMA = ROOT / PRODUCTIZATION_SCHEMA_REL
@@ -55,7 +54,6 @@ CONTROL_PLANE_SCHEMA_FIELDS = (
     "required_control_plane_anchors",
     "authority_rules",
     "required_lane_ids",
-    "dependent_effect_lane_authority",
 )
 STATUS_INDEX_FIELDS = (
     "schema_version",
@@ -96,38 +94,6 @@ EXPECTED_SCHEMA_PURPOSE = (
     "authority rules, and stable compatibility anchors. Mutable state lives in "
     "the status index and writer scope lives in the authority manifest."
 )
-DEPENDENT_EFFECT_LANE_ID = "untargeted_owner_backfill_canonical_quantitative_projection"
-DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT = (
-    "xic_extractor/alignment/data/quantitative_projection_authority.json"
-)
-DEPENDENT_PACKAGE_AUTHORITY_SHA256 = (
-    "26753EB69300EC14A4EB044D21E44CB1351C2360CAC7FAE9884C3AEC9BB6CD54"
-)
-DEPENDENT_EFFECT_LANE_AUTHORITY_FIELDS = (
-    "lane_id",
-    "authority_manifest_schema_version",
-    "package_authority_schema_version",
-    "required_signal_processing_profile_id",
-    "requires_registered_writer_membership",
-    "may_add_write_rows",
-    "write_authority",
-    "product_authority_scope",
-    "unregistered_or_cross_cell_policy",
-)
-EXPECTED_DEPENDENT_EFFECT_LANE_AUTHORITY = {
-    "lane_id": DEPENDENT_EFFECT_LANE_ID,
-    "authority_manifest_schema_version": ("quantitative_projection_authority_manifest"),
-    "package_authority_schema_version": "quantitative_projection_authority",
-    "required_signal_processing_profile_id": (
-        "signal-profile:"
-        "bcefd76d05bc26a0ec9f333fdb76427ccb2133c1946f5ec711916e85efc06de2"
-    ),
-    "requires_registered_writer_membership": True,
-    "may_add_write_rows": False,
-    "write_authority": False,
-    "product_authority_scope": "",
-    "unregistered_or_cross_cell_policy": "fail_closed",
-}
 REQUIRED_CONTROL_PLANE_ANCHORS = {
     "broad_backfill_autowrite": "park_broad_backfill",
     "productization_authority_firewall": "productization_authority_manifest",
@@ -143,9 +109,6 @@ REQUIRED_CONTROL_PLANE_ANCHORS = {
     "review_action_manual_boundary_area_writer": "manual-boundary area writer parked",
     "calibration_normalization_activation": "calibration/normalization activation",
     "gui_replay_parity": "GUI replay / GUI parity is out of scope",
-    DEPENDENT_EFFECT_LANE_ID: (
-        "Untargeted Owner Backfill Canonical Quantitative Projection"
-    ),
 }
 REQUIRED_LANE_IDS = tuple(REQUIRED_CONTROL_PLANE_ANCHORS)
 
@@ -192,35 +155,6 @@ AUTHORITY_LIST_RULE_EXPECTATIONS = {
     "forbidden_authority_sources": EXPECTED_FORBIDDEN_AUTHORITY_SOURCE_ORDER,
 }
 
-EXPECTED_HOLD_ROW = {
-    "schema_version": "productization_status_index",
-    "lane_id": DEPENDENT_EFFECT_LANE_ID,
-    "lane_group": "backfill",
-    "readiness_status": "production_candidate",
-    "owner": "xic_extractor.alignment.quantitative_projection_authority",
-    "current_artifact": DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT,
-    "artifact_sha256": DEPENDENT_PACKAGE_AUTHORITY_SHA256,
-    "row_count": "0",
-    "write_authority": "FALSE",
-    "product_authority_scope": "",
-    "may_touch_matrix": "FALSE",
-    "may_change_quant_output": "FALSE",
-    "may_change_workbook": "FALSE",
-    "may_change_selected_peak": "FALSE",
-    "may_change_selected_area": "FALSE",
-    "may_change_counted_detection": "FALSE",
-    "product_effect": "hold_canonical_quantitative_projection_no_public_write",
-    "public_surface": "package_hold_guard_and_full_audit_diagnostic",
-    "control_plane_anchor": (
-        "Untargeted Owner Backfill Canonical Quantitative Projection"
-    ),
-    "handoff_anchor": ("Untargeted Owner Backfill Canonical Quantitative Projection"),
-    "next_checkpoint": ("rehydrate_registered_writer_membership_without_new_raw"),
-    "expiration_condition": ("superseded by membership-bound ACTIVE effect or retired"),
-    "notes": (
-        "HOLD; no ProductWriter authority; no registered-writer membership owner exists"
-    ),
-}
 PRODUCT_TOPIC_BY_LANE_GROUP = {
     "backfill": "backfill.md",
     "calibration": "instrument-qc-calibration.md",
@@ -468,7 +402,6 @@ def _check_schema_and_rows(
                 "schema required_control_plane_anchors contains duplicates: "
                 + ", ".join(duplicate_anchors)
             )
-    _check_dependent_effect_lane_authority(schema, problems)
     lane_ids = [row.get("lane_id", "") for row in rows]
     duplicates = sorted(
         lane_id for lane_id, count in Counter(lane_ids).items() if count > 1
@@ -511,61 +444,6 @@ def _check_schema_and_rows(
         ):
             if row.get(field) not in {"TRUE", "FALSE"}:
                 problems.append(f"row {index}: {field} must be TRUE or FALSE")
-
-    dependent_rows = [
-        row for row in rows if row.get("lane_id") == DEPENDENT_EFFECT_LANE_ID
-    ]
-    if len(dependent_rows) == 1:
-        dependent_row = dependent_rows[0]
-        drifted_fields = [
-            field
-            for field in STATUS_INDEX_FIELDS
-            if dependent_row.get(field) != EXPECTED_HOLD_ROW[field]
-        ]
-        if drifted_fields:
-            problems.append(
-                "dependent effect status row must remain the exact 23-field HOLD "
-                "contract; drifted=" + ", ".join(drifted_fields)
-            )
-        if dependent_row.get("readiness_status") == "production_ready":
-            problems.append(
-                "dependent effect ACTIVE transition is outside this HOLD contract"
-            )
-
-
-def _check_dependent_effect_lane_authority(
-    schema: Mapping[str, Any],
-    problems: list[str],
-) -> None:
-    raw_dependent = schema.get("dependent_effect_lane_authority")
-    if not isinstance(raw_dependent, Mapping):
-        problems.append("schema dependent_effect_lane_authority must be an object")
-        return
-    if tuple(raw_dependent) != (DEPENDENT_EFFECT_LANE_ID,):
-        problems.append(
-            "schema dependent_effect_lane_authority must contain exactly the "
-            "ordered Issue #256 lane"
-        )
-        return
-    raw_rule = raw_dependent.get(DEPENDENT_EFFECT_LANE_ID)
-    if not isinstance(raw_rule, Mapping):
-        problems.append("schema dependent effect lane rule must be an object")
-        return
-    if tuple(raw_rule) != DEPENDENT_EFFECT_LANE_AUTHORITY_FIELDS:
-        problems.append(
-            "schema dependent effect lane rule fields must exactly match the "
-            "ordered contract"
-        )
-    if any(
-        field not in raw_rule
-        or type(raw_rule[field]) is not type(expected)
-        or raw_rule[field] != expected
-        for field, expected in EXPECTED_DEPENDENT_EFFECT_LANE_AUTHORITY.items()
-    ):
-        problems.append(
-            "schema dependent effect lane rule values must exactly match the HOLD "
-            "authority contract"
-        )
 
 
 def _check_authority_boundaries(
@@ -788,10 +666,6 @@ def _render_compatibility_index(rows: Sequence[Mapping[str, str]]) -> str:
             "(../productization/status/productization_authority_manifest.json)"
         ),
         (
-            "- [Dependent quantitative-effect authority manifest]"
-            f"(../productization/status/{Path(QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL).name})"
-        ),
-        (
             "- [Structured control schema]"
             f"(../schemas/{Path(PRODUCTIZATION_SCHEMA_REL).name})"
         ),
@@ -824,13 +698,6 @@ def _render_compatibility_index(rows: Sequence[Mapping[str, str]]) -> str:
     )
     for row in rows:
         routes = writer_routes
-        if row.get("lane_id") == DEPENDENT_EFFECT_LANE_ID:
-            routes = (
-                "Routes: [state](../validation/productization_status_index.tsv), "
-                "[dependent-effect authority](../productization/status/"
-                f"{Path(QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL).name}), "
-                "[stable capability](../../product/productization.md)."
-            )
         lines.extend(
             (
                 f"### {row.get('control_plane_anchor', '')}",
