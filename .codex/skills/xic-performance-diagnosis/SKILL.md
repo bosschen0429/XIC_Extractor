@@ -1,12 +1,14 @@
 ---
 name: xic-performance-diagnosis
-description: Diagnose XIC performance from timing and parity artifacts before optimization. Use for missing baselines, single-run bottlenecks, baseline/candidate proof, RAW/XIC locality, worker budgets, regressions, or fast-mode review.
+description: Diagnose XIC performance from timing and parity artifacts before optimization. Use for missing timing baselines, bottlenecks, performance comparisons, RAW/XIC locality, worker budgets, performance regressions, or fast-mode review.
 ---
 
 # XIC Performance Diagnosis
 
 Use timing and correctness evidence to answer the current performance question.
 Reuse a still-applicable diagnosis; no separate packet is required before edits.
+Output-parity-only refactors without a timing or call-cost question use their
+owning Issue and regression/parity checks, not this optimization workflow.
 
 ## Choose The Evidence Needed
 
@@ -65,8 +67,8 @@ applicable, and material uncertainty or next action. Use the relevant verdict:
 - `inconclusive`: comparability, timing stability, or parity is insufficient.
 - `rejected`: a comparable candidate is within noise, regresses, or fails correctness.
 
-Accept candidate code only with `optimized`. Otherwise retain it unaccepted
-while closing bounded missing proof; a rejected candidate calls for rollback.
+Accept performance optimizations only with `optimized`. Otherwise retain them
+unaccepted while closing bounded missing proof; a rejected candidate calls for rollback.
 Disposition does not grant mutation authority: execute rollback only within
 authorization, preserving unrelated work and the accepted baseline. A read-only
 diagnosis reports the scoped action without changing files.

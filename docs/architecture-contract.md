@@ -93,11 +93,21 @@ internal-defense changes:
    Reuse current owner evidence; CBM owns structural query mechanics.
 2. A fallback, recomputation, or deep revalidation needs a reachable input/path
    and observable loss. Justify the check by changed inputs or an
-   actual trust boundary. Repair a fixed internal bypass at its owner or caller;
-   uncertainty alone does not justify another defense.
-3. Update consumers and retire superseded surfaces in the same responsibility
+   actual trust boundary. Construction, dataclass replacement, and internal
+   module handoff are not themselves new trust boundaries. Keep normalization
+   and mathematical/domain constraints at the producer. Repair a fixed internal
+   bypass at its owner or caller; uncertainty alone does not justify another
+   defense.
+3. Before adding an ID, digest, proof/receipt wrapper, or mint capability, name
+   the current consumer and observable behavior that needs it. Prefer domain
+   values or existing tuple keys for in-memory data; minting a hash only to
+   verify it again supplies no consumer benefit. Capabilities protect concrete
+   construction or write authority, not a private-owner naming convention.
+   Preserve existing public/persisted IDs and capability contracts until an
+   approved migration changes them.
+4. Update consumers and retire superseded surfaces in the same responsibility
    change. The [testing contract](agent/testing.md) owns which oracles survive.
-4. For one rule or representation changed in this diff, identify the affected
+5. For one rule or representation changed in this diff, identify the affected
    modules that must know it and justify each remaining dependency. For in-scope
    decoupling, ordinary consumers still reconstructing owner-derived facts or
    parsing other owners' internal ancestor schemas are unmet technical acceptance.
@@ -128,9 +138,11 @@ To maintain clean code and prevent cognitive overload, runaway monoliths, and de
    - Domain algorithms calculate domain answers and return pure result structures (e.g., `AlignmentResult`, `HypothesisGroup`).
    - Calculating SHA-256 byte digests, serializing to JSON/TSV, and minting runtime finalization receipts are separate responsibilities owned by boundary adapters or reporting layers, never embedded within algorithmic loops.
 
-4. **Centralized Primitive Reuse (No Private Boilerplate)**:
-   - Shared mathematical arithmetic (e.g., ppm/Da mass tolerance), byte hashing, and primitive sequence validations belong to centralized utility modules (`xic_extractor.validation_primitives`, core math modules).
-   - Copy-pasting private assertions, duplicate helper routines, or local tolerance formulas across business files is strictly prohibited.
+4. **Semantic Primitive Reuse**:
+   - Reuse established math and validation primitives for the same rule and
+     compatible semantics. Domain-specific constraints stay with their owner;
+     similar assertion syntax alone does not justify a shared validator.
+     [Design Principles](#design-principles) governs new abstractions.
 
 ## System Shape
 
