@@ -20,8 +20,6 @@ from xic_extractor.mass_accuracy import neutral_loss_match
 
 DriftPriorSource = Literal["targeted_istd_trend", "batch_istd_trend", "none"]
 
-_TARGETED_ISTD_ANCHOR_MINT_TOKEN = object()
-
 
 @dataclass(frozen=True)
 class KnownIstdReference:
@@ -374,13 +372,6 @@ class TargetedIstdIdentityAnchor:
 
     target_snapshot: TargetListSnapshot
     observed_labels: tuple[str, ...]
-    _mint_token: object = field(default=None, repr=False, compare=False)
-
-    def __post_init__(self) -> None:
-        if self._mint_token is not _TARGETED_ISTD_ANCHOR_MINT_TOKEN:
-            raise ValueError(
-                "targeted ISTD identity anchors must be minted by the owner"
-            )
 
     @property
     def targets(self) -> tuple[Target, ...]:
@@ -404,7 +395,6 @@ def build_targeted_istd_identity_anchor(
     return TargetedIstdIdentityAnchor(
         target_snapshot=target_snapshot,
         observed_labels=labels,
-        _mint_token=_TARGETED_ISTD_ANCHOR_MINT_TOKEN,
     )
 
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import InitVar, asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from typing import Literal, cast, final
 
 from xic_extractor.alignment.cell_observation.observations import (
@@ -64,8 +64,6 @@ _BACKFILL_UNIVERSE_ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_
     media_type="application/json",
     serialization_format="canonical-json-utf8-lf",
 )
-_CELL_DECISION_MINT_TOKEN = object()
-_BACKFILL_UNIVERSE_MINT_TOKEN = object()
 ACTIVATION_ELIGIBLE_SAMPLE_ROLES = frozenset({"study_sample", "qc", "pooled_qc"})
 
 ConservativeBackfillDisposition = Literal[
@@ -112,17 +110,10 @@ class ConservativeBackfillCandidateUniverse:
     group_facts: tuple[ConservativeBackfillGroupFacts, ...]
     candidate_assessment: CidNlMethodAssessmentRef
     artifact: EvidenceArtifactRef
-    _mint_token: InitVar[object] = field(kw_only=True)
     localization: BackfillPeakLocation | None = None
     localization_sources: tuple[PeakObservationRef, ...] = ()
     validation_status: str = VALIDATION_STATUS
     product_authority: str = PRODUCT_AUTHORITY
-
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _BACKFILL_UNIVERSE_MINT_TOKEN:
-            raise ConservativeBackfillContractError(
-                "backfill universe must be minted by the conservative Backfill owner"
-            )
 
     @property
     def method_subject_id(self) -> str:
@@ -175,19 +166,12 @@ class ConservativeBackfillCellDecision:
     matched_candidate: ConservativeBackfillEvidence | None
     disposition: ConservativeBackfillDisposition
     reason_codes: tuple[str, ...]
-    _mint_token: InitVar[object] = field(kw_only=True)
     policy_version: str = POLICY_VERSION
     validation_status: str = VALIDATION_STATUS
     product_authority: str = PRODUCT_AUTHORITY
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         raise TypeError("ConservativeBackfillCellDecision is final")
-
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _CELL_DECISION_MINT_TOKEN:
-            raise ConservativeBackfillContractError(
-                "cell decisions must be minted by the conservative Backfill mapper"
-            )
 
 
 def minimum_direct_support_count(sample_count_n: int) -> int:
@@ -289,7 +273,6 @@ def mint_conservative_backfill_candidate_universe(
         artifact=artifact,
         localization=localization,
         localization_sources=localization_sources,
-        _mint_token=_BACKFILL_UNIVERSE_MINT_TOKEN,
     )
 
 
@@ -1078,7 +1061,6 @@ def _decision(
         matched_candidate=matched_candidate,
         disposition=disposition,
         reason_codes=tuple(sorted(set(reasons))),
-        _mint_token=_CELL_DECISION_MINT_TOKEN,
     )
 
 

@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import InitVar, dataclass, field
+from dataclasses import dataclass
 from typing import Literal, cast, final, get_args
 
 from xic_extractor.alignment.config import OwnerBuildXicBackend
 
 EffectiveOwnerBuildRoute = Literal["retained_untargeted_cid_nl_batch"]
 
-_OWNER_BUILD_ROUTE_RECEIPT_MINT_TOKEN = object()
 _OWNER_BUILD_XIC_BACKENDS = frozenset(get_args(OwnerBuildXicBackend))
 
 
@@ -29,16 +28,9 @@ class OwnerBuildRouteReceipt:
     effective_owner_build_xic_backend: OwnerBuildXicBackend | None
     processing_run_spec_id: str | None
     processing_run_spec_hash: str | None
-    _mint_token: InitVar[object] = field(kw_only=True)
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         raise TypeError("OwnerBuildRouteReceipt is final")
-
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _OWNER_BUILD_ROUTE_RECEIPT_MINT_TOKEN:
-            raise ValueError(
-                "OwnerBuildRouteReceipt must be minted by the Alignment owner"
-            )
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -67,7 +59,6 @@ def _mint_retained_untargeted_cid_nl_route_receipt(
         effective_owner_build_xic_backend=None,
         processing_run_spec_id=None,
         processing_run_spec_hash=None,
-        _mint_token=_OWNER_BUILD_ROUTE_RECEIPT_MINT_TOKEN,
     )
 
 

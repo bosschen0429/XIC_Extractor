@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Sequence
-from dataclasses import InitVar, dataclass, field, fields
+from dataclasses import dataclass, field, fields
 from typing import Literal, TypeAlias
 
 from xic_extractor.alignment.backfill.conservative import (
@@ -42,10 +42,6 @@ class FinalizedScientificAlignmentContractError(ValueError):
     """Raised when the shared scientific core cannot close exactly."""
 
 
-_FINALIZER_MINT_TOKEN = object()
-_FRESH_CELL_POPULATION_MINT_TOKEN = object()
-
-
 @dataclass(frozen=True, slots=True)
 class ObservedSearchSubject:
     """One owner-sealed capture with a selected scientific hypothesis."""
@@ -54,10 +50,6 @@ class ObservedSearchSubject:
     canonical_sample_identity_id: str
     trace_group_id: str
     hypothesis: PeakHypothesis
-    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
-
-    def __post_init__(self, _mint_token: object) -> None:
-        _require_finalizer_mint(_mint_token)
 
     @property
     def variant(self) -> Literal["observed"]:
@@ -72,10 +64,6 @@ class SearchedNoObservationSubject:
     canonical_sample_identity_id: str
     trace_group_id: str
     detection_status: Literal["not_detected"]
-    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
-
-    def __post_init__(self, _mint_token: object) -> None:
-        _require_finalizer_mint(_mint_token)
 
     @property
     def variant(self) -> Literal["searched_no_observation"]:
@@ -103,12 +91,9 @@ class FinalizedScientificAlignment:
     cell_observations: tuple[FinalGroupCellObservation, ...]
     grouping_result: CrossSampleGroupingResult
     _completion_seal: tuple[int, ...] = field(init=False, repr=False, compare=False)
-    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
     targeted_backfill_decisions: tuple[ConservativeBackfillCellDecision, ...] = ()
 
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _FRESH_CELL_POPULATION_MINT_TOKEN:
-            _require_finalizer_mint(_mint_token)
+    def __post_init__(self) -> None:
         object.__setattr__(self, "_completion_seal", _scientific_completion_state(self))
 
     def __copy__(self) -> FinalizedScientificAlignment:
@@ -243,8 +228,6 @@ def finalize_scientific_alignment(
         cell_observations=canonical_cells,
         grouping_result=grouping_result,
         targeted_backfill_decisions=targeted_backfill_decisions,
-        # The composer just closed these cells; no callback precedes this mint.
-        _mint_token=_FRESH_CELL_POPULATION_MINT_TOKEN,
     )
     return result
 
@@ -318,7 +301,6 @@ def _terminal_subject(
             canonical_sample_identity_id=binding.sample_identity_id,
             trace_group_id=capture.trace_group.trace_group_id,
             detection_status="not_detected",
-            _mint_token=_FINALIZER_MINT_TOKEN,
         )
     if type(selected) is not PeakHypothesis or capture.detection.status != "detected":
         raise FinalizedScientificAlignmentContractError(
@@ -329,7 +311,6 @@ def _terminal_subject(
         canonical_sample_identity_id=binding.sample_identity_id,
         trace_group_id=capture.trace_group.trace_group_id,
         hypothesis=selected,
-        _mint_token=_FINALIZER_MINT_TOKEN,
     )
 
 
@@ -365,13 +346,6 @@ def _terminal_sort_key(subject: TerminalSearchObservation) -> tuple[str, str, st
         subject.candidate_id,
         subject.variant,
     )
-
-
-def _require_finalizer_mint(value: object) -> None:
-    if value is not _FINALIZER_MINT_TOKEN:
-        raise FinalizedScientificAlignmentContractError(
-            "value must be minted by the scientific alignment finalizer"
-        )
 
 
 __all__ = (

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import InitVar, dataclass, field
+from dataclasses import dataclass
 from typing import Literal, TypeAlias, cast
 
 from xic_extractor.alignment.cell_decision.owner import (
@@ -22,7 +22,6 @@ TargetReviewQueueReason: TypeAlias = Literal[
     "not_quantifiable",
 ]
 
-_POST_CELL_MINT_TOKEN = object()
 _TARGET_NO_WRITE_REASONS = frozenset({"searched_no_observation", "not_quantifiable"})
 
 
@@ -33,13 +32,6 @@ class TargetReviewQueueReference:
     subject: TargetCellSubject
     decision: ProductionCellDecision
     reasons: tuple[TargetReviewQueueReason, ...]
-    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
-
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _POST_CELL_MINT_TOKEN:
-            raise TargetProjectionContractError(
-                "Target Review Queue references must be minted by Target projection"
-            )
 
     @property
     def row_binding(self) -> TargetRowBinding:
@@ -55,13 +47,6 @@ class TargetPostCellProjection:
     accepted_cell_count: int
     no_write_count: int
     review_queue_references: tuple[TargetReviewQueueReference, ...]
-    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
-
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _POST_CELL_MINT_TOKEN:
-            raise TargetProjectionContractError(
-                "Target post-cell projection must be minted by Target projection"
-            )
 
     @property
     def row_binding(self) -> TargetRowBinding:
@@ -102,7 +87,6 @@ def project_target_post_cell(
         accepted_cell_count=accepted_cell_count,
         no_write_count=no_write_count,
         review_queue_references=review_queue_references,
-        _mint_token=_POST_CELL_MINT_TOKEN,
     )
 
 
@@ -162,7 +146,6 @@ def _build_review_queue_references(
                 subject=subject,
                 decision=decision,
                 reasons=reasons,
-                _mint_token=_POST_CELL_MINT_TOKEN,
             )
         )
     return tuple(references)

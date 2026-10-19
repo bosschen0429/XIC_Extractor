@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import math
 from collections.abc import Sequence
-from dataclasses import InitVar, dataclass, field, fields
+from dataclasses import dataclass, fields
 from typing import Literal, TypeAlias, cast
 
 from xic_extractor.alignment.cell_observation.observations import (
@@ -51,7 +51,6 @@ CellEvidence: TypeAlias = (
 
 _DECISION_PREFIX = "xic.production-cell-decision:"
 _DECISION_SCHEMA_VERSION = "production_cell_decision"
-_DECISION_MINT_TOKEN = object()
 _NO_WRITE_STATES = frozenset(
     {
         "not_searched",
@@ -101,19 +100,10 @@ class ProductionCellDecision:
     subject: CellSubject
     evidence: CellEvidence
     payload: CellDecisionPayload
+    # The factory derives the basis and ID from these exact inputs.
     basis_bytes: bytes
     # Retain the chosen observation even when its area is not quantifiable.
     selected_integration: IntegrationResult | None
-    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
-
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _DECISION_MINT_TOKEN:
-            raise CellDecisionContractError(
-                "production cell decision must be minted by cell_decision"
-            )
-
-        # The sealed factory derives the basis and ID from these exact inputs.
-
     @property
     def variant(self) -> Literal["numeric"] | NoWriteState:
         return self.payload.variant
@@ -383,7 +373,6 @@ def _mint_decision(
         payload=payload,
         basis_bytes=basis,
         selected_integration=selected_integration,
-        _mint_token=_DECISION_MINT_TOKEN,
     )
 
 

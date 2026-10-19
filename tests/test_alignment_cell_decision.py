@@ -32,7 +32,6 @@ from xic_extractor.alignment.cell_decision import owner as decision_owner
 from xic_extractor.alignment.cell_decision.owner import (
     CellDecisionContractError,
     NoWriteCellDecision,
-    ProductionCellDecision,
     decide_group_cell_population,
     decide_production_cell,
     decide_target_cell_population,
@@ -501,7 +500,7 @@ def test_group_split_nonmember_maps_exact_not_searched_closure(
     )
 
 
-def test_decision_is_immutable_and_owner_minted(
+def test_decision_is_immutable(
     tmp_path: Path,
 ) -> None:
     _fixture, _scope, alignment, _hypotheses = _finalized_case(
@@ -515,16 +514,6 @@ def test_decision_is_immutable_and_owner_minted(
 
     with pytest.raises(FrozenInstanceError):
         decision.payload = NoWriteCellDecision("unavailable")  # type: ignore[misc]
-    with pytest.raises(CellDecisionContractError, match="must be minted"):
-        ProductionCellDecision(
-            decision_id=decision.decision_id,
-            subject=decision.subject,
-            evidence=decision.evidence,
-            payload=decision.payload,
-            basis_bytes=decision.basis_bytes,
-            selected_integration=decision.selected_integration,
-            _mint_token=object(),
-        )
     assert decision.selected_integration is not None
 
 

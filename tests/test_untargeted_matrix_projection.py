@@ -39,7 +39,6 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.projection.untarget import (
-    UntargetMatrixProjection,
     UntargetProjectionContractError,
     project_untarget_matrix,
 )
@@ -418,13 +417,3 @@ def test_projection_requires_answers_for_the_exact_observation_population(
         )
     with pytest.raises(UntargetProjectionContractError, match="missing|extra|crossed"):
         project_untarget_matrix(alignment, changed)
-
-
-def test_projection_cannot_be_directly_minted(tmp_path, monkeypatch):
-    alignment, _, projection = _completed_projection(
-        tmp_path, monkeypatch, disposition="established"
-    )
-    with pytest.raises(UntargetProjectionContractError, match="must be minted"):
-        UntargetMatrixProjection(
-            finalized_alignment=alignment, rows=projection.rows, _mint_token=object()
-        )

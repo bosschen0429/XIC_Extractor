@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import re
 from collections.abc import Sequence
-from dataclasses import InitVar, dataclass, field
+from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
 from xic_extractor.alignment.backfill.evaluation_coverage import (
@@ -63,7 +63,6 @@ _TARGET_KEY_ID_PREFIX = "xic.target-key:"
 _TARGET_DEFINITION_ID_PREFIX = "xic.target-definition:"
 _FINAL_CELL_OBSERVATION_ID_PREFIX = "xic.final-cell-observation:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-_FINAL_CELL_MINT_TOKEN = object()
 _ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     # Persisted artifact-hash identity; intentionally not this module's path.
     owner_namespace="xic_extractor.alignment.cell_observations",
@@ -121,15 +120,6 @@ class FinalGroupCellObservation:
     evidence_states: tuple[FinalCellEvidenceState, ...]
     basis_bytes: bytes
     backfill_cell: CellObservationRef | None = None
-    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
-
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _FINAL_CELL_MINT_TOKEN:
-            raise CellObservationContractError(
-                "final cell observation must be minted by CellObservation"
-            )
-        # The composer validates the input joins and derives these fields once.
-
     @property
     def group_hypothesis_id(self) -> str:
         return self.group.group_hypothesis_id
@@ -617,7 +607,6 @@ def _mint_final_group_cell_observation(
         evidence_states=evidence_states,
         basis_bytes=basis,
         backfill_cell=backfill_cell,
-        _mint_token=_FINAL_CELL_MINT_TOKEN,
     )
 
 
