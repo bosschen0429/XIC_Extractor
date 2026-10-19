@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import InitVar, dataclass, field
+from dataclasses import dataclass
 
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupIdentity,
@@ -26,7 +26,6 @@ _UNTARGET_ROW_KEY_PREFIX = "xic.untarget-row-key:"
 _GROUP_CELL_SUBJECT_PREFIX = "xic.group-cell-subject:"
 _UNTARGET_ROW_KEY_SCHEMA_VERSION = "untarget_row_key"
 _GROUP_CELL_SUBJECT_SCHEMA_VERSION = "group_cell_subject"
-_PROJECTION_MINT_TOKEN = object()
 
 
 def _request_id(value: object, *, field_name: str) -> str:
@@ -105,7 +104,6 @@ class GroupCellSubject:
     row_key: UntargetRowKey
     canonical_sample: ResolvedCanonicalSampleIdentity
     member_subject: CrossSampleGroupMemberSubject | None
-    _mint_token: InitVar[object | None] = field(default=None, kw_only=True, repr=False)
 
     @property
     def group(self) -> CrossSampleGroupIdentity:

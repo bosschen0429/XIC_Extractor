@@ -12,7 +12,6 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleLineageEdge,
 )
 from xic_extractor.alignment.projection.untarget.identity import (
-    _PROJECTION_MINT_TOKEN,
     GroupCellSubject,
     UntargetProjectionContractError,
     UntargetRowKey,
@@ -227,7 +226,6 @@ def project_untarget_matrix(
                         row_key,
                         sample,
                         members.get(sample_id),
-                        _mint_token=_PROJECTION_MINT_TOKEN,
                     ),
                     evidence=observation,
                     payload=payload,
