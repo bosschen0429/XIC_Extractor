@@ -35,7 +35,6 @@ workflow owner rather than chaining similarly named commands.
 | Select Matrix features for downstream analysis | GUI **篩選匯出…** or `xic-feature-quality`; [Feature Quality](../../docs/product/feature-quality.md) owns the rule and output |
 | Review instrument/ISTD drift | `scripts.run_instrument_qc` and `scripts.add_istd_rt_trend`; [Instrument QC](../../docs/product/instrument-qc-calibration.md) owns their distinct inputs and claims |
 | Build a solvent-blank background library | `scripts.extract_blank_library`; `xic_extractor.discovery.blank_qualification` owns extraction and serialization |
-| Prepare targeted review actions | [Review Roundtrip commands](../../docs/product/review-roundtrip.md#operator-commands) distinguish candidate verification, copy-state edits, and peak-editing authority |
 | Run tissue validation | `scripts.run_tissue_validation`; [execution settings](../../docs/agent/parameter-settings.md#validation-scale) own prerequisites |
 | Query Discovery or experiment with grouping / RT calibration | `tools.diagnostics.grouping_experiment query/prepare/replay`; [Grouping experiments](#grouping_experimentpy) describes the input and output boundary |
 | Maintain CI or command safety | `tools.testing.test_shards` and `tools.command_policy` serve CI/hooks; they have no GUI workflow |
@@ -387,29 +386,6 @@ are not daily).
 **Purpose**: Calibrate SDO/LEK instrument trends with method-doc order.
 **Originating spec**: `retired-provenance:77f7869271f4`
 **Recent doc**: `retired-provenance:b15c365ea97c`
-
----
-
-### `instrument_qc_biological_istd_transfer_audit.py`
-
-**Purpose**: Build audit-only evidence for clean-standard RT trend transfer to biological QC ISTDs.
-**Originating spec**: `retired-provenance:9b1b633f6f09`
-
----
-
-### `instrument_qc_calibration_maturity_gate.py`
-
-**Purpose**: Build audit-only go/no-go decisions for instrument-QC calibration maturity levels.
-**Originating spec**: `retired-provenance:9b1b633f6f09`
-**Recent doc**: `retired-provenance:458efd729908`
-
----
-
-### `instrument_qc_matrix_calibration_preview.py`
-
-**Purpose**: Build manifest-backed instrument QC calibration evidence bundle and optional matrix preview sidecar.
-**Originating spec**: `retired-provenance:5cd57a52f007`
-**Recent doc**: `retired-provenance:7626f95b0a28`
 
 ---
 

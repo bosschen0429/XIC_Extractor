@@ -36,14 +36,9 @@
     "out_of_scope"
   ],
   "required_control_plane_anchors": {
-    "broad_backfill_autowrite": "park_broad_backfill",
     "productization_authority_firewall": "productization_authority_manifest",
     "quality_explanation_sidecar": "quality_explanations and quality_blockers are explanation and triage inputs only",
     "sample_metadata_order_projection": "sample_metadata cross-module parity",
-    "sample_metadata_role_value_behavior": "role/value behavior remains blocked",
-    "review_action_selected_candidate_switch": "selected candidate / manual boundary writer parked",
-    "review_action_manual_boundary_area_writer": "manual-boundary area writer parked",
-    "calibration_normalization_activation": "calibration/normalization activation",
     "gui_replay_parity": "GUI replay / GUI parity is out of scope"
   },
   "authority_rules": {
@@ -67,14 +62,9 @@
     "handoff_and_control_plane_anchor_required": true
   },
   "required_lane_ids": [
-    "broad_backfill_autowrite",
     "productization_authority_firewall",
     "quality_explanation_sidecar",
     "sample_metadata_order_projection",
-    "sample_metadata_role_value_behavior",
-    "review_action_selected_candidate_switch",
-    "review_action_manual_boundary_area_writer",
-    "calibration_normalization_activation",
     "gui_replay_parity"
   ]
 }

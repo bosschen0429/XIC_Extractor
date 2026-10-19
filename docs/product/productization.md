@@ -55,7 +55,7 @@ link here instead of restating this rule.
 | Backfill | An evidence-based Backfill value reaches product outputs only through an explicit authority and expected-diff path | [Backfill](backfill.md) |
 | Quant output | Accepted values, cell provenance, and matrix-version contracts are public output responsibilities | [Quant Matrix](quant-matrix.md) |
 | Targeted selection | Configured identity and bounded rescue behavior have their own public and evidence boundaries | [Targeted Selection](targeted-selection.md) |
-| Review | Human or automated review stays auditable and cannot silently become writer authority | [Review Roundtrip](review-roundtrip.md) |
+| Review | Human or automated review stays auditable and cannot silently become writer authority | [Writer authority](#writer-authority) |
 | Run replay | Inputs, configuration, versions, and artifacts remain traceable through explicit provenance | [Run Provenance](run-provenance.md) |
 | Sample metadata and QC | Sample roles and QC projections are typed inputs, not implicit activation authority | [Sample Metadata and QC](sample-metadata-qc.md) |
 | Presets | Reproducible CLI/HTML bundles route behavior but do not create independent product authority | [Presets](presets.md) |

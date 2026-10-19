@@ -78,7 +78,6 @@ lineage seal.
 
 - [Agent parameter settings](../agent/parameter-settings.md)
 - [Sample metadata and QC](sample-metadata-qc.md)
-- [Review roundtrip](review-roundtrip.md)
 - [Processing identity, lineage, and retention](processing-lineage.md)
 - [Productization](productization.md)
 - [Product Validation](../agent/product-validation-contract.md)

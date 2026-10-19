@@ -43,8 +43,6 @@ Other owners remain:
 - [`run-provenance.md`](run-provenance.md): Targeted workbook run metadata;
 - [`sample-metadata-qc.md`](sample-metadata-qc.md): canonical sample identity
   schema and lookup projection;
-- [`review-roundtrip.md`](review-roundtrip.md): typed review actions, review
-  queues, expected-diff review, and reviewer-rationale routing;
 - [`shared-processing-kernel.md`](shared-processing-kernel.md): scientific
   hypotheses, observation states, group membership, selection, and Backfill
   facts;
@@ -85,7 +83,6 @@ labels until an adapter binds them to the contract above.
 | `processing_request_id` | Identified acquisition sources; normalized evidence queries and method constraints; algorithm/schema/contract versions | Output path, wall-clock time, worker count, cache hit/miss, or product publication result |
 | `processing_attempt_id` | A unique execution identity referencing exactly one request; optional retry/predecessor reference | Request digest alone or a reused timestamp |
 | `canonical_sample_identity` | Owner-minted identity under the [Sample Metadata contract](sample-metadata-qc.md#contract) | Reconstructing sample identity from acquisition sources or display/projection fields |
-| `immutable_review_record_ref` | Owner-resolved reference under [Review record identity](review-roundtrip.md#review-record-identity) and [Resolution](review-roundtrip.md#resolution) | Unresolved, superseded, or caller-reconstructed records; review truth inferred by lineage |
 | `evidence_artifact_id` | Producer attempt + semantic role + schema version + content digest | Filename, directory, row count, or generated timestamp alone |
 | owner-backed CID-NL `peak_hypothesis_id` | Hypothesis method + canonical sample identity + physical peak content ID + chromatographic-support artifact content ID | Target label, ISTD role/pairing, trace-group ID, selection status, attempt token, or output position |
 | kernel object reference | Request identity plus the normalized sample-local or cross-sample scientific identity | A bare ID whose meaning can change across requests |
@@ -129,10 +126,9 @@ numbers), with a type/version prefix. Its current content boundary is:
   Its owner fixes the `pt_pattern_discovery_evidence` UTF-8 CSV bytes and role.
   Callers cannot supply role/schema strings; minting requires an owner-issued
   processing attempt;
-- canonical samples and immutable review records come from
-  [Sample Metadata](sample-metadata-qc.md) and
-  [Review Roundtrip](review-roundtrip.md). Lineage composes their owner-resolved
-  references and snapshots rather than deriving IDs from display labels.
+- canonical samples come from [Sample Metadata](sample-metadata-qc.md).
+  Lineage composes owner-resolved references and snapshots rather than deriving
+  IDs from display labels.
 
 The Targeted adapter currently names the existing Thermo MS-controller-1
 namespace explicitly. A different controller, acquisition adapter, or
@@ -143,19 +139,14 @@ full-file read per source, but opens no vendor RAW handle and makes no XIC call.
 ### Owner-reference composition
 
 This freezes the acquisition-source -> processing-request ->
-processing-attempt boundary plus the sample, target-list, and review owner APIs.
-The lineage layer's `ProcessingOwnerReferences` only composes and validates a
-complete request and attempt, owner-resolved sample bindings whose exact lookup tokens
-cover every request acquisition input and share one exact metadata snapshot,
-the request-pinned target-list snapshot, a same-request/same-attempt artifact
-closure with no missing upstream dependency, and an optional owner-resolved current
-review record bound to the exact sample, target key/definition, request, and
-review registry snapshot. A review record must retain typed artifact references
-that exist in that validated closure. Lineage does not mint
-sample/target/artifact/review IDs and it
-rejects mixed sample snapshots, target/request substitution, unresolved review
-records, superseded review records, artifact content/role/schema substitution,
-missing dependencies, cross-attempt mixing, and review-snapshot substitution.
+processing-attempt boundary plus the sample and target-list owner APIs.
+`ProcessingOwnerReferences` composes a complete request and attempt,
+owner-resolved sample bindings whose exact lookup tokens cover every request
+acquisition input and share one metadata snapshot, the request-pinned target-list
+snapshot, and a same-request/same-attempt artifact closure with no missing
+upstream dependency. Lineage does not mint sample, target, or artifact IDs.
+It rejects mixed sample snapshots, target/request substitution, artifact
+content/role/schema substitution, missing dependencies, and cross-attempt mixing.
 
 Production workflows and diagnostic tracers consume this owner-reference
 closure; it is not a production artifact registry. The processing-identity owner
@@ -322,14 +313,11 @@ apply to this graph. Delivery also requires:
 1. An attempt may consume an artifact from an earlier attempt only through an
    explicit immutable dependency reference. It must not copy or relabel that
    artifact as though the later attempt produced it.
-2. Every selected hypothesis, integration, group observation, review action,
-   Targeted delivery revision, and retained Untargeted cell-ledger decision can
-   identify the attempt and artifacts it used. A retained human-review
-   conclusion uses an owner-resolved immutable review record under
-   [Review Roundtrip](review-roundtrip.md#review-record-identity) and the
-   [owner-reference composition contract](#owner-reference-composition).
-   This does not transfer review authority or private rationale ownership into
-   the lineage layer.
+2. Every selected hypothesis, integration, group observation, Targeted delivery
+   revision, and retained Untargeted cell-ledger decision can identify the
+   attempt and artifacts it used. Human review evidence cannot independently
+   grant write authority; [Productization](productization.md#writer-authority)
+   owns that boundary.
 
 Publication validation belongs to [Two-Phase Delivery Seal](#two-phase-delivery-seal).
 

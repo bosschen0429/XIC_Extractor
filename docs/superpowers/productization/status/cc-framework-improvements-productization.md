@@ -17,12 +17,7 @@ Promotion requirements belong to
 
 ## Stable lane keys
 
-- `broad_backfill_autowrite`
 - `productization_authority_firewall`
 - `quality_explanation_sidecar`
 - `sample_metadata_order_projection`
-- `sample_metadata_role_value_behavior`
-- `review_action_selected_candidate_switch`
-- `review_action_manual_boundary_area_writer`
-- `calibration_normalization_activation`
 - `gui_replay_parity`

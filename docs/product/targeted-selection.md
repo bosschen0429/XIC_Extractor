@@ -428,7 +428,7 @@ inputs. A different sample cannot replace missing current-sample identity suppor
 ## See Also
 
 - [LC-MS/MS evidence rules](../lc-msms-evidence-rules.md) | [Evidence spine](evidence-spine.md)
-- [Quantitation context](quantitation-context.md) | [Review roundtrip](review-roundtrip.md)
+- [Quantitation context](quantitation-context.md)
 - [Decision policy](decision-policy.md)
 
 ## Retired candidate audit outputs

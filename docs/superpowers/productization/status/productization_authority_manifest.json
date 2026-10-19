@@ -1,7 +1,7 @@
 {
   "schema_version": "productization_authority_manifest",
   "status": "active",
-  "updated": "2026-10-01",
+  "updated": "2026-10-19",
   "authority_policy": {
     "unregistered_scope_policy": "fail_closed",
     "product_writer_allowed_scopes": [],
@@ -19,14 +19,6 @@
     ]
   },
   "current_authority": {},
-  "parked_lanes": {
-    "broad_backfill": {
-      "status": "parked",
-      "decision_packet": "vault:Backfill Broad Autowrite Feasibility Gate.md",
-      "reason": "Existing artifacts do not prove broad analyte peak-choice truth, analyte area truth, or homogeneous separability for the unresolved 3015 trace-matched rows; 1087 rows still lack trace/overlay evidence.",
-      "may_grant_write_authority": false
-    }
-  },
   "explanation_only_sources": [
     {
       "source_id": "backfill_policy_quality_explanations",

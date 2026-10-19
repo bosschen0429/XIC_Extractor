@@ -2129,19 +2129,19 @@ def test_repo_owner_marker_controls_topic_before_body_keywords(
     vault = tmp_path / "vault"
     _clean_repo(root)
     _clean_vault(vault)
-    subcontract_path = "docs/superpowers/validation/review-roundtrip-subcontract.md"
+    subcontract_path = "docs/superpowers/validation/targeted-selection-subcontract.md"
     _write(
         root / subcontract_path,
         "\n".join(
             [
-                "# Review roundtrip subcontract",
+                "# Targeted selection subcontract",
                 "",
                 "Doc placement: repo_subcontract_doc",
                 "Doc kind: spec",
                 "Doc lifecycle: active",
-                "Repo owner: docs/product/review-roundtrip.md",
+                "Repo owner: docs/product/targeted-selection.md",
                 (
-                    "Doc exit rule: retire after docs/product/review-roundtrip.md "
+                    "Doc exit rule: retire after docs/product/targeted-selection.md "
                     "absorbs it."
                 ),
                 "",
@@ -2163,10 +2163,10 @@ def test_repo_owner_marker_controls_topic_before_body_keywords(
     )
     assert cluster["topic_key"] == "targeted selection"
     assert cluster["repo_owner_hint"] == (
-        "docs/product/targeted-selection.md; docs/product/review-roundtrip.md"
+        "docs/product/targeted-selection.md"
     )
     assert cluster["topic_cluster_status"] == "subcontracts_with_owner"
-    assert cluster["subcontract_claims"] == "docs/product/review-roundtrip.md"
+    assert cluster["subcontract_claims"] == "docs/product/targeted-selection.md"
 
 
 def test_architecture_contract_owner_routes_cleanup_specs_out_of_backfill(

@@ -36,12 +36,6 @@ byte-for-byte identical to the retired body.
 
 ## Lane anchor index
 
-### park_broad_backfill
-
-Lane key: `broad_backfill_autowrite`
-
-Routes: [state](../validation/productization_status_index.tsv), [writer authority](../productization/status/productization_authority_manifest.json), [stable capability](../../product/productization.md).
-
 ### productization_authority_manifest
 
 Lane key: `productization_authority_firewall`
@@ -57,30 +51,6 @@ Routes: [state](../validation/productization_status_index.tsv), [writer authorit
 ### sample_metadata cross-module parity
 
 Lane key: `sample_metadata_order_projection`
-
-Routes: [state](../validation/productization_status_index.tsv), [writer authority](../productization/status/productization_authority_manifest.json), [stable capability](../../product/productization.md).
-
-### role/value behavior remains blocked
-
-Lane key: `sample_metadata_role_value_behavior`
-
-Routes: [state](../validation/productization_status_index.tsv), [writer authority](../productization/status/productization_authority_manifest.json), [stable capability](../../product/productization.md).
-
-### selected candidate / manual boundary writer parked
-
-Lane key: `review_action_selected_candidate_switch`
-
-Routes: [state](../validation/productization_status_index.tsv), [writer authority](../productization/status/productization_authority_manifest.json), [stable capability](../../product/productization.md).
-
-### manual-boundary area writer parked
-
-Lane key: `review_action_manual_boundary_area_writer`
-
-Routes: [state](../validation/productization_status_index.tsv), [writer authority](../productization/status/productization_authority_manifest.json), [stable capability](../../product/productization.md).
-
-### calibration/normalization activation
-
-Lane key: `calibration_normalization_activation`
 
 Routes: [state](../validation/productization_status_index.tsv), [writer authority](../productization/status/productization_authority_manifest.json), [stable capability](../../product/productization.md).
 

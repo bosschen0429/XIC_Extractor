@@ -78,7 +78,7 @@ def _cell_observation_content_payload(content: Any) -> dict[str, Any]:
         ),
         "evidence_artifact_ids": list(content.evidence_artifact_ids),
         "reason_codes": list(content.reason_codes),
-        "human_disposition_ref_id": content.human_disposition_ref_id,
+        "human_disposition_ref_id": None,
         "outside_group": (
             asdict(content.outside_group) if content.outside_group is not None else None
         ),

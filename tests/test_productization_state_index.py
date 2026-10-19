@@ -400,11 +400,11 @@ def test_checker_rejects_state_bearing_compatibility_prose(tmp_path: Path) -> No
 @pytest.mark.parametrize(
     "readiness_text",
     (
-        "broad_backfill_autowrite remains parked",
-        "park_broad_backfill is blocked",
-        "Broad auto-write from the full candidate universe is production-ready",
-        "Broad auto-write — parked",
-        "Broad Backfill: blocked",
+        "quality_explanation_sidecar remains diagnostic_only",
+        "quality_explanation_sidecar is blocked",
+        "Quality explanation sidecar is production-ready",
+        "Quality explanation sidecar — diagnostic_only",
+        "Quality explanation sidecar: blocked",
     ),
 )
 def test_checker_rejects_product_topic_lane_readiness_assignment(
@@ -422,7 +422,7 @@ def test_checker_rejects_product_topic_lane_readiness_assignment(
 
     assert any(
         "product topic owner duplicates mutable readiness for "
-        "broad_backfill_autowrite" in problem
+        "quality_explanation_sidecar" in problem
         for problem in problems
     )
 
@@ -458,25 +458,6 @@ def test_checker_rejects_compatibility_owner_route_drift(tmp_path: Path) -> None
     assert any("closed metadata" in problem for problem in problems)
 
 
-def test_checker_rejects_parked_broad_backfill_authority(tmp_path: Path) -> None:
-    mutated = _mutated_index(
-        tmp_path,
-        "broad_backfill_autowrite",
-        {
-            "write_authority": "TRUE",
-            "product_authority_scope": "backfill_policy_write_ready_rows",
-            "may_touch_matrix": "TRUE",
-        },
-    )
-
-    problems = _check_with_index(mutated)
-
-    assert any("parked lane grants authority" in problem for problem in problems)
-    assert any(
-        "broad_backfill_autowrite must stay parked" in problem for problem in problems
-    )
-
-
 def test_checker_rejects_diagnostic_sidecar_authority(tmp_path: Path) -> None:
     mutated = _mutated_index(
         tmp_path,
@@ -510,7 +491,7 @@ def test_checker_rejects_non_writer_matrix_touch_without_write_flag(
 ) -> None:
     mutated = _mutated_index(
         tmp_path,
-        "review_action_selected_candidate_switch",
+        "quality_explanation_sidecar",
         {
             "write_authority": "FALSE",
             "product_authority_scope": "",

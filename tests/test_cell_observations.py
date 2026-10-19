@@ -149,6 +149,10 @@ def test_predecessor_cells_keep_all_supports_with_deterministic_outside_witness(
             "cell_observation"
         }
         assert all("outside_group" in payload["content"] for payload in payloads)
+        assert all(
+            payload["content"]["human_disposition_ref_id"] is None
+            for payload in payloads
+        )
         assert len({frozenset(payload["content"]) for payload in payloads}) == 1
         assert any(payload["content"]["outside_group"] is None for payload in payloads)
 

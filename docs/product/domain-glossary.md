@@ -301,9 +301,6 @@ contract says otherwise.
 
 - `sample_metadata`: canonical schema for sample identity, injection order,
   role, batch, and QC context.
-- `review_action`: typed action-import schema for converting human review
-  decisions into machine-checkable plans without silently editing product
-  values.
 - `validation-minimal`: lightweight Alignment validation output profile. It is
   an artifact surface, not production-readiness evidence by itself.
 

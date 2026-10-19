@@ -33,7 +33,7 @@ treat a passing diagnostic replay as permission to change that output.
 | How are missing observations searched and accepted? | [Backfill](../../product/backfill.md) |
 | How do Targeted selection, confidence, and counted detection relate? | [Targeted Selection](../../product/targeted-selection.md) and [Decision Policy](../../product/decision-policy.md) |
 | How do completed cells become Matrix values and rows? | [Quant Matrix](../../product/quant-matrix.md) |
-| What can a review action change? | [Review Roundtrip](../../product/review-roundtrip.md) |
+| What grants product-writing authority? | [Writer authority](../../product/productization.md#writer-authority) |
 | Which request, attempt, and artifact produced a result? | [Result Traceability](../../product/processing-lineage.md) |
 | What happened during execution? | [Execution Runtime](../../product/execution-runtime.md) |
 | How is retained evidence inspected? | [XIC Inspector](../../product/xic-inspector.md) and the [Diagnostics Index](../../../tools/diagnostics/INDEX.md) |
