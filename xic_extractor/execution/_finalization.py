@@ -256,60 +256,6 @@ class AttemptFinalizationState:
     events: tuple[RuntimeLifecycleEvent, ...] = ()
     failures: tuple[RuntimeLifecycleFailure, ...] = ()
 
-    def __post_init__(self) -> None:
-        if not isinstance(self.runtime, AttemptRuntime):
-            raise RuntimeFinalizationContractError("runtime must be an AttemptRuntime")
-        _require_tuple_of(self.resources, RuntimeResourceRecord, field="resources")
-        _require_tuple_of(self.artifacts, RuntimeArtifactRecord, field="artifacts")
-        _require_tuple_of(self.events, RuntimeLifecycleEvent, field="events")
-        _require_tuple_of(self.failures, RuntimeLifecycleFailure, field="failures")
-        attempt = self.runtime.manifest.attempt
-        resource_keys = tuple(
-            record.reservation.resource_key for record in self.resources
-        )
-        if len(resource_keys) != len(set(resource_keys)):
-            raise RuntimeFinalizationContractError("resource keys must be unique")
-        if any(record.reservation.attempt != attempt for record in self.resources):
-            raise RuntimeFinalizationContractError(
-                "resource reservations must bind the runtime attempt"
-            )
-        artifact_ids = tuple(
-            record.artifact.evidence_artifact_id for record in self.artifacts
-        )
-        if len(artifact_ids) != len(set(artifact_ids)):
-            raise RuntimeFinalizationContractError("artifact ids must be unique")
-        if any(
-            record.artifact.producer_processing_request_id
-            != attempt.processing_request_id
-            or record.artifact.producer_processing_attempt_id
-            != attempt.processing_attempt_id
-            for record in self.artifacts
-        ):
-            raise RuntimeFinalizationContractError(
-                "runtime artifacts must bind the runtime request and attempt"
-            )
-        manifest_keys = set(self.runtime.manifest.work_unit_keys)
-        if any(record.work_unit_key not in manifest_keys for record in self.artifacts):
-            raise RuntimeFinalizationContractError(
-                "runtime artifacts must bind declared manifest work units"
-            )
-        first_sequence = len(self.runtime.history.events) + 1
-        if tuple(event.sequence for event in self.events) != tuple(
-            range(first_sequence, first_sequence + len(self.events))
-        ):
-            raise RuntimeFinalizationContractError(
-                "lifecycle event sequences must continue the attempt history"
-            )
-        terminal_indexes = tuple(
-            index
-            for index, event in enumerate(self.events)
-            if event.kind is RuntimeLifecycleEventKind.TERMINAL_PROPOSAL
-        )
-        if terminal_indexes and terminal_indexes != (len(self.events) - 1,):
-            raise RuntimeFinalizationContractError(
-                "terminal proposal must be the final coordinator event"
-            )
-
     @property
     def terminal_proposed(self) -> bool:
         return bool(
@@ -775,7 +721,7 @@ def _register_runtime_artifacts(
     state: AttemptFinalizationState,
     registrations: Iterable[tuple[str, EvidenceArtifactRef]],
 ) -> AttemptFinalizationState:
-    """Register ordered artifacts with one complete, strictly validated state."""
+    """Admit ordered artifact registrations into the next coordinator state."""
 
     artifacts_by_id = {
         item.artifact.evidence_artifact_id: item for item in state.artifacts

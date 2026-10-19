@@ -84,7 +84,6 @@ from xic_extractor.execution._receipts import (
     RuntimeWorkerBatchReceipt,
     RuntimeWorkerPeakRssSample,
     _acquisition_receipts_match,
-    _require_tuple_of,
     _required_text,
     accept_runtime_finalization_receipt,
     compact_runtime_acquisition_receipt,
@@ -170,21 +169,6 @@ class RuntimeAttemptAggregate:
         if _mint_token is not _RUNTIME_OWNER_MINT_TOKEN:
             raise RuntimeFinalizationContractError(
                 "RuntimeAttemptAggregate must be minted by the runtime owner"
-            )
-        if not isinstance(self.state, AttemptFinalizationState):
-            raise RuntimeFinalizationContractError(
-                "aggregate state must be an AttemptFinalizationState"
-            )
-        _require_tuple_of(
-            self.acquisitions,
-            RuntimeAcquisitionReceipt,
-            field="acquisitions",
-        )
-        manifest_keys = set(self.state.runtime.manifest.work_unit_keys)
-        keys = tuple(item.work_unit_key for item in self.acquisitions)
-        if any(key not in manifest_keys for key in keys):
-            raise RuntimeFinalizationContractError(
-                "acquisition receipts must bind declared manifest work"
             )
 
     @property

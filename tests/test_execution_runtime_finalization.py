@@ -15,9 +15,7 @@ from tests.runtime_telemetry_fixtures import (
 )
 from xic_extractor.evidence_artifacts import EvidenceArtifactRef
 from xic_extractor.execution._finalization import (
-    AttemptFinalizationState,
     RuntimeArtifactDisposition,
-    RuntimeArtifactRecord,
     RuntimeFinalizationContractError,
     RuntimeLifecycleEventKind,
     RuntimeLifecycleFailureKind,
@@ -694,7 +692,7 @@ def test_process_worker_open_does_not_increment_raw_open_count(
     )
 
 
-def test_undeclared_artifact_is_rejected_by_registration_and_state_invariant(
+def test_undeclared_artifact_is_rejected_by_registration(
     tmp_path: Path,
 ) -> None:
     attempt = _attempt(tmp_path)
@@ -723,16 +721,6 @@ def test_undeclared_artifact_is_rejected_by_registration_and_state_invariant(
     assert coordinator.state.artifacts[0].proposed_disposition is (
         RuntimeArtifactDisposition.OFFERED_TO_OWNER
     )
-    with pytest.raises(RuntimeFinalizationContractError, match="declared manifest"):
-        AttemptFinalizationState(
-            runtime=runtime,
-            artifacts=(
-                RuntimeArtifactRecord(
-                    work_unit_key="raw:rogue",
-                    artifact=rogue_artifact,
-                ),
-            ),
-        )
 
 
 def test_successful_settlement_requires_artifact_registered_for_same_work_unit(
