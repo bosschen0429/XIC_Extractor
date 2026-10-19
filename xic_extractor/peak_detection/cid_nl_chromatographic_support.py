@@ -64,56 +64,6 @@ def compose_cid_nl_chromatographic_support_ref(
     )
 
 
-def validate_cid_nl_chromatographic_support_binding(
-    reference: CidNlChromatographicSupportRef,
-    *,
-    processing_owners: ProcessingOwnerReferences,
-    sample: ResolvedCanonicalSampleIdentity,
-    scan_support_refs: tuple[DdaCidNlPeakSupportRef, ...],
-) -> None:
-    """Reject owner, sample, scan-set, peak, policy, or universe substitution."""
-
-    if not isinstance(reference, CidNlChromatographicSupportRef):
-        raise CidNlChromatographicSupportContractError(
-            "reference must be owner-minted chromatographic support"
-        )
-    _validate_owner_sample(processing_owners, sample)
-    supports = _validated_scan_supports(
-        scan_support_refs,
-        processing_owners=processing_owners,
-        sample=sample,
-        evidence_refs=reference.evidence_refs,
-    )
-    expected_content = _content_from_supports(
-        sample=sample, supports=supports, evidence_refs=reference.evidence_refs
-    )
-    if reference.content != expected_content:
-        raise CidNlChromatographicSupportContractError(
-            "chromatographic event references a different scan support set"
-        )
-    expected_upstream_ids = tuple(
-        sorted(support.artifact.evidence_artifact_id for support in supports)
-    )
-    if reference.artifact.upstream_artifact_ids != expected_upstream_ids:
-        raise CidNlChromatographicSupportContractError(
-            "chromatographic event upstream scan support was substituted"
-        )
-    if (
-        reference.artifact.producer_processing_request_id
-        != processing_owners.request.processing_request_id
-    ):
-        raise CidNlChromatographicSupportContractError(
-            "chromatographic event references a different processing request"
-        )
-    if (
-        reference.artifact.producer_processing_attempt_id
-        != processing_owners.attempt.processing_attempt_id
-    ):
-        raise CidNlChromatographicSupportContractError(
-            "chromatographic event references a different processing attempt"
-        )
-
-
 def _content_from_supports(
     *,
     sample: ResolvedCanonicalSampleIdentity,
@@ -287,5 +237,4 @@ __all__ = [
     "SCHEMA_VERSION",
     "canonical_cid_nl_chromatographic_support_bytes",
     "compose_cid_nl_chromatographic_support_ref",
-    "validate_cid_nl_chromatographic_support_binding",
 ]

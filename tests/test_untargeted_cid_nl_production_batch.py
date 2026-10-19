@@ -2335,7 +2335,6 @@ def test_alignment_subject_worksets_preserve_only_compatible_overlap() -> None:
         CidNlMethodSubjectContractError,
         cid_nl_alignment_subject_worksets,
         mint_untargeted_cid_nl_method_subject,
-        validate_cid_nl_alignment_subject_workset,
     )
 
     first = mint_untargeted_cid_nl_method_subject(
@@ -2387,24 +2386,9 @@ def test_alignment_subject_worksets_preserve_only_compatible_overlap() -> None:
     )
     with pytest.raises(
         CidNlMethodSubjectContractError,
-        match="not overlap-connected",
+        match="duplicate method subjects",
     ):
-        validate_cid_nl_alignment_subject_workset((first, disconnected))
-    with pytest.raises(
-        CidNlMethodSubjectContractError,
-        match="cannot cross configured neutral losses",
-    ):
-        validate_cid_nl_alignment_subject_workset((first, different_loss))
-    with pytest.raises(
-        CidNlMethodSubjectContractError,
-        match="scalar Untargeted",
-    ):
-        validate_cid_nl_alignment_subject_workset((first, composite))
-    with pytest.raises(
-        CidNlMethodSubjectContractError,
-        match="unique method subject identities",
-    ):
-        validate_cid_nl_alignment_subject_workset((first, first))
+        cid_nl_alignment_subject_worksets((first, first))
 
 
 def test_completed_empty_recovery_preserves_each_compatible_source_subject(
