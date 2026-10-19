@@ -25,6 +25,13 @@ superseded internal representations in the same change. Keep the correctness ora
 with the owner and consumer-visible behavior with the consumer. A test alone
 does not justify retaining a retired interface or compatibility branch.
 
+A rejection test needs a reachable producer of the rejected input: external or
+persisted data, a user action, or an actual caller path. Hand-assembling forged,
+crossed, tampered, or substituted internal objects only to show that a
+constructor rejects them tests the defense itself, not product behavior; it
+does not justify adding or retaining that defense. Removing an unneeded
+internal check retires its rejection tests in the same change.
+
 ## Oracle, Attribution, And Contract Boundaries
 
 1. **Independent oracle:** derive expected results from an analytical formula,
