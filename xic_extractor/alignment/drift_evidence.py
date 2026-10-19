@@ -357,7 +357,6 @@ def mint_known_istd_reference_from_measurements(
 class SampleDriftEvidence:
     sample_stem: str
     injection_order: int
-    trend_id: str
     istd_rt_min: float
     local_trend_rt_min: float
     rt_drift_delta_min: float

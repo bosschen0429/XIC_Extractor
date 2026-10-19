@@ -74,7 +74,6 @@ def test_unchanged_identity_closes_complete_cartesian_population(
 
     assert first == second
     assert first.coverage is coverage
-    assert first.final_receipt is receipt
     assert first.predecessor_associations[0].successors == (group,)
     assert len(first.position_associations) == 2
     assert {item.position.position_id for item in first.position_associations} == {

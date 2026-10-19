@@ -71,7 +71,6 @@ class CrossSamplePeakGroupHypothesis:
     group_hypothesis_id: str
     public_family_id: str
     owner_ids: tuple[str, ...]
-    event_ids: tuple[str, ...]
     event_member_count: int
     processing_request_id: str = ""
     member_subjects: tuple[CrossSampleGroupMemberSubject, ...] = ()
@@ -272,9 +271,6 @@ def _hypothesis_from_owner_group(
         if not events
         else sum(event.observed_neutral_loss_da for event in events) / len(events)
     )
-    event_ids = tuple(
-        event_id for owner in group for event_id in owner.event_candidate_ids
-    )
     is_singleton = len(group) == 1
     has_definitive = any(not getattr(owner, "is_provisional", False) for owner in group)
     has_anchor = has_definitive or not is_singleton
@@ -289,7 +285,7 @@ def _hypothesis_from_owner_group(
         group_hypothesis_id=group_identity.group_hypothesis_id,
         public_family_id=public_family_id,
         owner_ids=tuple(owner.owner_id for owner in group),
-        event_ids=event_ids,
+
         event_member_count=sum(len(owner.all_events) for owner in group),
         processing_request_id=group_identity.processing_request_id,
         member_subjects=group_identity.member_subjects,

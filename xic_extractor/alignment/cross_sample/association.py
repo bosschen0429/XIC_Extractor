@@ -58,7 +58,6 @@ class CrossSampleAssociationLineageHandoff:
 
     handoff_id: str
     coverage: BackfillEvaluationCoverageBatch
-    final_receipt: CrossSampleGroupingResult
     predecessor_associations: tuple[CrossSamplePredecessorAssociation, ...]
     position_associations: tuple[CrossSampleCoveragePositionAssociation, ...]
     final_population: tuple[CrossSampleGroupIdentity, ...]
@@ -100,7 +99,7 @@ def build_cross_sample_association_lineage_handoff(
     return CrossSampleAssociationLineageHandoff(
         handoff_id=typed_identity_digest(_HANDOFF_PREFIX, basis),
         coverage=coverage,
-        final_receipt=final_receipt,
+
         predecessor_associations=predecessor_associations,
         position_associations=position_associations,
         final_population=final_population,
