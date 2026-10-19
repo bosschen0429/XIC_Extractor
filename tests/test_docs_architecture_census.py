@@ -43,38 +43,25 @@ def _defense_gate_repo(tmp_path: Path, source: str) -> Path:
     return path
 
 
+_MINT = "def mint(value):\n return Ref(value, _MINT_TOKEN)\n"
+
+
 @pytest.mark.parametrize(
-    ("before", "after", "rule"),
+    "after",
     (
-        ("", "_OWNER_MINT_TOKEN = object()\n", "mint-token"),
-        ("", "class Ref:\n _mint_token: object\n", "mint-token"),
-        (
-            "",
-            "import hashlib as h\ndef identity(data):\n"
-            " return h.sha256(data).hexdigest()\n",
-            "hashing",
-        ),
-        (
-            "",
-            "from hashlib import sha256 as digest\ndef identity(data):\n"
-            " return digest(data).hexdigest()\n",
-            "hashing",
-        ),
+        "_OWNER_MINT_TOKEN = object()\n",
+        "class Ref:\n _mint_token: object\n",
+        _MINT,
     ),
 )
-def test_internal_defense_growth_is_rejected(
-    tmp_path: Path,
-    before: str,
-    after: str,
-    rule: str,
-) -> None:
-    path = _defense_gate_repo(tmp_path, before)
+def test_internal_defense_growth_is_rejected(tmp_path: Path, after: str) -> None:
+    path = _defense_gate_repo(tmp_path, "")
     path.write_text(after, encoding="utf-8")
 
     problems = census.validate_internal_defense_growth(tmp_path, "HEAD")
 
     assert any(
-        rule in problem and "xic_extractor/example.py:" in problem
+        "mint-token" in problem and "xic_extractor/example.py:" in problem
         for problem in problems
     )
 
@@ -82,20 +69,17 @@ def test_internal_defense_growth_is_rejected(
 @pytest.mark.parametrize(
     ("before", "after"),
     (
-        (
-            "import hashlib\ndef digest(data):\n return hashlib.sha256(data)\n",
-            "import hashlib\ndef digest(data):\n return hashlib.sha256(data)\n",
-        ),
-        ("import hashlib\ndef digest(data):\n return hashlib.sha256(data)\n", ""),
+        (_MINT, _MINT),
+        (_MINT, ""),
         (
             "class Ref:\n _mint_token: object\n def check(self):\n"
             "  return self._mint_token is _MINT_TOKEN\n",
             "class Ref:\n _mint_token: object\n",
         ),
         (
-            "import hashlib\ndef digest(data):\n return hashlib.sha256(data)\n",
-            "import hashlib\ndef digest(data):\n"
-            ' """Updated explanation."""\n return hashlib.sha256(data)\n',
+            _MINT,
+            "def mint(value):\n"
+            ' """Updated explanation."""\n return Ref(value, _MINT_TOKEN)\n',
         ),
     ),
 )
@@ -110,32 +94,12 @@ def test_internal_defense_gate_preserves_existing_boundaries_and_cleanup(
     assert census.validate_internal_defense_growth(tmp_path, "HEAD") == []
 
 
-@pytest.mark.parametrize(
-    "algorithm", ("sha3_224", "sha3_384", "shake_128", "shake_256")
-)
-@pytest.mark.parametrize("imported", (False, True))
-def test_internal_defense_gate_covers_hashlib_calls(
-    tmp_path: Path, algorithm: str, imported: bool
-) -> None:
-    path = _defense_gate_repo(tmp_path, "")
-    source = (
-        f"from hashlib import {algorithm} as digest\ndigest(b'input')\n"
-        if imported
-        else f"import hashlib as h\nh.{algorithm}(b'input')\n"
-    )
-    path.write_text(source, encoding="utf-8")
-    assert any(
-        "hashing" in p
-        for p in census.validate_internal_defense_growth(tmp_path, "HEAD")
-    )
-
-
 @pytest.mark.parametrize("staged", (False, True))
 @pytest.mark.parametrize("growth", (False, True))
 def test_internal_defense_gate_tracks_module_renames(
     tmp_path: Path, staged: bool, growth: bool
 ) -> None:
-    path = _defense_gate_repo(tmp_path, "import hashlib\nhashlib.sha256(b'input')\n")
+    path = _defense_gate_repo(tmp_path, "_MINT_TOKEN = object()\n" + _MINT)
     destination = path.with_name("renamed.py")
     subprocess.run(
         ["git", "-C", str(tmp_path), "mv", str(path), str(destination)],
@@ -144,7 +108,9 @@ def test_internal_defense_gate_tracks_module_renames(
         env=census._git_subprocess_environment(),
     )
     if growth:
-        destination.write_text(destination.read_text() + "hashlib.shake_256(b'new')\n")
+        destination.write_text(
+            destination.read_text() + "def remint(value):\n return mint(_MINT_TOKEN)\n"
+        )
         subprocess.run(
             ["git", "-C", str(tmp_path), "add", "."],
             check=True,
@@ -166,9 +132,11 @@ def test_internal_defense_gate_tracks_module_renames(
         " assert all(row.parent in rows for row in rows)\n",
         "class LocalPeakShape:\n def __post_init__(self):\n  assert self.width > 0\n",
         "class ArtifactRef:\n def __post_init__(self):\n  verify(self.artifact)\n",
+        "import hashlib\ndef fingerprint(path):\n"
+        " return hashlib.sha256(path.read_bytes()).hexdigest()\n",
     ),
 )
-def test_internal_defense_gate_allows_boundary_and_numeric_validation(
+def test_internal_defense_gate_allows_validation_and_hashing(
     tmp_path: Path, source: str
 ) -> None:
     path = _defense_gate_repo(tmp_path, "")
@@ -181,16 +149,14 @@ def test_internal_defense_gate_compares_duplicate_scopes_by_occurrence(
 ) -> None:
     path = _defense_gate_repo(
         tmp_path,
-        "import hashlib\ndef digest(data):\n pass\n"
-        "if condition:\n def digest(data):\n  pass\n",
+        "def mint(value):\n pass\nif condition:\n def mint(value):\n  pass\n",
     )
     path.write_text(
-        "import hashlib\ndef digest(data):\n return hashlib.sha256(data)\n"
-        "if condition:\n def digest(data):\n  pass\n",
+        _MINT + "if condition:\n def mint(value):\n  pass\n",
         encoding="utf-8",
     )
     assert any(
-        "hashing" in p
+        "mint-token" in p
         for p in census.validate_internal_defense_growth(tmp_path, "HEAD")
     )
 
@@ -199,8 +165,8 @@ def test_internal_defense_gate_compares_duplicate_scopes_by_occurrence(
     ("before", "after", "growth"),
     (
         (
-            "def _mint_ref(data):\n import hashlib\n return hashlib.sha256(data)\n",
-            "def mint_ref(data):\n import hashlib\n return hashlib.sha256(data)\n",
+            "def _mint_ref(data):\n return Ref(data, _MINT_TOKEN)\n",
+            "def mint_ref(data):\n return Ref(data, _MINT_TOKEN)\n",
             False,
         ),
         (
@@ -209,15 +175,15 @@ def test_internal_defense_gate_compares_duplicate_scopes_by_occurrence(
             False,
         ),
         (
-            "def mint_ref(data):\n import hashlib\n return hashlib.sha256(data)\n",
-            "def mint_ref(data):\n import hashlib\n return hashlib.sha256(data)\n"
-            "def copy_ref(data):\n import hashlib\n return hashlib.sha256(data)\n",
+            "def mint_ref(data):\n return Ref(data, _MINT_TOKEN)\n",
+            "def mint_ref(data):\n return Ref(data, _MINT_TOKEN)\n"
+            "def copy_ref(data):\n return Ref(data, _MINT_TOKEN)\n",
             True,
         ),
         (
-            "def old(data):\n import hashlib\n return hashlib.sha256(data)\n",
-            "def first(data):\n import hashlib\n return hashlib.sha256(data)\n"
-            "def second(data):\n import hashlib\n return hashlib.sha256(data)\n",
+            "def old(data):\n return Ref(data, _MINT_TOKEN)\n",
+            "def first(data):\n return Ref(data, _MINT_TOKEN)\n"
+            "def second(data):\n return Ref(data, _MINT_TOKEN)\n",
             True,
         ),
     ),

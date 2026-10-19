@@ -1556,17 +1556,6 @@ class _DefenseScope:
 def _internal_defense_profile(source: str) -> list[_DefenseScope]:
     """Collect bounded syntax signals; this is not a semantic trust analysis."""
     tree = ast.parse(source)
-    hash_modules = {"hashlib"}
-    hash_functions: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            hash_modules.update(
-                item.asname or item.name
-                for item in node.names
-                if item.name == "hashlib"
-            )
-        elif isinstance(node, ast.ImportFrom) and node.module == "hashlib":
-            hash_functions.update(item.asname or item.name for item in node.names)
     result: list[_DefenseScope] = []
 
     def scan(scope: Any, name: str) -> None:
@@ -1611,17 +1600,6 @@ def _internal_defense_profile(source: str) -> list[_DefenseScope]:
                         ),
                     )
                 ]
-            ),
-            "hashing": sum(
-                isinstance(node, ast.Call)
-                and (
-                    isinstance(node.func, ast.Name)
-                    and node.func.id in hash_functions
-                    or isinstance(node.func, ast.Attribute)
-                    and isinstance(node.func.value, ast.Name)
-                    and node.func.value.id in hash_modules
-                )
-                for node in nodes
             ),
         }
         result.append(

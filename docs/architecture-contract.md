@@ -122,16 +122,17 @@ the affected flow, not a whole-repository audit.
 ### Internal Defense Growth Gate
 
 `scripts/check_architecture_census.py --internal-defense-base REF` blocks
-syntactic growth in mint-token uses and direct `hashlib` calls (including
-imported aliases) in changed `xic_extractor` source. The pre-commit hook
-compares HEAD to staged source; CI compares against the event's base commit. A
-missing baseline or unreadable source fails closed. Existing unchanged scopes
-are not re-certified, and no generated baseline registry is maintained.
+syntactic growth in mint-token uses in changed `xic_extractor` source. The
+pre-commit hook compares HEAD to staged source; CI compares against the event's
+base commit. A missing baseline or unreadable source fails closed. Existing
+unchanged scopes are not re-certified, and no generated baseline registry is
+maintained.
 
-Validators are not gated: assertion syntax cannot separate a producer domain
-constraint or external admission check from replayed internal validation. Change
-Locality and review own that decision. Duplicate scope definitions are compared
-by occurrence rather than silently overwriting one another.
+Validators and hashing are not gated: syntax cannot separate a producer domain
+constraint, external admission check, or boundary-adapter digest from replayed
+internal validation or identity minting. Change Locality and review own that
+decision. Duplicate scope definitions are compared by occurrence rather than
+silently overwriting one another.
 
 Git-detected file renames use the original blob as baseline. An unambiguous,
 exact-body scope rename can retain a removed scope's baseline; a copied scope
