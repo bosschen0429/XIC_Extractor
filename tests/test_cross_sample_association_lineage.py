@@ -11,9 +11,6 @@ import xic_extractor.alignment.cross_sample.peak_groups as cross_sample_owner
 import xic_extractor.peak_detection.integration as integration_runtime
 import xic_extractor.peak_detection.ms1_shape_identity as smoothing_runtime
 from tests.alignment_pipeline_helpers import _owner
-from xic_extractor.alignment.backfill import (
-    acquisition as owner_backfill_acquisition_runtime,
-)
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillEvaluationCoverageBatch,
     BackfillPlanningPosition,
@@ -122,11 +119,6 @@ def test_pure_association_adds_no_xic_smoothing_or_integration_work(
 
         return fail
 
-    monkeypatch.setattr(
-        owner_backfill_acquisition_runtime,
-        "_extract_unique_many",
-        forbidden("extract_xic"),
-    )
     monkeypatch.setattr(
         smoothing_runtime,
         "gaussian_smooth_values",

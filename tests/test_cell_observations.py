@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from copy import copy
-from dataclasses import fields, replace
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -237,33 +238,7 @@ def _outside_population_handoff(tmp_path: Path):
         samples=fixture.samples, owners=fixture.owners, request=fixture.owners.request
     )
     coverage = _coverage_for_groups(
-        binding, identities, fixture.samples, retained=False
-    )
-    epoch = coverage.epoch
-    coverage = build_backfill_evaluation_coverage(
-        mint_backfill_planning_epoch(
-            **{
-                item.name: getattr(epoch, item.name)
-                for item in fields(epoch)
-                if item.name not in {"epoch_id", "positions"}
-            },
-            positions=tuple(
-                replace(
-                    position,
-                    planning_reason=(
-                        "retained_local_owner"
-                        if any(
-                            member.canonical_sample_identity_id
-                            == position.sample.identity.sample_identity_id
-                            for member in position.group_identity.member_subjects
-                        )
-                        else "local_owner_not_supersedable"
-                    ),
-                )
-                for position in epoch.positions
-            ),
-        ),
-        (),
+        binding, identities, fixture.samples, predecessor_cells=cells
     )
     receipt = _final_receipt(
         _receipt_fixture(binding, fixture.samples),
@@ -369,25 +344,25 @@ def _owner_handoff(tmp_path: Path):
         spine.group,
         require_canonical=True,
     )
-    coverage = _not_planned_coverage(
-        fixture.owners,
+    return fixture, spine, _owner_handoff_for_cells(fixture, group, spine.cells)
+
+
+def _owner_handoff_for_cells(fixture: Any, group: Any, cells: tuple[Any, ...]):
+    coverage = _coverage_for_groups(
+        fixture,
         (group,),
         fixture.samples,
-        planning_reason="retained_local_owner",
-    )
-    receipt_fixture = SimpleNamespace(
-        context=SimpleNamespace(processing_owners=fixture.owners),
+        predecessor_cells=cells,
     )
     receipt = _final_receipt(
-        receipt_fixture,
+        SimpleNamespace(context=SimpleNamespace(processing_owners=fixture.owners)),
         predecessors=(group,),
         successors=(group,),
     )
-    handoff = build_cross_sample_association_lineage_handoff(
+    return build_cross_sample_association_lineage_handoff(
         coverage=coverage,
         final_receipt=receipt,
     )
-    return fixture, spine, handoff
 
 
 def _support_assessment(
@@ -436,33 +411,12 @@ def _support_assessment(
     )
 
 
-def _not_evaluated_assessment(
-    fixture: Any,
-    sample_stem: str,
-    *,
-    suffix: str,
-):
-    receipt = replace(
-        _completed_receipt(scanned_event_count=0),
-        search_completed=False,
-        reason_code="search_not_evaluated",
-    )
-    return mint_cid_nl_method_assessment_ref(
-        processing_owners=fixture.owners,
-        sample=fixture.sample(sample_stem),
-        target=fixture.target,
-        detector_invocation_id=f"gaussian15:{sample_stem}:{suffix}",
-        evaluation_receipt=receipt,
-        technical_state="not_evaluated",
-    )
-
-
 def _not_planned_coverage(
     owners: Any,
     groups: tuple[Any, ...],
     samples: tuple[Any, ...],
     *,
-    planning_reason: BackfillPlanningReason,
+    planning_reason: Callable[[Any, Any], BackfillPlanningReason],
 ):
     """Coverage shaped like CID-NL completion: no planned requests or terminals."""
     positions = tuple(
@@ -475,7 +429,7 @@ def _not_planned_coverage(
             group_identity=group,
             sample=sample,
             planning_state="not_planned",
-            planning_reason=planning_reason,
+            planning_reason=planning_reason(group, sample),
             primary_logical_requests=(),
         )
         for group in groups
@@ -499,19 +453,42 @@ def _not_planned_coverage(
     return build_backfill_evaluation_coverage(epoch, ())
 
 
+def _completion_planning_reason(cell: Any) -> BackfillPlanningReason:
+    """Mirror CID-NL completion's planning reason for one predecessor cell."""
+    if cell is None:
+        return "no_discovery_input"
+    if cell.content.outside_group is not None:
+        return "local_owner_not_supersedable"
+    if (
+        cell.content.technical_state == "evaluated"
+        and cell.content.method_result == "HOLD"
+        and cell.peak_observation is None
+        and len(cell.method_assessment.candidate_peaks) >= 2
+    ):
+        return "retained_unresolved_candidates"
+    return "retained_local_owner"
+
+
 def _coverage_for_groups(
     fixture: Any,
     groups: tuple[Any, ...],
     samples: tuple[Any, ...],
     *,
-    retained: bool,
+    predecessor_cells: tuple[Any, ...],
 ):
+    cells = {
+        (
+            cell.group_context.group_identity.group_hypothesis_id,
+            cell.content.canonical_sample_identity_id,
+        ): cell
+        for cell in predecessor_cells
+    }
     return _not_planned_coverage(
         fixture.owners,
         groups,
         samples,
-        planning_reason=(
-            "retained_local_owner" if retained else "selected_family_excluded"
+        planning_reason=lambda group, sample: _completion_planning_reason(
+            cells.get((group.group_hypothesis_id, sample.identity.sample_identity_id))
         ),
     )
 
@@ -532,21 +509,6 @@ def _receipt_fixture(fixture: Any, samples: tuple[Any, ...]):
             processing_owners=fixture.owners,
         ),
         acquisitions=acquisitions,
-    )
-
-
-def _source_cell(
-    fixture: Any,
-    sample: Any,
-    group_spine: Any,
-    assessment: Any,
-):
-    return mint_cell_observation_ref(
-        processing_owners=fixture.owners,
-        sample=sample,
-        target=fixture.target,
-        group_context=group_spine.cells[0].group_context,
-        method_assessment=assessment,
     )
 
 
@@ -627,6 +589,11 @@ def test_composer_distinguishes_completed_negative_search(
         else cell
         for cell in spine.cells
     )
+    handoff = _owner_handoff_for_cells(
+        fixture,
+        handoff.coverage.epoch.group_identities[0],
+        predecessor_cells,
+    )
 
     cells = compose_final_group_cell_observation_population(
         handoff=handoff,
@@ -676,11 +643,13 @@ def test_composer_rejects_same_sample_crossed_source_to_position(
     )
     assert first_group != second_group
     samples = (sample,)
+    first_cell = first_spine.cells[0]
+    second_cell = second_spine.cells[0]
     coverage = _coverage_for_groups(
         fixture,
         (first_group, second_group),
         samples,
-        retained=False,
+        predecessor_cells=(first_cell, second_cell),
     )
     receipt = _final_receipt(
         _receipt_fixture(fixture, samples),
@@ -691,13 +660,6 @@ def test_composer_rejects_same_sample_crossed_source_to_position(
         coverage=coverage,
         final_receipt=receipt,
     )
-    not_evaluated = _not_evaluated_assessment(
-        fixture,
-        "s1",
-        suffix="a3",
-    )
-    first_cell = _source_cell(fixture, sample, first_spine, not_evaluated)
-    second_cell = _source_cell(fixture, sample, second_spine, not_evaluated)
     composed = compose_final_group_cell_observation_population(
         handoff=handoff,
         predecessor_cells=(first_cell, second_cell),
@@ -761,61 +723,6 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
         processing_request_id=left.processing_request_id,
         member_subjects=left.member_subjects + right.member_subjects,
     )
-    coverage = _coverage_for_groups(
-        fixture,
-        (left, right),
-        samples,
-        retained=False,
-    )
-    if outside_support:
-        epoch = coverage.epoch
-        coverage = build_backfill_evaluation_coverage(
-            mint_backfill_planning_epoch(
-                **{
-                    item.name: getattr(epoch, item.name)
-                    for item in fields(epoch)
-                    if item.name not in {"epoch_id", "positions"}
-                },
-                positions=tuple(
-                    replace(
-                        position,
-                        planning_reason=(
-                            "retained_local_owner"
-                            if any(
-                                member.canonical_sample_identity_id
-                                == position.sample.identity.sample_identity_id
-                                for member in position.group_identity.member_subjects
-                            )
-                            else "local_owner_not_supersedable"
-                        ),
-                    )
-                    for position in epoch.positions
-                ),
-            ),
-            (),
-        )
-    receipt = _final_receipt(
-        _receipt_fixture(fixture, samples),
-        predecessors=(left, right),
-        successors=(merged,),
-    )
-    handoff = build_cross_sample_association_lineage_handoff(
-        coverage=coverage,
-        final_receipt=receipt,
-    )
-    not_evaluated = {
-        sample.lookup_token: _not_evaluated_assessment(
-            fixture,
-            sample.lookup_token,
-            suffix="a5",
-        )
-        for sample in samples
-    }
-    predecessor_cells = tuple(
-        _source_cell(fixture, sample, group_spine, not_evaluated[sample.lookup_token])
-        for group_spine in (left_spine, right_spine)
-        for sample in samples
-    )
     if outside_support:
         predecessor_cells = tuple(
             group_spine.cells[0]
@@ -833,6 +740,23 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
                 samples, (left_spine, right_spine), strict=True
             )
         )
+    else:
+        predecessor_cells = (left_spine.cells[0], right_spine.cells[0])
+    coverage = _coverage_for_groups(
+        fixture,
+        (left, right),
+        samples,
+        predecessor_cells=predecessor_cells,
+    )
+    receipt = _final_receipt(
+        _receipt_fixture(fixture, samples),
+        predecessors=(left, right),
+        successors=(merged,),
+    )
+    handoff = build_cross_sample_association_lineage_handoff(
+        coverage=coverage,
+        final_receipt=receipt,
+    )
     forward = compose_final_group_cell_observation_population(
         handoff=handoff,
         predecessor_cells=predecessor_cells,
@@ -846,13 +770,9 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
     assert all(
         item.group is merged
         and len(item.position_associations) == 2
-        and len(item.predecessor_cells) == 2
-        and sorted(item.evidence_states)
-        == (
-            ["direct_observation", "not_searched"]
-            if outside_support
-            else ["not_searched", "not_searched"]
-        )
+        # A lane without discovery input keeps its position but has no cell.
+        and len(item.predecessor_cells) == (2 if outside_support else 1)
+        and sorted(item.evidence_states) == ["direct_observation", "not_searched"]
         for item in forward
     )
     expected_positions_by_sample = {
@@ -924,7 +844,7 @@ def test_composer_split_keeps_cartesian_not_searched_remainder(
         fixture,
         (predecessor,),
         samples,
-        retained=True,
+        predecessor_cells=predecessor_spine.cells,
     )
     receipt = _final_receipt(
         _receipt_fixture(fixture, samples),

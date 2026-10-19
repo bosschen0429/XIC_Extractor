@@ -18,21 +18,15 @@ from tests.processing_identity_no_raw_fixture import (
 from tests.test_cell_observations import (
     _coverage_for_groups,
     _final_receipt,
-    _not_evaluated_assessment,
     _owner_handoff,
+    _owner_handoff_for_cells,
     _receipt_fixture,
-    _source_cell,
     _support_assessment,
 )
 from tests.test_cid_nl_evidence_spine import _completed_receipt
 from tests.test_target_pre_cell_projection import _finalized_case
 from tests.test_untargeted_matrix_projection import (
     _untarget_projection_inputs,
-)
-from xic_extractor.alignment.backfill.evaluation_coverage import (
-    build_backfill_evaluation_coverage,
-    mint_backfill_attempt_terminal,
-    mint_backfill_selection_subject_id,
 )
 from xic_extractor.alignment.cell_decision import owner as decision_owner
 from xic_extractor.alignment.cell_decision.owner import (
@@ -227,7 +221,7 @@ def test_group_population_preserves_complete_member_and_nonmember_positions(
     }
     assert {payload.variant for payload, _ in answers.values()} == {
         "not_quantifiable",
-        "unavailable",
+        "not_searched",
     }
     for observation in alignment.cell_observations:
         payload, integration = answers[observation.cell_observation_id]
@@ -235,7 +229,7 @@ def test_group_population_preserves_complete_member_and_nonmember_positions(
             assert payload.variant == "not_quantifiable"
             assert integration is observation.integrations[0]
         else:
-            assert payload.variant == "unavailable"
+            assert payload.variant == "not_searched"
             assert integration is None
     projection = project_untarget_matrix(alignment, answers)
     member = next(
@@ -329,6 +323,11 @@ def test_group_hold_counterexample_distinguishes_observed_and_zero_candidate(
     predecessor_cells = tuple(
         negative_cell if item is source else item for item in spine.cells
     )
+    handoff = _owner_handoff_for_cells(
+        fixture,
+        handoff.coverage.epoch.group_identities[0],
+        predecessor_cells,
+    )
     negative_cells = compose_final_group_cell_observation_population(
         handoff=handoff,
         predecessor_cells=predecessor_cells,
@@ -340,42 +339,24 @@ def test_group_hold_counterexample_distinguishes_observed_and_zero_candidate(
     )
 
 
-def test_group_reject_precedes_fallback_and_evaluated_coverage_terminals(
+def test_group_reject_decides_rejected_observation(
     tmp_path: Path,
 ) -> None:
-    _fixture, spine, fallback_handoff = _owner_handoff(tmp_path)
-    fallback_cells = compose_final_group_cell_observation_population(
-        handoff=fallback_handoff,
+    _fixture, spine, handoff = _owner_handoff(tmp_path)
+    cells = compose_final_group_cell_observation_population(
+        handoff=handoff,
         predecessor_cells=spine.cells,
     )
-    fallback_reject = next(
-        item for item in fallback_cells if item.evidence_state == "rejected_observation"
+    reject = next(
+        item for item in cells if item.evidence_state == "rejected_observation"
     )
     assert (
-        decision_owner._decide_group(fallback_reject, is_member=False)[0].variant
-        == "rejected_observation"
-    )
-
-    evaluated_handoff = _with_evaluated_coverage_terminal(
-        fallback_handoff,
-        sample_stem=fallback_reject.canonical_sample.lookup_token,
-    )
-    evaluated_cells = compose_final_group_cell_observation_population(
-        handoff=evaluated_handoff,
-        predecessor_cells=spine.cells,
-    )
-    evaluated_reject = next(
-        item
-        for item in evaluated_cells
-        if item.canonical_sample is fallback_reject.canonical_sample
-    )
-    assert (
-        decision_owner._decide_group(evaluated_reject, is_member=False)[0].variant
+        decision_owner._decide_group(reject, is_member=False)[0].variant
         == "rejected_observation"
     )
 
 
-def test_group_merge_selects_one_direct_integration_among_terminal_lanes(
+def test_group_merge_selects_one_direct_integration_among_lanes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -420,11 +401,13 @@ def test_group_merge_selects_one_direct_integration_among_terminal_lanes(
         processing_request_id=left.processing_request_id,
         member_subjects=left.member_subjects + right.member_subjects,
     )
+    # CID-NL composition gives each spine a cell only for its searched sample.
+    predecessor_cells = (left_spine.cells[0], right_spine.cells[0])
     coverage = _coverage_for_groups(
         fixture,
         (left, right),
         samples,
-        planned=True,
+        predecessor_cells=predecessor_cells,
     )
     receipt = _final_receipt(
         _receipt_fixture(fixture, samples),
@@ -435,27 +418,13 @@ def test_group_merge_selects_one_direct_integration_among_terminal_lanes(
         coverage=coverage,
         final_receipt=receipt,
     )
-    not_evaluated = tuple(
-        _not_evaluated_assessment(
-            fixture,
-            sample.lookup_token,
-            suffix="cell-decision-mixed-merge-terminal",
-        )
-        for sample in samples
-    )
-    predecessor_cells = (
-        left_spine.cells[0],
-        _source_cell(fixture, samples[1], left_spine, not_evaluated[1]),
-        _source_cell(fixture, samples[0], right_spine, not_evaluated[0]),
-        right_spine.cells[0],
-    )
     observations = compose_final_group_cell_observation_population(
         handoff=handoff,
         predecessor_cells=predecessor_cells,
     )
 
     assert all(
-        set(item.evidence_states) == {"direct_observation", "unavailable"}
+        set(item.evidence_states) == {"direct_observation", "not_searched"}
         and item.evidence_state == "mixed"
         and len(item.integrations) == 1
         for item in observations
@@ -510,7 +479,7 @@ def test_group_split_nonmember_maps_exact_not_searched_closure(
         fixture,
         (predecessor,),
         samples,
-        planned=True,
+        predecessor_cells=spine.cells,
     )
     receipt = _final_receipt(
         _receipt_fixture(fixture, samples),
@@ -557,65 +526,6 @@ def test_decision_is_immutable_and_owner_minted(
             _mint_token=object(),
         )
     assert decision.selected_integration is not None
-
-
-def _with_evaluated_coverage_terminal(
-    handoff: Any,
-    *,
-    sample_stem: str,
-) -> Any:
-    original = next(
-        item
-        for item in handoff.coverage.terminals
-        if item.logical_request.item.sample_stem == sample_stem
-    )
-    selection_subject_id = mint_backfill_selection_subject_id(
-        request_identity=original.request_identity,
-        group_hypothesis_id=original.logical_request.group_hypothesis_id,
-        sample_stem=sample_stem,
-        request=original.logical_request.item.request,
-        candidate_index=original.candidate_index,
-        candidate_phase="primary_query",
-    )
-    rt = tuple(7.5 + index / 30.0 for index in range(31))
-    intensity = tuple(
-        500.0 if index == 15 else 50.0 if index in {14, 16} else 0.0
-        for index in range(31)
-    )
-    prepared = prepare_physical_signal(
-        rt,
-        intensity,
-        profile=SignalProcessingProfile(window_points=3),
-    )
-    evaluation = evaluate_physical_peak(
-        prepared,
-        selection_subject_id=selection_subject_id,
-        query_rt_min=8.0,
-        request_context_rt_start_min=7.9,
-        request_context_rt_end_min=8.1,
-    )
-    evaluated = mint_backfill_attempt_terminal(
-        position_id=original.position_id,
-        logical_request=original.logical_request,
-        request_identity=original.request_identity,
-        candidate_phase="primary_query",
-        candidate_index=original.candidate_index,
-        trace_evaluated=True,
-        selected_for_output=True,
-        terminal_reason=None,
-        physical_evaluation=evaluation,
-    )
-    terminals = tuple(
-        evaluated if item is original else item for item in handoff.coverage.terminals
-    )
-    coverage = build_backfill_evaluation_coverage(
-        handoff.coverage.epoch,
-        terminals,
-    )
-    return build_cross_sample_association_lineage_handoff(
-        coverage=coverage,
-        final_receipt=handoff.final_receipt,
-    )
 
 
 def _numeric_peak(

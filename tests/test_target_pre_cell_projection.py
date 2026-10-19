@@ -430,7 +430,7 @@ def _finalized_case(
         fixture,
         (predecessor,),
         fixture.samples,
-        planned=True,
+        predecessor_cells=spine.cells,
     )
     handoff = build_cross_sample_association_lineage_handoff(
         coverage=coverage,
