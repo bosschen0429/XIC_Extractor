@@ -148,8 +148,8 @@ jobs:
 
           $serialTargets = @()
           if ($runPackagingBuild) {
-            $serialTargets += "tests/test_pyinstaller_spec.py::test_built_wheel_contains_one_byte_identical_quantitative_authority"
-            $serialTargets += "tests/test_pyinstaller_spec.py::test_final_pyinstaller_output_contains_one_byte_identical_quantitative_authority"
+            $serialTargets += "tests/test_pyinstaller_spec.py::test_built_wheel_contains_workbench_and_matching_target_template"
+            $serialTargets += "tests/test_pyinstaller_spec.py::test_final_pyinstaller_archive_runs_html_workbench_smoke"
             $serialTargets += "tests/test_pyinstaller_spec.py::test_built_wheel_exposes_public_cid_nl_activation_surface"
           }
           $serialStarted = Get-Date

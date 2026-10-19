@@ -12,9 +12,6 @@ This file is a checker lookup registry, not a current-state board or branch
 handoff. Mutable lane state and writer scope belong only to
 `docs/superpowers/validation/productization_status_index.tsv` and
 `docs/superpowers/productization/status/productization_authority_manifest.json`.
-Dependent quantitative-effect package/activation binding belongs to
-`docs/superpowers/productization/status/quantitative_projection_authority_manifest.json`;
-it does not extend writer scope.
 Promotion requirements belong to
 `docs/agent/product-validation-contract.md`.
 
@@ -29,4 +26,3 @@ Promotion requirements belong to
 - `review_action_manual_boundary_area_writer`
 - `calibration_normalization_activation`
 - `gui_replay_parity`
-- `untargeted_owner_backfill_canonical_quantitative_projection`

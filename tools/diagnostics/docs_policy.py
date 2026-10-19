@@ -70,9 +70,6 @@ PRODUCTIZATION_STATUS_INDEX_REL = (
 PRODUCTIZATION_AUTHORITY_MANIFEST_REL = (
     "docs/superpowers/productization/status/productization_authority_manifest.json"
 )
-QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL = (
-    "docs/superpowers/productization/status/quantitative_projection_authority_manifest.json"
-)
 PRODUCTIZATION_CONTROL_PLANE_SOURCE_HASH = (
     "97778ff9fb5c316ac58ee5f34964de8f13e9dd5f7dfd18e04e0cb6490fa213e5"
 )
@@ -357,7 +354,6 @@ DOC_ROUTING_AUTHORITY_REFERRER_PATHS = frozenset(
     {
         "docs/superpowers/validation/productization_status_index.tsv",
         "docs/superpowers/productization/status/productization_authority_manifest.json",
-        QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL,
     }
 )
 PRIVATE_HISTORY_SIGNALS = [

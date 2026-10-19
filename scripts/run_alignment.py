@@ -18,9 +18,6 @@ from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
 )
 from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteReceipt
-from xic_extractor.alignment.quantitative_projection_authority import (
-    QuantitativeProjectionAuthorityHoldError,
-)
 from xic_extractor.applications.untargeted.application import (
     AlignmentProcessExecutionError,
     run_untargeted_application,
@@ -263,24 +260,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         context = UntargetedExecutionContext(timing_recorder=timing_recorder)
         profiler = cProfile.Profile() if args.profile == "cprofile" else None
-        authority_hold = False
         try:
             if profiler is None:
                 outputs = run_untargeted_application(request, context)
             else:
                 outputs = profiler.runcall(run_untargeted_application, request, context)
-        except QuantitativeProjectionAuthorityHoldError:
-            authority_hold = True
-            raise
         finally:
-            if profiler is not None and not authority_hold:
+            if profiler is not None:
                 _write_cprofile_outputs(
                     profiler,
                     _profile_output_dir(args, output_dir),
                 )
-    except QuantitativeProjectionAuthorityHoldError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
     except (
         AlignmentProcessExecutionError,
         RawReaderError,

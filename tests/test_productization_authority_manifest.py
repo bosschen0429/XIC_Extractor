@@ -12,13 +12,7 @@ MANIFEST_PATH = (
     / "docs/superpowers/productization/status/"
     "productization_authority_manifest.json"
 )
-DEPENDENT_MANIFEST_PATH = (
-    ROOT
-    / "docs/superpowers/productization/status/"
-    "quantitative_projection_authority_manifest.json"
-)
 
-APPROVED_SCOPE = "backfill_policy_write_ready_rows"
 PARKED_SCOPE = "broad_backfill"
 NEGATIVE_SCOPE_IDS = {
     "all_stability",
@@ -69,24 +63,6 @@ def test_manifest_has_no_registered_file_activation_writer() -> None:
         "backfill_expansion_raw_trace_expected_diff_666_cells": "retired",
         "backfill_expansion_clean_target_selective_activation_84_cells": "retired",
     }
-
-
-def test_dependent_hold_does_not_change_writer_authority() -> None:
-    writer_manifest = _read_json(MANIFEST_PATH)
-    dependent_manifest = _read_json(DEPENDENT_MANIFEST_PATH)
-    approved_scope_order = (APPROVED_SCOPE,)
-
-    assert tuple(
-        writer_manifest["authority_policy"]["product_writer_allowed_scopes"]
-    ) == ()
-    assert writer_manifest["current_authority"] == {}
-    assert dependent_manifest["status"] == "HOLD_PENDING_VALIDATION"
-    assert tuple(dependent_manifest["allowed_registered_writer_scope_ids"]) == (
-        approved_scope_order
-    )
-    assert dependent_manifest["current_effect_cell_count"] == 0
-    assert dependent_manifest["activation_summary_artifact"] == ""
-    assert dependent_manifest["activation_summary_sha256"] == ""
 
 
 def test_manifest_compact_artifact_hashes_match() -> None:

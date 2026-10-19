@@ -1706,8 +1706,8 @@ def test_topic_review_separates_bound_and_compressible_support_surfaces(
     _clean_repo(root)
     _clean_vault(vault)
     authority_bound_path = "docs/superpowers/notes/backfill-bound-packet.md"
-    dependent_authority_bound_path = (
-        "docs/superpowers/notes/dependent-effect-bound-packet.md"
+    explanation_bound_path = (
+        "docs/superpowers/notes/backfill-explanation-bound-packet.md"
     )
     exact_ref_path = "docs/superpowers/notes/backfill-oracle-note.md"
     compressible_path = "docs/superpowers/notes/backfill-archived-note.md"
@@ -1722,7 +1722,7 @@ def test_topic_review_separates_bound_and_compressible_support_surfaces(
     ]
     for path in (
         authority_bound_path,
-        dependent_authority_bound_path,
+        explanation_bound_path,
         exact_ref_path,
         compressible_path,
     ):
@@ -1734,12 +1734,12 @@ def test_topic_review_separates_bound_and_compressible_support_surfaces(
     _write(
         root / "docs/superpowers/productization/status/"
         "productization_authority_manifest.json",
-        json.dumps({"decision_packet": authority_bound_path}),
-    )
-    _write(
-        root / "docs/superpowers/productization/status/"
-        "quantitative_projection_authority_manifest.json",
-        json.dumps({"activation_summary_artifact": dependent_authority_bound_path}),
+        json.dumps(
+            {
+                "decision_packet": authority_bound_path,
+                "explanation_only_sources": [{"artifact": explanation_bound_path}],
+            }
+        ),
     )
     for index in range(6):
         _write(
@@ -1764,7 +1764,7 @@ def test_topic_review_separates_bound_and_compressible_support_surfaces(
     assert "exact_referrer_bound_support:1" in cluster["support_retention_counts"]
     assert "archived_compressible_support:1" in cluster["support_retention_counts"]
     assert authority_bound_path in cluster["bound_support_sample_paths"]
-    assert dependent_authority_bound_path in cluster["bound_support_sample_paths"]
+    assert explanation_bound_path in cluster["bound_support_sample_paths"]
     assert exact_ref_path in cluster["bound_support_sample_paths"]
     assert compressible_path in cluster["compressible_support_sample_paths"]
 

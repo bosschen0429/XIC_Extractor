@@ -20,7 +20,6 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
     PRODUCTIZATION_AUTHORITY_MANIFEST_REL,
     PRODUCTIZATION_SCHEMA_REL,
     PRODUCTIZATION_STATUS_INDEX_REL,
-    QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL,
     classify_doc,
     classify_doc_path,
     doc_placement_is_non_repo,
@@ -48,7 +47,6 @@ PRODUCTIZATION_OWNER_ROUTE = (
     "docs/product/productization.md; "
     f"{PRODUCTIZATION_STATUS_INDEX_REL}; "
     f"{PRODUCTIZATION_AUTHORITY_MANIFEST_REL}; "
-    f"{QUANTITATIVE_PROJECTION_AUTHORITY_MANIFEST_REL}; "
     f"{PRODUCTIZATION_SCHEMA_REL}; "
     "docs/agent/product-validation-contract.md"
 )

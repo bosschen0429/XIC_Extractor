@@ -27,10 +27,9 @@ or the relevant structured productization owner.
 
 ## Current Public Schemas
 
-Current ProductWriter and dependent-effect state lives in the
-[writer manifest](../productization/status/productization_authority_manifest.json)
-and [dependent-effect manifest](../productization/status/quantitative_projection_authority_manifest.json);
-these authority instances are not schemas.
+Current ProductWriter state lives in the
+[writer manifest](../productization/status/productization_authority_manifest.json);
+this authority instance is not a schema.
 
 - `bounded_non_broad_product_lanes.json`: bounded product-lane contract for
   non-broad activation lanes and review scope.
@@ -39,8 +38,8 @@ these authority instances are not schemas.
   future Backfill row artifact that may grant `write_authority=true`; it does
   not activate ProductWriter or the default quant matrix.
 - `productization_control_plane_schema.json`: current control-plane schema
-  for productization lane state, maturity, authority rules, the stable
-  compatibility-anchor registry, and dependent-effect lane authority.
+  for productization lane state, maturity, authority rules, and the stable
+  compatibility-anchor registry.
 
 The [Matrix publication contract](../../product/quant-matrix.md#matrix-publication)
 describes current numeric publication and its retained acceptance owners.

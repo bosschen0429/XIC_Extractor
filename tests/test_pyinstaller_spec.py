@@ -18,16 +18,10 @@ from PyInstaller.utils.hooks import collect_data_files
 from xic_extractor.presets import list_presets
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-AUTHORITY_RESOURCE_RELATIVE = (
-    Path("xic_extractor")
-    / "alignment"
-    / "data"
-    / "quantitative_projection_authority.json"
+TARGET_TEMPLATE_RELATIVE = (
+    Path("xic_extractor") / "configuration" / "data" / "targets.csv"
 )
-AUTHORITY_RESOURCE_ARCHIVE_PATH = PurePosixPath(*AUTHORITY_RESOURCE_RELATIVE.parts)
-AUTHORITY_RESOURCE_SHA256 = (
-    "26753eb69300ec14a4eb044d21e44cb1351c2360cac7fae9884c3aec9bb6cd54"
-)
+TARGET_TEMPLATE_ARCHIVE_PATH = PurePosixPath(*TARGET_TEMPLATE_RELATIVE.parts)
 INSTALLED_WHEEL_PROBE = """
 import contextlib
 import io
@@ -41,20 +35,6 @@ target = Path(sys.argv[1]).resolve()
 resource_output = Path(sys.argv[2])
 metadata_output = Path(sys.argv[3])
 sys.path.insert(0, str(target))
-
-from xic_extractor.alignment import quantitative_projection_authority as owner
-authority = owner.load_quantitative_projection_authority_for_diagnostic()
-module_file = Path(owner.__file__).resolve()
-if not module_file.is_relative_to(target):
-    message = (
-        "owner module was not loaded from installed target: "
-        f"{module_file}"
-    )
-    raise RuntimeError(message)
-resource = files("xic_extractor.alignment").joinpath(
-    "data", "quantitative_projection_authority.json"
-)
-resource_output.write_bytes(resource.read_bytes())
 
 from xic_inspector.rendering.template import HTML_TEMPLATE
 from xic_workbench import config_io
@@ -81,6 +61,7 @@ if (target / "config" / "settings.example.csv").exists():
     raise RuntimeError("retired settings template was shipped")
 if not targets_template_path().read_bytes():
     raise RuntimeError("installed targets template is empty")
+resource_output.write_bytes(targets_template_path().read_bytes())
 if config_io.CONFIG_DIR.resolve().is_relative_to(target):
     raise RuntimeError("installed workbench would write settings into site-packages")
 if not targets_template_path().resolve().is_relative_to(target / "xic_extractor"):
@@ -116,8 +97,7 @@ if any(name == "PyQt6" or name.startswith("PyQt6.") for name in sys.modules):
 metadata_output.write_text(
     json.dumps(
         {
-            "authority_id": authority.authority_id,
-            "module_file": str(module_file),
+            "module_file": str(Path(workbench_cli.__file__).resolve()),
             "config_dir": str(config_io.CONFIG_DIR),
             "xic_extractor_entry": primary_entrypoint.value,
         }
@@ -303,7 +283,7 @@ def test_pyinstaller_system_icu_wins_over_foreign_path_dll(monkeypatch, tmp_path
 
 
 @pytest.fixture(scope="module")
-def authority_packaging_source(tmp_path_factory: pytest.TempPathFactory) -> Path:
+def packaging_source(tmp_path_factory: pytest.TempPathFactory) -> Path:
     # Leave room for isolated build environments and their package paths.
     temp_root = tmp_path_factory.mktemp("pkg")
     source_root = temp_root / "source"
@@ -349,11 +329,9 @@ def _run_packaging_command(
 
 
 def _assert_resource_bytes_match_source(resource_bytes: bytes) -> None:
-    source_bytes = (PROJECT_ROOT / AUTHORITY_RESOURCE_RELATIVE).read_bytes()
+    source_bytes = (PROJECT_ROOT / TARGET_TEMPLATE_RELATIVE).read_bytes()
 
-    assert hashlib.sha256(source_bytes).hexdigest() == AUTHORITY_RESOURCE_SHA256
     assert resource_bytes == source_bytes
-    assert hashlib.sha256(resource_bytes).hexdigest() == AUTHORITY_RESOURCE_SHA256
 
 
 def test_primary_package_routes_to_html_workbench_without_qt() -> None:
@@ -492,33 +470,6 @@ def test_pyinstaller_collects_builtin_preset_tomls() -> None:
     )
 
 
-def test_pyinstaller_spec_includes_quantitative_projection_authority() -> None:
-    spec_text = Path("xic_extractor.spec").read_text(encoding="utf-8")
-
-    assert "authority_datas = collect_data_files(" in spec_text
-    assert '"xic_extractor.alignment"' in spec_text
-    assert 'includes=["data/quantitative_projection_authority.json"]' in spec_text
-    assert "+ authority_datas" in spec_text
-
-
-def test_pyinstaller_collects_quantitative_projection_authority() -> None:
-    datas = collect_data_files(
-        "xic_extractor.alignment",
-        includes=["data/quantitative_projection_authority.json"],
-    )
-    collected = {
-        (Path(source).name, Path(destination).as_posix())
-        for source, destination in datas
-    }
-
-    assert collected == {
-        (
-            "quantitative_projection_authority.json",
-            "xic_extractor/alignment/data",
-        )
-    }
-
-
 def test_pyinstaller_spec_includes_discovery_default_background_library() -> None:
     spec_text = Path("xic_extractor.spec").read_text(encoding="utf-8")
 
@@ -546,11 +497,11 @@ def test_pyinstaller_collects_discovery_default_background_library() -> None:
 
 @pytest.mark.packaging_build
 @pytest.mark.serial_ci
-def test_built_wheel_contains_one_byte_identical_quantitative_authority(
-    authority_packaging_source: Path,
+def test_built_wheel_contains_workbench_and_matching_target_template(
+    packaging_source: Path,
 ) -> None:
-    artifact_root = authority_packaging_source.parent / "wheel-artifacts"
-    uv_cache_root = authority_packaging_source.parent / "uv-cache"
+    artifact_root = packaging_source.parent / "wheel-artifacts"
+    uv_cache_root = packaging_source.parent / "uv-cache"
     artifact_root.mkdir()
     _run_packaging_command(
         (
@@ -563,9 +514,9 @@ def test_built_wheel_contains_one_byte_identical_quantitative_authority(
             str(artifact_root),
             "--python",
             sys.executable,
-            str(authority_packaging_source),
+            str(packaging_source),
         ),
-        cwd=authority_packaging_source.parent,
+        cwd=packaging_source.parent,
         timeout_seconds=300,
     )
 
@@ -576,14 +527,14 @@ def test_built_wheel_contains_one_byte_identical_quantitative_authority(
             PurePosixPath(member)
             for member in wheel.namelist()
             if PurePosixPath(member).name.casefold()
-            == AUTHORITY_RESOURCE_RELATIVE.name.casefold()
+            == TARGET_TEMPLATE_RELATIVE.name.casefold()
         ]
-        assert resource_members == [AUTHORITY_RESOURCE_ARCHIVE_PATH]
+        assert resource_members == [TARGET_TEMPLATE_ARCHIVE_PATH]
         resource_bytes = wheel.read(resource_members[0].as_posix())
 
     _assert_resource_bytes_match_source(resource_bytes)
 
-    install_target = authority_packaging_source.parent / "installed-wheel"
+    install_target = packaging_source.parent / "installed-wheel"
     _run_packaging_command(
         (
             "uv",
@@ -598,11 +549,11 @@ def test_built_wheel_contains_one_byte_identical_quantitative_authority(
             "--no-deps",
             str(wheels[0]),
         ),
-        cwd=authority_packaging_source.parent,
+        cwd=packaging_source.parent,
         timeout_seconds=300,
     )
-    installed_resource = authority_packaging_source.parent / "installed-resource.json"
-    probe_metadata = authority_packaging_source.parent / "installed-probe.json"
+    installed_resource = packaging_source.parent / "installed-targets.csv"
+    probe_metadata = packaging_source.parent / "installed-probe.json"
     _run_packaging_command(
         (
             sys.executable,
@@ -613,14 +564,11 @@ def test_built_wheel_contains_one_byte_identical_quantitative_authority(
             str(installed_resource),
             str(probe_metadata),
         ),
-        cwd=authority_packaging_source.parent,
+        cwd=packaging_source.parent,
         timeout_seconds=60,
     )
 
-    source_bytes = (PROJECT_ROOT / AUTHORITY_RESOURCE_RELATIVE).read_bytes()
-    source_payload = json.loads(source_bytes)
     metadata = json.loads(probe_metadata.read_text(encoding="utf-8"))
-    assert metadata["authority_id"] == source_payload["authority_id"]
     assert metadata["xic_extractor_entry"] == "xic_workbench.cli:main"
     assert (
         Path(metadata["module_file"]).resolve().is_relative_to(install_target.resolve())
@@ -631,12 +579,10 @@ def test_built_wheel_contains_one_byte_identical_quantitative_authority(
 @pytest.mark.packaging_build
 @pytest.mark.serial_ci
 def test_built_wheel_exposes_public_cid_nl_activation_surface(
-    authority_packaging_source: Path,
+    packaging_source: Path,
 ) -> None:
-    artifact_root = (
-        authority_packaging_source.parent / "public-activation-wheel-artifacts"
-    )
-    uv_cache_root = authority_packaging_source.parent / "uv-public"
+    artifact_root = packaging_source.parent / "public-activation-wheel-artifacts"
+    uv_cache_root = packaging_source.parent / "uv-public"
     artifact_root.mkdir()
     _run_packaging_command(
         (
@@ -649,17 +595,15 @@ def test_built_wheel_exposes_public_cid_nl_activation_surface(
             str(artifact_root),
             "--python",
             sys.executable,
-            str(authority_packaging_source),
+            str(packaging_source),
         ),
-        cwd=authority_packaging_source.parent,
+        cwd=packaging_source.parent,
         timeout_seconds=300,
     )
 
     wheels = list(artifact_root.glob("*.whl"))
     assert len(wheels) == 1
-    install_target = (
-        authority_packaging_source.parent / "public-activation-installed-wheel"
-    )
+    install_target = packaging_source.parent / "public-activation-installed-wheel"
     _run_packaging_command(
         (
             "uv",
@@ -674,13 +618,11 @@ def test_built_wheel_exposes_public_cid_nl_activation_surface(
             "--no-deps",
             str(wheels[0]),
         ),
-        cwd=authority_packaging_source.parent,
+        cwd=packaging_source.parent,
         timeout_seconds=300,
     )
 
-    probe_metadata = (
-        authority_packaging_source.parent / "public-activation-installed-probe.json"
-    )
+    probe_metadata = packaging_source.parent / "public-activation-installed-probe.json"
     _run_packaging_command(
         (
             sys.executable,
@@ -690,7 +632,7 @@ def test_built_wheel_exposes_public_cid_nl_activation_surface(
             str(install_target),
             str(probe_metadata),
         ),
-        cwd=authority_packaging_source.parent,
+        cwd=packaging_source.parent,
         timeout_seconds=60,
     )
 
@@ -717,10 +659,10 @@ def test_built_wheel_exposes_public_cid_nl_activation_surface(
 
 @pytest.mark.packaging_build
 @pytest.mark.serial_ci
-def test_final_pyinstaller_output_contains_one_byte_identical_quantitative_authority(
-    authority_packaging_source: Path,
+def test_final_pyinstaller_archive_runs_html_workbench_smoke(
+    packaging_source: Path,
 ) -> None:
-    artifact_root = authority_packaging_source.parent / "pyinstaller-artifacts"
+    artifact_root = packaging_source.parent / "pyinstaller-artifacts"
     dist_root = artifact_root / "dist"
     work_root = artifact_root / "work"
     dist_root.mkdir(parents=True)
@@ -737,9 +679,9 @@ def test_final_pyinstaller_output_contains_one_byte_identical_quantitative_autho
             str(dist_root),
             "--workpath",
             str(work_root),
-            str(authority_packaging_source / "xic_extractor.spec"),
+            str(packaging_source / "xic_extractor.spec"),
         ),
-        cwd=authority_packaging_source,
+        cwd=packaging_source,
         timeout_seconds=900,
     )
 
@@ -764,21 +706,6 @@ def test_final_pyinstaller_output_contains_one_byte_identical_quantitative_autho
             examples[0].read_bytes()
             == (PROJECT_ROOT / "xic_extractor/configuration/data" / name).read_bytes()
         )
-    resource_paths = [
-        path
-        for path in final_output.rglob("*")
-        if path.is_file()
-        and path.name.casefold() == AUTHORITY_RESOURCE_RELATIVE.name.casefold()
-    ]
-    assert len(resource_paths) == 1
-    resource_relative_to_final = PurePosixPath(
-        resource_paths[0].relative_to(final_output).as_posix()
-    )
-    assert resource_relative_to_final.parts[
-        -len(AUTHORITY_RESOURCE_ARCHIVE_PATH.parts) :
-    ] == (AUTHORITY_RESOURCE_ARCHIVE_PATH.parts)
-    _assert_resource_bytes_match_source(resource_paths[0].read_bytes())
-
     # Exercise the archive that would be delivered, rather than rebuilding a probe.
     archive_path = Path(
         shutil.make_archive(
@@ -802,10 +729,8 @@ def test_final_pyinstaller_output_contains_one_byte_identical_quantitative_autho
     assert report["status"] == "passed"
     assert report["frozen"] and report["server_started"] and report["preset_roundtrip"]
     assert Path(report["executable"]).resolve() == executable.resolve()
-    assert (
-        report["resources"]["authority_id"]
-        == json.loads(resource_paths[0].read_bytes())["authority_id"]
-    )
+    assert report["resources"]["target_rows"] > 0
+    assert report["resources"]["background_ions"] > 0
     assert Path(report["preset_path"]).is_file()
     assert hashlib.sha256(archive_path.read_bytes()).hexdigest() == archive_hash
     print(f"Delivered archive smoke report: {smoke_report}")

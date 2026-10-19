@@ -12,12 +12,7 @@ from scripts.check_productization_state import (
     DEFAULT_PRODUCTIZATION_SUMMARY,
     DEFAULT_SCHEMA,
     DEFAULT_STATUS_INDEX,
-    DEPENDENT_EFFECT_LANE_AUTHORITY_FIELDS,
-    DEPENDENT_EFFECT_LANE_ID,
-    DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT,
-    DEPENDENT_PACKAGE_AUTHORITY_SHA256,
     EXPECTED_CONTROL_PLANE_SCHEMA_VERSION,
-    EXPECTED_HOLD_ROW,
     REQUIRED_LANE_IDS,
     STATUS_INDEX_FIELDS,
     _render_compatibility_index,
@@ -50,26 +45,6 @@ def test_status_schema_matches_index_header() -> None:
     assert schema["required_control_plane_anchors"] == {
         row["lane_id"]: row["control_plane_anchor"] for row in rows
     }
-
-
-@pytest.mark.ledger_snapshot
-def test_dependent_effect_lane_is_exact_hold_package_binding() -> None:
-    schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8"))
-    _, rows = _read_tsv(DEFAULT_STATUS_INDEX)
-    dependent_rule = schema["dependent_effect_lane_authority"][DEPENDENT_EFFECT_LANE_ID]
-    row = next(item for item in rows if item["lane_id"] == DEPENDENT_EFFECT_LANE_ID)
-
-    assert tuple(dependent_rule) == DEPENDENT_EFFECT_LANE_AUTHORITY_FIELDS
-    assert row == EXPECTED_HOLD_ROW
-    assert row["current_artifact"] == DEPENDENT_PACKAGE_AUTHORITY_ARTIFACT
-    assert row["artifact_sha256"] == DEPENDENT_PACKAGE_AUTHORITY_SHA256
-    assert artifact_sha256(Path(__file__).parents[1] / row["current_artifact"]) == (
-        DEPENDENT_PACKAGE_AUTHORITY_SHA256
-    )
-    assert row["readiness_status"] == "production_candidate"
-    assert row["write_authority"] == "FALSE"
-    assert row["product_authority_scope"] == ""
-    assert row["row_count"] == "0"
 
 
 def test_compatibility_index_preserves_exact_unique_status_anchors() -> None:
@@ -261,45 +236,6 @@ def test_checker_rejects_duplicate_schema_json_key(tmp_path: Path) -> None:
     assert any("duplicate JSON object key" in problem for problem in problems)
 
 
-@pytest.mark.parametrize(
-    ("mutation", "expected_problem"),
-    (
-        ("missing", "rule fields must exactly match"),
-        ("extra", "rule fields must exactly match"),
-        ("reordered", "rule fields must exactly match"),
-        ("crossed", "rule values must exactly match"),
-        ("type", "rule values must exactly match"),
-    ),
-)
-def test_checker_rejects_dependent_effect_rule_drift(
-    tmp_path: Path,
-    mutation: str,
-    expected_problem: str,
-) -> None:
-    schema = json.loads(DEFAULT_SCHEMA.read_text(encoding="utf-8"))
-    rule = schema["dependent_effect_lane_authority"][DEPENDENT_EFFECT_LANE_ID]
-    if mutation == "missing":
-        del rule["may_add_write_rows"]
-    elif mutation == "extra":
-        rule["future_authority"] = True
-    elif mutation == "reordered":
-        schema["dependent_effect_lane_authority"][DEPENDENT_EFFECT_LANE_ID] = {
-            key: rule[key] for key in reversed(tuple(rule))
-        }
-    elif mutation == "crossed":
-        rule["authority_manifest_schema_version"] = rule[
-            "package_authority_schema_version"
-        ]
-    else:
-        rule["requires_registered_writer_membership"] = 1
-    mutated = tmp_path / f"dependent-rule-{mutation}.json"
-    mutated.write_text(json.dumps(schema), encoding="utf-8")
-
-    problems = check_productization_state(schema_path=mutated)
-
-    assert any(expected_problem in problem for problem in problems)
-
-
 @pytest.mark.parametrize("mutation", ("missing", "extra", "duplicate", "reordered"))
 def test_checker_rejects_non_exact_lane_registry(
     tmp_path: Path,
@@ -350,27 +286,6 @@ def test_checker_rejects_non_exact_anchor_registry(
     assert any(
         f"ordered {len(REQUIRED_LANE_IDS)}-anchor" in problem for problem in problems
     )
-
-
-def test_checker_rejects_crossed_or_active_dependent_status_row(
-    tmp_path: Path,
-) -> None:
-    crossed = _mutated_index(
-        tmp_path,
-        DEPENDENT_EFFECT_LANE_ID,
-        {
-            "current_artifact": (
-                "docs/superpowers/productization/status/productization_authority_manifest.json"
-            ),
-            "artifact_sha256": artifact_sha256(DEFAULT_AUTHORITY_MANIFEST),
-            "readiness_status": "production_ready",
-        },
-    )
-
-    problems = _check_with_index(crossed)
-
-    assert any("exact 23-field HOLD contract" in problem for problem in problems)
-    assert any("ACTIVE transition is outside" in problem for problem in problems)
 
 
 @pytest.mark.parametrize(

@@ -9,9 +9,7 @@
 /docs/user/assets/*.architecture.json text eol=lf
 /tests/*.py text eol=lf
 /xic_extractor/**/*.py text eol=lf
-/xic_extractor/alignment/data/quantitative_projection_authority.json text eol=lf
 /docs/superpowers/schemas/productization_control_plane_schema.json text eol=lf
-/docs/superpowers/productization/status/quantitative_projection_authority_manifest.json text eol=lf
 /docs/superpowers/validation/**/*.tsv whitespace=cr-at-eol,-blank-at-eol
 /docs/superpowers/validation/issue180_m9_gate_c_observation_replay/** -text -eol
 /docs/superpowers/validation/issue180_m9_gate_c_closed_writer/review_transfer/manual_review.json -text -eol

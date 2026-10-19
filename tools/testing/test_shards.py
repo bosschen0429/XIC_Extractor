@@ -95,7 +95,6 @@ SNAPSHOT_TESTS: dict[str, tuple[str, ...]] = {
         "test_productization_authority_checker_accepts_repo_artifacts",
     ),
     "tests/test_productization_state_index.py": (
-        "test_dependent_effect_lane_is_exact_hold_package_binding",
         "test_productization_state_index_accepts_current_artifacts",
     ),
     "tests/test_validation_artifact_cid_nl_public_claim_catalog.py": (
@@ -212,7 +211,6 @@ SHARD_PATTERNS: ShardPatterns = OrderedDict(
             "tests/test_processing_run_spec_architecture.py",
             "tests/test_processing_run_spec_entrypoints.py",
             "tests/test_process_job_execution.py",
-            "tests/test_quantitative_projection_authority.py",
             "tests/test_raw_superwindow_source.py",
             "tests/test_run_alignment.py",
             "tests/test_run_discovery.py",

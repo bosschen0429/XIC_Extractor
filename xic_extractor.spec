@@ -18,10 +18,6 @@ preset_datas = collect_data_files(
     "xic_extractor.presets",
     includes=["data/*.toml"],
 )
-authority_datas = collect_data_files(
-    "xic_extractor.alignment",
-    includes=["data/quantitative_projection_authority.json"],
-)
 discovery_datas = collect_data_files(
     "xic_extractor.discovery",
     includes=["data/*"],
@@ -42,7 +38,6 @@ a = Analysis(
         ("scripts", "scripts"),
     ]
     + preset_datas
-    + authority_datas
     + discovery_datas
     + inspector_datas
     + workbench_datas,
