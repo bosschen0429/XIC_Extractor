@@ -433,7 +433,7 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
         "acquisition_source",
         foreign_spec.acquisition_inputs[0].acquisition_source,
     )
-    with pytest.raises(ValueError, match="crosses acquisition record"):
+    with pytest.raises(ValueError, match="crosses acquisition source"):
         validate_discovery_candidate_physical_bindings(
             run_spec=spec,
             sample_stem=raw_paths[0].stem,

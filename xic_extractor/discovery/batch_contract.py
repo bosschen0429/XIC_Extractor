@@ -20,7 +20,6 @@ from xic_extractor.discovery.models import (
 )
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryCandidatePhysicalBinding,
-    validate_discovery_candidate_physical_binding,
 )
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
@@ -276,7 +275,6 @@ def validate_discovery_candidate_physical_bindings(
             raise TypeError(
                 "bindings must contain DiscoveryCandidatePhysicalBinding values"
             )
-        validate_discovery_candidate_physical_binding(binding)
         candidate_id = binding.candidate.candidate_id
         candidate = candidates_by_id.get(candidate_id)
         if candidate is None:
