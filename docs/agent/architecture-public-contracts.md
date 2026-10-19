@@ -143,7 +143,7 @@ patterns, and runtime-construction violations from source.
 - `scripts/check_architecture_census.py` owns the targeted construction and
   export gate.
 - Dynamic loaders, installed entry points, frozen applications, workflow
-  checks, diagnostics indexes, and pytest shards remain with their respective
+  checks, diagnostics indexes, and test selection remain with their respective
   executable owners.
 - A dependency ignore is temporary migration debt: it needs a named owner and
   rationale, and unmatched-ignore alerting must remove it when the edge closes.
