@@ -115,9 +115,31 @@ internal-defense changes:
    production fact.
 
 Use source and existing observable checks for this acceptance. Record the result
-in the current task/PR, not a permanent inventory or a new generic lint gate.
+in the current task/PR, not a permanent inventory.
 Established-owner local edits retain their compact workflow; this is a check of
 the affected flow, not a whole-repository audit.
+
+### Internal Defense Growth Gate
+
+`scripts/check_architecture_census.py --internal-defense-base REF` blocks
+syntactic growth in pure-by-syntax validators, mint-token uses, and cryptographic
+hashing in changed `xic_extractor` source. The existing pre-commit hook compares
+HEAD to staged source; CI compares against the event's base commit. A missing
+baseline or unreadable source fails closed. Existing unchanged scopes are not
+re-certified, and no generated baseline registry is maintained.
+
+This conservative gate triggers review; it does not decide semantic necessity.
+It can block a legitimate new boundary, and it cannot detect every renamed,
+value-returning, indirect, or same-size replacement defense. There is no inline
+suppression or pass-anyway flag. A blocked change needs removal of unnecessary
+machinery or an explicit maintainer decision to adjust the gate's scope; the
+agent does not authorize its own exception. Preserve the existing product
+boundary while resolving a block.
+
+Local hooks can be bypassed, and repository code cannot prevent an actor with
+permission from editing the checker or workflow. Required remote checks and
+review protection are separate repository settings, not a guarantee made by
+this source-level gate.
 
 ## Responsibility Boundaries and Anti-Paranoia Invariants
 

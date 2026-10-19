@@ -13,6 +13,155 @@ import pytest
 
 from scripts import check_architecture_census as census
 
+
+def _defense_gate_repo(tmp_path: Path, source: str) -> Path:
+    path = tmp_path / "xic_extractor" / "example.py"
+    path.parent.mkdir()
+    path.write_text(source, encoding="utf-8")
+    env = census._git_subprocess_environment()
+    for args in (
+        ("init",),
+        ("add", "."),
+        (
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-m",
+            "baseline",
+        ),
+    ):
+        subprocess.run(
+            ["git", "-C", str(tmp_path), *args],
+            env=env,
+            check=True,
+            capture_output=True,
+        )
+    return path
+
+
+@pytest.mark.parametrize(
+    ("before", "after", "rule"),
+    (
+        (
+            "",
+            "class Ref:\n def __post_init__(self):\n  verify(self.artifact)\n",
+            "pure-validator",
+        ),
+        (
+            "def validate(value):\n assert value\n",
+            "def validate(value):\n assert value\n assert value.id == remint(value)\n",
+            "pure-validator",
+        ),
+        ("", "_OWNER_MINT_TOKEN = object()\n", "mint-token"),
+        ("", "class Ref:\n _mint_token: object\n", "mint-token"),
+        (
+            "",
+            "import hashlib as h\ndef identity(data):\n"
+            " return h.sha256(data).hexdigest()\n",
+            "hashing",
+        ),
+        (
+            "",
+            "from hashlib import sha256 as digest\ndef identity(data):\n"
+            " return digest(data).hexdigest()\n",
+            "hashing",
+        ),
+    ),
+)
+def test_internal_defense_growth_is_rejected(
+    tmp_path: Path,
+    before: str,
+    after: str,
+    rule: str,
+) -> None:
+    path = _defense_gate_repo(tmp_path, before)
+    path.write_text(after, encoding="utf-8")
+
+    problems = census.validate_internal_defense_growth(tmp_path, "HEAD")
+
+    assert any(
+        rule in problem and "xic_extractor/example.py:" in problem
+        for problem in problems
+    )
+
+
+@pytest.mark.parametrize(
+    ("before", "after"),
+    (
+        (
+            "def validate_manifest(keys):\n assert len(keys) == len(set(keys))\n",
+            "def validate_manifest(keys):\n assert len(keys) == len(set(keys))\n",
+        ),
+        ("def validate(value):\n assert value\n", ""),
+        (
+            "def validate(value):\n assert value\n assert value.id\n",
+            "def validate(value):\n assert value\n",
+        ),
+        (
+            "",
+            "class Value:\n def __post_init__(self):\n"
+            "  object.__setattr__(self, 'value', float(self.value))\n",
+        ),
+        (
+            "def validate(value):\n assert value\n",
+            'def validate(value):\n """Updated explanation."""\n assert value\n',
+        ),
+    ),
+)
+def test_internal_defense_gate_preserves_existing_boundaries_and_cleanup(
+    tmp_path: Path,
+    before: str,
+    after: str,
+) -> None:
+    path = _defense_gate_repo(tmp_path, before)
+    path.write_text(after, encoding="utf-8")
+
+    assert census.validate_internal_defense_growth(tmp_path, "HEAD") == []
+
+
+def test_internal_defense_gate_uses_index_not_unstaged_source(tmp_path: Path) -> None:
+    path = _defense_gate_repo(tmp_path, "")
+    path.write_text("_OWNER_MINT_TOKEN = object()\n", encoding="utf-8")
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "add", "."],
+        check=True,
+        env=census._git_subprocess_environment(),
+        capture_output=True,
+    )
+    path.write_text("", encoding="utf-8")
+
+    assert census.validate_internal_defense_growth(tmp_path, "HEAD", staged=True)
+    assert census.validate_internal_defense_growth(tmp_path, "HEAD") == []
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "add", "."],
+        check=True,
+        env=census._git_subprocess_environment(),
+        capture_output=True,
+    )
+    path.write_text("_OWNER_MINT_TOKEN = object()\n", encoding="utf-8")
+    assert census.validate_internal_defense_growth(tmp_path, "HEAD", staged=True) == []
+    assert census.validate_internal_defense_growth(tmp_path, "HEAD")
+
+
+def test_internal_defense_cli_blocks_growth_and_missing_base(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    path = _defense_gate_repo(tmp_path, "")
+    monkeypatch.setattr(census, "ROOT", tmp_path)
+    assert census.main(["--internal-defense-base", "HEAD"]) == 0
+    path.write_text("_OWNER_MINT_TOKEN = object()\n", encoding="utf-8")
+    assert census.main(["--internal-defense-base", "HEAD"]) == 1
+    assert "mint-token" in capsys.readouterr().err
+    assert census.main(["--internal-defense-base", "missing-ref"]) == 1
+    assert "baseline" in capsys.readouterr().err
+
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -862,7 +1011,7 @@ def test_default_production_activation_loci_are_exact() -> None:
         "run_untargeted_application": set(),
         "complete_untargeted_alignment": set(),
         "execute_untargeted_plan": set(),
-        'execute_partition': set(),
+        "execute_partition": set(),
     }
     for path in census.repository_python_paths(ROOT):
         if not path.parts or path.parts[0] == "tests":
@@ -899,7 +1048,7 @@ def test_default_production_activation_loci_are_exact() -> None:
     assert production_calls["execute_untargeted_plan"] == {
         Path("xic_extractor/untargeted_execution/alignment.py")
     }
-    assert production_calls['execute_partition'] == {
+    assert production_calls["execute_partition"] == {
         Path("xic_extractor/untargeted_execution/execution.py")
     }
 

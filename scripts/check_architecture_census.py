@@ -1545,20 +1545,227 @@ def write_architecture_census_json(
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+def _internal_defense_profile(source: str) -> dict[tuple[str, str], tuple[int, int]]:
+    """Count syntactic growth signals, not semantic validity or trust."""
+    tree = ast.parse(source)
+    hash_names = {
+        "sha1",
+        "sha224",
+        "sha256",
+        "sha384",
+        "sha512",
+        "md5",
+        "blake2b",
+        "blake2s",
+        "sha3_256",
+        "sha3_512",
+        "new",
+    }
+    hash_modules = {"hashlib"}
+    hash_functions: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            hash_modules.update(
+                item.asname or item.name
+                for item in node.names
+                if item.name == "hashlib"
+            )
+        elif isinstance(node, ast.ImportFrom) and node.module == "hashlib":
+            hash_functions.update(
+                item.asname or item.name
+                for item in node.names
+                if item.name in hash_names
+            )
+    result: dict[tuple[str, str], tuple[int, int]] = {}
+
+    def scan(scope: Any, name: str) -> None:
+        nodes: list[ast.AST] = []
+        children: list[Any] = []
+
+        def collect(node: ast.AST) -> None:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                children.append(node)
+                return
+            nodes.append(node)
+            for child in ast.iter_child_nodes(node):
+                collect(child)
+
+        for statement in scope.body:
+            if (
+                isinstance(statement, ast.Expr)
+                and isinstance(statement.value, ast.Constant)
+                and isinstance(statement.value.value, str)
+            ):
+                continue
+            collect(statement)
+        line = getattr(scope, "lineno", 1)
+        token_nodes = nodes
+        if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            token_nodes = [*nodes, *ast.walk(scope.args)]
+        tokens = sum(
+            isinstance(label, str) and label.lower().endswith("mint_token")
+            for node in token_nodes
+            for label in [
+                getattr(
+                    node,
+                    "id",
+                    getattr(
+                        node, "attr", getattr(node, "arg", getattr(node, "value", None))
+                    ),
+                )
+            ]
+        )
+        hashes = sum(
+            isinstance(node, ast.Call)
+            and (
+                isinstance(node.func, ast.Name)
+                and node.func.id in hash_functions
+                or isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id in hash_modules
+                and node.func.attr in hash_names
+            )
+            for node in nodes
+        )
+        result[name, "mint-token"] = (tokens, line)
+        result[name, "hashing"] = (hashes, line)
+        if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)) and (
+            scope.name == "__post_init__"
+            or scope.name.lstrip("_").startswith(("validate", "verify", "require"))
+        ):
+            mutates = any(
+                isinstance(node, ast.Attribute)
+                and isinstance(node.ctx, (ast.Store, ast.Del))
+                or isinstance(node, ast.Call)
+                and (
+                    isinstance(node.func, ast.Attribute)
+                    and node.func.attr in {"__setattr__", "__delattr__"}
+                    or isinstance(node.func, ast.Name)
+                    and node.func.id in {"setattr", "delattr"}
+                )
+                for node in nodes
+            )
+            returns_value = any(
+                isinstance(node, (ast.Yield, ast.YieldFrom))
+                or isinstance(node, ast.Return)
+                and node.value is not None
+                and not (
+                    isinstance(node.value, ast.Constant) and node.value.value is None
+                )
+                for node in nodes
+            )
+            if not mutates and not returns_value:
+                result[name, "pure-validator"] = (len(nodes), line)
+        for child in children:
+            scan(child, child.name if name == "<module>" else name + "." + child.name)
+
+    scan(tree, "<module>")
+    return result
+
+
+def validate_internal_defense_growth(
+    repo_root: Path,
+    base: str,
+    *,
+    staged: bool = False,
+) -> list[str]:
+    """Reject growth relative to Git; unchanged legacy is not an allowlist."""
+
+    def git(*args: str) -> bytes:
+        return subprocess.check_output(
+            ["git", "-C", str(repo_root), *args],
+            env=_git_subprocess_environment(),
+            stderr=subprocess.PIPE,
+        )
+
+    try:
+        commit = git("rev-parse", "--verify", base + "^{commit}").decode().strip()
+    except subprocess.CalledProcessError as exc:
+        raise ValueError(f"internal-defense baseline is unavailable: {base}") from exc
+    old_paths = set(
+        git("ls-tree", "-r", "--name-only", "-z", commit, "--", "xic_extractor")
+        .decode()
+        .split("\0")
+    )
+    flags = ("--cached",) if staged else ()
+    paths = (
+        git(
+            "diff",
+            *flags,
+            "--name-only",
+            "-z",
+            "--diff-filter=AMRT",
+            commit,
+            "--",
+            "xic_extractor",
+        )
+        .decode()
+        .split("\0")
+    )
+    problems = []
+    for relative in paths:
+        if not relative.endswith(".py"):
+            continue
+        path = (repo_root / relative).resolve()
+        if not path.is_relative_to(repo_root.resolve()):
+            raise ValueError("internal-defense source escapes repository")
+        before = git("show", commit + ":" + relative) if relative in old_paths else b""
+        after = git("show", ":" + relative) if staged else path.read_bytes()
+        previous = _internal_defense_profile(before.decode("utf-8-sig"))
+        current = _internal_defense_profile(after.decode("utf-8-sig"))
+        for (name, rule), (count, line) in current.items():
+            old_count = previous.get((name, rule), (0, 0))[0]
+            if count > old_count:
+                problems.append(
+                    f"{relative}:{line}: internal-defense {rule} growth in {name} "
+                    f"({old_count} -> {count}); remove unnecessary machinery or seek "
+                    "a maintainer decision on the gate scope"
+                )
+    return problems
+
+
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument(
+        "--internal-defense-base",
+        metavar="REF",
+        help="Reject internal-defense growth against this Git commit.",
+    )
     parser.add_argument(
+        "--staged",
+        action="store_true",
+        help="Inspect index source instead of working files (requires base).",
+    )
+    modes.add_argument(
         "--json-output",
         type=Path,
         help=(
             "Optional disposable JSON output outside the repo or under an ignored path."
         ),
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.staged and args.internal_defense_base is None:
+        parser.error("--staged requires --internal-defense-base")
+    return args
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
+    if args.internal_defense_base is not None:
+        try:
+            problems = validate_internal_defense_growth(
+                ROOT,
+                args.internal_defense_base,
+                staged=args.staged,
+            )
+        except (OSError, subprocess.CalledProcessError, SyntaxError, ValueError) as exc:
+            problems = [str(exc)]
+        for problem in problems:
+            print(problem, file=sys.stderr)
+        if not problems:
+            print("Internal-defense growth gate passed.")
+        return int(bool(problems))
     census = build_architecture_census(ROOT)
     problems = validate_architecture_census(ROOT, census)
     if args.json_output is not None:
