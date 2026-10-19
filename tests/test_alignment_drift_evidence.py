@@ -1,21 +1,15 @@
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from openpyxl import Workbook
 
 from xic_extractor.alignment.drift_evidence import (
     DriftEvidenceLookup,
-    LocalFeatureLandmarkEvidence,
-    LocalTrajectoryEvidenceLookup,
     SampleDriftEvidence,
-    assess_local_trajectory,
-    build_targeted_istd_identity_anchor,
 )
 from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.configuration.models import Target
-from xic_extractor.configuration.target_identity import mint_target_list_snapshot
 
 
 def test_measured_istd_binding_uses_observed_peak_not_expected_rt() -> None:
@@ -722,168 +716,6 @@ def test_lookup_rejects_conflicting_injection_orders_for_sample() -> None:
         lookup.injection_order("sample-a")
 
 
-def test_local_landmarks_retain_full_trace_and_explicit_quality() -> None:
-    lookup = LocalTrajectoryEvidenceLookup(
-        points=(
-            LocalFeatureLandmarkEvidence(
-                sample_stem="sample-a",
-                injection_order=1,
-                acquisition_source_id="acquisition-source:sample-a",
-                processing_request_id="processing-request:current",
-                processing_attempt_id="processing-attempt:current",
-                landmark_id="landmark-001",
-                observed_rt_min=4.10,
-                local_trajectory_rt_min=4.00,
-                rt_drift_delta_min=0.10,
-                quality="accepted",
-                evidence_ref="peak-observation:a1",
-            ),
-            LocalFeatureLandmarkEvidence(
-                sample_stem="sample-a",
-                injection_order=1,
-                acquisition_source_id="acquisition-source:sample-a",
-                processing_request_id="processing-request:current",
-                processing_attempt_id="processing-attempt:current",
-                landmark_id="landmark-002",
-                observed_rt_min=8.30,
-                local_trajectory_rt_min=8.10,
-                rt_drift_delta_min=0.20,
-                quality="accepted",
-                evidence_ref="peak-observation:a2",
-            ),
-            LocalFeatureLandmarkEvidence(
-                sample_stem="sample-b",
-                injection_order=2,
-                acquisition_source_id="acquisition-source:sample-b",
-                processing_request_id="processing-request:current",
-                processing_attempt_id="processing-attempt:current",
-                landmark_id="landmark-001",
-                observed_rt_min=4.00,
-                local_trajectory_rt_min=4.00,
-                rt_drift_delta_min=0.00,
-                quality="poor",
-                evidence_ref="peak-observation:b1",
-                exclusion_reason="shape_unstable",
-            ),
-        )
-    )
-
-    assert not hasattr(lookup, "local_delta_min")
-    assert not hasattr(lookup, "source")
-    assert not hasattr(lookup, "sample_delta_min")
-    assert not hasattr(lookup, "injection_order")
-    assert lookup.points[0].landmark_id == "landmark-001"
-    assert lookup.points[1].landmark_id == "landmark-002"
-    sample_a = assess_local_trajectory(lookup, ("sample-a",))
-    assert sample_a.status == "assessable"
-    assert sample_a.landmark_points == lookup.points[:2]
-    assert assess_local_trajectory(lookup, ("sample-b",)).status == "poor_landmarks"
-    assert assess_local_trajectory(lookup, ("sample-c",)).status == (
-        "missing_landmarks"
-    )
-
-
-def test_local_trajectory_conflict_requires_explicit_evidence_refs() -> None:
-    point = LocalFeatureLandmarkEvidence(
-        sample_stem="sample-a",
-        injection_order=1,
-        acquisition_source_id="acquisition-source:sample-a",
-        processing_request_id="processing-request:current",
-        processing_attempt_id="processing-attempt:current",
-        landmark_id="landmark-001",
-        observed_rt_min=4.10,
-        local_trajectory_rt_min=4.00,
-        rt_drift_delta_min=0.10,
-        quality="accepted",
-        evidence_ref="peak-observation:a1",
-    )
-    lookup = LocalTrajectoryEvidenceLookup(points=(point,))
-
-    assessment = assess_local_trajectory(
-        lookup,
-        ("sample-a",),
-        conflict_evidence_refs=(point.evidence_ref,),
-    )
-    assert assessment.status == "conflict"
-    assert assessment.landmark_evidence_refs == (point.evidence_ref,)
-    assert assessment.conflict_evidence_refs == (point.evidence_ref,)
-
-    with pytest.raises(ValueError, match="conflict_evidence_refs.*duplicates"):
-        assess_local_trajectory(
-            lookup,
-            ("sample-a",),
-            conflict_evidence_refs=(point.evidence_ref, point.evidence_ref),
-        )
-
-
-def test_local_trajectory_rejects_duplicate_sample_inputs() -> None:
-    with pytest.raises(ValueError, match="sample_stems.*duplicates"):
-        assess_local_trajectory(
-            LocalTrajectoryEvidenceLookup(points=()),
-            ("sample-a", "sample-a"),
-        )
-
-
-def test_missing_landmarks_cannot_be_relabelled_as_conflict() -> None:
-    assessment = assess_local_trajectory(
-        LocalTrajectoryEvidenceLookup(points=()),
-        ("sample-a",),
-        conflict_evidence_refs=("manual:trajectory-conflict",),
-    )
-
-    assert assessment.status == "missing_landmarks"
-    assert assessment.conflict_evidence_refs == ()
-
-
-def test_istd_lookup_cannot_be_used_as_identity_trajectory_truth() -> None:
-    with pytest.raises(TypeError, match="local feature landmarks"):
-        assess_local_trajectory(DriftEvidenceLookup(points=()), ("sample-a",))
-
-
-def test_leave_one_landmark_out_retains_points_without_a_median_template() -> None:
-    points = (
-        LocalFeatureLandmarkEvidence(
-            sample_stem="sample-a",
-            injection_order=1,
-            acquisition_source_id="acquisition-source:sample-a",
-            processing_request_id="processing-request:current",
-            processing_attempt_id="processing-attempt:current",
-            landmark_id="landmark-001",
-            observed_rt_min=4.10,
-            local_trajectory_rt_min=4.00,
-            rt_drift_delta_min=0.10,
-            quality="accepted",
-            evidence_ref="peak-observation:a1",
-        ),
-        LocalFeatureLandmarkEvidence(
-            sample_stem="sample-a",
-            injection_order=1,
-            acquisition_source_id="acquisition-source:sample-a",
-            processing_request_id="processing-request:current",
-            processing_attempt_id="processing-attempt:current",
-            landmark_id="landmark-002",
-            observed_rt_min=8.30,
-            local_trajectory_rt_min=8.10,
-            rt_drift_delta_min=0.20,
-            quality="accepted",
-            evidence_ref="peak-observation:a2",
-        ),
-    )
-    full = LocalTrajectoryEvidenceLookup(points=points)
-    leave_one_out = LocalTrajectoryEvidenceLookup(points=points[1:])
-
-    full_assessment = assess_local_trajectory(full, ("sample-a",))
-    leave_one_out_assessment = assess_local_trajectory(
-        leave_one_out,
-        ("sample-a",),
-    )
-
-    assert full_assessment.status == "assessable"
-    assert full_assessment.landmark_points == points
-    assert leave_one_out_assessment.status == "assessable"
-    assert leave_one_out_assessment.landmark_points == points[1:]
-
-
 def test_lookup_keeps_conflicting_injection_order_lazy_per_sample() -> None:
     lookup = DriftEvidenceLookup(
         points=(
@@ -921,77 +753,3 @@ def test_lookup_keeps_conflicting_injection_order_lazy_per_sample() -> None:
     assert lookup.sample_delta_min("sample-b") == 0.2
     with pytest.raises(ValueError, match="conflicting injection order"):
         lookup.injection_order("sample-a")
-
-
-def test_targeted_istd_anchor_matches_only_observed_dna_dr_target() -> None:
-    target = Target(
-        label="d3-5-hmdC",
-        mz=261.127276,
-        rt_min=8.0,
-        rt_max=10.0,
-        ppm_tol=20.0,
-        neutral_loss_da=116.0474,
-        nl_ppm_warn=20.0,
-        nl_ppm_max=50.0,
-        is_istd=True,
-        istd_pair="",
-        sample_applicability="all",
-    )
-    anchor = build_targeted_istd_identity_anchor(
-        mint_target_list_snapshot(
-            (target,),
-            identity_namespace="test-targeted-istd",
-        ),
-        observed_labels=("d3-5-hmdC",),
-    )
-
-    with pytest.raises(TypeError, match="target_snapshot"):
-        build_targeted_istd_identity_anchor(
-            (target,),  # type: ignore[arg-type]
-            observed_labels=("d3-5-hmdC",),
-        )
-
-    assert (
-        anchor.matching_target(
-            SimpleNamespace(
-                feature_family_id="FAM_ISTD",
-                neutral_loss_tag="DNA_dR",
-                family_center_mz=261.1270,
-                family_center_rt=9.0,
-            )
-        )
-        == target
-    )
-    assert (
-        anchor.matching_target(
-            SimpleNamespace(
-                feature_family_id="FAM_OTHER",
-                neutral_loss_tag="DNA_dR",
-                family_center_mz=300.1605,
-                family_center_rt=23.0,
-            )
-        )
-        is None
-    )
-    assert anchor.matches_observation(
-        target,
-        neutral_loss_tag="DNA_dR",
-        precursor_mz=261.127276,
-        apex_rt=9.0,
-    )
-    assert not anchor.matches_observation(
-        target,
-        neutral_loss_tag="DNA_dR",
-        precursor_mz=261.127276,
-        apex_rt=10.1,
-    )
-    assert anchor.matching_family_ids(
-        (
-            SimpleNamespace(
-                feature_family_id="FAM_ISTD",
-                neutral_loss_tag="DNA_dR",
-                family_center_mz=261.1270,
-                family_center_rt=9.0,
-            ),
-        )
-    ) == frozenset({"FAM_ISTD"})

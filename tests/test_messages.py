@@ -20,6 +20,30 @@ from xic_extractor.peak_detection.physical_peak_evaluation import (
 )
 
 
+def test_selected_candidate_warn_token_keeps_measured_loss_error() -> None:
+    evidence = CandidateMS2Evidence(
+        ms2_present=True,
+        nl_match=True,
+        nl_status="WARN",
+        trigger_scan_count=1,
+        strict_nl_scan_count=1,
+        best_loss_ppm=12.345,
+        best_scan_rt=8.5,
+        best_product_base_ratio=0.4,
+        alignment_source="region",
+    )
+    result = ExtractionResult(
+        peak_result=PeakDetectionResult(
+            status="NO_PEAK", peak=None, n_points=0, max_smoothed=0.0,
+            n_prominent_peaks=0,
+        ),
+        nl=None,
+        candidate_ms2_evidence=evidence,
+    )
+
+    assert result.nl_token == "WARN_12.3ppm"
+
+
 @pytest.mark.parametrize(
     "point_count, expected_reason",
     [

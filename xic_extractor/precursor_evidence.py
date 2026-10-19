@@ -233,19 +233,3 @@ def precursor_inference_bounds(
     radius = maximum_radius_da if width is None else min(width / 2, maximum_radius_da)
     center = selected_mz + offset
     return center - radius, center + radius
-
-
-def scan_has_precursor_candidate(
-    scan: Ms2Scan, target_mz: float, maximum_radius_da: float, tolerance_ppm: float
-) -> bool:
-    references = recorded_precursor_references(scan, tolerance_ppm)
-    if not references:
-        return False
-    if any(
-        abs(mz - target_mz) <= target_mz * tolerance_ppm / 1e6 for mz, _ in references
-    ):
-        return True
-    lower, upper = precursor_inference_bounds(
-        scan.precursor_mz, scan.precursor_metadata, maximum_radius_da
-    )
-    return lower <= target_mz <= upper
