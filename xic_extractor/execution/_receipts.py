@@ -22,7 +22,6 @@ from xic_extractor.execution._finalization import (
     RuntimeResourceCleanupOutcome,
     RuntimeResourceOpenOutcome,
     SupervisorFinalizationRecord,
-    accept_supervisor_finalization,
 )
 from xic_extractor.execution._lifecycle import WorkUnitSettlement
 from xic_extractor.execution._observability import (
@@ -921,19 +920,6 @@ class RuntimeFinalizationReceipt:
             raise RuntimeFinalizationContractError(
                 "RuntimeFinalizationReceipt must be minted by the runtime owner"
             )
-        if not isinstance(self.coordinator, CoordinatorTerminalRecord):
-            raise RuntimeFinalizationContractError(
-                "coordinator must be a CoordinatorTerminalRecord"
-            )
-        if not isinstance(self.supervisor, SupervisorFinalizationRecord):
-            raise RuntimeFinalizationContractError(
-                "supervisor must be a SupervisorFinalizationRecord"
-            )
-        accept_supervisor_finalization(
-            self.coordinator,
-            self.supervisor,
-            observability_ledger=self.supervisor.observability_ledger,
-        )
 
     @property
     def observability_ledger(self) -> RuntimeObservabilityLedger:

@@ -461,93 +461,6 @@ class AttemptRuntime:
     settlements: tuple[WorkUnitSettlement, ...] = ()
     integrity_failure: WorkUnitSettlementIntegrityFailure | None = None
 
-    def __post_init__(self) -> None:
-        if not isinstance(
-            self.manifest,
-            (RequiredWorkManifest, _RejectedRequiredWorkManifest),
-        ):
-            raise AttemptLifecycleContractError("manifest must be runtime-owner-issued")
-        if not isinstance(self.history, AttemptLifecycleHistory):
-            raise AttemptLifecycleContractError(
-                "history must be an AttemptLifecycleHistory"
-            )
-        if self.history.attempt != self.manifest.attempt:
-            raise AttemptLifecycleContractError(
-                "runtime history must reference the manifest attempt"
-            )
-        preflight_failed = isinstance(self.manifest, _RejectedRequiredWorkManifest)
-        if preflight_failed:
-            if (
-                self.history.events[-1].kind
-                is not AttemptLifecycleEventKind.TERMINAL_PROPOSAL
-                or self.history.events[-1].proposed_outcome
-                is not AttemptTerminalOutcome.FAILED
-                or any(
-                    event.kind is AttemptLifecycleEventKind.ATTEMPT_STARTED
-                    for event in self.history.events
-                )
-            ):
-                raise AttemptLifecycleContractError(
-                    "rejected manifest runtime must retain the queued-to-failed path"
-                )
-            if self.settlements or self.integrity_failure is not None:
-                raise AttemptLifecycleContractError(
-                    "preflight-terminalized runtime cannot contain work results"
-                )
-        elif not any(
-            event.kind is AttemptLifecycleEventKind.ATTEMPT_STARTED
-            for event in self.history.events
-        ):
-            raise AttemptLifecycleContractError(
-                "runtime history must contain attempt_started"
-            )
-        if not isinstance(self.settlements, tuple):
-            raise AttemptLifecycleContractError("settlements must be a tuple")
-        if any(
-            not isinstance(settlement, WorkUnitSettlement)
-            for settlement in self.settlements
-        ):
-            raise AttemptLifecycleContractError(
-                "settlements must contain WorkUnitSettlement values"
-            )
-        work_unit_keys = tuple(
-            settlement.work_unit_key for settlement in self.settlements
-        )
-        if len(set(work_unit_keys)) != len(work_unit_keys):
-            raise AttemptLifecycleContractError(
-                "each work unit may have only one accepted settlement"
-            )
-        manifest_keys = set(self.manifest.work_unit_keys)
-        if any(
-            settlement.attempt != self.manifest.attempt
-            or settlement.work_unit_key not in manifest_keys
-            for settlement in self.settlements
-        ):
-            raise AttemptLifecycleContractError(
-                "accepted settlements must bind declared manifest work"
-            )
-        if (
-            any(
-                settlement.outcome is WorkUnitTerminalOutcome.CANCELLED
-                for settlement in self.settlements
-            )
-            and not self.history.cancellation_accepted
-        ):
-            raise AttemptLifecycleContractError(
-                "cancelled settlement requires accepted cancellation"
-            )
-        if self.integrity_failure is not None:
-            if not isinstance(
-                self.integrity_failure, WorkUnitSettlementIntegrityFailure
-            ):
-                raise AttemptLifecycleContractError(
-                    "integrity_failure must be a WorkUnitSettlementIntegrityFailure"
-                )
-            if self.integrity_failure.attempt != self.manifest.attempt:
-                raise AttemptLifecycleContractError(
-                    "integrity failure must reference the manifest attempt"
-                )
-
     @property
     def all_manifest_work_settled(self) -> bool:
         settled_keys = {settlement.work_unit_key for settlement in self.settlements}
@@ -798,7 +711,7 @@ def _settle_work_units(
     runtime: AttemptRuntime,
     settlements: Iterable[WorkUnitSettlement],
 ) -> AttemptRuntime:
-    """Reduce ordered owner submissions before validating the complete runtime."""
+    """Reduce ordered owner submissions into the next runtime state."""
 
     if not isinstance(runtime, AttemptRuntime):
         raise AttemptLifecycleContractError("runtime must be an AttemptRuntime")
