@@ -3,6 +3,13 @@ minimum_pre_commit_version: "4.0.0"
 repos:
   - repo: local
     hooks:
+      - id: internal-defense-growth
+        name: Block new internal-defense machinery
+        entry: uv run --cache-dir .uv-cache python scripts/check_architecture_census.py --internal-defense-base HEAD --staged
+        language: system
+        files: ^(xic_extractor/.*\.py|scripts/check_architecture_census\.py|\.pre-commit-config\.yaml)$
+        pass_filenames: false
+
       - id: ruff-staged-python
         name: Ruff staged Python files
         entry: uv run --cache-dir .uv-cache ruff check --fix

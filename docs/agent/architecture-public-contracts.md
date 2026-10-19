@@ -57,10 +57,13 @@ schema versions, and command flags. Do not copy those inventories here.
 
 For a non-trivial source-to-target conversion, identify the source owner,
 target consumer, identity/cardinality, preserved facts, deliberate loss, and
-the oracle that protects the consumer. Add durable binding only when the
-projection persists or certifies facts.
+the oracle that protects the consumer. Durable binding needs a current
+persisted/replay consumer or an actual admission/authority boundary; internal
+handoffs reuse established owner facts. Apply
+[Change Locality](../architecture-contract.md#change-locality) before adding
+identity, proof, or construction machinery.
 
-- Preserve composite identity through maps, joins, digests, and receipts.
+- Preserve composite identity through maps and joins using the owner's domain keys.
 - Validate cardinality at the semantic owner.
 - Preserve terminal failure and provenance when a current consumer relies on
   them.

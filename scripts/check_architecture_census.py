@@ -1545,20 +1545,213 @@ def write_architecture_census_json(
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+@dataclass
+class _DefenseScope:
+    name: str
+    fingerprint: str
+    line: int
+    counts: dict[str, int]
+
+
+def _internal_defense_profile(source: str) -> list[_DefenseScope]:
+    """Collect bounded syntax signals; this is not a semantic trust analysis."""
+    tree = ast.parse(source)
+    result: list[_DefenseScope] = []
+
+    def scan(scope: Any, name: str) -> None:
+        nodes: list[ast.AST] = []
+        children: list[Any] = []
+        body: list[ast.stmt] = []
+
+        def collect(node: ast.AST) -> None:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                children.append(node)
+                return
+            nodes.append(node)
+            for child in ast.iter_child_nodes(node):
+                collect(child)
+
+        for statement in scope.body:
+            if (
+                isinstance(statement, ast.Expr)
+                and isinstance(statement.value, ast.Constant)
+                and isinstance(statement.value.value, str)
+            ):
+                continue
+            body.append(statement)
+            collect(statement)
+        token_nodes = nodes
+        signature = ""
+        if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            token_nodes = [*nodes, *ast.walk(scope.args)]
+            signature = ast.dump(scope.args)
+        counts = {
+            "mint-token": sum(
+                isinstance(label, str) and label.lower().endswith("mint_token")
+                for node in token_nodes
+                for label in [
+                    getattr(
+                        node,
+                        "id",
+                        getattr(
+                            node,
+                            "attr",
+                            getattr(node, "arg", getattr(node, "value", None)),
+                        ),
+                    )
+                ]
+            ),
+        }
+        result.append(
+            _DefenseScope(
+                name=name,
+                fingerprint=type(scope).__name__
+                + signature
+                + "".join(ast.dump(n) for n in body),
+                line=getattr(scope, "lineno", 1),
+                counts=counts,
+            )
+        )
+        for child in children:
+            scan(child, child.name if name == "<module>" else name + "." + child.name)
+
+    scan(tree, "<module>")
+    return result
+
+
+def _match_defense_scopes(
+    previous: list[_DefenseScope], current: list[_DefenseScope]
+) -> dict[int, _DefenseScope]:
+    """Match occurrences, then unambiguous exact-body renames, never copies."""
+    remaining = list(previous)
+    matched: dict[int, _DefenseScope] = {}
+    for index, scope in enumerate(current):
+        for old in remaining:
+            if old.name == scope.name:
+                matched[index] = old
+                remaining.remove(old)
+                break
+    for index, scope in enumerate(current):
+        if index in matched:
+            continue
+        candidates = [old for old in remaining if old.fingerprint == scope.fingerprint]
+        peers = [
+            other
+            for i, other in enumerate(current)
+            if i not in matched and other.fingerprint == scope.fingerprint
+        ]
+        if len(candidates) == len(peers) == 1:
+            matched[index] = candidates[0]
+            remaining.remove(candidates[0])
+    return matched
+
+
+def validate_internal_defense_growth(
+    repo_root: Path,
+    base: str,
+    *,
+    staged: bool = False,
+) -> list[str]:
+    """Reject growth relative to Git; unchanged legacy is not an allowlist."""
+
+    def git(*args: str) -> bytes:
+        return subprocess.check_output(
+            ["git", "-C", str(repo_root), *args],
+            env=_git_subprocess_environment(),
+            stderr=subprocess.PIPE,
+        )
+
+    try:
+        commit = git("rev-parse", "--verify", base + "^{commit}").decode().strip()
+    except subprocess.CalledProcessError as exc:
+        raise ValueError(f"internal-defense baseline is unavailable: {base}") from exc
+    flags = ("--cached",) if staged else ()
+    changes = iter(
+        git(
+            "diff",
+            *flags,
+            "-M",
+            "--name-status",
+            "-z",
+            "--diff-filter=AMRT",
+            commit,
+            "--",
+            "xic_extractor",
+        )
+        .decode()
+        .split("\0")[:-1]
+    )
+    problems = []
+    for status in changes:
+        original = next(changes)
+        relative = next(changes) if status.startswith("R") else original
+        if not relative.endswith(".py"):
+            continue
+        path = (repo_root / relative).resolve()
+        if not path.is_relative_to(repo_root.resolve()):
+            raise ValueError("internal-defense source escapes repository")
+        before = b"" if status == "A" else git("show", commit + ":" + original)
+        after = git("show", ":" + relative) if staged else path.read_bytes()
+        previous = _internal_defense_profile(before.decode("utf-8-sig"))
+        current = _internal_defense_profile(after.decode("utf-8-sig"))
+        matched = _match_defense_scopes(previous, current)
+        for index, scope in enumerate(current):
+            old_counts = matched[index].counts if index in matched else {}
+            for rule, count in scope.counts.items():
+                old_count = old_counts.get(rule, 0)
+                if count > old_count:
+                    problems.append(
+                        f"{relative}:{scope.line}: internal-defense {rule} growth "
+                        f"in {scope.name} "
+                        f"({old_count} -> {count}); remove unnecessary machinery "
+                        "or seek "
+                        "a maintainer decision on the gate scope"
+                    )
+    return problems
+
+
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument(
+        "--internal-defense-base",
+        metavar="REF",
+        help="Reject internal-defense growth against this Git commit.",
+    )
     parser.add_argument(
+        "--staged",
+        action="store_true",
+        help="Inspect index source instead of working files (requires base).",
+    )
+    modes.add_argument(
         "--json-output",
         type=Path,
         help=(
             "Optional disposable JSON output outside the repo or under an ignored path."
         ),
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.staged and args.internal_defense_base is None:
+        parser.error("--staged requires --internal-defense-base")
+    return args
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
+    if args.internal_defense_base is not None:
+        try:
+            problems = validate_internal_defense_growth(
+                ROOT,
+                args.internal_defense_base,
+                staged=args.staged,
+            )
+        except (OSError, subprocess.CalledProcessError, SyntaxError, ValueError) as exc:
+            problems = [str(exc)]
+        for problem in problems:
+            print(problem, file=sys.stderr)
+        if not problems:
+            print("Internal-defense growth gate passed.")
+        return int(bool(problems))
     census = build_architecture_census(ROOT)
     problems = validate_architecture_census(ROOT, census)
     if args.json_output is not None:

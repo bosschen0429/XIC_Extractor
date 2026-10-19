@@ -93,11 +93,21 @@ internal-defense changes:
    Reuse current owner evidence; CBM owns structural query mechanics.
 2. A fallback, recomputation, or deep revalidation needs a reachable input/path
    and observable loss. Justify the check by changed inputs or an
-   actual trust boundary. Repair a fixed internal bypass at its owner or caller;
-   uncertainty alone does not justify another defense.
-3. Update consumers and retire superseded surfaces in the same responsibility
+   actual trust boundary. Construction, dataclass replacement, and internal
+   module handoff are not themselves new trust boundaries. Keep normalization
+   and mathematical/domain constraints at the producer. Repair a fixed internal
+   bypass at its owner or caller; uncertainty alone does not justify another
+   defense.
+3. Before adding an ID, digest, proof/receipt wrapper, or mint capability, name
+   the current consumer and observable behavior that needs it. Prefer domain
+   values or existing tuple keys for in-memory data; minting a hash only to
+   verify it again supplies no consumer benefit. Capabilities protect concrete
+   construction or write authority, not a private-owner naming convention.
+   Preserve existing public/persisted IDs and capability contracts until an
+   approved migration changes them.
+4. Update consumers and retire superseded surfaces in the same responsibility
    change. The [testing contract](agent/testing.md) owns which oracles survive.
-4. For one rule or representation changed in this diff, identify the affected
+5. For one rule or representation changed in this diff, identify the affected
    modules that must know it and justify each remaining dependency. For in-scope
    decoupling, ordinary consumers still reconstructing owner-derived facts or
    parsing other owners' internal ancestor schemas are unmet technical acceptance.
@@ -105,9 +115,41 @@ internal-defense changes:
    production fact.
 
 Use source and existing observable checks for this acceptance. Record the result
-in the current task/PR, not a permanent inventory or a new generic lint gate.
+in the current task/PR, not a permanent inventory.
 Established-owner local edits retain their compact workflow; this is a check of
 the affected flow, not a whole-repository audit.
+
+### Internal Defense Growth Gate
+
+`scripts/check_architecture_census.py --internal-defense-base REF` blocks
+syntactic growth in mint-token uses in changed `xic_extractor` source. The
+pre-commit hook compares HEAD to staged source; CI compares against the event's
+base commit. A missing baseline or unreadable source fails closed. Existing
+unchanged scopes are not re-certified, and no generated baseline registry is
+maintained.
+
+Validators and hashing are not gated: syntax cannot separate a producer domain
+constraint, external admission check, or boundary-adapter digest from replayed
+internal validation or identity minting. Change Locality and review own that
+decision. Duplicate scope definitions are compared by occurrence rather than
+silently overwriting one another.
+
+Git-detected file renames use the original blob as baseline. An unambiguous,
+exact-body scope rename can retain a removed scope's baseline; a copied scope
+cannot reuse a still-present scope's allowance. Rename plus substantive edits,
+ambiguous moves, or moves Git does not recognize can still require a maintainer
+decision. This is a syntactic review trigger, not semantic necessity analysis:
+token naming, indirect calls, alias rebinding, and same-count replacements
+limit coverage. There is no inline suppression or
+pass-anyway flag. A blocked change needs removal of unnecessary machinery or an
+explicit maintainer decision to adjust the gate's scope; the agent does not
+authorize its own exception. Preserve the existing product boundary while
+resolving a block.
+
+Local hooks can be bypassed, and repository code cannot prevent an actor with
+permission from editing the checker or workflow. Required remote checks and
+review protection are separate repository settings, not a guarantee made by
+this source-level gate.
 
 ## Responsibility Boundaries and Anti-Paranoia Invariants
 
@@ -128,9 +170,11 @@ To maintain clean code and prevent cognitive overload, runaway monoliths, and de
    - Domain algorithms calculate domain answers and return pure result structures (e.g., `AlignmentResult`, `HypothesisGroup`).
    - Calculating SHA-256 byte digests, serializing to JSON/TSV, and minting runtime finalization receipts are separate responsibilities owned by boundary adapters or reporting layers, never embedded within algorithmic loops.
 
-4. **Centralized Primitive Reuse (No Private Boilerplate)**:
-   - Shared mathematical arithmetic (e.g., ppm/Da mass tolerance), byte hashing, and primitive sequence validations belong to centralized utility modules (`xic_extractor.validation_primitives`, core math modules).
-   - Copy-pasting private assertions, duplicate helper routines, or local tolerance formulas across business files is strictly prohibited.
+4. **Semantic Primitive Reuse**:
+   - Reuse established math and validation primitives for the same rule and
+     compatible semantics. Domain-specific constraints stay with their owner;
+     similar assertion syntax alone does not justify a shared validator.
+     [Design Principles](#design-principles) governs new abstractions.
 
 ## System Shape
 

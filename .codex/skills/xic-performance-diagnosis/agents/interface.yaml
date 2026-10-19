@@ -1,7 +1,7 @@
 interface:
   display_name: "XIC Performance Diagnosis"
-  short_description: "Prove XIC bottlenecks and baseline/candidate comparability"
-  default_prompt: "Use $xic-performance-diagnosis to bind the XIC workload and timing source, prove baseline/candidate comparability when paired artifacts exist, explain stage and RAW/XIC call-cost deltas, and keep correctness and product authority separate before any optimization handoff."
+  short_description: "Diagnose XIC bottlenecks and performance comparisons"
+  default_prompt: "Use $xic-performance-diagnosis for a XIC performance question: bind workload and timing source, establish comparability for paired performance artifacts, explain stage and RAW/XIC call-cost deltas, and keep correctness and product authority separate before an optimization handoff."
 compatibility:
   canonical_format: "agent-skills"
   adapter_targets:

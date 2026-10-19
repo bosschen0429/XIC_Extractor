@@ -24,6 +24,9 @@ request.
 - "What is a profiler?"
 - "Speed up this unit test helper with no XIC timing or validation surface."
 - "Review a matrix activation plan that has no runtime or call-cost question."
+- "Remove redundant internal envelope validation; compare baseline/candidate
+  outputs without a speedup claim." Use the owning Issue and regression/parity
+  checks; missing timing is not an optimization-acceptance gate for this task.
 - "Launch 85RAW now." Use the runner documented in `parameter-settings.md`;
   this skill can only define the performance decision the run should close.
 - "Can this diagnostic evidence advance product tier?" Read or update the
@@ -37,8 +40,9 @@ request.
   actually needed.
 - If the request is implementation after a performance diagnosis already exists,
   reuse the applicable diagnosis and continue within the owning Issue.
-- If timing artifacts are missing but the task is XIC preset/runtime work, this
-  skill should still trigger and usually return `baseline_needed`.
+- If timing artifacts are missing but the task asks about XIC preset/runtime
+  performance, this skill should still trigger and usually return
+  `baseline_needed`.
 - If the user only wants to run a generic command benchmark with no XIC
   artifact, locality, parity, or product surface, use an ordinary benchmark or
   diagnosis workflow instead.
