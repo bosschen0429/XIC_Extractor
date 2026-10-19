@@ -32,12 +32,6 @@ class WorkerError:
     message: str
 
 
-@dataclass(frozen=True)
-class SpawnSmokeJob:
-    raw_index: int
-    raw_name: str
-
-
 class ParallelExecutionError(RuntimeError):
     """Raised when a process worker reports a failed RAW job."""
 

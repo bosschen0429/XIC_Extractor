@@ -5,7 +5,6 @@ import gzip
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -17,14 +16,6 @@ if TYPE_CHECKING:
     from xic_extractor.discovery.models import DiscoveryCandidate
 
 BLANK_BACKGROUND_LIBRARY_SCHEMA = "blank_background_library"
-
-
-class BlankQualificationCategory(str, Enum):
-    """Classification of Discovery candidates based on Blank background evaluation."""
-
-    CLEAN_ANALYTE = "CLEAN_ANALYTE"
-    SYSTEM_BACKGROUND = "SYSTEM_BACKGROUND"
-    HIGH_ABUNDANCE_OVERRIDE = "HIGH_ABUNDANCE_OVERRIDE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,40 +175,6 @@ def deserialize_background_library(payload: str) -> BlankBackgroundLibrary:
         return library
     except (KeyError, TypeError, OverflowError) as exc:
         raise ValueError("invalid background library snapshot") from exc
-
-
-@dataclass(frozen=True, slots=True)
-class CandidateBlankQualification:
-    """Qualification verdict for a Discovery candidate against Blank background."""
-
-    candidate_id: str
-    precursor_mz: float
-    category: BlankQualificationCategory
-    matched_blank_mz: float | None
-    delta_ppm: float | None
-    blank_intensity: float | None
-    fold_change: float | None
-    is_excluded_from_review: bool
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "candidate_id": self.candidate_id,
-            "precursor_mz": round(self.precursor_mz, 6),
-            "category": self.category.value,
-            "matched_blank_mz": round(self.matched_blank_mz, 6)
-            if self.matched_blank_mz
-            else None,
-            "delta_ppm": round(self.delta_ppm, 3)
-            if self.delta_ppm is not None
-            else None,
-            "blank_intensity": float(self.blank_intensity)
-            if self.blank_intensity is not None
-            else None,
-            "fold_change": round(self.fold_change, 2)
-            if self.fold_change is not None
-            else None,
-            "is_excluded_from_review": self.is_excluded_from_review,
-        }
 
 
 def extract_blank_background_library(

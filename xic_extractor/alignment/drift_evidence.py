@@ -458,24 +458,6 @@ class TargetedIstdIdentityAnchor:
         )
 
     @property
-    def target_config_identity(self) -> str:
-        """Stable identity of the owner-validated target snapshot."""
-
-        payload = {
-            "snapshot_id": self.target_snapshot.snapshot_id,
-            "observed_labels": list(self.observed_labels),
-        }
-        return hashlib.sha256(
-            json.dumps(
-                payload,
-                ensure_ascii=False,
-                allow_nan=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode("utf-8")
-        ).hexdigest()
-
-    @property
     def targets(self) -> tuple[Target, ...]:
         return tuple(
             definition.target for definition in self.target_snapshot.definitions
@@ -551,16 +533,6 @@ class LocalTrajectoryEvidenceLookup:
     points: tuple[LocalFeatureLandmarkEvidence, ...]
     validation_status: str = LOCAL_TRAJECTORY_VALIDATION_STATUS
     product_authority: str = LOCAL_TRAJECTORY_PRODUCT_AUTHORITY
-
-    def sample_injection_order(self, sample_stem: str) -> int | None:
-        orders = self._injection_orders_by_sample.get(sample_stem)
-        if not orders:
-            return None
-        if len(orders) == 1:
-            return orders[0]
-        raise ValueError(
-            f"conflicting injection order for sample {sample_stem!r}: {list(orders)}"
-        )
 
     def landmark_status(self, sample_stem: str) -> LocalTrajectoryStatus:
         sample_points = tuple(

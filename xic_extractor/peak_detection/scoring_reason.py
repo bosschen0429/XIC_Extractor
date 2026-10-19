@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from xic_extractor.peak_detection.peak_scoring_evidence import EvidenceScore
-from xic_extractor.peak_detection.scoring_models import Confidence
 
 _EVIDENCE_REASON_LABELS = {
     "strict_nl_ok": "strict NL OK",
@@ -61,13 +60,3 @@ def score_breakdown_fields(
         ("Positive Points", str(evidence_score.positive_points)),
         ("Negative Points", str(evidence_score.negative_points)),
     )
-
-
-def _is_review_only_evidence(
-    evidence_score: EvidenceScore,
-    *,
-    count_no_ms2_as_detected: bool,
-) -> bool:
-    if evidence_score.confidence == Confidence.VERY_LOW.value:
-        return True
-    return "no_ms2_cap" in evidence_score.cap_labels and not count_no_ms2_as_detected

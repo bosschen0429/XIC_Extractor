@@ -127,21 +127,6 @@ def _canonical_basis_digest(basis_bytes: bytes) -> str:
 _cached_canonical_basis_digest = lru_cache(maxsize=4096)(_canonical_basis_digest)
 
 
-def validate_typed_identity_basis(
-    identity_id: object,
-    *,
-    prefix: str,
-    basis_bytes: bytes,
-    field: str,
-) -> str:
-    """Validate that a typed identity commits to the retained basis bytes."""
-
-    value = _validate_typed_id(identity_id, prefix=prefix, field=field)
-    if value != typed_identity_digest(prefix, basis_bytes):
-        raise IdentityContractError(f"{field} mismatches its exact basis bytes")
-    return value
-
-
 def validate_typed_identity_id(
     identity_id: object,
     *,
@@ -1170,6 +1155,5 @@ __all__ = [
     "retry_predecessor_attempt_ids",
     "resolve_request_acquisition_source",
     "typed_identity_digest",
-    "validate_typed_identity_basis",
     "validate_typed_identity_id",
 ]

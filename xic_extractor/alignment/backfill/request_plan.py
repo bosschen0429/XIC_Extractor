@@ -160,20 +160,6 @@ class BackfillRequestPlan:
     ) -> tuple[BackfillRequestItem, ...]:
         return self.requests_by_sample.get(sample_stem, ())
 
-    def features_for_sample(
-        self,
-        sample_stem: str,
-    ) -> tuple[BackfillRuntimeFeature, ...]:
-        features: list[BackfillRuntimeFeature] = []
-        seen_feature_ids: set[int] = set()
-        for item in self.requests_for_sample(sample_stem):
-            feature_id = id(item.feature)
-            if feature_id in seen_feature_ids:
-                continue
-            seen_feature_ids.add(feature_id)
-            features.append(item.feature)
-        return tuple(features)
-
     def request_count_for_sample(self, sample_stem: str) -> int:
         return len(self.requests_for_sample(sample_stem))
 

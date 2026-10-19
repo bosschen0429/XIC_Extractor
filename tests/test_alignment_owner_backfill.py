@@ -305,8 +305,6 @@ def test_owner_backfill_accepts_delivery_contract_feature_without_legacy_dto() -
         review_only=False,
         confirm_local_owners_with_backfill=False,
         backfill_seed_centers=(),
-        ambiguous_sample_stem=None,
-        ambiguous_candidate_ids=(),
         group_hypothesis_id="GROUP_CONTRACT",
         public_family_id="FAM_CONTRACT",
         group_construction_role="successor_projection_adapter",

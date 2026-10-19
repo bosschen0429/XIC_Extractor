@@ -303,23 +303,6 @@ class PhysicalFactSource:
         self._ensure_current()
         return value
 
-    def _iter_indexed(
-        self,
-        spans: _IndexedSpans,
-        *,
-        label: str,
-    ) -> Iterator[dict]:
-        self._ensure_current()
-        spool_path = self._require_spool()
-        try:
-            with spool_path.open("rb") as spool:
-                for span in spans:
-                    if span is None:
-                        continue
-                    yield _read_pickled(spool, span)
-        finally:
-            self._ensure_current()
-
     def _require_spool(self) -> Path:
         if self._spool_path is None:
             raise ValueError("Discovery physical fact source is closed")

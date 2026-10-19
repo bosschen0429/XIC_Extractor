@@ -492,22 +492,6 @@ def _prevalence_flags(rows: Iterable[Mapping[str, str] | None]) -> str:
     return ";".join(flags)
 
 
-def _quant_matrix_by_peak_from_provenance(
-    quant_matrix_rows: Sequence[Mapping[str, str]],
-    cell_provenance_rows: Sequence[Mapping[str, str]],
-) -> dict[str, Mapping[str, str]]:
-    peaks = tuple(
-        dict.fromkeys(row.get("peak_hypothesis_id", "") for row in cell_provenance_rows)
-    )
-    if len(peaks) > len(quant_matrix_rows):
-        raise ValueError("cell provenance references more rows than quant matrix")
-    return {
-        peak_hypothesis_id: quant_matrix_rows[index]
-        for index, peak_hypothesis_id in enumerate(peaks)
-        if peak_hypothesis_id
-    }
-
-
 def _format_numeric(value: str) -> str:
     parsed = optional_float(value)
     if parsed is None:
