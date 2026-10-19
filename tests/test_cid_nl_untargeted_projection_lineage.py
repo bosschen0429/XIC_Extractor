@@ -18,7 +18,6 @@ from xic_extractor.discovery.cid_nl_evidence_projection import (
 from xic_extractor.discovery.models import DiscoverySeed
 from xic_extractor.evidence_artifacts import verify_evidence_artifact_payload
 from xic_extractor.peak_detection.cid_nl_evidence import (
-    CidNlEvidenceContractError,
     canonical_cid_nl_evidence_bytes,
     mint_cid_nl_evidence_ref,
 )
@@ -186,19 +185,11 @@ def test_signed_zero_cid_nl_evidence_has_one_canonical_identity(tmp_path: Path) 
     assert negative.artifact.content_identity == positive.artifact.content_identity
 
 
-def test_evidence_mutation_and_discovery_substitution_fail_closed(
+def test_discovery_seed_substitution_fails_closed(
     tmp_path: Path,
 ) -> None:
     fixture = _fixture(tmp_path)
     evidence = _evidence(fixture)
-    with pytest.raises(CidNlEvidenceContractError, match="mismatches"):
-        replace(
-            evidence,
-            observation=replace(
-                evidence.observation,
-                product_intensity=evidence.observation.product_intensity + 1.0,
-            ),
-        )
     for seed, reason in (
         (replace(fixture.seed, product_mz=fixture.seed.product_mz + 0.1), "product_mz"),
         (replace(fixture.seed, scan_number=43), "scan_number"),

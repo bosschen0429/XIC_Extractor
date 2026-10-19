@@ -10,7 +10,6 @@ from dataclasses import asdict, dataclass
 from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
     mint_artifact_semantic_contract_ref,
-    verify_evidence_artifact_payload,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
     ACQUISITION_MODE,
@@ -39,6 +38,8 @@ _ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     media_type=MEDIA_TYPE,
     serialization_format=SERIALIZATION_FORMAT,
 )
+
+
 class CidNlChromatographicSupportContractError(ValueError):
     """Raised when scan support cannot form one physical-peak event."""
 
@@ -197,59 +198,6 @@ class CidNlChromatographicSupportRef:
     content: CidNlChromatographicSupportContent
     artifact: EvidenceArtifactRef
     evidence_refs: tuple[CidNlEvidenceRef, ...] = ()
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.content, CidNlChromatographicSupportContent):
-            raise CidNlChromatographicSupportContractError(
-                "content must be owner-normalized chromatographic support"
-            )
-        if not isinstance(self.artifact, EvidenceArtifactRef):
-            raise CidNlChromatographicSupportContractError(
-                "artifact must be an owner-minted EvidenceArtifactRef"
-            )
-        composite = self.content.scan_supports[0].configured_neutral_loss_da is not None
-        if self.artifact.semantic_contract != _ARTIFACT_SEMANTIC_CONTRACT:
-            raise CidNlChromatographicSupportContractError(
-                "artifact semantic contract is not owned by CID-NL support"
-            )
-        if composite:
-            evidence = {
-                ref.artifact.content_identity.artifact_content_id: ref
-                for ref in self.evidence_refs
-            }
-            if len(evidence) != len(self.evidence_refs) or set(evidence) != {
-                member.cid_nl_evidence_content_id
-                for member in self.content.scan_supports
-            }:
-                raise CidNlChromatographicSupportContractError(
-                    "composite support must retain exact measured loss evidence"
-                )
-            for member in self.content.scan_supports:
-                observed = evidence[member.cid_nl_evidence_content_id].observation
-                if (observed.scan_number, observed.configured_neutral_loss_da) != (
-                    member.dda_scan_number,
-                    member.configured_neutral_loss_da,
-                ):
-                    raise CidNlChromatographicSupportContractError(
-                        "composite support loss dimension was substituted"
-                    )
-        elif self.evidence_refs:
-            raise CidNlChromatographicSupportContractError(
-                "scalar support cannot carry composite evidence dimensions"
-            )
-        if len(self.artifact.upstream_artifact_ids) != len(self.content.scan_supports):
-            raise CidNlChromatographicSupportContractError(
-                "chromatographic event upstream refs do not close its scan support"
-            )
-        try:
-            verify_evidence_artifact_payload(
-                self.artifact,
-                canonical_cid_nl_chromatographic_support_bytes(self.content),
-            )
-        except ValueError as exc:
-            raise CidNlChromatographicSupportContractError(
-                "chromatographic support mismatches its immutable artifact"
-            ) from exc
 
 
 def canonical_cid_nl_chromatographic_support_bytes(

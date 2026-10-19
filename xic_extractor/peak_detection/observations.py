@@ -25,7 +25,6 @@ from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
     mint_artifact_semantic_contract_ref,
     mint_evidence_artifact_ref,
-    verify_evidence_artifact_payload,
 )
 from xic_extractor.peak_detection.baseline import (
     asls_baseline,
@@ -377,43 +376,6 @@ class PeakObservationRef:
     )
     capture_stage: str = field(default="initial_capture", compare=False)
 
-    def __post_init__(self) -> None:
-        if not isinstance(self.content, PeakObservationContent):
-            raise PeakObservationContractError(
-                "content must be owner-normalized peak observation content"
-            )
-        if not isinstance(
-            self.generation_provenance,
-            PeakObservationGenerationProvenance,
-        ):
-            raise PeakObservationContractError(
-                "generation_provenance must be owner-normalized"
-            )
-        if not isinstance(self.artifact, EvidenceArtifactRef):
-            raise PeakObservationContractError(
-                "artifact must be an owner-minted EvidenceArtifactRef"
-            )
-        if self.artifact.semantic_contract != _ARTIFACT_SEMANTIC_CONTRACT:
-            raise PeakObservationContractError(
-                "artifact semantic contract is not owned by peak observations"
-            )
-        if self.artifact.upstream_artifact_ids:
-            raise PeakObservationContractError(
-                "peak observation must not invent artifact dependencies"
-            )
-        try:
-            verify_evidence_artifact_payload(
-                self.artifact,
-                canonical_peak_observation_ref_bytes(
-                    self.content,
-                    self.generation_provenance,
-                ),
-            )
-        except ValueError as exc:
-            raise PeakObservationContractError(
-                "peak observation mismatches its immutable artifact"
-            ) from exc
-
 
 @dataclass(frozen=True, slots=True)
 class RetainedCaptureEvidence:
@@ -524,10 +486,10 @@ def _mint_peak_observation_artifact(
         semantic_contract=_ARTIFACT_SEMANTIC_CONTRACT,
         payload_bytes=payload_bytes,
     )
-    return _owner_minted_peak_observation_ref(
-        content,
-        generation_provenance,
-        artifact,
+    return PeakObservationRef(
+        content=content,
+        generation_provenance=generation_provenance,
+        artifact=artifact,
         physical_evaluation=physical_evaluation,
         capture_stage=capture_stage,
     )
@@ -700,25 +662,6 @@ def _owner_minted_peak_observation_content(
     object.__setattr__(content, "intensity", intensity)
     object.__setattr__(content, "integration", integration)
     return content
-
-
-def _owner_minted_peak_observation_ref(
-    content: PeakObservationContent,
-    generation_provenance: PeakObservationGenerationProvenance,
-    artifact: EvidenceArtifactRef,
-    *,
-    physical_evaluation: PhysicalPeakEvaluation | None,
-    capture_stage: str,
-) -> PeakObservationRef:
-    """Issue a ref whose exact canonical payload just minted ``artifact``."""
-
-    reference = object.__new__(PeakObservationRef)
-    object.__setattr__(reference, "content", content)
-    object.__setattr__(reference, "generation_provenance", generation_provenance)
-    object.__setattr__(reference, "artifact", artifact)
-    object.__setattr__(reference, "physical_evaluation", physical_evaluation)
-    object.__setattr__(reference, "capture_stage", capture_stage)
-    return reference
 
 
 def canonical_peak_observation_ref_bytes(
