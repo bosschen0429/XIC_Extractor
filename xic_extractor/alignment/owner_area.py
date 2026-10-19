@@ -1,23 +1,21 @@
 from __future__ import annotations
 
 import math
-from typing import cast
+
+from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 
 
-def owner_quantification_eligible(owner: object) -> bool:
-    if not bool(getattr(owner, "quantification_eligible", True)):
+def owner_quantification_eligible(owner: SampleLocalMS1Owner) -> bool:
+    if not owner.quantification_eligible:
         return False
-    missing = object()
-    apex = getattr(owner, "owner_apex_rt", missing)
-    left = getattr(owner, "owner_peak_start_rt", missing)
-    right = getattr(owner, "owner_peak_end_rt", missing)
-    integration = getattr(owner, "selected_integration", missing)
-    if integration is not missing and integration is not None:
-        apex = getattr(integration, "rt_apex_min", missing)
-        left = getattr(integration, "rt_left_min", missing)
-        right = getattr(integration, "rt_right_min", missing)
-    if any(value is missing for value in (apex, left, right)):
-        return True
+    apex = owner.owner_apex_rt
+    left = owner.owner_peak_start_rt
+    right = owner.owner_peak_end_rt
+    integration = owner.selected_integration
+    if integration is not None:
+        apex = integration.rt_apex_min
+        left = integration.rt_left_min
+        right = integration.rt_right_min
     if not all(
         isinstance(value, (int, float))
         and not isinstance(value, bool)
@@ -25,4 +23,4 @@ def owner_quantification_eligible(owner: object) -> bool:
         for value in (apex, left, right)
     ):
         return False
-    return cast(float, left) < cast(float, apex) < cast(float, right)
+    return left < apex < right

@@ -471,9 +471,7 @@ def _coverage(
             ),
             group_identity=group,
             sample=sample,
-            planning_state="not_planned",
             planning_reason="no_discovery_input",
-            primary_logical_requests=(),
         )
         for group in groups
         for sample in context.samples
@@ -493,7 +491,7 @@ def _coverage(
         selected_family_ids=frozenset(),
         positions=positions,
     )
-    return build_backfill_evaluation_coverage(epoch, ())
+    return build_backfill_evaluation_coverage(epoch)
 
 
 def _final_receipt(

@@ -8,18 +8,6 @@ from xic_extractor.alignment.backfill.evidence_contract import (
 )
 
 BackfillScope = Literal["full-audit", "production-equivalent", "selected-families"]
-BackfillScopeExclusionReason = Literal[
-    "production_equivalent_excluded",
-    "selected_family_excluded",
-]
-BackfillRequestPlanningReason = Literal[
-    "planned",
-    "review_only",
-    "insufficient_detected_samples",
-    "raw_source_unavailable",
-    "retained_local_owner",
-    "local_owner_not_supersedable",
-]
 REQUEST_PLAN_VERSION = "alignment-parity-scoped-owner-backfill-request-plan"
 
 

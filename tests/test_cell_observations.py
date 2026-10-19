@@ -43,6 +43,7 @@ from xic_extractor.alignment.cell_observation.observations import (
     compose_final_group_cell_observation_population,
     mint_cell_observation_ref,
 )
+from xic_extractor.alignment.cid_nl_completion import _cell_planning_reason
 from xic_extractor.alignment.cid_nl_evidence_spine import (
     build_cid_nl_reference_spine,
 )
@@ -428,9 +429,7 @@ def _not_planned_coverage(
             ),
             group_identity=group,
             sample=sample,
-            planning_state="not_planned",
             planning_reason=planning_reason(group, sample),
-            primary_logical_requests=(),
         )
         for group in groups
         for sample in samples
@@ -450,23 +449,7 @@ def _not_planned_coverage(
         selected_family_ids=frozenset(),
         positions=positions,
     )
-    return build_backfill_evaluation_coverage(epoch, ())
-
-
-def _completion_planning_reason(cell: Any) -> BackfillPlanningReason:
-    """Mirror CID-NL completion's planning reason for one predecessor cell."""
-    if cell is None:
-        return "no_discovery_input"
-    if cell.content.outside_group is not None:
-        return "local_owner_not_supersedable"
-    if (
-        cell.content.technical_state == "evaluated"
-        and cell.content.method_result == "HOLD"
-        and cell.peak_observation is None
-        and len(cell.method_assessment.candidate_peaks) >= 2
-    ):
-        return "retained_unresolved_candidates"
-    return "retained_local_owner"
+    return build_backfill_evaluation_coverage(epoch)
 
 
 def _coverage_for_groups(
@@ -487,7 +470,7 @@ def _coverage_for_groups(
         fixture.owners,
         groups,
         samples,
-        planning_reason=lambda group, sample: _completion_planning_reason(
+        planning_reason=lambda group, sample: _cell_planning_reason(
             cells.get((group.group_hypothesis_id, sample.identity.sample_identity_id))
         ),
     )
@@ -538,10 +521,6 @@ def test_composer_mints_exact_cartesian_owner_population_and_states(
         assert all(
             any(association is item for item in handoff.position_associations)
             for association in cell.position_associations
-        )
-        assert all(
-            any(terminal is item for item in handoff.coverage.terminals)
-            for terminal in cell.coverage_terminals
         )
 
 

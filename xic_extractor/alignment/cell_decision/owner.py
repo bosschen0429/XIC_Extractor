@@ -448,10 +448,8 @@ def _decision_basis(
             "evidence_states": evidence.evidence_states,
             "position_ids": evidence.position_ids,
             "source_cell_artifact_ids": evidence.source_cell_artifact_ids,
-            "coverage_terminal_ids": tuple(
-                item.terminal_id for item in evidence.coverage_terminals
-            ),
             # Preserve the canonical decision identity for published artifacts.
+            "coverage_terminal_ids": (),
             "repair_receipt_ids": (),
             "repaired_observation_keys": (),
             "integrations": tuple(
