@@ -4,17 +4,6 @@ import math
 from typing import cast
 
 
-def positive_finite(value: object) -> float | None:
-    if (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(value)
-        and value > 0
-    ):
-        return float(value)
-    return None
-
-
 def owner_quantification_eligible(owner: object) -> bool:
     if not bool(getattr(owner, "quantification_eligible", True)):
         return False

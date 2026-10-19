@@ -52,12 +52,6 @@ class OwnerGroupDeliveryFeature(Protocol):
     def review_only(self) -> bool: ...
 
     @property
-    def confirm_local_owners_with_backfill(self) -> bool: ...
-
-    @property
-    def backfill_seed_centers(self) -> tuple[tuple[float, float], ...]: ...
-
-    @property
     def group_hypothesis_id(self) -> str: ...
 
     @property
@@ -82,12 +76,6 @@ class GroupProjection(TypedDict):
     group_construction_role: str
     group_delivery_role: str
     group_membership_source: str
-
-
-class CellGroupProjection(GroupProjection):
-    gap_fill_state: str
-    gap_fill_reason: str
-    missing_observation_state: str
 
 
 GROUP_REVIEW_PROJECTION_COLUMNS = (
@@ -160,36 +148,6 @@ def delivery_group_projection(feature: object) -> GroupProjection:
         "group_construction_role": delivery_group_construction_role(feature),
         "group_delivery_role": delivery_group_delivery_role(feature),
         "group_membership_source": delivery_group_membership_source(feature),
-    }
-
-
-def delivery_cell_projection(
-    feature: object,
-    *,
-    gap_fill_state: str,
-    gap_fill_reason: str,
-    missing_observation_state: str,
-) -> CellGroupProjection:
-    return delivery_cell_projection_from_group(
-        delivery_group_projection(feature),
-        gap_fill_state=gap_fill_state,
-        gap_fill_reason=gap_fill_reason,
-        missing_observation_state=missing_observation_state,
-    )
-
-
-def delivery_cell_projection_from_group(
-    group_projection: GroupProjection,
-    *,
-    gap_fill_state: str,
-    gap_fill_reason: str,
-    missing_observation_state: str,
-) -> CellGroupProjection:
-    return {
-        **group_projection,
-        "gap_fill_state": gap_fill_state,
-        "gap_fill_reason": gap_fill_reason,
-        "missing_observation_state": missing_observation_state,
     }
 
 

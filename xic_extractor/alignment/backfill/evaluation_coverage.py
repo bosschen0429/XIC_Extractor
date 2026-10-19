@@ -7,7 +7,7 @@ import json
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, replace
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Literal
 
 from xic_extractor.alignment.backfill.completion_evidence import (
     BackfillCompletionProjection,
@@ -16,28 +16,21 @@ from xic_extractor.alignment.backfill.request_plan import (
     BackfillLogicalRequestMember,
     BackfillRequestIdentity,
     BackfillRequestItem,
-    BackfillRequestPlan,
     BackfillValidationMode,
     BackfillWindowStrategy,
 )
 from xic_extractor.alignment.backfill.scope import (
     BackfillScope,
-    backfill_request_planning_reason,
-    backfill_scope_exclusion_reasons,
 )
 from xic_extractor.alignment.config import AlignmentConfig, BackfillXicBackend
 from xic_extractor.alignment.cross_sample.peak_groups import (
-    CrossSampleGroupDisposition,
     CrossSampleGroupIdentity,
-    CrossSampleGroupMemberSubject,
 )
-from xic_extractor.alignment.owner_group_delivery import OwnerGroupDeliveryFeatures
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
 )
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
-from xic_extractor.xic_models import XICRequest
 
 if TYPE_CHECKING:
     from xic_extractor.alignment.backfill.conservative import (
@@ -231,23 +224,6 @@ def _conservative_no_request_basis(
 
 
 @dataclass(frozen=True, slots=True)
-class BackfillEvaluationCoverageContext:
-    processing_owners: ProcessingOwnerReferences
-    input_features: OwnerGroupDeliveryFeatures
-    samples: tuple[ResolvedCanonicalSampleIdentity, ...]
-    sample_order: tuple[str, ...]
-    raw_sample_stems: frozenset[str]
-    alignment_config: AlignmentConfig
-    backend: BackfillXicBackend
-    window_strategy: BackfillWindowStrategy
-    superwindow_span_factor: int
-    validation_mode: BackfillValidationMode
-    result_semantics: str
-    scope: BackfillScope
-    selected_family_ids: frozenset[str]
-
-
-@dataclass(frozen=True, slots=True)
 class BackfillPlannedLogicalRequest:
     logical_request: BackfillLogicalRequestMember
     request_identity: BackfillRequestIdentity
@@ -329,63 +305,6 @@ def mint_backfill_position_id(
     )
 
 
-def mint_backfill_terminal_id(
-    *,
-    position_id: str,
-    logical_request_id: str,
-    request_identity_id: str,
-    candidate_phase: BackfillCandidatePhase,
-    candidate_index: int,
-) -> str:
-    return _typed_id(
-        _TERMINAL_PREFIX,
-        {
-            "schema": "owner_backfill_coverage_terminal",
-            "position_id": _required_text(position_id, "position_id"),
-            "logical_request_id": _required_text(
-                logical_request_id,
-                "logical_request_id",
-            ),
-            "request_identity_id": _required_text(
-                request_identity_id,
-                "request_identity_id",
-            ),
-            "candidate_phase": candidate_phase,
-            "candidate_index": candidate_index,
-        },
-    )
-
-
-def mint_backfill_selection_subject_id(
-    *,
-    request_identity: BackfillRequestIdentity | None,
-    group_hypothesis_id: str,
-    sample_stem: str,
-    request: XICRequest,
-    candidate_index: int,
-    candidate_phase: str,
-) -> str:
-    request_key = (
-        request_identity.request_identity_id
-        if request_identity is not None
-        else "unsealed:" + _canonical_request_digest(request)
-    )
-    canonical = json.dumps(
-        {
-            "schema_version": "owner_backfill_selection_subject",
-            "request_identity_id": request_key,
-            "group_hypothesis_id": group_hypothesis_id,
-            "sample_stem": sample_stem,
-            "candidate_index": candidate_index,
-            "candidate_phase": candidate_phase,
-        },
-        ensure_ascii=False,
-        allow_nan=False,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return "owner-backfill-subject:" + hashlib.sha256(canonical).hexdigest()
-
-
 def mint_backfill_planning_epoch(
     *,
     processing_owners: ProcessingOwnerReferences,
@@ -435,131 +354,6 @@ def mint_backfill_planning_epoch(
         scope=scope,
         selected_family_ids=selected_family_ids,
         positions=positions,
-    )
-
-
-def build_backfill_planning_epoch(
-    context: BackfillEvaluationCoverageContext,
-    *,
-    request_plan: BackfillRequestPlan,
-) -> BackfillEvaluationPlanningEpoch:
-    if not request_plan.exact_equivalence_available:
-        raise ValueError("evaluation coverage requires exact request identity")
-    group_identities = tuple(
-        _group_identity_from_feature(
-            feature,
-            processing_request_id=(
-                context.processing_owners.request.processing_request_id
-            ),
-        )
-        for feature in context.input_features
-    )
-    exclusion_reasons = backfill_scope_exclusion_reasons(
-        context.input_features,
-        alignment_config=context.alignment_config,
-        scope=context.scope,
-        selected_family_ids=context.selected_family_ids,
-    )
-    positions: list[BackfillPlanningPosition] = []
-    expected_logical_ids: set[str] = set()
-    for feature, group_identity in zip(
-        context.input_features,
-        group_identities,
-        strict=True,
-    ):
-        scope_reason = exclusion_reasons.get(id(feature))
-        for sample in context.samples:
-            reason: BackfillPlanningReason = (
-                scope_reason
-                if scope_reason is not None
-                else backfill_request_planning_reason(
-                    feature,
-                    sample_stem=sample.lookup_token,
-                    raw_sample_stems=context.raw_sample_stems,
-                    alignment_config=context.alignment_config,
-                )
-            )
-            logical_requests: tuple[BackfillPlannedLogicalRequest, ...] = ()
-            if reason == "planned":
-                logical_requests = tuple(
-                    BackfillPlannedLogicalRequest(logical, identity)
-                    for logical, identity in request_plan.logical_bindings_for_position(
-                        sample_stem=sample.lookup_token,
-                        group_hypothesis_id=group_identity.group_hypothesis_id,
-                    )
-                )
-                expected_logical_ids.update(
-                    item.logical_request.logical_request_id for item in logical_requests
-                )
-            positions.append(
-                BackfillPlanningPosition(
-                    position_id=mint_backfill_position_id(
-                        processing_request_id=group_identity.processing_request_id,
-                        group_hypothesis_id=group_identity.group_hypothesis_id,
-                        sample_identity_id=sample.identity.sample_identity_id,
-                    ),
-                    group_identity=group_identity,
-                    sample=sample,
-                    planning_state=(
-                        "planned" if reason == "planned" else "not_planned"
-                    ),
-                    planning_reason=reason,
-                    primary_logical_requests=logical_requests,
-                )
-            )
-    actual_logical_ids = {
-        logical.logical_request_id
-        for sample_stem in context.sample_order
-        for logical, _identity in request_plan.logical_bindings_for_sample(sample_stem)
-    }
-    if actual_logical_ids != expected_logical_ids:
-        raise ValueError("request plan is missing, extra, or rebound to coverage")
-    return mint_backfill_planning_epoch(
-        processing_owners=context.processing_owners,
-        group_identities=group_identities,
-        samples=context.samples,
-        raw_sample_stems=context.raw_sample_stems,
-        alignment_config=context.alignment_config,
-        backend=context.backend,
-        window_strategy=context.window_strategy,
-        superwindow_span_factor=context.superwindow_span_factor,
-        validation_mode=context.validation_mode,
-        result_semantics=context.result_semantics,
-        scope=context.scope,
-        selected_family_ids=context.selected_family_ids,
-        positions=tuple(positions),
-    )
-
-
-def mint_backfill_attempt_terminal(
-    *,
-    position_id: str,
-    logical_request: BackfillLogicalRequestMember,
-    request_identity: BackfillRequestIdentity,
-    candidate_phase: BackfillCandidatePhase,
-    candidate_index: int,
-    trace_evaluated: bool,
-    selected_for_output: bool,
-    terminal_reason: BackfillTerminalReason | None,
-    physical_evaluation: PhysicalPeakEvaluation | None,
-) -> BackfillAttemptTerminal:
-    return BackfillAttemptTerminal(
-        terminal_id=mint_backfill_terminal_id(
-            position_id=position_id,
-            logical_request_id=logical_request.logical_request_id,
-            request_identity_id=request_identity.request_identity_id,
-            candidate_phase=candidate_phase,
-            candidate_index=candidate_index,
-        ),
-        position_id=position_id,
-        logical_request=logical_request,
-        request_identity=request_identity,
-        candidate_phase=candidate_phase,
-        candidate_index=candidate_index,
-        trace_evaluated=trace_evaluated,
-        selected_for_output=selected_for_output,
-        terminal_reason=terminal_reason,
-        physical_evaluation=physical_evaluation,
     )
 
 
@@ -844,55 +638,6 @@ def _typed_id(prefix: str, basis: Mapping[str, object]) -> str:
     return prefix + hashlib.sha256(payload).hexdigest()
 
 
-def _canonical_request_digest(request: XICRequest) -> str:
-    canonical = json.dumps(
-        {
-            "mz": float(request.mz).hex(),
-            "rt_min": float(request.rt_min).hex(),
-            "rt_max": float(request.rt_max).hex(),
-            "ppm_tol": float(request.ppm_tol).hex(),
-        },
-        ensure_ascii=False,
-        allow_nan=False,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()
-
-
-def _group_identity_from_feature(
-    feature: object,
-    *,
-    processing_request_id: str,
-) -> CrossSampleGroupIdentity:
-    group_hypothesis_id = _required_text(
-        getattr(feature, "group_hypothesis_id", None),
-        "feature.group_hypothesis_id",
-    )
-    feature_request_id = _required_text(
-        getattr(feature, "processing_request_id", None),
-        "feature.processing_request_id",
-    )
-    if feature_request_id != processing_request_id:
-        raise ValueError("input group crossed the processing request")
-    member_subjects = getattr(feature, "member_subjects", None)
-    if not isinstance(member_subjects, tuple) or not member_subjects:
-        raise ValueError("input group is missing canonical member subjects")
-    basis_bytes = getattr(feature, "identity_basis_bytes", None)
-    if not isinstance(basis_bytes, bytes) or not basis_bytes:
-        raise ValueError("input group is missing canonical identity basis")
-    disposition = getattr(feature, "disposition", None)
-    return CrossSampleGroupIdentity(
-        group_hypothesis_id=group_hypothesis_id,
-        processing_request_id=feature_request_id,
-        member_subjects=cast(
-            tuple[CrossSampleGroupMemberSubject, ...],
-            member_subjects,
-        ),
-        basis_bytes=basis_bytes,
-        disposition=cast(CrossSampleGroupDisposition, disposition),
-    )
-
-
 def _required_text(value: object, field: str) -> str:
     if not isinstance(value, str) or not value or value != value.strip():
         raise ValueError(f"{field} must be non-empty normalized text")
@@ -906,7 +651,6 @@ __all__ = [
     "BackfillAttemptTerminal",
     "BackfillCandidatePhase",
     "BackfillEvaluationCoverageBatch",
-    "BackfillEvaluationCoverageContext",
     "BackfillEvaluationPlanningEpoch",
     "BackfillPlannedLogicalRequest",
     "BackfillPlanningPosition",
@@ -914,10 +658,6 @@ __all__ = [
     "BackfillPlanningState",
     "BackfillTerminalReason",
     "build_backfill_evaluation_coverage",
-    "build_backfill_planning_epoch",
-    "mint_backfill_attempt_terminal",
     "mint_backfill_planning_epoch",
     "mint_backfill_position_id",
-    "mint_backfill_selection_subject_id",
-    "mint_backfill_terminal_id",
 ]

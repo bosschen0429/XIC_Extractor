@@ -5,17 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
-from statistics import median
-from typing import Protocol, TypeAlias, cast
+from typing import Protocol, TypeAlias
 
 from xic_extractor.alignment.cross_sample.peak_groups import (
-    CrossSampleGroupDisposition,
     CrossSampleGroupIdentity,
-    CrossSampleGroupMemberSubject,
 )
-from xic_extractor.alignment.owner_area import owner_quantification_eligible
 
 _RUNTIME_FEATURE_ID_PREFIX = "xic.owner-backfill-runtime-feature:"
 
@@ -43,12 +39,6 @@ class BackfillRuntimeFeature(Protocol):
 
     @property
     def review_only(self) -> bool: ...
-
-    @property
-    def confirm_local_owners_with_backfill(self) -> bool: ...
-
-    @property
-    def backfill_seed_centers(self) -> tuple[tuple[float, float], ...]: ...
 
     @property
     def group_hypothesis_id(self) -> str: ...
@@ -111,255 +101,10 @@ BackfillRuntimeFeatures: TypeAlias = tuple[
 ]
 
 
-def mint_backfill_runtime_feature(
-    feature: BackfillRuntimeFeature,
-) -> BackfillRuntimeFeatureProjection:
-    """Mint the only worker-safe form of an Alignment Backfill feature."""
-
-    owner_eligibility = tuple(
-        BackfillOwnerEligibility(
-            sample_stem=cast(str, getattr(owner, "sample_stem", None)),
-            owner_area=_backfill_area(owner),
-            quantification_eligible=owner_quantification_eligible(owner),
-        )
-        for owner in _full_feature_owners(feature)
-    )
-    input_group_identity = _input_group_identity(feature)
-    basis = _runtime_feature_basis(
-        feature=feature,
-        owner_eligibility=owner_eligibility,
-        input_group_identity=input_group_identity,
-    )
-    return BackfillRuntimeFeatureProjection(
-        runtime_feature_id=_typed_id(_RUNTIME_FEATURE_ID_PREFIX, basis),
-        feature_family_id=_required_text(
-            feature.feature_family_id,
-            "feature_family_id",
-        ),
-        neutral_loss_tag=_required_text(feature.neutral_loss_tag, "neutral_loss_tag"),
-        family_center_mz=_positive_finite(
-            feature.family_center_mz,
-            "family_center_mz",
-        ),
-        family_center_rt=_finite(feature.family_center_rt, "family_center_rt"),
-        family_product_mz=_positive_finite(
-            feature.family_product_mz,
-            "family_product_mz",
-        ),
-        family_observed_neutral_loss_da=_finite(
-            feature.family_observed_neutral_loss_da,
-            "family_observed_neutral_loss_da",
-        ),
-        review_only=_required_bool(feature.review_only, "review_only"),
-        confirm_local_owners_with_backfill=_required_bool(
-            feature.confirm_local_owners_with_backfill,
-            "confirm_local_owners_with_backfill",
-        ),
-        backfill_seed_centers=_seed_centers(feature.backfill_seed_centers),
-        owner_eligibility=owner_eligibility,
-        group_hypothesis_id=_required_text(
-            feature.group_hypothesis_id,
-            "group_hypothesis_id",
-        ),
-        public_family_id=_required_text(feature.public_family_id, "public_family_id"),
-        group_construction_role=_required_text(
-            feature.group_construction_role,
-            "group_construction_role",
-        ),
-        group_delivery_role=_required_text(
-            feature.group_delivery_role,
-            "group_delivery_role",
-        ),
-        group_membership_source=_required_text(
-            feature.group_membership_source,
-            "group_membership_source",
-        ),
-        input_group_identity=input_group_identity,
-    )
-
-
-def backfill_runtime_owner_eligibility(
-    feature: BackfillRuntimeFeature,
-) -> tuple[BackfillOwnerEligibility, ...]:
-    """Expose eligibility without synthesizing domain owners in a worker."""
-
-    if isinstance(feature, BackfillRuntimeFeatureProjection):
-        return feature.owner_eligibility
-    return tuple(
-        BackfillOwnerEligibility(
-            sample_stem=cast(str, getattr(owner, "sample_stem", None)),
-            owner_area=_backfill_area(owner),
-            quantification_eligible=owner_quantification_eligible(owner),
-        )
-        for owner in _full_feature_owners(feature)
-    )
-
-
-def median_backfill_runtime_owner_area(feature: BackfillRuntimeFeature) -> float | None:
-    areas = tuple(
-        item.owner_area
-        for item in backfill_runtime_owner_eligibility(feature)
-        if item.owner_area is not None
-    )
-    return float(median(areas)) if areas else None
-
-
-def _runtime_feature_basis(
-    *,
-    feature: BackfillRuntimeFeature,
-    owner_eligibility: Iterable[BackfillOwnerEligibility],
-    input_group_identity: CrossSampleGroupIdentity | None,
-) -> Mapping[str, object]:
-    return {
-        "schema": "owner_backfill_runtime_feature",
-        "feature_family_id": _required_text(
-            feature.feature_family_id, "feature_family_id"
-        ),
-        "neutral_loss_tag": _required_text(
-            feature.neutral_loss_tag, "neutral_loss_tag"
-        ),
-        "family_center_mz": _positive_finite(
-            feature.family_center_mz, "family_center_mz"
-        ),
-        "family_center_rt": _finite(feature.family_center_rt, "family_center_rt"),
-        "family_product_mz": _positive_finite(
-            feature.family_product_mz,
-            "family_product_mz",
-        ),
-        "family_observed_neutral_loss_da": _finite(
-            feature.family_observed_neutral_loss_da,
-            "family_observed_neutral_loss_da",
-        ),
-        "review_only": _required_bool(feature.review_only, "review_only"),
-        "confirm_local_owners_with_backfill": _required_bool(
-            feature.confirm_local_owners_with_backfill,
-            "confirm_local_owners_with_backfill",
-        ),
-        "backfill_seed_centers": _seed_centers(feature.backfill_seed_centers),
-        "owner_eligibility": tuple(
-            {
-                "sample_stem": _required_text(
-                    item.sample_stem,
-                    "owner eligibility sample_stem",
-                ),
-                "owner_area": _validated_owner_area(
-                    item.owner_area,
-                    "owner eligibility owner_area",
-                ),
-                "quantification_eligible": item.quantification_eligible,
-            }
-            for item in owner_eligibility
-        ),
-        "group_hypothesis_id": _required_text(
-            feature.group_hypothesis_id,
-            "group_hypothesis_id",
-        ),
-        "public_family_id": _required_text(
-            feature.public_family_id, "public_family_id"
-        ),
-        "group_construction_role": _required_text(
-            feature.group_construction_role,
-            "group_construction_role",
-        ),
-        "group_delivery_role": _required_text(
-            feature.group_delivery_role,
-            "group_delivery_role",
-        ),
-        "group_membership_source": _required_text(
-            feature.group_membership_source,
-            "group_membership_source",
-        ),
-        "input_group_identity": (
-            {
-                "group_hypothesis_id": input_group_identity.group_hypothesis_id,
-                "processing_request_id": input_group_identity.processing_request_id,
-                "member_subject_ids": tuple(
-                    item.member_subject_id
-                    for item in input_group_identity.member_subjects
-                ),
-                "basis_bytes_hex": input_group_identity.basis_bytes.hex(),
-                "disposition": input_group_identity.disposition,
-            }
-            if input_group_identity is not None
-            else None
-        ),
-    }
-
-
-def _input_group_identity(feature: object) -> CrossSampleGroupIdentity | None:
-    processing_request_id = getattr(feature, "processing_request_id", "")
-    member_subjects = getattr(feature, "member_subjects", ())
-    basis_bytes = getattr(feature, "identity_basis_bytes", b"")
-    identity_fields = (processing_request_id, member_subjects, basis_bytes)
-    if not any(identity_fields):
-        return None
-    if not all(identity_fields):
-        raise ValueError("runtime feature has incomplete CrossSample identity")
-    return CrossSampleGroupIdentity(
-        group_hypothesis_id=_required_text(
-            getattr(feature, "group_hypothesis_id", None),
-            "group_hypothesis_id",
-        ),
-        processing_request_id=_required_text(
-            getattr(feature, "processing_request_id", None),
-            "processing_request_id",
-        ),
-        member_subjects=cast(
-            tuple[CrossSampleGroupMemberSubject, ...],
-            member_subjects,
-        ),
-        basis_bytes=cast(bytes, basis_bytes),
-        disposition=cast(
-            CrossSampleGroupDisposition,
-            getattr(feature, "disposition", None),
-        ),
-    )
-
-
-def _full_feature_owners(feature: object) -> tuple[object, ...]:
-    owners = getattr(feature, "owners")
-    if not isinstance(owners, tuple) or not owners:
-        raise TypeError("Backfill runtime projection requires non-empty owner tuple")
-    return owners
-
-
-def _seed_centers(value: object) -> tuple[tuple[float, float], ...]:
-    if not isinstance(value, tuple):
-        raise TypeError("backfill_seed_centers must be a tuple")
-    centers: list[tuple[float, float]] = []
-    for index, center in enumerate(value):
-        if not isinstance(center, tuple) or len(center) != 2:
-            raise TypeError("backfill seed center must be an (mz, rt) tuple")
-        centers.append(
-            (
-                _positive_finite(center[0], f"backfill_seed_centers[{index}].mz"),
-                _finite(center[1], f"backfill_seed_centers[{index}].rt"),
-            )
-        )
-    return tuple(centers)
-
-
 def _required_text(value: object, field: str) -> str:
     if not isinstance(value, str) or not value or value != value.strip():
         raise ValueError(f"{field} must be non-empty owner-normalized text")
     return value
-
-
-def _required_bool(value: object, field: str) -> bool:
-    if not isinstance(value, bool):
-        raise TypeError(f"{field} must be bool")
-    return value
-
-
-def _positive_finite(value: object, field: str) -> float:
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(value)
-        or value <= 0
-    ):
-        raise ValueError(f"{field} must be finite and positive")
-    return float(value)
 
 
 def _validated_owner_area(value: object, field: str) -> float | None:
@@ -369,12 +114,6 @@ def _validated_owner_area(value: object, field: str) -> float | None:
     if normalized is None:
         raise ValueError(f"{field} must be None or finite and positive")
     return normalized
-
-
-def _backfill_area(owner: object) -> float | None:
-    if not owner_quantification_eligible(owner):
-        return None
-    return _normalized_owner_area(getattr(owner, "owner_area", None))
 
 
 def _normalized_owner_area(value: object) -> float | None:

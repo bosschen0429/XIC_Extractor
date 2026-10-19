@@ -95,17 +95,6 @@ class TraceWindowEvidenceFacts:
 
 
 @dataclass(frozen=True)
-class PeakTraceEvidenceFacts:
-    """One selected integration and its reused Gaussian15 physical evidence."""
-
-    integration: IntegrationResult
-    normalized_shape_trace: OwnMaxTrace
-    window: TraceWindowEvidenceFacts
-    smoothing_count: int
-    integration_count: int
-
-
-@dataclass(frozen=True)
 class ChemicalEvidenceFacts:
     neutral_loss_required: bool = True
     ms2_present: bool | None = None
@@ -312,43 +301,6 @@ def integration_with_trace_evidence(
     return enriched
 
 
-def peak_trace_evidence(
-    integration: IntegrationResult,
-    rt_values: object,
-    intensity_values: object,
-    *,
-    baseline_integration_method: str = "asls",
-) -> PeakTraceEvidenceFacts:
-    """Mint selected-peak area, shape, and window facts from one acquired trace.
-
-    The Gaussian15 positive-AsLS residual trace is computed once and reused for
-    morphology area and own-max shape/window projections.  The selected peak
-    and its compatibility area remain caller-owned inputs.
-    """
-
-    enriched, rt, morphology_trace = _integration_and_morphology_trace(
-        integration,
-        rt_values,
-        intensity_values,
-        baseline_integration_method=baseline_integration_method,
-    )
-    normalized_shape = _normalized_precomputed_trace(rt, morphology_trace)
-    window = _trace_window_evidence_facts(
-        tuple(float(value) for value in rt),
-        normalized_shape,
-        query_apex_rt_min=integration.rt_apex_min,
-        half_window_min=DEFAULT_LOCAL_HALF_WINDOW_MIN,
-        report_global_trace_apex_delta=True,
-    )
-    return PeakTraceEvidenceFacts(
-        integration=enriched,
-        normalized_shape_trace=normalized_shape,
-        window=window,
-        smoothing_count=1 if morphology_trace is not None else 0,
-        integration_count=1,
-    )
-
-
 def _integration_and_morphology_trace(
     integration: IntegrationResult,
     rt_values: object,
@@ -418,36 +370,6 @@ def _integration_and_morphology_trace(
         ),
     )
     return enriched, rt, morphology_trace
-
-
-def _normalized_precomputed_trace(
-    rt_values: np.ndarray,
-    intensity_values: np.ndarray | None,
-) -> OwnMaxTrace:
-    if intensity_values is None:
-        return OwnMaxTrace("inconclusive", "gaussian15_trace_unavailable")
-    rt = np.asarray(rt_values, dtype=float)
-    intensity = np.asarray(intensity_values, dtype=float)
-    if rt.ndim != 1 or intensity.ndim != 1 or len(rt) != len(intensity):
-        return OwnMaxTrace("inconclusive", "length_mismatch")
-    mask = np.isfinite(rt) & np.isfinite(intensity)
-    if int(np.sum(mask)) < 3:
-        return OwnMaxTrace("inconclusive", "too_few_points")
-    rt = rt[mask]
-    intensity = intensity[mask]
-    order = np.argsort(rt)
-    rt = rt[order]
-    intensity = intensity[order]
-    maximum = float(np.max(intensity)) if intensity.size else 0.0
-    if maximum <= 0:
-        return OwnMaxTrace("inconclusive", "non_positive_signal")
-    return OwnMaxTrace(
-        "ok",
-        "gaussian15_positive_asls_residual_own_max",
-        tuple(float(value) for value in rt),
-        tuple(float(value) for value in intensity / maximum),
-        maximum,
-    )
 
 
 def build_candidate_evidence_facts(
