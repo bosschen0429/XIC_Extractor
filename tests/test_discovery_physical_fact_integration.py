@@ -1195,7 +1195,7 @@ def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
     assert [len(batch) for batch in raw.request_batches] == [2]
 
 
-def test_physical_fact_owner_rejects_cross_acquisition_reassembly(
+def test_physical_binding_rejects_cross_acquisition_reassembly(
     tmp_path: Path,
 ) -> None:
     current_dir = tmp_path / "current"
@@ -1240,11 +1240,8 @@ def test_physical_fact_owner_rejects_cross_acquisition_reassembly(
         peak_config=_backfill_peak_config(),
         signal_processing_profile=profile,
     )
-    current_record = current.physical_evaluations[0]
     foreign_record = foreign.physical_evaluations[0]
 
-    with pytest.raises(ValueError, match="crosses acquired trace content"):
-        replace(current_record, evaluation=foreign_record.evaluation)
     with pytest.raises(ValueError, match="crosses acquisition record"):
         replace(
             current.physical_bindings[0],

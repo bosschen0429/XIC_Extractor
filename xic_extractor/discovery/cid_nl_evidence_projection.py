@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import math
-import re
 from dataclasses import dataclass
 
 from xic_extractor.discovery.models import DiscoverySeed
@@ -12,7 +11,6 @@ from xic_extractor.evidence_artifacts import (
     EvidenceArtifactRef,
     mint_artifact_semantic_contract_ref,
     mint_evidence_artifact_ref,
-    verify_evidence_artifact_payload,
 )
 from xic_extractor.peak_detection.cid_nl_evidence import (
     CidNlEvidenceContractError,
@@ -29,9 +27,6 @@ from xic_extractor.sample_metadata import (
 SCHEMA_VERSION = "untargeted_cid_nl_evidence_projection"
 ARTIFACT_SEMANTIC_ROLE = "untargeted_cid_nl_evidence_projection"
 VALIDATION_STATUS = "diagnostic_only"
-_SAMPLE_ID_PREFIX = "xic.sample:"
-_EVIDENCE_ARTIFACT_ID_PREFIX = "xic.evidence-artifact:"
-_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.discovery.cid_nl_evidence_projection",
     semantic_role=ARTIFACT_SEMANTIC_ROLE,
@@ -54,50 +49,6 @@ class UntargetedCidNlProjectionRef:
     neutral_loss_tag: str
     canonical_evidence_artifact_id: str
     artifact: EvidenceArtifactRef
-
-    def __post_init__(self) -> None:
-        _validate_typed_id(
-            self.canonical_sample_identity_id,
-            prefix=_SAMPLE_ID_PREFIX,
-            field="canonical_sample_identity_id",
-        )
-        if (
-            not isinstance(self.neutral_loss_tag, str)
-            or not self.neutral_loss_tag
-            or self.neutral_loss_tag != self.neutral_loss_tag.strip()
-        ):
-            raise UntargetedCidNlProjectionError(
-                "neutral_loss_tag must be non-empty owner-normalized text"
-            )
-        _validate_typed_id(
-            self.canonical_evidence_artifact_id,
-            prefix=_EVIDENCE_ARTIFACT_ID_PREFIX,
-            field="canonical_evidence_artifact_id",
-        )
-        if not isinstance(self.artifact, EvidenceArtifactRef):
-            raise UntargetedCidNlProjectionError(
-                "artifact must be an owner-minted EvidenceArtifactRef"
-            )
-        if self.artifact.semantic_contract != _ARTIFACT_SEMANTIC_CONTRACT:
-            raise UntargetedCidNlProjectionError(
-                "artifact semantic contract is not owned by Untargeted projection"
-            )
-        if self.artifact.upstream_artifact_ids != (
-            self.canonical_evidence_artifact_id,
-        ):
-            raise UntargetedCidNlProjectionError(
-                "Untargeted projection must depend on exactly one canonical "
-                "evidence ref"
-            )
-        try:
-            verify_evidence_artifact_payload(
-                self.artifact,
-                canonical_untargeted_cid_nl_projection_bytes(self),
-            )
-        except ValueError as exc:
-            raise UntargetedCidNlProjectionError(
-                "Untargeted projection content mismatches its immutable artifact"
-            ) from exc
 
 
 def mint_untargeted_cid_nl_projection_ref(
@@ -318,14 +269,6 @@ def _require_close(
         raise UntargetedCidNlProjectionError(
             f"Discovery {field} mismatches canonical CID-NL evidence"
         )
-
-
-def _validate_typed_id(value: object, *, prefix: str, field: str) -> str:
-    if not isinstance(value, str) or not value.startswith(prefix):
-        raise UntargetedCidNlProjectionError(f"{field} must use the {prefix!r} prefix")
-    if _SHA256_RE.fullmatch(value[len(prefix) :]) is None:
-        raise UntargetedCidNlProjectionError(f"{field} must contain a SHA-256 digest")
-    return value
 
 
 __all__ = [

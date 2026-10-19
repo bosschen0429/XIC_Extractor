@@ -45,9 +45,6 @@ class DiscoveryPhysicalFactRecord:
         default=(), compare=False
     )
 
-    def __post_init__(self) -> None:
-        validate_discovery_physical_fact_record(self)
-
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, DiscoveryPhysicalFactRecord):
             return NotImplemented
@@ -101,7 +98,7 @@ class DiscoveryCandidatePhysicalBinding:
 def validate_discovery_physical_fact_record(
     record: DiscoveryPhysicalFactRecord,
 ) -> None:
-    """Re-run the complete Discovery owner invariant for one physical fact."""
+    """Validate work/trace/evaluation binding at a physical-record boundary."""
 
     if not isinstance(record, DiscoveryPhysicalFactRecord):
         raise TypeError("record must be a DiscoveryPhysicalFactRecord")
@@ -127,7 +124,7 @@ def validate_discovery_physical_fact_record(
 def validate_discovery_candidate_physical_binding(
     binding: DiscoveryCandidatePhysicalBinding,
 ) -> None:
-    """Re-run the final-candidate projection against its complete owner record."""
+    """Bind a final candidate to its settled physical record and acquisition."""
 
     if not isinstance(binding, DiscoveryCandidatePhysicalBinding):
         raise TypeError("binding must be a DiscoveryCandidatePhysicalBinding")
@@ -152,7 +149,6 @@ def validate_discovery_candidate_physical_binding(
         raise ValueError("representative source must belong to the merged members")
     if binding.representative_work_ordinal < 0:
         raise ValueError("representative_work_ordinal must be non-negative")
-    validate_discovery_physical_fact_record(binding.physical_fact_record)
     work_item = binding.physical_fact_record.work_item
     if (
         work_item.acquisition_source_id

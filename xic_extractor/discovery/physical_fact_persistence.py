@@ -679,7 +679,7 @@ def restore_discovery_physical_fact_record(
     ):
         raise ValueError("Discovery physical sidecar crosses profile identity")
 
-    return DiscoveryPhysicalFactRecord(
+    restored = DiscoveryPhysicalFactRecord(
         work_item=item,
         acquired_trace=acquired,
         candidate_links=_restore_candidate_links(record, item.work_ordinal),
@@ -690,6 +690,8 @@ def restore_discovery_physical_fact_record(
             acquired,
         ),
     )
+    validate_discovery_physical_fact_record(restored)
+    return restored
 
 
 def deserialize_discovery_physical_fact_sidecar(
@@ -796,22 +798,22 @@ def _deserialize_discovery_physical_fact_sidecar_from_root(
         )
         if profile != expected_run_spec.signal_processing_profile:
             raise ValueError("Discovery physical sidecar crosses profile identity")
-        records.append(
-            DiscoveryPhysicalFactRecord(
-                work_item=item,
-                acquired_trace=acquired,
-                candidate_links=_restore_candidate_links(record, item.work_ordinal),
-                evaluation=_restore_retained_signal(
-                    record,
-                    evaluation,
-                    expected_run_spec.signal_processing_profile,
-                    acquired,
-                ),
-            )
+        restored = DiscoveryPhysicalFactRecord(
+            work_item=item,
+            acquired_trace=acquired,
+            candidate_links=_restore_candidate_links(record, item.work_ordinal),
+            evaluation=_restore_retained_signal(
+                record,
+                evaluation,
+                expected_run_spec.signal_processing_profile,
+                acquired,
+            ),
         )
+        validate_discovery_physical_fact_record(restored)
+        records.append(restored)
     result = tuple(records)
     # Nested decoders already enforce their canonical bytes, and each record
-    # constructor validates its exact work/trace/evaluation binding. Re-encode
+    # decoder validates its exact work/trace/evaluation binding. Re-encode
     # the checked envelope without serializing and validating all records again.
     canonical_root = {
         **root,
