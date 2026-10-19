@@ -23,21 +23,19 @@ from tests.test_cid_nl_evidence_spine import (
     _completed_receipt,
     _truth_table_fixture,
 )
-from tests.test_cross_sample_association_lineage import _final_receipt, _runtime_feature
+from tests.test_cross_sample_association_lineage import _final_receipt
 from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.alignment.backfill.evaluation_coverage import (
-    BackfillEvaluationCoverageContext,
+    BackfillPlanningPosition,
+    BackfillPlanningReason,
     build_backfill_evaluation_coverage,
-    build_backfill_planning_epoch,
-    mint_backfill_attempt_terminal,
     mint_backfill_planning_epoch,
+    mint_backfill_position_id,
 )
 from xic_extractor.alignment.backfill.request_plan import (
     BACKFILL_TRACE_RESULT_SEMANTICS,
-    BackfillRequestEquivalenceContext,
-    build_backfill_request_plan,
 )
 from xic_extractor.alignment.cell_observation.observations import (
     CellObservationContractError,
@@ -238,7 +236,9 @@ def _outside_population_handoff(tmp_path: Path):
     binding = SimpleNamespace(
         samples=fixture.samples, owners=fixture.owners, request=fixture.owners.request
     )
-    coverage = _coverage_for_groups(binding, identities, fixture.samples, planned=False)
+    coverage = _coverage_for_groups(
+        binding, identities, fixture.samples, retained=False
+    )
     epoch = coverage.epoch
     coverage = build_backfill_evaluation_coverage(
         mint_backfill_planning_epoch(
@@ -369,70 +369,14 @@ def _owner_handoff(tmp_path: Path):
         spine.group,
         require_canonical=True,
     )
-    feature = _runtime_feature(group)
-    sample_order = tuple(sample.lookup_token for sample in fixture.samples)
-    context = BackfillEvaluationCoverageContext(
-        processing_owners=fixture.owners,
-        input_features=(feature,),
-        samples=fixture.samples,
-        sample_order=sample_order,
-        raw_sample_stems=frozenset(sample_order),
-        alignment_config=AlignmentConfig(owner_backfill_min_detected_samples=1),
-        backend="raw",
-        window_strategy="exact",
-        superwindow_span_factor=2,
-        validation_mode="primary",
-        result_semantics=BACKFILL_TRACE_RESULT_SEMANTICS,
-        scope="full-audit",
-        selected_family_ids=frozenset(),
+    coverage = _not_planned_coverage(
+        fixture.owners,
+        (group,),
+        fixture.samples,
+        planning_reason="retained_local_owner",
     )
-    acquisition_sources = {
-        sample.lookup_token: source
-        for sample, source in zip(
-            fixture.samples,
-            fixture.request.acquisition_sources,
-            strict=True,
-        )
-    }
-    equivalence = BackfillRequestEquivalenceContext(
-        acquisition_sources=acquisition_sources,
-        backend=context.backend,
-        window_strategy=context.window_strategy,
-        superwindow_span_factor=context.superwindow_span_factor,
-        validation_mode=context.validation_mode,
-        result_semantics=context.result_semantics,
-    )
-    request_plan = build_backfill_request_plan(
-        (feature,),
-        sample_order=context.sample_order,
-        raw_sample_stems=context.raw_sample_stems,
-        alignment_config=context.alignment_config,
-        equivalence_context=equivalence,
-    )
-    epoch = build_backfill_planning_epoch(
-        context,
-        request_plan=request_plan,
-    )
-    terminals = []
-    for position in epoch.positions:
-        for planned in position.primary_logical_requests:
-            terminals.append(
-                mint_backfill_attempt_terminal(
-                    position_id=position.position_id,
-                    logical_request=planned.logical_request,
-                    request_identity=planned.request_identity,
-                    candidate_phase="primary_fallback",
-                    candidate_index=1,
-                    trace_evaluated=False,
-                    selected_for_output=False,
-                    terminal_reason="primary_unassessable",
-                    physical_evaluation=None,
-                )
-            )
-    coverage = build_backfill_evaluation_coverage(epoch, tuple(terminals))
     receipt_fixture = SimpleNamespace(
-        context=context,
-        acquisitions=acquisition_sources,
+        context=SimpleNamespace(processing_owners=fixture.owners),
     )
     receipt = _final_receipt(
         receipt_fixture,
@@ -513,74 +457,63 @@ def _not_evaluated_assessment(
     )
 
 
-def _coverage_for_groups(
-    fixture: Any,
+def _not_planned_coverage(
+    owners: Any,
     groups: tuple[Any, ...],
     samples: tuple[Any, ...],
     *,
-    planned: bool,
+    planning_reason: BackfillPlanningReason,
 ):
-    features = tuple(_runtime_feature(group) for group in groups)
-    sample_order = tuple(sample.lookup_token for sample in samples)
-    all_acquisitions = {
-        sample.lookup_token: source
-        for sample, source in zip(
-            fixture.samples,
-            fixture.request.acquisition_sources,
-            strict=True,
+    """Coverage shaped like CID-NL completion: no planned requests or terminals."""
+    positions = tuple(
+        BackfillPlanningPosition(
+            position_id=mint_backfill_position_id(
+                processing_request_id=group.processing_request_id,
+                group_hypothesis_id=group.group_hypothesis_id,
+                sample_identity_id=sample.identity.sample_identity_id,
+            ),
+            group_identity=group,
+            sample=sample,
+            planning_state="not_planned",
+            planning_reason=planning_reason,
+            primary_logical_requests=(),
         )
-    }
-    acquisition_sources = {stem: all_acquisitions[stem] for stem in sample_order}
-    context = BackfillEvaluationCoverageContext(
-        processing_owners=fixture.owners,
-        input_features=features,
+        for group in groups
+        for sample in samples
+    )
+    epoch = mint_backfill_planning_epoch(
+        processing_owners=owners,
+        group_identities=groups,
         samples=samples,
-        sample_order=sample_order,
-        raw_sample_stems=frozenset(sample_order),
+        raw_sample_stems=frozenset(sample.lookup_token for sample in samples),
         alignment_config=AlignmentConfig(owner_backfill_min_detected_samples=1),
         backend="raw",
         window_strategy="exact",
         superwindow_span_factor=2,
         validation_mode="primary",
         result_semantics=BACKFILL_TRACE_RESULT_SEMANTICS,
-        scope="full-audit" if planned else "selected-families",
-        selected_family_ids=frozenset() if planned else frozenset({"not-this-family"}),
+        scope="full-audit",
+        selected_family_ids=frozenset(),
+        positions=positions,
     )
-    equivalence = BackfillRequestEquivalenceContext(
-        acquisition_sources=acquisition_sources,
-        backend=context.backend,
-        window_strategy=context.window_strategy,
-        superwindow_span_factor=context.superwindow_span_factor,
-        validation_mode=context.validation_mode,
-        result_semantics=context.result_semantics,
+    return build_backfill_evaluation_coverage(epoch, ())
+
+
+def _coverage_for_groups(
+    fixture: Any,
+    groups: tuple[Any, ...],
+    samples: tuple[Any, ...],
+    *,
+    retained: bool,
+):
+    return _not_planned_coverage(
+        fixture.owners,
+        groups,
+        samples,
+        planning_reason=(
+            "retained_local_owner" if retained else "selected_family_excluded"
+        ),
     )
-    request_plan = build_backfill_request_plan(
-        features if planned else (),
-        sample_order=sample_order,
-        raw_sample_stems=frozenset(sample_order),
-        alignment_config=context.alignment_config,
-        equivalence_context=equivalence,
-    )
-    epoch = build_backfill_planning_epoch(
-        context,
-        request_plan=request_plan,
-    )
-    terminals = tuple(
-        mint_backfill_attempt_terminal(
-            position_id=position.position_id,
-            logical_request=planned_request.logical_request,
-            request_identity=planned_request.request_identity,
-            candidate_phase="primary_fallback",
-            candidate_index=1,
-            trace_evaluated=False,
-            selected_for_output=False,
-            terminal_reason="primary_unassessable",
-            physical_evaluation=None,
-        )
-        for position in epoch.positions
-        for planned_request in position.primary_logical_requests
-    )
-    return build_backfill_evaluation_coverage(epoch, terminals)
 
 
 def _receipt_fixture(fixture: Any, samples: tuple[Any, ...]):
@@ -747,7 +680,7 @@ def test_composer_rejects_same_sample_crossed_source_to_position(
         fixture,
         (first_group, second_group),
         samples,
-        planned=False,
+        retained=False,
     )
     receipt = _final_receipt(
         _receipt_fixture(fixture, samples),
@@ -832,7 +765,7 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
         fixture,
         (left, right),
         samples,
-        planned=False,
+        retained=False,
     )
     if outside_support:
         epoch = coverage.epoch
@@ -991,7 +924,7 @@ def test_composer_split_keeps_cartesian_not_searched_remainder(
         fixture,
         (predecessor,),
         samples,
-        planned=True,
+        retained=True,
     )
     receipt = _final_receipt(
         _receipt_fixture(fixture, samples),

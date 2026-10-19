@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -12,22 +11,20 @@ import xic_extractor.alignment.cross_sample.peak_groups as cross_sample_owner
 import xic_extractor.peak_detection.integration as integration_runtime
 import xic_extractor.peak_detection.ms1_shape_identity as smoothing_runtime
 from tests.alignment_pipeline_helpers import _owner
-from tests.test_alignment_owner_backfill import _feature
-from tests.test_backfill_evaluation_coverage import _coverage_fixture
 from xic_extractor.alignment.backfill import (
     acquisition as owner_backfill_acquisition_runtime,
 )
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillEvaluationCoverageBatch,
-    BackfillEvaluationCoverageContext,
+    BackfillPlanningPosition,
     build_backfill_evaluation_coverage,
-    build_backfill_planning_epoch,
+    mint_backfill_planning_epoch,
+    mint_backfill_position_id,
 )
 from xic_extractor.alignment.backfill.request_plan import (
     BACKFILL_TRACE_RESULT_SEMANTICS,
-    BackfillRequestEquivalenceContext,
-    build_backfill_request_plan,
 )
+from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.association import (
     CrossSampleAssociationContractError,
     build_cross_sample_association_lineage_handoff,
@@ -44,8 +41,20 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.processing_identity import (
+    AcquisitionInputBinding,
+    ProcessingOwnerReferences,
+    build_acquisition_source_identity,
+    build_processing_request_identity,
     canonical_identity_basis_bytes,
+    compose_processing_owner_references,
+    issue_processing_attempt,
     typed_identity_digest,
+)
+from xic_extractor.sample_metadata import (
+    ResolvedCanonicalSampleIdentity,
+    SampleMetadata,
+    mint_sample_metadata_snapshot,
+    resolve_canonical_sample_identity,
 )
 
 
@@ -335,17 +344,86 @@ def test_owner_order_changes_identity_while_each_output_remains_canonical(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _CoverageContext:
+    processing_owners: ProcessingOwnerReferences
+    samples: tuple[ResolvedCanonicalSampleIdentity, ...]
+    sample_order: tuple[str, ...]
+    raw_sample_stems: frozenset[str]
+    alignment_config: AlignmentConfig
+
+
 class _Fixture:
-    def __init__(self, base: Any) -> None:
-        self.context = base.context
-        self.acquisitions = base.acquisitions
+    def __init__(self, context: _CoverageContext) -> None:
+        self.context = context
         self.samples = {sample.lookup_token: sample for sample in self.context.samples}
         self.members: dict[str, CrossSampleGroupMemberSubject] = {}
 
 
+def _coverage_context(
+    tmp_path: Path,
+    *,
+    sample_order: tuple[str, ...],
+) -> _CoverageContext:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    acquisitions = []
+    bindings = []
+    metadata = []
+    for index, sample in enumerate(sample_order, start=1):
+        raw_path = tmp_path / f"{sample}.raw"
+        raw_path.write_bytes(f"coverage:{sample}".encode())
+        acquisition = build_acquisition_source_identity(
+            raw_path,
+            acquisition_format="thermo_raw",
+            observation_namespace="test-backfill-coverage",
+        )
+        acquisitions.append(acquisition)
+        bindings.append(
+            AcquisitionInputBinding(
+                acquisition_source_id=acquisition.acquisition_source_id,
+                adapter_input_key=sample,
+                injection_order=index,
+            )
+        )
+        metadata.append(
+            SampleMetadata(
+                sample_name=sample,
+                raw_stem=sample,
+                injection_order=index,
+                sample_role="study_sample",
+            )
+        )
+    request = build_processing_request_identity(
+        acquisition_sources=tuple(acquisitions),
+        acquisition_bindings=tuple(bindings),
+        scientific_input_schema_version="backfill_coverage_test",
+        processing_algorithm_version="backfill_coverage_test",
+        processing_contract_version="processing_identity",
+        scientific_inputs={"fixture": "backfill-evaluation-coverage"},
+    )
+    snapshot = mint_sample_metadata_snapshot(
+        tuple(metadata),
+        identity_namespace="study:backfill-evaluation-coverage",
+    )
+    resolved = tuple(
+        resolve_canonical_sample_identity(snapshot, sample) for sample in sample_order
+    )
+    return _CoverageContext(
+        processing_owners=compose_processing_owner_references(
+            request=request,
+            attempt=issue_processing_attempt(request),
+            sample_snapshot=snapshot,
+            sample_resolutions=resolved,
+        ),
+        samples=resolved,
+        sample_order=sample_order,
+        raw_sample_stems=frozenset(sample_order),
+        alignment_config=AlignmentConfig(owner_backfill_min_detected_samples=1),
+    )
+
+
 def _fixture(tmp_path: Path, *, sample_stems: tuple[str, ...]) -> _Fixture:
-    base = _coverage_fixture(tmp_path, sample_order=sample_stems)
-    fixture = _Fixture(base)
+    fixture = _Fixture(_coverage_context(tmp_path, sample_order=sample_stems))
     request_id = fixture.context.processing_owners.request.processing_request_id
     for sample_stem, sample in fixture.samples.items():
         original = _owner(sample_stem, f"association-{sample_stem}")
@@ -387,60 +465,41 @@ def _group(
     )
 
 
-def _runtime_feature(group: CrossSampleGroupIdentity):
-    owner = replace(
-        _owner("sample-owner", group.group_hypothesis_id[-8:]),
-        cross_sample_member_subject=group.member_subjects[0],
-    )
-    return replace(
-        _feature(),
-        owners=(owner,),
-        group_hypothesis_id=group.group_hypothesis_id,
-        processing_request_id=group.processing_request_id,
-        member_subjects=group.member_subjects,
-        identity_basis_bytes=group.basis_bytes,
-        disposition=group.disposition,
-    )
-
-
 def _coverage(
     fixture: _Fixture,
     groups: tuple[CrossSampleGroupIdentity, ...],
 ) -> BackfillEvaluationCoverageBatch:
-    features = tuple(_runtime_feature(group) for group in groups)
-    context = BackfillEvaluationCoverageContext(
-        processing_owners=fixture.context.processing_owners,
-        input_features=features,
-        samples=fixture.context.samples,
-        sample_order=fixture.context.sample_order,
-        raw_sample_stems=fixture.context.raw_sample_stems,
-        alignment_config=fixture.context.alignment_config,
+    context = fixture.context
+    positions = tuple(
+        BackfillPlanningPosition(
+            position_id=mint_backfill_position_id(
+                processing_request_id=group.processing_request_id,
+                group_hypothesis_id=group.group_hypothesis_id,
+                sample_identity_id=sample.identity.sample_identity_id,
+            ),
+            group_identity=group,
+            sample=sample,
+            planning_state="not_planned",
+            planning_reason="no_discovery_input",
+            primary_logical_requests=(),
+        )
+        for group in groups
+        for sample in context.samples
+    )
+    epoch = mint_backfill_planning_epoch(
+        processing_owners=context.processing_owners,
+        group_identities=groups,
+        samples=context.samples,
+        raw_sample_stems=context.raw_sample_stems,
+        alignment_config=context.alignment_config,
         backend="raw",
         window_strategy="exact",
         superwindow_span_factor=2,
         validation_mode="primary",
         result_semantics=BACKFILL_TRACE_RESULT_SEMANTICS,
-        scope="selected-families",
-        selected_family_ids=frozenset({"not-this-family"}),
-    )
-    equivalence = BackfillRequestEquivalenceContext(
-        acquisition_sources=fixture.acquisitions,
-        backend=context.backend,
-        window_strategy=context.window_strategy,
-        superwindow_span_factor=context.superwindow_span_factor,
-        validation_mode=context.validation_mode,
-        result_semantics=context.result_semantics,
-    )
-    request_plan = build_backfill_request_plan(
-        (),
-        sample_order=context.sample_order,
-        raw_sample_stems=context.raw_sample_stems,
-        alignment_config=context.alignment_config,
-        equivalence_context=equivalence,
-    )
-    epoch = build_backfill_planning_epoch(
-        context,
-        request_plan=request_plan,
+        scope="full-audit",
+        selected_family_ids=frozenset(),
+        positions=positions,
     )
     return build_backfill_evaluation_coverage(epoch, ())
 
