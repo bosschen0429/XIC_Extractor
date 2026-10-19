@@ -427,15 +427,6 @@ def begin_attempt_finalization(runtime: AttemptRuntime) -> AttemptFinalizationSt
     return AttemptFinalizationState(runtime=runtime)
 
 
-def reserve_runtime_resource(
-    state: AttemptFinalizationState,
-    reservation: RuntimeResourceReservation,
-) -> AttemptFinalizationState:
-    """Record a reservation before the adapter allocates or dispatches it."""
-
-    return _reserve_runtime_resources(state, (reservation,))
-
-
 def _reserve_runtime_resources(
     state: AttemptFinalizationState,
     reservations: Iterable[RuntimeResourceReservation],
@@ -484,38 +475,6 @@ def _reserve_runtime_resources(
         events=(*state.events, *events),
         failures=tuple(failures),
     )
-
-
-def settle_runtime_resource(
-    state: AttemptFinalizationState,
-    *,
-    resource_key: str,
-    open_outcome: RuntimeResourceOpenOutcome,
-    cleanup_outcome: RuntimeResourceCleanupOutcome,
-) -> AttemptFinalizationState:
-    """Accept one complete resource report; identical replay is idempotent."""
-
-    opened = record_runtime_resource_open(
-        state,
-        resource_key=resource_key,
-        outcome=open_outcome,
-    )
-    return record_runtime_resource_cleanup(
-        opened,
-        resource_key=resource_key,
-        outcome=cleanup_outcome,
-    )
-
-
-def record_runtime_resource_open(
-    state: AttemptFinalizationState,
-    *,
-    resource_key: str,
-    outcome: RuntimeResourceOpenOutcome,
-) -> AttemptFinalizationState:
-    """Accept the first open outcome; identical replay is idempotent."""
-
-    return _record_runtime_resource_opens(state, ((resource_key, outcome),))
 
 
 def _record_runtime_resource_opens(
@@ -577,17 +536,6 @@ def _record_runtime_resource_opens(
     )
 
 
-def record_runtime_resource_cleanup(
-    state: AttemptFinalizationState,
-    *,
-    resource_key: str,
-    outcome: RuntimeResourceCleanupOutcome,
-) -> AttemptFinalizationState:
-    """Accept the first terminal cleanup; identical replay is idempotent."""
-
-    return _record_runtime_resource_cleanups(state, ((resource_key, outcome),))
-
-
 def _record_runtime_resource_cleanups(
     state: AttemptFinalizationState,
     reports: Iterable[tuple[str, RuntimeResourceCleanupOutcome]],
@@ -640,80 +588,6 @@ def _record_runtime_resource_cleanups(
         resources=tuple(resources.values()),
         events=(*state.events, *events),
         failures=tuple(failures),
-    )
-
-
-def mark_worker_lost(
-    state: AttemptFinalizationState,
-    *,
-    worker_key: str,
-) -> AttemptFinalizationState:
-    """Close every non-terminal resource for one lost worker conservatively."""
-
-    _require_mutable_state(state)
-    key = _required_text(worker_key, field="worker_key")
-    current = state
-    for record in state.resources:
-        if record.reservation.worker_key == key and record.cleanup_outcome is None:
-            open_outcome = record.open_outcome or (
-                RuntimeResourceOpenOutcome.OPEN_STATE_UNKNOWN_AFTER_WORKER_LOSS
-            )
-            current = record_runtime_resource_open(
-                current,
-                resource_key=record.reservation.resource_key,
-                outcome=open_outcome,
-            )
-            current = record_runtime_resource_cleanup(
-                current,
-                resource_key=record.reservation.resource_key,
-                outcome=RuntimeResourceCleanupOutcome.UNKNOWN_AFTER_WORKER_LOSS,
-            )
-    return current
-
-
-def register_runtime_artifact(
-    state: AttemptFinalizationState,
-    *,
-    work_unit_key: str,
-    artifact: EvidenceArtifactRef,
-) -> AttemptFinalizationState:
-    """Register a current-attempt artifact while it is runtime_temporary."""
-
-    _require_mutable_state(state)
-    record = _runtime_artifact_registration(
-        state,
-        work_unit_key=work_unit_key,
-        artifact=artifact,
-        manifest_keys=state.runtime.manifest.work_unit_keys,
-    )
-    existing = next(
-        (
-            item
-            for item in state.artifacts
-            if item.artifact.evidence_artifact_id == artifact.evidence_artifact_id
-        ),
-        None,
-    )
-    if existing is not None:
-        if existing == record:
-            return state
-        return _record_failure(
-            state,
-            RuntimeLifecycleFailureKind.CONFLICTING_ARTIFACT_REGISTRATION,
-            artifact.evidence_artifact_id,
-            "artifact was registered against a different work unit",
-        )
-    return replace(
-        state,
-        artifacts=(*state.artifacts, record),
-        events=(
-            *state.events,
-            _event(
-                state,
-                RuntimeLifecycleEventKind.ARTIFACT_REGISTERED,
-                artifact.evidence_artifact_id,
-            ),
-        ),
     )
 
 
@@ -951,34 +825,6 @@ def mint_supervisor_finalization(
     )
 
 
-def accept_supervisor_finalization(
-    coordinator: CoordinatorTerminalRecord,
-    submitted: SupervisorFinalizationRecord,
-    *,
-    observability_ledger: RuntimeObservabilityLedger,
-    existing: SupervisorFinalizationRecord | None = None,
-) -> SupervisorFinalizationRecord:
-    """Accept canonical acknowledgement once; identical replay is idempotent."""
-
-    if not isinstance(submitted, SupervisorFinalizationRecord):
-        raise RuntimeFinalizationContractError(
-            "supervisor finalization conflicts with the coordinator proposal"
-        )
-    expected = mint_supervisor_finalization(
-        coordinator,
-        observability_ledger=observability_ledger,
-    )
-    if submitted != expected:
-        raise RuntimeFinalizationContractError(
-            "supervisor finalization conflicts with the coordinator proposal"
-        )
-    if existing is None:
-        return submitted
-    if not isinstance(existing, SupervisorFinalizationRecord) or existing != submitted:
-        raise RuntimeFinalizationContractError(
-            "conflicting finalization already exists for this attempt"
-        )
-    return existing
 
 
 def _validate_observability_against_coordinator(

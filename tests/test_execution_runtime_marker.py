@@ -11,6 +11,12 @@ from pathlib import Path
 import pytest
 
 import xic_extractor.execution.recovery as runtime_marker_module
+from tests.runtime_observability_fixtures import (
+    register_runtime_artifact,
+    reserve_runtime_resource,
+    settle_runtime_resource,
+    settle_work_unit,
+)
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
@@ -29,9 +35,6 @@ from xic_extractor.execution._finalization import (
     canonical_coordinator_terminal_record_bytes,
     mint_supervisor_finalization,
     propose_attempt_terminal,
-    register_runtime_artifact,
-    reserve_runtime_resource,
-    settle_runtime_resource,
 )
 from xic_extractor.execution._lifecycle import (
     AttemptLifecycleEventKind,
@@ -43,7 +46,6 @@ from xic_extractor.execution._lifecycle import (
     WorkUnitTerminalOutcome,
     append_attempt_lifecycle_event,
     preflight_required_work_manifest,
-    settle_work_unit,
     start_attempt_runtime,
 )
 from xic_extractor.execution._observability import (

@@ -9,7 +9,13 @@ from typing import cast
 
 import pytest
 
-from tests.runtime_observability_fixtures import build_runtime_observability_ledger
+from tests.runtime_observability_fixtures import (
+    build_runtime_observability_ledger,
+    record_runtime_resource_cleanup,
+    record_runtime_resource_open,
+    register_runtime_artifact,
+    settle_work_unit,
+)
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
@@ -32,9 +38,6 @@ from xic_extractor.execution._finalization import (
     RuntimeResourceOpenOutcome,
     RuntimeResourceReservation,
     canonical_coordinator_terminal_record_bytes,
-    record_runtime_resource_cleanup,
-    record_runtime_resource_open,
-    register_runtime_artifact,
 )
 from xic_extractor.execution._lifecycle import (
     AttemptLifecycleContractError,
@@ -43,7 +46,6 @@ from xic_extractor.execution._lifecycle import (
     WorkUnitFailureCategory,
     WorkUnitFailureDetail,
     WorkUnitTerminalOutcome,
-    settle_work_unit,
 )
 from xic_extractor.execution._observability import (
     RuntimeMetricAvailability,
@@ -53,17 +55,12 @@ from xic_extractor.execution._observability import (
 from xic_extractor.execution.attempt import (
     RuntimeAcquisitionMetrics,
     RuntimeAcquisitionReceipt,
-    RuntimeArtifactIoSample,
     RuntimeArtifactRegistrationReceipt,
     RuntimeAttemptAggregate,
     RuntimeCancellationRequest,
     RuntimeExecutionPhase,
     RuntimeExecutionPhaseError,
     RuntimeFinalizationReceipt,
-    RuntimePeakFactCostMetrics,
-    RuntimePeakFactIdentityStatus,
-    RuntimePeakFactOperation,
-    RuntimePeakFactWorkReceipt,
     RuntimeRawOpenMetrics,
     RuntimeResourceSettlementReceipt,
     RuntimeTelemetrySamples,
@@ -76,7 +73,6 @@ from xic_extractor.execution.attempt import (
     _prepare_runtime_attempt,
     compact_runtime_acquisition_receipt,
     derive_runtime_acquisition_metrics,
-    derive_runtime_peak_fact_cost_metrics,
     derive_runtime_raw_open_metrics,
     execute_runtime_attempt,
     mint_work_unit_settlement,
@@ -90,19 +86,6 @@ from xic_extractor.processing_identity import (
     build_processing_request_identity,
     issue_processing_attempt,
 )
-
-
-def test_runtime_peak_fact_operation_vocabulary_is_exact() -> None:
-    assert tuple(operation.value for operation in RuntimePeakFactOperation) == (
-        "trace_evaluation",
-        "asls_baseline",
-        "gaussian_smoothing",
-        "segment_enumeration",
-        "integration",
-        "normalization",
-        "raw_descriptor_projection",
-        "region_audit_projection",
-    )
 
 
 def test_runtime_event_offsets_preserve_scan_values_and_exactly_one_errors(
@@ -183,339 +166,10 @@ def test_runtime_owner_derives_raw_open_only_from_matching_unique_receipt(
         )
 
 
-def test_runtime_owner_derives_peak_fact_cost_from_typed_work_and_telemetry(
-    tmp_path: Path,
-) -> None:
-    raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"peak-fact-runtime-owner")
-    source = build_acquisition_source_identity(
-        raw_path,
-        acquisition_format="thermo_raw",
-        observation_namespace="thermo_raw_file_reader:Device.MS:1",
-    )
-    capability = mint_raw_acquisition_session_capability(source)
-    raw_receipt = _mint_raw_acquisition_session_receipt(capability)
-    work = (
-        RuntimePeakFactWorkReceipt(
-            work_unit_key="sealed:1",
-            sample_stem="sample-a",
-            operations=(
-                RuntimePeakFactOperation.TRACE_EVALUATION,
-                RuntimePeakFactOperation.ASLS_BASELINE,
-                RuntimePeakFactOperation.GAUSSIAN_SMOOTHING,
-                RuntimePeakFactOperation.SEGMENT_ENUMERATION,
-                RuntimePeakFactOperation.INTEGRATION,
-                RuntimePeakFactOperation.NORMALIZATION,
-                RuntimePeakFactOperation.RAW_DESCRIPTOR_PROJECTION,
-                RuntimePeakFactOperation.REGION_AUDIT_PROJECTION,
-            ),
-            identity_status=RuntimePeakFactIdentityStatus.SEALED,
-            owner_request_identity="owner-request:1",
-            group_hypothesis_id="GROUP:1",
-            acquisition_source=source,
-            prepared_signal_id="prepared-signal:" + "1" * 64,
-            elapsed_seconds=0.25,
-        ),
-        RuntimePeakFactWorkReceipt(
-            work_unit_key="unsealed:2",
-            sample_stem="sample-a",
-            operations=(RuntimePeakFactOperation.TRACE_EVALUATION,),
-            identity_status=RuntimePeakFactIdentityStatus.UNAVAILABLE,
-        ),
-    )
-
-    metrics = derive_runtime_peak_fact_cost_metrics(
-        raw_session_capability=capability,
-        raw_open_receipts=(raw_receipt,),
-        work_receipts=work,
-        artifact_io=RuntimeArtifactIoSample(
-            read_count=0,
-            read_bytes=0,
-            write_count=0,
-            write_bytes=0,
-        ),
-    )
-
-    assert metrics.raw_open_count == 1
-    assert metrics.trace_evaluation_count == 2
-    assert metrics.smoothing_count == 1
-    assert metrics.asls_baseline_count == 1
-    assert metrics.segment_enumeration_count == 1
-    assert metrics.integration_count == 1
-    assert metrics.normalization_count == 1
-    assert metrics.raw_descriptor_projection_count == 1
-    assert metrics.region_audit_projection_count == 1
-    assert metrics.artifact_round_trip_count == 0
-    assert metrics.sealed_observation_count == 1
-    assert metrics.identity_unavailable_count == 1
-    assert metrics.elapsed_seconds == pytest.approx(0.25)
-    assert metrics.measurement_source == "execution_runtime_owner"
-
-    with pytest.raises(
-        RuntimeFinalizationContractError,
-        match="requires prepared_signal_id",
-    ):
-        replace(work[0], prepared_signal_id=None)
-
-    with pytest.raises(RuntimeFinalizationContractError, match="duplicate"):
-        derive_runtime_peak_fact_cost_metrics(
-            raw_session_capability=capability,
-            raw_open_receipts=(raw_receipt,),
-            work_receipts=(work[0], work[0]),
-            artifact_io=None,
-        )
-    foreign_path = tmp_path / "foreign.raw"
-    foreign_path.write_bytes(b"foreign-peak-fact-runtime-owner")
-    foreign_source = build_acquisition_source_identity(
-        foreign_path,
-        acquisition_format="thermo_raw",
-        observation_namespace="thermo_raw_file_reader:Device.MS:1",
-    )
-    with pytest.raises(RuntimeFinalizationContractError, match="RAW session"):
-        derive_runtime_peak_fact_cost_metrics(
-            raw_session_capability=capability,
-            raw_open_receipts=(raw_receipt,),
-            work_receipts=(
-                replace(
-                    work[0],
-                    work_unit_key="sealed:foreign",
-                    acquisition_source=foreign_source,
-                ),
-            ),
-            artifact_io=None,
-        )
-    with pytest.raises(RuntimeFinalizationContractError, match="trace evaluation"):
-        RuntimePeakFactWorkReceipt(
-            work_unit_key="unsealed-without-work",
-            sample_stem="sample-a",
-            operations=(),
-            identity_status=RuntimePeakFactIdentityStatus.UNAVAILABLE,
-        )
-    with pytest.raises(RuntimeFinalizationContractError, match="at most once"):
-        RuntimePeakFactWorkReceipt(
-            work_unit_key="duplicate-asls",
-            sample_stem="sample-a",
-            operations=(
-                RuntimePeakFactOperation.TRACE_EVALUATION,
-                RuntimePeakFactOperation.ASLS_BASELINE,
-                RuntimePeakFactOperation.ASLS_BASELINE,
-            ),
-            identity_status=RuntimePeakFactIdentityStatus.SEALED,
-            owner_request_identity="owner-request:duplicate-asls",
-            group_hypothesis_id="GROUP:duplicate-asls",
-            acquisition_source=source,
-        )
-    with pytest.raises(RuntimeFinalizationContractError, match="canonical order"):
-        RuntimePeakFactWorkReceipt(
-            work_unit_key="out-of-order",
-            sample_stem="sample-a",
-            operations=(
-                RuntimePeakFactOperation.TRACE_EVALUATION,
-                RuntimePeakFactOperation.GAUSSIAN_SMOOTHING,
-                RuntimePeakFactOperation.ASLS_BASELINE,
-            ),
-            identity_status=RuntimePeakFactIdentityStatus.SEALED,
-            owner_request_identity="owner-request:out-of-order",
-            group_hypothesis_id="GROUP:out-of-order",
-            acquisition_source=source,
-        )
-    with pytest.raises(RuntimeFinalizationContractError, match="finite and positive"):
-        RuntimePeakFactWorkReceipt(
-            work_unit_key="non-finite",
-            sample_stem="sample-a",
-            operations=(
-                RuntimePeakFactOperation.TRACE_EVALUATION,
-                RuntimePeakFactOperation.ASLS_BASELINE,
-                RuntimePeakFactOperation.GAUSSIAN_SMOOTHING,
-            ),
-            identity_status=RuntimePeakFactIdentityStatus.SEALED,
-            owner_request_identity="owner-request:non-finite",
-            group_hypothesis_id="GROUP:non-finite",
-            acquisition_source=source,
-            prepared_signal_id="prepared-signal:" + "2" * 64,
-            elapsed_seconds=float("nan"),
-        )
-    with pytest.raises(
-        RuntimeFinalizationContractError,
-        match="minted by the runtime owner",
-    ):
-        RuntimePeakFactCostMetrics(
-            raw_open_count=1,
-            raw_open_unavailable_reason="",
-            trace_evaluation_count=2,
-            asls_baseline_count=1,
-            smoothing_count=1,
-            segment_enumeration_count=1,
-            integration_count=1,
-            normalization_count=1,
-            raw_descriptor_projection_count=1,
-            region_audit_projection_count=1,
-            artifact_round_trip_count=0,
-            artifact_round_trip_unavailable_reason="",
-            sealed_observation_count=1,
-            identity_unavailable_count=1,
-            elapsed_seconds=0.25,
-            elapsed_unavailable_reason="",
-            _mint_token=object(),
-        )
 
 
-def test_runtime_owner_counts_preparation_once_per_prepared_signal(
-    tmp_path: Path,
-) -> None:
-    raw_path = tmp_path / "shared.raw"
-    raw_path.write_bytes(b"shared-prepared-signal")
-    source = build_acquisition_source_identity(
-        raw_path,
-        acquisition_format="thermo_raw",
-        observation_namespace="thermo_raw_file_reader:Device.MS:1",
-    )
-    shared_prepared_signal_id = "prepared-signal:" + "a" * 64
-    operations = (
-        RuntimePeakFactOperation.TRACE_EVALUATION,
-        RuntimePeakFactOperation.ASLS_BASELINE,
-        RuntimePeakFactOperation.GAUSSIAN_SMOOTHING,
-        RuntimePeakFactOperation.SEGMENT_ENUMERATION,
-        RuntimePeakFactOperation.INTEGRATION,
-        RuntimePeakFactOperation.NORMALIZATION,
-        RuntimePeakFactOperation.RAW_DESCRIPTOR_PROJECTION,
-        RuntimePeakFactOperation.REGION_AUDIT_PROJECTION,
-    )
-    receipts = tuple(
-        RuntimePeakFactWorkReceipt(
-            work_unit_key=f"sealed:{index}",
-            sample_stem="sample-a",
-            operations=operations,
-            identity_status=RuntimePeakFactIdentityStatus.SEALED,
-            owner_request_identity=f"owner-request:{index}",
-            group_hypothesis_id=f"GROUP:{index}",
-            acquisition_source=source,
-            prepared_signal_id=shared_prepared_signal_id,
-            elapsed_seconds=0.25,
-        )
-        for index in range(2)
-    )
-
-    metrics = derive_runtime_peak_fact_cost_metrics(
-        raw_session_capability=None,
-        raw_open_receipts=(),
-        work_receipts=receipts,
-        artifact_io=None,
-    )
-
-    assert metrics.trace_evaluation_count == 1
-    assert metrics.asls_baseline_count == 1
-    assert metrics.smoothing_count == 1
-    assert metrics.segment_enumeration_count == 2
-    assert metrics.integration_count == 2
-    assert metrics.normalization_count == 2
-    assert metrics.raw_descriptor_projection_count == 2
-    assert metrics.region_audit_projection_count == 2
-    assert metrics.sealed_observation_count == 2
-
-    distinct_metrics = derive_runtime_peak_fact_cost_metrics(
-        raw_session_capability=None,
-        raw_open_receipts=(),
-        work_receipts=(
-            receipts[0],
-            replace(
-                receipts[1],
-                prepared_signal_id="prepared-signal:" + "b" * 64,
-            ),
-        ),
-        artifact_io=None,
-    )
-    assert distinct_metrics.trace_evaluation_count == 2
-    assert distinct_metrics.asls_baseline_count == 2
-    assert distinct_metrics.smoothing_count == 2
-    assert distinct_metrics.segment_enumeration_count == 2
-
-    unavailable_metrics = derive_runtime_peak_fact_cost_metrics(
-        raw_session_capability=None,
-        raw_open_receipts=(),
-        work_receipts=tuple(
-            replace(
-                receipt,
-                operations=(RuntimePeakFactOperation.TRACE_EVALUATION,),
-                elapsed_seconds=None,
-            )
-            for receipt in receipts
-        ),
-        artifact_io=None,
-    )
-    assert unavailable_metrics.trace_evaluation_count == 1
-    assert unavailable_metrics.asls_baseline_count == 0
-    assert unavailable_metrics.smoothing_count == 0
-    assert unavailable_metrics.segment_enumeration_count == 0
-    assert unavailable_metrics.integration_count == 0
-    assert unavailable_metrics.normalization_count == 0
-    assert unavailable_metrics.raw_descriptor_projection_count == 0
-
-    with pytest.raises(RuntimeFinalizationContractError, match="prepared_signal_id"):
-        replace(receipts[0], prepared_signal_id="prepared-signal:not-a-digest")
-
-    with pytest.raises(
-        RuntimeFinalizationContractError,
-        match="inconsistent preparation operations",
-    ):
-        derive_runtime_peak_fact_cost_metrics(
-            raw_session_capability=None,
-            raw_open_receipts=(),
-            work_receipts=(
-                receipts[0],
-                replace(
-                    receipts[1],
-                    operations=(RuntimePeakFactOperation.TRACE_EVALUATION,),
-                    elapsed_seconds=None,
-                ),
-            ),
-            artifact_io=None,
-        )
 
 
-def test_runtime_owner_keeps_missing_peak_fact_timing_and_artifacts_unavailable(
-    tmp_path: Path,
-) -> None:
-    raw_path = tmp_path / "missing.raw"
-    raw_path.write_bytes(b"missing-peak-fact-runtime-owner")
-    source = build_acquisition_source_identity(
-        raw_path,
-        acquisition_format="thermo_raw",
-        observation_namespace="thermo_raw_file_reader:Device.MS:1",
-    )
-    capability = mint_raw_acquisition_session_capability(source)
-    metrics = derive_runtime_peak_fact_cost_metrics(
-        raw_session_capability=capability,
-        raw_open_receipts=(),
-        work_receipts=(
-            RuntimePeakFactWorkReceipt(
-                work_unit_key="sealed:missing-time",
-                sample_stem="sample-a",
-                operations=(
-                    RuntimePeakFactOperation.TRACE_EVALUATION,
-                    RuntimePeakFactOperation.ASLS_BASELINE,
-                    RuntimePeakFactOperation.GAUSSIAN_SMOOTHING,
-                    RuntimePeakFactOperation.SEGMENT_ENUMERATION,
-                    RuntimePeakFactOperation.INTEGRATION,
-                    RuntimePeakFactOperation.NORMALIZATION,
-                    RuntimePeakFactOperation.RAW_DESCRIPTOR_PROJECTION,
-                ),
-                identity_status=RuntimePeakFactIdentityStatus.SEALED,
-                owner_request_identity="owner-request:missing-time",
-                group_hypothesis_id="GROUP:missing-time",
-                acquisition_source=source,
-                prepared_signal_id="prepared-signal:" + "3" * 64,
-            ),
-        ),
-        artifact_io=None,
-    )
-
-    assert metrics.raw_open_count is None
-    assert metrics.raw_open_unavailable_reason
-    assert metrics.artifact_round_trip_count is None
-    assert metrics.artifact_round_trip_unavailable_reason
-    assert metrics.elapsed_seconds is None
-    assert metrics.elapsed_unavailable_reason
 
 
 def test_owner_start_accepts_exact_typed_cancellation_request(

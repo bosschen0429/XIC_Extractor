@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.runtime_observability_fixtures import settle_work_unit
 from xic_extractor.processing_identity import (
     AcquisitionInputBinding,
     ProcessingAttemptIdentity,
@@ -305,7 +306,6 @@ def test_attempt_runtime_settles_manifest_work_exactly_once(tmp_path: Path) -> N
         WorkUnitTerminalOutcome,
         append_attempt_lifecycle_event,
         preflight_required_work_manifest,
-        settle_work_unit,
         start_attempt_runtime,
     )
 
@@ -370,7 +370,6 @@ def test_conflicting_work_settlement_is_recorded_and_fails_attempt(
         WorkUnitTerminalOutcome,
         append_attempt_lifecycle_event,
         preflight_required_work_manifest,
-        settle_work_unit,
         start_attempt_runtime,
     )
 
@@ -438,7 +437,6 @@ def test_undeclared_work_settlement_fails_attempt_without_accepting_result(
         WorkUnitTerminalOutcome,
         append_attempt_lifecycle_event,
         preflight_required_work_manifest,
-        settle_work_unit,
         start_attempt_runtime,
     )
 
@@ -486,7 +484,6 @@ def test_work_settlement_outcome_and_result_ref_fail_closed(tmp_path: Path) -> N
         WorkUnitTerminalOutcome,
         append_attempt_lifecycle_event,
         preflight_required_work_manifest,
-        settle_work_unit,
         start_attempt_runtime,
     )
 

@@ -531,17 +531,20 @@ def test_runtime_boundary_authority_scans_scripts_for_low_level_calls(
     source.parent.mkdir(parents=True)
     source.write_text(
         """
-from xic_extractor.execution._finalization import mark_worker_lost
+from xic_extractor.execution._finalization import _record_runtime_resource_cleanups
 
 def bypass(state):
-    return mark_worker_lost(state, worker_key="worker:a")
+    return _record_runtime_resource_cleanups(state, ())
 """.lstrip(),
         encoding="utf-8",
     )
 
     problems = census.validate_runtime_boundary_authority(tmp_path, (script,))
 
-    assert any("mark_worker_lost is owner-internal" in item for item in problems)
+    assert any(
+        "_record_runtime_resource_cleanups is owner-internal" in item
+        for item in problems
+    )
 
 
 def test_runtime_receipt_internal_allowlist_is_path_scoped(
