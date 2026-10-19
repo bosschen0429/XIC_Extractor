@@ -10,7 +10,6 @@ from dataclasses import InitVar, dataclass, field, replace
 from functools import cached_property
 from typing import Literal
 
-from xic_extractor.alignment.identity_gates import is_dr_neutral_loss_tag
 from xic_extractor.alignment.ownership_models import SampleLocalMS1Owner
 from xic_extractor.configuration.models import Target
 from xic_extractor.configuration.target_identity import (
@@ -395,86 +394,6 @@ class TargetedIstdIdentityAnchor:
                 "targeted ISTD identity anchors must be minted by the owner"
             )
 
-    def matching_target(self, family: object) -> Target | None:
-        """Return a unique configured ISTD match for one aligned family."""
-
-        if not is_dr_neutral_loss_tag(str(getattr(family, "neutral_loss_tag", ""))):
-            return None
-        family_mz = _finite_float(getattr(family, "family_center_mz", None))
-        if family_mz is None:
-            family_mz = _finite_float(getattr(family, "cluster_center_mz", None))
-        if family_mz is None:
-            return None
-        family_rt = _finite_float(getattr(family, "family_center_rt", None))
-        if family_rt is None:
-            family_rt = _finite_float(getattr(family, "cluster_center_rt", None))
-        if family_rt is None:
-            return None
-        candidates = tuple(
-            target
-            for target in self.targets
-            if target.label in self.observed_labels
-            and self.matches_observation(
-                target,
-                neutral_loss_tag=str(getattr(family, "neutral_loss_tag", "")),
-                precursor_mz=family_mz,
-                apex_rt=family_rt,
-            )
-        )
-        return candidates[0] if len(candidates) == 1 else None
-
-    def matches_observation(
-        self,
-        target: Target,
-        *,
-        neutral_loss_tag: str,
-        precursor_mz: float,
-        apex_rt: float,
-    ) -> bool:
-        """Check one owner observation against the matched target envelope."""
-
-        return (
-            target.is_istd
-            and target.label in self.observed_labels
-            and target.neutral_loss_da is not None
-            and math.isclose(
-                target.neutral_loss_da,
-                _DNA_DR_NEUTRAL_LOSS_DA,
-                rel_tol=0.0,
-                abs_tol=1e-6,
-            )
-            and target.rt_min <= apex_rt <= target.rt_max
-            and abs(precursor_mz - target.mz)
-            <= target.mz * target.ppm_tol / 1_000_000.0
-            and is_dr_neutral_loss_tag(neutral_loss_tag)
-        )
-
-    def matching_family_ids(self, families: Iterable[object]) -> frozenset[str]:
-        return frozenset(
-            family_id
-            for family in families
-            if (family_id := _family_id(family))
-            and self.matching_target(family) is not None
-        )
-
-    @property
-    def target_config_identity(self) -> str:
-        """Stable identity of the owner-validated target snapshot."""
-
-        payload = {
-            "snapshot_id": self.target_snapshot.snapshot_id,
-            "observed_labels": list(self.observed_labels),
-        }
-        return hashlib.sha256(
-            json.dumps(
-                payload,
-                ensure_ascii=False,
-                allow_nan=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode("utf-8")
-        ).hexdigest()
-
     @property
     def targets(self) -> tuple[Target, ...]:
         return tuple(
@@ -551,16 +470,6 @@ class LocalTrajectoryEvidenceLookup:
     points: tuple[LocalFeatureLandmarkEvidence, ...]
     validation_status: str = LOCAL_TRAJECTORY_VALIDATION_STATUS
     product_authority: str = LOCAL_TRAJECTORY_PRODUCT_AUTHORITY
-
-    def sample_injection_order(self, sample_stem: str) -> int | None:
-        orders = self._injection_orders_by_sample.get(sample_stem)
-        if not orders:
-            return None
-        if len(orders) == 1:
-            return orders[0]
-        raise ValueError(
-            f"conflicting injection order for sample {sample_stem!r}: {list(orders)}"
-        )
 
     def landmark_status(self, sample_stem: str) -> LocalTrajectoryStatus:
         sample_points = tuple(
@@ -700,12 +609,6 @@ class DriftEvidenceLookup:
             sample_stem: tuple(sorted(orders))
             for sample_stem, orders in by_sample.items()
         }
-
-
-def _family_id(family: object) -> str:
-    return str(
-        getattr(family, "feature_family_id", "") or getattr(family, "cluster_id", "")
-    ).strip()
 
 
 def _finite_float(value: object) -> float | None:

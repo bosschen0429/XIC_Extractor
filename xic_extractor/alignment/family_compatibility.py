@@ -18,35 +18,6 @@ from xic_extractor.alignment.config import AlignmentConfig
 _PRODUCT_PRECURSOR_SHIFT_TOLERANCE_DA = 0.02
 
 
-def compatible_primary_family(
-    left: Any,
-    right: Any,
-    config: AlignmentConfig,
-) -> bool:
-    if bool(getattr(left, "review_only", False)) or bool(
-        getattr(right, "review_only", False),
-    ):
-        return False
-    if str(left.neutral_loss_tag) != str(right.neutral_loss_tag):
-        return False
-    if ppm(family_center_mz(left), family_center_mz(right)) > config.max_ppm:
-        return False
-    if (
-        abs(family_center_rt(left) - family_center_rt(right)) * 60.0
-        > config.identity_rt_candidate_window_sec
-    ):
-        return False
-    if (
-        ppm(family_product_mz(left), family_product_mz(right))
-        > config.product_mz_tolerance_ppm
-    ):
-        return False
-    return (
-        ppm(family_observed_loss(left), family_observed_loss(right))
-        <= config.observed_loss_tolerance_ppm
-    )
-
-
 def loose_compatible_primary_family(
     left: Any,
     right: Any,

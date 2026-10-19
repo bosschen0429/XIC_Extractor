@@ -496,7 +496,6 @@ def test_batch_application_result_preserves_order_and_binding_across_chunks(
             UntargetBatchApplicationResultRequest(**kwargs)
         )
         assert result.children is supplied_children
-        assert tuple(result.application_results) == children
         assert result.rows == tuple(
             child.completed_projection.rows[0] for child in children
         )

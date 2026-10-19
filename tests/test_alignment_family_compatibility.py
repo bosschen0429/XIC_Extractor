@@ -4,25 +4,8 @@ from types import SimpleNamespace
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.family_compatibility import (
-    compatible_primary_family,
     loose_compatible_primary_family,
 )
-
-
-def test_compatible_primary_family_rejects_review_only_and_tag_mismatch() -> None:
-    config = AlignmentConfig()
-
-    assert compatible_primary_family(_family("F1"), _family("F2"), config)
-    assert not compatible_primary_family(
-        _family("F1", review_only=True),
-        _family("F2"),
-        config,
-    )
-    assert not compatible_primary_family(
-        _family("F1", tag="DNA_dR"),
-        _family("F2", tag="RNA_R"),
-        config,
-    )
 
 
 def test_loose_compatible_allows_product_precursor_shift() -> None:

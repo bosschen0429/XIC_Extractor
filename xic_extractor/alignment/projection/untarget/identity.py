@@ -75,10 +75,6 @@ class UntargetRowKey:
     def group_hypothesis_id(self) -> str:
         return self.group.group_hypothesis_id
 
-    @property
-    def group_identity_basis_bytes(self) -> bytes:
-        return self.group.basis_bytes
-
 
 def _mint_untarget_row_key(group: CrossSampleGroupIdentity) -> UntargetRowKey:
     """Mint the row key from an owner-validated canonical group."""

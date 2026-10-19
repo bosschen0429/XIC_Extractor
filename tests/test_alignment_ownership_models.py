@@ -1,7 +1,6 @@
 from xic_extractor.alignment.ownership_models import (
     AmbiguousOwnerRecord,
     IdentityEvent,
-    OwnerAssignment,
     SampleLocalMS1Owner,
 )
 
@@ -89,19 +88,11 @@ def test_sample_local_owner_censors_endpoint_apex_even_without_explicit_flag():
     )
 
 
-def test_owner_assignment_and_ambiguity_records_are_debug_contracts():
-    assignment = OwnerAssignment(
-        candidate_id="s1#7002",
-        owner_id="OWN-s1-000003",
-        assignment_status="supporting",
-        reason="tail_assignment",
-    )
+def test_ambiguity_records_are_debug_contracts():
     ambiguous = AmbiguousOwnerRecord(
-        ambiguity_id="AMB-s1-000001",
         sample_stem="s1",
         candidate_ids=("s1#8001", "s1#8002"),
         reason="owner_multiplet_ambiguity",
     )
 
-    assert assignment.assignment_status == "supporting"
     assert ambiguous.candidate_ids == ("s1#8001", "s1#8002")

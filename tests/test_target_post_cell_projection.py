@@ -54,12 +54,10 @@ def test_target_post_cell_projection_closes_fixed_row_counts_and_review_routing(
         actual is expected
         for actual, expected in zip(completed.decisions, decisions, strict=True)
     )
-    assert completed.include_row is True
-    assert completed.inclusion_reason == "fixed_target_row"
     assert completed.accepted_cell_count == 1
     assert completed.no_write_count == 1
     assert completed.decision_count == 2
-    assert completed.review_queue_count == 1
+    assert len(completed.review_queue_references) == 1
 
     review_ref = completed.review_queue_references[0]
     no_write = next(item for item in decisions if item.variant != "numeric")
@@ -94,7 +92,7 @@ def test_disjoint_internal_groups_bind_one_fixed_target_row(
     assert pre_cell.row_binding.variant == "bound"
     assert completed.accepted_cell_count == 2
     assert completed.no_write_count == 0
-    assert completed.review_queue_count == 0
+    assert len(completed.review_queue_references) == 0
 
 
 @pytest.mark.parametrize(

@@ -32,13 +32,6 @@ class CellQualityDecision:
     quality_reason: str
 
     @property
-    def is_quantifiable_cell(self) -> bool:
-        return self.quality_status in {
-            "detected_quantifiable",
-            "rescue_quantifiable",
-        }
-
-    @property
     def is_detected_identity_support(self) -> bool:
         return self.quality_status == "detected_quantifiable"
 

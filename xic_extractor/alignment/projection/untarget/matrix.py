@@ -81,16 +81,8 @@ class UntargetRowDecisionCounts:
     by_variant: tuple[UntargetDecisionVariantCount, ...]
 
     @property
-    def total_cells(self) -> int:
-        return sum(item.count for item in self.by_variant)
-
-    @property
     def numeric_cells(self) -> int:
         return self.count_for("numeric")
-
-    @property
-    def no_write_cells(self) -> int:
-        return self.total_cells - self.numeric_cells
 
     def count_for(self, variant: UntargetDecisionVariant) -> int:
         if variant not in _DECISION_VARIANT_SET:
@@ -180,18 +172,6 @@ class UntargetMatrixProjection:
     @property
     def decisions(self) -> tuple[ProductionCellDecision, ...]:
         return tuple(decision for row in self.rows for decision in row.decisions)
-
-    @property
-    def included_rows(self) -> tuple[UntargetMatrixRow, ...]:
-        return tuple(row for row in self.rows if row.route.destination == "matrix")
-
-    @property
-    def archive_rows(self) -> tuple[UntargetMatrixRow, ...]:
-        return tuple(row for row in self.rows if row.route.destination == "archive")
-
-    @property
-    def archive_row_keys(self) -> tuple[UntargetRowKey, ...]:
-        return tuple(row.row_key for row in self.archive_rows)
 
 
 def project_untarget_matrix(

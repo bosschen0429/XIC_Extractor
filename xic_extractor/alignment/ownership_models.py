@@ -90,16 +90,7 @@ class SampleLocalMS1Owner:
 
 
 @dataclass(frozen=True)
-class OwnerAssignment:
-    candidate_id: str
-    owner_id: str | None
-    assignment_status: OwnerAssignmentStatus
-    reason: str
-
-
-@dataclass(frozen=True)
 class AmbiguousOwnerRecord:
-    ambiguity_id: str
     sample_stem: str
     candidate_ids: tuple[str, ...]
     reason: str

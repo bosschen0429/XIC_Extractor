@@ -1,5 +1,4 @@
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from openpyxl import Workbook
@@ -10,12 +9,10 @@ from xic_extractor.alignment.drift_evidence import (
     LocalTrajectoryEvidenceLookup,
     SampleDriftEvidence,
     assess_local_trajectory,
-    build_targeted_istd_identity_anchor,
 )
 from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.configuration.models import Target
-from xic_extractor.configuration.target_identity import mint_target_list_snapshot
 
 
 def test_measured_istd_binding_uses_observed_peak_not_expected_rt() -> None:
@@ -921,77 +918,3 @@ def test_lookup_keeps_conflicting_injection_order_lazy_per_sample() -> None:
     assert lookup.sample_delta_min("sample-b") == 0.2
     with pytest.raises(ValueError, match="conflicting injection order"):
         lookup.injection_order("sample-a")
-
-
-def test_targeted_istd_anchor_matches_only_observed_dna_dr_target() -> None:
-    target = Target(
-        label="d3-5-hmdC",
-        mz=261.127276,
-        rt_min=8.0,
-        rt_max=10.0,
-        ppm_tol=20.0,
-        neutral_loss_da=116.0474,
-        nl_ppm_warn=20.0,
-        nl_ppm_max=50.0,
-        is_istd=True,
-        istd_pair="",
-        sample_applicability="all",
-    )
-    anchor = build_targeted_istd_identity_anchor(
-        mint_target_list_snapshot(
-            (target,),
-            identity_namespace="test-targeted-istd",
-        ),
-        observed_labels=("d3-5-hmdC",),
-    )
-
-    with pytest.raises(TypeError, match="target_snapshot"):
-        build_targeted_istd_identity_anchor(
-            (target,),  # type: ignore[arg-type]
-            observed_labels=("d3-5-hmdC",),
-        )
-
-    assert (
-        anchor.matching_target(
-            SimpleNamespace(
-                feature_family_id="FAM_ISTD",
-                neutral_loss_tag="DNA_dR",
-                family_center_mz=261.1270,
-                family_center_rt=9.0,
-            )
-        )
-        == target
-    )
-    assert (
-        anchor.matching_target(
-            SimpleNamespace(
-                feature_family_id="FAM_OTHER",
-                neutral_loss_tag="DNA_dR",
-                family_center_mz=300.1605,
-                family_center_rt=23.0,
-            )
-        )
-        is None
-    )
-    assert anchor.matches_observation(
-        target,
-        neutral_loss_tag="DNA_dR",
-        precursor_mz=261.127276,
-        apex_rt=9.0,
-    )
-    assert not anchor.matches_observation(
-        target,
-        neutral_loss_tag="DNA_dR",
-        precursor_mz=261.127276,
-        apex_rt=10.1,
-    )
-    assert anchor.matching_family_ids(
-        (
-            SimpleNamespace(
-                feature_family_id="FAM_ISTD",
-                neutral_loss_tag="DNA_dR",
-                family_center_mz=261.1270,
-                family_center_rt=9.0,
-            ),
-        )
-    ) == frozenset({"FAM_ISTD"})
