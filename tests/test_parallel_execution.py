@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import concurrent.futures
-import multiprocessing
 import pickle
 from dataclasses import replace
 from pathlib import Path
@@ -96,24 +94,6 @@ def test_job_payload_rejects_callables_and_open_file_handles(tmp_path: Path) -> 
             validate_job_payload(replace(job, targets=(handle,)))
     finally:
         handle.close()
-
-
-def test_process_pool_spawn_can_run_importable_no_raw_worker(
-    tmp_path: Path,
-) -> None:
-    from xic_extractor.extraction.jobs import (
-        SpawnSmokeJob,
-        spawn_smoke_worker,
-    )
-
-    context = multiprocessing.get_context("spawn")
-    job = SpawnSmokeJob(raw_index=5, raw_name="SampleA.raw")
-    with concurrent.futures.ProcessPoolExecutor(
-        max_workers=1,
-        mp_context=context,
-    ) as executor:
-        future = executor.submit(spawn_smoke_worker, job)
-        assert future.result(timeout=30) == "5:SampleA.raw"
 
 
 def test_parallel_full_extraction_submits_pickleable_scoring_jobs_and_sorts(

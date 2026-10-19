@@ -88,10 +88,6 @@ class UntargetRowDecisionCounts:
     def numeric_cells(self) -> int:
         return self.count_for("numeric")
 
-    @property
-    def no_write_cells(self) -> int:
-        return self.total_cells - self.numeric_cells
-
     def count_for(self, variant: UntargetDecisionVariant) -> int:
         if variant not in _DECISION_VARIANT_SET:
             raise UntargetProjectionContractError(
@@ -188,10 +184,6 @@ class UntargetMatrixProjection:
     @property
     def archive_rows(self) -> tuple[UntargetMatrixRow, ...]:
         return tuple(row for row in self.rows if row.route.destination == "archive")
-
-    @property
-    def archive_row_keys(self) -> tuple[UntargetRowKey, ...]:
-        return tuple(row.row_key for row in self.archive_rows)
 
 
 def project_untarget_matrix(

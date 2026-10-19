@@ -5,15 +5,13 @@ import pytest
 from xic_extractor.discovery.blank_qualification import (
     BlankBackgroundIon,
     BlankBackgroundLibrary,
-    BlankQualificationCategory,
     get_default_background_library,
     get_default_background_library_path,
-    qualify_candidates_against_blank,
 )
 
 
 @pytest.mark.parametrize("suffix", [".json", ".json.gz"])
-def test_loaded_unordered_library_still_classifies_background(
+def test_loaded_unordered_library_still_matches_background(
     tmp_path: Path, suffix: str,
 ) -> None:
     import gzip
@@ -36,12 +34,8 @@ def test_loaded_unordered_library_still_classifies_background(
     else:
         path.write_text(json.dumps(payload), encoding="utf-8")
     library = BlankBackgroundLibrary.load_json(path)
-    (verdict,) = qualify_candidates_against_blank(
-        [{"candidate_id": "C1", "precursor_mz": 300.0, "ms1_height": 120000.0}],
-        library, fold_change_threshold=3.0,
-    )
-    assert verdict.category == BlankQualificationCategory.SYSTEM_BACKGROUND
-    assert verdict.is_excluded_from_review is True
+    (match,) = library.match(300.0, ppm_tol=10.0)
+    assert match[0].mz == 300.0
 
 
 def test_background_library_snapshot_preserves_precision_and_rejects_noncanonical(
@@ -142,66 +136,6 @@ def test_blank_library_serialization(tmp_path: Path):
     assert loaded.ions[0].mz == 279.0960
     assert loaded.ions[0].max_intensity == 1500000.0
     assert loaded.ions[1].mz == 391.1110
-
-
-def test_candidate_qualification_categories():
-    ions = (
-        BlankBackgroundIon(
-            mz=279.0960, max_intensity=100000.0, scan_count=20, source_blank="Blank_1"
-        ),
-        BlankBackgroundIon(
-            mz=300.1000, max_intensity=50000.0, scan_count=15, source_blank="Blank_1"
-        ),
-    )
-    lib = BlankBackgroundLibrary(
-        ions=ions,
-        min_intensity=25000.0,
-        source_blanks=("Blank_1",),
-    )
-
-    candidates = [
-        # Candidate 1: In blank, high sample intensity (FC >= 3.0) -> OVERRIDE
-        {
-            "candidate_id": "C1",
-            "precursor_mz": 279.0960,
-            "ms1_height": 500000.0,
-        },
-        # Candidate 2: In blank (FC < 3.0) -> SYSTEM_BACKGROUND
-        {
-            "candidate_id": "C2",
-            "precursor_mz": 300.1000,
-            "ms1_height": 60000.0,
-        },
-        # Candidate 3: Not in blank at all -> CLEAN_ANALYTE
-        {
-            "candidate_id": "C3",
-            "precursor_mz": 450.2000,
-            "ms1_height": 80000.0,
-        },
-    ]
-
-    verdicts = qualify_candidates_against_blank(
-        candidates, lib, fold_change_threshold=3.0, ppm_tol=10.0
-    )
-    assert len(verdicts) == 3
-
-    # C1: High abundance override
-    assert verdicts[0].candidate_id == "C1"
-    assert verdicts[0].category == BlankQualificationCategory.HIGH_ABUNDANCE_OVERRIDE
-    assert verdicts[0].is_excluded_from_review is False
-    assert verdicts[0].fold_change == 5.0
-
-    # C2: System background
-    assert verdicts[1].candidate_id == "C2"
-    assert verdicts[1].category == BlankQualificationCategory.SYSTEM_BACKGROUND
-    assert verdicts[1].is_excluded_from_review is True
-    assert verdicts[1].fold_change == 1.2
-
-    # C3: Clean analyte
-    assert verdicts[2].candidate_id == "C3"
-    assert verdicts[2].category == BlankQualificationCategory.CLEAN_ANALYTE
-    assert verdicts[2].is_excluded_from_review is False
-    assert verdicts[2].matched_blank_mz is None
 
 
 def test_default_background_library_packaged_and_loadable():
@@ -613,11 +547,6 @@ def test_run_discovery_blank_dir_uses_current_blank_content(
     assert code == 0
     library = BlankBackgroundLibrary.load_json(cached_file)
     assert library.ions[0].max_intensity == 200000
-    (verdict,) = qualify_candidates_against_blank(
-        [{"candidate_id": "C1", "precursor_mz": 300.0, "ms1_height": 400000.0}],
-        library, fold_change_threshold=3.0,
-    )
-    assert verdict.category == BlankQualificationCategory.SYSTEM_BACKGROUND
 
 
 def test_run_discovery_explicit_disable_skips_blank_directory(

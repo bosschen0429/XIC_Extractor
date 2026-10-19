@@ -2569,7 +2569,6 @@ def test_process_backend_reuses_one_shared_pool_and_closes_once(
     )
 
     assert adapter.acquisition_workers == 2
-    assert adapter.partition_raw_workers == 8
     assert len(created) == 1
     assert created[0].max_workers == 8
     assert sum(pool.max_workers for pool in created) == 8

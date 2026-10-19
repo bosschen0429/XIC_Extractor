@@ -156,26 +156,6 @@ class BackfillPeakFactObservation:
             raise ValueError("peak fact observation must be minted by Owner Backfill")
 
 
-def _physical_query_matches_owner_request(
-    evaluation: PhysicalPeakEvaluation,
-    *,
-    preferred_rt: float,
-) -> bool:
-    question = evaluation.question
-    if question.query_rt_min == preferred_rt:
-        return True
-    segments = evaluation.segment_universe.segments
-    if len(segments) != 1:
-        return False
-    segment = segments[0]
-    return (
-        not segment.left_rt_min <= preferred_rt <= segment.right_rt_min
-        and question.query_rt_min == segment.apex_rt_min
-        and evaluation.answer.physical_segment_id == segment.physical_segment_id
-        and evaluation.state == "available"
-    )
-
-
 @dataclass(frozen=True, slots=True)
 class BackfillRequestReuseObservation:
     sample_stem: str

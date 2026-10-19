@@ -201,12 +201,6 @@ class FinalGroupCellObservation:
         return self.direct_observations
 
     @property
-    def provider_ids(self) -> tuple[str, ...]:
-        return tuple(
-            cell.method_assessment.content.provider_id for cell in self.effective_cells
-        )
-
-    @property
     def method_subject_ids(self) -> tuple[str, ...]:
         return tuple(
             cell.group_context.method_subject_id for cell in self.effective_cells
@@ -806,52 +800,6 @@ def _final_cell_sort_key(
     cell: FinalGroupCellObservation,
 ) -> tuple[str, str]:
     return cell.group_hypothesis_id, cell.canonical_sample_identity_id
-
-
-def _require_same_refs(
-    actual: FinalGroupCellObservation,
-    expected: FinalGroupCellObservation,
-) -> None:
-    if actual.backfill_cell is not expected.backfill_cell:
-        raise CellObservationContractError(
-            "final cell substituted its completed backfill reference"
-        )
-    if (
-        actual.group is not expected.group
-        or actual.canonical_sample is not expected.canonical_sample
-    ):
-        raise CellObservationContractError(
-            "final cell did not retain exact group/sample owner references"
-        )
-    for actual_association, expected_association in zip(
-        actual.position_associations,
-        expected.position_associations,
-        strict=True,
-    ):
-        if actual_association is not expected_association:
-            raise CellObservationContractError(
-                "final cell did not retain exact position association references"
-            )
-    for actual_cell, expected_cell in zip(
-        actual.predecessor_cells,
-        expected.predecessor_cells,
-        strict=True,
-    ):
-        if actual_cell is not expected_cell:
-            raise CellObservationContractError(
-                "final cell did not retain exact predecessor cell references"
-            )
-    if any(
-        actual_ref is not expected_ref
-        for actual_ref, expected_ref in zip(
-            actual.coverage_terminals,
-            expected.coverage_terminals,
-            strict=True,
-        )
-    ):
-        raise CellObservationContractError(
-            "final cell did not retain exact coverage terminal references"
-        )
 
 
 __all__ = [

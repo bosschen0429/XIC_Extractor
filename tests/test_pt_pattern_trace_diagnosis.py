@@ -864,7 +864,7 @@ def test_anchor_segmentation_externalizes_right_boundary_truncation(
         rt_end = 7.0 if position_label == "pt_plus_4" else 9.0
         end_index = int(rt_end) + 1
         segment = ChromPeakSegment(
-            segment_id=f"segment:{position_label}",
+
             interval=TraceInterval(
                 start_index=start_index,
                 end_index=end_index,

@@ -184,10 +184,6 @@ class BackfillCellEvidence:
         return _normalize(self.trace_quality) in _TRACE_CONTINUITY_LABELS
 
     @property
-    def chemical_support(self) -> bool:
-        return _contains_marker(self.reason, _CHEMICAL_MARKERS)
-
-    @property
     def high_neighbor_interference(self) -> bool:
         text = _normalize(self.reason)
         for marker in _INTERFERENCE_NOT_ASSESSED_MARKERS:

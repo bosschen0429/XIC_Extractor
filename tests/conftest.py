@@ -79,5 +79,6 @@ def _isolate_raw_reader_assembly_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     """Fake DLL loads must not make later tests skip the real assembly loader."""
     from xic_extractor import raw_reader
 
-    # Register the original state for teardown without changing in-test caching.
-    monkeypatch.setattr(raw_reader, "_ASSEMBLIES_LOADED", raw_reader._ASSEMBLIES_LOADED)
+    # Start unloaded; normal in-test caching remains intact and teardown restores
+    # the original state. Tests do not need a product reset convenience API.
+    monkeypatch.setattr(raw_reader, "_ASSEMBLIES_LOADED", False)

@@ -9,7 +9,6 @@ from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence, NLResult
 from xic_extractor.extraction.paired_area_ratio import (
     PAIRED_AREA_RATIO_BASIS,
     PAIRED_AREA_RATIO_REFERENCE_BASIS,
-    PAIRED_AREA_RATIO_ROBUST_BASIS,
     PairedAreaRatioReferencePoint,
     assess_paired_area_ratio,
     paired_area_ratio_references,
@@ -42,9 +41,6 @@ def test_area_ratio_basis_documents_counted_leave_one_out_robust_gate() -> None:
     assert PAIRED_AREA_RATIO_BASIS == (
         "leave_one_sample_out_median_plus_minus_3_scaled_mad_area_over_istd_area"
     )
-    assert PAIRED_AREA_RATIO_ROBUST_BASIS == (
-        "leave_one_sample_out_median_plus_minus_3_scaled_mad_area_over_istd_area"
-    )
 
 
 def test_area_ratio_assessment_reports_robust_shadow_conflict() -> None:
@@ -63,13 +59,12 @@ def test_area_ratio_assessment_reports_robust_shadow_conflict() -> None:
     )
 
     assert assessment.status == "outside_robust_range"
-    assert assessment.within_reference is False
+    assert (assessment.status == "within_robust_range") is False
     assert assessment.robust_status == "outside_robust_range"
     assert assessment.robust_reference_median == pytest.approx(0.5)
     assert assessment.robust_reference_mad == pytest.approx(0.1)
     assert assessment.robust_reference_min == pytest.approx(0.05522, abs=1e-5)
     assert assessment.robust_reference_max == pytest.approx(0.94478, abs=1e-5)
-    assert assessment.robust_basis == PAIRED_AREA_RATIO_ROBUST_BASIS
 
 
 def _target() -> Target:
@@ -304,7 +299,7 @@ def test_ratio_observation_does_not_change_scientific_results(area: float) -> No
         references=references,
     )
     assert observation.observed_ratio == area / 100000.0
-    assert observation.within_reference is (area == 50000.0)
+    assert (observation.status == "within_robust_range") is (area == 50000.0)
     assert result.targeted_product_projection is projection
     assert result.selection_decision is decision
     assert projection is not None and not projection.counted_detection

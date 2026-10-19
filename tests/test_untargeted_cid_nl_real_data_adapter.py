@@ -2559,9 +2559,7 @@ def test_physical_backfill_context_is_not_search_permission(
     )
 
     fixture = build_untargeted_cid_nl_no_raw_fixture(
-        tmp_path,
-        sample_roles={"S1": "study_sample"},
-        thermo_raw_sources=True,
+        tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True
     )
     profile = SignalProcessingProfile(window_points=15)
     old = fixture.owners.request
@@ -2645,10 +2643,6 @@ def test_physical_backfill_context_is_not_search_permission(
         assert gate_result.state == "unavailable"
         assert gate_result.facts is None
         assert not gated.assessment.candidate_peaks
-        if target_present:
-            assert gate_result.nearest_candidate_rt_min == pytest.approx(
-                target_center, abs=0.02
-            )
         assert gate_result.reason == (
             "sample_localization_unreliable"
             if not reliable

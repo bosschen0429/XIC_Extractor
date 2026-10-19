@@ -11,24 +11,7 @@ from xic_extractor.peak_detection.models import PeakCandidate, PeakResult
 from xic_extractor.peak_detection.scoring_models import (
     Confidence,
     ScoringContext,
-    confidence_from_total,
 )
-
-
-@pytest.mark.parametrize(
-    ("total", "expected"),
-    [
-        (0, Confidence.HIGH),
-        (1, Confidence.MEDIUM),
-        (2, Confidence.MEDIUM),
-        (3, Confidence.LOW),
-        (4, Confidence.LOW),
-        (5, Confidence.VERY_LOW),
-        (100, Confidence.VERY_LOW),
-    ],
-)
-def test_confidence_from_total(total: int, expected: Confidence) -> None:
-    assert confidence_from_total(total) == expected
 
 
 def _make_candidate(apex_rt: float, apex_intensity: float) -> PeakCandidate:

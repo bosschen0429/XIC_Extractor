@@ -250,7 +250,6 @@ def test_runtime_owner_derives_peak_fact_cost_from_typed_work_and_telemetry(
     assert metrics.identity_unavailable_count == 1
     assert metrics.elapsed_seconds == pytest.approx(0.25)
     assert metrics.measurement_source == "execution_runtime_owner"
-    assert metrics.count_scope == "owner_backfill_worker_peak_fact_runtime"
 
     with pytest.raises(
         RuntimeFinalizationContractError,

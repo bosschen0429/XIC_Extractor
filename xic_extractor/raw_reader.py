@@ -953,11 +953,6 @@ def preflight_raw_reader(
     return errors
 
 
-def reset_reader_state() -> None:
-    global _ASSEMBLIES_LOADED
-    _ASSEMBLIES_LOADED = False
-
-
 def _check_dotnet_runtime(pythonnet: Any) -> None:
     get_runtime_info = getattr(pythonnet, "get_runtime_info", None)
     if callable(get_runtime_info):

@@ -14,7 +14,6 @@ PAIRED_AREA_RATIO_REFERENCE_BASIS = "leave_one_sample_out_counted_area_over_istd
 PAIRED_AREA_RATIO_BASIS = (
     "leave_one_sample_out_median_plus_minus_3_scaled_mad_area_over_istd_area"
 )
-PAIRED_AREA_RATIO_ROBUST_BASIS = PAIRED_AREA_RATIO_BASIS
 _SCALED_MAD_FACTOR = 1.4826
 _ROBUST_MAD_WINDOW_MULTIPLIER = 3.0
 
@@ -39,11 +38,7 @@ class PairedAreaRatioAssessment:
     robust_reference_median: float | None = None
     robust_reference_max: float | None = None
     robust_reference_mad: float | None = None
-    robust_basis: str = ""
 
-    @property
-    def within_reference(self) -> bool:
-        return self.status == "within_robust_range"
 
 
 def paired_area_ratio_references(
@@ -122,7 +117,6 @@ def assess_paired_area_ratio(
             reference_n=len(reference),
             basis=PAIRED_AREA_RATIO_BASIS,
             robust_status="inconclusive",
-            robust_basis=PAIRED_AREA_RATIO_ROBUST_BASIS,
         )
     return assess_paired_area_ratio_values(
         observed_ratio=observed,
@@ -158,7 +152,6 @@ def assess_paired_area_ratio_values(
         robust_reference_median=robust_median,
         robust_reference_max=robust_max,
         robust_reference_mad=robust_mad,
-        robust_basis=PAIRED_AREA_RATIO_ROBUST_BASIS,
     )
 
 

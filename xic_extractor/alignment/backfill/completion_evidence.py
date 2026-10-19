@@ -48,25 +48,6 @@ class BackfillCompletionProjection:
     artifact: EvidenceArtifactRef
 
 
-def canonical_backfill_completion_bytes(
-    projection: BackfillCompletionProjection,
-) -> bytes:
-    return _completed_backfill_projection_bytes(
-        processing_owners=projection.processing_owners,
-        sample=projection.sample,
-        group_identity=projection.group_identity,
-        group_center_mz=projection.group_center_mz,
-        group_center_rt=projection.group_center_rt,
-        query_rt=projection.query_rt,
-        query_rt_basis=projection.query_rt_basis,
-        source_result_artifact=projection.source_result_artifact,
-        initial_assessment_artifact=projection.initial_assessment_artifact,
-        backfill_assessment=projection.backfill_assessment,
-        trace_coordinate=projection.trace_coordinate,
-        acquisition_sha256=projection.acquisition_sha256,
-    )
-
-
 def mint_backfill_completion_projection(
     *,
     processing_owners: ProcessingOwnerReferences,

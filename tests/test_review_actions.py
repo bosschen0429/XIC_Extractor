@@ -21,14 +21,12 @@ from xic_extractor.review_actions.rows import (
     review_action_expected_diff_template_to_row,
     summarize_review_action_applications,
     summarize_review_action_apply_changeset_plan,
-    summarize_review_action_apply_readiness_plan,
     summarize_review_actions,
 )
 from xic_extractor.review_actions.schema import (
     REVIEW_ACTION_APPLICATION_PLAN_SCHEMA_VERSION,
     REVIEW_ACTION_APPLY_AUDIT_SCHEMA_VERSION,
     REVIEW_ACTION_APPLY_CHANGESET_SCHEMA_VERSION,
-    REVIEW_ACTION_APPLY_READINESS_SCHEMA_VERSION,
     REVIEW_ACTION_COLUMNS,
     REVIEW_ACTION_EXPECTED_DIFF_COLUMNS,
     REVIEW_ACTION_EXPECTED_DIFF_SCHEMA_VERSION,
@@ -573,18 +571,6 @@ def test_review_action_apply_readiness_consumes_approved_expected_diff(
     assert rows[1]["expected_diff_validation_tier"] == "fixture_cohort"
     assert rows[2]["apply_readiness_status"] == "ready_review_state_only"
     assert plan.unused_expected_diff_approvals == ()
-    assert summarize_review_action_apply_readiness_plan(plan) == {
-        "schema_version": REVIEW_ACTION_APPLY_READINESS_SCHEMA_VERSION,
-        "row_count": 3,
-        "ready_count": 3,
-        "blocked_count": 0,
-        "unused_expected_diff_approval_count": 0,
-        "counts_by_status": {
-            "ready_expected_diff_approved": 1,
-            "ready_no_output_change": 1,
-            "ready_review_state_only": 1,
-        },
-    }
 
 
 def test_review_action_apply_readiness_blocks_stale_expected_diff_baseline(

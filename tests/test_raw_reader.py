@@ -170,14 +170,12 @@ def test_open_raw_disposes_vendor_handle_when_select_instrument_fails(
     from xic_extractor.raw_reader import (
         RawReaderOpenError,
         open_raw,
-        reset_reader_state,
     )
 
     class _SelectFailRaw(_FakeRaw):
         def SelectInstrument(self, *_args) -> None:
             raise RuntimeError("select failed")
 
-    reset_reader_state()
     _write_expected_dlls(tmp_path)
     raw = _SelectFailRaw()
 
@@ -199,7 +197,6 @@ def test_open_raw_reports_cleanup_failure_after_vendor_open_error(
     from xic_extractor.raw_reader import (
         RawReaderOpenError,
         open_raw,
-        reset_reader_state,
     )
 
     class _CleanupFailRaw(_FakeRaw):
@@ -209,7 +206,6 @@ def test_open_raw_reports_cleanup_failure_after_vendor_open_error(
         def Dispose(self) -> None:
             raise RuntimeError("dispose failed")
 
-    reset_reader_state()
     _write_expected_dlls(tmp_path)
     raw = _CleanupFailRaw()
 
@@ -231,10 +227,8 @@ def test_open_raw_loads_only_expected_absolute_dll_paths(tmp_path: Path) -> None
     from xic_extractor.raw_reader import (
         EXPECTED_THERMO_DLLS,
         open_raw,
-        reset_reader_state,
     )
 
-    reset_reader_state()
     _write_expected_dlls(tmp_path)
     raw = SimpleNamespace(SelectInstrument=lambda *_: None)
     calls: list[str] = []
@@ -252,9 +246,8 @@ def test_open_raw_loads_only_expected_absolute_dll_paths(tmp_path: Path) -> None
 
 def test_open_raw_binds_only_the_verified_acquisition_source(tmp_path: Path) -> None:
     from xic_extractor.processing_identity import build_acquisition_source_identity
-    from xic_extractor.raw_reader import open_raw, reset_reader_state
+    from xic_extractor.raw_reader import open_raw
 
-    reset_reader_state()
     _write_expected_dlls(tmp_path)
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"sample-a")
@@ -281,9 +274,8 @@ def test_open_raw_mints_receipt_only_after_verified_vendor_open(tmp_path: Path) 
         mint_raw_acquisition_session_capability,
     )
     from xic_extractor.processing_identity import build_acquisition_source_identity
-    from xic_extractor.raw_reader import open_raw, reset_reader_state
+    from xic_extractor.raw_reader import open_raw
 
-    reset_reader_state()
     _write_expected_dlls(tmp_path)
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"sample-a")
@@ -321,7 +313,6 @@ def test_open_raw_does_not_mint_receipt_when_vendor_open_fails(
         def SelectInstrument(self, *_args) -> None:
             raise RuntimeError("select failed")
 
-    raw_reader.reset_reader_state()
     _write_expected_dlls(tmp_path)
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"sample-a")
@@ -370,9 +361,8 @@ def test_open_raw_rejects_source_identity_for_wrong_adapter_semantics(
     observation_namespace: str,
 ) -> None:
     from xic_extractor.processing_identity import build_acquisition_source_identity
-    from xic_extractor.raw_reader import RawReaderError, open_raw, reset_reader_state
+    from xic_extractor.raw_reader import RawReaderError, open_raw
 
-    reset_reader_state()
     _write_expected_dlls(tmp_path)
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"sample-a")
@@ -400,10 +390,8 @@ def test_owner_bound_raw_handle_seals_payload_and_source(tmp_path: Path) -> None
     from xic_extractor.raw_reader import (
         open_raw,
         require_owner_bound_raw_handle,
-        reset_reader_state,
     )
 
-    reset_reader_state()
     _write_expected_dlls(tmp_path)
     raw_path = tmp_path / "sample.raw"
     other_path = tmp_path / "other.raw"
@@ -470,9 +458,8 @@ def test_direct_raw_handle_cannot_claim_an_acquisition_source(tmp_path: Path) ->
 
 def test_open_raw_rejects_path_content_from_another_source(tmp_path: Path) -> None:
     from xic_extractor.processing_identity import build_acquisition_source_identity
-    from xic_extractor.raw_reader import RawReaderError, open_raw, reset_reader_state
+    from xic_extractor.raw_reader import RawReaderError, open_raw
 
-    reset_reader_state()
     _write_expected_dlls(tmp_path)
     expected_path = tmp_path / "sample-a.raw"
     actual_path = tmp_path / "sample-b.raw"
@@ -501,9 +488,8 @@ def test_open_raw_rejects_source_path_replacement_during_vendor_open(
     tmp_path: Path,
 ) -> None:
     from xic_extractor.processing_identity import build_acquisition_source_identity
-    from xic_extractor.raw_reader import RawReaderError, open_raw, reset_reader_state
+    from xic_extractor.raw_reader import RawReaderError, open_raw
 
-    reset_reader_state()
     _write_expected_dlls(tmp_path)
     raw_path = tmp_path / "sample.raw"
     replacement_path = tmp_path / "replacement.raw"
@@ -545,7 +531,6 @@ def test_open_raw_uses_owner_verified_path_state_without_rehashing(
     import xic_extractor.raw_reader as raw_reader
     from xic_extractor.processing_identity import build_acquisition_source_identity
 
-    raw_reader.reset_reader_state()
     _write_expected_dlls(tmp_path)
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"sample-a")
@@ -590,7 +575,6 @@ def test_open_raw_rejects_stale_owner_verified_path_state(
     import xic_extractor.raw_reader as raw_reader
     from xic_extractor.processing_identity import build_acquisition_source_identity
 
-    raw_reader.reset_reader_state()
     _write_expected_dlls(tmp_path)
     raw_path = tmp_path / "sample.raw"
     replacement_path = tmp_path / "replacement.raw"
@@ -645,7 +629,6 @@ def test_open_raw_rechecks_content_after_vendor_open(
     import xic_extractor.raw_reader as raw_reader
     from xic_extractor.processing_identity import build_acquisition_source_identity
 
-    raw_reader.reset_reader_state()
     _write_expected_dlls(tmp_path)
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"sample-a")

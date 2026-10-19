@@ -468,14 +468,6 @@ class UntargetedSampleResult:
             attempt.assessment for attempt in self.backfill_attempts
         )
 
-    @property
-    def effective_assessment(self) -> CidNlMethodAssessmentRef:
-        backfill = self.backfill_attempt
-        return (
-            backfill.assessment
-            if backfill is not None
-            else self.adapter_result.assessment_input.assessment
-        )
 
     def backfill_for_group(
         self, center: float, *, group_hypothesis_id: str | None = None

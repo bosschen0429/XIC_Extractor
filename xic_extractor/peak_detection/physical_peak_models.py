@@ -188,19 +188,6 @@ class PhysicalPeakEvaluation:
     retained_prepared_signal: PreparedSignal | None = field(default=None, compare=False)
 
     @property
-    def nearest_candidate_rt_min(self) -> float | None:
-        """Nearest enumerated apex, not a qualified identity or a selected value."""
-        candidate = min(
-            self.segment_universe.segments,
-            key=lambda segment: (
-                abs(segment.apex_rt_min - self.question.query_rt_min),
-                segment.apex_rt_min,
-            ),
-            default=None,
-        )
-        return None if candidate is None else candidate.apex_rt_min
-
-    @property
     def requires_overlap_review(self) -> bool:
         selected_id = self.answer.physical_segment_id
         return selected_id is not None and any(

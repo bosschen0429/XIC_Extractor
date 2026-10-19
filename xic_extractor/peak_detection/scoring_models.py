@@ -77,15 +77,5 @@ class ScoringContext:
     morphology_trace_window_points: int | None = None
 
 
-def confidence_from_total(total_severity: int) -> Confidence:
-    if total_severity == 0:
-        return Confidence.HIGH
-    if total_severity <= 2:
-        return Confidence.MEDIUM
-    if total_severity <= 4:
-        return Confidence.LOW
-    return Confidence.VERY_LOW
-
-
 def confidence_from_value(value: str) -> Confidence:
     return Confidence(value)

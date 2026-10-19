@@ -30,7 +30,6 @@ def test_load_feature_tag_profiles_parses_nl_and_tolerates_deferred_pi(
     profiles = load_feature_tag_profiles(csv_path)
 
     assert profiles[0] == FeatureTagProfile(
-        tag_id="1",
         tag_kind="neutral_loss",
         tag_label="NL: dR",
         tag_name="dR",
@@ -86,6 +85,19 @@ def test_load_feature_tag_profiles_rejects_unknown_category(tmp_path: Path) -> N
 
     with pytest.raises(ValueError, match="unsupported Tag Category"):
         load_feature_tag_profiles(csv_path)
+
+
+def test_load_feature_tag_profiles_still_requires_tag_number(tmp_path: Path) -> None:
+    path = _feature_list(tmp_path)
+    path.write_text(
+        path.read_text(encoding="utf-8").replace(
+            "1,1,116.047344", ",1,116.047344", 1
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=r"Tag No\. is required"):
+        load_feature_tag_profiles(path)
 
 
 def _feature_list(tmp_path: Path) -> Path:

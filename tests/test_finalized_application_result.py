@@ -89,8 +89,6 @@ def test_target_result_binds_exact_owner_graph_and_completion_receipts(
     )
     assert result.scientific_core is scientific_core
     assert result.completed_projection is projection
-    assert result.completion_receipts[0] is scientific_core.grouping_result
-    assert result.completion_receipts[1] is projection
     assert all(
         actual is expected
         for actual, expected in zip(
@@ -125,10 +123,6 @@ def test_untarget_result_binds_complete_rows_without_matrix_reconstruction(
     assert result.canonical_samples == scientific_core.canonical_samples
     assert result.scientific_core is scientific_core
     assert result.completed_projection is projection
-    assert result.completion_receipts == (
-        scientific_core.grouping_result,
-        projection,
-    )
     assert result.completed_projection.included_rows == projection.included_rows
     assert result.completed_projection.archive_rows == projection.archive_rows
 

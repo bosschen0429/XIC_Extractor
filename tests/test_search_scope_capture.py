@@ -589,14 +589,15 @@ def test_untargeted_batch_scope_uses_exact_candidate_subject_membership(
         processing_owners=fixture.owners,
         sample=sample,
     )
+    subjects_by_id = {subject.method_subject_id: subject for subject in subjects}
     bindings = tuple(
         _capture_binding(
             candidate_id=candidate_id,
             method_subject_id=method_subject_id,
             sample=sample,
             acquisition_source_id=source.acquisition_source_id,
-            mz=batch.subject_for_candidate(candidate_id).precursor_mz + query_offset,
-            ppm_tol=batch.subject_for_candidate(candidate_id).precursor_tolerance_ppm,
+            mz=subjects_by_id[method_subject_id].precursor_mz + query_offset,
+            ppm_tol=subjects_by_id[method_subject_id].precursor_tolerance_ppm,
             rt_min=7.7,
             rt_max=8.3,
         )
@@ -852,14 +853,15 @@ def test_untargeted_batch_scope_accepts_known_comparison_bridged_workset(
         processing_owners=fixture.owners,
         sample=sample,
     )
+    subjects_by_id = {subject.method_subject_id: subject for subject in subjects}
     bindings = tuple(
         _capture_binding(
             candidate_id=candidate_id,
             method_subject_id=method_subject_id,
             sample=sample,
             acquisition_source_id=source.acquisition_source_id,
-            mz=batch.subject_for_candidate(candidate_id).precursor_mz,
-            ppm_tol=batch.subject_for_candidate(candidate_id).precursor_tolerance_ppm,
+            mz=subjects_by_id[method_subject_id].precursor_mz,
+            ppm_tol=subjects_by_id[method_subject_id].precursor_tolerance_ppm,
             rt_min=7.7,
             rt_max=8.3,
         )

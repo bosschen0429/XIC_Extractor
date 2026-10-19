@@ -207,10 +207,6 @@ class CompetingPeakSummary:
     strongest_competing_peak_rt_min: float | None = None
     strongest_competing_peak_own_max_ratio: float | None = None
 
-    @property
-    def has_competing_peak(self) -> bool:
-        return self.strongest_competing_peak_own_max_ratio is not None
-
 
 def gaussian_smooth_values(
     values: Sequence[float | int | None],

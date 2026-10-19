@@ -3,7 +3,6 @@ import pytest
 from xic_extractor.output.alignment.output_levels import (
     EXPLANATION_ARTIFACT_NAME,
     artifact_names_for_output_level,
-    parse_alignment_output_level,
 )
 
 
@@ -67,14 +66,7 @@ def test_all_output_levels_keep_same_provenance_filename_without_alias(
     assert artifacts.count("alignment_owner_backfill_peak_fact_provenance.tsv") == 1
 
 
-def test_parse_alignment_output_level_rejects_unknown_value():
-    with pytest.raises(ValueError, match="output_level"):
-        parse_alignment_output_level("everything")
-
-
-@pytest.mark.parametrize(
-    "level", ["production", "machine", "validation-minimal"]
-)
+@pytest.mark.parametrize("level", ["production", "machine", "validation-minimal"])
 def test_non_diagnostic_levels_do_not_produce_the_explanation_report(level):
     """The report is a per-cell projection; only diagnostic levels pay for it."""
     assert EXPLANATION_ARTIFACT_NAME not in artifact_names_for_output_level(level)

@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import csv
 import re
-import statistics
-from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from openpyxl import load_workbook
@@ -19,29 +17,6 @@ def read_injection_order(path: Path) -> dict[str, int]:
     if suffix == ".csv":
         return _read_csv(path)
     raise ValueError(f"Unsupported injection-order file type: {suffix}")
-
-
-def order_sample_columns_by_injection(
-    sample_order: Sequence[str],
-    injection_order: Mapping[str, int],
-) -> tuple[str, ...]:
-    """Order sample columns by injection order (early -> late).
-
-    Samples found in ``injection_order`` are sorted ascending by their order so
-    the matrix reads earliest-injected to latest-injected left-to-right (making
-    injection-order drift a smooth gradient across columns). Samples absent from
-    ``injection_order`` keep their original relative order and are placed after
-    all ordered samples. Pure and stable; only reorders columns — it never adds,
-    drops, or alters a sample.
-    """
-
-    def sort_key(sample: str) -> tuple[int, int]:
-        order = injection_order.get(sample)
-        if order is None:
-            return (1, 0)
-        return (0, order)
-
-    return tuple(sorted(sample_order, key=sort_key))
 
 
 def _read_csv(path: Path) -> dict[str, int]:
@@ -134,29 +109,3 @@ def _canonical_sample_name(name: str) -> str:
         return normalized
 
     return name
-
-
-def rolling_median_rt(
-    istd_label: str,
-    target_sample: str,
-    rt_by_sample: dict[str, float],
-    injection_order: dict[str, int],
-    window: int,
-) -> float | None:
-    """Return the median RT for samples within the target injection window."""
-    _ = istd_label
-    target_order = injection_order.get(target_sample)
-    if target_order is None:
-        return None
-    lo = target_order - window
-    hi = target_order + window
-    values: list[float] = []
-    for sample, rt in rt_by_sample.items():
-        order = injection_order.get(sample)
-        if order is None:
-            continue
-        if lo <= order <= hi:
-            values.append(rt)
-    if len(values) < _MIN_WINDOW_SAMPLES:
-        return None
-    return float(statistics.median(values))

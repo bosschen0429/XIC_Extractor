@@ -108,7 +108,6 @@ def test_competing_peak_summary_reports_strongest_outside_candidate_window() -> 
         0.42,
         rel=0.15,
     )
-    assert summary.has_competing_peak
 
 
 def test_own_max_normalized_trace_fails_closed_for_bad_inputs() -> None:

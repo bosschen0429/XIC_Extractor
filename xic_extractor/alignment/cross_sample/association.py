@@ -292,19 +292,6 @@ def _handoff_basis(
     )
 
 
-def _population_by_id(
-    population: tuple[CrossSampleGroupIdentity, ...],
-    *,
-    field: str,
-) -> dict[str, CrossSampleGroupIdentity]:
-    result = {group.group_hypothesis_id: group for group in population}
-    if len(result) != len(population):
-        raise CrossSampleAssociationContractError(
-            f"{field} population duplicates a group identity"
-        )
-    return result
-
-
 __all__ = [
     "CrossSampleAssociationContractError",
     "CrossSampleAssociationLineageHandoff",

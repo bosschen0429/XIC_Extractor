@@ -1,9 +1,7 @@
 from pathlib import Path
 
 from xic_extractor.injection_rolling import (
-    order_sample_columns_by_injection,
     read_injection_order,
-    rolling_median_rt,
 )
 
 
@@ -26,50 +24,6 @@ def test_read_strips_whitespace(tmp_path: Path) -> None:
     p = tmp_path / "info.csv"
     p.write_text("Sample_Name,Injection_Order\n  S_A  ,5\n", encoding="utf-8")
     assert read_injection_order(p) == {"S_A": 5}
-
-
-def test_rolling_median_uses_window() -> None:
-    rts = {f"s{i}": float(i) for i in range(1, 11)}
-    order = {f"s{i}": i for i in range(1, 11)}
-    assert rolling_median_rt("istd", "s5", rts, order, window=2) == 5.0
-
-
-def test_order_sample_columns_sorts_ascending_by_injection() -> None:
-    result = order_sample_columns_by_injection(
-        ("S_c", "S_a", "S_b"),
-        {"S_a": 1, "S_b": 2, "S_c": 3},
-    )
-    assert result == ("S_a", "S_b", "S_c")
-
-
-def test_order_sample_columns_unmatched_go_last_in_original_order() -> None:
-    result = order_sample_columns_by_injection(
-        ("S_x", "S_c", "S_y", "S_a", "S_b"),
-        {"S_a": 1, "S_b": 2, "S_c": 3},
-    )
-    assert result == ("S_a", "S_b", "S_c", "S_x", "S_y")
-
-
-def test_order_sample_columns_empty_map_preserves_input_order() -> None:
-    order = ("S_c", "S_a", "S_b")
-    assert order_sample_columns_by_injection(order, {}) == order
-
-
-def test_order_sample_columns_is_pure_permutation() -> None:
-    order = ("S_c", "S_a", "S_b", "S_x")
-    result = order_sample_columns_by_injection(order, {"S_a": 5, "S_b": 1})
-    assert sorted(result) == sorted(order)
-    assert result == ("S_b", "S_a", "S_c", "S_x")
-
-
-def test_rolling_median_respects_gaps() -> None:
-    rts = {"s1": 1.0, "s2": 2.0, "s10": 10.0}
-    order = {"s1": 1, "s2": 2, "s10": 10}
-    assert rolling_median_rt("istd", "s10", rts, order, window=1) is None
-
-
-def test_rolling_median_missing_target_returns_none() -> None:
-    assert rolling_median_rt("istd", "unknown", {}, {}, window=5) is None
 
 
 def test_read_xlsx(tmp_path: Path) -> None:

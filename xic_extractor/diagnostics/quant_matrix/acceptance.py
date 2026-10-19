@@ -243,55 +243,6 @@ def build_quant_matrix_version_from_checked_manifest(
     )
 
 
-def build_quant_matrix_version_from_in_process_acceptance(
-    *,
-    matrix_header: Sequence[str],
-    input_quant_matrix_rows: Sequence[Mapping[str, str]],
-    input_matrix_identity_rows: Sequence[Mapping[str, str]],
-    production_acceptance_rows: Sequence[Mapping[str, str]],
-    source_artifacts: Mapping[str, bytes],
-    expected_diff_rows: Sequence[Mapping[str, str]],
-) -> QuantMatrixVersionRows:
-    """Validate fresh in-process acceptance content before Matrix projection.
-
-    This is the non-file-backed entry to the existing acceptance owner.  It
-    validates the same manifest rules and complete source bytes as the TSV
-    loader, but it does not persist and then re-read an authority artifact.
-    """
-
-    rows = tuple(dict(row) for row in production_acceptance_rows)
-    problems: list[str] = []
-    if not rows:
-        problems.append("production acceptance rows are empty")
-    for row_number, row in enumerate(rows, start=2):
-        missing = tuple(column for column in REQUIRED_COLUMNS if column not in row)
-        extra = tuple(column for column in row if column not in REQUIRED_COLUMNS)
-        if missing:
-            problems.append(
-                f"row {row_number}: missing columns: {', '.join(missing)}"
-            )
-        if extra:
-            problems.append(f"row {row_number}: extra columns: {', '.join(extra)}")
-    expected_manifest_sha = production_acceptance_manifest_sha256(rows)
-    _check_manifest_rows(
-        rows,
-        expected_manifest_sha,
-        None,
-        problems,
-        source_artifacts=source_artifacts,
-    )
-    if problems:
-        raise ProductionAcceptanceManifestError(problems)
-    checked_rows = tuple(MappingProxyType(row) for row in rows)
-    return build_quant_matrix_version_rows(
-        matrix_header=matrix_header,
-        input_quant_matrix_rows=input_quant_matrix_rows,
-        input_matrix_identity_rows=input_matrix_identity_rows,
-        production_acceptance_rows=checked_rows,
-        expected_diff_rows=expected_diff_rows,
-    )
-
-
 def _read_and_check_manifest_snapshot(
     *,
     manifest_path: Path,

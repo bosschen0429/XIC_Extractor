@@ -178,20 +178,6 @@ def product_matrix_tsv_rows(
     ]
 
 
-def product_matrix_identity_rows(
-    matrix: AlignmentMatrix,
-    *,
-    alignment_config: AlignmentConfig | None = None,
-    production_decisions: ProductionDecisionSet | None = None,
-) -> list[dict[str, object]]:
-    return [
-        row.identity
-        for row in build_product_matrix_rows(
-            matrix,
-            alignment_config=alignment_config,
-            production_decisions=production_decisions,
-        )
-    ]
 
 
 def _identity_row(

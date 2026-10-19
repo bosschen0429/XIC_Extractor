@@ -150,11 +150,6 @@ class CandidateMS2Evidence:
         return self.nl_status
 
 
-def anchor_window_bounds(
-    rt_center: float, search_margin_min: float
-) -> tuple[float, float]:
-    """Preserve the configured anchor request's exact RT bounds."""
-    return max(0.0, rt_center - search_margin_min), rt_center + search_margin_min
 
 
 @dataclass(frozen=True)

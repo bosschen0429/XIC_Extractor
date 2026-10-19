@@ -1,4 +1,5 @@
 """Shared synthetic RAW acquisition fixtures for CID-NL workflow tests."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -21,7 +22,6 @@ from xic_extractor.raw_reader import (
     Ms2ScanEvent,
     RawFileHandle,
     open_raw,
-    reset_reader_state,
 )
 from xic_extractor.xic_models import XICRequest, XICTrace
 
@@ -105,7 +105,6 @@ def _open_bound_raw(
     *,
     tmp_path: Path,
 ) -> tuple[RawFileHandle, _FakeThermoRaw]:
-    reset_reader_state()
     for filename in EXPECTED_THERMO_DLLS:
         (tmp_path / filename).write_bytes(b"dll")
     vendor_raw = _FakeThermoRaw(source_raw)

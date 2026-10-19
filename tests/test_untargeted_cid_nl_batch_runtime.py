@@ -20,6 +20,7 @@ from tests.test_untargeted_cid_nl_real_data_runtime import (
     _install_runtime_raw,
     _install_runtime_raws,
 )
+from tests.untargeted_partition_fixtures import fixture_assessment
 from xic_extractor.discovery.models import DiscoveryCandidate
 from xic_extractor.execution.attempt import start_runtime_attempt
 from xic_extractor.execution.recovery import OwnerPathRuntimeMarker
@@ -328,7 +329,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
     assert len(missing_results) == 2
     assert all(item.backfill_attempt is not None for item in missing_results)
     assert all(
-        item.effective_assessment is item.backfill_attempt.assessment
+        fixture_assessment(item) is item.backfill_attempt.assessment
         for item in missing_results
         if item.backfill_attempt is not None
     )

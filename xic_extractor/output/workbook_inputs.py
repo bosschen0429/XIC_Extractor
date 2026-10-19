@@ -33,21 +33,6 @@ def _read_long_results(
     )
 
 
-def _wide_to_long_rows(
-    rows: list[dict[str, str]], targets: list[Target]
-) -> list[dict[str, str]]:
-    long_rows: list[dict[str, str]] = []
-    for row in rows:
-        sample_name = row.get("SampleName", "")
-        for target in targets:
-            long_rows.append(
-                _legacy_wide_long_row(
-                    row,
-                    target,
-                    sample_name=sample_name,
-                )
-            )
-    return long_rows
 
 
 def _legacy_wide_long_row(
