@@ -1098,7 +1098,6 @@ def production_case(
         peak_result = find_peak_and_area(rt, intensity, config, preferred_rt=1.5)
         hypotheses = build_peak_hypotheses(
             analysis_mode="targeted",
-            common_evidence_source_id="test-retained-trace",
             sample_name=sample_name,
             target_label=target.label,
             role="Analyte",

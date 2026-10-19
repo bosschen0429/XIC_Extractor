@@ -17,10 +17,8 @@ def build_targeted_peak_hypotheses(**values: Any) -> tuple[PeakHypothesis, ...]:
     owner-issued ``TargetSearchScope`` values directly.
     """
 
-    if "analysis_mode" in values or "common_evidence_source_id" in values:
-        raise TypeError(
-            "Targeted hypothesis adapter owns analysis mode and evidence source"
-        )
+    if "analysis_mode" in values:
+        raise TypeError("Targeted hypothesis adapter owns analysis mode")
     target_label = values.get("target_label")
     if (
         not isinstance(target_label, str)
@@ -30,7 +28,6 @@ def build_targeted_peak_hypotheses(**values: Any) -> tuple[PeakHypothesis, ...]:
         raise ValueError("Targeted hypothesis adapter requires a normalized label")
     return build_peak_hypotheses(
         analysis_mode="targeted",
-        common_evidence_source_id=target_label,
         **values,
     )
 

@@ -213,7 +213,6 @@ def hypothesis_audit_id(
 def build_peak_hypotheses(
     *,
     analysis_mode: AnalysisMode,
-    common_evidence_source_id: str,
     sample_name: str,
     target_label: str,
     role: str,
@@ -230,12 +229,6 @@ def build_peak_hypotheses(
 ) -> tuple[PeakHypothesis, ...]:
     if analysis_mode not in ("targeted", "untargeted"):
         raise ValueError("analysis_mode must be targeted or untargeted")
-    if (
-        not isinstance(common_evidence_source_id, str)
-        or not common_evidence_source_id
-        or common_evidence_source_id != common_evidence_source_id.strip()
-    ):
-        raise ValueError("common_evidence_source_id must be normalized text")
     if trace_group is not None and trace_group.analysis_mode != analysis_mode:
         raise ValueError("trace_group analysis mode mismatches analysis_mode")
     selected = _selected_candidate(peak_result)
@@ -289,7 +282,6 @@ def build_peak_hypotheses(
                     score,
                     evidence,
                     analysis_mode=analysis_mode,
-                    common_evidence_source_id=common_evidence_source_id,
                     count_no_ms2_as_detected=count_no_ms2_as_detected,
                 ),
                 audit=AuditTrail(
@@ -421,7 +413,6 @@ def _evidence_from_candidate(
     evidence: CandidateMS2Evidence | None,
     *,
     analysis_mode: AnalysisMode,
-    common_evidence_source_id: str,
     count_no_ms2_as_detected: bool = False,
 ) -> EvidenceVector:
     facts = score.evidence_facts if score is not None else None
@@ -432,7 +423,6 @@ def _evidence_from_candidate(
         source=(
             "targeted_peak" if analysis_mode == "targeted" else "discovery_candidate"
         ),
-        source_id=common_evidence_source_id,
         provenance=(
             "selected_or_candidate"
             if analysis_mode == "targeted"
@@ -562,14 +552,12 @@ def _common_evidence_from_peak_candidate(
     score: PeakCandidateScore | None = None,
     candidate_ms2_evidence: CandidateMS2Evidence | None = None,
     source: Literal["targeted_peak", "discovery_candidate"],
-    source_id: str,
     provenance: str,
 ) -> CommonEvidence:
     """Project one captured peak without assigning workflow product authority."""
 
     return CommonEvidence(
         source=source,
-        source_id=source_id,
         provenance=provenance,
         ms1_peak_found=True,
         ms1_apex_rt_min=candidate.selection_apex_rt,

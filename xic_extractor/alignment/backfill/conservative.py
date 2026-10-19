@@ -96,7 +96,6 @@ class ConservativeBackfillGroupFacts:
     reason_codes: tuple[str, ...]
     policy_version: str = POLICY_VERSION
     validation_status: str = VALIDATION_STATUS
-    product_authority: str = PRODUCT_AUTHORITY
     unsearched_sample_ids: tuple[str, ...] = ()
 
 
@@ -113,7 +112,6 @@ class ConservativeBackfillCandidateUniverse:
     localization: BackfillPeakLocation | None = None
     localization_sources: tuple[PeakObservationRef, ...] = ()
     validation_status: str = VALIDATION_STATUS
-    product_authority: str = PRODUCT_AUTHORITY
 
     @property
     def method_subject_id(self) -> str:
@@ -141,7 +139,6 @@ class ConservativeBackfillEvidence:
     peak_observation: PeakObservationRef
     evidence_source: str = "owner_backfill_revisit"
     validation_status: str = VALIDATION_STATUS
-    product_authority: str = PRODUCT_AUTHORITY
 
     @property
     def method_subject_id(self) -> str:
@@ -168,7 +165,6 @@ class ConservativeBackfillCellDecision:
     reason_codes: tuple[str, ...]
     policy_version: str = POLICY_VERSION
     validation_status: str = VALIDATION_STATUS
-    product_authority: str = PRODUCT_AUTHORITY
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         raise TypeError("ConservativeBackfillCellDecision is final")

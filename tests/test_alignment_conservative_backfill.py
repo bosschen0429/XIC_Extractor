@@ -122,7 +122,6 @@ def test_roles_votes_and_full_support_trace_set_are_owner_derived(
         )
     )
     assert not any("median" in field.name.lower() for field in fields(type(targeted)))
-    assert targeted.product_authority == "none"
     assert targeted.validation_status == "shadow_ready"
     assert plan_conservative_backfill_targets(
         (spine.group,), sample_population=fixture.samples

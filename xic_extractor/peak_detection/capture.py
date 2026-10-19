@@ -140,7 +140,7 @@ def capture_peak_hypotheses(
         )
     candidate = binding.candidate_id
     peak_config = scope.method_constraints.peak_config
-    label, role, istd_pair, common_evidence_source_id = _hypothesis_context(
+    label, role, istd_pair = _hypothesis_context(
         scope, query_mz=binding.query_mz, method_subject_id=binding.method_subject_id
     )
     if (
@@ -164,7 +164,6 @@ def capture_peak_hypotheses(
     if detection.status == "detected" and detection.result is not None:
         hypotheses = build_peak_hypotheses(
             analysis_mode=scope.variant,
-            common_evidence_source_id=common_evidence_source_id,
             sample_name=trace.sample_name,
             target_label=label,
             role=role,
@@ -258,7 +257,7 @@ def _capture_trace_group(
         )
     except SearchScopeContractError as exc:
         raise SampleLocalCaptureError(str(exc)) from exc
-    label, role, istd_pair, _ = _hypothesis_context(
+    label, role, istd_pair = _hypothesis_context(
         scope,
         query_mz=binding.query_mz,
         method_subject_id=binding.method_subject_id,
@@ -804,20 +803,19 @@ def _hypothesis_context(
     *,
     query_mz: float,
     method_subject_id: str,
-) -> tuple[str, str, str, str]:
+) -> tuple[str, str, str]:
     if isinstance(scope, TargetSearchScope):
         target = scope.target.definition.target
         return (
             target.label,
             "ISTD" if target.is_istd else "Analyte",
             target.istd_pair,
-            target.label,
         )
     method_subject = cid_nl_method_subject_from_request(
         scope.request, method_subject_id=method_subject_id
     )
     label = f"untargeted:{query_mz:.8g}:{method_subject.label}"
-    return label, "Analyte", "", label
+    return label, "Analyte", ""
 
 
 __all__ = (
