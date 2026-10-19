@@ -926,7 +926,6 @@ def _build_production_composition_inputs(
             ),
             samples=batch.context.samples,
             alignment_config=alignment_config,
-            raw_sample_stems=frozenset(batch.context.raw_paths_by_sample),
         )
         receipts = tuple(
             result_context.project_completed_backfill(

@@ -285,7 +285,7 @@ def _compose_application_result(
             )
         if (
             closed_coverage is not None
-            and closed_coverage.epoch.processing_owners is not owners
+            and closed_coverage.processing_owners is not owners
         ):
             raise AlignmentWorkflowContractError(
                 "closed cell coverage crossed exact workflow processing owners"
@@ -370,7 +370,7 @@ def resolve_workflow_processing_owners(
     """Resolve the owners already established by the selected workflow."""
     if isinstance(adapter, UntargetWorkflowAdapter):
         assert adapter.closed_cell_coverage is not None
-        return adapter.closed_cell_coverage.epoch.processing_owners
+        return adapter.closed_cell_coverage.processing_owners
     return compose_processing_owner_references(
         request=request.processing_request,
         attempt=request.processing_attempt,

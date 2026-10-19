@@ -336,7 +336,7 @@ def _require_batch_population(
         )
         handoff = core.cell_observation_handoff
         assert handoff is not None
-        child_owners = handoff.coverage.epoch.processing_owners
+        child_owners = handoff.coverage.processing_owners
         if child_owners.attempt.processing_attempt_id != (
             request.processing_attempt.processing_attempt_id
         ):

@@ -163,9 +163,7 @@ def _fake_application(*, scope, request, attempt, samples, row_id, physical_id):
         canonical_samples=samples,
         cell_observation_handoff=SimpleNamespace(
             coverage=SimpleNamespace(
-                epoch=SimpleNamespace(
-                    processing_owners=SimpleNamespace(attempt=attempt),
-                ),
+                processing_owners=SimpleNamespace(attempt=attempt),
             ),
         ),
         grouping_result=SimpleNamespace(
@@ -462,9 +460,7 @@ def test_batch_application_result_preserves_order_and_binding_across_chunks(
 
     if case == "wrong_attempt":
         handoff = children[1].scientific_core.cell_observation_handoff
-        handoff.coverage.epoch.processing_owners.attempt = issue_processing_attempt(
-            request
-        )
+        handoff.coverage.processing_owners.attempt = issue_processing_attempt(request)
     elif case == "duplicate_physical":
         children[1].scientific_core.final_population[0].member_subjects[
             0

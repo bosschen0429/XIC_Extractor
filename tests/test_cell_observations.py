@@ -29,14 +29,9 @@ from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.alignment.backfill.evaluation_coverage import (
+    BackfillEvaluationCoverageBatch,
     BackfillPlanningPosition,
     BackfillPlanningReason,
-    build_backfill_evaluation_coverage,
-    mint_backfill_planning_epoch,
-    mint_backfill_position_id,
-)
-from xic_extractor.alignment.backfill.request_plan import (
-    BACKFILL_TRACE_RESULT_SEMANTICS,
 )
 from xic_extractor.alignment.cell_observation.observations import (
     CellObservationContractError,
@@ -53,7 +48,6 @@ from xic_extractor.alignment.cid_nl_inputs import (
 from xic_extractor.alignment.cid_nl_predecessor_cells import (
     compose_cid_nl_predecessor_cells,
 )
-from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.association import (
     build_cross_sample_association_lineage_handoff,
 )
@@ -422,11 +416,6 @@ def _not_planned_coverage(
     """Coverage shaped like CID-NL completion: no planned requests or terminals."""
     positions = tuple(
         BackfillPlanningPosition(
-            position_id=mint_backfill_position_id(
-                processing_request_id=group.processing_request_id,
-                group_hypothesis_id=group.group_hypothesis_id,
-                sample_identity_id=sample.identity.sample_identity_id,
-            ),
             group_identity=group,
             sample=sample,
             planning_reason=planning_reason(group, sample),
@@ -434,22 +423,12 @@ def _not_planned_coverage(
         for group in groups
         for sample in samples
     )
-    epoch = mint_backfill_planning_epoch(
+    return BackfillEvaluationCoverageBatch(
         processing_owners=owners,
         group_identities=groups,
         samples=samples,
-        raw_sample_stems=frozenset(sample.lookup_token for sample in samples),
-        alignment_config=AlignmentConfig(owner_backfill_min_detected_samples=1),
-        backend="raw",
-        window_strategy="exact",
-        superwindow_span_factor=2,
-        validation_mode="primary",
-        result_semantics=BACKFILL_TRACE_RESULT_SEMANTICS,
-        scope="full-audit",
-        selected_family_ids=frozenset(),
         positions=positions,
     )
-    return build_backfill_evaluation_coverage(epoch)
 
 
 def _coverage_for_groups(
@@ -505,9 +484,7 @@ def test_composer_mints_exact_cartesian_owner_population_and_states(
         predecessor_cells=spine.cells,
     )
 
-    assert len(cells) == len(handoff.final_population) * len(
-        handoff.coverage.epoch.samples
-    )
+    assert len(cells) == len(handoff.final_population) * len(handoff.coverage.samples)
     assert {cell.evidence_state for cell in cells} == {
         "direct_observation",
         "unresolved",
@@ -570,7 +547,7 @@ def test_composer_distinguishes_completed_negative_search(
     )
     handoff = _owner_handoff_for_cells(
         fixture,
-        handoff.coverage.epoch.group_identities[0],
+        handoff.coverage.group_identities[0],
         predecessor_cells,
     )
 
@@ -756,14 +733,14 @@ def test_composer_merge_retains_both_predecessor_lanes_deterministically(
     )
     expected_positions_by_sample = {
         item.canonical_sample.identity.sample_identity_id: {
-            association.position.position_id
+            association.position.key
             for association in handoff.position_associations
             if association.position.sample is item.canonical_sample
         }
         for item in forward
     }
     assert all(
-        {association.position.position_id for association in item.position_associations}
+        {association.position.key for association in item.position_associations}
         == expected_positions_by_sample[
             item.canonical_sample.identity.sample_identity_id
         ]

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -120,6 +119,7 @@ class FinalGroupCellObservation:
     evidence_states: tuple[FinalCellEvidenceState, ...]
     basis_bytes: bytes
     backfill_cell: CellObservationRef | None = None
+
     @property
     def group_hypothesis_id(self) -> str:
         return self.group.group_hypothesis_id
@@ -195,10 +195,9 @@ class FinalGroupCellObservation:
         )
 
     @property
-    def position_ids(self) -> tuple[str, ...]:
+    def position_keys(self) -> tuple[tuple[str, str], ...]:
         return tuple(
-            association.position.position_id
-            for association in self.position_associations
+            association.position.key for association in self.position_associations
         )
 
     @property
@@ -244,7 +243,7 @@ def _compose_final_group_cell_observation_population(
     predecessor_cells: tuple[CellObservationRef, ...],
     backfill_cells: tuple[CellObservationRef, ...] = (),
 ) -> tuple[FinalGroupCellObservation, ...]:
-    request_id = handoff.coverage.epoch.processing_owners.request.processing_request_id
+    request_id = handoff.coverage.processing_owners.request.processing_request_id
     backfilled_by_key: dict[tuple[str, str], CellObservationRef] = {}
     for backfill_ref in backfill_cells:
         key = (
@@ -254,7 +253,7 @@ def _compose_final_group_cell_observation_population(
         if key in backfilled_by_key:
             raise CellObservationContractError("duplicate completed backfill cell")
         backfilled_by_key[key] = backfill_ref
-    positions = tuple(handoff.coverage.epoch.positions)
+    positions = tuple(handoff.coverage.positions)
     source_by_position = _index_predecessor_cells(
         predecessor_cells,
         positions=positions,
@@ -269,17 +268,17 @@ def _compose_final_group_cell_observation_population(
         ).append(association)
     cells: list[FinalGroupCellObservation] = []
     for group in handoff.final_population:
-        for sample in handoff.coverage.epoch.samples:
+        for sample in handoff.coverage.samples:
             associations = tuple(
                 sorted(
                     associations_by_key.get((id(group), id(sample)), ()),
-                    key=lambda item: item.position.position_id,
+                    key=lambda item: item.position.key,
                 )
             )
             source_lanes = tuple(
-                source_by_position[item.position.position_id]
+                source_by_position[item.position.key]
                 for item in associations
-                if item.position.position_id in source_by_position
+                if item.position.key in source_by_position
             )
             states: tuple[FinalCellEvidenceState, ...]
             recovered = backfilled_by_key.pop(
@@ -328,9 +327,7 @@ def _compose_final_group_cell_observation_population(
                 states = tuple(
                     _derive_lane_evidence_state(
                         association=association,
-                        source_cell=source_by_position.get(
-                            association.position.position_id
-                        ),
+                        source_cell=source_by_position.get(association.position.key),
                         final_group=group,
                         canonical_sample=sample,
                         processing_request_id=request_id,
@@ -340,7 +337,6 @@ def _compose_final_group_cell_observation_population(
             cells.append(
                 _mint_final_group_cell_observation(
                     processing_request_id=request_id,
-                    handoff=handoff,
                     group=group,
                     canonical_sample=sample,
                     position_associations=associations,
@@ -361,7 +357,7 @@ def _index_predecessor_cells(
     *,
     positions: tuple[BackfillPlanningPosition, ...],
     processing_request_id: str,
-) -> dict[str, CellObservationRef]:
+) -> dict[tuple[str, str], CellObservationRef]:
     if isinstance(predecessor_cells, (str, bytes)):
         raise CellObservationContractError(
             "predecessor cells must be a finite owner-sealed sequence"
@@ -371,7 +367,7 @@ def _index_predecessor_cells(
         raise CellObservationContractError(
             "predecessor cell population duplicates an exact source object"
         )
-    result: dict[str, CellObservationRef] = {}
+    result: dict[tuple[str, str], CellObservationRef] = {}
     positions_by_key: dict[tuple[str, str], list[BackfillPlanningPosition]] = {}
     for position in positions:
         key = (
@@ -398,14 +394,14 @@ def _index_predecessor_cells(
                 "Backfill coverage position by full group identity and sample"
             )
         position = matches[0]
-        if position.position_id in result:
+        if position.key in result:
             raise CellObservationContractError(
                 "predecessor CellObservationRef population duplicates a coverage "
                 "position"
             )
-        result[position.position_id] = cell
+        result[position.key] = cell
     expected_ids = {
-        position.position_id
+        position.key
         for position in positions
         if position.planning_reason != "no_discovery_input"
     }
@@ -481,15 +477,15 @@ def _derive_lane_evidence_state(
             )
         # A merged sibling may supply a direct lane; this lane adds no value.
         return "not_searched"
-    no_request_proof = association.position.conservative_no_request_proof
-    if no_request_proof is not None:
+    no_request_decision = association.position.no_request_decision
+    if no_request_decision is not None:
         if final_member is not None:
             raise CellObservationContractError(
                 "conservative no-request lane cannot carry physical evidence"
             )
         return (
             "not_searched"
-            if no_request_proof.variant == "threshold_not_met"
+            if no_request_decision.variant == "threshold_not_met"
             else "unavailable"
         )
     if final_member is not None and method_result in {"HOLD", "REJECT"}:
@@ -578,7 +574,6 @@ def _member_for_sample(
 def _mint_final_group_cell_observation(
     *,
     processing_request_id: str,
-    handoff: CrossSampleAssociationLineageHandoff,
     group: CrossSampleGroupIdentity,
     canonical_sample: ResolvedCanonicalSampleIdentity,
     position_associations: tuple[CrossSampleCoveragePositionAssociation, ...],
@@ -588,7 +583,6 @@ def _mint_final_group_cell_observation(
 ) -> FinalGroupCellObservation:
     payload = _final_closure_basis(
         processing_request_id=processing_request_id,
-        handoff=handoff,
         group=group,
         canonical_sample=canonical_sample,
         position_associations=position_associations,
@@ -613,8 +607,6 @@ def _mint_final_group_cell_observation(
 def _final_closure_basis(
     *,
     processing_request_id: str,
-    handoff: CrossSampleAssociationLineageHandoff | None = None,
-    handoff_id: str | None = None,
     group: CrossSampleGroupIdentity,
     canonical_sample: ResolvedCanonicalSampleIdentity,
     position_associations: tuple[CrossSampleCoveragePositionAssociation, ...],
@@ -622,39 +614,30 @@ def _final_closure_basis(
     evidence_states: tuple[FinalCellEvidenceState, ...],
     backfill_cell: CellObservationRef | None = None,
 ) -> dict[str, object]:
-    resolved_handoff_id = handoff_id or (
-        handoff.handoff_id if handoff is not None else None
-    )
-    if resolved_handoff_id is None:
-        raise CellObservationContractError("final cell basis requires exact handoff")
     payload: dict[str, object] = {
         "schema_version": "final_group_cell_observation",
         "processing_request_id": processing_request_id,
-        "handoff_id": resolved_handoff_id,
         "group": {
             "group_hypothesis_id": group.group_hypothesis_id,
             "processing_request_id": group.processing_request_id,
             "member_subject_ids": [
                 member.member_subject_id for member in group.member_subjects
             ],
-            "basis_sha256": hashlib.sha256(group.basis_bytes).hexdigest(),
             "disposition": group.disposition,
         },
         "canonical_sample_identity_id": canonical_sample.identity.sample_identity_id,
         "position_associations": [
             {
-                "position_id": item.position.position_id,
+                "position_key": item.position.key,
                 "predecessor_group_hypothesis_id": (
                     item.position.group_identity.group_hypothesis_id
                 ),
-                "predecessor_group_basis_sha256": hashlib.sha256(
-                    item.position.group_identity.basis_bytes
-                ).hexdigest(),
                 "sample_identity_id": item.position.sample.identity.sample_identity_id,
                 "final_successor_group_hypothesis_id": (
                     item.final_successor.group_hypothesis_id
                 ),
                 "resolution": item.resolution,
+                "planning_reason": item.position.planning_reason,
             }
             for item in position_associations
         ],
@@ -680,10 +663,6 @@ def _final_closure_basis(
             }
             for cell in predecessor_cells
         ],
-        # Keep the canonical identity encoding stable for existing artifacts.
-        "coverage_terminals": [],
-        "repair_receipts": [],
-        "repaired_observations": [],
         "evidence_states": list(evidence_states),
     }
     if backfill_cell is not None:

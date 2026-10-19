@@ -316,7 +316,7 @@ def _finalization_inputs(
     request = fixture.owners.request
     receipt = _final_receipt(
         SimpleNamespace(context=SimpleNamespace(processing_owners=fixture.owners)),
-        predecessors=handoff.coverage.epoch.group_identities,
+        predecessors=handoff.coverage.group_identities,
         successors=handoff.final_population,
     )
     method_subject = spine.cells[0].group_context.method_subject
