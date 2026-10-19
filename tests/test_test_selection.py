@@ -424,6 +424,26 @@ def test_local_run_runs_every_test_when_git_cannot_diff(
     )
 
 
+def test_renamed_module_reports_its_old_path_and_runs_every_test(
+    selection_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    git = [shutil.which("git"), "-c", "user.email=t@t", "-c", "user.name=t"]
+    subprocess.run([*git, "commit", "-qm", "base"], cwd=selection_repo, check=True)
+    subprocess.run(
+        [*git, "mv", "selpkg/core.py", "selpkg/kernel.py"],
+        cwd=selection_repo,
+        check=True,
+    )
+    subprocess.run([*git, "commit", "-qm", "rename"], cwd=selection_repo, check=True)
+    monkeypatch.chdir(selection_repo)
+
+    changed = test_selection.changed_paths("HEAD~1", "HEAD")
+
+    # selpkg/consumer.py still imports the old module; only a full run sees it.
+    assert changed is not None and "selpkg/core.py" in changed
+    assert _select(selection_repo, *changed) is None
+
+
 def test_ci_reads_the_plan_from_the_selection_owner() -> None:
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 

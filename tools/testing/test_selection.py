@@ -419,7 +419,9 @@ def changed_paths(base: str, head: str | None = None) -> list[str] | None:
     Returns None when git cannot answer, so callers fall back to running every
     test instead of silently skipping them.
     """
-    diff = ["git", "diff", "--name-only", base] + ([head] if head else [])
+    # A rename must report its old path too: code still naming it is affected.
+    diff = ["git", "diff", "--no-renames", "--name-only", base]
+    diff += [head] if head else []
     commands = [diff]
     if head is None:
         commands.append(["git", "ls-files", "--others", "--exclude-standard"])
