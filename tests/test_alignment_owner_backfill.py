@@ -112,7 +112,6 @@ def test_owner_backfill_shared_peak_facts_preserve_projection_and_work_telemetry
     assert observation.facts.integration == candidate.cells[0].selected_integration
     assert observation.cell.status == "backfilled"
     assert observation.cell.reason == "owner-centered MS1 backfill"
-    assert observation.evidence_authority == "evidence_only_no_write_authority"
     assert observation.trace_evaluated is True
     assert observation.fact_elapsed_seconds is not None
     assert observation.fact_elapsed_seconds > 0

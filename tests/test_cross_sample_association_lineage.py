@@ -78,10 +78,6 @@ def test_unchanged_identity_closes_complete_cartesian_population(
         item.final_successor is group and item.resolution == "unchanged_identity"
         for item in first.position_associations
     )
-    assert first.membership_authority == "none"
-    assert first.value_authority == "none"
-    assert first.matrix_authority == "none"
-    assert first.writer_authority == "none"
 
 
 def test_alignment_outputs_carries_exact_owner_coverage(
@@ -233,7 +229,7 @@ def test_split_nonmember_position_rejects_without_a_handoff(
         )
 
 
-def test_rejected_disposition_is_retained_without_decision_authority(
+def test_rejected_disposition_is_retained(
     tmp_path: Path,
 ) -> None:
     fixture = _fixture(tmp_path, sample_stems=("sample-a",))
@@ -257,7 +253,6 @@ def test_rejected_disposition_is_retained_without_decision_authority(
 
     assert handoff.position_associations[0].final_successor is rejected
     assert handoff.position_associations[0].final_successor.disposition == "rejected"
-    assert handoff.activation_authority == "none"
 
 
 def test_crossed_request_and_zero_successor_reject(

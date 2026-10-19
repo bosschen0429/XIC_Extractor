@@ -133,10 +133,6 @@ class BackfillPeakFactObservation:
     _mint_token: InitVar[object] = field(kw_only=True)
 
     @property
-    def evidence_authority(self) -> str:
-        return "evidence_only_no_write_authority"
-
-    @property
     def work_unit_key(self) -> str:
         return (
             f"{self.request_identity.request_identity_id}:"
