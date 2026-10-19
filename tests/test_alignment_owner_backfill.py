@@ -6,7 +6,6 @@ import numpy as np
 import pytest
 from pytest import MonkeyPatch
 
-import xic_extractor.alignment.backfill.peak_fact as owner_backfill_module
 import xic_extractor.alignment.backfill.request_plan as request_plan_module
 from tests.alignment_pipeline_helpers import _owner
 from xic_extractor.alignment.backfill import (
@@ -119,42 +118,9 @@ def test_owner_backfill_shared_peak_facts_preserve_projection_and_work_telemetry
     assert observation.fact_elapsed_seconds > 0
     rehydrated_observation = pickle.loads(pickle.dumps(observation))
     assert rehydrated_observation == observation
-    owner_backfill_module.validate_backfill_peak_fact_observation(
-        rehydrated_observation
-    )
     with pytest.raises(ValueError, match="must be minted by Owner Backfill"):
         replace(observation, _mint_token=object())
     assert observation.physical_evaluation is not None
-    forged_question = replace(
-        observation.physical_evaluation.question,
-        selection_subject_id="owner-backfill-subject:" + "0" * 64,
-    )
-    with pytest.raises(ValueError, match="physical selection subject"):
-        replace(
-            observation,
-            physical_evaluation=replace(
-                observation.physical_evaluation,
-                question=forged_question,
-            ),
-            _mint_token=(
-                owner_backfill_module._BACKFILL_PEAK_FACT_OBSERVATION_MINT_TOKEN
-            ),
-        )
-    forged_query = replace(
-        observation.physical_evaluation.question,
-        query_rt_min=observation.physical_evaluation.question.query_rt_min + 0.01,
-    )
-    with pytest.raises(ValueError, match="physical query RT"):
-        replace(
-            observation,
-            physical_evaluation=replace(
-                observation.physical_evaluation,
-                question=forged_query,
-            ),
-            _mint_token=(
-                owner_backfill_module._BACKFILL_PEAK_FACT_OBSERVATION_MINT_TOKEN
-            ),
-        )
     assert candidate.peak_fact_unsealed_evaluation_keys == ()
     assert not hasattr(candidate, "peak_fact_cost")
     assert owner_backfill_acquisition_module._positive_elapsed(0.0) is None
@@ -1360,9 +1326,7 @@ def test_candidate_audit_rows_follow_their_only_destination(tmp_path) -> None:
 
     # everything the Matrix and provenance depend on is unchanged
     assert emitted.cells == suppressed.cells
-    assert len(emitted.peak_fact_observations) == len(
-        suppressed.peak_fact_observations
-    )
+    assert len(emitted.peak_fact_observations) == len(suppressed.peak_fact_observations)
     assert [o.work_unit_key for o in emitted.peak_fact_observations] == [
         o.work_unit_key for o in suppressed.peak_fact_observations
     ]

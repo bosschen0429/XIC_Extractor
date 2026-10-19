@@ -18,7 +18,6 @@ from xic_extractor.alignment.backfill.request_plan import (
 from xic_extractor.alignment.backfill.result import (
     BackfillPeakFactReceipt,
     _BackfillTraceEvaluation,
-    validate_backfill_peak_fact_observation,  # noqa: F401
 )
 from xic_extractor.alignment.backfill.runtime_projection import (
     BackfillRuntimeFeature,
@@ -446,6 +445,7 @@ def _backfilled_cell_sort_key(cell: AlignedCell) -> tuple[float, float, float]:
     rt_delta = abs(cell.rt_delta_sec) if cell.rt_delta_sec is not None else np.inf
     apex_rt = float(cell.apex_rt or 0.0)
     return (-area, rt_delta, apex_rt)
+
 
 def _scan_support_score(
     rt: NDArray[np.float64],

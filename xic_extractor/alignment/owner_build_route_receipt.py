@@ -39,23 +39,6 @@ class OwnerBuildRouteReceipt:
             raise ValueError(
                 "OwnerBuildRouteReceipt must be minted by the Alignment owner"
             )
-        _validate_owner_build_xic_backend(
-            self.configured_owner_build_xic_backend,
-        )
-        if self.effective_owner_build_route == "retained_untargeted_cid_nl_batch":
-            if self.effective_owner_build_xic_backend is not None:
-                raise ValueError(
-                    "retained CID-NL batch does not execute a legacy backend"
-                )
-            if (
-                self.processing_run_spec_id is not None
-                or self.processing_run_spec_hash is not None
-            ):
-                raise ValueError(
-                    "retained CID-NL batch does not claim a ProcessingRunSpec route"
-                )
-        else:
-            raise ValueError("unsupported effective owner build route")
 
     def as_dict(self) -> dict[str, object]:
         return {

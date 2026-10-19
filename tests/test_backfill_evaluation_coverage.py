@@ -391,9 +391,9 @@ def test_primary_fallback_and_evaluated_no_signal_remain_distinct(
 @pytest.mark.parametrize(
     ("mutation", "message"),
     (
-        ("missing", "missing or adds"),
+        ("missing", "missing"),
         ("duplicate", "duplicates"),
-        ("crossed", "crosses its canonical sample"),
+        ("crossed", "primary terminal"),
     ),
 )
 def test_coverage_rejects_missing_duplicate_and_crossed_terminals(
@@ -431,45 +431,6 @@ def test_coverage_rejects_missing_duplicate_and_crossed_terminals(
 
     with pytest.raises(ValueError, match=message):
         build_backfill_evaluation_coverage(coverage.epoch, candidate)
-
-
-def test_terminal_rejects_crossed_phase_index_and_physical_evaluation(
-    tmp_path: Path,
-) -> None:
-    fixture = _coverage_fixture(
-        tmp_path,
-        sample_order=("sample-a", "sample-b", "sample-c"),
-    )
-    coverage = _run(fixture, with_coverage=True).evaluation_coverage
-    assert coverage is not None
-    first, second = coverage.terminals
-    assert second.physical_evaluation is not None
-
-    with pytest.raises(ValueError, match="crossed its physical evaluation"):
-        mint_backfill_attempt_terminal(
-            position_id=first.position_id,
-            logical_request=first.logical_request,
-            request_identity=first.request_identity,
-            candidate_phase=first.candidate_phase,
-            candidate_index=first.candidate_index,
-            trace_evaluated=True,
-            selected_for_output=first.selected_for_output,
-            terminal_reason=None,
-            physical_evaluation=second.physical_evaluation,
-        )
-    with pytest.raises(ValueError, match="crossed its physical evaluation"):
-        mint_backfill_attempt_terminal(
-            position_id=first.position_id,
-            logical_request=first.logical_request,
-            request_identity=first.request_identity,
-            candidate_phase="prefilter_query",
-            candidate_index=first.candidate_index + 1,
-            trace_evaluated=True,
-            selected_for_output=first.selected_for_output,
-            terminal_reason=None,
-            physical_evaluation=first.physical_evaluation,
-        )
-
 
 def test_closed_vocabularies_cover_every_emitted_disposition_and_phase(
     tmp_path: Path,

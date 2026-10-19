@@ -57,10 +57,6 @@ from xic_extractor.peak_detection.peak_hypothesis_identity import (
     HYPOTHESIS_METHOD_DDA_CID_NL,
     HYPOTHESIS_METHOD_MS1_OBSERVATION,
 )
-from xic_extractor.peak_detection.search_scope import (
-    TargetSearchScope,
-    UntargetedSearchScope,
-)
 from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
@@ -129,14 +125,6 @@ def build_targeted_cross_sample_groups(
         owners.append(owner)
         selected_by_id[sample_id] = selected
 
-    if captures:
-        _validate_capture_owner_hypotheses(
-            captures=captures,
-            owners=owners,
-            source_by_id={
-                selected.hypothesis_id: selected for selected in selected_by_id.values()
-            },
-        )
     groups = construct_cross_sample_peak_group_hypotheses(
         tuple(owners),
         config=alignment_config,
@@ -205,14 +193,6 @@ def build_initial_cid_nl_cross_sample_groups(
         retained_hypotheses_by_assessment=retained_hypotheses_by_assessment,
     )
     groups = grouping_scope.groups
-    _validate_capture_owner_hypotheses(
-        captures=captures,
-        owners=tuple(owner for group in groups for owner in group.owners),
-        source_by_id={
-            candidate.peak_hypothesis_id: candidate.peak_hypothesis
-            for candidate in retained_candidates
-        },
-    )
     identities = tuple(
         validate_cross_sample_peak_group_identity(group, require_canonical=True)
         for group in groups
@@ -414,7 +394,9 @@ def admit_cid_nl_group_backfills(
         for index, owner in enumerate(candidates):
             for other in candidates[:index]:
                 if conflict := peak_shape_union_conflict(
-                    (owner,), (other,), alignment_config,
+                    (owner,),
+                    (other,),
+                    alignment_config,
                 ):
                     conflicted.update(conflict)
     additions: dict[str, list[SampleLocalMS1Owner]] = defaultdict(list)
@@ -634,9 +616,7 @@ def contested_backfill_peaks(
                 len(claims[key]) > 1
                 or key in occupied
                 or any(
-                    holder != group_id
-                    and lower <= other_upper
-                    and other_lower <= upper
+                    holder != group_id and lower <= other_upper and other_lower <= upper
                     for holder, _, (other_lower, other_upper) in entries
                 )
                 or any(
@@ -666,71 +646,3 @@ def _partition_transition(
             else "membership_changed"
         ),
     )
-
-
-def _validate_capture_owner_hypotheses(
-    *,
-    captures: Sequence[SampleLocalCapture],
-    owners: Sequence[SampleLocalMS1Owner],
-    source_by_id: Mapping[str, PeakHypothesis],
-) -> None:
-    capture_tuple = tuple(captures)
-    if not capture_tuple or any(
-        type(capture) is not SampleLocalCapture for capture in capture_tuple
-    ):
-        raise CrossSampleGroupingContractError(
-            "grouping workflow captures do not close exact owner results"
-        )
-    capture_scope = capture_tuple[0].scope
-    if type(capture_scope) not in {TargetSearchScope, UntargetedSearchScope} or any(
-        capture.scope is not capture_scope for capture in capture_tuple
-    ):
-        raise CrossSampleGroupingContractError(
-            "grouping workflow captures crossed their exact SearchScope"
-        )
-    candidate_ids = tuple(capture.candidate_id for capture in capture_tuple)
-    declared_candidate_ids = capture_scope.declared_candidate_ids
-    if candidate_ids != declared_candidate_ids or len(candidate_ids) != len(
-        set(candidate_ids)
-    ):
-        raise CrossSampleGroupingContractError(
-            "grouping workflow captures do not preserve the declared candidate order"
-        )
-    selected_ids = tuple(
-        sorted(
-            capture.selected_hypothesis.hypothesis_id
-            for capture in capture_tuple
-            if capture.selected_hypothesis is not None
-        )
-    )
-    owner_ids = tuple(sorted(owner.owner_id for owner in owners))
-    if not set(selected_ids).issubset(source_by_id) or len(owner_ids) != len(
-        set(owner_ids)
-    ):
-        raise CrossSampleGroupingContractError(
-            "grouping workflow captures cross the exact retained candidate population"
-        )
-    if any(
-        capture.selected_hypothesis.integration
-        is not source_by_id[capture.selected_hypothesis.hypothesis_id].integration
-        for capture in capture_tuple
-        if capture.selected_hypothesis is not None
-    ):
-        raise CrossSampleGroupingContractError(
-            "grouping workflow captures crossed exact retained physical integration"
-        )
-    if not set(owner_ids).issubset(source_by_id) or any(
-        owner.selected_integration is not source_by_id[owner.owner_id].integration
-        or owner.owner_apex_rt != source_by_id[owner.owner_id].integration.rt_apex_min
-        or owner.owner_peak_start_rt
-        != source_by_id[owner.owner_id].integration.rt_left_min
-        or owner.owner_peak_end_rt
-        != source_by_id[owner.owner_id].integration.rt_right_min
-        or owner.owner_area
-        != source_by_id[owner.owner_id].integration.area_raw_counts_seconds
-        or owner.owner_height != source_by_id[owner.owner_id].integration.height_raw
-        for owner in owners
-    ):
-        raise CrossSampleGroupingContractError(
-            "grouping workflow source crossed exact owner physical integration"
-        )

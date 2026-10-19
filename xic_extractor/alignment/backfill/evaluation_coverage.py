@@ -1,47 +1,37 @@
+"""Retain owner decisions and close Backfill request coverage at assembly."""
+
 from __future__ import annotations
 
 import hashlib
 import json
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import InitVar, asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, replace
 from typing import TYPE_CHECKING, Literal, cast
 
 from xic_extractor.alignment.backfill.completion_evidence import (
     BackfillCompletionProjection,
 )
 from xic_extractor.alignment.backfill.request_plan import (
-    BACKFILL_TRACE_RESULT_SEMANTICS,
     BackfillLogicalRequestMember,
     BackfillRequestIdentity,
     BackfillRequestItem,
     BackfillRequestPlan,
     BackfillValidationMode,
     BackfillWindowStrategy,
-    mint_backfill_logical_request_member,
 )
 from xic_extractor.alignment.backfill.scope import (
     BackfillScope,
     backfill_request_planning_reason,
     backfill_scope_exclusion_reasons,
-    select_backfill_features,
 )
 from xic_extractor.alignment.config import AlignmentConfig, BackfillXicBackend
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupDisposition,
     CrossSampleGroupIdentity,
     CrossSampleGroupMemberSubject,
-    validate_cross_sample_group_population,
-    validate_cross_sample_peak_group_identity,
 )
 from xic_extractor.alignment.owner_group_delivery import OwnerGroupDeliveryFeatures
-from xic_extractor.peak_detection.cid_nl_method_assessment import (
-    is_unsearched_cid_nl_discovery_assessment,
-    validate_cid_nl_method_assessment_binding,
-)
-from xic_extractor.peak_detection.physical_peak_evaluation import (
-    validate_bounded_physical_peak_evaluation,
-)
 from xic_extractor.peak_detection.physical_peak_models import (
     PhysicalPeakEvaluation,
 )
@@ -52,11 +42,8 @@ from xic_extractor.xic_models import XICRequest
 if TYPE_CHECKING:
     from xic_extractor.alignment.backfill.conservative import (
         ConservativeBackfillCellDecision,
-        ConservativeBackfillGroupFacts,
     )
-    from xic_extractor.alignment.cell_observation.observations import CellObservationRef
 
-_CONSERVATIVE_PROOF_MINT_TOKEN = object()
 
 BackfillPlanningState = Literal["planned", "not_planned"]
 BackfillPlanningReason = Literal[
@@ -120,35 +107,6 @@ _TERMINAL_PREFIX = "xic.owner-backfill-coverage-terminal:"
 _EPOCH_PREFIX = "xic.owner-backfill-planning-epoch:"
 _BATCH_PREFIX = "xic.owner-backfill-evaluation-coverage:"
 
-@dataclass(frozen=True, slots=True)
-class ConservativeNoRequestProofBuilder:
-    """Bind a frozen group's shared evidence once before minting its cells."""
-
-    processing_owners: ProcessingOwnerReferences
-    group_identity: CrossSampleGroupIdentity
-    group_facts: ConservativeBackfillGroupFacts
-
-    def __post_init__(self) -> None:
-        _validate_conservative_group_binding(
-            self.processing_owners, self.group_identity, self.group_facts
-        )
-
-    def mint(
-        self,
-        *,
-        sample: ResolvedCanonicalSampleIdentity,
-        decision: ConservativeBackfillCellDecision,
-        completion: BackfillCompletionProjection | None = None,
-    ) -> BackfillConservativeNoRequestProof:
-        return mint_backfill_conservative_no_request_proof(
-            processing_owners=self.processing_owners,
-            group_identity=self.group_identity,
-            sample=sample,
-            decision=decision,
-            completion=completion,
-            _group_binding=self,
-        )
-
 
 @dataclass(frozen=True, slots=True)
 class BackfillConservativeNoRequestProof:
@@ -160,10 +118,6 @@ class BackfillConservativeNoRequestProof:
     sample: ResolvedCanonicalSampleIdentity
     decision: ConservativeBackfillCellDecision
     completion: BackfillCompletionProjection | None = None
-    # Construction-only: persisted proof fields and IDs remain unchanged.
-    # Direct construction/replacement still validates the complete binding.
-    _group_binding: InitVar[ConservativeNoRequestProofBuilder | None] = None
-    _mint_token: InitVar[object] = field(default=None, kw_only=True)
 
     @property
     def variant(self) -> Literal["threshold_not_met", "completed_backfill_empty"]:
@@ -181,28 +135,6 @@ class BackfillConservativeNoRequestProof:
             else "backfill_search_completed_empty"
         )
 
-    def __post_init__(
-        self,
-        _group_binding: ConservativeNoRequestProofBuilder | None,
-        _mint_token: object,
-    ) -> None:
-        _validate_conservative_no_request(self, _group_binding)
-        # The mint just derived this ID from these exact immutable arguments.
-        # Direct construction/replacement must still verify a supplied ID.
-        if _mint_token is _CONSERVATIVE_PROOF_MINT_TOKEN:
-            return
-        if self.proof_id != _typed_id(
-            "xic.owner-backfill-conservative-no-request:",
-            _conservative_no_request_basis(
-                processing_owners=self.processing_owners,
-                group_identity=self.group_identity,
-                sample=self.sample,
-                decision=self.decision,
-                completion=self.completion,
-            ),
-        ):
-            raise ValueError("conservative no-request proof identity was substituted")
-
 
 def mint_backfill_conservative_no_request_proof(
     *,
@@ -211,7 +143,6 @@ def mint_backfill_conservative_no_request_proof(
     sample: ResolvedCanonicalSampleIdentity,
     decision: ConservativeBackfillCellDecision,
     completion: BackfillCompletionProjection | None = None,
-    _group_binding: ConservativeNoRequestProofBuilder | None = None,
 ) -> BackfillConservativeNoRequestProof:
     return BackfillConservativeNoRequestProof(
         proof_id=_typed_id(
@@ -229,127 +160,7 @@ def mint_backfill_conservative_no_request_proof(
         sample=sample,
         decision=decision,
         completion=completion,
-        _group_binding=_group_binding,
-        _mint_token=_CONSERVATIVE_PROOF_MINT_TOKEN,
     )
-
-
-def _validate_conservative_group_binding(
-    owners: ProcessingOwnerReferences,
-    group_identity: CrossSampleGroupIdentity,
-    facts: ConservativeBackfillGroupFacts,
-) -> None:
-    if not isinstance(owners, ProcessingOwnerReferences):
-        raise ValueError("no-request proof crossed its exact sample owners")
-    canonical_samples = tuple(
-        sorted(owners.sample_resolutions, key=lambda x: x.identity.sample_identity_id)
-    )
-    if len(facts.sample_population) != len(canonical_samples) or any(
-        left is not right
-        for left, right in zip(facts.sample_population, canonical_samples, strict=True)
-    ):
-        raise ValueError("no-request proof crossed its complete sample population")
-    samples_by_id = {
-        sample.identity.sample_identity_id: sample for sample in canonical_samples
-    }
-    for cell in facts.source_cells:
-        source_sample = samples_by_id[cell.content.canonical_sample_identity_id]
-        validate_cid_nl_method_assessment_binding(
-            cell.method_assessment,
-            processing_owners=owners,
-            sample=source_sample,
-            method_subject=cell.method_assessment.content.method_subject,
-        )
-        if cell.group_context.processing_attempt is not owners.attempt or (
-            cell.artifact.producer_processing_attempt_id
-            != owners.attempt.processing_attempt_id
-        ):
-            raise ValueError("no-request proof crossed its current source attempt")
-    if not facts.group_frozen:
-        raise ValueError("no-request proof requires exact frozen conservative facts")
-    if group_identity != validate_cross_sample_peak_group_identity(
-        facts.group_context.group, require_canonical=True
-    ):
-        raise ValueError("no-request proof crossed its exact group")
-
-
-def _validate_conservative_no_request(
-    proof: BackfillConservativeNoRequestProof,
-    group_binding: ConservativeNoRequestProofBuilder | None = None,
-) -> None:
-    # These owners consume coverage types; defer their validation imports.
-    from xic_extractor.alignment.backfill.conservative import (
-        ConservativeBackfillCellDecision,
-    )
-
-    owners = proof.processing_owners
-    if not isinstance(owners, ProcessingOwnerReferences) or not any(
-        proof.sample is sample for sample in owners.sample_resolutions
-    ):
-        raise ValueError("no-request proof crossed its exact sample owners")
-    decision = proof.decision
-    if type(decision) is not ConservativeBackfillCellDecision:
-        raise TypeError("no-request proof requires a conservative owner decision")
-    facts = decision.group_facts
-    if group_binding is None:
-        _validate_conservative_group_binding(owners, proof.group_identity, facts)
-    elif (
-        type(group_binding) is not ConservativeNoRequestProofBuilder
-        or group_binding.processing_owners is not owners
-        or group_binding.group_identity is not proof.group_identity
-        or group_binding.group_facts is not facts
-    ):
-        raise ValueError("no-request proof crossed its bound group facts")
-    target = decision.target_cell
-    if (
-        target.content.canonical_sample_identity_id
-        != proof.sample.identity.sample_identity_id
-        or not (
-            (
-                target.content.technical_state == "evaluated"
-                and target.content.method_result == "HOLD"
-                and target.method_assessment.content.evaluation_receipt.search_completed
-            )
-            or (
-                proof.completion is None
-                and is_unsearched_cid_nl_discovery_assessment(target.method_assessment)
-            )
-        )
-        or not target.method_assessment.content.evaluation_receipt.acquisition_supported
-        or target.peak_observation is not None
-        or target.peak_hypothesis is not None
-        or (proof.completion is not None and target.method_assessment.candidate_peaks)
-        or target.content.outside_group is not None
-        or decision.disposition != "hold"
-        or decision.matched_candidate is not None
-        or decision.candidate_evidence
-    ):
-        raise ValueError("no-request proof cannot replace an arbitrary cell result")
-    universe = decision.candidate_universe
-    if proof.completion is None:
-        if universe is not None or facts.may_attempt_backfill:
-            raise ValueError("threshold proof cannot hide an eligible backfill")
-        expected_reason = "direct_support_threshold_not_met"
-    else:
-        completion = proof.completion
-        if (
-            not facts.may_attempt_backfill
-            or universe is None
-            or completion.processing_owners is not owners
-            or completion.sample is not proof.sample
-            or completion.group_identity != proof.group_identity
-            or completion.group_center_mz != facts.group_context.group.family_center_mz
-            or completion.group_center_rt != facts.group_context.group.group_center_rt
-            or completion.backfill_assessment is not target.method_assessment
-            or universe.candidate_assessment is not target.method_assessment
-            or universe.candidate_peaks
-        ):
-            raise ValueError("empty backfill proof lost its exact completed epoch")
-        expected_reason = "backfill_candidate_universe_empty"
-    # The mapper already settled this immutable decision and its group facts.
-    # This projection binds that result; it does not evaluate the method again.
-    if decision.reason_codes != (expected_reason,):
-        raise ValueError("no-request proof does not match the conservative mapper")
 
 
 def _conservative_no_request_basis(
@@ -435,55 +246,11 @@ class BackfillEvaluationCoverageContext:
     scope: BackfillScope
     selected_family_ids: frozenset[str]
 
-    def __post_init__(self) -> None:
-        if not isinstance(self.processing_owners, ProcessingOwnerReferences):
-            raise TypeError("processing_owners must be owner-backed")
-        if not isinstance(self.input_features, tuple):
-            raise TypeError("input_features must be a canonical tuple")
-        if not isinstance(self.samples, tuple) or not self.samples:
-            raise ValueError("coverage context requires canonical samples")
-        if self.samples != self.processing_owners.sample_resolutions:
-            raise ValueError("coverage context crossed the processing sample snapshot")
-        if self.sample_order != tuple(sample.lookup_token for sample in self.samples):
-            raise ValueError("coverage context sample order crossed owner resolutions")
-        if not isinstance(self.raw_sample_stems, frozenset):
-            raise TypeError("raw_sample_stems must be a frozenset")
-        if not isinstance(self.alignment_config, AlignmentConfig):
-            raise TypeError("alignment_config must be owner-resolved")
-        _validate_request_semantics(
-            backend=self.backend,
-            window_strategy=self.window_strategy,
-            superwindow_span_factor=self.superwindow_span_factor,
-            validation_mode=self.validation_mode,
-            result_semantics=self.result_semantics,
-        )
-        if self.scope not in {
-            "full-audit",
-            "production-equivalent",
-            "selected-families",
-        }:
-            raise ValueError("coverage context Backfill scope is not closed")
-        if not isinstance(self.selected_family_ids, frozenset):
-            raise TypeError("selected_family_ids must be a frozenset")
-
 
 @dataclass(frozen=True, slots=True)
 class BackfillPlannedLogicalRequest:
     logical_request: BackfillLogicalRequestMember
     request_identity: BackfillRequestIdentity
-
-    def __post_init__(self) -> None:
-        if not isinstance(
-            self.logical_request,
-            BackfillLogicalRequestMember,
-        ):
-            raise TypeError("logical_request must be owner-minted")
-        if not isinstance(self.request_identity, BackfillRequestIdentity):
-            raise TypeError("request_identity must be owner-minted")
-        if self.logical_request.item.sample_stem != self.request_identity.sample_stem:
-            raise ValueError("logical request crosses canonical samples")
-        if self.logical_request.item.request != self.request_identity.request:
-            raise ValueError("logical request crosses canonical extraction semantics")
 
 
 @dataclass(frozen=True, slots=True)
@@ -495,129 +262,6 @@ class BackfillPlanningPosition:
     planning_reason: BackfillPlanningReason
     primary_logical_requests: tuple[BackfillPlannedLogicalRequest, ...]
     conservative_no_request_proof: BackfillConservativeNoRequestProof | None = None
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.group_identity, CrossSampleGroupIdentity):
-            raise TypeError("group_identity must be CrossSample-owned")
-        if not isinstance(self.sample, ResolvedCanonicalSampleIdentity):
-            raise TypeError("sample must be owner-resolved")
-        expected = mint_backfill_position_id(
-            processing_request_id=self.group_identity.processing_request_id,
-            group_hypothesis_id=self.group_identity.group_hypothesis_id,
-            sample_identity_id=self.sample.identity.sample_identity_id,
-        )
-        if self.position_id != expected:
-            raise ValueError("position_id mismatches exact group/sample identity")
-        if self.planning_state not in {"planned", "not_planned"}:
-            raise ValueError("planning_state is not closed")
-        if self.planning_reason not in BACKFILL_PLANNING_REASONS:
-            raise ValueError("planning_reason is not closed")
-        if not isinstance(self.primary_logical_requests, tuple):
-            raise TypeError("primary_logical_requests must be a tuple")
-        if any(
-            not isinstance(item, BackfillPlannedLogicalRequest)
-            for item in self.primary_logical_requests
-        ):
-            raise TypeError("primary logical request is not owner-minted")
-        if self.planning_state == "planned":
-            if self.planning_reason != "planned":
-                raise ValueError("planned position requires the planned reason")
-            if not self.primary_logical_requests:
-                raise ValueError("planned position requires primary logical requests")
-        elif self.planning_reason == "planned" or self.primary_logical_requests:
-            raise ValueError("not-planned position cannot retain logical requests")
-        if self.planning_reason == "no_discovery_input" and any(
-            member.canonical_sample_identity_id
-            == self.sample.identity.sample_identity_id
-            for member in self.group_identity.member_subjects
-        ):
-            raise ValueError("no-input position cannot discard a group member")
-        proof = self.conservative_no_request_proof
-        if proof is not None:
-            if not isinstance(proof, BackfillConservativeNoRequestProof):
-                raise TypeError("position requires a conservative no-request proof")
-            if (
-                self.planning_state != "not_planned"
-                or self.planning_reason != proof.planning_reason
-                or self.group_identity != proof.group_identity
-                or self.sample is not proof.sample
-            ):
-                raise ValueError("position crossed its conservative no-request proof")
-        elif self.planning_reason in {
-            "direct_support_threshold_not_met",
-            "backfill_search_completed_empty",
-        }:
-            raise ValueError("conservative no-request reason requires its owner proof")
-        logical_ids: set[str] = set()
-        for item in self.primary_logical_requests:
-            logical = item.logical_request
-            if logical.logical_request_id in logical_ids:
-                raise ValueError("position duplicates a primary logical request")
-            logical_ids.add(logical.logical_request_id)
-            if logical.group_hypothesis_id != self.group_identity.group_hypothesis_id:
-                raise ValueError("logical request crosses input group identity")
-            if logical.item.sample_stem != self.sample.lookup_token:
-                raise ValueError("logical request crosses canonical sample lookup")
-
-
-def validate_backfill_retained_candidate_position(
-    position: BackfillPlanningPosition,
-    *,
-    source_cell: CellObservationRef,
-) -> bool:
-    """Recognize a completed ambiguous source without creating a repair claim."""
-    if position.planning_reason != "retained_unresolved_candidates":
-        return False
-    assessment = source_cell.method_assessment
-    if (
-        position.planning_state != "not_planned"
-        or source_cell.content.technical_state != "evaluated"
-        or source_cell.content.method_result != "HOLD"
-        or assessment.content.method_subject.subject_kind != "untargeted_precursor"
-        or len(assessment.candidate_peaks) < 2
-        or source_cell.content.outside_group is not None
-        or source_cell.peak_observation is not None
-        or source_cell.peak_hypothesis is not None
-    ):
-        raise ValueError("retained candidate position lacks its unresolved source")
-    return True
-
-
-def validate_backfill_conservative_no_request_position(
-    position: BackfillPlanningPosition,
-    *,
-    source_cell: CellObservationRef | None = None,
-    source_population: tuple[CellObservationRef, ...] | None = None,
-) -> BackfillConservativeNoRequestProof | None:
-    """Bind the existing decision to its exact current consumer population."""
-    proof = position.conservative_no_request_proof
-    if proof is None:
-        if position.planning_reason in {
-            "direct_support_threshold_not_met",
-            "backfill_search_completed_empty",
-        }:
-            raise ValueError("conservative no-request reason requires its owner proof")
-        return None
-    if source_cell is not None and proof.decision.target_cell is not source_cell:
-        raise ValueError("no-request proof crossed its consumer source cell")
-    if source_population is not None:
-        group_cells = tuple(
-            sorted(
-                (
-                    cell
-                    for cell in source_population
-                    if cell.content.group_hypothesis_id
-                    == position.group_identity.group_hypothesis_id
-                ),
-                key=lambda cell: cell.content.canonical_sample_identity_id,
-            )
-        )
-        expected = proof.decision.group_facts.source_cells
-        if len(group_cells) != len(expected) or any(
-            left is not right for left, right in zip(group_cells, expected, strict=True)
-        ):
-            raise ValueError("no-request proof crossed its consumer cell population")
-    return proof
 
 
 @dataclass(frozen=True, slots=True)
@@ -637,86 +281,6 @@ class BackfillEvaluationPlanningEpoch:
     selected_family_ids: frozenset[str]
     positions: tuple[BackfillPlanningPosition, ...]
 
-    def __post_init__(self) -> None:
-        if not isinstance(self.processing_owners, ProcessingOwnerReferences):
-            raise TypeError("processing_owners must be owner-backed")
-        groups = validate_cross_sample_group_population(self.group_identities)
-        if groups != self.group_identities:
-            raise ValueError("group identities are not in canonical producer order")
-        if not isinstance(self.samples, tuple) or not self.samples:
-            raise ValueError("planning epoch requires canonical samples")
-        if any(
-            not isinstance(sample, ResolvedCanonicalSampleIdentity)
-            for sample in self.samples
-        ):
-            raise TypeError("planning epoch samples must be owner-resolved")
-        if self.samples != self.processing_owners.sample_resolutions:
-            raise ValueError("planning epoch crossed the processing sample snapshot")
-        if not isinstance(self.raw_sample_stems, frozenset):
-            raise TypeError("planning epoch RAW sample stems must be a frozenset")
-        if not isinstance(self.alignment_config, AlignmentConfig):
-            raise TypeError("planning epoch config must be owner-resolved")
-        _validate_request_semantics(
-            backend=self.backend,
-            window_strategy=self.window_strategy,
-            superwindow_span_factor=self.superwindow_span_factor,
-            validation_mode=self.validation_mode,
-            result_semantics=self.result_semantics,
-        )
-        if self.scope not in {
-            "full-audit",
-            "production-equivalent",
-            "selected-families",
-        }:
-            raise ValueError("planning epoch Backfill scope is not closed")
-        if not isinstance(self.selected_family_ids, frozenset):
-            raise TypeError("planning epoch selected families must be a frozenset")
-        request_id = self.processing_owners.request.processing_request_id
-        if any(group.processing_request_id != request_id for group in groups):
-            raise ValueError("planning epoch crossed the processing request")
-        expected_positions = tuple(
-            (group.group_hypothesis_id, sample.identity.sample_identity_id)
-            for group in groups
-            for sample in self.samples
-        )
-        actual_positions = tuple(
-            (
-                position.group_identity.group_hypothesis_id,
-                position.sample.identity.sample_identity_id,
-            )
-            for position in self.positions
-        )
-        if actual_positions != expected_positions:
-            raise ValueError("planning epoch does not close the Cartesian population")
-        for position in self.positions:
-            proof = validate_backfill_conservative_no_request_position(position)
-            if proof is not None and (
-                proof.processing_owners is not self.processing_owners
-                or proof.decision.group_facts.group_context.config
-                != self.alignment_config
-            ):
-                raise ValueError("planning epoch crossed its conservative proof owners")
-        expected_id = _typed_id(
-            _EPOCH_PREFIX,
-            _epoch_basis(
-                processing_request_id=request_id,
-                groups=groups,
-                samples=self.samples,
-                raw_sample_stems=self.raw_sample_stems,
-                alignment_config=self.alignment_config,
-                backend=self.backend,
-                window_strategy=self.window_strategy,
-                superwindow_span_factor=self.superwindow_span_factor,
-                validation_mode=self.validation_mode,
-                result_semantics=self.result_semantics,
-                scope=self.scope,
-                selected_family_ids=self.selected_family_ids,
-                positions=self.positions,
-            ),
-        )
-        if self.epoch_id != expected_id:
-            raise ValueError("epoch_id mismatches complete planning semantics")
-
 
 @dataclass(frozen=True, slots=True)
 class BackfillAttemptTerminal:
@@ -731,97 +295,12 @@ class BackfillAttemptTerminal:
     terminal_reason: BackfillTerminalReason | None
     physical_evaluation: PhysicalPeakEvaluation | None
 
-    def __post_init__(self) -> None:
-        if not isinstance(self.logical_request, BackfillLogicalRequestMember):
-            raise TypeError("terminal logical_request must be owner-minted")
-        if not isinstance(self.request_identity, BackfillRequestIdentity):
-            raise TypeError("terminal request_identity must be owner-minted")
-        if self.logical_request.item.sample_stem != self.request_identity.sample_stem:
-            raise ValueError("terminal crosses canonical samples")
-        if self.logical_request.item.request != self.request_identity.request:
-            raise ValueError("terminal crosses canonical extraction semantics")
-        if self.candidate_phase not in BACKFILL_CANDIDATE_PHASES:
-            raise ValueError("terminal candidate phase is not closed")
-        if (
-            isinstance(self.candidate_index, bool)
-            or not isinstance(self.candidate_index, int)
-            or self.candidate_index < 1
-        ):
-            raise ValueError("terminal candidate_index must be positive")
-        if not isinstance(self.trace_evaluated, bool):
-            raise TypeError("terminal trace_evaluated must be boolean")
-        if not isinstance(self.selected_for_output, bool):
-            raise TypeError("terminal selected_for_output must be boolean")
-        query_phase = self.candidate_phase in {
-            "primary_query",
-            "prefilter_query",
-            "validation_query",
-        }
-        expected_reason: BackfillTerminalReason | None = None
-        if self.candidate_phase == "primary_fallback":
-            expected_reason = "primary_unassessable"
-        elif self.candidate_phase == "validation_unavailable":
-            expected_reason = "validation_source_unavailable"
-        elif self.candidate_phase == "validation_fallback":
-            expected_reason = "validation_unassessable"
-        if query_phase:
-            if not self.trace_evaluated:
-                raise ValueError("query terminal must retain an evaluated trace")
-            if self.terminal_reason is not None:
-                raise ValueError("query terminal cannot carry a fallback reason")
-            if not isinstance(self.physical_evaluation, PhysicalPeakEvaluation):
-                raise ValueError("query terminal requires physical evaluation facts")
-            validate_bounded_physical_peak_evaluation(self.physical_evaluation)
-            expected_subject_id = mint_backfill_selection_subject_id(
-                request_identity=self.request_identity,
-                group_hypothesis_id=self.logical_request.group_hypothesis_id,
-                sample_stem=self.logical_request.item.sample_stem,
-                request=self.logical_request.item.request,
-                candidate_index=self.candidate_index,
-                candidate_phase=self.candidate_phase,
-            )
-            if (
-                self.physical_evaluation.question.selection_subject_id
-                != expected_subject_id
-            ):
-                raise ValueError("terminal crossed its physical evaluation subject")
-        else:
-            if self.trace_evaluated or self.physical_evaluation is not None:
-                raise ValueError("fallback terminal cannot claim physical evaluation")
-            if self.terminal_reason != expected_reason:
-                raise ValueError("fallback terminal reason mismatches its phase")
-        expected = mint_backfill_terminal_id(
-            position_id=self.position_id,
-            logical_request_id=self.logical_request.logical_request_id,
-            request_identity_id=self.request_identity.request_identity_id,
-            candidate_phase=self.candidate_phase,
-            candidate_index=self.candidate_index,
-        )
-        if self.terminal_id != expected:
-            raise ValueError("terminal_id mismatches exact attempt identity")
-
 
 @dataclass(frozen=True, slots=True)
 class BackfillEvaluationCoverageBatch:
     coverage_id: str
     epoch: BackfillEvaluationPlanningEpoch
     terminals: tuple[BackfillAttemptTerminal, ...]
-
-    def __post_init__(self) -> None:
-        _validate_batch(self.epoch, self.terminals)
-        expected = _typed_id(
-            _BATCH_PREFIX,
-            {
-                "schema": "owner_backfill_evaluation_coverage",
-                "epoch_id": self.epoch.epoch_id,
-                "terminal_ids": [item.terminal_id for item in self.terminals],
-                "terminal_evaluations": [
-                    _terminal_evaluation_basis(item) for item in self.terminals
-                ],
-            },
-        )
-        if self.coverage_id != expected:
-            raise ValueError("coverage_id mismatches complete evaluation coverage")
 
 
 def mint_backfill_position_id(
@@ -962,25 +441,10 @@ def mint_backfill_planning_epoch(
 def build_backfill_planning_epoch(
     context: BackfillEvaluationCoverageContext,
     *,
-    selected_features: tuple[object, ...],
     request_plan: BackfillRequestPlan,
 ) -> BackfillEvaluationPlanningEpoch:
-    if not isinstance(context, BackfillEvaluationCoverageContext):
-        raise TypeError("coverage context must be owner-closed")
-    if not isinstance(request_plan, BackfillRequestPlan):
-        raise TypeError("request_plan must be Owner Backfill-minted")
     if not request_plan.exact_equivalence_available:
         raise ValueError("evaluation coverage requires exact request identity")
-    expected_selection = select_backfill_features(
-        context.input_features,
-        sample_order=context.sample_order,
-        raw_sample_stems=context.raw_sample_stems,
-        alignment_config=context.alignment_config,
-        scope=context.scope,
-        selected_family_ids=context.selected_family_ids,
-    )
-    if expected_selection.features != selected_features:
-        raise ValueError("selected Backfill features crossed the owner scope")
     group_identities = tuple(
         _group_identity_from_feature(
             feature,
@@ -1103,7 +567,9 @@ def build_backfill_evaluation_coverage(
     epoch: BackfillEvaluationPlanningEpoch,
     terminals: Sequence[BackfillAttemptTerminal],
 ) -> BackfillEvaluationCoverageBatch:
+    """Join owner terminal streams without revalidating their upstream facts."""
     canonical = _canonical_terminals(epoch, tuple(terminals))
+    _require_terminal_coverage(epoch, canonical)
     return BackfillEvaluationCoverageBatch(
         coverage_id=_typed_id(
             _BATCH_PREFIX,
@@ -1121,119 +587,47 @@ def build_backfill_evaluation_coverage(
     )
 
 
-def validate_backfill_evaluation_coverage(
-    batch: BackfillEvaluationCoverageBatch,
-) -> None:
-    """Require coverage whose constructor already checked epoch and terminals."""
-    if not isinstance(batch, BackfillEvaluationCoverageBatch):
-        raise TypeError("batch must be Owner Backfill evaluation coverage")
-
-
-def _validate_batch(
+def _require_terminal_coverage(
     epoch: BackfillEvaluationPlanningEpoch,
     terminals: tuple[BackfillAttemptTerminal, ...],
 ) -> None:
-    if not isinstance(epoch, BackfillEvaluationPlanningEpoch):
-        raise TypeError("coverage requires an owner planning epoch")
-    if not isinstance(terminals, tuple) or any(
-        not isinstance(item, BackfillAttemptTerminal) for item in terminals
-    ):
-        raise TypeError("coverage terminals must be a typed tuple")
-    if terminals != _canonical_terminals(epoch, terminals):
-        raise ValueError("coverage terminals are not in canonical producer order")
-    position_by_id = {position.position_id: position for position in epoch.positions}
-    if len(position_by_id) != len(epoch.positions):
-        raise ValueError("coverage epoch duplicates a position")
-    terminal_ids: set[str] = set()
-    primary_by_position: dict[str, set[str]] = {}
-    prefilter_validation_requirements: list[tuple[object, ...]] = []
+    """Close request cardinality once, where owner terminal streams are joined."""
+    expected_primary = Counter(
+        (position.position_id, item.logical_request.logical_request_id)
+        for position in epoch.positions
+        for item in position.primary_logical_requests
+    )
+    actual_primary = Counter(
+        (item.position_id, item.logical_request.logical_request_id)
+        for item in terminals
+        if item.candidate_phase
+        in {"primary_query", "prefilter_query", "primary_fallback"}
+    )
+    if actual_primary != expected_primary:
+        raise ValueError("coverage is missing, duplicates, or adds a primary terminal")
     validation_index_by_sample: Counter[str] = Counter()
-    validation_terminals: list[tuple[object, ...]] = []
-    for terminal in terminals:
-        if terminal.terminal_id in terminal_ids:
-            raise ValueError("coverage duplicates an attempt terminal")
-        terminal_ids.add(terminal.terminal_id)
-        position = position_by_id.get(terminal.position_id)
-        if position is None:
-            raise ValueError("coverage contains an extra or rebound position")
-        logical = terminal.logical_request
-        if logical.group_hypothesis_id != position.group_identity.group_hypothesis_id:
-            raise ValueError("terminal crosses its input group position")
-        if logical.item.sample_stem != position.sample.lookup_token:
-            raise ValueError("terminal crosses its canonical sample position")
-        if position.planning_state != "planned":
-            raise ValueError("not-planned position retained an attempt terminal")
-        if terminal.candidate_phase in {
-            "primary_query",
-            "prefilter_query",
-            "primary_fallback",
+    expected_validation: Counter[tuple[object, ...]] = Counter()
+    actual_validation: Counter[tuple[object, ...]] = Counter()
+    for item in terminals:
+        signature = (item.position_id, *_terminal_request_signature(item))
+        evaluation = item.physical_evaluation
+        if (
+            item.candidate_phase == "prefilter_query"
+            and evaluation is not None
+            and evaluation.state == "available"
+            and evaluation.facts is not None
+        ):
+            sample = item.logical_request.item.sample_stem
+            index = validation_index_by_sample[sample]
+            validation_index_by_sample[sample] += 1
+            expected_validation[(*signature, index)] += 1
+        elif item.candidate_phase in {
+            "validation_query",
+            "validation_unavailable",
+            "validation_fallback",
         }:
-            primary_ids = primary_by_position.setdefault(position.position_id, set())
-            if logical.logical_request_id in primary_ids:
-                raise ValueError("logical request has two primary terminals")
-            primary_ids.add(logical.logical_request_id)
-            expected_primary_bindings = {
-                item.logical_request.logical_request_id: (
-                    item.request_identity.request_identity_id
-                )
-                for item in position.primary_logical_requests
-            }
-            if expected_primary_bindings.get(logical.logical_request_id) != (
-                terminal.request_identity.request_identity_id
-            ):
-                raise ValueError("primary terminal is missing, extra, or rebound")
-            evaluation = terminal.physical_evaluation
-            if (
-                terminal.candidate_phase == "prefilter_query"
-                and evaluation is not None
-                and evaluation.state == "available"
-                and evaluation.facts is not None
-            ):
-                validation_index = validation_index_by_sample[logical.item.sample_stem]
-                validation_index_by_sample[logical.item.sample_stem] += 1
-                validation_member = mint_backfill_logical_request_member(
-                    logical_index=validation_index,
-                    group_hypothesis_id=logical.group_hypothesis_id,
-                    item=logical.item,
-                )
-                prefilter_validation_requirements.append(
-                    (
-                        *_terminal_request_signature(terminal),
-                        validation_member.logical_index,
-                        validation_member.logical_request_id,
-                    )
-                )
-        else:
-            matching_primary = tuple(
-                item
-                for item in position.primary_logical_requests
-                if _planned_request_signature(item)
-                == _terminal_request_signature(terminal)
-            )
-            if not matching_primary:
-                raise ValueError(
-                    "validation terminal is not bound to a planned request"
-                )
-            _validate_validation_request_identity(
-                terminal.request_identity,
-                primary_identity=matching_primary[0].request_identity,
-            )
-            validation_terminals.append(
-                (
-                    *_terminal_request_signature(terminal),
-                    logical.logical_index,
-                    logical.logical_request_id,
-                )
-            )
-    for position in epoch.positions:
-        actual = primary_by_position.get(position.position_id, set())
-        expected_primary_ids = {
-            item.logical_request.logical_request_id
-            for item in position.primary_logical_requests
-        }
-        if actual != expected_primary_ids:
-            raise ValueError("coverage is missing or adds a primary terminal")
-    if Counter(validation_terminals) != Counter(prefilter_validation_requirements):
+            actual_validation[(*signature, item.logical_request.logical_index)] += 1
+    if actual_validation != expected_validation:
         raise ValueError("coverage is missing or adds a validation terminal")
 
 
@@ -1338,26 +732,6 @@ def _terminal_request_signature(
     )
 
 
-def _validate_validation_request_identity(
-    validation: BackfillRequestIdentity,
-    *,
-    primary_identity: BackfillRequestIdentity,
-) -> None:
-    if validation.validation_mode != "validation":
-        raise ValueError("validation terminal lacks validation request semantics")
-    if (
-        validation.sample_stem != primary_identity.sample_stem
-        or validation.acquisition_source != primary_identity.acquisition_source
-        or validation.request != primary_identity.request
-        or validation.backend != "raw"
-        or validation.window_strategy != "exact"
-        or validation.superwindow_span_factor
-        != primary_identity.superwindow_span_factor
-        or validation.result_semantics != primary_identity.result_semantics
-    ):
-        raise ValueError("validation terminal crossed primary request identity")
-
-
 def _epoch_basis(
     *,
     processing_request_id: str,
@@ -1430,30 +804,6 @@ def _epoch_basis(
             for item in positions
         ],
     }
-
-
-def _validate_request_semantics(
-    *,
-    backend: BackfillXicBackend,
-    window_strategy: BackfillWindowStrategy,
-    superwindow_span_factor: int,
-    validation_mode: BackfillValidationMode,
-    result_semantics: str,
-) -> None:
-    if backend not in {"raw", "ms1_index", "ms1_index_hybrid"}:
-        raise ValueError("coverage request backend is not closed")
-    if window_strategy not in {"exact", "super-window"}:
-        raise ValueError("coverage request window strategy is not closed")
-    if (
-        isinstance(superwindow_span_factor, bool)
-        or not isinstance(superwindow_span_factor, int)
-        or superwindow_span_factor < 1
-    ):
-        raise ValueError("coverage superwindow span factor must be positive")
-    if validation_mode not in {"primary", "prefilter", "validation"}:
-        raise ValueError("coverage validation mode is not closed")
-    if result_semantics != BACKFILL_TRACE_RESULT_SEMANTICS:
-        raise ValueError("coverage result semantics crossed the owner contract")
 
 
 def _terminal_evaluation_basis(
@@ -1570,6 +920,4 @@ __all__ = [
     "mint_backfill_position_id",
     "mint_backfill_selection_subject_id",
     "mint_backfill_terminal_id",
-    "validate_backfill_evaluation_coverage",
-    "validate_backfill_retained_candidate_position",
 ]

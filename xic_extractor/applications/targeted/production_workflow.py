@@ -18,7 +18,7 @@ from xic_extractor.alignment.completion import (
     WorkflowStage,
     WorkflowStageFailure,
     complete_analysis,
-    validate_completion_inputs,
+    resolve_workflow_processing_owners,
 )
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.result.application_result import (
@@ -597,8 +597,7 @@ def _apply_paired_istd_positions(
                             label,
                             "PAIRED_POSITION_SUPPORT_REJECTED",
                             "At paired-ISTD-derived reference "
-                            f"RT {reference_rt:.4f} min: "
-                            + "; ".join(failures),
+                            f"RT {reference_rt:.4f} min: " + "; ".join(failures),
                         )
                     )
             diagnostics.append(
@@ -1138,7 +1137,7 @@ def _complete_retained_target(
     work_unit_key: str,
 ) -> FinalizedTargetProductionResult:
     """Acknowledge retained acquisition, then complete its exact owner evidence."""
-    owners = validate_completion_inputs(request, adapter)
+    owners = resolve_workflow_processing_owners(request, adapter)
     if (
         runtime.manifest.attempt is not request.processing_attempt
         or runtime.history.attempt is not request.processing_attempt

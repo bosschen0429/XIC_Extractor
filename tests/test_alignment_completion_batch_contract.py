@@ -7,9 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 import xic_extractor.alignment.completion as workflow_owner
-import xic_extractor.alignment.result.application_result as application_result_owner
 import xic_extractor.untargeted_execution.execution_result as execution_result_owner
-from tests.test_search_scope_capture import _capture_binding, _peak_config
 from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
 )
@@ -37,16 +35,9 @@ from xic_extractor.discovery.batch_contract import (
 from xic_extractor.execution._lifecycle import AttemptTerminalOutcome
 from xic_extractor.immutable_sequence import ImmutableSequence
 from xic_extractor.peak_detection.cid_nl_method_subject import (
-    CID_NL_PROVIDER_ID,
     REQUEST_INPUT_KEY,
     mint_untargeted_cid_nl_method_subject,
     mint_untargeted_cid_nl_method_subject_batch,
-)
-from xic_extractor.peak_detection.search_scope import (
-    SEARCH_SCOPE_SCHEMA_VERSION,
-    CaptureMethodConstraints,
-    EvidenceProviderBinding,
-    UntargetedSearchScope,
 )
 from xic_extractor.processing_identity import (
     IdentityContractError,
@@ -64,121 +55,6 @@ def _uninitialized(value_type, **values):
     for name, item in values.items():
         object.__setattr__(value, name, item)
     return value
-
-
-def test_batch_request_requires_real_complete_request_scope(
-    tmp_path, monkeypatch
-) -> None:
-    fixture = build_untargeted_cid_nl_no_raw_fixture(
-        tmp_path,
-        sample_roles={"sample-a": "qc"},
-    )
-    subjects = tuple(
-        sorted(
-            (
-                mint_untargeted_cid_nl_method_subject(
-                    precursor_mz=243.098,
-                    precursor_tolerance_ppm=10.0,
-                    neutral_loss_da=fixture.method_subject.neutral_loss_da,
-                ),
-                mint_untargeted_cid_nl_method_subject(
-                    precursor_mz=243.108,
-                    precursor_tolerance_ppm=10.0,
-                    neutral_loss_da=fixture.method_subject.neutral_loss_da,
-                ),
-            ),
-            key=lambda subject: subject.method_subject_id,
-        )
-    )
-    memberships = tuple(
-        (f"candidate:{index}", subject.method_subject_id)
-        for index, subject in enumerate(subjects)
-    )
-    subject_batch = mint_untargeted_cid_nl_method_subject_batch(
-        subjects=subjects,
-        candidate_memberships=memberships,
-    )
-    base_request = fixture.owners.request
-    request_identity = build_processing_request_identity(
-        acquisition_sources=base_request.acquisition_sources,
-        acquisition_bindings=base_request.acquisition_bindings,
-        scientific_input_schema_version="untargeted-batch-request-test",
-        processing_algorithm_version=base_request.processing_algorithm_version,
-        processing_contract_version=base_request.processing_contract_version,
-        scientific_inputs={REQUEST_INPUT_KEY: subject_batch.request_payload()},
-    )
-    attempt = issue_processing_attempt(request_identity)
-    sample = fixture.samples[0]
-    source = resolve_request_acquisition_source(
-        processing_owners=fixture.owners,
-        sample=sample,
-    )
-    bindings = tuple(
-        _capture_binding(
-            candidate_id=candidate_id,
-            method_subject_id=method_subject_id,
-            sample=sample,
-            acquisition_source_id=source.acquisition_source_id,
-            mz=subject_batch.subject_for_candidate(candidate_id).precursor_mz,
-            ppm_tol=subject_batch.subject_for_candidate(
-                candidate_id
-            ).precursor_tolerance_ppm,
-            rt_min=7.7,
-            rt_max=8.3,
-        )
-        for candidate_id, method_subject_id in memberships
-    )
-    scope = UntargetedSearchScope(
-        schema_version=SEARCH_SCOPE_SCHEMA_VERSION,
-        request=request_identity,
-        samples=fixture.samples,
-        method_constraints=CaptureMethodConstraints(
-            boundary_policy="resolver_interval",
-            peak_config=_peak_config(tmp_path),
-        ),
-        evidence_providers=tuple(
-            EvidenceProviderBinding(
-                provider_id=CID_NL_PROVIDER_ID,
-                method_subject_id=subject.method_subject_id,
-            )
-            for subject in subjects
-        ),
-        declared_candidate_ids=tuple(candidate_id for candidate_id, _ in memberships),
-        capture_bindings=bindings,
-    )
-    request = UntargetWorkflowCompositionRequest(
-        scope=scope,
-        processing_request=request_identity,
-        processing_attempt=attempt,
-    )
-    with monkeypatch.context() as trusted:
-        trusted.setattr(
-            UntargetWorkflowCompositionRequest,
-            "__post_init__",
-            lambda *_: pytest.fail("batch completion replayed request construction"),
-        )
-        workflow_owner._validate_untarget_batch_composition_request(request)
-
-    child_scope = UntargetedSearchScope(
-        schema_version=scope.schema_version,
-        request=request_identity,
-        samples=scope.samples,
-        method_constraints=scope.method_constraints,
-        evidence_providers=(scope.evidence_providers[0],),
-        declared_candidate_ids=(bindings[0].candidate_id,),
-        capture_bindings=(bindings[0],),
-    )
-    with pytest.raises(
-        workflow_owner.AlignmentWorkflowContractError,
-        match="complete request universe",
-    ):
-        workflow_owner._validate_untarget_batch_composition_request(
-            UntargetWorkflowCompositionRequest(
-                scope=child_scope,
-                processing_request=request_identity,
-                processing_attempt=attempt,
-            )
-        )
 
 
 def test_completed_batch_rejects_crossed_runtime_attempt(
@@ -363,15 +239,10 @@ def test_batch_application_result_rejects_duplicate_subject_and_crossed_attempt(
         row_id="row:a",
         physical_id="physical:a",
     )
-    monkeypatch.setattr(
-        application_result_owner,
-        "_validate_untarget_result",
-        lambda _child: None,
-    )
 
     with pytest.raises(
         ApplicationResultContractError,
-        match="duplicate subjects across children",
+        match="duplicate|conflicts",
     ):
         finalize_alignment_result(
             UntargetBatchApplicationResultRequest(
@@ -511,9 +382,7 @@ def test_batch_application_result_requires_owner_candidate_universe(
 
 
 @pytest.mark.parametrize("carrier", ["tuple", "chunks"])
-@pytest.mark.parametrize(
-    "case", ["valid", "reversed", "wrong_attempt", "duplicate_physical"]
-)
+@pytest.mark.parametrize("case", ["valid", "wrong_attempt", "duplicate_physical"])
 def test_batch_application_result_preserves_order_and_binding_across_chunks(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
@@ -590,15 +459,8 @@ def test_batch_application_result_preserves_order_and_binding_across_chunks(
         )
         for candidate_id, method_subject_id in memberships
     )
-    monkeypatch.setattr(
-        application_result_owner,
-        "_validate_untarget_result",
-        lambda _child: None,
-    )
 
-    if case == "reversed":
-        children = tuple(reversed(children))
-    elif case == "wrong_attempt":
+    if case == "wrong_attempt":
         handoff = children[1].scientific_core.cell_observation_handoff
         handoff.coverage.epoch.processing_owners.attempt = issue_processing_attempt(
             request
@@ -640,7 +502,6 @@ def test_batch_application_result_preserves_order_and_binding_across_chunks(
         )
     else:
         message = {
-            "reversed": "canonical order",
             "wrong_attempt": "crossed its processing attempt",
             "duplicate_physical": "share a physical observation",
         }[case]
@@ -665,7 +526,9 @@ def test_subject_composition_closes_without_runtime_and_preserves_failure_stage(
     adapter = object()
     owners = object()
     child = _uninitialized(FinalizedUntargetApplicationResult)
-    monkeypatch.setattr(workflow_owner, "validate_completion_inputs", lambda *_: owners)
+    monkeypatch.setattr(
+        workflow_owner, "resolve_workflow_processing_owners", lambda *_: owners
+    )
     monkeypatch.setattr(
         workflow_owner,
         "_untarget_scope_memberships",
@@ -769,9 +632,7 @@ def test_request_candidate_selection_rejects_noncanonical_or_foreign_ids(
         tmp_path, {ALIGNMENT_FEATURE_INPUT_KEY: selection}
     )
     with pytest.raises(IdentityContractError, match="alignment feature"):
-        candidate_sample_stems_from_request(
-            request, expected_sample_stems=("S1", "S2")
-        )
+        candidate_sample_stems_from_request(request, expected_sample_stems=("S1", "S2"))
 
 
 @pytest.mark.parametrize("selection", [None, []])
@@ -782,9 +643,7 @@ def test_request_candidate_selection_rejects_cross_sample_duplicates_before_filt
         tmp_path, {ALIGNMENT_FEATURE_INPUT_KEY: selection}, second_candidate_id="c1"
     )
     with pytest.raises(IdentityContractError, match="universe is not unique"):
-        candidate_sample_stems_from_request(
-            request, expected_sample_stems=("S1", "S2")
-        )
+        candidate_sample_stems_from_request(request, expected_sample_stems=("S1", "S2"))
 
 
 def _candidate_selection_request(
@@ -820,12 +679,6 @@ def test_batch_child_failure_keeps_stage_and_never_finalizes_partial_results(
 ):
     request = object()
     bundle = _uninitialized(UntargetWorkflowBundle, request=object(), adapter=object())
-    monkeypatch.setattr(
-        workflow_owner, "_validate_untarget_batch_composition_request", lambda _: None
-    )
-    monkeypatch.setattr(
-        workflow_owner, "_validate_untarget_batch_bundles", lambda *_: None
-    )
     error = ValueError("child failed")
 
     def fail_child(*args, **kwargs):

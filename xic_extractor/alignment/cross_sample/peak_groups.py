@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Literal, TypeAlias, cast
+from typing import Literal, TypeAlias, cast
 
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.identity_models import (
@@ -28,7 +28,6 @@ from xic_extractor.alignment.cross_sample.identity_models import (
     CrossSampleNeighborhoodStatus,
     group_member_subject_from_peak_hypothesis,
     mint_cross_sample_group_identity,
-    validate_cross_sample_group_population,
 )
 from xic_extractor.alignment.cross_sample.neighborhood_graph import (
     CrossSampleLineageEdge,
@@ -56,9 +55,6 @@ from xic_extractor.alignment.ownership_models import (
 )
 from xic_extractor.alignment.peak_trajectories import PeakTrajectories
 from xic_extractor.alignment.rt_frame import RtFrame
-
-if TYPE_CHECKING:
-    pass
 
 CrossSamplePeakGroupEdgeRole: TypeAlias = Literal[
     "membership_support",
@@ -505,6 +501,5 @@ __all__ = (
     "group_member_subject_from_peak_hypothesis",
     "mint_cross_sample_group_identity",
     "review_only_peak_group_hypotheses_from_ambiguous_records",
-    "validate_cross_sample_group_population",
     "validate_cross_sample_peak_group_identity",
 )

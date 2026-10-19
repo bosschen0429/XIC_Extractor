@@ -8,7 +8,6 @@ from typing import Literal, TypeAlias
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillEvaluationCoverageBatch,
     BackfillPlanningPosition,
-    validate_backfill_evaluation_coverage,
 )
 from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingResult,
@@ -16,7 +15,6 @@ from xic_extractor.alignment.cross_sample.grouping_result import (
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleContractError,
     CrossSampleGroupIdentity,
-    validate_cross_sample_group_population,
 )
 from xic_extractor.processing_identity import (
     canonical_identity_basis_bytes,
@@ -44,34 +42,6 @@ class CrossSamplePredecessorAssociation:
     predecessor: CrossSampleGroupIdentity
     successors: tuple[CrossSampleGroupIdentity, ...]
 
-    def __post_init__(self) -> None:
-        if type(self.predecessor) is not CrossSampleGroupIdentity:
-            raise CrossSampleAssociationContractError(
-                "predecessor association requires an exact CrossSample group"
-            )
-        if type(self.successors) is not tuple or any(
-            type(group) is not CrossSampleGroupIdentity for group in self.successors
-        ):
-            raise CrossSampleAssociationContractError(
-                "predecessor successors must be an exact typed tuple"
-            )
-        if not self.successors:
-            raise CrossSampleAssociationContractError(
-                "predecessor has no exact final successor"
-            )
-        if self.successors != tuple(
-            sorted(self.successors, key=lambda group: group.group_hypothesis_id)
-        ):
-            raise CrossSampleAssociationContractError(
-                "predecessor successors are not canonical-sorted"
-            )
-        if len({group.group_hypothesis_id for group in self.successors}) != len(
-            self.successors
-        ):
-            raise CrossSampleAssociationContractError(
-                "predecessor association duplicates a final successor"
-            )
-
 
 @dataclass(frozen=True, slots=True)
 class CrossSampleCoveragePositionAssociation:
@@ -80,24 +50,6 @@ class CrossSampleCoveragePositionAssociation:
     position: BackfillPlanningPosition
     final_successor: CrossSampleGroupIdentity
     resolution: CrossSamplePositionResolution
-
-    def __post_init__(self) -> None:
-        if type(self.position) is not BackfillPlanningPosition:
-            raise CrossSampleAssociationContractError(
-                "position association requires an exact coverage position"
-            )
-        if type(self.final_successor) is not CrossSampleGroupIdentity:
-            raise CrossSampleAssociationContractError(
-                "position association requires an exact final successor"
-            )
-        if self.resolution not in {
-            "unchanged_identity",
-            "unique_successor",
-            "exact_sample_member_successor",
-        }:
-            raise CrossSampleAssociationContractError(
-                "position association resolution is not closed"
-            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,7 +70,6 @@ class CrossSampleAssociationLineageHandoff:
             raise CrossSampleAssociationContractError(
                 "association handoff must be minted by CrossSample"
             )
-        _validate_handoff(self)
 
     @property
     def evidence_authority(self) -> str:
@@ -152,7 +103,12 @@ def build_cross_sample_association_lineage_handoff(
 ) -> CrossSampleAssociationLineageHandoff:
     """Compile exact coverage positions onto exact final CrossSample groups."""
 
-    _validate_inputs(coverage=coverage, final_receipt=final_receipt)
+    if coverage.epoch.processing_owners.request.processing_request_id != (
+        final_receipt.processing_request_id
+    ):
+        raise CrossSampleAssociationContractError(
+            "coverage and final receipt cross processing request"
+        )
     predecessor_associations, position_associations = _compile_associations(
         coverage=coverage,
         final_receipt=final_receipt,
@@ -177,60 +133,6 @@ def build_cross_sample_association_lineage_handoff(
     )
 
 
-def validate_cross_sample_association_lineage_handoff(
-    handoff: CrossSampleAssociationLineageHandoff,
-) -> None:
-    """Revalidate the complete typed handoff without reminting owner facts."""
-
-    if type(handoff) is not CrossSampleAssociationLineageHandoff:
-        raise TypeError("handoff must be an exact CrossSample association handoff")
-    _validate_handoff(handoff)
-
-
-def _validate_inputs(
-    *,
-    coverage: BackfillEvaluationCoverageBatch,
-    final_receipt: CrossSampleGroupingResult,
-) -> None:
-    if type(coverage) is not BackfillEvaluationCoverageBatch:
-        raise CrossSampleAssociationContractError(
-            "coverage must be an exact Owner Backfill coverage batch"
-        )
-    try:
-        validate_backfill_evaluation_coverage(coverage)
-    except (TypeError, ValueError) as exc:
-        raise CrossSampleAssociationContractError(
-            f"coverage is not owner-closed: {exc}"
-        ) from exc
-    if type(final_receipt) is not CrossSampleGroupingResult:
-        raise CrossSampleAssociationContractError(
-            "final receipt must be an exact CrossSample final receipt"
-        )
-    request_id = coverage.epoch.processing_owners.request.processing_request_id
-    if final_receipt.processing_request_id != request_id:
-        raise CrossSampleAssociationContractError(
-            "coverage and final receipt cross processing request"
-        )
-    _validate_initial_population(coverage=coverage, final_receipt=final_receipt)
-
-
-def _validate_initial_population(
-    *,
-    coverage: BackfillEvaluationCoverageBatch,
-    final_receipt: CrossSampleGroupingResult,
-) -> None:
-    coverage_by_id = _population_by_id(
-        coverage.epoch.group_identities, field="coverage epoch"
-    )
-    initial_by_id = _population_by_id(
-        final_receipt.initial_population, field="initial grouping"
-    )
-    if coverage_by_id != initial_by_id:
-        raise CrossSampleAssociationContractError(
-            "coverage groups do not equal the grouping result's initial population"
-        )
-
-
 def _compile_associations(
     *,
     coverage: BackfillEvaluationCoverageBatch,
@@ -240,12 +142,6 @@ def _compile_associations(
     tuple[CrossSampleCoveragePositionAssociation, ...],
 ]:
     final_population = final_receipt.final_population
-    try:
-        validate_cross_sample_group_population(final_population)
-    except (TypeError, ValueError) as exc:
-        raise CrossSampleAssociationContractError(
-            f"final population is not owner-closed: {exc}"
-        ) from exc
     predecessor_associations = tuple(
         _associate_predecessor(predecessor=group, final_population=final_population)
         for group in coverage.epoch.group_identities
@@ -296,6 +192,10 @@ def _associate_predecessor(
             key=lambda group: group.group_hypothesis_id,
         )
     )
+    if not successors:
+        raise CrossSampleAssociationContractError(
+            "predecessor group has no final successor"
+        )
     return CrossSamplePredecessorAssociation(predecessor, successors)
 
 
@@ -351,43 +251,6 @@ def _associate_position(
     )
 
 
-def _validate_handoff(handoff: CrossSampleAssociationLineageHandoff) -> None:
-    _validate_inputs(coverage=handoff.coverage, final_receipt=handoff.final_receipt)
-    expected_predecessors, expected_positions = _compile_associations(
-        coverage=handoff.coverage,
-        final_receipt=handoff.final_receipt,
-    )
-    if handoff.predecessor_associations != expected_predecessors:
-        raise CrossSampleAssociationContractError(
-            "handoff predecessor associations are missing, duplicate, extra, "
-            "partial, or reordered"
-        )
-    if handoff.position_associations != expected_positions:
-        raise CrossSampleAssociationContractError(
-            "handoff position associations are missing, duplicate, extra, "
-            "partial, or reordered"
-        )
-    if handoff.final_population != handoff.final_receipt.final_population:
-        raise CrossSampleAssociationContractError(
-            "handoff final population crosses its final receipt"
-        )
-    expected_basis = _handoff_basis(
-        coverage=handoff.coverage,
-        final_receipt=handoff.final_receipt,
-        predecessor_associations=handoff.predecessor_associations,
-        position_associations=handoff.position_associations,
-        final_population=handoff.final_population,
-    )
-    if handoff.basis_bytes != expected_basis:
-        raise CrossSampleAssociationContractError(
-            "handoff basis bytes do not bind its complete association population"
-        )
-    if handoff.handoff_id != typed_identity_digest(_HANDOFF_PREFIX, expected_basis):
-        raise CrossSampleAssociationContractError(
-            "handoff id does not bind its complete content"
-        )
-
-
 def _handoff_basis(
     *,
     coverage: BackfillEvaluationCoverageBatch,
@@ -434,12 +297,6 @@ def _population_by_id(
     *,
     field: str,
 ) -> dict[str, CrossSampleGroupIdentity]:
-    try:
-        validate_cross_sample_group_population(population)
-    except (TypeError, ValueError) as exc:
-        raise CrossSampleAssociationContractError(
-            f"{field} population is not owner-closed: {exc}"
-        ) from exc
     result = {group.group_hypothesis_id: group for group in population}
     if len(result) != len(population):
         raise CrossSampleAssociationContractError(
@@ -455,5 +312,4 @@ __all__ = [
     "CrossSamplePositionResolution",
     "CrossSamplePredecessorAssociation",
     "build_cross_sample_association_lineage_handoff",
-    "validate_cross_sample_association_lineage_handoff",
 ]

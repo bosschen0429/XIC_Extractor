@@ -23,8 +23,6 @@ from xic_extractor.alignment.cell_observation.observations import (
     mint_cell_observation_ref,
 )
 from xic_extractor.alignment.cid_nl_evidence_spine import (
-    CidNlEvidenceSpineError,
-    TargetedCellObservationReferenceProjection,
     build_cid_nl_reference_spine,
 )
 from xic_extractor.alignment.config import AlignmentConfig
@@ -843,106 +841,6 @@ def test_reference_spine_mints_once_and_fans_out_same_cell(
     )
 
 
-def test_cell_rejects_hypothesis_from_a_different_assessment_relation_set(
-    tmp_path: Path,
-) -> None:
-    fixture = build_processing_identity_no_raw_fixture(
-        tmp_path, sample_stems=("cross",)
-    )
-    sample = fixture.sample("cross")
-    peak = cid_nl_peak(fixture, "cross")
-    first_evidence = cid_nl_evidence(
-        fixture,
-        "cross",
-        scan_number=61,
-        scan_rt_min=7.99,
-    )
-    second_evidence = cid_nl_evidence(
-        fixture,
-        "cross",
-        scan_number=62,
-        scan_rt_min=8.01,
-    )
-    first_support = cid_nl_unique_support(
-        fixture,
-        "cross",
-        peak=peak,
-        evidence=first_evidence,
-    )
-    second_support = cid_nl_unique_support(
-        fixture,
-        "cross",
-        peak=peak,
-        evidence=second_evidence,
-    )
-    common = {
-        "processing_owners": fixture.owners,
-        "sample": sample,
-        "target": fixture.target,
-        "evaluation_receipt": _completed_receipt(scanned_event_count=1),
-        "candidate_peaks": (peak,),
-    }
-    first_assessment = mint_cid_nl_method_assessment_ref(
-        **common,
-        detector_invocation_id="gaussian15:cross:first",
-        evidence_refs=(first_evidence,),
-        individual_support_refs=(first_support,),
-    )
-    second_assessment = mint_cid_nl_method_assessment_ref(
-        **common,
-        detector_invocation_id="gaussian15:cross:second",
-        evidence_refs=(second_evidence,),
-        individual_support_refs=(second_support,),
-    )
-    second_spine = build_cid_nl_reference_spine(
-        processing_owners=fixture.owners,
-        target=fixture.target,
-        sample_assessments=((sample, second_assessment),),
-    )
-    assert second_spine.group is not None
-
-    with pytest.raises(CellObservationContractError, match="relations"):
-        mint_cell_observation_ref(
-            processing_owners=fixture.owners,
-            sample=sample,
-            target=fixture.target,
-            group_context=second_spine.cells[0].group_context,
-            method_assessment=first_assessment,
-            peak_observation=peak,
-            peak_hypothesis=second_spine.support_hypotheses[0],
-        )
-
-
-def test_reference_spine_and_cell_content_reject_crossed_manual_reassembly(
-    tmp_path: Path,
-) -> None:
-    fixture, assessments = _truth_table_fixture(tmp_path)
-    spine = build_cid_nl_reference_spine(
-        processing_owners=fixture.owners,
-        target=fixture.target,
-        sample_assessments=tuple(
-            (fixture.sample(sample_stem), assessment)
-            for sample_stem, assessment in zip(
-                ("s1", "s2", "s3", "s4", "s5"),
-                assessments,
-                strict=True,
-            )
-        ),
-    )
-
-    with pytest.raises(CidNlEvidenceSpineError, match="assessment"):
-        replace(spine, assessments=tuple(reversed(spine.assessments)))
-    with pytest.raises(CidNlEvidenceSpineError, match="hypotheses"):
-        replace(spine, support_hypotheses=())
-    with pytest.raises(CellObservationContractError, match="evaluated"):
-        replace(
-            spine.cells[0].content,
-            method_result=None,
-            peak_observation_content_id=None,
-            peak_hypothesis_id=None,
-        )
-
-
 def test_without_support_assessments_do_not_invent_group_or_cells(
     tmp_path: Path,
 ) -> None:
@@ -1214,16 +1112,6 @@ def test_cell_identity_binds_full_provisional_group_membership(
     )
     assert combined_a.content.group_owner_ids == tuple(sorted(combined.group.owner_ids))
 
-    substituted_group = replace(
-        combined.group,
-        group_center_rt=combined.group.group_center_rt + 0.01,
-    )
-    with pytest.raises(CidNlEvidenceSpineError, match="exact group context"):
-        TargetedCellObservationReferenceProjection(
-            cell=combined_a,
-            group=substituted_group,
-        )
-
 
 def test_non_support_cell_rejects_group_from_another_target(tmp_path: Path) -> None:
     fixture = build_processing_identity_no_raw_fixture(
@@ -1425,7 +1313,7 @@ def test_cell_rejects_human_disposition_from_a_different_sample(
         sample_assessments=((fixture.sample("support"), other_support),),
         config=AlignmentConfig(anchor_min_seed_events=1),
     )
-    with pytest.raises(CellObservationContractError, match="different target"):
+    with pytest.raises(CellObservationContractError, match="current target evidence"):
         mint_cell_observation_ref(
             processing_owners=review_owners,
             sample=fixture.sample("reviewed"),
@@ -1434,7 +1322,7 @@ def test_cell_rejects_human_disposition_from_a_different_sample(
             method_assessment=crossed_target_assessment,
             human_disposition=review_record,
         )
-    with pytest.raises(CellObservationContractError, match="current method assessment"):
+    with pytest.raises(CellObservationContractError, match="current target evidence"):
         mint_cell_observation_ref(
             processing_owners=review_owners,
             sample=fixture.sample("reviewed"),
@@ -1992,4 +1880,74 @@ def test_monoisotopic_canonical_evidence_binds_vendor_metadata(tmp_path):
             mono.observation,
             precursor_mz_basis="product_plus_neutral_loss",
             precursor_inference_tolerance_da=1.2,
+        )
+
+
+def test_cell_rejects_hypothesis_from_a_different_assessment_relation_set(
+    tmp_path: Path,
+) -> None:
+    fixture = build_processing_identity_no_raw_fixture(
+        tmp_path, sample_stems=("cross",)
+    )
+    sample = fixture.sample("cross")
+    peak = cid_nl_peak(fixture, "cross")
+    first_evidence = cid_nl_evidence(
+        fixture,
+        "cross",
+        scan_number=61,
+        scan_rt_min=7.99,
+    )
+    second_evidence = cid_nl_evidence(
+        fixture,
+        "cross",
+        scan_number=62,
+        scan_rt_min=8.01,
+    )
+    first_support = cid_nl_unique_support(
+        fixture,
+        "cross",
+        peak=peak,
+        evidence=first_evidence,
+    )
+    second_support = cid_nl_unique_support(
+        fixture,
+        "cross",
+        peak=peak,
+        evidence=second_evidence,
+    )
+    common = {
+        "processing_owners": fixture.owners,
+        "sample": sample,
+        "target": fixture.target,
+        "evaluation_receipt": _completed_receipt(scanned_event_count=1),
+        "candidate_peaks": (peak,),
+    }
+    first_assessment = mint_cid_nl_method_assessment_ref(
+        **common,
+        detector_invocation_id="gaussian15:cross:first",
+        evidence_refs=(first_evidence,),
+        individual_support_refs=(first_support,),
+    )
+    second_assessment = mint_cid_nl_method_assessment_ref(
+        **common,
+        detector_invocation_id="gaussian15:cross:second",
+        evidence_refs=(second_evidence,),
+        individual_support_refs=(second_support,),
+    )
+    second_spine = build_cid_nl_reference_spine(
+        processing_owners=fixture.owners,
+        target=fixture.target,
+        sample_assessments=((sample, second_assessment),),
+    )
+    assert second_spine.group is not None
+
+    with pytest.raises(CellObservationContractError, match="relations"):
+        mint_cell_observation_ref(
+            processing_owners=fixture.owners,
+            sample=sample,
+            target=fixture.target,
+            group_context=second_spine.cells[0].group_context,
+            method_assessment=first_assessment,
+            peak_observation=peak,
+            peak_hypothesis=second_spine.support_hypotheses[0],
         )

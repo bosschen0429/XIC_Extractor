@@ -101,7 +101,7 @@ def test_workflow_forwards_exact_owner_objects_once(
 
     monkeypatch.setattr(
         workflow_owner,
-        "validate_completion_inputs",
+        "resolve_workflow_processing_owners",
         lambda supplied_request, supplied_adapter: (
             calls.append(("validate", supplied_request, supplied_adapter)) or owners
         ),

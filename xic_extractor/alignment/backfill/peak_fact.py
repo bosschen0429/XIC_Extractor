@@ -46,8 +46,6 @@ from xic_extractor.alignment.backfill.request_plan import (
 from xic_extractor.alignment.backfill.result import (
     _BACKFILL_PEAK_FACT_OBSERVATION_MINT_TOKEN,
     BackfillCandidateAuditRow,
-    BackfillExtractionResult,  # noqa: F401
-    BackfillLogicalExtractionResult,  # noqa: F401
     BackfillPeakFactObservation,
     BackfillPeakFactReceipt,
     BackfillRequestReuseObservation,
@@ -55,7 +53,12 @@ from xic_extractor.alignment.backfill.result import (
     BackfillSource,
     _BackfillCandidateRecord,
     _BackfillCoverageAttempt,
-    validate_backfill_peak_fact_observation,  # noqa: F401
+)
+from xic_extractor.alignment.backfill.result import (
+    BackfillExtractionResult as BackfillExtractionResult,
+)
+from xic_extractor.alignment.backfill.result import (
+    BackfillLogicalExtractionResult as BackfillLogicalExtractionResult,
 )
 from xic_extractor.alignment.backfill.runtime_projection import (
     BackfillRuntimeFeature,
@@ -199,7 +202,6 @@ def build_backfill_result(
     evaluation_epoch = (
         build_backfill_planning_epoch(
             evaluation_coverage_context,
-            selected_features=features,
             request_plan=request_plan,
         )
         if evaluation_coverage_context is not None
@@ -795,8 +797,6 @@ def build_backfill_result(
             evaluation_coverage_terminals if evaluation_epoch is None else ()
         ),
     )
-
-
 
 
 def _append_candidate_record(

@@ -29,50 +29,6 @@ class UntargetedCidNlAssessmentInput:
     discovery_projections: tuple[UntargetedCidNlProjectionRef, ...] = ()
 
     def __post_init__(self) -> None:
-        if not isinstance(self.sample, ResolvedCanonicalSampleIdentity):
-            raise UntargetedCidNlGoldenPathError(
-                "sample input requires an owner-resolved canonical sample"
-            )
-        if not isinstance(self.assessment, CidNlMethodAssessmentRef):
-            raise UntargetedCidNlGoldenPathError(
-                "sample input requires an owner-backed method assessment"
-            )
-        if not isinstance(self.discovery_projections, tuple) or any(
-            not isinstance(item, UntargetedCidNlProjectionRef)
-            for item in self.discovery_projections
-        ):
-            raise UntargetedCidNlGoldenPathError(
-                "discovery_projections must contain exact Untargeted projection refs"
-            )
-        sample_id = self.sample.identity.sample_identity_id
-        if self.assessment.content.canonical_sample_identity_id != sample_id:
-            raise UntargetedCidNlGoldenPathError(
-                "sample and assessment reference different canonical samples"
-            )
-        projection_sample_ids = {
-            item.canonical_sample_identity_id for item in self.discovery_projections
-        }
-        if projection_sample_ids.difference({sample_id}):
-            raise UntargetedCidNlGoldenPathError(
-                "Discovery projection references a different canonical sample"
-            )
-        evidence_artifact_ids = tuple(
-            sorted(
-                evidence.artifact.evidence_artifact_id
-                for evidence in self.assessment.evidence_refs
-            )
-        )
-        projected_artifact_ids = tuple(
-            sorted(
-                projection.canonical_evidence_artifact_id
-                for projection in self.discovery_projections
-            )
-        )
-        if projected_artifact_ids != evidence_artifact_ids:
-            raise UntargetedCidNlGoldenPathError(
-                "Discovery projections must cover every assessment evidence ref "
-                "exactly once"
-            )
         object.__setattr__(
             self,
             "discovery_projections",
@@ -91,27 +47,3 @@ class UntargetedCidNlBackfillInput:
 
     sample: ResolvedCanonicalSampleIdentity
     candidate_assessment: CidNlMethodAssessmentRef
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.sample, ResolvedCanonicalSampleIdentity):
-            raise UntargetedCidNlGoldenPathError(
-                "backfill input requires an owner-resolved canonical sample"
-            )
-        if not isinstance(self.candidate_assessment, CidNlMethodAssessmentRef):
-            raise UntargetedCidNlGoldenPathError(
-                "backfill input requires an owner-backed assessment"
-            )
-        if self.candidate_assessment.content.canonical_sample_identity_id != (
-            self.sample.identity.sample_identity_id
-        ):
-            raise UntargetedCidNlGoldenPathError(
-                "backfill assessment references a different sample"
-            )
-        if self.candidate_assessment.content.method_result != "HOLD":
-            raise UntargetedCidNlGoldenPathError(
-                "backfill input must be a completed HOLD assessment"
-            )
-        if not self.candidate_assessment.candidate_peaks:
-            raise UntargetedCidNlGoldenPathError(
-                "backfill input must retain its complete non-empty candidate universe"
-            )

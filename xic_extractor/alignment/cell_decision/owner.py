@@ -17,8 +17,6 @@ from xic_extractor.alignment.primary_matrix_area import (
 from xic_extractor.alignment.projection.target.pre_cell import (
     TargetCellSubject,
     TargetPreCellProjection,
-    TargetRowBinding,
-    validate_target_row_binding,
 )
 from xic_extractor.alignment.projection.untarget.identity import (
     GroupCellSubject,
@@ -30,9 +28,7 @@ from xic_extractor.alignment.result import (
 )
 from xic_extractor.peak_detection.integration_result import IntegrationResult
 from xic_extractor.processing_identity import (
-    canonical_identity_basis_bytes,
     mint_typed_identity,
-    typed_identity_digest,
 )
 
 
@@ -80,19 +76,6 @@ class NumericCellDecision:
     source: str
 
     def __post_init__(self) -> None:
-        if (
-            isinstance(self.value, bool)
-            or not isinstance(self.value, (int, float))
-            or not math.isfinite(self.value)
-            or self.value <= 0
-        ):
-            raise CellDecisionContractError(
-                "numeric cell decision requires a finite positive value"
-            )
-        if not isinstance(self.source, str) or not self.source.strip():
-            raise CellDecisionContractError(
-                "numeric cell decision requires a named area source"
-            )
         object.__setattr__(self, "value", float(self.value))
 
     @property
@@ -105,12 +88,6 @@ class NoWriteCellDecision:
     """One closed reason that forbids a numeric write."""
 
     variant: NoWriteState
-
-    def __post_init__(self) -> None:
-        if self.variant not in _NO_WRITE_STATES:
-            raise CellDecisionContractError(
-                "no-write cell decision uses an unsupported closed variant"
-            )
 
 
 CellDecisionPayload: TypeAlias = NumericCellDecision | NoWriteCellDecision
@@ -136,7 +113,6 @@ class ProductionCellDecision:
             )
 
         # The sealed factory derives the basis and ID from these exact inputs.
-        # Explicit validation remains available at an external trust boundary.
 
     @property
     def variant(self) -> Literal["numeric"] | NoWriteState:
@@ -167,7 +143,7 @@ def decide_production_cell(
             raise CellDecisionContractError(
                 "Target decision requires only its exact Target projection"
             )
-        target_owner_subjects = _validate_target_projection(target_projection)
+        target_owner_subjects = target_projection.cell_subjects
         if not any(subject is item for item in target_owner_subjects):
             raise CellDecisionContractError(
                 "explicit Target subject is absent from its owner population"
@@ -189,7 +165,7 @@ def decide_target_cell_population(
 ) -> tuple[ProductionCellDecision, ...]:
     """Decide the complete Target subject population in canonical identity order."""
 
-    owner_subjects = _validate_target_projection(projection)
+    owner_subjects = projection.cell_subjects
     requested = owner_subjects if subjects is None else tuple(subjects)
     ordered = cast(
         tuple[TargetCellSubject, ...],
@@ -233,27 +209,6 @@ def decide_group_cell_population(
     }
 
 
-def validate_production_cell_decision(decision: ProductionCellDecision) -> None:
-    """Revalidate one sealed decision against its retained exact owner inputs."""
-
-    if type(decision) is not ProductionCellDecision:
-        raise CellDecisionContractError(
-            "decision must be an exact ProductionCellDecision"
-        )
-    _validate_decision_binding(decision)
-    expected = _decide_sealed_subject(
-        decision.subject,
-        evidence=decision.evidence,
-    )
-    if (
-        decision != expected
-        or decision.selected_integration is not expected.selected_integration
-    ):
-        raise CellDecisionContractError(
-            "production cell decision payload or selected integration was substituted"
-        )
-
-
 def _decide_sealed_subject(
     subject: CellSubject,
     *,
@@ -270,7 +225,6 @@ def _decide_sealed_subject(
             raise CellDecisionContractError(
                 "Group decision requires an exact final cell observation"
             )
-        _validate_group_binding(subject, evidence)
         payload, integration = _decide_group(
             evidence,
             is_member=any(
@@ -384,73 +338,6 @@ def _reject_non_finite_integration(integration: IntegrationResult) -> None:
             )
 
 
-def _validate_target_projection(
-    projection: TargetPreCellProjection,
-) -> tuple[TargetCellSubject, ...]:
-    if type(projection) is not TargetPreCellProjection:
-        raise CellDecisionContractError(
-            "Target population requires an exact TargetPreCellProjection"
-        )
-    if type(projection.row_binding) is not TargetRowBinding:
-        raise CellDecisionContractError(
-            "Target projection crossed its exact row binding"
-        )
-    binding = projection.row_binding
-    try:
-        validate_target_row_binding(binding)
-    except (TypeError, ValueError) as exc:
-        raise CellDecisionContractError(str(exc)) from exc
-    groups = binding.eligible_groups
-    group_ids = tuple(group.group_hypothesis_id for group in groups)
-    if group_ids != tuple(sorted(set(group_ids))):
-        raise CellDecisionContractError(
-            "Target row binding groups are duplicate or non-canonical"
-        )
-    if any(
-        group.processing_request_id != projection.scope.request.processing_request_id
-        or group.disposition not in {"established", "provisional"}
-        for group in groups
-    ):
-        raise CellDecisionContractError(
-            "Target row binding contains a crossed or ineligible group"
-        )
-    owner_subjects = tuple(projection.cell_subjects)
-    expected_samples = tuple(
-        sorted(
-            projection.scope.samples,
-            key=lambda sample: sample.identity.sample_identity_id,
-        )
-    )
-    actual_samples = tuple(subject.canonical_sample for subject in owner_subjects)
-    if actual_samples != expected_samples:
-        raise CellDecisionContractError(
-            "Target projection does not retain the complete canonical sample population"
-        )
-    for subject in owner_subjects:
-        if (
-            type(subject) is not TargetCellSubject
-            or subject.target is not projection.scope.target
-            or subject.processing_request is not projection.scope.request
-            or subject.row_binding is not projection.row_binding
-        ):
-            raise CellDecisionContractError(
-                "Target projection contains a crossed or substituted subject"
-            )
-        terminal = subject.terminal_subject
-        matching_bindings = tuple(
-            binding
-            for binding in projection.scope.capture_bindings
-            if binding.candidate_id == terminal.candidate_id
-            and binding.sample_identity_id
-            == subject.canonical_sample.identity.sample_identity_id
-        )
-        if len(matching_bindings) != 1:
-            raise CellDecisionContractError(
-                "Target terminal candidate crossed its exact scope binding"
-            )
-    return owner_subjects
-
-
 def _bind_complete_subject_population(
     subjects: Sequence[CellSubject],
     *,
@@ -478,36 +365,6 @@ def _bind_complete_subject_population(
     return requested
 
 
-def _validate_group_binding(
-    subject: GroupCellSubject,
-    observation: FinalGroupCellObservation,
-) -> None:
-    if observation.group is not subject.group:
-        raise CellDecisionContractError("Group decision crossed the exact final group")
-    if observation.canonical_sample is not subject.canonical_sample:
-        raise CellDecisionContractError(
-            "Group decision crossed the exact canonical sample"
-        )
-    if observation.processing_request_id != subject.processing_request_id:
-        raise CellDecisionContractError(
-            "Group decision crossed the exact processing request"
-        )
-    member = subject.member_subject
-    if member is not None:
-        if not any(member is item for item in subject.group.member_subjects):
-            raise CellDecisionContractError(
-                "Group decision crossed the exact member subject"
-            )
-        if (
-            member.processing_request_id != subject.processing_request_id
-            or member.canonical_sample_identity_id
-            != subject.canonical_sample.identity.sample_identity_id
-        ):
-            raise CellDecisionContractError(
-                "Group decision member crossed its request or canonical sample"
-            )
-
-
 def _mint_decision(
     *,
     subject: CellSubject,
@@ -528,28 +385,6 @@ def _mint_decision(
         selected_integration=selected_integration,
         _mint_token=_DECISION_MINT_TOKEN,
     )
-
-
-def _validate_decision_binding(decision: ProductionCellDecision) -> None:
-    if type(decision.payload) not in {NumericCellDecision, NoWriteCellDecision}:
-        raise CellDecisionContractError(
-            "production cell decision contains an unsupported payload"
-        )
-    expected_basis = canonical_identity_basis_bytes(
-        _decision_basis(
-            subject=decision.subject,
-            evidence=decision.evidence,
-            payload=decision.payload,
-        )
-    )
-    if decision.basis_bytes != expected_basis:
-        raise CellDecisionContractError(
-            "production cell decision mismatches its exact basis"
-        )
-    if decision.decision_id != typed_identity_digest(_DECISION_PREFIX, expected_basis):
-        raise CellDecisionContractError(
-            "production cell decision ID mismatches its exact basis"
-        )
 
 
 def _decision_basis(

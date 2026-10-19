@@ -18,8 +18,8 @@ from xic_extractor.alignment.backfill.conservative import (
 from xic_extractor.alignment.backfill.evaluation_coverage import (
     BackfillEvaluationCoverageBatch,
     BackfillPlanningPosition,
-    ConservativeNoRequestProofBuilder,
     build_backfill_evaluation_coverage,
+    mint_backfill_conservative_no_request_proof,
     mint_backfill_planning_epoch,
     mint_backfill_position_id,
 )
@@ -384,7 +384,6 @@ def _close_cell_coverage(
         ): item
         for item in completed_empty_backfills
     }
-    builders: dict[str, ConservativeNoRequestProofBuilder] = {}
     no_request_proofs = {}
     for sample, facts in plan.proof_positions:
         group = facts.group_context.group_identity
@@ -404,14 +403,12 @@ def _close_cell_coverage(
         (decision,) = map_conservative_backfill_candidates(
             (facts,), sample=sample, candidate_universes=universes
         )
-        builder = builders.get(group.group_hypothesis_id)
-        if builder is None:
-            builder = ConservativeNoRequestProofBuilder(
-                processing_owners=owners, group_identity=group, group_facts=facts
-            )
-            builders[group.group_hypothesis_id] = builder
-        no_request_proofs[key] = builder.mint(
-            sample=sample, decision=decision, completion=completion
+        no_request_proofs[key] = mint_backfill_conservative_no_request_proof(
+            processing_owners=owners,
+            group_identity=group,
+            sample=sample,
+            decision=decision,
+            completion=completion,
         )
     positions = tuple(
         BackfillPlanningPosition(

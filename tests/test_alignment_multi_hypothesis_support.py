@@ -20,7 +20,6 @@ from xic_extractor.alignment.grouping_bootstrap import (
 from xic_extractor.alignment.hypothesis_owner_adapter import (
     compose_cid_nl_peak_hypotheses_from_assessment,
     owner_from_cid_nl_assessment_support,
-    validate_cid_nl_assessment_hypothesis_closure,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
@@ -115,11 +114,6 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
         right.content.peak_observation_content_id,
     }
     for hypothesis in hypotheses:
-        validate_cid_nl_assessment_hypothesis_closure(
-            sample=sample,
-            assessment=assessment,
-            hypothesis=hypothesis,
-        )
         owner = owner_from_cid_nl_assessment_support(
             sample=sample,
             assessment=assessment,
@@ -129,7 +123,7 @@ def test_one_assessment_preserves_two_individually_supported_peaks(
         assert owner.peak_shape is not None
         observation = hypothesis.peak_observation_refs[0].content
         assert owner.peak_shape.source_point_count == sum(
-            abs(rt - observation.integration.rt_apex_min) <= .35
+            abs(rt - observation.integration.rt_apex_min) <= 0.35
             for rt in observation.rt
         )
 
@@ -294,7 +288,9 @@ def test_supported_identity_uses_independent_relation_masses_per_sample(
                 scan_precursor_mz=500.0,
                 precursor_inference_tolerance_da=0.8,
                 precursor_metadata=Ms2PrecursorMetadata(
-                    charge=1, isolation_width_da=1.6, isolation_offset_da=0.0,
+                    charge=1,
+                    isolation_width_da=1.6,
+                    isolation_offset_da=0.0,
                     master_scan_number=300,
                 ),
                 ms1_precursor_observation=Ms1PrecursorObservation(
