@@ -5,15 +5,21 @@ from pathlib import Path
 import pytest
 
 from xic_extractor.tabular_io import (
+    bool_value,
     file_sha256,
     format_diagnostic_value,
     format_spreadsheet_value,
+    numeric_equal,
+    optional_float,
+    optional_int,
     read_delimited_rows,
     read_tsv_required,
     read_tsv_with_header,
     render_delimited_rows,
     required_indexes,
     rows_by_text_field,
+    split_semicolon_labels,
+    text_value,
     write_delimited_rows,
     write_tsv,
 )
@@ -360,6 +366,26 @@ def test_file_sha256_supports_uppercase_and_lowercase_metadata(
 
     assert file_sha256(path) == expected.upper()
     assert file_sha256(path, uppercase=False) == expected
+
+
+def test_shared_scalar_parsers_match_diagnostic_loader_contracts() -> None:
+    assert optional_float(" 1.25 ") == 1.25
+    assert optional_float("'-8.6973") == -8.6973
+    assert optional_float(float("inf")) is None
+    assert optional_float("not numeric") is None
+    assert optional_int("3.9") == 3
+    assert optional_int("") is None
+    assert bool_value("TRUE") is True
+    assert bool_value("yes") is True
+    assert bool_value("0") is False
+    assert bool_value("maybe") is None
+    assert text_value(None) == ""
+    assert text_value("  A  ") == "A"
+    assert split_semicolon_labels(" a ; ; b ") == ["a", "b"]
+    assert numeric_equal("1.0000001", "1.0000002") is True
+    assert numeric_equal("1.01", "1.02") is False
+    assert numeric_equal(" raw ", "raw") is True
+    assert numeric_equal("raw", "other") is False
 
 
 def test_rows_by_text_field_preserves_group_order() -> None:

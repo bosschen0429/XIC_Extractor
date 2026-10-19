@@ -10,6 +10,34 @@ from xic_extractor.discovery.blank_qualification import (
 )
 
 
+@pytest.mark.parametrize("suffix", [".json", ".json.gz"])
+def test_loaded_unordered_library_still_matches_background(
+    tmp_path: Path, suffix: str,
+) -> None:
+    import gzip
+    import json
+
+    path = tmp_path / f"library{suffix}"
+    payload = {
+        "version": "blank_background_library",
+        "min_intensity": 25000.0,
+        "source_blanks": ["B1"],
+        "ions": [
+            {"mz": mz, "max_intensity": 100000.0,
+             "scan_count": 5, "source_blank": "B1"}
+            for mz in [300.0, 100.0, 200.0]
+        ],
+    }
+    if suffix.endswith(".gz"):
+        with gzip.open(path, "wt", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+    else:
+        path.write_text(json.dumps(payload), encoding="utf-8")
+    library = BlankBackgroundLibrary.load_json(path)
+    (match,) = library.match(300.0, ppm_tol=10.0)
+    assert match[0].mz == 300.0
+
+
 def test_background_library_snapshot_preserves_precision_and_rejects_noncanonical(
 ) -> None:
     import json
@@ -432,6 +460,93 @@ def test_run_discovery_cli_missing_blank_library_fails(tmp_path: Path) -> None:
         ]
     )
     assert code == 2
+
+
+@pytest.mark.parametrize("change", ["same_path_new_content", "new_dir_same_names"])
+def test_run_discovery_blank_dir_uses_current_blank_content(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str,
+) -> None:
+    from scripts.run_discovery import main
+
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    sample_raw = raw_dir / "sample.raw"
+    sample_raw.write_bytes(b"sample")
+
+    blank_dir = tmp_path / "blanks"
+    blank_dir.mkdir()
+    (blank_dir / "Blank_1.raw").write_bytes(b"100000")
+
+    dll_dir = tmp_path / "dll"
+    dll_dir.mkdir()
+
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+
+    cached_file = output_dir / "blank_library.json"
+
+    def mock_extract(blank_raws, dll_dir):
+        return BlankBackgroundLibrary(
+            ions=(BlankBackgroundIon(
+                mz=300.0, max_intensity=float(blank_raws[0].read_bytes()),
+                scan_count=5, source_blank="Blank_1",
+            ),),
+            min_intensity=25000.0,
+            source_blanks=tuple(sorted(p.stem for p in blank_raws)),
+        )
+
+    monkeypatch.setattr(
+        "scripts.run_discovery.extract_blank_background_library", mock_extract
+    )
+
+    # Mock _compile_processing_run_spec and run_discovery to avoid running full pipeline
+    monkeypatch.setattr(
+        "scripts.run_discovery._compile_processing_run_spec",
+        lambda *args, **kwargs: None,
+    )
+    from unittest.mock import MagicMock
+
+    mock_outputs = MagicMock()
+    mock_outputs.candidates_csv = Path("dummy.csv")
+    monkeypatch.setattr(
+        "scripts.run_discovery.run_discovery",
+        lambda *args, **kwargs: mock_outputs,
+    )
+
+    code = main(
+        [
+            "--raw",
+            str(sample_raw),
+            "--dll-dir",
+            str(dll_dir),
+            "--output-dir",
+            str(output_dir),
+            "--blank-dir",
+            str(blank_dir),
+        ]
+    )
+    assert code == 0
+    assert BlankBackgroundLibrary.load_json(cached_file).ions[0].max_intensity == 100000
+
+    if change == "new_dir_same_names":
+        blank_dir = tmp_path / "other_blanks"
+        blank_dir.mkdir()
+    (blank_dir / "Blank_1.raw").write_bytes(b"200000")
+    code = main(
+        [
+            "--raw",
+            str(sample_raw),
+            "--dll-dir",
+            str(dll_dir),
+            "--output-dir",
+            str(output_dir),
+            "--blank-dir",
+            str(blank_dir),
+        ]
+    )
+    assert code == 0
+    library = BlankBackgroundLibrary.load_json(cached_file)
+    assert library.ions[0].max_intensity == 200000
 
 
 def test_run_discovery_explicit_disable_skips_blank_directory(
