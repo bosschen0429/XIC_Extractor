@@ -231,12 +231,6 @@ def test_golden_path_rejects_manifest_rewrite(
         backfill_inputs=(backfill,),
         source_artifact_relpath=SOURCE_RELPATH,
     )
-    with pytest.raises(UntargetedCidNlGoldenPathError, match="must be minted"):
-        replace(
-            projection,
-            input_quant_matrix_rows=({"Mz": "999", "RT": "999"},),
-            _mint_token=object(),
-        )
     manifest_path, checked_rows = _check_acceptance_manifest(tmp_path, projection)
     rewritten_without_sha = ({**checked_rows[0], "quant_value": "999"},)
     rewritten_sha = production_acceptance_manifest_sha256(rewritten_without_sha)

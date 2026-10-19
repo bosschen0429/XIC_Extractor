@@ -12,7 +12,7 @@ import hashlib
 import json
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import InitVar, asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import MappingProxyType
 from typing import final
@@ -59,7 +59,6 @@ from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 VALIDATION_STATUS = "production_candidate"
 PRODUCT_AUTHORITY = "none_until_checked_manifest"
 SOURCE_SCHEMA_VERSION = "untargeted_cid_nl_golden_path_source"
-_GOLDEN_PATH_PROJECTION_MINT_TOKEN = object()
 
 
 @final
@@ -84,18 +83,13 @@ class UntargetedCidNlGoldenPathProjection:
     source_artifact_relpath: str
     source_artifact_bytes: bytes
     source_artifact_sha256: str
-    _mint_token: InitVar[object] = field(kw_only=True)
     validation_status: str = VALIDATION_STATUS
     product_authority: str = PRODUCT_AUTHORITY
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         raise TypeError("UntargetedCidNlGoldenPathProjection is final")
 
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _GOLDEN_PATH_PROJECTION_MINT_TOKEN:
-            raise UntargetedCidNlGoldenPathError(
-                "golden-path projections must be minted by their orchestration owner"
-            )
+    def __post_init__(self) -> None:
         if self.validation_status != VALIDATION_STATUS:
             raise UntargetedCidNlGoldenPathError(
                 f"validation_status must be {VALIDATION_STATUS!r}"
@@ -359,7 +353,6 @@ def build_untargeted_cid_nl_golden_path(
         source_artifact_relpath=source_artifact_relpath,
         source_artifact_bytes=source_bytes,
         source_artifact_sha256=source_sha,
-        _mint_token=_GOLDEN_PATH_PROJECTION_MINT_TOKEN,
     )
 
 

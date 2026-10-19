@@ -24,7 +24,6 @@ DecisionClass = Literal["accepted", "review", "not_counted", "excluded", "ambigu
 @dataclass(frozen=True)
 class CommonEvidence:
     source: EvidenceSource
-    source_id: str = ""
     provenance: str = ""
     ms1_peak_found: bool | None = None
     ms1_apex_rt_min: float | None = None

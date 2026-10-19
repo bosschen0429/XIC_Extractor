@@ -812,8 +812,6 @@ def test_reference_spine_mints_once_and_fans_out_same_cell(
         assert untargeted.group is spine.group
         assert targeted.validation_status == "diagnostic_only"
         assert untargeted.validation_status == "diagnostic_only"
-        assert targeted.product_authority == "none"
-        assert untargeted.product_authority == "none"
 
     by_sample = {
         cell.content.canonical_sample_identity_id: cell for cell in spine.cells

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from dataclasses import InitVar, dataclass, field
+from dataclasses import dataclass, field
 from typing import Literal
 
 from xic_extractor.alignment.config import AlignmentConfig
@@ -27,7 +27,6 @@ from xic_extractor.processing_identity import (
 )
 
 _CROSS_SAMPLE_LINEAGE_EDGE_PREFIX = "xic.cross-sample-lineage-edge:"
-_INITIAL_EDGE_MINT_TOKEN = object()
 INITIAL_GROUPING_POLICY: Literal["feature-group-membership-v1"] = (
     "feature-group-membership-v1"
 )
@@ -48,7 +47,6 @@ class CrossSampleNeighborhoodEdge:
         repr=False,
         compare=False,
     )
-    _mint_token: InitVar[object | None] = field(default=None, kw_only=True, repr=False)
 
 
 def classify_cross_sample_initial_edge(

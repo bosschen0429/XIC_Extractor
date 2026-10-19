@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import InitVar, dataclass, field, fields
+from dataclasses import dataclass, field, fields
 from typing import TYPE_CHECKING, Literal, TypeAlias
 
 from xic_extractor.alignment.cross_sample.peak_groups import (
@@ -12,7 +12,6 @@ from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleLineageEdge,
 )
 from xic_extractor.alignment.projection.untarget.identity import (
-    _PROJECTION_MINT_TOKEN,
     GroupCellSubject,
     UntargetProjectionContractError,
     UntargetRowKey,
@@ -51,7 +50,6 @@ _DECISION_VARIANTS: tuple[UntargetDecisionVariant, ...] = (
     "unavailable",
 )
 _DECISION_VARIANT_SET = frozenset(_DECISION_VARIANTS)
-_MATRIX_MINT_TOKEN = object()
 
 
 def _route_for_disposition(
@@ -112,13 +110,6 @@ class UntargetMatrixRow:
     decisions: tuple[ProductionCellDecision, ...]
     counts: UntargetRowDecisionCounts
     route: UntargetRowRoute
-    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
-
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _MATRIX_MINT_TOKEN:
-            raise UntargetProjectionContractError(
-                "Matrix row must be minted by its owner entry point"
-            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,13 +123,8 @@ class UntargetMatrixProjection:
         repr=False,
         compare=False,
     )
-    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
 
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _MATRIX_MINT_TOKEN:
-            raise UntargetProjectionContractError(
-                "Matrix projection must be minted by its owner entry point"
-            )
+    def __post_init__(self) -> None:
         object.__setattr__(self, "_completion_seal", _untarget_completion_state(self))
 
     def __copy__(self) -> UntargetMatrixProjection:
@@ -227,7 +213,6 @@ def project_untarget_matrix(
                         row_key,
                         sample,
                         members.get(sample_id),
-                        _mint_token=_PROJECTION_MINT_TOKEN,
                     ),
                     evidence=observation,
                     payload=payload,
@@ -238,7 +223,6 @@ def project_untarget_matrix(
     return UntargetMatrixProjection(
         finalized_alignment=finalized_alignment,
         rows=tuple(rows),
-        _mint_token=_MATRIX_MINT_TOKEN,
     )
 
 
@@ -289,7 +273,6 @@ def _mint_matrix_row(
             destination=_route_for_disposition(row_key.group.disposition),
             reason=row_key.group.disposition,
         ),
-        _mint_token=_MATRIX_MINT_TOKEN,
     )
 
 

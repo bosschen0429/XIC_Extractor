@@ -10,8 +10,7 @@ from __future__ import annotations
 import json
 import math
 import re
-from dataclasses import InitVar, asdict, dataclass, fields
-from dataclasses import field as dataclass_field
+from dataclasses import asdict, dataclass, fields
 from typing import Literal, TypeAlias
 
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
@@ -84,7 +83,6 @@ _SAMPLE_ID_PREFIX = "xic.sample:"
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _TECHNICAL_STATES = frozenset({"evaluated", "unsupported", "failed", "not_evaluated"})
 _METHOD_RESULTS = frozenset({"SUPPORT", "HOLD", "REJECT"})
-_ASSESSMENT_MINT_TOKEN = object()
 _ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     owner_namespace="xic_extractor.peak_detection.cid_nl_method_assessment",
     semantic_role=ARTIFACT_SEMANTIC_ROLE,
@@ -420,7 +418,6 @@ class CidNlMethodAssessmentRef:
     individual_support_refs: tuple[DdaCidNlPeakSupportRef, ...]
     set_relation_refs: tuple[DdaCidNlCandidateSetRelationRef, ...]
     artifact: EvidenceArtifactRef
-    _mint_token: InitVar[object] = dataclass_field(default=None, kw_only=True)
 
 
 def resolve_cid_nl_method_relations(
@@ -595,7 +592,6 @@ def mint_cid_nl_method_assessment_ref(
         individual_support_refs=individual,
         set_relation_refs=set_relations,
         artifact=artifact,
-        _mint_token=_ASSESSMENT_MINT_TOKEN,
     )
 
 

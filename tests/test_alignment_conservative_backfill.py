@@ -122,7 +122,6 @@ def test_roles_votes_and_full_support_trace_set_are_owner_derived(
         )
     )
     assert not any("median" in field.name.lower() for field in fields(type(targeted)))
-    assert targeted.product_authority == "none"
     assert targeted.validation_status == "shadow_ready"
     assert plan_conservative_backfill_targets(
         (spine.group,), sample_population=fixture.samples
@@ -200,32 +199,6 @@ def test_group_exists_below_threshold_but_cannot_trigger_recovery(
     assert decision.matched_candidate is None
     assert decision.reason_codes == ("direct_support_threshold_not_met",)
     assert _forbidden_product_fields(ConservativeBackfillCellDecision) == set()
-
-    forged_candidate = ConservativeBackfillEvidence(
-        candidate_universe=universe,
-        peak_observation=universe.candidate_peaks[0],
-    )
-    with pytest.raises(
-        ConservativeBackfillContractError,
-        match="minted by the conservative Backfill mapper",
-    ):
-        ConservativeBackfillCellDecision(
-            group_facts=facts,
-            target_cell=decision.target_cell,
-            candidate_universe=universe,
-            candidate_evidence=(forged_candidate,),
-            matched_candidate=forged_candidate,
-            disposition="candidate_mapped",
-            reason_codes=("forged_mapping",),
-            _mint_token=object(),
-        )
-    with pytest.raises((TypeError, ValueError), match="InitVar '_mint_token'"):
-        replace(
-            decision,
-            matched_candidate=forged_candidate,
-            disposition="candidate_mapped",
-            reason_codes=("forged_mapping",),
-        )
 
 
 def test_incomplete_group_snapshot_is_held_even_when_support_threshold_passes(
@@ -700,9 +673,6 @@ def test_recovery_receipt_rejects_truncated_processing_request_population(
         "s03",
         (_peak(fixture, "s03", apex_rt=8.0),),
     )
-    with pytest.raises(ValueError, match="_mint_token"):
-        replace(valid_universe, group_facts=(facts,))
-
     payload = json.loads(
         canonical_conservative_backfill_universe_bytes(
             processing_owners=fixture.owners,

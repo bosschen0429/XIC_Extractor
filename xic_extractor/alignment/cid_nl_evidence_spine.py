@@ -44,7 +44,6 @@ from xic_extractor.processing_identity import ProcessingOwnerReferences
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
 
 VALIDATION_STATUS = "diagnostic_only"
-PRODUCT_AUTHORITY = "none"
 
 
 class CidNlEvidenceSpineError(ValueError):
@@ -60,7 +59,6 @@ class TargetedCellObservationReferenceProjection:
     cell: CellObservationRef
     group: CrossSamplePeakGroupHypothesis
     validation_status: str = VALIDATION_STATUS
-    product_authority: str = PRODUCT_AUTHORITY
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,7 +68,6 @@ class UntargetedCellObservationReferenceProjection:
     cell: CellObservationRef
     group: CrossSamplePeakGroupHypothesis
     validation_status: str = VALIDATION_STATUS
-    product_authority: str = PRODUCT_AUTHORITY
 
 
 @dataclass(frozen=True, slots=True)

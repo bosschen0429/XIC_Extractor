@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import InitVar, asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, fields
 from typing import Literal
 
 from xic_extractor.alignment.cell_observation.group_context import (
@@ -36,8 +36,6 @@ from xic_extractor.processing_identity import (
 )
 from xic_extractor.review_records import ResolvedReviewRecordRef
 from xic_extractor.sample_metadata import ResolvedCanonicalSampleIdentity
-
-_CELL_OBSERVATION_MINT_TOKEN = object()
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,7 +82,6 @@ class CellObservationRef:
     human_disposition: ResolvedReviewRecordRef | None
     artifact: EvidenceArtifactRef
     outside_group_context: CidNlCellGroupContext | None = None
-    _mint_token: InitVar[object] = field(default=None, kw_only=True)
 
 
 def _direct_member_integration(
@@ -343,7 +340,6 @@ def mint_cell_observation_ref(
         human_disposition=human_disposition,
         artifact=artifact,
         outside_group_context=outside_group_context,
-        _mint_token=_CELL_OBSERVATION_MINT_TOKEN,
     )
 
 

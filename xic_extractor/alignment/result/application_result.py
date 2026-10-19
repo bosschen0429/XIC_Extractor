@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import InitVar, dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, TypeAlias
 
 from xic_extractor.alignment.result.scientific_alignment import (
@@ -43,9 +43,6 @@ if TYPE_CHECKING:
 
 class ApplicationResultContractError(ValueError):
     """Raised when application-result owners cannot close exactly."""
-
-
-_APPLICATION_RESULT_MINT_TOKEN = object()
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,10 +117,6 @@ ApplicationResultRequest: TypeAlias = (
 class FinalizedTargetApplicationResult:
     scientific_core: FinalizedScientificAlignment
     completed_projection: TargetPostCellProjection
-    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
-
-    def __post_init__(self, _mint_token: object) -> None:
-        _require_result_mint(_mint_token)
 
     @property
     def variant(self) -> Literal["targeted"]:
@@ -144,10 +137,6 @@ class FinalizedTargetApplicationResult:
 class FinalizedUntargetApplicationResult:
     scientific_core: FinalizedScientificAlignment
     completed_projection: UntargetMatrixProjection
-    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
-
-    def __post_init__(self, _mint_token: object) -> None:
-        _require_result_mint(_mint_token)
 
     @property
     def variant(self) -> Literal["untargeted"]:
@@ -184,10 +173,6 @@ class FinalizedUntargetBatchApplicationResult:
         tuple[UntargetedCandidateExclusion, ...]
         | ImmutableSequence[UntargetedCandidateExclusion]
     )
-    _mint_token: InitVar[object]
-
-    def __post_init__(self, _mint_token: object) -> None:
-        _require_result_mint(_mint_token)
 
     @property
     def variant(self) -> Literal["untargeted_batch"]:
@@ -275,14 +260,12 @@ def finalize_alignment_result(
         return FinalizedTargetApplicationResult(
             scientific_core=core,
             completed_projection=request.completed_projection,
-            _mint_token=_APPLICATION_RESULT_MINT_TOKEN,
         )
     if type(request) is UntargetApplicationResultRequest:
         core = request.scientific_core
         result = FinalizedUntargetApplicationResult(
             scientific_core=core,
             completed_projection=request.completed_projection,
-            _mint_token=_APPLICATION_RESULT_MINT_TOKEN,
         )
         return result
     if type(request) is UntargetBatchApplicationResultRequest:
@@ -293,7 +276,6 @@ def finalize_alignment_result(
             processing_attempt=request.processing_attempt,
             children=request.children,
             excluded_candidates=request.excluded_candidates,
-            _mint_token=_APPLICATION_RESULT_MINT_TOKEN,
         )
     raise ApplicationResultContractError(
         "application result requires an exact discriminated request variant"
@@ -308,7 +290,6 @@ def _finalize_fresh_untarget_result(
     result = FinalizedUntargetApplicationResult(
         scientific_core=request.scientific_core,
         completed_projection=request.completed_projection,
-        _mint_token=_APPLICATION_RESULT_MINT_TOKEN,
     )
     return result
 
@@ -438,13 +419,6 @@ def _candidate_sample_ids_from_request(
 
 def _sample_sort_key(sample: ResolvedCanonicalSampleIdentity) -> str:
     return sample.identity.sample_identity_id
-
-
-def _require_result_mint(value: object) -> None:
-    if value is not _APPLICATION_RESULT_MINT_TOKEN:
-        raise ApplicationResultContractError(
-            "finalized application result must be minted by its owner finalizer"
-        )
 
 
 __all__ = (

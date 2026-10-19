@@ -23,7 +23,6 @@ from xic_extractor.alignment.projection.target.pre_cell import project_target_pr
 from xic_extractor.alignment.projection.untarget import UntargetMatrixProjection
 from xic_extractor.alignment.projection.untarget import matrix as untarget_matrix
 from xic_extractor.alignment.result import (
-    ApplicationResultContractError,
     FinalizedTargetApplicationResult,
     FinalizedUntargetApplicationResult,
     TargetApplicationResultRequest,
@@ -156,19 +155,6 @@ def test_untarget_result_consumes_projection_without_recomputing_it(
 
     assert result.scientific_core is scientific_core
     assert result.completed_projection is projection
-
-
-def test_finalized_application_result_cannot_be_caller_minted(
-    tmp_path: Path,
-) -> None:
-    scientific_core, projection = _target_completion(tmp_path / "target")
-
-    with pytest.raises(ApplicationResultContractError, match="must be minted"):
-        FinalizedTargetApplicationResult(
-            scientific_core=cast(Any, scientific_core),
-            completed_projection=projection,
-            _mint_token=object(),
-        )
 
 
 def _restore_test_mapping_proxy(values):

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import InitVar, dataclass, field
+from dataclasses import dataclass
 from typing import Literal, TypeAlias, cast
 
 from xic_extractor.alignment.cross_sample.peak_groups import (
@@ -35,8 +35,6 @@ TargetRowBindingVariant: TypeAlias = Literal[
     "unresolved_many",
 ]
 
-_TARGET_PROJECTION_MINT_TOKEN = object()
-
 
 @dataclass(frozen=True, slots=True)
 class TargetRowBinding:
@@ -46,10 +44,6 @@ class TargetRowBinding:
     target: ResolvedTargetDefinition
     processing_request: ProcessingRequestIdentity
     eligible_groups: tuple[CrossSampleGroupIdentity, ...]
-    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
-
-    def __post_init__(self, _mint_token: object) -> None:
-        _require_projection_mint(_mint_token)
 
     @property
     def group(self) -> CrossSampleGroupIdentity | None:
@@ -67,10 +61,6 @@ class TargetCellSubject:
     canonical_sample: ResolvedCanonicalSampleIdentity
     row_binding: TargetRowBinding
     terminal_subject: TerminalSearchObservation
-    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
-
-    def __post_init__(self, _mint_token: object) -> None:
-        _require_projection_mint(_mint_token)
 
     @property
     def sample(self) -> ResolvedCanonicalSampleIdentity:
@@ -85,10 +75,6 @@ class TargetPreCellProjection:
     scope: TargetSearchScope
     row_binding: TargetRowBinding
     cell_subjects: tuple[TargetCellSubject, ...]
-    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
-
-    def __post_init__(self, _mint_token: object) -> None:
-        _require_projection_mint(_mint_token)
 
     @property
     def binding(self) -> TargetRowBinding:
@@ -129,7 +115,6 @@ def project_target_pre_cell(
             canonical_sample=sample,
             row_binding=row_binding,
             terminal_subject=terminals[sample.identity.sample_identity_id],
-            _mint_token=_TARGET_PROJECTION_MINT_TOKEN,
         )
         for sample in samples
     )
@@ -138,7 +123,6 @@ def project_target_pre_cell(
         scope=scope,
         row_binding=row_binding,
         cell_subjects=subjects,
-        _mint_token=_TARGET_PROJECTION_MINT_TOKEN,
     )
 
 
@@ -249,15 +233,7 @@ def _mint_row_binding(
         target=target,
         processing_request=processing_request,
         eligible_groups=eligible_groups,
-        _mint_token=_TARGET_PROJECTION_MINT_TOKEN,
     )
-
-
-def _require_projection_mint(value: object) -> None:
-    if value is not _TARGET_PROJECTION_MINT_TOKEN:
-        raise TargetProjectionContractError(
-            "Target pre-cell values must be minted by the Target projection owner"
-        )
 
 
 __all__ = (

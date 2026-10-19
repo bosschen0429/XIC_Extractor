@@ -34,7 +34,6 @@ VALIDATION_STATUS = "diagnostic_only"
 MEDIA_TYPE = "application/json"
 SERIALIZATION_FORMAT = "canonical-json-utf8-lf"
 
-_FINAL_CELL_MINT_TOKEN = object()
 _ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     # Persisted artifact-hash identity; intentionally not this module's path.
     owner_namespace="xic_extractor.alignment.cell_observations",

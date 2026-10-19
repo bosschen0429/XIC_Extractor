@@ -1,5 +1,4 @@
 import math
-from dataclasses import fields, replace
 from types import SimpleNamespace
 from typing import cast
 
@@ -10,13 +9,7 @@ from xic_extractor.alignment.matrix import (
     AlignmentRowLike,
 )
 from xic_extractor.alignment.production_decisions import (
-    ALIGNMENT_DECISION_CONFIG_FIELDS,
-    ALIGNMENT_DECISION_CONFIG_ID_PREFIX,
-    PRODUCTION_CELL_DECISION_ID_PREFIX,
-    PRODUCTION_CELL_DECISION_SCHEMA_VERSION,
-    alignment_decision_config_projection,
     build_production_decisions,
-    production_cell_decision_projection,
     production_cell_decision_record,
 )
 from xic_extractor.alignment.promotion_policy import (
@@ -24,123 +17,6 @@ from xic_extractor.alignment.promotion_policy import (
     PRIMARY_IDENTITY_RETAINED_BACKFILL_REVIEW_REASON,
 )
 from xic_extractor.peak_detection.hypotheses import IntegrationResult
-
-_PRODUCTION_CELL_DECISION_FIELDS = (
-    "owner_backfill_cell_content_id",
-    "alignment_decision_config_id",
-    "feature_family_id",
-    "sample_stem",
-    "raw_status",
-    "production_status",
-    "backfill_tier",
-    "write_matrix_value",
-    "matrix_value",
-    "blank_reason",
-    "matrix_value_source",
-)
-_EXPECTED_ALIGNMENT_DECISION_CONFIG_FIELDS = (
-    "preferred_ppm",
-    "max_ppm",
-    "preferred_rt_sec",
-    "max_rt_sec",
-    "product_mz_tolerance_ppm",
-    "observed_loss_tolerance_ppm",
-    "mz_bucket_neighbor_radius",
-    "anchor_priorities",
-    "anchor_min_evidence_score",
-    "anchor_min_seed_events",
-    "anchor_min_scan_support_score",
-    "duplicate_fold_ppm",
-    "duplicate_fold_rt_sec",
-    "duplicate_fold_product_ppm",
-    "duplicate_fold_observed_loss_ppm",
-    "duplicate_fold_min_detected_overlap",
-    "duplicate_fold_min_shared_detected_count",
-    "duplicate_fold_min_detected_jaccard",
-    "duplicate_fold_min_present_overlap",
-    "owner_window_overlap_fraction",
-    "owner_apex_close_sec",
-    "owner_tail_seed_guard_sec",
-    "owner_tail_max_secondary_ratio",
-    "owner_backfill_min_detected_samples",
-    "identity_rt_candidate_window_sec",
-    "rt_unit",
-    "fragmentation_model",
-)
-
-
-def test_alignment_decision_config_identity_covers_exact_27_fields() -> None:
-    projection = alignment_decision_config_projection(AlignmentConfig())
-
-    assert ALIGNMENT_DECISION_CONFIG_FIELDS == (
-        _EXPECTED_ALIGNMENT_DECISION_CONFIG_FIELDS
-    )
-    assert tuple(field.name for field in fields(projection)) == (
-        _EXPECTED_ALIGNMENT_DECISION_CONFIG_FIELDS
-    )
-    assert projection.alignment_decision_config_id.startswith(
-        ALIGNMENT_DECISION_CONFIG_ID_PREFIX
-    )
-
-    alternatives: dict[str, object] = {
-        name: (
-            ("MEDIUM",)
-            if name == "anchor_priorities"
-            else "changed"
-            if name in {"rt_unit", "fragmentation_model"}
-            else getattr(projection, name) + 1
-        )
-        for name in _EXPECTED_ALIGNMENT_DECISION_CONFIG_FIELDS
-    }
-    for name, value in alternatives.items():
-        assert (
-            replace(projection, **{name: value}).alignment_decision_config_id
-            != projection.alignment_decision_config_id
-        )
-
-
-def test_production_cell_projection_binds_live_cell_config_value_and_source() -> None:
-    matrix = _matrix(
-        clusters=(_feature("FAM001", evidence="owner_complete_link;owner_count=2"),),
-        cells=(
-            _cell("s1", "FAM001", "detected", 100.0),
-            _cell("s2", "FAM001", "detected", 95.0),
-        ),
-        sample_order=("s1", "s2"),
-    )
-    config = AlignmentConfig()
-    decision = build_production_decisions(matrix, config).cell("FAM001", "s1")
-
-    projection = production_cell_decision_projection(
-        decision,
-        cell=matrix.cells[0],
-        config=config,
-        owner_backfill_cell_content_id=("owner-backfill-authority-cell:" + "0" * 64),
-    )
-
-    assert projection.production_cell_decision_id.startswith(
-        PRODUCTION_CELL_DECISION_ID_PREFIX
-    )
-    assert PRODUCTION_CELL_DECISION_SCHEMA_VERSION == (
-        "production_cell_decision_projection"
-    )
-    assert PRODUCTION_CELL_DECISION_ID_PREFIX == "production-cell-decision:"
-    assert projection.matrix_value == matrix.cells[0].matrix_area
-    assert projection.matrix_value_source == matrix.cells[0].matrix_area_source
-    assert tuple(field.name for field in fields(projection)) == (
-        _PRODUCTION_CELL_DECISION_FIELDS
-    )
-    for field_name in _PRODUCTION_CELL_DECISION_FIELDS:
-        mutated = replace(
-            projection,
-            **{
-                field_name: _different_projection_value(getattr(projection, field_name))
-            },
-        )
-        assert (
-            mutated.production_cell_decision_id
-            != projection.production_cell_decision_id
-        ), field_name
 
 
 def test_detected_and_supported_backfill_write_numeric_values():
@@ -637,16 +513,6 @@ def test_bool_area_is_not_a_valid_production_matrix_area():
     assert backfilled.production_status == "rejected_backfill"
     assert backfilled.backfill_tier == "rejected_backfill"
     assert backfilled.blank_reason == "invalid_area"
-
-
-def _different_projection_value(value: object) -> object:
-    if isinstance(value, bool):
-        return not value
-    if isinstance(value, (int, float)):
-        return value + 1
-    if isinstance(value, str):
-        return f"{value}-mutated"
-    raise AssertionError(f"unsupported projection field value: {value!r}")
 
 
 def _matrix(

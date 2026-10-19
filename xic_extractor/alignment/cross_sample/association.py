@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import InitVar, dataclass, field
+from dataclasses import dataclass
 from typing import Literal, TypeAlias
 
 from xic_extractor.alignment.backfill.evaluation_coverage import (
@@ -28,7 +28,6 @@ CrossSamplePositionResolution: TypeAlias = Literal[
 ]
 
 _HANDOFF_PREFIX = "xic.cross-sample-association-lineage:"
-_HANDOFF_MINT_TOKEN = object()
 
 
 class CrossSampleAssociationContractError(CrossSampleContractError):
@@ -62,13 +61,6 @@ class CrossSampleAssociationLineageHandoff:
     position_associations: tuple[CrossSampleCoveragePositionAssociation, ...]
     final_population: tuple[CrossSampleGroupIdentity, ...]
     basis_bytes: bytes
-    _mint_token: InitVar[object] = field(kw_only=True, repr=False)
-
-    def __post_init__(self, _mint_token: object) -> None:
-        if _mint_token is not _HANDOFF_MINT_TOKEN:
-            raise CrossSampleAssociationContractError(
-                "association handoff must be minted by CrossSample"
-            )
 
 
 def build_cross_sample_association_lineage_handoff(
@@ -104,7 +96,6 @@ def build_cross_sample_association_lineage_handoff(
         position_associations=position_associations,
         final_population=final_population,
         basis_bytes=basis,
-        _mint_token=_HANDOFF_MINT_TOKEN,
     )
 
 

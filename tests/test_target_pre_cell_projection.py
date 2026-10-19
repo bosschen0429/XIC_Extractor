@@ -450,7 +450,6 @@ def _finalized_case(
                     canonical_sample_identity_id=(sample.identity.sample_identity_id),
                     trace_group_id=hypothesis.trace_group_id,
                     hypothesis=hypothesis,
-                    _mint_token=finalizer_owner._FINALIZER_MINT_TOKEN,
                 )
             )
         else:
@@ -460,7 +459,6 @@ def _finalized_case(
                     canonical_sample_identity_id=(sample.identity.sample_identity_id),
                     trace_group_id=f"trace-{sample.lookup_token}",
                     detection_status="not_detected",
-                    _mint_token=finalizer_owner._FINALIZER_MINT_TOKEN,
                 )
             )
     cell_observations = compose_final_group_cell_observation_population(
@@ -482,7 +480,6 @@ def _finalized_case(
         cell_observation_handoff=handoff,
         cell_observations=cell_observations,
         grouping_result=receipt,
-        _mint_token=finalizer_owner._FINALIZER_MINT_TOKEN,
     )
     return fixture, scope, result, hypotheses
 

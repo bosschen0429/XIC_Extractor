@@ -306,54 +306,6 @@ def test_finalizer_rejects_crossed_scope_and_request(
         )
 
 
-def test_finalized_values_cannot_be_forged_by_direct_construction(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    scope, captures, receipt, handoff, predecessor_cells = _finalization_inputs(
-        tmp_path, monkeypatch
-    )
-    result = finalize_scientific_alignment(
-        scope=scope,
-        captures=captures,
-        grouping_result=receipt,
-        cell_observation_handoff=handoff,
-        predecessor_cell_observations=predecessor_cells,
-    )
-    observed = next(
-        subject
-        for subject in result.terminal_subjects
-        if isinstance(subject, ObservedSearchSubject)
-    )
-
-    with pytest.raises(
-        FinalizedScientificAlignmentContractError,
-        match="minted by the scientific alignment finalizer",
-    ):
-        ObservedSearchSubject(
-            candidate_id=observed.candidate_id,
-            canonical_sample_identity_id=observed.canonical_sample_identity_id,
-            trace_group_id=observed.trace_group_id,
-            hypothesis=observed.hypothesis,
-            _mint_token=object(),
-        )
-
-    with pytest.raises(
-        FinalizedScientificAlignmentContractError,
-        match="minted by the scientific alignment finalizer",
-    ):
-        FinalizedScientificAlignment(
-            scope=result.scope,
-            processing_request=result.processing_request,
-            canonical_samples=result.canonical_samples,
-            terminal_subjects=result.terminal_subjects,
-            cell_observation_handoff=result.cell_observation_handoff,
-            cell_observations=result.cell_observations,
-            grouping_result=result.grouping_result,
-            _mint_token=object(),
-        )
-
-
 def _finalization_inputs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
