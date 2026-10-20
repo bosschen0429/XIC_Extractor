@@ -160,42 +160,6 @@ class _DiscoveryMs1AcquisitionResult:
     physical_bindings: tuple["DiscoveryCandidatePhysicalBinding", ...] = ()
 
 
-def backfill_ms1_candidates(
-    raw: MS1XicSource,
-    groups: Iterable[DiscoverySeedGroup],
-    *,
-    settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
-) -> tuple[DiscoveryCandidate, ...]:
-    """Preserve the scalar compatibility path for non-owner-bound callers."""
-
-    candidates: list[DiscoveryCandidate] = []
-    plans = _discovery_ms1_request_plan(groups, settings=settings)
-    for plan in plans:
-        request = plan.request
-        rt, intensity = raw.extract_xic(
-            request.mz,
-            request.rt_min,
-            request.rt_max,
-            request.ppm_tol,
-        )
-        candidates.append(
-            _candidate_from_trace(
-                plan.group,
-                rt,
-                intensity,
-                settings=settings,
-                peak_config=peak_config,
-            )
-        )
-    merged = candidate_merge.merge_candidates_by_ms1_peak_with_lineage(
-        candidates, settings=settings
-    )
-    return _verify_precursor_evidence(
-        raw, merged, plans, candidates, settings=settings
-    ).candidates
-
-
 def _backfill_ms1_candidates_with_acquisition(
     raw: BatchXICAdapter,
     groups: Iterable[DiscoverySeedGroup],
@@ -866,9 +830,7 @@ def _hold_doubly_charged_candidates(
                     "peak apex; retained for review"
                 ),
             )
-            if all(
-                doubly_charged_by_source[s] for s in binding.member_source_ordinals
-            )
+            if all(doubly_charged_by_source[s] for s in binding.member_source_ordinals)
             else candidate
             for candidate, binding in zip(
                 merge_result.candidates, merge_result.bindings, strict=True

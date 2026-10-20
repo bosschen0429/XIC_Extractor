@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -10,14 +11,19 @@ import numpy as np
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery.grouping import group_discovery_seeds
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
-from xic_extractor.discovery.ms1_backfill import backfill_ms1_candidates
+from xic_extractor.discovery.ms1_backfill import (
+    _backfill_ms1_candidates_with_acquisition,
+)
 from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
+    build_acquisition_source_identity,
     resolve_request_acquisition_source,
 )
 from xic_extractor.raw_reader import (
     EXPECTED_THERMO_DLLS,
+    THERMO_RAW_ACQUISITION_FORMAT,
+    THERMO_RAW_OBSERVATION_NAMESPACE,
     Ms2Scan,
     Ms2ScanEvent,
     RawFileHandle,
@@ -40,12 +46,24 @@ def _current_candidates(
 ):
     seeds = collect_strict_nl_seeds(raw, raw_file=raw_file, settings=settings)
     groups = group_discovery_seeds(seeds, settings=settings)
-    return backfill_ms1_candidates(
+    return _backfill_ms1_candidates_with_acquisition(
         raw,
         groups,
+        acquisition_source=raw.acquisition_source or fake_acquisition_source(),
         settings=settings,
         peak_config=peak_config,
-    )
+    ).candidates
+
+
+def fake_acquisition_source() -> AcquisitionSourceIdentity:
+    with tempfile.TemporaryDirectory() as directory:
+        raw_path = Path(directory) / "sample.raw"
+        raw_path.write_bytes(b"owner-bound-discovery")
+        return build_acquisition_source_identity(
+            raw_path,
+            acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+            observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+        )
 
 
 def _settings() -> DiscoverySettings:

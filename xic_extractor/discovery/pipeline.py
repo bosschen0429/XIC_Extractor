@@ -38,7 +38,6 @@ from xic_extractor.discovery.ms1_backfill import (
     MS1XicSource,
     _backfill_ms1_candidates_with_acquisition,
     _DiscoveryMs1Measurements,
-    backfill_ms1_candidates,
 )
 from xic_extractor.discovery.ms2_seeds import MS2ScanSource, collect_strict_nl_seeds
 from xic_extractor.discovery.peak_anchor import assign_peak_anchors
@@ -965,8 +964,6 @@ def _acquire_discovery_sample(
                 "discover.ms1_backfill",
                 sample_stem=sample_stem,
             ) as stage:
-                if run_spec is None:
-                    owner_bound_source = _owner_bound_acquisition_source(raw)
                 if run_spec is not None and acquisition_input is not None:
                     acquisition_source = acquisition_input.acquisition_source
                     acquisition_result = _backfill_ms1_candidates_with_acquisition(
@@ -985,18 +982,12 @@ def _acquire_discovery_sample(
                     physical_work_manifest = acquisition_result.physical_work_manifest
                     physical_evaluations = acquisition_result.physical_evaluations
                     physical_bindings = acquisition_result.physical_bindings
-                elif owner_bound_source is None:
-                    candidates = backfill_ms1_candidates(
-                        raw,
-                        groups,
-                        settings=settings,
-                        peak_config=peak_config,
-                    )
-                    ms1_measurements = None
-                    physical_work_manifest = ()
-                    physical_evaluations = ()
-                    physical_bindings = ()
                 else:
+                    owner_bound_source = _owner_bound_acquisition_source(raw)
+                    if owner_bound_source is None:
+                        raise ValueError(
+                            "Discovery RAW handle lacks an acquisition source"
+                        )
                     acquisition_result = _backfill_ms1_candidates_with_acquisition(
                         cast(BatchXICAdapter, raw),
                         groups,

@@ -12,6 +12,7 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
+from tests.cid_nl_raw_fixture import fake_acquisition_source
 from xic_extractor.acquisition_contract import (
     _mint_raw_acquisition_session_receipt,
     mint_raw_acquisition_session_capability,
@@ -281,10 +282,13 @@ def test_pipeline_retains_distinct_inferred_features_from_one_ms2_in_both_csvs(
     areas = {258.1085: 2_000.0, 258.6085: 8_000.0}
     monkeypatch.setattr(
         raw,
-        "extract_xic",
-        lambda mz, rt_min, rt_max, ppm_tol: (
-            np.array([7.7, 7.8, 7.9]),
-            np.array([10.0, areas[round(mz, 4)] / 2, 10.0]),
+        "extract_xic_many",
+        lambda requests: tuple(
+            XICTrace.from_arrays(
+                np.array([7.7, 7.8, 7.9]),
+                np.array([10.0, areas[round(request.mz, 4)] / 2, 10.0]),
+            )
+            for request in requests
         ),
     )
     monkeypatch.setattr(
@@ -1443,9 +1447,12 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
     assert records_by_stage["discover.group_seeds"].metrics["group_count"] == 1
     assert records_by_stage["discover.ms1_backfill"].metrics["candidate_count"] == 1
     assert records_by_stage["discover.peak_anchor"].metrics["candidate_count"] == 1
-    assert records_by_stage["discover.blank_qualification"].metrics[
-        "excluded_background_count"
-    ] == 1
+    assert (
+        records_by_stage["discover.blank_qualification"].metrics[
+            "excluded_background_count"
+        ]
+        == 1
+    )
     assert records_by_stage["discover.write_candidates_csv"].metrics["row_count"] == 1
     assert records_by_stage["discover.write_review_csv"].metrics["row_count"] == 1
     assert records_by_stage["discover.publish_outputs"].metrics == {
@@ -1814,8 +1821,14 @@ class _FakeRawHandle:
         self._intensity = np.asarray(
             [] if intensity is None else intensity, dtype=float
         )
+        self.acquisition_source = fake_acquisition_source()
+        self._chromatogram_call_count = 0
         self.entered = False
         self.closed = False
+
+    @property
+    def raw_chromatogram_call_count(self) -> int:
+        return self._chromatogram_call_count
 
     def __enter__(self) -> "_FakeRawHandle":
         self.entered = True
@@ -1827,11 +1840,32 @@ class _FakeRawHandle:
     def iter_ms2_scans(self, rt_min: float, rt_max: float) -> Iterator[Ms2ScanEvent]:
         yield from self._events
 
-    def extract_xic(
+    def extract_xic_many(
         self,
-        mz: float,
-        rt_min: float,
-        rt_max: float,
-        ppm_tol: float,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        return self._rt, self._intensity
+        requests: Sequence[XICRequest],
+    ) -> tuple[XICTrace, ...]:
+        self._chromatogram_call_count += len(
+            {self.scan_window_for_request(request) for request in requests}
+        )
+        return tuple(
+            XICTrace.from_arrays(self._rt, self._intensity) for _request in requests
+        )
+
+    def scan_window_for_request(self, request: XICRequest) -> tuple[int, int]:
+        return 0, max(len(self._rt) - 1, 0)
+
+
+def test_handle_without_acquisition_source_fails_instead_of_scalar_fallback(
+    tmp_path: Path,
+) -> None:
+    raw = _FakeRawHandle(events=[])
+    del raw.acquisition_source
+
+    with pytest.raises(ValueError, match="lacks an acquisition source"):
+        _acquire_discovery_sample(
+            tmp_path / "sample.raw",
+            settings=_settings(),
+            peak_config=_peak_config(tmp_path),
+            raw_opener=lambda path, dll_dir: raw,
+            timing_recorder=TimingRecorder("discovery"),
+        )
