@@ -75,8 +75,6 @@ class DiscoveryInputSource(Mapping[str, tuple[DiscoveryCandidate, ...]]):
         for stem in batch.sample_order:
             path = batch.candidate_csvs[stem]
             receipt = batch.candidate_receipts[stem]
-            if receipt is None:
-                raise ValueError("bounded Discovery input requires an owner receipt")
             before = self._stat(path)
             validate_discovery_candidate_artifact(receipt, path)
             ids = []

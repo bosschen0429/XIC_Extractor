@@ -598,7 +598,6 @@ def prepare_indexed_untargeted_plan(
     entries = []
     for stem in sorted(source):
         receipt = receipts[stem]
-        assert receipt is not None
         entries.append(
             {
                 "sample_stem": stem,

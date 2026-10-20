@@ -121,9 +121,7 @@ def _prepare(args: argparse.Namespace) -> dict:
         signal_processing_window_points=profile.window_points,
         ms1_morphology_smoothing_window_points=profile.window_points,
     )
-    batch = read_discovery_batch_index(
-        args.discovery_batch_index, require_owner_closure=True
-    )
+    batch = read_discovery_batch_index(args.discovery_batch_index)
     resources = prepare_untargeted_alignment_inputs(
         discovery_batch=batch,
         candidates_by_sample=DiscoveryInputSource(batch),

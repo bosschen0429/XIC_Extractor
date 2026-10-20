@@ -33,7 +33,6 @@ def write_batch(
     sample_order: tuple[str, ...],
     *,
     raw_files: dict[str, str] | None = None,
-    owner_closed: bool = True,
 ) -> Path:
     batch_dir = tmp_path / "batch"
     batch_dir.mkdir(exist_ok=True)
@@ -54,24 +53,19 @@ def write_batch(
             "candidate_csv": str(candidates_csv.relative_to(batch_dir)),
             "review_csv": "",
         }
-        if owner_closed:
-            row.update(_owner_closed_receipt_fields(sample_stem, candidates_csv))
+        row.update(_owner_closed_receipt_fields(sample_stem, candidates_csv))
         rows.append(row)
     batch_index = batch_dir / "discovery_batch_index.csv"
     write_csv(
         batch_index,
         (
-            (
-                "schema_version",
-                "sample_stem",
-                "raw_file",
-                "candidate_csv",
-                "review_csv",
-                "candidate_count",
-                *DISCOVERY_BATCH_RECEIPT_COLUMNS,
-            )
-            if owner_closed
-            else ("sample_stem", "raw_file", "candidate_csv", "review_csv")
+            "schema_version",
+            "sample_stem",
+            "raw_file",
+            "candidate_csv",
+            "review_csv",
+            "candidate_count",
+            *DISCOVERY_BATCH_RECEIPT_COLUMNS,
         ),
         rows,
     )

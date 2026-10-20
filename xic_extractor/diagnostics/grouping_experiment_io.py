@@ -45,9 +45,7 @@ def query_discovery(
     index_path: Path, mz_ranges: Sequence[tuple[float, float]]
 ) -> tuple[tuple[str, ...], list[dict[str, Any]]]:
     """Query saved candidates by measured mass; no RAW or physical-curve loading."""
-    source = DiscoveryInputSource(
-        read_discovery_batch_index(index_path, require_owner_closure=True)
-    )
+    source = DiscoveryInputSource(read_discovery_batch_index(index_path))
     selected = tuple(
         cid
         for cid, location in source.locations.items()

@@ -403,10 +403,8 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
     assert all(raw.entered and raw.closed for raw in raw_by_path.values())
     batch = read_discovery_batch_index(
         outputs.batch_index_csv,
-        require_owner_closure=True,
     )
     receipt = batch.candidate_receipts["TumorBC2312_DNA"]
-    assert receipt is not None
     rebound = read_owner_bound_discovery_candidates_csv(
         batch.candidate_csvs["TumorBC2312_DNA"],
         receipt=receipt,
@@ -419,10 +417,8 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
     (tmp_path / "out").replace(published)
     relocated = read_discovery_batch_index(
         published / "discovery_batch_index.csv",
-        require_owner_closure=True,
     )
     relocated_receipt = relocated.candidate_receipts["TumorBC2312_DNA"]
-    assert relocated_receipt is not None
     relocated_candidates = read_owner_bound_discovery_candidates_csv(
         relocated.candidate_csvs["TumorBC2312_DNA"],
         receipt=relocated_receipt,

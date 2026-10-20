@@ -1036,7 +1036,6 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
     )
     batch = read_discovery_batch_index(
         discovery.batch_index_csv,
-        require_owner_closure=True,
     )
 
     def alignment_raw(index: int) -> _FakeRaw:

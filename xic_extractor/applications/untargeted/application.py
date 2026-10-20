@@ -63,9 +63,7 @@ def run_untargeted_application(
         },
     )
     with recorder.stage("alignment.read_batch_index"):
-        batch = read_discovery_batch_index(
-            request.discovery_batch_index, require_owner_closure=True
-        )
+        batch = read_discovery_batch_index(request.discovery_batch_index)
     with recorder.stage("alignment.read_candidates") as stage:
         candidates_by_sample = DiscoveryInputSource(batch)
         stage.metrics["candidate_count"] = len(candidates_by_sample.locations)
@@ -126,7 +124,6 @@ def run_untargeted_application(
         requested_audit_evidence_mode=request.legacy.audit_evidence_mode,
         heavy_audit_enabled=False,
         audit_evidence_mode_reason="retained_untargeted_cid_nl_owner",
-        require_discovery_owner_closure=True,
         signal_processing_profile=signal_processing_profile,
         owner_backfill_peak_fact_provenance_row_count=len(
             EMPTY_BACKFILL_PEAK_FACT_PROVENANCE_BATCH.rows
