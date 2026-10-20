@@ -94,8 +94,7 @@ RELEVANCE_RULES: dict[str, re.Pattern[str]] = {
         r"^(scripts/check_productization_state\.py|tests/test_productization_state_index\.py"
         r"|docs/product/|docs/superpowers/(validation|schemas|productization)/"
         r"|docs/superpowers/plans/2026-06-15-productization-control-plane\.md"
-        r"|tools/diagnostics/docs_(policy|scan)\.py"
-        r"|xic_extractor/alignment/(production_acceptance|quant_matrix_version)\.py)"
+        r"|tools/diagnostics/docs_(policy|scan)\.py)"
     ),
 }
 # The main CI pytest session: snapshots never run, the census runs once in the

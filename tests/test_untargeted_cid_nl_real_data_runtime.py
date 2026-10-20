@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from tests.cid_nl_raw_fixture import (
+    TEST_PROFILE,
     _current_candidates,
     _FakeRaw,
     _FakeThermoRaw,
@@ -31,9 +32,6 @@ from xic_extractor.acquisition_contract import (
     acquire_trace_batch,
     mint_trace_acquisition_capability,
     serialize_acquired_trace,
-)
-from xic_extractor.diagnostics.quant_matrix.golden_path import (
-    build_untargeted_cid_nl_golden_path,
 )
 from xic_extractor.discovery.batch_contract import (
     ALIGNMENT_FEATURE_INPUT_KEY,
@@ -622,10 +620,11 @@ def test_lazy_acquisition_cache_replay_skips_opener_and_opens_once_on_miss(
     assert rejected_handles[0][1].disposed is True
 
 
-def test_runtime_delivers_one_real_subject_cohort_into_golden_path(
+def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    physical_records = {}
     capture_variants: list[str] = []
     real_capture = capture_owner.capture_peak_hypotheses
 
@@ -645,6 +644,7 @@ def test_runtime_delivers_one_real_subject_cohort_into_golden_path(
         raw_file=raw_paths[0],
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )
     subject = mint_untargeted_cid_nl_method_subject(
         precursor_mz=500.0,
@@ -677,6 +677,12 @@ def test_runtime_delivers_one_real_subject_cohort_into_golden_path(
             {"S1": candidates, "S2": ()},
         ),
         sample_identity_namespace="study:real-data-runtime-test",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in ({"S1": candidates, "S2": ()}).values()
+            for c in values
+        },
     )
     vendor_raw = _install_runtime_raw(
         monkeypatch,
@@ -702,6 +708,11 @@ def test_runtime_delivers_one_real_subject_cohort_into_golden_path(
                 sample.metadata.raw_stem
             ],
             acquisition_cache_dir=tmp_path / "runtime-cache",
+            signal_processing_profile=context.signal_processing_profile,
+            physical_records=tuple(
+                context.physical_records_by_candidate[c.candidate_id]
+                for c in (context.candidates_by_sample[sample.metadata.raw_stem])
+            ),
         )
         for sample in context.samples
     )
@@ -822,26 +833,12 @@ def test_runtime_delivers_one_real_subject_cohort_into_golden_path(
     )
     _assert_partition_matches_runtime(jobs, result, monkeypatch)
 
-    projection = build_untargeted_cid_nl_golden_path(
-        processing_owners=context.processing_owners,
-        method_subject=context.method_subject,
-        sample_inputs=tuple(
-            item.adapter_result.assessment_input for item in result.sample_results
-        ),
-        source_artifact_relpath=(
-            "output/real_data_runtime/untargeted_cid_nl_source.json"
-        ),
-    )
-    assert len(projection.spine.cells) == 2
-    assert projection.matrix_header == ("Mz", "RT", "S1", "S2")
-    assert projection.input_quant_matrix_rows[0]["S1"]
-    assert projection.input_quant_matrix_rows[0]["S2"] == ""
-
 
 def test_runtime_does_not_evaluate_ineligible_inferred_precursor(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    physical_records = {}
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"real-data-runtime-unsupported:S1")
     settings = _settings()
@@ -856,6 +853,7 @@ def test_runtime_does_not_evaluate_ineligible_inferred_precursor(
         raw_file=raw_path,
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )[0]
     assert inferred.precursor_mz_basis == "product_plus_neutral_loss"
     assert not inferred.ms1_peak_found
@@ -884,6 +882,12 @@ def test_runtime_does_not_evaluate_ineligible_inferred_precursor(
             {"S1": (inferred,)},
         ),
         sample_identity_namespace="study:real-data-runtime-unsupported-test",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in ({"S1": (inferred,)}).values()
+            for c in values
+        },
     )
     job = UntargetedPartitionJob(
         processing_owners=context.processing_owners,
@@ -896,6 +900,11 @@ def test_runtime_does_not_evaluate_ineligible_inferred_precursor(
         raw_path=raw_path,
         dll_dir=tmp_path,
         work_unit_key="untargeted-cid-nl:S1",
+        signal_processing_profile=context.signal_processing_profile,
+        physical_records=tuple(
+            context.physical_records_by_candidate[c.candidate_id]
+            for c in (context.candidates_by_sample["S1"])
+        ),
     )
     runtime = start_runtime_attempt(
         attempt=context.processing_owners.attempt,
@@ -965,6 +974,7 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
     backfill_stop,
     cancel_accepted,
 ) -> None:
+    physical_records = {}
     from xic_extractor.alignment.cell_observation.records import CellObservationRef
 
     construct_cell = CellObservationRef.__init__
@@ -992,12 +1002,14 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
             raw_file=raw_paths[0],
             settings=settings,
             peak_config=peak_config,
+            physical_records=physical_records,
         ),
         "S2": _current_candidates(
             source_raws[raw_paths[1]],
             raw_file=raw_paths[1],
             settings=settings,
             peak_config=peak_config,
+            physical_records=physical_records,
         ),
         "Missing": (),
         "NoPeak": (),
@@ -1052,6 +1064,12 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
             candidates_by_sample,
         ),
         sample_identity_namespace="study:real-data-runtime-recovery-test",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in (candidates_by_sample).values()
+            for c in values
+        },
     )
     opened = _install_runtime_raws(
         monkeypatch,
@@ -1072,6 +1090,11 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
             raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
             dll_dir=tmp_path,
             work_unit_key=f"untargeted-cid-nl:{sample.metadata.raw_stem}",
+            signal_processing_profile=context.signal_processing_profile,
+            physical_records=tuple(
+                context.physical_records_by_candidate[c.candidate_id]
+                for c in (context.candidates_by_sample[sample.metadata.raw_stem])
+            ),
         )
         for sample in context.samples
     )
@@ -1164,41 +1187,18 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
     } == {
         raw_paths[0]: [[1]],
         raw_paths[1]: [[1]],
-        raw_paths[2]: [[1]],
-        raw_paths[3]: [[1]],
+        raw_paths[2]: [[2]],
+        raw_paths[3]: [[2]],
     }
     assert all(vendor.disposed for vendors in opened.values() for vendor in vendors)
 
-    projection = build_untargeted_cid_nl_golden_path(
-        processing_owners=context.processing_owners,
-        method_subject=context.method_subject,
-        sample_inputs=tuple(
-            item.adapter_result.assessment_input for item in result.sample_results
-        ),
-        backfill_inputs=tuple(
-            item.backfill_input
-            for item in result.sample_results
-            if item.backfill_input is not None
-        ),
-        source_artifact_relpath="output/real_data_runtime/recovered_source.json",
-    )
-    decisions = {
-        decision.target_cell.content.canonical_sample_identity_id: decision
-        for decision in projection.backfill_decisions
-    }
-    missing_id = by_stem["Missing"].job.sample.identity.sample_identity_id
-    blank_id = by_stem["Blank"].job.sample.identity.sample_identity_id
-    no_peak_id = by_stem["NoPeak"].job.sample.identity.sample_identity_id
-    assert decisions[missing_id].disposition == "candidate_mapped"
-    assert decisions[no_peak_id].disposition == "hold"
-    assert decisions[blank_id].disposition == "hold"
-    assert len(projection.pending_acceptance_rows) == 1
     _assert_partition_matches_runtime(jobs, result, monkeypatch)
 
 
 def test_runtime_job_rejects_candidate_content_changed_after_request_mint(
     tmp_path: Path,
 ) -> None:
+    physical_records = {}
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"real-data-runtime-request-pin:S1")
     settings = _settings()
@@ -1209,6 +1209,7 @@ def test_runtime_job_rejects_candidate_content_changed_after_request_mint(
         raw_file=raw_path,
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )
     subject = mint_untargeted_cid_nl_method_subject(
         precursor_mz=500.0,
@@ -1235,6 +1236,12 @@ def test_runtime_job_rejects_candidate_content_changed_after_request_mint(
             {"S1": candidates},
         ),
         sample_identity_namespace="study:real-data-runtime-request-pin-test",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in ({"S1": candidates}).values()
+            for c in values
+        },
     )
 
     with pytest.raises(
@@ -1252,6 +1259,11 @@ def test_runtime_job_rejects_candidate_content_changed_after_request_mint(
             raw_path=raw_path,
             dll_dir=tmp_path,
             work_unit_key="untargeted-cid-nl:S1",
+            signal_processing_profile=context.signal_processing_profile,
+            physical_records=tuple(
+                context.physical_records_by_candidate[c.candidate_id]
+                for c in ((replace(candidates[0], reason="tampered-after-request"),))
+            ),
         )
 
 
@@ -1259,19 +1271,36 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    physical_records = {}
     raw_paths = (tmp_path / "S1.synthetic", tmp_path / "S2.synthetic")
     settings = _settings()
     peak_config = _peak_config(tmp_path)
     candidates_by_sample = {}
+    sources_by_path = {}
     for path in raw_paths:
         path.write_bytes(path.stem.encode())
-        first = _current_candidates(
-            _FakeRaw((8.0,)), raw_file=path, settings=settings, peak_config=peak_config
-        )[0]
-        candidates_by_sample[path.stem] = tuple(
-            replace(first, candidate_id=f"{path.stem}:{suffix}")
-            for suffix in ("a", "b", "c")
-        )
+        candidates = []
+        scans = []
+        for offset in range(3):
+            source = _FakeRaw((8.0,))
+            scan = source.scans[0]
+            number = scan.scan_number + offset
+            source.scans = (
+                replace(scan, scan_number=number, rt=float(source.rt[number - 1])),
+            )
+            scans.extend(source.scans)
+            candidates.extend(
+                _current_candidates(
+                    source,
+                    raw_file=path,
+                    settings=settings,
+                    peak_config=peak_config,
+                    physical_records=physical_records,
+                )
+            )
+        source.scans = tuple(scans)
+        sources_by_path[path] = source
+        candidates_by_sample[path.stem] = tuple(candidates)
     receipts = _discovery_receipts(tmp_path, raw_paths, candidates_by_sample)
     subjects = tuple(
         sorted(
@@ -1320,6 +1349,12 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
             candidates_by_sample=candidates_by_sample,
             discovery_receipts_by_sample=receipts,
             sample_identity_namespace="study:runtime-selection",
+            signal_processing_profile=TEST_PROFILE,
+            physical_records_by_candidate={
+                c.candidate_id: physical_records[c.candidate_id]
+                for values in (candidates_by_sample).values()
+                for c in values
+            },
         )
         jobs = tuple(
             job
@@ -1342,6 +1377,17 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
                 acquisition_source_expectation=context.acquisition_sources_by_sample[
                     sample.metadata.raw_stem
                 ],
+                signal_processing_profile=context.signal_processing_profile,
+                physical_records=tuple(
+                    context.physical_records_by_candidate[c.candidate_id]
+                    for c in (
+                        tuple(
+                            reversed(
+                                context.candidates_by_sample[sample.metadata.raw_stem]
+                            )
+                        )
+                    )
+                ),
             )
         )
         assert all(
@@ -1392,7 +1438,7 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
         )
     _install_runtime_raws(
         monkeypatch,
-        sources_by_path={path: _FakeRaw((8.0,)) for path in raw_paths},
+        sources_by_path=sources_by_path,
         tmp_path=tmp_path,
     )
     selected_jobs = tuple(
@@ -1433,6 +1479,7 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
 def test_partition_runtime_job_requires_exact_local_feature_membership(
     tmp_path: Path,
 ) -> None:
+    physical_records = {}
     from xic_extractor.untargeted_execution.partition import models as models_owner
 
     raw_path = tmp_path / "S1.synthetic"
@@ -1444,6 +1491,7 @@ def test_partition_runtime_job_requires_exact_local_feature_membership(
         raw_file=raw_path,
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )
     assert len(candidates) == 2
     subjects = tuple(
@@ -1493,6 +1541,12 @@ def test_partition_runtime_job_requires_exact_local_feature_membership(
         candidates_by_sample={"S1": candidates},
         discovery_receipts_by_sample=receipts,
         sample_identity_namespace="study:partition-runtime-job",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in ({"S1": candidates}).values()
+            for c in values
+        },
     )
     old_request = context.processing_owners.request
     request = build_processing_request_identity(
@@ -1533,6 +1587,8 @@ def test_partition_runtime_job_requires_exact_local_feature_membership(
     models_owner._request_input_index.cache_clear()
     build_args = dict(
         processing_owners=owners,
+        signal_processing_profile=TEST_PROFILE,
+        physical_records=(physical_records[local_candidate.candidate_id],),
         sample=context.sample("S1"),
         subject_work_units=((partition_subject, "partition:S1"),),
         subject_partition=partition,
@@ -1555,7 +1611,7 @@ def test_partition_runtime_job_requires_exact_local_feature_membership(
         UntargetedPartitionError,
         match="exactly cover its selected feature IDs",
     ):
-        replace(job, candidates=())
+        replace(job, candidates=(), physical_records=())
 
     foreign_membership = next(
         membership for membership in memberships if membership != partition_membership
@@ -1577,6 +1633,7 @@ def test_direct_subject_batch_seals_initial_and_recovery_acquisitions_once(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    physical_records = {}
     raw_paths = tuple(tmp_path / f"S{index}.synthetic" for index in range(1, 5))
     settings = _settings()
     peak_config = _peak_config(tmp_path)
@@ -1589,6 +1646,7 @@ def test_direct_subject_batch_seals_initial_and_recovery_acquisitions_once(
             raw_file=path,
             settings=settings,
             peak_config=peak_config,
+            physical_records=physical_records,
         )
     subjects = tuple(
         sorted(
@@ -1633,6 +1691,12 @@ def test_direct_subject_batch_seals_initial_and_recovery_acquisitions_once(
             tmp_path, raw_paths, candidates_by_sample
         ),
         sample_identity_namespace="study:runtime-phase-acquisition-seal",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in (candidates_by_sample).values()
+            for c in values
+        },
     )
     jobs = tuple(
         job
@@ -1658,6 +1722,11 @@ def test_direct_subject_batch_seals_initial_and_recovery_acquisitions_once(
             acquisition_source_expectation=context.acquisition_sources_by_sample[
                 sample.metadata.raw_stem
             ],
+            signal_processing_profile=context.signal_processing_profile,
+            physical_records=tuple(
+                context.physical_records_by_candidate[c.candidate_id]
+                for c in (context.candidates_by_sample[sample.metadata.raw_stem])
+            ),
         )
     )
     _install_runtime_raws(
@@ -1737,6 +1806,7 @@ def test_direct_subject_batch_seals_initial_and_recovery_acquisitions_once(
 def test_context_rejects_same_stem_receipt_from_different_acquisition(
     tmp_path: Path,
 ) -> None:
+    physical_records = {}
     source_dir = tmp_path / "source"
     replay_dir = tmp_path / "replay"
     source_dir.mkdir()
@@ -1752,6 +1822,7 @@ def test_context_rejects_same_stem_receipt_from_different_acquisition(
         raw_file=source_path,
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )
     receipt = _discovery_receipts(
         tmp_path,
@@ -1784,6 +1855,12 @@ def test_context_rejects_same_stem_receipt_from_different_acquisition(
             candidates_by_sample={"S1": candidates},
             discovery_receipts_by_sample={"S1": receipt},
             sample_identity_namespace="study:real-data-runtime-crossed-acquisition-test",
+            signal_processing_profile=TEST_PROFILE,
+            physical_records_by_candidate={
+                c.candidate_id: physical_records[c.candidate_id]
+                for values in ({"S1": candidates}).values()
+                for c in values
+            },
         )
 
 
@@ -1793,6 +1870,7 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
     monkeypatch: pytest.MonkeyPatch,
     excluded: bool,
 ) -> None:
+    physical_records = {}
     stems = ("Support", "Reject", "Empty")
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
     for raw_path in raw_paths:
@@ -1805,6 +1883,7 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
         raw_file=raw_paths[0],
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )
     reject = tuple(
         _without_ms1_peak(candidate)
@@ -1813,6 +1892,7 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
             raw_file=raw_paths[1],
             settings=settings,
             peak_config=peak_config,
+            physical_records=physical_records,
         )
     )
     candidates_by_sample = {
@@ -1850,6 +1930,12 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
             candidates_by_sample,
         ),
         sample_identity_namespace="study:real-data-runtime-conditional-resource-test",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in (candidates_by_sample).values()
+            for c in values
+        },
     )
     opened = _install_runtime_raws(
         monkeypatch,
@@ -1878,6 +1964,11 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
             raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
             dll_dir=tmp_path,
             work_unit_key=f"untargeted-cid-nl:{sample.metadata.raw_stem}",
+            signal_processing_profile=context.signal_processing_profile,
+            physical_records=tuple(
+                context.physical_records_by_candidate[c.candidate_id]
+                for c in (context.candidates_by_sample[sample.metadata.raw_stem])
+            ),
         )
         for sample in context.samples
     )

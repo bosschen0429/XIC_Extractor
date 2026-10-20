@@ -243,11 +243,11 @@ def is_supported_alignment_discovery(settings: Any) -> bool:
 
 def _physical_subject_candidate_fact(
     candidate: DiscoveryCandidate,
-    record: DiscoveryPhysicalFactRecord | None,
+    record: DiscoveryPhysicalFactRecord,
 ) -> CidNlPhysicalCandidateFact:
-    facts = None if record is None else record.evaluation.facts
+    facts = record.evaluation.facts
     proof = None
-    if record is not None and facts is not None:
+    if facts is not None:
         trace = record.acquired_trace.trace
         proof = CidNlPhysicalProof(
             acquisition_source_id=record.work_item.acquisition_source_id,
@@ -271,8 +271,7 @@ def prepare_untargeted_subject_membership(
     *,
     candidates_by_sample: Mapping[str, tuple[DiscoveryCandidate, ...]],
     settings: DiscoverySettings,
-    physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord]
-    | None = None,
+    physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord],
 ) -> UntargetedCidNlMethodSubjectBatch:
     """Resolve exact subject membership for a closed precursor working set."""
     candidates = tuple(
@@ -297,11 +296,11 @@ def prepare_untargeted_subject_membership(
             or neutral_loss_da <= 0.0
         ):
             raise ValueError("Discovery candidate lacks finite CID-NL owner facts")
-    physical_records = physical_records_by_candidate or {}
+    physical_records = physical_records_by_candidate
     subject_units = group_cid_nl_physical_subject_units(
         tuple(
             _physical_subject_candidate_fact(
-                candidate, physical_records.get(candidate.candidate_id)
+                candidate, physical_records[candidate.candidate_id]
             )
             for candidate in candidates
         ),
@@ -349,9 +348,8 @@ def prepare_eager_untargeted_plan(
     ],
     dll_dir: Path,
     sample_identity_namespace: str,
-    signal_processing_profile: SignalProcessingProfile | None = None,
-    physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord]
-    | None = None,
+    signal_processing_profile: SignalProcessingProfile,
+    physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord],
     acquisition_source_expectations: tuple[AcquisitionSourceExpectation, ...]
     | None = None,
 ) -> UntargetedInputPlan:

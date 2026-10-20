@@ -90,15 +90,11 @@ from xic_extractor.peak_detection.elution_context import (
     SampleElutionContext,
     project_elution_context,
 )
-from xic_extractor.peak_detection.hypotheses import build_peak_hypotheses
-from xic_extractor.peak_detection.ms1_trace_detection import detect_ms1_trace_peak
 from xic_extractor.peak_detection.observations import (
     PeakObservationRef,
     RetainedCaptureEvidence,
-    mint_peak_observation_ref,
     same_selected_peak,
 )
-from xic_extractor.peak_detection.peak_integration import find_peak_and_area
 from xic_extractor.peak_detection.physical_peak_evaluation import (
     prepare_physical_signal,
 )
@@ -484,7 +480,6 @@ def _sample_capture_requests(
     processing_owners: ProcessingOwnerReferences,
     candidates: tuple[DiscoveryCandidate, ...],
     settings: DiscoverySettings,
-    profile: SignalProcessingProfile | None,
     method_subject: CidNlMethodSubject | None = None,
 ) -> tuple[tuple[XICRequest, ...], tuple[int, ...]]:
     requests = {
@@ -496,53 +491,44 @@ def _sample_capture_requests(
         )
         for item in candidates
     }
-    if profile is not None:
-        subjects = method_subject or cid_nl_method_subjects_from_request(
-            processing_owners.request
+    subjects = method_subject or cid_nl_method_subjects_from_request(
+        processing_owners.request
+    )
+    if isinstance(subjects, UntargetedCidNlMethodSubjectBatch):
+        memberships = dict(subjects.candidate_memberships)
+        subject_values = {item.method_subject_id: item for item in subjects.subjects}
+        grouped: dict[str, list[DiscoveryCandidate]] = {}
+        for item in candidates:
+            subject_id = memberships.get(item.candidate_id)
+            if subject_id not in subject_values:
+                raise CidNlAcquisitionError("capture candidate lacks method subject")
+            grouped.setdefault(subject_id, []).append(item)
+    else:
+        grouped = {subjects.method_subject_id: list(candidates)}
+    for members in grouped.values():
+        ordered = sorted(
+            members, key=lambda item: (item.ms1_search_rt_min, item.candidate_id)
         )
-        if isinstance(subjects, UntargetedCidNlMethodSubjectBatch):
-            memberships = dict(subjects.candidate_memberships)
-            subject_values = {
-                item.method_subject_id: item for item in subjects.subjects
-            }
-            grouped: dict[str, list[DiscoveryCandidate]] = {}
-            for item in candidates:
-                subject_id = memberships.get(item.candidate_id)
-                if subject_id not in subject_values:
-                    raise CidNlAcquisitionError(
-                        "capture candidate lacks method subject"
+        components: list[tuple[float, list[DiscoveryCandidate]]] = []
+        for item in ordered:
+            if not components or item.ms1_search_rt_min > components[-1][0]:
+                components.append((item.ms1_search_rt_max, [item]))
+            else:
+                components[-1] = (
+                    max(components[-1][0], item.ms1_search_rt_max),
+                    components[-1][1],
+                )
+                components[-1][1].append(item)
+        for right, members in components:
+            if len(members) > 1:
+                for item in members:
+                    requests[item.candidate_id] = replace(
+                        requests[item.candidate_id],
+                        rt_min=members[0].ms1_search_rt_min,
+                        rt_max=right,
                     )
-                grouped.setdefault(subject_id, []).append(item)
-        else:
-            grouped = {subjects.method_subject_id: list(candidates)}
-        for members in grouped.values():
-            ordered = sorted(
-                members, key=lambda item: (item.ms1_search_rt_min, item.candidate_id)
-            )
-            components: list[tuple[float, list[DiscoveryCandidate]]] = []
-            for item in ordered:
-                if not components or item.ms1_search_rt_min > components[-1][0]:
-                    components.append((item.ms1_search_rt_max, [item]))
-                else:
-                    components[-1] = (
-                        max(components[-1][0], item.ms1_search_rt_max),
-                        components[-1][1],
-                    )
-                    components[-1][1].append(item)
-            for right, members in components:
-                if len(members) > 1:
-                    for item in members:
-                        requests[item.candidate_id] = replace(
-                            requests[item.candidate_id],
-                            rt_min=members[0].ms1_search_rt_min,
-                            rt_max=right,
-                        )
     unique: dict[XICRequest, int] = {}
     indices = []
-    if profile is None:
-        return tuple(requests[item.candidate_id] for item in candidates), tuple(
-            range(len(candidates))
-        )
     for item in candidates:
         request = requests[item.candidate_id]
         indices.append(unique.setdefault(request, len(unique)))
@@ -556,7 +542,7 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
     candidates: tuple[DiscoveryCandidate, ...],
     settings: DiscoverySettings,
     raw: CidNlRawSource,
-    signal_processing_profile: SignalProcessingProfile | None = None,
+    signal_processing_profile: SignalProcessingProfile,
 ) -> UntargetedCidNlSampleTraceBatch | None:
     """Acquire all eligible candidate XICs for one sample in one adapter call."""
 
@@ -613,14 +599,9 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
         processing_owners=processing_owners,
         candidates=capture_candidates,
         settings=settings,
-        profile=signal_processing_profile,
     )
-    context_requests = (
-        _elution_context_requests(
-            requests, padding_min=CID_NL_ALIGNMENT_CONFIG.preferred_rt_sec / 60.0
-        )
-        if signal_processing_profile is not None
-        else ()
+    context_requests = _elution_context_requests(
+        requests, padding_min=CID_NL_ALIGNMENT_CONFIG.preferred_rt_sec / 60.0
     )
     # Original requests and indices remain exact. Wider context is acquired
     # in this batch but is never supplied to the integration owner.
@@ -631,20 +612,19 @@ def acquire_untargeted_cid_nl_sample_trace_batch(
         )
     )
     contexts = []
-    if signal_processing_profile is not None:
-        for index in context_indices:
-            acquired = acquisition.traces[index]
-            context = project_elution_context(
-                prepare_physical_signal(
-                    acquired.trace.rt,
-                    acquired.trace.intensity,
-                    profile=signal_processing_profile,
-                ),
-                sample_stem=sample.metadata.raw_stem,
-                mz=acquired.coordinate.request.mz,
-            )
-            if context is not None:
-                contexts.append(context)
+    for index in context_indices:
+        acquired = acquisition.traces[index]
+        context = project_elution_context(
+            prepare_physical_signal(
+                acquired.trace.rt,
+                acquired.trace.intensity,
+                profile=signal_processing_profile,
+            ),
+            sample_stem=sample.metadata.raw_stem,
+            mz=acquired.coordinate.request.mz,
+        )
+        if context is not None:
+            contexts.append(context)
     return UntargetedCidNlSampleTraceBatch(
         sample_identity_id=sample.identity.sample_identity_id,
         acquisition_source_id=source.acquisition_source_id,
@@ -824,7 +804,7 @@ def adapt_current_discovery_sample_subject(
     raw: CidNlRawSource | None,
     _observer: _PartitionWorkObserver | None = None,
     _preacquired_traces: UntargetedCidNlSampleTraceBatch | None = None,
-    signal_processing_profile: SignalProcessingProfile | None = None,
+    signal_processing_profile: SignalProcessingProfile,
     physical_records: tuple[DiscoveryPhysicalFactRecord, ...] = (),
 ) -> CidNlAcquisitionResult:
     """Reacquire a subject and mint its complete CellObservationRef input."""
@@ -1114,7 +1094,7 @@ def backfill_untargeted_cid_nl_sample_subject(
     raw: CidNlRawSource | None,
     initial_assessment: CidNlMethodAssessmentRef | None = None,
     settings: DiscoverySettings | None = None,
-    signal_processing_profile: SignalProcessingProfile | None = None,
+    signal_processing_profile: SignalProcessingProfile,
     _observer: _PartitionWorkObserver | None = None,
     _preacquired_traces: UntargetedCidNlBackfillTraceBatch | None = None,
 ) -> UntargetedCidNlBackfillAttemptResult:
@@ -1183,10 +1163,6 @@ def backfill_untargeted_cid_nl_sample_subject(
         )
     except CidNlMethodSubjectContractError as exc:
         raise CidNlAcquisitionError(str(exc)) from exc
-    if signal_processing_profile is None and PHYSICAL_CAPTURE_INPUT_KEY in json.loads(
-        processing_owners.request.normalized_scientific_inputs_json
-    ):
-        raise CidNlAcquisitionError("physical backfill lost its request-bound profile")
     source = resolve_request_acquisition_source(
         processing_owners=processing_owners,
         sample=sample,
@@ -1209,18 +1185,13 @@ def backfill_untargeted_cid_nl_sample_subject(
         ppm_tol=method_subject.precursor_tolerance_ppm,
         physical_context=False,
     )
-    context_request = (
-        _backfill_xic_request(
-            mz=physical_mz,
-            query_rt=float(query_rt),
-            half_window=half_window,
-            ppm_tol=method_subject.precursor_tolerance_ppm,
-            physical_context=True,
-        )
-        if signal_processing_profile is not None
-        else None
+    context_request = _backfill_xic_request(
+        mz=physical_mz,
+        query_rt=float(query_rt),
+        half_window=half_window,
+        ppm_tol=method_subject.precursor_tolerance_ppm,
+        physical_context=True,
     )
-    context_acquired = None
     if _preacquired_traces is None:
         if raw is None:
             raise CidNlAcquisitionError(
@@ -1241,13 +1212,12 @@ def backfill_untargeted_cid_nl_sample_subject(
         acquisition = _freeze_acquisition(
             acquire_untargeted_trace_batch(
                 capability,
-                (request, context_request) if context_request else (request,),
+                (request, context_request),
                 bound_raw,
             )
         )
         acquired = acquisition.traces[0]
-        if context_request is not None:
-            context_acquired = acquisition.traces[1]
+        context_acquired = acquisition.traces[1]
     else:
         if group_hypothesis_id is None:
             raise CidNlAcquisitionError(
@@ -1265,116 +1235,51 @@ def backfill_untargeted_cid_nl_sample_subject(
             group_hypothesis_id=group_hypothesis_id,
             request=request,
         )
-        if context_request is not None:
-            context_acquired = _preacquired_traces.acquired_trace(
-                group_hypothesis_id=group_hypothesis_id,
-                request=context_request,
-            )
+        context_acquired = _preacquired_traces.acquired_trace(
+            group_hypothesis_id=group_hypothesis_id,
+            request=context_request,
+        )
     if _observer is not None:
         _observer.record_acquisition(acquisition, backfill=True)
     observations: tuple[PeakObservationRef, ...] = ()
     physical_evaluations: list[PhysicalPeakEvaluation] = []
-    if signal_processing_profile is not None:
-        assert context_request is not None and context_acquired is not None
-        # Complete observations keep their original signal and integral. Only
-        # clipped context permits one bounded reconsideration of the same search.
-        for capture_request, capture_acquired in (
-            (request, acquired),
-            (context_request, context_acquired),
-        ):
-            trace = trace_from_xic_request(
-                sample_name=sample.metadata.sample_name,
-                request=capture_request,
-                xic_trace=capture_acquired.trace,
-                source=(
-                    f"{_ADAPTER_NAMESPACE}.backfill:"
-                    f"{TraceCoordinateKind.NATIVE_SCAN.value}"
-                ),
-                acquisition_source_id=source.acquisition_source_id,
-            )
-            physical_evaluations.clear()
-            observation = capture_owner.capture_physical_backfill_observation(
-                processing_owners=processing_owners,
-                sample=sample,
-                method_subject=method_subject,
-                trace=trace,
-                query_rt_min=float(query_rt),
-                location_reliable=query_rt_reliable,
-                search_rt_window=selection_window
-                or (
-                    (query_rt_min, query_rt_max)
-                    if capture_request is context_request
-                    else None
-                ),
-                physical_mz=float(physical_mz),
-                profile=signal_processing_profile,
-                resolver_mode=peak_config.resolver_mode,
-                evaluation_sink=physical_evaluations.append,
-            )
-            if physical_evaluations[0].reason != "incomplete_peak_context":
-                break
-        observations = (observation,) if observation is not None else ()
-    else:
-        detection = detect_ms1_trace_peak(
-            acquired.trace.rt,
-            acquired.trace.intensity,
-            peak_config=peak_config,
-            preferred_rt=float(query_rt),
-            peak_finder=find_peak_and_area,
+    # Complete observations keep their original signal and integral. Only
+    # clipped context permits one bounded reconsideration of the same search.
+    for capture_request, capture_acquired in (
+        (request, acquired),
+        (context_request, context_acquired),
+    ):
+        trace = trace_from_xic_request(
+            sample_name=sample.metadata.sample_name,
+            request=capture_request,
+            xic_trace=capture_acquired.trace,
+            source=(
+                f"{_ADAPTER_NAMESPACE}.backfill:{TraceCoordinateKind.NATIVE_SCAN.value}"
+            ),
+            acquisition_source_id=source.acquisition_source_id,
         )
-        if (
-            detection.status == "detected"
-            and detection.result is not None
-            and detection.peak is not None
-            and query_rt_reliable
-            and (
-                selection_window is None
-                or selection_window[0] <= detection.peak.rt <= selection_window[1]
-            )
-        ):
-            hypotheses = build_peak_hypotheses(
-                analysis_mode="untargeted",
-                sample_name=sample.metadata.sample_name,
-                target_label=(
-                    f"untargeted:{method_subject.precursor_mz:.8g}:"
-                    f"{method_subject.label}:backfill"
-                ),
-                role="Analyte",
-                istd_pair="",
-                resolver_mode=peak_config.resolver_mode,
-                peak_result=detection.result,
-                rt=detection.rt,
-                intensity=detection.intensity,
-                baseline_integration_method="asls",
-                ms1_morphology_smoothing_window_points=(
-                    peak_config.ms1_morphology_smoothing_window_points
-                ),
-            )
-            trace = trace_from_xic_request(
-                sample_name=sample.metadata.sample_name,
-                request=request,
-                xic_trace=acquired.trace,
-                source=(
-                    f"{_ADAPTER_NAMESPACE}.backfill:{TraceCoordinateKind.NATIVE_SCAN.value}"
-                ),
-                acquisition_source_id=source.acquisition_source_id,
-            )
-            observations = tuple(
-                sorted(
-                    (
-                        mint_peak_observation_ref(
-                            processing_owners=processing_owners,
-                            sample=sample,
-                            trace=trace,
-                            integration=hypothesis.integration,
-                            resolver_mode=peak_config.resolver_mode,
-                            proposal_sources=hypothesis.audit.proposal_sources,
-                        )
-                        for hypothesis in hypotheses
-                    ),
-                    key=lambda item: item.content.peak_observation_content_id,
-                )
-            )
+        physical_evaluations.clear()
+        observation = capture_owner.capture_physical_backfill_observation(
+            processing_owners=processing_owners,
+            sample=sample,
+            method_subject=method_subject,
+            trace=trace,
+            query_rt_min=float(query_rt),
+            location_reliable=query_rt_reliable,
+            search_rt_window=selection_window
+            or (
+                (query_rt_min, query_rt_max)
+                if capture_request is context_request
+                else None
+            ),
+            physical_mz=float(physical_mz),
+            profile=signal_processing_profile,
+            resolver_mode=peak_config.resolver_mode,
+            evaluation_sink=physical_evaluations.append,
+        )
+        if physical_evaluations[0].reason != "incomplete_peak_context":
+            break
+    observations = (observation,) if observation is not None else ()
     if _observer is not None:
         for observation in observations:
             _observer.record_artifact(observation.artifact)
@@ -1638,7 +1543,6 @@ def _reacquire_peak_observations(
         processing_owners=processing_owners,
         candidates=candidates,
         settings=settings,
-        profile=search_scope.method_constraints.signal_processing_profile,
         method_subject=method_subject,
     )
     if _preacquired_traces is None:
@@ -1747,10 +1651,10 @@ def _reacquire_peak_observations(
             raise CidNlAcquisitionError(
                 f"{candidate.candidate_id}: current MS1 receipt was not reacquired"
             )
-        integration = capture.selected_hypothesis.integration
-        if capture.physical_evaluation is None:
-            _validate_candidate_integration(candidate, integration)
-        elif binding.source_physical_evaluation is None:
+        if (
+            capture.physical_evaluation is not None
+            and binding.source_physical_evaluation is None
+        ):
             _validate_physical_candidate_receipt(candidate, capture.physical_evaluation)
         observation = capture_owner.mint_captured_peak_observation(
             capture,
@@ -1796,8 +1700,7 @@ def _reacquire_peak_observations(
         observations.append(observation)
         if evidence_sink is not None:
             evidence_sink.append(replace(retained, observation_ref=observation))
-    if search_scope.method_constraints.signal_processing_profile is not None:
-        observations = list(dict.fromkeys(observations))
+    observations = list(dict.fromkeys(observations))
     return acquisition, tuple(observations), tuple(captures)
 
 
@@ -1937,7 +1840,7 @@ def _untargeted_search_scope(
     candidates: tuple[DiscoveryCandidate, ...],
     capture_candidates: tuple[DiscoveryCandidate, ...],
     peak_config: ExtractionConfig,
-    signal_processing_profile: SignalProcessingProfile | None = None,
+    signal_processing_profile: SignalProcessingProfile,
     physical_records: tuple[DiscoveryPhysicalFactRecord, ...] = (),
 ) -> UntargetedSearchScope:
     records = {record.candidate_id: record for record in physical_records}
@@ -1970,17 +1873,11 @@ def _untargeted_search_scope(
                     query_rt_max=item.ms1_search_rt_max,
                     query_ppm_tol=method_subject.precursor_tolerance_ppm,
                     preferred_rt=item.best_seed_rt,
-                    physical_evaluation=(
-                        records[item.candidate_id].evaluation
-                        if signal_processing_profile is not None
-                        else None
-                    ),
+                    physical_evaluation=(records[item.candidate_id].evaluation),
                     # The active query belongs to the physical subject; the
                     # retained evaluation still belongs to its original XIC.
                     physical_evaluation_mz=(
                         records[item.candidate_id].work_item.xic_mz
-                        if signal_processing_profile is not None
-                        else None
                     ),
                 )
                 for item in capture_candidates
@@ -2120,37 +2017,6 @@ def _validate_physical_candidate_receipt(
         ):
             raise CidNlAcquisitionError(
                 f"{candidate.candidate_id}: physical {field} mismatches current receipt"
-            )
-
-
-def _validate_candidate_integration(
-    candidate: DiscoveryCandidate,
-    integration: object,
-) -> None:
-    for field, expected in (
-        ("rt_apex_min", candidate.ms1_apex_rt),
-        ("rt_left_min", candidate.ms1_peak_rt_start),
-        ("rt_right_min", candidate.ms1_peak_rt_end),
-        ("area_raw_counts_seconds", candidate.ms1_area),
-        ("height_raw", candidate.ms1_height),
-    ):
-        actual = getattr(integration, field)
-        if expected is None or not math.isclose(
-            actual,
-            expected,
-            rel_tol=_WRITER_ROUNDING_REL_TOL,
-            abs_tol=_WRITER_ROUNDING_ABS_TOL,
-        ):
-            if field in {"area_raw_counts_seconds", "height_raw"}:
-                raise CidNlAcquisitionError(
-                    f"{candidate.candidate_id}: "
-                    "morphology_receipt_compatibility_unresolved: "
-                    f"{field} mismatches current receipt; "
-                    "compatibility remains diagnostic_only"
-                )
-            raise CidNlAcquisitionError(
-                f"{candidate.candidate_id}: reacquired {field} mismatches "
-                "current receipt"
             )
 
 

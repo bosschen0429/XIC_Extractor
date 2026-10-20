@@ -34,11 +34,7 @@ For explicit diagnostic or Backfill matrix activations, ProductWriter consumes
 only scopes registered in the authority manifest. Activation authority requires
 the authority manifest, status index, expected diff, and promotion contract;
 the manifest `authority_policy` owns the exact write requirements and the sources
-that can never grant authority. A `ProductionAcceptanceManifest`
-([checker](../../xic_extractor/diagnostics/quant_matrix/acceptance.py)) can
-grant per-cell write authority only when the later activation path binds it to
-expected diff, provenance, and the current authority scope.
-`QuantMatrixVersion` / default activation outputs are the writer surface.
+that can never grant authority.
 
 Evidence providers, candidate rows, `write_ready` labels, quality blockers,
 sidecars, replays, review packets, galleries, and diagnostics can explain or

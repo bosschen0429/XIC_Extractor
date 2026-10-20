@@ -31,16 +31,12 @@ Current ProductWriter state lives in the
 [writer manifest](../productization/status/productization_authority_manifest.json);
 this authority instance is not a schema.
 
-- `production_acceptance_manifest_schema.json`: Backfill
-  `ProductionAcceptanceManifest v1` contract. This defines/checks the only
-  future Backfill row artifact that may grant `write_authority=true`; it does
-  not activate ProductWriter or the default quant matrix.
 - `productization_control_plane_schema.json`: current control-plane schema
   for productization lane state, maturity, authority rules, and the stable
   compatibility-anchor registry.
 
 The [Matrix publication contract](../../product/quant-matrix.md#matrix-publication)
-describes current numeric publication and its retained acceptance owners.
+describes current numeric publication and its decision owners.
 
 ## Rule
 

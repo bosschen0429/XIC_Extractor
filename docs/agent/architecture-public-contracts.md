@@ -46,8 +46,8 @@ schema versions, and command flags. Do not copy those inventories here.
 - Shared models or protocols are justified when they prevent an actual cycle
   or schema drift.
 - Formal Untargeted partitions consume the pure CID-NL input contract in
-  `alignment/cid_nl_inputs.py`. Golden Path artifacts, checked acceptance and
-  versioned table projection belong to `diagnostics/quant_matrix/`.
+  `alignment/cid_nl_inputs.py` and require a resolved signal-processing profile
+  with Discovery physical facts.
 - Separate real-data validation from normal unit tests.
 
 ## Boundary Projection Closure

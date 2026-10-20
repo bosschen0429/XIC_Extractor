@@ -10,6 +10,7 @@ from tests.cid_nl_peak_support_no_raw_fixture import (
     cid_nl_unique_support,
 )
 from tests.cid_nl_raw_fixture import (
+    TEST_PROFILE,
     _current_candidates,
     _FakeRaw,
     _peak_config,
@@ -86,34 +87,54 @@ from xic_extractor.untargeted_execution.partition.request import (
 @pytest.mark.parametrize("with_order", [False, True])
 @pytest.mark.parametrize("reverse", [False, True])
 def test_backfill_batch_preserves_shape_compatibility_without_arbitrary_winners(
-    tmp_path, conflicting, with_order, reverse,
+    tmp_path,
+    conflicting,
+    with_order,
+    reverse,
 ):
     widths = {
-        "reference1": .07, "reference2": .07,
-        "narrow": .03, "other": .25 if conflicting else .05, "compatible": .07,
+        "reference1": 0.07,
+        "reference2": 0.07,
+        "narrow": 0.03,
+        "other": 0.25 if conflicting else 0.05,
+        "compatible": 0.07,
     }
     fixture = build_processing_identity_no_raw_fixture(
-        tmp_path, sample_stems=tuple(widths),
+        tmp_path,
+        sample_stems=tuple(widths),
     )
     owners, assessments = {}, {}
-    offsets = np.linspace(-.6, .6, 121)
+    offsets = np.linspace(-0.6, 0.6, 121)
     for name, width in widths.items():
         sample = fixture.sample(name)
-        values = 1000 * np.exp(-.5 * (offsets / width) ** 2)
+        values = 1000 * np.exp(-0.5 * (offsets / width) ** 2)
         source = resolve_request_acquisition_source(
-            processing_owners=fixture.owners, sample=sample,
+            processing_owners=fixture.owners,
+            sample=sample,
         )
         trace = Trace.from_arrays(
-            sample_name=name, mz=500., rt=offsets + 8, intensity=values,
-            rt_min=7.4, rt_max=8.6, ppm_tol=10., source="synthetic_gaussian",
+            sample_name=name,
+            mz=500.0,
+            rt=offsets + 8,
+            intensity=values,
+            rt_min=7.4,
+            rt_max=8.6,
+            ppm_tol=10.0,
+            source="synthetic_gaussian",
             acquisition_source_id=source.acquisition_source_id,
         )
         peak = mint_peak_observation_ref(
-            processing_owners=fixture.owners, sample=sample, trace=trace,
+            processing_owners=fixture.owners,
+            sample=sample,
+            trace=trace,
             integration=IntegrationResult(
-                rt_left_min=7.4, rt_apex_min=8., rt_right_min=8.6,
-                raw_apex_rt_min=8., rt_width_min=1.2,
-                height_raw=1000., height_smoothed=1000.,
+                rt_left_min=7.4,
+                rt_apex_min=8.0,
+                rt_right_min=8.6,
+                raw_apex_rt_min=8.0,
+                rt_width_min=1.2,
+                height_raw=1000.0,
+                height_smoothed=1000.0,
                 area_raw_counts_seconds=float(np.trapezoid(values, offsets) * 60),
                 integration_method="raw_trapezoid",
                 boundary_sources=("candidate_interval", "gaussian15"),
@@ -122,43 +143,63 @@ def test_backfill_batch_preserves_shape_compatibility_without_arbitrary_winners(
             resolver_mode="local_minimum",
             proposal_sources=("local_minimum", "gaussian15"),
         )
-        evidence = cid_nl_evidence(fixture, name, scan_number=101, scan_rt_min=8.)
+        evidence = cid_nl_evidence(fixture, name, scan_number=101, scan_rt_min=8.0)
         support = cid_nl_unique_support(fixture, name, peak=peak, evidence=evidence)
         assessment = mint_cid_nl_method_assessment_ref(
-            processing_owners=fixture.owners, sample=sample, target=fixture.target,
+            processing_owners=fixture.owners,
+            sample=sample,
+            target=fixture.target,
             detector_invocation_id=f"gaussian15:{name}",
             evaluation_receipt=CidNlEvaluationReceipt(
-                query_rt_min=7.4, query_rt_max=8.6,
-                support_policy=cid_nl_support_policy(), acquisition_supported=True,
-                search_completed=True, scanned_event_count=1, reason_code=None,
+                query_rt_min=7.4,
+                query_rt_max=8.6,
+                support_policy=cid_nl_support_policy(),
+                acquisition_supported=True,
+                search_completed=True,
+                scanned_event_count=1,
+                reason_code=None,
             ),
-            candidate_peaks=(peak,), evidence_refs=(evidence,),
+            candidate_peaks=(peak,),
+            evidence_refs=(evidence,),
             individual_support_refs=(support,),
         )
         assert assessment.content.method_result == "SUPPORT"
         (hypothesis,) = compose_cid_nl_peak_hypotheses_from_assessment(
-            processing_owners=fixture.owners, sample=sample, assessment=assessment,
+            processing_owners=fixture.owners,
+            sample=sample,
+            assessment=assessment,
         )
         owners[name] = owner_from_cid_nl_assessment_support(
-            sample=sample, assessment=assessment, hypothesis=hypothesis,
+            sample=sample,
+            assessment=assessment,
+            hypothesis=hypothesis,
         )
         assessments[name] = assessment
 
     config = AlignmentConfig()
-    frame = SampleRtFrame(injection_order={
-        name: index for index, name in enumerate(widths, 1)
-    } if with_order else {})
+    frame = SampleRtFrame(
+        injection_order={name: index for index, name in enumerate(widths, 1)}
+        if with_order
+        else {}
+    )
     references = (owners["reference1"], owners["reference2"])
     (group,) = group_cid_nl_owners(
-        references, config=config, sample_universe=frozenset(widths), rt_frame=frame,
+        references,
+        config=config,
+        sample_universe=frozenset(widths),
+        rt_frame=frame,
     )
     assert group.disposition == "established"
     identity = validate_cross_sample_peak_group_identity(group, require_canonical=True)
     initial = CrossSampleGroupingResult(
-        processing_owners=fixture.owners, rt_frame=frame,
+        processing_owners=fixture.owners,
+        rt_frame=frame,
         partition_transition=CrossSamplePartitionTransition(
-            status="assessable", predecessors=(identity,), successors=(identity,),
-            lineage=(), reason="unchanged_membership_no_lineage",
+            status="assessable",
+            predecessors=(identity,),
+            successors=(identity,),
+            lineage=(),
+            reason="unchanged_membership_no_lineage",
         ),
     )
     backfills = {}
@@ -166,16 +207,25 @@ def test_backfill_batch_preserves_shape_compatibility_without_arbitrary_winners(
         # Both conflicting shapes pass individually against the references:
         # r(narrow, reference)=.898, r(wide, reference)=.818, but r(narrow, wide)=.597.
         assert supports_existing_feature(
-            owners[name], group.owners, config=config, rt_frame=frame,
+            owners[name],
+            group.owners,
+            config=config,
+            rt_frame=frame,
         )
-        backfills[(
-            group.group_hypothesis_id, fixture.sample(name).identity.sample_identity_id,
-            assessments[name].content.method_subject.method_subject_id,
-        )] = (fixture.sample(name), assessments[name])
+        backfills[
+            (
+                group.group_hypothesis_id,
+                fixture.sample(name).identity.sample_identity_id,
+                assessments[name].content.method_subject.method_subject_id,
+            )
+        ] = (fixture.sample(name), assessments[name])
     if reverse:
         backfills = dict(reversed(tuple(backfills.items())))
     grouping, (successor,), successor_ids, retained = admit_cid_nl_group_backfills(
-        result=initial, groups=(group,), backfills=backfills, alignment_config=config,
+        result=initial,
+        groups=(group,),
+        backfills=backfills,
+        alignment_config=config,
     )
     accepted = {"compatible"} if conflicting else {"narrow", "other", "compatible"}
     assert {owner.sample_stem for owner in successor.owners} == (
@@ -187,17 +237,21 @@ def test_backfill_batch_preserves_shape_compatibility_without_arbitrary_winners(
         owners[name].cross_sample_member_subject for name in accepted
     }
     assert set(retained) == {
-        (fixture.sample(name).identity.sample_identity_id,
-         assessments[name].artifact.content_identity.artifact_content_id)
+        (
+            fixture.sample(name).identity.sample_identity_id,
+            assessments[name].artifact.content_identity.artifact_content_id,
+        )
         for name in accepted
     }
     assert {
         hypothesis.hypothesis_id
-        for values in retained.values() for hypothesis in values
+        for values in retained.values()
+        for hypothesis in values
     } == {owners[name].owner_id for name in accepted}
 
 
 def test_backfill_window_does_not_change_initial_owner_partition(tmp_path, monkeypatch):
+    physical_records = {}
     from xic_extractor.untargeted_execution.partition_composition import (
         finalize_untargeted_partition_grouping,
         prepare_untargeted_partition_grouping,
@@ -215,7 +269,11 @@ def test_backfill_window_does_not_change_initial_owner_partition(tmp_path, monke
         raw.scans = tuple(replace(scan, rt=scan.rt + shift) for scan in raw.scans)
         raws[path] = raw
         candidates[path.stem] = _current_candidates(
-            raw, raw_file=path, settings=settings, peak_config=peak_config
+            raw,
+            raw_file=path,
+            settings=settings,
+            peak_config=peak_config,
+            physical_records=physical_records,
         )
     batch = build_dense_partition(
         raw_paths=paths,
@@ -229,6 +287,12 @@ def test_backfill_window_does_not_change_initial_owner_partition(tmp_path, monke
         discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
         dll_dir=tmp_path,
         sample_identity_namespace="study:grouping-window-invariance",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in (candidates).values()
+            for c in values
+        },
     )
     _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     config = AlignmentConfig(anchor_min_seed_events=1)
@@ -304,6 +368,7 @@ def test_backfill_window_does_not_change_initial_owner_partition(tmp_path, monke
 def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
     tmp_path, monkeypatch, empty, half_window
 ):
+    physical_records = {}
     import csv
 
     from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
@@ -330,7 +395,11 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
         raw = _FakeRaw((8.0 + shifts[path.stem],))
         candidates[path.stem] = (
             _current_candidates(
-                raw, raw_file=path, settings=settings, peak_config=peak_config
+                raw,
+                raw_file=path,
+                settings=settings,
+                peak_config=peak_config,
+                physical_records=physical_records,
             )
             if path.stem.startswith("S")
             else ()
@@ -357,6 +426,12 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
         discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
         dll_dir=tmp_path,
         sample_identity_namespace="study:sample-query-rt",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in (candidates).values()
+            for c in values
+        },
     )
     _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     config = AlignmentConfig(anchor_min_seed_events=1)
@@ -446,6 +521,7 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
 def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
     tmp_path, monkeypatch, outcome
 ):
+    physical_records = {}
     from xic_extractor.alignment.untargeted_finalized_matrix import (
         project_completed_untarget_batch_writer_inputs,
     )
@@ -459,7 +535,11 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
         raw = _FakeRaw((8.0,))
         raws[path] = raw
         candidates[path.stem] = _current_candidates(
-            raw, raw_file=path, settings=settings, peak_config=peak_config
+            raw,
+            raw_file=path,
+            settings=settings,
+            peak_config=peak_config,
+            physical_records=physical_records,
         )
         if path.stem == "Rejected":
             candidates[path.stem] = tuple(
@@ -489,6 +569,12 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
         discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
         sample_identity_namespace="study:rejected-bounded-recovery",
         dll_dir=tmp_path,
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in (candidates).values()
+            for c in values
+        },
     )
     opened = _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     recovery_calls = []
@@ -637,6 +723,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
                 peak_config=peak_config,
                 raw=None,
                 initial_assessment=initial,
+                signal_processing_profile=TEST_PROFILE,
             )
         with pytest.raises(ValueError, match="support policy"):
             backfill_untargeted_cid_nl_sample_subject(
@@ -652,6 +739,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
                 peak_config=peak_config,
                 raw=None,
                 initial_assessment=initial,
+                signal_processing_profile=TEST_PROFILE,
             )
     elif outcome == "empty":
         (recovery,) = rejected.backfill_attempts
@@ -665,7 +753,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
         [] if outcome in {"blank", "below-quorum"} else ["Rejected"]
     )
     assert sum(sum(raw.chromatogram_request_counts) for raw in opened[paths[-1]]) == (
-        0 if outcome in {"blank", "below-quorum"} else 1
+        0 if outcome in {"blank", "below-quorum"} else 2
     )
 
 
@@ -683,6 +771,7 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
 def test_runtime_recovers_every_authorized_rt_group(
     tmp_path, monkeypatch, batched, recovery_peaks, shared_support
 ):
+    physical_records = {}
     support = {"S1": (8.0,), "S2": (8.0,), "S3": (12.0,), "S4": (12.0,)}
     if shared_support == "configured":
         support = {"S1": (8.0,), "S2": (8.0,), "S3": (8.12,)}
@@ -724,7 +813,11 @@ def test_runtime_recovers_every_authorized_rt_group(
             )
         raws[path] = raw
         current_candidates = _current_candidates(
-            raw, raw_file=path, settings=settings, peak_config=peak_config
+            raw,
+            raw_file=path,
+            settings=settings,
+            peak_config=peak_config,
+            physical_records=physical_records,
         )
         candidates[path.stem] = (
             current_candidates
@@ -751,6 +844,12 @@ def test_runtime_recovers_every_authorized_rt_group(
         candidates_by_sample=candidates,
         discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
         sample_identity_namespace="study:multi-group-recovery",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in candidates.values()
+            for c in values
+        },
     )
     if shared_support == "configured":
         _assert_alignment_uses_configured_recovery_groups(
@@ -789,6 +888,11 @@ def test_runtime_recovers_every_authorized_rt_group(
                 raw_path=context.raw_paths_by_sample[sample.metadata.raw_stem],
                 dll_dir=tmp_path,
                 work_unit_key=sample.metadata.raw_stem,
+                signal_processing_profile=context.signal_processing_profile,
+                physical_records=tuple(
+                    context.physical_records_by_candidate[c.candidate_id]
+                    for c in (candidates[sample.metadata.raw_stem])
+                ),
             )
             for sample in context.samples
         )
@@ -845,7 +949,7 @@ def test_runtime_recovers_every_authorized_rt_group(
     )
     assert sum(
         sum(raw.chromatogram_request_counts) for raw in opened.get(paths[-1], ())
-    ) == len(authorized_centers)
+    ) == 2 * len(authorized_centers)
     assert len(missing.backfill_attempts) == len(authorized_centers)
     assert sorted(
         len(attempt.assessment.candidate_peaks) for attempt in missing.backfill_attempts
@@ -1290,6 +1394,7 @@ def test_runtime_recovers_every_authorized_rt_group(
 def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
     tmp_path, monkeypatch
 ):
+    physical_records = {}
     """A shared physical peak must not be assigned to both groups."""
 
     centers = {"S1": (8.0, 8.12), "S2": (8.0, 8.12), "Missing": (8.06,)}
@@ -1320,7 +1425,11 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         )
         raws[path] = raw
         current = _current_candidates(
-            raw, raw_file=path, settings=settings, peak_config=peak_config
+            raw,
+            raw_file=path,
+            settings=settings,
+            peak_config=peak_config,
+            physical_records=physical_records,
         )
         candidates[path.stem] = (
             current
@@ -1344,6 +1453,12 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
         discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
         sample_identity_namespace="study:shared-recovery-claim",
         dll_dir=tmp_path,
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in (candidates).values()
+            for c in values
+        },
     )
     _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     runtime = start_runtime_attempt(
@@ -1414,6 +1529,7 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
 def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
     tmp_path, monkeypatch, mz_separation_ppm, reverse
 ):
+    physical_records = {}
     """Overlapping extraction windows cannot supply one peak to two rows."""
 
     ms1_centers = {"S1": (8.0, 8.12), "S2": (8.0, 8.12), "Missing": (8.06,)}
@@ -1432,9 +1548,8 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
                 replace(
                     scan,
                     precursor_mz=second_mz if scan.rt > 8.06 else first_mz,
-                    masses=scan.masses + (
-                        second_mz - first_mz if scan.rt > 8.06 else 0.0
-                    ),
+                    masses=scan.masses
+                    + (second_mz - first_mz if scan.rt > 8.06 else 0.0),
                 )
                 for scan in self.scans
             )
@@ -1471,7 +1586,11 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         raws[path] = raw
         candidates[path.stem] = (
             _current_candidates(
-                raw, raw_file=path, settings=settings, peak_config=peak_config
+                raw,
+                raw_file=path,
+                settings=settings,
+                peak_config=peak_config,
+                physical_records=physical_records,
             )
             if path.stem != "Missing"
             else ()
@@ -1495,6 +1614,12 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
         discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
         sample_identity_namespace="study:shared-ms1-only-backfill",
         dll_dir=tmp_path,
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in (candidates).values()
+            for c in values
+        },
     )
     _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     runtime = start_runtime_attempt(
@@ -1531,10 +1656,12 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
     assert first.generation_provenance.acquisition_source_id == (
         second.generation_provenance.acquisition_source_id
     )
-    assert len({
-        first.content.peak_observation_content_id,
-        second.content.peak_observation_content_id,
-    }) == (1 if mz_separation_ppm == 0.0 else 2)
+    assert len(
+        {
+            first.content.peak_observation_content_id,
+            second.content.peak_observation_content_id,
+        }
+    ) == (1 if mz_separation_ppm == 0.0 else 2)
 
     completed = complete_dense_partition(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
@@ -1569,13 +1696,14 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
     ("missing_peaks", "expected_state"),
     [
         ((8.0,), "ms1_only_backfill_observation"),
-        ((7.8, 8.2), "unresolved"),
+        ((7.8, 8.2), "unavailable"),
     ],
     ids=["one-ms1-peak", "two-ms1-peaks"],
 )
 def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
     tmp_path, monkeypatch, missing_peaks, expected_state
 ):
+    physical_records = {}
     centers = {"S1": (8.0,), "S2": (8.0,), "Missing": missing_peaks}
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in centers)
     settings, peak_config = (
@@ -1601,7 +1729,11 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         raws[path] = raw
         candidates[path.stem] = (
             _current_candidates(
-                raw, raw_file=path, settings=settings, peak_config=peak_config
+                raw,
+                raw_file=path,
+                settings=settings,
+                peak_config=peak_config,
+                physical_records=physical_records,
             )
             if path.stem != "Missing"
             else ()
@@ -1623,6 +1755,12 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
         sample_identity_namespace="study:ms1-only-backfill",
         dll_dir=tmp_path,
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in (candidates).values()
+            for c in values
+        },
     )
     _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     runtime = start_runtime_attempt(
@@ -1645,8 +1783,17 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         if item.job.sample.metadata.raw_stem == "Missing"
     )
     (attempt,) = missing.backfill_attempts
-    assert attempt.assessment.content.reason_codes == ("no_unique_qualifying_relation",)
-    assert len(attempt.assessment.candidate_peaks) == len(missing_peaks)
+    if len(missing_peaks) == 1:
+        assert attempt.assessment.content.reason_codes == (
+            "no_unique_qualifying_relation",
+        )
+        assert len(attempt.assessment.candidate_peaks) == 1
+    else:
+        # No physical peak occupies the predicted position between the two peaks.
+        assert attempt.assessment.content.reason_codes == (
+            "insufficient_method_evidence",
+        )
+        assert attempt.assessment.candidate_peaks == ()
     completed = complete_dense_partition(
         batch, result, alignment_config=AlignmentConfig(anchor_min_seed_events=1)
     )
@@ -1665,9 +1812,9 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
         for decision in writer.production_decisions.cells.values()
         if decision.sample_stem == "Missing"
     )
-    if expected_state == "unresolved":
+    if expected_state == "unavailable":
         assert not decision.write_matrix_value
-        assert decision.raw_status == "ambiguous_ms1_owner"
+        assert decision.matrix_value is None
     else:
         assert decision.write_matrix_value
         assert decision.raw_status == "backfilled"
@@ -1723,6 +1870,7 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
     # Missing has CID-NL support only for its own peak at 9.6 min; its peak in
     # the S1/S2 group at 8.0 min carries no MS2. Support elsewhere must not
     # stop the group-bounded revisit.
+    physical_records = {}
     ms1_centers = {"S1": (8.0,), "S2": (8.0,), "Missing": (8.0, 9.6)}
     nl_centers = {"S1": (8.0,), "S2": (8.0,), "Missing": (9.6,)}
     paths = tuple(tmp_path / f"{stem}.synthetic" for stem in ms1_centers)
@@ -1748,7 +1896,11 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
         )
         raws[path] = raw
         candidates[path.stem] = _current_candidates(
-            raw, raw_file=path, settings=settings, peak_config=peak_config
+            raw,
+            raw_file=path,
+            settings=settings,
+            peak_config=peak_config,
+            physical_records=physical_records,
         )
     batch = build_dense_partition(
         raw_paths=paths,
@@ -1767,6 +1919,12 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
         discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
         sample_identity_namespace="study:support-elsewhere",
         dll_dir=tmp_path,
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in (candidates).values()
+            for c in values
+        },
     )
     _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     runtime = start_runtime_attempt(
@@ -1857,7 +2015,16 @@ def _assert_alignment_uses_configured_recovery_groups(
         return result
 
     monkeypatch.setattr(bounded_runtime, "execute_partition", retain_runtime)
+    monkeypatch.setattr(
+        "xic_extractor.untargeted_execution.alignment._load_physical_replay_inputs",
+        lambda **options: (
+            options["candidates_by_sample"],
+            kwargs["physical_records_by_candidate"],
+            None,
+        ),
+    )
     completed = complete_untargeted_alignment(
+        signal_processing_profile=TEST_PROFILE,
         discovery_batch=DiscoveryBatchInput(
             sample_order=tuple(candidates),
             candidate_csvs={
@@ -1934,4 +2101,4 @@ def _assert_alignment_uses_configured_recovery_groups(
         for decision in writer.production_decisions.cells.values()
         if decision.sample_stem == "Missing"
     )
-    assert sum(sum(raw.chromatogram_request_counts) for raw in opened[paths[-1]]) == 1
+    assert sum(sum(raw.chromatogram_request_counts) for raw in opened[paths[-1]]) == 2

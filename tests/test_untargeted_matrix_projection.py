@@ -11,6 +11,12 @@ import numpy as np
 import pytest
 
 import xic_extractor.alignment.result.scientific_alignment as finalizer_owner
+from tests.cid_nl_peak_support_no_raw_fixture import (
+    cid_nl_evidence,
+    cid_nl_peak,
+    cid_nl_support_policy,
+    cid_nl_unique_support,
+)
 from tests.test_cell_observations import (
     _coverage_for_groups,
     _receipt_fixture,
@@ -19,10 +25,11 @@ from tests.test_cross_sample_association_lineage import (
     _final_receipt as _lineage_final_receipt,
 )
 from tests.test_search_scope_capture import _capture_binding, _peak_config
-from tests.test_untargeted_cid_nl_golden_path import (
-    _support_input,
-)
 from tests.untargeted_cid_nl_no_raw_fixture import (
+    NEUTRAL_LOSS_DA,
+    PRECURSOR_MZ,
+    PRODUCT_MZ,
+    UntargetedCidNlNoRawFixture,
     build_untargeted_cid_nl_no_raw_fixture,
 )
 from xic_extractor.alignment.cell_decision.owner import (
@@ -31,6 +38,7 @@ from xic_extractor.alignment.cell_decision.owner import (
 from xic_extractor.alignment.cid_nl_evidence_spine import (
     build_cid_nl_reference_spine,
 )
+from xic_extractor.alignment.cid_nl_inputs import UntargetedCidNlAssessmentInput
 from xic_extractor.alignment.cross_sample.association import (
     build_cross_sample_association_lineage_handoff,
 )
@@ -45,7 +53,16 @@ from xic_extractor.alignment.projection.untarget import (
 from xic_extractor.alignment.result import (
     FinalizedScientificAlignment,
 )
+from xic_extractor.discovery.cid_nl_evidence_projection import (
+    UntargetedCidNlProjectionRef,
+    mint_untargeted_cid_nl_projection_ref,
+)
+from xic_extractor.discovery.models import DiscoverySeed
 from xic_extractor.peak_detection.capture import capture_peak_hypotheses
+from xic_extractor.peak_detection.cid_nl_method_assessment import (
+    CidNlEvaluationReceipt,
+    mint_cid_nl_method_assessment_ref,
+)
 from xic_extractor.peak_detection.cid_nl_method_subject import CID_NL_PROVIDER_ID
 from xic_extractor.peak_detection.search_scope import (
     SEARCH_SCOPE_SCHEMA_VERSION,
@@ -284,7 +301,7 @@ def _completed_projection(tmp_path, monkeypatch, *, disposition, numeric=False):
         from tests.test_alignment_cell_decision import _numeric_peak
 
         monkeypatch.setattr(
-            "tests.test_untargeted_cid_nl_golden_path.cid_nl_peak", _numeric_peak
+            "tests.test_untargeted_matrix_projection.cid_nl_peak", _numeric_peak
         )
     _, _, _, alignment = _untarget_projection_inputs(
         tmp_path,
@@ -303,7 +320,7 @@ def test_completed_values_project_to_exact_group_sample_positions(
     from tests.test_alignment_cell_decision import _numeric_peak
 
     monkeypatch.setattr(
-        "tests.test_untargeted_cid_nl_golden_path.cid_nl_peak", _numeric_peak
+        "tests.test_untargeted_matrix_projection.cid_nl_peak", _numeric_peak
     )
     _, _, _, alignment = _untarget_projection_inputs(
         tmp_path, monkeypatch, group_mode=group_mode
@@ -417,3 +434,86 @@ def test_projection_requires_answers_for_the_exact_observation_population(
         )
     with pytest.raises(UntargetProjectionContractError, match="missing|extra|crossed"):
         project_untarget_matrix(alignment, changed)
+
+
+def _support_input(
+    fixture: UntargetedCidNlNoRawFixture,
+    sample_stem: str,
+    *,
+    scan_number: int,
+    height: float,
+) -> UntargetedCidNlAssessmentInput:
+    peak = cid_nl_peak(fixture, sample_stem, height=height)
+    evidence = cid_nl_evidence(
+        fixture,
+        sample_stem,
+        scan_number=scan_number,
+        scan_rt_min=8.0,
+    )
+    support = cid_nl_unique_support(
+        fixture,
+        sample_stem,
+        peak=peak,
+        evidence=evidence,
+    )
+    assessment = mint_cid_nl_method_assessment_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample(sample_stem),
+        method_subject=fixture.method_subject,
+        detector_invocation_id=f"gaussian15:{sample_stem}",
+        evaluation_receipt=_completed_receipt(scanned_event_count=1),
+        candidate_peaks=(peak,),
+        evidence_refs=(evidence,),
+        individual_support_refs=(support,),
+    )
+    return UntargetedCidNlAssessmentInput(
+        sample=fixture.sample(sample_stem),
+        assessment=assessment,
+        discovery_projections=(_projection(fixture, sample_stem, evidence),),
+    )
+
+
+def _completed_receipt(*, scanned_event_count: int) -> CidNlEvaluationReceipt:
+    return CidNlEvaluationReceipt(
+        query_rt_min=7.5,
+        query_rt_max=8.6,
+        support_policy=cid_nl_support_policy(),
+        acquisition_supported=True,
+        search_completed=True,
+        scanned_event_count=scanned_event_count,
+        reason_code=None,
+    )
+
+
+def _projection(
+    fixture: UntargetedCidNlNoRawFixture,
+    sample_stem: str,
+    evidence,
+) -> UntargetedCidNlProjectionRef:
+    source = resolve_request_acquisition_source(
+        processing_owners=fixture.owners,
+        sample=fixture.sample(sample_stem),
+    )
+    observation = evidence.observation
+    seed = DiscoverySeed(
+        raw_file=fixture.source_paths[sample_stem],
+        sample_stem=sample_stem,
+        scan_number=observation.scan_number,
+        rt=observation.scan_rt_min,
+        precursor_mz=PRECURSOR_MZ,
+        product_mz=PRODUCT_MZ,
+        product_intensity=observation.product_intensity,
+        neutral_loss_tag="NL116",
+        configured_neutral_loss_da=NEUTRAL_LOSS_DA,
+        observed_neutral_loss_da=NEUTRAL_LOSS_DA,
+        observed_loss_error_ppm=0.0,
+        matched_tag_names=("NL116",),
+        scan_precursor_mz=PRECURSOR_MZ,
+        acquisition_source_id=source.acquisition_source_id,
+    )
+    return mint_untargeted_cid_nl_projection_ref(
+        processing_owners=fixture.owners,
+        sample=fixture.sample(sample_stem),
+        canonical_evidence=evidence,
+        discovery_seed=seed,
+    )

@@ -7,12 +7,14 @@ import numpy as np
 import pytest
 
 from tests.cid_nl_raw_fixture import (
+    TEST_PROFILE,
     _current_candidates,
     _FakeRaw,
     _multi_tag_settings,
     _open_bound_raw,
     _peak_config,
     _settings,
+    bind_physical_capture,
 )
 from tests.untargeted_cid_nl_no_raw_fixture import (
     build_untargeted_cid_nl_no_raw_fixture,
@@ -641,6 +643,7 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
 def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
     tmp_path: Path,
 ) -> None:
+    physical_records = {}
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
@@ -654,6 +657,7 @@ def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
         raw_file=fixture.source_paths["S1"],
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )
     raw, vendor_raw = _open_bound_raw(
         fixture,
@@ -662,6 +666,9 @@ def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
         tmp_path=tmp_path,
     )
 
+    fixture = replace(
+        fixture, owners=bind_physical_capture(fixture.owners, physical_records)
+    )
     result = adapt_current_discovery_sample_subject(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
@@ -670,6 +677,8 @@ def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
         settings=settings,
         peak_config=peak_config,
         raw=raw,
+        signal_processing_profile=TEST_PROFILE,
+        physical_records=tuple(physical_records[c.candidate_id] for c in (candidates)),
     )
 
     assessment = result.assessment_input.assessment
@@ -692,6 +701,7 @@ def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
 def test_adapter_retains_completed_relation_before_later_evidence_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    physical_records = {}
     from xic_extractor.untargeted_execution.partition import cid_nl_acquisition
 
     fixture = build_untargeted_cid_nl_no_raw_fixture(
@@ -705,8 +715,12 @@ def test_adapter_retains_completed_relation_before_later_evidence_failure(
         raw_file=fixture.source_paths["S1"],
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )
     raw, _vendor_raw = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+    fixture = replace(
+        fixture, owners=bind_physical_capture(fixture.owners, physical_records)
+    )
     observer = cid_nl_acquisition._PartitionWorkObserver(fixture.owners)
     resolve_relations = cid_nl_acquisition.resolve_cid_nl_method_relations
     successful_relations = []
@@ -731,6 +745,10 @@ def test_adapter_retains_completed_relation_before_later_evidence_failure(
             peak_config=peak_config,
             raw=raw,
             _observer=observer,
+            signal_processing_profile=TEST_PROFILE,
+            physical_records=tuple(
+                physical_records[c.candidate_id] for c in (candidates)
+            ),
         )
 
     (((support,), set_relations),) = successful_relations
@@ -752,6 +770,7 @@ def test_adapter_retains_completed_relation_before_later_evidence_failure(
 def test_adapter_preserves_strict_scans_within_mixed_candidate(
     tmp_path: Path,
 ) -> None:
+    physical_records = {}
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
@@ -771,6 +790,7 @@ def test_adapter_preserves_strict_scans_within_mixed_candidate(
         raw_file=fixture.source_paths["S1"],
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )
     (candidate,) = candidates
     assert candidate.precursor_mz_basis == "mixed"
@@ -780,6 +800,9 @@ def test_adapter_preserves_strict_scans_within_mixed_candidate(
     }
     raw, _vendor_raw = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
 
+    fixture = replace(
+        fixture, owners=bind_physical_capture(fixture.owners, physical_records)
+    )
     result = adapt_current_discovery_sample_subject(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
@@ -788,6 +811,8 @@ def test_adapter_preserves_strict_scans_within_mixed_candidate(
         settings=settings,
         peak_config=peak_config,
         raw=raw,
+        signal_processing_profile=TEST_PROFILE,
+        physical_records=tuple(physical_records[c.candidate_id] for c in (candidates)),
     )
 
     assessment = result.assessment_input.assessment
@@ -810,6 +835,7 @@ def test_adapter_preserves_strict_scans_within_mixed_candidate(
 def test_adapter_preserves_strict_support_after_ms1_merge_of_inferred_scan(
     tmp_path: Path,
 ) -> None:
+    physical_records = {}
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
@@ -838,6 +864,7 @@ def test_adapter_preserves_strict_support_after_ms1_merge_of_inferred_scan(
         raw_file=fixture.source_paths["S1"],
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )
     (candidate,) = candidates
     assert candidate.precursor_mz_basis == "mixed"
@@ -854,6 +881,9 @@ def test_adapter_preserves_strict_support_after_ms1_merge_of_inferred_scan(
     )
     raw, _vendor_raw = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
 
+    fixture = replace(
+        fixture, owners=bind_physical_capture(fixture.owners, physical_records)
+    )
     result = adapt_current_discovery_sample_subject(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
@@ -862,6 +892,8 @@ def test_adapter_preserves_strict_support_after_ms1_merge_of_inferred_scan(
         settings=settings,
         peak_config=peak_config,
         raw=raw,
+        signal_processing_profile=TEST_PROFILE,
+        physical_records=tuple(physical_records[c.candidate_id] for c in (candidates)),
     )
 
     assessment = result.assessment_input.assessment
@@ -879,6 +911,7 @@ def test_inferred_precursor_retains_physical_peak_without_strict_nl_support(
     tmp_path: Path,
     ms1_present: bool,
 ) -> None:
+    physical_records = {}
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
@@ -897,10 +930,14 @@ def test_inferred_precursor_retains_physical_peak_without_strict_nl_support(
         raw_file=fixture.source_paths["S1"],
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )
     assert candidates
     assert all(c.precursor_mz_basis == "product_plus_neutral_loss" for c in candidates)
     raw, _vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+    fixture = replace(
+        fixture, owners=bind_physical_capture(fixture.owners, physical_records)
+    )
     result = adapt_current_discovery_sample_subject(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
@@ -909,6 +946,8 @@ def test_inferred_precursor_retains_physical_peak_without_strict_nl_support(
         settings=settings,
         peak_config=peak_config,
         raw=raw,
+        signal_processing_profile=TEST_PROFILE,
+        physical_records=tuple(physical_records[c.candidate_id] for c in (candidates)),
     )
     assessment = result.assessment_input.assessment
     assert result.strict_scan_count == 0
@@ -948,6 +987,7 @@ def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
     parent_supported: bool,
     composite: bool,
 ) -> None:
+    physical_records = {}
     import json
     from types import SimpleNamespace
 
@@ -1036,6 +1076,7 @@ def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
         raw_file=fixture.source_paths["S1"],
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )
     raw, vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
     # Supply only the vendor boundary; RAW metadata parsing and the batched
@@ -1072,6 +1113,9 @@ def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
         )
 
     monkeypatch.setattr(vendor, "GetCentroidStream", parent_centroids, raising=False)
+    fixture = replace(
+        fixture, owners=bind_physical_capture(fixture.owners, physical_records)
+    )
     try:
         result = adapt_current_discovery_sample_subject(
             processing_owners=fixture.owners,
@@ -1081,6 +1125,11 @@ def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
             settings=settings,
             peak_config=peak_config,
             raw=raw,
+            signal_processing_profile=TEST_PROFILE,
+            physical_records=tuple(
+                physical_records[c.candidate_id]
+                for c in (candidates[::-1] if reverse_products else candidates)
+            ),
         )
     finally:
         raw.__exit__(None, None, None)
@@ -1161,6 +1210,7 @@ def test_scan_event_prefers_independent_direct_loss_over_stronger_inference(
 def test_inferred_precursor_can_gain_support_from_measured_parent_ms1(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cached: bool
 ) -> None:
+    physical_records = {}
     from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
 
     fixture = build_untargeted_cid_nl_no_raw_fixture(
@@ -1187,6 +1237,7 @@ def test_inferred_precursor_can_gain_support_from_measured_parent_ms1(
         raw_file=fixture.source_paths["S1"],
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )
     raw, _vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
     monkeypatch.setattr(
@@ -1222,6 +1273,9 @@ def test_inferred_precursor_can_gain_support_from_measured_parent_ms1(
         raw = CachedUntargetedRaw(
             raw, source=raw.acquisition_source, cache_dir=tmp_path / "raw-facts"
         )
+    fixture = replace(
+        fixture, owners=bind_physical_capture(fixture.owners, physical_records)
+    )
     result = adapt_current_discovery_sample_subject(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
@@ -1230,6 +1284,8 @@ def test_inferred_precursor_can_gain_support_from_measured_parent_ms1(
         settings=settings,
         peak_config=peak_config,
         raw=raw,
+        signal_processing_profile=TEST_PROFILE,
+        physical_records=tuple(physical_records[c.candidate_id] for c in (candidates)),
     )
     assessment = result.assessment_input.assessment
     assert assessment.content.method_result == "SUPPORT"
@@ -1254,6 +1310,7 @@ def test_inferred_precursor_off_its_scan_receipt_is_rejected(
     # An inferred precursor stays product + loss; its apex MS1 reading is only
     # reported. A persisted precursor or product off the scan's receipt breaks
     # the strict seed reconstruction.
+    physical_records = {}
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
@@ -1275,10 +1332,15 @@ def test_inferred_precursor_off_its_scan_receipt_is_rejected(
             raw_file=fixture.source_paths["S1"],
             settings=settings,
             peak_config=peak_config,
+            physical_records=physical_records,
         )
     )
     assert all(c.precursor_mz_basis == "product_plus_neutral_loss" for c in candidates)
     raw, _vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
+
+    fixture = replace(
+        fixture, owners=bind_physical_capture(fixture.owners, physical_records)
+    )
 
     def adapt():
         return adapt_current_discovery_sample_subject(
@@ -1289,6 +1351,10 @@ def test_inferred_precursor_off_its_scan_receipt_is_rejected(
             settings=settings,
             peak_config=peak_config,
             raw=raw,
+            signal_processing_profile=TEST_PROFILE,
+            physical_records=tuple(
+                physical_records[c.candidate_id] for c in (candidates)
+            ),
         )
 
     with pytest.raises(CidNlAcquisitionError, match="seed is not unique"):
@@ -1478,21 +1544,31 @@ def test_scan_seed_enumeration_runs_once_per_declared_scan(
 def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
     tmp_path: Path,
 ) -> None:
+    physical_records = {}
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
         thermo_raw_sources=True,
     )
-    source_raw = _FakeRaw((7.98, 8.02))
-    settings = _settings()
+    source_raw = _FakeRaw((7.8, 9.2))
+    source_raw.rt = np.linspace(7.0, 10.0, 1201)
+    source_raw.intensity = sum(
+        1000.0 * np.exp(-0.5 * ((source_raw.rt - apex) / 0.035) ** 2)
+        for apex in (7.8, 9.2)
+    )
+    source_raw.scans = tuple(
+        replace(scan, scan_number=int(np.argmin(abs(source_raw.rt - scan.rt))) + 1)
+        for scan in source_raw.scans
+    )
+    settings = replace(_settings(), rt_min=7.0, rt_max=10.0)
     peak_config = _peak_config(tmp_path)
-    first = _current_candidates(
+    first, second = _current_candidates(
         source_raw,
         raw_file=fixture.source_paths["S1"],
         settings=settings,
         peak_config=peak_config,
-    )[0]
-    second = replace(first, candidate_id=f"{first.candidate_id}:second")
+        physical_records=physical_records,
+    )
     candidates = tuple(sorted((first, second), key=lambda item: item.candidate_id))
     raw, vendor_raw = _open_bound_raw(
         fixture,
@@ -1507,9 +1583,13 @@ def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
         candidates=candidates,
         settings=settings,
         raw=raw,
+        signal_processing_profile=TEST_PROFILE,
     )
 
     assert batch is not None
+    fixture = replace(
+        fixture, owners=bind_physical_capture(fixture.owners, physical_records)
+    )
     results = tuple(
         adapt_current_discovery_sample_subject(
             processing_owners=fixture.owners,
@@ -1520,6 +1600,10 @@ def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
             peak_config=peak_config,
             raw=raw,
             _preacquired_traces=batch,
+            signal_processing_profile=TEST_PROFILE,
+            physical_records=tuple(
+                physical_records[c.candidate_id] for c in ((candidate,))
+            ),
         )
         for candidate in candidates
     )
@@ -1531,7 +1615,7 @@ def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
     assert [result.source_candidate_ids for result in results] == [
         (candidate.candidate_id,) for candidate in candidates
     ]
-    assert vendor_raw.chromatogram_request_counts == [2]
+    assert vendor_raw.chromatogram_request_counts == [3]
 
 
 def test_elution_context_shares_acquisition_without_widening_capture(
@@ -1545,7 +1629,7 @@ def test_elution_context_shares_acquisition_without_widening_capture(
         tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True
     )
     source = _FakeRaw((7.8,))
-    source.intensity += 700.0 * np.exp(-0.5 * ((source.rt - 8.4) / 0.035) ** 2)
+    source.intensity += 700.0 * np.exp(-0.5 * ((source.rt - 8.5) / 0.035) ** 2)
     candidate = _current_candidates(
         source,
         raw_file=fixture.source_paths["S1"],
@@ -1569,24 +1653,23 @@ def test_elution_context_shares_acquisition_without_widening_capture(
     assert len(batch.context_trace_indices) == len(batch.elution_contexts) == 1
     assert [
         peak.apex_rt for peak in batch.elution_contexts[0].landmarks
-    ] == pytest.approx([7.8, 8.4], abs=0.005)
+    ] == pytest.approx([7.8, 8.5], abs=0.005)
     original = batch.acquired_trace(candidate.candidate_id)
     assert original.coordinate.request.rt_min == candidate.ms1_search_rt_min
     assert original.coordinate.request.rt_max == candidate.ms1_search_rt_max
-    mask = (source.rt >= candidate.ms1_search_rt_min) & (
-        source.rt <= candidate.ms1_search_rt_max
-    )
+    first_scan, last_scan = source.scan_window_for_request(original.coordinate.request)
+    mask = slice(first_scan - 1, last_scan)
     np.testing.assert_array_equal(original.trace.rt, source.rt[mask])
     np.testing.assert_array_equal(original.trace.intensity, source.intensity[mask])
     assert original is batch.acquired_trace(duplicate.candidate_id)
-    assert max(original.trace.rt) < 8.4
+    assert max(original.trace.rt) < 8.5
 
 
 @pytest.mark.parametrize(
     "sample,query_rt,expected_apex,width,tolerance",
     [
         ("S1", 7.8, 7.8, 0.035, None),
-        ("S2", 8.4, 8.4, 0.035, None),
+        ("S2", 8.5, 8.5, 0.035, None),
         ("S1", 7.55, 7.8, 0.1, 12.0),
     ],
     ids=["first-sample", "second-sample", "query-containing-peak"],
@@ -1634,12 +1717,12 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
         sample_snapshot=fixture.owners.sample_snapshot,
         sample_resolutions=fixture.samples,
     )
-    source = _FakeRaw((7.8, 8.4))
+    source = _FakeRaw((7.8, 8.5))
     if tolerance is not None:
         source.rt = np.linspace(6.5, 9.5, 1201)
     source.intensity = 450.0 * np.exp(
         -0.5 * ((source.rt - 7.8) / width) ** 2
-    ) + 1200.0 * np.exp(-0.5 * ((source.rt - 8.4) / 0.035) ** 2)
+    ) + 1200.0 * np.exp(-0.5 * ((source.rt - 8.5) / 0.035) ** 2)
     raw, _ = _open_bound_raw(fixture, sample, source, tmp_path=tmp_path)
     query_basis = (
         "trajectory_observed"
@@ -1712,7 +1795,7 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
         )
         == "reuse"
     )
-    other_peak = 8.4 if expected_apex == 7.8 else 7.8
+    other_peak = 8.5 if expected_apex == 7.8 else 7.8
     assert (
         decide_cid_nl_backfill_revisit(
             assessment, observed_rt=other_peak, apex_tolerance_sec=2.0
@@ -1802,6 +1885,7 @@ def test_recovery_batch_canonicalizes_shared_group_queries_without_merging_cente
 def test_adapter_receipt_covers_candidate_search_beyond_seed_window(
     tmp_path: Path,
 ) -> None:
+    physical_records = {}
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
@@ -1816,6 +1900,7 @@ def test_adapter_receipt_covers_candidate_search_beyond_seed_window(
         raw_file=fixture.source_paths["S1"],
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )
     assert len(candidates) == 1
     candidate = candidates[0]
@@ -1830,6 +1915,9 @@ def test_adapter_receipt_covers_candidate_search_beyond_seed_window(
         tmp_path=tmp_path,
     )
 
+    fixture = replace(
+        fixture, owners=bind_physical_capture(fixture.owners, physical_records)
+    )
     result = adapt_current_discovery_sample_subject(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
@@ -1838,6 +1926,8 @@ def test_adapter_receipt_covers_candidate_search_beyond_seed_window(
         settings=settings,
         peak_config=peak_config,
         raw=raw,
+        signal_processing_profile=TEST_PROFILE,
+        physical_records=tuple(physical_records[c.candidate_id] for c in (candidates)),
     )
 
     receipt = result.assessment_input.assessment.content.evaluation_receipt
@@ -1854,6 +1944,7 @@ def test_adapter_receipt_covers_candidate_search_beyond_seed_window(
 def test_adapter_closes_qualifying_ms2_without_ms1_peak_as_reject(
     tmp_path: Path,
 ) -> None:
+    physical_records = {}
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
@@ -1867,6 +1958,7 @@ def test_adapter_closes_qualifying_ms2_without_ms1_peak_as_reject(
         raw_file=fixture.source_paths["S1"],
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )[0]
     orphan = _without_ms1_peak(candidate)
     raw, vendor_raw = _open_bound_raw(
@@ -1876,6 +1968,9 @@ def test_adapter_closes_qualifying_ms2_without_ms1_peak_as_reject(
         tmp_path=tmp_path,
     )
 
+    fixture = replace(
+        fixture, owners=bind_physical_capture(fixture.owners, physical_records)
+    )
     result = adapt_current_discovery_sample_subject(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
@@ -1884,6 +1979,8 @@ def test_adapter_closes_qualifying_ms2_without_ms1_peak_as_reject(
         settings=settings,
         peak_config=peak_config,
         raw=raw,
+        signal_processing_profile=TEST_PROFILE,
+        physical_records=tuple(physical_records[c.candidate_id] for c in ((orphan,))),
     )
 
     assessment = result.assessment_input.assessment
@@ -1911,6 +2008,7 @@ def test_adapter_closes_empty_subject_universe_as_not_evaluated_without_xic(
         tmp_path=tmp_path,
     )
 
+    fixture = replace(fixture, owners=bind_physical_capture(fixture.owners, {}))
     result = adapt_current_discovery_sample_subject(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
@@ -1919,6 +2017,7 @@ def test_adapter_closes_empty_subject_universe_as_not_evaluated_without_xic(
         settings=_settings(),
         peak_config=_peak_config(tmp_path),
         raw=raw,
+        signal_processing_profile=TEST_PROFILE,
     )
 
     assessment = result.assessment_input.assessment
@@ -1938,6 +2037,7 @@ def test_auto_range_empty_subject_has_no_fabricated_query_and_needs_no_raw(
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True
     )
+    fixture = replace(fixture, owners=bind_physical_capture(fixture.owners, {}))
     result = adapt_current_discovery_sample_subject(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
@@ -1946,6 +2046,7 @@ def test_auto_range_empty_subject_has_no_fabricated_query_and_needs_no_raw(
         settings=replace(_settings(), rt_min=None, rt_max=None),
         peak_config=_peak_config(tmp_path),
         raw=None,
+        signal_processing_profile=TEST_PROFILE,
     )
     assessment = result.assessment_input.assessment
     receipt = assessment.content.evaluation_receipt
@@ -1956,6 +2057,7 @@ def test_auto_range_empty_subject_has_no_fabricated_query_and_needs_no_raw(
 
 
 def test_auto_range_evaluated_receipt_uses_current_raw_bounds(tmp_path: Path) -> None:
+    physical_records = {}
     from types import SimpleNamespace
 
     fixture = build_untargeted_cid_nl_no_raw_fixture(
@@ -1969,9 +2071,13 @@ def test_auto_range_evaluated_receipt_uses_current_raw_bounds(tmp_path: Path) ->
         raw_file=fixture.source_paths["S1"],
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )
     raw, vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
     vendor.RunHeaderEx = SimpleNamespace(StartTime=7.4, EndTime=75.0)
+    fixture = replace(
+        fixture, owners=bind_physical_capture(fixture.owners, physical_records)
+    )
     result = adapt_current_discovery_sample_subject(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
@@ -1980,6 +2086,8 @@ def test_auto_range_evaluated_receipt_uses_current_raw_bounds(tmp_path: Path) ->
         settings=replace(settings, rt_min=None, rt_max=None),
         peak_config=peak_config,
         raw=raw,
+        signal_processing_profile=TEST_PROFILE,
+        physical_records=tuple(physical_records[c.candidate_id] for c in (candidates)),
     )
     receipt = result.assessment_input.assessment.content.evaluation_receipt
     assert receipt.search_completed is True
@@ -1989,6 +2097,7 @@ def test_auto_range_evaluated_receipt_uses_current_raw_bounds(tmp_path: Path) ->
 def test_adapter_uses_orphan_support_without_giving_it_feature_standing(
     tmp_path: Path,
 ) -> None:
+    physical_records = {}
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
@@ -2002,10 +2111,14 @@ def test_adapter_uses_orphan_support_without_giving_it_feature_standing(
         raw_file=fixture.source_paths["S1"],
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )
     support = _without_ms1_peak(support_source)
     raw, _vendor_raw = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
 
+    fixture = replace(
+        fixture, owners=bind_physical_capture(fixture.owners, physical_records)
+    )
     result = adapt_current_discovery_sample_subject(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
@@ -2015,6 +2128,8 @@ def test_adapter_uses_orphan_support_without_giving_it_feature_standing(
         settings=settings,
         peak_config=peak_config,
         raw=raw,
+        signal_processing_profile=TEST_PROFILE,
+        physical_records=tuple(physical_records[c.candidate_id] for c in ((feature,))),
     )
 
     assert result.source_candidate_ids == (feature.candidate_id,)
@@ -2027,6 +2142,7 @@ def test_adapter_uses_orphan_support_without_giving_it_feature_standing(
 
 
 def test_adapter_does_not_read_raw_for_orphan_only_support(tmp_path: Path) -> None:
+    physical_records = {}
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
@@ -2040,9 +2156,13 @@ def test_adapter_does_not_read_raw_for_orphan_only_support(tmp_path: Path) -> No
             raw_file=fixture.source_paths["S1"],
             settings=settings,
             peak_config=_peak_config(tmp_path),
+            physical_records=physical_records,
         )[0]
     )
 
+    fixture = replace(
+        fixture, owners=bind_physical_capture(fixture.owners, physical_records)
+    )
     result = adapt_current_discovery_sample_subject(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
@@ -2052,6 +2172,8 @@ def test_adapter_does_not_read_raw_for_orphan_only_support(tmp_path: Path) -> No
         settings=settings,
         peak_config=_peak_config(tmp_path),
         raw=None,
+        signal_processing_profile=TEST_PROFILE,
+        physical_records=tuple(physical_records[c.candidate_id] for c in (())),
     )
 
     assert result.assessment_input.assessment.content.technical_state == (
@@ -2066,6 +2188,7 @@ def test_adapter_requires_raw_to_preserve_inferred_physical_observations(
     tmp_path: Path,
     include_direct_candidate: bool,
 ) -> None:
+    physical_records = {}
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
@@ -2078,6 +2201,7 @@ def test_adapter_requires_raw_to_preserve_inferred_physical_observations(
         raw_file=fixture.source_paths["S1"],
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )[0]
     inferred = replace(
         direct,
@@ -2086,6 +2210,9 @@ def test_adapter_requires_raw_to_preserve_inferred_physical_observations(
     )
     candidates = (direct, inferred) if include_direct_candidate else (inferred,)
 
+    fixture = replace(
+        fixture, owners=bind_physical_capture(fixture.owners, physical_records)
+    )
     with pytest.raises(
         CidNlAcquisitionError,
         match="requires an owner-opened RAW adapter",
@@ -2098,6 +2225,8 @@ def test_adapter_requires_raw_to_preserve_inferred_physical_observations(
             settings=settings,
             peak_config=peak_config,
             raw=None,
+            signal_processing_profile=TEST_PROFILE,
+            physical_records=tuple(physical_records.values()),
         )
 
 
@@ -2210,15 +2339,16 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
 def test_adapter_preserves_supported_and_observation_only_physical_peaks(
     tmp_path: Path,
 ) -> None:
+    physical_records = {}
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
         thermo_raw_sources=True,
     )
-    source_raw = _FakeRaw((7.8, 8.2))
-    source_raw.intensity = sum(
-        1000.0 * np.exp(-0.5 * ((source_raw.rt - center) / 0.035) ** 2)
-        for center in (7.8, 8.35)
+    source_raw = _FakeRaw((7.8, 8.35))
+    source_raw.scans = (
+        source_raw.scans[0],
+        replace(source_raw.scans[1], precursor_mz=500.5),
     )
     settings = _settings()
     peak_config = _peak_config(tmp_path)
@@ -2227,6 +2357,7 @@ def test_adapter_preserves_supported_and_observation_only_physical_peaks(
         raw_file=fixture.source_paths["S1"],
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )
     assert len(candidates) == 2
     raw, _vendor_raw = _open_bound_raw(
@@ -2236,6 +2367,9 @@ def test_adapter_preserves_supported_and_observation_only_physical_peaks(
         tmp_path=tmp_path,
     )
 
+    fixture = replace(
+        fixture, owners=bind_physical_capture(fixture.owners, physical_records)
+    )
     result = adapt_current_discovery_sample_subject(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
@@ -2244,13 +2378,16 @@ def test_adapter_preserves_supported_and_observation_only_physical_peaks(
         settings=settings,
         peak_config=peak_config,
         raw=raw,
+        signal_processing_profile=TEST_PROFILE,
+        physical_records=tuple(physical_records[c.candidate_id] for c in (candidates)),
     )
 
     assessment = result.assessment_input.assessment
     assert assessment.content.method_result == "SUPPORT"
     assert len(assessment.candidate_peaks) == 2
     assert len(assessment.individual_support_refs) == 1
-    assert result.strict_scan_count == sum(len(c.seed_scan_ids) for c in candidates)
+    # Only the recorded precursor supplies NL support.
+    assert result.strict_scan_count == 1
     hypotheses = compose_peak_hypotheses_from_assessment_universe(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
@@ -2292,6 +2429,7 @@ def test_adapter_preserves_supported_and_observation_only_physical_peaks(
 
 
 def test_adapter_rejects_discovery_candidate_receipt_drift(tmp_path: Path) -> None:
+    physical_records = {}
     fixture = build_untargeted_cid_nl_no_raw_fixture(
         tmp_path,
         sample_roles={"S1": "study_sample"},
@@ -2305,6 +2443,7 @@ def test_adapter_rejects_discovery_candidate_receipt_drift(tmp_path: Path) -> No
         raw_file=fixture.source_paths["S1"],
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )[0]
     assert candidate.ms1_apex_rt is not None
     drifted = replace(candidate, ms1_apex_rt=candidate.ms1_apex_rt + 0.1)
@@ -2315,9 +2454,12 @@ def test_adapter_rejects_discovery_candidate_receipt_drift(tmp_path: Path) -> No
         tmp_path=tmp_path,
     )
 
+    fixture = replace(
+        fixture, owners=bind_physical_capture(fixture.owners, physical_records)
+    )
     with pytest.raises(
         CidNlAcquisitionError,
-        match="rt_apex_min mismatches current receipt",
+        match="apex_rt_min mismatches current receipt",
     ):
         adapt_current_discovery_sample_subject(
             processing_owners=fixture.owners,
@@ -2327,6 +2469,10 @@ def test_adapter_rejects_discovery_candidate_receipt_drift(tmp_path: Path) -> No
             settings=settings,
             peak_config=peak_config,
             raw=raw,
+            signal_processing_profile=TEST_PROFILE,
+            physical_records=tuple(
+                physical_records[c.candidate_id] for c in ((drifted,))
+            ),
         )
 
 
@@ -2354,6 +2500,7 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
         tmp_path=tmp_path,
     )
 
+    fixture = replace(fixture, owners=bind_physical_capture(fixture.owners, {}))
     result = backfill_untargeted_cid_nl_sample_subject(
         processing_owners=fixture.owners,
         sample=fixture.sample("S1"),
@@ -2367,6 +2514,7 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
         ),
         peak_config=_peak_config(tmp_path),
         raw=raw,
+        signal_processing_profile=TEST_PROFILE,
     )
 
     assert result.assessment.content.technical_state == "evaluated"
@@ -2393,8 +2541,8 @@ def test_recovery_revisits_one_hold_cell_without_minting_support(
     assert len(result.assessment.candidate_peaks) == 1
     assert result.assessment.evidence_refs == ()
     assert result.backfill_input is not None
-    assert result.acquisition.logical_xic_request_count == 1
-    assert vendor_raw.chromatogram_request_counts == [1]
+    assert result.acquisition.logical_xic_request_count == 2
+    assert vendor_raw.chromatogram_request_counts == [2]
 
 
 def _without_ms1_peak(candidate: DiscoveryCandidate) -> DiscoveryCandidate:
@@ -2476,7 +2624,9 @@ def test_physical_backfill_receipt_covers_recovered_peak_outside_apex_window(
     )
 
     fixture = build_untargeted_cid_nl_no_raw_fixture(
-        tmp_path, sample_roles={"S1": "study_sample"}, thermo_raw_sources=True,
+        tmp_path,
+        sample_roles={"S1": "study_sample"},
+        thermo_raw_sources=True,
     )
     profile = SignalProcessingProfile(window_points=15)
     old = fixture.owners.request
@@ -2512,7 +2662,8 @@ def test_physical_backfill_receipt_covers_recovered_peak_outside_apex_window(
         group_center_rt=8.0,
         group_center_mz=500.0,
         support_policy=DdaCidNlPeakSupportPolicy(
-            precursor_tolerance_da=0.01, neutral_loss_tolerance_ppm=20.0,
+            precursor_tolerance_da=0.01,
+            neutral_loss_tolerance_ppm=20.0,
         ),
         peak_config=replace(_peak_config(tmp_path), nl_rt_anchor_half_window_min=0.5),
         raw=raw,
@@ -2622,7 +2773,10 @@ def test_physical_backfill_context_is_not_search_permission(
         _preacquired_traces=batch,
     )
     assert vendor.chromatogram_request_counts == [2]
-    direct = backfill_untargeted_cid_nl_sample_subject(**kwargs, raw=raw)
+    direct = backfill_untargeted_cid_nl_sample_subject(
+        **kwargs,
+        raw=raw,
+    )
     assert vendor.chromatogram_request_counts == [2, 2]
     first = batched.capture_evidence[0].physical_evaluation
     assert first == direct.capture_evidence[0].physical_evaluation
@@ -2636,7 +2790,10 @@ def test_physical_backfill_context_is_not_search_permission(
         raw=None,
         _preacquired_traces=batch,
     )
-    gated_direct = backfill_untargeted_cid_nl_sample_subject(**gated_kwargs, raw=raw)
+    gated_direct = backfill_untargeted_cid_nl_sample_subject(
+        **gated_kwargs,
+        raw=raw,
+    )
     gate_result = gated.capture_evidence[0].physical_evaluation
     assert gate_result == gated_direct.capture_evidence[0].physical_evaluation
     if not reliable or tolerance == 12.0:
@@ -2782,6 +2939,7 @@ def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
         lambda _number: SimpleNamespace(Labels=labels, Values=values),
         raising=False,
     )
+    owners = bind_physical_capture(owners, {})
     try:
         result = backfill_untargeted_cid_nl_sample_subject(
             processing_owners=owners,
@@ -2795,6 +2953,7 @@ def test_composite_backfill_resolves_one_event_per_scan_loss_across_references(
             peak_config=_peak_config(tmp_path),
             raw=raw,
             settings=settings,
+            signal_processing_profile=TEST_PROFILE,
         )
     finally:
         raw.__exit__(None, None, None)

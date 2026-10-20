@@ -20,6 +20,7 @@ import xic_extractor.raw_reader as raw_reader_owner
 import xic_extractor.untargeted_execution.alignment as alignment_adapter
 import xic_extractor.untargeted_execution.partition.request as input_owner
 from tests.cid_nl_raw_fixture import (
+    TEST_PROFILE,
     _multi_tag_settings,
     _peak_config,
     _settings,
@@ -1790,7 +1791,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
     )
     from xic_extractor.processing_identity import resolve_request_acquisition_source
     from xic_extractor.untargeted_execution.partition.cid_nl_acquisition import (
-        CidNlAcquisitionError,
         backfill_untargeted_cid_nl_sample_subject,
     )
 
@@ -1851,10 +1851,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                     )
                 }
             )
-        )
-    with pytest.raises(CidNlAcquisitionError, match="lost its request-bound profile"):
-        backfill_untargeted_cid_nl_sample_subject(
-            **(recovery_args | {"signal_processing_profile": None})
         )
     original_intensity = source_raws[paths[0]].intensity
     recovery_evaluations = []
@@ -1995,7 +1991,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         if job.sample == first_job.sample
     )
     for changed, message in (
-        ({"signal_processing_profile": None}, "lost its profile"),
         (
             {"signal_processing_profile": SignalProcessingProfile(window_points=21)},
             "profile is not request-bound",
@@ -2195,11 +2190,15 @@ def test_subject_planning_uses_physical_mass_without_rewriting_seed_receipts(
         prepare_untargeted_subject_membership,
     )
 
+    physical_records = {}
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"physical-ion-planning:S1")
     settings = replace(_settings(), neutral_loss_profile=None)
     _, candidates = _nearby_subject_candidates(
-        raw_path, settings=settings, peak_config=_peak_config(tmp_path)
+        raw_path,
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+        physical_records=physical_records,
     )
     inferred = replace(
         candidates[0],
@@ -2209,7 +2208,9 @@ def test_subject_planning_uses_physical_mass_without_rewriting_seed_receipts(
         precursor_mz_basis="product_plus_neutral_loss",
     )
     subjects = prepare_untargeted_subject_membership(
-        candidates_by_sample={"S1": (inferred,)}, settings=settings
+        candidates_by_sample={"S1": (inferred,)},
+        settings=settings,
+        physical_records_by_candidate=physical_records,
     )
     assert len(subjects.subjects) == 1
     assert subjects.subjects[0].precursor_mz == 445.2071
@@ -2218,7 +2219,9 @@ def test_subject_planning_uses_physical_mass_without_rewriting_seed_receipts(
 
     selected = replace(inferred, ms1_apex_mz=None, precursor_mz_basis="scan_precursor")
     fallback = prepare_untargeted_subject_membership(
-        candidates_by_sample={"S1": (selected,)}, settings=settings
+        candidates_by_sample={"S1": (selected,)},
+        settings=settings,
+        physical_records_by_candidate=physical_records,
     )
     assert fallback.subjects[0].precursor_mz == 445.2140
 
@@ -2258,6 +2261,7 @@ def test_physical_subject_units_keep_unproven_candidates_singleton(
 def test_proven_subject_unit_is_not_split_by_lower_fixed_anchor(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    physical_records = {}
     from xic_extractor.untargeted_execution import input_planning as planning_owner
 
     raw_path = tmp_path / "S1.synthetic"
@@ -2266,7 +2270,10 @@ def test_proven_subject_unit_is_not_split_by_lower_fixed_anchor(
         _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=20.0
     )
     _raw, base_candidates = _nearby_subject_candidates(
-        raw_path, settings=settings, peak_config=_peak_config(tmp_path)
+        raw_path,
+        settings=settings,
+        peak_config=_peak_config(tmp_path),
+        physical_records=physical_records,
     )
     masses = (499.995, 500.0, 500.015)
     candidates = tuple(
@@ -2314,6 +2321,7 @@ def test_proven_subject_unit_is_not_split_by_lower_fixed_anchor(
             dll_dir=tmp_path,
             sample_identity_namespace="test:lower-anchor",
             physical_records_by_candidate=records,
+            signal_processing_profile=TEST_PROFILE,
         )
 
     subject_batch = captured["subject_batch"]
@@ -2395,6 +2403,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    physical_records = {}
     stems = ("SupportA1", "SupportA2", "SupportB1", "SupportB2", "Missing")
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
     for raw_path in raw_paths:
@@ -2418,6 +2427,7 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
             raw_file=raw_path,
             settings=settings,
             peak_config=peak_config,
+            physical_records=physical_records,
         )
         source_raws[raw_path] = source_raw
         selected_candidates[raw_path.stem] = candidates[0]
@@ -2447,6 +2457,12 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
         ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:compatible-source-subject",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in (candidates_by_sample).values()
+            for c in values
+        },
     )
     assert len(batch.subject_batch.subjects) == 2
     assert (
@@ -2531,24 +2547,26 @@ def test_production_batch_preserves_bounded_subject_membership(
         _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=ppm
     )
     peak_config = _peak_config(tmp_path)
-    _source_raw, candidates = _nearby_subject_candidates(
-        raw_path,
-        settings=settings,
-        peak_config=peak_config,
-    )
+    from xic_extractor.discovery.models import NeutralLossProfile
 
+    physical_records = {}
     candidates = tuple(
-        replace(
-            candidates[0],
-            candidate_id=f"{raw_path.stem}:membership-{index}",
-            best_ms2_scan_id=index + 100,
-            precursor_mz=mz,
-            product_mz=mz - loss,
-            configured_neutral_loss_da=loss,
-        )
+        _current_candidates(
+            _FakeRaw(
+                (8.0 + index * 0.1,), scan_precursor_mz=mz, neutral_loss_das=(loss,)
+            ),
+            raw_file=raw_path,
+            settings=replace(
+                settings, neutral_loss_profiles=(NeutralLossProfile("DNA_dR", loss),)
+            ),
+            peak_config=peak_config,
+            physical_records=physical_records,
+        )[0]
         for index, (mz, loss) in enumerate(zip(masses, losses, strict=True))
     )
     arguments = dict(
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate=physical_records,
         raw_paths=(raw_path,),
         sample_metadata=(
             SampleMetadata(
@@ -2609,6 +2627,7 @@ def test_production_batch_preserves_bounded_subject_membership(
 
 
 def _source_verification_inputs(tmp_path: Path):
+    physical_records = {}
     path = tmp_path / "S1.synthetic"
     path.write_bytes(b"source-verification:S1")
     settings = replace(
@@ -2616,7 +2635,10 @@ def _source_verification_inputs(tmp_path: Path):
     )
     peak_config = _peak_config(tmp_path)
     raw, candidates = _nearby_subject_candidates(
-        path, settings=settings, peak_config=peak_config
+        path,
+        settings=settings,
+        peak_config=peak_config,
+        physical_records=physical_records,
     )
     return (
         path,
@@ -2639,6 +2661,8 @@ def _source_verification_inputs(tmp_path: Path):
             ),
             dll_dir=tmp_path,
             sample_identity_namespace="study:source-verification",
+            signal_processing_profile=TEST_PROFILE,
+            physical_records_by_candidate=physical_records,
         ),
     )
 
@@ -2741,6 +2765,7 @@ def test_reused_run_spec_source_preserves_plan_request_and_candidates(
     monkeypatch: pytest.MonkeyPatch,
     stems: tuple[str, str],
 ) -> None:
+    physical_records = {}
     settings = replace(
         _settings(), neutral_loss_profile=None, precursor_mz_tolerance_ppm=1.0
     )
@@ -2750,9 +2775,14 @@ def test_reused_run_spec_source_preserves_plan_request_and_candidates(
     for path in paths:
         path.write_bytes(f"source-verification:{path.stem}".encode())
         _, candidates[path.stem] = _nearby_subject_candidates(
-            path, settings=settings, peak_config=peak_config
+            path,
+            settings=settings,
+            peak_config=peak_config,
+            physical_records=physical_records,
         )
     arguments = dict(
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate=physical_records,
         raw_paths=paths,
         sample_metadata=tuple(
             SampleMetadata(
@@ -2833,6 +2863,7 @@ def test_production_rejects_source_change_after_input_verification(
 def test_sample_job_builder_rejects_changed_request_bound_inputs(
     tmp_path: Path,
 ) -> None:
+    physical_records = {}
     from tests.processing_identity_no_raw_fixture import (
         build_processing_identity_no_raw_fixture,
     )
@@ -2847,7 +2878,10 @@ def test_sample_job_builder_rejects_changed_request_bound_inputs(
     )
     peak_config = _peak_config(tmp_path)
     _source_raw, candidates = _nearby_subject_candidates(
-        raw_path, settings=settings, peak_config=peak_config
+        raw_path,
+        settings=settings,
+        peak_config=peak_config,
+        physical_records=physical_records,
     )
     batch = build_dense_partition(
         raw_paths=(raw_path,),
@@ -2867,6 +2901,12 @@ def test_sample_job_builder_rejects_changed_request_bound_inputs(
         ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:production-batch",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in ({"S1": candidates}).values()
+            for c in values
+        },
     )
     first = batch.jobs[0]
     shared = {
@@ -2981,7 +3021,14 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
         execute,
     )
 
+    monkeypatch.setattr(
+        alignment_adapter,
+        "_load_physical_replay_inputs",
+        lambda **kwargs: (kwargs["candidates_by_sample"], {}, None),
+    )
+
     result = alignment_adapter.complete_untargeted_alignment(
+        signal_processing_profile=TEST_PROFILE,
         discovery_batch=discovery_batch,
         candidates_by_sample={"S1": candidates},
         raw_dir=tmp_path,
@@ -3023,6 +3070,7 @@ def test_alignment_adapter_prepares_and_executes_bounded_once(
 
 
 def test_production_batch_rejects_non_single_provider_settings(tmp_path: Path) -> None:
+    physical_records = {}
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"production-batch:S1")
     settings = _settings()
@@ -3031,6 +3079,7 @@ def test_production_batch_rejects_non_single_provider_settings(tmp_path: Path) -
         raw_path,
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )
     crossed_settings = type(settings)(
         neutral_loss_profiles=(
@@ -3057,6 +3106,12 @@ def test_production_batch_rejects_non_single_provider_settings(tmp_path: Path) -
             ),
             dll_dir=tmp_path,
             sample_identity_namespace="study:production-batch",
+            signal_processing_profile=TEST_PROFILE,
+            physical_records_by_candidate={
+                c.candidate_id: physical_records[c.candidate_id]
+                for values in ({"S1": candidates}).values()
+                for c in values
+            },
         )
     except ValueError as exc:
         assert "single-provider" in str(exc)
@@ -3069,6 +3124,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
     monkeypatch,
 ) -> None:
 
+    physical_records = {}
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"production-batch:S1")
     # The atomic phase must contain two disjoint method worksets.
@@ -3080,6 +3136,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
         raw_path,
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )
     batch = build_dense_partition(
         raw_paths=(raw_path,),
@@ -3101,6 +3158,12 @@ def test_production_batch_executes_one_atomic_sample_phase(
         ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:production-batch",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in ({"S1": candidates}).values()
+            for c in values
+        },
     )
     vendor_raw = _install_runtime_raw(
         monkeypatch,
@@ -3120,7 +3183,7 @@ def test_production_batch_executes_one_atomic_sample_phase(
 
     assert result.succeeded
     assert len(result.sample_results) == len(batch.jobs) == 2
-    assert vendor_raw.chromatogram_request_counts == [2]
+    assert vendor_raw.chromatogram_request_counts == [4]
 
     alignment_config = AlignmentConfig(anchor_min_seed_events=1)
     completed = complete_dense_partition(
@@ -3244,6 +3307,7 @@ def test_production_composition_closes_observation_only_hold_without_membership(
     monkeypatch,
     scenario: str,
 ) -> None:
+    physical_records = {}
     above_threshold = scenario == "ambiguous_hold_above_threshold"
     ambiguous = scenario.startswith("ambiguous_hold_")
     stems = ("Support", "Hold", "Support2") if above_threshold else ("Support", "Hold")
@@ -3257,9 +3321,9 @@ def test_production_composition_closes_observation_only_hold_without_membership(
     peak_config = _peak_config(tmp_path)
 
     def observation_only_raw(peak_rts: tuple[float, ...]) -> _FakeRaw:
-        # MS1 stays usable, but each NL scan precedes its integration interval.
-        # The narrow peak fits inside the scan-centered discovery query.
-        raw = _FakeRaw(tuple(rt - 0.15 for rt in peak_rts))
+        # An inferred precursor retains MS1 but cannot supply strict NL support.
+        raw = _FakeRaw(tuple(rt - 0.01 for rt in peak_rts))
+        raw.scans = tuple(replace(scan, precursor_mz=500.5) for scan in raw.scans)
         raw.intensity[:] = [
             sum(
                 1000.0 * math.exp(-0.5 * ((rt - center) / 0.015) ** 2)
@@ -3291,12 +3355,14 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         raw_file=raw_paths[0],
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )[0]
     direct_hold_candidates = _current_candidates(
         source_raws[raw_paths[1]],
         raw_file=raw_paths[1],
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )
     direct_hold = direct_hold_candidates[0]
     candidates_by_sample: dict[str, tuple[DiscoveryCandidate, ...]] = {
@@ -3326,6 +3392,7 @@ def test_production_composition_closes_observation_only_hold_without_membership(
                     raw_file=raw_path,
                     settings=settings,
                     peak_config=peak_config,
+                    physical_records=physical_records,
                 )[0]
                 for raw in (first_raw, second_raw)
             )
@@ -3340,6 +3407,7 @@ def test_production_composition_closes_observation_only_hold_without_membership(
             raw_file=raw_paths[2],
             settings=settings,
             peak_config=peak_config,
+            physical_records=physical_records,
         )
     batch = build_dense_partition(
         raw_paths=raw_paths,
@@ -3362,6 +3430,12 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:production-hold",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in (candidates_by_sample).values()
+            for c in values
+        },
     )
     opened = _install_runtime_raws(
         monkeypatch,
@@ -3628,6 +3702,7 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
     monkeypatch: pytest.MonkeyPatch,
     supported_samples: int,
 ) -> None:
+    physical_records = {}
     from xic_extractor.untargeted_execution import partition_composition as production
 
     stems = ("Early", "Middle", "Late")
@@ -3641,7 +3716,11 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
         if index >= supported_samples:
             raws[path].intensity[:] = 0
         candidates[path.stem] = _current_candidates(
-            raws[path], raw_file=path, settings=settings, peak_config=peak_config
+            raws[path],
+            raw_file=path,
+            settings=settings,
+            peak_config=peak_config,
+            physical_records=physical_records,
         )
     batch = build_dense_partition(
         raw_paths=paths,
@@ -3660,6 +3739,12 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
         discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
         dll_dir=tmp_path,
         sample_identity_namespace="study:canonical-batch",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in (candidates).values()
+            for c in values
+        },
     )
     _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     initial_contexts = []
@@ -3737,6 +3822,7 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    physical_records = {}
     from openpyxl import Workbook
 
     from xic_extractor.acquisition.istd_reference import read_known_istd_reference
@@ -3774,6 +3860,7 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
             raw_file=path,
             settings=settings,
             peak_config=peak_config,
+            physical_records=physical_records,
         )
     batch = build_dense_partition(
         raw_paths=paths,
@@ -3792,6 +3879,12 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
         discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
         dll_dir=tmp_path,
         sample_identity_namespace="study:known-istd",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in (candidates).values()
+            for c in values
+        },
     )
     _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     runtime_plain = execute_dense_partition(
@@ -4079,6 +4172,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
     monkeypatch,
     recovery_case: str,
 ) -> None:
+    physical_records = {}
     sample_stems = (
         ("Support1", "Hold")
         if recovery_case == "threshold"
@@ -4106,6 +4200,7 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                 raw_file=raw_path,
                 settings=settings,
                 peak_config=peak_config,
+                physical_records=physical_records,
             )[0],
         )
         for raw_path in raw_paths[:-1]
@@ -4132,6 +4227,12 @@ def test_production_composition_closes_recovered_observation_without_candidate(
         ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:production-recovery",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in (candidates_by_sample).values()
+            for c in values
+        },
     )
     opened = _install_runtime_raws(
         monkeypatch,
@@ -4397,6 +4498,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    physical_records = {}
     sample_stems = ("Support1", "Support2", "Support3", "MS1Only", "NoPeak")
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in sample_stems)
     settings = _settings()
@@ -4421,6 +4523,7 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
                 raw_file=raw_path,
                 settings=settings,
                 peak_config=peak_config,
+                physical_records=physical_records,
             )
         )
         for raw_path in raw_paths
@@ -4455,6 +4558,12 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
         ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:ms1-only-publication",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in (candidates_by_sample).values()
+            for c in values
+        },
     )
     _install_runtime_raws(monkeypatch, sources_by_path=source_raws, tmp_path=tmp_path)
 
@@ -4573,6 +4682,7 @@ def test_production_composition_retains_typed_non_acquired_candidate_exclusion(
     monkeypatch,
     exclude_all: bool,
 ) -> None:
+    physical_records = {}
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"production-orphan:S1")
     # Isolate the orphan's method rejection from the acquired candidate.
@@ -4584,6 +4694,7 @@ def test_production_composition_retains_typed_non_acquired_candidate_exclusion(
         raw_path,
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )
     excluded_source_ids = {
         candidate.candidate_id
@@ -4627,6 +4738,12 @@ def test_production_composition_retains_typed_non_acquired_candidate_exclusion(
         ),
         dll_dir=tmp_path,
         sample_identity_namespace="study:production-orphan",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in ({"S1": candidates}).values()
+            for c in values
+        },
     )
     _install_runtime_raw(
         monkeypatch,

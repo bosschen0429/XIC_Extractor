@@ -106,9 +106,9 @@ def build_untargeted_cid_nl_no_raw_fixture(
     request = build_processing_request_identity(
         acquisition_sources=tuple(sources),
         acquisition_bindings=tuple(bindings),
-        scientific_input_schema_version="untargeted-cid-nl-golden-path-input",
-        processing_algorithm_version="untargeted-cid-nl-golden-path",
-        processing_contract_version="untargeted-cid-nl-golden-path",
+        scientific_input_schema_version="untargeted-cid-nl-fixture-input",
+        processing_algorithm_version="untargeted-cid-nl-fixture",
+        processing_contract_version="untargeted-cid-nl-fixture",
         scientific_inputs={
             "fixture": "untargeted-cid-nl-no-raw",
             REQUEST_INPUT_KEY: method_subject.request_payload(),

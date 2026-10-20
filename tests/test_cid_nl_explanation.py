@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass, replace
 import pytest
 
 from tests.cid_nl_raw_fixture import (
+    TEST_PROFILE,
     _current_candidates,
     _FakeRaw,
     _peak_config,
@@ -66,6 +67,7 @@ def test_missing_report_is_unavailable(tmp_path):
 
 
 def _owner_run(tmp_path, monkeypatch, scenario):
+    physical_records = {}
     preset = tmp_path / "method.toml"
     mode = "intersection" if scenario == "all_hold" else "union"
     preset.write_text(
@@ -87,7 +89,11 @@ def _owner_run(tmp_path, monkeypatch, scenario):
         source = _FakeRaw((center,), neutral_loss_das=(loss,))
         sources[path] = source
         candidates[path.stem] = _current_candidates(
-            source, raw_file=path, settings=settings, peak_config=peak_config
+            source,
+            raw_file=path,
+            settings=settings,
+            peak_config=peak_config,
+            physical_records=physical_records,
         )
     batch = build_dense_partition(
         raw_paths=paths,
@@ -106,6 +112,12 @@ def _owner_run(tmp_path, monkeypatch, scenario):
         discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
         dll_dir=tmp_path,
         sample_identity_namespace="study:explanation",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in (candidates).values()
+            for c in values
+        },
     )
     _install_runtime_raws(monkeypatch, sources_by_path=sources, tmp_path=tmp_path)
     config = AlignmentConfig(

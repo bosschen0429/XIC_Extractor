@@ -247,7 +247,7 @@ def prepare_untargeted_alignment_inputs(
     peak_config: ExtractionConfig,
     sample_metadata: tuple[SampleMetadata, ...] | None = None,
     timing_recorder: TimingRecorder | None = None,
-    signal_processing_profile: SignalProcessingProfile | None = None,
+    signal_processing_profile: SignalProcessingProfile,
     raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_worker_backend: str = "thread",
     should_cancel: Callable[[], bool] | None = None,
@@ -305,8 +305,7 @@ def prepare_untargeted_alignment_inputs(
             shared_objects=(),
             individually_addressable_fields=frozenset({"discovery_physical_records"}),
         )
-        if signal_processing_profile is not None
-        and not isinstance(candidates_by_sample, DiscoveryInputSource)
+        if not isinstance(candidates_by_sample, DiscoveryInputSource)
         else None
     )
     resources = ExitStack()
@@ -327,10 +326,6 @@ def prepare_untargeted_alignment_inputs(
             tuple[AcquisitionSourceExpectation, ...] | None
         ) = None
         if isinstance(candidates_by_sample, DiscoveryInputSource):
-            if signal_processing_profile is None:
-                raise ValueError(
-                    "indexed Alignment requires a physical processing profile"
-                )
             with recorder.stage("alignment.verify_acquisition_sources"):
                 spec, expectations = (
                     compile_discovery_processing_run_spec_with_expectations(
@@ -396,7 +391,7 @@ def prepare_untargeted_alignment_inputs(
                     sample_identity_namespace=_SAMPLE_IDENTITY_NAMESPACE,
                     restore_candidate=_restore_physical_candidate,
                 )
-        elif signal_processing_profile is not None:
+        else:
             with recorder.stage("alignment.load_physical_facts"):
                 (
                     candidates_by_sample,
@@ -451,7 +446,7 @@ def complete_untargeted_alignment(
     sample_metadata: tuple[SampleMetadata, ...] | None = None,
     known_istd_reference: KnownIstdReference | None = None,
     timing_recorder: TimingRecorder | None = None,
-    signal_processing_profile: SignalProcessingProfile | None = None,
+    signal_processing_profile: SignalProcessingProfile,
     raw_workers: int = DEFAULT_ALIGNMENT_WORKERS,
     raw_worker_backend: str = "thread",
     should_cancel: Callable[[], bool] | None = None,

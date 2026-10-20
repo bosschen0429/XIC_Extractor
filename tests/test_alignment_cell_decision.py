@@ -242,7 +242,7 @@ def test_group_population_preserves_complete_member_and_nonmember_positions(
 
 def test_group_numeric_uses_real_primary_matrix_area(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        "tests.test_untargeted_cid_nl_golden_path.cid_nl_peak", _numeric_peak
+        "tests.test_untargeted_matrix_projection.cid_nl_peak", _numeric_peak
     )
     _, _, _, alignment = _untarget_projection_inputs(tmp_path, monkeypatch)
     answers = decide_group_cell_population(alignment)

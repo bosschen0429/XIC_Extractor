@@ -44,32 +44,11 @@ boundaries are both interior and its primary Matrix area is valid; an
 endpoint or incomplete observation is censored by the same rule. This is a
 quantification-authority guard, not a new peak-selection or Backfill route.
 
-### Acceptance authority
-
-- `ProductionAcceptanceManifest` is the authority boundary for accepted
-  Backfill values.
-- Candidate sidecars, review packets, galleries, lockbox labels, and
-  diagnostics do not grant authority by themselves.
-- File-backed activation reads each manifest byte snapshot once.
-- The [`production_acceptance` owner](../../xic_extractor/diagnostics/quant_matrix/acceptance.py) validates that snapshot and mints an
-  immutable `CheckedProductionAcceptanceManifest`. Activation writers consume
-  those exact checked rows. Activation writers do not reopen the path.
-- The lower-level `QuantMatrixVersion` row builder is a pure renderer. The row
-  builder does not grant authority to caller-authored mappings.
-- Forbidden authority-source classification applies to the normalized manifest
-  spelling and to its resolved in-repo target. A symlink alias cannot relabel a
-  shadow, report, gallery, or candidate artifact as an accepted Matrix source.
-- Quant matrix, identity, manifest, and expected-diff source-summary digests
-  bind the same byte snapshots that were parsed and consumed. These digests are
-  not hashes of a later reread of the input paths.
-
 ### Matrix publication
 
 - Normal Matrix publication consumes the live Alignment cell decisions and
   projection owners. It does not run a separate promotion, activation dry-run,
   or product-ready closeout chain.
-- `QuantMatrixVersion` remains an internal diagnostic result used by the no-RAW golden path. Its presence does not grant a
-  standalone file-based matrix-writing capability.
 - Consult the [authority manifest](../superpowers/productization/status/productization_authority_manifest.json)
   for current registered writer scopes. Historical validation packets cannot
   authorize current values.
@@ -114,8 +93,7 @@ decisions.
 - Renderers can format the `ProductionDecisionSet`. Renderers cannot rebuild
   competing values, statuses, counts, or row inclusion from raw cells.
 - This in-process handoff does not define a durable decision carrier by
-  itself. File-backed acceptance used by the golden path remains governed by
-  the Acceptance authority contract.
+  itself.
 - The live cell-decision owner is `alignment/cell_decision/owner.py`. Target
   retains its fixed-row decision path. Untarget completes payload and selected
   integration from group/sample evidence before its single Matrix projection
@@ -133,17 +111,6 @@ decisions.
 
 The writer maps retained provenance to its legacy candidate-ID field without
 revalidating assessment/hypothesis closure.
-
-### No-RAW golden path
-
-- The Untargeted CID-NL no-RAW golden-path projection prepares one
-  deterministic raw-area row and an owner-mapped Backfill diff.
-- The golden-path projection cannot self-authorize. Its prepared Backfill row
-  must pass the file-level `ProductionAcceptanceManifest` owner. The row must
-  then enter `QuantMatrixVersion` through its immutable checked snapshot. Only
-  then can that cell be rendered.
-- This fixture is opt-in `production_candidate` evidence only. The fixture
-  does not register a current/default lane or change writer scope.
 
 ### Row identity and display
 
@@ -197,10 +164,8 @@ validation notes are not matrix authority by themselves.
 | `cell_provenance.tsv` | Cell-level provenance for accepted values |
 | `row_summary.tsv` | Matrix row identity and summary sidecar |
 | `expected_diff_summary` | Review gate for behavior-changing activation |
-| `ProductionAcceptanceManifest` | Accepted Backfill authority record |
 | `ProductionDecisionSet` | One live Alignment-owned decision set consumed by all activated renderers |
 | `ProductionCellDecision` | Published value/no-write decision retaining the selected integration and workflow-specific subject |
-| `QuantMatrixVersion` | Internal accepted-value result for the diagnostic golden path |
 | Productization status index / authority manifest | Current state and writer scope |
 
 Alignment additionally exposes `alignment_review.tsv` for review,

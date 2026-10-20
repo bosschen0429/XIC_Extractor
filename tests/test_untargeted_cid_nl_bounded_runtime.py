@@ -13,7 +13,7 @@ from time import perf_counter, sleep
 import pytest
 from openpyxl import Workbook
 
-from tests.cid_nl_raw_fixture import _peak_config, _settings
+from tests.cid_nl_raw_fixture import TEST_PROFILE, _peak_config, _settings
 from tests.runtime_telemetry_fixtures import (
     build_runtime_telemetry_samples_from_coordinator,
 )
@@ -63,6 +63,7 @@ def _disable_real_dll_loading(monkeypatch) -> None:
 def _plan(
     tmp_path, monkeypatch, *, scenario="positive", opened_sink=None, sample_count=4
 ):
+    physical_records = {}
     paths = tuple(tmp_path / f"S{i}.synthetic" for i in range(sample_count))
     settings = replace(
         _settings(),
@@ -77,7 +78,10 @@ def _plan(
     for path in paths:
         path.write_bytes(path.stem.encode())
         raw, sample_candidates = _nearby_subject_candidates(
-            path, settings=settings, peak_config=peak_config
+            path,
+            settings=settings,
+            peak_config=peak_config,
+            physical_records=physical_records,
         )
         third_raw = _FakeRaw(
             (7.98,), scan_precursor_mz=500.008, neutral_loss_das=(116.0474,)
@@ -93,7 +97,11 @@ def _plan(
         if scenario == "mixed_eligibility":
             third_raw.intensity[:] = 0.0
         third_candidates = _current_candidates(
-            third_raw, raw_file=path, settings=settings, peak_config=peak_config
+            third_raw,
+            raw_file=path,
+            settings=settings,
+            peak_config=peak_config,
+            physical_records=physical_records,
         )
         sample_candidates = tuple(
             sorted(
@@ -105,7 +113,11 @@ def _plan(
         if scenario == "ineligible":
             raw.intensity[:] = 0.0
             sample_candidates = _current_candidates(
-                raw, raw_file=path, settings=settings, peak_config=peak_config
+                raw,
+                raw_file=path,
+                settings=settings,
+                peak_config=peak_config,
+                physical_records=physical_records,
             )
         raws[path] = raw
         if scenario == "recovery" and path == paths[-1]:
@@ -146,6 +158,12 @@ def _plan(
         discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
         dll_dir=tmp_path,
         sample_identity_namespace="study:bounded-runtime",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in (candidates).values()
+            for c in values
+        },
     )
     opened = _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
     if opened_sink is not None:
@@ -203,6 +221,7 @@ def _phase_partitions(adapter, store, *, reverse_initial=False):
 def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity(
     tmp_path, monkeypatch
 ):
+    physical_records = {}
     import numpy as np
 
     from xic_extractor.execution.result_store import StreamedResultStore
@@ -233,6 +252,7 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
             raw_file=path,
             settings=settings,
             peak_config=peak_config,
+            physical_records=physical_records,
         )
         assert len(candidates[path.stem]) == 12
     plan = prepare_eager_untargeted_plan(
@@ -252,6 +272,12 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
         discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
         dll_dir=tmp_path,
         sample_identity_namespace="study:partition-invariant-warp",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in (candidates).values()
+            for c in values
+        },
     )
     _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
 
@@ -304,6 +330,7 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
 def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
     tmp_path, monkeypatch
 ):
+    physical_records = {}
     import numpy as np
 
     from xic_extractor.execution.result_store import StreamedResultStore
@@ -336,6 +363,7 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
             raw_file=path,
             settings=settings,
             peak_config=peak_config,
+            physical_records=physical_records,
         )
         assert len(candidates[path.stem]) == 2
         if index >= 20:
@@ -363,6 +391,12 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
         discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
         dll_dir=tmp_path,
         sample_identity_namespace="study:partition-invariant-warp",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in (candidates).values()
+            for c in values
+        },
     )
     _install_runtime_raws(monkeypatch, sources_by_path=raws, tmp_path=tmp_path)
 

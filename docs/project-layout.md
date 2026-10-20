@@ -40,7 +40,6 @@ XIC_Extractor/
 │   │   └── alignment/         Matrix 格式、artifact 選擇、串流／實體化與 atomic publishing
 │   ├── instrument_qc/         儀器 QC、校正與其報告流程
 │   ├── diagnostics/           可重用的診斷與說明工具
-│   │   └── quant_matrix/      版本化 Matrix artifact projection、acceptance 及 table model
 │   └── *.py                   RAW adapter、共享模型／規則、公開入口
 ├── xic_inspector/              完成證據的只讀檢視
 │   ├── sources/               解讀來源證據
