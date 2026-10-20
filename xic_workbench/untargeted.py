@@ -31,7 +31,7 @@ from xic_extractor.configuration.signal_processing_profile import (
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.pipeline import run_discovery, run_discovery_batch
 from xic_extractor.discovery.processing_run_spec_adapter import (
-    compile_discovery_processing_run_spec_from_config as _compile_processing_run_spec,
+    compile_discovery_processing_run_spec,
 )
 from xic_extractor.output.alignment.pipeline_outputs import AlignmentRunOutputs
 from xic_extractor.presets import (
@@ -209,14 +209,15 @@ class UntargetedRun:
         self.progress(0, total_steps, "Discovery...")
         self.stage = "Discovery 設定"
         settings = self._build_settings()
-        peak_config = self._discovery_peak_config(settings)
-        run_spec = _compile_processing_run_spec(raw_paths, settings, peak_config)
+        run_spec = compile_discovery_processing_run_spec(
+            raw_paths, discovery_settings=settings
+        )
         self.stage = "Discovery 擷取與結果發布"
         batch_outputs = run_discovery_batch(
             raw_paths,
             output_dir=request.output_dir,
             settings=settings,
-            peak_config=peak_config,
+            dll_dir=request.dll_dir,
             run_spec=run_spec,
             max_workers=min(len(raw_paths), request.execution_profile.parallel_workers),
             should_cancel=self.should_cancel,
@@ -247,16 +248,15 @@ class UntargetedRun:
         self.progress(0, 1, "Discovery...")
         self.stage = "Discovery 設定"
         settings = self._build_settings()
-        peak_config = self._discovery_peak_config(settings)
-        run_spec = _compile_processing_run_spec(
-            (request.raw_file,), settings, peak_config
+        run_spec = compile_discovery_processing_run_spec(
+            (request.raw_file,), discovery_settings=settings
         )
         self.stage = "Discovery 擷取與結果發布"
         outputs = run_discovery(
             request.raw_file,
             output_dir=request.output_dir,
             settings=settings,
-            peak_config=peak_config,
+            dll_dir=request.dll_dir,
             run_spec=run_spec,
             should_cancel=self.should_cancel,
         )
@@ -373,12 +373,6 @@ class UntargetedRun:
 
     def _build_settings(self) -> DiscoverySettings:
         return self._alignment_runtime().discovery_settings
-
-    def _discovery_peak_config(self, settings: DiscoverySettings) -> ExtractionConfig:
-        data_dir = self.request.raw_dir
-        if data_dir is None and self.request.raw_file is not None:
-            data_dir = self.request.raw_file.parent
-        return self._peak_config(data_dir or self.request.output_dir, settings)
 
     def _alignment_peak_config(self, settings: DiscoverySettings) -> ExtractionConfig:
         return self._peak_config(

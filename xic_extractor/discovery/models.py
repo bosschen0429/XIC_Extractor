@@ -564,7 +564,7 @@ def discovery_candidate_output_sort_key(
 class DiscoveryRunOutputs:
     candidates_csv: Path
     review_csv: Path
-    physical_facts_json: Path | None = None
+    physical_facts_json: Path
     physical_bindings: tuple["DiscoveryCandidatePhysicalBinding", ...] = ()
 
 

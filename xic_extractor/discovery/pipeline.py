@@ -13,8 +13,7 @@ from xic_extractor.acquisition_contract import (
     RawAcquisitionSessionReceipt,
     mint_raw_acquisition_session_capability,
 )
-from xic_extractor.configuration.models import ExtractionConfig
-from xic_extractor.discovery import candidate_merge, output_publication
+from xic_extractor.discovery import output_publication
 from xic_extractor.discovery.blank_qualification import (
     BlankBackgroundLibrary,
     apply_blank_qualification_to_candidates,
@@ -40,7 +39,6 @@ from xic_extractor.discovery.physical_fact_record import (
     bind_physical_facts_to_final_candidates,
 )
 from xic_extractor.discovery.processing_run_spec_adapter import (
-    processing_profile_from_config,
     validate_processing_run_spec_call,
 )
 from xic_extractor.discovery.runtime_measurements import (
@@ -59,11 +57,14 @@ from xic_extractor.processing_run_spec import (
     ProcessingAcquisitionInput,
     ProcessingRunSpec,
 )
-from xic_extractor.raw_reader import RawFileHandle
 
 
 class DiscoveryRawHandle(BatchXICAdapter, MS2ScanSource, Protocol):
     """RAW reader surface needed by single-file discovery orchestration."""
+
+    def ms1_centroid_mz(
+        self, rt: float, mz_min: float, mz_max: float
+    ) -> float | None: ...
 
     @property
     def acquisition_source(self) -> AcquisitionSourceIdentity: ...
@@ -77,9 +78,9 @@ class _DiscoverySampleResult:
     candidates: tuple[DiscoveryCandidate, ...]
     ms1_measurements: _DiscoveryMs1Measurements | None
     raw_open_receipt: RawAcquisitionSessionReceipt | None
-    physical_work_manifest: tuple[DiscoveryPhysicalWorkItem, ...] = ()
-    physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...] = ()
-    physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...] = ()
+    physical_work_manifest: tuple[DiscoveryPhysicalWorkItem, ...]
+    physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...]
+    physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...]
 
 
 @lru_cache(maxsize=2)
@@ -90,7 +91,6 @@ def _bound_background_library(content: str) -> BlankBackgroundLibrary:
 def _apply_blank_qualification_if_enabled(
     candidates: tuple[DiscoveryCandidate, ...],
     *,
-    raw_path: Path,
     settings: DiscoverySettings,
     timing_recorder: TimingRecorder,
     sample_stem: str,
@@ -130,7 +130,7 @@ def run_discovery(
     *,
     output_dir: Path,
     settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
+    dll_dir: Path,
     raw_opener: RawOpener | None = None,
     timing_recorder: TimingRecorder | None = None,
     run_spec: ProcessingRunSpec,
@@ -143,27 +143,13 @@ def run_discovery(
         run_spec,
         (raw_path,),
         discovery_settings=settings,
-        signal_processing_profile=processing_profile_from_config(peak_config),
     )
-    acquisition_source = acquisition_input.acquisition_source
-    if raw_opener is None:
-        raw_session_capability = mint_raw_acquisition_session_capability(
-            acquisition_source
-        )
-        opener = _owner_bound_raw_opener(
-            acquisition_source,
-            raw_session_capability,
-        )
-    else:
-        raw_session_capability = None
-        opener = raw_opener
-    discovery_result = _discover_completed_sample_with_runtime_projection(
+    discovery_result = _discover_sample(
         raw_path,
         settings=settings,
-        peak_config=peak_config,
-        raw_opener=opener,
+        dll_dir=dll_dir,
+        raw_opener=raw_opener,
         timing_recorder=recorder,
-        raw_session_capability=raw_session_capability,
         run_spec=run_spec,
         acquisition_input=acquisition_input,
     )
@@ -186,7 +172,7 @@ def run_discovery_batch(
     *,
     output_dir: Path,
     settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
+    dll_dir: Path,
     raw_opener: RawOpener | None = None,
     timing_recorder: TimingRecorder | None = None,
     max_workers: int = 1,
@@ -203,7 +189,6 @@ def run_discovery_batch(
         run_spec,
         raw_paths,
         discovery_settings=settings,
-        signal_processing_profile=processing_profile_from_config(peak_config),
     )
     if max_workers > 1:
         if raw_opener is not None:
@@ -215,7 +200,7 @@ def run_discovery_batch(
             raw_paths,
             output_dir=output_dir,
             settings=settings,
-            peak_config=peak_config,
+            dll_dir=dll_dir,
             timing_recorder=recorder,
             max_workers=max_workers,
             executor_factory=executor_factory,
@@ -233,24 +218,12 @@ def run_discovery_batch(
         sample_stem = raw_path.stem
         acquisition_input = run_inputs[sample_index]
         acquisition_source = acquisition_input.acquisition_source
-        if raw_opener is None:
-            raw_session_capability = mint_raw_acquisition_session_capability(
-                acquisition_source
-            )
-            opener = _owner_bound_raw_opener(
-                acquisition_source,
-                raw_session_capability,
-            )
-        else:
-            raw_session_capability = None
-            opener = raw_opener
-        discovery_result = _discover_completed_sample_with_runtime_projection(
+        discovery_result = _discover_sample(
             raw_path,
             settings=settings,
-            peak_config=peak_config,
-            raw_opener=opener,
+            dll_dir=dll_dir,
+            raw_opener=raw_opener,
             timing_recorder=recorder,
-            raw_session_capability=raw_session_capability,
             run_spec=run_spec,
             acquisition_input=acquisition_input,
         )
@@ -282,11 +255,45 @@ def run_discovery_batch(
     )
 
 
+def _discover_sample(
+    raw_path: Path,
+    *,
+    settings: DiscoverySettings,
+    dll_dir: Path,
+    raw_opener: RawOpener | None,
+    timing_recorder: TimingRecorder,
+    run_spec: ProcessingRunSpec,
+    acquisition_input: ProcessingAcquisitionInput,
+) -> _DiscoverySampleResult:
+    acquisition_source = acquisition_input.acquisition_source
+    if raw_opener is None:
+        raw_session_capability = mint_raw_acquisition_session_capability(
+            acquisition_source
+        )
+        opener = _owner_bound_raw_opener(
+            acquisition_source,
+            raw_session_capability,
+        )
+    else:
+        raw_session_capability = None
+        opener = raw_opener
+    return _discover_completed_sample_with_runtime_projection(
+        raw_path,
+        settings=settings,
+        dll_dir=dll_dir,
+        raw_opener=opener,
+        timing_recorder=timing_recorder,
+        raw_session_capability=raw_session_capability,
+        run_spec=run_spec,
+        acquisition_input=acquisition_input,
+    )
+
+
 def _discover_completed_sample_with_runtime_projection(
     raw_path: Path,
     *,
     settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
+    dll_dir: Path,
     raw_opener: RawOpener,
     timing_recorder: TimingRecorder,
     raw_session_capability: RawAcquisitionSessionCapability | None,
@@ -324,7 +331,7 @@ def _discover_completed_sample_with_runtime_projection(
         result = _discover_completed_sample(
             raw_path,
             settings=settings,
-            peak_config=peak_config,
+            dll_dir=dll_dir,
             raw_opener=raw_opener,
             timing_recorder=timing_recorder,
             raw_open_receipt_observer=_capture_receipt,
@@ -348,7 +355,7 @@ def _discover_completed_sample(
     raw_path: Path,
     *,
     settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
+    dll_dir: Path,
     raw_opener: RawOpener,
     timing_recorder: TimingRecorder,
     measurement_observer: Callable[[_DiscoveryMs1Measurements], None] | None = None,
@@ -364,7 +371,7 @@ def _discover_completed_sample(
     acquired = _acquire_discovery_sample(
         raw_path,
         settings=settings,
-        peak_config=peak_config,
+        dll_dir=dll_dir,
         raw_opener=raw_opener,
         timing_recorder=timing_recorder,
         measurement_observer=measurement_observer,
@@ -384,7 +391,6 @@ def _discover_completed_sample(
         stage.metrics["candidate_count"] = len(candidates)
     candidates = _apply_blank_qualification_if_enabled(
         candidates,
-        raw_path=raw_path,
         settings=settings,
         timing_recorder=timing_recorder,
         sample_stem=sample_stem,
@@ -408,7 +414,7 @@ def _acquire_discovery_sample(
     raw_path: Path,
     *,
     settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
+    dll_dir: Path,
     raw_opener: RawOpener,
     timing_recorder: TimingRecorder,
     measurement_observer: Callable[[_DiscoveryMs1Measurements], None] | None = None,
@@ -425,12 +431,8 @@ def _acquire_discovery_sample(
     ):
         raise ValueError("Discovery input crosses ProcessingRunSpec binding")
     sample_stem = raw_path.stem
-    with raw_opener(raw_path, peak_config.dll_dir) as raw:
+    with raw_opener(raw_path, dll_dir) as raw:
         owner_bound_source = _owner_bound_acquisition_source(raw)
-        if owner_bound_source is None:
-            raise ValueError(
-                "spec-bound Discovery RAW handle lacks an acquisition source"
-            )
         if owner_bound_source != acquisition_input.acquisition_source:
             raise ValueError(
                 "spec-bound Discovery RAW handle crosses acquisition source"
@@ -478,7 +480,7 @@ def _acquire_discovery_sample(
                     settings=settings,
                     measurement_observer=_capture_acquired_measurements,
                     signal_processing_profile=run_spec.signal_processing_profile,
-                    ms1_centroid_mz=_ms1_centroid_source(raw),
+                    ms1_centroid_mz=raw.ms1_centroid_mz,
                 )
                 candidates = acquisition_result.candidates
                 ms1_measurements = acquisition_result.measurements
@@ -520,21 +522,12 @@ def _acquire_discovery_sample(
                         )
 
 
-def _ms1_centroid_source(raw: object) -> candidate_merge.MS1CentroidMz | None:
-    return raw.ms1_centroid_mz if isinstance(raw, RawFileHandle) else None
-
-
 def _owner_bound_acquisition_source(
-    raw: object,
-) -> AcquisitionSourceIdentity | None:
-    source = getattr(raw, "acquisition_source", None)
-    if source is None:
-        return None
+    raw: DiscoveryRawHandle,
+) -> AcquisitionSourceIdentity:
+    source = raw.acquisition_source
     if not isinstance(source, AcquisitionSourceIdentity):
         raise ValueError("Discovery RAW handle has an invalid acquisition source")
-    for method_name in ("extract_xic_many", "scan_window_for_request"):
-        if not callable(getattr(raw, method_name, None)):
-            raise ValueError(f"owner-bound Discovery RAW handle lacks {method_name}")
     return source
 
 
@@ -585,7 +578,7 @@ def discover_sample_for_process_job(
     return _discover_completed_sample(
         job.raw_path,
         settings=job.settings,
-        peak_config=job.peak_config,
+        dll_dir=job.dll_dir,
         raw_opener=_owner_bound_raw_opener(
             job.acquisition_source,
             job.raw_session_capability,

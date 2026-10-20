@@ -9,11 +9,10 @@ from typing import cast
 import pytest
 
 from scripts.run_discovery import (
-    _compile_processing_run_spec as compile_cli_processing_run_spec,
+    compile_discovery_processing_run_spec as compile_cli_processing_run_spec,
 )
 from tests.test_discovery_worker import _alignment_outputs
-from tests.test_processing_run_spec import _peak_config, _raws, _settings
-from xic_extractor.configuration.models import ExtractionConfig
+from tests.test_processing_run_spec import _raws, _settings
 from xic_extractor.discovery.models import DiscoverySettings
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
@@ -26,7 +25,7 @@ from xic_extractor.processing_run_spec import (
 )
 from xic_workbench.untargeted import DiscoveryRequest, UntargetedRun, parse_request
 from xic_workbench.untargeted import (
-    _compile_processing_run_spec as compile_workbench_processing_run_spec,
+    compile_discovery_processing_run_spec as compile_workbench_processing_run_spec,
 )
 
 
@@ -34,23 +33,20 @@ def test_equal_workbench_cli_inputs_compile_equal_immutable_identity(
     tmp_path: Path,
 ) -> None:
     from xic_extractor.discovery.processing_run_spec_adapter import (
-        compile_discovery_processing_run_spec_from_config,
+        compile_discovery_processing_run_spec,
     )
 
     raw_paths = _raws(tmp_path)
     settings = _settings()
 
     assert compile_workbench_processing_run_spec is (
-        compile_discovery_processing_run_spec_from_config
+        compile_discovery_processing_run_spec
     )
-    assert compile_cli_processing_run_spec is (
-        compile_discovery_processing_run_spec_from_config
-    )
-    peak_config = _peak_config()
+    assert compile_cli_processing_run_spec is (compile_discovery_processing_run_spec)
     workbench_spec = compile_workbench_processing_run_spec(
-        raw_paths, settings, peak_config
+        raw_paths, discovery_settings=settings
     )
-    cli_spec = compile_cli_processing_run_spec(raw_paths, settings, peak_config)
+    cli_spec = compile_cli_processing_run_spec(raw_paths, discovery_settings=settings)
 
     assert workbench_spec == cli_spec
     assert workbench_spec.run_spec_id == cli_spec.run_spec_id
@@ -200,53 +196,6 @@ def test_actual_workbench_entry_rejects_invalid_preset_before_fingerprint_or_raw
         )
 
 
-def test_actual_workbench_entry_rejects_invalid_profile_before_fingerprint_or_raw(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    import xic_workbench.untargeted as workbench_module
-
-    raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"sample")
-    monkeypatch.setattr(
-        "xic_extractor.discovery.processing_run_spec_adapter."
-        "build_acquisition_source_identity",
-        lambda *_args, **_kwargs: pytest.fail("fingerprinted invalid profile"),
-    )
-    monkeypatch.setattr(
-        workbench_module,
-        "run_discovery",
-        lambda *_args, **_kwargs: pytest.fail("opened RAW for invalid profile"),
-    )
-    request = DiscoveryRequest(
-        mode="discovery_only",
-        preset="dna_dr",
-        tuning_overrides={},
-        raw_dir=None,
-        raw_file=raw_path,
-        dll_dir=tmp_path / "dll",
-        output_dir=tmp_path / "out",
-        discovery_batch_index=None,
-    )
-    run = UntargetedRun(
-        request, progress=lambda *_args: None, should_cancel=lambda: False
-    )
-    monkeypatch.setattr(
-        run,
-        "_discovery_peak_config",
-        lambda *_args: cast(
-            ExtractionConfig,
-            SimpleNamespace(
-                signal_processing_method="savgol",
-                signal_processing_window_points=15,
-            ),
-        ),
-    )
-
-    with pytest.raises(ValueError, match="method"):
-        run.execute()
-
-
 def test_actual_cli_entry_rejects_invalid_method_before_fingerprint_or_raw(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -279,33 +228,6 @@ def test_actual_cli_entry_rejects_invalid_method_before_fingerprint_or_raw(
                 "arbitrated",
             ]
         )
-
-
-@pytest.mark.parametrize(
-    "builder",
-    [compile_workbench_processing_run_spec, compile_cli_processing_run_spec],
-)
-def test_highest_entry_rejects_invalid_profile_before_fingerprinting(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    builder,
-) -> None:
-    raw_paths = _raws(tmp_path)
-    invalid = cast(
-        ExtractionConfig,
-        SimpleNamespace(
-            signal_processing_method="savgol",
-            signal_processing_window_points=15,
-        ),
-    )
-    monkeypatch.setattr(
-        "xic_extractor.discovery.processing_run_spec_adapter."
-        "build_acquisition_source_identity",
-        lambda *_args, **_kwargs: pytest.fail("fingerprinted invalid profile"),
-    )
-
-    with pytest.raises(ValueError, match="method"):
-        builder(raw_paths, _settings(), invalid)
 
 
 def test_adapter_rejects_invalid_method_before_fingerprinting(
@@ -346,19 +268,7 @@ def test_run_spec_conflicts_fail_before_raw_opener(tmp_path: Path) -> None:
             raw_path,
             output_dir=tmp_path / "settings-out",
             settings=replace(settings, seed_rt_gap_min=0.33),
-            peak_config=_peak_config(tmp_path),
-            raw_opener=_open,
-            run_spec=spec,
-        )
-    with pytest.raises(ValueError, match="peak config conflicts"):
-        run_discovery(
-            raw_path,
-            output_dir=tmp_path / "profile-out",
-            settings=settings,
-            peak_config=replace(
-                _peak_config(tmp_path),
-                signal_processing_window_points=21,
-            ),
+            dll_dir=_peak_config(tmp_path).dll_dir,
             raw_opener=_open,
             run_spec=spec,
         )
@@ -367,8 +277,28 @@ def test_run_spec_conflicts_fail_before_raw_opener(tmp_path: Path) -> None:
             raw_path,
             output_dir=tmp_path / "invalid-out",
             settings=settings,
-            peak_config=_peak_config(tmp_path),
+            dll_dir=_peak_config(tmp_path).dll_dir,
             raw_opener=_open,
             run_spec=object(),  # type: ignore[arg-type]
         )
     assert opens == []
+
+
+def test_adapter_rejects_invalid_profile_before_fingerprinting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from xic_extractor.configuration.signal_processing_profile import (
+        SignalProcessingProfile,
+    )
+
+    monkeypatch.setattr(
+        "xic_extractor.discovery.processing_run_spec_adapter.build_acquisition_source_identity",
+        lambda *_args, **_kwargs: pytest.fail("fingerprinted invalid profile"),
+    )
+    with pytest.raises(TypeError, match="SignalProcessingProfile"):
+        compile_discovery_processing_run_spec(
+            _raws(tmp_path),
+            discovery_settings=_settings(),
+            signal_processing_profile=cast(SignalProcessingProfile, object()),
+        )

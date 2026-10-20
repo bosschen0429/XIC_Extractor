@@ -82,12 +82,8 @@ class _PrecursorMassIndex:
         if not math.isfinite(radius_da):
             return self._all_ordinals()
         radius_da = math.nextafter(radius_da, math.inf)
-        first_bucket = math.floor(
-            (reference_mz - radius_da) / self._BUCKET_WIDTH_DA
-        )
-        last_bucket = math.floor(
-            (reference_mz + radius_da) / self._BUCKET_WIDTH_DA
-        )
+        first_bucket = math.floor((reference_mz - radius_da) / self._BUCKET_WIDTH_DA)
+        last_bucket = math.floor((reference_mz + radius_da) / self._BUCKET_WIDTH_DA)
         bucket_span = last_bucket - first_bucket + 1
         if bucket_span <= max(64, 2 * len(self._buckets)):
             ordinals = {
@@ -120,24 +116,11 @@ class _PrecursorMassIndex:
         return math.floor(precursor_mz / cls._BUCKET_WIDTH_DA)
 
 
-def merge_candidates_by_ms1_peak(
-    candidates: Iterable[DiscoveryCandidate],
-    *,
-    settings: DiscoverySettings,
-    ms1_centroid_mz: MS1CentroidMz | None = None,
-) -> tuple[DiscoveryCandidate, ...]:
-    return merge_candidates_by_ms1_peak_with_lineage(
-        candidates,
-        settings=settings,
-        ms1_centroid_mz=ms1_centroid_mz,
-    ).candidates
-
-
 def merge_candidates_by_ms1_peak_with_lineage(
     candidates: Iterable[DiscoveryCandidate],
     *,
     settings: DiscoverySettings,
-    ms1_centroid_mz: MS1CentroidMz | None = None,
+    ms1_centroid_mz: MS1CentroidMz,
 ) -> DiscoveryCandidateMergeResult:
     merged: list[DiscoveryCandidate] = []
     mass_index = _PrecursorMassIndex()
@@ -238,7 +221,7 @@ def _matching_ms1_peak_candidate(
     merged: list[DiscoveryCandidate],
     *,
     settings: DiscoverySettings,
-    ms1_centroid_mz: MS1CentroidMz | None = None,
+    ms1_centroid_mz: MS1CentroidMz,
     candidate_ordinals: Iterable[int] | None = None,
 ) -> tuple[int, DiscoveryCandidate | None] | None:
     """The merge target and, for one measured ion, the candidate that holds it."""
@@ -477,7 +460,7 @@ def _same_ms1_peak_on_one_measured_ion(
     second: DiscoveryCandidate,
     *,
     settings: DiscoverySettings,
-    ms1_centroid_mz: MS1CentroidMz | None,
+    ms1_centroid_mz: MS1CentroidMz,
 ) -> DiscoveryCandidate | None:
     """The candidate whose trace holds the whole peak of one ion both traced.
 
@@ -493,8 +476,7 @@ def _same_ms1_peak_on_one_measured_ion(
 
     tolerance = settings.precursor_mz_tolerance_ppm
     if not (
-        ms1_centroid_mz is not None
-        and first.raw_file == second.raw_file
+        first.raw_file == second.raw_file
         and first.sample_stem == second.sample_stem
         and _has_resolved_ms1_peak(first)
         and _has_resolved_ms1_peak(second)

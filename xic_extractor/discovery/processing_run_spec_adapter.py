@@ -9,11 +9,9 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TypedDict
 
-from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
     SignalProcessingProfile,
-    resolve_signal_processing_profile,
 )
 from xic_extractor.discovery.blank_qualification import (
     BlankBackgroundLibrary,
@@ -137,33 +135,6 @@ def compile_discovery_processing_run_spec_with_expectations(
     return spec, tuple(expectations)
 
 
-def compile_discovery_processing_run_spec_from_config(
-    raw_paths: tuple[Path, ...],
-    discovery_settings: DiscoverySettings,
-    extraction_config: ExtractionConfig,
-) -> ProcessingRunSpec:
-    """Resolve the canonical profile from config, then compile one run spec."""
-
-    return compile_discovery_processing_run_spec(
-        raw_paths,
-        discovery_settings=discovery_settings,
-        signal_processing_profile=processing_profile_from_config(extraction_config),
-    )
-
-
-def processing_profile_from_config(
-    extraction_config: ExtractionConfig,
-) -> SignalProcessingProfile:
-    """Resolve the canonical signal-processing profile a config selects."""
-
-    return resolve_signal_processing_profile(
-        signal_processing_method=extraction_config.signal_processing_method,
-        signal_processing_window_points=(
-            extraction_config.signal_processing_window_points
-        ),
-    )
-
-
 def processing_run_input_for_path(
     spec: ProcessingRunSpec,
     raw_path: Path,
@@ -226,7 +197,6 @@ def validate_processing_run_spec_call(
     raw_paths: tuple[Path, ...],
     *,
     discovery_settings: DiscoverySettings,
-    signal_processing_profile: SignalProcessingProfile,
 ) -> tuple[ProcessingAcquisitionInput, ...]:
     """Close compatibility arguments against one supplied immutable spec."""
 
@@ -238,10 +208,6 @@ def validate_processing_run_spec_call(
         raise ValueError("ProcessingRunSpec input cardinality does not match call")
     if discovery_settings != spec.discovery_method.settings:
         raise ValueError("Discovery settings conflict with ProcessingRunSpec")
-    if not isinstance(signal_processing_profile, SignalProcessingProfile):
-        raise TypeError("signal_processing_profile must be a SignalProcessingProfile")
-    if signal_processing_profile != spec.signal_processing_profile:
-        raise ValueError("peak config conflicts with ProcessingRunSpec profile")
     inputs = tuple(
         processing_run_input_for_path(spec, path, input_ordinal=ordinal)
         for ordinal, path in enumerate(raw_paths)
@@ -268,8 +234,6 @@ def validate_processing_run_spec_call(
 __all__ = [
     "compile_discovery_processing_run_spec",
     "compile_discovery_processing_run_spec_with_expectations",
-    "compile_discovery_processing_run_spec_from_config",
-    "processing_profile_from_config",
     "processing_run_input_for_path",
     "validate_processing_run_spec_call",
 ]

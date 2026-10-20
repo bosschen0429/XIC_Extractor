@@ -239,21 +239,12 @@ def test_run_spec_call_rejects_conflicts_before_runtime(tmp_path: Path) -> None:
             discovery_settings=DiscoverySettings(
                 neutral_loss_profile=NeutralLossProfile("DNA_dR", 98.0)
             ),
-            signal_processing_profile=SignalProcessingProfile(),
-        )
-    with pytest.raises(ValueError, match="profile"):
-        validate_processing_run_spec_call(
-            spec,
-            raw_paths,
-            discovery_settings=settings,
-            signal_processing_profile=SignalProcessingProfile(window_points=21),
         )
     with pytest.raises(ValueError, match="runtime RAW path"):
         validate_processing_run_spec_call(
             spec,
             (raw_paths[0], tmp_path / "C.raw"),
             discovery_settings=settings,
-            signal_processing_profile=SignalProcessingProfile(),
         )
 
 
@@ -648,7 +639,7 @@ def test_bound_blank_snapshot_controls_each_sample_after_library_mutation(
         tuple(paths),
         output_dir=tmp_path / "out",
         settings=settings,
-        peak_config=pipeline_config(tmp_path),
+        dll_dir=pipeline_config(tmp_path).dll_dir,
         raw_opener=lambda path, _dll: handles[path],
         run_spec=spec,
     )

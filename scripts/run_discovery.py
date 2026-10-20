@@ -7,17 +7,14 @@ from pathlib import Path
 from typing import Any
 
 from xic_extractor.configuration.execution_profile import load_execution_profile
-from xic_extractor.configuration.models import ConfigError, ExtractionConfig
-from xic_extractor.configuration.signal_processing_profile import (
-    DEFAULT_SIGNAL_PROCESSING_PROFILE,
-)
+from xic_extractor.configuration.models import ConfigError
 from xic_extractor.discovery.blank_qualification import (
     extract_blank_background_library,
 )
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.discovery.pipeline import run_discovery, run_discovery_batch
 from xic_extractor.discovery.processing_run_spec_adapter import (
-    compile_discovery_processing_run_spec_from_config as _compile_processing_run_spec,
+    compile_discovery_processing_run_spec,
 )
 from xic_extractor.discovery.sample_process_execution import (
     DiscoveryProcessExecutionError,
@@ -113,7 +110,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     data_dir = raw_path.parent if raw_path is not None else raw_dir
     if data_dir is None:
         raise ValueError("Discovery input directory was not resolved")
-    peak_config = _peak_config(data_dir, dll_dir, output_dir, settings)
     timing_recorder = (
         TimingRecorder(
             "discovery",
@@ -127,7 +123,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             "discover.compile_run_spec",
             metrics={"raw_count": len(raw_paths)},
         ):
-            run_spec = _compile_processing_run_spec(raw_paths, settings, peak_config)
+            run_spec = compile_discovery_processing_run_spec(
+                raw_paths, discovery_settings=settings
+            )
     except (OSError, TypeError, ValueError) as exc:
         print(_bounded_run_spec_error(exc), file=sys.stderr)
         return 2
@@ -137,7 +135,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raw_path,
                 output_dir=output_dir,
                 settings=settings,
-                peak_config=peak_config,
+                dll_dir=dll_dir,
                 run_spec=run_spec,
                 timing_recorder=timing_recorder,
             )
@@ -149,7 +147,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raw_paths,
                 output_dir=output_dir,
                 settings=settings,
-                peak_config=peak_config,
+                dll_dir=dll_dir,
                 run_spec=run_spec,
                 max_workers=max_workers,
                 timing_recorder=timing_recorder,
@@ -425,30 +423,6 @@ def _discovery_settings(args: argparse.Namespace) -> DiscoverySettings:
     if blank_updates:
         settings = replace(settings, **blank_updates)
     return settings
-
-
-def _peak_config(
-    data_dir: Path,
-    dll_dir: Path,
-    output_dir: Path,
-    settings: DiscoverySettings,
-) -> ExtractionConfig:
-    return ExtractionConfig(
-        data_dir=data_dir,
-        dll_dir=dll_dir,
-        output_csv=output_dir / "xic_results.csv",
-        diagnostics_csv=output_dir / "xic_diagnostics.csv",
-        smooth_window=15,
-        smooth_polyorder=3,
-        ms1_morphology_smoothing_window_points=(
-            DEFAULT_SIGNAL_PROCESSING_PROFILE.window_points
-        ),
-        peak_rel_height=0.95,
-        peak_min_prominence_ratio=0.10,
-        ms2_precursor_tol_da=settings.ms2_precursor_tol_da,
-        nl_min_intensity_ratio=settings.nl_min_intensity_ratio,
-        resolver_mode=settings.resolver_mode,
-    )
 
 
 def _raw_paths_from_dir(

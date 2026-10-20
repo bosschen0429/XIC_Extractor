@@ -787,6 +787,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 run_spec_id=spec.run_spec_id,
                 settings=settings,
                 signal_processing_profile=profile,
+                ms1_centroid_mz=lambda *_: None,
             )
         folder = tmp_path / path.stem
         folder.mkdir()

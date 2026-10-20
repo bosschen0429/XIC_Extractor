@@ -66,6 +66,7 @@ def test_physical_sidecar_and_publication_timing_cover_canonical_bytes_without_r
         run_spec_id=spec.run_spec_id,
         settings=settings,
         signal_processing_profile=profile,
+        ms1_centroid_mz=lambda *_: None,
     )
     from xic_extractor.peak_detection import physical_peak_codec as owner
 

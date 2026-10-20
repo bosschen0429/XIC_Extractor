@@ -51,7 +51,10 @@ _run_discovery_sample_process_job = partial(
 @pytest.mark.parametrize("workers", (1, 2))
 @pytest.mark.parametrize("surface", ("rows", "facts"))
 def test_discovery_persists_feature_facts_and_measured_review_support(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, workers: int, surface: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    workers: int,
+    surface: str,
 ) -> None:
     from xic_extractor.discovery import output_publication, pipeline
     from xic_extractor.discovery.csv_writer import write_discovery_candidates_csv
@@ -83,15 +86,17 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
             spec.acquisition_inputs[index].acquisition_source,
             [
                 _scan_event(
-                    scan_number=scan, rt=7.8, precursor_mz=mz + 1.0,
+                    scan_number=scan,
+                    rt=7.8,
+                    precursor_mz=mz + 1.0,
                     masses=[mz - 116.0474, mz + 1.0 - 116.0474],
                     intensities=[10000.0, 12000.0],
                 )
                 for scan, mz in ((101, 500.0), (202, 700.0))
             ],
             rt=rt,
-            intensity=100.0 + (index + 1) * 500.0
-            * np.exp(-0.5 * ((rt - 7.8) / 0.08) ** 2),
+            intensity=100.0
+            + (index + 1) * 500.0 * np.exp(-0.5 * ((rt - 7.8) / 0.08) ** 2),
         )
         for index, path in enumerate(paths)
     }
@@ -106,7 +111,8 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
         output_publication, "publish_discovery_batch_sample", capture_publication
     )
     monkeypatch.setattr(
-        pipeline, "_owner_bound_raw_opener",
+        pipeline,
+        "_owner_bound_raw_opener",
         lambda *_args: lambda path, _dll: handles[path],
     )
 
@@ -123,8 +129,12 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
             pass
 
     outputs = run_discovery_batch(
-        paths, output_dir=tmp_path / "discovery", settings=settings,
-        peak_config=_peak_config(tmp_path), run_spec=spec, max_workers=workers,
+        paths,
+        output_dir=tmp_path / "discovery",
+        settings=settings,
+        dll_dir=_peak_config(tmp_path).dll_dir,
+        run_spec=spec,
+        max_workers=workers,
         raw_opener=(lambda path, _dll: handles[path]) if workers == 1 else None,
         executor_factory=ImmediateExecutor if workers > 1 else None,
     )
@@ -132,23 +142,30 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
         outputs.batch_index_csv,
     )
     for acquisition, output in zip(
-        spec.acquisition_inputs, outputs.per_sample, strict=True,
+        spec.acquisition_inputs,
+        outputs.per_sample,
+        strict=True,
     ):
         candidates, physical = captured[acquisition.sample_stem]
         features = tuple(
-            item for item in candidates
+            item
+            for item in candidates
             if item.ms1_peak_found
             and item.discovery_candidate_state in MS1_FEATURE_BACKED_STATES
         )
         assert {item.precursor_mz_basis for item in features} == {
-            "scan_precursor", "product_plus_neutral_loss",
+            "scan_precursor",
+            "product_plus_neutral_loss",
         }
         support = tuple(
-            item for item in candidates if not item.ms1_peak_found
-            and item.precursor_mz_basis == "scan_precursor"
+            item
+            for item in candidates
+            if not item.ms1_peak_found and item.precursor_mz_basis == "scan_precursor"
         )
         dropped = tuple(
-            item for item in candidates if not item.ms1_peak_found
+            item
+            for item in candidates
+            if not item.ms1_peak_found
             and item.precursor_mz_basis == "product_plus_neutral_loss"
         )
         assert len(features) == 2 and len(support) == len(dropped) == 1
@@ -170,7 +187,8 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
         )) == 3
         assert len(payload["records"]) == len(payload["work_manifest"]) == 2
         records = read_discovery_physical_fact_records(
-            output.physical_facts_json, expected_run_spec=spec,
+            output.physical_facts_json,
+            expected_run_spec=spec,
             expected_acquisition_input=acquisition,
         )
         assert {record.candidate_id for record in records} == {
@@ -220,7 +238,7 @@ def test_physical_bindings_match_published_candidates_by_id(
         (raw_path,),
         output_dir=tmp_path / "discovery",
         settings=settings,
-        peak_config=_peak_config(tmp_path),
+        dll_dir=_peak_config(tmp_path).dll_dir,
         raw_opener=lambda _path, _dll_dir: raw,
         run_spec=spec,
     )
@@ -268,7 +286,7 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
         raw_paths,
         output_dir=tmp_path / "serial-spec",
         settings=settings,
-        peak_config=_peak_config(tmp_path),
+        dll_dir=_peak_config(tmp_path).dll_dir,
         raw_opener=lambda path, dll_dir: serial_handles[path],
         run_spec=spec,
     )
@@ -311,7 +329,7 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
         raw_paths,
         output_dir=tmp_path / "process-spec",
         settings=settings,
-        peak_config=_peak_config(tmp_path),
+        dll_dir=_peak_config(tmp_path).dll_dir,
         max_workers=2,
         executor_factory=_SynchronousExecutor,
         run_spec=spec,
@@ -361,6 +379,7 @@ def test_batch_serial_and_process_share_one_run_spec_and_sample_bindings(
         spec.acquisition_inputs[0].acquisition_source
     )
 
+
 def test_real_spawn_rejects_full_mismatched_process_job_with_exact_identity(
     tmp_path: Path,
 ) -> None:
@@ -377,7 +396,7 @@ def test_real_spawn_rejects_full_mismatched_process_job_with_exact_identity(
         raw_path=raw_path,
         output_dir=tmp_path / "out",
         settings=replace(settings, seed_rt_gap_min=0.33),
-        peak_config=_peak_config(tmp_path),
+        dll_dir=_peak_config(tmp_path).dll_dir,
         acquisition_source=source,
         raw_session_capability=mint_raw_acquisition_session_capability(source),
         run_spec=spec,
@@ -439,7 +458,7 @@ def test_process_job_validates_binding_and_preserves_failure_identity(
         raw_path=raw_path,
         output_dir=tmp_path / "out",
         settings=settings,
-        peak_config=_peak_config(tmp_path),
+        dll_dir=_peak_config(tmp_path).dll_dir,
         acquisition_source=source,
         raw_session_capability=capability,
         run_spec=spec,

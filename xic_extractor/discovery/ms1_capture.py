@@ -141,9 +141,9 @@ class _DiscoveryMs1Measurements:
 class _DiscoveryMs1AcquisitionResult:
     candidates: tuple[DiscoveryCandidate, ...]
     measurements: _DiscoveryMs1Measurements
-    physical_work_manifest: tuple[DiscoveryPhysicalWorkItem, ...] = ()
-    physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...] = ()
-    physical_bindings: tuple["DiscoveryCandidatePhysicalBinding", ...] = ()
+    physical_work_manifest: tuple[DiscoveryPhysicalWorkItem, ...]
+    physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...]
+    physical_bindings: tuple["DiscoveryCandidatePhysicalBinding", ...]
 
 
 def capture_ms1_candidates(
@@ -155,7 +155,7 @@ def capture_ms1_candidates(
     settings: DiscoverySettings,
     measurement_observer: Callable[[_DiscoveryMs1Measurements], None] | None = None,
     signal_processing_profile: SignalProcessingProfile,
-    ms1_centroid_mz: candidate_merge.MS1CentroidMz | None = None,
+    ms1_centroid_mz: candidate_merge.MS1CentroidMz,
 ) -> _DiscoveryMs1AcquisitionResult:
     """Acquire canonical Discovery requests in bounded owner-minted batches."""
 
@@ -707,7 +707,7 @@ def _apex_ion_reading(
     acquired: AcquiredTrace,
     evaluation: PhysicalPeakEvaluation,
     *,
-    ms1_centroid_mz: candidate_merge.MS1CentroidMz | None,
+    ms1_centroid_mz: candidate_merge.MS1CentroidMz,
 ) -> tuple[float | None, bool]:
     """The MS1 ion read at the resolved peak of an inferred precursor.
 
@@ -723,7 +723,6 @@ def _apex_ion_reading(
     facts = evaluation.facts
     if (
         plan.group.precursor_mz_basis != "product_plus_neutral_loss"
-        or ms1_centroid_mz is None
         or evaluation.state != "available"
         or facts is None
     ):

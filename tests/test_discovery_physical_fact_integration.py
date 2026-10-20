@@ -134,7 +134,7 @@ def test_recorded_mono_nl_match_keeps_distinct_inferred_physical_search(
         raw_path,
         output_dir=tmp_path / "out",
         settings=settings,
-        peak_config=_peak_config(tmp_path),
+        dll_dir=_peak_config(tmp_path).dll_dir,
         raw_opener=lambda *_args: raw,
         run_spec=spec,
     )
@@ -203,7 +203,7 @@ def test_pipeline_retains_each_seeded_physical_peak_from_one_rt_group(
         raw_path,
         output_dir=tmp_path / "out",
         settings=settings,
-        peak_config=_peak_config(tmp_path),
+        dll_dir=_peak_config(tmp_path).dll_dir,
         raw_opener=lambda *_args: raw,
         run_spec=spec,
     )
@@ -343,6 +343,7 @@ def test_discovery_retained_physical_peak_cardinality(
         run_spec_id=spec.run_spec_id,
         settings=settings,
         signal_processing_profile=profile,
+        ms1_centroid_mz=lambda *_: None,
     )
     path = write_discovery_candidates_csv(
         tmp_path / "candidates.csv", result.candidates
@@ -501,6 +502,7 @@ def test_merged_physical_candidate_persists_representative_search_window(
         run_spec_id=spec.run_spec_id,
         settings=settings,
         signal_processing_profile=profile,
+        ms1_centroid_mz=lambda *_: None,
     )
     (candidate,) = result.candidates
     (binding,) = result.physical_bindings
@@ -673,7 +675,7 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
         raw_path,
         output_dir=tmp_path / "out",
         settings=settings,
-        peak_config=_peak_config(tmp_path),
+        dll_dir=_peak_config(tmp_path).dll_dir,
         raw_opener=lambda path, dll_dir: raw,
         run_spec=spec,
     )
@@ -749,12 +751,12 @@ def test_spec_bound_handle_closes_source_before_ms2_or_xic(
 
     handle = CountingHandle()
 
-    with pytest.raises(ValueError, match="lacks|crosses"):
+    with pytest.raises(ValueError, match="invalid acquisition source|crosses"):
         run_discovery(
             raw_path,
             output_dir=tmp_path / "out",
             settings=settings,
-            peak_config=_peak_config(tmp_path),
+            dll_dir=_peak_config(tmp_path).dll_dir,
             raw_opener=lambda *_args: handle,
             run_spec=spec,
         )
@@ -796,7 +798,7 @@ def test_sparse_trace_outside_actual_context_persists_truthful_unavailable(
         raw_path,
         output_dir=tmp_path / "out",
         settings=settings,
-        peak_config=_peak_config(tmp_path),
+        dll_dir=_peak_config(tmp_path).dll_dir,
         raw_opener=lambda *_args: raw,
         run_spec=spec,
     )
@@ -859,6 +861,7 @@ def test_short_discovery_request_reacquires_points_without_assuming_complete_con
         run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_capture_settings(),
         signal_processing_profile=profile,
+        ms1_centroid_mz=lambda *_: None,
     )
 
     assert len(result.measurements.acquisition_batches) == 2
@@ -914,6 +917,7 @@ def test_single_seed_discovery_acquires_complete_physical_context(
         run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_capture_settings(),
         signal_processing_profile=profile,
+        ms1_centroid_mz=lambda *_: None,
     )
 
     assert result.measurements.reacquisition_request_count == 0
@@ -979,6 +983,7 @@ def test_product_inferred_single_seed_uses_widened_initial_context(
         run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_capture_settings(),
         signal_processing_profile=profile,
+        ms1_centroid_mz=lambda *_: None,
     )
 
     assert result.measurements.reacquisition_request_count == 0
@@ -1026,6 +1031,7 @@ def test_strong_product_inferred_seed_group_uses_widened_initial_context(
         run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_capture_settings(),
         signal_processing_profile=profile,
+        ms1_centroid_mz=lambda *_: None,
     )
 
     assert len(result.measurements.acquisition_batches) == 1
@@ -1094,6 +1100,7 @@ def test_qualification_survives_physical_fact_reuse(
         run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_capture_settings(),
         signal_processing_profile=SignalProcessingProfile(),
+        ms1_centroid_mz=lambda *_: None,
     )
 
     (candidate,) = result.candidates
@@ -1152,6 +1159,7 @@ def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
         run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_capture_settings(),
         signal_processing_profile=SignalProcessingProfile(window_points=3),
+        ms1_centroid_mz=lambda *_: None,
     )
 
     metrics = derive_runtime_acquisition_metrics(
@@ -1199,6 +1207,7 @@ def test_physical_binding_rejects_cross_acquisition_reassembly(
         run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_capture_settings(),
         signal_processing_profile=profile,
+        ms1_centroid_mz=lambda *_: None,
     )
     foreign_raw = _OwnerBoundBatchRaw(foreign_source)
     foreign_raw.intensity = np.asarray(
@@ -1211,6 +1220,7 @@ def test_physical_binding_rejects_cross_acquisition_reassembly(
         run_spec_id="processing-run:" + ("1" * 64),
         settings=_capture_settings(),
         signal_processing_profile=profile,
+        ms1_centroid_mz=lambda *_: None,
     )
     foreign_record = foreign.physical_evaluations[0]
 
@@ -1287,6 +1297,7 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
         run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_capture_settings(),
         signal_processing_profile=SignalProcessingProfile(window_points=window_points),
+        ms1_centroid_mz=lambda *_: None,
     )
 
     candidate = result.candidates[0]
@@ -1374,6 +1385,7 @@ def test_discovery_publishes_supported_peak(
         run_spec_id=_TEST_RUN_SPEC_ID,
         settings=_capture_settings(),
         signal_processing_profile=profile,
+        ms1_centroid_mz=lambda *_: None,
     )
     evaluation = result.physical_evaluations[0].evaluation
     candidate = result.candidates[0]
@@ -1465,6 +1477,7 @@ def test_physical_fact_sharing_uses_exact_owner_question(
         run_spec_id=spec.run_spec_id,
         settings=settings,
         signal_processing_profile=profile,
+        ms1_centroid_mz=lambda *_: None,
     )
 
     expected_count = 1 if same_question else 2
@@ -1581,6 +1594,52 @@ def test_inferred_precursor_reports_the_ms1_ion_read_at_the_apex(
     assert record.work_item.xic_mz == pytest.approx(group.precursor_mz)
 
 
+def test_pipeline_publishes_inferred_precursor_ms1_ion_from_raw_handle(
+    tmp_path: Path,
+) -> None:
+    raw_path = tmp_path / "inferred.raw"
+    raw_path.write_bytes(b"inferred precursor with a measured MS1 ion")
+    settings = _settings()
+    spec = compile_discovery_processing_run_spec(
+        (raw_path,), discovery_settings=settings
+    )
+    ion_mz = 500.0005
+
+    class CentroidRaw(_OwnerBoundFakeRawHandle):
+        def ms1_centroid_mz(
+            self, rt: float, mz_min: float, mz_max: float
+        ) -> float | None:
+            return ion_mz if mz_min <= ion_mz <= mz_max else None
+
+    rt = np.arange(9.3, 10.7, 0.01)
+    raw = CentroidRaw(
+        spec.acquisition_inputs[0].acquisition_source,
+        [
+            _scan_event(
+                scan_number=100,
+                rt=10.0,
+                precursor_mz=500.5,
+                masses=[500.0 - 116.0474],
+            )
+        ],
+        rt=rt,
+        intensity=100.0 + 10_000 * np.exp(-0.5 * ((rt - 10.0) / 0.05) ** 2),
+    )
+    outputs = run_discovery(
+        raw_path,
+        output_dir=tmp_path / "out",
+        settings=settings,
+        dll_dir=tmp_path / "dll",
+        raw_opener=lambda *_args: raw,
+        run_spec=spec,
+    )
+
+    (candidate,) = _read_csv(outputs.candidates_csv)
+    assert candidate["precursor_mz_basis"] == "product_plus_neutral_loss"
+    assert float(candidate["precursor_mz"]) == pytest.approx(500.0)
+    assert float(candidate["ms1_apex_mz"]) == pytest.approx(ion_mz)
+
+
 def _two_ions(inferred: float, rt: float) -> float:
     # Alternating readings 12 ppm apart: two ions share the window.
     return inferred * (1 - 18e-6 if round(rt / 0.04) % 2 else 1 - 6e-6)
@@ -1665,19 +1724,18 @@ def test_held_inferred_peak_remains_in_review_and_physical_sidecar(
     )
     ion_mz = 500.0005
     monkeypatch.setattr(
-        "xic_extractor.discovery.pipeline._ms1_centroid_source",
-        lambda _raw: (
-            lambda _rt, low, high: next(
-                (mz for mz in (ion_mz, ion_mz + 1.0033548 / 2) if low <= mz <= high),
-                None,
-            )
+        raw,
+        "ms1_centroid_mz",
+        lambda _rt, low, high: next(
+            (mz for mz in (ion_mz, ion_mz + 1.0033548 / 2) if low <= mz <= high),
+            None,
         ),
     )
     outputs = run_discovery(
         raw_path,
         output_dir=tmp_path / "out",
         settings=settings,
-        peak_config=_peak_config(tmp_path),
+        dll_dir=_peak_config(tmp_path).dll_dir,
         raw_opener=lambda *_args: raw,
         run_spec=spec,
     )

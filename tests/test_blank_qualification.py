@@ -12,7 +12,8 @@ from xic_extractor.discovery.blank_qualification import (
 
 @pytest.mark.parametrize("suffix", [".json", ".json.gz"])
 def test_loaded_unordered_library_still_matches_background(
-    tmp_path: Path, suffix: str,
+    tmp_path: Path,
+    suffix: str,
 ) -> None:
     import gzip
     import json
@@ -23,8 +24,7 @@ def test_loaded_unordered_library_still_matches_background(
         "min_intensity": 25000.0,
         "source_blanks": ["B1"],
         "ions": [
-            {"mz": mz, "max_intensity": 100000.0,
-             "scan_count": 5, "source_blank": "B1"}
+            {"mz": mz, "max_intensity": 100000.0, "scan_count": 5, "source_blank": "B1"}
             for mz in [300.0, 100.0, 200.0]
         ],
     }
@@ -38,8 +38,9 @@ def test_loaded_unordered_library_still_matches_background(
     assert match[0].mz == 300.0
 
 
-def test_background_library_snapshot_preserves_precision_and_rejects_noncanonical(
-) -> None:
+def test_background_library_snapshot_preserves_precision_and_rejects_noncanonical() -> (
+    None
+):
     import json
 
     from xic_extractor.discovery.blank_qualification import (
@@ -48,11 +49,16 @@ def test_background_library_snapshot_preserves_precision_and_rejects_noncanonica
     )
 
     library = BlankBackgroundLibrary(
-        ions=(BlankBackgroundIon(
-            mz=300.12345678912345, max_intensity=12345.6789012345,
-            scan_count=5, source_blank="B1",
-        ),),
-        min_intensity=10000.0, source_blanks=("B1",),
+        ions=(
+            BlankBackgroundIon(
+                mz=300.12345678912345,
+                max_intensity=12345.6789012345,
+                scan_count=5,
+                source_blank="B1",
+            ),
+        ),
+        min_intensity=10000.0,
+        source_blanks=("B1",),
     )
     payload = serialize_background_library(library)
     restored = deserialize_background_library(payload)
@@ -64,9 +70,13 @@ def test_background_library_snapshot_preserves_precision_and_rejects_noncanonica
     with_extra_key = json.loads(payload)
     with_extra_key["unexpected"] = "not part of the library"
     with pytest.raises(ValueError):
-        deserialize_background_library(json.dumps(
-            with_extra_key, sort_keys=True, separators=(",", ":"),
-        ))
+        deserialize_background_library(
+            json.dumps(
+                with_extra_key,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
 
 
 def test_blank_library_matching():
@@ -174,7 +184,9 @@ def test_resolve_background_library_missing_explicit_path_raises(
 @pytest.mark.parametrize("preset", [None, "dna_dr"])
 @pytest.mark.parametrize("enabled", [False, True])
 def test_discovery_only_filters_background_when_explicitly_enabled(
-    tmp_path: Path, preset: str | None, enabled: bool,
+    tmp_path: Path,
+    preset: str | None,
+    enabled: bool,
 ):
     from scripts.run_discovery import _discovery_settings, _parse_args
     from xic_extractor.discovery.blank_qualification import (
@@ -318,12 +330,15 @@ def test_discovery_only_filters_background_when_explicitly_enabled(
         args.extend(["--preset", preset])
     settings = _discovery_settings(_parse_args(args))
     spec = compile_discovery_processing_run_spec(
-        (raw,), discovery_settings=settings,
+        (raw,),
+        discovery_settings=settings,
     )
     assert (spec.acquisition_inputs[0].blank_library_sha256 is not None) is enabled
     qualified = _apply_blank_qualification_if_enabled(
-        (c_background, c_override, c_clean), raw_path=raw, settings=settings,
-        timing_recorder=TimingRecorder.disabled("discovery"), sample_stem="test",
+        (c_background, c_override, c_clean),
+        settings=settings,
+        timing_recorder=TimingRecorder.disabled("discovery"),
+        sample_stem="test",
         acquisition_input=spec.acquisition_inputs[0],
     )
 
@@ -464,7 +479,9 @@ def test_run_discovery_cli_missing_blank_library_fails(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("change", ["same_path_new_content", "new_dir_same_names"])
 def test_run_discovery_blank_dir_uses_current_blank_content(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    change: str,
 ) -> None:
     from scripts.run_discovery import main
 
@@ -487,10 +504,14 @@ def test_run_discovery_blank_dir_uses_current_blank_content(
 
     def mock_extract(blank_raws, dll_dir):
         return BlankBackgroundLibrary(
-            ions=(BlankBackgroundIon(
-                mz=300.0, max_intensity=float(blank_raws[0].read_bytes()),
-                scan_count=5, source_blank="Blank_1",
-            ),),
+            ions=(
+                BlankBackgroundIon(
+                    mz=300.0,
+                    max_intensity=float(blank_raws[0].read_bytes()),
+                    scan_count=5,
+                    source_blank="Blank_1",
+                ),
+            ),
             min_intensity=25000.0,
             source_blanks=tuple(sorted(p.stem for p in blank_raws)),
         )
@@ -501,7 +522,7 @@ def test_run_discovery_blank_dir_uses_current_blank_content(
 
     # Mock _compile_processing_run_spec and run_discovery to avoid running full pipeline
     monkeypatch.setattr(
-        "scripts.run_discovery._compile_processing_run_spec",
+        "scripts.run_discovery.compile_discovery_processing_run_spec",
         lambda *args, **kwargs: None,
     )
     from unittest.mock import MagicMock
@@ -550,7 +571,8 @@ def test_run_discovery_blank_dir_uses_current_blank_content(
 
 
 def test_run_discovery_explicit_disable_skips_blank_directory(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from types import SimpleNamespace
 
@@ -569,7 +591,8 @@ def test_run_discovery_explicit_disable_skips_blank_directory(
     def forbidden_extraction(*args, **kwargs):
         pytest.fail("explicit disable must not acquire blank RAWs")
 
-    def compile_spec(raw_paths, settings, peak_config):
+    def compile_spec(raw_paths, *, discovery_settings):
+        settings = discovery_settings
         settings_seen.append(settings)
         return None
 
@@ -578,16 +601,30 @@ def test_run_discovery_explicit_disable_skips_blank_directory(
         return SimpleNamespace(candidates_csv="candidates.csv", review_csv="review.csv")
 
     monkeypatch.setattr(
-        "scripts.run_discovery.extract_blank_background_library", forbidden_extraction,
+        "scripts.run_discovery.extract_blank_background_library",
+        forbidden_extraction,
     )
     monkeypatch.setattr(
-        "scripts.run_discovery._compile_processing_run_spec", compile_spec,
+        "scripts.run_discovery.compile_discovery_processing_run_spec",
+        compile_spec,
     )
     monkeypatch.setattr("scripts.run_discovery.run_discovery", discover)
-    assert main([
-        "--raw", str(raw), "--dll-dir", str(dll), "--output-dir", str(output),
-        "--blank-dir", str(blanks), "--no-blank-qualification",
-    ]) == 0
+    assert (
+        main(
+            [
+                "--raw",
+                str(raw),
+                "--dll-dir",
+                str(dll),
+                "--output-dir",
+                str(output),
+                "--blank-dir",
+                str(blanks),
+                "--no-blank-qualification",
+            ]
+        )
+        == 0
+    )
     assert len(settings_seen) == 2
     assert all(not settings.enable_blank_qualification for settings in settings_seen)
     assert not (output / "blank_library.json").exists()
