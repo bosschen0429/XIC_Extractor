@@ -74,9 +74,7 @@ class AlignmentArtifactFingerprintBatch:
             not isinstance(receipt, AlignmentArtifactFingerprintReceipt)
             for receipt in self.receipts
         ):
-            raise TypeError(
-                "receipts must contain only Alignment artifact receipts"
-            )
+            raise TypeError("receipts must contain only Alignment artifact receipts")
         receipt_paths = tuple(receipt.artifact_path for receipt in self.receipts)
         if len(self.artifact_paths) != len(set(self.artifact_paths)):
             raise ValueError("artifact_paths must be unique")
