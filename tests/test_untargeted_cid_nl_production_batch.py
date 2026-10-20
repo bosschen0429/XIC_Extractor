@@ -3817,7 +3817,9 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
     physical_records = {}
     from openpyxl import Workbook
 
-    from xic_extractor.acquisition.istd_reference import read_known_istd_reference
+    from xic_extractor.applications.untargeted.istd_reference import (
+        read_known_istd_reference,
+    )
 
     paths = tuple(tmp_path / f"S{i}.synthetic" for i in range(2))
     precursor_mzs = (500.0, 500.03)

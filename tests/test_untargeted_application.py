@@ -847,7 +847,9 @@ def test_pipeline_rejects_unsupported_discovery_before_acquisition_or_output(
 def test_known_reference_provenance_survives_sqlite_summary(tmp_path, monkeypatch):
     from tests.test_alignment_drift_evidence import _known_reference_workbook
     from tests.test_cid_nl_explanation import _owner_run
-    from xic_extractor.acquisition.istd_reference import read_known_istd_reference
+    from xic_extractor.applications.untargeted.istd_reference import (
+        read_known_istd_reference,
+    )
     from xic_extractor.diagnostics.alignment_explanation import read_cid_nl_explanation
     from xic_extractor.diagnostics.alignment_explanation_projection import (
         write_cid_nl_explanation,

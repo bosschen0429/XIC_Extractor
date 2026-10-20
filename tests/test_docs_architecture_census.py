@@ -1263,12 +1263,15 @@ def test_import_linter_config_owns_the_static_dependency_contracts() -> None:
         "importlinter:contract:inner-layers-do-not-import-diagnostics",
         "importlinter:contract:inner-layers-do-not-import-applications",
         "importlinter:contract:targeted-untargeted-independent",
+        "importlinter:contract:main-chain-layers",
+        "importlinter:contract:acquisition-stays-inner",
     }
     independence_section = "importlinter:contract:targeted-untargeted-independent"
+    layers_section = "importlinter:contract:main-chain-layers"
     assert all(
         config[section]["type"] == "forbidden"
         and not config[section].getboolean("allow_indirect_imports")
-        for section in contracts - {independence_section}
+        for section in contracts - {independence_section, layers_section}
     )
     independence = config[independence_section]
     assert independence["type"] == "independence"
@@ -1277,6 +1280,15 @@ def test_import_linter_config_owns_the_static_dependency_contracts() -> None:
         "xic_extractor.untargeted_execution",
     ]
     assert not independence.get("ignore_imports", "").strip()
+    layers = config[layers_section]
+    assert layers["type"] == "layers"
+    assert layers["layers"].strip().splitlines() == [
+        "xic_extractor.applications",
+        "xic_extractor.untargeted_execution | xic_extractor.extraction",
+        "xic_extractor.alignment",
+        "xic_extractor.discovery",
+        "xic_extractor.peak_detection",
+    ]
 
 
 def test_import_linter_static_scope_does_not_claim_dynamic_resolution(

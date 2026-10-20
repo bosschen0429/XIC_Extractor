@@ -108,3 +108,27 @@ type = independence
 modules =
     xic_extractor.extraction
     xic_extractor.untargeted_execution
+
+[importlinter:contract:main-chain-layers]
+name = Main processing chain layers
+type = layers
+layers =
+    xic_extractor.applications
+    xic_extractor.untargeted_execution | xic_extractor.extraction
+    xic_extractor.alignment
+    xic_extractor.discovery
+    xic_extractor.peak_detection
+
+[importlinter:contract:acquisition-stays-inner]
+name = Acquisition stays inner
+type = forbidden
+source_modules =
+    xic_extractor.acquisition
+forbidden_modules =
+    xic_extractor.alignment
+    xic_extractor.applications
+    xic_extractor.discovery
+    xic_extractor.extraction
+    xic_extractor.untargeted_execution
+    xic_extractor.output
+allow_indirect_imports = False
