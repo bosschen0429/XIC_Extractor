@@ -55,7 +55,7 @@ def test_consistency_classifier_allows_cwt_as_shape_context_but_not_chemistry() 
     )
 
 
-def test_consistency_classifier_allows_chrom_segment_as_shape_context_not_chemistry(
+def test_consistency_allows_chrom_segment_as_shape_context_not_chemistry(
 ) -> None:
     labels = classify_evidence_consistency(
         EvidenceSignalSet(
@@ -74,7 +74,7 @@ def test_consistency_classifier_allows_chrom_segment_as_shape_context_not_chemis
     )
 
 
-def test_consistency_classifier_treats_soft_trace_flags_as_context_warning_with_cwt(
+def test_consistency_soft_trace_flags_are_context_warning_with_cwt(
 ) -> None:
     labels = classify_evidence_consistency(
         EvidenceSignalSet(
@@ -275,7 +275,7 @@ def test_decision_semantics_keeps_cwt_as_context_not_standalone_authority() -> N
     assert decision.review_reasons == ("cwt_requires_correlated_evidence",)
 
 
-def test_decision_semantics_keeps_chrom_segment_as_context_not_standalone_authority(
+def test_decision_chrom_segment_is_context_not_standalone_authority(
 ) -> None:
     decision = decision_semantics_from_signal_set(
         EvidenceSignalSet(
@@ -336,7 +336,7 @@ def test_decision_semantics_anchor_mismatch_cap_without_strict_nl_is_not_counted
     assert decision.exclusion_reasons == ()
 
 
-def test_decision_semantics_anchor_mismatch_cap_with_strict_nl_skips_anchor_policy(
+def test_decision_anchor_mismatch_cap_with_strict_nl_skips_anchor_policy(
 ) -> None:
     decision = decision_semantics_from_signal_set(
         EvidenceSignalSet(

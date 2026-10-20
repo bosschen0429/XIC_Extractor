@@ -83,7 +83,7 @@ def test_targeted_istd_trajectory_does_not_promote_one_detected_owner() -> None:
     assert decision.identity_reason == "insufficient_detected_identity_support"
 
 
-def test_targeted_istd_trajectory_with_two_detected_uses_existing_multi_sample_policy(
+def test_targeted_istd_trajectory_two_detected_uses_multi_sample_policy(
 ) -> None:
     matrix = _matrix(
         _feature(
