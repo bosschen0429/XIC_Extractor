@@ -6,7 +6,7 @@ import hashlib
 from collections import defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from xml.etree.ElementTree import ParseError
 from zipfile import BadZipFile
 
@@ -171,7 +171,7 @@ class TargetedWorkbookSource:
     def target_names_for_role(self, role: str | None) -> list[str]:
         """Project role options only from recorded Targets.Role, never labels."""
         if role is None:
-            return list(self.summary["target_names"])
+            return list(cast(list[str], self.summary["target_names"]))
         return [
             target["Label"]
             for target in self.targets

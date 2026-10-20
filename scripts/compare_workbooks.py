@@ -1,7 +1,7 @@
 import argparse
 import math
 import sys
-from collections.abc import Container, Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -61,7 +61,7 @@ def compare_workbooks(
 
 
 def _sheets_to_compare(
-    left_sheetnames: Container[str], right_sheetnames: Container[str]
+    left_sheetnames: Iterable[str], right_sheetnames: Iterable[str]
 ) -> tuple[str, ...]:
     additional = sorted(
         (set(left_sheetnames) | set(right_sheetnames)) - set(COMPARE_SHEETS)

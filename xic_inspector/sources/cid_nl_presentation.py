@@ -622,7 +622,7 @@ def _decision_label(cells):
 
 def _item_labels(item, samples, route):
     """Describe recorded outcomes without promoting them to scientific claims."""
-    group = next(
+    group: dict[str, Any] = next(
         (r["facts"] for r in item.details["records"] if r["kind"] == "final_groups"),
         {},
     )
@@ -661,7 +661,7 @@ def _item_labels(item, samples, route):
             "missing": "此樣本沒有定量決策紀錄",
         }[next(state for state, state_count in states.items() if state_count)]
     else:
-        labels = (
+        population_labels = (
             ("numeric", "有定量數值"),
             ("null", "空值"),
             ("zero", "零值"),
@@ -671,7 +671,9 @@ def _item_labels(item, samples, route):
         population = "所選 {} 個樣本：{}".format(
             count,
             "、".join(
-                f"{states[state]} 個{label}" for state, label in labels if states[state]
+                f"{states[state]} 個{label}"
+                for state, label in population_labels
+                if states[state]
             ),
         )
     curve_missing = sum(

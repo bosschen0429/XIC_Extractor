@@ -1239,17 +1239,23 @@ class CidNlSource:
             "provenance": payload.get("provenance"),
         }
         sample_stem = self.sample_labels.get(payload.get("sample_id"))
-        knots = self.calibration_by_sample_stem.get(sample_stem)
+        knots = (
+            self.calibration_by_sample_stem.get(sample_stem)
+            if sample_stem is not None
+            else None
+        )
         if knots:
             aligned_rts = [interpolate_calibrated_rt_min(value, knots) for value in rts]
+            left = integration.get("rt_left_min")
+            right = integration.get("rt_right_min")
             aligned_left = (
-                interpolate_calibrated_rt_min(integration.get("rt_left_min"), knots)
-                if isinstance(integration.get("rt_left_min"), (int, float))
+                interpolate_calibrated_rt_min(left, knots)
+                if isinstance(left, (int, float))
                 else None
             )
             aligned_right = (
-                interpolate_calibrated_rt_min(integration.get("rt_right_min"), knots)
-                if isinstance(integration.get("rt_right_min"), (int, float))
+                interpolate_calibrated_rt_min(right, knots)
+                if isinstance(right, (int, float))
                 else None
             )
             apex = integration.get("rt_apex_min", integration.get("apex_rt_min"))

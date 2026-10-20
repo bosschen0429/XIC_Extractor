@@ -71,6 +71,8 @@ select = ["E", "F", "I", "B"]
 [tool.mypy]
 explicit_package_bases = true
 ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true
 
 [dependency-groups]
 dev = [

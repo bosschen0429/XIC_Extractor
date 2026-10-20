@@ -421,7 +421,7 @@ def validate_semantic_identifiers(
                 )
                 for child in ast.walk(node)
             }
-            candidates = (
+            candidates: Iterator[tuple[int, str]] = (
                 (node.lineno, node.value)
                 for node in ast.walk(tree)
                 if isinstance(node, ast.Constant)

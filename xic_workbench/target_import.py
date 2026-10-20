@@ -8,6 +8,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import cast
 from zipfile import BadZipFile, ZipFile
 
 import openpyxl
@@ -20,7 +21,7 @@ from xic_extractor.configuration.targeted_method_files import load_target_table
 MAX_UPLOAD_BYTES = 1024 * 1024
 
 
-def preview_target_upload(name: str, content: str, settings: dict) -> dict:
+def preview_target_upload(name: object, content: object, settings: dict) -> dict:
     """Decode browser bytes and delegate semantics; never persist a preview."""
     from xic_extractor.configuration.targeted_method_files import (
         apply_targeted_method,
@@ -49,8 +50,8 @@ def preview_target_upload(name: str, content: str, settings: dict) -> dict:
 
 
 def import_istd_upload(
-    name: str,
-    content: str,
+    name: object,
+    content: object,
     config_dir: Path,
     *,
     profiles: Sequence[NeutralLossProfile] | None = None,
@@ -72,7 +73,7 @@ def import_istd_upload(
 
 
 @contextmanager
-def uploaded_target_file(name: str, content: str) -> Iterator[Path]:
+def uploaded_target_file(name: object, content: object) -> Iterator[Path]:
     """Bound and decode browser bytes for both list consumers; names are labels."""
     suffix = Path(name).suffix.lower() if isinstance(name, str) else ""
     if suffix not in {".xlsx", ".csv", ".tsv"}:
@@ -98,7 +99,7 @@ def uploaded_target_file(name: str, content: str) -> Iterator[Path]:
                         raise ConfigError("XLSX 解壓後過大，請移除不必要的內容。")
             yield path
         except ConfigError as exc:
-            raise ConfigError(str(exc).replace(str(path), name)) from exc
+            raise ConfigError(str(exc).replace(str(path), cast(str, name))) from exc
         except (BadZipFile, OSError, ValueError, KeyError) as exc:
             raise ConfigError("檔案無法讀取，請確認格式與內容後重新選擇。") from exc
 

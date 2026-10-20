@@ -213,7 +213,7 @@ class IndexedCidNlSource(CidNlSource):
                 ids, run_total, eligible, matched, missing = self._review_page(
                     db, scope, request
                 )
-            cache = {}
+            cache: dict[int, CanonicalItem] = {}
 
             def item(item_id):
                 if item_id in cache:
