@@ -34,11 +34,9 @@ from xic_extractor.discovery.models import (
     DiscoveryRunOutputs,
     DiscoverySettings,
 )
-from xic_extractor.discovery.ms1_backfill import (
-    MS1XicSource,
-    _backfill_ms1_candidates_with_acquisition,
+from xic_extractor.discovery.ms1_capture import (
     _DiscoveryMs1Measurements,
-    backfill_ms1_candidates,
+    capture_ms1_candidates,
 )
 from xic_extractor.discovery.ms2_seeds import MS2ScanSource, collect_strict_nl_seeds
 from xic_extractor.discovery.peak_anchor import assign_peak_anchors
@@ -84,8 +82,11 @@ _DISCOVERY_MS1_MEASUREMENT_NAMES = frozenset(
 )
 
 
-class DiscoveryRawHandle(MS1XicSource, MS2ScanSource, Protocol):
+class DiscoveryRawHandle(BatchXICAdapter, MS2ScanSource, Protocol):
     """RAW reader surface needed by single-file discovery orchestration."""
+
+    @property
+    def acquisition_source(self) -> AcquisitionSourceIdentity: ...
 
 
 RawOpener = Callable[[Path, Path], AbstractContextManager[DiscoveryRawHandle]]
@@ -962,14 +963,12 @@ def _acquire_discovery_sample(
                 groups = group_discovery_seeds(seeds, settings=settings)
                 stage.metrics["group_count"] = len(groups)
             with timing_recorder.stage(
-                "discover.ms1_backfill",
+                "discover.ms1_capture",
                 sample_stem=sample_stem,
             ) as stage:
-                if run_spec is None:
-                    owner_bound_source = _owner_bound_acquisition_source(raw)
                 if run_spec is not None and acquisition_input is not None:
                     acquisition_source = acquisition_input.acquisition_source
-                    acquisition_result = _backfill_ms1_candidates_with_acquisition(
+                    acquisition_result = capture_ms1_candidates(
                         cast(BatchXICAdapter, raw),
                         groups,
                         acquisition_source=acquisition_source,
@@ -985,19 +984,13 @@ def _acquire_discovery_sample(
                     physical_work_manifest = acquisition_result.physical_work_manifest
                     physical_evaluations = acquisition_result.physical_evaluations
                     physical_bindings = acquisition_result.physical_bindings
-                elif owner_bound_source is None:
-                    candidates = backfill_ms1_candidates(
-                        raw,
-                        groups,
-                        settings=settings,
-                        peak_config=peak_config,
-                    )
-                    ms1_measurements = None
-                    physical_work_manifest = ()
-                    physical_evaluations = ()
-                    physical_bindings = ()
                 else:
-                    acquisition_result = _backfill_ms1_candidates_with_acquisition(
+                    owner_bound_source = _owner_bound_acquisition_source(raw)
+                    if owner_bound_source is None:
+                        raise ValueError(
+                            "Discovery RAW handle lacks an acquisition source"
+                        )
+                    acquisition_result = capture_ms1_candidates(
                         cast(BatchXICAdapter, raw),
                         groups,
                         acquisition_source=owner_bound_source,
@@ -1106,7 +1099,7 @@ def _record_discovery_ms1_measurements(
             "Discovery MS1 acquisition receipts do not cover the input population"
         )
     acquisition_source = "xic_extractor.acquisition_contract.TraceAcquisitionBatch"
-    discovery_source = "xic_extractor.discovery.ms1_backfill"
+    discovery_source = "xic_extractor.discovery.ms1_capture"
     observed = (
         (
             "logical_xic_request_count",
@@ -1221,7 +1214,7 @@ def _record_unavailable_discovery_ms1_measurements(
             value=None,
             scope=sample_stem,
             unit=unit,
-            source="xic_extractor.discovery.ms1_backfill",
+            source="xic_extractor.discovery.ms1_capture",
             availability="unavailable",
             reason=reason,
         )

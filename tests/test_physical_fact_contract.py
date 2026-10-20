@@ -20,7 +20,7 @@ def test_physical_fact_record_has_dependency_light_canonical_owner() -> None:
 
     repository_root = Path(__file__).parents[1]
     for relative_path in (
-        "xic_extractor/discovery/ms1_backfill.py",
+        "xic_extractor/discovery/ms1_capture.py",
         "xic_extractor/discovery/physical_fact_sidecar.py",
         "xic_extractor/discovery/pipeline.py",
     ):

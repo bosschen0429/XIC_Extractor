@@ -34,7 +34,13 @@ def test_run_discovery_cli_passes_single_raw_settings(
     captured = {}
 
     def _fake_run_discovery(
-        raw_path_arg, *, output_dir, settings, peak_config, run_spec
+        raw_path_arg,
+        *,
+        output_dir,
+        settings,
+        peak_config,
+        run_spec,
+        timing_recorder=None,
     ):
         captured["raw_path"] = raw_path_arg
         captured["output_dir"] = output_dir
@@ -154,7 +160,14 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
     save_workspace(isolated_config_dir, settings={"parallel_workers": "1"})
 
     def _fake_run_discovery_batch(
-        raw_paths, *, output_dir, settings, peak_config, run_spec, max_workers
+        raw_paths,
+        *,
+        output_dir,
+        settings,
+        peak_config,
+        run_spec,
+        max_workers,
+        timing_recorder=None,
     ):
         captured["raw_paths"] = raw_paths
         captured["output_dir"] = output_dir

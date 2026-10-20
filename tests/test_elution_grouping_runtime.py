@@ -21,8 +21,8 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.discovery.grouping import group_discovery_seeds
-from xic_extractor.discovery.ms1_backfill import (
-    _backfill_ms1_candidates_with_acquisition,
+from xic_extractor.discovery.ms1_capture import (
+    capture_ms1_candidates,
 )
 from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
 from xic_extractor.execution.result_store import StreamedResultStore
@@ -80,7 +80,7 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
         raw, _ = _open_bound_raw(fixture, sample, source, tmp_path=tmp_path)
         with raw:
             seeds = collect_strict_nl_seeds(raw, raw_file=path, settings=settings)
-            discovery = _backfill_ms1_candidates_with_acquisition(
+            discovery = capture_ms1_candidates(
                 raw,
                 group_discovery_seeds(seeds, settings=settings),
                 acquisition_source=raw.acquisition_source,
@@ -303,7 +303,7 @@ def test_hold_reuse_beside_several_searches_completes_each_group_cell(
         raw, _ = _open_bound_raw(fixture, sample, source, tmp_path=tmp_path)
         with raw:
             seeds = collect_strict_nl_seeds(raw, raw_file=path, settings=settings)
-            discovery = _backfill_ms1_candidates_with_acquisition(
+            discovery = capture_ms1_candidates(
                 raw,
                 group_discovery_seeds(seeds, settings=settings),
                 acquisition_source=raw.acquisition_source,

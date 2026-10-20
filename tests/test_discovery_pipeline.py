@@ -12,6 +12,7 @@ from typing import Any, cast
 import numpy as np
 import pytest
 
+from tests.cid_nl_raw_fixture import fake_acquisition_source
 from xic_extractor.acquisition_contract import (
     _mint_raw_acquisition_session_receipt,
     mint_raw_acquisition_session_capability,
@@ -31,7 +32,7 @@ from xic_extractor.discovery.models import (
     DiscoverySettings,
     NeutralLossProfile,
 )
-from xic_extractor.discovery.ms1_backfill import _DiscoveryMs1Measurements
+from xic_extractor.discovery.ms1_capture import _DiscoveryMs1Measurements
 from xic_extractor.discovery.output_publication import (
     _BATCH_INDEX_COLUMNS,
     write_batch_index,
@@ -163,7 +164,7 @@ def test_single_raw_pipeline_groups_strict_ms2_seeds_and_writes_dual_csvs(
         intensity=np.array([10.0, 600.0, 20.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: _ok_peak(
             rt=7.86,
             intensity=600.0,
@@ -221,7 +222,7 @@ def test_single_raw_pipeline_writes_inferred_and_direct_same_scan_rows(
         intensity=np.array([10.0, 1000.0, 20.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: _ok_peak(
             rt=23.34,
             intensity=1000.0,
@@ -281,14 +282,17 @@ def test_pipeline_retains_distinct_inferred_features_from_one_ms2_in_both_csvs(
     areas = {258.1085: 2_000.0, 258.6085: 8_000.0}
     monkeypatch.setattr(
         raw,
-        "extract_xic",
-        lambda mz, rt_min, rt_max, ppm_tol: (
-            np.array([7.7, 7.8, 7.9]),
-            np.array([10.0, areas[round(mz, 4)] / 2, 10.0]),
+        "extract_xic_many",
+        lambda requests: tuple(
+            XICTrace.from_arrays(
+                np.array([7.7, 7.8, 7.9]),
+                np.array([10.0, areas[round(request.mz, 4)] / 2, 10.0]),
+            )
+            for request in requests
         ),
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda rt, intensity, peak_config, **kwargs: _ok_peak(
             rt=7.8,
             intensity=float(intensity[1]),
@@ -368,7 +372,7 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
         ),
     }
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda rt, intensity, peak_config, **kwargs: _ok_peak(
             rt=float(rt[1]),
             intensity=float(intensity[1]),
@@ -484,7 +488,7 @@ def test_parallel_batch_preserves_serial_artifacts_and_sample_order(
         }
 
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda rt, intensity, peak_config, **kwargs: _ok_peak(
             rt=float(rt[1]),
             intensity=float(intensity[1]),
@@ -1059,7 +1063,7 @@ def test_discovery_peak_failure_preserves_owner_acquisition_measurements(
     )
     recorder = TimingRecorder("discovery")
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("peak failed")),
     )
 
@@ -1300,7 +1304,7 @@ def test_pipeline_threads_evidence_profile_into_scoring(
         intensity=np.array([10.0, 600.0, 20.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: _ok_peak(
             rt=7.80,
             intensity=600.0,
@@ -1344,7 +1348,7 @@ def test_pipeline_populates_ms1_scan_support_score_from_profile_target(
         intensity=np.array([10.0, 100.0, 600.0, 300.0, 20.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: _ok_peak(
             rt=7.80,
             intensity=600.0,
@@ -1407,7 +1411,7 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
         intensity=np.array([10.0, 600.0, 20.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: _ok_peak(
             rt=7.80,
             intensity=600.0,
@@ -1431,7 +1435,7 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
     assert set(records_by_stage) == {
         "discover.ms2_seeds",
         "discover.group_seeds",
-        "discover.ms1_backfill",
+        "discover.ms1_capture",
         "discover.peak_anchor",
         "discover.blank_qualification",
         "discover.write_candidates_csv",
@@ -1441,11 +1445,14 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
     assert records_by_stage["discover.ms2_seeds"].sample_stem == "Sample"
     assert records_by_stage["discover.ms2_seeds"].metrics["seed_count"] == 1
     assert records_by_stage["discover.group_seeds"].metrics["group_count"] == 1
-    assert records_by_stage["discover.ms1_backfill"].metrics["candidate_count"] == 1
+    assert records_by_stage["discover.ms1_capture"].metrics["candidate_count"] == 1
     assert records_by_stage["discover.peak_anchor"].metrics["candidate_count"] == 1
-    assert records_by_stage["discover.blank_qualification"].metrics[
-        "excluded_background_count"
-    ] == 1
+    assert (
+        records_by_stage["discover.blank_qualification"].metrics[
+            "excluded_background_count"
+        ]
+        == 1
+    )
     assert records_by_stage["discover.write_candidates_csv"].metrics["row_count"] == 1
     assert records_by_stage["discover.write_review_csv"].metrics["row_count"] == 1
     assert records_by_stage["discover.publish_outputs"].metrics == {
@@ -1600,7 +1607,7 @@ def test_owner_bound_discovery_projects_complete_ms1_measurements(
         intensity=np.asarray([10.0, 100.0, 10.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: _ok_peak(
             rt=7.8,
             intensity=100.0,
@@ -1814,8 +1821,14 @@ class _FakeRawHandle:
         self._intensity = np.asarray(
             [] if intensity is None else intensity, dtype=float
         )
+        self.acquisition_source = fake_acquisition_source()
+        self._chromatogram_call_count = 0
         self.entered = False
         self.closed = False
+
+    @property
+    def raw_chromatogram_call_count(self) -> int:
+        return self._chromatogram_call_count
 
     def __enter__(self) -> "_FakeRawHandle":
         self.entered = True
@@ -1827,11 +1840,32 @@ class _FakeRawHandle:
     def iter_ms2_scans(self, rt_min: float, rt_max: float) -> Iterator[Ms2ScanEvent]:
         yield from self._events
 
-    def extract_xic(
+    def extract_xic_many(
         self,
-        mz: float,
-        rt_min: float,
-        rt_max: float,
-        ppm_tol: float,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        return self._rt, self._intensity
+        requests: Sequence[XICRequest],
+    ) -> tuple[XICTrace, ...]:
+        self._chromatogram_call_count += len(
+            {self.scan_window_for_request(request) for request in requests}
+        )
+        return tuple(
+            XICTrace.from_arrays(self._rt, self._intensity) for _request in requests
+        )
+
+    def scan_window_for_request(self, request: XICRequest) -> tuple[int, int]:
+        return 0, max(len(self._rt) - 1, 0)
+
+
+def test_handle_without_acquisition_source_fails_instead_of_scalar_fallback(
+    tmp_path: Path,
+) -> None:
+    raw = _FakeRawHandle(events=[])
+    del raw.acquisition_source
+
+    with pytest.raises(ValueError, match="lacks an acquisition source"):
+        _acquire_discovery_sample(
+            tmp_path / "sample.raw",
+            settings=_settings(),
+            peak_config=_peak_config(tmp_path),
+            raw_opener=lambda path, dll_dir: raw,
+            timing_recorder=TimingRecorder("discovery"),
+        )

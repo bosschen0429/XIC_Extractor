@@ -124,63 +124,37 @@ def main(argv: Sequence[str] | None = None) -> int:
         else None
     )
     try:
-        if timing_recorder is None:
+        with (timing_recorder or TimingRecorder.disabled("discovery")).stage(
+            "discover.compile_run_spec",
+            metrics={"raw_count": len(raw_paths)},
+        ):
             run_spec = _compile_processing_run_spec(raw_paths, settings, peak_config)
-        else:
-            with timing_recorder.stage(
-                "discover.compile_run_spec",
-                metrics={"raw_count": len(raw_paths)},
-            ):
-                run_spec = _compile_processing_run_spec(
-                    raw_paths,
-                    settings,
-                    peak_config,
-                )
     except (OSError, TypeError, ValueError) as exc:
         print(_bounded_run_spec_error(exc), file=sys.stderr)
         return 2
     try:
         if raw_path is not None:
-            if timing_recorder is None:
-                single_outputs = run_discovery(
-                    raw_path,
-                    output_dir=output_dir,
-                    settings=settings,
-                    peak_config=peak_config,
-                    run_spec=run_spec,
-                )
-            else:
-                single_outputs = run_discovery(
-                    raw_path,
-                    output_dir=output_dir,
-                    settings=settings,
-                    peak_config=peak_config,
-                    run_spec=run_spec,
-                    timing_recorder=timing_recorder,
-                )
+            single_outputs = run_discovery(
+                raw_path,
+                output_dir=output_dir,
+                settings=settings,
+                peak_config=peak_config,
+                run_spec=run_spec,
+                timing_recorder=timing_recorder,
+            )
             print(f"Discovery candidates CSV: {single_outputs.candidates_csv}")
             print(f"Discovery review CSV: {single_outputs.review_csv}")
         else:
             max_workers = min(len(raw_paths), execution_profile.parallel_workers)
-            if timing_recorder is None:
-                batch_outputs = run_discovery_batch(
-                    raw_paths,
-                    output_dir=output_dir,
-                    settings=settings,
-                    peak_config=peak_config,
-                    run_spec=run_spec,
-                    max_workers=max_workers,
-                )
-            else:
-                batch_outputs = run_discovery_batch(
-                    raw_paths,
-                    output_dir=output_dir,
-                    settings=settings,
-                    peak_config=peak_config,
-                    run_spec=run_spec,
-                    max_workers=max_workers,
-                    timing_recorder=timing_recorder,
-                )
+            batch_outputs = run_discovery_batch(
+                raw_paths,
+                output_dir=output_dir,
+                settings=settings,
+                peak_config=peak_config,
+                run_spec=run_spec,
+                max_workers=max_workers,
+                timing_recorder=timing_recorder,
+            )
             print(f"Discovery batch index: {batch_outputs.batch_index_csv}")
     except (RawReaderError, DiscoveryProcessExecutionError) as exc:
         print(str(exc), file=sys.stderr)

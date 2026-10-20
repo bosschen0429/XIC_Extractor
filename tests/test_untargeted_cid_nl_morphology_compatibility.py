@@ -30,8 +30,8 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.discovery.grouping import group_discovery_seeds
-from xic_extractor.discovery.ms1_backfill import (
-    _backfill_ms1_candidates_with_acquisition,
+from xic_extractor.discovery.ms1_capture import (
+    capture_ms1_candidates,
 )
 from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
 from xic_extractor.execution.attempt import start_runtime_attempt
@@ -325,7 +325,7 @@ def _canonical_physical_candidates(
     assert raw.acquisition_source is not None
     seeds = collect_strict_nl_seeds(raw, raw_file=raw_file, settings=settings)
     groups = group_discovery_seeds(seeds, settings=settings)
-    result = _backfill_ms1_candidates_with_acquisition(
+    result = capture_ms1_candidates(
         cast(BatchXICAdapter, raw),
         groups,
         acquisition_source=raw.acquisition_source,

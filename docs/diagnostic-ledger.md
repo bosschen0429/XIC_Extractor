@@ -123,6 +123,9 @@ changes.
 Discovery does not import Alignment. Requests and per-request traces are
 unchanged.
 
+Naming note: the module and timing stage were later renamed to `ms1_capture` and
+`discover.ms1_capture`; the measurements below keep the original names.
+
 - Two RAWs (`TumorBC2264_DNA`, `Breast_Cancer_Tissue_pooled_QC3`), default
   `DNA_dR` settings: `discovery_candidates.csv`, `discovery_review.csv` and
   `discovery_physical_facts.json` are byte-identical to master `f097894b`.

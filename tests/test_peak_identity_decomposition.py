@@ -7,11 +7,13 @@ contracts.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
 import pytest
 
+from tests.cid_nl_raw_fixture import fake_acquisition_source
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery.delta_mass_patterns import match_delta_mass_pattern
 from xic_extractor.discovery.detected_features import DetectedFeature
@@ -22,7 +24,9 @@ from xic_extractor.discovery.models import (
     DiscoverySettings,
     NeutralLossProfile,
 )
-from xic_extractor.discovery.ms1_backfill import backfill_ms1_candidates
+from xic_extractor.discovery.ms1_capture import (
+    capture_ms1_candidates,
+)
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.peak_detection.hypotheses import (
     IntegrationResult,
@@ -39,6 +43,7 @@ from xic_extractor.peak_detection.traces import (
     targeted_trace_group,
     untargeted_trace_group,
 )
+from xic_extractor.xic_models import XICRequest, XICTrace
 
 _RAW_FILE = Path("synthetic/SampleA.raw")
 _NEUTRAL_LOSS_DA = 116.0474
@@ -174,22 +179,24 @@ def test_cid_nl_seed_changes_ms1_generation_window_before_peak_evaluation(
         )
 
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         _same_physical_peak,
     )
 
-    first = backfill_ms1_candidates(
+    first = capture_ms1_candidates(
         raw,
         (first_group,),
+        acquisition_source=raw.acquisition_source,
         settings=settings,
         peak_config=_peak_config(),
-    )[0]
-    second = backfill_ms1_candidates(
+    ).candidates[0]
+    second = capture_ms1_candidates(
         raw,
         (second_group,),
+        acquisition_source=raw.acquisition_source,
         settings=settings,
         peak_config=_peak_config(),
-    )[0]
+    ).candidates[0]
 
     assert raw.requests == [
         (500.0, pytest.approx(7.70), pytest.approx(8.10), 20.0),
@@ -341,17 +348,22 @@ class _FakeXicSource:
     def __init__(self) -> None:
         self.rt = np.asarray([7.95, 8.00, 8.05])
         self.intensity = np.asarray([20.0, 500.0, 20.0])
+        self.acquisition_source = fake_acquisition_source()
+        self.raw_chromatogram_call_count = 0
         self.requests: list[tuple[float, float, float, float]] = []
 
-    def extract_xic(
+    def extract_xic_many(
         self,
-        mz: float,
-        rt_min: float,
-        rt_max: float,
-        ppm_tol: float,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        self.requests.append((mz, rt_min, rt_max, ppm_tol))
-        return self.rt, self.intensity
+        requests: Sequence[XICRequest],
+    ) -> tuple[XICTrace, ...]:
+        for request in requests:
+            self.requests.append(
+                (request.mz, request.rt_min, request.rt_max, request.ppm_tol)
+            )
+        return tuple(XICTrace.from_arrays(self.rt, self.intensity) for _ in requests)
+
+    def scan_window_for_request(self, request: XICRequest) -> tuple[int, int]:
+        return 0, len(self.rt) - 1
 
 
 def _discovery_ms1_peak_probe(

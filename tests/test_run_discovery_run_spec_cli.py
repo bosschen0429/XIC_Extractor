@@ -45,7 +45,8 @@ def test_discovery_cli_reports_batch_execution_failure(
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
     monkeypatch.setattr(
-        run_discovery, "load_execution_profile",
+        run_discovery,
+        "load_execution_profile",
         lambda *, parallel_workers=None: ExecutionProfile(
             parallel_workers=workers if parallel_workers is None else parallel_workers
         ),
@@ -53,7 +54,7 @@ def test_discovery_cli_reports_batch_execution_failure(
 
     def fail_batch(_paths, **kwargs):
         assert kwargs["max_workers"] == workers
-        assert ("timing_recorder" in kwargs) is timing
+        assert (kwargs["timing_recorder"] is not None) is timing
         if workers == 1:
             raise RawReaderError("A.raw: unable to open RAW")
         raise DiscoveryProcessExecutionError(
@@ -127,12 +128,13 @@ def test_discovery_cli_forwards_worker_budget_and_run_spec(
         )
 
     monkeypatch.setattr(
-        run_discovery, "load_execution_profile",
+        run_discovery,
+        "load_execution_profile",
         lambda *, parallel_workers=None: ExecutionProfile(
             parallel_workers=(
                 default_workers if parallel_workers is None else parallel_workers
             )
-        )
+        ),
     )
     monkeypatch.setattr(run_discovery, "run_discovery", capture_pipeline)
     monkeypatch.setattr(run_discovery, "run_discovery_batch", capture_pipeline)
@@ -155,7 +157,7 @@ def test_discovery_cli_forwards_worker_budget_and_run_spec(
         assert "max_workers" not in forwarded
     else:
         assert forwarded["max_workers"] == expected_workers
-    assert ("timing_recorder" in forwarded) is timing
+    assert (forwarded["timing_recorder"] is not None) is timing
     assert forwarded["run_spec"].discovery_method.settings == forwarded["settings"]
     assert not forwarded["settings"].enable_blank_qualification
     assert all(

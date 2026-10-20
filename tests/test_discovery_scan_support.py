@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from xic_extractor.discovery.ms1_backfill import compute_ms1_scan_support_score
+from xic_extractor.discovery.ms1_capture import compute_ms1_scan_support_score
 from xic_extractor.peak_detection.models import PeakResult
 
 
