@@ -9,6 +9,7 @@ from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from xic_extractor.tabular_io import (
     file_sha256,
@@ -300,13 +301,13 @@ def _sentinel_rows(
         )
     candidates.sort(
         key=lambda row: (
-            -int(row["severity_score"]),
+            -int(cast(int, row["severity_score"])),
             text_value(row["feature_family_id"]),
         ),
     )
     output: list[dict[str, object]] = []
-    for rank, row in enumerate(candidates[:limit], start=1):
-        output.append({"rank": rank, **row})
+    for rank, candidate in enumerate(candidates[:limit], start=1):
+        output.append({"rank": rank, **candidate})
     return output
 
 

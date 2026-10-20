@@ -25,7 +25,7 @@ import tokenize
 from dataclasses import dataclass
 from importlib.util import find_spec
 from pathlib import Path
-from typing import Sequence
+from typing import Sequence, cast
 
 import grimp
 
@@ -292,7 +292,7 @@ def _dependency_source(path: Path) -> str:
             )
             and ast.get_docstring(node, clean=False) is not None
         ):
-            value = node.body[0].value
+            value = cast(ast.Expr, node.body[0]).value
             docstrings.append(
                 (
                     (value.lineno, value.col_offset),

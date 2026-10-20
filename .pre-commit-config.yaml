@@ -27,7 +27,7 @@ repos:
         entry: uv run --cache-dir .uv-cache mypy
         language: system
         require_serial: true
-        files: ^(xic_extractor|scripts|xic_workbench|xic_inspector)/.*\.py$
+        files: ^(xic_extractor|scripts|xic_workbench|xic_inspector|tools)/.*\.py$
         types: [python]
 
       - id: pytest-staged-tests

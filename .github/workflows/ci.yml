@@ -65,7 +65,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv sync --locked --all-extras --dev
-      - run: uv run mypy xic_extractor scripts xic_workbench xic_inspector
+      - run: uv run mypy xic_extractor scripts xic_workbench xic_inspector tools
 
   test:
     name: test (Python 3.12)
