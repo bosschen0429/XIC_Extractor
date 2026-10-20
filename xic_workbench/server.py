@@ -117,6 +117,7 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
     cookie_name = f"xic_session_{secrets.token_hex(8)}"
 
     class Handler(BaseHTTPRequestHandler):
+        server: ThreadingHTTPServer
         # Every response has a Content-Length. Reuse browser connections instead
         # of allocating a new Windows socket for every asset and status poll.
         protocol_version = "HTTP/1.1"
@@ -221,10 +222,10 @@ def create_server(workspace: ReviewWorkspace, *, port: int = 0) -> ThreadingHTTP
             elif url.path in _EXAMPLES:
                 # Fixed public resources only; no arbitrary filesystem access.
                 name = url.path.rsplit("/", 1)[-1]
-                data = files("xic_extractor.configuration").joinpath("data", name)
+                resource = files("xic_extractor.configuration").joinpath("data", name)
                 self._send(
                     200,
-                    data.read_bytes(),
+                    resource.read_bytes(),
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     Content_Disposition=f'attachment; filename="{name}"',
                 )

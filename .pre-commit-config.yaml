@@ -23,11 +23,11 @@ repos:
         types: [python]
 
       - id: mypy-staged-package
-        name: mypy staged xic_extractor files
+        name: mypy staged package files
         entry: uv run --cache-dir .uv-cache mypy
         language: system
         require_serial: true
-        files: ^xic_extractor/.*\.py$
+        files: ^(xic_extractor|scripts|xic_workbench|xic_inspector)/.*\.py$
         types: [python]
 
       - id: pytest-staged-tests

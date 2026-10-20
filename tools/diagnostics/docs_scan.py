@@ -503,6 +503,7 @@ def markdown_without_fenced_code(text: str) -> str:
             content = content[blockquote.end() :]
         return content
 
+    logical_line: str | None
     visible: list[str] = []
     fence_character = ""
     fence_length = 0

@@ -6,6 +6,7 @@ import dataclasses
 import os
 import re
 import shutil
+import sys
 import uuid
 from pathlib import Path
 from typing import Any
@@ -326,7 +327,7 @@ class AnalysisWorkspace:
                 ".txt",
             }:
                 raise ValueError("工作區只會開啟分析文件或資料夾。")
-            if os.name != "nt":
+            if sys.platform != "win32":
                 raise ValueError(f"請在檔案管理員開啟：{path}")
             os.startfile(str(path))  # noqa: S606
             return {"path": str(path)}

@@ -7,7 +7,7 @@ from xic_extractor.diagnostics.alignment_explanation import open_review_populati
 
 def review_overview(path, summary):
     rows = {}
-    coverage = Counter()
+    coverage: Counter[str] = Counter()
     sample_count = len(summary["samples"])
     with open_review_population(path, summary) as population:
         for record in population:

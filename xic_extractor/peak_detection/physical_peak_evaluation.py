@@ -1259,4 +1259,4 @@ def _physical_operation(value: object) -> PhysicalPeakOperation:
     text = _physical_text(value, field="physical operation")
     if text not in _PHYSICAL_PEAK_OPERATION_ORDER:
         raise ValueError("unsupported physical operation")
-    return text  # type: ignore[return-value]
+    return text
