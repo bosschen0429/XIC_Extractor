@@ -84,7 +84,7 @@ class UntargetedPartitionContext:
         str,
         DiscoveryCandidateUniverseReceipt,
     ]
-    signal_processing_profile: SignalProcessingProfile | None = None
+    signal_processing_profile: SignalProcessingProfile
     physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord] = field(
         default_factory=dict
     )
@@ -125,7 +125,7 @@ def build_partition_context(
         DiscoveryCandidateUniverseReceipt,
     ],
     sample_identity_namespace: str,
-    signal_processing_profile: SignalProcessingProfile | None = None,
+    signal_processing_profile: SignalProcessingProfile,
     physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord]
     | None = None,
     acquisition_source_expectations: tuple[AcquisitionSourceExpectation, ...]
@@ -242,41 +242,33 @@ def build_partition_context(
         for candidates in candidate_map.values()
         for candidate in candidates
     }
-    if signal_processing_profile is None:
-        if physical_records:
+    if not isinstance(signal_processing_profile, SignalProcessingProfile):
+        raise IdentityContractError("physical replay profile must be owner-resolved")
+    if set(physical_records) != set(candidate_by_id):
+        raise IdentityContractError(
+            "physical replay must cover the exact candidate universe"
+        )
+    for candidate_id, record in physical_records.items():
+        validate_discovery_physical_fact_record(record)
+        candidate = candidate_by_id[candidate_id]
+        work = record.work_item
+        if (
+            record.candidate_id != candidate_id
+            or work.sample_stem != candidate.sample_stem
+            or work.acquisition_source_id
+            != sources_by_stem[candidate.sample_stem].acquisition_source_id
+            or work.best_ms2_scan_id != candidate.best_ms2_scan_id
+            or work.precursor_mz != candidate.precursor_mz
+            or work.product_mz != candidate.product_mz
+            or work.query_rt_min != candidate.best_seed_rt
+            or work.xic_rt_min != candidate.ms1_search_rt_min
+            or work.xic_rt_max != candidate.ms1_search_rt_max
+            or record.evaluation.prepared.profile_id
+            != signal_processing_profile.profile_id
+        ):
             raise IdentityContractError(
-                "physical replay records require a signal profile"
+                "physical replay crossed candidate, acquisition, or profile"
             )
-    else:
-        if not isinstance(signal_processing_profile, SignalProcessingProfile):
-            raise IdentityContractError(
-                "physical replay profile must be owner-resolved"
-            )
-        if set(physical_records) != set(candidate_by_id):
-            raise IdentityContractError(
-                "physical replay must cover the exact candidate universe"
-            )
-        for candidate_id, record in physical_records.items():
-            validate_discovery_physical_fact_record(record)
-            candidate = candidate_by_id[candidate_id]
-            work = record.work_item
-            if (
-                record.candidate_id != candidate_id
-                or work.sample_stem != candidate.sample_stem
-                or work.acquisition_source_id
-                != sources_by_stem[candidate.sample_stem].acquisition_source_id
-                or work.best_ms2_scan_id != candidate.best_ms2_scan_id
-                or work.precursor_mz != candidate.precursor_mz
-                or work.product_mz != candidate.product_mz
-                or work.query_rt_min != candidate.best_seed_rt
-                or work.xic_rt_min != candidate.ms1_search_rt_min
-                or work.xic_rt_max != candidate.ms1_search_rt_max
-                or record.evaluation.prepared.profile_id
-                != signal_processing_profile.profile_id
-            ):
-                raise IdentityContractError(
-                    "physical replay crossed candidate, acquisition, or profile"
-                )
     return compose_partition_context(
         method_subject=method_subject,
         settings=settings,
@@ -300,8 +292,6 @@ def build_partition_context(
                 signal_processing_profile,
                 {cid: record.evaluation for cid, record in physical_records.items()},
             )
-            if signal_processing_profile is not None
-            else None
         ),
     )
 
@@ -319,9 +309,9 @@ def compose_partition_context(
     receipt_map: Mapping[str, DiscoveryCandidateUniverseReceipt],
     physical_records: dict[str, DiscoveryPhysicalFactRecord],
     sample_identity_namespace: str,
-    signal_processing_profile: SignalProcessingProfile | None,
+    signal_processing_profile: SignalProcessingProfile,
     candidate_universe: dict[str, object],
-    physical_capture: dict[str, object] | None,
+    physical_capture: dict[str, object],
     feature_candidate_ids: tuple[str, ...] | None = None,
 ) -> UntargetedPartitionContext:
     """Compose request identity from input-owner verified compact facts."""
@@ -356,11 +346,7 @@ def compose_partition_context(
                 field: getattr(peak_config, field)
                 for field in SCIENTIFIC_SETTING_FIELDS
             },
-            **(
-                {PHYSICAL_CAPTURE_INPUT_KEY: physical_capture}
-                if physical_capture is not None
-                else {}
-            ),
+            PHYSICAL_CAPTURE_INPUT_KEY: physical_capture,
             **(
                 {ALIGNMENT_FEATURE_INPUT_KEY: list(feature_candidate_ids)}
                 if feature_candidate_ids is not None

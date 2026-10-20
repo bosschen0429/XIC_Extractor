@@ -208,7 +208,6 @@ installed_distribution = next(
 )
 cli_help_names = [
     "xic-align-cli", "xic-discovery-cli", "xic-extractor-cli",
-    "xic-untargeted-cid-nl-real-data-cli",
 ]
 for cli_name in cli_help_names:
     entrypoint = next(
@@ -651,7 +650,6 @@ def test_built_wheel_exposes_public_cid_nl_activation_surface(
         "xic-align-cli",
         "xic-discovery-cli",
         "xic-extractor-cli",
-        "xic-untargeted-cid-nl-real-data-cli",
     ]
     for module_file in metadata["module_files"].values():
         assert Path(module_file).resolve().is_relative_to(install_target.resolve())

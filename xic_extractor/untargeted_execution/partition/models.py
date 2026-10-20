@@ -163,9 +163,9 @@ class UntargetedPartitionJob:
     raw_path: Path
     dll_dir: Path
     work_unit_key: str
+    signal_processing_profile: SignalProcessingProfile
     subject_partition: UntargetedCidNlMethodSubjectBatch | None = None
     support_candidates: tuple[DiscoveryCandidate, ...] = ()
-    signal_processing_profile: SignalProcessingProfile | None = None
     physical_records: tuple[DiscoveryPhysicalFactRecord, ...] = ()
     acquisition_source_expectation: AcquisitionSourceExpectation | None = field(
         default=None, compare=False
@@ -270,7 +270,7 @@ def build_sample_jobs(
     peak_config: ExtractionConfig,
     raw_path: Path,
     dll_dir: Path,
-    signal_processing_profile: SignalProcessingProfile | None = None,
+    signal_processing_profile: SignalProcessingProfile,
     physical_records: tuple[DiscoveryPhysicalFactRecord, ...] = (),
     acquisition_source_expectation: AcquisitionSourceExpectation | None = None,
     subject_partition: UntargetedCidNlMethodSubjectBatch | None = None,
@@ -467,7 +467,6 @@ class UntargetedSampleResult:
         return (self.adapter_result.assessment_input.assessment,) + tuple(
             attempt.assessment for attempt in self.backfill_attempts
         )
-
 
     def backfill_for_group(
         self, center: float, *, group_hypothesis_id: str | None = None
@@ -884,42 +883,31 @@ def _validate_request_bound_inputs(
             "processing request scientific inputs are malformed"
         ) from exc
     physical_payload = request_inputs.get(PHYSICAL_CAPTURE_INPUT_KEY)
-    if job.signal_processing_profile is None:
-        if physical_payload is not None or job.physical_records:
-            raise UntargetedPartitionError("physical replay lost its profile")
-    else:
-        records = {record.candidate_id: record for record in job.physical_records}
-        if (
-            type(job.physical_records) is not tuple
-            or len(records) != len(job.physical_records)
-            or set(records) != {candidate.candidate_id for candidate in job.candidates}
-        ):
-            raise UntargetedPartitionError("physical replay candidate coverage changed")
-        expected_physical = physical_capture_input_payload(
-            job.signal_processing_profile,
-            {
-                candidate_id: record.evaluation
-                for candidate_id, record in records.items()
-            },
-        )
-        if (
-            not isinstance(physical_payload, dict)
-            or physical_payload.get("profile") != expected_physical["profile"]
-            or not isinstance(physical_payload.get("candidates"), dict)
-        ):
-            raise UntargetedPartitionError(
-                "physical replay profile is not request-bound"
-            )
-        expected_candidates = expected_physical["candidates"]
-        assert isinstance(expected_candidates, dict)
-        actual_candidates = physical_payload["candidates"]
-        if any(
-            actual_candidates.get(candidate_id) != value
-            for candidate_id, value in expected_candidates.items()
-        ):
-            raise UntargetedPartitionError(
-                "physical replay answer is not request-bound"
-            )
+    records = {record.candidate_id: record for record in job.physical_records}
+    if (
+        type(job.physical_records) is not tuple
+        or len(records) != len(job.physical_records)
+        or set(records) != {candidate.candidate_id for candidate in job.candidates}
+    ):
+        raise UntargetedPartitionError("physical replay candidate coverage changed")
+    expected_physical = physical_capture_input_payload(
+        job.signal_processing_profile,
+        {candidate_id: record.evaluation for candidate_id, record in records.items()},
+    )
+    if (
+        not isinstance(physical_payload, dict)
+        or physical_payload.get("profile") != expected_physical["profile"]
+        or not isinstance(physical_payload.get("candidates"), dict)
+    ):
+        raise UntargetedPartitionError("physical replay profile is not request-bound")
+    expected_candidates = expected_physical["candidates"]
+    assert isinstance(expected_candidates, dict)
+    actual_candidates = physical_payload["candidates"]
+    if any(
+        actual_candidates.get(candidate_id) != value
+        for candidate_id, value in expected_candidates.items()
+    ):
+        raise UntargetedPartitionError("physical replay answer is not request-bound")
     try:
         pinned = cid_nl_method_subjects_from_request(request)
     except CidNlMethodSubjectContractError as exc:

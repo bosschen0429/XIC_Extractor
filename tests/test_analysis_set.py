@@ -92,7 +92,9 @@ def test_header_names_cannot_collide_with_another_raw_alias(header_names):
 def test_retained_alignment_keeps_full_root_injection_order(
     tmp_path, monkeypatch, same_stem_context, retained_copy
 ):
+    physical_records = {}
     from tests.cid_nl_raw_fixture import (
+        TEST_PROFILE,
         _current_candidates,
         _FakeRaw,
         _peak_config,
@@ -136,7 +138,11 @@ def test_retained_alignment_keeps_full_root_injection_order(
     settings, config = _settings(), _peak_config(tmp_path)
     candidates = {
         p.stem: _current_candidates(
-            _FakeRaw((7.98,)), raw_file=p, settings=settings, peak_config=config
+            _FakeRaw((7.98,)),
+            raw_file=p,
+            settings=settings,
+            peak_config=config,
+            physical_records=physical_records,
         )
         for p in selected_paths
     }
@@ -148,7 +154,12 @@ def test_retained_alignment_keeps_full_root_injection_order(
         review_csvs={},
         candidate_receipts=receipts,
     )
+    monkeypatch.setattr(
+        "xic_extractor.untargeted_execution.alignment._load_physical_replay_inputs",
+        lambda **options: (options["candidates_by_sample"], physical_records, None),
+    )
     prepared = prepare_untargeted_alignment_inputs(
+        signal_processing_profile=TEST_PROFILE,
         discovery_batch=batch,
         candidates_by_sample=candidates,
         raw_dir=tmp_path,

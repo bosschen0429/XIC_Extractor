@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from tests.cid_nl_raw_fixture import (
+    TEST_PROFILE,
     _current_candidates,
     _FakeRaw,
     _peak_config,
@@ -51,6 +52,7 @@ from xic_extractor.sample_metadata import SampleMetadata
 def test_configured_composition_runs_discovery_to_owner_matrix(
     tmp_path, monkeypatch, mode, scenario
 ):
+    physical_records = {}
     preset_file = tmp_path / "method.toml"
     preset_file.write_text(
         'name = "two losses"\ndescription = "Composition fixture"\n'
@@ -100,7 +102,11 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
             )
         sources[path] = source
         candidates[path.stem] = _current_candidates(
-            source, raw_file=path, settings=settings, peak_config=peak_config
+            source,
+            raw_file=path,
+            settings=settings,
+            peak_config=peak_config,
+            physical_records=physical_records,
         )
         if recovery and index == 3:
             candidates[path.stem] = ()
@@ -121,6 +127,12 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
         discovery_receipts_by_sample=_discovery_receipts(tmp_path, paths, candidates),
         dll_dir=tmp_path,
         sample_identity_namespace="study:composition",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in (candidates).values()
+            for c in values
+        },
     )
     assert len(batch.subject_batch.subjects) == 1
     _install_runtime_raws(monkeypatch, sources_by_path=sources, tmp_path=tmp_path)

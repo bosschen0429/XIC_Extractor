@@ -9,6 +9,9 @@ from types import SimpleNamespace
 import numpy as np
 
 from xic_extractor.configuration.models import ExtractionConfig
+from xic_extractor.configuration.signal_processing_profile import (
+    SignalProcessingProfile,
+)
 from xic_extractor.discovery.grouping import group_discovery_seeds
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
 from xic_extractor.discovery.ms1_capture import (
@@ -31,6 +34,8 @@ from xic_extractor.raw_reader import (
 )
 from xic_extractor.xic_models import XICRequest, XICTrace
 
+TEST_PROFILE = SignalProcessingProfile(window_points=15)
+
 NEUTRAL_LOSS_DA = 116.0474
 SECONDARY_NEUTRAL_LOSS_DA = 132.0423
 PRECURSOR_MZ = 500.0
@@ -43,16 +48,72 @@ def _current_candidates(
     raw_file: Path,
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
+    physical_records=None,
 ):
+    """Produce canonical Discovery candidates and optionally retain their facts."""
     seeds = collect_strict_nl_seeds(raw, raw_file=raw_file, settings=settings)
     groups = group_discovery_seeds(seeds, settings=settings)
-    return capture_ms1_candidates(
+    source = raw.acquisition_source
+    if source is None:
+        source = (
+            build_acquisition_source_identity(
+                raw_file,
+                acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
+                observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
+            )
+            if raw_file.exists()
+            else fake_acquisition_source()
+        )
+    discovery = capture_ms1_candidates(
         raw,
         groups,
-        acquisition_source=raw.acquisition_source or fake_acquisition_source(),
+        acquisition_source=source,
+        run_spec_id="processing-run:" + "0" * 64,
         settings=settings,
         peak_config=peak_config,
-    ).candidates
+        signal_processing_profile=TEST_PROFILE,
+    )
+    if physical_records is not None:
+        physical_records.update(
+            (record.candidate_id, record) for record in discovery.physical_evaluations
+        )
+    return discovery.candidates
+
+
+def bind_physical_capture(owners, records, *, profile=TEST_PROFILE):
+    """Bind retained Discovery facts into the synthetic request before capture."""
+    import json
+
+    from xic_extractor.peak_detection.search_scope import (
+        PHYSICAL_CAPTURE_INPUT_KEY,
+        physical_capture_input_payload,
+    )
+    from xic_extractor.processing_identity import (
+        build_processing_request_identity,
+        compose_processing_owner_references,
+        issue_processing_attempt,
+    )
+
+    original = owners.request
+    request = build_processing_request_identity(
+        acquisition_sources=original.acquisition_sources,
+        acquisition_bindings=original.acquisition_bindings,
+        scientific_input_schema_version=original.scientific_input_schema_version,
+        processing_algorithm_version=original.processing_algorithm_version,
+        processing_contract_version=original.processing_contract_version,
+        scientific_inputs={
+            **json.loads(original.normalized_scientific_inputs_json),
+            PHYSICAL_CAPTURE_INPUT_KEY: physical_capture_input_payload(
+                profile, {key: record.evaluation for key, record in records.items()}
+            ),
+        },
+    )
+    return compose_processing_owner_references(
+        request=request,
+        attempt=issue_processing_attempt(request),
+        sample_snapshot=owners.sample_snapshot,
+        sample_resolutions=owners.sample_resolutions,
+    )
 
 
 def fake_acquisition_source() -> AcquisitionSourceIdentity:
@@ -281,9 +342,13 @@ class _FakeRaw:
         return tuple(self._trace(request) for request in requests)
 
     def scan_window_for_request(self, request: XICRequest) -> tuple[int, int]:
-        mask = (self.rt >= request.rt_min) & (self.rt <= request.rt_max)
-        indices = np.flatnonzero(mask)
-        return int(indices[0]), int(indices[-1])
+        first = min(
+            int(np.searchsorted(self.rt, request.rt_min, side="left")), len(self.rt) - 1
+        )
+        last = min(
+            int(np.searchsorted(self.rt, request.rt_max, side="left")), len(self.rt) - 1
+        )
+        return first + 1, last + 1
 
     def iter_ms2_scans(
         self,
@@ -299,5 +364,8 @@ class _FakeRaw:
                 )
 
     def _trace(self, request: XICRequest) -> XICTrace:
-        mask = (self.rt >= request.rt_min) & (self.rt <= request.rt_max)
-        return XICTrace(rt=self.rt[mask], intensity=self.intensity[mask])
+        first, last = self.scan_window_for_request(request)
+        return XICTrace(
+            rt=self.rt[first - 1 : last].copy(),
+            intensity=self.intensity[first - 1 : last].copy(),
+        )

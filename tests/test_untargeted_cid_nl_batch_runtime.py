@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from tests.cid_nl_raw_fixture import (
+    TEST_PROFILE,
     _current_candidates,
     _FakeRaw,
     _peak_config,
@@ -45,6 +46,7 @@ def test_runtime_batch_request_shares_initial_acquisition_across_exact_subjects(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    physical_records = {}
     raw_path = tmp_path / "S1.synthetic"
     raw_path.write_bytes(b"real-data-runtime-batch:S1")
     settings = _settings()
@@ -53,6 +55,7 @@ def test_runtime_batch_request_shares_initial_acquisition_across_exact_subjects(
         raw_path,
         settings=settings,
         peak_config=peak_config,
+        physical_records=physical_records,
     )
     subjects = _subjects(candidates, settings.precursor_mz_tolerance_ppm)
     subject_by_precursor = {subject.precursor_mz: subject for subject in subjects}
@@ -88,6 +91,12 @@ def test_runtime_batch_request_shares_initial_acquisition_across_exact_subjects(
             {"S1": candidates},
         ),
         sample_identity_namespace="study:real-data-runtime-batch-test",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in ({"S1": candidates}).values()
+            for c in values
+        },
     )
     vendor_raw = _install_runtime_raw(
         monkeypatch,
@@ -108,6 +117,11 @@ def test_runtime_batch_request_shares_initial_acquisition_across_exact_subjects(
             raw_path=context.raw_paths_by_sample["S1"],
             dll_dir=tmp_path,
             work_unit_key=f"untargeted-cid-nl:S1:{subject.method_subject_id}",
+            signal_processing_profile=context.signal_processing_profile,
+            physical_records=tuple(
+                context.physical_records_by_candidate[c.candidate_id]
+                for c in (context.candidates_by_sample["S1"])
+            ),
         )
         for subject in subjects
     )
@@ -146,7 +160,7 @@ def test_runtime_batch_request_shares_initial_acquisition_across_exact_subjects(
         )
         for candidate in candidates
     }
-    assert vendor_raw.chromatogram_request_counts == [2]
+    assert vendor_raw.chromatogram_request_counts == [4]
 
 
 @pytest.mark.parametrize("initial_trace_without_peak", [False, True])
@@ -155,6 +169,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
     monkeypatch,
     initial_trace_without_peak: bool,
 ) -> None:
+    physical_records = {}
     stems = ("S1", "S2", "Missing")
     raw_paths = tuple(tmp_path / f"{stem}.synthetic" for stem in stems)
     for raw_path in raw_paths:
@@ -170,6 +185,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             raw_path,
             settings=settings,
             peak_config=peak_config,
+            physical_records=physical_records,
         )
         source_raws[raw_path] = source_raw
         candidates_by_sample[raw_path.stem] = candidates
@@ -177,7 +193,10 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
     candidates_by_sample["Missing"] = ()
     if initial_trace_without_peak:
         source_raw, candidates = _nearby_subject_candidates(
-            raw_paths[2], settings=settings, peak_config=peak_config
+            raw_paths[2],
+            settings=settings,
+            peak_config=peak_config,
+            physical_records=physical_records,
         )
         source_raws[raw_paths[2]] = source_raw
         candidates_by_sample["Missing"] = candidates
@@ -237,6 +256,12 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             candidates_by_sample,
         ),
         sample_identity_namespace="study:real-data-runtime-batch-recovery-test",
+        signal_processing_profile=TEST_PROFILE,
+        physical_records_by_candidate={
+            c.candidate_id: physical_records[c.candidate_id]
+            for values in (candidates_by_sample).values()
+            for c in values
+        },
     )
     opened = _install_runtime_raws(
         monkeypatch,
@@ -259,6 +284,11 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             work_unit_key=(
                 f"untargeted-cid-nl:{sample.metadata.raw_stem}:"
                 f"{subject.method_subject_id}"
+            ),
+            signal_processing_profile=context.signal_processing_profile,
+            physical_records=tuple(
+                context.physical_records_by_candidate[c.candidate_id]
+                for c in (context.candidates_by_sample[sample.metadata.raw_stem])
             ),
         )
         for subject in subjects
@@ -296,7 +326,7 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
             )
         assert [
             vendor.chromatogram_request_counts for vendor in opened[raw_paths[2]]
-        ] == [[2], [2]]
+        ] == [[4], [4]]
         return
     runtime = start_runtime_attempt(
         attempt=context.processing_owners.attempt,
@@ -337,9 +367,9 @@ def test_runtime_batch_request_bounds_initial_and_recovery_by_sample_phase(
         path: [vendor.chromatogram_request_counts for vendor in vendors]
         for path, vendors in opened.items()
     } == {
-        raw_paths[0]: [[2]],
-        raw_paths[1]: [[2]],
-        raw_paths[2]: [[2]],
+        raw_paths[0]: [[4]],
+        raw_paths[1]: [[4]],
+        raw_paths[2]: [[4]],
     }
     resource_keys = tuple(
         resource.reservation.resource_key
@@ -355,6 +385,7 @@ def _nearby_subject_candidates(
     *,
     settings,
     peak_config,
+    physical_records=None,
 ) -> tuple[_FakeRaw, tuple[DiscoveryCandidate, ...]]:
     first_raw = _FakeRaw((7.98,))
     second_raw = _FakeRaw(
@@ -376,6 +407,7 @@ def _nearby_subject_candidates(
                     raw_file=raw_path,
                     settings=settings,
                     peak_config=peak_config,
+                    physical_records=physical_records,
                 )[0]
                 for raw in (first_raw, second_raw)
             ),

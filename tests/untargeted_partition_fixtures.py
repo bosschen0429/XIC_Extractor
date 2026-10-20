@@ -74,9 +74,8 @@ def build_dense_partition(
     discovery_receipts_by_sample: Mapping[str, DiscoveryCandidateUniverseReceipt],
     dll_dir: Path,
     sample_identity_namespace: str,
-    signal_processing_profile: SignalProcessingProfile | None = None,
-    physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord]
-    | None = None,
+    signal_processing_profile: SignalProcessingProfile,
+    physical_records_by_candidate: Mapping[str, DiscoveryPhysicalFactRecord],
 ) -> UntargetedPartitionInputs:
     """Prepare one dense partition through the formal eager plan owner."""
 
