@@ -520,7 +520,7 @@ def test_run_discovery_blank_dir_uses_current_blank_content(
         "scripts.run_discovery.extract_blank_background_library", mock_extract
     )
 
-    # Mock _compile_processing_run_spec and run_discovery to avoid running full pipeline
+    # Mock run-spec compilation and run_discovery to avoid running the full pipeline.
     monkeypatch.setattr(
         "scripts.run_discovery.compile_discovery_processing_run_spec",
         lambda *args, **kwargs: None,

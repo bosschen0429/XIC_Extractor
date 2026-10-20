@@ -284,7 +284,7 @@ def test_discovery_cli_reports_unreadable_preset_before_execution(
 
     monkeypatch.setattr(Path, "read_bytes", unreadable_method)
     monkeypatch.setattr(
-        run_discovery, "_compile_processing_run_spec", unexpected_compile
+        run_discovery, "compile_discovery_processing_run_spec", unexpected_compile
     )
     code = run_discovery.main(
         ["--raw", str(raw_path), "--dll-dir", str(dll_dir), "--preset", str(method)]
