@@ -4,7 +4,19 @@ from pathlib import Path
 
 import pytest
 
+from tests.alignment_pipeline_helpers import _owner_closed_receipt_fields
+from xic_extractor.discovery.batch_contract import DISCOVERY_BATCH_RECEIPT_COLUMNS
 from xic_extractor.discovery.models import DISCOVERY_CANDIDATE_COLUMNS
+
+
+def test_read_discovery_batch_index_requires_owner_closure(tmp_path: Path) -> None:
+    from xic_extractor.discovery.csv_reader import read_discovery_batch_index
+
+    index_path = tmp_path / "discovery_batch_index.csv"
+    index_path.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="owner closure is required"):
+        read_discovery_batch_index(index_path)
 
 
 @pytest.mark.parametrize("provisional,seed_count", [(True, 1), (True, 2), (False, 2)])
@@ -98,17 +110,34 @@ def test_read_discovery_batch_index_preserves_order_and_resolves_candidate_paths
 
     index_path = tmp_path / "batch" / "discovery_batch_index.csv"
     index_path.parent.mkdir()
+    candidate_paths = (
+        index_path.parent / "Sample_B" / "discovery_candidates.csv",
+        tmp_path / "abs" / "candidates.csv",
+    )
+    for candidate_path in candidate_paths:
+        candidate_path.parent.mkdir(parents=True, exist_ok=True)
+        _write_csv(candidate_path, DISCOVERY_CANDIDATE_COLUMNS, [])
     _write_csv(
         index_path,
-        ("sample_stem", "raw_file", "candidate_csv", "review_csv"),
+        (
+            "schema_version",
+            "sample_stem",
+            "raw_file",
+            "candidate_csv",
+            "review_csv",
+            "candidate_count",
+            *DISCOVERY_BATCH_RECEIPT_COLUMNS,
+        ),
         [
             {
+                **_owner_closed_receipt_fields("Sample_B", candidate_paths[0]),
                 "sample_stem": "Sample_B",
                 "raw_file": "C:/stale/Sample_B.raw",
                 "candidate_csv": "Sample_B/discovery_candidates.csv",
                 "review_csv": "Sample_B/discovery_review.csv",
             },
             {
+                **_owner_closed_receipt_fields("Sample_A", candidate_paths[1]),
                 "sample_stem": "Sample_A",
                 "raw_file": "C:/stale/Sample_A.raw",
                 "candidate_csv": str(tmp_path / "abs" / "candidates.csv"),
@@ -136,10 +165,32 @@ def test_read_discovery_batch_index_accepts_utf8_bom(tmp_path: Path) -> None:
     from xic_extractor.discovery.csv_reader import read_discovery_batch_index
 
     index_path = tmp_path / "discovery_batch_index.csv"
+    candidate_path = tmp_path / "Sample_A" / "candidates.csv"
+    candidate_path.parent.mkdir()
+    _write_csv(candidate_path, DISCOVERY_CANDIDATE_COLUMNS, [])
+    _write_csv(
+        index_path,
+        (
+            "schema_version",
+            "sample_stem",
+            "raw_file",
+            "candidate_csv",
+            "review_csv",
+            "candidate_count",
+            *DISCOVERY_BATCH_RECEIPT_COLUMNS,
+        ),
+        [
+            {
+                "sample_stem": "Sample_A",
+                "raw_file": "Sample_A.raw",
+                "candidate_csv": "Sample_A/candidates.csv",
+                "review_csv": "Sample_A/review.csv",
+                **_owner_closed_receipt_fields("Sample_A", candidate_path),
+            }
+        ],
+    )
     index_path.write_text(
-        "\ufeffsample_stem,raw_file,candidate_csv,review_csv\n"
-        "Sample_A,Sample_A.raw,Sample_A/candidates.csv,Sample_A/review.csv\n",
-        encoding="utf-8",
+        "\ufeff" + index_path.read_text(encoding="utf-8"), encoding="utf-8"
     )
 
     batch = read_discovery_batch_index(index_path)
@@ -157,17 +208,30 @@ def test_read_discovery_batch_index_unescapes_known_formula_fields(
     from xic_extractor.discovery.csv_reader import read_discovery_batch_index
 
     index_path = tmp_path / "discovery_batch_index.csv"
+    candidate_paths = (tmp_path / "-candidates.csv", tmp_path / "'plain.csv")
+    for candidate_path in candidate_paths:
+        _write_csv(candidate_path, DISCOVERY_CANDIDATE_COLUMNS, [])
     _write_csv(
         index_path,
-        ("sample_stem", "raw_file", "candidate_csv", "review_csv"),
+        (
+            "schema_version",
+            "sample_stem",
+            "raw_file",
+            "candidate_csv",
+            "review_csv",
+            "candidate_count",
+            *DISCOVERY_BATCH_RECEIPT_COLUMNS,
+        ),
         [
             {
+                **_owner_closed_receipt_fields("=Sample", candidate_paths[0]),
                 "sample_stem": "'=Sample",
                 "raw_file": "'+Sample.raw",
                 "candidate_csv": "'-candidates.csv",
                 "review_csv": "'@review.csv",
             },
             {
+                **_owner_closed_receipt_fields("'Ordinary", candidate_paths[1]),
                 "sample_stem": "'Ordinary",
                 "raw_file": "'plain.raw",
                 "candidate_csv": "'plain.csv",

@@ -107,7 +107,7 @@ class DiscoveryBatchInput:
     review_csvs: dict[str, Path | None]
     candidate_receipts: dict[
         str,
-        DiscoveryCandidateUniverseReceipt | None,
+        DiscoveryCandidateUniverseReceipt,
     ]
 
 
@@ -129,19 +129,16 @@ class _Ms1FeatureRowIdentity:
 
 def read_discovery_batch_index(
     path: Path,
-    *,
-    require_owner_closure: bool = False,
 ) -> DiscoveryBatchInput:
     rows, fieldnames = _read_csv_rows(path)
     _require_columns(path, fieldnames, _BATCH_REQUIRED_COLUMNS)
-    has_schema_version = "schema_version" in fieldnames
-    has_receipt_columns = bool(set(DISCOVERY_BATCH_RECEIPT_COLUMNS) & set(fieldnames))
-    if has_schema_version or has_receipt_columns:
-        _require_columns(path, fieldnames, _BATCH_OWNER_REQUIRED_COLUMNS)
-    elif require_owner_closure:
+    if "schema_version" not in fieldnames and not (
+        set(DISCOVERY_BATCH_RECEIPT_COLUMNS) & set(fieldnames)
+    ):
         raise ValueError(
             f"{path}: {DISCOVERY_BATCH_INDEX_SCHEMA_VERSION} owner closure is required"
         )
+    _require_columns(path, fieldnames, _BATCH_OWNER_REQUIRED_COLUMNS)
 
     sample_order: list[str] = []
     candidate_csvs: dict[str, Path] = {}
@@ -149,7 +146,7 @@ def read_discovery_batch_index(
     review_csvs: dict[str, Path | None] = {}
     candidate_receipts: dict[
         str,
-        DiscoveryCandidateUniverseReceipt | None,
+        DiscoveryCandidateUniverseReceipt,
     ] = {}
     for row_number, row in rows:
         sample_stem = _machine_text(row.get("sample_stem", ""))
@@ -165,30 +162,28 @@ def read_discovery_batch_index(
                 f"{path}: row {row_number}: duplicate sample_stem values are not "
                 f"supported ({sample_stem!r})"
             )
-        receipt: DiscoveryCandidateUniverseReceipt | None = None
-        if has_schema_version or has_receipt_columns:
-            schema_version = _machine_text(row.get("schema_version", ""))
-            if schema_version != DISCOVERY_BATCH_INDEX_SCHEMA_VERSION:
-                raise ValueError(
-                    f"{path}: row {row_number}: unsupported schema_version "
-                    f"{schema_version!r}"
-                )
-            candidate_count = _batch_nonnegative_int(
-                path,
-                row_number,
-                row.get("candidate_count", ""),
-                field="candidate_count",
+        schema_version = _machine_text(row.get("schema_version", ""))
+        if schema_version != DISCOVERY_BATCH_INDEX_SCHEMA_VERSION:
+            raise ValueError(
+                f"{path}: row {row_number}: unsupported schema_version "
+                f"{schema_version!r}"
             )
-            try:
-                receipt = discovery_receipt_from_index_fields(
-                    row,
-                    sample_stem=sample_stem,
-                    candidate_count=candidate_count,
-                )
-            except (IdentityContractError, ValueError) as exc:
-                raise ValueError(
-                    f"{path}: row {row_number}: invalid Discovery receipt: {exc}"
-                ) from exc
+        candidate_count = _batch_nonnegative_int(
+            path,
+            row_number,
+            row.get("candidate_count", ""),
+            field="candidate_count",
+        )
+        try:
+            receipt = discovery_receipt_from_index_fields(
+                row,
+                sample_stem=sample_stem,
+                candidate_count=candidate_count,
+            )
+        except (IdentityContractError, ValueError) as exc:
+            raise ValueError(
+                f"{path}: row {row_number}: invalid Discovery receipt: {exc}"
+            ) from exc
         sample_order.append(sample_stem)
         candidate_csvs[sample_stem] = _resolve_artifact_path(path.parent, candidate_csv)
         raw_files[sample_stem] = Path(raw_file) if raw_file else None

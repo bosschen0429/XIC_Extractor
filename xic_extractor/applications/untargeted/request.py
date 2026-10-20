@@ -40,7 +40,6 @@ class RetainedAlignmentOptions:
 
     owner_build_xic_backend: OwnerBuildXicBackend = "raw"
     audit_evidence_mode: str = "auto"
-    require_discovery_owner_closure: bool = False
 
     def __post_init__(self) -> None:
         if self.audit_evidence_mode not in {"auto", "none"}:

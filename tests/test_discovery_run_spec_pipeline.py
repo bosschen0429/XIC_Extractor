@@ -129,7 +129,7 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
         executor_factory=ImmediateExecutor if workers > 1 else None,
     )
     batch = read_discovery_batch_index(
-        outputs.batch_index_csv, require_owner_closure=True,
+        outputs.batch_index_csv,
     )
     for acquisition, output in zip(
         spec.acquisition_inputs, outputs.per_sample, strict=True,
@@ -164,7 +164,7 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
             item.candidate_id for item in expected
         }
         receipt = batch.candidate_receipts[acquisition.sample_stem]
-        assert receipt is not None and receipt.candidate_count == 3
+        assert receipt.candidate_count == 3
         assert len(read_owner_bound_discovery_candidates_csv(
             output.candidates_csv, receipt=receipt,
         )) == 3
@@ -226,10 +226,8 @@ def test_physical_bindings_match_published_candidates_by_id(
     )
     batch = read_discovery_batch_index(
         outputs.batch_index_csv,
-        require_owner_closure=True,
     )
     receipt = batch.candidate_receipts[raw_path.stem]
-    assert receipt is not None
     canonical_candidates = read_owner_bound_discovery_candidates_csv(
         batch.candidate_csvs[raw_path.stem],
         receipt=receipt,

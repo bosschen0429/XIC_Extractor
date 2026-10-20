@@ -177,7 +177,6 @@ def alignment_metadata(
     audit_evidence_mode_reason: str = "",
     scope_warning: str = "",
     skipped_evidence_predicate_version: str = "",
-    require_discovery_owner_closure: bool = False,
     signal_processing_profile: SignalProcessingProfile = (
         DEFAULT_SIGNAL_PROCESSING_PROFILE
     ),
@@ -222,9 +221,7 @@ def alignment_metadata(
         "output_scope": output_scope,
         "selected_family_count": str(selected_family_count),
         "selected_family_source": selected_family_source,
-        "require_discovery_owner_closure": (
-            "TRUE" if require_discovery_owner_closure else "FALSE"
-        ),
+        "require_discovery_owner_closure": "TRUE",
         "request_plan_version": request_plan_version,
         "audit_evidence_mode": audit_evidence_mode,
         "requested_audit_evidence_mode": requested_audit_evidence_mode,

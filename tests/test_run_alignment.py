@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from scripts import run_alignment
+from tests.alignment_pipeline_helpers import _owner_closed_receipt_fields, write_csv
 from xic_extractor.alignment.owner_build_route_receipt import (
     _mint_retained_untargeted_cid_nl_route_receipt,
 )
@@ -21,6 +22,7 @@ from xic_extractor.discovery.batch_contract import (
     discovery_receipt_index_fields,
     mint_discovery_candidate_universe_receipt,
 )
+from xic_extractor.discovery.models import DISCOVERY_CANDIDATE_COLUMNS
 from xic_extractor.execution.process_memory import ProcessMemoryPeak
 from xic_extractor.output.alignment.pipeline_outputs import (
     AlignmentRunOutputs as _AlignmentRunOutputs,
@@ -31,6 +33,41 @@ from xic_extractor.raw_reader import (
     THERMO_RAW_OBSERVATION_NAMESPACE,
     RawReaderError,
 )
+
+
+def _write_empty_batch_index(path: Path) -> None:
+    _write_owner_closed_batch_index(path, [])
+
+
+def _write_owner_closed_batch_index(
+    path: Path,
+    rows: list[tuple[str, str, str]],
+) -> None:
+    batch_rows = []
+    for sample_stem, raw_file, candidate_csv in rows:
+        candidate_path = path.parent / (candidate_csv or "empty.csv")
+        candidate_path.parent.mkdir(parents=True, exist_ok=True)
+        write_csv(candidate_path, DISCOVERY_CANDIDATE_COLUMNS, [])
+        batch_rows.append(
+            {
+                "sample_stem": sample_stem,
+                "raw_file": raw_file,
+                "candidate_csv": candidate_csv,
+                **_owner_closed_receipt_fields(sample_stem, candidate_path),
+            }
+        )
+    write_csv(
+        path,
+        (
+            "schema_version",
+            "sample_stem",
+            "raw_file",
+            "candidate_csv",
+            "candidate_count",
+            *DISCOVERY_BATCH_RECEIPT_COLUMNS,
+        ),
+        batch_rows,
+    )
 
 
 def AlignmentRunOutputs(  # noqa: N802 - test factory mirrors the product type
@@ -54,7 +91,7 @@ def test_run_alignment_cli_rejects_nondefault_profile_before_acquisition_or_outp
     output_level: str,
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -133,7 +170,7 @@ def test_run_alignment_accepts_asls_baseline_integration_method_override(
     tmp_path: Path,
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -185,7 +222,7 @@ def test_run_alignment_rejects_retired_linear_edge_baseline_override(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -227,7 +264,7 @@ def test_run_alignment_rejects_retired_linear_edge_baseline_env(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -268,7 +305,7 @@ def test_run_alignment_cli_accepts_output_level_debug(
     raw_workers: int,
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -309,7 +346,7 @@ def test_run_alignment_cli_accepts_raw_worker_backend(
     tmp_path: Path,
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -349,7 +386,7 @@ def test_run_alignment_cli_accepts_validation_minimal_output_level(
     tmp_path: Path,
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -386,7 +423,7 @@ def test_run_alignment_cli_dna_dr_preset_binds_retained_recipe(
     tmp_path: Path,
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -443,7 +480,6 @@ def test_run_alignment_cli_dna_dr_preset_binds_retained_recipe(
         is False
     )
     assert captured_alignment["request"].publication.emit_alignment_cells is False
-    assert captured_alignment["request"].legacy.require_discovery_owner_closure is True
     assert len(bound_recipes) == 1
     recipe = bound_recipes[0]
     assert captured_alignment["request"].discovery_settings is recipe.discovery_settings
@@ -472,7 +508,7 @@ nl_min_intensity_ratio = 0.37
         encoding="utf-8",
     )
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -517,7 +553,7 @@ def test_run_alignment_cli_compat_preset_reports_retained_route(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -593,7 +629,7 @@ def test_run_alignment_cli_can_override_product_ready_owner_build_backend(
     tmp_path: Path,
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -664,7 +700,7 @@ backfill_expansion_productization = "clean-target-selective"
         encoding="utf-8",
     )
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -748,7 +784,7 @@ def test_run_alignment_cli_dna_dr_preset_uses_light_cells_for_validation_minimal
     tmp_path: Path,
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -806,7 +842,7 @@ def test_run_alignment_cli_passes_owner_build_xic_backend(
     tmp_path: Path,
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -843,7 +879,7 @@ def test_run_alignment_cli_passes_raw_superwindow_owner_build_xic_backend(
     tmp_path: Path,
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -881,7 +917,7 @@ def test_run_alignment_cli_writes_timing_json(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -927,7 +963,7 @@ def test_run_alignment_cli_records_foreground_memory_and_stops_sampler(
     tmp_path: Path,
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -976,7 +1012,7 @@ def test_run_alignment_cli_stops_memory_sampler_on_failure(
     tmp_path: Path,
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -1049,7 +1085,7 @@ def test_run_alignment_cli_writes_live_timing_json(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -1091,7 +1127,7 @@ def test_run_alignment_cli_writes_cprofile_outputs(
     tmp_path: Path,
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -1157,7 +1193,7 @@ def test_run_alignment_cli_rejects_missing_raw_dir(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     dll_dir = tmp_path / "dll"
     dll_dir.mkdir()
 
@@ -1183,7 +1219,7 @@ def test_run_alignment_cli_rejects_missing_dll_dir(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
 
@@ -1209,9 +1245,8 @@ def test_run_alignment_cli_rejects_expected_sample_count_mismatch(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\nS1,S1.raw,s1.csv\nS2,S2.raw,s2.csv\n",
-        encoding="utf-8",
+    _write_owner_closed_batch_index(
+        batch_index, [("S1", "S1.raw", "s1.csv"), ("S2", "S2.raw", "s2.csv")]
     )
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
@@ -1242,11 +1277,8 @@ def test_run_alignment_cli_rejects_duplicate_sample_stems(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\n"
-        "S1,S1.raw,s1.csv\n"
-        "S1,S1.raw,s1_again.csv\n",
-        encoding="utf-8",
+    _write_owner_closed_batch_index(
+        batch_index, [("S1", "S1.raw", "s1.csv"), ("S1", "S1.raw", "s1_again.csv")]
     )
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
@@ -1279,11 +1311,7 @@ def test_run_alignment_cli_normal_run_does_not_require_all_raw_paths(
     tmp_path: Path,
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\nS1,S1.raw,s1.csv\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "s1.csv").write_text("", encoding="utf-8")
+    _write_owner_closed_batch_index(batch_index, [("S1", "S1.raw", "s1.csv")])
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -1478,10 +1506,7 @@ def test_run_alignment_cli_preflight_only_uses_shared_batch_parser(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\nS1,S1.raw,\n",
-        encoding="utf-8",
-    )
+    _write_owner_closed_batch_index(batch_index, [("S1", "S1.raw", "")])
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -1544,10 +1569,8 @@ def test_run_alignment_cli_preflight_only_rejects_missing_candidate_csv(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\nS1,S1.raw,missing.csv\n",
-        encoding="utf-8",
-    )
+    _write_owner_closed_batch_index(batch_index, [("S1", "S1.raw", "missing.csv")])
+    (batch_index.parent / "missing.csv").unlink()
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     (raw_dir / "S1.raw").write_text("", encoding="utf-8")
@@ -1579,11 +1602,7 @@ def test_run_alignment_cli_preflight_only_rejects_missing_raw_file(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\nS1,S1.raw,s1.csv\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "s1.csv").write_text("", encoding="utf-8")
+    _write_owner_closed_batch_index(batch_index, [("S1", "S1.raw", "s1.csv")])
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -1614,10 +1633,8 @@ def test_run_alignment_cli_rejects_noncanonical_full_cohort_contract(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\n"
-        + "".join(f"S{i},S{i}.raw,s{i}.csv\n" for i in range(85)),
-        encoding="utf-8",
+    _write_owner_closed_batch_index(
+        batch_index, [(f"S{i}", f"S{i}.raw", f"s{i}.csv") for i in range(85)]
     )
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
@@ -1654,10 +1671,8 @@ def test_run_alignment_cli_rejects_full_cohort_wrong_python_environment(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\n"
-        + "".join(f"S{i},S{i}.raw,s{i}.csv\n" for i in range(85)),
-        encoding="utf-8",
+    _write_owner_closed_batch_index(
+        batch_index, [(f"S{i}", f"S{i}.raw", f"s{i}.csv") for i in range(85)]
     )
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
@@ -1714,7 +1729,7 @@ def test_run_alignment_cli_returns_2_for_user_visible_errors(
     exc: Exception,
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -1747,11 +1762,11 @@ def test_run_alignment_cli_returns_2_for_missing_candidate_csv(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\n"
-        "Sample_A,C:/stale/Sample_A.raw,missing/discovery_candidates.csv\n",
-        encoding="utf-8",
+    _write_owner_closed_batch_index(
+        batch_index,
+        [("Sample_A", "C:/stale/Sample_A.raw", "missing/discovery_candidates.csv")],
     )
+    (batch_index.parent / "missing/discovery_candidates.csv").unlink()
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -1789,7 +1804,7 @@ def test_run_alignment_cli_targets_csv_and_workbook_mutually_exclusive(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     batch_index = tmp_path / "batch.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -1910,7 +1925,7 @@ def test_run_alignment_cli_targets_csv_must_exist(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     batch_index = tmp_path / "batch.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"
@@ -1946,12 +1961,9 @@ def test_run_alignment_cli_routes_sample_metadata_without_losing_cohorts(
 
     install_fake_raw_headers(monkeypatch)
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text(
-        "sample_stem,raw_file,candidate_csv\nS1,S1.raw,S1.csv\nS2,S2.raw,S2.csv\n",
-        encoding="utf-8",
+    _write_owner_closed_batch_index(
+        batch_index, [("S1", "S1.raw", "S1.csv"), ("S2", "S2.raw", "S2.csv")]
     )
-    for stem in ("S1", "S2"):
-        (tmp_path / f"{stem}.csv").write_text("x\n", encoding="utf-8")
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     # The RAW clock runs S2 before S1, against the metadata numbers 12 and 3.
@@ -2040,7 +2052,7 @@ def test_run_alignment_cli_rejects_invalid_sample_metadata_before_application(
     invalid_kind: str,
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
-    batch_index.write_text("sample_stem,raw_file,candidate_csv\n", encoding="utf-8")
+    _write_empty_batch_index(batch_index)
     raw_dir = tmp_path / "raws"
     raw_dir.mkdir()
     dll_dir = tmp_path / "dll"

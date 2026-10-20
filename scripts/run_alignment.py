@@ -127,7 +127,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         legacy = RetainedAlignmentOptions(
             owner_build_xic_backend=owner_build_xic_backend,
-            require_discovery_owner_closure=True,
         )
         validate_retained_processing_profile(signal_processing_profile)
     except ValueError as exc:
@@ -189,14 +188,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 2
     if args.preflight_only:
-        try:
-            discovery_batch = read_discovery_batch_index(
-                discovery_batch_index,
-                require_owner_closure=True,
-            )
-        except (ValueError, OSError, BadZipFile, KeyError) as exc:
-            print(str(exc), file=sys.stderr)
-            return 2
         _print_preflight_summary(
             args,
             discovery_batch_index=discovery_batch_index,
