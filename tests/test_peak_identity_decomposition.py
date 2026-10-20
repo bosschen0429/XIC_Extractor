@@ -157,6 +157,7 @@ def test_cid_nl_seed_changes_ms1_generation_window_before_peak_evaluation() -> N
         run_spec_id="processing-run:" + "0" * 64,
         signal_processing_profile=TEST_PROFILE,
         settings=settings,
+        ms1_centroid_mz=lambda *_: None,
     ).candidates[0]
     second = capture_ms1_candidates(
         raw,
@@ -165,6 +166,7 @@ def test_cid_nl_seed_changes_ms1_generation_window_before_peak_evaluation() -> N
         run_spec_id="processing-run:" + "0" * 64,
         signal_processing_profile=TEST_PROFILE,
         settings=settings,
+        ms1_centroid_mz=lambda *_: None,
     ).candidates[0]
 
     assert raw.requests == [

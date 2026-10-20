@@ -31,7 +31,12 @@ def test_assign_peak_anchors_groups_candidates_sharing_ms1_peak() -> None:
         peak_end=12.306,
     )
 
-    assigned = assign_peak_anchors((second, first))
+    assigned = assign_peak_anchors(
+        (second, first),
+        settings=DiscoverySettings(
+            neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474)
+        ),
+    )
 
     assert {candidate.feature_family_id for candidate in assigned} == {"Sample@F0001"}
     assert [candidate.feature_family_size for candidate in assigned] == [2, 2]
@@ -130,7 +135,10 @@ def test_assign_peak_anchors_keeps_raw_sample_and_tag_boundaries_separate() -> N
                 sample_stem="Sample",
                 neutral_loss_tag="RNA_r",
             ),
-        )
+        ),
+        settings=DiscoverySettings(
+            neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474)
+        ),
     )
 
     assert [candidate.feature_family_size for candidate in assigned] == [1, 1, 1, 1]
@@ -152,7 +160,10 @@ def test_assign_peak_anchors_keeps_distinct_ms1_peaks_separate() -> None:
                 peak_start=7.96,
                 peak_end=8.14,
             ),
-        )
+        ),
+        settings=DiscoverySettings(
+            neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474)
+        ),
     )
 
     assert [candidate.feature_family_id for candidate in assigned] == [
@@ -167,7 +178,10 @@ def test_assign_peak_anchors_does_not_group_missing_ms1_peaks() -> None:
         (
             _candidate(candidate_id="Sample#10", ms1_peak_found=False),
             _candidate(candidate_id="Sample#20", ms1_peak_found=False),
-        )
+        ),
+        settings=DiscoverySettings(
+            neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474)
+        ),
     )
 
     assert [candidate.feature_family_id for candidate in assigned] == [
@@ -208,7 +222,10 @@ def test_assign_peak_anchors_assigns_evidence_score_and_tier() -> None:
                 ms2_product_max_intensity=500.0,
                 ms1_area=None,
             ),
-        )
+        ),
+        settings=DiscoverySettings(
+            neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474)
+        ),
     )
 
     by_id = {candidate.candidate_id: candidate for candidate in assigned}
@@ -226,7 +243,12 @@ def test_assign_peak_anchors_assigns_evidence_score_and_tier() -> None:
 
 
 def test_assign_peak_anchors_threads_custom_evidence_settings() -> None:
-    default_assigned = assign_peak_anchors((_candidate(candidate_id="Sample#10"),))
+    default_assigned = assign_peak_anchors(
+        (_candidate(candidate_id="Sample#10"),),
+        settings=DiscoverySettings(
+            neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474)
+        ),
+    )
     custom_settings = DiscoverySettings(
         neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474),
         evidence_profile=DiscoveryEvidenceProfile(
@@ -296,9 +318,17 @@ def test_assign_peak_anchors_preserves_distinct_feature_backed_inferred_candidat
         ms1_feature_row_id="Sample|DNA_dR|420.2|7.84",
     )
 
-    assigned = assign_peak_anchors((weaker, direct, other_scan, stronger))
+    assigned = assign_peak_anchors(
+        (weaker, direct, other_scan, stronger),
+        settings=DiscoverySettings(
+            neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474)
+        ),
+    )
     reversed_assigned = assign_peak_anchors(
-        tuple(reversed((weaker, direct, other_scan, stronger)))
+        tuple(reversed((weaker, direct, other_scan, stronger))),
+        settings=DiscoverySettings(
+            neutral_loss_profile=NeutralLossProfile("DNA_dR", 116.0474)
+        ),
     )
     by_id = {candidate.candidate_id: candidate for candidate in assigned}
     reversed_by_id = {
@@ -380,9 +410,7 @@ def _candidate(
         ms1_peak_found=ms1_peak_found,
         ms1_apex_rt=apex_rt,
         ms1_area=(
-            (1000.0 if ms1_peak_found else None)
-            if ms1_area is None
-            else ms1_area
+            (1000.0 if ms1_peak_found else None) if ms1_area is None else ms1_area
         ),
         ms2_product_max_intensity=ms2_product_max_intensity,
         reason="single MS2 NL seed; MS1 peak found",

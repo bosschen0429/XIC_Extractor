@@ -38,14 +38,14 @@ def test_run_discovery_cli_passes_single_raw_settings(
         *,
         output_dir,
         settings,
-        peak_config,
+        dll_dir,
         run_spec,
         timing_recorder=None,
     ):
         captured["raw_path"] = raw_path_arg
         captured["output_dir"] = output_dir
         captured["settings"] = settings
-        captured["peak_config"] = peak_config
+        captured["dll_dir"] = dll_dir
         captured["run_spec"] = run_spec
         output_dir.mkdir(parents=True, exist_ok=True)
         candidates_csv = output_dir / "discovery_candidates.csv"
@@ -55,6 +55,7 @@ def test_run_discovery_cli_passes_single_raw_settings(
         return DiscoveryRunOutputs(
             candidates_csv=candidates_csv,
             review_csv=review_csv,
+            physical_facts_json=tmp_path / "discovery_physical_facts.json",
         )
 
     monkeypatch.setattr(run_discovery, "run_discovery", _fake_run_discovery)
@@ -97,14 +98,8 @@ def test_run_discovery_cli_passes_single_raw_settings(
     assert settings.ms2_precursor_tol_da == pytest.approx(0.75)
     assert settings.resolver_mode == "local_minimum"
     assert settings.rt_min is None and settings.rt_max is None
-    peak_config = captured["peak_config"]
-    assert peak_config.data_dir == raw_path.parent.resolve()
-    assert peak_config.dll_dir == dll_dir.resolve()
-    assert peak_config.output_csv == output_dir.resolve() / "xic_results.csv"
-    assert peak_config.diagnostics_csv == output_dir.resolve() / "xic_diagnostics.csv"
-    assert peak_config.resolver_mode == "local_minimum"
-    assert peak_config.ms2_precursor_tol_da == pytest.approx(0.75)
-    assert peak_config.nl_min_intensity_ratio == settings.nl_min_intensity_ratio
+    assert captured["dll_dir"] == dll_dir.resolve()
+    assert captured["run_spec"].signal_processing_profile.window_points == 15
     assert captured["run_spec"].discovery_method.settings == settings
     assert captured["run_spec"].acquisition_inputs[0].sample_stem == raw_path.stem
     stdout = capsys.readouterr().out
@@ -164,7 +159,7 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
         *,
         output_dir,
         settings,
-        peak_config,
+        dll_dir,
         run_spec,
         max_workers,
         timing_recorder=None,
@@ -172,7 +167,7 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
         captured["raw_paths"] = raw_paths
         captured["output_dir"] = output_dir
         captured["settings"] = settings
-        captured["peak_config"] = peak_config
+        captured["dll_dir"] = dll_dir
         captured["run_spec"] = run_spec
         captured["max_workers"] = max_workers
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -180,6 +175,7 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
         sample_outputs = DiscoveryRunOutputs(
             candidates_csv=output_dir / "A" / "discovery_candidates.csv",
             review_csv=output_dir / "A" / "discovery_review.csv",
+            physical_facts_json=tmp_path / "discovery_physical_facts.json",
         )
         output_path.write_text("sample_stem\n", encoding="utf-8")
         return DiscoveryBatchOutputs(
@@ -207,7 +203,7 @@ def test_run_discovery_cli_passes_raw_dir_batch_settings(
     assert code == 0
     assert captured["raw_paths"] == (second.resolve(), first.resolve())
     assert captured["output_dir"] == output_dir.resolve()
-    assert captured["peak_config"].data_dir == raw_dir.resolve()
+    assert captured["dll_dir"] == dll_dir.resolve()
     assert captured["settings"].resolver_mode == "local_minimum"
     assert captured["max_workers"] == 1
     assert tuple(
@@ -293,7 +289,7 @@ def test_run_discovery_cli_writes_live_and_final_timing_json_for_batch(
         *,
         output_dir,
         settings,
-        peak_config,
+        dll_dir,
         run_spec,
         max_workers,
         timing_recorder=None,

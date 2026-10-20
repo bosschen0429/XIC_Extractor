@@ -19,13 +19,9 @@ class DiscoveryEvidence:
 def score_discovery_evidence(
     candidate: DiscoveryCandidate,
     *,
-    settings: DiscoverySettings | None = None,
+    settings: DiscoverySettings,
 ) -> DiscoveryEvidence:
-    profile = (
-        settings.evidence_profile
-        if settings is not None
-        else DEFAULT_EVIDENCE_PROFILE
-    )
+    profile = settings.evidence_profile
     weights = profile.weights
     thresholds = profile.thresholds
 
@@ -101,14 +97,12 @@ def classify_ms2_support(
             and candidate.ms2_product_max_intensity
             >= thresholds.product_intensity_med_min
         )
-        or candidate.ms2_product_max_intensity
-        >= thresholds.product_intensity_high_min
+        or candidate.ms2_product_max_intensity >= thresholds.product_intensity_high_min
     ):
         return "strong"
     if (
         candidate.seed_event_count >= 2
-        or candidate.ms2_product_max_intensity
-        >= thresholds.product_intensity_med_min
+        or candidate.ms2_product_max_intensity >= thresholds.product_intensity_med_min
     ):
         return "moderate"
     return "weak"
@@ -134,9 +128,8 @@ def classify_ms1_support(
         and high_scan_support
     ):
         return "strong"
-    if (
-        candidate.ms1_area >= thresholds.ms1_support_moderate_area_min
-        or (high_scan_support and not low_scan_support)
+    if candidate.ms1_area >= thresholds.ms1_support_moderate_area_min or (
+        high_scan_support and not low_scan_support
     ):
         return "moderate"
     return "weak"

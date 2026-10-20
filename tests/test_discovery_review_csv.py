@@ -37,20 +37,22 @@ def test_discovery_brief_columns_are_stable_csv_contract() -> None:
     assert len(DISCOVERY_BRIEF_COLUMNS) == 16
 
 
-def test_discovery_run_outputs_carries_two_csv_paths() -> None:
+def test_discovery_run_outputs_carries_two_csv_paths(tmp_path: Path) -> None:
     outputs = DiscoveryRunOutputs(
         candidates_csv=Path("a.csv"),
         review_csv=Path("b.csv"),
+        physical_facts_json=tmp_path / "discovery_physical_facts.json",
     )
     assert outputs.candidates_csv == Path("a.csv")
     assert outputs.review_csv == Path("b.csv")
 
 
-def test_discovery_batch_outputs_carries_index_and_per_sample() -> None:
+def test_discovery_batch_outputs_carries_index_and_per_sample(tmp_path: Path) -> None:
     per_sample = (
         DiscoveryRunOutputs(
             candidates_csv=Path("s1/c.csv"),
             review_csv=Path("s1/r.csv"),
+            physical_facts_json=tmp_path / "discovery_physical_facts.json",
         ),
     )
     batch = DiscoveryBatchOutputs(

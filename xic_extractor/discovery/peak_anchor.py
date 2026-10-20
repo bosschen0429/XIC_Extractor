@@ -11,16 +11,11 @@ _APEX_RT_EPSILON_MIN = 1e-6
 def assign_peak_anchors(
     candidates: tuple[DiscoveryCandidate, ...],
     *,
-    settings: DiscoverySettings | None = None,
+    settings: DiscoverySettings,
 ) -> tuple[DiscoveryCandidate, ...]:
-    precursor_mz_tolerance_ppm = (
-        settings.precursor_mz_tolerance_ppm
-        if settings is not None
-        else DiscoverySettings.precursor_mz_tolerance_ppm
-    )
     anchored = _assign_peak_anchors(
         candidates,
-        precursor_mz_tolerance_ppm=precursor_mz_tolerance_ppm,
+        precursor_mz_tolerance_ppm=settings.precursor_mz_tolerance_ppm,
     )
     return _score_all_evidence(anchored, settings=settings)
 
@@ -76,7 +71,7 @@ def _assign_peak_anchors(
 def _score_all_evidence(
     candidates: tuple[DiscoveryCandidate, ...],
     *,
-    settings: DiscoverySettings | None = None,
+    settings: DiscoverySettings,
 ) -> tuple[DiscoveryCandidate, ...]:
     scored: list[DiscoveryCandidate] = []
     for candidate in candidates:

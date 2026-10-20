@@ -64,7 +64,7 @@ def test_evidence_thresholds_are_frozen_and_hashable() -> None:
 
 
 def test_score_discovery_evidence_preserves_default_baseline() -> None:
-    evidence = score_discovery_evidence(_candidate())
+    evidence = score_discovery_evidence(_candidate(), settings=_settings())
 
     assert evidence.score == 71
     assert evidence.tier == "B"
@@ -145,7 +145,7 @@ def test_score_discovery_evidence_keeps_mid_scan_support_neutral() -> None:
         ms1_scan_support_score=0.5,
     )
 
-    evidence = score_discovery_evidence(candidate)
+    evidence = score_discovery_evidence(candidate, settings=_settings())
 
     assert evidence.score == 66
 
@@ -157,7 +157,7 @@ def test_numeric_scan_support_takes_precedence_over_legacy_trace_quality() -> No
         ms1_scan_support_score=0.1,
     )
 
-    evidence = score_discovery_evidence(candidate)
+    evidence = score_discovery_evidence(candidate, settings=_settings())
 
     assert evidence.score == 56
 
@@ -169,7 +169,7 @@ def test_legacy_trace_quality_fallback_scores_when_scan_support_missing() -> Non
         ms1_scan_support_score=None,
     )
 
-    evidence = score_discovery_evidence(candidate)
+    evidence = score_discovery_evidence(candidate, settings=_settings())
 
     assert evidence.score == 71
     assert evidence.ms1_support == "moderate"
@@ -186,7 +186,7 @@ def test_missing_ms1_peak_does_not_apply_low_scan_support_penalty() -> None:
         ms1_scan_support_score=0.0,
     )
 
-    evidence = score_discovery_evidence(candidate)
+    evidence = score_discovery_evidence(candidate, settings=_settings())
 
     assert evidence.score == 26
     assert evidence.ms1_support == "missing"

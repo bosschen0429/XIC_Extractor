@@ -11,7 +11,6 @@ from tests.cid_nl_raw_fixture import TEST_PROFILE, fake_acquisition_source
 from xic_extractor.acquisition_contract import AcquisitionContractError
 from xic_extractor.discovery import candidate_merge as candidate_merge_module
 from xic_extractor.discovery.candidate_merge import (
-    merge_candidates_by_ms1_peak,
     merge_candidates_by_ms1_peak_with_lineage,
 )
 from xic_extractor.discovery.grouping import group_discovery_seeds
@@ -197,6 +196,7 @@ def test_ms1_peak_fields_are_filled_from_physical_facts(scans_target: int) -> No
         run_spec_id="processing-run:" + "0" * 64,
         signal_processing_profile=TEST_PROFILE,
         settings=settings,
+        ms1_centroid_mz=lambda *_: None,
     )
     (candidate,) = result.candidates
     (record,) = result.physical_evaluations
@@ -321,7 +321,9 @@ def test_cross_tag_candidates_merge_only_when_ms1_peak_overlaps() -> None:
         _candidate("MeR", product_mz=253.942100, observed_loss=146.057900),
     ]
 
-    merged = merge_candidates_by_ms1_peak(candidates, settings=settings)
+    merged = merge_candidates_by_ms1_peak_with_lineage(
+        candidates, settings=settings, ms1_centroid_mz=lambda *_: None
+    ).candidates
 
     assert len(merged) == 1
     assert merged[0].matched_tag_names == ("dR", "R", "MeR")
@@ -419,13 +421,11 @@ def test_merge_with_lineage_preserves_candidate_policy_and_source_ordinals() -> 
         ms2_product_max_intensity=3_000.0,
     )
 
-    expected_candidates = merge_candidates_by_ms1_peak(
-        (first, second),
-        settings=settings,
-    )
+    expected_candidates = merge_candidates_by_ms1_peak_with_lineage(
+        (first, second), settings=settings, ms1_centroid_mz=lambda *_: None
+    ).candidates
     result = merge_candidates_by_ms1_peak_with_lineage(
-        (first, second),
-        settings=settings,
+        (first, second), settings=settings, ms1_centroid_mz=lambda *_: None
     )
 
     assert result.candidates == expected_candidates
@@ -491,7 +491,9 @@ def test_precursor_mass_index_matches_linear_scan_at_boundaries_and_invalid_mass
     ]
     if reverse:
         candidates.reverse()
-    indexed = merge_candidates_by_ms1_peak_with_lineage(candidates, settings=settings)
+    indexed = merge_candidates_by_ms1_peak_with_lineage(
+        candidates, settings=settings, ms1_centroid_mz=lambda *_: None
+    )
     assert len(indexed.candidates) == 5
     assert any(len(binding.member_source_ordinals) == 2 for binding in indexed.bindings)
     indexed_signature = [
@@ -519,7 +521,9 @@ def test_precursor_mass_index_matches_linear_scan_at_boundaries_and_invalid_mass
         "_matching_ms1_peak_candidate",
         linear_matching,
     )
-    linear = merge_candidates_by_ms1_peak_with_lineage(candidates, settings=settings)
+    linear = merge_candidates_by_ms1_peak_with_lineage(
+        candidates, settings=settings, ms1_centroid_mz=lambda *_: None
+    )
     linear_signature = [
         (
             candidate.seed_scan_ids,
@@ -572,7 +576,9 @@ def test_merge_candidates_preserves_same_tag_evidence_details() -> None:
         ),
     )
 
-    merged = merge_candidates_by_ms1_peak([first, second], settings=settings)
+    merged = merge_candidates_by_ms1_peak_with_lineage(
+        [first, second], settings=settings, ms1_centroid_mz=lambda *_: None
+    ).candidates
 
     assert len(merged) == 1
     evidence = json.loads(merged[0].tag_evidence_json)
@@ -611,7 +617,9 @@ def test_merge_candidates_by_shared_ms1_feature_row_id_when_seed_is_on_tail() ->
         ms1_feature_row_id=row_id,
     )
 
-    merged = merge_candidates_by_ms1_peak([first, second], settings=settings)
+    merged = merge_candidates_by_ms1_peak_with_lineage(
+        [first, second], settings=settings, ms1_centroid_mz=lambda *_: None
+    ).candidates
 
     assert len(merged) == 1
     assert merged[0].ms1_feature_row_id == row_id
@@ -658,7 +666,9 @@ def test_candidates_sharing_an_ms1_apex_within_extraction_tolerance_are_one_peak
         ms1_feature_row_id=(f"NormalBC2259_DNA|dR|{second_precursor_mz:.6f}|40.579393"),
     )
 
-    merged = merge_candidates_by_ms1_peak([first, second], settings=settings)
+    merged = merge_candidates_by_ms1_peak_with_lineage(
+        [first, second], settings=settings, ms1_centroid_mz=lambda *_: None
+    ).candidates
 
     assert len(merged) == expected_count
     if expected_count == 1:
@@ -698,7 +708,9 @@ def test_merge_shared_ms1_feature_row_id_with_configured_loss_edge_evidence() ->
         ms1_feature_row_id=row_id,
     )
 
-    merged = merge_candidates_by_ms1_peak([first, second], settings=settings)
+    merged = merge_candidates_by_ms1_peak_with_lineage(
+        [first, second], settings=settings, ms1_centroid_mz=lambda *_: None
+    ).candidates
 
     assert len(merged) == 1
     assert merged[0].ms1_feature_row_id == row_id
@@ -725,7 +737,9 @@ def test_shared_ms1_apex_merges_whatever_the_fragment_or_loss(
         ms1_feature_row_id=row_id,
     )
 
-    merged = merge_candidates_by_ms1_peak([first, second], settings=settings)
+    merged = merge_candidates_by_ms1_peak_with_lineage(
+        [first, second], settings=settings, ms1_centroid_mz=lambda *_: None
+    ).candidates
 
     assert len(merged) == 1
     assert merged[0].seed_event_count == 2
@@ -767,14 +781,21 @@ def test_shared_ms1_apex_beyond_tolerance_merges_on_the_measured_ms1_ion(
     reads: list[tuple[float, float, float]] = []
     centroid = _ms1_scans({first.ms1_apex_rt: ions}, reads)
 
-    merged = merge_candidates_by_ms1_peak(
+    merged = merge_candidates_by_ms1_peak_with_lineage(
         [first, second], settings=settings, ms1_centroid_mz=centroid
-    )
+    ).candidates
 
     assert len(merged) == merged_count
     if offset_ppm > 2 * settings.precursor_mz_tolerance_ppm:
         assert reads == []
-    assert len(merge_candidates_by_ms1_peak([first, second], settings=settings)) == 2
+    assert (
+        len(
+            merge_candidates_by_ms1_peak_with_lineage(
+                [first, second], settings=settings, ms1_centroid_mz=lambda *_: None
+            ).candidates
+        )
+        == 2
+    )
 
 
 def _tail_of(anchor: DiscoveryCandidate, *, offset_ppm: float, apex: float):
@@ -805,9 +826,9 @@ def test_a_window_that_clips_the_ion_merges_into_the_peak_it_sees_the_tail_of() 
     tail = _tail_of(anchor, offset_ppm=-25.0, apex=5.08)
     centroid = _ms1_scans({anchor.ms1_apex_rt: (400.001,), 5.08: (399.995,)})
 
-    merged = merge_candidates_by_ms1_peak(
+    merged = merge_candidates_by_ms1_peak_with_lineage(
         [tail, anchor], settings=settings, ms1_centroid_mz=centroid
-    )
+    ).candidates
 
     assert len(merged) == 1
     assert merged[0].precursor_mz == anchor.precursor_mz
@@ -832,9 +853,9 @@ def test_a_nearby_candidate_stays_separate_unless_it_is_the_same_ion_and_peak(
     other = _tail_of(anchor, offset_ppm=-25.0, apex=tail_apex)
     centroid = _ms1_scans({anchor.ms1_apex_rt: (400.001,), tail_apex: (tail_ion,)})
 
-    merged = merge_candidates_by_ms1_peak(
+    merged = merge_candidates_by_ms1_peak_with_lineage(
         [other, anchor], settings=settings, ms1_centroid_mz=centroid
-    )
+    ).candidates
 
     assert len(merged) == 2
 
@@ -844,7 +865,9 @@ def test_cross_tag_candidates_do_not_merge_without_ms1_overlap() -> None:
     left = _candidate("dR", peak_start=5.00, peak_end=5.05)
     right = _candidate("R", peak_start=5.20, peak_end=5.25)
 
-    merged = merge_candidates_by_ms1_peak([left, right], settings=settings)
+    merged = merge_candidates_by_ms1_peak_with_lineage(
+        [left, right], settings=settings, ms1_centroid_mz=lambda *_: None
+    ).candidates
 
     assert len(merged) == 2
 
@@ -972,6 +995,7 @@ def test_owner_acquisition_batches_requests_and_preserves_exact_windows(
         run_spec_id="processing-run:" + "0" * 64,
         signal_processing_profile=TEST_PROFILE,
         settings=_settings(),
+        ms1_centroid_mz=lambda *_: None,
     )
 
     measurements = result.measurements
@@ -1015,6 +1039,7 @@ def test_owner_acquisition_splits_request_order_at_256_without_deduplication(
         run_spec_id="processing-run:" + "0" * 64,
         signal_processing_profile=TEST_PROFILE,
         settings=_settings(),
+        ms1_centroid_mz=lambda *_: None,
     )
 
     metrics = derive_runtime_acquisition_metrics(
@@ -1062,6 +1087,7 @@ def test_owner_acquisition_reads_overlapping_windows_once_with_exact_traces(
         run_spec_id="processing-run:" + "0" * 64,
         signal_processing_profile=TEST_PROFILE,
         settings=_settings(),
+        ms1_centroid_mz=lambda *_: None,
     )
 
     batches = result.measurements.acquisition_batches
@@ -1099,6 +1125,7 @@ def test_owner_acquisition_fails_closed_on_wrong_trace_cardinality(
             run_spec_id="processing-run:" + "0" * 64,
             signal_processing_profile=TEST_PROFILE,
             settings=_settings(),
+            ms1_centroid_mz=lambda *_: None,
         )
 
 
@@ -1333,6 +1360,7 @@ def _candidates_from_raw(
         run_spec_id="processing-run:" + "0" * 64,
         signal_processing_profile=TEST_PROFILE,
         settings=settings,
+        ms1_centroid_mz=lambda *_: None,
     ).candidates
 
 
@@ -1351,7 +1379,9 @@ def test_merge_does_not_offer_different_apex_as_support_alternative() -> None:
         ms2_product_max_intensity=20000.0,
     )
     originals = (anchor, other)
-    merged = merge_candidates_by_ms1_peak_with_lineage(originals, settings=_settings())
+    merged = merge_candidates_by_ms1_peak_with_lineage(
+        originals, settings=_settings(), ms1_centroid_mz=lambda *_: None
+    )
     assert len(merged.candidates) == 1
     assert merged.candidates[0].best_ms2_scan_id == 10
     assert merged.candidates[0].seed_scan_ids == (10, 20)

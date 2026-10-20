@@ -19,7 +19,6 @@ from xic_extractor.acquisition_contract import (
     RawAcquisitionSessionReceipt,
     mint_raw_acquisition_session_capability,
 )
-from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery import output_publication
 from xic_extractor.discovery.models import (
     DiscoveryBatchOutputs,
@@ -33,7 +32,6 @@ from xic_extractor.discovery.physical_fact_record import (
     DiscoveryPhysicalFactRecord,
 )
 from xic_extractor.discovery.processing_run_spec_adapter import (
-    processing_profile_from_config,
     processing_run_input_for_path,
 )
 from xic_extractor.discovery.runtime_measurements import (
@@ -57,7 +55,7 @@ class DiscoverySampleProcessJob:
     raw_path: Path
     output_dir: Path
     settings: DiscoverySettings
-    peak_config: ExtractionConfig
+    dll_dir: Path
     acquisition_source: AcquisitionSourceIdentity
     raw_session_capability: RawAcquisitionSessionCapability
     run_spec: ProcessingRunSpec
@@ -167,7 +165,7 @@ def run_discovery_batch_process(
     *,
     output_dir: Path,
     settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
+    dll_dir: Path,
     timing_recorder: TimingRecorder,
     max_workers: int,
     executor_factory: Callable[..., Any] | None,
@@ -188,7 +186,7 @@ def run_discovery_batch_process(
                 raw_path=raw_path,
                 output_dir=output_dir,
                 settings=settings,
-                peak_config=peak_config,
+                dll_dir=dll_dir,
                 acquisition_source=acquisition_source,
                 raw_session_capability=mint_raw_acquisition_session_capability(
                     acquisition_source
@@ -463,11 +461,6 @@ def _validate_discovery_process_job_binding(job: DiscoverySampleProcessJob) -> N
         raise ValueError("Discovery process job crosses acquisition identity")
     if job.settings != job.run_spec.discovery_method.settings:
         raise ValueError("Discovery process job crosses method settings")
-    if (
-        processing_profile_from_config(job.peak_config)
-        != job.run_spec.signal_processing_profile
-    ):
-        raise ValueError("Discovery process job crosses signal profile")
 
 
 def _discovery_process_error(

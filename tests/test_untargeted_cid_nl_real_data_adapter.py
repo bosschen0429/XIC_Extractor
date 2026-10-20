@@ -204,6 +204,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         run_spec_id="processing-run:" + "0" * 64,
         settings=settings,
         signal_processing_profile=profile,
+        ms1_centroid_mz=lambda *_: None,
     )
     assert len(discovery.candidates) == 2
     legacy_records = tuple(
@@ -563,6 +564,7 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
         run_spec_id="processing-run:" + "0" * 64,
         settings=settings,
         signal_processing_profile=profile,
+        ms1_centroid_mz=lambda *_: None,
     )
     (original,) = discovery.candidates
     (record,) = discovery.physical_evaluations
@@ -2261,6 +2263,7 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
         run_spec_id="processing-run:" + "0" * 64,
         settings=settings,
         signal_processing_profile=profile,
+        ms1_centroid_mz=lambda *_: None,
     )
     assert len(discovery.candidates) == 2
     old_request = fixture.owners.request
