@@ -165,7 +165,7 @@ def test_index_parser_rejects_malformed_and_duplicate_records() -> None:
         _parse_index_entries(b"100644 " + oid + b" 2\tdocs/conflict.md\0")
     with pytest.raises(RepositoryViewError, match="duplicate normalized path"):
         _parse_index_entries(
-            b"100644 " + oid + b" 0\tdocs/a.md\0"
+            b"100644 " + oid + b" 0\tdocs/a.md\x00"
             b"100644 " + oid + b" 0\tdocs/./a.md\0"
         )
 
