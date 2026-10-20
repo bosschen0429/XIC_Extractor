@@ -73,6 +73,9 @@ class SameScanSettings:
             raise ValueError("minimum_joint_scans must be at least one")
 
 
+_DEFAULT_SAME_SCAN_SETTINGS = SameScanSettings()
+
+
 @dataclass(frozen=True, slots=True)
 class ObservedPeak:
     mz: float
@@ -149,7 +152,7 @@ class ResolvedConflictComponent:
 def evaluate_same_scan_envelope(
     index: Sequence[MS1Scan],
     seed: PtPatternSeed,
-    settings: SameScanSettings = SameScanSettings(),
+    settings: SameScanSettings = _DEFAULT_SAME_SCAN_SETTINGS,
 ) -> SameScanEnvelopeEvidence:
     """Measure fixed-mass Pt positions on shared MS1 scan IDs."""
 

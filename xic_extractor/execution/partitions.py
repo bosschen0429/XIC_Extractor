@@ -311,7 +311,7 @@ class PartitionPipelineScheduler:
             ]
 
             timeline_by_index = {
-                p.index: r for p, r in zip(partitions, timeline_records)
+                p.index: r for p, r in zip(partitions, timeline_records, strict=True)
             }
 
             def emit_timeline() -> None:
@@ -484,7 +484,7 @@ class PartitionPipelineScheduler:
                         for entry in enumerate(phase.partitions, start=phase_offset):
                             pending_partitions.put(entry)
 
-                        def is_stopped() -> bool:
+                        def is_stopped(stop_event=stop_event) -> bool:
                             return (
                                 stop_event.is_set()
                                 or cancellation_ingress.is_cancelled
@@ -495,7 +495,12 @@ class PartitionPipelineScheduler:
                                 )
                             )
 
-                        def producer_worker() -> None:
+                        def producer_worker(
+                            admission_credits=admission_credits,
+                            pending_partitions=pending_partitions,
+                            handoff_queue=handoff_queue,
+                            stop_event=stop_event,
+                        ) -> None:
                             nonlocal producer_exc
                             try:
                                 while True:
@@ -600,7 +605,12 @@ class PartitionPipelineScheduler:
                                     except queue.Full:
                                         continue
 
-                        def consumer_worker() -> None:
+                        def consumer_worker(
+                            phase=phase,
+                            handoff_queue=handoff_queue,
+                            admission_credits=admission_credits,
+                            stop_event=stop_event,
+                        ) -> None:
                             nonlocal consumer_exc
                             next_index = phase.partitions[0].index
                             finished_producers = 0
@@ -683,15 +693,17 @@ class PartitionPipelineScheduler:
                                         if not credit_released:
                                             admission_credits.release()
                                             credit_released = True
-                            except Exception as exc:
-                                consumer_exc = exc
+                            except Exception as composition_error:
+                                consumer_exc = composition_error
                                 if "partition" in locals():
                                     with thread_lock:
                                         timeline_by_index[partition.index][
                                             "compose_end"
                                         ] = time.perf_counter()
                                     record_partition_failure(
-                                        partition, "partition-composition", exc
+                                        partition,
+                                        "partition-composition",
+                                        composition_error,
                                     )
                                 stop_event.set()
                                 cancellation_ingress.request_cancellation(
@@ -967,7 +979,7 @@ class PartitionPipelineScheduler:
                 # Keep the original failure and every sealed file even if the
                 # diagnostic metadata cannot be written (for example, disk full).
                 exc.add_note(f"Could not retain replay metadata: {preservation_error}")
-                raise exc
+                raise exc from preservation_error
             if checkpoint is not None:
                 exc.add_note(f"Completed partition results retained at {checkpoint}")
             raise

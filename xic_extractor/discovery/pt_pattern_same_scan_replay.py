@@ -40,6 +40,9 @@ from xic_extractor.tabular_io import (
 )
 from xic_extractor.validation_primitives import require_finite_real
 
+_DEFAULT_SAME_SCAN_SETTINGS = SameScanSettings()
+
+
 SCHEMA_VERSION = "pt_pattern_same_scan_replay"
 READINESS_TIER = "diagnostic_only"
 EVIDENCE_OWNER = "xic_extractor.discovery.pt_pattern_same_scan_evidence"
@@ -153,7 +156,7 @@ def run_same_scan_replay(
     report_id: str,
     source_sample_stem: str,
     index_input: Path,
-    settings: SameScanSettings = SameScanSettings(),
+    settings: SameScanSettings = _DEFAULT_SAME_SCAN_SETTINGS,
     candidate_rt_half_window_sec: float = 45.0,
     index_source: str = "provided_index",
     index_provenance: MS1ScanIndexProvenance | None = None,

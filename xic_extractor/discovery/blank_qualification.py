@@ -170,7 +170,9 @@ def deserialize_background_library(payload: str) -> BlankBackgroundLibrary:
             raise ValueError("unsupported Blank background library version")
         if serialize_background_library(library) != payload:
             raise ValueError("background library snapshot is not canonical")
-        if any(a.mz > b.mz for a, b in zip(library.ions, library.ions[1:])):
+        if any(
+            a.mz > b.mz for a, b in zip(library.ions, library.ions[1:], strict=False)
+        ):
             raise ValueError("background library snapshot ions are not ordered")
         return library
     except (KeyError, TypeError, OverflowError) as exc:
@@ -215,7 +217,7 @@ def extract_blank_background_library(
                 i_arr = np.asarray(intensities, dtype=np.float64)
                 mask = i_arr >= min_intensity
 
-                for m, intensity in zip(m_arr[mask], i_arr[mask]):
+                for m, intensity in zip(m_arr[mask], i_arr[mask], strict=True):
                     collected_ions.append((m, intensity, stem))
 
     if not collected_ions:

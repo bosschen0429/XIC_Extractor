@@ -119,7 +119,11 @@ class IndexedCidNlSource(CidNlSource):
                 stratum,
                 observed.bit_count(),
                 present.bit_count(),
-                [name for name, mask in zip(ORIGIN_FLAGS, origins) if mask],
+                [
+                    name
+                    for name, mask in zip(ORIGIN_FLAGS, origins, strict=False)
+                    if mask
+                ],
             )
             coverage, origin, status = review_case_order(case)
             return coverage * 20 + origin * 5 + status

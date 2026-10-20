@@ -548,10 +548,7 @@ def _validate_pt_assignment_geometry(
         observed_positions.append(observed_mz)
     if any(
         right <= left
-        for left, right in zip(
-            observed_positions,
-            observed_positions[1:],
-        )
+        for left, right in zip(observed_positions, observed_positions[1:], strict=False)
     ):
         raise ValueError("candidate Pt position m/z values must be strictly ascending")
 

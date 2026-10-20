@@ -68,7 +68,7 @@ def _review_batch(tmp_path, sample_count=2):
             ("archive", "archive", (500,) + ("unresolved",) * (sample_count - 1)),
         ):
             keys = []
-            for sid, value in zip(sample_ids, values):
+            for sid, value in zip(sample_ids, values, strict=True):
                 if isinstance(value, int):
                     cid = f"{rid}-{sid}"
                     keys.append((cid, sid))
@@ -102,7 +102,7 @@ def _review_batch(tmp_path, sample_count=2):
                         "variant": "numeric" if isinstance(value, int) else value,
                         "value": value if isinstance(value, int) else None,
                     }
-                    for sid, value in zip(sample_ids, values)
+                    for sid, value in zip(sample_ids, values, strict=True)
                 ],
                 {sid: i for i, sid in enumerate(sample_ids)},
             )

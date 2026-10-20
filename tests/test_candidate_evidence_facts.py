@@ -738,7 +738,6 @@ def test_paired_istd_anchor_projects_one_role_aware_rt_support_reason() -> None:
     assert "paired_istd_rt_support" not in semantics.support_reasons
     assert not {
         "paired_istd_rt_close",
-        "paired_istd_rt_close",
     }.intersection(semantics.compatibility_labels)
 
 

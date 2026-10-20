@@ -238,7 +238,7 @@ def _build_knots(
 def _is_usable(knots: tuple[tuple[float, float], ...]) -> bool:
     return len(knots) >= 2 and all(
         left[0] < right[0] and left[1] < right[1]
-        for left, right in zip(knots, knots[1:])
+        for left, right in zip(knots, knots[1:], strict=False)
     )
 
 

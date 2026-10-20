@@ -1411,7 +1411,9 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
             expected = tuple(c for c in job.candidates if c.candidate_id in member_ids)
             selected = partition_models._request_subject_candidates(job)
             assert selected == expected
-            assert all(left is right for left, right in zip(selected, expected))
+            assert all(
+                left is right for left, right in zip(selected, expected, strict=True)
+            )
             assert (
                 partition_models._request_subject_candidates(replace(job)) == expected
             )

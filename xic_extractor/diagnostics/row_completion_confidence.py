@@ -626,10 +626,10 @@ def _validate_sentinel_rows(rows: tuple[dict[str, str], ...]) -> None:
         rank = text_value(row.get("rank"))
         try:
             int(rank)
-        except ValueError:
+        except ValueError as exc:
             raise ValueError(
                 f"alignment_health_family_sentinels.tsv rank is not numeric: {rank!r}",
-            )
+            ) from exc
 
 
 def _summary_row(

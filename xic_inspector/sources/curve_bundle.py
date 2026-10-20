@@ -155,7 +155,7 @@ def _curve(value: object, where: str) -> ChromatogramCurve | None:
         raise _fail(where, "rt and intensity must have the same nonzero length")
     rt = tuple(_number(value, f"{where}.rt") for value in rts)
     intensity = tuple(_number(value, f"{where}.intensity") for value in intensities)
-    if any(a >= b for a, b in zip(rt, rt[1:])):
+    if any(a >= b for a, b in zip(rt, rt[1:], strict=False)):
         raise _fail(where, "rt must increase strictly")
     return ChromatogramCurve(rt, intensity)
 

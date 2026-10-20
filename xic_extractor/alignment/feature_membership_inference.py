@@ -284,7 +284,7 @@ class BatchRtWarpAccumulator:
                     knots.append((rt, statistics.median(point[1] for point in nearest)))
             if len(knots) >= 2 and all(
                 left[0] + left[1] < right[0] + right[1]
-                for left, right in zip(knots, knots[1:])
+                for left, right in zip(knots, knots[1:], strict=False)
             ):
                 sample_knots.append((sample, tuple(knots)))
         return BatchRtWarp(tuple(sample_knots), self._accepted)
@@ -1227,7 +1227,7 @@ def _window_inference(
                     members[first].extend(members.pop(owner_id))
                     sample_sets[first].update(sample_sets.pop(owner_id))
 
-            def root(owner_id: str) -> str:
+            def root(owner_id: str, parents=parents) -> str:
                 while parents[owner_id] != owner_id:
                     parents[owner_id] = parents[parents[owner_id]]
                     owner_id = parents[owner_id]

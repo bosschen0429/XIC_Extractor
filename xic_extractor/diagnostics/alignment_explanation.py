@@ -161,7 +161,7 @@ def _validate_curve_payload(
             for value in values
         ):
             raise ExplanationError(f"curve values must be finite numbers: {name}")
-    if any(right <= left for left, right in zip(rt, rt[1:])):
+    if any(right <= left for left, right in zip(rt, rt[1:], strict=False)):
         raise ExplanationError("curve RT must be strictly increasing")
 
     coordinate = payload["trace_coordinate"]

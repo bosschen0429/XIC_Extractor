@@ -108,7 +108,12 @@ def _bind_acquisition_sources(
                     )
                 )
 
-            def bind_candidate(candidate):
+            def bind_candidate(
+                candidate,
+                source=source,
+                sample_name=sample_name,
+                target_label=target_label,
+            ):
                 product = None if candidate is None else candidate.best_product_evidence
                 if product is None:
                     return candidate

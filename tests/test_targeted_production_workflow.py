@@ -473,7 +473,8 @@ def test_each_nl_target_gets_distinct_runtime_attempt_and_manifest(
     assert all(not runtime.manifest_preflight_failed for _attempt, runtime in started)
     assert all(len(manifest.work_unit_keys) == 1 for manifest in manifests)
     assert all(
-        manifest.attempt is attempt for attempt, manifest in zip(attempts, manifests)
+        manifest.attempt is attempt
+        for attempt, manifest in zip(attempts, manifests, strict=True)
     )
     assert {manifest.work_unit_keys[0] for manifest in manifests} == {
         "targeted-workflow:"

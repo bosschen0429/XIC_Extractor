@@ -274,7 +274,10 @@ def read_rt_calibration(path: Path) -> BatchRtCalibration:
         )
         if (
             any(not math.isfinite(v) for pair in knots for v in pair)
-            or any(x2 <= x1 or y2 <= y1 for (x1, y1), (x2, y2) in zip(knots, knots[1:]))
+            or any(
+                x2 <= x1 or y2 <= y1
+                for (x1, y1), (x2, y2) in zip(knots, knots[1:], strict=False)
+            )
             or len(knots) == 1
         ):
             raise ValueError(f"Invalid RT knots for {row['sample_stem']}")

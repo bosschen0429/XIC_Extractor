@@ -439,7 +439,7 @@ def _finalized_case(
     observed_set = set(observed_stems)
     hypotheses: dict[str, object] = {}
     terminals = []
-    for index, sample in enumerate(fixture.samples):
+    for _, sample in enumerate(fixture.samples):
         candidate_id = f"candidate-{sample.lookup_token}"
         if sample.lookup_token in observed_set:
             hypothesis = hypothesis_by_stem[sample.lookup_token]

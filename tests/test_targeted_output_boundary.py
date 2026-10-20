@@ -543,7 +543,7 @@ def test_service_publishes_finalized_numeric_values_without_counting_detection(
     try:
         rows = workbook["XIC Results"].iter_rows(values_only=True)
         headers = next(rows)
-        workbook_rows = {row[0]: dict(zip(headers, row)) for row in rows}
+        workbook_rows = {row[0]: dict(zip(headers, row, strict=True)) for row in rows}
         sheet = workbook["XIC Results"]
         for header in (
             "Area",
@@ -685,7 +685,7 @@ def test_service_publishes_no_numeric_for_finalized_no_observation(
     workbook = load_workbook(excel_path, read_only=True, data_only=True)
     try:
         rows = workbook["XIC Results"].iter_rows(values_only=True)
-        workbook_row = dict(zip(next(rows), next(rows)))
+        workbook_row = dict(zip(next(rows), next(rows), strict=True))
     finally:
         workbook.close()
     for field in ("RT", "Area", "PeakStart", "PeakEnd", "PeakWidth"):
@@ -1882,7 +1882,7 @@ def test_formal_targeted_backfill_uses_confirmed_peers_and_paired_istd(
     workbook = load_workbook(workbook_path, read_only=True, data_only=True)
     values = iter(workbook["XIC Results"].values)
     headers = next(values)
-    rows = [dict(zip(headers, row)) for row in values]
+    rows = [dict(zip(headers, row, strict=True)) for row in values]
     workbook.close()
     row = next(
         r for r in rows if r["SampleName"] == "SampleC" and r["Target"] == "Analyte"
@@ -2072,7 +2072,7 @@ def test_paired_position_rejects_remote_nl_peak_in_workbook_and_inspector(
     rows = {
         r["SampleName"]: r
         for cells in values
-        if (r := dict(zip(headers, cells)))["Target"] == "Analyte"
+        if (r := dict(zip(headers, cells, strict=True)))["Target"] == "Analyte"
     }
     workbook.close()
     assert rows["Far"]["Counted Detection"] == "FALSE"
@@ -2242,7 +2242,7 @@ def test_istd_backfill_keeps_a_drifting_target_as_one_group(
     workbook = load_workbook(workbook_path, read_only=True, data_only=True)
     values = iter(workbook["XIC Results"].values)
     headers = next(values)
-    rows = {row[0]: dict(zip(headers, row)) for row in values}
+    rows = {row[0]: dict(zip(headers, row, strict=True)) for row in values}
     workbook.close()
     assert rows["S3"]["Counted Detection"] == "TRUE"
     assert rows["S3"]["RT"] == pytest.approx(2.6, abs=0.01)
