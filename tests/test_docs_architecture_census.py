@@ -1110,7 +1110,6 @@ def test_default_production_activation_loci_are_exact() -> None:
     assert outer_callers == {
         Path("scripts/run_alignment.py"),
         Path("xic_workbench/untargeted.py"),
-        Path("xic_extractor/applications/untargeted/provisional_matrix.py"),
     }
     application_path = Path("xic_extractor/applications/untargeted/application.py")
     activation_loci = outer_callers | {application_path}
@@ -1118,7 +1117,6 @@ def test_default_production_activation_loci_are_exact() -> None:
         application_path,
         Path("scripts/run_alignment.py"),
         Path("xic_workbench/untargeted.py"),
-        Path("xic_extractor/applications/untargeted/provisional_matrix.py"),
     }
     assert production_calls["complete_untargeted_alignment"] == {application_path}
     assert production_calls["execute_untargeted_plan"] == {

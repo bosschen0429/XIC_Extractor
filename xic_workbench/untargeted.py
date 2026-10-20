@@ -64,10 +64,6 @@ _PUBLISHED_OUTPUT_ATTRS = (
     "backfill_seed_audit_tsv",
     "status_matrix_tsv",
     "run_metadata_json",
-    "provisional_matrix_tsv",
-    "provisional_identity_tsv",
-    "provisional_cell_provenance_tsv",
-    "provisional_summary_json",
 )
 
 

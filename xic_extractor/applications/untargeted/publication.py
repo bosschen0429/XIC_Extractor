@@ -46,7 +46,6 @@ class UntargetedPublicationPolicy:
     explanation_curve_mz_ranges: tuple[tuple[float, float], ...] = ()
     emit_alignment_backfill_seed_audit: bool = False
     capture_artifact_fingerprints: bool = False
-    emit_provisional_matrix: bool = False
 
     def output_paths(self, output_dir: Path) -> AlignmentRunOutputs:
         return output_paths(
@@ -55,7 +54,6 @@ class UntargetedPublicationPolicy:
             emit_alignment_cells=self.emit_alignment_cells,
             emit_alignment_status_matrix=self.emit_alignment_status_matrix,
             emit_alignment_backfill_seed_audit=self.emit_alignment_backfill_seed_audit,
-            emit_provisional_matrix=self.emit_provisional_matrix,
         )
 
 

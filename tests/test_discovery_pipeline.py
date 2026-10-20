@@ -18,6 +18,7 @@ from xic_extractor.acquisition_contract import (
     mint_raw_acquisition_session_capability,
 )
 from xic_extractor.configuration.models import ExtractionConfig
+from xic_extractor.discovery import pipeline as _pipeline
 from xic_extractor.discovery.csv_reader import (
     read_discovery_batch_index,
     read_owner_bound_discovery_candidates_csv,
@@ -47,11 +48,11 @@ from xic_extractor.discovery.pipeline import (
     _reject_caller_authored_discovery_ms1_measurement,
     _run_discovery_sample_process_job,
     _validate_discovery_ms1_observations,
-    run_discovery,
-    run_discovery_batch,
+)
+from xic_extractor.discovery.processing_run_spec_adapter import (
+    compile_discovery_processing_run_spec,
 )
 from xic_extractor.execution.timing import TimingRecord, TimingRecorder
-from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     build_acquisition_source_identity,
@@ -80,7 +81,9 @@ def test_cancelled_batch_retains_completed_samples_without_publishing_index(
 
     monkeypatch.setattr(
         "xic_extractor.discovery.pipeline._owner_bound_raw_opener",
-        lambda *_args: opener,
+        lambda source, _capability: lambda path, dll_dir: _with_source(
+            opener(path, dll_dir), source
+        ),
     )
 
     class Executor:
@@ -98,7 +101,7 @@ def test_cancelled_batch_retains_completed_samples_without_publishing_index(
     progress = []
     output_dir = tmp_path / "out"
     with pytest.raises(InterruptedError, match="Discovery cancelled"):
-        run_discovery_batch(
+        _run_discovery_batch(
             raw_paths,
             output_dir=output_dir,
             settings=_settings(),
@@ -125,7 +128,7 @@ def test_single_discovery_cancelled_after_acquisition_closes_raw_without_output(
     raw = _FakeRawHandle(events=[])
     output_dir = tmp_path / "out"
     with pytest.raises(InterruptedError, match="Discovery cancelled"):
-        run_discovery(
+        _run_discovery(
             tmp_path / "sample.raw",
             output_dir=output_dir,
             settings=_settings(),
@@ -160,21 +163,10 @@ def test_single_raw_pipeline_groups_strict_ms2_seeds_and_writes_dual_csvs(
             _scan_event(scan_number=101, rt=7.80, product_intensity=3000.0),
             _scan_event(scan_number=202, rt=7.86, product_intensity=9000.0),
         ],
-        rt=np.array([7.70, 7.86, 8.00]),
-        intensity=np.array([10.0, 600.0, 20.0]),
-    )
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-        lambda *args, **kwargs: _ok_peak(
-            rt=7.86,
-            intensity=600.0,
-            area=42.0,
-            start=7.70,
-            end=8.00,
-        ),
+        **_peak_kwargs(7.86, 619.0),
     )
 
-    outputs = run_discovery(
+    outputs = _run_discovery(
         raw_path,
         output_dir=output_dir,
         settings=_settings(seed_rt_gap_min=0.20, enable_blank_qualification=True),
@@ -182,10 +174,9 @@ def test_single_raw_pipeline_groups_strict_ms2_seeds_and_writes_dual_csvs(
         raw_opener=lambda path, dll_dir: raw,
     )
 
-    assert outputs == DiscoveryRunOutputs(
-        candidates_csv=output_dir / "discovery_candidates.csv",
-        review_csv=output_dir / "discovery_review.csv",
-    )
+    assert outputs.candidates_csv == output_dir / "discovery_candidates.csv"
+    assert outputs.review_csv == output_dir / "discovery_review.csv"
+    assert outputs.physical_facts_json == output_dir / "discovery_physical_facts.json"
     rows = _read_csv(outputs.candidates_csv)
     assert len(rows) == 1
     assert rows[0]["candidate_id"] == "TumorBC2312_DNA#202@mz258.1085_p142.0611"
@@ -218,21 +209,10 @@ def test_single_raw_pipeline_writes_inferred_and_direct_same_scan_rows(
                 intensities=[278825.7, 367660.1],
             ),
         ],
-        rt=np.array([23.10, 23.34, 23.50]),
-        intensity=np.array([10.0, 1000.0, 20.0]),
-    )
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-        lambda *args, **kwargs: _ok_peak(
-            rt=23.34,
-            intensity=1000.0,
-            area=123456.0,
-            start=23.10,
-            end=23.50,
-        ),
+        **_peak_kwargs(23.45, 1000.0),
     )
 
-    outputs = run_discovery(
+    outputs = _run_discovery(
         raw_path,
         output_dir=output_dir,
         settings=_settings(seed_rt_gap_min=0.20, ms2_precursor_tol_da=1.6),
@@ -279,30 +259,17 @@ def test_pipeline_retains_distinct_inferred_features_from_one_ms2_in_both_csvs(
             )
         ]
     )
-    areas = {258.1085: 2_000.0, 258.6085: 8_000.0}
+    amplitudes = {258.1085: 250.0, 258.6085: 1_000.0}
     monkeypatch.setattr(
         raw,
         "extract_xic_many",
         lambda requests: tuple(
-            XICTrace.from_arrays(
-                np.array([7.7, 7.8, 7.9]),
-                np.array([10.0, areas[round(request.mz, 4)] / 2, 10.0]),
-            )
+            XICTrace.from_arrays(*_peak_trace(7.8, amplitudes[round(request.mz, 4)]))
             for request in requests
         ),
     )
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-        lambda rt, intensity, peak_config, **kwargs: _ok_peak(
-            rt=7.8,
-            intensity=float(intensity[1]),
-            area=float(intensity[1] * 2),
-            start=7.7,
-            end=7.9,
-        ),
-    )
 
-    outputs = run_discovery(
+    outputs = _run_discovery(
         tmp_path / "Sample.raw",
         output_dir=tmp_path / "out",
         settings=_settings(),
@@ -312,9 +279,11 @@ def test_pipeline_retains_distinct_inferred_features_from_one_ms2_in_both_csvs(
 
     rows = _read_csv(outputs.candidates_csv)
     assert len(rows) == 2
-    assert {
+    areas = {
         round(float(row["precursor_mz"]), 4): float(row["ms1_area"]) for row in rows
-    } == areas
+    }
+    assert set(areas) == set(amplitudes)
+    assert areas[258.6085] > areas[258.1085] > 0.0
     assert len({row["candidate_id"] for row in rows}) == 2
     assert len({row["ms1_feature_row_id"] for row in rows}) == 2
     assert {row["best_ms2_scan_id"] for row in rows} == {"19561"}
@@ -330,7 +299,7 @@ def test_pipeline_retains_distinct_inferred_features_from_one_ms2_in_both_csvs(
 def test_pipeline_writes_header_only_csv_when_no_strict_seeds(tmp_path: Path) -> None:
     raw = _FakeRawHandle(events=[])
 
-    outputs = run_discovery(
+    outputs = _run_discovery(
         tmp_path / "Blank.raw",
         output_dir=tmp_path / "out",
         settings=_settings(),
@@ -362,27 +331,15 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
     raw_by_path = {
         raw_paths[0]: _FakeRawHandle(
             [_scan_event(scan_number=101, rt=7.80, product_intensity=3000.0)],
-            rt=np.array([7.70, 7.80, 8.00]),
-            intensity=np.array([10.0, 600.0, 20.0]),
+            **_peak_kwargs(7.8, 619.0),
         ),
         raw_paths[1]: _FakeRawHandle(
             [_scan_event(scan_number=202, rt=9.10, product_intensity=7000.0)],
-            rt=np.array([9.00, 9.10, 9.30]),
-            intensity=np.array([15.0, 900.0, 25.0]),
+            **_peak_kwargs(9.1, 940.0),
         ),
     }
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-        lambda rt, intensity, peak_config, **kwargs: _ok_peak(
-            rt=float(rt[1]),
-            intensity=float(intensity[1]),
-            area=float(intensity[1] * 0.1),
-            start=float(rt[0]),
-            end=float(rt[-1]),
-        ),
-    )
 
-    outputs = run_discovery_batch(
+    outputs = _run_discovery_batch(
         raw_paths,
         output_dir=tmp_path / "out",
         settings=_settings(enable_blank_qualification=True),
@@ -487,18 +444,8 @@ def test_parallel_batch_preserves_serial_artifacts_and_sample_order(
             for index, path in enumerate(raw_paths)
         }
 
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-        lambda rt, intensity, peak_config, **kwargs: _ok_peak(
-            rt=float(rt[1]),
-            intensity=float(intensity[1]),
-            area=10.0,
-            start=float(rt[0]),
-            end=float(rt[-1]),
-        ),
-    )
     serial_handles = _handles()
-    serial = run_discovery_batch(
+    serial = _run_discovery_batch(
         raw_paths,
         output_dir=tmp_path / "serial",
         settings=_settings(),
@@ -510,7 +457,9 @@ def test_parallel_batch_preserves_serial_artifacts_and_sample_order(
     monkeypatch.setattr(
         "xic_extractor.discovery.pipeline._owner_bound_raw_opener",
         lambda acquisition_source, raw_session_capability: (
-            lambda path, dll_dir: parallel_handles[path]
+            lambda path, dll_dir: _with_source(
+                parallel_handles[path], acquisition_source
+            )
         ),
     )
 
@@ -527,7 +476,7 @@ def test_parallel_batch_preserves_serial_artifacts_and_sample_order(
             pass
 
     progress = []
-    parallel = run_discovery_batch(
+    parallel = _run_discovery_batch(
         raw_paths,
         output_dir=tmp_path / "parallel",
         settings=_settings(),
@@ -558,7 +507,7 @@ def test_parallel_batch_preserves_serial_artifacts_and_sample_order(
 
 def test_parallel_batch_rejects_parent_raw_opener(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="RAW handles inside spawned workers"):
-        run_discovery_batch(
+        _run_discovery_batch(
             (tmp_path / "sample.raw",),
             output_dir=tmp_path / "out",
             settings=_settings(),
@@ -586,6 +535,7 @@ def test_parallel_batch_preserves_first_failure_and_completed_census(
                         sample_index=job.sample_index,
                         sample_stem=job.raw_path.stem,
                         raw_name=job.raw_path.name,
+                        **_job_identity(job),
                         message="RuntimeError: owner boom",
                         timing_records=(
                             TimingRecord(
@@ -617,7 +567,7 @@ def test_parallel_batch_preserves_first_failure_and_completed_census(
 
     recorder = TimingRecorder("discovery")
     with pytest.raises(DiscoveryProcessExecutionError) as caught:
-        run_discovery_batch(
+        _run_discovery_batch(
             raw_paths,
             output_dir=tmp_path / "out",
             settings=_settings(),
@@ -669,6 +619,7 @@ def test_parallel_batch_preserves_every_same_batch_failure(
                     sample_index=job.sample_index,
                     sample_stem=job.raw_path.stem,
                     raw_name=job.raw_path.name,
+                    **_job_identity(job),
                     message=f"RuntimeError: owner boom {job.sample_index}",
                 )
             )
@@ -678,7 +629,7 @@ def test_parallel_batch_preserves_every_same_batch_failure(
             pass
 
     with pytest.raises(DiscoveryProcessExecutionError) as caught:
-        run_discovery_batch(
+        _run_discovery_batch(
             raw_paths,
             output_dir=tmp_path / "out",
             settings=_settings(),
@@ -714,6 +665,7 @@ def test_parallel_batch_rejects_error_caller_authored_owner_counts(
                     sample_index=job.sample_index,
                     sample_stem=job.raw_path.stem,
                     raw_name=job.raw_path.name,
+                    **_job_identity(job),
                     message="RuntimeError: owner boom",
                     measurement_observations=(
                         {
@@ -735,7 +687,7 @@ def test_parallel_batch_rejects_error_caller_authored_owner_counts(
             pass
 
     with pytest.raises(ValueError, match="cannot author"):
-        run_discovery_batch(
+        _run_discovery_batch(
             (raw_path,),
             output_dir=tmp_path / "out",
             settings=_settings(),
@@ -773,6 +725,7 @@ def test_parallel_batch_projects_typed_error_measurements_and_reduces_raw_open(
                     sample_index=job.sample_index,
                     sample_stem=job.raw_path.stem,
                     raw_name=job.raw_path.name,
+                    **_job_identity(job),
                     message="RuntimeError: owner boom",
                     ms1_measurements=measurements,
                     raw_open_receipt=raw_open_receipt,
@@ -785,7 +738,7 @@ def test_parallel_batch_projects_typed_error_measurements_and_reduces_raw_open(
 
     recorder = TimingRecorder("discovery")
     with pytest.raises(DiscoveryProcessExecutionError, match="owner boom"):
-        run_discovery_batch(
+        _run_discovery_batch(
             (raw_path,),
             output_dir=tmp_path / "out",
             settings=_settings(),
@@ -825,6 +778,7 @@ def test_parallel_batch_disabled_timing_skips_ipc_serialization(
                     sample_index=job.sample_index,
                     sample_stem=job.raw_path.stem,
                     raw_name=job.raw_path.name,
+                    **_job_identity(job),
                     message="RuntimeError: owner boom",
                 )
             )
@@ -839,7 +793,7 @@ def test_parallel_batch_disabled_timing_skips_ipc_serialization(
     )
 
     with pytest.raises(DiscoveryProcessExecutionError, match="owner boom"):
-        run_discovery_batch(
+        _run_discovery_batch(
             raw_paths,
             output_dir=tmp_path / "out",
             settings=_settings(),
@@ -850,7 +804,7 @@ def test_parallel_batch_disabled_timing_skips_ipc_serialization(
 
     recorder = TimingRecorder("discovery")
     with pytest.raises(DiscoveryProcessExecutionError, match="owner boom"):
-        run_discovery_batch(
+        _run_discovery_batch(
             raw_paths,
             output_dir=tmp_path / "instrumented-out",
             settings=_settings(),
@@ -881,25 +835,8 @@ def test_discovery_worker_disabled_mode_omits_diagnostic_payload(
         "xic_extractor.discovery.pipeline._discover_completed_sample",
         _fail_with_diagnostics,
     )
-    job = DiscoverySampleProcessJob(
-        sample_index=0,
-        raw_path=raw_path,
-        output_dir=tmp_path / "out",
-        settings=_settings(),
-        peak_config=_peak_config(tmp_path),
-        acquisition_source=build_acquisition_source_identity(
-            raw_path,
-            acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
-            observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
-        ),
-        raw_session_capability=mint_raw_acquisition_session_capability(
-            build_acquisition_source_identity(
-                raw_path,
-                acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
-                observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
-            )
-        ),
-        instrument_diagnostics=False,
+    job = _bound_process_job(
+        raw_path, tmp_path, instrument_diagnostics=False
     )
 
     result = _run_discovery_sample_process_job(job)
@@ -935,25 +872,8 @@ def test_discovery_worker_failure_carries_own_partial_diagnostics(
         "xic_extractor.discovery.pipeline._discover_completed_sample",
         _fail_with_diagnostics,
     )
-    job = DiscoverySampleProcessJob(
-        sample_index=0,
-        raw_path=raw_path,
-        output_dir=tmp_path / "out",
-        settings=_settings(),
-        peak_config=_peak_config(tmp_path),
-        acquisition_source=build_acquisition_source_identity(
-            raw_path,
-            acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
-            observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
-        ),
-        raw_session_capability=mint_raw_acquisition_session_capability(
-            build_acquisition_source_identity(
-                raw_path,
-                acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
-                observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
-            )
-        ),
-        instrument_diagnostics=True,
+    job = _bound_process_job(
+        raw_path, tmp_path, instrument_diagnostics=True
     )
 
     result = _run_discovery_sample_process_job(job)
@@ -1018,6 +938,8 @@ def test_discovery_raw_failure_preserves_open_and_adapter_measurements(
     )
     raw = _FakeRawHandle(events=[])
     raw.raw_open_receipt = receipt
+    spec = _compiled_run_spec((raw_path,), _settings())
+    raw.acquisition_source = spec.acquisition_inputs[0].acquisition_source
     recorder = TimingRecorder("discovery")
     observed_receipts = []
     monkeypatch.setattr(
@@ -1033,6 +955,8 @@ def test_discovery_raw_failure_preserves_open_and_adapter_measurements(
             raw_opener=lambda path, dll_dir: raw,
             timing_recorder=recorder,
             raw_open_receipt_observer=observed_receipts.append,
+            run_spec=spec,
+            acquisition_input=spec.acquisition_inputs[0],
         )
 
     rows = recorder.measurement_observations
@@ -1044,7 +968,7 @@ def test_discovery_raw_failure_preserves_open_and_adapter_measurements(
         for row in rows
     )
 
-def test_discovery_peak_failure_preserves_owner_acquisition_measurements(
+def test_discovery_capture_failure_preserves_owner_acquisition_measurements(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1058,12 +982,12 @@ def test_discovery_peak_failure_preserves_owner_acquisition_measurements(
     raw = _OwnerBoundFakeRawHandle(
         source,
         [_scan_event(scan_number=101, rt=7.80, product_intensity=3000.0)],
-        rt=np.asarray([7.7, 7.8, 7.9]),
-        intensity=np.asarray([10.0, 100.0, 10.0]),
+        **_peak_kwargs(7.8, 100.0),
     )
     recorder = TimingRecorder("discovery")
+    spec = _compiled_run_spec((raw_path,), _settings())
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture._verify_precursor_evidence",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("peak failed")),
     )
 
@@ -1074,6 +998,8 @@ def test_discovery_peak_failure_preserves_owner_acquisition_measurements(
             peak_config=_peak_config(tmp_path),
             raw_opener=lambda path, dll_dir: raw,
             timing_recorder=recorder,
+            run_spec=spec,
+            acquisition_input=spec.acquisition_inputs[0],
         )
 
     rows = {
@@ -1084,7 +1010,7 @@ def test_discovery_peak_failure_preserves_owner_acquisition_measurements(
     assert rows["logical_xic_request_count"]["value"] == 1
     assert rows["xic_batch_count"]["value"] == 1
     assert rows["adapter_chromatogram_call_count"]["value"] == 1
-    assert rows["trace_point_count"]["value"] == 3
+    assert rows["trace_point_count"]["value"] == len(_peak_trace(7.8)[0])
     assert raw.closed
 
 def test_adapter_counter_failure_does_not_mask_discovery_failure(
@@ -1097,6 +1023,9 @@ def test_adapter_counter_failure_does_not_mask_discovery_failure(
             raise RuntimeError("counter failed")
 
     raw = _CounterFailureRaw(events=[])
+    raw_path = tmp_path / "sample.raw"
+    spec = _compiled_run_spec((raw_path,), _settings())
+    raw.acquisition_source = spec.acquisition_inputs[0].acquisition_source
     recorder = TimingRecorder("discovery")
     monkeypatch.setattr(
         "xic_extractor.discovery.pipeline.collect_strict_nl_seeds",
@@ -1105,11 +1034,13 @@ def test_adapter_counter_failure_does_not_mask_discovery_failure(
 
     with pytest.raises(RuntimeError, match="scan failed"):
         _acquire_discovery_sample(
-            tmp_path / "sample.raw",
+            raw_path,
             settings=_settings(),
             peak_config=_peak_config(tmp_path),
             raw_opener=lambda path, dll_dir: raw,
             timing_recorder=recorder,
+            run_spec=spec,
+            acquisition_input=spec.acquisition_inputs[0],
         )
 
     adapter_row = next(
@@ -1141,12 +1072,14 @@ def test_parallel_batch_failure_preserves_completed_worker_diagnostics(
                     sample_stem="sample-0",
                     raw_name="sample-0.raw",
                     message="RuntimeError: owner boom",
+                    **_job_identity(job),
                 )
             else:
                 result = DiscoverySampleProcessResult(
                     sample_index=1,
                     sample_stem="sample-1",
                     publication=cast(Any, None),
+                    **_job_identity(job),
                     timing_records=(
                         TimingRecord(
                             stage="discover.worker",
@@ -1175,7 +1108,7 @@ def test_parallel_batch_failure_preserves_completed_worker_diagnostics(
 
     recorder = TimingRecorder("discovery")
     with pytest.raises(DiscoveryProcessExecutionError) as caught:
-        run_discovery_batch(
+        _run_discovery_batch(
             raw_paths,
             output_dir=tmp_path / "out",
             settings=_settings(),
@@ -1201,7 +1134,7 @@ def test_batch_pipeline_escapes_excel_formula_strings_in_index(
     raw_path.write_bytes(b"formula-path")
     raw = _FakeRawHandle(events=[])
 
-    outputs = run_discovery_batch(
+    outputs = _run_discovery_batch(
         (raw_path,),
         output_dir=tmp_path / "out",
         settings=_settings(),
@@ -1281,7 +1214,7 @@ def test_run_discovery_keeps_stale_pair_when_review_write_fails(
     )
 
     with pytest.raises(OSError, match="simulated review writer failure"):
-        run_discovery(
+        _run_discovery(
             tmp_path / "Blank.raw",
             output_dir=output_dir,
             settings=_settings(),
@@ -1300,18 +1233,7 @@ def test_pipeline_threads_evidence_profile_into_scoring(
 ) -> None:
     raw = _FakeRawHandle(
         [_scan_event(scan_number=101, rt=7.80, product_intensity=3000.0)],
-        rt=np.array([7.70, 7.80, 8.00]),
-        intensity=np.array([10.0, 600.0, 20.0]),
-    )
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-        lambda *args, **kwargs: _ok_peak(
-            rt=7.80,
-            intensity=600.0,
-            area=42.0,
-            start=7.70,
-            end=8.00,
-        ),
+        **_peak_kwargs(7.8, 600.0),
     )
     settings = _settings(
         evidence_profile=DiscoveryEvidenceProfile(
@@ -1327,7 +1249,7 @@ def test_pipeline_threads_evidence_profile_into_scoring(
         )
     )
 
-    outputs = run_discovery(
+    outputs = _run_discovery(
         tmp_path / "Sample.raw",
         output_dir=tmp_path / "out",
         settings=settings,
@@ -1344,18 +1266,7 @@ def test_pipeline_populates_ms1_scan_support_score_from_profile_target(
 ) -> None:
     raw = _FakeRawHandle(
         [_scan_event(scan_number=101, rt=7.80, product_intensity=3000.0)],
-        rt=np.array([7.60, 7.70, 7.80, 7.90, 8.00]),
-        intensity=np.array([10.0, 100.0, 600.0, 300.0, 20.0]),
-    )
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-        lambda *args, **kwargs: _ok_peak(
-            rt=7.80,
-            intensity=600.0,
-            area=42.0,
-            start=7.70,
-            end=8.00,
-        ),
+        **_peak_kwargs(7.8, 600.0),
     )
     settings = _settings(
         evidence_profile=DiscoveryEvidenceProfile(
@@ -1363,12 +1274,12 @@ def test_pipeline_populates_ms1_scan_support_score_from_profile_target(
             weights=DEFAULT_EVIDENCE_PROFILE.weights,
             thresholds=replace(
                 DEFAULT_EVIDENCE_PROFILE.thresholds,
-                scan_support_target=8,
+                scan_support_target=150,
             ),
         )
     )
 
-    outputs = run_discovery(
+    outputs = _run_discovery(
         tmp_path / "Sample.raw",
         output_dir=tmp_path / "out",
         settings=settings,
@@ -1388,7 +1299,7 @@ def test_pipeline_leaves_ms1_scan_support_blank_for_missing_ms1_peak(
         intensity=np.asarray([], dtype=float),
     )
 
-    outputs = run_discovery(
+    outputs = _run_discovery(
         tmp_path / "Sample.raw",
         output_dir=tmp_path / "out",
         settings=_settings(),
@@ -1407,22 +1318,11 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
     _write_sample_background_library(tmp_path)
     raw = _FakeRawHandle(
         [_scan_event(scan_number=101, rt=7.80, product_intensity=3000.0)],
-        rt=np.array([7.70, 7.80, 8.00]),
-        intensity=np.array([10.0, 600.0, 20.0]),
-    )
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-        lambda *args, **kwargs: _ok_peak(
-            rt=7.80,
-            intensity=600.0,
-            area=42.0,
-            start=7.70,
-            end=8.00,
-        ),
+        **_peak_kwargs(7.8, 600.0),
     )
     recorder = TimingRecorder("discovery", run_id="test-discovery")
 
-    run_discovery(
+    _run_discovery(
         tmp_path / "Sample.raw",
         output_dir=tmp_path / "out",
         settings=_settings(enable_blank_qualification=True),
@@ -1440,6 +1340,7 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
         "discover.blank_qualification",
         "discover.write_candidates_csv",
         "discover.write_review_csv",
+        "discover.write_physical_facts_sidecar",
         "discover.publish_outputs",
     }
     assert records_by_stage["discover.ms2_seeds"].sample_stem == "Sample"
@@ -1456,7 +1357,7 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
     assert records_by_stage["discover.write_candidates_csv"].metrics["row_count"] == 1
     assert records_by_stage["discover.write_review_csv"].metrics["row_count"] == 1
     assert records_by_stage["discover.publish_outputs"].metrics == {
-        "artifact_count": 2,
+        "artifact_count": 3,
         "replaced_existing_count": 0,
     }
 
@@ -1466,7 +1367,7 @@ def test_batch_pipeline_records_batch_index_timing(tmp_path: Path) -> None:
     raw = _FakeRawHandle(events=[])
     recorder = TimingRecorder("discovery", run_id="test-batch")
 
-    run_discovery_batch(
+    _run_discovery_batch(
         (raw_path,),
         output_dir=tmp_path / "out",
         settings=_settings(),
@@ -1493,7 +1394,7 @@ def test_pipeline_uses_injected_raw_opener_with_dll_dir_and_closes_context(
         calls.append((path, dll_dir))
         return raw
 
-    run_discovery(
+    _run_discovery(
         raw_path,
         output_dir=tmp_path / "out",
         settings=_settings(),
@@ -1530,6 +1431,7 @@ def test_batch_pipeline_binds_production_open_to_receipted_raw_content(
                 _raw_session_capability,
             )
         )
+        raw.acquisition_source = expected_acquisition_source
         raw.raw_open_receipt = _mint_raw_acquisition_session_receipt(
             _raw_session_capability
         )
@@ -1538,7 +1440,7 @@ def test_batch_pipeline_binds_production_open_to_receipted_raw_content(
     monkeypatch.setattr("xic_extractor.raw_reader.open_raw", _open)
 
     recorder = TimingRecorder("discovery")
-    run_discovery_batch(
+    _run_discovery_batch(
         (raw_path,),
         output_dir=tmp_path / "out",
         settings=_settings(),
@@ -1603,22 +1505,11 @@ def test_owner_bound_discovery_projects_complete_ms1_measurements(
     raw = _OwnerBoundFakeRawHandle(
         source,
         [_scan_event(scan_number=101, rt=7.80, product_intensity=3000.0)],
-        rt=np.asarray([7.7, 7.8, 7.9]),
-        intensity=np.asarray([10.0, 100.0, 10.0]),
-    )
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-        lambda *args, **kwargs: _ok_peak(
-            rt=7.8,
-            intensity=100.0,
-            area=10.0,
-            start=7.7,
-            end=7.9,
-        ),
+        **_peak_kwargs(7.8, 100.0),
     )
     recorder = TimingRecorder("discovery")
 
-    run_discovery(
+    _run_discovery(
         raw_path,
         output_dir=tmp_path / "out",
         settings=_settings(),
@@ -1640,7 +1531,7 @@ def test_owner_bound_discovery_projects_complete_ms1_measurements(
     assert rows["logical_xic_request_count"]["value"] == 1
     assert rows["xic_batch_count"]["value"] == 1
     assert rows["adapter_chromatogram_call_count"]["value"] == 1
-    assert rows["trace_point_count"]["value"] == 3
+    assert rows["trace_point_count"]["value"] == len(_peak_trace(7.8)[0])
     assert rows["discovery_ms1_exact_scan_window_count"]["value"] == 1
     assert rows["discovery_ms1_predicted_chunked_call_count"]["value"] == 1
     assert rows["discovery_ms1_batch_max_requests"]["value"] == 256
@@ -1736,28 +1627,100 @@ def _scan_event(
         scan_number=scan_number,
     )
 
-def _ok_peak(
-    *,
-    rt: float,
-    intensity: float,
-    area: float,
-    start: float,
-    end: float,
-) -> PeakDetectionResult:
-    return PeakDetectionResult(
-        status="OK",
-        peak=PeakResult(
-            rt=rt,
-            intensity=intensity,
-            intensity_smoothed=intensity,
-            area=area,
-            peak_start=start,
-            peak_end=end,
-        ),
-        n_points=3,
-        max_smoothed=intensity,
-        n_prominent_peaks=1,
+def _peak_trace(
+    apex_rt: float, amplitude: float = 1000.0
+) -> tuple[np.ndarray, np.ndarray]:
+    """A resolved Gaussian peak with enough points for the canonical profile."""
+    rt = np.linspace(apex_rt - 1.0, apex_rt + 1.0, 201)
+    return rt, 5.0 + amplitude * np.exp(-0.5 * ((rt - apex_rt) / 0.1) ** 2)
+
+
+def _peak_kwargs(apex_rt: float, amplitude: float) -> dict[str, np.ndarray]:
+    rt, intensity = _peak_trace(apex_rt, amplitude)
+    return {"rt": rt, "intensity": intensity}
+
+
+def _compiled_run_spec(
+    raw_paths: tuple[Path, ...], settings: DiscoverySettings
+) -> Any:
+    for path in raw_paths:
+        if not path.exists():
+            path.write_bytes(f"discovery:{path.stem}".encode())
+    return compile_discovery_processing_run_spec(
+        raw_paths, discovery_settings=settings
     )
+
+
+def _spec_bound_opener(spec: Any, opener: Any) -> Any:
+    sources = {
+        item.sample_stem: item.acquisition_source for item in spec.acquisition_inputs
+    }
+
+    def open_bound(path: Path, dll_dir: Path) -> Any:
+        handle = opener(path, dll_dir)
+        handle.acquisition_source = sources[path.stem]
+        return handle
+
+    return open_bound
+
+
+def _with_source(handle: Any, source: Any) -> Any:
+    handle.acquisition_source = source
+    return handle
+
+
+def _job_identity(job: Any) -> dict[str, str]:
+    return {
+        "run_spec_id": job.run_spec.run_spec_id,
+        "profile_id": job.run_spec.profile_id,
+        "acquisition_source_id": job.acquisition_source.acquisition_source_id,
+    }
+
+
+def _bound_process_job(raw_path: Path, tmp_path: Path, **overrides: Any) -> Any:
+    settings = _settings()
+    spec = _compiled_run_spec((raw_path,), settings)
+    source = spec.acquisition_inputs[0].acquisition_source
+    fields: dict[str, Any] = {
+        "sample_index": 0,
+        "raw_path": raw_path,
+        "output_dir": tmp_path / "out",
+        "settings": settings,
+        "peak_config": _peak_config(tmp_path),
+        "acquisition_source": source,
+        "raw_session_capability": mint_raw_acquisition_session_capability(source),
+        "run_spec": spec,
+        "acquisition_input": spec.acquisition_inputs[0],
+    }
+    fields.update(overrides)
+    return DiscoverySampleProcessJob(**fields)
+
+
+def _run_discovery(raw_path: Path, **kwargs: Any) -> DiscoveryRunOutputs:
+    spec = kwargs.pop("run_spec", None) or _compiled_run_spec(
+        (raw_path,), kwargs["settings"]
+    )
+    opener = kwargs.pop("raw_opener", None)
+    if opener is not None:
+        opener = _spec_bound_opener(spec, opener)
+    return _pipeline.run_discovery(
+        raw_path, run_spec=spec, raw_opener=opener, **kwargs
+    )
+
+
+def _run_discovery_batch(
+    raw_paths: tuple[Path, ...], **kwargs: Any
+) -> DiscoveryBatchOutputs:
+    spec = kwargs.pop("run_spec", None) or _compiled_run_spec(
+        raw_paths, kwargs["settings"]
+    )
+    opener = kwargs.pop("raw_opener", None)
+    if opener is not None:
+        opener = _spec_bound_opener(spec, opener)
+    return _pipeline.run_discovery_batch(
+        raw_paths, run_spec=spec, raw_opener=opener, **kwargs
+    )
+
 
 def _read_csv(path: Path) -> list[dict[str, str]]:
     with path.open(newline="", encoding="utf-8") as handle:
@@ -1860,12 +1823,16 @@ def test_handle_without_acquisition_source_fails_instead_of_scalar_fallback(
 ) -> None:
     raw = _FakeRawHandle(events=[])
     del raw.acquisition_source
+    raw_path = tmp_path / "sample.raw"
+    spec = _compiled_run_spec((raw_path,), _settings())
 
     with pytest.raises(ValueError, match="lacks an acquisition source"):
         _acquire_discovery_sample(
-            tmp_path / "sample.raw",
+            raw_path,
             settings=_settings(),
             peak_config=_peak_config(tmp_path),
             raw_opener=lambda path, dll_dir: raw,
             timing_recorder=TimingRecorder("discovery"),
+            run_spec=spec,
+            acquisition_input=spec.acquisition_inputs[0],
         )
