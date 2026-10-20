@@ -119,8 +119,6 @@ def test_readiness_rejects_historical_targeted_istd_metadata() -> None:
     assert index.readiness_row["full_cohort_metadata_contract_status"] == "fail"
 
 
-
-
 def test_readiness_rejects_legacy_matrix_policy_under() -> None:
     metadata = {
         **_full_cohort_metadata(),

@@ -18,18 +18,21 @@ def test_detected_cell_requires_positive_finite_area() -> None:
     config = AlignmentConfig()
 
     assert (
-        decide_cell_quality(_cell("s1", "FAM001", "detected", 100.0), config)
-        .quality_status
+        decide_cell_quality(
+            _cell("s1", "FAM001", "detected", 100.0), config
+        ).quality_status
         == "detected_quantifiable"
     )
     assert (
-        decide_cell_quality(_cell("s1", "FAM001", "detected", 0.0), config)
-        .quality_status
+        decide_cell_quality(
+            _cell("s1", "FAM001", "detected", 0.0), config
+        ).quality_status
         == "invalid"
     )
     assert (
-        decide_cell_quality(_cell("s1", "FAM001", "detected", math.nan), config)
-        .quality_status
+        decide_cell_quality(
+            _cell("s1", "FAM001", "detected", math.nan), config
+        ).quality_status
         == "invalid"
     )
 
@@ -74,8 +77,9 @@ def test_backfill_requires_complete_peak_and_rt_inside_alignment_window() -> Non
     config = AlignmentConfig(preferred_rt_sec=10.0, max_rt_sec=30.0)
 
     assert (
-        decide_cell_quality(_cell("s1", "FAM001", "backfilled", 100.0), config)
-        .quality_status
+        decide_cell_quality(
+            _cell("s1", "FAM001", "backfilled", 100.0), config
+        ).quality_status
         == "rescue_quantifiable"
     )
     assert (
@@ -210,9 +214,7 @@ def _integration(
         boundary_sources=("test",),
         area_ms1_morphology=morphology_area,
         ms1_morphology_area_source=(
-            "gaussian15_positive_asls_residual"
-            if morphology_area is not None
-            else ""
+            "gaussian15_positive_asls_residual" if morphology_area is not None else ""
         ),
     )
 

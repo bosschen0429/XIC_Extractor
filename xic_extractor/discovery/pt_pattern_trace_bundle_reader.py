@@ -166,8 +166,7 @@ def load_verified_trace_summary_bundle(
         if not discriminator_rows:
             raise ValueError("trace summary must contain at least one candidate row")
         schemas = {
-            str(row.get("schema_version", "")).strip()
-            for row in discriminator_rows
+            str(row.get("schema_version", "")).strip() for row in discriminator_rows
         }
         if len(schemas) != 1:
             raise ValueError("trace summary rows must use one schema_version")
@@ -444,9 +443,7 @@ def _validate_candidate_trace_projection(
         candidate_rows,
         expected_sample_stem=manifest_identity.source_sample_stem,
     )
-    candidates_by_id = {
-        str(row["candidate_id"]).strip(): row for row in candidate_rows
-    }
+    candidates_by_id = {str(row["candidate_id"]).strip(): row for row in candidate_rows}
     expected_assignments = sorted(
         (
             candidate_id,
@@ -722,9 +719,7 @@ def _validate_trace_point_metric_projection(
             if any(start is None or end is None for start, end in boundary_values):
                 raise ValueError("anchor trace metrics contain partial boundaries")
             common_start = max(
-                start
-                for start, _end in boundary_values
-                if start is not None
+                start for start, _end in boundary_values if start is not None
             )
             common_end = min(end for _start, end in boundary_values if end is not None)
             for (row_candidate, _position), rows in points_by_pair.items():
@@ -763,13 +758,10 @@ def _validate_trace_point_metric_projection(
         ]
         if mismatches:
             candidate_id = str(observed_row.get("candidate_id", "")).strip()
-            position_label = str(
-                observed_row.get("position_label", "")
-            ).strip()
+            position_label = str(observed_row.get("position_label", "")).strip()
             raise ValueError(
                 f"trace metrics {candidate_id}:{position_label} are not the "
-                "deterministic projection of trace points: "
-                + ",".join(mismatches)
+                "deterministic projection of trace points: " + ",".join(mismatches)
             )
 
 
@@ -864,9 +856,7 @@ def _validate_trace_summary_projection(
                 expected.update(
                     {
                         "trace_support_status": "review",
-                        "combined_pt_pattern_status": (
-                            "pt_pattern_candidate_review"
-                        ),
+                        "combined_pt_pattern_status": ("pt_pattern_candidate_review"),
                         "reason": (
                             f"anchor_segmentation_{segmentation_status}:"
                             f"{segmentation_reason}"
@@ -882,8 +872,7 @@ def _validate_trace_summary_projection(
         if mismatches:
             raise ValueError(
                 f"trace summary row {row_index}: aggregate fields are not the "
-                "deterministic projection of trace metrics: "
-                + ",".join(mismatches)
+                "deterministic projection of trace metrics: " + ",".join(mismatches)
             )
         if artifact_role == PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE:
             _validate_anchor_segmentation_projection(
@@ -1028,9 +1017,7 @@ def _validate_anchor_segmentation_projection(
                 "flat",
                 "unavailable",
             }:
-                raise ValueError(
-                    f"trace metrics contains unsupported {trend_field}"
-                )
+                raise ValueError(f"trace metrics contains unsupported {trend_field}")
         for text_field in (
             "anchor_segment_class",
             "anchor_segment_boundary_stop_reason",

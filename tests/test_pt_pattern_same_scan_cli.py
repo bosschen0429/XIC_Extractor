@@ -132,16 +132,12 @@ def test_same_scan_cli_runs_from_npz_without_raw(tmp_path: Path) -> None:
     assert (output_dir / "pt_pattern_same_scan_summary.json").is_file()
     assert (output_dir / "pt_pattern_same_scan_report.html").is_file()
     summary = json.loads(
-        (output_dir / "pt_pattern_same_scan_summary.json").read_text(
-            encoding="utf-8"
-        )
+        (output_dir / "pt_pattern_same_scan_summary.json").read_text(encoding="utf-8")
     )
     assert summary["source_sample_stem"] == "SampleA"
     assert summary["index_input"]["path"] == str(index_path.resolve())
     assert summary["index_input"]["sha256"]
-    assert summary["index_input"]["source_provenance"]["source_sha256"] == (
-        "a" * 64
-    )
+    assert summary["index_input"]["source_provenance"]["source_sha256"] == ("a" * 64)
 
 
 def test_same_scan_cli_rejects_npz_without_source_provenance(

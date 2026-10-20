@@ -559,14 +559,17 @@ class _PatternCenter:
 
 
 def _pattern_center(
-    sample: str, peaks: Sequence[ElutionLandmark], rt_frame: RtFrame | None,
+    sample: str,
+    peaks: Sequence[ElutionLandmark],
+    rt_frame: RtFrame | None,
 ) -> _PatternCenter:
     return _PatternCenter(
         sum(peak.apex_rt for peak in peaks) / len(peaks),
         (
             sum(rt_frame.common_rt_min(sample, peak.apex_rt) for peak in peaks)
             / len(peaks)
-            if rt_frame is not None and rt_frame.has_support(sample) else None
+            if rt_frame is not None and rt_frame.has_support(sample)
+            else None
         ),
     )
 
@@ -673,7 +676,10 @@ def resolve_peak_trajectories(
     if not contexts or not owners:
         return PeakTrajectories()
     nodes, patterns, owner_nodes = _local_patterns(
-        owners, contexts, config, rt_frame,
+        owners,
+        contexts,
+        config,
+        rt_frame,
     )
     # Calibration arrives after initial grouping. Preserve the supplied context
     # even when raw-RT pruning cannot yet use it, so regroup can reconsider it.
@@ -681,7 +687,8 @@ def resolve_peak_trajectories(
     if not patterns:
         return PeakTrajectories(source_contexts=retained_contexts)
     calibrated_samples = {
-        sample for sample in {node.sample for node in nodes}
+        sample
+        for sample in {node.sample for node in nodes}
         if rt_frame is not None and rt_frame.has_support(sample)
     }
     common_peaks = {}
@@ -696,13 +703,18 @@ def resolve_peak_trajectories(
                 peak.height,
                 rt_frame.common_rt_min(observed_node.sample, peak.apex_rt + half_width)
                 - rt_frame.common_rt_min(
-                    observed_node.sample, peak.apex_rt - half_width,
+                    observed_node.sample,
+                    peak.apex_rt - half_width,
                 ),
             )
     matches = []
     comparisons = 0
     for left, right in _neighbor_pairs(
-        patterns, nodes, config, injection_order, rt_frame,
+        patterns,
+        nodes,
+        config,
+        injection_order,
+        rt_frame,
     ):
         comparisons += 1
         calibrated = {left.sample, right.sample} <= calibrated_samples
@@ -956,7 +968,9 @@ def _local_patterns(
             ):
                 continue
             center = _pattern_center(
-                context.sample_stem, (peaks[start], peaks[end - 1]), rt_frame,
+                context.sample_stem,
+                (peaks[start], peaks[end - 1]),
+                rt_frame,
             )
             if any(
                 center.distance_to(seed_centers[index]) * 60.0 <= config.max_rt_sec
@@ -983,7 +997,9 @@ def _neighbor_pairs(
     mass_index = _MassIndex([pattern.mz for pattern in patterns], config.preferred_ppm)
     centers = [
         _pattern_center(
-            pattern.sample, [nodes[i].landmark for i in pattern.nodes], rt_frame,
+            pattern.sample,
+            [nodes[i].landmark for i in pattern.nodes],
+            rt_frame,
         )
         for pattern in patterns
     ]

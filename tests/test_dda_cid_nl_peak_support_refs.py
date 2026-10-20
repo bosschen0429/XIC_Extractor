@@ -354,8 +354,7 @@ def test_cid_nl_support_accepts_loss_inside_ion_window(tmp_path: Path) -> None:
 
     assert support.content.observed_loss_error_ppm == pytest.approx(40.0)
     assert (
-        support.content.observed_loss_error_da
-        < support.content.neutral_loss_window_da
+        support.content.observed_loss_error_da < support.content.neutral_loss_window_da
     )
 
 

@@ -41,9 +41,7 @@ def read_delimited_rows(
                 raise ValueError(
                     f"{path}:{row_index}: row has more cells than declared header"
                 )
-            truncated = [
-                column for column, value in row.items() if value is None
-            ]
+            truncated = [column for column, value in row.items() if value is None]
             disallowed_truncated = [
                 column for column in truncated if column not in allowed_missing
             ]
@@ -77,9 +75,7 @@ def validate_delimited_header(
 
     header = tuple(fieldnames or ())
     blank_positions = [
-        str(index)
-        for index, column in enumerate(header, start=1)
-        if not column.strip()
+        str(index) for index, column in enumerate(header, start=1) if not column.strip()
     ]
     if blank_positions:
         raise ValueError(
@@ -451,9 +447,7 @@ def required_indexes(
     required_columns: Sequence[str],
     sheet_name: str,
 ) -> dict[str, int]:
-    indexes = {
-        str(value).strip(): index for index, value in enumerate(header) if value
-    }
+    indexes = {str(value).strip(): index for index, value in enumerate(header) if value}
     missing = [column for column in required_columns if column not in indexes]
     if missing:
         raise ValueError(

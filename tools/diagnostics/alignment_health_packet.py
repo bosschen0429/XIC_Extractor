@@ -210,9 +210,7 @@ def _summary_metrics(
     seed_rows: Sequence[Mapping[str, str]],
     sentinels: Sequence[Mapping[str, object]],
 ) -> dict[str, object]:
-    sample_columns = [
-        column for column in matrix_header if column not in {"Mz", "RT"}
-    ]
+    sample_columns = [column for column in matrix_header if column not in {"Mz", "RT"}]
     row_flag_counts: Counter[str] = Counter()
     identity_counts: Counter[str] = Counter()
     for row in review_rows:

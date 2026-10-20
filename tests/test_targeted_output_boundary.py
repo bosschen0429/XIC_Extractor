@@ -964,8 +964,7 @@ def test_concurrent_non_replacing_publications_are_collision_atomic(
     worklist_text = str(list(workbook["需檢查"].values))
     workbook.close()
     assert (
-        sum(marker in worklist_text for marker in ("concurrent-a", "concurrent-b"))
-        == 1
+        sum(marker in worklist_text for marker in ("concurrent-a", "concurrent-b")) == 1
     )
     assert not list(config.output_csv.parent.glob(".xic-targeted-publish-*"))
     assert not (config.output_csv.parent / ".xic-targeted-publish.lock").exists()

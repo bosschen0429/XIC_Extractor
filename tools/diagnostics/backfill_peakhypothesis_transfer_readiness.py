@@ -40,18 +40,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.full_cohort_hypothesis_review_summary_json is not None
             else None
         )
-        index = (
-            backfill_peakhypothesis_transfer_readiness.build_transfer_readiness(
-                promotion_summary=promotion_summary,
-                activation_acceptance_rows=activation_acceptance_rows,
-                full_cohort_metadata=full_cohort_metadata,
-                full_cohort_counts=full_cohort_counts,
-                full_cohort_acceptance_gate_summary=full_cohort_acceptance_gate_summary,
-                full_cohort_winner_remap_summary=full_cohort_winner_remap_summary,
-                full_cohort_hypothesis_review_summary=full_cohort_hypothesis_review_summary,
-                source_run_id=args.source_run_id,
-                expected_full_cohort_sample_columns=args.expected_full_cohort_sample_columns,
-            )
+        index = backfill_peakhypothesis_transfer_readiness.build_transfer_readiness(
+            promotion_summary=promotion_summary,
+            activation_acceptance_rows=activation_acceptance_rows,
+            full_cohort_metadata=full_cohort_metadata,
+            full_cohort_counts=full_cohort_counts,
+            full_cohort_acceptance_gate_summary=full_cohort_acceptance_gate_summary,
+            full_cohort_winner_remap_summary=full_cohort_winner_remap_summary,
+            full_cohort_hypothesis_review_summary=full_cohort_hypothesis_review_summary,
+            source_run_id=args.source_run_id,
+            expected_full_cohort_sample_columns=args.expected_full_cohort_sample_columns,
         )
         outputs = (
             backfill_peakhypothesis_transfer_readiness.write_transfer_readiness_outputs(

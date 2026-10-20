@@ -96,9 +96,7 @@ def diagnose_pt_pattern_trace_batch(
             tuple(
                 dict(metric_row)
                 | _anchor_segmentation_metric_fields(
-                    boundary_by_position.get(
-                        str(metric_row.get("position_label", ""))
-                    )
+                    boundary_by_position.get(str(metric_row.get("position_label", "")))
                 )
                 for metric_row in anchor.metric_rows
             ),
@@ -128,8 +126,7 @@ def diagnose_pt_pattern_trace_batch(
         anchor_summary_rows.append(_with_anchor_schema(anchor_summary))
 
         anchor_metric_rows.extend(
-            _with_anchor_schema(metric_row)
-            for metric_row in projected_anchor_metrics
+            _with_anchor_schema(metric_row) for metric_row in projected_anchor_metrics
         )
         anchor_trace_point_rows.extend(
             _with_anchor_schema(row) for row in anchor.trace_point_rows
@@ -154,9 +151,7 @@ def project_anchor_local_metric_rows(
     output = [dict(row) for row in metric_rows]
     if segmentation_status != "clear":
         return tuple(output)
-    by_position = {
-        str(row.get("position_label", "")).strip(): row for row in output
-    }
+    by_position = {str(row.get("position_label", "")).strip(): row for row in output}
     if set(by_position) != set(POSITION_LABELS):
         raise ValueError(
             "anchor metric projection requires exactly one row per Pt position"
@@ -192,20 +187,10 @@ def project_anchor_local_metric_rows(
                 "anchor_segment_rt_start_min": start,
                 "anchor_segment_rt_end_min": end,
                 "anchor_segment_duration_sec": duration_sec,
-                "anchor_segment_owns_common_start": str(
-                    start == common_start
-                ).lower(),
-                "anchor_segment_owns_common_end": str(
-                    end == common_end
-                ).lower(),
-                "anchor_segment_left_clip_sec": (
-                    common_start - start
-                )
-                * 60.0,
-                "anchor_segment_right_clip_sec": (
-                    end - common_end
-                )
-                * 60.0,
+                "anchor_segment_owns_common_start": str(start == common_start).lower(),
+                "anchor_segment_owns_common_end": str(end == common_end).lower(),
+                "anchor_segment_left_clip_sec": (common_start - start) * 60.0,
+                "anchor_segment_right_clip_sec": (end - common_end) * 60.0,
                 "anchor_segment_common_retained_fraction": (
                     common_duration_sec / duration_sec
                 ),
@@ -238,9 +223,7 @@ def project_anchor_segmentation_summary_fields(
             "anchor_segmentation_min_common_retained_fraction": "",
             "anchor_segmentation_max_common_left_residual_fraction": "",
             "anchor_segmentation_max_common_right_residual_fraction": "",
-            "anchor_segmentation_descending_at_common_right_position_labels": (
-                "none"
-            ),
+            "anchor_segmentation_descending_at_common_right_position_labels": ("none"),
         }
     if segmentation_reason != "one_anchor_segment_per_position":
         raise ValueError("clear anchor segmentation reason mismatch")
@@ -248,9 +231,7 @@ def project_anchor_segmentation_summary_fields(
         metric_rows,
         segmentation_status=segmentation_status,
     )
-    by_position = {
-        str(row.get("position_label", "")).strip(): row for row in projected
-    }
+    by_position = {str(row.get("position_label", "")).strip(): row for row in projected}
     ordered_rows = [by_position[position] for position in POSITION_LABELS]
     starts = [
         _csv_precision_float(
@@ -288,8 +269,7 @@ def project_anchor_segmentation_summary_fields(
         and (
             str(row.get("anchor_segment_class", ""))
             in {"shoulder_candidate", "low_scan_segment"}
-            or "review"
-            in str(row.get("anchor_segment_boundary_stop_reason", ""))
+            or "review" in str(row.get("anchor_segment_boundary_stop_reason", ""))
         )
     ]
     descending_right = [
@@ -302,10 +282,7 @@ def project_anchor_segmentation_summary_fields(
         "anchor_segmentation_reason": segmentation_reason,
         "anchor_segmentation_common_rt_start_min": common_start,
         "anchor_segmentation_common_rt_end_min": common_end,
-        "anchor_segmentation_common_duration_sec": (
-            common_end - common_start
-        )
-        * 60.0,
+        "anchor_segmentation_common_duration_sec": (common_end - common_start) * 60.0,
         "anchor_segmentation_common_start_owner_labels": _labels(start_owners),
         "anchor_segmentation_common_end_owner_labels": _labels(end_owners),
         "anchor_segmentation_boundary_review_status": (

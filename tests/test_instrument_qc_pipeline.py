@@ -52,9 +52,7 @@ def _trace(apex_rt: float) -> tuple[np.ndarray, np.ndarray]:
 
 def _long_trace(apex_rt: float) -> tuple[np.ndarray, np.ndarray]:
     rt = np.linspace(apex_rt - 0.4, apex_rt + 0.4, 9)
-    intensity = np.array(
-        [0.0, 10.0, 100.0, 400.0, 1000.0, 400.0, 100.0, 10.0, 0.0]
-    )
+    intensity = np.array([0.0, 10.0, 100.0, 400.0, 1000.0, 400.0, 100.0, 10.0, 0.0])
     return rt, intensity
 
 
@@ -227,8 +225,7 @@ def test_pipeline_can_emit_mixstds_outputs_from_explicit_registry(
     _write_raw(raw_root / "STDs" / "Mix_STDs_01.raw")
     registry = tmp_path / "mixstds.csv"
     registry.write_text(
-        "compound,precursor_mz,rt_min,rt_max,ppm_tol\n"
-        "STD-A,123.4567,1.0,2.0,10\n",
+        "compound,precursor_mz,rt_min,rt_max,ppm_tol\nSTD-A,123.4567,1.0,2.0,10\n",
         encoding="utf-8",
     )
 
@@ -346,6 +343,5 @@ def test_pipeline_reports_mixstds_missing_registry_without_extraction(
     assert output.mixstds_trend_tsv is not None
     assert output.mixstds_trend_tsv.exists()
     assert any(
-        diag.issue == "MIXSTDS_TARGET_REGISTRY_MISSING"
-        for diag in output.diagnostics
+        diag.issue == "MIXSTDS_TARGET_REGISTRY_MISSING" for diag in output.diagnostics
     )

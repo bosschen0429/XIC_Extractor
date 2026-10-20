@@ -166,9 +166,7 @@ def require_repository_text_view(
 
 def repository_git_env() -> dict[str, str]:
     return {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith("GIT_")
+        key: value for key, value in os.environ.items() if not key.startswith("GIT_")
     }
 
 
@@ -219,9 +217,7 @@ def _parse_batch_blobs(
             returned_oid, object_type, raw_size = header.split(" ")
             size = int(raw_size)
         except (UnicodeDecodeError, ValueError) as exc:
-            raise RepositoryViewError(
-                "malformed git cat-file batch response"
-            ) from exc
+            raise RepositoryViewError("malformed git cat-file batch response") from exc
         if size < 0:
             raise RepositoryViewError("malformed git cat-file batch byte count")
         if returned_oid.lower() != requested_oid.lower() or object_type != "blob":
@@ -252,11 +248,7 @@ def _filesystem_repository_text_view(
 ) -> RepositoryTextView:
     required = {normalize_repo_rel_path(path) for path in required_text_paths}
     paths = tuple(
-        sorted(
-            repo_rel(path, root)
-            for path in root.rglob("*")
-            if path.is_file()
-        )
+        sorted(repo_rel(path, root) for path in root.rglob("*") if path.is_file())
     )
     entries = {
         path: RepositoryIndexEntry(path, "filesystem", "filesystem", 0)
@@ -538,10 +530,8 @@ def markdown_without_fenced_code(text: str) -> str:
         logical_line = closing_container_content(line, fence_blockquote_indents)
         if (
             logical_line is not None
-            and leading_indent_width(logical_line)
-            >= fence_container_indent_width
-            and leading_indent_width(logical_line)
-            <= fence_container_indent_width + 3
+            and leading_indent_width(logical_line) >= fence_container_indent_width
+            and leading_indent_width(logical_line) <= fence_container_indent_width + 3
             and re.match(
                 rf"^[ \t]*{re.escape(fence_character)}"
                 rf"{{{fence_length},}}[ \t]*$",
@@ -623,10 +613,7 @@ def markdown_without_code(text: str) -> str:
             if closing_start < 0:
                 break
             candidate_end = closing_start + 1
-            while (
-                candidate_end < len(unfenced)
-                and unfenced[candidate_end] == "`"
-            ):
+            while candidate_end < len(unfenced) and unfenced[candidate_end] == "`":
                 candidate_end += 1
             if candidate_end - closing_start == run_length:
                 closing_end = candidate_end
@@ -663,8 +650,7 @@ def markdown_without_html_comments(text: str) -> str:
             comment_end = text.find("-->", index + 4)
             end = len(text) if comment_end < 0 else comment_end + 3
             visible.extend(
-                "\n" if character == "\n" else " "
-                for character in text[index:end]
+                "\n" if character == "\n" else " " for character in text[index:end]
             )
             index = end
             continue
@@ -730,9 +716,7 @@ def markdown_link_targets(text: str) -> tuple[str, ...]:
         if target:
             definitions.setdefault(label, target)
 
-    reference_pattern = re.compile(
-        r"\[((?:\\.|[^\]\\\n])*)\]\[((?:\\.|[^\]\\\n])*)\]"
-    )
+    reference_pattern = re.compile(r"\[((?:\\.|[^\]\\\n])*)\]\[((?:\\.|[^\]\\\n])*)\]")
     for match in reference_pattern.finditer(text):
         occupied_spans.append(match.span())
         if _is_escaped(text, match.start()) or (

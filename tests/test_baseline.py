@@ -76,9 +76,7 @@ def test_rt_baseline_preserves_linear_background(
     lam: float, n_points: int, slope: float
 ) -> None:
     unit_rt = np.linspace(0.0, 1.0, n_points)
-    rt = 3.0 * (
-        unit_rt + 0.55 * np.sin(2.0 * np.pi * unit_rt) / (2.0 * np.pi)
-    )
+    rt = 3.0 * (unit_rt + 0.55 * np.sin(2.0 * np.pi * unit_rt) / (2.0 * np.pi))
     expected = 7.5 + slope * rt
 
     baseline = asls_baseline_on_rt(rt, expected, lam=lam, p=0.01)
@@ -107,8 +105,7 @@ def test_rt_baseline_gaussian_area_is_stable_across_sampling_grids(
         rt = duration * unit_rt
         if nonuniform:
             rt = duration * (
-                unit_rt
-                + 0.55 * np.sin(2.0 * np.pi * unit_rt) / (2.0 * np.pi)
+                unit_rt + 0.55 * np.sin(2.0 * np.pi * unit_rt) / (2.0 * np.pi)
             )
         background = 10.0 + 0.8 * rt
         peak = amplitude * np.exp(-0.5 * ((rt - centre) / sigma) ** 2)

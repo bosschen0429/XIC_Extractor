@@ -27,9 +27,7 @@ def _physical_vector(values: object, *, field: str) -> tuple[float, ...]:
     try:
         array = np.asarray(values, dtype=float)
     except (TypeError, ValueError) as exc:
-        raise TypeError(
-            f"{field} must be a one-dimensional numeric sequence"
-        ) from exc
+        raise TypeError(f"{field} must be a one-dimensional numeric sequence") from exc
     if array.ndim != 1:
         raise ValueError(f"{field} must be one-dimensional")
     return tuple(float(value) for value in array)

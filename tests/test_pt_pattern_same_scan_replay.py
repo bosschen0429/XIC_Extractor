@@ -16,9 +16,7 @@ from xic_extractor.ms1_scan_index import MS1Scan
 
 def _write_csv(path: Path, rows: list[dict[str, str]]) -> None:
     prepared_rows = [
-        _complete_candidate_assignment(row)
-        if "base_feature_id" in row
-        else dict(row)
+        _complete_candidate_assignment(row) if "base_feature_id" in row else dict(row)
         for row in rows
     ]
     with path.open("w", newline="", encoding="utf-8") as handle:
@@ -229,18 +227,27 @@ def test_same_scan_replay_writes_contract_comparison_and_conflict_audit(
     assert summary["index_input"]["sha256"]
 
     by_seed = {(row["source_set"], row["seed_id"]): row for row in rows}
-    assert by_seed[("current_feature_hypothesis", "candidate-a")][
-        "contract_b_strict_full_same_scan"
-    ] == "TRUE"
-    assert by_seed[("current_feature_hypothesis", "candidate-b")][
-        "contract_b_strict_full_same_scan"
-    ] == "FALSE"
+    assert (
+        by_seed[("current_feature_hypothesis", "candidate-a")][
+            "contract_b_strict_full_same_scan"
+        ]
+        == "TRUE"
+    )
+    assert (
+        by_seed[("current_feature_hypothesis", "candidate-b")][
+            "contract_b_strict_full_same_scan"
+        ]
+        == "FALSE"
+    )
     assert by_seed[("known_named", "known:base_mz=500")]["expected_class"] == (
         "expected_positive"
     )
-    assert by_seed[("known_named", "known:base_mz=500")][
-        "contract_a_current_feature_accept"
-    ] == "TRUE"
+    assert (
+        by_seed[("known_named", "known:base_mz=500")][
+            "contract_a_current_feature_accept"
+        ]
+        == "TRUE"
+    )
     assert by_seed[("known_named", "known:base_mz=600")]["expected_class"] == (
         "non_pt_control"
     )
@@ -386,9 +393,7 @@ def test_candidate_contexts_reject_stale_evidence_coordinates(
     )
     _write_csv(
         evidence_csv,
-        [
-            _evidence_row("candidate-a", base_mz="501.0")
-        ],
+        [_evidence_row("candidate-a", base_mz="501.0")],
     )
 
     with pytest.raises(ValueError, match="base_mz.*does not match"):
@@ -731,9 +736,7 @@ def test_same_scan_replay_namespaces_candidate_and_known_seed_identity(
     )
     _write_csv(
         evidence_csv,
-        [
-            _evidence_row("known:base_mz=500")
-        ],
+        [_evidence_row("known:base_mz=500")],
     )
     _write_csv(
         known_csv,

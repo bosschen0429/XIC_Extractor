@@ -178,9 +178,7 @@ def test_scan_link_builder_enforces_consecutive_intensity_threshold() -> None:
     )
 
     assert features == ()
-    assert [row.reason for row in diagnostics] == [
-        "too_few_consecutive_intense_scans"
-    ]
+    assert [row.reason for row in diagnostics] == ["too_few_consecutive_intense_scans"]
 
 
 def test_consecutive_intensity_gate_fails_closed_without_scan_positions() -> None:
@@ -488,9 +486,9 @@ def test_large_sparse_component_exceeding_edge_bound_degrades_to_greedy() -> Non
     assert summary.candidate_edge_count == trace_count * 2 - 1
     assert summary.conflict_component_count == 1
     assert summary.degraded_assignment_component_count == 1
-    assert {
-        row.assignment_mode for row in diagnostics
-    } == {"greedy_edge_count_limited_component"}
+    assert {row.assignment_mode for row in diagnostics} == {
+        "greedy_edge_count_limited_component"
+    }
     assert all(row.assignment_degraded_large_component for row in diagnostics)
 
 

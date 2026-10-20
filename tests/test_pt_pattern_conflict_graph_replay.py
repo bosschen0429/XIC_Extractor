@@ -86,10 +86,7 @@ def test_conflict_graph_replay_writes_pairwise_sidecars_and_legacy_comparison(
     assert summary["changes_current_machine_call"] is False
     assert components[0]["pairwise_compatible_pair_count"] == "1"
     assert components[0]["is_clique"] == "FALSE"
-    assert (
-        components[0]["component_wide_at_most_one_would_overconstrain"]
-        == "TRUE"
-    )
+    assert components[0]["component_wide_at_most_one_would_overconstrain"] == "TRUE"
     assert legacy[0]["induced_edge_count"] == "2"
     assert legacy[0]["induced_pairwise_compatible_pair_count"] == "1"
     assert legacy[0]["legacy_preferred_candidate_id"] == ""
@@ -206,9 +203,7 @@ def test_conflict_graph_summary_is_path_and_report_label_independent(
     )
 
     assert first["summary_json"].read_bytes() == second["summary_json"].read_bytes()
-    first_metadata = json.loads(
-        first["run_metadata_json"].read_text(encoding="utf-8")
-    )
+    first_metadata = json.loads(first["run_metadata_json"].read_text(encoding="utf-8"))
     second_metadata = json.loads(
         second["run_metadata_json"].read_text(encoding="utf-8")
     )

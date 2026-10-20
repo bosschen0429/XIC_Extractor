@@ -241,12 +241,8 @@ def run_diagnostic_gate(
         "oracle_promotion_summary_json_sha256": (
             oracle_bundle.summary_json_sha256 if oracle_bundle else ""
         ),
-        "oracle_packet_id": (
-            oracle_bundle.oracle_packet_id if oracle_bundle else ""
-        ),
-        "oracle_bundle_row_count": (
-            len(oracle_bundle.rows) if oracle_bundle else 0
-        ),
+        "oracle_packet_id": (oracle_bundle.oracle_packet_id if oracle_bundle else ""),
+        "oracle_bundle_row_count": (len(oracle_bundle.rows) if oracle_bundle else 0),
         "row_count": len(gate_rows),
         "diagnostic_gate_call_counts": dict(sorted(call_counts.items())),
         "oracle_call_counts": dict(sorted(oracle_counts.items())),

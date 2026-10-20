@@ -351,11 +351,13 @@ def test_worker_loss_preserves_open_fact_and_closes_cleanup_unknown(
     )
 
     lost = record_runtime_resource_cleanup(
-        state, resource_key="session:a",
+        state,
+        resource_key="session:a",
         outcome=RuntimeResourceCleanupOutcome.UNKNOWN_AFTER_WORKER_LOSS,
     )
     replay = record_runtime_resource_cleanup(
-        lost, resource_key="session:a",
+        lost,
+        resource_key="session:a",
         outcome=RuntimeResourceCleanupOutcome.UNKNOWN_AFTER_WORKER_LOSS,
     )
     coordinator = propose_attempt_terminal(lost)

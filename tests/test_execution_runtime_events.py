@@ -258,8 +258,7 @@ def test_invalid_required_work_manifest_drives_existing_failed_proposal(
         AttemptLifecycleEventKind.TERMINAL_PROPOSAL,
     ]
     assert (
-        preflight.history.events[-1].proposed_outcome
-        is AttemptTerminalOutcome.FAILED
+        preflight.history.events[-1].proposed_outcome is AttemptTerminalOutcome.FAILED
     )
     with pytest.raises(
         AttemptLifecycleContractError,
@@ -294,8 +293,7 @@ def test_required_work_manifest_attempt_mismatch_fails_closed(tmp_path: Path) ->
     assert preflight.accepted is False
     assert preflight.manifest is None
     assert (
-        preflight.history.events[-1].kind
-        is AttemptLifecycleEventKind.TERMINAL_PROPOSAL
+        preflight.history.events[-1].kind is AttemptLifecycleEventKind.TERMINAL_PROPOSAL
     )
 
 

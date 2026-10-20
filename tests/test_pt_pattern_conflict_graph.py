@@ -67,8 +67,7 @@ def test_conflict_graph_keeps_pairwise_edges_inside_non_clique_component() -> No
         vertex.source_hypothesis_id: vertex.vertex_id for vertex in graph.vertices
     }
     edge_pairs = {
-        frozenset((edge.left_vertex_id, edge.right_vertex_id))
-        for edge in graph.edges
+        frozenset((edge.left_vertex_id, edge.right_vertex_id)) for edge in graph.edges
     }
 
     assert len(graph.components) == 1
@@ -102,9 +101,7 @@ def test_conflict_graph_is_deterministic_across_input_and_mapping_order() -> Non
     right = _hypothesis("right", ("shared", "f5", "f6", "f7"))
     reordered_left = PtConflictGraphInput(
         source_hypothesis_id="left",
-        hypothesis_source_artifact_sha256=(
-            left.hypothesis_source_artifact_sha256
-        ),
+        hypothesis_source_artifact_sha256=(left.hypothesis_source_artifact_sha256),
         hypothesis_source_schema_version=left.hypothesis_source_schema_version,
         claims_by_position=dict(reversed(tuple(left.claims_by_position.items()))),
     )

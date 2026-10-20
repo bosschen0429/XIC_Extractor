@@ -262,7 +262,6 @@ class BackfillEvidenceRecord:
         )
 
 
-
 @dataclass(frozen=True, slots=True)
 class BackfillEvidenceCandidateAssignment:
     sample_stem: str

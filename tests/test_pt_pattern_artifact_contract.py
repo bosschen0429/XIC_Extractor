@@ -74,9 +74,7 @@ def _evidence_row(**overrides: object) -> dict[str, object]:
         "trace_rule_reason": "full_pattern_close_apex_shape_overlap",
         "evidence_rule_id": pt_pattern_rule_id(DEFAULT_THRESHOLDS),
         "evidence_rule_owner": EVIDENCE_RULE_OWNER,
-        "required_combined_status": (
-            DEFAULT_THRESHOLDS.required_combined_status
-        ),
+        "required_combined_status": (DEFAULT_THRESHOLDS.required_combined_status),
         "min_non_base_positions_supported": (
             DEFAULT_THRESHOLDS.min_non_base_positions_supported
         ),
@@ -90,9 +88,7 @@ def _evidence_row(**overrides: object) -> dict[str, object]:
         "effective_max_abs_apex_delta_threshold_sec": (
             DEFAULT_THRESHOLDS.max_abs_apex_delta_sec
         ),
-        "min_pearson_r_to_base_threshold": (
-            DEFAULT_THRESHOLDS.min_pearson_r_to_base
-        ),
+        "min_pearson_r_to_base_threshold": (DEFAULT_THRESHOLDS.min_pearson_r_to_base),
         "min_active_overlap_fraction_threshold": (
             DEFAULT_THRESHOLDS.min_active_overlap_fraction
         ),
@@ -149,9 +145,7 @@ def test_assignment_fingerprint_rejects_non_pt_geometry(
     message: str,
 ) -> None:
     with pytest.raises(ValueError, match=message):
-        pt_pattern_candidate_assignment_fingerprint(
-            _candidate_row(**{field: value})
-        )
+        pt_pattern_candidate_assignment_fingerprint(_candidate_row(**{field: value}))
 
 
 @pytest.mark.parametrize(
@@ -173,9 +167,10 @@ def test_identity_contract_rejects_conflicting_shared_fields(
             _trace_summary_row(**{field: conflicting_value}),
         )
 
-    assert "regenerate the trace summary from the same candidate csv" in str(
-        error.value
-    ).lower()
+    assert (
+        "regenerate the trace summary from the same candidate csv"
+        in str(error.value).lower()
+    )
 
 
 @pytest.mark.parametrize(

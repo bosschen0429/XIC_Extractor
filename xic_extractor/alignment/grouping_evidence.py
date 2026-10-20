@@ -3,6 +3,7 @@
 Membership, edge scoring, and matrix identity consume completed support decisions
 without unpacking CID-NL assessment/physical membership bindings themselves.
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence

@@ -416,12 +416,8 @@ def _vertex_row(
         "vertex_id": vertex.vertex_id,
         "source_hypothesis_id": vertex.source_hypothesis_id,
         "sample_stem": vertex.sample_stem,
-        "hypothesis_source_artifact_sha256": (
-            vertex.hypothesis_source_artifact_sha256
-        ),
-        "hypothesis_source_schema_version": (
-            vertex.hypothesis_source_schema_version
-        ),
+        "hypothesis_source_artifact_sha256": (vertex.hypothesis_source_artifact_sha256),
+        "hypothesis_source_schema_version": (vertex.hypothesis_source_schema_version),
         "feature_source_artifact_sha256": next(
             iter(position_claims.values())
         ).feature_source_artifact_sha256,
@@ -500,12 +496,16 @@ def _legacy_comparison_rows(
                 f"legacy component {legacy_id} unique_strict_support requires a "
                 "preferred candidate"
             )
-        if resolution_status in {
-            "unique_core_support",
-            "ambiguous_multiple_strict_support",
-            "ambiguous_multiple_core_support",
-            "no_same_scan_support",
-        } and preferred_candidate_id:
+        if (
+            resolution_status
+            in {
+                "unique_core_support",
+                "ambiguous_multiple_strict_support",
+                "ambiguous_multiple_core_support",
+                "no_same_scan_support",
+            }
+            and preferred_candidate_id
+        ):
             raise ValueError(
                 f"legacy component {legacy_id} {resolution_status} must not name a "
                 "preferred candidate"
@@ -565,9 +565,7 @@ def _summary(
     feature_hash: str,
     legacy_hash: str | None,
 ) -> dict[str, object]:
-    multi_rows = [
-        row for row in component_rows if _int_value(row["vertex_count"]) > 1
-    ]
+    multi_rows = [row for row in component_rows if _int_value(row["vertex_count"]) > 1]
     overconstrained = [
         row
         for row in component_rows
@@ -615,8 +613,7 @@ def _summary(
             overconstrained
         ),
         "pairwise_compatible_pair_count": sum(
-            _int_value(row["pairwise_compatible_pair_count"])
-            for row in component_rows
+            _int_value(row["pairwise_compatible_pair_count"]) for row in component_rows
         ),
         "max_component_size": max(
             _int_value(row["vertex_count"]) for row in component_rows

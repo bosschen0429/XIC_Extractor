@@ -47,9 +47,7 @@ def test_ratio_profile_writes_primary_rows_without_gate_language(
     ]
     forbidden = ("ratio_pass", "ratio_fail", "ratio_score", "ratio_confidence")
     assert not any(
-        forbidden_token in column
-        for column in rows[0]
-        for forbidden_token in forbidden
+        forbidden_token in column for column in rows[0] for forbidden_token in forbidden
     )
     first = rows[0]
     assert first["fh_base_to_plus1_height_ratio"] == "1"
@@ -166,9 +164,7 @@ def test_ratio_profile_cli_writes_static_html_without_call_words(
     )
 
     assert result == 0
-    html = (output_dir / "pt_pattern_ratio_profile.html").read_text(
-        encoding="utf-8"
-    )
+    html = (output_dir / "pt_pattern_ratio_profile.html").read_text(encoding="utf-8")
     assert "diagnostic_only" in html
     assert "primary population" in html
     assert "background population" in html

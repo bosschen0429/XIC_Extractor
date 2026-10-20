@@ -499,9 +499,7 @@ def _validate_rows_against_manifest_semantics(
     label: str,
 ) -> None:
     expected_values = {
-        "ppm": format_diagnostic_value(
-            _required_number(manifest, "ppm")
-        ),
+        "ppm": format_diagnostic_value(_required_number(manifest, "ppm")),
         "trace_decision_basis": _required_text(
             manifest,
             "trace_decision_basis",
@@ -565,8 +563,7 @@ def _validate_summary_numeric_domains(
             )
         except ValueError as exc:
             raise ValueError(
-                f"trace summary row {row_index}: base_mz must be finite and "
-                "positive"
+                f"trace summary row {row_index}: base_mz must be finite and positive"
             ) from exc
         try:
             base_rt = _optional_finite_row_number(
@@ -847,9 +844,7 @@ def _required_mz_source(
         return "expected"
     if value == "observed":
         return "observed"
-    raise ValueError(
-        "trace manifest mz_source must be 'expected' or 'observed'"
-    )
+    raise ValueError("trace manifest mz_source must be 'expected' or 'observed'")
 
 
 def _validate_trace_setting_domains(manifest: Mapping[str, object]) -> None:

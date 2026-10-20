@@ -441,6 +441,7 @@ def test_acquisition_batch_rejects_coordinate_source_or_kind_substitution(
             trace_point_count=len(acquired.trace.rt),
         )
 
+
 def _source(tmp_path: Path):
     path = tmp_path / "source.fixture"
     path.write_bytes(b"no-raw-source")

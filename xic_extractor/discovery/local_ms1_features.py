@@ -120,13 +120,9 @@ class LocalMs1FeatureSettings:
         if self.max_duration_min < self.min_duration_min:
             raise ValueError("max_duration_min must be >= min_duration_min")
         if self.min_ok_prominence < self.weak_support_prominence:
-            raise ValueError(
-                "min_ok_prominence must be >= weak_support_prominence"
-            )
+            raise ValueError("min_ok_prominence must be >= weak_support_prominence")
         if self.max_ok_gap_fraction > self.max_weak_gap_fraction:
-            raise ValueError(
-                "max_ok_gap_fraction must be <= max_weak_gap_fraction"
-            )
+            raise ValueError("max_ok_gap_fraction must be <= max_weak_gap_fraction")
         if self.max_ok_mz_ppm_std > self.max_weak_mz_ppm_std:
             raise ValueError("max_ok_mz_ppm_std must be <= max_weak_mz_ppm_std")
 
@@ -314,8 +310,7 @@ def build_local_ms1_feature_table(
         )
     else:
         raise ValueError(
-            "unsupported local MS1 trace builder mode: "
-            f"{resolved.trace_builder_mode}",
+            f"unsupported local MS1 trace builder mode: {resolved.trace_builder_mode}",
         )
     features: list[DetectedFeature] = []
     diagnostics: list[LocalMs1FeatureDiagnosticRow] = []
@@ -892,8 +887,7 @@ def _mass_detected_scan_peaks(
         return []
     order = np.argsort(masses[indices])
     return [
-        (float(masses[index]), float(intensities[index]))
-        for index in indices[order]
+        (float(masses[index]), float(intensities[index])) for index in indices[order]
     ]
 
 
@@ -1015,13 +1009,9 @@ def _link_traces(
                 component_trace_count=component_trace_count,
                 component_peak_count=component_peak_count,
             )
-            use_optimal = (
-                len(component) <= settings.optimal_component_max_edges
-                and (
-                    component_size <= settings.optimal_component_max_size
-                    or component_edge_density
-                    <= settings.optimal_component_max_edge_density
-                )
+            use_optimal = len(component) <= settings.optimal_component_max_edges and (
+                component_size <= settings.optimal_component_max_size
+                or component_edge_density <= settings.optimal_component_max_edge_density
             )
             if use_optimal:
                 assignment_mode = "optimal_component"

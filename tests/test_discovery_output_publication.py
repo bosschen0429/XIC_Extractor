@@ -16,15 +16,23 @@ from xic_extractor.execution.timing import TimingRecorder
 
 
 @pytest.mark.parametrize(
-    "basis", ("scan_precursor", "mixed", "product_plus_neutral_loss"),
+    "basis",
+    ("scan_precursor", "mixed", "product_plus_neutral_loss"),
 )
-@pytest.mark.parametrize("state", (
-    "ms1_feature_nl_supported", "ms1_feature_nl_rescued",
-    "review_only_orphan_nl", "review_only_ambiguous_coisolation",
-    "rejected_noise_or_outside_rt",
-))
+@pytest.mark.parametrize(
+    "state",
+    (
+        "ms1_feature_nl_supported",
+        "ms1_feature_nl_rescued",
+        "review_only_orphan_nl",
+        "review_only_ambiguous_coisolation",
+        "rejected_noise_or_outside_rt",
+    ),
+)
 def test_discovery_publication_retains_only_used_candidate_states(
-    tmp_path: Path, basis: str, state: str,
+    tmp_path: Path,
+    basis: str,
+    state: str,
 ) -> None:
     from tests.test_discovery_csv import _candidate
     from tests.test_discovery_pipeline import _read_csv
@@ -32,8 +40,10 @@ def test_discovery_publication_retains_only_used_candidate_states(
 
     feature_backed = state in MS1_FEATURE_BACKED_STATES
     candidate = replace(
-        _candidate(), precursor_mz_basis=basis,
-        discovery_candidate_state=state, ms1_peak_found=feature_backed,
+        _candidate(),
+        precursor_mz_basis=basis,
+        discovery_candidate_state=state,
+        ms1_peak_found=feature_backed,
     )
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"retained-states")
@@ -41,13 +51,23 @@ def test_discovery_publication_retains_only_used_candidate_states(
         (raw_path,), discovery_settings=_settings()
     )
     outputs = write_dual_csvs(
-        tmp_path / "out", (candidate,), sample_stem=candidate.sample_stem,
+        tmp_path / "out",
+        (candidate,),
+        sample_stem=candidate.sample_stem,
         timing_recorder=TimingRecorder.disabled("discovery"),
-        run_spec=spec, acquisition_input=spec.acquisition_inputs[0],
+        run_spec=spec,
+        acquisition_input=spec.acquisition_inputs[0],
     )
-    expected_ids = [candidate.candidate_id] if feature_backed or basis in {
-        "scan_precursor", "mixed",
-    } else []
+    expected_ids = (
+        [candidate.candidate_id]
+        if feature_backed
+        or basis
+        in {
+            "scan_precursor",
+            "mixed",
+        }
+        else []
+    )
     for path in (outputs.candidates_csv, outputs.review_csv):
         assert [row["candidate_id"] for row in _read_csv(path)] == expected_ids
 
@@ -74,8 +94,7 @@ def test_discovery_output_publication_rolls_back_every_replace_failure(
     )
     acquisition_input = run_spec.acquisition_inputs[0]
     prior = {
-        path: f"prior-{index}".encode("utf-8")
-        for index, path in enumerate(final_paths)
+        path: f"prior-{index}".encode("utf-8") for index, path in enumerate(final_paths)
     }
     if prior_outputs:
         for path, payload in prior.items():

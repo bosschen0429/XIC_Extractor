@@ -12,10 +12,7 @@ def cached_retention_time_for_scan(
     retention_time_by_scan: ScanRetentionTimeCache | None = None,
 ) -> float | None:
     scan_number = int(scan_number)
-    if (
-        retention_time_by_scan is not None
-        and scan_number in retention_time_by_scan
-    ):
+    if retention_time_by_scan is not None and scan_number in retention_time_by_scan:
         return retention_time_by_scan[scan_number]
 
     resolver = getattr(source, "retention_time_for_scan", None)

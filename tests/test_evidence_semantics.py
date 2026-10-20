@@ -55,8 +55,7 @@ def test_consistency_classifier_allows_cwt_as_shape_context_but_not_chemistry() 
     )
 
 
-def test_consistency_allows_chrom_segment_as_shape_context_not_chemistry(
-) -> None:
+def test_consistency_allows_chrom_segment_as_shape_context_not_chemistry() -> None:
     labels = classify_evidence_consistency(
         EvidenceSignalSet(
             support_labels=("local_sn_strong", "trace_clean"),
@@ -74,8 +73,7 @@ def test_consistency_allows_chrom_segment_as_shape_context_not_chemistry(
     )
 
 
-def test_consistency_soft_trace_flags_are_context_warning_with_cwt(
-) -> None:
+def test_consistency_soft_trace_flags_are_context_warning_with_cwt() -> None:
     labels = classify_evidence_consistency(
         EvidenceSignalSet(
             support_labels=("local_sn_strong", "cwt_same_apex_support"),
@@ -169,8 +167,9 @@ def test_decision_semantics_projects_paired_area_ratio_support() -> None:
     assert decision.not_counted_reasons == ("legacy_review_only_projection",)
 
 
-def test_decision_semantics_counts_paired_ratio_supported_nl_dropout_as_review(
-) -> None:
+def test_decision_semantics_counts_paired_ratio_supported_nl_dropout_as_review() -> (
+    None
+):
     decision = decision_semantics_from_signal_set(
         EvidenceSignalSet(
             support_labels=(
@@ -275,8 +274,7 @@ def test_decision_semantics_keeps_cwt_as_context_not_standalone_authority() -> N
     assert decision.review_reasons == ("cwt_requires_correlated_evidence",)
 
 
-def test_decision_chrom_segment_is_context_not_standalone_authority(
-) -> None:
+def test_decision_chrom_segment_is_context_not_standalone_authority() -> None:
     decision = decision_semantics_from_signal_set(
         EvidenceSignalSet(
             proposal_sources=("chrom_peak_segment",),
@@ -290,8 +288,9 @@ def test_decision_chrom_segment_is_context_not_standalone_authority(
     )
 
 
-def test_decision_semantics_keeps_targeted_rt_conflict_as_review_not_exclusion(
-) -> None:
+def test_decision_semantics_keeps_targeted_rt_conflict_as_review_not_exclusion() -> (
+    None
+):
     decision = decision_semantics_from_signal_set(
         EvidenceSignalSet(
             support_labels=("strict_nl_ok", "local_sn_strong", "shape_clean"),
@@ -311,8 +310,9 @@ def test_decision_semantics_keeps_targeted_rt_conflict_as_review_not_exclusion(
     assert decision.exclusion_reasons == ()
 
 
-def test_decision_semantics_anchor_mismatch_cap_without_strict_nl_is_not_counted(
-) -> None:
+def test_decision_semantics_anchor_mismatch_cap_without_strict_nl_is_not_counted() -> (
+    None
+):
     decision = decision_semantics_from_signal_set(
         EvidenceSignalSet(
             support_labels=("local_sn_strong", "shape_clean", "trace_clean"),
@@ -336,8 +336,7 @@ def test_decision_semantics_anchor_mismatch_cap_without_strict_nl_is_not_counted
     assert decision.exclusion_reasons == ()
 
 
-def test_decision_anchor_mismatch_cap_with_strict_nl_skips_anchor_policy(
-) -> None:
+def test_decision_anchor_mismatch_cap_with_strict_nl_skips_anchor_policy() -> None:
     decision = decision_semantics_from_signal_set(
         EvidenceSignalSet(
             support_labels=(

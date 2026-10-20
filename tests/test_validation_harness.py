@@ -134,9 +134,7 @@ def test_build_validation_specs_includes_canonical_settings_in_commands(
         settings_overrides=(("signal_processing_window_points", "21"),),
     )
 
-    assert specs[0].settings_overrides == (
-        ("signal_processing_window_points", "21"),
-    )
+    assert specs[0].settings_overrides == (("signal_processing_window_points", "21"),)
     command = command_to_powershell(specs[0].command)
     assert "--setting signal_processing_window_points=21" in command
 
@@ -169,10 +167,7 @@ def test_run_validation_specs_compares_exact_baseline_workbook_paths(
     )
     baseline_root = tmp_path / "baseline"
     baseline_path = (
-        baseline_root
-        / "run1"
-        / "tissue_fixture_cohort"
-        / "xic_results_process_w4.xlsx"
+        baseline_root / "run1" / "tissue_fixture_cohort" / "xic_results_process_w4.xlsx"
     )
     runner_calls: list[dict[str, object]] = []
     compare_calls: list[tuple[Path, Path]] = []
@@ -270,9 +265,7 @@ def test_run_validation_specs_passes_canonical_settings_to_extraction_runner(
     )
 
     assert results[0].status == "passed"
-    assert runner_calls[0]["settings_overrides"] == {
-        "nl_min_intensity_ratio": "0.02"
-    }
+    assert runner_calls[0]["settings_overrides"] == {"nl_min_intensity_ratio": "0.02"}
 
 
 def test_run_validation_specs_records_compare_errors_without_traceback(

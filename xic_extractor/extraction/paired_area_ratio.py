@@ -40,7 +40,6 @@ class PairedAreaRatioAssessment:
     robust_reference_mad: float | None = None
 
 
-
 def paired_area_ratio_references(
     file_results: Sequence[object],
     *,

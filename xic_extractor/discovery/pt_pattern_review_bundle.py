@@ -224,9 +224,7 @@ def _validate_review_packet_source_projection(
         source_label=str(manifest.get("source_label", "")),
         max_per_status=max_per_status,
     )
-    expected_columns = PACKET_SCHEMA_COLUMNS[
-        str(packet_rows[0]["schema_version"])
-    ]
+    expected_columns = PACKET_SCHEMA_COLUMNS[str(packet_rows[0]["schema_version"])]
     serialized_expected = tuple(
         {
             column: format_diagnostic_value(row.get(column, ""))
@@ -358,10 +356,7 @@ def machine_row_projection_mismatches(
 
     if machine_row is None:
         return ()
-    expected = {
-        key: str(value)
-        for key, value in machine_call_row(review_row).items()
-    }
+    expected = {key: str(value) for key, value in machine_call_row(review_row).items()}
     expected_schema = expected["schema_version"]
     return tuple(
         field
@@ -597,12 +592,8 @@ def load_verified_machine_call_collection(
     return VerifiedMachineCallCollection(
         rows=tuple(rows),
         summary_jsons=tuple(summaries),
-        review_packet_sha256_by_packet_row_id=(
-            review_packet_sha256_by_packet_row_id
-        ),
-        summary_json_sha256_by_packet_row_id=(
-            summary_json_sha256_by_packet_row_id
-        ),
+        review_packet_sha256_by_packet_row_id=(review_packet_sha256_by_packet_row_id),
+        summary_json_sha256_by_packet_row_id=(summary_json_sha256_by_packet_row_id),
     )
 
 

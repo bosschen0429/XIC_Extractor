@@ -54,7 +54,10 @@ class AlignmentConfig:
         )
         _require_positive("product_mz_tolerance_ppm", self.product_mz_tolerance_ppm)
         _require_numeric_range(
-            "min_peak_shape_similarity", self.min_peak_shape_similarity, 0, 1,
+            "min_peak_shape_similarity",
+            self.min_peak_shape_similarity,
+            0,
+            1,
         )
         _require_positive(
             "observed_loss_tolerance_ppm",

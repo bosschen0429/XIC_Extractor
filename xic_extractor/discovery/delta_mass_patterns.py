@@ -221,8 +221,7 @@ def match_delta_mass_pattern(
     resolved_settings = settings if settings is not None else DeltaMassPatternSettings()
     if resolved_settings.ratio_basis != "both":
         raise ValueError(
-            "unsupported Pt delta-mass ratio_basis: "
-            f"{resolved_settings.ratio_basis!r}"
+            f"unsupported Pt delta-mass ratio_basis: {resolved_settings.ratio_basis!r}"
         )
     resolved_pattern = pattern if pattern is not None else resolved_settings.pattern
     if (

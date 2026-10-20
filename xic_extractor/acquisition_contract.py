@@ -782,7 +782,6 @@ def _nonnegative_integer(value: object, field: str) -> int:
     )
 
 
-
 __all__ = [
     "AcquiredTrace",
     "AcquisitionContractError",

@@ -209,9 +209,7 @@ def _parse_tags(value: Any) -> tuple[PresetTag, ...]:
 
         if strategy == "neutral_loss":
             tag_value = _parse_neutral_loss_tag(tag_table, tag_name=tag_name)
-            tags.append(
-                PresetTag(strategy=strategy, name=tag_name, value=tag_value)
-            )
+            tags.append(PresetTag(strategy=strategy, name=tag_name, value=tag_value))
         else:
             pattern_id = _parse_delta_mass_tag(tag_table, tag_name=tag_name)
             tags.append(
@@ -283,9 +281,7 @@ def validate_delta_mass_preset_tags(
             "set 'value'"
         )
     if delta_mass_tag.pattern_id != _DELTA_MASS_PATTERN_ID:
-        raise PresetError(
-            "a delta_mass preset currently supports only pattern_id='pt'"
-        )
+        raise PresetError("a delta_mass preset currently supports only pattern_id='pt'")
 
     for neutral_loss_tag in neutral_loss_tags:
         if neutral_loss_tag.pattern_id is not None:
@@ -297,7 +293,7 @@ def validate_delta_mass_preset_tags(
     if len(tags) == 1:
         if combine_mode != "single":
             raise PresetError(
-                "a Pt-only delta_mass preset requires combine_mode = \"single\""
+                'a Pt-only delta_mass preset requires combine_mode = "single"'
             )
         return
 
@@ -382,6 +378,4 @@ def reject_retired_alignment_runtime_options(
 ) -> None:
     retired = sorted(set(options) & RETIRED_STANDARD_PEAK_ALIGNMENT_KEYS)
     if retired:
-        raise PresetError(
-            f"{retired[0]}: {STANDARD_PEAK_NORMAL_ROUTE_RETIRED_MESSAGE}"
-        )
+        raise PresetError(f"{retired[0]}: {STANDARD_PEAK_NORMAL_ROUTE_RETIRED_MESSAGE}")

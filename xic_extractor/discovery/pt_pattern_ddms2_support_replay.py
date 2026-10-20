@@ -293,9 +293,7 @@ def load_fullscan_pt_seeds(
                     column="base_rt_apex_min",
                 ),
                 trace_rule_call=trace_rule_call,
-                trace_detection_status=evidence_row[
-                    "trace_detection_status"
-                ].strip(),
+                trace_detection_status=evidence_row["trace_detection_status"].strip(),
             )
         )
     return tuple(seeds)
@@ -314,9 +312,7 @@ def build_ddms2_support_summary(
     rt_window_sec: float,
     seed_trace_rule_call: str,
 ) -> dict[str, Any]:
-    support_counter = Counter(
-        str(row["ddms2_ms1_support_status"]) for row in rows
-    )
+    support_counter = Counter(str(row["ddms2_ms1_support_status"]) for row in rows)
     reason_counter = Counter(str(row["reason"]) for row in rows)
     position_support_counts = {
         label: sum(
@@ -433,9 +429,7 @@ def _replay_seed(
     }
     position_count = sum(match is not None for match in matches.values())
     non_base_count = sum(
-        match is not None
-        for label, match in matches.items()
-        if label != _BASE_LABEL
+        match is not None for label, match in matches.items() if label != _BASE_LABEL
     )
     status, reason = _classify_support(
         has_base=matches[_BASE_LABEL] is not None,
@@ -535,9 +529,7 @@ def _add_position_columns(
     row[f"{prefix}_mz"] = feature.mz
     row[f"{prefix}_mz_error_ppm"] = match.mz_error_ppm
     row[f"{prefix}_rt_apex_min"] = feature.rt_apex_min
-    row[f"{prefix}_rt_delta_sec_to_fullscan_base"] = (
-        match.rt_delta_sec_to_fullscan_base
-    )
+    row[f"{prefix}_rt_delta_sec_to_fullscan_base"] = match.rt_delta_sec_to_fullscan_base
     row[f"{prefix}_height"] = feature.height
     row[f"{prefix}_area"] = "" if feature.area is None else feature.area
     row[f"{prefix}_trace_quality"] = feature.trace_quality
@@ -595,8 +587,7 @@ def _unique_rows_by_candidate_id(
             )
         if candidate_id in by_candidate_id:
             raise ValueError(
-                f"{path}:{row_index}: duplicate {label} candidate_id: "
-                f"{candidate_id}"
+                f"{path}:{row_index}: duplicate {label} candidate_id: {candidate_id}"
             )
         by_candidate_id[candidate_id] = row
     return by_candidate_id

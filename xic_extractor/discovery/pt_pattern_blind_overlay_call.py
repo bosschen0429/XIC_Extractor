@@ -190,9 +190,7 @@ def _validate_packet_envelope(
     }
     for field, expected in expected_values.items():
         if str(row.get(field, "")).strip() != expected:
-            raise ValueError(
-                f"packet row {row_index}: {field} must be {expected!r}"
-            )
+            raise ValueError(f"packet row {row_index}: {field} must be {expected!r}")
     for field in ("human_review_decision", "human_review_note"):
         if str(row.get(field, "")).strip():
             raise ValueError(f"packet row {row_index}: {field} must be blank")

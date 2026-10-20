@@ -87,7 +87,9 @@ def mint_test_process_result_ref(
         producer_processing_request_id=processing_attempt.processing_request_id,
         producer_processing_attempt_id=processing_attempt.processing_attempt_id,
         semantic_contract=contract,
-        payload_bytes=f"{work_unit_key}:{hashlib.sha256(owner_result_payload).hexdigest()}".encode("utf-8"),
+        payload_bytes=f"{work_unit_key}:{hashlib.sha256(owner_result_payload).hexdigest()}".encode(
+            "utf-8"
+        ),
         upstream_artifacts=upstream_artifacts,
     )
     return TestProcessResultRef(artifact=artifact)

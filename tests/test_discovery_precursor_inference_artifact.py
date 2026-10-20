@@ -52,12 +52,9 @@ def test_precursor_inference_checker_rejects_row_identity_mismatch(
     )
 
     assert any(
-        "candidate_id precursor_mz does not match" in problem
-        for problem in problems
+        "candidate_id precursor_mz does not match" in problem for problem in problems
     )
-    assert any(
-        "candidate_id scan id does not match" in problem for problem in problems
-    )
+    assert any("candidate_id scan id does not match" in problem for problem in problems)
 
 
 def test_precursor_inference_checker_rejects_invalid_basis_values(
@@ -95,9 +92,7 @@ def _row(expected: dict[str, object]) -> dict[str, str]:
         precursor_mz_basis = "scan_precursor"
         neutral_loss_error_basis = "measured_scan_precursor_product"
     scan_delta = (
-        "1.004343"
-        if precursor_mz_basis == "product_plus_neutral_loss"
-        else "0.0"
+        "1.004343" if precursor_mz_basis == "product_plus_neutral_loss" else "0.0"
     )
     return {
         "candidate_id": str(expected["candidate_id"]),

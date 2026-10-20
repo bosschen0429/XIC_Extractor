@@ -180,9 +180,7 @@ def run_pt_pattern_discovery(
     if trace_summary_csv is None and (
         trace_metrics_csv is not None or trace_manifest_json is not None
     ):
-        raise ValueError(
-            "trace metrics/manifest overrides require trace_summary_csv"
-        )
+        raise ValueError("trace metrics/manifest overrides require trace_summary_csv")
     trace_bundle = (
         load_pt_discovery_trace_bundle(
             trace_summary_csv,
@@ -264,9 +262,7 @@ def run_pt_pattern_discovery(
                 trace_bundle.schema_version if trace_bundle is not None else None
             ),
             trace_artifact_role=(
-                trace_bundle.trace_artifact_role
-                if trace_bundle is not None
-                else None
+                trace_bundle.trace_artifact_role if trace_bundle is not None else None
             ),
             trace_extraction_sha256=(
                 trace_bundle.trace_extraction_sha256
@@ -477,9 +473,7 @@ def _parse_cid_nl_row_state(
     def _row_label() -> str:
         return f"{path} row {row_index}"
 
-    candidate_id = _required_text(
-        row.get("candidate_id"), "candidate_id", _row_label()
-    )
+    candidate_id = _required_text(row.get("candidate_id"), "candidate_id", _row_label())
     _reject_ambiguous_formula_escaped_identity(
         candidate_id,
         field="candidate_id",
@@ -519,9 +513,7 @@ def _parse_cid_nl_row(
         "discovery_candidate_state",
         _row_label(),
     )
-    candidate_id = _required_text(
-        row.get("candidate_id"), "candidate_id", _row_label()
-    )
+    candidate_id = _required_text(row.get("candidate_id"), "candidate_id", _row_label())
     explicit_sample_stem = _optional_text(row.get("sample_stem"))
     derived_sample_stem = _sample_stem_from_row_id(ms1_feature_row_id)
     for field, identity in (
@@ -536,10 +528,7 @@ def _parse_cid_nl_row(
                 field=field,
                 row_label=_row_label(),
             )
-    if (
-        explicit_sample_stem is not None
-        and explicit_sample_stem != derived_sample_stem
-    ):
+    if explicit_sample_stem is not None and explicit_sample_stem != derived_sample_stem:
         raise ValueError(
             f"{_row_label()} has sample_stem {explicit_sample_stem!r} that does not "
             "match the sample identity derived from ms1_feature_row_id "
@@ -676,9 +665,7 @@ def _apply_cid_nl_composite_join(
 
         if match is None and comparable_identity is None:
             fallback_matches = [
-                row
-                for row in sample_rows
-                if _fallback_matches(candidate, row)
+                row for row in sample_rows if _fallback_matches(candidate, row)
             ]
             if fallback_matches:
                 match = _best_fallback_match(candidate, fallback_matches)

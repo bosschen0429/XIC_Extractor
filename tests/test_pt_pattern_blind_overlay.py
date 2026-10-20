@@ -167,9 +167,7 @@ def _limit_review_packet_to_one_row(
     packet_manifest = json.loads(packet_manifest_path.read_text(encoding="utf-8"))
     packet_manifest["max_per_status"] = 1
     packet_manifest["packet_row_count"] = 1
-    packet_manifest["outputs"]["packet_csv_sha256"] = file_sha256(
-        review_packet
-    ).lower()
+    packet_manifest["outputs"]["packet_csv_sha256"] = file_sha256(review_packet).lower()
     packet_manifest_path.write_text(
         json.dumps(packet_manifest, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -423,9 +421,7 @@ def test_blind_overlay_rejects_packet_row_id_not_projected_from_sources(
     packet_manifest_path = bundle["review_packet_manifest_json"]
     assert isinstance(packet_manifest_path, Path)
     packet_manifest = json.loads(packet_manifest_path.read_text(encoding="utf-8"))
-    packet_manifest["outputs"]["packet_csv_sha256"] = file_sha256(
-        review_packet
-    ).lower()
+    packet_manifest["outputs"]["packet_csv_sha256"] = file_sha256(review_packet).lower()
     packet_manifest_path.write_text(
         json.dumps(packet_manifest, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -474,11 +470,14 @@ def test_blind_overlay_rejects_current_full_packet_without_ambiguity_columns(
         column
         for column in packet.PACKET_COLUMNS
         if column
-        not in ({
-            "trace_ambiguity_status",
-            "trace_ambiguity_flags",
-            "shifted_only_position_labels",
-        } | set(evidence.ANCHOR_SEGMENTATION_SUMMARY_COLUMNS))
+        not in (
+            {
+                "trace_ambiguity_status",
+                "trace_ambiguity_flags",
+                "shifted_only_position_labels",
+            }
+            | set(evidence.ANCHOR_SEGMENTATION_SUMMARY_COLUMNS)
+        )
     )
     incomplete_row = {
         column: value
@@ -495,9 +494,7 @@ def test_blind_overlay_rejects_current_full_packet_without_ambiguity_columns(
     write_delimited_rows(review_packet, [incomplete_row], incomplete_columns)
     packet_manifest_path = bundle["review_packet_manifest_json"]
     packet_manifest = json.loads(packet_manifest_path.read_text(encoding="utf-8"))
-    packet_manifest["outputs"]["packet_csv_sha256"] = file_sha256(
-        review_packet
-    ).lower()
+    packet_manifest["outputs"]["packet_csv_sha256"] = file_sha256(review_packet).lower()
     packet_manifest_path.write_text(
         json.dumps(packet_manifest, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -543,9 +540,7 @@ def test_blind_overlay_rejects_packet_not_projected_from_recorded_sources(
     packet_manifest_path = bundle["review_packet_manifest_json"]
     assert isinstance(packet_manifest_path, Path)
     packet_manifest = json.loads(packet_manifest_path.read_text(encoding="utf-8"))
-    packet_manifest["outputs"]["packet_csv_sha256"] = file_sha256(
-        review_packet
-    ).lower()
+    packet_manifest["outputs"]["packet_csv_sha256"] = file_sha256(review_packet).lower()
     packet_manifest_path.write_text(
         json.dumps(packet_manifest, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -675,16 +670,12 @@ def test_blind_overlay_renders_non_accept_candidates_with_empty_position_traces(
         []
         if missing_position is None
         else [
-            row
-            for row in _trace_points()
-            if row["position_label"] != missing_position
+            row for row in _trace_points() if row["position_label"] != missing_position
         ]
     )
     write_overlay_lineage_bundle(
         review_packet_csv=review_packet,
-        packet_rows=[
-            _packet_row(status="pt_pattern_candidate_incomplete")
-        ],
+        packet_rows=[_packet_row(status="pt_pattern_candidate_incomplete")],
         trace_points_csv=trace_points,
         trace_point_rows=rows,
     )
@@ -798,8 +789,7 @@ def test_blind_overlay_rejects_point_derived_metric_tamper_with_refreshed_hashes
     with pytest.raises(
         ValueError,
         match=(
-            "deterministic projection of trace points|"
-            "does not match raw trace points"
+            "deterministic projection of trace points|does not match raw trace points"
         ),
     ):
         overlay.run_blind_overlay(
@@ -1013,9 +1003,7 @@ def test_blind_overlay_rejects_context_point_tamper_with_refreshed_manifest_hash
     )
     context_manifest_path = bundle["context_trace_manifest_json"]
     assert isinstance(context_manifest_path, Path)
-    context_manifest = json.loads(
-        context_manifest_path.read_text(encoding="utf-8")
-    )
+    context_manifest = json.loads(context_manifest_path.read_text(encoding="utf-8"))
     context_manifest["output_sha256"]["trace_points_csv"] = file_sha256(
         context_trace_points
     ).lower()
@@ -1027,8 +1015,7 @@ def test_blind_overlay_rejects_context_point_tamper_with_refreshed_manifest_hash
     with pytest.raises(
         ValueError,
         match=(
-            "deterministic projection of trace points|"
-            "does not match raw trace points"
+            "deterministic projection of trace points|does not match raw trace points"
         ),
     ):
         overlay.run_blind_overlay(
@@ -1066,9 +1053,7 @@ def test_blind_overlay_rejects_context_target_rebinding_with_refreshed_hash(
     write_delimited_rows(context_metrics, metric_rows, evidence.METRIC_COLUMNS)
     context_manifest_path = bundle["context_trace_manifest_json"]
     assert isinstance(context_manifest_path, Path)
-    context_manifest = json.loads(
-        context_manifest_path.read_text(encoding="utf-8")
-    )
+    context_manifest = json.loads(context_manifest_path.read_text(encoding="utf-8"))
     context_manifest["output_sha256"]["metrics_csv"] = file_sha256(
         context_metrics
     ).lower()

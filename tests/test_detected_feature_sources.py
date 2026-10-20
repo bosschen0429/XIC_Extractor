@@ -318,10 +318,7 @@ def test_mzmine_wide_feature_table_maps_positive_peak_area_rows(
     assert features[0].area == 1200.5
     assert features[0].trace_quality == "UNSPECIFIED"
     assert comparable_cid_nl_identity(features[0]) is None
-    assert (
-        features[0].source
-        == "external_feature_table:MZmine:mzmine_wide_area_proxy"
-    )
+    assert features[0].source == "external_feature_table:MZmine:mzmine_wide_area_proxy"
     assert features[1].sample_stem == "Sample_B"
     assert features[1].feature_id == "Sample_B|mzmine_row|8"
 
@@ -368,9 +365,7 @@ def test_cid_nl_identity_capability_survives_detected_feature_round_trip(
     comparable = comparable_cid_nl_identity(reloaded)
     assert (comparable is not None) is expected_comparable
     if comparable is not None:
-        assert comparable.values == frozenset(
-            {"feature-local-id", "cid-shared-id"}
-        )
+        assert comparable.values == frozenset({"feature-local-id", "cid-shared-id"})
 
 
 def test_mzmine_wide_feature_table_strips_raw_suffix_from_sample_stem(

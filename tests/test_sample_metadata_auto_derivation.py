@@ -1,4 +1,3 @@
-
 import pytest
 
 from xic_extractor.sample_metadata import (

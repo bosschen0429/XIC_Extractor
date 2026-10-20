@@ -973,18 +973,16 @@ def test_run_pt_pattern_discovery_applies_optional_trace_summary_evidence(
         "pt_plus_4_mz": 504.005213,
         "pt_plus_4_expected_mz": 504.005213,
     }
-    assignment_sha256 = pt_pattern_candidate_assignment_fingerprint(
-        trace_candidate_row
-    )
+    assignment_sha256 = pt_pattern_candidate_assignment_fingerprint(trace_candidate_row)
     trace_bundle = write_trace_summary_lineage_bundle(
         trace_summary_csv=trace_summary_csv,
         summary_rows=[
             full_context_trace_summary_row(
                 candidate_id=candidate_id,
                 candidate_assignment_sha256=assignment_sha256,
-                    sample_stem="Sample_1",
-                    trace_ambiguity_status="review_required",
-                    trace_ambiguity_flags="position_shift_direction_mixed",
+                sample_stem="Sample_1",
+                trace_ambiguity_status="review_required",
+                trace_ambiguity_flags="position_shift_direction_mixed",
             )
         ],
         candidate_rows=[trace_candidate_row],
@@ -1012,9 +1010,7 @@ def test_run_pt_pattern_discovery_applies_optional_trace_summary_evidence(
         "position_shift_direction_mixed"
     )
     assert evidence_rows[0]["shifted_only_position_labels"] == "none"
-    assert evidence_rows[0]["trace_schema_version"] == (
-        "pt_pattern_trace_diagnosis"
-    )
+    assert evidence_rows[0]["trace_schema_version"] == ("pt_pattern_trace_diagnosis")
     assert evidence_rows[0]["trace_artifact_role"] == "full_context"
     assert evidence_rows[0]["trace_extraction_sha256"]
     assert evidence_rows[0]["trace_manifest_sha256"]

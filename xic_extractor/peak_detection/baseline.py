@@ -145,9 +145,12 @@ def asls_baseline_on_rt(
         format="csc",
     )
     objective_scale = float(np.median(cell_widths))
-    weighted_curvature = sparse.diags(
-        np.sqrt(float(lam) * interior_widths / objective_scale), 0, format="csc"
-    ) @ curvature
+    weighted_curvature = (
+        sparse.diags(
+            np.sqrt(float(lam) * interior_widths / objective_scale), 0, format="csc"
+        )
+        @ curvature
+    )
     curvature_rows = weighted_curvature.tocsr()
     system_size = 2 * n - 2
     z_positions = np.concatenate((2 * np.arange(n - 1), [system_size - 1]))

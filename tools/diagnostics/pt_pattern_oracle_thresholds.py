@@ -51,9 +51,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         outputs = run_threshold_calibration(
             oracle_promotion_csv=args.oracle_promotion_csv.resolve(),
-            review_packet_csvs=[
-                path.resolve() for path in args.review_packet_csv
-            ],
+            review_packet_csvs=[path.resolve() for path in args.review_packet_csv],
             output_dir=args.output_dir.resolve(),
             calibration_id=args.calibration_id,
         )

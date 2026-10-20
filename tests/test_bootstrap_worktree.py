@@ -26,9 +26,7 @@ def test_inspect_state_fails_fast_when_worktree_interpreter_is_missing(
     )
 
 
-def test_venv_python_uses_current_platform_layout(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_venv_python_uses_current_platform_layout(tmp_path: Path, monkeypatch) -> None:
     windows_python = tmp_path / ".venv" / "Scripts" / "python.exe"
     posix_python = tmp_path / ".venv" / "bin" / "python"
     windows_python.parent.mkdir(parents=True)
@@ -56,9 +54,7 @@ def test_check_rejects_interpreter_from_other_platform_only(
     assert bootstrap_worktree.main(["--check"]) == 1
 
 
-def test_linked_worktree_venv_fails_closed(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_linked_worktree_venv_fails_closed(tmp_path: Path, monkeypatch) -> None:
     _write_contract(tmp_path)
     monkeypatch.setattr(bootstrap_worktree, "_venv_is_link", lambda _root: True)
 
@@ -77,9 +73,7 @@ def test_inspect_state_requires_current_contract_stamp(
     python = bootstrap_worktree._venv_python(tmp_path)
     python.parent.mkdir(parents=True)
     python.touch()
-    versions = {
-        name: "1.0" for name in bootstrap_worktree.REQUIRED_DISTRIBUTIONS
-    }
+    versions = {name: "1.0" for name in bootstrap_worktree.REQUIRED_DISTRIBUTIONS}
     monkeypatch.setattr(
         bootstrap_worktree,
         "_inspect_distributions",
@@ -122,9 +116,7 @@ def test_inspect_state_rejects_stamp_from_another_worktree(
     python = bootstrap_worktree._venv_python(worktree)
     python.parent.mkdir(parents=True)
     python.touch()
-    versions = {
-        name: "1.0" for name in bootstrap_worktree.REQUIRED_DISTRIBUTIONS
-    }
+    versions = {name: "1.0" for name in bootstrap_worktree.REQUIRED_DISTRIBUTIONS}
     monkeypatch.setattr(
         bootstrap_worktree,
         "_inspect_distributions",
@@ -155,9 +147,7 @@ def test_inspect_state_requires_the_complete_locked_environment(
     python = bootstrap_worktree._venv_python(tmp_path)
     python.parent.mkdir(parents=True)
     python.touch()
-    versions = {
-        name: "1.0" for name in bootstrap_worktree.REQUIRED_DISTRIBUTIONS
-    }
+    versions = {name: "1.0" for name in bootstrap_worktree.REQUIRED_DISTRIBUTIONS}
     monkeypatch.setattr(
         bootstrap_worktree,
         "_inspect_distributions",
@@ -224,9 +214,7 @@ def test_locked_environment_check_uses_sanitized_worktree_context(
 
     monkeypatch.setattr(bootstrap_worktree.subprocess, "run", fake_run)
 
-    synchronized, detail = bootstrap_worktree._environment_is_synchronized(
-        tmp_path
-    )
+    synchronized, detail = bootstrap_worktree._environment_is_synchronized(tmp_path)
 
     assert synchronized is False
     assert detail == "environment is not up-to-date"
@@ -246,9 +234,7 @@ def test_linked_worktree_reuses_main_repo_uv_cache(tmp_path: Path) -> None:
     worktree.mkdir(parents=True)
     (worktree / ".git").write_text(f"gitdir: {gitdir}\n", encoding="utf-8")
 
-    assert bootstrap_worktree._shared_cache_dir(worktree) == (
-        main_repo / ".uv-cache"
-    )
+    assert bootstrap_worktree._shared_cache_dir(worktree) == (main_repo / ".uv-cache")
 
 
 def test_bootstrap_overrides_inherited_environment_for_linked_worktree(
@@ -264,9 +250,7 @@ def test_bootstrap_overrides_inherited_environment_for_linked_worktree(
     python = bootstrap_worktree._venv_python(worktree)
     python.parent.mkdir(parents=True)
     python.touch()
-    versions = {
-        name: "1.0" for name in bootstrap_worktree.REQUIRED_DISTRIBUTIONS
-    }
+    versions = {name: "1.0" for name in bootstrap_worktree.REQUIRED_DISTRIBUTIONS}
     monkeypatch.setattr(
         bootstrap_worktree,
         "_inspect_distributions",
@@ -290,9 +274,7 @@ def test_bootstrap_overrides_inherited_environment_for_linked_worktree(
     assert state.ready is True
     assert captured_env["UV_CACHE_DIR"] == str(main_repo / ".uv-cache")
     assert "VIRTUAL_ENV" not in captured_env
-    assert not (
-        set(bootstrap_worktree.UV_SYNC_SEMANTIC_ENV_VARS) & set(captured_env)
-    )
+    assert not (set(bootstrap_worktree.UV_SYNC_SEMANTIC_ENV_VARS) & set(captured_env))
 
 
 def _ready_state() -> bootstrap_worktree.BootstrapState:
@@ -316,9 +298,7 @@ def test_default_cli_path_does_not_inspect_local_resources(
     monkeypatch.setattr(bootstrap_worktree, "_local_env_state", reject_local)
 
     assert bootstrap_worktree.main([]) == 0
-    assert capsys.readouterr().out == (
-        "worktree development environment is ready\n"
-    )
+    assert capsys.readouterr().out == ("worktree development environment is ready\n")
 
 
 def test_local_bootstrap_materializes_env_with_rebound_worktree_root(

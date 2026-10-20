@@ -54,9 +54,7 @@ def test_required_population_fails_only_on_default_or_missing_output(
         "family\thas_anchor\ttag\nF1\tFALSE\tcid_nl:116\n",
         encoding="utf-8",
     )
-    (tmp_path / "short.tsv").write_text(
-        "family\thas_anchor\nF1\n", encoding="utf-8"
-    )
+    (tmp_path / "short.tsv").write_text("family\thas_anchor\nF1\n", encoding="utf-8")
     report = tmp_path / "report" / "census.tsv"
 
     def run(*required: str) -> int:

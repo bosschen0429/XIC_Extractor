@@ -246,12 +246,8 @@ def _refresh_promotion_packet_summary(outputs: dict[str, Path]) -> None:
         for call in sorted({row["oracle_call"] for row in packet_rows})
     }
     summary["oracle_detection_status_counts"] = {
-        status: sum(
-            row["oracle_detection_status"] == status for row in packet_rows
-        )
-        for status in sorted(
-            {row["oracle_detection_status"] for row in packet_rows}
-        )
+        status: sum(row["oracle_detection_status"] == status for row in packet_rows)
+        for status in sorted({row["oracle_detection_status"] for row in packet_rows})
     }
     outputs["summary_json"].write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
@@ -499,9 +495,7 @@ def test_verified_promotion_rejects_packet_changed_during_verification(
     )
 
     with pytest.raises(ValueError, match="packet changed during verification"):
-        promotion.load_verified_oracle_promotion_bundle(
-            outputs["promotion_packet_csv"]
-        )
+        promotion.load_verified_oracle_promotion_bundle(outputs["promotion_packet_csv"])
 
 
 def test_verified_promotion_rejects_paired_call_tamper(tmp_path: Path) -> None:
@@ -522,9 +516,7 @@ def test_verified_promotion_rejects_paired_call_tamper(tmp_path: Path) -> None:
     _refresh_promotion_packet_summary(outputs)
 
     with pytest.raises(ValueError, match="deterministic projection"):
-        promotion.load_verified_oracle_promotion_bundle(
-            outputs["promotion_packet_csv"]
-        )
+        promotion.load_verified_oracle_promotion_bundle(outputs["promotion_packet_csv"])
 
 
 @pytest.mark.parametrize("mutation", ["delete", "reverse"])
@@ -548,9 +540,7 @@ def test_verified_promotion_rejects_row_set_or_order_tamper(
     _refresh_promotion_packet_summary(outputs)
 
     with pytest.raises(ValueError, match="deterministic projection"):
-        promotion.load_verified_oracle_promotion_bundle(
-            outputs["promotion_packet_csv"]
-        )
+        promotion.load_verified_oracle_promotion_bundle(outputs["promotion_packet_csv"])
 
 
 def test_verified_promotion_rejects_extra_packet_column(tmp_path: Path) -> None:
@@ -569,9 +559,7 @@ def test_verified_promotion_rejects_extra_packet_column(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValueError, match="does not match exact schema"):
-        promotion.load_verified_oracle_promotion_bundle(
-            outputs["promotion_packet_csv"]
-        )
+        promotion.load_verified_oracle_promotion_bundle(outputs["promotion_packet_csv"])
 
 
 def test_verified_promotion_rejects_missing_commit_summary(
@@ -581,9 +569,7 @@ def test_verified_promotion_rejects_missing_commit_summary(
     outputs["summary_json"].unlink()
 
     with pytest.raises(FileNotFoundError):
-        promotion.load_verified_oracle_promotion_bundle(
-            outputs["promotion_packet_csv"]
-        )
+        promotion.load_verified_oracle_promotion_bundle(outputs["promotion_packet_csv"])
 
 
 def test_verified_promotion_rejects_non_sibling_output_binding(
@@ -600,9 +586,7 @@ def test_verified_promotion_rejects_non_sibling_output_binding(
     )
 
     with pytest.raises(ValueError, match="fixed sibling"):
-        promotion.load_verified_oracle_promotion_bundle(
-            outputs["promotion_packet_csv"]
-        )
+        promotion.load_verified_oracle_promotion_bundle(outputs["promotion_packet_csv"])
 
 
 def test_verified_promotion_rejects_non_integer_call_counts(
@@ -617,9 +601,7 @@ def test_verified_promotion_rejects_non_integer_call_counts(
     )
 
     with pytest.raises(ValueError, match="oracle_call_counts.*integer"):
-        promotion.load_verified_oracle_promotion_bundle(
-            outputs["promotion_packet_csv"]
-        )
+        promotion.load_verified_oracle_promotion_bundle(outputs["promotion_packet_csv"])
 
 
 def test_oracle_promotion_rejects_input_at_final_output_path(
@@ -681,8 +663,7 @@ def test_oracle_promotion_publish_failure_removes_commit_marker_and_temps(
         source_path(descriptor) for descriptor in inputs["review_packet_csvs"]
     ]
     overlay_summary_jsons = [
-        source_path(descriptor)
-        for descriptor in inputs["blind_overlay_summary_jsons"]
+        source_path(descriptor) for descriptor in inputs["blind_overlay_summary_jsons"]
     ]
     original_replace = Path.replace
     failed_name = (

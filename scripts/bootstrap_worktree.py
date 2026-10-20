@@ -247,10 +247,7 @@ def inspect_state(root: Path) -> BootstrapState:
     if not synchronized:
         return BootstrapState(
             ready=False,
-            reason=(
-                "locked development environment is not synchronized: "
-                f"{detail}"
-            ),
+            reason=(f"locked development environment is not synchronized: {detail}"),
             contract_digest=contract_digest,
             distributions=distributions,
         )
@@ -363,8 +360,7 @@ def _local_env_state(root: Path, *, provision: bool) -> dict[str, object]:
         }
     lines = text.splitlines(keepends=True)
     root_indexes = [
-        index for index, line in enumerate(lines)
-        if line.startswith("XIC_REPO_ROOT=")
+        index for index, line in enumerate(lines) if line.startswith("XIC_REPO_ROOT=")
     ]
     if len(root_indexes) != 1:
         return {
@@ -372,8 +368,10 @@ def _local_env_state(root: Path, *, provision: bool) -> dict[str, object]:
             "reason": "main worktree local env must contain exactly one repo root line",
         }
     index = root_indexes[0]
-    ending = "\r\n" if lines[index].endswith("\r\n") else (
-        "\n" if lines[index].endswith("\n") else ""
+    ending = (
+        "\r\n"
+        if lines[index].endswith("\r\n")
+        else ("\n" if lines[index].endswith("\n") else "")
     )
     lines[index] = f"XIC_REPO_ROOT={root.resolve()}{ending}"
     temp_name = ""

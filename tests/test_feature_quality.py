@@ -174,13 +174,16 @@ def _html_quality(paths, output, threshold):
 
     jobs = AnalysisJobs(output.parent / "config")
     try:
-        jobs.start("quality", {
-            "matrix_path": str(paths[0]),
-            "identity_path": str(paths[1]),
-            "sample_metadata_path": str(paths[2]),
-            "output_dir": str(output),
-            "min_finite_fraction": threshold,
-        })
+        jobs.start(
+            "quality",
+            {
+                "matrix_path": str(paths[0]),
+                "identity_path": str(paths[1]),
+                "sample_metadata_path": str(paths[2]),
+                "output_dir": str(output),
+                "min_finite_fraction": threshold,
+            },
+        )
         return _terminal(jobs)["job"]
     finally:
         jobs.close()

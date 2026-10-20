@@ -78,8 +78,7 @@ def test_repo_path_resolution_rejects_symlink_escape(tmp_path: Path) -> None:
 def test_current_control_plane_is_a_compatibility_index_preimage() -> None:
     root = Path(__file__).parents[1]
     text = (
-        root
-        / "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
+        root / "docs/superpowers/plans/2026-06-15-productization-control-plane.md"
     ).read_text(encoding="utf-8")
 
     assert is_productization_compatibility_index_text(text)
@@ -215,12 +214,8 @@ def test_permanent_root_contract_ignores_nested_fenced_only_route() -> None:
 @pytest.mark.parametrize(
     "fenced_example",
     (
-        ("> ```markdown\n"
-         "> [fenced route](docs/product/README.md)\n"
-         "> ```\n"),
-        ("> 1. ```markdown\n"
-         ">    [fenced route](docs/product/README.md)\n"
-         ">    ```\n"),
+        ("> ```markdown\n> [fenced route](docs/product/README.md)\n> ```\n"),
+        ("> 1. ```markdown\n>    [fenced route](docs/product/README.md)\n>    ```\n"),
     ),
 )
 def test_permanent_root_contract_ignores_blockquoted_fenced_only_route(
@@ -240,30 +235,12 @@ def test_permanent_root_contract_ignores_blockquoted_fenced_only_route(
 @pytest.mark.parametrize(
     "fenced_example",
     (
-        ("```markdown\n"
-         "- ```\n"
-         "[fenced route](docs/product/README.md)\n"
-         "```\n"),
-        ("> ```markdown\n"
-         "> > ```\n"
-         "> [fenced route](docs/product/README.md)\n"
-         "> ```\n"),
-        ("```markdown\n"
-         "    ```\n"
-         "[fenced route](docs/product/README.md)\n"
-         "```\n"),
-        ("> ```markdown\n"
-         ">     ```\n"
-         "> [fenced route](docs/product/README.md)\n"
-         "> ```\n"),
-        ("- ```markdown\n"
-         "```\n"
-         "[fenced route](docs/product/README.md)\n"
-         "  ```\n"),
-        ("- > ```markdown\n"
-         "> ```\n"
-         "> [fenced route](docs/product/README.md)\n"
-         "  > ```\n"),
+        ("```markdown\n- ```\n[fenced route](docs/product/README.md)\n```\n"),
+        ("> ```markdown\n> > ```\n> [fenced route](docs/product/README.md)\n> ```\n"),
+        ("```markdown\n    ```\n[fenced route](docs/product/README.md)\n```\n"),
+        ("> ```markdown\n>     ```\n> [fenced route](docs/product/README.md)\n> ```\n"),
+        ("- ```markdown\n```\n[fenced route](docs/product/README.md)\n  ```\n"),
+        ("- > ```markdown\n> ```\n> [fenced route](docs/product/README.md)\n  > ```\n"),
     ),
 )
 def test_permanent_root_contract_ignores_faux_closing_container_in_fence(
@@ -320,8 +297,7 @@ def test_dependency_census_resolves_relative_markdown_html_and_constant_consumer
         {
             "referrer": "docs/guide/ref.md",
             "raw_target": (
-                "../superpowers/plans/"
-                "2026-06-15-productization-control-plane.md"
+                "../superpowers/plans/2026-06-15-productization-control-plane.md"
             ),
             "resolved_path": target,
         }
@@ -330,8 +306,7 @@ def test_dependency_census_resolves_relative_markdown_html_and_constant_consumer
         {
             "referrer": "docs/report.html",
             "raw_target": (
-                "superpowers/plans/"
-                "2026-06-15-productization-control-plane.md"
+                "superpowers/plans/2026-06-15-productization-control-plane.md"
             ),
             "resolved_path": target,
         }

@@ -100,9 +100,7 @@ def _write_required_alignment_artifacts(alignment_dir: Path) -> None:
         encoding="utf-8",
     )
     (alignment_dir / "alignment_matrix.tsv").write_text(
-        "Mz\tRT\tSampleA\tSampleB\n"
-        "100\t5\t10\t\n"
-        "101\t6\t\t20\n",
+        "Mz\tRT\tSampleA\tSampleB\n100\t5\t10\t\n101\t6\t\t20\n",
         encoding="utf-8",
     )
     (alignment_dir / "alignment_matrix_identity.tsv").write_text(

@@ -153,9 +153,7 @@ def test_subset_schema_can_explicitly_pad_allowed_trailing_column(
         allow_missing_trailing_columns=("optional_note",),
     )
 
-    assert rows == [
-        {"family_id": "FAM001", "sample": "S1", "optional_note": ""}
-    ]
+    assert rows == [{"family_id": "FAM001", "sample": "S1", "optional_note": ""}]
 
 
 def test_trailing_padding_still_rejects_missing_required_cell(

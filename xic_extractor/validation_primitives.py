@@ -288,6 +288,7 @@ def require_list(
         raise error_factory(f"{label} must be one JSON array")
     return value
 
+
 def require_tuple_of(
     value: object,
     item_type: type | tuple[type, ...],

@@ -50,9 +50,8 @@ def test_discovery_csv_rejects_non_physical_state_values(
 
     write_discovery_candidates_csv(output_path, (candidate,))
     with pytest.raises(ValueError, match="discovery_candidate_state must be one"):
-        read_discovery_candidates_csv(
-        output_path
-        )
+        read_discovery_candidates_csv(output_path)
+
 
 @pytest.mark.parametrize(
     (
@@ -206,9 +205,7 @@ def test_discovery_state_and_physical_truth_projection_table(
             ms1_area=88765.4 if ms1_peak_found else None,
             discovery_candidate_state=state,
             ms1_feature_row_id=(
-                "Sample_1|DNA_dR|258.108512|7.841234"
-                if ms1_peak_found
-                else ""
+                "Sample_1|DNA_dR|258.108512|7.841234" if ms1_peak_found else ""
             ),
         ),
         precursor_mz_basis=precursor_mz_basis,  # type: ignore[arg-type]

@@ -626,7 +626,8 @@ def _admissible_physical_segments(
             # window. Recover only containing segments, never nearby context peaks.
             # The answer still enforces uniqueness, complete support and contrast.
             candidates = tuple(
-                segment for segment in universe.segments
+                segment
+                for segment in universe.segments
                 if segment.left_rt_min <= query_rt <= segment.right_rt_min
             )
         # The prior resolves ambiguity only among eligible candidates.
@@ -782,9 +783,7 @@ def _physical_segment_support_failure(
         return "insufficient_original_xic_continuity"
     # Hit density can identify additional censored clusters; it does not
     # establish the absence of an already observed morphology peak.
-    left, right, apex = (
-        selected.start_index, selected.end_index, selected.apex_index
-    )
+    left, right, apex = (selected.start_index, selected.end_index, selected.apex_index)
     signal = np.asarray(prepared.positive_signal[left:right], dtype=float)
     apex_offset = apex - left
     prominence = float(signal[apex_offset]) - max(

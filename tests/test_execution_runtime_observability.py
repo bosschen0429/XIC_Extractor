@@ -80,8 +80,7 @@ def test_runtime_event_indexes_preserve_scan_bytes_and_rejection_results(
             get=lambda key, default=(): tuple(
                 index
                 for index, event in enumerate(events)
-                if event.subject is subject
-                and (event.subject_key, event.kind) == key
+                if event.subject is subject and (event.subject_key, event.kind) == key
             )
         )
 

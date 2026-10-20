@@ -125,16 +125,13 @@ def write_sequence_manifest_markdown(
         f"- matched rows: {status_counts.get('matched', 0)}",
         f"- unmatched rows: {status_counts.get('unmatched', 0)}",
         f"- ambiguous rows: {status_counts.get('ambiguous', 0)}",
-        "- manual review rows: "
-        f"{status_counts.get('manual_review', 0)}",
+        f"- manual review rows: {status_counts.get('manual_review', 0)}",
         "",
         "## Review Rows",
         "",
     ]
     review_rows = [
-        row
-        for row in row_list
-        if row.match_status != ManifestMatchStatus.MATCHED
+        row for row in row_list if row.match_status != ManifestMatchStatus.MATCHED
     ][:20]
     if not review_rows:
         lines.append("No unmatched or ambiguous rows.")

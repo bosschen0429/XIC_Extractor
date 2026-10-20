@@ -115,9 +115,7 @@ def _sources(
     backfill_rows = [
         _backfill_row(),
         _backfill_row(
-            feature_family_id=(
-                "FAM000001" if multiple_lookup_matches else "FAM000002"
-            ),
+            feature_family_id=("FAM000001" if multiple_lookup_matches else "FAM000002"),
             group_hypothesis_id="FAM000002",
             public_family_id="FAM000002",
             sample_stem="sample-a" if multiple_lookup_matches else "sample-b",
@@ -276,9 +274,7 @@ def test_shadow_bundle_rehydrates_formula_escaped_machine_identities(
     bindings = BackfillEvidenceOwnerBindings(
         known_group_ids=frozenset({canonical["group_hypothesis_id"]}),
         known_sample_stems=frozenset({canonical["sample_stem"]}),
-        candidate_samples={
-            canonical["source_candidate_id"]: canonical["sample_stem"]
-        },
+        candidate_samples={canonical["source_candidate_id"]: canonical["sample_stem"]},
         group_feature_family_ids={
             canonical["group_hypothesis_id"]: canonical["feature_family_id"]
         },

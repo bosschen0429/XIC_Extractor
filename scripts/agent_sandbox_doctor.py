@@ -139,9 +139,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         action="append",
         type=Path,
         default=None,
-        help=(
-            "Allowed write root. Repeatable. Defaults to the active workspace."
-        ),
+        help=("Allowed write root. Repeatable. Defaults to the active workspace."),
     )
     parser.add_argument(
         "--json-output",

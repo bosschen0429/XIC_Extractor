@@ -101,10 +101,16 @@ def _interval_chart(
         )
     for index, (key, label, _) in enumerate(_RATIO_VISUALS):
         y = 74.0 + index * 82.0
-        parts.append(f'<text class="label" x="12" y="{y + 10:.1f}">{escape(label)}</text>')
+        parts.append(
+            f'<text class="label" x="12" y="{y + 10:.1f}">{escape(label)}</text>'
+        )
         parts.extend(_interval_marks(primary.get(key), y, left, width, "primary"))
-        parts.extend(_interval_marks(background.get(key), y + 29, left, width, "background"))
-    parts.append("</svg><div class=\"legend\"><span><i class=\"swatch gold\"></i>accepted</span><span><i class=\"swatch\"></i>background</span></div></div>")
+        parts.extend(
+            _interval_marks(background.get(key), y + 29, left, width, "background")
+        )
+    parts.append(
+        '</svg><div class="legend"><span><i class="swatch gold"></i>accepted</span><span><i class="swatch"></i>background</span></div></div>'
+    )
     return "".join(parts)
 
 
@@ -167,26 +173,44 @@ def _rt_small_multiples(
         high = optional_float(row_summary.get("q95")) or max(low * 10, 1.0)
         low = max(low, 1e-6)
         high = max(high, low * 1.01)
-        parts.append(f'<text class="label" x="12" y="{top + 16:.1f}">{escape(label)}</text>')
-        parts.append(f'<rect class="hotspot" x="{hotspot_x1:.1f}" y="{top:.1f}" width="{max(hotspot_x2 - hotspot_x1, 0):.1f}" height="130"/>')
-        parts.append(f'<line class="axis" x1="{left}" y1="{top + 130:.1f}" x2="{left + width}" y2="{top + 130:.1f}"/>')
+        parts.append(
+            f'<text class="label" x="12" y="{top + 16:.1f}">{escape(label)}</text>'
+        )
+        parts.append(
+            f'<rect class="hotspot" x="{hotspot_x1:.1f}" y="{top:.1f}" width="{max(hotspot_x2 - hotspot_x1, 0):.1f}" height="130"/>'
+        )
+        parts.append(
+            f'<line class="axis" x1="{left}" y1="{top + 130:.1f}" x2="{left + width}" y2="{top + 130:.1f}"/>'
+        )
         for row in rows:
             rt = optional_float(row.get("base_rt_apex_min"))
             ratio = optional_float(row.get(key))
             if rt is None or ratio is None or ratio <= 0:
                 continue
             x = left + _linear(rt, rt_min, rt_max, width)
-            y = top + 130 - _linear(
-                math.log10(min(max(ratio, low), high)),
-                math.log10(low),
-                math.log10(high),
-                118,
+            y = (
+                top
+                + 130
+                - _linear(
+                    math.log10(min(max(ratio, low), high)),
+                    math.log10(low),
+                    math.log10(high),
+                    118,
+                )
             )
             point_class = "point-hot" if 12.5 <= rt <= 13.5 else "point"
-            parts.append(f'<circle class="{point_class}" cx="{x:.1f}" cy="{y:.1f}" r="3"/>')
-        parts.append(f'<text x="{left}" y="{top + 151:.1f}">{number(rt_min)} min</text><text x="{left + width}" y="{top + 151:.1f}" text-anchor="end">{number(rt_max)} min</text>')
-        parts.append(f'<text x="12" y="{top + 45:.1f}">{number(high)}</text><text x="12" y="{top + 126:.1f}">{number(low)}</text>')
-    parts.append("</svg><div class=\"legend\"><span><i class=\"swatch orange\"></i>12.5-13.5 min</span><span><i class=\"swatch\"></i>其餘 RT</span></div></div>")
+            parts.append(
+                f'<circle class="{point_class}" cx="{x:.1f}" cy="{y:.1f}" r="3"/>'
+            )
+        parts.append(
+            f'<text x="{left}" y="{top + 151:.1f}">{number(rt_min)} min</text><text x="{left + width}" y="{top + 151:.1f}" text-anchor="end">{number(rt_max)} min</text>'
+        )
+        parts.append(
+            f'<text x="12" y="{top + 45:.1f}">{number(high)}</text><text x="12" y="{top + 126:.1f}">{number(low)}</text>'
+        )
+    parts.append(
+        '</svg><div class="legend"><span><i class="swatch orange"></i>12.5-13.5 min</span><span><i class="swatch"></i>其餘 RT</span></div></div>'
+    )
     return "".join(parts)
 
 
@@ -197,9 +221,11 @@ def _linear(value: float, minimum: float, maximum: float, size: float) -> float:
 
 
 def _formula_details(rows: Sequence[Mapping[str, object]]) -> str:
-    visible = [row for row in rows if text_value(row.get("measurement_basis")) == "height"]
+    visible = [
+        row for row in rows if text_value(row.get("measurement_basis")) == "height"
+    ]
     body = "".join(
-        f'<tr><td><code>{escape(text_value(row.get("ratio_name")))}</code></td><td>{escape(text_value(row.get("numerator")))}</td><td>{escape(text_value(row.get("denominator")))}</td><td>{escape(text_value(row.get("formula_family")))}</td></tr>'
+        f"<tr><td><code>{escape(text_value(row.get('ratio_name')))}</code></td><td>{escape(text_value(row.get('numerator')))}</td><td>{escape(text_value(row.get('denominator')))}</td><td>{escape(text_value(row.get('formula_family')))}</td></tr>"
         for row in visible
     )
     return f'<details><summary>Debug: 完整 formula manifest</summary><div class="table-wrap"><table><thead><tr><th>ratio</th><th>分子</th><th>分母</th><th>family</th></tr></thead><tbody>{body}</tbody></table></div></details>'
@@ -207,7 +233,7 @@ def _formula_details(rows: Sequence[Mapping[str, object]]) -> str:
 
 def _tail_details(rows: Sequence[Mapping[str, object]]) -> str:
     body = "".join(
-        f'<tr><td><code>{escape(text_value(row.get("candidate_id")))}</code></td><td>{number(optional_float(row.get("base_mz")))}</td><td>{number(optional_float(row.get("base_rt_apex_min")), digits=4)}</td><td>{int(optional_float(row.get("ratio_outlier_count")) or 0)}</td></tr>'
+        f"<tr><td><code>{escape(text_value(row.get('candidate_id')))}</code></td><td>{number(optional_float(row.get('base_mz')))}</td><td>{number(optional_float(row.get('base_rt_apex_min')), digits=4)}</td><td>{int(optional_float(row.get('ratio_outlier_count')) or 0)}</td></tr>"
         for row in rows[:50]
     )
     return f'<details><summary>Tail review rows（前 50 筆）</summary><div class="table-wrap"><table><thead><tr><th>candidate</th><th>base m/z</th><th>RT min</th><th>tail fields</th></tr></thead><tbody>{body}</tbody></table></div></details>'

@@ -397,9 +397,7 @@ def _validate_assembly_rows(
         row_label = f"{label} row {row_index}"
         query_set = _required_text(row, "query_set", label=row_label)
         if query_set != expected_query_set:
-            raise ValueError(
-                f"{row_label} query_set must be {expected_query_set!r}"
-            )
+            raise ValueError(f"{row_label} query_set must be {expected_query_set!r}")
         _required_text(row, "compound", label=row_label)
         _required_positive_number(row, "list_plus1_mz", label=row_label)
         for position in ("base", "plus1", "plus2", "plus4"):
@@ -571,11 +569,7 @@ def _interference_payload(interference: Mapping[str, object]) -> dict[str, objec
         and not isinstance(largest_value, (str, bytes))
         else []
     )
-    largest_cluster = (
-        largest[0]
-        if largest and isinstance(largest[0], Mapping)
-        else {}
-    )
+    largest_cluster = largest[0] if largest and isinstance(largest[0], Mapping) else {}
     available = bool(interference)
     if not available:
         counts: dict[str, int | None] = {
@@ -629,10 +623,7 @@ def _interference_payload(interference: Mapping[str, object]) -> dict[str, objec
 
 
 def _plus1_payload(rows: Sequence[Mapping[str, str]]) -> dict[str, object]:
-    by_threshold = {
-        _plus1_threshold_key(row): row
-        for row in rows
-    }
+    by_threshold = {_plus1_threshold_key(row): row for row in rows}
     return {
         "available": bool(rows),
         "thresholds": {
@@ -642,8 +633,7 @@ def _plus1_payload(rows: Sequence[Mapping[str, str]]) -> dict[str, object]:
         "threshold_25000": _plus1_threshold_payload(by_threshold.get(25000)),
         "threshold_100000": _plus1_threshold_payload(by_threshold.get(100000)),
         "interpretation": (
-            "+1 intensity is a seed/prioritization knob here, not a hard "
-            "detector gate."
+            "+1 intensity is a seed/prioritization knob here, not a hard detector gate."
         ),
     }
 
@@ -721,9 +711,7 @@ def _inclusion_payload(
             raise ValueError(f"inclusion {set_name} must define row_count")
         for metric, value in metrics.items():
             if metric != "row_count" and isinstance(value, int) and value > row_count:
-                raise ValueError(
-                    f"inclusion {set_name}/{metric} must be <= row_count"
-                )
+                raise ValueError(f"inclusion {set_name}/{metric} must be <= row_count")
     return {"available": bool(rows), **grouped}
 
 
@@ -750,12 +738,8 @@ def _validate_ratio_summary_rows(
     expected_population_label: str,
 ) -> str:
     if not rows:
-        raise ValueError(
-            f"{label} must contain the complete canonical ratio_name set"
-        )
-    observed_ratio_names = {
-        text_value(row.get("ratio_name")) for row in rows
-    }
+        raise ValueError(f"{label} must contain the complete canonical ratio_name set")
+    observed_ratio_names = {text_value(row.get("ratio_name")) for row in rows}
     expected_ratio_names = set(RATIO_NAMES)
     if observed_ratio_names != expected_ratio_names:
         missing = sorted(expected_ratio_names - observed_ratio_names)
@@ -766,8 +750,7 @@ def _validate_ratio_summary_rows(
         if extra:
             details.append("extra=" + ",".join(extra))
         raise ValueError(
-            f"{label} must contain the canonical ratio_name set: "
-            + "; ".join(details)
+            f"{label} must contain the canonical ratio_name set: " + "; ".join(details)
         )
     profile_ids: set[str] = set()
     total_population_counts: set[int] = set()
@@ -782,9 +765,7 @@ def _validate_ratio_summary_rows(
         for field, expected_value in expected_envelope.items():
             observed_value = _required_text(row, field, label=row_label)
             if observed_value != expected_value:
-                raise ValueError(
-                    f"{row_label} {field} must be {expected_value!r}"
-                )
+                raise ValueError(f"{row_label} {field} must be {expected_value!r}")
         profile_ids.add(_required_text(row, "profile_id", label=row_label))
         population_label = _required_text(
             row,
@@ -793,8 +774,7 @@ def _validate_ratio_summary_rows(
         )
         if population_label != expected_population_label:
             raise ValueError(
-                f"{row_label} population_label must be "
-                f"{expected_population_label!r}"
+                f"{row_label} population_label must be {expected_population_label!r}"
             )
         row_count = _required_nonnegative_int(
             row,
@@ -813,9 +793,7 @@ def _validate_ratio_summary_rows(
             label=row_label,
         )
         if outlier_count > row_count:
-            raise ValueError(
-                f"{row_label} outlier_count must be <= row_count"
-            )
+            raise ValueError(f"{row_label} outlier_count must be <= row_count")
         values = {
             field: _optional_finite_number(
                 row,
@@ -852,8 +830,7 @@ def _validate_ratio_summary_rows(
             raise ValueError(f"{row_label} must satisfy q75 <= q95")
     if len(profile_ids) != 1:
         raise ValueError(
-            f"{label} must contain a single profile_id; found "
-            f"{sorted(profile_ids)!r}"
+            f"{label} must contain a single profile_id; found {sorted(profile_ids)!r}"
         )
     if len(total_population_counts) != 1:
         raise ValueError(
@@ -1025,9 +1002,7 @@ def _optional_finite_number(
     maximum: float | None = None,
 ) -> float | None:
     raw_value = row.get(field)
-    if raw_value is None or (
-        isinstance(raw_value, str) and not raw_value.strip()
-    ):
+    if raw_value is None or (isinstance(raw_value, str) and not raw_value.strip()):
         return None
     value = optional_float(raw_value)
     if value is None:
@@ -1059,9 +1034,7 @@ def _require_unique_plus1_thresholds(
     for row in rows:
         threshold = _plus1_threshold_key(row)
         if threshold in seen:
-            raise ValueError(
-                f"duplicate plus1 threshold_plus1_height: {threshold}"
-            )
+            raise ValueError(f"duplicate plus1 threshold_plus1_height: {threshold}")
         seen.add(threshold)
 
 
@@ -1072,9 +1045,7 @@ def _require_unique_inclusion_keys(
     for row_index, row in enumerate(rows, start=2):
         key = (text_value(row.get("set")), text_value(row.get("metric")))
         if not all(key):
-            raise ValueError(
-                f"inclusion set/metric row {row_index} must be non-empty"
-            )
+            raise ValueError(f"inclusion set/metric row {row_index} must be non-empty")
         if key in seen:
             raise ValueError(f"duplicate inclusion set/metric: {key!r}")
         seen.add(key)
@@ -1140,9 +1111,7 @@ def _known_example_rows(
     source_label: str,
 ) -> list[dict[str, object]]:
     examples = [
-        row
-        for row in rows
-        if text_value(row.get("pipeline_status")) != "accepted_146"
+        row for row in rows if text_value(row.get("pipeline_status")) != "accepted_146"
     ][:40]
     return [
         {
@@ -1217,8 +1186,7 @@ def _observations(
     if layer_counter:
         top_layer, top_count = layer_counter.most_common(1)[0]
         observations.append(
-            f"Largest assembly diagnosis layer is {top_layer} "
-            f"({top_count} rows)."
+            f"Largest assembly diagnosis layer is {top_layer} ({top_count} rows)."
         )
     primary_counts = ratio_payload.get("primary_row_count_by_ratio")
     has_primary_rows = isinstance(primary_counts, Mapping) and any(
@@ -1263,9 +1231,7 @@ def _render_markdown(summary: Mapping[str, object]) -> str:
             "root cause；Ratio 仍只能當 diagnostic signal。"
         )
     else:
-        conclusion = (
-            "目前只有 ratio artifact；可以比較分布，但不能判定主要漏失來源。"
-        )
+        conclusion = "目前只有 ratio artifact；可以比較分布，但不能判定主要漏失來源。"
     evidence_lines: list[str] = []
     if interference_available:
         evidence_lines.append(

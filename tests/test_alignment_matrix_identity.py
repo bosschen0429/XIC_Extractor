@@ -83,8 +83,7 @@ def test_targeted_istd_trajectory_does_not_promote_one_detected_owner() -> None:
     assert decision.identity_reason == "insufficient_detected_identity_support"
 
 
-def test_targeted_istd_trajectory_two_detected_uses_multi_sample_policy(
-) -> None:
+def test_targeted_istd_trajectory_two_detected_uses_multi_sample_policy() -> None:
     matrix = _matrix(
         _feature(
             "FAM001",
@@ -1132,9 +1131,7 @@ def test_bounded_continuity_does_not_count_endpoint_apex_as_quantifiable() -> No
         ),
     )
 
-    decision = build_matrix_identity_decisions(matrix, AlignmentConfig()).row(
-        "FAM001"
-    )
+    decision = build_matrix_identity_decisions(matrix, AlignmentConfig()).row("FAM001")
 
     assert not decision.include_in_primary_matrix
     assert decision.identity_reason == "bounded_continuity_below_quantitation_limit"

@@ -201,9 +201,7 @@ def _validate_exact_header(
             duplicates.append(field_name)
         seen.add(field_name)
     if duplicates:
-        raise ValueError(
-            f"{path}: duplicate header fields: {', '.join(duplicates)}"
-        )
+        raise ValueError(f"{path}: duplicate header fields: {', '.join(duplicates)}")
     if tuple(fieldnames) != tuple(expected_header):
         raise ValueError(
             f"{path}: expected exact header {tuple(expected_header)!r}, "

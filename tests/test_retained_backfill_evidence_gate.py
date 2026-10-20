@@ -69,8 +69,7 @@ def test_cli_writes_retained_product_backfill_gate_and_summary(
     assert conflict["evidence_gate_status"] == "evidence_conflict"
     assert conflict["recommended_action"] == "review_product_backfill"
     assert (
-        "review_required_neighboring_ms1_interference"
-        in conflict["challenge_blockers"]
+        "review_required_neighboring_ms1_interference" in conflict["challenge_blockers"]
     )
     assert "backfill_cell_evidence_required" in conflict["dependent_context"]
     assert "backfill_rescue_review_only" in conflict["dependent_context"]
@@ -154,9 +153,10 @@ def test_overlay_support_without_seed_provenance_fails_closed(
     rows = _read_tsv(output_dir / "alignment_retained_backfill_evidence_gate.tsv")
     by_id = {row["feature_family_id"]: row for row in rows}
     assert by_id["FAM_SUPPORT"]["evidence_gate_status"] == "evidence_missing"
-    assert "ms1_shape_supports_family_backfill" not in by_id["FAM_SUPPORT"][
-        "support_components"
-    ]
+    assert (
+        "ms1_shape_supports_family_backfill"
+        not in by_id["FAM_SUPPORT"]["support_components"]
+    )
     assert "missing_seed_provenance" in by_id["FAM_SUPPORT"]["missing_evidence"]
     assert "missing_overlay_evidence" in by_id["FAM_SUPPORT"]["missing_evidence"]
     payload = json.loads(
@@ -176,8 +176,7 @@ def test_high_detected_low_backfill_missing_overlay_is_not_queued(
     output_dir = tmp_path / "gate"
     family_id = "FAM_STRONG"
     detected_cells = [
-        _cell_row(family_id, f"D{index:02d}", "detected")
-        for index in range(1, 84)
+        _cell_row(family_id, f"D{index:02d}", "detected") for index in range(1, 84)
     ]
     backfilled_cells = [
         _cell_row(family_id, "R01", "backfilled"),
@@ -220,13 +219,11 @@ def test_high_detected_low_backfill_missing_overlay_is_not_queued(
         "track_machine_supported_backfill",
     }
     assert all(
-        "high_detected_anchor_low_rescue_machine_support"
-        in row["support_components"]
+        "high_detected_anchor_low_rescue_machine_support" in row["support_components"]
         for row in rows
     )
     assert all(
-        "missing_overlay_evidence" not in row["missing_evidence"]
-        for row in rows
+        "missing_overlay_evidence" not in row["missing_evidence"] for row in rows
     )
     queue_rows = _read_tsv(
         output_dir / "alignment_retained_backfill_missing_overlay_queue.tsv",
@@ -286,9 +283,7 @@ def test_unbound_family_overlay_is_not_evidence(
     assert by_queue_id["FAM_SUPPORT"]["seed_group_id"] == _seed_group_id(
         "FAM_SUPPORT",
     )
-    assert "missing_overlay_evidence" in by_queue_id["FAM_SUPPORT"][
-        "missing_evidence"
-    ]
+    assert "missing_overlay_evidence" in by_queue_id["FAM_SUPPORT"]["missing_evidence"]
 
 
 def test_seed_specific_overlay_rows_do_not_leak_across_seed_groups(
@@ -396,12 +391,8 @@ def test_cli_defaults_output_dir_to_alignment_dir(tmp_path: Path) -> None:
     code = gate_cli.main(["--alignment-dir", str(alignment_dir)])
 
     assert code == 0
-    assert (
-        alignment_dir / "alignment_retained_backfill_evidence_gate.tsv"
-    ).is_file()
-    assert (
-        alignment_dir / "alignment_retained_backfill_evidence_gate.json"
-    ).is_file()
+    assert (alignment_dir / "alignment_retained_backfill_evidence_gate.tsv").is_file()
+    assert (alignment_dir / "alignment_retained_backfill_evidence_gate.json").is_file()
     assert (
         alignment_dir / "alignment_retained_backfill_missing_overlay_queue.tsv"
     ).is_file()
@@ -597,8 +588,7 @@ def _seed_group_id(
     rt_max: str = "11.0000",
 ) -> str:
     return (
-        f"seed::{family_id}::mz=269.145::rt={seed_rt}::"
-        f"window={rt_min}-{rt_max}::ppm=10"
+        f"seed::{family_id}::mz=269.145::rt={seed_rt}::window={rt_min}-{rt_max}::ppm=10"
     )
 
 

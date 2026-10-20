@@ -280,9 +280,7 @@ def _read_clean_alignment_matrix(
     for row_index, row in enumerate(rows, start=1):
         family_ids = identity_by_index.get(row_index)
         if family_ids is None:
-            raise ValueError(
-                f"{identity_path} is missing matrix_row_index {row_index}"
-            )
+            raise ValueError(f"{identity_path} is missing matrix_row_index {row_index}")
         values: dict[str, float] = {}
         for column, sample in sample_column_pairs:
             area = _float_value(row.get(column))
@@ -307,8 +305,7 @@ def _matrix_identity_by_index(
             matrix_row_index = int(index_text)
         except ValueError as exc:
             raise ValueError(
-                f"{path} row {row_number} has invalid matrix_row_index: "
-                f"{index_text!r}"
+                f"{path} row {row_number} has invalid matrix_row_index: {index_text!r}"
             ) from exc
         if matrix_row_index in identity_by_index:
             raise ValueError(
@@ -358,6 +355,7 @@ def read_alignment_cells(path: Path) -> dict[tuple[str, str], AlignmentCell]:
         cells[(cell.feature_family_id, sample)] = cell
     return cells
 
+
 def _required_text_value(
     path: Path,
     row_number: int,
@@ -374,7 +372,6 @@ def _risk_reasons_value(value: object) -> tuple[str, ...]:
     if isinstance(value, list):
         return tuple(_text(item) for item in value if _text(item))
     return tuple(part for part in _text(value).split(";") if part)
-
 
 
 def _normalize_sample_id(sample_id: str) -> str:

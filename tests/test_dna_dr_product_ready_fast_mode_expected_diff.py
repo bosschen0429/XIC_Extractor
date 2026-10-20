@@ -84,8 +84,7 @@ def _write_alignment_output(
 ) -> None:
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "alignment_matrix.tsv").write_text(
-        "Mz\tRT\tSampleA\n"
-        f"100.0\t5.0\t{matrix_area}\n",
+        f"Mz\tRT\tSampleA\n100.0\t5.0\t{matrix_area}\n",
         encoding="utf-8",
     )
     (directory / "alignment_matrix_identity.tsv").write_text(

@@ -152,9 +152,7 @@ def test_instrument_qc_tsv_writers_write_header_without_rows(
 
         writer(path, [])
 
-        assert path.read_text(encoding="utf-8").splitlines() == [
-            "\t".join(columns)
-        ]
+        assert path.read_text(encoding="utf-8").splitlines() == ["\t".join(columns)]
 
 
 def test_write_sdolek_json_contains_summary_and_rows(tmp_path: Path) -> None:

@@ -311,9 +311,7 @@ def diagnose_candidate_traces(
         PT_PATTERN_TRACE_FULL_CONTEXT_ROLE,
         PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE,
     }:
-        raise ValueError(
-            "trace_artifact_role must be 'full_context' or 'anchor_local'"
-        )
+        raise ValueError("trace_artifact_role must be 'full_context' or 'anchor_local'")
     base_mz = _required_float(row, "base_mz", label=candidate_id)
     base_rt = _required_float(row, "base_rt_apex_min", label=candidate_id)
 
@@ -587,12 +585,10 @@ def trace_summary_aggregate_fields(
     ordered_rows = [by_position[label] for label in POSITION_LABELS]
     non_base_rows = [by_position[label] for label in NON_BASE_POSITION_LABELS]
     point_counts = [
-        _required_non_negative_metric_int(row, "point_count")
-        for row in ordered_rows
+        _required_non_negative_metric_int(row, "point_count") for row in ordered_rows
     ]
     support_statuses = [
-        _required_metric_text(row, "trace_support_status")
-        for row in ordered_rows
+        _required_metric_text(row, "trace_support_status") for row in ordered_rows
     ]
     allowed_support_statuses = {
         "supported",
@@ -605,8 +601,7 @@ def trace_summary_aggregate_fields(
         raise ValueError("trace metric contains unsupported trace_support_status")
 
     max_intensities = [
-        _optional_finite_metric_float(row, "max_intensity")
-        for row in ordered_rows
+        _optional_finite_metric_float(row, "max_intensity") for row in ordered_rows
     ]
     supported_count = sum(
         _required_metric_text(row, "trace_support_status") == "supported"
@@ -632,12 +627,10 @@ def trace_summary_aggregate_fields(
         summary_status = "review"
         summary_reason = "no_non_base_positions_trace_supported"
 
-    trace_ambiguity_status, trace_ambiguity_flags = (
-        _summary_ambiguity_from_metric_rows(non_base_rows)
-    )
-    shifted_only_position_labels = _shifted_only_labels_from_metric_rows(
+    trace_ambiguity_status, trace_ambiguity_flags = _summary_ambiguity_from_metric_rows(
         non_base_rows
     )
+    shifted_only_position_labels = _shifted_only_labels_from_metric_rows(non_base_rows)
     return {
         "min_median_rt_step_sec": _min_optional_metric_value(
             ordered_rows,
@@ -768,9 +761,7 @@ def trace_metric_call_fields(
             min_pearson_r=min_pearson_r,
         )
     )
-    existing_flags = _split_flags(
-        str(metric_row.get("trace_quality_flags", ""))
-    )
+    existing_flags = _split_flags(str(metric_row.get("trace_quality_flags", "")))
     if (
         position_label == "pt_plus_4"
         and "plus4_window_tail_dominance" in existing_flags
@@ -793,16 +784,11 @@ def _with_serialized_metric_call_projection(
     max_apex_delta_sec: float,
 ) -> tuple[dict[str, object], ...]:
     serialized_rows = tuple(
-        {
-            field: format_diagnostic_value(value)
-            for field, value in row.items()
-        }
+        {field: format_diagnostic_value(value) for field, value in row.items()}
         for row in metric_rows
     )
     base_row = next(
-        row
-        for row in serialized_rows
-        if str(row.get("position_label", "")) == "base"
+        row for row in serialized_rows if str(row.get("position_label", "")) == "base"
     )
     output: list[dict[str, object]] = []
     for original_row, serialized_row in zip(
@@ -908,9 +894,7 @@ def _summary_ambiguity_from_metric_rows(
                 flags.add(flag)
         if "shifted_only_support" in metric_flags:
             flags.add("shifted_only_support_present")
-            shifted_only_positions.append(
-                _required_metric_text(row, "position_label")
-            )
+            shifted_only_positions.append(_required_metric_text(row, "position_label"))
         shape_shift = _optional_finite_metric_float(
             row,
             "shape_shift_sec_to_base",
@@ -923,8 +907,7 @@ def _summary_ambiguity_from_metric_rows(
         flags.add("isolated_position_shift")
     if shifted_only_positions:
         flags.add(
-            "shifted_only_positions="
-            + ",".join(sorted(set(shifted_only_positions)))
+            "shifted_only_positions=" + ",".join(sorted(set(shifted_only_positions)))
         )
     joined = _join_flags(flags)
     return ("review_required" if joined != TRACE_FLAG_NONE else "clear", joined)
@@ -1019,9 +1002,7 @@ def _is_plus4_window_tail_dominant(
     if len(reference_shapes) < 2:
         return False
 
-    reference_area = float(
-        np.median([shape.area for shape in reference_shapes])
-    )
+    reference_area = float(np.median([shape.area for shape in reference_shapes]))
     reference_span25 = float(
         np.median([shape.span25_sec for shape in reference_shapes])
     )
@@ -1032,8 +1013,7 @@ def _is_plus4_window_tail_dominant(
         return False
 
     return (
-        plus4_shape.area / reference_area
-        >= PLUS4_WINDOW_DOMINANCE_MIN_AREA_RATIO
+        plus4_shape.area / reference_area >= PLUS4_WINDOW_DOMINANCE_MIN_AREA_RATIO
         and plus4_shape.span25_sec / reference_span25
         >= PLUS4_WINDOW_DOMINANCE_MIN_SPAN25_RATIO
         and (plus4_shape.centroid_rt_min - reference_centroid) * 60.0
@@ -1094,9 +1074,7 @@ def _trace_metric(
         point_count=point_count,
         median_rt_step_sec=median_rt_step_sec,
     )
-    _base_raw_point_count, base_raw_max_intensity, base_raw_apex_rt_min = (
-        base_raw_stats
-    )
+    _base_raw_point_count, base_raw_max_intensity, base_raw_apex_rt_min = base_raw_stats
     _decision_point_count, max_intensity, apex_rt_min = _trace_stats(
         trace,
         intensity_basis="decision",
@@ -1108,9 +1086,7 @@ def _trace_metric(
     if position_label == "base":
         raw_supported = raw_max_intensity is not None and raw_max_intensity > 0
         status = (
-            "supported"
-            if max_intensity and max_intensity > 0
-            else "missing_signal"
+            "supported" if max_intensity and max_intensity > 0 else "missing_signal"
         )
         return TraceMetric(
             position_label=position_label,
@@ -1125,9 +1101,7 @@ def _trace_metric(
             raw_apex_rt_min=raw_apex_rt_min,
             raw_apex_delta_sec_to_base=0.0 if raw_apex_rt_min is not None else None,
             raw_smoothed_apex_delta_sec=(
-                0.0
-                if raw_apex_rt_min is not None and apex_rt_min is not None
-                else None
+                0.0 if raw_apex_rt_min is not None and apex_rt_min is not None else None
             ),
             raw_height_ratio_to_base=1.0 if raw_supported else None,
             raw_pearson_r_to_base=1.0 if raw_supported else None,
@@ -1383,8 +1357,10 @@ def _shifted_pearson_r_to_base(
         value = _pearson_arrays(base_segment, target_segment)
         if value is None:
             continue
-        if best is None or value > best[0] or (
-            math.isclose(value, best[0]) and abs(lag) < abs(best[1])
+        if (
+            best is None
+            or value > best[0]
+            or (math.isclose(value, best[0]) and abs(lag) < abs(best[1]))
         ):
             best = (value, lag)
     if best is None:
@@ -1454,11 +1430,7 @@ def _effective_smoothing_window_sec(
     point_count: int,
     median_rt_step_sec: float | None,
 ) -> float | None:
-    if (
-        point_count < 3
-        or median_rt_step_sec is None
-        or median_rt_step_sec <= 0.0
-    ):
+    if point_count < 3 or median_rt_step_sec is None or median_rt_step_sec <= 0.0:
         return None
     window = min(TRACE_SMOOTH_WINDOW_POINTS, point_count)
     if window % 2 == 0:
@@ -1561,10 +1533,7 @@ def _quality_flags(
             flags.append("raw_shape_weak_for_shifted_support")
         if pearson_r is None or pearson_r < min_pearson_r:
             flags.append("smoothed_shape_weak_for_shifted_support")
-        if (
-            shape_shift_sec is not None
-            and abs(shape_shift_sec) > LARGE_SHAPE_SHIFT_SEC
-        ):
+        if shape_shift_sec is not None and abs(shape_shift_sec) > LARGE_SHAPE_SHIFT_SEC:
             flags.append("large_shape_shift")
         if position_label == "pt_plus_4":
             flags.append("plus4_shifted_only_support")

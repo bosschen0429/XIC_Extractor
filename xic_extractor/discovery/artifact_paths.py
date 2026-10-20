@@ -29,8 +29,7 @@ def require_disjoint_artifact_paths(
         input_path
         for input_path in resolved_inputs
         for output_path in resolved_outputs
-        if input_path == output_path
-        or _same_existing_file(input_path, output_path)
+        if input_path == output_path or _same_existing_file(input_path, output_path)
     }
     if collisions:
         joined = ", ".join(
@@ -40,9 +39,7 @@ def require_disjoint_artifact_paths(
                 key=_canonical_path_sort_key,
             )
         )
-        raise ValueError(
-            f"{label} input/output paths must be disjoint: {joined}"
-        )
+        raise ValueError(f"{label} input/output paths must be disjoint: {joined}")
 
 
 def _require_distinct_paths(paths: Sequence[Path], *, label: str) -> None:

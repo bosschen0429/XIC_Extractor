@@ -123,20 +123,15 @@ def _overall_counts(summaries: Sequence[Any]) -> dict[str, object]:
         for summary in summaries
     )
     active_fail_count = sum(
-        summary.status == "FAIL" and summary.active_tag
-        for summary in summaries
+        summary.status == "FAIL" and summary.active_tag for summary in summaries
     )
     active_warn_count = sum(
-        (
-            summary.status == "WARN"
-            or bool(summary.targeted_reliability_warning_modes)
-        )
+        (summary.status == "WARN" or bool(summary.targeted_reliability_warning_modes))
         and summary.active_tag
         for summary in summaries
     )
     false_positive_tag_count = sum(
-        "FALSE_POSITIVE_TAG" in summary.failure_modes
-        for summary in summaries
+        "FALSE_POSITIVE_TAG" in summary.failure_modes for summary in summaries
     )
     return {
         "overall_status": "FAIL" if fail_count else "WARN" if warn_count else "PASS",

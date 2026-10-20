@@ -124,8 +124,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         default=None,
         metavar="KEY=VALUE",
         help=(
-            "Additional canonical setting override for extraction suites. "
-            "Repeatable."
+            "Additional canonical setting override for extraction suites. Repeatable."
         ),
     )
     parser.add_argument(

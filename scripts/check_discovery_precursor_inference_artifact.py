@@ -182,10 +182,7 @@ def _append_row_contract_problems(
             f"row {row_number}: invalid precursor_mz_basis "
             f"{row.get('precursor_mz_basis', '')!r}"
         )
-    if (
-        row.get("neutral_loss_error_basis", "")
-        not in ALLOWED_NEUTRAL_LOSS_ERROR_BASIS
-    ):
+    if row.get("neutral_loss_error_basis", "") not in ALLOWED_NEUTRAL_LOSS_ERROR_BASIS:
         problems.append(
             f"row {row_number}: invalid neutral_loss_error_basis "
             f"{row.get('neutral_loss_error_basis', '')!r}"
@@ -235,8 +232,7 @@ def _append_expected_row_problems(
     allowed_basis = expected["precursor_mz_basis"]
     if basis not in allowed_basis:
         problems.append(
-            f"{label}: precursor_mz_basis {basis!r} not in "
-            f"{sorted(allowed_basis)!r}"
+            f"{label}: precursor_mz_basis {basis!r} not in {sorted(allowed_basis)!r}"
         )
 
     error_basis = row.get("neutral_loss_error_basis", "")

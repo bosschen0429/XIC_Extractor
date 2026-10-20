@@ -327,9 +327,7 @@ def _parse_detected_feature(
     row_label = _row_label(path, row_index)
     sample_stem = _required_text(row.get("sample_stem"), "sample_stem", row_label)
     feature_id = _required_text(row.get("feature_id"), "feature_id", row_label)
-    trace_quality = _required_text(
-        row.get("trace_quality"), "trace_quality", row_label
-    )
+    trace_quality = _required_text(row.get("trace_quality"), "trace_quality", row_label)
     source = _required_text(row.get("source"), "source", row_label)
 
     return DetectedFeature(
@@ -532,9 +530,7 @@ def _validate_detected_feature(
             _finite_feature_value(value, field_name, row_label)
     height = _finite_feature_value(feature.height, "height", row_label)
     if height <= 0:
-        raise ValueError(
-            f"{row_label} has invalid height: must be > 0, got {height!r}"
-        )
+        raise ValueError(f"{row_label} has invalid height: must be > 0, got {height!r}")
     _validate_trace_quality_for_source(
         trace_quality,
         source=source,
@@ -703,9 +699,7 @@ def _first_optional_positive_float(
 
 def _positive_float(value: float, field: str, row_label: str) -> float:
     if value <= 0:
-        raise ValueError(
-            f"{row_label} has invalid {field}: must be > 0, got {value!r}"
-        )
+        raise ValueError(f"{row_label} has invalid {field}: must be > 0, got {value!r}")
     return value
 
 

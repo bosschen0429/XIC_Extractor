@@ -118,9 +118,7 @@ class PhysicalFactSource:
         return transfer
 
     @classmethod
-    def from_detached(
-        cls, transfer: DetachedPhysicalFactSource
-    ) -> PhysicalFactSource:
+    def from_detached(cls, transfer: DetachedPhysicalFactSource) -> PhysicalFactSource:
         """Adopt a worker-produced spool after process-safe transport."""
 
         if not isinstance(transfer, DetachedPhysicalFactSource):

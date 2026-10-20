@@ -40,6 +40,7 @@ class OwnerEdgeEvidence:
     Corrected RT is absent when the trigger skips lookup or the lookup cannot
     assess the pair. Reasons distinguish raw sufficiency from unavailability.
     """
+
     left_owner_id: str
     right_owner_id: str
     left_sample_stem: str
@@ -273,21 +274,35 @@ def _score_and_decide(
         return raw_score, raw_decision, "raw", raw_reason, None
     if raw_decision == "strong_edge" and not has_direct_reference:
         return (
-            raw_score, raw_decision, "raw", raw_reason + ";drift=raw_sufficient", None,
+            raw_score,
+            raw_decision,
+            "raw",
+            raw_reason + ";drift=raw_sufficient",
+            None,
         )
     if seed_support_level == "weak" or owner_quality in {"weak", "ambiguous_nearby"}:
         return (
-            raw_score, raw_decision, "raw",
-            raw_reason + ";drift=insufficient_non_rt_evidence", None,
+            raw_score,
+            raw_decision,
+            "raw",
+            raw_reason + ";drift=insufficient_non_rt_evidence",
+            None,
         )
     rt_drift_corrected_delta_sec = corrected_delta_supplier()
     if rt_drift_corrected_delta_sec is None:
         return raw_score, raw_decision, "raw", raw_reason + ";drift=unavailable", None
-    if _drift_is_contradictory(
-        rt_raw_delta_sec, rt_drift_corrected_delta_sec,
-    ) or rt_raw_delta_sec <= config.preferred_rt_sec < rt_drift_corrected_delta_sec:
+    if (
+        _drift_is_contradictory(
+            rt_raw_delta_sec,
+            rt_drift_corrected_delta_sec,
+        )
+        or rt_raw_delta_sec <= config.preferred_rt_sec < rt_drift_corrected_delta_sec
+    ):
         return (
-            raw_score, raw_decision, "raw", raw_reason + ";drift=raw_fallback",
+            raw_score,
+            raw_decision,
+            "raw",
+            raw_reason + ";drift=raw_fallback",
             rt_drift_corrected_delta_sec,
         )
 
@@ -309,7 +324,10 @@ def _score_and_decide(
         config=config,
     )
     return (
-        score, decision, "drift_corrected", _pass_reason(decision, score),
+        score,
+        decision,
+        "drift_corrected",
+        _pass_reason(decision, score),
         rt_drift_corrected_delta_sec,
     )
 

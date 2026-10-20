@@ -39,7 +39,6 @@ def _group(
         group_hypothesis_id=group_id,
         public_family_id="display-family",
         owner_ids=owner_ids or (f"owner:{group_id}",),
-
         event_member_count=1,
         group_center_mz=center_mz,
         group_center_rt=center_rt,

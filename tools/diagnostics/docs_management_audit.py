@@ -71,6 +71,8 @@ COMPLETED_TRANSIENT_LIFECYCLES = {
     "archived",
     "retired",
 }
+
+
 @dataclass(frozen=True)
 class AuditMessage:
     severity: str
@@ -169,8 +171,7 @@ def audit_repo(
         if rel_path.startswith("docs/") and is_markdown_path(rel_path)
     )
     docs_by_top = Counter(
-        rel_path.removeprefix("docs/").split("/", 1)[0] or "."
-        for rel_path in docs
+        rel_path.removeprefix("docs/").split("/", 1)[0] or "." for rel_path in docs
     )
 
     local_path_counts: Counter[str] = Counter()
@@ -201,9 +202,7 @@ def audit_repo(
 
     routing_review = docs_routing_review(repository_view)
     structure_review = docs_structure_review_for_repo(repository_view.paths)
-    completed_transient_review = completed_transient_review_for_repo(
-        repository_view
-    )
+    completed_transient_review = completed_transient_review_for_repo(repository_view)
     canonical_metadata_review = canonical_metadata_review_for_repo(repository_view)
     routing_candidates = int(routing_review["candidate_files"])
     metadata_review_files = int(routing_review["metadata_review_files"])
@@ -215,8 +214,8 @@ def audit_repo(
         for row in canonical_metadata_review["top_missing_metadata"]
         if row["metadata_status"] == "invalid_permanent_root_contract"
     ]
-    ordinary_canonical_metadata_count = (
-        canonical_missing_metadata - len(invalid_permanent_rows)
+    ordinary_canonical_metadata_count = canonical_missing_metadata - len(
+        invalid_permanent_rows
     )
     if routing_candidates:
         invalid_count = int(

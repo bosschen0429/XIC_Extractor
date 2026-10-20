@@ -12,9 +12,9 @@ def test_alignment_exports_plan2_public_api_names():
         "AlignmentMatrix",
         "CellStatus",
     )
-    assert {
-        name for name in dir(alignment) if not name.startswith("_")
-    } == set(alignment.__all__)
+    assert {name for name in dir(alignment) if not name.startswith("_")} == set(
+        alignment.__all__
+    )
 
 
 def test_discovery_csv_and_alignment_tsv_do_not_import_raw_reader():
@@ -33,8 +33,6 @@ def test_discovery_csv_and_alignment_tsv_do_not_import_raw_reader():
         ]
 
         assert violations == []
-
-
 
 
 def test_alignment_ownership_module_stays_domain_focused():
@@ -56,12 +54,7 @@ def test_alignment_ownership_module_stays_domain_focused():
 
 
 def test_alignment_edge_scoring_stays_domain_focused():
-    path = (
-        Path(__file__).parents[1]
-        / "xic_extractor"
-        / "alignment"
-        / "edge_scoring.py"
-    )
+    path = Path(__file__).parents[1] / "xic_extractor" / "alignment" / "edge_scoring.py"
     banned_roots = (
         "xic_workbench",
         "openpyxl",
@@ -87,9 +80,7 @@ def _imported_module_names(node):
     if isinstance(node, ast.ImportFrom):
         imported_names = [node.module] if node.module else []
         imported_names.extend(
-            f"{node.module}.{alias.name}"
-            for alias in node.names
-            if node.module
+            f"{node.module}.{alias.name}" for alias in node.names if node.module
         )
         return imported_names
     return []

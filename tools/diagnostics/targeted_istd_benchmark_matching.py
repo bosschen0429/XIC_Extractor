@@ -20,9 +20,7 @@ def _match_target_to_alignment(
     target_points: tuple[TargetedPoint, ...],
     thresholds: BenchmarkThresholds,
 ) -> tuple[CandidateMatch, ...]:
-    target_mean_rt = _mean(
-        point.rt for point in target_points if point.positive
-    )
+    target_mean_rt = _mean(point.rt for point in target_points if point.positive)
     exact_matches = _match_target_to_alignment_with_shift(
         target,
         features,
@@ -30,10 +28,9 @@ def _match_target_to_alignment(
         thresholds=thresholds,
         mass_shift_da=0.0,
     )
-    if (
-        any(match.include_in_primary_matrix for match in exact_matches)
-        or not _is_active_tag(target, thresholds)
-    ):
+    if any(
+        match.include_in_primary_matrix for match in exact_matches
+    ) or not _is_active_tag(target, thresholds):
         return tuple(sorted(exact_matches, key=_match_sort_key))
     isotope_matches = tuple(
         match
@@ -72,9 +69,7 @@ def _match_target_to_alignment_with_shift(
         )
         if abs(product_delta_ppm) > target.ppm_tol:
             continue
-        loss_delta_da = (
-            feature.family_observed_neutral_loss_da - target.neutral_loss_da
-        )
+        loss_delta_da = feature.family_observed_neutral_loss_da - target.neutral_loss_da
         if abs(loss_delta_da) > thresholds.active_neutral_loss_tolerance_da:
             continue
         rt_delta_sec = _target_rt_delta_sec(
@@ -145,8 +140,6 @@ def _target_rt_delta_sec(
     if rt < target.rt_min:
         return (rt - target.rt_min) * 60.0
     return (rt - target.rt_max) * 60.0
-
-
 
 
 def _ppm_delta(reference: float, observed: float) -> float:

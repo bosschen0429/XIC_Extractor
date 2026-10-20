@@ -306,9 +306,7 @@ def load_verified_oracle_promotion_bundle(
     }
     for field, expected in expected_constants.items():
         if payload.get(field) != expected:
-            raise ValueError(
-                f"oracle promotion summary {field} must be {expected!r}"
-            )
+            raise ValueError(f"oracle promotion summary {field} must be {expected!r}")
     for field, expected_bool in {
         "manual_oracle_only": True,
         "changes_matrix": False,
@@ -317,18 +315,13 @@ def load_verified_oracle_promotion_bundle(
     }.items():
         if payload.get(field) is not expected_bool:
             raise ValueError(
-                f"oracle promotion summary {field} must be "
-                f"{str(expected_bool).lower()}"
+                f"oracle promotion summary {field} must be {str(expected_bool).lower()}"
             )
 
     oracle_packet_id = _required_text(payload, "oracle_packet_id")
-    observed_packet_ids = {
-        _required_text(row, "oracle_packet_id") for row in rows
-    }
+    observed_packet_ids = {_required_text(row, "oracle_packet_id") for row in rows}
     if observed_packet_ids != {oracle_packet_id}:
-        raise ValueError(
-            "oracle promotion rows must use the summary oracle_packet_id"
-        )
+        raise ValueError("oracle promotion rows must use the summary oracle_packet_id")
     outputs = _required_mapping(payload, "outputs", label="oracle promotion summary")
     _require_exact_keys(
         outputs,
@@ -342,10 +335,13 @@ def load_verified_oracle_promotion_bundle(
     expected_packet_path = summary_json.parent / PROMOTION_PACKET_FILE_NAME
     if expected_packet_path.resolve() != packet_csv.resolve():
         raise ValueError("oracle promotion packet is not the fixed summary sibling")
-    if _normalized_sha256(
-        outputs.get("promotion_packet_csv_sha256"),
-        label="oracle promotion summary packet SHA-256",
-    ) != packet_sha256:
+    if (
+        _normalized_sha256(
+            outputs.get("promotion_packet_csv_sha256"),
+            label="oracle promotion summary packet SHA-256",
+        )
+        != packet_sha256
+    ):
         raise ValueError("oracle promotion summary packet SHA-256 mismatch")
     if _required_manifest_int(payload, "packet_row_count") != len(rows):
         raise ValueError("oracle promotion summary packet_row_count mismatch")
@@ -355,10 +351,7 @@ def load_verified_oracle_promotion_bundle(
     observed_detection_counts = dict(
         sorted(Counter(row["oracle_detection_status"] for row in rows).items())
     )
-    if (
-        _required_count_mapping(payload, "oracle_call_counts")
-        != observed_call_counts
-    ):
+    if _required_count_mapping(payload, "oracle_call_counts") != observed_call_counts:
         raise ValueError("oracle promotion summary oracle_call_counts mismatch")
     if (
         _required_count_mapping(payload, "oracle_detection_status_counts")
@@ -423,9 +416,7 @@ def load_verified_oracle_promotion_bundle(
     )
     _validate_adjudication_summary(adjudication_summary_json, adjudicated_rows)
     review_packets = _read_review_packets(review_packet_csvs)
-    overlay_bundles = _read_blind_overlay_summaries(
-        blind_overlay_summary_jsons
-    )
+    overlay_bundles = _read_blind_overlay_summaries(blind_overlay_summary_jsons)
     rebuilt_rows = build_oracle_promotion_rows(
         adjudicated_rows=adjudicated_rows,
         review_packet_rows=review_packets.rows,
@@ -754,30 +745,42 @@ def _revalidate_promotion_sources(
     review_packet_csvs: tuple[Path, ...],
     blind_overlay_summary_jsons: tuple[Path, ...],
 ) -> None:
-    if _load_artifact_descriptor(
-        inputs.get("adjudicated_oracle_csv"),
-        manifest_path=summary_json,
-        label="adjudicated oracle CSV",
-    ) != adjudicated_oracle_csv:
+    if (
+        _load_artifact_descriptor(
+            inputs.get("adjudicated_oracle_csv"),
+            manifest_path=summary_json,
+            label="adjudicated oracle CSV",
+        )
+        != adjudicated_oracle_csv
+    ):
         raise ValueError("oracle promotion adjudicated source changed")
     if adjudication_summary_json is not None:
-        if _load_artifact_descriptor(
-            inputs.get("adjudication_summary_json"),
-            manifest_path=summary_json,
-            label="adjudication summary JSON",
-        ) != adjudication_summary_json:
+        if (
+            _load_artifact_descriptor(
+                inputs.get("adjudication_summary_json"),
+                manifest_path=summary_json,
+                label="adjudication summary JSON",
+            )
+            != adjudication_summary_json
+        ):
             raise ValueError("oracle promotion adjudication summary changed")
-    if _load_artifact_descriptor_list(
-        inputs.get("review_packet_csvs"),
-        manifest_path=summary_json,
-        label="review packet CSV",
-    ) != review_packet_csvs:
+    if (
+        _load_artifact_descriptor_list(
+            inputs.get("review_packet_csvs"),
+            manifest_path=summary_json,
+            label="review packet CSV",
+        )
+        != review_packet_csvs
+    ):
         raise ValueError("oracle promotion review packet sources changed")
-    if _load_artifact_descriptor_list(
-        inputs.get("blind_overlay_summary_jsons"),
-        manifest_path=summary_json,
-        label="blind-overlay summary JSON",
-    ) != blind_overlay_summary_jsons:
+    if (
+        _load_artifact_descriptor_list(
+            inputs.get("blind_overlay_summary_jsons"),
+            manifest_path=summary_json,
+            label="blind-overlay summary JSON",
+        )
+        != blind_overlay_summary_jsons
+    ):
         raise ValueError("oracle promotion blind-overlay sources changed")
 
 
@@ -791,9 +794,7 @@ def _require_exact_keys(
     if observed != expected:
         missing = sorted(expected - observed)
         extra = sorted(observed - expected)
-        raise ValueError(
-            f"{label} keys mismatch; missing={missing!r}; extra={extra!r}"
-        )
+        raise ValueError(f"{label} keys mismatch; missing={missing!r}; extra={extra!r}")
 
 
 def _required_mapping(
@@ -821,9 +822,7 @@ def _required_count_mapping(
 ) -> dict[str, int]:
     value = row.get(field)
     if not isinstance(value, Mapping):
-        raise ValueError(
-            f"oracle promotion summary {field} must be an object"
-        )
+        raise ValueError(f"oracle promotion summary {field} must be an object")
     counts: dict[str, int] = {}
     for key, count in value.items():
         if not isinstance(key, str) or not key:
@@ -891,11 +890,7 @@ def _validate_adjudication_summary(
     }
     for key, value in expected.items():
         observed = summary.get(key)
-        if (
-            isinstance(observed, bool)
-            or not isinstance(observed, int)
-            or observed < 0
-        ):
+        if isinstance(observed, bool) or not isinstance(observed, int) or observed < 0:
             raise ValueError(f"{path}: {key} must be an integer >= 0")
         if observed != value:
             raise ValueError(

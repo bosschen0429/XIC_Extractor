@@ -151,9 +151,7 @@ def products_for_group(
     if product_group:
         keys.append(product_group.casefold())
     candidates = [
-        product
-        for product in products
-        if product.compound_or_group.casefold() in keys
+        product for product in products if product.compound_or_group.casefold() in keys
     ]
     if activation == "CID":
         filtered = [product for product in candidates if product.activation == "CID"]
@@ -232,9 +230,7 @@ def _normalize_label(label: str) -> str:
 def base_group_from_label_base_letter(label: str) -> str | None:
     label_without_isotopes = re.sub(r"\[[^\]]+\]", "", label)
     candidates = [
-        char
-        for char in label_without_isotopes
-        if char in {"A", "T", "C", "G", "U"}
+        char for char in label_without_isotopes if char in {"A", "T", "C", "G", "U"}
     ]
     if not candidates:
         return None

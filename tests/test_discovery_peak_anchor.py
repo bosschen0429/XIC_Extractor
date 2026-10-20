@@ -269,8 +269,7 @@ def test_assign_peak_anchors_threads_custom_evidence_settings() -> None:
     assert custom_assigned[0].evidence_score == default_assigned[0].evidence_score + 5
 
 
-def test_peak_anchors_preserve_distinct_feature_backed_inferred_candidates(
-) -> None:
+def test_peak_anchors_preserve_distinct_feature_backed_inferred_candidates() -> None:
     weaker = replace(
         _candidate(
             candidate_id="Sample#10-weaker",

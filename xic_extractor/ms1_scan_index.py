@@ -153,9 +153,7 @@ def write_ms1_scan_index_npz(
         position += int(masses.size)
         offsets[scan_index + 1] = position
     masses_concat = (
-        np.concatenate(mass_arrays)
-        if mass_arrays
-        else np.asarray([], dtype=np.float64)
+        np.concatenate(mass_arrays) if mass_arrays else np.asarray([], dtype=np.float64)
     )
     intensities_concat = (
         np.concatenate(intensity_arrays)
@@ -202,8 +200,7 @@ def read_ms1_scan_index_npz(path: Path) -> tuple[MS1Scan, ...]:
         ) from exc
     if schema_version != MS1_INDEX_CACHE_SCHEMA_VERSION:
         raise ValueError(
-            "unsupported MS1 index cache schema version: "
-            f"{schema_version}",
+            f"unsupported MS1 index cache schema version: {schema_version}",
         )
     _validate_integer_array(scan_number_values, name="scan_number")
     _validate_integer_array(offset_values, name="offsets")
@@ -222,9 +219,7 @@ def read_ms1_scan_index_npz(path: Path) -> tuple[MS1Scan, ...]:
     if masses.ndim != 1 or intensities.ndim != 1 or masses.shape != intensities.shape:
         raise ValueError("MS1 index cache intensity arrays are malformed")
     if len(offsets) and (
-        offsets[0] != 0
-        or offsets[-1] != len(masses)
-        or np.any(np.diff(offsets) < 0)
+        offsets[0] != 0 or offsets[-1] != len(masses) or np.any(np.diff(offsets) < 0)
     ):
         raise ValueError("MS1 index cache offsets do not match payload length")
     scans: list[MS1Scan] = []
@@ -317,11 +312,7 @@ def _scan_arrays(
         scan = raw_file.GetSimplifiedScan(scan_number)
         masses = np.asarray(getattr(scan, "Masses", []), dtype=np.float64)
     intensities = np.asarray(getattr(scan, "Intensities", []), dtype=np.float64)
-    if (
-        masses.ndim != 1
-        or intensities.ndim != 1
-        or masses.shape != intensities.shape
-    ):
+    if masses.ndim != 1 or intensities.ndim != 1 or masses.shape != intensities.shape:
         return masses, intensities
     order = np.argsort(masses)
     return masses[order], intensities[order]
@@ -353,11 +344,7 @@ def _validate_ms1_scan(scan: MS1Scan, *, previous: MS1Scan | None) -> None:
     _validate_real_array(raw_intensities, name="intensities")
     masses = raw_masses.astype(np.float64, copy=False)
     intensities = raw_intensities.astype(np.float64, copy=False)
-    if (
-        masses.ndim != 1
-        or intensities.ndim != 1
-        or masses.shape != intensities.shape
-    ):
+    if masses.ndim != 1 or intensities.ndim != 1 or masses.shape != intensities.shape:
         raise ValueError("masses/intensities must be matching 1D arrays")
     if not np.all(np.isfinite(masses)):
         raise ValueError("masses must be finite")

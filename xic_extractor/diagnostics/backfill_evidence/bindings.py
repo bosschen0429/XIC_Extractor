@@ -29,9 +29,7 @@ def rehydrate_backfill_evidence_bindings(
         field="group_hypothesis_id",
     )
     if group_hypothesis_id and group_hypothesis_id not in bindings.known_group_ids:
-        raise ValueError(
-            f"unknown group_hypothesis_id {group_hypothesis_id!r}"
-        )
+        raise ValueError(f"unknown group_hypothesis_id {group_hypothesis_id!r}")
 
     expected_feature_family_id = bindings.group_feature_family_ids.get(
         group_hypothesis_id
@@ -93,9 +91,7 @@ def rehydrate_backfill_evidence_bindings(
     if source_candidate_id:
         candidate_sample = bindings.candidate_samples.get(source_candidate_id)
         if candidate_sample is None:
-            raise ValueError(
-                f"unknown source_candidate_id {source_candidate_id!r}"
-            )
+            raise ValueError(f"unknown source_candidate_id {source_candidate_id!r}")
         if candidate_sample != sample_stem:
             raise ValueError(
                 f"source_candidate_id {source_candidate_id!r} belongs to "
@@ -149,9 +145,7 @@ def validate_skipped_evidence_bindings(
     bindings: SkippedEvidenceOwnerBindings,
 ) -> None:
     if record.feature_family_id not in bindings.known_feature_family_ids:
-        raise ValueError(
-            f"unknown feature_family_id {record.feature_family_id!r}"
-        )
+        raise ValueError(f"unknown feature_family_id {record.feature_family_id!r}")
     if record.sample_stem not in bindings.known_sample_stems:
         raise ValueError(f"unknown sample_stem {record.sample_stem!r}")
     if record.backfill_scope != bindings.expected_backfill_scope:

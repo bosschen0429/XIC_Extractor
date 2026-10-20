@@ -653,7 +653,6 @@ def test_lookup_returns_median_sample_delta_and_injection_order() -> None:
             SampleDriftEvidence(
                 sample_stem="sample-a",
                 injection_order=7,
-
                 istd_rt_min=1.9,
                 local_trend_rt_min=2.1,
                 rt_drift_delta_min=-0.2,
@@ -662,7 +661,6 @@ def test_lookup_returns_median_sample_delta_and_injection_order() -> None:
             SampleDriftEvidence(
                 sample_stem="sample-a",
                 injection_order=7,
-
                 istd_rt_min=2.0,
                 local_trend_rt_min=2.0,
                 rt_drift_delta_min=0.0,
@@ -671,7 +669,6 @@ def test_lookup_returns_median_sample_delta_and_injection_order() -> None:
             SampleDriftEvidence(
                 sample_stem="sample-b",
                 injection_order=10,
-
                 istd_rt_min=2.1,
                 local_trend_rt_min=2.0,
                 rt_drift_delta_min=0.1,
@@ -694,7 +691,6 @@ def test_lookup_rejects_conflicting_injection_orders_for_sample() -> None:
             SampleDriftEvidence(
                 sample_stem="sample-a",
                 injection_order=7,
-
                 istd_rt_min=1.9,
                 local_trend_rt_min=2.1,
                 rt_drift_delta_min=-0.2,
@@ -703,7 +699,6 @@ def test_lookup_rejects_conflicting_injection_orders_for_sample() -> None:
             SampleDriftEvidence(
                 sample_stem="sample-a",
                 injection_order=8,
-
                 istd_rt_min=2.0,
                 local_trend_rt_min=2.0,
                 rt_drift_delta_min=0.0,
@@ -722,7 +717,6 @@ def test_lookup_keeps_conflicting_injection_order_lazy_per_sample() -> None:
             SampleDriftEvidence(
                 sample_stem="sample-a",
                 injection_order=7,
-
                 istd_rt_min=1.9,
                 local_trend_rt_min=2.1,
                 rt_drift_delta_min=-0.2,
@@ -731,7 +725,6 @@ def test_lookup_keeps_conflicting_injection_order_lazy_per_sample() -> None:
             SampleDriftEvidence(
                 sample_stem="sample-a",
                 injection_order=8,
-
                 istd_rt_min=2.0,
                 local_trend_rt_min=2.0,
                 rt_drift_delta_min=0.0,
@@ -740,7 +733,6 @@ def test_lookup_keeps_conflicting_injection_order_lazy_per_sample() -> None:
             SampleDriftEvidence(
                 sample_stem="sample-b",
                 injection_order=10,
-
                 istd_rt_min=2.2,
                 local_trend_rt_min=2.0,
                 rt_drift_delta_min=0.2,

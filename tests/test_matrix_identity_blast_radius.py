@@ -297,9 +297,7 @@ def test_blast_radius_input_bundle_preserves_existing_order_contracts() -> None:
         "FAM_A",
     ]
     assert inputs.matrix.sample_order == ("sample-a", "sample-b", "sample-c")
-    assert [
-        row["sample_stem"] for row in inputs.cell_rows_by_family["FAM_B"]
-    ] == [
+    assert [row["sample_stem"] for row in inputs.cell_rows_by_family["FAM_B"]] == [
         "sample-b",
         "sample-a",
     ]

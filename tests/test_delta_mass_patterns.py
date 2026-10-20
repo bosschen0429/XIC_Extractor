@@ -786,8 +786,7 @@ def test_matcher_rejects_unimplemented_direct_ratio_basis() -> None:
         )
 
 
-def test_matcher_rejects_duplicate_sample_local_identity_before_id_collision(
-) -> None:
+def test_matcher_rejects_duplicate_sample_local_identity_before_id_collision() -> None:
     features = _features_with_pt_plus_1(BASE_MZ + PT_PLUS_1_DELTA)
     features.append(
         _feature(

@@ -34,7 +34,10 @@ def test_selected_candidate_warn_token_keeps_measured_loss_error() -> None:
     )
     result = ExtractionResult(
         peak_result=PeakDetectionResult(
-            status="NO_PEAK", peak=None, n_points=0, max_smoothed=0.0,
+            status="NO_PEAK",
+            peak=None,
+            n_points=0,
+            max_smoothed=0.0,
             n_prominent_peaks=0,
         ),
         nl=None,

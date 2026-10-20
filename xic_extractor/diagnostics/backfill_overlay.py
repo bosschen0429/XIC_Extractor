@@ -14,9 +14,7 @@ def selected_overlay_row(
     if not rows:
         return {}
     seed_specific = [
-        row
-        for row in rows
-        if text_value(row.get("seed_group_id")) == seed_group_id
+        row for row in rows if text_value(row.get("seed_group_id")) == seed_group_id
     ]
     if not seed_group_id or not seed_specific:
         return {}

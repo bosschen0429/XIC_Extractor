@@ -90,9 +90,7 @@ def test_load_feature_tag_profiles_rejects_unknown_category(tmp_path: Path) -> N
 def test_load_feature_tag_profiles_still_requires_tag_number(tmp_path: Path) -> None:
     path = _feature_list(tmp_path)
     path.write_text(
-        path.read_text(encoding="utf-8").replace(
-            "1,1,116.047344", ",1,116.047344", 1
-        ),
+        path.read_text(encoding="utf-8").replace("1,1,116.047344", ",1,116.047344", 1),
         encoding="utf-8",
     )
 

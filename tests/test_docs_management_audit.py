@@ -28,9 +28,7 @@ MAINTAINED_VALIDATION_HTML = (
 
 def _isolated_git_subprocess_env() -> dict[str, str]:
     return {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith("GIT_")
+        key: value for key, value in os.environ.items() if not key.startswith("GIT_")
     }
 
 
@@ -298,9 +296,9 @@ def test_repo_only_completed_transient_spec_is_advisory(
     assert review["top_completed_files"][0]["path"] == spec_path
     _write(
         root / spec_path,
-        (root / spec_path).read_text(encoding="utf-8").replace(
-            "Doc lifecycle: implemented", "Doc lifecycle: active"
-        ),
+        (root / spec_path)
+        .read_text(encoding="utf-8")
+        .replace("Doc lifecycle: implemented", "Doc lifecycle: active"),
     )
     active_result = _run_audit(root, repo_only=True)
     assert result.blockers == active_result.blockers
@@ -312,8 +310,7 @@ def test_repo_only_archived_productization_summary_inventory(
     root = tmp_path / "repo"
     _clean_repo(root)
     summary_path = (
-        "docs/superpowers/productization/evidence/"
-        "2026-07-01-framework-phase-summary.md"
+        "docs/superpowers/productization/evidence/2026-07-01-framework-phase-summary.md"
     )
     _write(
         root / summary_path,
@@ -1802,9 +1799,9 @@ def test_repo_docs_topic_review_separates_support_surfaces_from_owners(
     assert cluster["topic_owner_count"] == 0
     assert cluster["supporting_count"] == 2
     assert cluster["digestion_review_count"] == 2
-    assert "external_owner_with_cleanup_candidates:2" in cluster[
-        "digestion_status_counts"
-    ]
+    assert (
+        "external_owner_with_cleanup_candidates:2" in cluster["digestion_status_counts"]
+    )
     candidate_paths = {
         item["path"]
         for item in review["top_candidates"]
@@ -2162,9 +2159,7 @@ def test_repo_owner_marker_controls_topic_before_body_keywords(
         if subcontract_path in item["subcontract_paths"]
     )
     assert cluster["topic_key"] == "targeted selection"
-    assert cluster["repo_owner_hint"] == (
-        "docs/product/targeted-selection.md"
-    )
+    assert cluster["repo_owner_hint"] == ("docs/product/targeted-selection.md")
     assert cluster["topic_cluster_status"] == "subcontracts_with_owner"
     assert cluster["subcontract_claims"] == "docs/product/targeted-selection.md"
 
@@ -2325,8 +2320,7 @@ def test_permanent_root_rejects_missing_routes_and_empty_content(
     assert row["metadata_status"] == "invalid_permanent_root_contract"
     assert expected_problem in row["metadata_missing_fields"]
     assert any(
-        msg.severity == "blocker" and msg.path == path
-        for msg in result.messages
+        msg.severity == "blocker" and msg.path == path for msg in result.messages
     )
 
 
@@ -2348,15 +2342,14 @@ def test_permanent_root_rejects_missing_target_and_referrer(tmp_path: Path) -> N
 
     rows = result.summary["repo"]["canonical_metadata_review"]["top_missing_metadata"]
     problems_by_path = {row["path"]: row["metadata_missing_fields"] for row in rows}
-    assert "required route target is missing: docs/agent/parameter-settings.md" in (
-        problems_by_path["AGENTS.md"]
+    assert (
+        "required route target is missing: docs/agent/parameter-settings.md"
+        in (problems_by_path["AGENTS.md"])
     )
     expected_referrer = (
         "required referrer must route: README.md -> docs/architecture-contract.md"
     )
-    assert expected_referrer in (
-        problems_by_path["docs/architecture-contract.md"]
-    )
+    assert expected_referrer in (problems_by_path["docs/architecture-contract.md"])
     assert {"AGENTS.md", "README.md", "docs/architecture-contract.md"} <= {
         message.path for message in result.blockers
     }

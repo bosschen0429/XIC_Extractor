@@ -119,6 +119,7 @@ class CrossSamplePeakGroupHypothesis:
     def event_cluster_ids(self) -> tuple[str, ...]:
         return self.owner_ids
 
+
 def validate_cross_sample_peak_group_identity(
     group: CrossSamplePeakGroupHypothesis,
     *,
@@ -285,7 +286,6 @@ def _hypothesis_from_owner_group(
         group_hypothesis_id=group_identity.group_hypothesis_id,
         public_family_id=public_family_id,
         owner_ids=tuple(owner.owner_id for owner in group),
-
         event_member_count=sum(len(owner.all_events) for owner in group),
         processing_request_id=group_identity.processing_request_id,
         member_subjects=group_identity.member_subjects,

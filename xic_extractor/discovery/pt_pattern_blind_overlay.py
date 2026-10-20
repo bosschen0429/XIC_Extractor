@@ -65,6 +65,7 @@ POSITION_LABELS = {
     "pt_plus_4": "+4.005213",
 }
 
+
 def render_blind_overlay_html(
     *,
     packet_rows: Sequence[Mapping[str, str]],
@@ -316,15 +317,11 @@ def _render_boundary_evidence(row: Mapping[str, str]) -> str:
         "boundary": row.get("anchor_segmentation_boundary_review_status", ""),
         "common_start": row.get("anchor_segmentation_common_rt_start_min", ""),
         "common_end": row.get("anchor_segmentation_common_rt_end_min", ""),
-        "start_owner": row.get(
-            "anchor_segmentation_common_start_owner_labels", ""
-        ),
+        "start_owner": row.get("anchor_segmentation_common_start_owner_labels", ""),
         "end_owner": row.get("anchor_segmentation_common_end_owner_labels", ""),
         "max_left_clip": row.get("anchor_segmentation_max_left_clip_sec", ""),
         "max_right_clip": row.get("anchor_segmentation_max_right_clip_sec", ""),
-        "min_retained": row.get(
-            "anchor_segmentation_min_common_retained_fraction", ""
-        ),
+        "min_retained": row.get("anchor_segmentation_min_common_retained_fraction", ""),
         "right_residual": row.get(
             "anchor_segmentation_max_common_right_residual_fraction", ""
         ),
@@ -340,17 +337,17 @@ def _render_boundary_evidence(row: Mapping[str, str]) -> str:
     return f"""<div class="boundary-evidence">
     <strong>Anchor 局部邊界證據（diagnostic only；僅作 assessability gate）</strong>
     <div class="boundary-grid">
-      <div>選段狀態: {escaped['selection']}</div>
-      <div>邊界 review: {escaped['boundary']}</div>
+      <div>選段狀態: {escaped["selection"]}</div>
+      <div>邊界 review: {escaped["boundary"]}</div>
       <div>共同區間: {common_interval}</div>
-      <div>共同左界 owner: {escaped['start_owner']}</div>
-      <div>共同右界 owner: {escaped['end_owner']}</div>
-      <div>需 review 位置: {escaped['review_positions']}</div>
-      <div>最大左側截斷: {escaped['max_left_clip']} sec</div>
-      <div>最大右側截斷: {escaped['max_right_clip']} sec</div>
-      <div>最小保留比例: {escaped['min_retained']}</div>
-      <div>右界 residual/apex 最大值: {escaped['right_residual']}</div>
-      <div>共同右界仍下降: {escaped['descending_right']}</div>
+      <div>共同左界 owner: {escaped["start_owner"]}</div>
+      <div>共同右界 owner: {escaped["end_owner"]}</div>
+      <div>需 review 位置: {escaped["review_positions"]}</div>
+      <div>最大左側截斷: {escaped["max_left_clip"]} sec</div>
+      <div>最大右側截斷: {escaped["max_right_clip"]} sec</div>
+      <div>最小保留比例: {escaped["min_retained"]}</div>
+      <div>右界 residual/apex 最大值: {escaped["right_residual"]}</div>
+      <div>共同右界仍下降: {escaped["descending_right"]}</div>
     </div>
   </div>"""
 

@@ -119,9 +119,7 @@ def test_product_registry_csv_overrides_builtins(tmp_path: Path) -> None:
 
 def test_activation_method_parser_uses_method_doc_text() -> None:
     assert (
-        activation_method_from_instrument_method(
-            "20260105 STDs_ddMS2_CIDwHCD_EASY-IC"
-        )
+        activation_method_from_instrument_method("20260105 STDs_ddMS2_CIDwHCD_EASY-IC")
         == "CIDwHCD"
     )
     assert (

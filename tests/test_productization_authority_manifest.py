@@ -8,8 +8,7 @@ from scripts.check_productization_state import artifact_sha256
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = (
-    ROOT
-    / "docs/superpowers/productization/status/"
+    ROOT / "docs/superpowers/productization/status/"
     "productization_authority_manifest.json"
 )
 
@@ -31,8 +30,8 @@ def test_manifest_has_no_registered_file_activation_writer() -> None:
     assert policy["unregistered_scope_policy"] == "fail_closed"
     assert policy["product_writer_allowed_scopes"] == []
     assert "quality_blockers" in policy["forbidden_authority_sources"]
-    assert "broad_backfill_candidate_universe" in (
-        policy["forbidden_authority_sources"]
+    assert (
+        "broad_backfill_candidate_universe" in (policy["forbidden_authority_sources"])
     )
 
     assert manifest["current_authority"] == {}
@@ -40,13 +39,11 @@ def test_manifest_has_no_registered_file_activation_writer() -> None:
     explanation_sources = manifest["explanation_only_sources"]
     assert explanation_sources
     assert all(
-        source["may_grant_write_authority"] is False
-        for source in explanation_sources
+        source["may_grant_write_authority"] is False for source in explanation_sources
     )
 
     blocked_scope_ids = {
-        scope["scope_id"]
-        for scope in manifest["blocked_or_negative_evidence_scopes"]
+        scope["scope_id"] for scope in manifest["blocked_or_negative_evidence_scopes"]
     }
     assert NEGATIVE_SCOPE_IDS <= blocked_scope_ids
     retired_scopes = {
@@ -62,9 +59,7 @@ def test_manifest_has_no_registered_file_activation_writer() -> None:
 
 def test_manifest_compact_artifact_hashes_match() -> None:
     manifest = _read_json(MANIFEST_PATH)
-    compact_artifacts = (
-        manifest["explanation_only_sources"][0],
-    )
+    compact_artifacts = (manifest["explanation_only_sources"][0],)
     for source in compact_artifacts:
         assert artifact_sha256(ROOT / source["artifact"]) == source["artifact_sha256"]
 

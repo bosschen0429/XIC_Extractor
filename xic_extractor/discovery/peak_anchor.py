@@ -63,8 +63,7 @@ def _assign_peak_anchors(
             )
 
     return tuple(
-        assigned_by_candidate_id[candidate.candidate_id]
-        for candidate in candidates
+        assigned_by_candidate_id[candidate.candidate_id] for candidate in candidates
     )
 
 

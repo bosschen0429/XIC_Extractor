@@ -163,9 +163,7 @@ def run_sdolek_pipeline(
         output_dir / "instrument_qc_mixstds_trend.json" if emit_mixstds else None
     )
     mixstds_diagnostics_tsv = (
-        output_dir / "instrument_qc_mixstds_diagnostics.tsv"
-        if emit_mixstds
-        else None
+        output_dir / "instrument_qc_mixstds_diagnostics.tsv" if emit_mixstds else None
     )
     hcd_audit_tsv = (
         output_dir / "instrument_qc_hcd_audit.tsv" if emit_hcd_audit else None

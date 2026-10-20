@@ -60,16 +60,13 @@ def load_mixstds_target_registry(path: Path | None) -> MixSTDSTargetRegistry:
         schema = _detect_target_schema(fieldnames)
         if schema is None:
             missing = [
-                column
-                for column in MIXSTDS_TARGET_COLUMNS
-                if column not in fieldnames
+                column for column in MIXSTDS_TARGET_COLUMNS if column not in fieldnames
             ]
             return MixSTDSTargetRegistry(
                 source=path,
                 status="invalid",
                 reason=(
-                    "Missing required Mix STDs target columns: "
-                    + ", ".join(missing)
+                    "Missing required Mix STDs target columns: " + ", ".join(missing)
                 ),
                 targets=(),
                 hcd_base_groups={},

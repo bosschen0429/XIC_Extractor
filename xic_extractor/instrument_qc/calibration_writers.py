@@ -174,9 +174,7 @@ def top_review_rows(
         "prior_reference_mismatch": 5,
         "stable_ms1_trend": 6,
     }
-    review_rows = [
-        row for row in rows if row.review_bucket != "stable_ms1_trend"
-    ]
+    review_rows = [row for row in rows if row.review_bucket != "stable_ms1_trend"]
     return sorted(
         review_rows,
         key=lambda row: (
@@ -189,9 +187,7 @@ def top_review_rows(
 
 
 def top_rt_observation(rows: Iterable[CalibratedSDOLEKTrendRow]) -> str:
-    rt_rows = [
-        row for row in rows if row.rt_delta_to_batch_median_min is not None
-    ]
+    rt_rows = [row for row in rows if row.rt_delta_to_batch_median_min is not None]
     if not rt_rows:
         return "batch RT evidence unavailable"
     row = max(rt_rows, key=lambda item: abs(item.rt_delta_to_batch_median_min or 0.0))
@@ -202,9 +198,7 @@ def top_rt_observation(rows: Iterable[CalibratedSDOLEKTrendRow]) -> str:
 
 
 def top_area_observation(rows: Iterable[CalibratedSDOLEKTrendRow]) -> str:
-    area_rows = [
-        row for row in rows if row.log2_area_ratio_to_batch_median is not None
-    ]
+    area_rows = [row for row in rows if row.log2_area_ratio_to_batch_median is not None]
     if not area_rows:
         return "batch area evidence unavailable"
     row = max(
@@ -247,9 +241,7 @@ def _calibrated_row_to_dict(row: CalibratedSDOLEKTrendRow) -> dict[str, object]:
         "rt_delta_to_batch_median_min": _optional_number(
             row.rt_delta_to_batch_median_min
         ),
-        "compound_batch_median_area": _optional_number(
-            row.compound_batch_median_area
-        ),
+        "compound_batch_median_area": _optional_number(row.compound_batch_median_area),
         "log2_area_ratio_to_batch_median": _optional_number(
             row.log2_area_ratio_to_batch_median
         ),

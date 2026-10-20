@@ -198,9 +198,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     trace_summary_csv = args.trace_summary_csv
     resolved_trace_summary_csv = (
-        trace_summary_csv.resolve()
-        if args.trace_summary_csv is not None
-        else None
+        trace_summary_csv.resolve() if args.trace_summary_csv is not None else None
     )
     if (
         resolved_trace_summary_csv is not None
@@ -215,13 +213,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.trace_metrics_csv is not None or args.trace_manifest_json is not None
     ):
         parser.error(
-            "--trace-metrics-csv/--trace-manifest-json require "
-            "--trace-summary-csv"
+            "--trace-metrics-csv/--trace-manifest-json require --trace-summary-csv"
         )
     resolved_trace_metrics_csv = (
-        args.trace_metrics_csv.resolve()
-        if args.trace_metrics_csv is not None
-        else None
+        args.trace_metrics_csv.resolve() if args.trace_metrics_csv is not None else None
     )
     resolved_trace_manifest_json = (
         args.trace_manifest_json.resolve()

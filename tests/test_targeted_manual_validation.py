@@ -204,9 +204,7 @@ def test_write_validation_workbook_contains_required_sheets(tmp_path: Path) -> N
             "正常",
         )
     ]
-    peaks = [
-        ProgramPeakRow("SampleA", "TargetA", False, 10.01, 1000.0, 10000.0, True)
-    ]
+    peaks = [ProgramPeakRow("SampleA", "TargetA", False, 10.01, 1000.0, 10000.0, True)]
     score = score_manual_validation(
         "canonical_targeted",
         {},
@@ -358,9 +356,7 @@ def test_run_cases_executes_each_case_once_with_current_config(
     assert calls == [("nosplit", overrides), ("split", overrides)]
 
 
-def test_main_writes_workbook_with_injected_runner(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_main_writes_workbook_with_injected_runner(tmp_path: Path, monkeypatch) -> None:
     import scripts.targeted_manual_validation as module
 
     manual_workbook = tmp_path / "manual.xlsx"
@@ -476,9 +472,7 @@ def test_main_applies_parallel_overrides_to_one_current_run(
     )
 
     assert exit_code == 0
-    assert seen_overrides == [
-        {"parallel_mode": "process", "parallel_workers": "4"}
-    ]
+    assert seen_overrides == [{"parallel_mode": "process", "parallel_workers": "4"}]
 
 
 def test_script_file_exposes_cli_help() -> None:
@@ -495,8 +489,7 @@ def test_script_file_exposes_cli_help() -> None:
 
     assert completed.returncode == 0
     assert (
-        "Compare the current Targeted extractor with manual truth"
-        in completed.stdout
+        "Compare the current Targeted extractor with manual truth" in completed.stdout
     )
     assert "resolver" not in completed.stdout
     assert "grid" not in completed.stdout

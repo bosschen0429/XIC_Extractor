@@ -78,8 +78,7 @@ def relaxed_local_minimum_config(
         ),
         resolver_peak_duration_max=max(
             config.resolver_peak_duration_max,
-            config.resolver_peak_duration_max
-            * LOCAL_RELAXED_DURATION_MAX_MULTIPLIER,
+            config.resolver_peak_duration_max * LOCAL_RELAXED_DURATION_MAX_MULTIPLIER,
         ),
     )
 
@@ -134,8 +133,7 @@ def _relaxed_search_parameters(
     else:
         relaxed_ratio = max(
             PREFERRED_RT_RELAXED_MIN_PROMINENCE_RATIO,
-            config.peak_min_prominence_ratio
-            * PREFERRED_RT_RELAXED_PROMINENCE_FRACTION,
+            config.peak_min_prominence_ratio * PREFERRED_RT_RELAXED_PROMINENCE_FRACTION,
         )
         if relaxed_ratio >= config.peak_min_prominence_ratio:
             return None

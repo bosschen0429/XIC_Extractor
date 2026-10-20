@@ -65,8 +65,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Primary ratio profile: {outputs['accepted_ratio_profile_csv']}")
     print(f"Primary ratio summary: {outputs['accepted_ratio_summary_csv']}")
     print(
-        "Background ratio summary: "
-        f"{outputs['rejected_ratio_background_summary_csv']}"
+        f"Background ratio summary: {outputs['rejected_ratio_background_summary_csv']}"
     )
     print(f"Static diagnostic HTML: {outputs['html']}")
     print(f"Summary JSON: {outputs['summary_json']}")

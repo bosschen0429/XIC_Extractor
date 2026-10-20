@@ -27,8 +27,9 @@ DEFAULT_HCD_FALLBACK_RT_MAX = 60.0
 
 
 class MS2Source(Protocol):
-    def iter_ms2_scans(self, rt_min: float, rt_max: float) -> Iterator[Ms2ScanEvent]:
-        ...
+    def iter_ms2_scans(
+        self, rt_min: float, rt_max: float
+    ) -> Iterator[Ms2ScanEvent]: ...
 
 
 @dataclass(frozen=True)

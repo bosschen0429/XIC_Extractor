@@ -188,9 +188,7 @@ def test_full_pipeline_emits_detected_features_columns_exactly(
     assert all(row[source_index] == PROXY_SOURCE_LABEL for row in data_rows)
 
 
-def test_detected_feature_rows_use_proxy_source_and_diagnostic_support_fields() -> (
-    None
-):
+def test_detected_feature_rows_use_proxy_source_and_diagnostic_support_fields() -> None:
     scans = [_fake_full_pattern_scan(scan_number=100, rt_min=10.00)]
     hits = [
         hit

@@ -204,6 +204,7 @@ PERMANENT_ROOT_METADATA_FIELDS_WAIVED = frozenset(
     {DOC_LIFECYCLE_MARKER.rstrip(":"), DOC_EXIT_RULE_MARKER.rstrip(":")}
 )
 
+
 def is_productization_control_plane_path(path: str) -> bool:
     return normalize_path_text(path).removeprefix("./") == CONTROL_PLANE_PATH
 
@@ -212,8 +213,7 @@ def is_productization_compatibility_index_text(text: str) -> bool:
     """Identify a previously retired control-plane compatibility preimage."""
 
     return all(
-        text.count(marker) == 1
-        for marker in PRODUCTIZATION_COMPATIBILITY_INDEX_MARKERS
+        text.count(marker) == 1 for marker in PRODUCTIZATION_COMPATIBILITY_INDEX_MARKERS
     )
 
 
@@ -595,15 +595,13 @@ def validation_readme_reference_scope(
 
     normalized = normalize_path_text(path).lstrip("./")
     path_classification = classify_doc_path(normalized)
-    if (
-        not path_classification.is_validation_or_fixture
-        or not normalized.endswith("/README.md")
+    if not path_classification.is_validation_or_fixture or not normalized.endswith(
+        "/README.md"
     ):
         return "", (normalized,)
     family_prefix = normalized.rsplit("/", 1)[0] + "/"
     normalized_visible_paths = tuple(
-        normalize_path_text(candidate).lstrip("./")
-        for candidate in visible_paths
+        normalize_path_text(candidate).lstrip("./") for candidate in visible_paths
     )
     needles = {
         normalized,
