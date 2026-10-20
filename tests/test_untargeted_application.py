@@ -1030,7 +1030,7 @@ def test_reduced_discovery_persistence_keeps_physical_facts_and_qualifies_alignm
         raw_paths,
         output_dir=tmp_path / "discovery",
         settings=settings,
-        dll_dir=_discovery_peak_config(tmp_path).dll_dir,
+        dll_dir=tmp_path / "dll",
         raw_opener=lambda path, _dll_dir: discovery_handles[path],
         run_spec=spec,
     )

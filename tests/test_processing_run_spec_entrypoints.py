@@ -248,7 +248,7 @@ def test_adapter_rejects_invalid_method_before_fingerprinting(
 
 
 def test_run_spec_conflicts_fail_before_raw_opener(tmp_path: Path) -> None:
-    from tests.test_discovery_pipeline import _FakeRawHandle, _peak_config, _settings
+    from tests.test_discovery_pipeline import _FakeRawHandle, _settings
     from xic_extractor.discovery.pipeline import run_discovery
 
     raw_path = tmp_path / "Sample.raw"
@@ -268,7 +268,7 @@ def test_run_spec_conflicts_fail_before_raw_opener(tmp_path: Path) -> None:
             raw_path,
             output_dir=tmp_path / "settings-out",
             settings=replace(settings, seed_rt_gap_min=0.33),
-            dll_dir=_peak_config(tmp_path).dll_dir,
+            dll_dir=tmp_path / "dll",
             raw_opener=_open,
             run_spec=spec,
         )
@@ -277,7 +277,7 @@ def test_run_spec_conflicts_fail_before_raw_opener(tmp_path: Path) -> None:
             raw_path,
             output_dir=tmp_path / "invalid-out",
             settings=settings,
-            dll_dir=_peak_config(tmp_path).dll_dir,
+            dll_dir=tmp_path / "dll",
             raw_opener=_open,
             run_spec=object(),  # type: ignore[arg-type]
         )

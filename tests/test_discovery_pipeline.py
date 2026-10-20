@@ -111,7 +111,7 @@ def test_cancelled_batch_retains_completed_samples_without_publishing_index(
             raw_paths,
             output_dir=output_dir,
             settings=_settings(),
-            dll_dir=_peak_config(tmp_path).dll_dir,
+            dll_dir=tmp_path / "dll",
             raw_opener=None if parallel else opener,
             max_workers=2 if parallel else 1,
             executor_factory=Executor if parallel else None,
@@ -138,7 +138,7 @@ def test_single_discovery_cancelled_after_acquisition_closes_raw_without_output(
             tmp_path / "sample.raw",
             output_dir=output_dir,
             settings=_settings(),
-            dll_dir=_peak_config(tmp_path).dll_dir,
+            dll_dir=tmp_path / "dll",
             raw_opener=lambda *_args: raw,
             should_cancel=lambda: raw.closed,
         )
@@ -178,7 +178,7 @@ def test_single_raw_pipeline_groups_strict_ms2_seeds_and_writes_dual_csvs(
         raw_path,
         output_dir=output_dir,
         settings=_settings(seed_rt_gap_min=0.20, enable_blank_qualification=True),
-        dll_dir=_peak_config(tmp_path).dll_dir,
+        dll_dir=tmp_path / "dll",
         raw_opener=lambda path, dll_dir: raw,
     )
 
@@ -225,7 +225,7 @@ def test_single_raw_pipeline_writes_inferred_and_direct_same_scan_rows(
         raw_path,
         output_dir=output_dir,
         settings=_settings(seed_rt_gap_min=0.20, ms2_precursor_tol_da=1.6),
-        dll_dir=_peak_config(tmp_path).dll_dir,
+        dll_dir=tmp_path / "dll",
         raw_opener=lambda path, dll_dir: raw,
     )
 
@@ -282,7 +282,7 @@ def test_pipeline_retains_distinct_inferred_features_from_one_ms2_in_both_csvs(
         tmp_path / "Sample.raw",
         output_dir=tmp_path / "out",
         settings=_settings(),
-        dll_dir=_peak_config(tmp_path).dll_dir,
+        dll_dir=tmp_path / "dll",
         raw_opener=lambda path, dll_dir: raw,
     )
 
@@ -312,7 +312,7 @@ def test_pipeline_writes_header_only_csv_when_no_strict_seeds(tmp_path: Path) ->
         tmp_path / "Blank.raw",
         output_dir=tmp_path / "out",
         settings=_settings(),
-        dll_dir=_peak_config(tmp_path).dll_dir,
+        dll_dir=tmp_path / "dll",
         raw_opener=lambda path, dll_dir: raw,
     )
 
@@ -353,7 +353,7 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
         raw_paths,
         output_dir=tmp_path / "out",
         settings=_settings(enable_blank_qualification=True),
-        dll_dir=_peak_config(tmp_path).dll_dir,
+        dll_dir=tmp_path / "dll",
         raw_opener=lambda path, dll_dir: raw_by_path[path],
     )
 
@@ -456,7 +456,7 @@ def test_parallel_batch_preserves_serial_artifacts_and_sample_order(
         raw_paths,
         output_dir=tmp_path / "serial",
         settings=_settings(),
-        dll_dir=_peak_config(tmp_path).dll_dir,
+        dll_dir=tmp_path / "dll",
         raw_opener=lambda path, dll_dir: serial_handles[path],
     )
 
@@ -487,7 +487,7 @@ def test_parallel_batch_preserves_serial_artifacts_and_sample_order(
         raw_paths,
         output_dir=tmp_path / "parallel",
         settings=_settings(),
-        dll_dir=_peak_config(tmp_path).dll_dir,
+        dll_dir=tmp_path / "dll",
         max_workers=2,
         executor_factory=_SynchronousExecutor,
         progress_callback=lambda completed, total, sample: progress.append(
@@ -519,7 +519,7 @@ def test_parallel_batch_rejects_parent_raw_opener(tmp_path: Path) -> None:
             (tmp_path / "sample.raw",),
             output_dir=tmp_path / "out",
             settings=_settings(),
-            dll_dir=_peak_config(tmp_path).dll_dir,
+            dll_dir=tmp_path / "dll",
             raw_opener=lambda path, dll_dir: _FakeRawHandle(events=[]),
             max_workers=2,
         )
@@ -580,7 +580,7 @@ def test_parallel_batch_preserves_first_failure_and_completed_census(
             raw_paths,
             output_dir=tmp_path / "out",
             settings=_settings(),
-            dll_dir=_peak_config(tmp_path).dll_dir,
+            dll_dir=tmp_path / "dll",
             timing_recorder=recorder,
             max_workers=2,
             executor_factory=_FailFirstExecutor,
@@ -643,7 +643,7 @@ def test_parallel_batch_preserves_every_same_batch_failure(
             raw_paths,
             output_dir=tmp_path / "out",
             settings=_settings(),
-            dll_dir=_peak_config(tmp_path).dll_dir,
+            dll_dir=tmp_path / "dll",
             max_workers=2,
             executor_factory=_MultipleFailureExecutor,
         )
@@ -702,7 +702,7 @@ def test_parallel_batch_rejects_error_caller_authored_owner_counts(
             (raw_path,),
             output_dir=tmp_path / "out",
             settings=_settings(),
-            dll_dir=_peak_config(tmp_path).dll_dir,
+            dll_dir=tmp_path / "dll",
             timing_recorder=TimingRecorder("discovery"),
             max_workers=2,
             executor_factory=_ForgedErrorExecutor,
@@ -754,7 +754,7 @@ def test_parallel_batch_projects_typed_error_measurements_and_reduces_raw_open(
             (raw_path,),
             output_dir=tmp_path / "out",
             settings=_settings(),
-            dll_dir=_peak_config(tmp_path).dll_dir,
+            dll_dir=tmp_path / "dll",
             timing_recorder=recorder,
             max_workers=2,
             executor_factory=_TypedErrorExecutor,
@@ -810,7 +810,7 @@ def test_parallel_batch_disabled_timing_skips_ipc_serialization(
             raw_paths,
             output_dir=tmp_path / "out",
             settings=_settings(),
-            dll_dir=_peak_config(tmp_path).dll_dir,
+            dll_dir=tmp_path / "dll",
             max_workers=2,
             executor_factory=_FailureExecutor,
         )
@@ -821,7 +821,7 @@ def test_parallel_batch_disabled_timing_skips_ipc_serialization(
             raw_paths,
             output_dir=tmp_path / "instrumented-out",
             settings=_settings(),
-            dll_dir=_peak_config(tmp_path).dll_dir,
+            dll_dir=tmp_path / "dll",
             timing_recorder=recorder,
             max_workers=2,
             executor_factory=_FailureExecutor,
@@ -968,7 +968,7 @@ def test_discovery_raw_failure_preserves_open_and_adapter_measurements(
         _acquire_discovery_sample(
             raw_path,
             settings=_settings(),
-            dll_dir=_peak_config(tmp_path).dll_dir,
+            dll_dir=tmp_path / "dll",
             raw_opener=lambda path, dll_dir: raw,
             timing_recorder=recorder,
             raw_open_receipt_observer=observed_receipts.append,
@@ -1013,7 +1013,7 @@ def test_discovery_capture_failure_preserves_owner_acquisition_measurements(
         _acquire_discovery_sample(
             raw_path,
             settings=_settings(),
-            dll_dir=_peak_config(tmp_path).dll_dir,
+            dll_dir=tmp_path / "dll",
             raw_opener=lambda path, dll_dir: raw,
             timing_recorder=recorder,
             run_spec=spec,
@@ -1055,7 +1055,7 @@ def test_adapter_counter_failure_does_not_mask_discovery_failure(
         _acquire_discovery_sample(
             raw_path,
             settings=_settings(),
-            dll_dir=_peak_config(tmp_path).dll_dir,
+            dll_dir=tmp_path / "dll",
             raw_opener=lambda path, dll_dir: raw,
             timing_recorder=recorder,
             run_spec=spec,
@@ -1132,7 +1132,7 @@ def test_parallel_batch_failure_preserves_completed_worker_diagnostics(
             raw_paths,
             output_dir=tmp_path / "out",
             settings=_settings(),
-            dll_dir=_peak_config(tmp_path).dll_dir,
+            dll_dir=tmp_path / "dll",
             timing_recorder=recorder,
             max_workers=2,
             executor_factory=_MixedExecutor,
@@ -1159,7 +1159,7 @@ def test_batch_pipeline_escapes_excel_formula_strings_in_index(
         (raw_path,),
         output_dir=tmp_path / "out",
         settings=_settings(),
-        dll_dir=_peak_config(tmp_path).dll_dir,
+        dll_dir=tmp_path / "dll",
         raw_opener=lambda path, dll_dir: raw,
     )
 
@@ -1242,7 +1242,7 @@ def test_run_discovery_keeps_stale_pair_when_review_write_fails(
             tmp_path / "Blank.raw",
             output_dir=output_dir,
             settings=_settings(),
-            dll_dir=_peak_config(tmp_path).dll_dir,
+            dll_dir=tmp_path / "dll",
             raw_opener=lambda path, dll_dir: raw,
         )
 
@@ -1278,7 +1278,7 @@ def test_pipeline_threads_evidence_profile_into_scoring(
         tmp_path / "Sample.raw",
         output_dir=tmp_path / "out",
         settings=settings,
-        dll_dir=_peak_config(tmp_path).dll_dir,
+        dll_dir=tmp_path / "dll",
         raw_opener=lambda path, dll_dir: raw,
     )
 
@@ -1309,7 +1309,7 @@ def test_pipeline_populates_ms1_scan_support_score_from_profile_target(
         tmp_path / "Sample.raw",
         output_dir=tmp_path / "out",
         settings=settings,
-        dll_dir=_peak_config(tmp_path).dll_dir,
+        dll_dir=tmp_path / "dll",
         raw_opener=lambda path, dll_dir: raw,
     )
 
@@ -1330,7 +1330,7 @@ def test_pipeline_leaves_ms1_scan_support_blank_for_missing_ms1_peak(
         tmp_path / "Sample.raw",
         output_dir=tmp_path / "out",
         settings=_settings(),
-        dll_dir=_peak_config(tmp_path).dll_dir,
+        dll_dir=tmp_path / "dll",
         raw_opener=lambda path, dll_dir: raw,
     )
 
@@ -1354,7 +1354,7 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
         tmp_path / "Sample.raw",
         output_dir=tmp_path / "out",
         settings=_settings(enable_blank_qualification=True),
-        dll_dir=_peak_config(tmp_path).dll_dir,
+        dll_dir=tmp_path / "dll",
         raw_opener=lambda path, dll_dir: raw,
         timing_recorder=recorder,
     )
@@ -1400,7 +1400,7 @@ def test_batch_pipeline_records_batch_index_timing(tmp_path: Path) -> None:
         (raw_path,),
         output_dir=tmp_path / "out",
         settings=_settings(),
-        dll_dir=_peak_config(tmp_path).dll_dir,
+        dll_dir=tmp_path / "dll",
         raw_opener=lambda path, dll_dir: raw,
         timing_recorder=recorder,
     )
@@ -1416,7 +1416,6 @@ def test_pipeline_uses_injected_raw_opener_with_dll_dir_and_closes_context(
     tmp_path: Path,
 ) -> None:
     raw_path = tmp_path / "Sample.raw"
-    peak_config = _peak_config(tmp_path)
     raw = _FakeRawHandle(events=[])
     calls: list[tuple[Path, Path]] = []
 
@@ -1428,11 +1427,11 @@ def test_pipeline_uses_injected_raw_opener_with_dll_dir_and_closes_context(
         raw_path,
         output_dir=tmp_path / "out",
         settings=_settings(),
-        dll_dir=peak_config.dll_dir,
+        dll_dir=tmp_path / "dll",
         raw_opener=_open,
     )
 
-    assert calls == [(raw_path, peak_config.dll_dir)]
+    assert calls == [(raw_path, tmp_path / "dll")]
     assert raw.entered is True
     assert raw.closed is True
 
@@ -1443,7 +1442,6 @@ def test_batch_pipeline_binds_production_open_to_receipted_raw_content(
 ) -> None:
     raw_path = tmp_path / "Sample.raw"
     raw_path.write_bytes(b"owner-bound-raw")
-    peak_config = _peak_config(tmp_path)
     raw = _FakeRawHandle(events=[])
     calls: list[tuple[Path, Path, object, object]] = []
 
@@ -1475,14 +1473,14 @@ def test_batch_pipeline_binds_production_open_to_receipted_raw_content(
         (raw_path,),
         output_dir=tmp_path / "out",
         settings=_settings(),
-        dll_dir=peak_config.dll_dir,
+        dll_dir=tmp_path / "dll",
         timing_recorder=recorder,
     )
 
     assert len(calls) == 1
     path, dll_dir, source, capability = calls[0]
     assert path == raw_path
-    assert dll_dir == peak_config.dll_dir
+    assert dll_dir == tmp_path / "dll"
     assert source == build_acquisition_source_identity(
         raw_path,
         acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
@@ -1546,7 +1544,7 @@ def test_owner_bound_discovery_projects_complete_ms1_measurements(
         raw_path,
         output_dir=tmp_path / "out",
         settings=_settings(),
-        dll_dir=_peak_config(tmp_path).dll_dir,
+        dll_dir=tmp_path / "dll",
         raw_opener=lambda path, dll_dir: raw,
         timing_recorder=recorder,
     )
@@ -1722,7 +1720,7 @@ def _bound_process_job(raw_path: Path, tmp_path: Path, **overrides: Any) -> Any:
         "raw_path": raw_path,
         "output_dir": tmp_path / "out",
         "settings": settings,
-        "dll_dir": _peak_config(tmp_path).dll_dir,
+        "dll_dir": tmp_path / "dll",
         "acquisition_source": source,
         "raw_session_capability": mint_raw_acquisition_session_capability(source),
         "run_spec": spec,

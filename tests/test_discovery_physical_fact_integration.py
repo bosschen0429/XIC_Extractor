@@ -21,7 +21,6 @@ from tests.test_discovery_ms1_capture import (
 )
 from tests.test_discovery_pipeline import (
     _OwnerBoundFakeRawHandle,
-    _peak_config,
     _read_csv,
     _scan_event,
     _settings,
@@ -134,7 +133,7 @@ def test_recorded_mono_nl_match_keeps_distinct_inferred_physical_search(
         raw_path,
         output_dir=tmp_path / "out",
         settings=settings,
-        dll_dir=_peak_config(tmp_path).dll_dir,
+        dll_dir=tmp_path / "dll",
         raw_opener=lambda *_args: raw,
         run_spec=spec,
     )
@@ -203,7 +202,7 @@ def test_pipeline_retains_each_seeded_physical_peak_from_one_rt_group(
         raw_path,
         output_dir=tmp_path / "out",
         settings=settings,
-        dll_dir=_peak_config(tmp_path).dll_dir,
+        dll_dir=tmp_path / "dll",
         raw_opener=lambda *_args: raw,
         run_spec=spec,
     )
@@ -675,7 +674,7 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
         raw_path,
         output_dir=tmp_path / "out",
         settings=settings,
-        dll_dir=_peak_config(tmp_path).dll_dir,
+        dll_dir=tmp_path / "dll",
         raw_opener=lambda path, dll_dir: raw,
         run_spec=spec,
     )
@@ -702,10 +701,14 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
     assert raw.raw_chromatogram_call_count == 1
 
 
-@pytest.mark.parametrize("binding", ["missing", "crossed"])
+@pytest.mark.parametrize(
+    ("binding", "expected_error"),
+    [("missing", "invalid acquisition source"), ("crossed", "crosses")],
+)
 def test_spec_bound_handle_closes_source_before_ms2_or_xic(
     tmp_path: Path,
     binding: str,
+    expected_error: str,
 ) -> None:
     raw_path = tmp_path / "Sample.raw"
     raw_path.write_bytes(b"compiled acquisition")
@@ -751,12 +754,12 @@ def test_spec_bound_handle_closes_source_before_ms2_or_xic(
 
     handle = CountingHandle()
 
-    with pytest.raises(ValueError, match="invalid acquisition source|crosses"):
+    with pytest.raises(ValueError, match=expected_error):
         run_discovery(
             raw_path,
             output_dir=tmp_path / "out",
             settings=settings,
-            dll_dir=_peak_config(tmp_path).dll_dir,
+            dll_dir=tmp_path / "dll",
             raw_opener=lambda *_args: handle,
             run_spec=spec,
         )
@@ -798,7 +801,7 @@ def test_sparse_trace_outside_actual_context_persists_truthful_unavailable(
         raw_path,
         output_dir=tmp_path / "out",
         settings=settings,
-        dll_dir=_peak_config(tmp_path).dll_dir,
+        dll_dir=tmp_path / "dll",
         raw_opener=lambda *_args: raw,
         run_spec=spec,
     )
@@ -1735,7 +1738,7 @@ def test_held_inferred_peak_remains_in_review_and_physical_sidecar(
         raw_path,
         output_dir=tmp_path / "out",
         settings=settings,
-        dll_dir=_peak_config(tmp_path).dll_dir,
+        dll_dir=tmp_path / "dll",
         raw_opener=lambda *_args: raw,
         run_spec=spec,
     )
