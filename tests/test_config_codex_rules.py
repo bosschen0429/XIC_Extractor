@@ -8,9 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _rule_block(tokens: tuple[str, ...]) -> str:
-    rules = (ROOT / ".codex" / "rules" / "xic-safety.rules").read_text(
-        encoding="utf-8"
-    )
+    rules = (ROOT / ".codex" / "rules" / "xic-safety.rules").read_text(encoding="utf-8")
     pattern = "pattern = [" + ", ".join(json.dumps(token) for token in tokens) + "]"
     matches = [
         block
@@ -29,7 +27,5 @@ def _rule_block(tokens: tuple[str, ...]) -> str:
         (("git", "clean"), "prompt"),
     ],
 )
-def test_destructive_git_command_policy(
-    tokens: tuple[str, ...], decision: str
-) -> None:
+def test_destructive_git_command_policy(tokens: tuple[str, ...], decision: str) -> None:
     assert f'decision = "{decision}"' in _rule_block(tokens)

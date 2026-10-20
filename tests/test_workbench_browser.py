@@ -1514,9 +1514,7 @@ def test_review_history_restores_server_query_before_loading_xic(
         analyte_xic.click()
     assert response.value.status == 202, response.value.json()
     review = _wait_for_curve_report(page)
-    expect(review.locator(".tx-chart-title")).to_have_text(
-        ["Analyte", "ISTD"]
-    )
+    expect(review.locator(".tx-chart-title")).to_have_text(["Analyte", "ISTD"])
 
 
 def test_review_overview_button_skips_workspace_tab_history(workbench, tmp_path):

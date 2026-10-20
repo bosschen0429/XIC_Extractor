@@ -53,8 +53,7 @@ class PtPatternEvidenceThresholds:
     def __post_init__(self) -> None:
         if (
             not isinstance(self.required_combined_status, str)
-            or self.required_combined_status
-            not in VALID_COMBINED_PT_PATTERN_STATUSES
+            or self.required_combined_status not in VALID_COMBINED_PT_PATTERN_STATUSES
         ):
             raise ValueError(
                 "required_combined_status must be one of "

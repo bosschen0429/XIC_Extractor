@@ -86,9 +86,7 @@ def append_lifecycle_dataset(
     paths = _lifecycle_paths(lifecycle_root)
     existing = _existing_fingerprints(paths.runs_tsv)
     if fingerprint in existing and not allow_duplicate:
-        raise DuplicateLifecycleRunError(
-            f"DUPLICATE_LIFECYCLE_RUN: {fingerprint}"
-        )
+        raise DuplicateLifecycleRunError(f"DUPLICATE_LIFECYCLE_RUN: {fingerprint}")
 
     run_row = {
         "run_id": run_id,
@@ -196,11 +194,7 @@ def _existing_fingerprints(path: Path) -> set[str]:
         return set()
     with path.open(encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
-        return {
-            row["run_fingerprint"]
-            for row in reader
-            if row.get("run_fingerprint")
-        }
+        return {row["run_fingerprint"] for row in reader if row.get("run_fingerprint")}
 
 
 def _append_rows(
@@ -215,8 +209,7 @@ def _append_rows(
         for existing_row in existing_rows
     ]
     rows.extend(
-        {column: new_row.get(column, "") for column in columns}
-        for new_row in new_rows
+        {column: new_row.get(column, "") for column in columns} for new_row in new_rows
     )
     temp_path = path.with_suffix(path.suffix + ".tmp")
     write_tsv(temp_path, rows, columns)

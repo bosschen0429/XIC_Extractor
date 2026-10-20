@@ -25,9 +25,7 @@ def summarize_timing_records(
     """Build no-RAW timing and XIC locality summaries from recorded spans."""
 
     views = tuple(_record_view(record) for record in records)
-    measurement_rows = _measurement_summary(
-        views, tuple(measurement_observations)
-    )
+    measurement_rows = _measurement_summary(views, tuple(measurement_observations))
     payload: dict[str, object] = {
         "stage_summary": _stage_summary(views),
         "raw_xic_locality_summary": _raw_xic_locality_summary(views),
@@ -99,18 +97,14 @@ def _measurement_summary(
     rows: list[dict[str, object]] = []
     for (metric, scope), items in grouped.items():
         units = {text_value(item.get("unit")) for item in items}
-        aggregations = {
-            text_value(item.get("aggregation")) or "sum" for item in items
-        }
+        aggregations = {text_value(item.get("aggregation")) or "sum" for item in items}
         if len(units) != 1 or len(aggregations) != 1:
             raise ValueError(
                 f"measurement contract mismatch for {metric!r} in scope {scope!r}"
             )
         aggregation = next(iter(aggregations))
         if aggregation not in {"sum", "max", "last"}:
-            raise ValueError(
-                f"unsupported measurement aggregation {aggregation!r}"
-            )
+            raise ValueError(f"unsupported measurement aggregation {aggregation!r}")
         measured = [
             item
             for item in items
@@ -176,11 +170,7 @@ def _exclusive_stage_summary(
 
     by_stage: dict[str, list[tuple[TimingRecordView, float]]] = defaultdict(list)
     for index, record in enumerate(records):
-        elapsed = (
-            exclusive_elapsed[index]
-            if index < len(exclusive_elapsed)
-            else None
-        )
+        elapsed = exclusive_elapsed[index] if index < len(exclusive_elapsed) else None
         if elapsed is None:
             continue
         by_stage[record.stage].append((record, max(0.0, elapsed)))

@@ -732,9 +732,12 @@ def _membership_trajectories(
     def compatible(member_id: str, anchor_id: str) -> bool:
         key = member_id, anchor_id
         if key not in compatibility:
-            compatibility[key] = member_id == anchor_id or not _feature_hard_reason(
-                supported[member_id], anchors[anchor_id], config
-            )[0]
+            compatibility[key] = (
+                member_id == anchor_id
+                or not _feature_hard_reason(
+                    supported[member_id], anchors[anchor_id], config
+                )[0]
+            )
         return compatibility[key]
 
     retained = []
@@ -1266,7 +1269,9 @@ def _window_inference(
                 ):
                     continue
                 if conflict := peak_shape_union_conflict(
-                    left_members, right_members, config,
+                    left_members,
+                    right_members,
+                    config,
                 ):
                     first, second = conflict
                     shape_conflicts[first].add(second)
@@ -1502,11 +1507,13 @@ def _window_membership_result(
             owner_id in weak for owner_id in owner_ids
         )
         shape_rejected = (
-            len(owner_ids) == 1 and owner_ids[0] not in weak
+            len(owner_ids) == 1
+            and owner_ids[0] not in weak
             and bool(shape_conflicts.get(owner_ids[0]))
         )
         unassigned_reason = (
-            "peak_shape_mismatch" if shape_rejected
+            "peak_shape_mismatch"
+            if shape_rejected
             else weak.get(owner_ids[0], "no_supported_cross_sample_membership")
         )
         groups.append(
@@ -1550,19 +1557,19 @@ def _window_membership_result(
                     sample_stem=owner.sample_stem,
                     owner_id=owner.owner_id,
                     feature_key=feature_key,
-                    state="assigned" if assigned else (
-                        "proven_incompatible" if shape_rejected
+                    state="assigned"
+                    if assigned
+                    else (
+                        "proven_incompatible"
+                        if shape_rejected
                         else "evaluated_undecided"
                     ),
-                    reason=(
-                        "window_level_rt_trend"
-                        if assigned
-                        else unassigned_reason
-                    ),
+                    reason=("window_level_rt_trend" if assigned else unassigned_reason),
                     witness_owner_ids=(witness.owner_id,)
                     if witness is not None
                     else tuple(sorted(shape_conflicts[owner.owner_id]))
-                    if shape_rejected else (),
+                    if shape_rejected
+                    else (),
                     selected_witness_owner_id=witness.owner_id
                     if witness is not None
                     else None,
@@ -1869,7 +1876,9 @@ def _assign_window_singletons(
             remaining = []
             for candidate in candidates_by_owner[owner.owner_id]:
                 conflict = peak_shape_union_conflict(
-                    (owner,), members[candidate.feature_key], config,
+                    (owner,),
+                    members[candidate.feature_key],
+                    config,
                 )
                 if conflict is None:
                     remaining.append(candidate)

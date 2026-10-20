@@ -339,9 +339,12 @@ def test_backfill_contest_keeps_sample_apex_and_group_boundaries(
             _candidate("b", apex=second_apex)
         ),
     }
-    assert contested_backfill_peaks(
-        groups=(), backfills=backfills, alignment_config=_CONFIG
-    ) == frozenset()
+    assert (
+        contested_backfill_peaks(
+            groups=(), backfills=backfills, alignment_config=_CONFIG
+        )
+        == frozenset()
+    )
 
 
 def _feature(sample: str, apex: float, suffix: str = "f") -> SampleLocalMS1Owner:

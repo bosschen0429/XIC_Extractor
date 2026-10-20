@@ -15,16 +15,22 @@ def test_cached_retention_time_for_scan_reuses_cached_values() -> None:
     source = Source()
     cache: dict[int, float | None] = {}
 
-    assert cached_retention_time_for_scan(
-        source,
-        812,
-        retention_time_by_scan=cache,
-    ) == 8.12
-    assert cached_retention_time_for_scan(
-        source,
-        812,
-        retention_time_by_scan=cache,
-    ) == 8.12
+    assert (
+        cached_retention_time_for_scan(
+            source,
+            812,
+            retention_time_by_scan=cache,
+        )
+        == 8.12
+    )
+    assert (
+        cached_retention_time_for_scan(
+            source,
+            812,
+            retention_time_by_scan=cache,
+        )
+        == 8.12
+    )
     assert source.calls == [812]
     assert cache == {812: 8.12}
 

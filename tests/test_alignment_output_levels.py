@@ -7,9 +7,7 @@ from xic_extractor.output.alignment.output_levels import (
 
 
 def test_production_output_level_is_matrix_only():
-    assert artifact_names_for_output_level("production") == (
-        "alignment_matrix.tsv",
-    )
+    assert artifact_names_for_output_level("production") == ("alignment_matrix.tsv",)
 
 
 def test_machine_output_level_adds_review_and_matrix_tsv():

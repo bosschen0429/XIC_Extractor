@@ -24,9 +24,7 @@ class BenchmarkThresholds:
     default_match_ppm: float = 20.0
     match_rt_sec: float = TARGET_MATCH_RT_SEC
     mean_rt_delta_max_min: float = MEAN_RT_DELTA_MAX_MIN
-    sample_rt_median_abs_delta_max_min: float = (
-        SAMPLE_RT_MEDIAN_ABS_DELTA_MAX_MIN
-    )
+    sample_rt_median_abs_delta_max_min: float = SAMPLE_RT_MEDIAN_ABS_DELTA_MAX_MIN
     sample_rt_p95_abs_delta_max_min: float = SAMPLE_RT_P95_ABS_DELTA_MAX_MIN
     log_area_spearman_min: float = LOG_AREA_SPEARMAN_MIN
     log_area_pearson_min: float = LOG_AREA_PEARSON_MIN
@@ -57,11 +55,7 @@ class TargetedPoint:
 
     @property
     def positive(self) -> bool:
-        return (
-            self.area is not None
-            and self.area > 0
-            and self.rt is not None
-        )
+        return self.area is not None and self.area > 0 and self.rt is not None
 
 
 @dataclass(frozen=True)

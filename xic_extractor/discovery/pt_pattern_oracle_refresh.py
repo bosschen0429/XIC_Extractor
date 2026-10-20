@@ -146,9 +146,7 @@ def run_oracle_refresh(
         adjudicated_rows=adjudicated_rows,
         review_packet_rows=review_packet_rows,
         machine_call_rows=machine_call_collection.rows,
-        review_hash_by_packet_row_id=(
-            review_packet_collection.sha256_by_packet_row_id
-        ),
+        review_hash_by_packet_row_id=(review_packet_collection.sha256_by_packet_row_id),
         machine_review_hash_by_packet_row_id=(
             machine_call_collection.review_packet_sha256_by_packet_row_id
         ),
@@ -279,9 +277,9 @@ def build_oracle_refresh_rows(
         packet_sha256_mismatch = False
         if machine_row is not None and review_hash_by_packet_row_id is not None:
             current_sha256 = review_hash_by_packet_row_id.get(packet_row_id, "")
-            machine_sha256 = (
-                machine_review_hash_by_packet_row_id or {}
-            ).get(packet_row_id, "")
+            machine_sha256 = (machine_review_hash_by_packet_row_id or {}).get(
+                packet_row_id, ""
+            )
             packet_sha256_mismatch = (
                 not current_sha256
                 or not machine_sha256
@@ -371,9 +369,7 @@ def _build_draft_row(
         "packet_row_id": packet_row_id,
         "review_packet_csv_sha256": review_packet_csv_sha256,
         "blind_overlay_summary_json_sha256": (
-            blind_overlay_summary_json_sha256
-            if trusted_machine_row is not None
-            else ""
+            blind_overlay_summary_json_sha256 if trusted_machine_row is not None else ""
         ),
         "schema_version": SCHEMA_VERSION,
         "readiness_tier": READINESS_TIER,

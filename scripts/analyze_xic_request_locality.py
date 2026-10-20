@@ -285,11 +285,7 @@ def _summarize_exact_request_keys(
 ) -> dict[str, Any]:
     counts = Counter(_request_key(record) for record in records)
     duplicate_items = sorted(
-        (
-            (key, count)
-            for key, count in counts.items()
-            if count > 1
-        ),
+        ((key, count) for key, count in counts.items() if count > 1),
         key=lambda item: (-item[1], item[0]),
     )
     return {

@@ -123,9 +123,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         default_match_ppm=args.default_match_ppm,
         match_rt_sec=args.match_rt_sec,
         mean_rt_delta_max_min=args.mean_rt_delta_max_min,
-        sample_rt_median_abs_delta_max_min=(
-            args.sample_rt_median_abs_delta_max_min
-        ),
+        sample_rt_median_abs_delta_max_min=(args.sample_rt_median_abs_delta_max_min),
         sample_rt_p95_abs_delta_max_min=args.sample_rt_p95_abs_delta_max_min,
         log_area_spearman_min=args.log_area_spearman_min,
         log_area_pearson_min=args.log_area_pearson_min,

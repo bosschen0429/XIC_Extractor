@@ -146,9 +146,7 @@ def build_sequence_manifest_from_entries(
             matched_raw_stems.add(raw_stem)
             reason = "Normalized doc display name matched one RAW stem."
             if duplicate_doc_counts.get(match_key, 0) > 1:
-                reason = (
-                    "Repeated doc display name matched RAW stem by sequence order."
-                )
+                reason = "Repeated doc display name matched RAW stem by sequence order."
             rows.append(
                 _manifest_row(
                     entry,

@@ -41,11 +41,7 @@ def trace_quality_severities(candidate: Any) -> tuple[tuple[int, str], ...]:
 def candidate_selection_quality_penalty(candidate: Any) -> float:
     raw_flags = getattr(candidate, "quality_flags", ())
     flags = tuple(dict.fromkeys(str(flag) for flag in raw_flags))
-    weighted_flags = [
-        flag
-        for flag in flags
-        if flag in _ADAP_LIKE_FLAG_LABELS
-    ]
+    weighted_flags = [flag for flag in flags if flag in _ADAP_LIKE_FLAG_LABELS]
     return min(
         _ADAP_LIKE_SELECTION_MAX,
         len(weighted_flags) * _ADAP_LIKE_SELECTION_WEIGHT,
@@ -58,8 +54,7 @@ def hard_quality_flags(raw_flags: tuple[object, ...]) -> tuple[str, ...]:
     return tuple(
         flag
         for flag in flags
-        if flag not in _ADAP_LIKE_FLAG_LABELS
-        and flag not in suppressed_legacy
+        if flag not in _ADAP_LIKE_FLAG_LABELS and flag not in suppressed_legacy
     )
 
 

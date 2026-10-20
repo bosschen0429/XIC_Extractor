@@ -15,8 +15,7 @@ class XICSource(Protocol):
         rt_min: float,
         rt_max: float,
         ppm_tol: float,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        ...
+    ) -> tuple[np.ndarray, np.ndarray]: ...
 
 
 RawOpener = Callable[[Path], AbstractContextManager[XICSource]]

@@ -43,9 +43,13 @@ def test_daily_packet_writes_no_authority_outputs(tmp_path: Path) -> None:
     assert packet["authority_decision"] == "no_control_plane_change"
     assert packet["input_artifact_manifest"]["run_id"] == "synthetic_daily"
     assert "diagnostic_only" in packet["no_authority_statement"]
-    summary_header = outputs.summary_tsv.read_text(
-        encoding="utf-8",
-    ).splitlines()[0].split("\t")
+    summary_header = (
+        outputs.summary_tsv.read_text(
+            encoding="utf-8",
+        )
+        .splitlines()[0]
+        .split("\t")
+    )
     assert tuple(summary_header) == SUMMARY_COLUMNS
     assert "duplicate_only_family_count" in outputs.summary_tsv.read_text(
         encoding="utf-8",
@@ -94,9 +98,9 @@ def test_product_gate_without_baseline_is_inconclusive(tmp_path: Path) -> None:
     assert packet["authority_decision"] == "baseline_required_for_product_gate"
     assert "baseline-bound shadow gate" in packet["no_authority_statement"]
     summary_rows = _read_tsv(outputs.summary_tsv)
-    selected_drift = {
-        row["metric_name"]: row for row in summary_rows
-    }["selected_value_drift"]
+    selected_drift = {row["metric_name"]: row for row in summary_rows}[
+        "selected_value_drift"
+    ]
     assert selected_drift["status"] == "INCONCLUSIVE"
     assert selected_drift["direction"] == "unknown"
 
@@ -126,10 +130,7 @@ def test_product_gate_with_matching_baseline_is_shadow_ready(tmp_path: Path) -> 
     assert packet["missing_evidence_code"] == ""
     assert packet["product_gate_eligible"] is True
     assert packet["production_ready"] is False
-    assert (
-        packet["authority_decision"]
-        == "shadow_gate_pass_no_control_plane_change"
-    )
+    assert packet["authority_decision"] == "shadow_gate_pass_no_control_plane_change"
     assert "baseline-bound shadow gate" in packet["no_authority_statement"]
 
 
@@ -411,10 +412,7 @@ def _assert_metric_source_unavailable(summary_json: Path) -> None:
 def _read_tsv(path: Path) -> list[dict[str, str]]:
     lines = path.read_text(encoding="utf-8").splitlines()
     header = lines[0].split("\t")
-    return [
-        dict(zip(header, line.split("\t"), strict=False))
-        for line in lines[1:]
-    ]
+    return [dict(zip(header, line.split("\t"), strict=False)) for line in lines[1:]]
 
 
 def _append_matrix_row(path: Path, *, area: str, family: str, peak_id: str) -> None:

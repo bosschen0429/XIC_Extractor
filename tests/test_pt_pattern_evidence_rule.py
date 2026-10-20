@@ -284,11 +284,7 @@ def test_pt_pattern_evidence_rule_applies_custom_thresholds() -> None:
         {"required_combined_status": ""},
         {"required_combined_status": "   "},
         {"required_combined_status": "other_status"},
-        {
-            "required_combined_status": (
-                " pt_pattern_detected_diagnostic "
-            )
-        },
+        {"required_combined_status": (" pt_pattern_detected_diagnostic ")},
         {"required_combined_status": True},
         {"min_non_base_positions_supported": 0},
         {"min_non_base_positions_supported": 4},

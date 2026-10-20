@@ -211,12 +211,8 @@ def _metric_rows(
                         if label == "pt_plus_4"
                         else "baseline_crossing"
                     ),
-                    "anchor_segment_owns_common_start": str(
-                        label == "base"
-                    ).lower(),
-                    "anchor_segment_owns_common_end": str(
-                        label == "pt_plus_4"
-                    ).lower(),
+                    "anchor_segment_owns_common_start": str(label == "base").lower(),
+                    "anchor_segment_owns_common_end": str(label == "pt_plus_4").lower(),
                     "anchor_segment_left_clip_sec": {
                         "base": "0",
                         "pt_plus_1": "6",
@@ -322,9 +318,7 @@ def _apply_anchor_projection(
             for field, value in (
                 trace_batch.project_anchor_segmentation_summary_fields(
                     segmentation_status=status,
-                    segmentation_reason=str(
-                        summary_row["anchor_segmentation_reason"]
-                    ),
+                    segmentation_reason=str(summary_row["anchor_segmentation_reason"]),
                     metric_rows=projected_metrics,
                 ).items()
             )
@@ -378,13 +372,9 @@ def _write_trace_bundle_fixture(
                 [],
             ).append(metric_row)
         for summary_row in summary_rows:
-            candidate_metrics = metrics_by_candidate[
-                str(summary_row["candidate_id"])
-            ]
+            candidate_metrics = metrics_by_candidate[str(summary_row["candidate_id"])]
             base_metric = next(
-                row
-                for row in candidate_metrics
-                if row["position_label"] == "base"
+                row for row in candidate_metrics if row["position_label"] == "base"
             )
             for metric_row in candidate_metrics:
                 metric_row.update(
@@ -406,9 +396,7 @@ def _write_trace_bundle_fixture(
                 aggregate.update(
                     {
                         "trace_support_status": "review",
-                        "combined_pt_pattern_status": (
-                            "pt_pattern_candidate_review"
-                        ),
+                        "combined_pt_pattern_status": ("pt_pattern_candidate_review"),
                         "reason": (
                             f"anchor_segmentation_{segmentation_status}:"
                             f"{segmentation_reason}"
@@ -430,9 +418,7 @@ def _write_trace_bundle_fixture(
                 if str(metric_row["candidate_id"]) == candidate_id
             ]
             candidate_metrics = [metric_rows[index] for index in indexes]
-            segmentation_status = str(
-                summary_row["anchor_segmentation_status"]
-            )
+            segmentation_status = str(summary_row["anchor_segmentation_status"])
             projected_metrics = trace_batch.project_anchor_local_metric_rows(
                 candidate_metrics,
                 segmentation_status=segmentation_status,
@@ -448,14 +434,10 @@ def _write_trace_bundle_fixture(
                         for field, value in projected_metric.items()
                     }
                 )
-            projected_summary = (
-                trace_batch.project_anchor_segmentation_summary_fields(
-                    segmentation_status=segmentation_status,
-                    segmentation_reason=str(
-                        summary_row["anchor_segmentation_reason"]
-                    ),
-                    metric_rows=projected_metrics,
-                )
+            projected_summary = trace_batch.project_anchor_segmentation_summary_fields(
+                segmentation_status=segmentation_status,
+                segmentation_reason=str(summary_row["anchor_segmentation_reason"]),
+                metric_rows=projected_metrics,
             )
             summary_row.update(
                 {
@@ -965,14 +947,11 @@ def test_verified_anchor_bundle_accepts_producer_legal_nonclear_override(
             "anchor_segmentation_min_common_retained_fraction": "",
             "anchor_segmentation_max_common_left_residual_fraction": "",
             "anchor_segmentation_max_common_right_residual_fraction": "",
-            "anchor_segmentation_descending_at_common_right_position_labels": (
-                "none"
-            ),
+            "anchor_segmentation_descending_at_common_right_position_labels": ("none"),
             "trace_support_status": "review",
             "combined_pt_pattern_status": "pt_pattern_candidate_review",
             "reason": (
-                "anchor_segmentation_missing_anchor_segment:"
-                f"{segmentation_reason}"
+                f"anchor_segmentation_missing_anchor_segment:{segmentation_reason}"
             ),
         }
     )
@@ -1028,14 +1007,11 @@ def test_verified_anchor_bundle_rejects_invalid_nonclear_envelope(
             "anchor_segmentation_min_common_retained_fraction": "",
             "anchor_segmentation_max_common_left_residual_fraction": "",
             "anchor_segmentation_max_common_right_residual_fraction": "",
-            "anchor_segmentation_descending_at_common_right_position_labels": (
-                "none"
-            ),
+            "anchor_segmentation_descending_at_common_right_position_labels": ("none"),
             "trace_support_status": "review",
             "combined_pt_pattern_status": "pt_pattern_candidate_review",
             "reason": (
-                "anchor_segmentation_missing_anchor_segment:"
-                f"{segmentation_reason}"
+                f"anchor_segmentation_missing_anchor_segment:{segmentation_reason}"
             ),
         }
     )
@@ -1046,16 +1022,12 @@ def test_verified_anchor_bundle_rejects_invalid_nonclear_envelope(
             "trace_support_status": "review",
             "combined_pt_pattern_status": "pt_pattern_candidate_review",
             "reason": (
-                "anchor_segmentation_missing_anchor_segment:"
-                f"{segmentation_reason}"
+                f"anchor_segmentation_missing_anchor_segment:{segmentation_reason}"
             ),
         }
     )
     summary.update(
-        {
-            field: format_diagnostic_value(value)
-            for field, value in aggregate.items()
-        }
+        {field: format_diagnostic_value(value) for field, value in aggregate.items()}
     )
     if mutation == "call":
         summary["combined_pt_pattern_status"] = "pt_pattern_detected_diagnostic"
@@ -1367,9 +1339,7 @@ def test_verified_anchor_bundle_allows_segment_outside_anchor_local_trace_bounds
         candidates_csv=candidates_csv,
     )
 
-    assert bundle.summary_rows[0]["anchor_segmentation_common_rt_start_min"] == (
-        "9.7"
-    )
+    assert bundle.summary_rows[0]["anchor_segmentation_common_rt_start_min"] == ("9.7")
     assert bundle.metric_rows[1]["anchor_segment_rt_start_min"] == "9"
 
 
@@ -1414,9 +1384,7 @@ def test_anchor_projection_rounds_primitives_before_derived_fields(
         candidates_csv=candidates_csv,
     )
 
-    assert bundle.summary_rows[0][
-        "anchor_segmentation_min_common_retained_fraction"
-    ]
+    assert bundle.summary_rows[0]["anchor_segmentation_min_common_retained_fraction"]
 
 
 def test_verified_trace_bundle_recomputes_position_call_from_scalar_evidence(
@@ -1458,9 +1426,7 @@ def test_verified_trace_bundle_recomputes_position_call_from_scalar_evidence(
     summary.update(
         {
             field: format_diagnostic_value(value)
-            for field, value in evidence.trace_summary_aggregate_fields(
-                metrics
-            ).items()
+            for field, value in evidence.trace_summary_aggregate_fields(metrics).items()
         }
     )
     manifest_json = _write_trace_bundle_fixture(
@@ -1512,9 +1478,7 @@ def test_verified_trace_bundle_rejects_out_of_domain_manifest_settings(
         candidates_csv=candidates_csv,
         summary_csv=summary_csv,
         metrics_csv=metrics_csv,
-        summary_rows=[
-            _summary_row(candidate_id, "pt_pattern_detected_diagnostic")
-        ],
+        summary_rows=[_summary_row(candidate_id, "pt_pattern_detected_diagnostic")],
         metric_rows=_metric_rows(candidate_id),
     )
     manifest = json.loads(manifest_json.read_text(encoding="utf-8"))

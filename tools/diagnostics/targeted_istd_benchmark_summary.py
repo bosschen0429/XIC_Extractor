@@ -42,11 +42,7 @@ def _summarize_target(
         reliability=reliability,
         strict_targeted_reliability=strict_targeted_reliability,
     )
-    benchmark_points = (
-        reliability_summary.clean_points
-        if reliability
-        else positives
-    )
+    benchmark_points = reliability_summary.clean_points if reliability else positives
     targeted_mean_rt = _mean(point.rt for point in benchmark_points)
     primary_matches = tuple(
         match for match in matches if match.include_in_primary_matrix
@@ -138,9 +134,7 @@ def _summarize_target(
             else "not_provided"
         ),
         clean_targeted_positive_count=len(reliability_summary.clean_points),
-        targeted_review_positive_count=(
-            reliability_summary.review_positive_count
-        ),
+        targeted_review_positive_count=(reliability_summary.review_positive_count),
         targeted_review_count=reliability_summary.review_count,
         targeted_negative_count=reliability_summary.negative_count,
         coverage_denominator_count=coverage_denominator_count,

@@ -708,7 +708,6 @@ def _selected_overlay_row(
     )
 
 
-
 def _group_by_family(
     rows: Iterable[Mapping[str, str]],
 ) -> dict[str, tuple[Mapping[str, str], ...]]:
@@ -832,9 +831,7 @@ def _missing_overlay_queue_candidates(
         row
         for row in rows
         if row.evidence_gate_status == "evidence_missing"
-        and (
-            "missing_overlay_evidence" in row.missing_evidence
-        )
+        and ("missing_overlay_evidence" in row.missing_evidence)
         and row.seed_group_basis == "seed_audit"
         and row.suggested_rt_min
         and row.suggested_rt_max

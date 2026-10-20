@@ -110,9 +110,7 @@ def write_overlay_lineage_bundle(
     if context_trace_points_csv is not None and context_trace_point_rows is None:
         raise ValueError("context path requires context rows")
 
-    packet_candidate_rows = [
-        _candidate_row_from_packet(row) for row in packet_rows
-    ]
+    packet_candidate_rows = [_candidate_row_from_packet(row) for row in packet_rows]
     candidates_csv = review_packet_csv.parent / "pt_pattern_candidates.csv"
     write_delimited_rows(
         candidates_csv,
@@ -625,9 +623,7 @@ def _candidate_row_from_packet(packet_row: Mapping[str, str]) -> dict[str, str]:
         "candidate_id": candidate_id,
         "base_feature_id": f"{candidate_id}:base",
         "base_mz": str(base_mz),
-        "base_rt_apex_min": str(
-            packet_row.get("base_rt_apex_min", "") or "10.0"
-        ),
+        "base_rt_apex_min": str(packet_row.get("base_rt_apex_min", "") or "10.0"),
         "pt_plus_1_feature_id": f"{candidate_id}:plus1",
         "pt_plus_1_mz": str(base_mz + 1.002111),
         "pt_plus_1_expected_mz": str(base_mz + 1.002111),
@@ -644,13 +640,10 @@ def _candidate_row_from_packet(packet_row: Mapping[str, str]) -> dict[str, str]:
         "evidence_tier": str(packet_row.get("evidence_tier", "")),
         "evidence_score": str(packet_row.get("evidence_score", "")),
         "cid_nl_base_status": str(packet_row.get("cid_nl_base_status", "")),
-        "cid_nl_base_join_mode": str(
-            packet_row.get("cid_nl_base_join_mode", "")
-        ),
+        "cid_nl_base_join_mode": str(packet_row.get("cid_nl_base_join_mode", "")),
     }
     return {
-        column: values.get(column, "")
-        for column in packet.CANDIDATE_REQUIRED_COLUMNS
+        column: values.get(column, "") for column in packet.CANDIDATE_REQUIRED_COLUMNS
     }
 
 
@@ -673,12 +666,9 @@ def _summary_row_from_packet(
             "candidate_id": str(packet_row["candidate_id"]),
             "trace_artifact_role": artifact_role,
             "scan_pattern_seed_status": str(
-                packet_row.get("scan_pattern_seed_status", "")
-                or "full_pattern_seeded"
+                packet_row.get("scan_pattern_seed_status", "") or "full_pattern_seeded"
             ),
-            "rt_half_window_sec": str(
-                packet_row.get("rt_half_window_sec", "") or "30"
-            ),
+            "rt_half_window_sec": str(packet_row.get("rt_half_window_sec", "") or "30"),
             "ppm": str(packet_row.get("ppm", "") or "20"),
             "mz_source": str(packet_row.get("mz_source", "") or "expected"),
             "trace_decision_basis": str(
@@ -733,34 +723,24 @@ def _metric_rows_from_packet(
     }
     shifted_only_labels = {
         label
-        for label in str(
-            packet_row.get("shifted_only_position_labels", "none")
-        ).split(",")
+        for label in str(packet_row.get("shifted_only_position_labels", "none")).split(
+            ","
+        )
         if label and label != "none"
     }
     point_count = str(packet_row.get("max_trace_point_count", "") or "31")
-    median_rt_step_sec = str(
-        packet_row.get("min_median_rt_step_sec", "") or "0.06"
-    )
+    median_rt_step_sec = str(packet_row.get("min_median_rt_step_sec", "") or "0.06")
     effective_smoothing_window_sec = str(
         packet_row.get("min_effective_smoothing_window_sec", "") or "9"
     )
     min_pearson = str(packet_row.get("min_pearson_r_to_base", "") or "0.95")
-    min_overlap = str(
-        packet_row.get("min_active_overlap_fraction", "") or "0.70"
-    )
-    min_shifted = str(
-        packet_row.get("min_shifted_pearson_r_to_base", "") or "0.96"
-    )
-    max_apex_delta = str(
-        packet_row.get("max_abs_apex_delta_sec", "") or "0.4"
-    )
+    min_overlap = str(packet_row.get("min_active_overlap_fraction", "") or "0.70")
+    min_shifted = str(packet_row.get("min_shifted_pearson_r_to_base", "") or "0.96")
+    max_apex_delta = str(packet_row.get("max_abs_apex_delta_sec", "") or "0.4")
     max_shape_shift = str(
         packet_row.get("max_abs_shape_shift_sec_to_base", "") or "2.0"
     )
-    anchor_status = str(
-        packet_row.get("anchor_segmentation_status", "") or "clear"
-    )
+    anchor_status = str(packet_row.get("anchor_segmentation_status", "") or "clear")
     common_start = float(
         packet_row.get("anchor_segmentation_common_rt_start_min", "") or 9.8
     )
@@ -862,15 +842,19 @@ def _metric_rows_from_packet(
         if position_label in shifted_only_labels:
             quality_flags.add("shifted_only_support")
         for flag in summary_flags:
-            if flag in {
-                "low_scan_density",
-                "short_effective_smoothing_window",
-                "raw_smoothed_apex_mismatch",
-                "raw_shape_weak_for_shifted_support",
-                "smoothed_shape_weak_for_shifted_support",
-                "large_shape_shift",
-                "plus4_window_tail_dominance",
-            } and position_label == "pt_plus_1":
+            if (
+                flag
+                in {
+                    "low_scan_density",
+                    "short_effective_smoothing_window",
+                    "raw_smoothed_apex_mismatch",
+                    "raw_shape_weak_for_shifted_support",
+                    "smoothed_shape_weak_for_shifted_support",
+                    "large_shape_shift",
+                    "plus4_window_tail_dominance",
+                }
+                and position_label == "pt_plus_1"
+            ):
                 quality_flags.add(flag)
             if flag == "plus4_shifted_only_support" and position_label == "pt_plus_4":
                 quality_flags.add(flag)
@@ -884,9 +868,7 @@ def _metric_rows_from_packet(
         row.update(
             {
                 "schema_version": schema_version,
-                "sample_stem": str(
-                    packet_row.get("sample_stem", "") or "SampleA"
-                ),
+                "sample_stem": str(packet_row.get("sample_stem", "") or "SampleA"),
                 "candidate_id": str(packet_row["candidate_id"]),
                 "trace_artifact_role": artifact_role,
                 "position_label": position_label,
@@ -936,9 +918,7 @@ def _metric_rows_from_packet(
                 "trace_quality_flags": (
                     ";".join(sorted(quality_flags)) if quality_flags else "none"
                 ),
-                "trace_support_status": (
-                    "supported" if is_supported else "review"
-                ),
+                "trace_support_status": ("supported" if is_supported else "review"),
                 "reason": "fixture_metric_projection",
             }
         )
@@ -994,14 +974,10 @@ def _metric_rows_from_packet(
                         common_duration_sec / segment_duration_sec
                     ),
                     "anchor_segment_common_left_residual_fraction": str(
-                        max_left_residual
-                        if position_label == "base"
-                        else 0.05
+                        max_left_residual if position_label == "base" else 0.05
                     ),
                     "anchor_segment_common_right_residual_fraction": str(
-                        max_right_residual
-                        if position_label == "pt_plus_4"
-                        else 0.05
+                        max_right_residual if position_label == "pt_plus_4" else 0.05
                     ),
                     "anchor_segment_common_left_trend": "ascending",
                     "anchor_segment_common_right_trend": (
@@ -1022,15 +998,9 @@ def _metric_rows_from_packet(
                 max_apex_delta_sec=30.0,
             )
         )
-    if (
-        artifact_role == PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE
-        and anchor_status == "clear"
-    ):
+    if artifact_role == PT_PATTERN_TRACE_ANCHOR_LOCAL_ROLE and anchor_status == "clear":
         output = [
-            {
-                field: format_diagnostic_value(value)
-                for field, value in row.items()
-            }
+            {field: format_diagnostic_value(value) for field, value in row.items()}
             for row in trace_batch.project_anchor_local_metric_rows(
                 output,
                 segmentation_status=anchor_status,
@@ -1213,8 +1183,8 @@ def _project_metric_raw_stats_from_trace_points(
         for metric_row in candidate_rows:
             raw_apex = metric_row.get("raw_apex_rt_min", "")
             if raw_apex and base_apex is not None:
-                metric_row["raw_apex_delta_sec_to_base"] = (
-                    format_diagnostic_value((float(raw_apex) - base_apex) * 60.0)
+                metric_row["raw_apex_delta_sec_to_base"] = format_diagnostic_value(
+                    (float(raw_apex) - base_apex) * 60.0
                 )
             elif (candidate_id, metric_row["position_label"]) not in invalid_pairs:
                 metric_row["raw_apex_delta_sec_to_base"] = ""

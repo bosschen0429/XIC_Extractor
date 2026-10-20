@@ -825,8 +825,6 @@ def mint_supervisor_finalization(
     )
 
 
-
-
 def _validate_observability_against_coordinator(
     coordinator: CoordinatorTerminalRecord,
     ledger: RuntimeObservabilityLedger,

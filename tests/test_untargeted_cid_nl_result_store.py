@@ -102,8 +102,10 @@ def test_tuple_field_read_skips_header_and_other_fields_after_preservation(tmp_p
     store = StreamedResultStore(tmp_path, ())
     expected = tuple((f"S{index}", index * 2) for index in range(2050))
     store.append(
-        "initial", Payload((_ObservedChild(),), method_assessments=expected,
-                           label=_ObservedChild())
+        "initial",
+        Payload(
+            (_ObservedChild(),), method_assessments=expected, label=_ObservedChild()
+        ),
     )
     store.append("other", Payload((), method_assessments=(("other", -1),)))
     _restored_children.clear()

@@ -248,10 +248,14 @@ def _parse_bool(
     *,
     style: Literal["upper", "title"],
 ) -> bool:
-    allowed = {"TRUE": True, "FALSE": False} if style == "upper" else {
-        "True": True,
-        "False": False,
-    }
+    allowed = (
+        {"TRUE": True, "FALSE": False}
+        if style == "upper"
+        else {
+            "True": True,
+            "False": False,
+        }
+    )
     raw_value = row[field_name]
     if raw_value not in allowed:
         raise ValueError(

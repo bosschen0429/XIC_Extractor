@@ -157,9 +157,7 @@ def test_backfill_lookup_rehydrates_reduced_owner_record_and_claims(
     assert result.claim("cross_artifact_binding").state is (
         EvidenceClaimState.OWNER_REHYDRATED
     )
-    assert result.claim("production_decision").state is (
-        EvidenceClaimState.UNAVAILABLE
-    )
+    assert result.claim("production_decision").state is (EvidenceClaimState.UNAVAILABLE)
     assert result.claim("full_aligned_cell").state is EvidenceClaimState.UNAVAILABLE
     assert result.claim("missing_key_absence").state is EvidenceClaimState.UNAVAILABLE
 
@@ -250,9 +248,7 @@ def test_backfill_lookup_rehydrates_formula_escaped_machine_identities(
     bindings = BackfillEvidenceOwnerBindings(
         known_group_ids=frozenset({canonical["group_hypothesis_id"]}),
         known_sample_stems=frozenset({canonical["sample_stem"]}),
-        candidate_samples={
-            canonical["source_candidate_id"]: canonical["sample_stem"]
-        },
+        candidate_samples={canonical["source_candidate_id"]: canonical["sample_stem"]},
         group_feature_family_ids={
             canonical["group_hypothesis_id"]: canonical["feature_family_id"]
         },
@@ -298,9 +294,7 @@ def test_backfill_owner_rejects_ambiguous_formula_escaped_identity(
     )
     known_group_ids = {canonical["group_hypothesis_id"]}
     known_sample_stems = {canonical["sample_stem"]}
-    candidate_samples = {
-        canonical["source_candidate_id"]: canonical["sample_stem"]
-    }
+    candidate_samples = {canonical["source_candidate_id"]: canonical["sample_stem"]}
     if ambiguous_field == "group_hypothesis_id":
         known_group_ids.add(persisted[ambiguous_field])
     elif ambiguous_field == "sample_stem":

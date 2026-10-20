@@ -30,9 +30,7 @@ def group_discovery_seeds(
     active_groups: list[list[DiscoverySeed]] = []
 
     for seed in sorted_seeds:
-        matching_group = _matching_active_group(
-            seed, active_groups, settings=settings
-        )
+        matching_group = _matching_active_group(seed, active_groups, settings=settings)
         if matching_group is None:
             active_groups.append([seed])
         else:

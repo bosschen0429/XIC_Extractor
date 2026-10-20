@@ -675,7 +675,8 @@ def cid_nl_alignment_subject_worksets(
         # subject still retains its own assessment owner.
         scalar_intervals = tuple(
             (
-                index, subject.neutral_loss_da,
+                index,
+                subject.neutral_loss_da,
                 *cid_nl_method_subject_resolver_interval(subject),
             )
             for index, component in enumerate(components)
@@ -694,9 +695,11 @@ def cid_nl_alignment_subject_worksets(
         for index, original_component in enumerate(components):
             merged.setdefault(root(index), []).extend(original_component)
         components = [
-            tuple(sorted(
-                component, key=lambda item: original_index[item.method_subject_id]
-            ))
+            tuple(
+                sorted(
+                    component, key=lambda item: original_index[item.method_subject_id]
+                )
+            )
             for component in merged.values()
         ]
 

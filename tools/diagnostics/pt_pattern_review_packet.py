@@ -42,10 +42,7 @@ def _validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
         parser.error(f"{args.trace_summary_csv}: trace summary CSV does not exist")
     if not args.trace_metrics_csv.is_file():
         parser.error(f"{args.trace_metrics_csv}: trace metrics CSV does not exist")
-    if (
-        args.trace_manifest_json is not None
-        and not args.trace_manifest_json.is_file()
-    ):
+    if args.trace_manifest_json is not None and not args.trace_manifest_json.is_file():
         parser.error(f"{args.trace_manifest_json}: trace manifest does not exist")
     if args.max_per_status <= 0:
         parser.error("--max-per-status must be > 0")

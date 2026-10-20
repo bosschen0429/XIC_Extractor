@@ -136,7 +136,8 @@ def enumerate_chrom_peak_segments(
         active_policy.morphology_trace_method == "rt_envelope"
         and max(float(active_policy.morphology_min_sigma_rt), 0.0)
         > float(np.median(np.diff(rt)))
-        * float(active_policy.morphology_trace_window_points) / 6.0
+        * float(active_policy.morphology_trace_window_points)
+        / 6.0
     )
     morphology_effective_points = _morphology_trace_effective_points(
         len(rt),
@@ -190,9 +191,7 @@ def enumerate_chrom_peak_segments(
         # A deeper canonical notch on a falling shoulder must not move that
         # boundary away from the sustained valley between the lobes. Supported
         # canonical clear splits, including restored narrow components, remain.
-        envelope_relations = _adjacent_relations(
-            morphology_trace, seeds, active_policy
-        )
+        envelope_relations = _adjacent_relations(morphology_trace, seeds, active_policy)
         relations = tuple(
             envelope_relation
             if (
@@ -224,8 +223,12 @@ def enumerate_chrom_peak_segments(
                 seeds[index].index in envelope_seed_indices
                 and seeds[index + 1].index in envelope_seed_indices
                 and _sustained_envelope_valley(
-                    relation_trace, rt, seeds[index], seeds[index + 1],
-                    relations[index].valley_index, active_policy,
+                    relation_trace,
+                    rt,
+                    seeds[index],
+                    seeds[index + 1],
+                    relations[index].valley_index,
+                    active_policy,
                     additional_envelope_smoothing=additional_envelope_smoothing,
                 )
             )
@@ -497,10 +500,13 @@ def _supported_apex_seeds(
             ):
                 continue
             contour_left, contour_right = sorted((seed.index, neighbor.index))
-            noise = max(noise, short_scale_noise_mad(
-                rt[contour_left:contour_right + 1],
-                acquired[contour_left:contour_right + 1],
-            ))
+            noise = max(
+                noise,
+                short_scale_noise_mad(
+                    rt[contour_left : contour_right + 1],
+                    acquired[contour_left : contour_right + 1],
+                ),
+            )
         if prominence >= policy.min_prominence_noise_mad * noise:
             supported.add(seed.index)
     # Noise significance does not make a bump a separate chromatographic peak.
@@ -548,14 +554,17 @@ def _restore_rt_envelope_clear_splits(
             policy,
         )
     canonical_relations = tuple(
-        relation if (
+        relation
+        if (
             relation.relation_class != "clear_split"
             or _sustained_canonical_valley(
                 canonical_residual, rt, left, right, relation.valley_index, policy
             )
-        ) else _AdjacentPeakRelation(relation.valley_index, "shoulder_overlap")
+        )
+        else _AdjacentPeakRelation(relation.valley_index, "shoulder_overlap")
         for left, right, relation in zip(
-            canonical_seeds, canonical_seeds[1:],
+            canonical_seeds,
+            canonical_seeds[1:],
             _adjacent_relations(canonical_residual, canonical_seeds, policy),
         )
     )
@@ -646,7 +655,7 @@ def _sustained_envelope_valley(
     returning to baseline. Requiring one canonical smoothing footprint rejects
     a brief acquired dropout that also creates two coarse-envelope maxima.
     """
-    spacing = float(np.median(np.diff(rt[left.index:right.index + 1])))
+    spacing = float(np.median(np.diff(rt[left.index : right.index + 1])))
     footprint = spacing * max(0, policy.morphology_trace_window_points - 1)
     weaker_height = min(float(signal[left.index]), float(signal[right.index]))
     valley_height = float(signal[valley_index])
@@ -659,15 +668,17 @@ def _sustained_envelope_valley(
             # A finer canonical notch cannot set the depth of a broader RT valley.
             support_left = max(
                 left.index,
-                int(np.searchsorted(
-                    rt, rt[valley_index] - 0.5 * footprint, side="left"
-                )),
+                int(
+                    np.searchsorted(rt, rt[valley_index] - 0.5 * footprint, side="left")
+                ),
             )
             support_right = min(
                 right.index + 1,
-                int(np.searchsorted(
-                    rt, rt[valley_index] + 0.5 * footprint, side="right"
-                )),
+                int(
+                    np.searchsorted(
+                        rt, rt[valley_index] + 0.5 * footprint, side="right"
+                    )
+                ),
             )
             valley_height = float(np.max(signal[support_left:support_right]))
         if weaker_height <= valley_height:
@@ -705,7 +716,7 @@ def _sustained_canonical_valley(
         start -= 1
     while end < right.index and signal[end + 1] <= threshold:
         end += 1
-    spacing = float(np.median(np.diff(rt[left.index:right.index + 1])))
+    spacing = float(np.median(np.diff(rt[left.index : right.index + 1])))
     footprint = spacing * max(0, policy.morphology_trace_window_points - 1)
     return bool(rt[end] - rt[start] >= footprint)
 
@@ -771,12 +782,20 @@ def _segment_from_seed(
         else morphology_trace
     )
     left, _ = _seed_interval_indices(
-        boundary_signal, context_interval, envelope_seeds[0],
-        left_relation, right_relation, policy,
+        boundary_signal,
+        context_interval,
+        envelope_seeds[0],
+        left_relation,
+        right_relation,
+        policy,
     )
     _, right = _seed_interval_indices(
-        boundary_signal, context_interval, envelope_seeds[-1],
-        left_relation, right_relation, policy,
+        boundary_signal,
+        context_interval,
+        envelope_seeds[-1],
+        left_relation,
+        right_relation,
+        policy,
     )
     relation_labels = _relation_labels(left_relation, right_relation)
     if policy.morphology_trace_method == "rt_envelope":

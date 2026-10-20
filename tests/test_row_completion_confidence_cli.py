@@ -32,11 +32,9 @@ def test_cli_writes_row_completion_outputs(tmp_path: Path) -> None:
     assert (output / "row_completion_confidence_summary.json").is_file()
     assert (output / "row_completion_sentinels.tsv").is_file()
     assert (output / "row_completion_family_sentinels.tsv").is_file()
-    assert (
-        output / "row_completion_family_sentinels.tsv"
-    ).read_text(encoding="utf-8") == (
-        output / "row_completion_sentinels.tsv"
-    ).read_text(encoding="utf-8")
+    assert (output / "row_completion_family_sentinels.tsv").read_text(
+        encoding="utf-8"
+    ) == (output / "row_completion_sentinels.tsv").read_text(encoding="utf-8")
     packet = json.loads(
         (output / "row_completion_confidence_summary.json").read_text(
             encoding="utf-8",
@@ -199,8 +197,10 @@ def test_cli_packetizes_missing_required_evidence(tmp_path: Path) -> None:
 
     assert code == 0
     summary_lines = (
-        output / "row_completion_confidence_summary.tsv"
-    ).read_text(encoding="utf-8").splitlines()
+        (output / "row_completion_confidence_summary.tsv")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
     summary_header = summary_lines[0].split("\t")
     summary_row = dict(zip(summary_header, summary_lines[1].split("\t"), strict=False))
     packet = json.loads(

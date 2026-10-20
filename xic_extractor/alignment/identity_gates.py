@@ -109,9 +109,7 @@ class SeedQualitySummary:
         return "weak" if self.weak else "adequate"
 
 
-SeedCandidateLookup = (
-    Mapping[Any, Any] | Callable[[DetectedSeedRef], Any | None]
-)
+SeedCandidateLookup = Mapping[Any, Any] | Callable[[DetectedSeedRef], Any | None]
 
 
 def classify_single_dr_backfill_dependency(

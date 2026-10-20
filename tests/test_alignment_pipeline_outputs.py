@@ -46,8 +46,7 @@ def test_alignment_metadata_records_method_and_output_contract() -> None:
     )
     assert metadata["public_family_id_policy"] == "fam_compatibility_id"
     assert (
-        metadata["group_delivery_policy"]
-        == "owner_group_delivery_successor_projection"
+        metadata["group_delivery_policy"] == "owner_group_delivery_successor_projection"
     )
     assert metadata["gap_fill_policy"] == "missing_observation_gap_fill"
     assert (
@@ -58,9 +57,7 @@ def test_alignment_metadata_records_method_and_output_contract() -> None:
         metadata["pre_backfill_projection_policy"]
         == "pre_backfill_successor_projection_required_when_enabled"
     )
-    assert (
-        metadata["matrix_value_policy"] == "canonical_signal_profile_selected_area"
-    )
+    assert metadata["matrix_value_policy"] == "canonical_signal_profile_selected_area"
     assert metadata["baseline_integration_method"] == "asls"
     assert metadata["owner_build_xic_backend"] == "raw"
     assert metadata["backfill_scope"] == "full-audit"

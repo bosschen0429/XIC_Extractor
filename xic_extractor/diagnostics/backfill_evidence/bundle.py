@@ -86,14 +86,10 @@ def write_backfill_evidence_parquet_shadow_bundle(
     backfill_source_binding = _file_binding(backfill_tsv)
     skipped_source_binding = _file_binding(skipped_tsv)
     run_metadata_source_binding = (
-        _file_binding(run_metadata_json)
-        if run_metadata_json is not None
-        else None
+        _file_binding(run_metadata_json) if run_metadata_json is not None else None
     )
     output_dir.parent.mkdir(parents=True, exist_ok=True)
-    staging_dir = output_dir.with_name(
-        f"{output_dir.name}.tmp-{uuid.uuid4().hex}"
-    )
+    staging_dir = output_dir.with_name(f"{output_dir.name}.tmp-{uuid.uuid4().hex}")
     staging_dir.mkdir()
     try:
         backfill_parquet = staging_dir / BACKFILL_PARQUET_FILENAME

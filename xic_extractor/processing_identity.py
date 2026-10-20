@@ -72,9 +72,7 @@ def canonical_identity_basis_bytes(value: Mapping[str, object]) -> bytes:
     return _canonical_json(dict(value)).encode("utf-8")
 
 
-def mint_typed_identity(
-    prefix: str, basis: Mapping[str, object]
-) -> tuple[str, bytes]:
+def mint_typed_identity(prefix: str, basis: Mapping[str, object]) -> tuple[str, bytes]:
     """Encode an owner-built basis once and return its identity and exact bytes."""
 
     if not isinstance(prefix, str) or not prefix or not prefix.endswith(":"):
@@ -675,7 +673,6 @@ class ProcessingOwnerReferences:
             raise IdentityContractError(str(exc)) from exc
         if canonical_artifacts != self.evidence_artifacts:
             raise IdentityContractError("evidence_artifacts must be canonical-sorted")
-
 
 
 def _validate_request_target_snapshot(

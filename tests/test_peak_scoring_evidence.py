@@ -53,13 +53,16 @@ def test_caps_limit_final_confidence_without_changing_raw_score() -> None:
 
 
 def test_multiple_caps_use_strongest_cap() -> None:
-    assert apply_confidence_caps(
-        "HIGH",
-        [
-            ConfidenceCap("no_ms2_cap", "LOW"),
-            ConfidenceCap("anchor_mismatch_cap", "VERY_LOW"),
-        ],
-    ) == "VERY_LOW"
+    assert (
+        apply_confidence_caps(
+            "HIGH",
+            [
+                ConfidenceCap("no_ms2_cap", "LOW"),
+                ConfidenceCap("anchor_mismatch_cap", "VERY_LOW"),
+            ],
+        )
+        == "VERY_LOW"
+    )
 
 
 def test_score_evidence_rejects_negative_evidence_points() -> None:
@@ -85,9 +88,12 @@ def test_score_evidence_rejects_negative_support_points() -> None:
 
 
 def test_caps_do_not_raise_confidence() -> None:
-    assert apply_confidence_caps(
-        "LOW",
-        [
-            ConfidenceCap("some_cap", "MEDIUM"),
-        ],
-    ) == "LOW"
+    assert (
+        apply_confidence_caps(
+            "LOW",
+            [
+                ConfidenceCap("some_cap", "MEDIUM"),
+            ],
+        )
+        == "LOW"
+    )

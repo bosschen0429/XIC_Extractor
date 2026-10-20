@@ -1,4 +1,5 @@
 """Describe provisional contrast quality without deciding peak availability."""
+
 from __future__ import annotations
 
 import numpy as np

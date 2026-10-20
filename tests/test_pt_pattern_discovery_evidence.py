@@ -199,9 +199,7 @@ def test_discovery_evidence_records_effective_scan_aware_apex_threshold() -> Non
     assert row["trace_rule_call"] == "accept"
     assert row["configured_max_abs_apex_delta_threshold_sec"] == 0.6
     assert row["max_abs_apex_delta_scan_step_multiplier"] == 1.25
-    assert row["effective_max_abs_apex_delta_threshold_sec"] == (
-        1.6446083333333332
-    )
+    assert row["effective_max_abs_apex_delta_threshold_sec"] == (1.6446083333333332)
 
 
 def test_discovery_evidence_persists_component_derived_scan_interval() -> None:
@@ -336,9 +334,7 @@ def test_discovery_trace_loader_rejects_refreshed_hash_projection_tamper(
         )
         rows[0][field] = value
         write_delimited_rows(summary_csv, rows, trace_evidence.SUMMARY_COLUMNS)
-        manifest["output_sha256"]["summary_csv"] = file_sha256(
-            summary_csv
-        ).lower()
+        manifest["output_sha256"]["summary_csv"] = file_sha256(summary_csv).lower()
     else:
         metrics_csv = paths["trace_metrics_csv"]
         rows = read_delimited_rows(
@@ -349,9 +345,7 @@ def test_discovery_trace_loader_rejects_refreshed_hash_projection_tamper(
         )
         rows[1][field] = value
         write_delimited_rows(metrics_csv, rows, trace_evidence.METRIC_COLUMNS)
-        manifest["output_sha256"]["metrics_csv"] = file_sha256(
-            metrics_csv
-        ).lower()
+        manifest["output_sha256"]["metrics_csv"] = file_sha256(metrics_csv).lower()
     manifest_path.write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -378,9 +372,7 @@ def test_discovery_evidence_records_reject_without_dropping_seed_candidate() -> 
 def test_discovery_evidence_marks_missing_candidate_trace_row() -> None:
     rows = build_pt_pattern_evidence_rows(
         [_candidate()],
-        trace_summary_rows=[
-            _trace_summary_row(candidate_id="Sample_1@pt@other-base")
-        ],
+        trace_summary_rows=[_trace_summary_row(candidate_id="Sample_1@pt@other-base")],
         trace_manifest_sha256=TRACE_MANIFEST_SHA256,
     )
 

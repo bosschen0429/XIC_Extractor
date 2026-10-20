@@ -149,9 +149,7 @@ def mint_discovery_candidate_universe_receipt(
         sample_stem=stem,
         acquisition_source=acquisition_source,
         candidate_count=len(ordered),
-        candidate_artifact_schema_version=(
-            DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION
-        ),
+        candidate_artifact_schema_version=(DISCOVERY_CANDIDATE_ARTIFACT_SCHEMA_VERSION),
         candidate_artifact_sha256=artifact.content_sha256,
         candidate_artifact_byte_size=artifact.byte_size,
         candidate_payload_sha256=payload_sha256,
@@ -315,9 +313,7 @@ def _canonical_candidates(
         item.sample_stem != sample_stem or item.raw_file.stem != sample_stem
         for item in ordered
     ):
-        raise IdentityContractError(
-            "candidate universe contains a different sample"
-        )
+        raise IdentityContractError("candidate universe contains a different sample")
     return ordered
 
 
@@ -398,9 +394,6 @@ def _nonnegative_int(value: object, *, field: str) -> int:
         error_factory=IdentityContractError,
         type_error_factory=IdentityContractError,
     )
-
-
-
 
 
 def validate_candidate_universe_payload(

@@ -91,9 +91,7 @@ def test_write_calibration_summary_json_includes_metadata_and_counts(
 
     payload = json.loads(path.read_text(encoding="utf-8"))
     assert payload["verdict"] == "review_ready"
-    assert payload["metadata_source_status"] == {
-        "injection_order_status": "missing"
-    }
+    assert payload["metadata_source_status"] == {"injection_order_status": "missing"}
     assert payload["calibration_metadata_status"]["source_contract"] == (
         "method_docs_only"
     )

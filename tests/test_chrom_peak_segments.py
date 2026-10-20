@@ -212,9 +212,8 @@ def test_remote_small_pulses_preserve_supported_overlapping_doublet(
     )
 
     rt = np.linspace(0.0, 16.0, 8001)
-    signal = (
-        10000.0 * np.exp(-0.5 * ((rt - 7.5) / 0.6) ** 2)
-        + 14000.0 * np.exp(-0.5 * ((rt - 9.1) / 0.6) ** 2)
+    signal = 10000.0 * np.exp(-0.5 * ((rt - 7.5) / 0.6) ** 2) + 14000.0 * np.exp(
+        -0.5 * ((rt - 9.1) / 0.6) ** 2
     )
     for center in (12.5, 13.5):
         signal += 20.0 * np.exp(-0.5 * ((rt - center) / 0.003) ** 2)
@@ -297,9 +296,7 @@ def test_rt_envelope_reports_original_signal_apex_within_smoothed_bounds() -> No
     assert segment.apex_index == int(np.argmax(signal))
     assert segment.apex_rt_min == pytest.approx(4.18, abs=0.005)
     assert int(np.argmax(result.morphology_trace_values)) != segment.apex_index
-    assert segment.morphology_apex_residual == pytest.approx(
-        signal[segment.apex_index]
-    )
+    assert segment.morphology_apex_residual == pytest.approx(signal[segment.apex_index])
 
 
 @pytest.mark.parametrize("sigma", (0.01, 0.02))
@@ -349,13 +346,16 @@ def test_rt_envelope_preserves_canonical_clear_valley_between_supported_peaks(
         for query_rt in (0.94, 1.06)
     )
     assert all(evaluation.state == "available" for evaluation in evaluations)
-    assert len(
-        {
-            evaluation.facts.physical_segment_id
-            for evaluation in evaluations
-            if evaluation.facts is not None
-        }
-    ) == 2
+    assert (
+        len(
+            {
+                evaluation.facts.physical_segment_id
+                for evaluation in evaluations
+                if evaluation.facts is not None
+            }
+        )
+        == 2
+    )
 
 
 def test_clear_valley_classification_uses_one_signal_scale() -> None:

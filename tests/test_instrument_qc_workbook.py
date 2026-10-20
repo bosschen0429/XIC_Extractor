@@ -333,9 +333,7 @@ def _hcd_row(
     review_flags: tuple[str, ...] | None = None,
 ) -> HCDAuditRow:
     row_review_flags: tuple[str, ...] = (
-        ("activation_unknown_review",)
-        if activation_method == "unknown"
-        else ()
+        ("activation_unknown_review",) if activation_method == "unknown" else ()
     )
     if review_flags is not None:
         row_review_flags = review_flags

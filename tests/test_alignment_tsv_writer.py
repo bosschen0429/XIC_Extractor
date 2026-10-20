@@ -443,8 +443,10 @@ def test_alignment_matrix_mz_format_preserves_identity_coordinate_contract(
     assert identity_row["Mz"] == "500.123456"
     assert review_row["family_center_mz"] == "500.123456"
     validate_matrix_identity_rows(
-        matrix_header=tuple(matrix_row), matrix_rows=(matrix_row,),
-        identity_columns=tuple(identity_row), identity_rows=(identity_row,),
+        matrix_header=tuple(matrix_row),
+        matrix_rows=(matrix_row,),
+        identity_columns=tuple(identity_row),
+        identity_rows=(identity_row,),
     )
 
 
@@ -616,34 +618,44 @@ def test_alignment_matrix_identity_requires_current_schema_and_binding() -> None
     matrix_header = ("Mz", "RT", "sample-a")
     matrix_rows = ({"Mz": "500.1230", "RT": "8.49", "sample-a": "100"},)
     identity = current_matrix_identity_row(
-        index=1, mz="500.123", rt="8.49", peak_hypothesis_id="ALN000001",
+        index=1,
+        mz="500.123",
+        rt="8.49",
+        peak_hypothesis_id="ALN000001",
         sample_values={"sample-a": "100"},
     )
     validate_matrix_identity_rows(
-        matrix_header=matrix_header, matrix_rows=matrix_rows,
-        identity_columns=ALIGNMENT_MATRIX_IDENTITY_COLUMNS, identity_rows=(identity,),
+        matrix_header=matrix_header,
+        matrix_rows=matrix_rows,
+        identity_columns=ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
+        identity_rows=(identity,),
     )
     for schema in (
-        "", "unknown_identity_schema",
+        "",
+        "unknown_identity_schema",
         "unsupported_matrix_identity",
     ):
         with pytest.raises(ValueError, match="identity schema"):
             validate_matrix_identity_rows(
-                matrix_header=matrix_header, matrix_rows=matrix_rows,
+                matrix_header=matrix_header,
+                matrix_rows=matrix_rows,
                 identity_columns=ALIGNMENT_MATRIX_IDENTITY_COLUMNS,
                 identity_rows=({**identity, "identity_schema_version": schema},),
             )
     for columns in (
         tuple(
-            c for c in ALIGNMENT_MATRIX_IDENTITY_COLUMNS
+            c
+            for c in ALIGNMENT_MATRIX_IDENTITY_COLUMNS
             if c != MATRIX_ROW_BINDING_COLUMN
         ),
         (*ALIGNMENT_MATRIX_IDENTITY_COLUMNS, "unknown_identity_field"),
     ):
         with pytest.raises(ValueError, match="identity columns"):
             validate_matrix_identity_rows(
-                matrix_header=matrix_header, matrix_rows=matrix_rows,
-                identity_columns=columns, identity_rows=(identity,),
+                matrix_header=matrix_header,
+                matrix_rows=matrix_rows,
+                identity_columns=columns,
+                identity_rows=(identity,),
             )
 
 

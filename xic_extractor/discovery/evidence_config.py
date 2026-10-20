@@ -70,10 +70,7 @@ class DiscoveryEvidenceThresholds:
             raise ValueError("Discovery product-intensity thresholds must be ordered")
         if self.area_high_min < self.area_med_min:
             raise ValueError("Discovery area thresholds must be ordered")
-        if (
-            self.ms1_support_strong_area_min
-            < self.ms1_support_moderate_area_min
-        ):
+        if self.ms1_support_strong_area_min < self.ms1_support_moderate_area_min:
             raise ValueError("Discovery MS1-support thresholds must be ordered")
         if (
             self.scan_support_high_score_min > 1.0
@@ -82,9 +79,8 @@ class DiscoveryEvidenceThresholds:
             raise ValueError("Discovery scan-support score thresholds must be <= 1")
         if self.scan_support_low_score_max > self.scan_support_high_score_min:
             raise ValueError("Discovery scan-support score thresholds must be ordered")
-        if (
-            isinstance(self.scan_support_target, bool)
-            or not isinstance(self.scan_support_target, int)
+        if isinstance(self.scan_support_target, bool) or not isinstance(
+            self.scan_support_target, int
         ):
             raise TypeError("scan_support_target must be a non-bool integer")
         if self.scan_support_target <= 0:

@@ -64,12 +64,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         outputs = run_oracle_refresh(
             adjudicated_oracle_csv=args.adjudicated_oracle_csv.resolve(),
-            review_packet_csvs=[
-                path.resolve() for path in args.review_packet_csv
-            ],
-            machine_call_csvs=[
-                path.resolve() for path in args.machine_calls_csv
-            ],
+            review_packet_csvs=[path.resolve() for path in args.review_packet_csv],
+            machine_call_csvs=[path.resolve() for path in args.machine_calls_csv],
             output_dir=args.output_dir.resolve(),
             refresh_packet_id=args.refresh_packet_id,
         )

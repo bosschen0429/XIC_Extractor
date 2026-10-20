@@ -21,12 +21,8 @@ PT_PATTERN_FOUNDATION_PATHS = (
     DISCOVERY_PACKAGE / "local_ms1_features.py",
     *tuple(sorted(DISCOVERY_PACKAGE.glob("delta_mass_*.py"))),
 )
-PT_PATTERN_PACKAGE_PATHS = tuple(
-    sorted(DISCOVERY_PACKAGE.glob("pt_pattern_*.py"))
-)
-PT_PATTERN_ENTRYPOINT_PATHS = (
-    REPO_ROOT / "scripts" / "run_pt_pattern_discovery.py",
-)
+PT_PATTERN_PACKAGE_PATHS = tuple(sorted(DISCOVERY_PACKAGE.glob("pt_pattern_*.py")))
+PT_PATTERN_ENTRYPOINT_PATHS = (REPO_ROOT / "scripts" / "run_pt_pattern_discovery.py",)
 PT_PATTERN_MODULE_PATHS = tuple(
     dict.fromkeys(
         (
@@ -107,7 +103,6 @@ def _pt_pattern_inward_violations(path: Path) -> list[str]:
     return violations
 
 
-
 def _imported_module_names(node: ast.AST) -> list[str]:
     if isinstance(node, ast.Import):
         return [alias.name for alias in node.names]
@@ -151,82 +146,42 @@ def test_delta_mass_pipeline_module_does_not_import_forbidden_roots() -> None:
 
 
 def test_pt_pattern_evidence_rule_module_does_not_import_forbidden_roots() -> None:
-    path = (
-        REPO_ROOT
-        / "xic_extractor"
-        / "discovery"
-        / "pt_pattern_evidence_rule.py"
-    )
+    path = REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_evidence_rule.py"
     assert _violations(path) == []
 
 
 def test_pt_pattern_trace_evidence_module_does_not_import_forbidden_roots() -> None:
-    path = (
-        REPO_ROOT
-        / "xic_extractor"
-        / "discovery"
-        / "pt_pattern_trace_evidence.py"
-    )
+    path = REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_trace_evidence.py"
     assert _violations(path) == []
 
 
 def test_pt_pattern_review_packet_module_does_not_import_forbidden_roots() -> None:
-    path = (
-        REPO_ROOT
-        / "xic_extractor"
-        / "discovery"
-        / "pt_pattern_review_packet.py"
-    )
+    path = REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_review_packet.py"
     assert _violations(path) == []
 
 
 def test_pt_pattern_blind_overlay_module_does_not_import_forbidden_roots() -> None:
-    path = (
-        REPO_ROOT
-        / "xic_extractor"
-        / "discovery"
-        / "pt_pattern_blind_overlay.py"
-    )
+    path = REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_blind_overlay.py"
     assert _violations(path) == []
 
 
 def test_pt_pattern_oracle_promotion_module_does_not_import_forbidden_roots() -> None:
-    path = (
-        REPO_ROOT
-        / "xic_extractor"
-        / "discovery"
-        / "pt_pattern_oracle_promotion.py"
-    )
+    path = REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_oracle_promotion.py"
     assert _violations(path) == []
 
 
 def test_pt_pattern_oracle_refresh_module_does_not_import_forbidden_roots() -> None:
-    path = (
-        REPO_ROOT
-        / "xic_extractor"
-        / "discovery"
-        / "pt_pattern_oracle_refresh.py"
-    )
+    path = REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_oracle_refresh.py"
     assert _violations(path) == []
 
 
 def test_pt_pattern_oracle_thresholds_module_does_not_import_forbidden_roots() -> None:
-    path = (
-        REPO_ROOT
-        / "xic_extractor"
-        / "discovery"
-        / "pt_pattern_oracle_thresholds.py"
-    )
+    path = REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_oracle_thresholds.py"
     assert _violations(path) == []
 
 
 def test_pt_pattern_diagnostic_gate_module_does_not_import_forbidden_roots() -> None:
-    path = (
-        REPO_ROOT
-        / "xic_extractor"
-        / "discovery"
-        / "pt_pattern_diagnostic_gate.py"
-    )
+    path = REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_diagnostic_gate.py"
     assert _violations(path) == []
 
 
@@ -234,10 +189,7 @@ def test_pt_pattern_ddms2_support_replay_module_does_not_import_forbidden_roots(
     None
 ):
     path = (
-        REPO_ROOT
-        / "xic_extractor"
-        / "discovery"
-        / "pt_pattern_ddms2_support_replay.py"
+        REPO_ROOT / "xic_extractor" / "discovery" / "pt_pattern_ddms2_support_replay.py"
     )
     assert _violations(path) == []
 
@@ -248,12 +200,8 @@ def test_run_pt_pattern_discovery_cli_does_not_import_forbidden_roots() -> None:
 
 
 def test_all_pt_pattern_modules_are_free_of_forbidden_imports() -> None:
-    all_violations = {
-        str(path): _violations(path) for path in PT_PATTERN_MODULE_PATHS
-    }
-    assert all(not violations for violations in all_violations.values()), (
-        all_violations
-    )
+    all_violations = {str(path): _violations(path) for path in PT_PATTERN_MODULE_PATHS}
+    assert all(not violations for violations in all_violations.values()), all_violations
 
 
 def test_pt_pattern_boundary_scope_covers_all_discovery_owner_modules() -> None:
@@ -332,16 +280,11 @@ def _product_writer_violations(path: Path) -> list[str]:
     ]
 
 
-def test_no_pt_pattern_module_imports_product_writer_or_quant_matrix_builders() -> (
-    None
-):
+def test_no_pt_pattern_module_imports_product_writer_or_quant_matrix_builders() -> None:
     all_violations = {
-        str(path): _product_writer_violations(path)
-        for path in PT_PATTERN_MODULE_PATHS
+        str(path): _product_writer_violations(path) for path in PT_PATTERN_MODULE_PATHS
     }
-    assert all(not violations for violations in all_violations.values()), (
-        all_violations
-    )
+    assert all(not violations for violations in all_violations.values()), all_violations
 
 
 def test_no_pt_pattern_module_source_mentions_product_writer_call_site() -> None:
@@ -451,12 +394,8 @@ def test_partial_pattern_with_synthetic_backfill_like_row_yields_zero_candidates
     base_mz = 500.0
     features = [
         _boundary_feature(feature_id="base", mz=base_mz, rt_apex_min=10.000),
-        _boundary_feature(
-            feature_id="plus1", mz=base_mz + 1.0021, rt_apex_min=10.000
-        ),
-        _boundary_feature(
-            feature_id="plus2", mz=base_mz + 2.0023, rt_apex_min=10.000
-        ),
+        _boundary_feature(feature_id="plus1", mz=base_mz + 1.0021, rt_apex_min=10.000),
+        _boundary_feature(feature_id="plus2", mz=base_mz + 2.0023, rt_apex_min=10.000),
         # Synthetic Backfill-like row: far from the pt_plus_4 expected m/z
         # window and explicitly tagged as Backfill-sourced, so it must not be
         # treated as a legitimate pt_plus_4 position match.

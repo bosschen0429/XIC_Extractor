@@ -226,9 +226,7 @@ def test_load_instrument_trend_rows_and_metadata(tmp_path: Path) -> None:
         json.dumps({"metadata_source_status": {"injection_order_status": "missing"}}),
         encoding="utf-8",
     )
-    assert load_metadata_source_status(summary) == {
-        "injection_order_status": "missing"
-    }
+    assert load_metadata_source_status(summary) == {"injection_order_status": "missing"}
 
 
 def test_load_instrument_trend_rows_fails_on_missing_columns(tmp_path: Path) -> None:

@@ -262,8 +262,7 @@ def evaluate_selected_envelope_boundary(
             selected_boundary_mode="review_only",
             legacy_resolver_provenance=legacy_resolver_provenance,
             boundary_change_class="context_apex_conflict",
-            boundary_evidence_sources=evidence_sources
-            + ("context_apex_conflict",),
+            boundary_evidence_sources=evidence_sources + ("context_apex_conflict",),
             boundary_stop_reason="stronger_context_apex_outside_envelope",
             asls_area_old_interval=old_area,
             asls_area_selected_envelope=envelope_area,
@@ -859,12 +858,8 @@ def _is_local_apex(
     index: int,
     interval: TraceInterval,
 ) -> bool:
-    left_value = (
-        residual[index - 1] if index > interval.start_index else -np.inf
-    )
-    right_value = (
-        residual[index + 1] if index + 1 < interval.end_index else -np.inf
-    )
+    left_value = residual[index - 1] if index > interval.start_index else -np.inf
+    right_value = residual[index + 1] if index + 1 < interval.end_index else -np.inf
     return residual[index] >= left_value and residual[index] >= right_value
 
 
@@ -951,8 +946,7 @@ def _apex_conflict_labels(
     policy: SelectedEnvelopePolicy,
 ) -> tuple[str, str, str]:
     nearest_delta = min(
-        abs(float(rt[index] - rt[selected_apex_index]))
-        for index in neighbor_apexes
+        abs(float(rt[index] - rt[selected_apex_index])) for index in neighbor_apexes
     )
     if nearest_delta <= policy.split_apex_max_delta_min:
         return (

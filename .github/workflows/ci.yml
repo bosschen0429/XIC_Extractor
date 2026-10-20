@@ -31,6 +31,7 @@ jobs:
       - id: install
         run: uv sync --locked --all-extras --dev
       - run: uv run ruff check xic_extractor xic_inspector xic_workbench scripts tools tests
+      - run: uv run ruff format --check xic_extractor xic_inspector xic_workbench scripts tools tests
       - name: Internal-defense growth gate
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         env:

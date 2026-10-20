@@ -148,9 +148,7 @@ def run_blast_radius(
             "identity_confidence": row_decision.identity_confidence,
             "identity_reason": row_decision.identity_reason,
             "primary_evidence": row_decision.primary_evidence,
-            "quantifiable_detected_count": (
-                row_decision.quantifiable_detected_count
-            ),
+            "quantifiable_detected_count": (row_decision.quantifiable_detected_count),
             "quantifiable_backfill_count": row_decision.quantifiable_backfill_count,
             "accepted_backfill_count": row_decision.quantifiable_backfill_count,
             "review_backfill_count": row_decision.review_backfill_count,
@@ -177,9 +175,7 @@ def run_blast_radius(
                     row_decision.quantifiable_backfill_count
                 ),
                 "duplicate_assigned_count": row_decision.duplicate_assigned_count,
-                "ambiguous_ms1_owner_count": (
-                    row_decision.ambiguous_ms1_owner_count
-                ),
+                "ambiguous_ms1_owner_count": (row_decision.ambiguous_ms1_owner_count),
                 "row_flags": ";".join(row_decision.row_flags),
                 **machine_decision_as_row(machine_decision),
                 "would_change_to_audit": current_include and not proposed_include,
@@ -474,9 +470,8 @@ def _selected_family_active_tag(
 ) -> str:
     if not family_id or family_id != selected_family_id:
         return ""
-    return (
-        summary_row.get("active_dna_istd_candidate")
-        or summary_row.get("active_tag", "")
+    return summary_row.get("active_dna_istd_candidate") or summary_row.get(
+        "active_tag", ""
     )
 
 

@@ -346,9 +346,7 @@ def _requires_boundary_review(
     has_review_boundary = evidence.segment_class in {
         "shoulder_candidate",
         "low_scan_segment",
-    } or (
-        "review" in evidence.boundary_stop_reason
-    )
+    } or ("review" in evidence.boundary_stop_reason)
     return owns_common_boundary and has_review_boundary
 
 

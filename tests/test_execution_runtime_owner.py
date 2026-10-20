@@ -166,12 +166,6 @@ def test_runtime_owner_derives_raw_open_only_from_matching_unique_receipt(
         )
 
 
-
-
-
-
-
-
 def test_owner_start_accepts_exact_typed_cancellation_request(
     tmp_path: Path,
 ) -> None:

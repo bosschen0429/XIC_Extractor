@@ -546,9 +546,7 @@ def test_curve_export_acquires_two_distinct_sample_curves_with_progress(
     )
     assert all(
         curve["stage_label"] == "diagnostic_reacquisition"
-        and curve["provenance"]["raw_identity"].startswith(
-            "xic.acquisition-source:"
-        )
+        and curve["provenance"]["raw_identity"].startswith("xic.acquisition-source:")
         for curve in inspector_curves
     )
 

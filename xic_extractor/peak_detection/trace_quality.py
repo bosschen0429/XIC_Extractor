@@ -50,10 +50,7 @@ def local_minimum_region_quality(
         flags.append("too_broad")
     if edge_ratio is not None and edge_ratio < config.resolver_min_ratio_top_edge:
         flags.append("poor_edge_recovery")
-    if (
-        trace_continuity is not None
-        and trace_continuity < TRACE_CONTINUITY_MIN_SCORE
-    ):
+    if trace_continuity is not None and trace_continuity < TRACE_CONTINUITY_MIN_SCORE:
         flags.append("low_trace_continuity")
     return LocalMinimumRegionQuality(
         flags=tuple(flags),

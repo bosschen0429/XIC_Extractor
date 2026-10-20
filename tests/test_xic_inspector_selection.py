@@ -54,14 +54,18 @@ def test_default_sample_keeps_cross_sample_cases_among_many_singletons() -> None
         ("limited", 1, "discovery_support", 200),
     ):
         for index in range(count):
-            groups.append(replace(
-                _make_item("row", f"{name}_{index}", "rest", ("s1",)),
-                details={"review_summary": {
-                    "observed_sample_count": observed,
-                    "scope_sample_count": 8,
-                    "origin_kinds": [origin],
-                }},
-            ))
+            groups.append(
+                replace(
+                    _make_item("row", f"{name}_{index}", "rest", ("s1",)),
+                    details={
+                        "review_summary": {
+                            "observed_sample_count": observed,
+                            "scope_sample_count": 8,
+                            "origin_kinds": [origin],
+                        }
+                    },
+                )
+            )
     candidates = [
         _make_item("candidate", f"c_{index}", "excluded", ("s1",))
         for index in range(2000)
@@ -69,8 +73,13 @@ def test_default_sample_keeps_cross_sample_cases_among_many_singletons() -> None
     selected = sample_cross_sample_sha256(groups + candidates, limit=30, seed=0)
     assert len(selected) == 30
     assert all(item.kind == "row" for item in selected)
-    assert sum(item.details["review_summary"]["observed_sample_count"] >= 2
-               for item in selected) >= 20
+    assert (
+        sum(
+            item.details["review_summary"]["observed_sample_count"] >= 2
+            for item in selected
+        )
+        >= 20
+    )
     assert any(item.identifier.startswith("broad_recovery") for item in selected)
     assert any(item.identifier.startswith("broad_direct") for item in selected)
     assert any(item.identifier.startswith("partial_reacquired") for item in selected)
@@ -96,21 +105,42 @@ def test_default_sample_uses_candidates_only_after_existing_groups() -> None:
 def test_scoped_strata_priority() -> None:
     """Verify scoped strata priority: attention > excluded > null > zero > rest."""
     # NULL + nonzero -> null
-    assert classify_scoped_stratum(
-        is_attention=False, is_excluded=False, has_null_cell=True, has_zero_cell=False
-    ) == "null"
+    assert (
+        classify_scoped_stratum(
+            is_attention=False,
+            is_excluded=False,
+            has_null_cell=True,
+            has_zero_cell=False,
+        )
+        == "null"
+    )
     # Only nonzero -> rest
-    assert classify_scoped_stratum(
-        is_attention=False, is_excluded=False, has_null_cell=False, has_zero_cell=False
-    ) == "rest"
+    assert (
+        classify_scoped_stratum(
+            is_attention=False,
+            is_excluded=False,
+            has_null_cell=False,
+            has_zero_cell=False,
+        )
+        == "rest"
+    )
     # 0 + nonzero -> zero
-    assert classify_scoped_stratum(
-        is_attention=False, is_excluded=False, has_null_cell=False, has_zero_cell=True
-    ) == "zero"
+    assert (
+        classify_scoped_stratum(
+            is_attention=False,
+            is_excluded=False,
+            has_null_cell=False,
+            has_zero_cell=True,
+        )
+        == "zero"
+    )
     # Scoped attention has highest priority
-    assert classify_scoped_stratum(
-        is_attention=True, is_excluded=True, has_null_cell=True, has_zero_cell=True
-    ) == "attention"
+    assert (
+        classify_scoped_stratum(
+            is_attention=True, is_excluded=True, has_null_cell=True, has_zero_cell=True
+        )
+        == "attention"
+    )
 
 
 def test_acceptance_a3_witness_chain_query() -> None:

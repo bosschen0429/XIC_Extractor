@@ -104,9 +104,14 @@ class BatchRtCalibration:
 
     def offset_min(self, sample_stem: str, common_rt: float) -> float:
         sample = self.samples.get(sample_stem)
-        observed = interpolate_calibrated_rt_min(
-            common_rt, tuple((reference, rt) for rt, reference in sample.knots),
-        ) if sample else None
+        observed = (
+            interpolate_calibrated_rt_min(
+                common_rt,
+                tuple((reference, rt) for rt, reference in sample.knots),
+            )
+            if sample
+            else None
+        )
         return 0.0 if observed is None else observed - common_rt
 
 

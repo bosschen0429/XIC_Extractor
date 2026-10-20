@@ -10,6 +10,12 @@ repos:
         files: ^(xic_extractor/.*\.py|scripts/check_architecture_census\.py|\.pre-commit-config\.yaml)$
         pass_filenames: false
 
+      - id: ruff-format-staged-python
+        name: Ruff format staged Python files
+        entry: uv run --cache-dir .uv-cache ruff format
+        language: system
+        types: [python]
+
       - id: ruff-staged-python
         name: Ruff staged Python files
         entry: uv run --cache-dir .uv-cache ruff check --fix
@@ -20,6 +26,7 @@ repos:
         name: mypy staged xic_extractor files
         entry: uv run --cache-dir .uv-cache mypy
         language: system
+        require_serial: true
         files: ^xic_extractor/.*\.py$
         types: [python]
 

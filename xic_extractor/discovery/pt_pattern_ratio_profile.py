@@ -475,6 +475,7 @@ def render_ratio_profile_html(
         profile_id=profile_id,
     )
 
+
 def _profile_row(
     candidate: Mapping[str, str],
     evidence: Mapping[str, str],
@@ -592,9 +593,7 @@ def _optional_bounded_float(
     maximum: float | None = None,
 ) -> float | None:
     raw_value = row.get(field)
-    if raw_value is None or (
-        isinstance(raw_value, str) and not raw_value.strip()
-    ):
+    if raw_value is None or (isinstance(raw_value, str) and not raw_value.strip()):
         return None
     value = optional_float(raw_value)
     if value is None:
@@ -757,9 +756,7 @@ def _unique_rows_by_key(
                 f"{path}: sample_stem/candidate_id key must be non-empty: {key!r}"
             )
         if key in grouped:
-            raise ValueError(
-                f"{path}: duplicate sample_stem/candidate_id key: {key!r}"
-            )
+            raise ValueError(f"{path}: duplicate sample_stem/candidate_id key: {key!r}")
         grouped[key] = row
     return grouped
 

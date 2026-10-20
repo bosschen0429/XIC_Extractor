@@ -53,7 +53,7 @@ def report_shell(*, title: str, meta: str, body: str) -> str:
             '<a class="skip-link" href="#main">跳至主要內容</a>',
             f'<main id="main"><header class="report-header"><p class="eyebrow">PT PATTERN · DIAGNOSTIC REVIEW</p><h1>{escape(title)}</h1><p class="meta">{escape(meta)}</p></header>',
             body,
-            '<footer><span>diagnostic_only</span><span>不開 RAW · 不改 detector · 不寫 Matrix</span></footer>',
+            "<footer><span>diagnostic_only</span><span>不開 RAW · 不改 detector · 不寫 Matrix</span></footer>",
             "</main>",
             "</body>",
             "</html>",

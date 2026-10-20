@@ -256,7 +256,8 @@ def test_single_landmark_cannot_join_disconnected_ordered_patterns(reverse):
         frozenset(("c:1", "d:1")),
     }
     assert result.trajectory_for([owners[1], owners[3]]).sample_apices == (
-        ("a", 10.3), ("b", 10.3),
+        ("a", 10.3),
+        ("b", 10.3),
     )
 
 
@@ -376,8 +377,11 @@ def test_pattern_calibration_requires_support_for_both_samples(second_sample_sup
         BatchRtWarp(tuple(knots), 12)
     )
     result = resolve_peak_trajectories(
-        owners, contexts, config=AlignmentConfig(),
-        injection_order=frame.injection_order, rt_frame=frame,
+        owners,
+        contexts,
+        config=AlignmentConfig(),
+        injection_order=frame.injection_order,
+        rt_frame=frame,
     )
     if second_sample_supported:
         # A measured zero correction is incompatible with a 1.6-minute pattern
@@ -401,18 +405,26 @@ def test_calibrated_candidates_survive_large_raw_displacement(ms1_only):
         _context("b", ((14.0, 30.0), (14.6, 100.0))),
     ]
     frame = SampleRtFrame(injection_order={"a": 1, "b": 2}).with_warp(
-        BatchRtWarp((
-            ("a", ((8.0, 0.0), (16.0, 0.0))),
-            ("b", ((8.0, 4.0), (16.0, 4.0))),
-        ), 12)
+        BatchRtWarp(
+            (
+                ("a", ((8.0, 0.0), (16.0, 0.0))),
+                ("b", ((8.0, 4.0), (16.0, 4.0))),
+            ),
+            12,
+        )
     )
     raw = resolve_peak_trajectories(
-        owners, contexts, config=AlignmentConfig(),
+        owners,
+        contexts,
+        config=AlignmentConfig(),
         injection_order=frame.injection_order,
     )
     result = resolve_peak_trajectories(
-        owners, raw.source_contexts, config=AlignmentConfig(),
-        injection_order=frame.injection_order, rt_frame=frame,
+        owners,
+        raw.source_contexts,
+        config=AlignmentConfig(),
+        injection_order=frame.injection_order,
+        rt_frame=frame,
     )
     assert result.pattern_comparisons == 1
     assert len(result.tracks) == 1

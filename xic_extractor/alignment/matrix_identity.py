@@ -48,6 +48,7 @@ IdentityDecision = Literal[
 ]
 IdentityConfidence = Literal["high", "medium", "review", "none"]
 
+
 @dataclass(frozen=True)
 class MatrixIdentityRowDecision:
     feature_family_id: str
@@ -306,9 +307,7 @@ def _matrix_identity_blockers(
         return ()
     return tuple(
         dict.fromkeys(
-            part
-            for part in (decision.identity_reason, *decision.row_flags)
-            if part
+            part for part in (decision.identity_reason, *decision.row_flags) if part
         )
     )
 
@@ -381,10 +380,7 @@ def _promotion_decision(
             "medium",
             promotion_policy.reason,
         )
-    if (
-        backfill_dependency == EXTREME_BACKFILL_REASON
-        and not backfill_cell_only_block
-    ):
+    if backfill_dependency == EXTREME_BACKFILL_REASON and not backfill_cell_only_block:
         return (
             False,
             "provisional_discovery",
@@ -430,7 +426,7 @@ def _promotion_decision(
             "provisional_discovery",
             "review",
             "insufficient_detected_identity_support",
-            )
+        )
     detection_grade_group = evidence.startswith(
         ("owner_bounded_continuity", "owner_complete_link_moderate")
     )

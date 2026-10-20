@@ -45,9 +45,9 @@ def test_hypothesis_synthesis_writes_diagnostic_only_report(
     assert summary["changes_detector_rule"] is False
     assert summary["ratio"]["primary_row_count"] == 3
     assert summary["interference"]["rt_12p5_13p5_accept_count"] == 2
-    assert summary["plus1_seed"]["threshold_100000"][
-        "current_146_accept_recovered"
-    ] == 2
+    assert (
+        summary["plus1_seed"]["threshold_100000"]["current_146_accept_recovered"] == 2
+    )
     assert summary["inclusion_list"]["top102"]["feature_all4_exist_20ppm"] == 2
     assert summary["observations"]
     markdown = outputs["markdown"].read_text(encoding="utf-8")
@@ -937,9 +937,7 @@ def _ratio_summary(
         {
             "schema_version": "pt_pattern_ratio_profile",
             "readiness_tier": "diagnostic_only",
-            "evidence_owner": (
-                "xic_extractor.discovery.pt_pattern_ratio_profile"
-            ),
+            "evidence_owner": ("xic_extractor.discovery.pt_pattern_ratio_profile"),
             "authority_scope": "ratio_profile_only",
             "profile_id": "fixture",
             "population_label": population_label,

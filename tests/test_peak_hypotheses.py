@@ -38,10 +38,7 @@ def test_hypothesis_id_is_deterministic() -> None:
     )
 
     assert first == second
-    assert first == (
-        "SampleA|Analyte|savgol|legacy_savgol|"
-        "8.12346|8.00123|8.65432"
-    )
+    assert first == ("SampleA|Analyte|savgol|legacy_savgol|8.12346|8.00123|8.65432")
 
 
 def test_build_peak_hypotheses_marks_selected_and_rejected_candidates() -> None:

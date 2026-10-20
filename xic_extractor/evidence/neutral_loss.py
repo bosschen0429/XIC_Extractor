@@ -76,10 +76,6 @@ class MS2ProductEvidence:
         )
 
 
-
-
-
-
 @dataclass(frozen=True)
 class CandidateMS2Evidence:
     ms2_present: bool

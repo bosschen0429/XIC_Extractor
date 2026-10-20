@@ -162,8 +162,7 @@ def _parse_trace_summary_inputs(
         source_label, separator, path_text = value.partition("=")
         if not separator or not source_label.strip() or not path_text.strip():
             parser.error(
-                "--trace-summary-input must use SOURCE_LABEL=PATH with "
-                "non-empty values"
+                "--trace-summary-input must use SOURCE_LABEL=PATH with non-empty values"
             )
         path = Path(path_text)
         if not path.is_file():

@@ -221,9 +221,7 @@ def _matrix_diff(
     cand_keys = set(cand_by_peak)
     common = sorted(exact_keys & cand_keys)
     sample_columns = sorted(
-        (
-            set(exact["matrix_fields"]) | set(candidate["matrix_fields"])
-        )
+        (set(exact["matrix_fields"]) | set(candidate["matrix_fields"]))
         - MATRIX_COORD_COLUMNS,
     )
     missing_cells = 0

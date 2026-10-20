@@ -525,16 +525,12 @@ def test_strict_reliability_excludes_targeted_review_rows_from_area_gate(
     assert summary.coverage_denominator_count == 3
     assert summary.paired_area_n == 3
     assert summary.failure_modes == ()
-    assert summary.targeted_reliability_warning_modes == (
-        "TARGETED_REVIEW_EVIDENCE",
-    )
+    assert summary.targeted_reliability_warning_modes == ("TARGETED_REVIEW_EVIDENCE",)
     payload = json.loads(outputs.json_path.read_text(encoding="utf-8"))
     assert payload["overall_status"] == "WARN"
     rows = _read_tsv(outputs.summary_tsv)
     assert rows[0]["clean_targeted_positive_count"] == "3"
-    assert rows[0]["targeted_reliability_warning_modes"] == (
-        "TARGETED_REVIEW_EVIDENCE"
-    )
+    assert rows[0]["targeted_reliability_warning_modes"] == ("TARGETED_REVIEW_EVIDENCE")
 
 
 def test_strict_reliability_tracks_review_positive_rows_separately(
@@ -798,7 +794,7 @@ def _write_targeted_workbook(
     for sample_index, sample in enumerate(samples, start=1):
         for target_index, target in enumerate(targets):
             rt = float(str(target["RT min"])) + 0.5 + sample_index * 0.01
-            area = 10.0 ** sample_index
+            area = 10.0**sample_index
             results.append(
                 [
                     sample if target_index == 0 else None,
@@ -927,9 +923,7 @@ def _identity_row(
     rt: float,
 ) -> dict[str, object]:
     return {
-        "identity_schema_version": (
-            "untargeted_peak_hypothesis_matrix_identity"
-        ),
+        "identity_schema_version": ("untargeted_peak_hypothesis_matrix_identity"),
         "matrix_row_index": matrix_row_index,
         "Mz": mz,
         "RT": rt,

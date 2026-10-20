@@ -187,12 +187,10 @@ def run_trace_diagnosis(
         )
 
     status_counts = Counter(
-        str(row.get("trace_support_status", ""))
-        for row in diagnosis.summary_rows
+        str(row.get("trace_support_status", "")) for row in diagnosis.summary_rows
     )
     combined_status_counts = Counter(
-        str(row.get("combined_pt_pattern_status", ""))
-        for row in diagnosis.summary_rows
+        str(row.get("combined_pt_pattern_status", "")) for row in diagnosis.summary_rows
     )
     sidecar = {
         "schema_version": SCHEMA_VERSION,

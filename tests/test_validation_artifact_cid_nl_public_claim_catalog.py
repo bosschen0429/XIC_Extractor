@@ -81,8 +81,7 @@ def test_claim_catalog_rejects_missing_markdown_heading(tmp_path: Path) -> None:
     )
 
     assert any(
-        "evidence or fixture anchor does not resolve" in problem
-        for problem in problems
+        "evidence or fixture anchor does not resolve" in problem for problem in problems
     )
 
 
@@ -112,8 +111,7 @@ def test_claim_catalog_marks_matrix_boundary_as_reference_only(
 @pytest.mark.ledger_snapshot
 def test_reference_rows_preserve_existing_owner_boundaries() -> None:
     rows = {
-        row["claim_id"]: row
-        for row in _read_rows(claim_catalog.DEFAULT_CATALOG_PATH)
+        row["claim_id"]: row for row in _read_rows(claim_catalog.DEFAULT_CATALOG_PATH)
     }
     selected = rows["targeted_output.selected_value_authority_ref"]
     counted = rows["targeted_output.counted_detection_authority_ref"]
@@ -124,13 +122,11 @@ def test_reference_rows_preserve_existing_owner_boundaries() -> None:
         assert row["disposition"] == "retain"
     for row in (selected, counted):
         assert "docs/product/decision-policy.md" in row["existing_authority_owner"]
-        assert "docs/product/targeted-selection.md" in row[
-            "existing_authority_owner"
-        ]
+        assert "docs/product/targeted-selection.md" in row["existing_authority_owner"]
     assert "docs/product/quant-matrix.md" in matrix["existing_authority_owner"]
-    assert "productization_authority_manifest.json" in matrix[
-        "existing_authority_owner"
-    ]
+    assert (
+        "productization_authority_manifest.json" in matrix["existing_authority_owner"]
+    )
     assert "targeted-selection.md" not in matrix["existing_authority_owner"]
 
 
@@ -145,8 +141,7 @@ def test_claim_catalog_rejects_repo_external_reference(tmp_path: Path) -> None:
     )
 
     assert any(
-        "is not a repo-relative clean-checkout path" in problem
-        for problem in problems
+        "is not a repo-relative clean-checkout path" in problem for problem in problems
     )
 
 

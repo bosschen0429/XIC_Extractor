@@ -55,26 +55,33 @@ class LocalPeakShape:
     def __post_init__(self) -> None:
         if (
             isinstance(self.half_window_min, bool)
-            or not math.isfinite(self.half_window_min) or self.half_window_min <= 0
+            or not math.isfinite(self.half_window_min)
+            or self.half_window_min <= 0
             or type(self.intensity) is not tuple
             or len(self.intensity) < 5
-            or type(self.source_point_count) is not int or self.source_point_count < 0
-            or (self.half_height_point_count is not None and (
-                type(self.half_height_point_count) is not int
-                or not 0 <= self.half_height_point_count <= self.source_point_count
-            ))
-            or (self.edge_intensity_ratio is not None and (
-                type(self.edge_intensity_ratio) is not tuple
-                or len(self.edge_intensity_ratio) != 2
-                or any(
-                    isinstance(value, bool) or not math.isfinite(value) or value > 1
-                    for value in self.edge_intensity_ratio
+            or type(self.source_point_count) is not int
+            or self.source_point_count < 0
+            or (
+                self.half_height_point_count is not None
+                and (
+                    type(self.half_height_point_count) is not int
+                    or not 0 <= self.half_height_point_count <= self.source_point_count
                 )
-            ))
+            )
+            or (
+                self.edge_intensity_ratio is not None
+                and (
+                    type(self.edge_intensity_ratio) is not tuple
+                    or len(self.edge_intensity_ratio) != 2
+                    or any(
+                        isinstance(value, bool) or not math.isfinite(value) or value > 1
+                        for value in self.edge_intensity_ratio
+                    )
+                )
+            )
             or any(
-                value is not None and (
-                    isinstance(value, bool) or not math.isfinite(value) or value > 1.0
-                )
+                value is not None
+                and (isinstance(value, bool) or not math.isfinite(value) or value > 1.0)
                 for value in self.intensity
             )
         ):
@@ -106,8 +113,10 @@ def prepare_local_peak_shape(
         return LocalPeakShape(half_window_min, (None,) * grid_size, 0)
     relative_rt = rt_array - apex_rt_min
     mask = (
-        np.isfinite(relative_rt) & np.isfinite(intensity_array)
-        & (relative_rt >= -half_window_min) & (relative_rt <= half_window_min)
+        np.isfinite(relative_rt)
+        & np.isfinite(intensity_array)
+        & (relative_rt >= -half_window_min)
+        & (relative_rt <= half_window_min)
     )
     source_count = int(np.sum(mask))
     if source_count < 3:
@@ -127,16 +136,20 @@ def prepare_local_peak_shape(
         # Keep the original RT support, but exclude disconnected signal only
         # from this private correspondence derivative, not from quantitation.
         primary[:start] = 0
-        primary[stop + 1:] = 0
+        primary[stop + 1 :] = 0
         peak_height = float(np.max(primary))
-        half_height_count = int(np.sum(primary >= .5 * peak_height))
+        half_height_count = int(np.sum(primary >= 0.5 * peak_height))
         edges = (float(primary[0] / peak_height), float(primary[-1] / peak_height))
     smoothed = np.asarray(gaussian_smooth_values(primary, points=smooth_points))
     max_intensity = float(np.max(smoothed))
     if max_intensity <= 0:
         return LocalPeakShape(half_window_min, (None,) * grid_size, source_count)
     values = np.interp(
-        grid, relative_rt, smoothed / max_intensity, left=np.nan, right=np.nan,
+        grid,
+        relative_rt,
+        smoothed / max_intensity,
+        left=np.nan,
+        right=np.nan,
     )
     return LocalPeakShape(
         half_window_min,
@@ -148,12 +161,12 @@ def prepare_local_peak_shape(
 
 
 def compare_local_peak_shapes(
-    left: LocalPeakShape, right: LocalPeakShape,
+    left: LocalPeakShape,
+    right: LocalPeakShape,
 ) -> ShapeSimilarityResult:
     """Compare only jointly observed points on the same relative RT grid."""
-    if (
-        left.half_window_min != right.half_window_min
-        or len(left.intensity) != len(right.intensity)
+    if left.half_window_min != right.half_window_min or len(left.intensity) != len(
+        right.intensity
     ):
         return ShapeSimilarityResult("inconclusive", "shape_grid_mismatch")
     if min(left.source_point_count, right.source_point_count) < 5:
@@ -164,7 +177,10 @@ def compare_local_peak_shapes(
     )
     if 0 < count < (len(left.intensity) + 1) // 2:
         return ShapeSimilarityResult(
-            "inconclusive", "insufficient_shared_shape_context", None, count,
+            "inconclusive",
+            "insufficient_shared_shape_context",
+            None,
+            count,
         )
     if similarity is not None:
         if (
@@ -172,26 +188,35 @@ def compare_local_peak_shapes(
             or right.half_height_point_count is None
         ):
             return ShapeSimilarityResult(
-                "inconclusive", "unassessed_shape_resolution", None, count,
+                "inconclusive",
+                "unassessed_shape_resolution",
+                None,
+                count,
             )
         if min(left.half_height_point_count, right.half_height_point_count) < 5:
             # Sparse primary peaks cannot support fine-shape disagreement. A
             # localized peak versus signal sustained at BOTH observed edges
             # is a coarser contrast that does not require resolving peak width.
             edges = (left.edge_intensity_ratio, right.edge_intensity_ratio)
-            localized = any(edge is not None and max(edge) < .5 for edge in edges)
-            sustained = any(edge is not None and min(edge) >= .5 for edge in edges)
+            localized = any(edge is not None and max(edge) < 0.5 for edge in edges)
+            sustained = any(edge is not None and min(edge) >= 0.5 for edge in edges)
             if not (localized and sustained):
                 return ShapeSimilarityResult(
-                    "inconclusive", "insufficient_primary_shape_resolution",
-                    None, count,
+                    "inconclusive",
+                    "insufficient_primary_shape_resolution",
+                    None,
+                    count,
                 )
             return ShapeSimilarityResult(
-                "ok", "localized_vs_sustained_shape_contrast", similarity, count,
+                "ok",
+                "localized_vs_sustained_shape_contrast",
+                similarity,
+                count,
             )
     return ShapeSimilarityResult(
         "ok" if similarity is not None else "inconclusive",
-        "local_own_max_shape_similarity" if similarity is not None
+        "local_own_max_shape_similarity"
+        if similarity is not None
         else "similarity_unavailable",
         similarity,
         count,

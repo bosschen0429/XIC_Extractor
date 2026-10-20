@@ -32,8 +32,12 @@ from tools.diagnostics.docs_policy import (  # noqa: E402
 )
 
 DOC_ROUTING_REFERRER_EXCLUDE_PATTERNS = (
-    re.compile(r"docs/superpowers/file-management/docs-cleanup/.*routing-manifest\.md$"),
-    re.compile(r"docs/superpowers/file-management/docs-cleanup/.*routing-manifest\.tsv$"),
+    re.compile(
+        r"docs/superpowers/file-management/docs-cleanup/.*routing-manifest\.md$"
+    ),
+    re.compile(
+        r"docs/superpowers/file-management/docs-cleanup/.*routing-manifest\.tsv$"
+    ),
     re.compile(r"docs/superpowers/file-management/docs-cleanup/.*topic-clusters\.tsv$"),
     re.compile(r"output/docs-topic-indexes/[^/]+/README\.md$"),
 )
@@ -404,8 +408,7 @@ def _topic_hint(path: str, text: str) -> tuple[str, str]:
 def _topic_slug(topic_key: str) -> str:
     return DOC_TOPIC_FOLDER_SLUGS.get(
         topic_key,
-        re.sub(r"[^a-z0-9]+", "-", topic_key.lower()).strip("-")
-        or "uncategorized",
+        re.sub(r"[^a-z0-9]+", "-", topic_key.lower()).strip("-") or "uncategorized",
     )
 
 
@@ -477,15 +480,13 @@ def _obsidian_lane(path: str, disposition: str) -> str:
         return "XIC/20 Archived Plans And Specs/Topic Archives/<topic>/Plans"
     if "/specs/" in path:
         return (
-            "XIC/20 Archived Plans And Specs/Topic Archives/<topic>/"
-            "Specs And Designs"
+            "XIC/20 Archived Plans And Specs/Topic Archives/<topic>/Specs And Designs"
         )
     if "/goals/" in path:
         return "XIC/20 Archived Plans And Specs/Topic Archives/<topic>/Goals"
     if "/reports/" in path or "/pulse-reports/" in path:
         return (
-            "XIC/20 Archived Plans And Specs/Topic Archives/<topic>/"
-            "Reports And Pulses"
+            "XIC/20 Archived Plans And Specs/Topic Archives/<topic>/Reports And Pulses"
         )
     if "/deepresearch/" in path:
         return "XIC/30 Research Notes/Deepresearch"
@@ -706,11 +707,15 @@ def _support_retention_requires_followup(reason: str) -> bool:
 
 
 def _record_requires_digestion_followup(record: DocsRoutingCandidate) -> bool:
-    return _digestion_requires_review(
-        record.digestion_status,
-    ) or _support_retention_requires_followup(
-        record.support_retention_reason,
-    ) or _record_requires_metadata_followup(record)
+    return (
+        _digestion_requires_review(
+            record.digestion_status,
+        )
+        or _support_retention_requires_followup(
+            record.support_retention_reason,
+        )
+        or _record_requires_metadata_followup(record)
+    )
 
 
 def _record_requires_metadata_followup(record: DocsRoutingCandidate) -> bool:
@@ -726,9 +731,7 @@ def _sample_referrer_paths(record: DocsRoutingCandidate) -> tuple[str, ...]:
     if record.sample_referrers == "none":
         return ()
     return tuple(
-        path.strip()
-        for path in record.sample_referrers.split(";")
-        if path.strip()
+        path.strip() for path in record.sample_referrers.split(";") if path.strip()
     )
 
 
@@ -821,10 +824,7 @@ def _wiki_skill_route(route: str) -> str:
     if route == DOC_ROUTE_OBSIDIAN_ORIGINAL:
         return "wiki-query -> wiki-ingest -> wiki-lint -> wiki-stage-commit"
     if route == DOC_ROUTE_REPO_DISTILLED_PLUS_OBSIDIAN_ORIGINAL:
-        return (
-            "wiki-query -> wiki-ingest/wiki-update -> wiki-lint -> "
-            "wiki-stage-commit"
-        )
+        return "wiki-query -> wiki-ingest/wiki-update -> wiki-lint -> wiki-stage-commit"
     if route == DOC_ROUTE_NEEDS_DECISION:
         return "wiki-status -> wiki-query -> critical review before write"
     return "wiki-query optional; wiki-update optional after durable repo change"
@@ -911,8 +911,7 @@ def _routing_metadata(path: str, text: str, disposition: str) -> dict[str, objec
 
 def _is_referrer_scan_target(rel_path: str) -> bool:
     if any(
-        pattern.match(rel_path)
-        for pattern in DOC_ROUTING_REFERRER_EXCLUDE_PATTERNS
+        pattern.match(rel_path) for pattern in DOC_ROUTING_REFERRER_EXCLUDE_PATTERNS
     ):
         return False
     return _docs_scan.is_local_path_scan_rel_path(rel_path)
@@ -1023,9 +1022,7 @@ def _with_topic_cluster_status(
 ) -> list[DocsRoutingCandidate]:
     groups: dict[tuple[str, str], list[DocsRoutingCandidate]] = {}
     for record in records:
-        groups.setdefault((record.topic_key, record.repo_owner_hint), []).append(
-            record
-        )
+        groups.setdefault((record.topic_key, record.repo_owner_hint), []).append(record)
 
     clustered: list[DocsRoutingCandidate] = []
     for group in groups.values():
@@ -1041,9 +1038,7 @@ def _with_topic_cluster_status(
                     topic_cluster_status=status,
                     topic_cluster_sample=sample,
                     digestion_status=digestion_status,
-                    digestion_next_action=_digestion_next_action(
-                        digestion_status
-                    ),
+                    digestion_next_action=_digestion_next_action(digestion_status),
                 )
             )
     return clustered
@@ -1054,16 +1049,12 @@ def _topic_cluster_rows(
 ) -> list[dict[str, object]]:
     groups: dict[tuple[str, str], list[DocsRoutingCandidate]] = {}
     for record in records:
-        groups.setdefault((record.topic_key, record.repo_owner_hint), []).append(
-            record
-        )
+        groups.setdefault((record.topic_key, record.repo_owner_hint), []).append(record)
 
     rows: list[dict[str, object]] = []
     for (topic_key, repo_owner_hint), group in groups.items():
         roles = Counter(record.topic_role for record in group)
-        digestion_status_counts = Counter(
-            record.digestion_status for record in group
-        )
+        digestion_status_counts = Counter(record.digestion_status for record in group)
         status = _topic_cluster_status(group)
         sorted_group = sorted(group, key=lambda item: item.path)
         owner_paths = [
@@ -1121,11 +1112,7 @@ def _topic_cluster_rows(
                 "ordinary_support_surface",
             }
         ]
-        candidate_paths = [
-            record.path
-            for record in sorted_group
-            if record.candidate
-        ]
+        candidate_paths = [record.path for record in sorted_group if record.candidate]
         rows.append(
             {
                 "topic_key": topic_key,
@@ -1145,9 +1132,7 @@ def _topic_cluster_rows(
                     _suggested_obsidian_topic_folder(topic_key)
                 ),
                 "topic_next_action": _topic_next_action(status),
-                "sample_paths": "; ".join(
-                    record.path for record in sorted_group[:8]
-                ),
+                "sample_paths": "; ".join(record.path for record in sorted_group[:8]),
                 "digestion_review_count": sum(
                     1
                     for record in sorted_group
@@ -1164,12 +1149,9 @@ def _topic_cluster_rows(
                 or "none",
                 "owner_paths": "; ".join(owner_paths[:8]) or "none",
                 "owner_claims": "; ".join(owner_claims[:8]) or "none",
-                "subcontract_paths": "; ".join(subcontract_paths[:8])
-                or "none",
-                "subcontract_claims": "; ".join(subcontract_claims[:8])
-                or "none",
-                "supporting_sample_paths": "; ".join(supporting_paths[:8])
-                or "none",
+                "subcontract_paths": "; ".join(subcontract_paths[:8]) or "none",
+                "subcontract_claims": "; ".join(subcontract_claims[:8]) or "none",
+                "supporting_sample_paths": "; ".join(supporting_paths[:8]) or "none",
                 "bound_support_sample_paths": "; ".join(bound_support_paths[:8])
                 or "none",
                 "compressible_support_sample_paths": "; ".join(
@@ -1333,10 +1315,7 @@ def _classify_docs_routing_candidate(
             candidate=True,
         )
 
-    if (
-        classification.is_high_risk_repo_doc
-        or classification.is_legacy_history
-    ):
+    if classification.is_high_risk_repo_doc or classification.is_legacy_history:
         return DocsRoutingCandidate(
             path=normalized,
             disposition="needs_human_review",
@@ -1375,31 +1354,20 @@ def docs_routing_review(
     records = [
         record
         for rel_path in repository_view.paths
-        if (
-            record := _classify_docs_routing_candidate(repository_view, rel_path)
-        )
+        if (record := _classify_docs_routing_candidate(repository_view, rel_path))
         is not None
     ]
-    records = [
-        _with_referrer_status(repository_view, record)
-        for record in records
-    ]
+    records = [_with_referrer_status(repository_view, record) for record in records]
     records = [_with_unbound_validation_review(record) for record in records]
     records = _with_topic_cluster_status(records)
     records = _with_support_retention(records)
-    candidates = [
-        record
-        for record in records
-        if record.candidate
-    ]
+    candidates = [record for record in records if record.candidate]
     all_disposition_counts = Counter(record.disposition for record in records)
     disposition_counts = Counter(candidate.disposition for candidate in candidates)
     all_doc_route_counts = Counter(record.doc_route for record in records)
     doc_route_counts = Counter(candidate.doc_route for candidate in candidates)
     all_doc_kind_counts = Counter(record.doc_kind for record in records)
-    all_digestion_status_counts = Counter(
-        record.digestion_status for record in records
-    )
+    all_digestion_status_counts = Counter(record.digestion_status for record in records)
     route_retained_records = [record for record in records if not record.candidate]
     route_retained_digestion_status_counts = Counter(
         record.digestion_status for record in route_retained_records
@@ -1414,9 +1382,7 @@ def docs_routing_review(
         for record in route_retained_records
         if _record_requires_metadata_followup(record)
     ]
-    all_lifecycle_status_counts = Counter(
-        record.lifecycle_status for record in records
-    )
+    all_lifecycle_status_counts = Counter(record.lifecycle_status for record in records)
     metadata_status_counts = Counter(record.metadata_status for record in records)
     all_topic_cluster_counts = Counter(
         record.topic_cluster_status for record in records
@@ -1489,12 +1455,8 @@ def docs_routing_review(
         ),
         "metadata_status_counts": dict(sorted(metadata_status_counts.items())),
         "lifecycle_status_counts": dict(sorted(lifecycle_status_counts.items())),
-        "all_topic_cluster_counts": dict(
-            sorted(all_topic_cluster_counts.items())
-        ),
-        "topic_cluster_group_counts": dict(
-            sorted(topic_cluster_group_counts.items())
-        ),
+        "all_topic_cluster_counts": dict(sorted(all_topic_cluster_counts.items())),
+        "topic_cluster_group_counts": dict(sorted(topic_cluster_group_counts.items())),
         "topic_clusters": topic_cluster_rows,
         "top_topic_clusters": topic_cluster_rows[:25],
         "candidates": candidate_rows,

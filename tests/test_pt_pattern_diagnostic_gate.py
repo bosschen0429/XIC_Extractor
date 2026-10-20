@@ -455,9 +455,7 @@ def test_diagnostic_gate_rejects_trace_basis_changed_with_refreshed_file_hash(
     write_delimited_rows(trace_summary_csv, summary_rows, evidence.SUMMARY_COLUMNS)
     manifest_json = tmp_path / "pt_pattern_context_trace_diagnosis.json"
     manifest = json.loads(manifest_json.read_text(encoding="utf-8"))
-    manifest["output_sha256"]["summary_csv"] = file_sha256(
-        trace_summary_csv
-    ).lower()
+    manifest["output_sha256"]["summary_csv"] = file_sha256(trace_summary_csv).lower()
     manifest_json.write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -742,9 +740,7 @@ def _write_verified_review_and_promotion(
     promotion_outputs = write_verified_oracle_promotion_bundle(
         review_packet_csv=review_csv,
         trace_points_csv=trace_points_csv,
-        oracle_call_by_packet_row_id={
-            review_rows[0]["packet_row_id"]: oracle_call
-        },
+        oracle_call_by_packet_row_id={review_rows[0]["packet_row_id"]: oracle_call},
         output_dir=output_dir / "oracle",
     )
     return review_csv, promotion_outputs["promotion_packet_csv"]

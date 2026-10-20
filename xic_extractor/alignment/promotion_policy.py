@@ -25,9 +25,7 @@ LOW_MS1_COVERAGE_BLOCKED_REASON = "low_ms1_assessable_coverage_blocked"
 MISSING_BACKFILL_EVIDENCE_BLOCKED_REASON = (
     "missing_independent_backfill_identity_evidence"
 )
-BACKFILL_OWNER_REHYDRATION_UNAVAILABLE_REASON = (
-    "backfill_owner_rehydration_unavailable"
-)
+BACKFILL_OWNER_REHYDRATION_UNAVAILABLE_REASON = "backfill_owner_rehydration_unavailable"
 BACKFILL_RT_EXPLANATION_BLOCKED_REASON = "backfill_rt_not_explained"
 BACKFILL_MS1_PATTERN_BLOCKED_REASON = "backfill_ms1_pattern_not_supportive"
 BACKFILL_MS2_CONTEXT_BLOCKED_REASON = "backfill_ms2_context_not_supportive"
@@ -121,9 +119,7 @@ class BackfillCellEvidence:
         return (
             self.status == "backfilled"
             and _positive(self.area)
-            and (
-                self.local_apex_supported
-            )
+            and (self.local_apex_supported)
         )
 
     @property
@@ -373,9 +369,8 @@ def classify_backfill_promotion(
     candidate_backfill_count = evidence.q_backfill + evidence.held_backfill_count
     review_backfill_count = evidence.unrehydrated_review_backfill_count
     if (
-        (review_backfill_count is None or review_backfill_count > 0)
-        and is_dr_neutral_loss_tag(evidence.neutral_loss_tag)
-    ):
+        review_backfill_count is None or review_backfill_count > 0
+    ) and is_dr_neutral_loss_tag(evidence.neutral_loss_tag):
         return BackfillPromotionDecision(
             state="unavailable",
             reason=BACKFILL_OWNER_REHYDRATION_UNAVAILABLE_REASON,
@@ -507,10 +502,7 @@ def _in_policy_scope(evidence: BackfillPromotionEvidence) -> bool:
 
 
 def _same_peak_policy_override(evidence: BackfillPromotionEvidence) -> bool:
-    if not (
-        evidence.q_detected == 1
-        or evidence.duplicate_count > evidence.q_detected
-    ):
+    if not (evidence.q_detected == 1 or evidence.duplicate_count > evidence.q_detected):
         return False
     return _same_peak_backfill_support(evidence)
 

@@ -23,6 +23,7 @@ def _placeholder_raw_headers(monkeypatch: pytest.MonkeyPatch) -> None:
     # RAW files here are placeholders; order them by their file times.
     install_fake_raw_headers(monkeypatch)
 
+
 _OPEN_RAW_SEAM = "xic_extractor.extraction.target_extraction.open_raw"
 
 

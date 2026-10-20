@@ -72,9 +72,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         outputs = run_oracle_promotion(
             adjudicated_oracle_csv=args.adjudicated_oracle_csv.resolve(),
-            review_packet_csvs=[
-                path.resolve() for path in args.review_packet_csv
-            ],
+            review_packet_csvs=[path.resolve() for path in args.review_packet_csv],
             blind_overlay_summary_jsons=[
                 path.resolve() for path in args.blind_overlay_summary_json
             ],

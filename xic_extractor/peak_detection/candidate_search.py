@@ -29,9 +29,7 @@ def find_peak_candidates(
         [np.ndarray, np.ndarray, ExtractionConfig],
         PeakCandidatesResult,
     ] = find_peak_candidates_local_minimum,
-    savgol_finder: Callable[..., PeakCandidatesResult] = (
-        find_peak_candidates_savgol
-    ),
+    savgol_finder: Callable[..., PeakCandidatesResult] = (find_peak_candidates_savgol),
 ) -> PeakCandidatesResult:
     resolver_mode = getattr(config, "resolver_mode", CANONICAL_RESOLVER_MODE)
     if resolver_mode == "local_minimum":

@@ -59,9 +59,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--report-id must be non-empty")
     if args.ms1_index_npz is not None:
         if not args.ms1_index_npz.is_file():
-            parser.error(
-                f"--ms1-index-npz does not exist: {args.ms1_index_npz}"
-            )
+            parser.error(f"--ms1-index-npz does not exist: {args.ms1_index_npz}")
         index_source = "npz"
         index_input = args.ms1_index_npz.resolve()
         try:

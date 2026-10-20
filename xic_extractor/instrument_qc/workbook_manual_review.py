@@ -180,14 +180,10 @@ def _manual_review_item(rows: list[dict[str, object]]) -> dict[str, object]:
     precursor_mz = first.get("precursor_mz", "")
     samples = sorted({str(row.get("sample_name", "")) for row in rows})
     hcd_statuses = _counts(
-        str(row.get("hcd_status", ""))
-        for row in rows
-        if row.get("hcd_status", "")
+        str(row.get("hcd_status", "")) for row in rows if row.get("hcd_status", "")
     )
     ms1_statuses = _counts(
-        str(row.get("ms1_status", ""))
-        for row in rows
-        if row.get("ms1_status", "")
+        str(row.get("ms1_status", "")) for row in rows if row.get("ms1_status", "")
     )
     return {
         "priority": _review_priority(reason),
@@ -400,8 +396,7 @@ def _suggested_action(reason: str, rows: list[dict[str, object]]) -> str:
         return "Review XIC/MS2 at reported RT and update targets.csv RT window."
     if reason == "hcd_group_unmapped":
         return (
-            "Add explicit HCD base/product group if this target needs "
-            "identity review."
+            "Add explicit HCD base/product group if this target needs identity review."
         )
     if reason == "activation_unknown":
         return "Parse method-detail table or manually label activation."

@@ -70,12 +70,14 @@ def test_local_own_max_similarity_reports_inconclusive_for_flat_trace() -> None:
 def test_shape_comparison_requires_acquired_points_and_shared_context() -> None:
     complete = prepare_local_peak_shape(
         np.linspace(9.5, 10.5, 101),
-        np.exp(-.5 * (np.linspace(-.5, .5, 101) / .07) ** 2),
+        np.exp(-0.5 * (np.linspace(-0.5, 0.5, 101) / 0.07) ** 2),
         apex_rt_min=10,
     )
     sparse = prepare_local_peak_shape([9.7, 10, 10.3], [0, 1, 0], apex_rt_min=10)
     clipped = prepare_local_peak_shape(
-        np.linspace(9.95, 10.05, 11), np.linspace(1, 0, 11), apex_rt_min=10,
+        np.linspace(9.95, 10.05, 11),
+        np.linspace(1, 0, 11),
+        apex_rt_min=10,
     )
     assert compare_local_peak_shapes(complete, sparse).reason == (
         "too_few_acquired_shape_points"
@@ -124,10 +126,10 @@ def test_own_max_normalized_trace_fails_closed_for_bad_inputs() -> None:
 
 
 def test_interpolated_zeros_do_not_resolve_sparse_primary_shape() -> None:
-    rt = np.linspace(-.35, .35, 141)
-    dense = np.exp(-.5 * (rt / .03) ** 2)
+    rt = np.linspace(-0.35, 0.35, 141)
+    dense = np.exp(-0.5 * (rt / 0.03) ** 2)
     sparse = np.zeros_like(rt)
-    sparse[70:72] = [1, .9]
+    sparse[70:72] = [1, 0.9]
     left = prepare_local_peak_shape(rt, sparse, apex_rt_min=0)
     right = prepare_local_peak_shape(rt, dense, apex_rt_min=0)
 
@@ -140,22 +142,22 @@ def test_interpolated_zeros_do_not_resolve_sparse_primary_shape() -> None:
 
 
 def test_sparse_localized_peak_still_contradicts_sustained_background() -> None:
-    rt = np.linspace(-.35, .35, 141)
+    rt = np.linspace(-0.35, 0.35, 141)
     sparse = np.zeros_like(rt)
-    sparse[70:72] = [1, .9]
+    sparse[70:72] = [1, 0.9]
     peak = prepare_local_peak_shape(rt, sparse, apex_rt_min=0)
-    background = prepare_local_peak_shape(rt, .8 + .2 * rt, apex_rt_min=0)
+    background = prepare_local_peak_shape(rt, 0.8 + 0.2 * rt, apex_rt_min=0)
 
     for a, b in ((peak, background), (background, peak)):
         result = compare_local_peak_shapes(a, b)
         assert result.is_usable
         assert result.reason == "localized_vs_sustained_shape_contrast"
-        assert result.similarity is not None and result.similarity < .8
+        assert result.similarity is not None and result.similarity < 0.8
 
 
 def test_zero_separated_neighbor_does_not_change_primary_shape_or_input() -> None:
-    rt = np.linspace(-.35, .35, 141)
-    primary = np.where(abs(rt) < .08, np.exp(-.5 * (rt / .03) ** 2), 0)
+    rt = np.linspace(-0.35, 0.35, 141)
+    primary = np.where(abs(rt) < 0.08, np.exp(-0.5 * (rt / 0.03) ** 2), 0)
     with_neighbor = primary.copy()
     with_neighbor[115:125] = 2
     original = with_neighbor.copy()
@@ -168,8 +170,8 @@ def test_zero_separated_neighbor_does_not_change_primary_shape_or_input() -> Non
 
 
 def test_missing_resolution_metadata_does_not_invent_shape_evidence() -> None:
-    rt = np.linspace(-.35, .35, 141)
-    shape = prepare_local_peak_shape(rt, np.exp(-.5 * (rt / .03) ** 2), apex_rt_min=0)
+    rt = np.linspace(-0.35, 0.35, 141)
+    shape = prepare_local_peak_shape(rt, np.exp(-0.5 * (rt / 0.03) ** 2), apex_rt_min=0)
     legacy = replace(shape, half_height_point_count=None, edge_intensity_ratio=None)
     assert compare_local_peak_shapes(legacy, shape).reason == (
         "unassessed_shape_resolution"
@@ -178,8 +180,8 @@ def test_missing_resolution_metadata_does_not_invent_shape_evidence() -> None:
 
 def test_same_analytic_peak_at_sparse_and_dense_sampling_is_not_contradiction() -> None:
     shapes = [
-        prepare_local_peak_shape(rt, np.exp(-.5 * (rt / .03) ** 2), apex_rt_min=0)
-        for rt in (np.linspace(-.35, .35, 22), np.linspace(-.35, .35, 141))
+        prepare_local_peak_shape(rt, np.exp(-0.5 * (rt / 0.03) ** 2), apex_rt_min=0)
+        for rt in (np.linspace(-0.35, 0.35, 22), np.linspace(-0.35, 0.35, 141))
     ]
     assert shapes[0].half_height_point_count == 2
     result = compare_local_peak_shapes(*shapes)

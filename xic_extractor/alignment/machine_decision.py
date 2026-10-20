@@ -189,9 +189,7 @@ def _blockers(
             flag in {"single_detected_seed", "skip_expensive_evidence"}
             and single_detected_supported
         )
-        and not (
-            flag == "duplicate_claim_pressure" and same_peak_backfill_supported
-        )
+        and not (flag == "duplicate_claim_pressure" and same_peak_backfill_supported)
     )
     blockers.extend(_cell_evidence_blockers(evidence))
     if identity_decision == _PROVISIONAL_DECISION and not blockers:
@@ -200,8 +198,7 @@ def _blockers(
         identity_decision == _PROVISIONAL_DECISION
         and evidence.q_detected == 1
         and not any(
-            blocker
-            not in {"single_detected_seed", "skip_expensive_evidence"}
+            blocker not in {"single_detected_seed", "skip_expensive_evidence"}
             for blocker in blockers
         )
     ):
@@ -229,8 +226,7 @@ def _cell_evidence_blockers(
     ):
         return (BACKFILL_HYPOTHESIS_BLOCKED_REASON,)
     if any(
-        cell.low_assessable_coverage
-        or not cell.additional_ms1_support
+        cell.low_assessable_coverage or not cell.additional_ms1_support
         for cell in backfilled
     ):
         return (LOW_MS1_COVERAGE_BLOCKED_REASON,)

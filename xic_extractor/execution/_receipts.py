@@ -396,18 +396,6 @@ class RuntimeArtifactIoSample:
             _nonnegative_integer(getattr(self, field_name), field=field_name)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 @dataclass(frozen=True, slots=True)
 class RuntimeWorkerPeakRssSample:
     """One externally observed peak-RSS result for an owner-derived worker key."""

@@ -146,17 +146,13 @@ def run_threshold_calibration(
         output_paths=(threshold_csv, case_audit_csv, summary_json),
         label="oracle threshold calibration",
     )
-    oracle_bundle = load_verified_oracle_promotion_bundle(
-        oracle_promotion_csv
-    )
+    oracle_bundle = load_verified_oracle_promotion_bundle(oracle_promotion_csv)
     oracle_rows = oracle_bundle.rows
     loaded_review_packets = load_review_packets(review_packet_csvs)
     cases = build_calibration_cases(
         oracle_rows=oracle_rows,
         review_rows=loaded_review_packets.rows,
-        review_packet_sha256_by_row_id=(
-            loaded_review_packets.sha256_by_packet_row_id
-        ),
+        review_packet_sha256_by_row_id=(loaded_review_packets.sha256_by_packet_row_id),
     )
     threshold_rows = evaluate_threshold_grid(
         cases=cases,
@@ -183,9 +179,7 @@ def run_threshold_calibration(
         "oracle_promotion_csv": str(oracle_bundle.packet_csv.resolve()),
         "oracle_promotion_csv_sha256": oracle_bundle.packet_csv_sha256,
         "oracle_promotion_summary_json": str(oracle_bundle.summary_json),
-        "oracle_promotion_summary_json_sha256": (
-            oracle_bundle.summary_json_sha256
-        ),
+        "oracle_promotion_summary_json_sha256": (oracle_bundle.summary_json_sha256),
         "oracle_packet_id": oracle_bundle.oracle_packet_id,
         "oracle_bundle_row_count": len(oracle_bundle.rows),
         "review_packet_csvs": [str(path) for path in review_packet_csvs],
@@ -276,9 +270,7 @@ def evaluate_threshold_grid(
     for rank, row in enumerate(rows, start=1):
         row["recommendation_rank"] = rank
         row["recommendation_reason"] = (
-            "selected_no_false_positive_max_recall_default_anchor"
-            if rank == 1
-            else ""
+            "selected_no_false_positive_max_recall_default_anchor" if rank == 1 else ""
         )
     return tuple(rows)
 
@@ -319,11 +311,7 @@ def build_case_audit_rows(
     )
     rows: list[dict[str, object]] = []
     for case in cases:
-        predicted = (
-            "accept"
-            if _rule_accepts(case, thresholds=thresholds)
-            else "reject"
-        )
+        predicted = "accept" if _rule_accepts(case, thresholds=thresholds) else "reject"
         rows.append(
             {
                 "schema_version": SCHEMA_VERSION,
@@ -393,11 +381,7 @@ def _threshold_row(
     )
     counts: Counter[str] = Counter()
     for case in cases:
-        predicted = (
-            "accept"
-            if _rule_accepts(case, thresholds=thresholds)
-            else "reject"
-        )
+        predicted = "accept" if _rule_accepts(case, thresholds=thresholds) else "reject"
         counts[_case_outcome(case.oracle_call, predicted)] += 1
         counts[f"oracle_{case.oracle_call}"] += 1
         counts[f"predicted_{predicted}"] += 1
@@ -419,9 +403,7 @@ def _threshold_row(
         true_positive + true_negative + false_positive + false_negative,
     )
     balanced_accuracy = (
-        None
-        if recall is None or specificity is None
-        else (recall + specificity) / 2
+        None if recall is None or specificity is None else (recall + specificity) / 2
     )
     return {
         "schema_version": SCHEMA_VERSION,
@@ -439,12 +421,8 @@ def _threshold_row(
         "max_abs_apex_delta_sec": thresholds.max_abs_apex_delta_sec,
         "min_pearson_r_to_base": thresholds.min_pearson_r_to_base,
         "min_active_overlap_fraction": thresholds.min_active_overlap_fraction,
-        "min_shifted_pearson_r_to_base": (
-            thresholds.min_shifted_pearson_r_to_base
-        ),
-        "max_abs_shape_shift_sec_to_base": (
-            thresholds.max_abs_shape_shift_sec_to_base
-        ),
+        "min_shifted_pearson_r_to_base": (thresholds.min_shifted_pearson_r_to_base),
+        "max_abs_shape_shift_sec_to_base": (thresholds.max_abs_shape_shift_sec_to_base),
         "row_count": len(cases),
         "oracle_accept_count": counts["oracle_accept"],
         "oracle_reject_count": counts["oracle_reject"],
@@ -480,10 +458,7 @@ def _recommendation_key(row: Mapping[str, object]) -> tuple[float, ...]:
         -_metric(row, "true_positive"),
         _metric(row, "false_negative"),
         abs(_metric(row, "max_abs_apex_delta_sec") - DEFAULT_APEX_DELTA_MAX_SEC),
-        abs(
-            _metric(row, "min_active_overlap_fraction")
-            - DEFAULT_OVERLAP_MIN
-        ),
+        abs(_metric(row, "min_active_overlap_fraction") - DEFAULT_OVERLAP_MIN),
         abs(_metric(row, "min_pearson_r_to_base") - DEFAULT_PEARSON_MIN),
         abs(
             _metric(row, "min_shifted_pearson_r_to_base")
@@ -523,9 +498,7 @@ def _calibration_case(
         non_base_positions_supported=optional_float(
             review.get("non_base_positions_supported")
         ),
-        max_abs_apex_delta_sec=optional_float(
-            review.get("max_abs_apex_delta_sec")
-        ),
+        max_abs_apex_delta_sec=optional_float(review.get("max_abs_apex_delta_sec")),
         min_pearson_r_to_base=optional_float(review.get("min_pearson_r_to_base")),
         min_active_overlap_fraction=optional_float(
             review.get("min_active_overlap_fraction")
@@ -555,16 +528,12 @@ def _summary_rule(row: Mapping[str, object]) -> dict[str, object]:
     return {
         "rule_id": row["rule_id"],
         "required_combined_status": row["required_combined_status"],
-        "min_non_base_positions_supported": row[
-            "min_non_base_positions_supported"
-        ],
+        "min_non_base_positions_supported": row["min_non_base_positions_supported"],
         "max_abs_apex_delta_sec": row["max_abs_apex_delta_sec"],
         "min_pearson_r_to_base": row["min_pearson_r_to_base"],
         "min_active_overlap_fraction": row["min_active_overlap_fraction"],
         "min_shifted_pearson_r_to_base": row["min_shifted_pearson_r_to_base"],
-        "max_abs_shape_shift_sec_to_base": row[
-            "max_abs_shape_shift_sec_to_base"
-        ],
+        "max_abs_shape_shift_sec_to_base": row["max_abs_shape_shift_sec_to_base"],
         "true_positive": row["true_positive"],
         "false_positive": row["false_positive"],
         "true_negative": row["true_negative"],
@@ -576,10 +545,14 @@ def _summary_rule(row: Mapping[str, object]) -> dict[str, object]:
 
 
 def _calibration_status(recommended: Mapping[str, object]) -> str:
-    if _metric(recommended, "false_positive") == 0 and _metric(
-        recommended,
-        "true_positive",
-    ) > 0:
+    if (
+        _metric(recommended, "false_positive") == 0
+        and _metric(
+            recommended,
+            "true_positive",
+        )
+        > 0
+    ):
         return "threshold_candidate_ready_for_review"
     return "no_zero_false_positive_rule_found"
 

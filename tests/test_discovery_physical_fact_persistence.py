@@ -206,9 +206,7 @@ def _physical_index_jobs(tmp_path: Path, *, count: int):
     for acquisition_input in spec.acquisition_inputs:
         manifest, records = _population(spec, acquisition_input)
         sidecar = (
-            tmp_path
-            / acquisition_input.sample_stem
-            / "discovery_physical_facts.json"
+            tmp_path / acquisition_input.sample_stem / "discovery_physical_facts.json"
         )
         write_discovery_physical_fact_sidecar(
             sidecar,
@@ -649,7 +647,7 @@ def _physical_source_payload(
     return json.dumps(
         {
             "schema_version": "discovery_physical_fact_sidecar",
-            "run_spec": {"name": "規格", "nested": [1, {"escaped": "a\\\"b"}]},
+            "run_spec": {"name": "規格", "nested": [1, {"escaped": 'a\\"b'}]},
             "sample": {"sample_stem": "樣本-α"},
             "work_manifest": manifest
             if manifest is not None

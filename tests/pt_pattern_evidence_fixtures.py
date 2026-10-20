@@ -55,11 +55,7 @@ def pt_evidence_row(
         "trace_evidence_status": "evaluated" if evaluated else "not_evaluated",
         "trace_rule_call": trace_rule_call,
         "trace_detection_status": (
-            "detected"
-            if accepted
-            else "non_detected"
-            if evaluated
-            else "not_evaluated"
+            "detected" if accepted else "non_detected" if evaluated else "not_evaluated"
         ),
         "trace_rule_reason": (
             "full_pattern_close_apex_shape_overlap"
@@ -84,9 +80,7 @@ def pt_evidence_row(
         "effective_max_abs_apex_delta_threshold_sec": (
             DEFAULT_THRESHOLDS.max_abs_apex_delta_sec if evaluated else ""
         ),
-        "min_pearson_r_to_base_threshold": (
-            DEFAULT_THRESHOLDS.min_pearson_r_to_base
-        ),
+        "min_pearson_r_to_base_threshold": (DEFAULT_THRESHOLDS.min_pearson_r_to_base),
         "min_active_overlap_fraction_threshold": (
             DEFAULT_THRESHOLDS.min_active_overlap_fraction
         ),

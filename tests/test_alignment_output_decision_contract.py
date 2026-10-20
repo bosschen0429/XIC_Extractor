@@ -165,7 +165,6 @@ def test_activated_renderers_use_supplied_owner_values_statuses_and_counts(
     assert review_row["representative_samples"] == ""
 
 
-
 def test_a_withheld_owner_decision_leaves_the_matrix_cell_empty(
     tmp_path: Path,
 ) -> None:

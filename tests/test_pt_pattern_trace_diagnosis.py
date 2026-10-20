@@ -532,9 +532,7 @@ def test_run_trace_diagnosis_writes_summary_metrics_and_optional_points(
         trace_points_csv=outputs["trace_points_csv"],
         trace_point_rows=trace_point_rows,
         expected_artifact_role="anchor_local",
-        expected_bundle_identities=verified_trace_summary_identities(
-            verified_summary
-        ),
+        expected_bundle_identities=verified_trace_summary_identities(verified_summary),
         expected_metric_rows=verified_summary.metric_rows,
     )
 
@@ -864,7 +862,6 @@ def test_anchor_segmentation_externalizes_right_boundary_truncation(
         rt_end = 7.0 if position_label == "pt_plus_4" else 9.0
         end_index = int(rt_end) + 1
         segment = ChromPeakSegment(
-
             interval=TraceInterval(
                 start_index=start_index,
                 end_index=end_index,
@@ -911,9 +908,7 @@ def test_anchor_segmentation_externalizes_right_boundary_truncation(
     assert segmentation.status == "clear"
     assert segmentation.boundary_review_status == "review_required"
     assert segmentation.boundary_review_position_labels == ("pt_plus_4",)
-    by_position = {
-        item.position_label: item for item in segmentation.boundary_evidence
-    }
+    by_position = {item.position_label: item for item in segmentation.boundary_evidence}
     assert by_position["pt_plus_4"].owns_common_end is True
     assert by_position["base"].right_clip_sec == 120.0
     assert math.isclose(
@@ -925,7 +920,4 @@ def test_anchor_segmentation_externalizes_right_boundary_truncation(
     assert by_position["pt_plus_1"].owns_common_start is False
     assert by_position["pt_plus_1"].owns_common_end is False
     assert by_position["pt_plus_4"].segment_class == "shoulder_candidate"
-    assert (
-        by_position["pt_plus_4"].boundary_stop_reason
-        == "shoulder_overlap_review"
-    )
+    assert by_position["pt_plus_4"].boundary_stop_reason == "shoulder_overlap_review"

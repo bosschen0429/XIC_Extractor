@@ -164,9 +164,9 @@ def test_failed_partition_timeline_survives_without_final_report(
 
     payload = json.loads(live_path.read_text(encoding="utf-8"))
     assert payload["partition_timeline"] == timeline
-    assert payload["partition_timeline"] == recorder.to_json_dict()[
-        "partition_timeline"
-    ]
+    assert (
+        payload["partition_timeline"] == recorder.to_json_dict()["partition_timeline"]
+    )
 
 
 def test_live_output_replace_failure_preserves_last_good_artifact(

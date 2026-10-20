@@ -72,9 +72,10 @@ def test_target_role_map_groups_requested_roles_in_one_pass() -> None:
     assert grouped[("d3-A", "Analyte")]["S2"]["RT"] == 9.2
     assert grouped[("d3-I", "ISTD")]["S2"]["RT"] == 9.0
     assert set(grouped[("d3-I", "ISTD")]) == {"S2"}
-    assert audit._rows_by_target_role(rows, "d3-A", "Analyte") == grouped[
-        ("d3-A", "Analyte")
-    ]
+    assert (
+        audit._rows_by_target_role(rows, "d3-A", "Analyte")
+        == grouped[("d3-A", "Analyte")]
+    )
 
     with pytest.raises(ValueError, match="Missing sample for d3-A/Analyte"):
         audit_io._rows_by_target_role_map(

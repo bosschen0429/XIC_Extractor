@@ -217,9 +217,7 @@ def test_oracle_refresh_keeps_unproven_old_labels_pending_and_marks_stale_rows(
     assert draft_rows[0]["adjudicated_call"] == ""
     assert draft_rows[0]["user_call"] == ""
     assert draft_rows[0]["source_adjudicated_call"] == "accept"
-    assert draft_rows[0]["review_packet_csv_sha256"] == file_sha256(
-        review_packet_csv
-    )
+    assert draft_rows[0]["review_packet_csv_sha256"] == file_sha256(review_packet_csv)
     assert draft_rows[0]["blind_overlay_summary_json_sha256"] == file_sha256(
         machine_calls_csv.parent / "pt_pattern_blind_overlay_summary.json"
     )

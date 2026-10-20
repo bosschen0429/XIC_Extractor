@@ -381,7 +381,5 @@ def _trace_rows_for_candidates(
     candidate_ids: set[str],
 ) -> tuple[Mapping[str, str], ...]:
     return tuple(
-        row
-        for row in rows
-        if str(row.get("candidate_id", "")).strip() in candidate_ids
+        row for row in rows if str(row.get("candidate_id", "")).strip() in candidate_ids
     )

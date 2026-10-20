@@ -141,14 +141,19 @@ class SampleRtFrame:
 
     def with_warp(self, warp: BatchRtWarp | None) -> SampleRtFrame:
         return replace(
-            self, _warp=warp, _sample_calibration=None, _coordinate_override=None,
+            self,
+            _warp=warp,
+            _sample_calibration=None,
+            _coordinate_override=None,
         )
 
     def with_sample_calibration(self, calibration: BatchRtCalibration) -> SampleRtFrame:
         """Retain bounded diagnostic calibration, not just its owner callback."""
         return replace(
-            self, _sample_calibration=calibration,
-            _warp=None, _coordinate_override=None,
+            self,
+            _sample_calibration=calibration,
+            _warp=None,
+            _coordinate_override=None,
         )
 
     def for_sample_stems(self, samples: frozenset[str]) -> SampleRtFrame:
@@ -190,7 +195,8 @@ class SampleRtFrame:
     @property
     def has_coordinates(self) -> bool:
         return (
-            self._warp is not None or self._sample_calibration is not None
+            self._warp is not None
+            or self._sample_calibration is not None
             or self._coordinate_override is not None
         )
 

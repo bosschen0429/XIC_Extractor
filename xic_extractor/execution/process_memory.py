@@ -176,8 +176,7 @@ def _default_sample_reader() -> tuple[Callable[[], ProcessMemorySample], bool]:
         api = _WindowsProcessMemoryApi()
     except Exception as exc:
         reason = (
-            "Win32 process-tree sampler initialization failed: "
-            f"{type(exc).__name__}"
+            f"Win32 process-tree sampler initialization failed: {type(exc).__name__}"
         )
         return (
             lambda: ProcessMemorySample(

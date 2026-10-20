@@ -52,9 +52,11 @@ def test_snapshot_retains_elution_inputs_and_replays_separated_rows(
         assert owner.cross_sample_member_subject is not None
         owners.append(
             replace(
-                owner, owner_id=owner.cross_sample_member_subject.subject_id,
+                owner,
+                owner_id=owner.cross_sample_member_subject.subject_id,
                 peak_shape=prepare_local_peak_shape(
-                    [-.3, -.2, -.1, 0, .1, .2, .3], [0, 0, .5, 1, .5, 0, 0],
+                    [-0.3, -0.2, -0.1, 0, 0.1, 0.2, 0.3],
+                    [0, 0, 0.5, 1, 0.5, 0, 0],
                     apex_rt_min=0,
                 ),
             )
@@ -145,13 +147,15 @@ def test_prepare_snapshot_and_cli_replay_preserve_formal_grouping(
     assert provenance == {"case": "cross-subject"}
     original_shapes = {
         owner.owner_id: owner.peak_shape
-        for workset in prepared.inputs.worksets for owner in workset.owners
+        for workset in prepared.inputs.worksets
+        for owner in workset.owners
     }
     assert original_shapes
     assert all(shape is not None for shape in original_shapes.values())
     assert {
         owner.owner_id: owner.peak_shape
-        for workset in restored.worksets for owner in workset.owners
+        for workset in restored.worksets
+        for owner in workset.owners
     } == original_shapes
     assert group_signature(replay_grouping(restored)) == group_signature(
         prepared.groups
@@ -220,10 +224,14 @@ def test_rt_coordinate_override_changes_membership_without_rewriting_measurement
 @pytest.mark.parametrize("reverse", [False, True])
 @pytest.mark.parametrize("shift", [0.05, 1.65])
 @pytest.mark.parametrize(
-    "entry", ["replay", "regroup", "replay_override", "cli_calibration"],
+    "entry",
+    ["replay", "regroup", "replay_override", "cli_calibration"],
 )
 def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
-    tmp_path, reverse, shift, entry,
+    tmp_path,
+    reverse,
+    shift,
+    entry,
 ):
     from tests.cid_nl_peak_support_no_raw_fixture import (
         cid_nl_evidence,
@@ -263,39 +271,59 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
     offsets = {"a": 0.0, "b": shift, "c": 0.02, "d": shift + 0.02}
     selected = {"a": 10.0, "b": 10.0, "c": 10.7, "d": 10.7}
     fixture = build_processing_identity_no_raw_fixture(
-        tmp_path, sample_stems=tuple(offsets),
+        tmp_path,
+        sample_stems=tuple(offsets),
     )
     owners = []
     for name, common_rt in selected.items():
         rt = common_rt + offsets[name]
         sample = fixture.sample(name)
         peak = cid_nl_peak(
-            fixture, name, apex_rt=rt, rt_left_min=rt - 0.1, rt_right_min=rt + 0.1,
+            fixture,
+            name,
+            apex_rt=rt,
+            rt_left_min=rt - 0.1,
+            rt_right_min=rt + 0.1,
         )
         evidence = cid_nl_evidence(fixture, name, scan_number=1, scan_rt_min=rt)
         support = cid_nl_unique_support(fixture, name, peak=peak, evidence=evidence)
         assessment = mint_cid_nl_method_assessment_ref(
-            processing_owners=fixture.owners, sample=sample, target=fixture.target,
+            processing_owners=fixture.owners,
+            sample=sample,
+            target=fixture.target,
             detector_invocation_id=f"direct:{name}",
             evaluation_receipt=CidNlEvaluationReceipt(
-                query_rt_min=rt - 0.1, query_rt_max=rt + 0.1,
+                query_rt_min=rt - 0.1,
+                query_rt_max=rt + 0.1,
                 support_policy=cid_nl_support_policy(),
-                acquisition_supported=True, search_completed=True,
-                scanned_event_count=1, reason_code=None,
+                acquisition_supported=True,
+                search_completed=True,
+                scanned_event_count=1,
+                reason_code=None,
             ),
-            candidate_peaks=(peak,), evidence_refs=(evidence,),
+            candidate_peaks=(peak,),
+            evidence_refs=(evidence,),
             individual_support_refs=(support,),
         )
         (hypothesis,) = compose_cid_nl_peak_hypotheses_from_assessment(
-            processing_owners=fixture.owners, sample=sample, assessment=assessment,
+            processing_owners=fixture.owners,
+            sample=sample,
+            assessment=assessment,
         )
-        owners.append(owner_from_cid_nl_assessment_support(
-            sample=sample, assessment=assessment, hypothesis=hypothesis,
-        ))
+        owners.append(
+            owner_from_cid_nl_assessment_support(
+                sample=sample,
+                assessment=assessment,
+                hypothesis=hypothesis,
+            )
+        )
     owners = tuple(owners)
     contexts = tuple(
         SampleElutionContext(
-            sample, 500.0, 8.0, 15.0,
+            sample,
+            500.0,
+            8.0,
+            15.0,
             tuple(
                 ElutionLandmark(rt + offset, height, 0.25)
                 for rt, height in (
@@ -307,26 +335,34 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
         )
         for sample, offset in offsets.items()
     )
-    warp = BatchRtWarp(tuple(
-        (sample, ((8.0, offset), (15.0, offset)))
-        for sample, offset in offsets.items()
-    ), 12)
+    warp = BatchRtWarp(
+        tuple(
+            (sample, ((8.0, offset), (15.0, offset)))
+            for sample, offset in offsets.items()
+        ),
+        12,
+    )
     inputs = GroupingInputs(
         sample_stems=tuple(offsets),
         injection_order={sample: i for i, sample in enumerate(offsets)},
         alignment_config=AlignmentConfig(),
-        worksets=(GroupingWorkset(
-            key="doublet", owners=owners[::-1] if reverse else owners,
-            known_identity_bindings=(), rt_warp=warp,
-            elution_contexts=contexts[::-1] if reverse else contexts,
-        ),),
+        worksets=(
+            GroupingWorkset(
+                key="doublet",
+                owners=owners[::-1] if reverse else owners,
+                known_identity_bindings=(),
+                rt_warp=warp,
+                elution_contexts=contexts[::-1] if reverse else contexts,
+            ),
+        ),
         candidate_ids_by_owner={},
     )
     if entry == "replay":
         groups = replay_grouping(inputs)
     elif entry == "replay_override":
         groups = replay_grouping(
-            inputs, rt_coordinates=SampleRtFrame().with_warp(warp),
+            inputs,
+            rt_coordinates=SampleRtFrame().with_warp(warp),
         )
     elif entry == "cli_calibration":
         import csv
@@ -342,46 +378,72 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
         )
 
         calibration = BatchRtCalibration(
-            RtCalibrationPolicy(), (), {
+            RtCalibrationPolicy(),
+            (),
+            {
                 sample: SampleRtCalibration(
-                    sample, "calibrated", ((8 + offset, 8), (15 + offset, 15)),
-                    None, None, "not_evaluated",
-                ) for sample, offset in offsets.items()
-            }, None, None, None,
+                    sample,
+                    "calibrated",
+                    ((8 + offset, 8), (15 + offset, 15)),
+                    None,
+                    None,
+                    "not_evaluated",
+                )
+                for sample, offset in offsets.items()
+            },
+            None,
+            None,
+            None,
         )
         snapshot, calibration_path = tmp_path / "inputs.gz", tmp_path / "rt.json"
         write_grouping_inputs(snapshot, inputs, provenance={"evidence": "synthetic"})
         write_rt_calibration(calibration_path, calibration)
         output = tmp_path / "calibrated"
-        assert main([
-            "replay", "--inputs", str(snapshot), "--output-dir", str(output),
-            "--rt-calibration", str(calibration_path),
-        ]) == 0
+        assert (
+            main(
+                [
+                    "replay",
+                    "--inputs",
+                    str(snapshot),
+                    "--output-dir",
+                    str(output),
+                    "--rt-calibration",
+                    str(calibration_path),
+                ]
+            )
+            == 0
+        )
         members = defaultdict(set)
         with (output / "members.tsv").open(encoding="utf-8-sig", newline="") as stream:
             for row in csv.DictReader(stream, delimiter="\t"):
                 members[row["group_id"]].add(row["sample_stem"])
         assert {frozenset(samples) for samples in members.values()} == {
-            frozenset(("a", "b")), frozenset(("c", "d")),
+            frozenset(("a", "b")),
+            frozenset(("c", "d")),
         }
         return
     else:
         workset = inputs.worksets[0]
         raw_frame = SampleRtFrame(injection_order=inputs.injection_order)
         raw_model = resolve_peak_trajectories(
-            workset.owners, workset.elution_contexts,
-            config=inputs.alignment_config, injection_order=inputs.injection_order,
+            workset.owners,
+            workset.elution_contexts,
+            config=inputs.alignment_config,
+            injection_order=inputs.injection_order,
         )
         initial = group_cid_nl_owners(
-            workset.owners, config=inputs.alignment_config,
-            sample_universe=frozenset(offsets), rt_frame=raw_frame,
+            workset.owners,
+            config=inputs.alignment_config,
+            sample_universe=frozenset(offsets),
+            rt_frame=raw_frame,
             peak_trajectories=raw_model,
         )
         population = tuple(
             sorted(
                 (
                     validate_cross_sample_peak_group_identity(
-                        group, require_canonical=True,
+                        group,
+                        require_canonical=True,
                     )
                     for group in initial
                 ),
@@ -391,7 +453,10 @@ def test_calibrated_patterns_reject_shifted_decoys_without_merging_real_peaks(
         scope, result = regroup_cid_nl_cross_sample_groups(
             processing_owners=fixture.owners,
             grouping_scope=InitialGroupingScope(
-                (499.0, 501.0), (7.0, 16.0), initial, raw_model,
+                (499.0, 501.0),
+                (7.0, 16.0),
+                initial,
+                raw_model,
             ),
             grouping_result=CrossSampleGroupingResult(
                 fixture.owners,

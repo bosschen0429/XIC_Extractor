@@ -259,32 +259,22 @@ def _counts(values: Iterable[str]) -> dict[str, int]:
 
 
 def _top_rt_delta(rows: list[SDOLEKTrendRow]) -> str:
-    candidates = [
-        row for row in rows if row.rt_delta_to_reference_min is not None
-    ]
+    candidates = [row for row in rows if row.rt_delta_to_reference_min is not None]
     if not candidates:
         return ""
     row = max(candidates, key=lambda item: abs(item.rt_delta_to_reference_min or 0.0))
-    return (
-        f"{row.sample_name} {row.compound}: "
-        f"{row.rt_delta_to_reference_min:.3f} min"
-    )
+    return f"{row.sample_name} {row.compound}: {row.rt_delta_to_reference_min:.3f} min"
 
 
 def _top_width_ratio(rows: list[SDOLEKTrendRow]) -> str:
-    candidates = [
-        row for row in rows if row.base_width_ratio_to_reference is not None
-    ]
+    candidates = [row for row in rows if row.base_width_ratio_to_reference is not None]
     if not candidates:
         return ""
     row = max(
         candidates,
         key=lambda item: abs((item.base_width_ratio_to_reference or 1.0) - 1.0),
     )
-    return (
-        f"{row.sample_name} {row.compound}: "
-        f"{row.base_width_ratio_to_reference:.3f}"
-    )
+    return f"{row.sample_name} {row.compound}: {row.base_width_ratio_to_reference:.3f}"
 
 
 def _autosize_columns(sheet: Any) -> None:

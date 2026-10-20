@@ -168,9 +168,7 @@ RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS: Mapping[str, frozenset[str]] = {
 }
 RUNTIME_RECEIPT_CONTRACT_INTERNAL_REFERENCES_BY_MODULE: Mapping[str, frozenset[str]] = {
     "xic_extractor.execution._lifecycle": frozenset({"WorkUnitSettlement"}),
-    "xic_extractor.execution._finalization": frozenset(
-        {"CoordinatorTerminalRecord"}
-    ),
+    "xic_extractor.execution._finalization": frozenset({"CoordinatorTerminalRecord"}),
 }
 RUNTIME_EXTERNAL_CALLS_BY_MODULE: Mapping[str, frozenset[str]] = {
     "xic_extractor.execution._lifecycle": RUNTIME_LOW_LEVEL_ALLOWED_EXPORTS[

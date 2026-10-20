@@ -154,7 +154,7 @@ def render_hypothesis_synthesis_html(
 def _metric(value: int | str, label: str) -> str:
     return (
         f'<div class="metric"><strong>{escape(str(value))}</strong>'
-        f'<span>{escape(label)}</span></div>'
+        f"<span>{escape(label)}</span></div>"
     )
 
 
@@ -201,7 +201,7 @@ def _rt_hotspot_chart(total: int, hotspot: int, overlap: int) -> str:
         '<div class="chart-shell"><p class="chart-title">Accepted seeds across RT concentration</p>'
         f'<p class="chart-subtitle">同一分母 {total}；內層越接近外層，代表 13 分鐘結構越主導整批資料</p>'
         '<svg data-chart="rt-hotspot" viewBox="0 0 940 210" role="img" aria-label="13 minute hotspot concentration">'
-        f'{"".join(rows)}</svg></div>'
+        f"{''.join(rows)}</svg></div>"
     )
 
 
@@ -225,7 +225,9 @@ def _ratio_chart(
         )
     for index, (key, label) in enumerate(_RATIO_VISUALS):
         y = 74.0 + index * 82.0
-        parts.append(f'<text class="label" x="12" y="{y + 10:.1f}">{escape(label)}</text>')
+        parts.append(
+            f'<text class="label" x="12" y="{y + 10:.1f}">{escape(label)}</text>'
+        )
         parts.extend(_interval_marks(primary.get(key), y, left, width, True))
         parts.extend(_interval_marks(background.get(key), y + 29, left, width, False))
     parts.append(
@@ -269,7 +271,7 @@ def _threshold_chart(plus1_seed: Mapping[str, object]) -> str:
         f'<line class="axis" x1="{left}" y1="{top + height}" x2="{left + width}" y2="{top + height}"/>'
         f'<text x="18" y="{top + 4}">100%</text><text x="28" y="{top + height / 2 + 4}">50%</text><text x="35" y="{top + height + 4}">0%</text>'
         f'<polyline points="{" ".join(path)}" fill="none" stroke="#b77b18" stroke-width="4" stroke-linejoin="round"/>'
-        f'{"".join(marks)}</svg></div>'
+        f"{''.join(marks)}</svg></div>"
     )
 
 
@@ -297,7 +299,7 @@ def _stage_panel(title: str, row: Mapping[str, object]) -> str:
     )
     return (
         f'<div class="stage-panel"><h3>{escape(title)}</h3>'
-        f'{"".join(_stage_row(label, value, total, highlight) for label, value, highlight in stages)}'
+        f"{''.join(_stage_row(label, value, total, highlight) for label, value, highlight in stages)}"
         f'<p class="stage-note">{no_candidate} 筆 all 4 exist，但沒有 candidate</p></div>'
     )
 
@@ -307,7 +309,7 @@ def _stage_row(label: str, value: int, total: int, highlight: bool) -> str:
     return (
         f'<div class="{css_class}"><span>{escape(label)}</span>'
         f'<div class="stage-track"><div class="stage-fill" style="width:{_fraction_width(value, total, 100):.1f}%"></div></div>'
-        f'<strong>{value}</strong></div>'
+        f"<strong>{value}</strong></div>"
     )
 
 
@@ -374,10 +376,10 @@ def _log_fraction(value: float, minimum: float, maximum: float) -> float:
 def _scope_details(summary: Mapping[str, object], background: str) -> str:
     return (
         '<details><summary>技術範圍與限制</summary><div class="table-wrap"><table>'
-        '<thead><tr><th>項目</th><th>狀態</th></tr></thead><tbody>'
-        f'<tr><td>report id</td><td><code>{escape(text_value(summary.get("report_id")))}</code></td></tr>'
-        f'<tr><td>background rows</td><td>{escape(background)}</td></tr>'
-        '<tr><td>RAW access</td><td>無</td></tr>'
-        '<tr><td>detector / counted detection / Matrix</td><td>全部未改</td></tr>'
-        '</tbody></table></div></details>'
+        "<thead><tr><th>項目</th><th>狀態</th></tr></thead><tbody>"
+        f"<tr><td>report id</td><td><code>{escape(text_value(summary.get('report_id')))}</code></td></tr>"
+        f"<tr><td>background rows</td><td>{escape(background)}</td></tr>"
+        "<tr><td>RAW access</td><td>無</td></tr>"
+        "<tr><td>detector / counted detection / Matrix</td><td>全部未改</td></tr>"
+        "</tbody></table></div></details>"
     )

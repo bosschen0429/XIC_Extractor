@@ -125,9 +125,7 @@ def build_pt_hypothesis_conflict_graph(
                 for vertex in vertices
                 for _, claim in vertex.position_claims
             }
-            | {
-                vertex.hypothesis_source_artifact_sha256 for vertex in vertices
-            }
+            | {vertex.hypothesis_source_artifact_sha256 for vertex in vertices}
         )
     )
     edges = _build_edges(vertices)
@@ -178,13 +176,9 @@ def _build_vertices(
             item.hypothesis_source_artifact_sha256,
             label="hypothesis_source_artifact_sha256",
         )
-        hypothesis_source_schema_version = (
-            item.hypothesis_source_schema_version.strip()
-        )
+        hypothesis_source_schema_version = item.hypothesis_source_schema_version.strip()
         if not hypothesis_source_schema_version:
-            raise ValueError(
-                "hypothesis_source_schema_version must be non-empty"
-            )
+            raise ValueError("hypothesis_source_schema_version must be non-empty")
         if hypothesis_source_schema_version != PT_PATTERN_CANDIDATE_SCHEMA_VERSION:
             raise ValueError(
                 "unsupported hypothesis_source_schema_version: "
@@ -223,9 +217,7 @@ def _build_vertices(
                 "hypothesis_source_artifact_sha256": (
                     hypothesis_source_artifact_sha256
                 ),
-                "hypothesis_source_schema_version": (
-                    hypothesis_source_schema_version
-                ),
+                "hypothesis_source_schema_version": (hypothesis_source_schema_version),
                 "position_claims": assignment_key,
             },
         )
@@ -233,12 +225,8 @@ def _build_vertices(
             PtConflictGraphVertex(
                 vertex_id=vertex_id,
                 source_hypothesis_id=source_id,
-                hypothesis_source_artifact_sha256=(
-                    hypothesis_source_artifact_sha256
-                ),
-                hypothesis_source_schema_version=(
-                    hypothesis_source_schema_version
-                ),
+                hypothesis_source_artifact_sha256=(hypothesis_source_artifact_sha256),
+                hypothesis_source_schema_version=(hypothesis_source_schema_version),
                 sample_stem=claims[0].sample_stem,
                 position_claims=position_claims,
             )
@@ -289,9 +277,7 @@ def _build_edges(
         for _, claim in vertex.position_claims:
             vertex_ids_by_claim.setdefault(claim, set()).add(vertex.vertex_id)
 
-    shared_claims_by_pair: dict[
-        tuple[str, str], set[NormalizedFeatureClaim]
-    ] = {}
+    shared_claims_by_pair: dict[tuple[str, str], set[NormalizedFeatureClaim]] = {}
     for claim, owner_ids in vertex_ids_by_claim.items():
         for left, right in combinations(sorted(owner_ids), 2):
             shared_claims_by_pair.setdefault((left, right), set()).add(claim)
@@ -325,9 +311,7 @@ def _build_components(
     graph_rule_version: str,
     source_artifact_sha256s: tuple[str, ...],
 ) -> tuple[PtConflictGraphComponent, ...]:
-    adjacency: dict[str, set[str]] = {
-        vertex.vertex_id: set() for vertex in vertices
-    }
+    adjacency: dict[str, set[str]] = {vertex.vertex_id: set() for vertex in vertices}
     edge_by_pair: dict[frozenset[str], PtConflictGraphEdge] = {}
     for edge in edges:
         adjacency[edge.left_vertex_id].add(edge.right_vertex_id)

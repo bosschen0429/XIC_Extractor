@@ -177,9 +177,7 @@ def test_cli_sidecar_records_relative_input_path_as_provided(
 
     assert code == 0
     sidecar = json.loads(
-        (tmp_path / "out" / "pt_pattern_sidecar.json").read_text(
-            encoding="utf-8"
-        )
+        (tmp_path / "out" / "pt_pattern_sidecar.json").read_text(encoding="utf-8")
     )
     assert sidecar["inputs"]["detected_features_csv"] == "detected_features.csv"
 

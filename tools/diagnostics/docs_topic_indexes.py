@@ -28,12 +28,8 @@ def _topic_index_markdown(cluster: dict[str, object]) -> str:
     obsidian_topic_folder = str(cluster["suggested_obsidian_topic_folder"])
     topic_next_action = str(cluster["topic_next_action"])
     digestion_review_count = str(cluster.get("digestion_review_count", "0"))
-    digestion_status_counts = str(
-        cluster.get("digestion_status_counts", "none")
-    )
-    support_retention_counts = str(
-        cluster.get("support_retention_counts", "none")
-    )
+    digestion_status_counts = str(cluster.get("digestion_status_counts", "none"))
+    support_retention_counts = str(cluster.get("support_retention_counts", "none"))
     title = _topic_title(topic_key)
     owner_paths = _manifest_path_values(cluster.get("owner_paths"))
     candidate_paths = _manifest_path_values(cluster.get("candidate_paths"))

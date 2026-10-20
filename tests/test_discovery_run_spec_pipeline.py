@@ -181,9 +181,15 @@ def test_discovery_persists_feature_facts_and_measured_review_support(
         }
         receipt = batch.candidate_receipts[acquisition.sample_stem]
         assert receipt.candidate_count == 3
-        assert len(read_owner_bound_discovery_candidates_csv(
-            output.candidates_csv, receipt=receipt,
-        )) == 3
+        assert (
+            len(
+                read_owner_bound_discovery_candidates_csv(
+                    output.candidates_csv,
+                    receipt=receipt,
+                )
+            )
+            == 3
+        )
         assert len(payload["records"]) == len(payload["work_manifest"]) == 2
         records = read_discovery_physical_fact_records(
             output.physical_facts_json,

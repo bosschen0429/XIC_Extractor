@@ -373,9 +373,7 @@ def _parse_candidate_row(
         neutral_loss_mass_error_ppm=_parse_optional_float(
             path, row_number, row, "neutral_loss_mass_error_ppm"
         ),
-        neutral_loss_error_basis=_parse_neutral_loss_error_basis(
-            path, row_number, row
-        ),
+        neutral_loss_error_basis=_parse_neutral_loss_error_basis(path, row_number, row),
         precursor_mz_basis=precursor_mz_basis,
         scan_precursor_mz=_parse_optional_float(
             path, row_number, row, "scan_precursor_mz"
@@ -415,7 +413,9 @@ def _parse_candidate_row(
 
 
 def _parse_provisional_decision(
-    path: Path, row_number: int, row: dict[str, str],
+    path: Path,
+    row_number: int,
+    row: dict[str, str],
 ) -> bool:
     return _parse_bool(path, row_number, row, "is_provisional")
 

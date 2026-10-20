@@ -316,9 +316,7 @@ def _daily_packet(
         }
         for row in sentinel_source_rows
     )
-    disagreement_rows = (
-        _external_reviewer_signal_row(run_id=run_id),
-    )
+    disagreement_rows = (_external_reviewer_signal_row(run_id=run_id),)
 
     payload = {
         "schema_version": SCHEMA_VERSION,
@@ -587,8 +585,10 @@ def _ordered_rows_drift_count(
     drift_count = 0
     if current_header != baseline_header:
         drift_count += 1
-    compare_header = current_header if current_header == baseline_header else tuple(
-        column for column in current_header if column in baseline_header
+    compare_header = (
+        current_header
+        if current_header == baseline_header
+        else tuple(column for column in current_header if column in baseline_header)
     )
     drift_count += abs(len(current_rows) - len(baseline_rows))
     for current_row, baseline_row in zip(current_rows, baseline_rows, strict=False):
@@ -628,8 +628,7 @@ def _validate_sentinel_rows(rows: tuple[dict[str, str], ...]) -> None:
             int(rank)
         except ValueError:
             raise ValueError(
-                "alignment_health_family_sentinels.tsv rank is not numeric: "
-                f"{rank!r}",
+                f"alignment_health_family_sentinels.tsv rank is not numeric: {rank!r}",
             )
 
 
@@ -718,9 +717,7 @@ def _missing_evidence_packet(
         payload=payload,
         summary_rows=summary_rows,
         sentinel_rows=(),
-        disagreement_rows=(
-            _external_reviewer_signal_row(run_id=run_id),
-        ),
+        disagreement_rows=(_external_reviewer_signal_row(run_id=run_id),),
     )
 
 
