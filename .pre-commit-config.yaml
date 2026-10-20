@@ -20,6 +20,7 @@ repos:
         name: mypy staged xic_extractor files
         entry: uv run --cache-dir .uv-cache mypy
         language: system
+        require_serial: true
         files: ^xic_extractor/.*\.py$
         types: [python]
 
