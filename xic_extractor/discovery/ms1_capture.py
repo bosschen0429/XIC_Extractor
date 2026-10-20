@@ -1,7 +1,7 @@
 import math
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, Protocol
+from typing import Any
 
 import numpy as np
 
@@ -78,16 +78,6 @@ _APEX_ION_SPREAD_PPM = 5.0
 # 13C spacing of a doubly charged ion. Product + loss assumes a singly charged
 # precursor, so an inferred ion read beside this isotope is not one.
 _DOUBLY_CHARGED_ISOTOPE_SPACING_MZ = 1.0033548 / 2
-
-
-class MS1XicSource(Protocol):
-    def extract_xic(
-        self,
-        mz: float,
-        rt_min: float,
-        rt_max: float,
-        ppm_tol: float,
-    ) -> tuple[np.ndarray, np.ndarray]: ...
 
 
 @dataclass(frozen=True, slots=True)

@@ -35,7 +35,6 @@ from xic_extractor.discovery.models import (
     DiscoverySettings,
 )
 from xic_extractor.discovery.ms1_capture import (
-    MS1XicSource,
     _DiscoveryMs1Measurements,
     capture_ms1_candidates,
 )
@@ -83,8 +82,11 @@ _DISCOVERY_MS1_MEASUREMENT_NAMES = frozenset(
 )
 
 
-class DiscoveryRawHandle(MS1XicSource, MS2ScanSource, Protocol):
+class DiscoveryRawHandle(BatchXICAdapter, MS2ScanSource, Protocol):
     """RAW reader surface needed by single-file discovery orchestration."""
+
+    @property
+    def acquisition_source(self) -> AcquisitionSourceIdentity: ...
 
 
 RawOpener = Callable[[Path, Path], AbstractContextManager[DiscoveryRawHandle]]
