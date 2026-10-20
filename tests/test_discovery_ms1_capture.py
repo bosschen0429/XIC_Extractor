@@ -7,9 +7,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tests.cid_nl_raw_fixture import fake_acquisition_source
+from tests.cid_nl_raw_fixture import TEST_PROFILE, fake_acquisition_source
 from xic_extractor.acquisition_contract import AcquisitionContractError
-from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery import candidate_merge as candidate_merge_module
 from xic_extractor.discovery.candidate_merge import (
     merge_candidates_by_ms1_peak,
@@ -27,7 +26,6 @@ from xic_extractor.discovery.ms1_capture import (
     capture_ms1_candidates,
 )
 from xic_extractor.execution.attempt import derive_runtime_acquisition_metrics
-from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
 from xic_extractor.processing_identity import (
     AcquisitionSourceIdentity,
     build_acquisition_source_identity,
@@ -42,7 +40,7 @@ NEUTRAL_LOSS_DA = 116.0474
 RAW_FILE = Path("C:/data/TumorBC2312_DNA.raw")
 
 
-def test_capture_runs_real_peak_detection_with_extraction_config() -> None:
+def test_capture_runs_physical_peak_detection() -> None:
     group = _group((_seed(scan_number=10, rt=9.00),))
     rt = np.linspace(8.60, 9.40, 161)
     intensity = _gaussian(rt, center=9.02, sigma=0.04, height=1000.0)
@@ -52,12 +50,11 @@ def test_capture_runs_real_peak_detection_with_extraction_config() -> None:
         raw,
         (group,),
         settings=_settings(ms1_search_padding_min=0.30),
-        peak_config=_peak_config(),
     )[0]
 
     assert candidate.ms1_peak_found is True
     assert candidate.ms1_apex_rt == pytest.approx(9.02)
-    assert candidate.ms1_height == pytest.approx(1000.0)
+    assert candidate.ms1_height is not None and 900.0 < candidate.ms1_height < 1000.0
     assert candidate.ms1_area is not None
     assert candidate.ms1_seed_delta_min == pytest.approx(0.02)
 
@@ -102,9 +99,7 @@ def test_discovery_verifies_inferred_seeds_after_ms1_without_moving_peak(
     rt = np.linspace(8.6, 9.4, 161)
     raw = _FakeRaw(rt=rt, intensity=_gaussian(rt, center=9.02, sigma=0.04, height=1000))
     settings = _settings(ms1_search_padding_min=0.3)
-    baseline = _candidates_from_raw(
-        raw, (group,), settings=settings, peak_config=_peak_config()
-    )[0]
+    baseline = _candidates_from_raw(raw, (group,), settings=settings)[0]
     batches = []
 
     def read_windows(self, requests):
@@ -112,9 +107,7 @@ def test_discovery_verifies_inferred_seeds_after_ms1_without_moving_peak(
         return (Ms1PrecursorObservation(9, parent_rt, masses),)
 
     monkeypatch.setattr(_FakeRaw, "read_ms1_mass_windows", read_windows, raising=False)
-    candidate = _candidates_from_raw(
-        raw, (group,), settings=settings, peak_config=_peak_config()
-    )[0]
+    candidate = _candidates_from_raw(raw, (group,), settings=settings)[0]
     assert len(batches) == 1 and len(batches[0]) == 1
     assert candidate.discovery_candidate_state == state
     assert candidate.precursor_mz_basis == "product_plus_neutral_loss"
@@ -130,72 +123,33 @@ def test_discovery_verifies_inferred_seeds_after_ms1_without_moving_peak(
         assert receipt["precursor_mz"] == 500.0
 
 
+@pytest.mark.parametrize("padding", [0.15, 0.8])
 def test_capture_extracts_group_precursor_xic_with_padded_rt_window_and_ppm(
-    monkeypatch: pytest.MonkeyPatch,
+    padding: float,
 ) -> None:
-    group = _group(
-        (
-            _seed(scan_number=10, rt=7.80, product_intensity=3000.0),
-            _seed(scan_number=20, rt=7.90, product_intensity=9000.0),
-        ),
-        ms1_search_padding_min=0.15,
-        precursor_mz_tolerance_ppm=12.0,
-    )
-    raw = _FakeRaw(
-        rt=np.array([7.76, 7.90, 8.01]),
-        intensity=np.array([10.0, 500.0, 20.0]),
-    )
-    peak_config = _peak_config(resolver_mode="local_minimum")
-    peak_calls: list[
-        tuple[np.ndarray, np.ndarray, ExtractionConfig, float | None, bool]
-    ] = []
-
-    def _fake_find_peak_and_area(
-        rt: np.ndarray,
-        intensity: np.ndarray,
-        config: ExtractionConfig,
-        *,
-        preferred_rt: float | None = None,
-        strict_preferred_rt: bool = False,
-    ) -> PeakDetectionResult:
-        peak_calls.append((rt, intensity, config, preferred_rt, strict_preferred_rt))
-        return _ok_peak(rt=7.90, intensity=500.0, area=42.0, start=7.76, end=8.01)
-
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-        _fake_find_peak_and_area,
-    )
-
+    group = _group((_seed(scan_number=10, rt=7.80), _seed(scan_number=20, rt=7.90)))
+    raw = _peak_raw(center=7.90)
     candidates = _candidates_from_raw(
         raw,
         (group,),
         settings=_settings(
-            ms1_search_padding_min=0.15,
-            precursor_mz_tolerance_ppm=12.0,
+            ms1_search_padding_min=padding, precursor_mz_tolerance_ppm=12.0
         ),
-        peak_config=peak_config,
     )
-
+    expected_padding = max(0.60, padding)
     assert raw.requests == [
         (
             group.precursor_mz,
-            pytest.approx(7.65),
-            pytest.approx(8.05),
+            pytest.approx(7.80 - expected_padding),
+            pytest.approx(7.90 + expected_padding),
             12.0,
         )
     ]
-    assert len(peak_calls) == 1
-    assert peak_calls[0][0] is raw.rt
-    assert peak_calls[0][1] is raw.intensity
-    assert peak_calls[0][2] is peak_config
-    assert peak_calls[0][3] == 7.90
-    assert peak_calls[0][4] is False
     assert len(candidates) == 1
+    assert candidates[0].ms1_peak_found
 
 
-def test_capture_clamps_ms1_search_rt_min_to_zero(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_capture_clamps_ms1_search_rt_min_to_zero() -> None:
     group = _group((_seed(scan_number=10, rt=0.05),))
     raw = _FakeRaw(rt=np.array([], dtype=float), intensity=np.array([], dtype=float))
 
@@ -203,58 +157,64 @@ def test_capture_clamps_ms1_search_rt_min_to_zero(
         raw,
         (group,),
         settings=_settings(ms1_search_padding_min=0.20),
-        peak_config=_peak_config(),
     )[0]
 
     assert raw.requests == [
         (
             group.precursor_mz,
             0.0,
-            pytest.approx(0.25),
+            pytest.approx(0.65),
             20.0,
         )
     ]
     assert candidate.ms1_search_rt_min == 0.0
-    assert candidate.ms1_search_rt_max == pytest.approx(0.25)
+    assert candidate.ms1_search_rt_max == pytest.approx(0.65)
 
 
-def test_ms1_peak_fields_are_filled_from_peak_detection_result(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+@pytest.mark.parametrize("scans_target", [10, 1000])
+def test_ms1_peak_fields_are_filled_from_physical_facts(scans_target: int) -> None:
     group = _group(
         (
             _seed(scan_number=10, rt=7.80, product_intensity=3000.0),
             _seed(scan_number=20, rt=7.90, product_intensity=9000.0),
         )
     )
-    raw = _FakeRaw(
-        rt=np.array([7.70, 7.91, 8.08]),
-        intensity=np.array([20.0, 900.0, 25.0]),
-    )
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-        lambda *args, **kwargs: _ok_peak(
-            rt=7.91,
-            intensity=900.0,
-            area=1234.5,
-            start=7.70,
-            end=8.08,
+    raw = _peak_raw(center=7.91, height=900.0)
+    settings = _settings()
+    settings = replace(
+        settings,
+        evidence_profile=replace(
+            settings.evidence_profile,
+            thresholds=replace(
+                settings.evidence_profile.thresholds, scan_support_target=scans_target
+            ),
         ),
     )
-
-    candidate = _candidates_from_raw(
+    result = capture_ms1_candidates(
         raw,
         (group,),
-        settings=_settings(ms1_search_padding_min=0.20),
-        peak_config=_peak_config(),
-    )[0]
-
-    assert candidate.ms1_peak_found is True
-    assert candidate.ms1_apex_rt == 7.91
-    assert candidate.ms1_height == 900.0
-    assert candidate.ms1_area == 1234.5
-    assert candidate.ms1_peak_rt_start == 7.70
-    assert candidate.ms1_peak_rt_end == 8.08
+        acquisition_source=raw.acquisition_source,
+        run_spec_id="processing-run:" + "0" * 64,
+        signal_processing_profile=TEST_PROFILE,
+        settings=settings,
+    )
+    (candidate,) = result.candidates
+    (record,) = result.physical_evaluations
+    facts = record.evaluation.facts
+    assert facts is not None
+    assert candidate.ms1_peak_found
+    assert candidate.ms1_apex_rt == pytest.approx(7.91)
+    assert candidate.ms1_height == facts.height
+    assert candidate.ms1_area == facts.area_counts_seconds
+    assert candidate.ms1_scan_support_score == min(
+        1.0, facts.scan_support_count / scans_target
+    )
+    if scans_target == 10:
+        assert candidate.ms1_scan_support_score == 1.0
+    else:
+        assert 0.0 < candidate.ms1_scan_support_score < 1.0
+    assert candidate.ms1_peak_rt_start == facts.left_rt_min
+    assert candidate.ms1_peak_rt_end == facts.right_rt_min
     assert candidate.ms1_seed_delta_min == pytest.approx(0.01)
     assert candidate.ms1_trace_quality == "clean"
     assert candidate.review_priority == "HIGH"
@@ -265,114 +225,59 @@ def test_ms1_peak_fields_are_filled_from_peak_detection_result(
 
 
 @pytest.mark.parametrize(
-    ("rt", "intensity", "peak_result"),
-    (
-        (np.array([], dtype=float), np.array([], dtype=float), None),
-        (
-            np.array([7.70, 7.90, 8.10]),
-            np.array([0.0, 0.0, 0.0]),
-            PeakDetectionResult(
-                status="NO_SIGNAL",
-                peak=None,
-                n_points=3,
-                max_smoothed=0.0,
-                n_prominent_peaks=0,
-            ),
-        ),
-    ),
+    "rt,intensity",
+    [
+        (np.array([], dtype=float), np.array([], dtype=float)),
+        (np.linspace(7.2, 8.4, 241), np.zeros(241)),
+    ],
 )
 def test_missing_or_empty_ms1_trace_still_creates_low_priority_candidate(
-    monkeypatch: pytest.MonkeyPatch,
-    rt: np.ndarray,
-    intensity: np.ndarray,
-    peak_result: PeakDetectionResult | None,
+    rt: np.ndarray, intensity: np.ndarray
 ) -> None:
     group = _group((_seed(scan_number=10, rt=7.80),))
-    raw = _FakeRaw(rt=rt, intensity=intensity)
-    if peak_result is not None:
-        monkeypatch.setattr(
-            "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-            lambda *args, **kwargs: peak_result,
-        )
-
     candidate = _candidates_from_raw(
-        raw,
-        (group,),
-        settings=_settings(),
-        peak_config=_peak_config(),
+        _FakeRaw(rt=rt, intensity=intensity), (group,), settings=_settings()
     )[0]
-
-    assert candidate.ms1_peak_found is False
+    assert not candidate.ms1_peak_found
     assert candidate.ms1_apex_rt is None
     assert candidate.ms1_height is None
     assert candidate.ms1_area is None
     assert candidate.ms1_peak_rt_start is None
     assert candidate.ms1_peak_rt_end is None
     assert candidate.ms1_seed_delta_min is None
-    assert candidate.ms1_trace_quality == "missing"
+    assert candidate.ms1_scan_support_score is None
+    assert candidate.ms1_trace_quality == "physical_unavailable"
     assert candidate.review_priority == "LOW"
-    assert candidate.reason == "strict MS2 NL seed; MS1 peak missing"
+    assert candidate.reason.startswith("physical MS1 evaluation unavailable:")
 
 
-def test_single_seed_with_ms1_peak_is_medium_priority(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_single_seed_with_ms1_peak_is_medium_priority() -> None:
     group = _group((_seed(scan_number=10, rt=7.80),))
-    raw = _FakeRaw(
-        rt=np.array([7.70, 7.80, 7.90]),
-        intensity=np.array([10.0, 100.0, 10.0]),
-    )
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-        lambda *args, **kwargs: _ok_peak(
-            rt=7.80,
-            intensity=100.0,
-            area=50.0,
-            start=7.70,
-            end=7.90,
-        ),
-    )
+    raw = _peak_raw(center=7.8, sigma=0.06, height=100)
 
     candidate = _candidates_from_raw(
         raw,
         (group,),
         settings=_settings(ms1_search_padding_min=0.20),
-        peak_config=_peak_config(),
     )[0]
 
     assert candidate.review_priority == "MEDIUM"
     assert candidate.reason == "single MS2 NL seed; MS1 peak found"
 
 
-def test_ms1_peak_far_from_best_seed_is_not_high_priority(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_ms1_peak_far_from_best_seed_is_not_high_priority() -> None:
     group = _group(
         (
             _seed(scan_number=10, rt=7.80, product_intensity=3000.0),
             _seed(scan_number=20, rt=7.90, product_intensity=9000.0),
         )
     )
-    raw = _FakeRaw(
-        rt=np.array([7.70, 8.16, 8.30]),
-        intensity=np.array([10.0, 100.0, 10.0]),
-    )
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-        lambda *args, **kwargs: _ok_peak(
-            rt=8.16,
-            intensity=100.0,
-            area=50.0,
-            start=8.10,
-            end=8.22,
-        ),
-    )
+    raw = _peak_raw(center=8.16, sigma=0.12, height=100)
 
     candidate = _candidates_from_raw(
         raw,
         (group,),
         settings=_settings(ms1_search_padding_min=0.20),
-        peak_config=_peak_config(),
     )[0]
 
     assert candidate.ms1_seed_delta_min == pytest.approx(0.26)
@@ -380,31 +285,15 @@ def test_ms1_peak_far_from_best_seed_is_not_high_priority(
     assert candidate.reason == "MS1 peak offset from seed RT"
 
 
-def test_capture_merges_candidates_inside_same_ms1_peak_boundary(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_capture_merges_candidates_inside_same_ms1_peak_boundary() -> None:
     first_group = _group((_seed(scan_number=10, rt=7.80, product_intensity=3000.0),))
     second_group = _group((_seed(scan_number=20, rt=8.04, product_intensity=9000.0),))
-    raw = _FakeRaw(
-        rt=np.array([7.70, 7.92, 8.10]),
-        intensity=np.array([20.0, 900.0, 25.0]),
-    )
-    peak_results = iter(
-        (
-            _ok_peak(rt=7.92, intensity=900.0, area=1234.5, start=7.70, end=8.10),
-            _ok_peak(rt=7.92, intensity=900.0, area=1234.5, start=7.70, end=8.10),
-        )
-    )
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-        lambda *args, **kwargs: next(peak_results),
-    )
+    raw = _peak_raw(center=7.92, sigma=0.1, height=900)
 
     candidates = _candidates_from_raw(
         raw,
         (first_group, second_group),
         settings=_settings(ms1_search_padding_min=0.20),
-        peak_config=_peak_config(),
     )
 
     assert len(candidates) == 1
@@ -414,69 +303,14 @@ def test_capture_merges_candidates_inside_same_ms1_peak_boundary(
     assert candidate.seed_event_count == 2
     assert candidate.rt_seed_min == pytest.approx(7.80)
     assert candidate.rt_seed_max == pytest.approx(8.04)
-    assert candidate.ms1_search_rt_min == pytest.approx(7.60)
-    assert candidate.ms1_search_rt_max == pytest.approx(8.24)
-    assert candidate.ms1_area == 1234.5
+    assert candidate.ms1_search_rt_min == pytest.approx(7.44)
+    assert candidate.ms1_search_rt_max == pytest.approx(8.64)
+    assert candidate.ms1_area is not None and candidate.ms1_area > 0
     assert candidate.ms2_product_max_intensity == 9000.0
     assert candidate.review_priority == "HIGH"
     assert candidate.reason == (
         "MS2 NL seeds merged by shared MS1 peak; MS1 peak found near seed RT"
     )
-
-
-def test_merged_peak_retains_complete_supported_member_not_original_interval(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
-    from xic_extractor.precursor_evidence import Ms1PrecursorObservation
-
-    first = replace(
-        _seed(scan_number=10, rt=7.8, product_intensity=9000.0),
-        precursor_mz_basis="scan_monoisotopic",
-        scan_precursor_mz=501.0,
-        precursor_metadata=Ms2PrecursorMetadata(
-            monoisotopic_mz=500.0, isolation_width_da=1.6, isolation_offset_da=0.0
-        ),
-    )
-    second = replace(
-        _seed(scan_number=20, rt=8.04, product_intensity=3000.0),
-        precursor_mz_basis="product_plus_neutral_loss",
-        observed_loss_error_ppm=None,
-        scan_precursor_mz=500.5,
-        precursor_metadata=Ms2PrecursorMetadata(
-            master_scan_number=19, isolation_width_da=1.6, isolation_offset_da=0.0
-        ),
-    )
-    raw = _FakeRaw(
-        rt=np.array([7.7, 7.92, 8.1]), intensity=np.array([20.0, 900.0, 25.0])
-    )
-    peaks = iter(
-        (
-            _ok_peak(rt=7.92, intensity=900.0, area=1234.5, start=7.7, end=8.0),
-            _ok_peak(rt=7.92, intensity=900.0, area=1300.0, start=7.7, end=8.1),
-        )
-    )
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-        lambda *args, **kwargs: next(peaks),
-    )
-    monkeypatch.setattr(
-        _FakeRaw,
-        "read_ms1_mass_windows",
-        lambda self, requests: (Ms1PrecursorObservation(19, 8.02, (500.001,)),),
-        raising=False,
-    )
-    (candidate,) = _candidates_from_raw(
-        raw,
-        (_group((first,)), _group((second,))),
-        settings=_settings(),
-        peak_config=_peak_config(),
-    )
-    assert candidate.best_ms2_scan_id == 20
-    assert candidate.ms1_area == 1300.0
-    assert candidate.ms1_peak_rt_end == 8.1
-    assert candidate.seed_scan_ids == (10, 20)
-    assert candidate.discovery_candidate_state == "ms1_feature_nl_supported"
 
 
 def test_cross_tag_candidates_merge_only_when_ms1_peak_overlaps() -> None:
@@ -542,7 +376,6 @@ def test_verified_multitag_peak_persists_each_tags_best_scan(
         _FakeRaw(rt=rt, intensity=_gaussian(rt, center=9.02, sigma=0.04, height=1000)),
         group_discovery_seeds(seeds, settings=settings),
         settings=settings,
-        peak_config=_peak_config(),
     )
     assert len(candidates) == 1
     candidate = candidates[0]
@@ -1016,66 +849,39 @@ def test_cross_tag_candidates_do_not_merge_without_ms1_overlap() -> None:
     assert len(merged) == 2
 
 
-def test_capture_does_not_merge_distinct_ms1_peak_boundaries(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_capture_does_not_merge_distinct_ms1_peak_boundaries() -> None:
     first_group = _group((_seed(scan_number=10, rt=7.80, product_intensity=3000.0),))
     second_group = _group((_seed(scan_number=20, rt=8.04, product_intensity=9000.0),))
+    rt = np.linspace(7.2, 8.6, 281)
     raw = _FakeRaw(
-        rt=np.array([7.70, 7.80, 8.04, 8.14]),
-        intensity=np.array([20.0, 900.0, 850.0, 25.0]),
-    )
-    peak_results = iter(
-        (
-            _ok_peak(rt=7.80, intensity=900.0, area=100.0, start=7.70, end=7.88),
-            _ok_peak(rt=8.04, intensity=850.0, area=90.0, start=7.96, end=8.14),
-        )
-    )
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-        lambda *args, **kwargs: next(peak_results),
+        rt=rt,
+        intensity=_gaussian(rt, center=7.80, sigma=0.025, height=900.0)
+        + _gaussian(rt, center=8.04, sigma=0.025, height=850.0),
     )
 
     candidates = _candidates_from_raw(
         raw,
         (first_group, second_group),
         settings=_settings(ms1_search_padding_min=0.20),
-        peak_config=_peak_config(),
     )
 
     assert len(candidates) == 2
     assert [candidate.seed_scan_ids for candidate in candidates] == [(10,), (20,)]
 
 
-def test_ms1_seed_delta_is_signed_but_priority_uses_absolute_distance(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_ms1_seed_delta_is_signed_but_priority_uses_absolute_distance() -> None:
     group = _group(
         (
             _seed(scan_number=10, rt=7.80, product_intensity=3000.0),
             _seed(scan_number=20, rt=7.90, product_intensity=9000.0),
         )
     )
-    raw = _FakeRaw(
-        rt=np.array([7.60, 7.70, 7.80]),
-        intensity=np.array([10.0, 100.0, 10.0]),
-    )
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-        lambda *args, **kwargs: _ok_peak(
-            rt=7.70,
-            intensity=100.0,
-            area=50.0,
-            start=7.60,
-            end=7.80,
-        ),
-    )
+    raw = _peak_raw(center=7.7, sigma=0.1, height=100)
 
     candidate = _candidates_from_raw(
         raw,
         (group,),
         settings=_settings(ms1_search_padding_min=0.20),
-        peak_config=_peak_config(),
     )[0]
 
     assert candidate.ms1_seed_delta_min == pytest.approx(-0.20)
@@ -1113,7 +919,6 @@ def test_ms1_seed_delta_is_signed_but_priority_uses_absolute_distance(
     ),
 )
 def test_best_seed_tie_breaks_by_error_then_rt_then_scan_for_candidate(
-    monkeypatch: pytest.MonkeyPatch,
     seed_values: tuple[tuple[int, float, float], ...],
     expected_scan: int,
     expected_rt: float,
@@ -1128,26 +933,12 @@ def test_best_seed_tie_breaks_by_error_then_rt_then_scan_for_candidate(
         for scan_number, rt, observed_loss_error_ppm in seed_values
     )
     group = _group(seeds)
-    raw = _FakeRaw(
-        rt=np.array([7.70, 7.90, 8.05]),
-        intensity=np.array([10.0, 500.0, 20.0]),
-    )
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-        lambda *args, **kwargs: _ok_peak(
-            rt=7.90,
-            intensity=500.0,
-            area=42.0,
-            start=7.70,
-            end=8.05,
-        ),
-    )
+    raw = _peak_raw(center=7.9, sigma=0.06, height=500)
 
     candidate = _candidates_from_raw(
         raw,
         (group,),
         settings=_settings(),
-        peak_config=_peak_config(),
     )[0]
 
     assert candidate.best_ms2_scan_id == expected_scan
@@ -1157,7 +948,6 @@ def test_best_seed_tie_breaks_by_error_then_rt_then_scan_for_candidate(
 
 def test_owner_acquisition_batches_requests_and_preserves_exact_windows(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"owner-bound-discovery")
@@ -1171,26 +961,17 @@ def test_owner_acquisition_batches_requests_and_preserves_exact_windows(
         first,
         seeds=(_seed(scan_number=20, rt=7.80),),
     )
-    later = _group((_seed(scan_number=30, rt=9.00),))
+    later = _group((_seed(scan_number=30, rt=9.20),))
     empty = replace(first, seeds=())
     raw = _OwnerBoundBatchRaw(source)
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-        lambda *args, **kwargs: _ok_peak(
-            rt=7.8,
-            intensity=100.0,
-            area=10.0,
-            start=7.7,
-            end=7.9,
-        ),
-    )
 
     result = capture_ms1_candidates(
         raw,
         (first, duplicate, later, empty),
         acquisition_source=source,
+        run_spec_id="processing-run:" + "0" * 64,
+        signal_processing_profile=TEST_PROFILE,
         settings=_settings(),
-        peak_config=_peak_config(),
     )
 
     measurements = result.measurements
@@ -1202,7 +983,7 @@ def test_owner_acquisition_batches_requests_and_preserves_exact_windows(
     assert runtime_metrics.logical_xic_request_count == 3
     assert runtime_metrics.xic_batch_count == 1
     assert runtime_metrics.adapter_chromatogram_call_count == 2
-    assert runtime_metrics.trace_point_count == 9
+    assert runtime_metrics.trace_point_count == 63
     assert measurements.exact_scan_window_count == 2
     assert measurements.predicted_chunked_call_count == 2
     assert measurements.batch_max_requests == 256
@@ -1212,7 +993,6 @@ def test_owner_acquisition_batches_requests_and_preserves_exact_windows(
 
 def test_owner_acquisition_splits_request_order_at_256_without_deduplication(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"owner-bound-discovery")
@@ -1227,23 +1007,14 @@ def test_owner_acquisition_splits_request_order_at_256_without_deduplication(
         for index in range(257)
     )
     raw = _OwnerBoundBatchRaw(source)
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-        lambda *args, **kwargs: _ok_peak(
-            rt=7.8,
-            intensity=100.0,
-            area=10.0,
-            start=7.7,
-            end=7.9,
-        ),
-    )
 
     result = capture_ms1_candidates(
         raw,
         groups,
         acquisition_source=source,
+        run_spec_id="processing-run:" + "0" * 64,
+        signal_processing_profile=TEST_PROFILE,
         settings=_settings(),
-        peak_config=_peak_config(),
     )
 
     metrics = derive_runtime_acquisition_metrics(
@@ -1253,7 +1024,7 @@ def test_owner_acquisition_splits_request_order_at_256_without_deduplication(
     assert metrics.logical_xic_request_count == 257
     assert metrics.xic_batch_count == 2
     assert metrics.adapter_chromatogram_call_count == 2
-    assert metrics.trace_point_count == 771
+    assert metrics.trace_point_count == 5397
     assert result.measurements.exact_scan_window_count == 1
     assert result.measurements.predicted_chunked_call_count == 2
     assert result.measurements.batch_max_requests == 256
@@ -1261,7 +1032,6 @@ def test_owner_acquisition_splits_request_order_at_256_without_deduplication(
 
 def test_owner_acquisition_reads_overlapping_windows_once_with_exact_traces(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     raw_path = tmp_path / "sample.raw"
     raw_path.write_bytes(b"owner-bound-discovery")
@@ -1284,23 +1054,14 @@ def test_owner_acquisition_reads_overlapping_windows_once_with_exact_traces(
         ),
     )
     raw = _ScanGridRaw(source)
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-        lambda *args, **kwargs: _ok_peak(
-            rt=7.8,
-            intensity=100.0,
-            area=10.0,
-            start=7.7,
-            end=7.9,
-        ),
-    )
 
     result = capture_ms1_candidates(
         raw,
         groups,
         acquisition_source=source,
+        run_spec_id="processing-run:" + "0" * 64,
+        signal_processing_profile=TEST_PROFILE,
         settings=_settings(),
-        peak_config=_peak_config(),
     )
 
     batches = result.measurements.acquisition_batches
@@ -1335,8 +1096,9 @@ def test_owner_acquisition_fails_closed_on_wrong_trace_cardinality(
             raw,
             (_group((_seed(scan_number=10, rt=7.80),)),),
             acquisition_source=source,
+            run_spec_id="processing-run:" + "0" * 64,
+            signal_processing_profile=TEST_PROFILE,
             settings=_settings(),
-            peak_config=_peak_config(),
         )
 
 
@@ -1428,22 +1190,6 @@ def _candidate(
     )
 
 
-def _peak_config(*, resolver_mode: str = "savgol") -> ExtractionConfig:
-    return ExtractionConfig(
-        data_dir=Path("raw"),
-        dll_dir=Path("dll"),
-        output_csv=Path("output/xic_results.csv"),
-        diagnostics_csv=Path("output/xic_diagnostics.csv"),
-        smooth_window=15,
-        smooth_polyorder=3,
-        peak_rel_height=0.95,
-        peak_min_prominence_ratio=0.10,
-        ms2_precursor_tol_da=0.5,
-        nl_min_intensity_ratio=0.01,
-        resolver_mode=resolver_mode,
-    )
-
-
 def _gaussian(
     rt: np.ndarray,
     *,
@@ -1485,30 +1231,6 @@ def _seed(
     )
 
 
-def _ok_peak(
-    *,
-    rt: float,
-    intensity: float,
-    area: float,
-    start: float,
-    end: float,
-) -> PeakDetectionResult:
-    return PeakDetectionResult(
-        status="OK",
-        peak=PeakResult(
-            rt=rt,
-            intensity=intensity,
-            intensity_smoothed=intensity,
-            area=area,
-            peak_start=start,
-            peak_end=end,
-        ),
-        n_points=3,
-        max_smoothed=intensity,
-        n_prominent_peaks=1,
-    )
-
-
 class _OwnerBoundBatchRaw:
     def __init__(
         self,
@@ -1520,8 +1242,8 @@ class _OwnerBoundBatchRaw:
         self.drop_results = drop_results
         self.raw_chromatogram_call_count = 0
         self.request_batches: list[tuple[XICRequest, ...]] = []
-        self.rt = np.asarray([7.7, 7.8, 7.9], dtype=float)
-        self.intensity = np.asarray([10.0, 100.0, 10.0], dtype=float)
+        self.rt = np.linspace(7.7, 7.9, 21)
+        self.intensity = np.zeros(21)
 
     def extract_xic_many(
         self,
@@ -1603,98 +1325,18 @@ def _candidates_from_raw(
     groups: Sequence[DiscoverySeedGroup],
     *,
     settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
 ) -> tuple[DiscoveryCandidate, ...]:
     return capture_ms1_candidates(
         raw,
         groups,
         acquisition_source=raw.acquisition_source,
+        run_spec_id="processing-run:" + "0" * 64,
+        signal_processing_profile=TEST_PROFILE,
         settings=settings,
-        peak_config=peak_config,
     ).candidates
 
 
-@pytest.mark.parametrize(
-    "parent_rt,masses,expected_scan,expected_state",
-    (
-        (8.0, (500.0,), 30, "ms1_feature_nl_supported"),
-        (7.75, (500.0,), 10, "ms1_feature_nl_supported"),
-        (8.0, (), 10, "ms1_feature_nl_rescued"),
-        (8.0, (500.9,), 10, "ms1_feature_nl_rescued"),
-        (7.5, (500.0,), 10, "ms1_feature_nl_rescued"),
-    ),
-)
-def test_capture_retains_supported_same_apex_member_without_extra_parent_reads(
-    monkeypatch: pytest.MonkeyPatch, parent_rt, masses, expected_scan, expected_state
-) -> None:
-    from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
-    from xic_extractor.precursor_evidence import Ms1PrecursorObservation
-
-    groups = tuple(
-        _group(
-            (
-                replace(
-                    _seed(scan_number=scan, rt=rt, product_intensity=height),
-                    precursor_mz_basis="product_plus_neutral_loss",
-                    observed_loss_error_ppm=None,
-                    scan_precursor_mz=500.5,
-                    precursor_metadata=Ms2PrecursorMetadata(
-                        master_scan_number=9,
-                        charge=1,
-                        isolation_width_da=(
-                            1.6 if scan != 10 or parent_rt == 7.75 else 0.1
-                        ),
-                        isolation_offset_da=0.0,
-                    ),
-                ),
-            )
-        )
-        for scan, rt, height in ((10, 7.8, 100000), (20, 8.1, 10000), (30, 8.12, 20000))
-    )
-    peaks = iter(
-        (
-            _ok_peak(rt=7.85, intensity=1000, area=111, start=7.7, end=7.9),
-            _ok_peak(rt=7.85, intensity=2000, area=222, start=7.7, end=8.2),
-            _ok_peak(rt=7.85, intensity=3000, area=333, start=7.6, end=8.3),
-        )
-    )
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-        lambda *a, **kw: next(peaks),
-    )
-    batches = []
-
-    def read_windows(self, requests):
-        batches.append(requests)
-        return (Ms1PrecursorObservation(9, parent_rt, masses),)
-
-    monkeypatch.setattr(_FakeRaw, "read_ms1_mass_windows", read_windows, raising=False)
-    raw = _FakeRaw(
-        rt=np.array([7.7, 7.85, 8.3]), intensity=np.array([10.0, 1000.0, 20.0])
-    )
-    (candidate,) = _candidates_from_raw(
-        raw, groups, settings=_settings(), peak_config=_peak_config()
-    )
-    assert len(batches) == 1 and len(batches[0]) == 1
-    assert len(raw.requests) == 3
-    assert candidate.best_ms2_scan_id == expected_scan
-    assert candidate.discovery_candidate_state == expected_state
-    assert candidate.ms1_area == (333 if expected_scan == 30 else 111)
-    assert candidate.ms1_height == (3000 if expected_scan == 30 else 1000)
-    assert candidate.ms1_peak_rt_start == (7.6 if expected_scan == 30 else 7.7)
-    assert candidate.ms1_peak_rt_end == (8.3 if expected_scan == 30 else 7.9)
-    assert candidate.seed_scan_ids == (10, 20, 30)
-    assert candidate.seed_event_count == 3
-    assert candidate.ms2_product_max_intensity == 100000
-    assert candidate.rt_seed_min == 7.8 and candidate.rt_seed_max == 8.12
-    receipts = json.loads(candidate.tag_evidence_json)["DNA_dR"]["scan_receipts"]
-    assert set(receipts) == {"10", "20", "30"}
-
-
-def test_capture_does_not_replace_unsupported_peak_with_different_apex_member(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Overlap/feature-row merging is broader than same physical-apex fallback.
+def test_merge_does_not_offer_different_apex_as_support_alternative() -> None:
     anchor = replace(
         _candidate("dR"),
         best_ms2_scan_id=10,
@@ -1708,32 +1350,25 @@ def test_capture_does_not_replace_unsupported_peak_with_different_apex_member(
         seed_scan_ids=(20,),
         ms2_product_max_intensity=20000.0,
     )
-    originals = iter((anchor, other))
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture._candidate_from_trace",
-        lambda *a, **kw: next(originals),
-    )
-    groups = tuple(
-        _group(
-            (
-                _seed(
-                    scan_number=scan,
-                    rt=5.11,
-                    precursor_mz=mass,
-                    product_mz=mass - NEUTRAL_LOSS_DA,
-                ),
+    originals = (anchor, other)
+    merged = merge_candidates_by_ms1_peak_with_lineage(originals, settings=_settings())
+    assert len(merged.candidates) == 1
+    assert merged.candidates[0].best_ms2_scan_id == 10
+    assert merged.candidates[0].seed_scan_ids == (10, 20)
+    assert (
+        list(
+            candidate_merge_module.same_apex_representative_alternatives(
+                originals, merged.bindings[0], settings=_settings()
             )
         )
-        for scan, mass in ((10, 400.0), (20, 400.004))
+        == []
     )
-    raw = _FakeRaw(
-        rt=np.array([5.0, 5.05, 5.12]), intensity=np.array([10.0, 1000.0, 20.0])
+
+
+def _peak_raw(
+    *, center: float, sigma: float = 0.06, height: float = 1000.0
+) -> _FakeRaw:
+    rt = np.linspace(center - 0.6, center + 0.6, 241)
+    return _FakeRaw(
+        rt=rt, intensity=_gaussian(rt, center=center, sigma=sigma, height=height)
     )
-    (candidate,) = _candidates_from_raw(
-        raw, groups, settings=_settings(), peak_config=_peak_config()
-    )
-    assert candidate.best_ms2_scan_id == 10
-    assert candidate.ms1_apex_rt == anchor.ms1_apex_rt
-    assert candidate.ms1_area == anchor.ms1_area
-    assert candidate.discovery_candidate_state == "ms1_feature_nl_rescued"
-    assert candidate.seed_scan_ids == (10, 20)

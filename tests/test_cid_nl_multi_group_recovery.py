@@ -272,7 +272,6 @@ def test_backfill_window_does_not_change_initial_owner_partition(tmp_path, monke
             raw,
             raw_file=path,
             settings=settings,
-            peak_config=peak_config,
             physical_records=physical_records,
         )
     batch = build_dense_partition(
@@ -398,7 +397,6 @@ def test_backfill_query_and_empty_completion_keep_sample_rt_separate_from_group(
                 raw,
                 raw_file=path,
                 settings=settings,
-                peak_config=peak_config,
                 physical_records=physical_records,
             )
             if path.stem.startswith("S")
@@ -538,7 +536,6 @@ def test_rejected_initial_evidence_gets_one_independent_bounded_assessment(
             raw,
             raw_file=path,
             settings=settings,
-            peak_config=peak_config,
             physical_records=physical_records,
         )
         if path.stem == "Rejected":
@@ -816,7 +813,6 @@ def test_runtime_recovers_every_authorized_rt_group(
             raw,
             raw_file=path,
             settings=settings,
-            peak_config=peak_config,
             physical_records=physical_records,
         )
         candidates[path.stem] = (
@@ -1428,7 +1424,6 @@ def test_shared_physical_recovery_claim_is_not_assigned_to_two_groups(
             raw,
             raw_file=path,
             settings=settings,
-            peak_config=peak_config,
             physical_records=physical_records,
         )
         candidates[path.stem] = (
@@ -1589,7 +1584,6 @@ def test_shared_ms1_only_backfill_peak_is_not_written_to_two_rows(
                 raw,
                 raw_file=path,
                 settings=settings,
-                peak_config=peak_config,
                 physical_records=physical_records,
             )
             if path.stem != "Missing"
@@ -1732,7 +1726,6 @@ def test_ms1_only_backfill_fills_only_one_unique_group_window_peak(
                 raw,
                 raw_file=path,
                 settings=settings,
-                peak_config=peak_config,
                 physical_records=physical_records,
             )
             if path.stem != "Missing"
@@ -1899,7 +1892,6 @@ def test_backfill_reaches_a_sample_whose_support_belongs_to_another_group(
             raw,
             raw_file=path,
             settings=settings,
-            peak_config=peak_config,
             physical_records=physical_records,
         )
     batch = build_dense_partition(

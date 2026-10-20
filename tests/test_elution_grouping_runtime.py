@@ -86,7 +86,6 @@ def test_crowded_doublet_uses_context_before_grouping_and_preserves_query_lineag
                 acquisition_source=raw.acquisition_source,
                 run_spec_id="processing-run:" + "0" * 64,
                 settings=settings,
-                peak_config=config,
                 signal_processing_profile=profile,
             )
         assert len(discovery.candidates) == 1
@@ -309,7 +308,6 @@ def test_hold_reuse_beside_several_searches_completes_each_group_cell(
                 acquisition_source=raw.acquisition_source,
                 run_spec_id="processing-run:" + "0" * 64,
                 settings=settings,
-                peak_config=config,
                 signal_processing_profile=profile,
             )
         assert len(discovery.candidates) == 1

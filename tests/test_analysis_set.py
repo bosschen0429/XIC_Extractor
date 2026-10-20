@@ -141,7 +141,6 @@ def test_retained_alignment_keeps_full_root_injection_order(
             _FakeRaw((7.98,)),
             raw_file=p,
             settings=settings,
-            peak_config=config,
             physical_records=physical_records,
         )
         for p in selected_paths

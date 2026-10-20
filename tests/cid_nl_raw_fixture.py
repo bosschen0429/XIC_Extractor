@@ -47,7 +47,6 @@ def _current_candidates(
     *,
     raw_file: Path,
     settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
     physical_records=None,
 ):
     """Produce canonical Discovery candidates and optionally retain their facts."""
@@ -70,7 +69,6 @@ def _current_candidates(
         acquisition_source=source,
         run_spec_id="processing-run:" + "0" * 64,
         settings=settings,
-        peak_config=peak_config,
         signal_processing_profile=TEST_PROFILE,
     )
     if physical_records is not None:

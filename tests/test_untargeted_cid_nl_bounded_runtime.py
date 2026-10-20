@@ -100,7 +100,6 @@ def _plan(
             third_raw,
             raw_file=path,
             settings=settings,
-            peak_config=peak_config,
             physical_records=physical_records,
         )
         sample_candidates = tuple(
@@ -116,7 +115,6 @@ def _plan(
                 raw,
                 raw_file=path,
                 settings=settings,
-                peak_config=peak_config,
                 physical_records=physical_records,
             )
         raws[path] = raw
@@ -251,7 +249,6 @@ def test_batch_rt_calibration_and_grouping_are_independent_of_partition_capacity
             raw,
             raw_file=path,
             settings=settings,
-            peak_config=peak_config,
             physical_records=physical_records,
         )
         assert len(candidates[path.stem]) == 12
@@ -362,7 +359,6 @@ def test_backfill_queries_are_partition_invariant_and_never_supply_ms2_support(
             raw,
             raw_file=path,
             settings=settings,
-            peak_config=peak_config,
             physical_records=physical_records,
         )
         assert len(candidates[path.stem]) == 2

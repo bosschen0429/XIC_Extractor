@@ -786,7 +786,6 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
                 acquisition_source=source.acquisition_source,
                 run_spec_id=spec.run_spec_id,
                 settings=settings,
-                peak_config=peak_config,
                 signal_processing_profile=profile,
             )
         folder = tmp_path / path.stem
@@ -2426,7 +2425,6 @@ def test_completed_empty_recovery_preserves_each_compatible_source_subject(
             source_raw,
             raw_file=raw_path,
             settings=settings,
-            peak_config=peak_config,
             physical_records=physical_records,
         )
         source_raws[raw_path] = source_raw
@@ -2559,7 +2557,6 @@ def test_production_batch_preserves_bounded_subject_membership(
             settings=replace(
                 settings, neutral_loss_profiles=(NeutralLossProfile("DNA_dR", loss),)
             ),
-            peak_config=peak_config,
             physical_records=physical_records,
         )[0]
         for index, (mz, loss) in enumerate(zip(masses, losses, strict=True))
@@ -3354,14 +3351,12 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         source_raws[raw_paths[0]],
         raw_file=raw_paths[0],
         settings=settings,
-        peak_config=peak_config,
         physical_records=physical_records,
     )[0]
     direct_hold_candidates = _current_candidates(
         source_raws[raw_paths[1]],
         raw_file=raw_paths[1],
         settings=settings,
-        peak_config=peak_config,
         physical_records=physical_records,
     )
     direct_hold = direct_hold_candidates[0]
@@ -3391,7 +3386,6 @@ def test_production_composition_closes_observation_only_hold_without_membership(
                     raw,
                     raw_file=raw_path,
                     settings=settings,
-                    peak_config=peak_config,
                     physical_records=physical_records,
                 )[0]
                 for raw in (first_raw, second_raw)
@@ -3406,7 +3400,6 @@ def test_production_composition_closes_observation_only_hold_without_membership(
             source_raws[raw_paths[2]],
             raw_file=raw_paths[2],
             settings=settings,
-            peak_config=peak_config,
             physical_records=physical_records,
         )
     batch = build_dense_partition(
@@ -3719,7 +3712,6 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
             raws[path],
             raw_file=path,
             settings=settings,
-            peak_config=peak_config,
             physical_records=physical_records,
         )
     batch = build_dense_partition(
@@ -3859,7 +3851,6 @@ def test_known_istd_reference_closes_drifting_group_and_cell_proof(
             raw,
             raw_file=path,
             settings=settings,
-            peak_config=peak_config,
             physical_records=physical_records,
         )
     batch = build_dense_partition(
@@ -4199,7 +4190,6 @@ def test_production_composition_closes_recovered_observation_without_candidate(
                 source_raws[raw_path],
                 raw_file=raw_path,
                 settings=settings,
-                peak_config=peak_config,
                 physical_records=physical_records,
             )[0],
         )
@@ -4522,7 +4512,6 @@ def test_atomic_publication_preserves_ms1_only_backfill_and_no_peak(
                 source_raws[raw_path],
                 raw_file=raw_path,
                 settings=settings,
-                peak_config=peak_config,
                 physical_records=physical_records,
             )
         )

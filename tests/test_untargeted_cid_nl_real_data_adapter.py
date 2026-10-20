@@ -203,7 +203,6 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         acquisition_source=source,
         run_spec_id="processing-run:" + "0" * 64,
         settings=settings,
-        peak_config=peak_config,
         signal_processing_profile=profile,
     )
     assert len(discovery.candidates) == 2
@@ -563,7 +562,6 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
         acquisition_source=fixture.owners.request.acquisition_sources[0],
         run_spec_id="processing-run:" + "0" * 64,
         settings=settings,
-        peak_config=peak_config,
         signal_processing_profile=profile,
     )
     (original,) = discovery.candidates
@@ -656,7 +654,6 @@ def test_adapter_preserves_complete_multiscan_evidence_without_target_identity(
         source_raw,
         raw_file=fixture.source_paths["S1"],
         settings=settings,
-        peak_config=peak_config,
         physical_records=physical_records,
     )
     raw, vendor_raw = _open_bound_raw(
@@ -714,7 +711,6 @@ def test_adapter_retains_completed_relation_before_later_evidence_failure(
         source_raw,
         raw_file=fixture.source_paths["S1"],
         settings=settings,
-        peak_config=peak_config,
         physical_records=physical_records,
     )
     raw, _vendor_raw = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
@@ -789,7 +785,6 @@ def test_adapter_preserves_strict_scans_within_mixed_candidate(
         source_raw,
         raw_file=fixture.source_paths["S1"],
         settings=settings,
-        peak_config=peak_config,
         physical_records=physical_records,
     )
     (candidate,) = candidates
@@ -863,7 +858,6 @@ def test_adapter_preserves_strict_support_after_ms1_merge_of_inferred_scan(
         source_raw,
         raw_file=fixture.source_paths["S1"],
         settings=settings,
-        peak_config=peak_config,
         physical_records=physical_records,
     )
     (candidate,) = candidates
@@ -929,7 +923,6 @@ def test_inferred_precursor_retains_physical_peak_without_strict_nl_support(
         source_raw,
         raw_file=fixture.source_paths["S1"],
         settings=settings,
-        peak_config=peak_config,
         physical_records=physical_records,
     )
     assert candidates
@@ -1075,7 +1068,6 @@ def test_adapter_resolves_one_event_from_same_scan_loss_product_alternatives(
         source_raw,
         raw_file=fixture.source_paths["S1"],
         settings=settings,
-        peak_config=peak_config,
         physical_records=physical_records,
     )
     raw, vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
@@ -1236,7 +1228,6 @@ def test_inferred_precursor_can_gain_support_from_measured_parent_ms1(
         source_raw,
         raw_file=fixture.source_paths["S1"],
         settings=settings,
-        peak_config=peak_config,
         physical_records=physical_records,
     )
     raw, _vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
@@ -1331,7 +1322,6 @@ def test_inferred_precursor_off_its_scan_receipt_is_rejected(
             source_raw,
             raw_file=fixture.source_paths["S1"],
             settings=settings,
-            peak_config=peak_config,
             physical_records=physical_records,
         )
     )
@@ -1385,7 +1375,6 @@ def test_merged_inferred_member_outside_final_mass_window_is_not_support(
         source_raw,
         raw_file=tmp_path / "S1.RAW",
         settings=settings,
-        peak_config=_peak_config(tmp_path),
     )
     assert candidate.precursor_mz_basis == "product_plus_neutral_loss"
     assert len(candidate.seed_scan_ids) == 3
@@ -1437,7 +1426,6 @@ def test_shared_apex_merge_keeps_each_absorbed_scan_receipt(
         source_raw,
         raw_file=tmp_path / "S1.RAW",
         settings=settings,
-        peak_config=_peak_config(tmp_path),
     )
     assert len(candidate.seed_scan_ids) == 4
 
@@ -1507,7 +1495,6 @@ def test_scan_seed_enumeration_runs_once_per_declared_scan(
         source_raw,
         raw_file=tmp_path / "S1.RAW",
         settings=settings,
-        peak_config=_peak_config(tmp_path),
     )
     assert len(candidate.seed_scan_ids) > 1
 
@@ -1566,7 +1553,6 @@ def test_sample_trace_batch_is_acquired_once_and_reused_by_subject_adapters(
         source_raw,
         raw_file=fixture.source_paths["S1"],
         settings=settings,
-        peak_config=peak_config,
         physical_records=physical_records,
     )
     candidates = tuple(sorted((first, second), key=lambda item: item.candidate_id))
@@ -1634,7 +1620,6 @@ def test_elution_context_shares_acquisition_without_widening_capture(
         source,
         raw_file=fixture.source_paths["S1"],
         settings=_settings(),
-        peak_config=_peak_config(tmp_path),
     )[0]
     duplicate = replace(candidate, candidate_id=candidate.candidate_id + ":duplicate")
     raw, vendor = _open_bound_raw(fixture, "S1", source, tmp_path=tmp_path)
@@ -1899,7 +1884,6 @@ def test_adapter_receipt_covers_candidate_search_beyond_seed_window(
         source_raw,
         raw_file=fixture.source_paths["S1"],
         settings=settings,
-        peak_config=peak_config,
         physical_records=physical_records,
     )
     assert len(candidates) == 1
@@ -1957,7 +1941,6 @@ def test_adapter_closes_qualifying_ms2_without_ms1_peak_as_reject(
         source_raw,
         raw_file=fixture.source_paths["S1"],
         settings=settings,
-        peak_config=peak_config,
         physical_records=physical_records,
     )[0]
     orphan = _without_ms1_peak(candidate)
@@ -2070,7 +2053,6 @@ def test_auto_range_evaluated_receipt_uses_current_raw_bounds(tmp_path: Path) ->
         source_raw,
         raw_file=fixture.source_paths["S1"],
         settings=settings,
-        peak_config=peak_config,
         physical_records=physical_records,
     )
     raw, vendor = _open_bound_raw(fixture, "S1", source_raw, tmp_path=tmp_path)
@@ -2110,7 +2092,6 @@ def test_adapter_uses_orphan_support_without_giving_it_feature_standing(
         source_raw,
         raw_file=fixture.source_paths["S1"],
         settings=settings,
-        peak_config=peak_config,
         physical_records=physical_records,
     )
     support = _without_ms1_peak(support_source)
@@ -2155,7 +2136,6 @@ def test_adapter_does_not_read_raw_for_orphan_only_support(tmp_path: Path) -> No
             source_raw,
             raw_file=fixture.source_paths["S1"],
             settings=settings,
-            peak_config=_peak_config(tmp_path),
             physical_records=physical_records,
         )[0]
     )
@@ -2200,7 +2180,6 @@ def test_adapter_requires_raw_to_preserve_inferred_physical_observations(
         _FakeRaw((8.0,)),
         raw_file=fixture.source_paths["S1"],
         settings=settings,
-        peak_config=peak_config,
         physical_records=physical_records,
     )[0]
     inferred = replace(
@@ -2281,7 +2260,6 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
         acquisition_source=fixture.owners.request.acquisition_sources[0],
         run_spec_id="processing-run:" + "0" * 64,
         settings=settings,
-        peak_config=peak_config,
         signal_processing_profile=profile,
     )
     assert len(discovery.candidates) == 2
@@ -2356,7 +2334,6 @@ def test_adapter_preserves_supported_and_observation_only_physical_peaks(
         source_raw,
         raw_file=fixture.source_paths["S1"],
         settings=settings,
-        peak_config=peak_config,
         physical_records=physical_records,
     )
     assert len(candidates) == 2
@@ -2442,7 +2419,6 @@ def test_adapter_rejects_discovery_candidate_receipt_drift(tmp_path: Path) -> No
         source_raw,
         raw_file=fixture.source_paths["S1"],
         settings=settings,
-        peak_config=peak_config,
         physical_records=physical_records,
     )[0]
     assert candidate.ms1_apex_rt is not None
@@ -2585,7 +2561,6 @@ def test_strict_replay_retains_two_recorded_precursors_from_one_scan(tmp_path):
         source_raw,
         raw_file=tmp_path / "S1.RAW",
         settings=settings,
-        peak_config=_peak_config(tmp_path),
     )
     assert len(candidates) == 2
     seeds = read_complete_discovery_scan_seeds(
@@ -2999,7 +2974,6 @@ def test_same_scan_absorbed_product_keeps_exact_canonical_seed(
         source_raw,
         raw_file=tmp_path / "S1.RAW",
         settings=settings,
-        peak_config=_peak_config(tmp_path),
     )
     assert candidate.product_mz == canonical_product
     evidence = json.loads(candidate.tag_evidence_json)["DNA_dR"]
@@ -3036,7 +3010,6 @@ def test_duplicate_exact_canonical_seed_is_rejected(
         source_raw,
         raw_file=tmp_path / "S1.RAW",
         settings=settings,
-        peak_config=_peak_config(tmp_path),
     )
     enumerate_seeds = strict_seed_receipts.discovery_seeds_from_scan
 

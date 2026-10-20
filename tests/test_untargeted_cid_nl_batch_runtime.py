@@ -406,7 +406,6 @@ def _nearby_subject_candidates(
                     raw,
                     raw_file=raw_path,
                     settings=settings,
-                    peak_config=peak_config,
                     physical_records=physical_records,
                 )[0]
                 for raw in (first_raw, second_raw)

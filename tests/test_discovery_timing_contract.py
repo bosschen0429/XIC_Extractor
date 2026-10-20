@@ -10,9 +10,6 @@ from tests.test_discovery_ms1_capture import (
     _multi_tag_settings,
     _seed,
 )
-from tests.test_discovery_ms1_capture import (
-    _peak_config as _capture_peak_config,
-)
 from tests.test_discovery_physical_fact_integration import _OwnerBoundBatchRaw
 from tests.test_discovery_pipeline import _settings
 from xic_extractor.configuration.signal_processing_profile import (
@@ -68,7 +65,6 @@ def test_physical_sidecar_and_publication_timing_cover_canonical_bytes_without_r
         acquisition_source=source,
         run_spec_id=spec.run_spec_id,
         settings=settings,
-        peak_config=_capture_peak_config(),
         signal_processing_profile=profile,
     )
     from xic_extractor.peak_detection import physical_peak_codec as owner

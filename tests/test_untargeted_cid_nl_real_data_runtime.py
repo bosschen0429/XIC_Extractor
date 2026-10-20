@@ -643,7 +643,6 @@ def test_runtime_delivers_one_real_subject_cohort_with_cache_replay(
         source_raw,
         raw_file=raw_paths[0],
         settings=settings,
-        peak_config=peak_config,
         physical_records=physical_records,
     )
     subject = mint_untargeted_cid_nl_method_subject(
@@ -852,7 +851,6 @@ def test_runtime_does_not_evaluate_ineligible_inferred_precursor(
         source_raw,
         raw_file=raw_path,
         settings=settings,
-        peak_config=peak_config,
         physical_records=physical_records,
     )[0]
     assert inferred.precursor_mz_basis == "product_plus_neutral_loss"
@@ -1001,14 +999,12 @@ def test_runtime_recovers_from_single_scan_cid_nl_support_owners(
             source_raws[raw_paths[0]],
             raw_file=raw_paths[0],
             settings=settings,
-            peak_config=peak_config,
             physical_records=physical_records,
         ),
         "S2": _current_candidates(
             source_raws[raw_paths[1]],
             raw_file=raw_paths[1],
             settings=settings,
-            peak_config=peak_config,
             physical_records=physical_records,
         ),
         "Missing": (),
@@ -1208,7 +1204,6 @@ def test_runtime_job_rejects_candidate_content_changed_after_request_mint(
         source_raw,
         raw_file=raw_path,
         settings=settings,
-        peak_config=peak_config,
         physical_records=physical_records,
     )
     subject = mint_untargeted_cid_nl_method_subject(
@@ -1294,7 +1289,6 @@ def test_batch_candidate_selection_preserves_order_and_request_sample_membership
                     source,
                     raw_file=path,
                     settings=settings,
-                    peak_config=peak_config,
                     physical_records=physical_records,
                 )
             )
@@ -1490,7 +1484,6 @@ def test_partition_runtime_job_requires_exact_local_feature_membership(
         _FakeRaw((7.8, 8.2)),
         raw_file=raw_path,
         settings=settings,
-        peak_config=peak_config,
         physical_records=physical_records,
     )
     assert len(candidates) == 2
@@ -1645,7 +1638,6 @@ def test_direct_subject_batch_seals_initial_and_recovery_acquisitions_once(
             source_raws[path],
             raw_file=path,
             settings=settings,
-            peak_config=peak_config,
             physical_records=physical_records,
         )
     subjects = tuple(
@@ -1821,7 +1813,6 @@ def test_context_rejects_same_stem_receipt_from_different_acquisition(
         _FakeRaw((8.0,)),
         raw_file=source_path,
         settings=settings,
-        peak_config=peak_config,
         physical_records=physical_records,
     )
     receipt = _discovery_receipts(
@@ -1882,7 +1873,6 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
         source_raws[raw_paths[0]],
         raw_file=raw_paths[0],
         settings=settings,
-        peak_config=peak_config,
         physical_records=physical_records,
     )
     reject = tuple(
@@ -1891,7 +1881,6 @@ def test_runtime_does_not_open_recovery_resource_when_owner_condition_is_false(
             source_raws[raw_paths[1]],
             raw_file=raw_paths[1],
             settings=settings,
-            peak_config=peak_config,
             physical_records=physical_records,
         )
     )
