@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pickle
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
@@ -15,10 +14,6 @@ from xic_extractor.acquisition_contract import (
     mint_raw_acquisition_session_capability,
 )
 from xic_extractor.configuration.models import ExtractionConfig
-from xic_extractor.configuration.signal_processing_profile import (
-    SignalProcessingProfile,
-    resolve_signal_processing_profile,
-)
 from xic_extractor.discovery import candidate_merge, output_publication
 from xic_extractor.discovery.blank_qualification import (
     BlankBackgroundLibrary,
@@ -45,33 +40,26 @@ from xic_extractor.discovery.physical_fact_record import (
     bind_physical_facts_to_final_candidates,
 )
 from xic_extractor.discovery.processing_run_spec_adapter import (
-    processing_run_input_for_path,
+    processing_profile_from_config,
     validate_processing_run_spec_call,
 )
-from xic_extractor.execution.attempt import (
-    derive_runtime_acquisition_metrics,
-    derive_runtime_raw_open_metrics,
+from xic_extractor.discovery.runtime_measurements import (
+    record_discovery_ms1_measurements,
+    record_raw_measurements,
+    record_raw_open_metrics,
 )
-from xic_extractor.execution.timing import TimingRecord, TimingRecorder
-from xic_extractor.execution.workers import execute_process_jobs
+from xic_extractor.discovery.sample_process_execution import (
+    DiscoverySampleProcessJob,
+    raise_if_discovery_cancelled,
+    run_discovery_batch_process,
+)
+from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.processing_run_spec import (
     ProcessingAcquisitionInput,
     ProcessingRunSpec,
 )
 from xic_extractor.raw_reader import RawFileHandle
-
-_DISCOVERY_MS1_MEASUREMENT_NAMES = frozenset(
-    {
-        "discovery_ms1_input_group_count",
-        "discovery_ms1_empty_group_count",
-        "discovery_ms1_exact_scan_window_count",
-        "discovery_ms1_predicted_chunked_call_count",
-        "discovery_ms1_batch_max_requests",
-        "discovery_ms1_reacquisition_request_count",
-        "discovery_ms1_predicted_call_reduction_pct",
-    }
-)
 
 
 class DiscoveryRawHandle(BatchXICAdapter, MS2ScanSource, Protocol):
@@ -92,75 +80,6 @@ class _DiscoverySampleResult:
     physical_work_manifest: tuple[DiscoveryPhysicalWorkItem, ...] = ()
     physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...] = ()
     physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...] = ()
-
-
-@dataclass(frozen=True)
-class DiscoverySampleProcessJob:
-    sample_index: int
-    raw_path: Path
-    output_dir: Path
-    settings: DiscoverySettings
-    peak_config: ExtractionConfig
-    acquisition_source: AcquisitionSourceIdentity
-    raw_session_capability: RawAcquisitionSessionCapability
-    run_spec: ProcessingRunSpec
-    acquisition_input: ProcessingAcquisitionInput
-    instrument_diagnostics: bool = False
-
-
-@dataclass(frozen=True)
-class DiscoverySampleProcessResult:
-    sample_index: int
-    sample_stem: str
-    publication: output_publication.PublishedDiscoverySample
-    timing_records: tuple[TimingRecord, ...]
-    measurement_observations: tuple[dict[str, object], ...]
-    ms1_measurements: _DiscoveryMs1Measurements | None = None
-    raw_open_receipt: RawAcquisitionSessionReceipt | None = None
-    run_spec_id: str = ""
-    profile_id: str = ""
-    acquisition_source_id: str = ""
-
-
-@dataclass(frozen=True)
-class DiscoverySampleProcessError:
-    sample_index: int
-    sample_stem: str
-    raw_name: str
-    message: str
-    timing_records: tuple[TimingRecord, ...] = ()
-    measurement_observations: tuple[dict[str, object], ...] = ()
-    ms1_measurements: _DiscoveryMs1Measurements | None = None
-    raw_open_receipt: RawAcquisitionSessionReceipt | None = None
-    run_spec_id: str = ""
-    profile_id: str = ""
-    acquisition_source_id: str = ""
-
-
-class DiscoveryProcessExecutionError(RuntimeError):
-    """Terminal execution failure with completed-work census."""
-
-    def __init__(
-        self,
-        first_failure: DiscoverySampleProcessError,
-        *,
-        completed_sample_stems: tuple[str, ...],
-        failed_sample_stems: tuple[str, ...],
-        cancelled_job_count: int,
-        in_flight_job_count: int,
-        unsubmitted_job_count: int,
-    ) -> None:
-        self.first_failure = first_failure
-        self.completed_sample_stems = completed_sample_stems
-        self.failed_sample_stems = failed_sample_stems
-        self.failed_job_count = len(failed_sample_stems)
-        self.cancelled_job_count = cancelled_job_count
-        self.in_flight_job_count = in_flight_job_count
-        self.unsubmitted_job_count = unsubmitted_job_count
-        self.run_spec_id = first_failure.run_spec_id
-        self.profile_id = first_failure.profile_id
-        self.acquisition_source_id = first_failure.acquisition_source_id
-        super().__init__(f"{first_failure.raw_name}: {first_failure.message}")
 
 
 @lru_cache(maxsize=2)
@@ -206,11 +125,6 @@ def _apply_blank_qualification_if_enabled(
         return qualified
 
 
-def _raise_if_discovery_cancelled(should_cancel: Callable[[], bool] | None) -> None:
-    if should_cancel is not None and should_cancel():
-        raise InterruptedError("Discovery cancelled before output publication")
-
-
 def run_discovery(
     raw_path: Path,
     *,
@@ -222,14 +136,14 @@ def run_discovery(
     run_spec: ProcessingRunSpec,
     should_cancel: Callable[[], bool] | None = None,
 ) -> DiscoveryRunOutputs:
-    _raise_if_discovery_cancelled(should_cancel)
+    raise_if_discovery_cancelled(should_cancel)
     recorder = timing_recorder or TimingRecorder.disabled("discovery")
     sample_stem = raw_path.stem
     (acquisition_input,) = validate_processing_run_spec_call(
         run_spec,
         (raw_path,),
         discovery_settings=settings,
-        signal_processing_profile=_processing_profile_from_config(peak_config),
+        signal_processing_profile=processing_profile_from_config(peak_config),
     )
     acquisition_source = acquisition_input.acquisition_source
     if raw_opener is None:
@@ -253,7 +167,7 @@ def run_discovery(
         run_spec=run_spec,
         acquisition_input=acquisition_input,
     )
-    _raise_if_discovery_cancelled(should_cancel)
+    raise_if_discovery_cancelled(should_cancel)
     return output_publication.write_dual_csvs(
         output_dir,
         discovery_result.candidates,
@@ -283,13 +197,13 @@ def run_discovery_batch(
 ) -> DiscoveryBatchOutputs:
     if max_workers < 1:
         raise ValueError("max_workers must be >= 1")
-    _raise_if_discovery_cancelled(should_cancel)
+    raise_if_discovery_cancelled(should_cancel)
     recorder = timing_recorder or TimingRecorder.disabled("discovery")
     run_inputs = validate_processing_run_spec_call(
         run_spec,
         raw_paths,
         discovery_settings=settings,
-        signal_processing_profile=_processing_profile_from_config(peak_config),
+        signal_processing_profile=processing_profile_from_config(peak_config),
     )
     if max_workers > 1:
         if raw_opener is not None:
@@ -297,7 +211,7 @@ def run_discovery_batch(
                 "parallel Discovery owns RAW handles inside spawned workers; "
                 "raw_opener injection requires max_workers=1"
             )
-        return _run_discovery_batch_process(
+        return run_discovery_batch_process(
             raw_paths,
             output_dir=output_dir,
             settings=settings,
@@ -309,12 +223,13 @@ def run_discovery_batch(
             run_spec=run_spec,
             run_inputs=run_inputs,
             should_cancel=should_cancel,
+            discover_sample=discover_sample_for_process_job,
         )
 
     index_rows: list[dict[str, str]] = []
     per_sample: list[DiscoveryRunOutputs] = []
     for sample_index, raw_path in enumerate(raw_paths):
-        _raise_if_discovery_cancelled(should_cancel)
+        raise_if_discovery_cancelled(should_cancel)
         sample_stem = raw_path.stem
         acquisition_input = run_inputs[sample_index]
         acquisition_source = acquisition_input.acquisition_source
@@ -356,7 +271,7 @@ def run_discovery_batch(
         if progress_callback is not None:
             progress_callback(sample_index + 1, len(raw_paths), sample_stem)
 
-    _raise_if_discovery_cancelled(should_cancel)
+    raise_if_discovery_cancelled(should_cancel)
     return DiscoveryBatchOutputs(
         batch_index_csv=output_publication.write_batch_index(
             output_dir / "discovery_batch_index.csv",
@@ -364,350 +279,6 @@ def run_discovery_batch(
             timing_recorder=recorder,
         ),
         per_sample=tuple(per_sample),
-    )
-
-
-def _run_discovery_batch_process(
-    raw_paths: tuple[Path, ...],
-    *,
-    output_dir: Path,
-    settings: DiscoverySettings,
-    peak_config: ExtractionConfig,
-    timing_recorder: TimingRecorder,
-    max_workers: int,
-    executor_factory: Callable[..., Any] | None,
-    progress_callback: Callable[[int, int, str], None] | None,
-    run_spec: ProcessingRunSpec,
-    run_inputs: tuple[ProcessingAcquisitionInput, ...],
-    should_cancel: Callable[[], bool] | None,
-) -> DiscoveryBatchOutputs:
-    pending_jobs: list[DiscoverySampleProcessJob] = []
-    for sample_index, raw_path in enumerate(raw_paths):
-        _raise_if_discovery_cancelled(should_cancel)
-        acquisition_input = run_inputs[sample_index]
-        acquisition_source = acquisition_input.acquisition_source
-        pending_jobs.append(
-            DiscoverySampleProcessJob(
-                sample_index=sample_index,
-                raw_path=raw_path,
-                output_dir=output_dir,
-                settings=settings,
-                peak_config=peak_config,
-                acquisition_source=acquisition_source,
-                raw_session_capability=mint_raw_acquisition_session_capability(
-                    acquisition_source
-                ),
-                instrument_diagnostics=timing_recorder.enabled,
-                run_spec=run_spec,
-                acquisition_input=acquisition_input,
-            )
-        )
-    jobs = tuple(pending_jobs)
-    jobs_by_sample_index = {job.sample_index: job for job in jobs}
-
-    completed = 0
-
-    def _progress(result: object) -> None:
-        nonlocal completed
-        if not isinstance(result, DiscoverySampleProcessResult):
-            return
-        completed += 1
-        if progress_callback is not None:
-            progress_callback(completed, len(jobs), result.sample_stem)
-
-    report = execute_process_jobs(
-        jobs,
-        worker=_run_discovery_sample_process_job,
-        error_factory=_discovery_process_error,
-        is_terminal_failure=lambda result: isinstance(
-            result, DiscoverySampleProcessError
-        ),
-        max_workers=max_workers,
-        executor_factory=executor_factory,
-        progress_callback=_progress,
-        should_cancel=should_cancel,
-    )
-    for ordinal in report.submitted_job_ordinals:
-        job = jobs[ordinal]
-        _observe_pickle_payload_bytes(
-            timing_recorder,
-            job,
-            scope=job.raw_path.stem,
-            source="discovery.process_job.request",
-        )
-    for observed in report.observed_results:
-        expected_job = jobs_by_sample_index.get(observed.sample_index)
-        if expected_job is None or observed.sample_stem != expected_job.raw_path.stem:
-            raise ValueError(
-                "Discovery process result does not match a submitted sample job"
-            )
-        if (
-            observed.run_spec_id != expected_job.run_spec.run_spec_id
-            or observed.profile_id != expected_job.run_spec.profile_id
-            or observed.acquisition_source_id
-            != expected_job.acquisition_source.acquisition_source_id
-        ):
-            raise ValueError(
-                "Discovery process result crosses run/profile/acquisition identity"
-            )
-        _observe_pickle_payload_bytes(
-            timing_recorder,
-            observed,
-            scope=observed.sample_stem,
-            source="discovery.process_job.result",
-        )
-        for record in observed.timing_records:
-            timing_recorder.record(
-                record.stage,
-                elapsed_sec=record.elapsed_sec,
-                sample_stem=record.sample_stem,
-                metrics=record.metrics,
-            )
-        for observation in observed.measurement_observations:
-            _reject_caller_authored_discovery_ms1_measurement(observation)
-            timing_recorder.observe(
-                str(observation["metric"]),
-                value=observation.get("value"),
-                scope=str(observation.get("scope", "run")),
-                unit=str(observation.get("unit", "")),
-                aggregation=str(observation.get("aggregation", "sum")),
-                source=str(observation.get("source", "")),
-                availability=str(observation.get("availability", "measured")),
-                reason=str(observation.get("reason", "")),
-            )
-        _record_raw_open_metrics(
-            timing_recorder,
-            expected_job.raw_session_capability,
-            observed.raw_open_receipt,
-            observed.sample_stem,
-        )
-        _record_discovery_ms1_measurements(
-            timing_recorder,
-            observed.ms1_measurements,
-            observed.sample_stem,
-            unavailable_reason=(
-                "process result carries no owner acquisition batch receipts"
-            ),
-        )
-    if report.first_failure is not None:
-        failure = cast(DiscoverySampleProcessError, report.first_failure)
-        completed_samples = tuple(
-            result.sample_stem
-            for result in report.completed_results
-            if isinstance(result, DiscoverySampleProcessResult)
-        )
-        failed_samples = tuple(
-            result.sample_stem
-            for result in report.observed_results
-            if isinstance(result, DiscoverySampleProcessError)
-        )
-        raise DiscoveryProcessExecutionError(
-            failure,
-            completed_sample_stems=completed_samples,
-            failed_sample_stems=failed_samples,
-            cancelled_job_count=len(report.cancelled_job_ordinals),
-            in_flight_job_count=len(report.in_flight_job_ordinals),
-            unsubmitted_job_count=len(report.unsubmitted_job_ordinals),
-        )
-
-    if report.cancellation_requested:
-        raise InterruptedError("Discovery cancelled before batch index publication")
-    _raise_if_discovery_cancelled(should_cancel)
-
-    results = tuple(
-        cast(DiscoverySampleProcessResult, result)
-        for result in report.completed_results
-    )
-    if len(results) != len(jobs):
-        raise DiscoveryProcessExecutionError(
-            DiscoverySampleProcessError(
-                sample_index=-1,
-                sample_stem="",
-                raw_name="",
-                message="parallel Discovery result census is incomplete",
-            ),
-            completed_sample_stems=tuple(result.sample_stem for result in results),
-            failed_sample_stems=(),
-            cancelled_job_count=len(report.cancelled_job_ordinals),
-            in_flight_job_count=len(report.in_flight_job_ordinals),
-            unsubmitted_job_count=len(report.unsubmitted_job_ordinals),
-        )
-
-    return DiscoveryBatchOutputs(
-        batch_index_csv=output_publication.write_batch_index(
-            output_dir / "discovery_batch_index.csv",
-            [result.publication.index_row for result in results],
-            timing_recorder=timing_recorder,
-        ),
-        per_sample=tuple(result.publication.outputs for result in results),
-    )
-
-
-def _observe_pickle_payload_bytes(
-    recorder: TimingRecorder,
-    payload: object,
-    *,
-    scope: str,
-    source: str,
-) -> None:
-    if not recorder.enabled:
-        return
-    try:
-        byte_size = len(pickle.dumps(payload))
-    except Exception as exc:
-        recorder.observe(
-            "ipc_bytes",
-            value=None,
-            scope=scope,
-            unit="bytes",
-            source=source,
-            availability="failed",
-            reason=f"pickle payload measurement failed: {type(exc).__name__}: {exc}",
-        )
-        return
-    recorder.observe(
-        "ipc_bytes",
-        value=byte_size,
-        scope=scope,
-        unit="bytes",
-        source=source,
-        availability="partial",
-        reason=(
-            "pickle payload bytes exclude executor framing and transport confirmation"
-        ),
-    )
-
-
-def _run_discovery_sample_process_job(
-    job: DiscoverySampleProcessJob,
-) -> DiscoverySampleProcessResult | DiscoverySampleProcessError:
-    recorder = (
-        TimingRecorder("discovery-worker")
-        if job.instrument_diagnostics
-        else TimingRecorder.disabled("discovery-worker")
-    )
-    acquired_measurements: _DiscoveryMs1Measurements | None = None
-    raw_open_receipt: RawAcquisitionSessionReceipt | None = None
-    raw_open_receipt_observed = False
-
-    def _capture_acquired_measurements(
-        measurements: _DiscoveryMs1Measurements,
-    ) -> None:
-        nonlocal acquired_measurements
-        if acquired_measurements is not None:
-            raise ValueError("Discovery MS1 measurements were emitted twice")
-        acquired_measurements = measurements
-
-    def _capture_raw_open_receipt(
-        receipt: RawAcquisitionSessionReceipt | None,
-    ) -> None:
-        nonlocal raw_open_receipt, raw_open_receipt_observed
-        if raw_open_receipt_observed:
-            raise ValueError("Discovery RAW-open receipt was emitted twice")
-        raw_open_receipt_observed = True
-        raw_open_receipt = receipt
-
-    try:
-        _validate_discovery_process_job_binding(job)
-        discovery_result = _discover_completed_sample(
-            job.raw_path,
-            settings=job.settings,
-            peak_config=job.peak_config,
-            raw_opener=_owner_bound_raw_opener(
-                job.acquisition_source,
-                job.raw_session_capability,
-            ),
-            timing_recorder=recorder,
-            measurement_observer=_capture_acquired_measurements,
-            raw_open_receipt_observer=_capture_raw_open_receipt,
-            run_spec=job.run_spec,
-            acquisition_input=job.acquisition_input,
-        )
-        sample_stem = job.raw_path.stem
-        publication = output_publication.publish_discovery_batch_sample(
-            job.raw_path,
-            discovery_result.candidates,
-            output_dir=job.output_dir,
-            acquisition_source=job.acquisition_source,
-            timing_recorder=recorder,
-            run_spec=job.run_spec,
-            acquisition_input=job.acquisition_input,
-            physical_work_manifest=discovery_result.physical_work_manifest,
-            physical_evaluations=discovery_result.physical_evaluations,
-            physical_bindings=discovery_result.physical_bindings,
-        )
-        return DiscoverySampleProcessResult(
-            sample_index=job.sample_index,
-            sample_stem=sample_stem,
-            publication=publication,
-            timing_records=recorder.records,
-            measurement_observations=_portable_worker_observations(recorder),
-            ms1_measurements=discovery_result.ms1_measurements,
-            raw_open_receipt=discovery_result.raw_open_receipt,
-            run_spec_id=job.run_spec.run_spec_id,
-            profile_id=job.run_spec.profile_id,
-            acquisition_source_id=job.acquisition_source.acquisition_source_id,
-        )
-    except Exception as exc:
-        return _discovery_process_error(
-            job,
-            exc,
-            timing_records=recorder.records,
-            measurement_observations=_portable_worker_observations(recorder),
-            ms1_measurements=acquired_measurements,
-            raw_open_receipt=raw_open_receipt,
-        )
-
-
-def _validate_discovery_process_job_binding(job: DiscoverySampleProcessJob) -> None:
-    expected = processing_run_input_for_path(
-        job.run_spec,
-        job.raw_path,
-        input_ordinal=job.acquisition_input.input_ordinal,
-    )
-    if expected != job.acquisition_input:
-        raise ValueError("Discovery process job crosses run-spec input binding")
-    if job.acquisition_source != expected.acquisition_source:
-        raise ValueError("Discovery process job crosses acquisition identity")
-    if job.settings != job.run_spec.discovery_method.settings:
-        raise ValueError("Discovery process job crosses method settings")
-    if (
-        _processing_profile_from_config(job.peak_config)
-        != job.run_spec.signal_processing_profile
-    ):
-        raise ValueError("Discovery process job crosses signal profile")
-
-
-def _processing_profile_from_config(
-    peak_config: ExtractionConfig,
-) -> SignalProcessingProfile:
-    return resolve_signal_processing_profile(
-        signal_processing_method=peak_config.signal_processing_method,
-        signal_processing_window_points=peak_config.signal_processing_window_points,
-    )
-
-
-def _discovery_process_error(
-    job: DiscoverySampleProcessJob,
-    exc: Exception,
-    *,
-    timing_records: tuple[TimingRecord, ...] = (),
-    measurement_observations: tuple[dict[str, object], ...] = (),
-    ms1_measurements: _DiscoveryMs1Measurements | None = None,
-    raw_open_receipt: RawAcquisitionSessionReceipt | None = None,
-) -> DiscoverySampleProcessError:
-    return DiscoverySampleProcessError(
-        sample_index=job.sample_index,
-        sample_stem=job.raw_path.stem,
-        raw_name=job.raw_path.name,
-        message=f"{type(exc).__name__}: {exc}",
-        timing_records=timing_records,
-        measurement_observations=measurement_observations,
-        ms1_measurements=ms1_measurements,
-        raw_open_receipt=raw_open_receipt,
-        run_spec_id=job.run_spec.run_spec_id,
-        profile_id=job.run_spec.profile_id,
-        acquisition_source_id=job.acquisition_source.acquisition_source_id,
     )
 
 
@@ -737,13 +308,13 @@ def _discover_completed_sample_with_runtime_projection(
     def _project_acquisition(result: _DiscoverySampleResult) -> None:
         nonlocal acquisition_projected
         acquisition_projected = True
-        _record_raw_open_metrics(
+        record_raw_open_metrics(
             timing_recorder,
             raw_session_capability,
             result.raw_open_receipt,
             raw_path.stem,
         )
-        _record_discovery_ms1_measurements(
+        record_discovery_ms1_measurements(
             timing_recorder,
             result.ms1_measurements,
             raw_path.stem,
@@ -763,7 +334,7 @@ def _discover_completed_sample_with_runtime_projection(
         )
     except Exception:
         if not acquisition_projected:
-            _record_raw_open_metrics(
+            record_raw_open_metrics(
                 timing_recorder,
                 raw_session_capability,
                 observed_receipt,
@@ -928,10 +499,10 @@ def _acquire_discovery_sample(
         finally:
             if not completed:
                 if acquired_measurements is None:
-                    _record_raw_measurements(timing_recorder, raw, sample_stem)
+                    record_raw_measurements(timing_recorder, raw, sample_stem)
                 else:
                     try:
-                        _record_discovery_ms1_measurements(
+                        record_discovery_ms1_measurements(
                             timing_recorder,
                             acquired_measurements,
                             sample_stem,
@@ -979,315 +550,6 @@ def _owner_bound_raw_open_receipt(
     return receipt
 
 
-def _record_discovery_ms1_measurements(
-    timing_recorder: TimingRecorder,
-    measurements: _DiscoveryMs1Measurements | None,
-    sample_stem: str,
-    *,
-    unavailable_reason: str = (
-        "RAW handle is not bound to the acquisition owner batch contract"
-    ),
-) -> None:
-    if measurements is None:
-        _record_unavailable_discovery_ms1_measurements(
-            timing_recorder,
-            sample_stem,
-            reason=unavailable_reason,
-        )
-        return
-
-    runtime_metrics = derive_runtime_acquisition_metrics(
-        measurements.acquisition_batches
-    )
-    nonempty_group_count = (
-        measurements.input_group_count - measurements.empty_group_count
-    )
-    if measurements.initial_request_count > nonempty_group_count or (
-        runtime_metrics.logical_xic_request_count
-        != measurements.initial_request_count + measurements.reacquisition_request_count
-    ):
-        raise ValueError(
-            "Discovery MS1 acquisition receipts do not cover the input population"
-        )
-    acquisition_source = "xic_extractor.acquisition_contract.TraceAcquisitionBatch"
-    discovery_source = "xic_extractor.discovery.ms1_capture"
-    observed = (
-        (
-            "logical_xic_request_count",
-            runtime_metrics.logical_xic_request_count,
-            "requests",
-            acquisition_source,
-        ),
-        (
-            "xic_batch_count",
-            runtime_metrics.xic_batch_count,
-            "batches",
-            acquisition_source,
-        ),
-        (
-            "adapter_chromatogram_call_count",
-            runtime_metrics.adapter_chromatogram_call_count,
-            "calls",
-            acquisition_source,
-        ),
-        (
-            "trace_point_count",
-            runtime_metrics.trace_point_count,
-            "points",
-            acquisition_source,
-        ),
-        (
-            "discovery_ms1_input_group_count",
-            measurements.input_group_count,
-            "groups",
-            discovery_source,
-        ),
-        (
-            "discovery_ms1_empty_group_count",
-            measurements.empty_group_count,
-            "groups",
-            discovery_source,
-        ),
-        (
-            "discovery_ms1_exact_scan_window_count",
-            measurements.exact_scan_window_count,
-            "windows",
-            discovery_source,
-        ),
-        (
-            "discovery_ms1_predicted_chunked_call_count",
-            measurements.predicted_chunked_call_count,
-            "calls",
-            discovery_source,
-        ),
-        (
-            "discovery_ms1_batch_max_requests",
-            measurements.batch_max_requests,
-            "requests/batch",
-            discovery_source,
-        ),
-        (
-            "discovery_ms1_reacquisition_request_count",
-            measurements.reacquisition_request_count,
-            "requests",
-            discovery_source,
-        ),
-        (
-            "discovery_ms1_predicted_call_reduction_pct",
-            (
-                0.0
-                if runtime_metrics.logical_xic_request_count == 0
-                else 100.0
-                * (
-                    runtime_metrics.logical_xic_request_count
-                    - measurements.predicted_chunked_call_count
-                )
-                / runtime_metrics.logical_xic_request_count
-            ),
-            "percent",
-            discovery_source,
-        ),
-    )
-    for metric, value, unit, source in observed:
-        timing_recorder.observe(
-            metric,
-            value=value,
-            scope=sample_stem,
-            unit=unit,
-            source=source,
-        )
-    _record_rss_unavailable(timing_recorder, sample_stem)
-    _validate_discovery_ms1_observations(timing_recorder, sample_stem)
-
-
-def _record_unavailable_discovery_ms1_measurements(
-    timing_recorder: TimingRecorder,
-    sample_stem: str,
-    *,
-    reason: str,
-) -> None:
-    unavailable = (
-        ("logical_xic_request_count", "requests"),
-        ("xic_batch_count", "batches"),
-        ("adapter_chromatogram_call_count", "calls"),
-        ("trace_point_count", "points"),
-        ("discovery_ms1_input_group_count", "groups"),
-        ("discovery_ms1_empty_group_count", "groups"),
-        ("discovery_ms1_exact_scan_window_count", "windows"),
-        ("discovery_ms1_predicted_chunked_call_count", "calls"),
-        ("discovery_ms1_batch_max_requests", "requests/batch"),
-        ("discovery_ms1_reacquisition_request_count", "requests"),
-        ("discovery_ms1_predicted_call_reduction_pct", "percent"),
-    )
-    for metric, unit in unavailable:
-        timing_recorder.observe(
-            metric,
-            value=None,
-            scope=sample_stem,
-            unit=unit,
-            source="xic_extractor.discovery.ms1_capture",
-            availability="unavailable",
-            reason=reason,
-        )
-    _record_rss_unavailable(timing_recorder, sample_stem)
-    _validate_discovery_ms1_observations(timing_recorder, sample_stem)
-
-
-def _record_rss_unavailable(
-    timing_recorder: TimingRecorder,
-    sample_stem: str,
-) -> None:
-    reason = "unsupported: Discovery runner has no owner-bound RSS sampler"
-    for metric in ("worker_peak_rss_bytes", "process_tree_peak_rss_bytes"):
-        timing_recorder.observe(
-            metric,
-            value=None,
-            scope=sample_stem,
-            unit="bytes",
-            aggregation="max",
-            source="xic_extractor.discovery.pipeline",
-            availability="unavailable",
-            reason=reason,
-        )
-
-
-def _record_raw_open_metrics(
-    timing_recorder: TimingRecorder,
-    raw_session_capability: RawAcquisitionSessionCapability | None,
-    raw_open_receipt: RawAcquisitionSessionReceipt | None,
-    sample_stem: str,
-) -> None:
-    metrics = derive_runtime_raw_open_metrics(
-        raw_session_capability,
-        () if raw_open_receipt is None else (raw_open_receipt,),
-    )
-    timing_recorder.observe(
-        "raw_open_count",
-        value=metrics.raw_open_count,
-        scope=sample_stem,
-        unit="opens",
-        source=("xic_extractor.execution.attempt.derive_runtime_raw_open_metrics"),
-        availability=(
-            "measured" if metrics.raw_open_count is not None else "unavailable"
-        ),
-        reason=metrics.unavailable_reason,
-    )
-
-
-def _portable_worker_observations(
-    timing_recorder: TimingRecorder,
-) -> tuple[dict[str, object], ...]:
-    return tuple(
-        observation
-        for observation in timing_recorder.measurement_observations
-        if not _is_reserved_process_measurement(observation)
-    )
-
-
-def _is_reserved_process_measurement(observation: dict[str, object]) -> bool:
-    metric = observation.get("metric")
-    reserved = {
-        "raw_open_count",
-        "logical_xic_request_count",
-        "xic_batch_count",
-        "adapter_chromatogram_call_count",
-        "trace_point_count",
-        "worker_peak_rss_bytes",
-        "process_tree_peak_rss_bytes",
-    }
-    return isinstance(metric, str) and (
-        metric.startswith("discovery_ms1_") or metric in reserved
-    )
-
-
-def _reject_caller_authored_discovery_ms1_measurement(
-    observation: dict[str, object],
-) -> None:
-    if _is_reserved_process_measurement(observation):
-        raise ValueError(
-            "Discovery worker diagnostics cannot author acquisition/runtime counts"
-        )
-
-
-def _validate_discovery_ms1_observations(
-    timing_recorder: TimingRecorder,
-    sample_stem: str,
-) -> None:
-    if not timing_recorder.enabled:
-        return
-    names = tuple(
-        str(row["metric"])
-        for row in timing_recorder.measurement_observations
-        if row.get("scope") == sample_stem
-        and isinstance(row.get("metric"), str)
-        and str(row["metric"]).startswith("discovery_ms1_")
-    )
-    if len(names) != len(set(names)):
-        raise ValueError("duplicate Discovery MS1 measurement field")
-    if set(names) != _DISCOVERY_MS1_MEASUREMENT_NAMES:
-        unexpected = sorted(set(names) - _DISCOVERY_MS1_MEASUREMENT_NAMES)
-        missing = sorted(_DISCOVERY_MS1_MEASUREMENT_NAMES - set(names))
-        raise ValueError(
-            "unknown or missing Discovery MS1 measurement field: "
-            f"unexpected={unexpected!r}, missing={missing!r}"
-        )
-
-
-def _record_raw_measurements(
-    timing_recorder: TimingRecorder,
-    raw: object,
-    sample_stem: str,
-) -> None:
-    """Project Discovery owner facts without inventing unavailable counters."""
-
-    try:
-        raw_calls = getattr(raw, "raw_chromatogram_call_count", None)
-        raw_calls_reason = (
-            "" if isinstance(raw_calls, int) else "raw handle has no call counter"
-        )
-    except Exception as exc:
-        raw_calls = None
-        raw_calls_reason = (
-            f"raw handle call counter read failed: {type(exc).__name__}: {exc}"
-        )
-    timing_recorder.observe(
-        "logical_xic_request_count",
-        value=None,
-        scope=sample_stem,
-        unit="requests",
-        source="discovery.raw_handle",
-        availability="unavailable",
-        reason="Discovery raw adapter exposes no logical request counter",
-    )
-    timing_recorder.observe(
-        "xic_batch_count",
-        value=None,
-        scope=sample_stem,
-        unit="batches",
-        source="discovery.raw_handle",
-        availability="unavailable",
-        reason="Discovery raw adapter exposes no batch counter",
-    )
-    timing_recorder.observe(
-        "adapter_chromatogram_call_count",
-        value=raw_calls,
-        scope=sample_stem,
-        unit="calls",
-        source="discovery.raw_handle.raw_chromatogram_call_count",
-        availability="measured" if isinstance(raw_calls, int) else "unavailable",
-        reason=raw_calls_reason,
-    )
-    timing_recorder.observe(
-        "trace_point_count",
-        value=None,
-        scope=sample_stem,
-        unit="points",
-        source="discovery.raw_handle",
-        availability="unavailable",
-        reason="Discovery raw adapter does not expose returned point count",
-    )
-
-
 def _owner_bound_raw_opener(
     acquisition_source: AcquisitionSourceIdentity,
     raw_session_capability: RawAcquisitionSessionCapability,
@@ -1311,3 +573,27 @@ def _owner_bound_raw_opener(
         )
 
     return _open
+
+
+def discover_sample_for_process_job(
+    job: DiscoverySampleProcessJob,
+    *,
+    timing_recorder: TimingRecorder,
+    measurement_observer: Callable[[_DiscoveryMs1Measurements], None],
+    raw_open_receipt_observer: Callable[[RawAcquisitionSessionReceipt | None], None],
+) -> _DiscoverySampleResult:
+    """Discover one process job's sample through the owner-bound RAW opener."""
+    return _discover_completed_sample(
+        job.raw_path,
+        settings=job.settings,
+        peak_config=job.peak_config,
+        raw_opener=_owner_bound_raw_opener(
+            job.acquisition_source,
+            job.raw_session_capability,
+        ),
+        timing_recorder=timing_recorder,
+        measurement_observer=measurement_observer,
+        raw_open_receipt_observer=raw_open_receipt_observer,
+        run_spec=job.run_spec,
+        acquisition_input=job.acquisition_input,
+    )

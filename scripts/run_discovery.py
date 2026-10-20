@@ -15,13 +15,12 @@ from xic_extractor.discovery.blank_qualification import (
     extract_blank_background_library,
 )
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
-from xic_extractor.discovery.pipeline import (
-    DiscoveryProcessExecutionError,
-    run_discovery,
-    run_discovery_batch,
-)
+from xic_extractor.discovery.pipeline import run_discovery, run_discovery_batch
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec_from_config as _compile_processing_run_spec,
+)
+from xic_extractor.discovery.sample_process_execution import (
+    DiscoveryProcessExecutionError,
 )
 from xic_extractor.discovery.tag_profiles import (
     load_feature_tag_profiles,
