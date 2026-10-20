@@ -806,14 +806,28 @@ def test_scheduler_finalize_failure_retains_completed_results(tmp_path: Path) ->
 
 def test_pipeline_overlap_temporal_intersection(tmp_path: Path) -> None:
     """Prove acquire(P1) and compose(P0) overlap temporally (> 0)."""
+    acquire1_started = threading.Event()
+    compose0_started = threading.Event()
+    handshake: dict[str, bool] = {}
+
+    def on_acquisition(index: int) -> None:
+        if index == 1:
+            acquire1_started.set()
+            handshake["acquire1_saw_compose0"] = compose0_started.wait(5)
+
+    def on_composition(index: int) -> None:
+        if index == 0:
+            compose0_started.set()
+            handshake["compose0_saw_acquire1"] = acquire1_started.wait(5)
+
     fixture = build_processing_identity_no_raw_fixture(
         tmp_path, sample_stems=("sample-1", "sample-2")
     )
     adapter = MockAdapter(
         fixture.owners,
         num_partitions=2,
-        acquisition_delay=0.04,
-        composition_delay=0.04,
+        on_acquisition=on_acquisition,
+        on_composition=on_composition,
     )
     output_dir = tmp_path / "output"
     marker = OwnerPathRuntimeMarker(tmp_path / "marker.json", "test-overlap")
@@ -827,14 +841,17 @@ def test_pipeline_overlap_temporal_intersection(tmp_path: Path) -> None:
         progress_callback=events.append,
         pipeline_overlap=True,
     )
-    assert result["application_result"]["total_children"] == 2
-
     timelines = [
         ev["timeline"] for ev in events if ev.get("event") == "partition_timeline"
     ]
-    assert len(timelines) == 1
+    diagnostics = f"handshake={handshake!r}; timelines={timelines!r}"
+    assert handshake == {
+        "acquire1_saw_compose0": True,
+        "compose0_saw_acquire1": True,
+    }, f"Handshake missing or timed out after 5 seconds: {diagnostics}"
+    assert len(timelines) == 1, diagnostics
     timeline = timelines[0]
-    assert len(timeline) == 2
+    assert len(timeline) == 2, diagnostics
 
     p0 = timeline[0]
     p1 = timeline[1]
@@ -843,8 +860,9 @@ def test_pipeline_overlap_temporal_intersection(tmp_path: Path) -> None:
         min(p1["acquire_end"], p0["compose_end"])
         - max(p1["acquire_start"], p0["compose_start"]),
     )
-    assert overlap > 0.0
-    assert p1.get("overlap_with_previous", 0.0) > 0.0
+    assert overlap > 0.0, diagnostics
+    assert p1.get("overlap_with_previous", 0.0) > 0.0, diagnostics
+    assert result["application_result"]["total_children"] == 2, diagnostics
 
 
 def test_pipeline_overlap_single_partition_serial(tmp_path: Path) -> None:
