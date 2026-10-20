@@ -6,6 +6,7 @@ import multiprocessing
 import pickle
 from concurrent.futures import Future
 from dataclasses import replace
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -28,15 +29,23 @@ from xic_extractor.discovery.csv_reader import (
     read_owner_bound_discovery_candidates_csv,
 )
 from xic_extractor.discovery.pipeline import (
-    DiscoverySampleProcessError,
-    DiscoverySampleProcessJob,
-    _run_discovery_sample_process_job,
+    discover_sample_for_process_job,
     run_discovery_batch,
 )
 from xic_extractor.discovery.processing_run_spec_adapter import (
     compile_discovery_processing_run_spec,
 )
+from xic_extractor.discovery.sample_process_execution import (
+    DiscoverySampleProcessError,
+    DiscoverySampleProcessJob,
+    run_discovery_sample_process_job,
+)
 from xic_extractor.xic_models import XICTrace
+
+_run_discovery_sample_process_job = partial(
+    run_discovery_sample_process_job,
+    discover_sample=discover_sample_for_process_job,
+)
 
 
 @pytest.mark.parametrize("workers", (1, 2))

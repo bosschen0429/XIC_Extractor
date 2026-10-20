@@ -10,7 +10,7 @@ import pytest
 from scripts import run_discovery
 from tests.raw_header_fakes import install_fake_raw_headers
 from xic_extractor.configuration.execution_profile import ExecutionProfile
-from xic_extractor.discovery.pipeline import (
+from xic_extractor.discovery.sample_process_execution import (
     DiscoveryProcessExecutionError,
     DiscoverySampleProcessError,
 )

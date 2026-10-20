@@ -144,16 +144,23 @@ def compile_discovery_processing_run_spec_from_config(
 ) -> ProcessingRunSpec:
     """Resolve the canonical profile from config, then compile one run spec."""
 
-    profile = resolve_signal_processing_profile(
+    return compile_discovery_processing_run_spec(
+        raw_paths,
+        discovery_settings=discovery_settings,
+        signal_processing_profile=processing_profile_from_config(extraction_config),
+    )
+
+
+def processing_profile_from_config(
+    extraction_config: ExtractionConfig,
+) -> SignalProcessingProfile:
+    """Resolve the canonical signal-processing profile a config selects."""
+
+    return resolve_signal_processing_profile(
         signal_processing_method=extraction_config.signal_processing_method,
         signal_processing_window_points=(
             extraction_config.signal_processing_window_points
         ),
-    )
-    return compile_discovery_processing_run_spec(
-        raw_paths,
-        discovery_settings=discovery_settings,
-        signal_processing_profile=profile,
     )
 
 
@@ -262,6 +269,7 @@ __all__ = [
     "compile_discovery_processing_run_spec",
     "compile_discovery_processing_run_spec_with_expectations",
     "compile_discovery_processing_run_spec_from_config",
+    "processing_profile_from_config",
     "processing_run_input_for_path",
     "validate_processing_run_spec_call",
 ]

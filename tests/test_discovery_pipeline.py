@@ -39,18 +39,23 @@ from xic_extractor.discovery.output_publication import (
     write_batch_index,
 )
 from xic_extractor.discovery.pipeline import (
-    _DISCOVERY_MS1_MEASUREMENT_NAMES,
+    _acquire_discovery_sample,
+    discover_sample_for_process_job,
+)
+from xic_extractor.discovery.processing_run_spec_adapter import (
+    compile_discovery_processing_run_spec,
+)
+from xic_extractor.discovery.runtime_measurements import (
+    DISCOVERY_MS1_MEASUREMENT_NAMES,
+    reject_caller_authored_discovery_ms1_measurement,
+    validate_discovery_ms1_observations,
+)
+from xic_extractor.discovery.sample_process_execution import (
     DiscoveryProcessExecutionError,
     DiscoverySampleProcessError,
     DiscoverySampleProcessJob,
     DiscoverySampleProcessResult,
-    _acquire_discovery_sample,
-    _reject_caller_authored_discovery_ms1_measurement,
-    _run_discovery_sample_process_job,
-    _validate_discovery_ms1_observations,
-)
-from xic_extractor.discovery.processing_run_spec_adapter import (
-    compile_discovery_processing_run_spec,
+    run_discovery_sample_process_job,
 )
 from xic_extractor.execution.timing import TimingRecord, TimingRecorder
 from xic_extractor.processing_identity import (
@@ -788,7 +793,7 @@ def test_parallel_batch_disabled_timing_skips_ipc_serialization(
             pass
 
     monkeypatch.setattr(
-        "xic_extractor.discovery.pipeline.pickle.dumps",
+        "xic_extractor.discovery.sample_process_execution.pickle.dumps",
         lambda _value: (_ for _ in ()).throw(AssertionError("must not serialize")),
     )
 
@@ -839,7 +844,9 @@ def test_discovery_worker_disabled_mode_omits_diagnostic_payload(
         raw_path, tmp_path, instrument_diagnostics=False
     )
 
-    result = _run_discovery_sample_process_job(job)
+    result = run_discovery_sample_process_job(
+        job, discover_sample=discover_sample_for_process_job
+    )
 
     assert isinstance(result, DiscoverySampleProcessError)
     assert result.timing_records == ()
@@ -876,7 +883,9 @@ def test_discovery_worker_failure_carries_own_partial_diagnostics(
         raw_path, tmp_path, instrument_diagnostics=True
     )
 
-    result = _run_discovery_sample_process_job(job)
+    result = run_discovery_sample_process_job(
+        job, discover_sample=discover_sample_for_process_job
+    )
 
     assert isinstance(result, DiscoverySampleProcessError)
     assert [record.stage for record in result.timing_records] == ["discover.partial"]
@@ -1553,13 +1562,13 @@ def test_worker_measurement_projection_rejects_caller_authored_owner_counts(
     metric: str,
 ) -> None:
     with pytest.raises(ValueError, match="cannot author"):
-        _reject_caller_authored_discovery_ms1_measurement(
+        reject_caller_authored_discovery_ms1_measurement(
             {"metric": metric, "value": 999}
         )
 
 def test_discovery_ms1_measurement_validator_rejects_duplicate_fields() -> None:
     recorder = TimingRecorder("discovery")
-    for metric in _DISCOVERY_MS1_MEASUREMENT_NAMES:
+    for metric in DISCOVERY_MS1_MEASUREMENT_NAMES:
         recorder.observe(metric, value=1, scope="Sample")
     recorder.observe(
         "discovery_ms1_input_group_count",
@@ -1568,16 +1577,16 @@ def test_discovery_ms1_measurement_validator_rejects_duplicate_fields() -> None:
     )
 
     with pytest.raises(ValueError, match="duplicate"):
-        _validate_discovery_ms1_observations(recorder, "Sample")
+        validate_discovery_ms1_observations(recorder, "Sample")
 
 def test_discovery_ms1_measurement_validator_rejects_unknown_fields() -> None:
     recorder = TimingRecorder("discovery")
-    for metric in _DISCOVERY_MS1_MEASUREMENT_NAMES:
+    for metric in DISCOVERY_MS1_MEASUREMENT_NAMES:
         recorder.observe(metric, value=1, scope="Sample")
     recorder.observe("discovery_ms1_unowned_count", value=1, scope="Sample")
 
     with pytest.raises(ValueError, match="unexpected=.*unowned"):
-        _validate_discovery_ms1_observations(recorder, "Sample")
+        validate_discovery_ms1_observations(recorder, "Sample")
 
 def _settings(**overrides: object) -> DiscoverySettings:
     values = {
