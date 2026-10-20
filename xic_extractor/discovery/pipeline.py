@@ -24,7 +24,6 @@ from xic_extractor.discovery.blank_qualification import (
     BlankBackgroundLibrary,
     apply_blank_qualification_to_candidates,
     deserialize_background_library,
-    resolve_background_library,
 )
 from xic_extractor.discovery.grouping import group_discovery_seeds
 from xic_extractor.discovery.models import (
@@ -55,19 +54,12 @@ from xic_extractor.execution.attempt import (
 )
 from xic_extractor.execution.timing import TimingRecord, TimingRecorder
 from xic_extractor.execution.workers import execute_process_jobs
-from xic_extractor.processing_identity import (
-    AcquisitionSourceIdentity,
-    build_acquisition_source_identity,
-)
+from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.processing_run_spec import (
     ProcessingAcquisitionInput,
     ProcessingRunSpec,
 )
-from xic_extractor.raw_reader import (
-    THERMO_RAW_ACQUISITION_FORMAT,
-    THERMO_RAW_OBSERVATION_NAMESPACE,
-    RawFileHandle,
-)
+from xic_extractor.raw_reader import RawFileHandle
 
 _DISCOVERY_MS1_MEASUREMENT_NAMES = frozenset(
     {
@@ -111,9 +103,9 @@ class DiscoverySampleProcessJob:
     peak_config: ExtractionConfig
     acquisition_source: AcquisitionSourceIdentity
     raw_session_capability: RawAcquisitionSessionCapability
+    run_spec: ProcessingRunSpec
+    acquisition_input: ProcessingAcquisitionInput
     instrument_diagnostics: bool = False
-    run_spec: ProcessingRunSpec | None = None
-    acquisition_input: ProcessingAcquisitionInput | None = None
 
 
 @dataclass(frozen=True)
@@ -183,7 +175,7 @@ def _apply_blank_qualification_if_enabled(
     settings: DiscoverySettings,
     timing_recorder: TimingRecorder,
     sample_stem: str,
-    acquisition_input: ProcessingAcquisitionInput | None = None,
+    acquisition_input: ProcessingAcquisitionInput,
 ) -> tuple[DiscoveryCandidate, ...]:
     if not settings.enable_blank_qualification:
         return candidates
@@ -192,12 +184,7 @@ def _apply_blank_qualification_if_enabled(
         sample_stem=sample_stem,
         metrics={"candidate_count": len(candidates)},
     ) as stage:
-        if acquisition_input is None:
-            library = resolve_background_library(
-                raw_dir=raw_path.parent,
-                library_path=settings.blank_library_path,
-            )
-        elif acquisition_input.blank_library_sha256 is None:
+        if acquisition_input.blank_library_sha256 is None:
             library = None
         elif acquisition_input.blank_library_content is None:
             raise ValueError("bound blank library snapshot is unavailable")
@@ -232,27 +219,20 @@ def run_discovery(
     peak_config: ExtractionConfig,
     raw_opener: RawOpener | None = None,
     timing_recorder: TimingRecorder | None = None,
-    run_spec: ProcessingRunSpec | None = None,
+    run_spec: ProcessingRunSpec,
     should_cancel: Callable[[], bool] | None = None,
 ) -> DiscoveryRunOutputs:
     _raise_if_discovery_cancelled(should_cancel)
     recorder = timing_recorder or TimingRecorder.disabled("discovery")
     sample_stem = raw_path.stem
-    acquisition_input: ProcessingAcquisitionInput | None = None
-    acquisition_source: AcquisitionSourceIdentity | None = None
-    if run_spec is not None:
-        (acquisition_input,) = validate_processing_run_spec_call(
-            run_spec,
-            (raw_path,),
-            discovery_settings=settings,
-            signal_processing_profile=_processing_profile_from_config(peak_config),
-        )
-        acquisition_source = acquisition_input.acquisition_source
-    elif raw_opener is None:
-        acquisition_source = _acquisition_source(raw_path)
+    (acquisition_input,) = validate_processing_run_spec_call(
+        run_spec,
+        (raw_path,),
+        discovery_settings=settings,
+        signal_processing_profile=_processing_profile_from_config(peak_config),
+    )
+    acquisition_source = acquisition_input.acquisition_source
     if raw_opener is None:
-        if acquisition_source is None:
-            raise ValueError("Discovery RAW owner requires acquisition identity")
         raw_session_capability = mint_raw_acquisition_session_capability(
             acquisition_source
         )
@@ -298,22 +278,18 @@ def run_discovery_batch(
     max_workers: int = 1,
     executor_factory: Callable[..., Any] | None = None,
     progress_callback: Callable[[int, int, str], None] | None = None,
-    run_spec: ProcessingRunSpec | None = None,
+    run_spec: ProcessingRunSpec,
     should_cancel: Callable[[], bool] | None = None,
 ) -> DiscoveryBatchOutputs:
     if max_workers < 1:
         raise ValueError("max_workers must be >= 1")
     _raise_if_discovery_cancelled(should_cancel)
     recorder = timing_recorder or TimingRecorder.disabled("discovery")
-    run_inputs = (
-        None
-        if run_spec is None
-        else validate_processing_run_spec_call(
-            run_spec,
-            raw_paths,
-            discovery_settings=settings,
-            signal_processing_profile=_processing_profile_from_config(peak_config),
-        )
+    run_inputs = validate_processing_run_spec_call(
+        run_spec,
+        raw_paths,
+        discovery_settings=settings,
+        signal_processing_profile=_processing_profile_from_config(peak_config),
     )
     if max_workers > 1:
         if raw_opener is not None:
@@ -340,12 +316,8 @@ def run_discovery_batch(
     for sample_index, raw_path in enumerate(raw_paths):
         _raise_if_discovery_cancelled(should_cancel)
         sample_stem = raw_path.stem
-        acquisition_input = None if run_inputs is None else run_inputs[sample_index]
-        acquisition_source = (
-            _acquisition_source(raw_path)
-            if acquisition_input is None
-            else acquisition_input.acquisition_source
-        )
+        acquisition_input = run_inputs[sample_index]
+        acquisition_source = acquisition_input.acquisition_source
         if raw_opener is None:
             raw_session_capability = mint_raw_acquisition_session_capability(
                 acquisition_source
@@ -405,19 +377,15 @@ def _run_discovery_batch_process(
     max_workers: int,
     executor_factory: Callable[..., Any] | None,
     progress_callback: Callable[[int, int, str], None] | None,
-    run_spec: ProcessingRunSpec | None,
-    run_inputs: tuple[ProcessingAcquisitionInput, ...] | None,
+    run_spec: ProcessingRunSpec,
+    run_inputs: tuple[ProcessingAcquisitionInput, ...],
     should_cancel: Callable[[], bool] | None,
 ) -> DiscoveryBatchOutputs:
     pending_jobs: list[DiscoverySampleProcessJob] = []
     for sample_index, raw_path in enumerate(raw_paths):
         _raise_if_discovery_cancelled(should_cancel)
-        acquisition_input = None if run_inputs is None else run_inputs[sample_index]
-        acquisition_source = (
-            _acquisition_source(raw_path)
-            if acquisition_input is None
-            else acquisition_input.acquisition_source
-        )
+        acquisition_input = run_inputs[sample_index]
+        acquisition_source = acquisition_input.acquisition_source
         pending_jobs.append(
             DiscoverySampleProcessJob(
                 sample_index=sample_index,
@@ -473,25 +441,11 @@ def _run_discovery_batch_process(
             raise ValueError(
                 "Discovery process result does not match a submitted sample job"
             )
-        expected_run_spec_id = (
-            expected_job.run_spec.run_spec_id
-            if expected_job.run_spec is not None
-            else ""
-        )
-        expected_profile_id = (
-            expected_job.run_spec.profile_id
-            if expected_job.run_spec is not None
-            else ""
-        )
-        expected_acquisition_source_id = (
-            expected_job.acquisition_source.acquisition_source_id
-            if expected_job.run_spec is not None
-            else ""
-        )
         if (
-            observed.run_spec_id != expected_run_spec_id
-            or observed.profile_id != expected_profile_id
-            or observed.acquisition_source_id != expected_acquisition_source_id
+            observed.run_spec_id != expected_job.run_spec.run_spec_id
+            or observed.profile_id != expected_job.run_spec.profile_id
+            or observed.acquisition_source_id
+            != expected_job.acquisition_source.acquisition_source_id
         ):
             raise ValueError(
                 "Discovery process result crosses run/profile/acquisition identity"
@@ -690,13 +644,9 @@ def _run_discovery_sample_process_job(
             measurement_observations=_portable_worker_observations(recorder),
             ms1_measurements=discovery_result.ms1_measurements,
             raw_open_receipt=discovery_result.raw_open_receipt,
-            run_spec_id=(job.run_spec.run_spec_id if job.run_spec is not None else ""),
-            profile_id=(job.run_spec.profile_id if job.run_spec is not None else ""),
-            acquisition_source_id=(
-                job.acquisition_source.acquisition_source_id
-                if job.run_spec is not None
-                else ""
-            ),
+            run_spec_id=job.run_spec.run_spec_id,
+            profile_id=job.run_spec.profile_id,
+            acquisition_source_id=job.acquisition_source.acquisition_source_id,
         )
     except Exception as exc:
         return _discovery_process_error(
@@ -710,10 +660,6 @@ def _run_discovery_sample_process_job(
 
 
 def _validate_discovery_process_job_binding(job: DiscoverySampleProcessJob) -> None:
-    if (job.run_spec is None) != (job.acquisition_input is None):
-        raise ValueError("Discovery process job run-spec binding is partial")
-    if job.run_spec is None or job.acquisition_input is None:
-        return
     expected = processing_run_input_for_path(
         job.run_spec,
         job.raw_path,
@@ -759,13 +705,9 @@ def _discovery_process_error(
         measurement_observations=measurement_observations,
         ms1_measurements=ms1_measurements,
         raw_open_receipt=raw_open_receipt,
-        run_spec_id=(job.run_spec.run_spec_id if job.run_spec is not None else ""),
-        profile_id=(job.run_spec.profile_id if job.run_spec is not None else ""),
-        acquisition_source_id=(
-            job.acquisition_source.acquisition_source_id
-            if job.run_spec is not None
-            else ""
-        ),
+        run_spec_id=job.run_spec.run_spec_id,
+        profile_id=job.run_spec.profile_id,
+        acquisition_source_id=job.acquisition_source.acquisition_source_id,
     )
 
 
@@ -777,8 +719,8 @@ def _discover_completed_sample_with_runtime_projection(
     raw_opener: RawOpener,
     timing_recorder: TimingRecorder,
     raw_session_capability: RawAcquisitionSessionCapability | None,
-    run_spec: ProcessingRunSpec | None = None,
-    acquisition_input: ProcessingAcquisitionInput | None = None,
+    run_spec: ProcessingRunSpec,
+    acquisition_input: ProcessingAcquisitionInput,
 ) -> _DiscoverySampleResult:
     """Return candidates ready for publication after projecting owner metrics."""
     observed_receipt: RawAcquisitionSessionReceipt | None = None
@@ -843,8 +785,8 @@ def _discover_completed_sample(
         Callable[[RawAcquisitionSessionReceipt | None], None] | None
     ) = None,
     acquisition_observer: Callable[[_DiscoverySampleResult], None] | None = None,
-    run_spec: ProcessingRunSpec | None = None,
-    acquisition_input: ProcessingAcquisitionInput | None = None,
+    run_spec: ProcessingRunSpec,
+    acquisition_input: ProcessingAcquisitionInput,
 ) -> _DiscoverySampleResult:
     """Acquire one RAW, close it, then complete its candidate facts."""
 
@@ -877,13 +819,9 @@ def _discover_completed_sample(
         sample_stem=sample_stem,
         acquisition_input=acquisition_input,
     )
-    physical_bindings = (
-        ()
-        if run_spec is None
-        else bind_physical_facts_to_final_candidates(
-            acquired.physical_bindings,
-            candidates,
-        )
+    physical_bindings = bind_physical_facts_to_final_candidates(
+        acquired.physical_bindings,
+        candidates,
     )
     return _DiscoverySampleResult(
         candidates=candidates,
@@ -906,31 +844,26 @@ def _acquire_discovery_sample(
     raw_open_receipt_observer: (
         Callable[[RawAcquisitionSessionReceipt | None], None] | None
     ) = None,
-    run_spec: ProcessingRunSpec | None = None,
-    acquisition_input: ProcessingAcquisitionInput | None = None,
+    run_spec: ProcessingRunSpec,
+    acquisition_input: ProcessingAcquisitionInput,
 ) -> _DiscoverySampleResult:
-    if (run_spec is None) != (acquisition_input is None):
-        raise ValueError("Discovery ProcessingRunSpec input binding is partial")
-    if run_spec is not None and acquisition_input is not None:
-        if (
-            acquisition_input.input_ordinal >= len(run_spec.acquisition_inputs)
-            or run_spec.acquisition_inputs[acquisition_input.input_ordinal]
-            != acquisition_input
-        ):
-            raise ValueError("Discovery input crosses ProcessingRunSpec binding")
+    if (
+        acquisition_input.input_ordinal >= len(run_spec.acquisition_inputs)
+        or run_spec.acquisition_inputs[acquisition_input.input_ordinal]
+        != acquisition_input
+    ):
+        raise ValueError("Discovery input crosses ProcessingRunSpec binding")
     sample_stem = raw_path.stem
     with raw_opener(raw_path, peak_config.dll_dir) as raw:
-        owner_bound_source: AcquisitionSourceIdentity | None = None
-        if run_spec is not None and acquisition_input is not None:
-            owner_bound_source = _owner_bound_acquisition_source(raw)
-            if owner_bound_source is None:
-                raise ValueError(
-                    "spec-bound Discovery RAW handle lacks an acquisition source"
-                )
-            if owner_bound_source != acquisition_input.acquisition_source:
-                raise ValueError(
-                    "spec-bound Discovery RAW handle crosses acquisition source"
-                )
+        owner_bound_source = _owner_bound_acquisition_source(raw)
+        if owner_bound_source is None:
+            raise ValueError(
+                "spec-bound Discovery RAW handle lacks an acquisition source"
+            )
+        if owner_bound_source != acquisition_input.acquisition_source:
+            raise ValueError(
+                "spec-bound Discovery RAW handle crosses acquisition source"
+            )
         raw_open_receipt = _owner_bound_raw_open_receipt(raw)
         if raw_open_receipt_observer is not None:
             raw_open_receipt_observer(raw_open_receipt)
@@ -966,44 +899,22 @@ def _acquire_discovery_sample(
                 "discover.ms1_capture",
                 sample_stem=sample_stem,
             ) as stage:
-                if run_spec is not None and acquisition_input is not None:
-                    acquisition_source = acquisition_input.acquisition_source
-                    acquisition_result = capture_ms1_candidates(
-                        cast(BatchXICAdapter, raw),
-                        groups,
-                        acquisition_source=acquisition_source,
-                        run_spec_id=run_spec.run_spec_id,
-                        settings=settings,
-                        peak_config=peak_config,
-                        measurement_observer=_capture_acquired_measurements,
-                        signal_processing_profile=(run_spec.signal_processing_profile),
-                        ms1_centroid_mz=_ms1_centroid_source(raw),
-                    )
-                    candidates = acquisition_result.candidates
-                    ms1_measurements = acquisition_result.measurements
-                    physical_work_manifest = acquisition_result.physical_work_manifest
-                    physical_evaluations = acquisition_result.physical_evaluations
-                    physical_bindings = acquisition_result.physical_bindings
-                else:
-                    owner_bound_source = _owner_bound_acquisition_source(raw)
-                    if owner_bound_source is None:
-                        raise ValueError(
-                            "Discovery RAW handle lacks an acquisition source"
-                        )
-                    acquisition_result = capture_ms1_candidates(
-                        cast(BatchXICAdapter, raw),
-                        groups,
-                        acquisition_source=owner_bound_source,
-                        settings=settings,
-                        peak_config=peak_config,
-                        measurement_observer=_capture_acquired_measurements,
-                        ms1_centroid_mz=_ms1_centroid_source(raw),
-                    )
-                    candidates = acquisition_result.candidates
-                    ms1_measurements = acquisition_result.measurements
-                    physical_work_manifest = ()
-                    physical_evaluations = ()
-                    physical_bindings = ()
+                acquisition_result = capture_ms1_candidates(
+                    cast(BatchXICAdapter, raw),
+                    groups,
+                    acquisition_source=acquisition_input.acquisition_source,
+                    run_spec_id=run_spec.run_spec_id,
+                    settings=settings,
+                    peak_config=peak_config,
+                    measurement_observer=_capture_acquired_measurements,
+                    signal_processing_profile=run_spec.signal_processing_profile,
+                    ms1_centroid_mz=_ms1_centroid_source(raw),
+                )
+                candidates = acquisition_result.candidates
+                ms1_measurements = acquisition_result.measurements
+                physical_work_manifest = acquisition_result.physical_work_manifest
+                physical_evaluations = acquisition_result.physical_evaluations
+                physical_bindings = acquisition_result.physical_bindings
                 stage.metrics["candidate_count"] = len(candidates)
             completed = True
             return _DiscoverySampleResult(
@@ -1400,11 +1311,3 @@ def _owner_bound_raw_opener(
         )
 
     return _open
-
-
-def _acquisition_source(raw_path: Path) -> AcquisitionSourceIdentity:
-    return build_acquisition_source_identity(
-        raw_path,
-        acquisition_format=THERMO_RAW_ACQUISITION_FORMAT,
-        observation_namespace=THERMO_RAW_OBSERVATION_NAMESPACE,
-    )

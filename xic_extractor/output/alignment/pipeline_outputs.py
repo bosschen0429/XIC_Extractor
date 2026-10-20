@@ -56,13 +56,6 @@ from xic_extractor.output.alignment.output_levels import (
     AlignmentOutputLevel,
     artifact_names_for_output_level,
 )
-from xic_extractor.output.alignment.provisional_matrix import (
-    build_provisional_matrix_projection,
-    write_provisional_identity_tsv,
-    write_provisional_matrix_tsv,
-    write_provisional_provenance_tsv,
-    write_provisional_summary_json,
-)
 from xic_extractor.output.alignment.tsv_writer import (
     write_alignment_backfill_cell_evidence_tsv,
     write_alignment_backfill_seed_audit_tsv,
@@ -87,10 +80,6 @@ class AlignmentRunOutputs:
     backfill_seed_audit_tsv: Path | None = None
     status_matrix_tsv: Path | None = None
     run_metadata_json: Path | None = None
-    provisional_matrix_tsv: Path | None = None
-    provisional_identity_tsv: Path | None = None
-    provisional_cell_provenance_tsv: Path | None = None
-    provisional_summary_json: Path | None = None
     artifact_fingerprint_batch: AlignmentArtifactFingerprintBatch | None = None
     owner_build_route_receipt: OwnerBuildRouteReceipt | None = None
     owner_backfill_evaluation_coverage: BackfillEvaluationCoverageBatch | None = (
@@ -111,7 +100,6 @@ def output_paths(
     emit_alignment_status_matrix: bool,
     emit_alignment_backfill_seed_audit: bool = False,
     emit_target_snapshot_metadata: bool = False,
-    emit_provisional_matrix: bool = False,
 ) -> AlignmentRunOutputs:
     artifacts = set(artifact_names_for_output_level(output_level))
     if emit_alignment_cells:
@@ -162,26 +150,6 @@ def output_paths(
         run_metadata_json=(
             output_dir / "alignment_run_metadata.json"
             if emit_target_snapshot_metadata
-            else None
-        ),
-        provisional_matrix_tsv=(
-            output_dir / "provisional_alignment_matrix.tsv"
-            if emit_provisional_matrix
-            else None
-        ),
-        provisional_identity_tsv=(
-            output_dir / "provisional_row_identity.tsv"
-            if emit_provisional_matrix
-            else None
-        ),
-        provisional_cell_provenance_tsv=(
-            output_dir / "provisional_cell_provenance.tsv"
-            if emit_provisional_matrix
-            else None
-        ),
-        provisional_summary_json=(
-            output_dir / "provisional_matrix_summary.json"
-            if emit_provisional_matrix
             else None
         ),
     )
@@ -369,66 +337,11 @@ def write_outputs_atomic(
     if not isinstance(production_decisions, ProductionDecisionSet):
         raise TypeError("production_decisions must be owner-minted")
     output_paths_and_writers: list[tuple[Path, Callable[[Path], Path]]] = []
-    provisional_projection = None
-    provisional_output_paths = (
-        outputs.provisional_matrix_tsv,
-        outputs.provisional_identity_tsv,
-        outputs.provisional_cell_provenance_tsv,
-        outputs.provisional_summary_json,
+    recorder = (
+        timing_recorder
+        if timing_recorder is not None and timing_recorder.instrument_writers
+        else TimingRecorder.disabled("writer")
     )
-    if any(path is not None for path in provisional_output_paths):
-        if any(path is None for path in provisional_output_paths):
-            raise ValueError("provisional matrix outputs must be emitted atomically")
-        recorder = (
-            timing_recorder
-            if timing_recorder is not None and timing_recorder.instrument_writers
-            else TimingRecorder.disabled("writer")
-        )
-        with recorder.stage("writer.provisional_matrix.projection"):
-            provisional_projection = build_provisional_matrix_projection(
-                matrix,
-                backfill_scope=metadata.get("backfill_scope", ""),
-                discovery_owner_closure=(
-                    metadata.get("require_discovery_owner_closure") == "TRUE"
-                ),
-                selected_family_count=_metadata_nonnegative_int(
-                    metadata,
-                    "selected_family_count",
-                ),
-            )
-        for path in provisional_output_paths:
-            assert path is not None
-            recorder.observe(
-                "writer_projection_time_sec",
-                value=None,
-                scope=_writer_artifact_name(path),
-                unit="seconds",
-                source="alignment.provisional_matrix",
-                availability="unavailable",
-                reason=(
-                    "shared compact-plan construction is measured once; lazy "
-                    "row projection is interleaved with rendering and cannot be "
-                    "attributed per artifact without changing writer behavior"
-                ),
-            )
-            recorder.observe(
-                "writer_projection_bytes",
-                value=None,
-                scope=_writer_artifact_name(path),
-                unit="bytes",
-                source="alignment.provisional_matrix",
-                availability="unavailable",
-                reason=(
-                    "the compact plan is shared and streamed row objects are "
-                    "ephemeral with no stable byte representation"
-                ),
-            )
-    else:
-        recorder = (
-            timing_recorder
-            if timing_recorder is not None and timing_recorder.instrument_writers
-            else TimingRecorder.disabled("writer")
-        )
     if outputs.matrix_tsv is not None:
         output_paths_and_writers.append(
             (
@@ -514,43 +427,6 @@ def write_outputs_atomic(
                 lambda path: _write_metadata_json(path, metadata),
             ),
         )
-    if outputs.provisional_matrix_tsv is not None:
-        assert provisional_projection is not None
-        assert outputs.provisional_identity_tsv is not None
-        assert outputs.provisional_cell_provenance_tsv is not None
-        assert outputs.provisional_summary_json is not None
-        output_paths_and_writers.extend(
-            (
-                (
-                    outputs.provisional_matrix_tsv,
-                    lambda path: write_provisional_matrix_tsv(
-                        path,
-                        provisional_projection,
-                    ),
-                ),
-                (
-                    outputs.provisional_identity_tsv,
-                    lambda path: write_provisional_identity_tsv(
-                        path,
-                        provisional_projection,
-                    ),
-                ),
-                (
-                    outputs.provisional_cell_provenance_tsv,
-                    lambda path: write_provisional_provenance_tsv(
-                        path,
-                        provisional_projection,
-                    ),
-                ),
-                (
-                    outputs.provisional_summary_json,
-                    lambda path: write_provisional_summary_json(
-                        path,
-                        provisional_projection,
-                    ),
-                ),
-            )
-        )
     return _write_artifacts_atomic(
         output_paths_and_writers,
         recorder=recorder,
@@ -565,10 +441,6 @@ def supports_streamed_untargeted_outputs(outputs: AlignmentRunOutputs) -> bool:
         (
             outputs.status_matrix_tsv,
             outputs.backfill_seed_audit_tsv,
-            outputs.provisional_matrix_tsv,
-            outputs.provisional_identity_tsv,
-            outputs.provisional_cell_provenance_tsv,
-            outputs.provisional_summary_json,
         )
     )
 

@@ -72,8 +72,8 @@ def publish_discovery_batch_sample(
     output_dir: Path,
     acquisition_source: AcquisitionSourceIdentity,
     timing_recorder: TimingRecorder,
-    run_spec: ProcessingRunSpec | None = None,
-    acquisition_input: ProcessingAcquisitionInput | None = None,
+    run_spec: ProcessingRunSpec,
+    acquisition_input: ProcessingAcquisitionInput,
     physical_work_manifest: tuple[DiscoveryPhysicalWorkItem, ...] = (),
     physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...] = (),
     physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...] = (),
@@ -135,14 +135,10 @@ def _persisted_physical_records(
 ) -> tuple[DiscoveryPhysicalFactRecord, ...]:
     """Retain measured peak evidence and compact persistence-local work indices."""
     peak_bindings = tuple(
-        binding
-        for binding in bindings
-        if binding.candidate.ms1_peak_found
+        binding for binding in bindings if binding.candidate.ms1_peak_found
     )
     used_work = {
-        ordinal
-        for binding in peak_bindings
-        for ordinal in binding.member_work_ordinals
+        ordinal for binding in peak_bindings for ordinal in binding.member_work_ordinals
     }
     retained = tuple(
         record for record in records if record.work_item.work_ordinal in used_work
@@ -178,8 +174,8 @@ def write_dual_csvs(
     *,
     timing_recorder: TimingRecorder,
     sample_stem: str,
-    run_spec: ProcessingRunSpec | None = None,
-    acquisition_input: ProcessingAcquisitionInput | None = None,
+    run_spec: ProcessingRunSpec,
+    acquisition_input: ProcessingAcquisitionInput,
     physical_work_manifest: tuple[DiscoveryPhysicalWorkItem, ...] = (),
     physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...] = (),
     physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...] = (),
@@ -204,8 +200,8 @@ def _write_persisted_candidate_outputs(
     *,
     timing_recorder: TimingRecorder,
     sample_stem: str,
-    run_spec: ProcessingRunSpec | None,
-    acquisition_input: ProcessingAcquisitionInput | None,
+    run_spec: ProcessingRunSpec,
+    acquisition_input: ProcessingAcquisitionInput,
     physical_work_manifest: tuple[DiscoveryPhysicalWorkItem, ...],
     physical_evaluations: tuple[DiscoveryPhysicalFactRecord, ...],
     physical_bindings: tuple[DiscoveryCandidatePhysicalBinding, ...],
@@ -221,20 +217,14 @@ def _write_persisted_candidate_outputs(
     output_dir.mkdir(parents=True, exist_ok=True)
     candidates_path = output_dir / "discovery_candidates.csv"
     review_path = output_dir / "discovery_review.csv"
-    physical_facts_member_path = output_dir / "discovery_physical_facts.json"
-    physical_facts_path = None if run_spec is None else physical_facts_member_path
-    if (run_spec is None) != (acquisition_input is None):
-        raise ValueError("Discovery physical persistence binding is partial")
-    if run_spec is None and (physical_work_manifest or physical_evaluations):
-        raise ValueError("legacy Discovery cannot persist owner physical facts")
+    physical_facts_path = output_dir / "discovery_physical_facts.json"
     physical_evaluations = _persisted_physical_records(
         physical_evaluations,
         physical_bindings,
     )
     physical_work_manifest = tuple(record.work_item for record in physical_evaluations)
 
-    final_paths = [candidates_path, review_path, physical_facts_member_path]
-    publish_count = 3 if physical_facts_path is not None else 2
+    final_paths = [candidates_path, review_path, physical_facts_path]
     temp_paths = [_discovery_output_temp_path(path) for path in final_paths]
     backup_paths = [_discovery_output_backup_path(path) for path in final_paths]
     existed_before = {path: path.exists() for path in final_paths}
@@ -264,25 +254,23 @@ def _write_persisted_candidate_outputs(
                 columns=DISCOVERY_BRIEF_COLUMNS,
                 row_count=len(candidates),
             )
-        if run_spec is not None and acquisition_input is not None:
-            assert physical_facts_path is not None
-            physical_tmp = temp_paths[2]
-            with timing_recorder.stage(
-                "discover.write_physical_facts_sidecar",
-                sample_stem=sample_stem,
-                metrics={
-                    "work_count": len(physical_work_manifest),
-                    "record_count": len(physical_evaluations),
-                },
-            ) as stage:
-                write_discovery_physical_fact_sidecar(
-                    physical_tmp,
-                    run_spec=run_spec,
-                    acquisition_input=acquisition_input,
-                    work_manifest=physical_work_manifest,
-                    records=physical_evaluations,
-                )
-                stage.metrics["byte_size"] = physical_tmp.stat().st_size
+        physical_tmp = temp_paths[2]
+        with timing_recorder.stage(
+            "discover.write_physical_facts_sidecar",
+            sample_stem=sample_stem,
+            metrics={
+                "work_count": len(physical_work_manifest),
+                "record_count": len(physical_evaluations),
+            },
+        ) as stage:
+            write_discovery_physical_fact_sidecar(
+                physical_tmp,
+                run_spec=run_spec,
+                acquisition_input=acquisition_input,
+                work_manifest=physical_work_manifest,
+                records=physical_evaluations,
+            )
+            stage.metrics["byte_size"] = physical_tmp.stat().st_size
     except Exception:
         for path in (*temp_paths, *backup_paths):
             path.unlink(missing_ok=True)
@@ -293,9 +281,9 @@ def _write_persisted_candidate_outputs(
         "discover.publish_outputs",
         sample_stem=sample_stem,
         metrics={
-            "artifact_count": publish_count,
+            "artifact_count": len(final_paths),
             "replaced_existing_count": sum(
-                int(existed_before[path]) for path in final_paths[:publish_count]
+                int(existed_before[path]) for path in final_paths
             ),
         },
     ):
@@ -309,8 +297,8 @@ def _write_persisted_candidate_outputs(
                     final_path.replace(backup_path)
                     backups.append((final_path, backup_path))
             for temp_path, final_path in zip(
-                temp_paths[:publish_count],
-                final_paths[:publish_count],
+                temp_paths,
+                final_paths,
                 strict=True,
             ):
                 temp_path.replace(final_path)

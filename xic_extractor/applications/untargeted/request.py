@@ -107,13 +107,6 @@ class UntargetedRequest:
                     "signal_processing_profile conflicts with peak_config "
                     "canonical fields"
                 )
-        if (
-            self.publication.emit_provisional_matrix
-            and not self.legacy.require_discovery_owner_closure
-        ):
-            raise ValueError(
-                "provisional matrix emission requires Discovery owner closure"
-            )
         validate_retained_processing_profile(profile)
         return profile
 

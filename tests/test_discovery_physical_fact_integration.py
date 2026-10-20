@@ -665,12 +665,6 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
     )
     monkeypatch.setattr(physical_owner, "prepare_physical_signal", counted_prepare)
     monkeypatch.setattr(physical_owner, "evaluate_physical_peak", counted_evaluate)
-    monkeypatch.setattr(
-        "xic_extractor.discovery.pipeline._acquisition_source",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            AssertionError("spec-bound run fingerprinted the RAW twice")
-        ),
-    )
     captured_manifest: tuple[DiscoveryPhysicalWorkItem, ...] = ()
 
     def capture_sidecar(path, **kwargs):

@@ -6,10 +6,6 @@ from pathlib import Path
 import pytest
 
 from tests.test_discovery_pipeline import _settings
-from xic_extractor.discovery.models import (
-    DISCOVERY_BRIEF_COLUMNS,
-    DISCOVERY_CANDIDATE_COLUMNS,
-)
 from xic_extractor.discovery.output_publication import (
     write_dual_csvs,
 )
@@ -39,9 +35,15 @@ def test_discovery_publication_retains_only_used_candidate_states(
         _candidate(), precursor_mz_basis=basis,
         discovery_candidate_state=state, ms1_peak_found=feature_backed,
     )
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"retained-states")
+    spec = compile_discovery_processing_run_spec(
+        (raw_path,), discovery_settings=_settings()
+    )
     outputs = write_dual_csvs(
-        tmp_path, (candidate,), sample_stem=candidate.sample_stem,
+        tmp_path / "out", (candidate,), sample_stem=candidate.sample_stem,
         timing_recorder=TimingRecorder.disabled("discovery"),
+        run_spec=spec, acquisition_input=spec.acquisition_inputs[0],
     )
     expected_ids = [candidate.candidate_id] if feature_backed or basis in {
         "scan_precursor", "mixed",
@@ -50,15 +52,11 @@ def test_discovery_publication_retains_only_used_candidate_states(
         assert [row["candidate_id"] for row in _read_csv(path)] == expected_ids
 
 
-@pytest.mark.parametrize(
-    ("spec_bound", "replacement_position"),
-    [(False, 1), (False, 2), (True, 1), (True, 2), (True, 3)],
-)
+@pytest.mark.parametrize("replacement_position", [1, 2, 3])
 @pytest.mark.parametrize("prior_outputs", [False, True])
 def test_discovery_output_publication_rolls_back_every_replace_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    spec_bound: bool,
     replacement_position: int,
     prior_outputs: bool,
 ) -> None:
@@ -69,15 +67,12 @@ def test_discovery_output_publication_rolls_back_every_replace_failure(
         output_dir / "discovery_review.csv",
         output_dir / "discovery_physical_facts.json",
     ]
-    run_spec = None
-    acquisition_input = None
-    if spec_bound:
-        raw_path = tmp_path / "sample.raw"
-        raw_path.write_bytes(b"atomic-publication")
-        run_spec = compile_discovery_processing_run_spec(
-            (raw_path,), discovery_settings=_settings()
-        )
-        acquisition_input = run_spec.acquisition_inputs[0]
+    raw_path = tmp_path / "sample.raw"
+    raw_path.write_bytes(b"atomic-publication")
+    run_spec = compile_discovery_processing_run_spec(
+        (raw_path,), discovery_settings=_settings()
+    )
+    acquisition_input = run_spec.acquisition_inputs[0]
     prior = {
         path: f"prior-{index}".encode("utf-8")
         for index, path in enumerate(final_paths)
@@ -120,116 +115,6 @@ def test_discovery_output_publication_rolls_back_every_replace_failure(
             assert path.read_bytes() == prior[path]
         else:
             assert not path.exists()
-    assert not [
-        path for path in output_dir.iterdir() if path.name.endswith((".tmp", ".bak"))
-    ]
-
-
-def test_legacy_publication_removes_stale_spec_bound_sidecar(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    output_dir = tmp_path / "out"
-    raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"spec-to-legacy-success")
-    spec = compile_discovery_processing_run_spec(
-        (raw_path,), discovery_settings=_settings()
-    )
-    spec_outputs = write_dual_csvs(
-        output_dir,
-        (),
-        timing_recorder=TimingRecorder.disabled("discovery"),
-        sample_stem="sample",
-        run_spec=spec,
-        acquisition_input=spec.acquisition_inputs[0],
-    )
-    assert spec_outputs.physical_facts_json is not None
-    assert spec_outputs.physical_facts_json.exists()
-    expected_candidates = (",".join(DISCOVERY_CANDIDATE_COLUMNS) + "\n").encode()
-    expected_review = (",".join(DISCOVERY_BRIEF_COLUMNS) + "\n").encode()
-
-    monkeypatch.setattr(
-        "xic_extractor.discovery.output_publication.write_discovery_candidates_csv",
-        lambda path, _candidates: path.write_bytes(expected_candidates),
-    )
-    monkeypatch.setattr(
-        "xic_extractor.discovery.output_publication.write_discovery_review_csv",
-        lambda path, _candidates: path.write_bytes(expected_review),
-    )
-
-    outputs = write_dual_csvs(
-        output_dir,
-        (),
-        timing_recorder=TimingRecorder.disabled("discovery"),
-        sample_stem="sample",
-    )
-
-    assert outputs.candidates_csv.read_bytes() == expected_candidates
-    assert outputs.review_csv.read_bytes() == expected_review
-    assert outputs.physical_facts_json is None
-    assert not (output_dir / "discovery_physical_facts.json").exists()
-    assert not [
-        path for path in output_dir.iterdir() if path.name.endswith((".tmp", ".bak"))
-    ]
-
-
-@pytest.mark.parametrize("failure_point", ["backup", "publish-1", "publish-2"])
-def test_spec_to_legacy_failure_restores_complete_prior_member_set(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    failure_point: str,
-) -> None:
-    output_dir = tmp_path / "out"
-    raw_path = tmp_path / "sample.raw"
-    raw_path.write_bytes(b"spec-to-legacy-rollback")
-    spec = compile_discovery_processing_run_spec(
-        (raw_path,), discovery_settings=_settings()
-    )
-    spec_outputs = write_dual_csvs(
-        output_dir,
-        (),
-        timing_recorder=TimingRecorder.disabled("discovery"),
-        sample_stem="sample",
-        run_spec=spec,
-        acquisition_input=spec.acquisition_inputs[0],
-    )
-    assert spec_outputs.physical_facts_json is not None
-    final_paths = (
-        spec_outputs.candidates_csv,
-        spec_outputs.review_csv,
-        spec_outputs.physical_facts_json,
-    )
-    prior = {path: path.read_bytes() for path in final_paths}
-    physical_path = spec_outputs.physical_facts_json
-    real_replace = Path.replace
-    published = 0
-
-    def fail_transition(source: Path, target: Path) -> Path:
-        nonlocal published
-        target = Path(target)
-        if (
-            failure_point == "backup"
-            and source == physical_path
-            and target.name == f"{physical_path.name}.bak"
-        ):
-            raise OSError("legacy transition backup failure")
-        if source.name.endswith(".tmp") and target in final_paths[:2]:
-            published += 1
-            if failure_point == f"publish-{published}":
-                raise OSError(f"legacy transition {failure_point} failure")
-        return real_replace(source, target)
-
-    monkeypatch.setattr(Path, "replace", fail_transition)
-
-    with pytest.raises(OSError, match="legacy transition"):
-        write_dual_csvs(
-            output_dir,
-            (),
-            timing_recorder=TimingRecorder.disabled("discovery"),
-            sample_stem="sample",
-        )
-
-    assert {path: path.read_bytes() for path in final_paths} == prior
     assert not [
         path for path in output_dir.iterdir() if path.name.endswith((".tmp", ".bak"))
     ]

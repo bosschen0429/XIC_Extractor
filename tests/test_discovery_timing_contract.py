@@ -171,22 +171,3 @@ def test_discovery_output_timing_records_failure_boundary(
     assert not [
         path for path in output_dir.iterdir() if path.name.endswith((".tmp", ".bak"))
     ]
-
-
-def test_legacy_publication_times_only_two_public_outputs(tmp_path: Path) -> None:
-    recorder = TimingRecorder("discovery", run_id="legacy-publication")
-
-    outputs = write_dual_csvs(
-        tmp_path / "out",
-        (),
-        timing_recorder=recorder,
-        sample_stem="sample",
-    )
-
-    assert outputs.physical_facts_json is None
-    by_stage = {record.stage: record for record in recorder.records}
-    assert "discover.write_physical_facts_sidecar" not in by_stage
-    assert by_stage["discover.publish_outputs"].metrics == {
-        "artifact_count": 2,
-        "replaced_existing_count": 0,
-    }

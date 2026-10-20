@@ -114,8 +114,6 @@ Other routes and retained artifacts:
   current-file self-consistency checks only. The packet has no independent
   historical seal. The ownerless writer and registered scope of the packet are
   retired.
-- The provisional full-universe runner continues to stop after its existing
-  provisional diagnostic projection.
 
 These route names are existing in-memory selectors. The route names are not
 new preset TOML fields or a user-authored workflow graph. The delta-mass

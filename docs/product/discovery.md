@@ -114,6 +114,9 @@ the error relative to the configured loss mass; it is not the acceptance gate.
   merge-member evidence; rows without a peak have no persisted physical facts.
   Retaining a physical answer does not grant NL qualification. Receipts, batch-index
   counts and hashes describe the persisted candidate rows.
+- Every Discovery run is bound to a `ProcessingRunSpec`; `run_discovery` and
+  `run_discovery_batch` require it and always write `discovery_physical_facts.json`
+  beside the candidate and review CSVs. There is no run-spec-free Discovery mode.
 - Seed evidence can include MS2 neutral loss, precursor inference, MS1 trace
   support, and future evidence providers.
 

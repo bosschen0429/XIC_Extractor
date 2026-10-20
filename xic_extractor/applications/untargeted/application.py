@@ -60,7 +60,6 @@ def run_untargeted_application(
             "backfill_scope": "full-audit",
             "requested_audit_evidence_mode": request.legacy.audit_evidence_mode,
             "require_discovery_owner_closure": True,
-            "emit_provisional_matrix": request.publication.emit_provisional_matrix,
         },
     )
     with recorder.stage("alignment.read_batch_index"):
@@ -210,10 +209,6 @@ _CONDITIONAL_ALIGNMENT_ARTIFACT_NAMES = (
     "alignment_owner_backfill_candidate_audit.tsv",
     "skipped_evidence_ledger.tsv",
     "alignment_run_metadata.json",
-    "provisional_alignment_matrix.tsv",
-    "provisional_row_identity.tsv",
-    "provisional_cell_provenance.tsv",
-    "provisional_matrix_summary.json",
 )
 
 
