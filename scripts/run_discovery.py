@@ -107,9 +107,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             settings,
             blank_library_path=str(library_path),
         )
-    data_dir = raw_path.parent if raw_path is not None else raw_dir
-    if data_dir is None:
-        raise ValueError("Discovery input directory was not resolved")
     timing_recorder = (
         TimingRecorder(
             "discovery",
