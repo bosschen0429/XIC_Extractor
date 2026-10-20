@@ -59,7 +59,7 @@ def test_run_spec_runtime_local_imports_keep_forbidden_modules_absent() -> None:
 
         prohibited = {
             "xic_extractor.discovery.pipeline",
-            "xic_extractor.discovery.ms1_backfill",
+            "xic_extractor.discovery.ms1_capture",
             "xic_extractor.discovery.ms2_seeds",
             "xic_extractor.discovery.csv_writer",
             "xic_extractor.raw_reader",

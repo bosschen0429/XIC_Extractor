@@ -8,19 +8,19 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 
-from tests.test_discovery_ms1_backfill import (
+from tests.test_discovery_ms1_capture import (
     _group,
     _multi_tag_settings,
     _seed,
 )
-from tests.test_discovery_ms1_backfill import (
+from tests.test_discovery_ms1_capture import (
     _OwnerBoundBatchRaw as _BatchRaw,
 )
-from tests.test_discovery_ms1_backfill import (
-    _peak_config as _backfill_peak_config,
+from tests.test_discovery_ms1_capture import (
+    _peak_config as _capture_peak_config,
 )
-from tests.test_discovery_ms1_backfill import (
-    _settings as _backfill_settings,
+from tests.test_discovery_ms1_capture import (
+    _settings as _capture_settings,
 )
 from tests.test_discovery_pipeline import (
     _OwnerBoundFakeRawHandle,
@@ -34,8 +34,8 @@ from xic_extractor.configuration.signal_processing_profile import (
 )
 from xic_extractor.discovery.csv_writer import build_discovery_review_note
 from xic_extractor.discovery.models import DiscoveryPhysicalWorkItem, DiscoverySettings
-from xic_extractor.discovery.ms1_backfill import (
-    _backfill_ms1_candidates_with_acquisition,
+from xic_extractor.discovery.ms1_capture import (
+    capture_ms1_candidates,
 )
 from xic_extractor.discovery.physical_fact_persistence import (
     read_discovery_physical_fact_sidecar,
@@ -284,7 +284,7 @@ def test_discovery_retained_physical_peak_cardinality(
     intensity = np.asarray([float.fromhex(v) for v in fixture["trace"]["intensity"]])
     raw_path = tmp_path / f"{fixture_name}.raw"
     raw_path.write_bytes(b"retained exact numerical XIC fixture")
-    settings = _backfill_settings()
+    settings = _capture_settings()
     profile = SignalProcessingProfile()
     spec = compile_discovery_processing_run_spec(
         (raw_path,), discovery_settings=settings, signal_processing_profile=profile
@@ -342,13 +342,13 @@ def test_discovery_retained_physical_peak_cardinality(
             strict=True,
         )
     )
-    result = _backfill_ms1_candidates_with_acquisition(
+    result = capture_ms1_candidates(
         RetainedTraceRaw(source),
         groups,
         acquisition_source=source,
         run_spec_id=spec.run_spec_id,
         settings=settings,
-        peak_config=_backfill_peak_config(),
+        peak_config=_capture_peak_config(),
         signal_processing_profile=profile,
     )
     path = write_discovery_candidates_csv(
@@ -501,13 +501,13 @@ def test_merged_physical_candidate_persists_representative_search_window(
             _OwnerBoundBatchRaw, "read_ms1_mass_windows", read_windows, raising=False
         )
     raw = _OwnerBoundBatchRaw(source)
-    result = _backfill_ms1_candidates_with_acquisition(
+    result = capture_ms1_candidates(
         raw,
         groups,
         acquisition_source=source,
         run_spec_id=spec.run_spec_id,
         settings=settings,
-        peak_config=_backfill_peak_config(),
+        peak_config=_capture_peak_config(),
         signal_processing_profile=profile,
     )
     (candidate,) = result.candidates
@@ -656,11 +656,11 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
         return real_evaluate(*args, **kwargs)
 
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.prepare_physical_signal",
+        "xic_extractor.discovery.ms1_capture.prepare_physical_signal",
         counted_prepare,
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.evaluate_physical_peak",
+        "xic_extractor.discovery.ms1_capture.evaluate_physical_peak",
         counted_evaluate,
     )
     monkeypatch.setattr(physical_owner, "prepare_physical_signal", counted_prepare)
@@ -866,13 +866,13 @@ def test_short_discovery_request_reacquires_points_without_assuming_complete_con
     )
     assert group.precursor_mz_basis == "mixed"
 
-    result = _backfill_ms1_candidates_with_acquisition(
+    result = capture_ms1_candidates(
         raw,
         (group,),
         acquisition_source=source,
         run_spec_id=_TEST_RUN_SPEC_ID,
-        settings=_backfill_settings(),
-        peak_config=_backfill_peak_config(),
+        settings=_capture_settings(),
+        peak_config=_capture_peak_config(),
         signal_processing_profile=profile,
     )
 
@@ -922,13 +922,13 @@ def test_single_seed_discovery_acquires_complete_physical_context(
     profile = SignalProcessingProfile(window_points=15)
     group = _group((_seed(scan_number=10, rt=12.063),))
 
-    result = _backfill_ms1_candidates_with_acquisition(
+    result = capture_ms1_candidates(
         raw,
         (group,),
         acquisition_source=source,
         run_spec_id=_TEST_RUN_SPEC_ID,
-        settings=_backfill_settings(),
-        peak_config=_backfill_peak_config(),
+        settings=_capture_settings(),
+        peak_config=_capture_peak_config(),
         signal_processing_profile=profile,
     )
 
@@ -988,13 +988,13 @@ def test_product_inferred_single_seed_uses_widened_initial_context(
     )
     assert group.precursor_mz_basis == "product_plus_neutral_loss"
 
-    result = _backfill_ms1_candidates_with_acquisition(
+    result = capture_ms1_candidates(
         raw,
         (group,),
         acquisition_source=source,
         run_spec_id=_TEST_RUN_SPEC_ID,
-        settings=_backfill_settings(),
-        peak_config=_backfill_peak_config(),
+        settings=_capture_settings(),
+        peak_config=_capture_peak_config(),
         signal_processing_profile=profile,
     )
 
@@ -1036,13 +1036,13 @@ def test_strong_product_inferred_seed_group_uses_widened_initial_context(
     )
     assert group.precursor_mz_basis == "product_plus_neutral_loss"
 
-    result = _backfill_ms1_candidates_with_acquisition(
+    result = capture_ms1_candidates(
         raw,
         (group,),
         acquisition_source=source,
         run_spec_id=_TEST_RUN_SPEC_ID,
-        settings=_backfill_settings(),
-        peak_config=_backfill_peak_config(),
+        settings=_capture_settings(),
+        peak_config=_capture_peak_config(),
         signal_processing_profile=profile,
     )
 
@@ -1101,17 +1101,17 @@ def test_qualification_survives_physical_fact_reuse(
     )
     qualifier = Mock(wraps=is_provisional_peak_shape)
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.is_provisional_peak_shape", qualifier
+        "xic_extractor.discovery.ms1_capture.is_provisional_peak_shape", qualifier
     )
     group = _group((_seed(scan_number=10, rt=7.8),))
 
-    result = _backfill_ms1_candidates_with_acquisition(
+    result = capture_ms1_candidates(
         raw,
         (group,) * shared_request_count,
         acquisition_source=source,
         run_spec_id=_TEST_RUN_SPEC_ID,
-        settings=_backfill_settings(),
-        peak_config=_backfill_peak_config(),
+        settings=_capture_settings(),
+        peak_config=_capture_peak_config(),
         signal_processing_profile=SignalProcessingProfile(),
     )
 
@@ -1160,23 +1160,23 @@ def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
         return prepare_physical_signal(*args, **kwargs)
 
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.prepare_physical_signal",
+        "xic_extractor.discovery.ms1_capture.prepare_physical_signal",
         _count_prepare,
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: (_ for _ in ()).throw(
             AssertionError("spec-bound route used legacy peak detection")
         ),
     )
 
-    result = _backfill_ms1_candidates_with_acquisition(
+    result = capture_ms1_candidates(
         raw,
         (first, duplicate_trace),
         acquisition_source=source,
         run_spec_id=_TEST_RUN_SPEC_ID,
-        settings=_backfill_settings(),
-        peak_config=_backfill_peak_config(),
+        settings=_capture_settings(),
+        peak_config=_capture_peak_config(),
         signal_processing_profile=SignalProcessingProfile(window_points=3),
     )
 
@@ -1218,26 +1218,26 @@ def test_physical_binding_rejects_cross_acquisition_reassembly(
     )
     group = _group((_seed(scan_number=10, rt=7.80),))
     profile = SignalProcessingProfile(window_points=3)
-    current = _backfill_ms1_candidates_with_acquisition(
+    current = capture_ms1_candidates(
         _OwnerBoundBatchRaw(current_source),
         (group,),
         acquisition_source=current_source,
         run_spec_id=_TEST_RUN_SPEC_ID,
-        settings=_backfill_settings(),
-        peak_config=_backfill_peak_config(),
+        settings=_capture_settings(),
+        peak_config=_capture_peak_config(),
         signal_processing_profile=profile,
     )
     foreign_raw = _OwnerBoundBatchRaw(foreign_source)
     foreign_raw.intensity = np.asarray(
         [0.0, 0.0, 0.0, 5.0, 500.0, 5.0, 0.0, 0.0, 0.0], dtype=float
     )
-    foreign = _backfill_ms1_candidates_with_acquisition(
+    foreign = capture_ms1_candidates(
         foreign_raw,
         (group,),
         acquisition_source=foreign_source,
         run_spec_id="processing-run:" + ("1" * 64),
-        settings=_backfill_settings(),
-        peak_config=_backfill_peak_config(),
+        settings=_capture_settings(),
+        peak_config=_capture_peak_config(),
         signal_processing_profile=profile,
     )
     foreign_record = foreign.physical_evaluations[0]
@@ -1308,13 +1308,13 @@ def test_spec_bound_terminal_physical_truth_remains_distinct_hold_state(
     raw.rt = rt
     raw.intensity = intensity
 
-    result = _backfill_ms1_candidates_with_acquisition(
+    result = capture_ms1_candidates(
         raw,
         (_group((_seed(scan_number=10, rt=7.80),)),),
         acquisition_source=source,
         run_spec_id=_TEST_RUN_SPEC_ID,
-        settings=_backfill_settings(),
-        peak_config=_backfill_peak_config(),
+        settings=_capture_settings(),
+        peak_config=_capture_peak_config(),
         signal_processing_profile=SignalProcessingProfile(window_points=window_points),
     )
 
@@ -1396,13 +1396,13 @@ def test_discovery_publishes_supported_peak(
     )
     raw = _OwnerBoundBatchRaw(source)
     raw.rt, raw.intensity = rt, intensity
-    result = _backfill_ms1_candidates_with_acquisition(
+    result = capture_ms1_candidates(
         raw,
         (_group((_seed(scan_number=10, rt=query_rt),)),),
         acquisition_source=source,
         run_spec_id=_TEST_RUN_SPEC_ID,
-        settings=_backfill_settings(),
-        peak_config=_backfill_peak_config(),
+        settings=_capture_settings(),
+        peak_config=_capture_peak_config(),
         signal_processing_profile=profile,
     )
     evaluation = result.physical_evaluations[0].evaluation
@@ -1482,19 +1482,19 @@ def test_physical_fact_sharing_uses_exact_owner_question(
     prepare = Mock(wraps=prepare_physical_signal)
     evaluate = Mock(wraps=evaluate_physical_peak)
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.prepare_physical_signal", prepare
+        "xic_extractor.discovery.ms1_capture.prepare_physical_signal", prepare
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.evaluate_physical_peak", evaluate
+        "xic_extractor.discovery.ms1_capture.evaluate_physical_peak", evaluate
     )
 
-    result = _backfill_ms1_candidates_with_acquisition(
+    result = capture_ms1_candidates(
         raw,
         (first, second),
         acquisition_source=source,
         run_spec_id=spec.run_spec_id,
         settings=settings,
-        peak_config=_backfill_peak_config(),
+        peak_config=_capture_peak_config(),
         signal_processing_profile=profile,
     )
 
@@ -1583,13 +1583,13 @@ def _inferred_apex_case(
         ions = () if mz is None else (mz, *(mz + offset for offset in isotope_offsets))
         return next((ion for ion in ions if low <= ion <= high), None)
 
-    result = _backfill_ms1_candidates_with_acquisition(
+    result = capture_ms1_candidates(
         raw,
         groups,
         acquisition_source=source,
         run_spec_id=_TEST_RUN_SPEC_ID,
-        settings=_backfill_settings(),
-        peak_config=_backfill_peak_config(),
+        settings=_capture_settings(),
+        peak_config=_capture_peak_config(),
         signal_processing_profile=SignalProcessingProfile(window_points=15),
         ms1_centroid_mz=read_ion,
     )
@@ -1834,13 +1834,13 @@ def test_inferred_precursor_rechecks_isotope_after_point_reacquisition(
         ions = (ion_mz, isotope_mz) if has_isotope else (ion_mz,)
         return next((mz for mz in ions if low <= mz <= high), None)
 
-    result = _backfill_ms1_candidates_with_acquisition(
+    result = capture_ms1_candidates(
         raw,
         (group,) * shared_request_count,
         acquisition_source=source,
         run_spec_id=_TEST_RUN_SPEC_ID,
-        settings=_backfill_settings(),
-        peak_config=_backfill_peak_config(),
+        settings=_capture_settings(),
+        peak_config=_capture_peak_config(),
         signal_processing_profile=profile,
         ms1_centroid_mz=read_ion,
     )

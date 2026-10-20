@@ -644,8 +644,8 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
         read_owner_bound_discovery_candidates_csv,
     )
     from xic_extractor.discovery.grouping import group_discovery_seeds
-    from xic_extractor.discovery.ms1_backfill import (
-        _backfill_ms1_candidates_with_acquisition,
+    from xic_extractor.discovery.ms1_capture import (
+        capture_ms1_candidates,
     )
     from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
     from xic_extractor.discovery.physical_fact_persistence import (
@@ -779,7 +779,7 @@ def test_profile_replay_closes_persisted_discovery_through_runtime_and_writer(
             seeds = collect_strict_nl_seeds(
                 discovery_raw, raw_file=path, settings=settings
             )
-            discovery = _backfill_ms1_candidates_with_acquisition(
+            discovery = capture_ms1_candidates(
                 discovery_raw,
                 group_discovery_seeds(seeds, settings=settings),
                 acquisition_source=source.acquisition_source,

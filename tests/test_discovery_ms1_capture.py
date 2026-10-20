@@ -23,8 +23,8 @@ from xic_extractor.discovery.models import (
     DiscoverySettings,
     NeutralLossProfile,
 )
-from xic_extractor.discovery.ms1_backfill import (
-    _backfill_ms1_candidates_with_acquisition,
+from xic_extractor.discovery.ms1_capture import (
+    capture_ms1_candidates,
 )
 from xic_extractor.execution.attempt import derive_runtime_acquisition_metrics
 from xic_extractor.peak_detection.models import PeakDetectionResult, PeakResult
@@ -42,7 +42,7 @@ NEUTRAL_LOSS_DA = 116.0474
 RAW_FILE = Path("C:/data/TumorBC2312_DNA.raw")
 
 
-def test_backfill_runs_real_peak_detection_with_extraction_config() -> None:
+def test_capture_runs_real_peak_detection_with_extraction_config() -> None:
     group = _group((_seed(scan_number=10, rt=9.00),))
     rt = np.linspace(8.60, 9.40, 161)
     intensity = _gaussian(rt, center=9.02, sigma=0.04, height=1000.0)
@@ -130,7 +130,7 @@ def test_discovery_verifies_inferred_seeds_after_ms1_without_moving_peak(
         assert receipt["precursor_mz"] == 500.0
 
 
-def test_backfill_extracts_group_precursor_xic_with_padded_rt_window_and_ppm(
+def test_capture_extracts_group_precursor_xic_with_padded_rt_window_and_ppm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     group = _group(
@@ -162,7 +162,7 @@ def test_backfill_extracts_group_precursor_xic_with_padded_rt_window_and_ppm(
         return _ok_peak(rt=7.90, intensity=500.0, area=42.0, start=7.76, end=8.01)
 
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         _fake_find_peak_and_area,
     )
 
@@ -193,7 +193,7 @@ def test_backfill_extracts_group_precursor_xic_with_padded_rt_window_and_ppm(
     assert len(candidates) == 1
 
 
-def test_backfill_clamps_ms1_search_rt_min_to_zero(
+def test_capture_clamps_ms1_search_rt_min_to_zero(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     group = _group((_seed(scan_number=10, rt=0.05),))
@@ -232,7 +232,7 @@ def test_ms1_peak_fields_are_filled_from_peak_detection_result(
         intensity=np.array([20.0, 900.0, 25.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: _ok_peak(
             rt=7.91,
             intensity=900.0,
@@ -291,7 +291,7 @@ def test_missing_or_empty_ms1_trace_still_creates_low_priority_candidate(
     raw = _FakeRaw(rt=rt, intensity=intensity)
     if peak_result is not None:
         monkeypatch.setattr(
-            "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+            "xic_extractor.discovery.ms1_capture.find_peak_and_area",
             lambda *args, **kwargs: peak_result,
         )
 
@@ -323,7 +323,7 @@ def test_single_seed_with_ms1_peak_is_medium_priority(
         intensity=np.array([10.0, 100.0, 10.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: _ok_peak(
             rt=7.80,
             intensity=100.0,
@@ -358,7 +358,7 @@ def test_ms1_peak_far_from_best_seed_is_not_high_priority(
         intensity=np.array([10.0, 100.0, 10.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: _ok_peak(
             rt=8.16,
             intensity=100.0,
@@ -380,7 +380,7 @@ def test_ms1_peak_far_from_best_seed_is_not_high_priority(
     assert candidate.reason == "MS1 peak offset from seed RT"
 
 
-def test_backfill_merges_candidates_inside_same_ms1_peak_boundary(
+def test_capture_merges_candidates_inside_same_ms1_peak_boundary(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     first_group = _group((_seed(scan_number=10, rt=7.80, product_intensity=3000.0),))
@@ -396,7 +396,7 @@ def test_backfill_merges_candidates_inside_same_ms1_peak_boundary(
         )
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: next(peak_results),
     )
 
@@ -457,7 +457,7 @@ def test_merged_peak_retains_complete_supported_member_not_original_interval(
         )
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: next(peaks),
     )
     monkeypatch.setattr(
@@ -1016,7 +1016,7 @@ def test_cross_tag_candidates_do_not_merge_without_ms1_overlap() -> None:
     assert len(merged) == 2
 
 
-def test_backfill_does_not_merge_distinct_ms1_peak_boundaries(
+def test_capture_does_not_merge_distinct_ms1_peak_boundaries(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     first_group = _group((_seed(scan_number=10, rt=7.80, product_intensity=3000.0),))
@@ -1032,7 +1032,7 @@ def test_backfill_does_not_merge_distinct_ms1_peak_boundaries(
         )
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: next(peak_results),
     )
 
@@ -1061,7 +1061,7 @@ def test_ms1_seed_delta_is_signed_but_priority_uses_absolute_distance(
         intensity=np.array([10.0, 100.0, 10.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: _ok_peak(
             rt=7.70,
             intensity=100.0,
@@ -1133,7 +1133,7 @@ def test_best_seed_tie_breaks_by_error_then_rt_then_scan_for_candidate(
         intensity=np.array([10.0, 500.0, 20.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: _ok_peak(
             rt=7.90,
             intensity=500.0,
@@ -1175,7 +1175,7 @@ def test_owner_acquisition_batches_requests_and_preserves_exact_windows(
     empty = replace(first, seeds=())
     raw = _OwnerBoundBatchRaw(source)
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: _ok_peak(
             rt=7.8,
             intensity=100.0,
@@ -1185,7 +1185,7 @@ def test_owner_acquisition_batches_requests_and_preserves_exact_windows(
         ),
     )
 
-    result = _backfill_ms1_candidates_with_acquisition(
+    result = capture_ms1_candidates(
         raw,
         (first, duplicate, later, empty),
         acquisition_source=source,
@@ -1228,7 +1228,7 @@ def test_owner_acquisition_splits_request_order_at_256_without_deduplication(
     )
     raw = _OwnerBoundBatchRaw(source)
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: _ok_peak(
             rt=7.8,
             intensity=100.0,
@@ -1238,7 +1238,7 @@ def test_owner_acquisition_splits_request_order_at_256_without_deduplication(
         ),
     )
 
-    result = _backfill_ms1_candidates_with_acquisition(
+    result = capture_ms1_candidates(
         raw,
         groups,
         acquisition_source=source,
@@ -1285,7 +1285,7 @@ def test_owner_acquisition_reads_overlapping_windows_once_with_exact_traces(
     )
     raw = _ScanGridRaw(source)
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: _ok_peak(
             rt=7.8,
             intensity=100.0,
@@ -1295,7 +1295,7 @@ def test_owner_acquisition_reads_overlapping_windows_once_with_exact_traces(
         ),
     )
 
-    result = _backfill_ms1_candidates_with_acquisition(
+    result = capture_ms1_candidates(
         raw,
         groups,
         acquisition_source=source,
@@ -1331,7 +1331,7 @@ def test_owner_acquisition_fails_closed_on_wrong_trace_cardinality(
         AcquisitionContractError,
         match="exactly one trace per request",
     ):
-        _backfill_ms1_candidates_with_acquisition(
+        capture_ms1_candidates(
             raw,
             (_group((_seed(scan_number=10, rt=7.80),)),),
             acquisition_source=source,
@@ -1605,7 +1605,7 @@ def _candidates_from_raw(
     settings: DiscoverySettings,
     peak_config: ExtractionConfig,
 ) -> tuple[DiscoveryCandidate, ...]:
-    return _backfill_ms1_candidates_with_acquisition(
+    return capture_ms1_candidates(
         raw,
         groups,
         acquisition_source=raw.acquisition_source,
@@ -1624,7 +1624,7 @@ def _candidates_from_raw(
         (7.5, (500.0,), 10, "ms1_feature_nl_rescued"),
     ),
 )
-def test_backfill_retains_supported_same_apex_member_without_extra_parent_reads(
+def test_capture_retains_supported_same_apex_member_without_extra_parent_reads(
     monkeypatch: pytest.MonkeyPatch, parent_rt, masses, expected_scan, expected_state
 ) -> None:
     from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata
@@ -1659,7 +1659,7 @@ def test_backfill_retains_supported_same_apex_member_without_extra_parent_reads(
         )
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *a, **kw: next(peaks),
     )
     batches = []
@@ -1691,7 +1691,7 @@ def test_backfill_retains_supported_same_apex_member_without_extra_parent_reads(
     assert set(receipts) == {"10", "20", "30"}
 
 
-def test_backfill_does_not_replace_unsupported_peak_with_different_apex_member(
+def test_capture_does_not_replace_unsupported_peak_with_different_apex_member(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Overlap/feature-row merging is broader than same physical-apex fallback.
@@ -1710,7 +1710,7 @@ def test_backfill_does_not_replace_unsupported_peak_with_different_apex_member(
     )
     originals = iter((anchor, other))
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill._candidate_from_trace",
+        "xic_extractor.discovery.ms1_capture._candidate_from_trace",
         lambda *a, **kw: next(originals),
     )
     groups = tuple(

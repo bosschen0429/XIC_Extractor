@@ -5,13 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from tests.test_discovery_ms1_backfill import (
+from tests.test_discovery_ms1_capture import (
     _group,
     _multi_tag_settings,
     _seed,
 )
-from tests.test_discovery_ms1_backfill import (
-    _peak_config as _backfill_peak_config,
+from tests.test_discovery_ms1_capture import (
+    _peak_config as _capture_peak_config,
 )
 from tests.test_discovery_physical_fact_integration import _OwnerBoundBatchRaw
 from tests.test_discovery_pipeline import _settings
@@ -19,8 +19,8 @@ from xic_extractor.configuration.signal_processing_profile import (
     SignalProcessingProfile,
 )
 from xic_extractor.discovery.models import DiscoverySettings
-from xic_extractor.discovery.ms1_backfill import (
-    _backfill_ms1_candidates_with_acquisition,
+from xic_extractor.discovery.ms1_capture import (
+    capture_ms1_candidates,
 )
 from xic_extractor.discovery.output_publication import (
     write_dual_csvs,
@@ -62,13 +62,13 @@ def test_physical_sidecar_and_publication_timing_cover_canonical_bytes_without_r
             (20, 7.82, "R", 132.0423),
         )
     )
-    result = _backfill_ms1_candidates_with_acquisition(
+    result = capture_ms1_candidates(
         _OwnerBoundBatchRaw(source),
         groups,
         acquisition_source=source,
         run_spec_id=spec.run_spec_id,
         settings=settings,
-        peak_config=_backfill_peak_config(),
+        peak_config=_capture_peak_config(),
         signal_processing_profile=profile,
     )
     from xic_extractor.peak_detection import physical_peak_codec as owner

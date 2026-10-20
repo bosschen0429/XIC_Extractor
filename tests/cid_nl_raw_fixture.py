@@ -11,8 +11,8 @@ import numpy as np
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.discovery.grouping import group_discovery_seeds
 from xic_extractor.discovery.models import DiscoverySettings, NeutralLossProfile
-from xic_extractor.discovery.ms1_backfill import (
-    _backfill_ms1_candidates_with_acquisition,
+from xic_extractor.discovery.ms1_capture import (
+    capture_ms1_candidates,
 )
 from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
 from xic_extractor.processing_identity import (
@@ -46,7 +46,7 @@ def _current_candidates(
 ):
     seeds = collect_strict_nl_seeds(raw, raw_file=raw_file, settings=settings)
     groups = group_discovery_seeds(seeds, settings=settings)
-    return _backfill_ms1_candidates_with_acquisition(
+    return capture_ms1_candidates(
         raw,
         groups,
         acquisition_source=raw.acquisition_source or fake_acquisition_source(),

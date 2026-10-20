@@ -24,8 +24,8 @@ from xic_extractor.discovery.models import (
     DiscoverySettings,
     NeutralLossProfile,
 )
-from xic_extractor.discovery.ms1_backfill import (
-    _backfill_ms1_candidates_with_acquisition,
+from xic_extractor.discovery.ms1_capture import (
+    capture_ms1_candidates,
 )
 from xic_extractor.evidence.neutral_loss import CandidateMS2Evidence
 from xic_extractor.peak_detection.hypotheses import (
@@ -179,18 +179,18 @@ def test_cid_nl_seed_changes_ms1_generation_window_before_peak_evaluation(
         )
 
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         _same_physical_peak,
     )
 
-    first = _backfill_ms1_candidates_with_acquisition(
+    first = capture_ms1_candidates(
         raw,
         (first_group,),
         acquisition_source=raw.acquisition_source,
         settings=settings,
         peak_config=_peak_config(),
     ).candidates[0]
-    second = _backfill_ms1_candidates_with_acquisition(
+    second = capture_ms1_candidates(
         raw,
         (second_group,),
         acquisition_source=raw.acquisition_source,

@@ -64,8 +64,8 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
         SignalProcessingProfile,
     )
     from xic_extractor.discovery.grouping import group_discovery_seeds
-    from xic_extractor.discovery.ms1_backfill import (
-        _backfill_ms1_candidates_with_acquisition,
+    from xic_extractor.discovery.ms1_capture import (
+        capture_ms1_candidates,
     )
     from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
     from xic_extractor.discovery.physical_fact_record import DiscoveryPhysicalFactRecord
@@ -195,7 +195,7 @@ def test_changed_physical_query_evaluates_once_and_preserves_support(
     seeds = collect_strict_nl_seeds(
         raw, raw_file=fixture.source_paths["S1"], settings=settings
     )
-    discovery = _backfill_ms1_candidates_with_acquisition(
+    discovery = capture_ms1_candidates(
         raw,
         group_discovery_seeds(seeds, settings=settings),
         acquisition_source=source,
@@ -493,8 +493,8 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
         SignalProcessingProfile,
     )
     from xic_extractor.discovery.grouping import group_discovery_seeds
-    from xic_extractor.discovery.ms1_backfill import (
-        _backfill_ms1_candidates_with_acquisition,
+    from xic_extractor.discovery.ms1_capture import (
+        capture_ms1_candidates,
     )
     from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
     from xic_extractor.peak_detection.cid_nl_method_subject import (
@@ -550,7 +550,7 @@ def test_physical_mass_change_preserves_scan_evidence_and_requantifies(
     settings = replace(_settings(), neutral_loss_profile=None)
     peak_config = _peak_config(tmp_path)
     profile = SignalProcessingProfile(window_points=15)
-    discovery = _backfill_ms1_candidates_with_acquisition(
+    discovery = capture_ms1_candidates(
         raw,
         group_discovery_seeds(
             collect_strict_nl_seeds(
@@ -2110,8 +2110,8 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
         SignalProcessingProfile,
     )
     from xic_extractor.discovery.grouping import group_discovery_seeds
-    from xic_extractor.discovery.ms1_backfill import (
-        _backfill_ms1_candidates_with_acquisition,
+    from xic_extractor.discovery.ms1_capture import (
+        capture_ms1_candidates,
     )
     from xic_extractor.discovery.ms2_seeds import collect_strict_nl_seeds
     from xic_extractor.peak_detection.search_scope import (
@@ -2146,7 +2146,7 @@ def test_adapter_supports_adjacent_physical_peaks_with_interior_scans(
     seeds = collect_strict_nl_seeds(
         raw, raw_file=fixture.source_paths["S1"], settings=settings
     )
-    discovery = _backfill_ms1_candidates_with_acquisition(
+    discovery = capture_ms1_candidates(
         raw,
         group_discovery_seeds(seeds, settings=settings),
         acquisition_source=fixture.owners.request.acquisition_sources[0],

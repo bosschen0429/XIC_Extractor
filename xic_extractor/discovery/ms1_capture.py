@@ -160,7 +160,7 @@ class _DiscoveryMs1AcquisitionResult:
     physical_bindings: tuple["DiscoveryCandidatePhysicalBinding", ...] = ()
 
 
-def _backfill_ms1_candidates_with_acquisition(
+def capture_ms1_candidates(
     raw: BatchXICAdapter,
     groups: Iterable[DiscoverySeedGroup],
     *,
@@ -188,7 +188,7 @@ def _backfill_ms1_candidates_with_acquisition(
     )
     capability = mint_trace_acquisition_capability(
         acquisition_source,
-        adapter_namespace="xic_extractor.discovery.ms1_backfill",
+        adapter_namespace="xic_extractor.discovery.ms1_capture",
         coordinate_kind=TraceCoordinateKind.NATIVE_SCAN,
     )
     physical_plans: list[_DiscoveryMs1RequestPlan] = []

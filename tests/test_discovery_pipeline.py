@@ -32,7 +32,7 @@ from xic_extractor.discovery.models import (
     DiscoverySettings,
     NeutralLossProfile,
 )
-from xic_extractor.discovery.ms1_backfill import _DiscoveryMs1Measurements
+from xic_extractor.discovery.ms1_capture import _DiscoveryMs1Measurements
 from xic_extractor.discovery.output_publication import (
     _BATCH_INDEX_COLUMNS,
     write_batch_index,
@@ -164,7 +164,7 @@ def test_single_raw_pipeline_groups_strict_ms2_seeds_and_writes_dual_csvs(
         intensity=np.array([10.0, 600.0, 20.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: _ok_peak(
             rt=7.86,
             intensity=600.0,
@@ -222,7 +222,7 @@ def test_single_raw_pipeline_writes_inferred_and_direct_same_scan_rows(
         intensity=np.array([10.0, 1000.0, 20.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: _ok_peak(
             rt=23.34,
             intensity=1000.0,
@@ -292,7 +292,7 @@ def test_pipeline_retains_distinct_inferred_features_from_one_ms2_in_both_csvs(
         ),
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda rt, intensity, peak_config, **kwargs: _ok_peak(
             rt=7.8,
             intensity=float(intensity[1]),
@@ -372,7 +372,7 @@ def test_batch_pipeline_writes_per_sample_csvs_and_index(
         ),
     }
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda rt, intensity, peak_config, **kwargs: _ok_peak(
             rt=float(rt[1]),
             intensity=float(intensity[1]),
@@ -488,7 +488,7 @@ def test_parallel_batch_preserves_serial_artifacts_and_sample_order(
         }
 
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda rt, intensity, peak_config, **kwargs: _ok_peak(
             rt=float(rt[1]),
             intensity=float(intensity[1]),
@@ -1063,7 +1063,7 @@ def test_discovery_peak_failure_preserves_owner_acquisition_measurements(
     )
     recorder = TimingRecorder("discovery")
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("peak failed")),
     )
 
@@ -1304,7 +1304,7 @@ def test_pipeline_threads_evidence_profile_into_scoring(
         intensity=np.array([10.0, 600.0, 20.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: _ok_peak(
             rt=7.80,
             intensity=600.0,
@@ -1348,7 +1348,7 @@ def test_pipeline_populates_ms1_scan_support_score_from_profile_target(
         intensity=np.array([10.0, 100.0, 600.0, 300.0, 20.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: _ok_peak(
             rt=7.80,
             intensity=600.0,
@@ -1411,7 +1411,7 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
         intensity=np.array([10.0, 600.0, 20.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: _ok_peak(
             rt=7.80,
             intensity=600.0,
@@ -1435,7 +1435,7 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
     assert set(records_by_stage) == {
         "discover.ms2_seeds",
         "discover.group_seeds",
-        "discover.ms1_backfill",
+        "discover.ms1_capture",
         "discover.peak_anchor",
         "discover.blank_qualification",
         "discover.write_candidates_csv",
@@ -1445,7 +1445,7 @@ def test_single_raw_pipeline_records_discovery_timing_stages(
     assert records_by_stage["discover.ms2_seeds"].sample_stem == "Sample"
     assert records_by_stage["discover.ms2_seeds"].metrics["seed_count"] == 1
     assert records_by_stage["discover.group_seeds"].metrics["group_count"] == 1
-    assert records_by_stage["discover.ms1_backfill"].metrics["candidate_count"] == 1
+    assert records_by_stage["discover.ms1_capture"].metrics["candidate_count"] == 1
     assert records_by_stage["discover.peak_anchor"].metrics["candidate_count"] == 1
     assert (
         records_by_stage["discover.blank_qualification"].metrics[
@@ -1607,7 +1607,7 @@ def test_owner_bound_discovery_projects_complete_ms1_measurements(
         intensity=np.asarray([10.0, 100.0, 10.0]),
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_backfill.find_peak_and_area",
+        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
         lambda *args, **kwargs: _ok_peak(
             rt=7.8,
             intensity=100.0,
