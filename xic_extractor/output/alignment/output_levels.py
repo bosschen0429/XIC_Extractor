@@ -15,9 +15,7 @@ AlignmentOutputLevel = Literal[
 ]
 
 _ARTIFACTS: dict[AlignmentOutputLevel, tuple[str, ...]] = {
-    "production": (
-        "alignment_matrix.tsv",
-    ),
+    "production": ("alignment_matrix.tsv",),
     "machine": (
         "alignment_matrix.tsv",
         "alignment_matrix_identity.tsv",
@@ -48,8 +46,6 @@ _ARTIFACTS: dict[AlignmentOutputLevel, tuple[str, ...]] = {
         "alignment_backfill_cell_evidence.tsv",
     ),
 }
-
-
 
 
 def artifact_names_for_output_level(

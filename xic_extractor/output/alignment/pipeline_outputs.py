@@ -82,9 +82,7 @@ class AlignmentRunOutputs:
     run_metadata_json: Path | None = None
     artifact_fingerprint_batch: AlignmentArtifactFingerprintBatch | None = None
     owner_build_route_receipt: OwnerBuildRouteReceipt | None = None
-    owner_backfill_evaluation_coverage: BackfillEvaluationCoverageBatch | None = (
-        None
-    )
+    owner_backfill_evaluation_coverage: BackfillEvaluationCoverageBatch | None = None
     # No live workflow result is published. The run closes its partition
     # store before returning, so a result handed back here would load its
     # children and assessments from a deleted spool. ``evidence`` carries the

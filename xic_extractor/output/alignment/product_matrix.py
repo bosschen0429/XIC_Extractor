@@ -178,8 +178,6 @@ def product_matrix_tsv_rows(
     ]
 
 
-
-
 def _identity_row(
     cluster: Any,
     *,

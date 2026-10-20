@@ -1,13 +1,22 @@
+# 依賴更新：Python（uv.lock）與 GitHub Actions 各自每月合併成一個 PR。
+# CI 全綠即可合併；若 CI 因 ruff／mypy 新版的規則或格式差異而失敗，另開票處理，
+# ruff 升級造成的格式變更需附格式化前後的 AST 等價比對。
 version: 2
 updates:
-  - package-ecosystem: "pip"
+  - package-ecosystem: "uv"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     labels: ["dependencies"]
+    groups:
+      python-dependencies:
+        patterns: ["*"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     labels: ["dependencies"]
+    groups:
+      github-actions:
+        patterns: ["*"]

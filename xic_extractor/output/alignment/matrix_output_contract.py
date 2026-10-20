@@ -113,8 +113,6 @@ def serialize_public_matrix_table(
     )
 
 
-
-
 def bind_matrix_identity_rows(
     *,
     matrix_header: Sequence[str],
