@@ -713,7 +713,7 @@ def _rt_facts(
     istd_pair: str,
     paired_istd_anchor_rt_min: float | None,
 ) -> RtEvidenceFacts:
-    selected_rt = float(getattr(candidate, "selection_apex_rt"))
+    selected_rt = float(candidate.selection_apex_rt)
     rt_prior = getattr(ctx, "rt_prior", None)
     rt_prior_delta = (
         round(abs(selected_rt - float(rt_prior)), 10)
@@ -800,7 +800,7 @@ def _candidate_id(candidate: Any) -> str:
     sources = ";".join(
         str(source) for source in getattr(candidate, "proposal_sources", ())
     )
-    selected_rt = float(getattr(candidate, "selection_apex_rt"))
+    selected_rt = float(candidate.selection_apex_rt)
     peak = getattr(candidate, "peak", None)
     peak_start = getattr(peak, "peak_start", selected_rt)
     peak_end = getattr(peak, "peak_end", selected_rt)
@@ -839,7 +839,7 @@ def _candidate_area(candidate: Any) -> float:
 
 def _candidate_height(candidate: Any) -> float:
     try:
-        value = float(getattr(candidate, "selection_apex_intensity"))
+        value = float(candidate.selection_apex_intensity)
     except (TypeError, ValueError):
         return 0.0
     return value if _is_finite(value) else 0.0

@@ -608,7 +608,9 @@ function .\.venv\Scripts\python.exe {
         "serial_ci",
     )
     for flags in itertools.product((False, True), repeat=len(markers)):
-        marked = {marker for marker, enabled in zip(markers, flags) if enabled}
+        marked = {
+            marker for marker, enabled in zip(markers, flags, strict=True) if enabled
+        }
         in_parallel = parallel_expression.evaluate(marked.__contains__)
         in_browser = (
             browser_expression.evaluate(marked.__contains__)

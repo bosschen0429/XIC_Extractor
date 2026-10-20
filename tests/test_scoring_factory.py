@@ -58,7 +58,7 @@ def test_factory_scores_analyte_against_current_sample_reference(
     assert ctx.rt_prior == reference
     assert (ctx.rt_min, ctx.rt_max) == (rt[0], rt[-1])
     assert ctx.rt_prior_sigma is None
-    assert getattr(builder, "prior_source") == "paired_istd"
+    assert builder.prior_source == "paired_istd"
     facts = build_candidate_evidence_facts(candidate, ctx)
     assert facts.rt.rt_prior_status == "close"
     assert facts.rt.window_status != "outside"

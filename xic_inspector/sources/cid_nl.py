@@ -274,7 +274,10 @@ class CidNlSource:
                         "known ISTD calibration knots must be finite"
                     )
                 knots.append((float(x), float(y)))
-            if any(a[0] >= b[0] or a[1] > b[1] for a, b in zip(knots, knots[1:])):
+            if any(
+                a[0] >= b[0] or a[1] > b[1]
+                for a, b in zip(knots, knots[1:], strict=False)
+            ):
                 raise ExplanationError("known ISTD calibration knots must be monotone")
             if domain != [knots[0][0], knots[-1][0]]:
                 raise ExplanationError(

@@ -331,5 +331,5 @@ def _relpath(path: Path, *, root: Path) -> str:
     resolved_root = root.resolve()
     try:
         return path.relative_to(resolved_root).as_posix()
-    except ValueError:
-        raise ValueError(f"{path} is outside root {resolved_root}")
+    except ValueError as exc:
+        raise ValueError(f"{path} is outside root {resolved_root}") from exc

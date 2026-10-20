@@ -84,7 +84,7 @@ def read_known_istd_reference(path: Path) -> KnownIstdReference:
             )
         for row in values:
             if any(value is not None for value in row):
-                yield dict(zip(headers, row))
+                yield dict(zip(headers, row, strict=False))
 
     def number(row: dict[str, object], key: str) -> float:
         value = row[key]

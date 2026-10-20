@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from typing import Protocol, cast
 
 import numpy as np
 
@@ -16,6 +17,13 @@ from xic_extractor.peak_detection.physical_peak_models import PreparedSignalResu
 from xic_extractor.peak_detection.scoring_metrics import compute_local_sn_cache
 from xic_extractor.peak_detection.scoring_models import ScoringContext
 from xic_extractor.peak_detection.scoring_quality import hard_quality_flags
+
+
+class _ScoringContextBuilder(Protocol):
+    rt_prior: float
+    prior_source: str
+
+    def __call__(self, candidate: PeakCandidate) -> ScoringContext: ...
 
 
 def build_scoring_context_factory(
@@ -204,9 +212,10 @@ def build_scoring_context_factory(
                 morphology_trace_window_points=morphology_trace_window_points,
             )
 
-        setattr(builder, "rt_prior", rt_prior)
-        setattr(builder, "prior_source", prior_source)
-        return builder
+        context_builder = cast(_ScoringContextBuilder, builder)
+        context_builder.rt_prior = rt_prior
+        context_builder.prior_source = prior_source
+        return context_builder
 
     return _factory
 

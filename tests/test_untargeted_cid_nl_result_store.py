@@ -2,6 +2,7 @@
 
 import gc
 import hashlib
+import pickle
 import shutil
 import subprocess
 import sys
@@ -528,7 +529,7 @@ def test_preserved_index_refuses_a_truncated_file(tmp_path):
 
     payload = index.read_bytes()
     index.write_bytes(payload[: len(payload) // 2])
-    with pytest.raises(Exception):
+    with pytest.raises(pickle.UnpicklingError):
         open_preserved_results(index)
 
 

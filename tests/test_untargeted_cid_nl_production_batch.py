@@ -3803,7 +3803,7 @@ def test_production_initial_groups_use_complete_feature_inference_batch(
     for cell_context in cell_contexts:
         assert cell_context.sample_universe == frozenset(stems)
         assert dict(cell_context.rt_frame.injection_order) == dict(
-            zip(stems, (1, 2, 3))
+            zip(stems, (1, 2, 3), strict=True)
         )
         rebound = replace(cell_context, rt_frame=SampleRtFrame())
         assert rebound.group is cell_context.group

@@ -233,7 +233,7 @@ def is_supported_alignment_discovery(settings: Any) -> bool:
             return True
         except (TypeError, ValueError):
             return False
-    if hasattr(settings, "tags") and getattr(settings, "tags"):
+    if hasattr(settings, "tags") and settings.tags:
         return all(
             getattr(tag, "strategy", None) in {"neutral_loss", "delta_mass"}
             for tag in settings.tags

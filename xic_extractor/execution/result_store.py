@@ -214,7 +214,7 @@ class StreamedResultStore:
             raise TypeError("partition payload requires a dataclass result")
         if not hasattr(metadata_payload, "children"):
             raise TypeError("streaming partition payload requires children")
-        if getattr(metadata_payload, "children") != ():
+        if metadata_payload.children != ():
             raise ValueError("streaming metadata payload must have empty children")
         return self._append_payload(
             partition_key,

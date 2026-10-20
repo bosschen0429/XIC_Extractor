@@ -374,7 +374,7 @@ class _FactCache:
             # per-entry disk durability is not a runtime acknowledgement.
             try:
                 os.replace(temporary, path)
-            except (FileExistsError, PermissionError):
+            except (FileExistsError, PermissionError) as exc:
                 # Windows can deny replacement while another worker reads the
                 # winner. An identical committed fact already satisfies this write.
                 existing = self.read(kind, key)
@@ -383,7 +383,7 @@ class _FactCache:
                 if existing != payload:
                     raise UntargetedAcquisitionCacheError(
                         "acquisition cache race produced conflicting facts"
-                    )
+                    ) from exc
         finally:
             temporary.unlink(missing_ok=True)
 

@@ -76,13 +76,16 @@ class ReferenceReport(TypedDict):
     summary: dict[str, object]
 
 
+_DEFAULT_REFERENCE_POLICY = ReferencePolicy()
+
+
 def reference_rt(target: Target) -> float:
     """Target CSV represents the reference by the search-window midpoint."""
     return (target.rt_min + target.rt_max) / 2
 
 
 def trace_clusters(
-    trace: XICTrace, policy: ReferencePolicy = ReferencePolicy()
+    trace: XICTrace, policy: ReferencePolicy = _DEFAULT_REFERENCE_POLICY
 ) -> tuple[tuple[float, float, float], ...]:
     """Diagnostic apex and half-prominence extents, never selected peaks.
 
@@ -130,7 +133,7 @@ def trace_clusters(
 
 
 def trace_cluster_apices(
-    trace: XICTrace, policy: ReferencePolicy = ReferencePolicy()
+    trace: XICTrace, policy: ReferencePolicy = _DEFAULT_REFERENCE_POLICY
 ) -> tuple[float, ...]:
     """Return diagnostic apex positions for callers that need positions only."""
     return tuple(apex for apex, _, _ in trace_clusters(trace, policy))
@@ -232,7 +235,7 @@ def _majority(values: Sequence[int], electorate: int | None = None) -> int | Non
 def check_reference_consistency(
     groups: Mapping[str, Sequence[Target]],
     observations: Sequence[ClusterObservation] = (),
-    policy: ReferencePolicy = ReferencePolicy(),
+    policy: ReferencePolicy = _DEFAULT_REFERENCE_POLICY,
 ) -> ReferenceReport:
     """Compare references without modifying targets, selections, or values.
 

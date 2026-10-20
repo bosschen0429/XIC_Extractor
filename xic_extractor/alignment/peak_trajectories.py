@@ -1090,7 +1090,7 @@ def _match_patterns(
                 if abs(value) <= max_shift
             )
     ordered = sorted(endpoints)
-    shifts.update((a + b) / 2.0 for a, b in zip(ordered, ordered[1:]))
+    shifts.update((a + b) / 2.0 for a, b in zip(ordered, ordered[1:], strict=False))
     empty: _ScoredPath = ((0, 0.0, 0.0), ())
     alternatives: dict[tuple[tuple[int, int], ...], tuple[int, float, float]] = {}
     for shift in sorted(shifts):
@@ -1149,7 +1149,7 @@ def _preserves_order(roots: Sequence[int], patterns: tuple[_Pattern, ...]) -> bo
         sequence = [roots[index] for index in pattern.nodes]
         if len(set(sequence)) != len(sequence):
             return False
-        for left, right in zip(sequence, sequence[1:]):
+        for left, right in zip(sequence, sequence[1:], strict=False):
             indegree.setdefault(left, 0)
             if right not in successors[left]:
                 successors[left].add(right)

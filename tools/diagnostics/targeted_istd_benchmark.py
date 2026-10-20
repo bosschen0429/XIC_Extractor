@@ -39,12 +39,15 @@ __all__ = (
 )
 
 
+_DEFAULT_BENCHMARK_THRESHOLDS = BenchmarkThresholds()
+
+
 def run_targeted_istd_benchmark(
     *,
     targeted_workbook: Path,
     alignment_dir: Path,
     output_dir: Path,
-    thresholds: BenchmarkThresholds = BenchmarkThresholds(),
+    thresholds: BenchmarkThresholds = _DEFAULT_BENCHMARK_THRESHOLDS,
     targeted_reliability_json: Path | None = None,
     strict_targeted_reliability: bool = False,
 ) -> tuple[BenchmarkOutputs, tuple[BenchmarkSummary, ...]]:

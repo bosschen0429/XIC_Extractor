@@ -22,6 +22,8 @@ from xic_extractor.raw_reader import open_raw
 from xic_extractor.tabular_io import file_sha256
 from xic_extractor.xic_models import XICRequest
 
+_DEFAULT_REFERENCE_POLICY = ReferencePolicy()
+
 
 @dataclass(frozen=True)
 class ReferenceGroup:
@@ -111,7 +113,7 @@ def run_reference_diagnostic(
     *,
     dll_dir: Path | None,
     output_dir: Path,
-    policy: ReferencePolicy = ReferencePolicy(),
+    policy: ReferencePolicy = _DEFAULT_REFERENCE_POLICY,
     rt_min: float = 1.0,
     rt_max: float = 80.0,
     progress: Callable[[str], None] | None = None,

@@ -177,7 +177,7 @@ def test_bind_cid_nl_recipe_closes_the_generic_matrix_method_surface() -> None:
         "owner_build_xic_backend",
     }
     with pytest.raises(FrozenInstanceError):
-        setattr(recipe, "route", "discovery_only")
+        recipe.route = "discovery_only"
 
 
 def test_bind_cid_nl_recipe_applies_only_recipe_owned_overrides() -> None:

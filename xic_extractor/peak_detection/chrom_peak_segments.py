@@ -206,7 +206,7 @@ def enumerate_chrom_peak_segments(
             )
             else relation
             for left, right, relation, envelope_relation in zip(
-                seeds, seeds[1:], relations, envelope_relations
+                seeds, seeds[1:], relations, envelope_relations, strict=False
             )
         )
     # Supported lobes with a persistent valley remain separate components
@@ -480,7 +480,7 @@ def _supported_apex_seeds(
     prominence_by_index: dict[int, float] = {}
     seed_positions = {seed.index: index for index, seed in enumerate(seeds)}
     for seed, prominence, left, right in zip(
-        interior, prominences, left_bases, right_bases
+        interior, prominences, left_bases, right_bases, strict=True
     ):
         left, right = start + int(left), start + int(right) + 1
         prominence_by_index[seed.index] = float(prominence)
@@ -566,6 +566,7 @@ def _restore_rt_envelope_clear_splits(
             canonical_seeds,
             canonical_seeds[1:],
             _adjacent_relations(canonical_residual, canonical_seeds, policy),
+            strict=False,
         )
     )
     connected_groups: list[list[_ApexSeed]] = []
@@ -594,7 +595,7 @@ def _restore_rt_envelope_clear_splits(
         context.start_index,
         *(
             _valley_index(canonical_residual, left[-1].index, right[0].index)
-            for left, right in zip(connected_groups, connected_groups[1:])
+            for left, right in zip(connected_groups, connected_groups[1:], strict=False)
         ),
         context.end_index,
     )
@@ -727,7 +728,7 @@ def _adjacent_relations(
     policy: ChromPeakSegmentPolicy,
 ) -> tuple[_AdjacentPeakRelation, ...]:
     relations: list[_AdjacentPeakRelation] = []
-    for left_seed, right_seed in zip(seeds, seeds[1:]):
+    for left_seed, right_seed in zip(seeds, seeds[1:], strict=False):
         valley_index = _valley_index(
             morphology_trace,
             left_seed.index,

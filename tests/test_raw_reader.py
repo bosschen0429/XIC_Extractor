@@ -26,8 +26,12 @@ def test_default_ms2_acquisition_uses_each_raw_span_without_fixed_ceiling() -> N
             scans={index: _FakeScan([384.0], [100.0]) for index in (1, 2)},
         )
         raw.RunHeaderEx = SimpleNamespace(StartTime=start, EndTime=end)
-        raw.ScanNumberFromRetentionTime = lambda rt: 1 if rt <= (start + end) / 2 else 2
-        raw.RetentionTimeFromScanNumber = lambda number: start if number == 1 else end
+        raw.ScanNumberFromRetentionTime = lambda rt, start=start, end=end: (
+            1 if rt <= (start + end) / 2 else 2
+        )
+        raw.RetentionTimeFromScanNumber = lambda number, start=start, end=end: (
+            start if number == 1 else end
+        )
         handle = RawFileHandle(raw, _fake_thermo(raw))
         seeds = collect_strict_nl_seeds(
             handle, raw_file=Path("span.raw"), settings=settings
@@ -1204,8 +1208,8 @@ def test_ms2_trailer_headers_are_file_local_and_reused_across_windows() -> None:
             "MS2 Isolation Width:": "1.60",
             "Unused:": "not a number",
         }
-        raw.GetTrailerExtraInformation = lambda _: SimpleNamespace(
-            Values=[values[label] for label in raw.trailer_labels]
+        raw.GetTrailerExtraInformation = lambda _, values=values, raw=raw: (
+            SimpleNamespace(Values=[values[label] for label in raw.trailer_labels])
         )
         handle = RawFileHandle(raw, _fake_thermo(raw))
         events = list(handle.iter_ms2_scans(8.0, 8.1))

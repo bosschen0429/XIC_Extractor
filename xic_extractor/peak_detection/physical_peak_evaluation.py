@@ -448,7 +448,9 @@ def _censoring_aware_segments(
     signal = np.asarray(prepared.positive_signal)
     baseline = np.asarray(prepared.baseline)
     replacements = []
-    for start, stop in zip(np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)):
+    for start, stop in zip(
+        np.flatnonzero(edges == 1), np.flatnonzero(edges == -1), strict=True
+    ):
         detected = np.flatnonzero(hits[start:stop]) + start
         if len(detected) < 6:
             continue
@@ -778,7 +780,8 @@ def _physical_segment_support_failure(
     if sum(value > 0.0 for value in original) < 2:
         return "insufficient_original_xic_support"
     if not any(
-        left > 0.0 and right > 0.0 for left, right in zip(original, original[1:])
+        left > 0.0 and right > 0.0
+        for left, right in zip(original, original[1:], strict=False)
     ):
         return "insufficient_original_xic_continuity"
     # Hit density can identify additional censored clusters; it does not
@@ -1182,7 +1185,7 @@ def _physical_trace_failure_reason(
         return "length_mismatch"
     if not all(math.isfinite(value) for value in (*rt, *raw)):
         return "nonfinite_trace"
-    if any(right <= left for left, right in zip(rt, rt[1:])):
+    if any(right <= left for left, right in zip(rt, rt[1:], strict=False)):
         return "non_monotonic_rt"
     return ""
 

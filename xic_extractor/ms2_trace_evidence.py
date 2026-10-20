@@ -98,7 +98,7 @@ def _product_area(points: Sequence[MS2TracePoint]) -> float | None:
         return None
     sorted_points = sorted(points, key=lambda point: point.rt)
     area = 0.0
-    for left, right in zip(sorted_points, sorted_points[1:]):
+    for left, right in zip(sorted_points, sorted_points[1:], strict=False):
         width = max(0.0, float(right.rt) - float(left.rt))
         area += width * (float(left.intensity) + float(right.intensity)) / 2.0
     return area
