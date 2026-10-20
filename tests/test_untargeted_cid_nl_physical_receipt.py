@@ -50,7 +50,6 @@ def _physical_fixture(tmp_path):
         source,
         raw_file=fixture.source_paths["S1"],
         settings=settings,
-        peak_config=config,
         physical_records=records,
     )
     fixture = replace(fixture, owners=bind_physical_capture(fixture.owners, records))

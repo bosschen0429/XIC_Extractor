@@ -92,7 +92,6 @@ def _owner_run(tmp_path, monkeypatch, scenario):
             source,
             raw_file=path,
             settings=settings,
-            peak_config=peak_config,
             physical_records=physical_records,
         )
     batch = build_dense_partition(

@@ -13,8 +13,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from tests.cid_nl_raw_fixture import fake_acquisition_source
-from xic_extractor.configuration.models import ExtractionConfig
+from tests.cid_nl_raw_fixture import TEST_PROFILE, fake_acquisition_source
 from xic_extractor.discovery.delta_mass_patterns import match_delta_mass_pattern
 from xic_extractor.discovery.detected_features import DetectedFeature
 from xic_extractor.discovery.grouping import group_discovery_seeds
@@ -139,9 +138,7 @@ def test_ms2_evidence_changes_without_changing_ms1_integration_or_id() -> None:
     assert unsupported.evidence.best_loss_ppm is None
 
 
-def test_cid_nl_seed_changes_ms1_generation_window_before_peak_evaluation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_cid_nl_seed_changes_ms1_generation_window_before_peak_evaluation() -> None:
     settings = _discovery_settings(ms1_search_padding_min=0.20)
     first_group = group_discovery_seeds(
         (_seed(scan_number=10, rt=7.90),),
@@ -153,55 +150,28 @@ def test_cid_nl_seed_changes_ms1_generation_window_before_peak_evaluation(
     )[0]
     raw = _FakeXicSource()
 
-    def _same_physical_peak(
-        rt: np.ndarray,
-        intensity: np.ndarray,
-        config: ExtractionConfig,
-        *,
-        preferred_rt: float | None = None,
-        strict_preferred_rt: bool = False,
-    ) -> PeakDetectionResult:
-        del rt, intensity, config, preferred_rt, strict_preferred_rt
-        peak = PeakResult(
-            rt=8.00,
-            intensity=500.0,
-            intensity_smoothed=480.0,
-            area=42.0,
-            peak_start=7.95,
-            peak_end=8.05,
-        )
-        return PeakDetectionResult(
-            status="OK",
-            peak=peak,
-            n_points=3,
-            max_smoothed=480.0,
-            n_prominent_peaks=1,
-        )
-
-    monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.find_peak_and_area",
-        _same_physical_peak,
-    )
-
     first = capture_ms1_candidates(
         raw,
         (first_group,),
         acquisition_source=raw.acquisition_source,
+        run_spec_id="processing-run:" + "0" * 64,
+        signal_processing_profile=TEST_PROFILE,
         settings=settings,
-        peak_config=_peak_config(),
     ).candidates[0]
     second = capture_ms1_candidates(
         raw,
         (second_group,),
         acquisition_source=raw.acquisition_source,
+        run_spec_id="processing-run:" + "0" * 64,
+        signal_processing_profile=TEST_PROFILE,
         settings=settings,
-        peak_config=_peak_config(),
     ).candidates[0]
 
     assert raw.requests == [
-        (500.0, pytest.approx(7.70), pytest.approx(8.10), 20.0),
-        (500.0, pytest.approx(7.90), pytest.approx(8.30), 20.0),
+        (500.0, pytest.approx(7.30), pytest.approx(8.50), 20.0),
+        (500.0, pytest.approx(7.50), pytest.approx(8.70), 20.0),
     ]
+    assert first.ms1_peak_found and second.ms1_peak_found
     assert _discovery_ms1_peak_probe(first) == _discovery_ms1_peak_probe(second)
     assert first.candidate_id != second.candidate_id
     assert first.ms1_feature_row_id == second.ms1_feature_row_id
@@ -328,26 +298,10 @@ def _seed(*, scan_number: int, rt: float) -> DiscoverySeed:
     )
 
 
-def _peak_config() -> ExtractionConfig:
-    return ExtractionConfig(
-        data_dir=Path("raw"),
-        dll_dir=Path("dll"),
-        output_csv=Path("output/xic_results.csv"),
-        diagnostics_csv=Path("output/xic_diagnostics.csv"),
-        smooth_window=15,
-        smooth_polyorder=3,
-        peak_rel_height=0.95,
-        peak_min_prominence_ratio=0.10,
-        ms2_precursor_tol_da=0.5,
-        nl_min_intensity_ratio=0.01,
-        resolver_mode="local_minimum",
-    )
-
-
 class _FakeXicSource:
     def __init__(self) -> None:
-        self.rt = np.asarray([7.95, 8.00, 8.05])
-        self.intensity = np.asarray([20.0, 500.0, 20.0])
+        self.rt = np.linspace(7.4, 8.6, 241)
+        self.intensity = 500.0 * np.exp(-0.5 * ((self.rt - 8.0) / 0.06) ** 2)
         self.acquisition_source = fake_acquisition_source()
         self.raw_chromatogram_call_count = 0
         self.requests: list[tuple[float, float, float, float]] = []

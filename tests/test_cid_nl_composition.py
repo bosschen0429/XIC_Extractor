@@ -105,7 +105,6 @@ def test_configured_composition_runs_discovery_to_owner_matrix(
             source,
             raw_file=path,
             settings=settings,
-            peak_config=peak_config,
             physical_records=physical_records,
         )
         if recovery and index == 3:

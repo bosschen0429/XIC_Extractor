@@ -476,7 +476,6 @@ def _acquire_discovery_sample(
                     acquisition_source=acquisition_input.acquisition_source,
                     run_spec_id=run_spec.run_spec_id,
                     settings=settings,
-                    peak_config=peak_config,
                     measurement_observer=_capture_acquired_measurements,
                     signal_processing_profile=run_spec.signal_processing_profile,
                     ms1_centroid_mz=_ms1_centroid_source(raw),
