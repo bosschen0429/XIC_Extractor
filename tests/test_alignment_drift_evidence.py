@@ -136,7 +136,9 @@ def test_known_reference_uses_declared_targets_rt_and_source_bytes(
 ) -> None:
     import hashlib
 
-    from xic_extractor.acquisition.istd_reference import read_known_istd_reference
+    from xic_extractor.applications.untargeted.istd_reference import (
+        read_known_istd_reference,
+    )
 
     path = tmp_path / "reference.xlsx"
     workbook = _known_reference_workbook(path)
@@ -218,7 +220,9 @@ def test_known_reference_content_identity_tracks_declared_and_measured_content()
 def test_known_reference_rejects_invalid_consumed_input(
     tmp_path: Path, damage: str
 ) -> None:
-    from xic_extractor.acquisition.istd_reference import read_known_istd_reference
+    from xic_extractor.applications.untargeted.istd_reference import (
+        read_known_istd_reference,
+    )
 
     path = tmp_path / "reference.xlsx"
     workbook = _known_reference_workbook(path)
@@ -249,9 +253,11 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
     from dataclasses import replace
 
     from tests.test_alignment_edge_scoring import _owner
-    from xic_extractor.acquisition.istd_reference import read_known_istd_reference
     from xic_extractor.alignment.config import AlignmentConfig
     from xic_extractor.alignment.edge_scoring import evaluate_owner_edge
+    from xic_extractor.applications.untargeted.istd_reference import (
+        read_known_istd_reference,
+    )
 
     path = tmp_path / "reference.xlsx"
     workbook = _known_reference_workbook(path)
@@ -346,10 +352,12 @@ def test_known_reference_grouping_preserves_main_peak_against_closer_competitor(
     use_reference: bool,
 ) -> None:
     from tests.alignment_pipeline_helpers import _owner
-    from xic_extractor.acquisition.istd_reference import read_known_istd_reference
     from xic_extractor.alignment.config import AlignmentConfig
     from xic_extractor.alignment.cross_sample.peak_groups import (
         construct_cross_sample_peak_group_hypotheses,
+    )
+    from xic_extractor.applications.untargeted.istd_reference import (
+        read_known_istd_reference,
     )
 
     path = tmp_path / "reference.xlsx"
@@ -374,7 +382,9 @@ def test_known_reference_grouping_preserves_main_peak_against_closer_competitor(
 
 
 def _batch_reference(tmp_path: Path, observations):
-    from xic_extractor.acquisition.istd_reference import read_known_istd_reference
+    from xic_extractor.applications.untargeted.istd_reference import (
+        read_known_istd_reference,
+    )
 
     path = tmp_path / "batch-reference.xlsx"
     workbook = _known_reference_workbook(path)

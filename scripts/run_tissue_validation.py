@@ -13,7 +13,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from xic_extractor.acquisition.istd_reference import read_known_istd_reference
+from xic_extractor.applications.untargeted.istd_reference import (
+    read_known_istd_reference,
+)
 from xic_extractor.configuration.execution_profile import load_execution_profile
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.paths import targets_template_path

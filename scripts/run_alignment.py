@@ -12,7 +12,6 @@ from dataclasses import replace
 from pathlib import Path
 from zipfile import BadZipFile
 
-from xic_extractor.acquisition.istd_reference import read_known_istd_reference
 from xic_extractor.acquisition.raw_paths import existing_raw_paths
 from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
@@ -21,6 +20,9 @@ from xic_extractor.alignment.owner_build_route_receipt import OwnerBuildRouteRec
 from xic_extractor.applications.untargeted.application import (
     AlignmentProcessExecutionError,
     run_untargeted_application,
+)
+from xic_extractor.applications.untargeted.istd_reference import (
+    read_known_istd_reference,
 )
 from xic_extractor.applications.untargeted.publication import (
     UntargetedPublicationPolicy,

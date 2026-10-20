@@ -258,6 +258,10 @@ contract 沒有 ignore，並包含間接依賴。
 - `applications/` is the outermost composition layer. The inner packages above
   and `diagnostics` never import it; `extractor.run` is the public root entry
   that calls into it.
+- 主幹分層：applications → untargeted_execution／extraction → alignment → discovery →
+  peak_detection，由 `.importlinter` 的 `main-chain-layers` 強制。
+- `acquisition/` 是內層，不 import alignment、applications、discovery、extraction、
+  untargeted_execution、output，由 `acquisition-stays-inner` 強制。
 - PT-pattern modules (`xic_extractor/discovery/pt_pattern_*.py`) must only be imported
   by the PT-pattern family itself (foundation modules `detected_features`, `local_ms1_features`,
   `delta_mass_*`, PT modules, and `scripts/run_pt_pattern_discovery.py`), `tools/`, and `tests/`.

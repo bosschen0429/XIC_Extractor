@@ -10,13 +10,15 @@ from dataclasses import asdict, replace
 from pathlib import Path
 from time import perf_counter
 
-from xic_extractor.acquisition.istd_reference import read_known_istd_reference
 from xic_extractor.alignment.grouping_experiment import (
     calibrate_grouping,
     replay_grouping,
 )
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.sample_rt_calibration import RtCalibrationPolicy
+from xic_extractor.applications.untargeted.istd_reference import (
+    read_known_istd_reference,
+)
 from xic_extractor.configuration.cid_nl_profile import DEFAULT_CID_NL_MASS_POLICY
 from xic_extractor.configuration.models import ExtractionConfig
 from xic_extractor.configuration.signal_processing_profile import (

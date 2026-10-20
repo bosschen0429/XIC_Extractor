@@ -4,12 +4,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from xic_extractor.acquisition.istd_reference import (
-    extract_batch_known_istd_reference,
-)
 from xic_extractor.alignment.drift_evidence import (
     KnownIstdReference,
     mint_known_istd_reference_from_measurements,
+)
+from xic_extractor.applications.untargeted.istd_reference import (
+    extract_batch_known_istd_reference,
 )
 from xic_extractor.configuration.models import ExtractionConfig, Target
 from xic_extractor.configuration.targets import read_targets
