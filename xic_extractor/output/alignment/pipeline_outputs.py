@@ -625,12 +625,16 @@ def _write_artifacts_atomic(
         if recorder.instrument_writers or capture_artifact_fingerprints:
             for final_path, _writer in output_paths_and_writers:
                 artifact = _writer_artifact_name(final_path)
+
+                def observe_fingerprint(
+                    event: Mapping[str, object], artifact: str = artifact
+                ) -> None:
+                    _record_fingerprint_observation(recorder, event, scope=artifact)
+
                 with recorder.stage(f"writer.{artifact}.hash") as stage:
                     fingerprint = fingerprint_file_content(
                         final_path,
-                        observation=lambda event: _record_fingerprint_observation(
-                            recorder, event, scope=artifact
-                        ),
+                        observation=observe_fingerprint,
                     )
                     stage.metrics["bytes"] = fingerprint.byte_size
                 if capture_artifact_fingerprints:
