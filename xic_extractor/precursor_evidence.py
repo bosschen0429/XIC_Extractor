@@ -4,7 +4,10 @@ import math
 from dataclasses import dataclass
 from typing import Literal
 
-from xic_extractor.configuration.cid_nl_profile import DEFAULT_CID_NL_MASS_POLICY
+from xic_extractor.configuration.cid_nl_profile import (
+    DEFAULT_CID_NL_MASS_POLICY,
+    PrecursorReferenceRequirement,
+)
 from xic_extractor.mass_accuracy import neutral_loss_match
 from xic_extractor.ms2_scan_models import Ms2PrecursorMetadata, Ms2Scan
 
@@ -14,7 +17,6 @@ PrecursorMzBasis = Literal[
 ]
 RECORDED_PRECURSOR_BASES = frozenset({"scan_precursor", "scan_monoisotopic"})
 IsolationMembership = Literal["inside_nominal", "outside_nominal", "unknown"]
-PrecursorReferenceRequirement = Literal["independent_mass", "recorded_precursor"]
 _CARBON_ISOTOPE_SPACING_DA = 1.0033548
 
 

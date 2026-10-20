@@ -1,6 +1,9 @@
 """Shared CID-NL mass policy, independent of workflow orchestration."""
 
 from dataclasses import dataclass
+from typing import Literal
+
+PrecursorReferenceRequirement = Literal["independent_mass", "recorded_precursor"]
 
 
 @dataclass(frozen=True)

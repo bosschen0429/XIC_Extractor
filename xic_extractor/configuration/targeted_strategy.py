@@ -8,12 +8,12 @@ from importlib.resources import files
 from xic_extractor.configuration.cid_nl_profile import (
     CidNlMassPolicy,
     NeutralLossProfile,
+    PrecursorReferenceRequirement,
 )
 from xic_extractor.configuration.models import ConfigError
 from xic_extractor.configuration.signal_processing_profile import (
     DEFAULT_SIGNAL_PROCESSING_PROFILE,
 )
-from xic_extractor.precursor_evidence import PrecursorReferenceRequirement
 from xic_extractor.settings_schema import TARGETED_STRATEGY
 
 TAG_PRESETS = {"dR": "dna_dr", "R": "rna_ribose", "MeR": "rna_mer"}
