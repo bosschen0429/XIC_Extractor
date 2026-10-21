@@ -54,8 +54,14 @@ historical filename as the stable topic locator.
 | `discovery_only` | One RAW file, DLL directory, output directory | Single-file Discovery |
 | `align_only` | RAW directory, `discovery_batch_index.csv`, DLL directory, output directory | Alignment |
 
-Batch Discovery-only remains a CLI surface. The HTML workbench uses `full` for
-directory-level Discovery followed by Alignment.
+In `full`, the Alignment switch defaults on. Turning it off runs batch
+Discovery only: per-sample candidate/review/physical-fact artifacts and the batch
+index remain available, but no Matrix or Alignment evidence is produced.
+`align_only` requires Alignment enabled. The Backfill switch defaults on and is
+effective only when Alignment runs; turning it off preserves local observations
+and leaves unsearched missing cells blank, without fabricated zeros or SUPPORT.
+Both switches persist in `discovery_gui.json`, separately from method tags and
+worker settings. Single-file Discovery ignores Alignment and Backfill.
 
 ### Untargeted method and sample setup
 

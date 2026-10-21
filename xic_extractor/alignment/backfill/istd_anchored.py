@@ -26,6 +26,7 @@ from xic_extractor.alignment.cell_observation.observations import (
     CidNlCellGroupSupport,
     mint_cell_observation_ref,
 )
+from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     construct_cross_sample_peak_group_hypotheses,
@@ -108,6 +109,7 @@ def resolve_istd_anchored_backfill(
             known_identity_bindings=tuple(
                 (owner.owner_id, target_identity) for owner in owners
             ),
+            rules=CID_NL_GROUPING_RULES,
         )
         if owners
         else ()

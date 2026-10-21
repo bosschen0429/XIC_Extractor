@@ -81,6 +81,15 @@ class DiscoveryRequest:
     sample_metadata: tuple[SampleMetadata, ...] | None = None
     preset_snapshot: Preset | None = None
     execution_profile: ExecutionProfile = field(default_factory=ExecutionProfile)
+    alignment_enabled: bool = True
+    backfill_enabled: bool = True
+
+    def __post_init__(self) -> None:
+        for name in ("alignment_enabled", "backfill_enabled"):
+            if type(getattr(self, name)) is not bool:
+                raise TypeError(f"{name} must be a boolean")
+        if self.mode == "align_only" and not self.alignment_enabled:
+            raise ValueError("align_only requires alignment_enabled")
 
 
 def parse_request(values: dict[str, Any]) -> DiscoveryRequest:
@@ -108,6 +117,8 @@ def parse_request(values: dict[str, Any]) -> DiscoveryRequest:
         "samples",
         "preset_snapshot",
         "execution_profile",
+        "alignment_enabled",
+        "backfill_enabled",
     }
     unknown = sorted(set(values) - allowed)
     if unknown:
@@ -154,6 +165,8 @@ def parse_request(values: dict[str, Any]) -> DiscoveryRequest:
         sample_metadata=samples_from_payload(values.get("samples")),
         preset_snapshot=bound_preset,
         execution_profile=profile,
+        alignment_enabled=values.get("alignment_enabled", True),
+        backfill_enabled=values.get("backfill_enabled", True),
     )
 
 
@@ -169,7 +182,9 @@ class UntargetedRun:
     ) -> None:
         # Persisted scientific inputs must not be re-read from an active locator
         # after dispatch. RAW acquisition remains live and is not a byte snapshot.
-        if request.targets_csv is not None:
+        if request.targets_csv is not None and not (
+            request.mode == "full" and not request.alignment_enabled
+        ):
             receipt_dir = request.output_dir / ".run_inputs" / uuid.uuid4().hex
             contents = request.targets_csv.read_bytes()
             receipt_dir.mkdir(parents=True)
@@ -196,6 +211,15 @@ class UntargetedRun:
         summary["published_paths"] = [
             str(path) for path in _ordered_existing_paths(self.available_outputs)
         ]
+        alignment_run = (
+            self.request.mode != "discovery_only" and self.request.alignment_enabled
+        )
+        summary["modules"] = {
+            "alignment": "completed" if alignment_run else "not_run",
+            "backfill": "enabled"
+            if alignment_run and self.request.backfill_enabled
+            else "not_run",
+        }
         return summary
 
     def _run_full(self) -> dict[str, Any]:
@@ -204,7 +228,7 @@ class UntargetedRun:
         raw_paths = self._raw_paths(request.raw_dir)
         if request.raw_dir is None or not raw_paths:
             raise ValueError(f"RAW 資料夾中找不到 .raw 檔案：{request.raw_dir}")
-        total_steps = len(raw_paths) + 1
+        total_steps = len(raw_paths) + int(request.alignment_enabled)
         self.progress(0, total_steps, "Discovery...")
         self.stage = "Discovery 設定"
         settings = self._build_settings()
@@ -233,6 +257,9 @@ class UntargetedRun:
         )
         self._retain_discovery_outputs(batch_outputs, index_path)
         self._raise_if_cancelled("Untargeted run cancelled after Discovery")
+        if not request.alignment_enabled:
+            self.progress(total_steps, total_steps, "完成（未執行 Alignment）")
+            return self._discovery_summary(index_path)
         self.progress(len(raw_paths), total_steps, "Alignment...")
         outputs = self._run_alignment(index_path=index_path, raw_dir=request.raw_dir)
         self.progress(total_steps, total_steps, "完成")
@@ -321,7 +348,9 @@ class UntargetedRun:
                 raw_dir=raw_dir,
                 dll_dir=request.dll_dir,
                 output_dir=request.output_dir,
-                alignment_config=recipe.alignment_config,
+                alignment_config=replace(
+                    recipe.alignment_config, backfill_enabled=request.backfill_enabled
+                ),
                 peak_config=self._alignment_peak_config(recipe.discovery_settings),
                 discovery_settings=recipe.discovery_settings,
                 sample_metadata=request.sample_metadata,

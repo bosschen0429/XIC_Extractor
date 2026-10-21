@@ -11,6 +11,7 @@ from xic_extractor.alignment.cell_observation.observations import (
     CidNlCellGroupSupport,
     mint_cell_observation_ref,
 )
+from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSamplePeakGroupHypothesis,
@@ -207,9 +208,7 @@ def build_cid_nl_reference_spine(
     effective_config = config or AlignmentConfig()
     rt_frame = SampleRtFrame()
     groups = construct_cross_sample_peak_group_hypotheses(
-        owners,
-        config=effective_config,
-        rt_frame=rt_frame,
+        owners, config=effective_config, rt_frame=rt_frame, rules=CID_NL_GROUPING_RULES
     )
     if len(groups) != 1:
         raise CidNlEvidenceSpineError(

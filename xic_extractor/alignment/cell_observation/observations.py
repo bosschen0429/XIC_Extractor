@@ -14,6 +14,9 @@ from xic_extractor.alignment.cell_observation.group_context import (
     CidNlCellGroupContext,
     CidNlCellGroupSupport,
 )
+from xic_extractor.alignment.cell_observation.method_evidence import (
+    FinalCellEvidenceState,
+)
 from xic_extractor.alignment.cell_observation.records import (
     CellObservationContent,
     CellObservationContractError,
@@ -36,7 +39,6 @@ from xic_extractor.evidence_artifacts import (
 )
 from xic_extractor.peak_detection.cid_nl_method_assessment import (
     CidNlMethodAssessmentRef,
-    is_ms1_only_cid_nl_backfill_assessment,
 )
 from xic_extractor.peak_detection.hypotheses import PeakHypothesis
 from xic_extractor.peak_detection.integration_result import IntegrationResult
@@ -72,15 +74,6 @@ _ARTIFACT_SEMANTIC_CONTRACT = mint_artifact_semantic_contract_ref(
     serialization_format=SERIALIZATION_FORMAT,
 )
 
-FinalCellEvidenceState: TypeAlias = Literal[
-    "direct_observation",
-    "ms1_only_backfill_observation",
-    "unresolved",
-    "rejected_observation",
-    "searched_no_observation",
-    "unavailable",
-    "not_searched",
-]
 TerminalObservationVariant: TypeAlias = Literal[
     "observed",
     "searched_no_observation",
@@ -309,18 +302,12 @@ def _compose_final_group_cell_observation_population(
                     or recovered.content.outside_group is not None
                 ):
                     states = ("unresolved",)
-                elif recovered.peak_hypothesis is not None:
-                    states = ("direct_observation",)
-                elif recovered.content.method_result == "HOLD":
-                    states = (
-                        "unresolved"
-                        if recovered.method_assessment.candidate_peaks
-                        else "searched_no_observation",
-                    )
-                elif recovered.content.method_result == "REJECT":
-                    states = ("rejected_observation",)
                 else:
-                    states = ("unavailable",)
+                    states = (
+                        recovered.method_evidence.recovered_state(
+                            recovered.peak_hypothesis
+                        ),
+                    )
             elif not associations:
                 states = ("not_searched",)
             else:
@@ -456,9 +443,6 @@ def _derive_lane_evidence_state(
         raise CellObservationContractError(
             "CrossSample successor dropped the exact source member evidence"
         )
-    assessment = source_cell.method_assessment
-    technical_state = assessment.content.technical_state
-    method_result = assessment.content.method_result
     if source_cell.content.unassigned_support:
         if final_member is not None:
             raise CellObservationContractError(
@@ -478,6 +462,8 @@ def _derive_lane_evidence_state(
         # A merged sibling may supply a direct lane; this lane adds no value.
         return "not_searched"
     no_request_decision = association.position.no_request_decision
+    if association.position.planning_reason == "backfill_disabled":
+        return "not_searched"
     if no_request_decision is not None:
         if final_member is not None:
             raise CellObservationContractError(
@@ -488,30 +474,19 @@ def _derive_lane_evidence_state(
             if no_request_decision.variant == "threshold_not_met"
             else "unavailable"
         )
-    if final_member is not None and method_result in {"HOLD", "REJECT"}:
-        raise CellObservationContractError(
-            "final CrossSample member cannot carry a HOLD or REJECT method lane"
-        )
     if association.position.planning_reason == "retained_unresolved_candidates":
-        return "unresolved"
-    if technical_state in {"unsupported", "failed"}:
-        if source_cell.peak_observation is not None or source_cell.peak_hypothesis:
+        if final_member is not None:
             raise CellObservationContractError(
-                "unavailable lane cannot carry direct observation evidence"
+                "final CrossSample member cannot carry a HOLD or REJECT method lane"
             )
-        return "unavailable"
-    if technical_state == "not_evaluated":
-        raise CellObservationContractError(
-            "retained local owner contradicts a not-evaluated source cell"
-        )
-    if method_result == "SUPPORT":
+        return "unresolved"
+    state = source_cell.method_evidence.local_state(
+        source_cell.peak_observation, source_cell.peak_hypothesis
+    )
+    if state == "direct_observation":
         if final_member is None:
             raise CellObservationContractError(
                 "SUPPORT evidence has no exact final CrossSample member"
-            )
-        if source_cell.peak_observation is None or source_cell.peak_hypothesis is None:
-            raise CellObservationContractError(
-                "SUPPORT source cell lacks its exact observation and hypothesis"
             )
         _direct_member_integration(
             member=final_member,
@@ -519,40 +494,15 @@ def _derive_lane_evidence_state(
             canonical_sample=canonical_sample,
             terminal_variant="observed",
             terminal_hypothesis=source_cell.peak_hypothesis,
-            method_assessment=assessment,
+            method_evidence=source_cell.method_evidence,
             peak_observation=source_cell.peak_observation,
             peak_hypothesis=source_cell.peak_hypothesis,
         )
-        return "direct_observation"
-    if method_result == "REJECT":
-        if source_cell.peak_hypothesis is not None:
-            raise CellObservationContractError(
-                "REJECT lane cannot carry a SUPPORT hypothesis"
-            )
-        return "rejected_observation"
-    if method_result != "HOLD":
+    elif final_member is not None and state != "unavailable":
         raise CellObservationContractError(
-            "evaluated source cell requires SUPPORT, HOLD, or REJECT"
+            "final CrossSample member cannot carry a HOLD or REJECT method lane"
         )
-    if source_cell.peak_hypothesis is not None:
-        raise CellObservationContractError(
-            "HOLD lane cannot carry a SUPPORT hypothesis"
-        )
-    if not assessment.candidate_peaks and source_cell.peak_observation is None:
-        return "searched_no_observation"
-    if (
-        source_cell.peak_observation is not None
-        and source_cell.peak_observation not in assessment.candidate_peaks
-    ):
-        raise CellObservationContractError(
-            "unresolved source evidence is outside the exact candidate universe"
-        )
-    if (
-        source_cell.peak_observation is not None
-        and is_ms1_only_cid_nl_backfill_assessment(assessment)
-    ):
-        return "ms1_only_backfill_observation"
-    return "unresolved"
+    return state
 
 
 def _member_for_sample(

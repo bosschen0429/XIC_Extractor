@@ -1266,14 +1266,21 @@ def test_import_linter_config_owns_the_static_dependency_contracts() -> None:
         "importlinter:contract:main-chain-layers",
         "importlinter:contract:acquisition-stays-inner",
         "importlinter:contract:sample-metadata-no-instrument-qc",
+        "importlinter:contract:grouping-and-cell-consume-method-answers",
     }
     independence_section = "importlinter:contract:targeted-untargeted-independent"
     layers_section = "importlinter:contract:main-chain-layers"
+    method_section = "importlinter:contract:grouping-and-cell-consume-method-answers"
     assert all(
         config[section]["type"] == "forbidden"
         and not config[section].getboolean("allow_indirect_imports")
-        for section in contracts - {independence_section, layers_section}
+        for section in contracts
+        - {independence_section, layers_section, method_section}
     )
+    method = config[method_section]
+    assert method["type"] == "forbidden"
+    assert method.getboolean("allow_indirect_imports") is True
+    assert not method.get("ignore_imports", "").strip()
     independence = config[independence_section]
     assert independence["type"] == "independence"
     assert independence["modules"].split() == [

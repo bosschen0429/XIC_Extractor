@@ -39,8 +39,11 @@ class AlignmentConfig:
     identity_rt_candidate_window_sec: float = 180.0
     rt_unit: Literal["min"] = "min"
     fragmentation_model: Literal["cid_nl"] = "cid_nl"
+    backfill_enabled: bool = True
 
     def __post_init__(self) -> None:
+        if type(self.backfill_enabled) is not bool:
+            raise ValueError("backfill_enabled must be a boolean")
         _require_positive("preferred_ppm", self.preferred_ppm)
         _require_positive("max_ppm", self.max_ppm)
         _require_at_most("preferred_ppm", self.preferred_ppm, "max_ppm", self.max_ppm)

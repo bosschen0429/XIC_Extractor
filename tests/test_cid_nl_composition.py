@@ -24,7 +24,11 @@ from tests.untargeted_partition_fixtures import (
     execute_dense_partition,
     fixture_assessment,
 )
+from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
+from xic_extractor.alignment.edge_scoring import (
+    evaluate_owner_edge as _evaluate_owner_edge,
+)
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.alignment.untargeted_finalized_matrix import (
     project_completed_untarget_batch_writer_inputs,
@@ -34,6 +38,16 @@ from xic_extractor.output.alignment.tsv_writer import write_alignment_matrix_tsv
 from xic_extractor.presets.apply import apply_to_discovery
 from xic_extractor.presets.loader import load_preset
 from xic_extractor.sample_metadata import SampleMetadata
+
+
+def evaluate_owner_edge(left, right, *, config, **kwargs):
+    return _evaluate_owner_edge(
+        left,
+        right,
+        config=config,
+        method_evidence=CID_NL_GROUPING_RULES.pair_evidence(left, right, config),
+        **kwargs,
+    )
 
 
 @pytest.mark.parametrize(
@@ -286,7 +300,6 @@ def _assert_unsupported_exclusion_closes_exact_coverage(completed):
 
 
 def _assert_composite_labels_cannot_grant_membership(batch, runtime):
-    from xic_extractor.alignment.edge_scoring import evaluate_owner_edge
     from xic_extractor.alignment.feature_membership_inference import (
         infer_feature_memberships,
     )
@@ -345,6 +358,7 @@ def _assert_composite_labels_cannot_grant_membership(batch, runtime):
             population,
             config=AlignmentConfig(anchor_min_seed_events=1),
             rt_frame=SampleRtFrame(),
+            rules=CID_NL_GROUPING_RULES,
         )
         assert len(inferred.groups) == expected_groups
 

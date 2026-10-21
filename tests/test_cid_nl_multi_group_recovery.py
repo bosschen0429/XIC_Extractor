@@ -31,6 +31,7 @@ from tests.untargeted_partition_fixtures import (
     build_dense_partition,
     complete_dense_partition,
 )
+from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingResult,
@@ -211,6 +212,7 @@ def test_backfill_batch_preserves_shape_compatibility_without_arbitrary_winners(
             group.owners,
             config=config,
             rt_frame=frame,
+            rules=CID_NL_GROUPING_RULES,
         )
         backfills[
             (

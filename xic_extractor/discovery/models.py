@@ -265,7 +265,11 @@ class DiscoverySeedGroup:
 
 @dataclass(frozen=True, slots=True)
 class DiscoveryPhysicalWorkItem:
-    """One ordered Discovery physical question bound to its acquisition."""
+    """CID-NL sidecar projection of completed physical work and method identity.
+
+    This persisted schema serves Discovery replay and Alignment. Shared physical
+    capture takes method-independent search coordinates, not this projection.
+    """
 
     work_ordinal: int
     acquisition_source_id: str

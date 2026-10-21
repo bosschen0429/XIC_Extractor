@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 from xic_extractor.acquisition_contract import (
-    BatchXICAdapter,
     RawAcquisitionSessionCapability,
     RawAcquisitionSessionReceipt,
     mint_raw_acquisition_session_capability,
@@ -19,7 +18,10 @@ from xic_extractor.discovery.blank_qualification import (
     apply_blank_qualification_to_candidates,
     deserialize_background_library,
 )
-from xic_extractor.discovery.grouping import group_discovery_seeds
+from xic_extractor.discovery.cid_nl_search import (
+    CidNlSearchSource,
+    search_cid_nl_sample,
+)
 from xic_extractor.discovery.models import (
     DiscoveryBatchOutputs,
     DiscoveryCandidate,
@@ -29,9 +31,7 @@ from xic_extractor.discovery.models import (
 )
 from xic_extractor.discovery.ms1_capture import (
     _DiscoveryMs1Measurements,
-    capture_ms1_candidates,
 )
-from xic_extractor.discovery.ms2_seeds import MS2ScanSource, collect_strict_nl_seeds
 from xic_extractor.discovery.peak_anchor import assign_peak_anchors
 from xic_extractor.discovery.physical_fact_record import (
     DiscoveryCandidatePhysicalBinding,
@@ -54,17 +54,14 @@ from xic_extractor.discovery.sample_process_execution import (
 from xic_extractor.execution.timing import TimingRecorder
 from xic_extractor.processing_identity import AcquisitionSourceIdentity
 from xic_extractor.processing_run_spec import (
+    CidNlDiscoveryMethodSpec,
     ProcessingAcquisitionInput,
     ProcessingRunSpec,
 )
 
 
-class DiscoveryRawHandle(BatchXICAdapter, MS2ScanSource, Protocol):
+class DiscoveryRawHandle(CidNlSearchSource, Protocol):
     """RAW reader surface needed by single-file discovery orchestration."""
-
-    def ms1_centroid_mz(
-        self, rt: float, mz_min: float, mz_max: float
-    ) -> float | None: ...
 
     @property
     def acquisition_source(self) -> AcquisitionSourceIdentity: ...
@@ -370,7 +367,6 @@ def _discover_completed_sample(
 
     acquired = _acquire_discovery_sample(
         raw_path,
-        settings=settings,
         dll_dir=dll_dir,
         raw_opener=raw_opener,
         timing_recorder=timing_recorder,
@@ -413,7 +409,6 @@ def _discover_completed_sample(
 def _acquire_discovery_sample(
     raw_path: Path,
     *,
-    settings: DiscoverySettings,
     dll_dir: Path,
     raw_opener: RawOpener,
     timing_recorder: TimingRecorder,
@@ -430,6 +425,9 @@ def _acquire_discovery_sample(
         != acquisition_input
     ):
         raise ValueError("Discovery input crosses ProcessingRunSpec binding")
+    method = run_spec.discovery_method
+    if not isinstance(method, CidNlDiscoveryMethodSpec):
+        raise ValueError("sample-local Discovery search supports only CID-NL")
     sample_stem = raw_path.stem
     with raw_opener(raw_path, dll_dir) as raw:
         owner_bound_source = _owner_bound_acquisition_source(raw)
@@ -454,48 +452,24 @@ def _acquire_discovery_sample(
                 measurement_observer(measurements)
 
         try:
-            with timing_recorder.stage(
-                "discover.ms2_seeds",
-                sample_stem=sample_stem,
-            ) as stage:
-                seeds = collect_strict_nl_seeds(
-                    raw, raw_file=raw_path, settings=settings
-                )
-                stage.metrics["seed_count"] = len(seeds)
-            with timing_recorder.stage(
-                "discover.group_seeds",
-                sample_stem=sample_stem,
-            ) as stage:
-                groups = group_discovery_seeds(seeds, settings=settings)
-                stage.metrics["group_count"] = len(groups)
-            with timing_recorder.stage(
-                "discover.ms1_capture",
-                sample_stem=sample_stem,
-            ) as stage:
-                acquisition_result = capture_ms1_candidates(
-                    cast(BatchXICAdapter, raw),
-                    groups,
-                    acquisition_source=acquisition_input.acquisition_source,
-                    run_spec_id=run_spec.run_spec_id,
-                    settings=settings,
-                    measurement_observer=_capture_acquired_measurements,
-                    signal_processing_profile=run_spec.signal_processing_profile,
-                    ms1_centroid_mz=raw.ms1_centroid_mz,
-                )
-                candidates = acquisition_result.candidates
-                ms1_measurements = acquisition_result.measurements
-                physical_work_manifest = acquisition_result.physical_work_manifest
-                physical_evaluations = acquisition_result.physical_evaluations
-                physical_bindings = acquisition_result.physical_bindings
-                stage.metrics["candidate_count"] = len(candidates)
+            acquisition_result = search_cid_nl_sample(
+                raw,
+                raw_file=raw_path,
+                method=method,
+                acquisition_source=acquisition_input.acquisition_source,
+                run_spec_id=run_spec.run_spec_id,
+                signal_processing_profile=run_spec.signal_processing_profile,
+                timing_recorder=timing_recorder,
+                measurement_observer=_capture_acquired_measurements,
+            )
             completed = True
             return _DiscoverySampleResult(
-                candidates=candidates,
-                ms1_measurements=ms1_measurements,
+                candidates=acquisition_result.candidates,
+                ms1_measurements=acquisition_result.measurements,
                 raw_open_receipt=raw_open_receipt,
-                physical_work_manifest=physical_work_manifest,
-                physical_evaluations=physical_evaluations,
-                physical_bindings=physical_bindings,
+                physical_work_manifest=acquisition_result.physical_work_manifest,
+                physical_evaluations=acquisition_result.physical_evaluations,
+                physical_bindings=acquisition_result.physical_bindings,
             )
         finally:
             if not completed:

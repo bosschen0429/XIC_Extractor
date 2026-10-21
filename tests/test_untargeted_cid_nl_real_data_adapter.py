@@ -1772,7 +1772,7 @@ def test_backfill_uses_sample_pattern_location_without_claiming_method_support(
         assert evaluation.question.search_rt_window == pytest.approx((7.35, 7.75))
         assert evaluation.facts.apex_rt_min > 7.75
         assert evaluation.facts.left_rt_min < query_rt < evaluation.facts.right_rt_min
-    from xic_extractor.alignment.backfill.cid_nl_planning import (
+    from xic_extractor.alignment.backfill.cid_nl_evidence import (
         decide_cid_nl_backfill_revisit,
     )
 

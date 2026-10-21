@@ -720,19 +720,19 @@ def _prepare_runtime_work(
                                 if state.adapter_result is not None
                             )
                         )
-                        if not initial_only:
+                        if not initial_only and alignment_config.backfill_enabled:
                             _prepare_group_authorized_backfills(
                                 states,
                                 prepared=work.prepared_grouping,
                                 sample_templates=backfill_templates,
                             )
-                elif not initial_only:
+                elif not initial_only and alignment_config.backfill_enabled:
                     _prepare_owner_authorized_backfills(
                         states,
                         alignment_config=alignment_config,
                         sample_templates=backfill_templates,
                     )
-                if not initial_only:
+                if not initial_only and alignment_config.backfill_enabled:
                     backfill_groups = _runtime_sample_groups(states)
                     for sample_states in backfill_groups:
                         phase = phases_by_sample.get(

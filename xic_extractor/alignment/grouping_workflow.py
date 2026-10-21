@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import cast
 
+from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.cross_sample.grouping_result import (
     CrossSampleGroupingContractError,
@@ -132,6 +133,7 @@ def build_targeted_cross_sample_groups(
             sample.metadata.raw_stem for sample in processing_owners.sample_resolutions
         ),
         rt_frame=rt_frame,
+        rules=CID_NL_GROUPING_RULES,
     )
     identities = tuple(
         validate_cross_sample_peak_group_identity(group, require_canonical=True)
@@ -291,6 +293,7 @@ def group_cid_nl_owners(
         known_identity_bindings=known_identity_bindings,
         operation_counts_sink=operation_counts_sink,
         peak_trajectories=peak_trajectories,
+        rules=CID_NL_GROUPING_RULES,
     )
     return reject_shoulder_groups(groups, config=config)
 
@@ -366,6 +369,7 @@ def admit_cid_nl_group_backfills(
             group.owners,
             config=alignment_config,
             rt_frame=result.rt_frame,
+            rules=CID_NL_GROUPING_RULES,
         ):
             continue
         claims[physical_key].add(group_id)

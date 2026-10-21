@@ -418,9 +418,11 @@ def test_run_alignment_cli_accepts_validation_minimal_output_level(
     assert captured["request"].publication.output_level == "validation-minimal"
 
 
+@pytest.mark.parametrize("backfill_enabled", (True, False))
 def test_run_alignment_cli_dna_dr_preset_binds_retained_recipe(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    backfill_enabled: bool,
 ) -> None:
     batch_index = tmp_path / "discovery_batch_index.csv"
     _write_empty_batch_index(batch_index)
@@ -471,6 +473,7 @@ def test_run_alignment_cli_dna_dr_preset_binds_retained_recipe(
             str(output_dir),
             "--preset",
             "dna_dr",
+            "--backfill" if backfill_enabled else "--no-backfill",
         ]
     )
 
@@ -481,6 +484,10 @@ def test_run_alignment_cli_dna_dr_preset_binds_retained_recipe(
     )
     assert captured_alignment["request"].publication.emit_alignment_cells is False
     assert len(bound_recipes) == 1
+    assert (
+        captured_alignment["request"].alignment_config.backfill_enabled
+        is backfill_enabled
+    )
     recipe = bound_recipes[0]
     assert captured_alignment["request"].discovery_settings is recipe.discovery_settings
 

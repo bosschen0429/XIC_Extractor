@@ -1,4 +1,4 @@
-"""Cell observation predecessor records and canonical artifact encoding."""
+"""CID-NL cell predecessor records and compatible canonical artifact encoding."""
 
 from __future__ import annotations
 
@@ -6,6 +6,9 @@ import json
 from dataclasses import asdict, dataclass, fields
 from typing import Literal
 
+from xic_extractor.alignment.cell_observation.cid_nl_evidence import (
+    CidNlCellEvidence,
+)
 from xic_extractor.alignment.cell_observation.group_context import (
     _ARTIFACT_SEMANTIC_CONTRACT,
     SCHEMA_VERSION,
@@ -14,6 +17,7 @@ from xic_extractor.alignment.cell_observation.group_context import (
     CidNlCellGroupContext,
     TerminalObservationVariant,
 )
+from xic_extractor.alignment.cell_observation.method_evidence import CellMethodEvidence
 from xic_extractor.alignment.cross_sample.peak_groups import (
     CrossSampleGroupMemberSubject,
 )
@@ -75,6 +79,7 @@ class CellObservationRef:
     content: CellObservationContent
     group_context: CidNlCellGroupContext
     method_assessment: CidNlMethodAssessmentRef
+    method_evidence: CellMethodEvidence
     peak_observation: PeakObservationRef | None
     peak_hypothesis: PeakHypothesis | None
     artifact: EvidenceArtifactRef
@@ -88,7 +93,7 @@ def _direct_member_integration(
     canonical_sample: ResolvedCanonicalSampleIdentity,
     terminal_variant: TerminalObservationVariant,
     terminal_hypothesis: PeakHypothesis | None,
-    method_assessment: CidNlMethodAssessmentRef | None,
+    method_evidence: CellMethodEvidence | None,
     peak_observation: PeakObservationRef | None,
     peak_hypothesis: PeakHypothesis | None,
 ) -> IntegrationResult | None:
@@ -125,15 +130,8 @@ def _direct_member_integration(
             raise CellObservationContractError(
                 "direct hypothesis does not mint the exact final member"
             )
-        if method_assessment is not None:
-            if method_assessment.content.method_result != "SUPPORT":
-                raise CellObservationContractError(
-                    "direct member assessment must be SUPPORT"
-                )
-            supported_observation_ids = {
-                relation.content.peak_observation_content_id
-                for relation in method_assessment.individual_support_refs
-            }
+        if method_evidence is not None:
+            supported_observation_ids = method_evidence.supported_observation_ids
             if not set(member.physical_observation_ids).issubset(
                 supported_observation_ids
             ):
@@ -308,6 +306,7 @@ def mint_cell_observation_ref(
         content=content,
         group_context=group_context,
         method_assessment=method_assessment,
+        method_evidence=CidNlCellEvidence(method_assessment),
         peak_observation=peak_observation,
         peak_hypothesis=peak_hypothesis,
         artifact=artifact,

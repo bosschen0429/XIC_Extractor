@@ -649,11 +649,11 @@ def test_spec_bound_single_run_uses_compiled_acquisition_and_writes_sidecar(
         return real_evaluate(*args, **kwargs)
 
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.prepare_physical_signal",
+        "xic_extractor.acquisition.physical_capture.prepare_physical_signal",
         counted_prepare,
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.evaluate_physical_peak",
+        "xic_extractor.acquisition.physical_capture.evaluate_physical_peak",
         counted_evaluate,
     )
     monkeypatch.setattr(physical_owner, "prepare_physical_signal", counted_prepare)
@@ -1092,7 +1092,8 @@ def test_qualification_survives_physical_fact_reuse(
     )
     qualifier = Mock(wraps=is_provisional_peak_shape)
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.is_provisional_peak_shape", qualifier
+        "xic_extractor.acquisition.physical_capture.is_provisional_peak_shape",
+        qualifier,
     )
     group = _group((_seed(scan_number=10, rt=7.8),))
 
@@ -1151,7 +1152,7 @@ def test_spec_bound_physical_owner_reuses_preparation_without_extra_acquisition(
         return prepare_physical_signal(*args, **kwargs)
 
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.prepare_physical_signal",
+        "xic_extractor.acquisition.physical_capture.prepare_physical_signal",
         _count_prepare,
     )
 
@@ -1467,10 +1468,10 @@ def test_physical_fact_sharing_uses_exact_owner_question(
     prepare = Mock(wraps=prepare_physical_signal)
     evaluate = Mock(wraps=evaluate_physical_peak)
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.prepare_physical_signal", prepare
+        "xic_extractor.acquisition.physical_capture.prepare_physical_signal", prepare
     )
     monkeypatch.setattr(
-        "xic_extractor.discovery.ms1_capture.evaluate_physical_peak", evaluate
+        "xic_extractor.acquisition.physical_capture.evaluate_physical_peak", evaluate
     )
 
     result = capture_ms1_candidates(

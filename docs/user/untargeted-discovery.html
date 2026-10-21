@@ -105,7 +105,7 @@
         <figure class="snapshot"><img src="../../assets/screenshots/untargeted-workspace.png" alt="Untargeted Discovery 工作區畫面"><figcaption>Untargeted Discovery 工作區：模式、資料路徑、上機資訊、內標與方法設定。</figcaption></figure>
         <ol class="steps">
           <li><h3>選擇 Untargeted Discovery</h3><p>進入探索工作區。</p></li>
-          <li><h3>選擇 run mode</h3><p>新批次通常選 <code>full</code>；單檔候選探索選 <code>discovery_only</code>；既有探索結果要重新對齊選 <code>align_only</code>。</p></li>
+          <li><h3>選擇 run mode</h3><p>新批次通常選 <code>full</code>；單檔候選探索選 <code>discovery_only</code>；既有探索結果要重新對齊選 <code>align_only</code>。</p><p><code>full</code> 可關閉 Alignment，只輸出批次各樣本的 Discovery，不產生矩陣。Alignment 與 Backfill 預設開啟；關閉 Backfill（CLI：<code>--no-backfill</code>）會保留原有觀察，未搜尋的缺格留空，不補零或新增 SUPPORT。</p></li>
           <li><h3>設定資料路徑</h3><p>指定 RAW 輸入、Thermo DLL 資料夾與輸出資料夾。</p></li>
           <li><h3>匯入 Word「上機資訊」</h3><p>依檔名配對樣本與注射順序；檢查未配對或有歧義項目。字母順序不是注射順序。</p></li>
           <li><h3>檢查「內標清單」</h3><p>在「選擇檔案」旁下載共用 XLSX 範例；可選檔或拖放 XLSX、CSV、TSV。預覽會列出內標；流程只使用 <code>role=istd</code> 且符合目前方法 CID-NL 的列。dR 方法不使用 R 內標；不適用會標示略過，不是 ND。切換方法會更新預覽。</p></li>

@@ -3,13 +3,27 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook
 
+from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.drift_evidence import (
     DriftEvidenceLookup,
     SampleDriftEvidence,
 )
+from xic_extractor.alignment.edge_scoring import (
+    evaluate_owner_edge as _evaluate_owner_edge,
+)
 from xic_extractor.alignment.feature_membership_inference import BatchRtWarp
 from xic_extractor.alignment.rt_frame import SampleRtFrame
 from xic_extractor.configuration.models import Target
+
+
+def evaluate_owner_edge(left, right, *, config, **kwargs):
+    return _evaluate_owner_edge(
+        left,
+        right,
+        config=config,
+        method_evidence=CID_NL_GROUPING_RULES.pair_evidence(left, right, config),
+        **kwargs,
+    )
 
 
 def test_measured_istd_binding_uses_observed_peak_not_expected_rt() -> None:
@@ -254,7 +268,6 @@ def test_known_reference_only_corrects_unique_same_target_support_pairs(
 
     from tests.test_alignment_edge_scoring import _owner
     from xic_extractor.alignment.config import AlignmentConfig
-    from xic_extractor.alignment.edge_scoring import evaluate_owner_edge
     from xic_extractor.applications.untargeted.istd_reference import (
         read_known_istd_reference,
     )
@@ -372,6 +385,7 @@ def test_known_reference_grouping_preserves_main_peak_against_closer_competitor(
         config=AlignmentConfig(),
         sample_universe=frozenset({"early", "late"}),
         rt_frame=SampleRtFrame().with_sources(drift_lookup=lookup),
+        rules=CID_NL_GROUPING_RULES,
     )
     paired = early if use_reference else competitor
     separate = competitor if use_reference else early
@@ -461,6 +475,7 @@ def test_batch_reference_corrects_bootstrap_unknowns_without_merging_distinct_pe
             drift_lookup=lookup
         ),
         bootstrap=True,
+        rules=CID_NL_GROUPING_RULES,
     )
     assert {frozenset(group.owner_ids) for group in groups} == {
         frozenset((early.owner_id, late.owner_id)),

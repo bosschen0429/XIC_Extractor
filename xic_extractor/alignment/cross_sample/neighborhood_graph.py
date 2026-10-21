@@ -69,10 +69,7 @@ def classify_cross_sample_initial_edge(
     }:
         raise CrossSampleContractError("initial edge context is not closed")
     if edge.decision == "blocked_edge":
-        if context == "targeted_istd_continuity" and edge.failure_reason in {
-            "product_mz_out_of_tolerance",
-            "observed_loss_out_of_tolerance",
-        }:
+        if context == "targeted_istd_continuity" and edge.failure_allows_rt_continuity:
             return _targeted_istd_rt_disposition(edge, config=config)
         return "excluded"
     if context == "hard_gate":

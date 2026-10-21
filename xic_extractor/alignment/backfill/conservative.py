@@ -15,6 +15,8 @@ import math
 from dataclasses import asdict, dataclass
 from typing import Literal, cast, final
 
+from xic_extractor.alignment.cell_observation.cid_nl_evidence import CidNlCellEvidence
+from xic_extractor.alignment.cell_observation.method_evidence import CellMethodEvidence
 from xic_extractor.alignment.cell_observation.observations import (
     CellObservationRef,
     CidNlCellGroupContext,
@@ -108,6 +110,7 @@ class ConservativeBackfillCandidateUniverse:
     sample: ResolvedCanonicalSampleIdentity
     group_facts: tuple[ConservativeBackfillGroupFacts, ...]
     candidate_assessment: CidNlMethodAssessmentRef
+    method_evidence: CellMethodEvidence
     artifact: EvidenceArtifactRef
     localization: BackfillPeakLocation | None = None
     localization_sources: tuple[PeakObservationRef, ...] = ()
@@ -266,6 +269,7 @@ def mint_conservative_backfill_candidate_universe(
         sample=sample,
         group_facts=facts,
         candidate_assessment=candidate_assessment,
+        method_evidence=CidNlCellEvidence(candidate_assessment),
         artifact=artifact,
         localization=localization,
         localization_sources=localization_sources,
@@ -603,21 +607,12 @@ def map_conservative_backfill_candidates(
     for index, (facts, cell) in enumerate(zip(group_facts, target_cells, strict=True)):
         candidate_universe = universes_by_subject.get(_group_method_subject_id(facts))
         target_candidates = _backfill_evidence_from_universe(candidate_universe)
-        if cell.content.method_result == "SUPPORT":
+        if reason := cell.method_evidence.backfill_block_reason:
             decisions[index] = _decision(
                 facts,
                 cell,
                 disposition="not_applicable",
-                reasons=("cell_already_has_direct_support",),
-                candidate_universe=candidate_universe,
-                candidates=target_candidates,
-            )
-        elif cell.content.method_result == "REJECT":
-            decisions[index] = _decision(
-                facts,
-                cell,
-                disposition="not_applicable",
-                reasons=("method_reject_is_not_backfill_eligible",),
+                reasons=(reason,),
                 candidate_universe=candidate_universe,
                 candidates=target_candidates,
             )
@@ -775,8 +770,7 @@ def _localized_backfill_candidates(
     location = universe.localization
     if not location.reliable or not candidates:
         return ()
-    # Set-level CID/NL is competing attribution, not missing chemical evidence.
-    if universe.candidate_assessment.set_relation_refs:
+    if not universe.method_evidence.allows_physical_localization:
         return ()
     evaluation = candidates[0].peak_observation.physical_evaluation
     if evaluation is None or evaluation.retained_prepared_signal is None:

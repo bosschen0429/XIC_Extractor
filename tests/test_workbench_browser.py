@@ -260,6 +260,36 @@ def test_navigation_and_theme_survive_reload(workbench):
     expect(page.locator("#workspace-untargeted")).to_be_visible()
 
 
+def test_untargeted_module_switches_persist_and_follow_mode(workbench):
+    page = workbench
+    _view(page, "untargeted")
+    alignment = page.locator("#u-alignment-enabled")
+    backfill = page.locator("#u-backfill-enabled")
+    expect(alignment).to_be_checked()
+    expect(backfill).to_be_checked()
+    backfill.uncheck()
+    alignment.uncheck()
+    expect(backfill).to_be_disabled()
+    with page.expect_response(
+        lambda response: response.url.endswith("/api/untargeted/save")
+    ):
+        page.locator("#untargeted-save").click()
+    expect(backfill).to_be_disabled()
+    page.reload()
+    expect(alignment).not_to_be_checked()
+    expect(backfill).not_to_be_checked()
+    expect(backfill).to_be_disabled()
+    page.locator("input[name=u-mode][value=align_only]").check()
+    expect(alignment).to_be_hidden()
+    expect(backfill).to_be_enabled()
+    page.locator("input[name=u-mode][value=discovery_only]").check()
+    expect(backfill).to_be_hidden()
+    page.locator("input[name=u-mode][value=full]").check()
+    expect(alignment).not_to_be_checked()
+    alignment.check()
+    expect(backfill).to_be_enabled()
+
+
 def test_sequence_warnings_are_visible_in_sample_loading(workbench, monkeypatch):
     page = workbench
     summary = {

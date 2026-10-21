@@ -150,6 +150,7 @@
       .querySelectorAll("[data-analysis-idle]")
       .forEach((node) => (node.disabled = isBusy() ||
         (node.dataset.rtBound === "true" && !$("u-rt-crop")?.checked)));
+    moduleFields();
     document.dispatchEvent(
       new CustomEvent("xic:analysis-busy", { detail: isRunning() }),
     );
@@ -775,19 +776,30 @@
     );
     (input || document.querySelector('input[name="u-mode"]')).checked = true;
   }
+  function moduleFields() {
+    const mode = currentMode();
+    const alignment = mode === "align_only" || (mode === "full" && $("u-alignment-enabled").checked);
+    $("u-alignment-enabled").parentElement.hidden = mode !== "full";
+    $("u-backfill-enabled").parentElement.hidden = mode === "discovery_only";
+    $("u-alignment-enabled").disabled = isBusy() || mode !== "full";
+    $("u-backfill-enabled").disabled = isBusy() || !alignment;
+    $("istd-path-field").parentElement.hidden = !alignment;
+  }
   function modeFields() {
     const mode = currentMode();
+    moduleFields();
     $("u-raw_dir-row").hidden = mode === "discovery_only";
     $("u-raw_file-row").hidden = mode !== "discovery_only";
     $("u-discovery_batch_index-row").hidden = mode !== "align_only";
     $("sample-section").hidden = mode === "discovery_only";
-    $("istd-path-field").parentElement.hidden = mode === "discovery_only";
     checklist("untargeted");
   }
   function untargetedValues() {
     const values = {
       ...state.config.untargeted,
       mode: currentMode(),
+      alignment_enabled: currentMode() === "align_only" || $("u-alignment-enabled").checked,
+      backfill_enabled: $("u-backfill-enabled").checked,
       preset: $("u-preset").value,
       sequence_source: $("sequence-source").value,
       overrides: {},
@@ -2175,6 +2187,7 @@
       $("target-import-status").textContent = `已匯入 ${state.targets.length} 個目標；儲存或開始分析後套用。`;
     };
     $("u-mode").addEventListener("change", modeFields);
+    $("u-alignment-enabled").addEventListener("change", modeFields);
     $("u-preset").onchange = () =>
       act(async () => {
         await loadMethod($("u-preset").value);
@@ -2491,6 +2504,8 @@
       state.config.untargeted.targets_csv,
     );
     setMode(state.config.untargeted.mode);
+    $("u-alignment-enabled").checked = state.config.untargeted.alignment_enabled !== false;
+    $("u-backfill-enabled").checked = state.config.untargeted.backfill_enabled !== false;
     $("sequence-source").value = state.config.untargeted.sequence_source || "";
     for (const method of state.config.methods) {
       const option = el("option", method.display_name);

@@ -24,6 +24,7 @@ BackfillPlanningReason = Literal[
     "direct_support_threshold_not_met",
     "backfill_search_completed_empty",
     "no_discovery_input",
+    "backfill_disabled",
 ]
 
 

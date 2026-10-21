@@ -42,6 +42,7 @@ from xic_extractor.alignment.cid_nl_completion import _cell_planning_reason
 from xic_extractor.alignment.cid_nl_evidence_spine import (
     build_cid_nl_reference_spine,
 )
+from xic_extractor.alignment.cid_nl_grouping import CID_NL_GROUPING_RULES
 from xic_extractor.alignment.cid_nl_inputs import (
     CID_NL_ALIGNMENT_CONFIG,
 )
@@ -119,7 +120,10 @@ def _outside_group_fixture(
         )
     )
     groups = construct_cross_sample_peak_group_hypotheses(
-        owners, config=CID_NL_ALIGNMENT_CONFIG, rt_frame=SampleRtFrame()
+        owners,
+        config=CID_NL_ALIGNMENT_CONFIG,
+        rt_frame=SampleRtFrame(),
+        rules=CID_NL_GROUPING_RULES,
     )
     assert len(groups) == len(support_centers) + 1
     return fixture, tuple(assessments), groups
@@ -346,12 +350,15 @@ def _owner_handoff(tmp_path: Path):
     return fixture, spine, _owner_handoff_for_cells(fixture, group, spine.cells)
 
 
-def _owner_handoff_for_cells(fixture: Any, group: Any, cells: tuple[Any, ...]):
+def _owner_handoff_for_cells(
+    fixture: Any, group: Any, cells: tuple[Any, ...], *, backfill_enabled: bool = True
+):
     coverage = _coverage_for_groups(
         fixture,
         (group,),
         fixture.samples,
         predecessor_cells=cells,
+        backfill_enabled=backfill_enabled,
     )
     receipt = _final_receipt(
         SimpleNamespace(context=SimpleNamespace(processing_owners=fixture.owners)),
@@ -441,6 +448,7 @@ def _coverage_for_groups(
     samples: tuple[Any, ...],
     *,
     predecessor_cells: tuple[Any, ...],
+    backfill_enabled: bool = True,
 ):
     cells = {
         (
@@ -454,7 +462,8 @@ def _coverage_for_groups(
         groups,
         samples,
         planning_reason=lambda group, sample: _cell_planning_reason(
-            cells.get((group.group_hypothesis_id, sample.identity.sample_identity_id))
+            cells.get((group.group_hypothesis_id, sample.identity.sample_identity_id)),
+            backfill_enabled=backfill_enabled,
         ),
     )
 
@@ -523,8 +532,10 @@ def test_composer_rejects_missing_or_duplicate_owner_source_cells(
         )
 
 
+@pytest.mark.parametrize("backfill_enabled", (True, False))
 def test_composer_distinguishes_completed_negative_search(
     tmp_path: Path,
+    backfill_enabled: bool,
 ) -> None:
     fixture, spine, handoff = _owner_handoff(tmp_path)
     sample = fixture.sample("s4")
@@ -553,6 +564,7 @@ def test_composer_distinguishes_completed_negative_search(
         fixture,
         handoff.coverage.group_identities[0],
         predecessor_cells,
+        backfill_enabled=backfill_enabled,
     )
 
     cells = compose_final_group_cell_observation_population(
@@ -561,7 +573,14 @@ def test_composer_distinguishes_completed_negative_search(
     )
 
     s4 = next(cell for cell in cells if cell.canonical_sample is sample)
-    assert s4.evidence_state == "searched_no_observation"
+    assert s4.evidence_state == (
+        "searched_no_observation" if backfill_enabled else "not_searched"
+    )
+    if not backfill_enabled:
+        assert (
+            s4.position_associations[0].position.planning_reason == "backfill_disabled"
+        )
+        assert not s4.integrations and not s4.direct_hypotheses
 
 
 def test_composer_rejects_same_sample_crossed_source_to_position(
