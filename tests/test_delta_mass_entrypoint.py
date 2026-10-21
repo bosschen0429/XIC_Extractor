@@ -182,7 +182,7 @@ smoothing_window_sec = 1
         (r["sample_stem"], float(r["base_mz"]), float(r["base_height"]), r["status"])
         for r in rows
     ] == [("first", 300, 1e6, "candidate"), ("second", 600, 2e6, "candidate")]
-    assert batches == [(300, 2), (600, 2)]
+    assert batches == [(300, 4 if signal_gate else 2), (600, 4 if signal_gate else 2)]
     assert [r["cid_nl_base_status"] for r in rows] == (
         ["matched", "unmatched"] if composite else ["", ""]
     )

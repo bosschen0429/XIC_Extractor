@@ -417,8 +417,9 @@ chemical pattern.
    chemical-identity claim.
 
 The optional lowest-position check acquires all positions in the same RAW batch
-with wider background context. Apex/shape checks retain their central
-`shape_window_sec` window. Every position's comparison height is its raw maximum
+with wider background context. Separate short requests in that same batch
+preserve the vendor scan-rounded `shape_window_sec` apex/shape windows; wider
+traces are not recropped to silently change existing shape decisions. Every position's comparison height is its raw maximum
 in that central window minus its local background; no table/smoothed height is
 mixed into this ordering decision. Background is the median of the lower-median
 flank, using the two configured `background_inner_sec`–`background_outer_sec`

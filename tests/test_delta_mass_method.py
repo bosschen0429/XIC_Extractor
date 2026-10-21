@@ -436,8 +436,8 @@ def test_lowest_position_requires_measured_net_height_and_background_support(
         settings,
         scan_interval_sec=1,
     )
-    assert len(prepared.requests) == 4
-    assert prepared.requests[0].rt_min == 0.5
+    assert len(prepared.requests) == 6
+    assert prepared.requests[2].rt_min == 0.5
     seconds = np.arange(-30, 31, dtype=float)
     times = 1 + seconds / 60
     traces = []
@@ -458,7 +458,16 @@ def test_lowest_position_requires_measured_net_height_and_background_support(
             else np.ones(len(times), dtype=bool)
         )
         traces.append(XICTrace(times[mask], y[mask]))
-    candidate = complete_delta_mass_candidates(prepared, traces, settings)[0]
+    shape_traces = [
+        XICTrace(
+            traces[i].rt[abs((traces[i].rt - 1) * 60) < 11],
+            traces[i].intensity[abs((traces[i].rt - 1) * 60) < 11],
+        )
+        for i in (0, 3)
+    ]
+    candidate = complete_delta_mass_candidates(
+        prepared, shape_traces + traces, settings
+    )[0]
     assert candidate.reject_reason == expected_reason
     assert candidate.status == ("rejected" if expected_reason else "candidate")
     four = candidate.positions[3]

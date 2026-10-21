@@ -11,7 +11,7 @@ import numpy as np
 from xic_extractor.discovery.delta_mass_strategy import DeltaMassPatternSettings
 from xic_extractor.discovery.detected_features import DetectedFeature
 from xic_extractor.mass_accuracy import mz_window, signed_ppm_error
-from xic_extractor.xic_models import XICRequest, XICTrace, crop_xic_trace_by_rt
+from xic_extractor.xic_models import XICRequest, XICTrace
 
 
 @dataclass
@@ -69,6 +69,7 @@ class DeltaMassPreparation:
     requests: tuple[XICRequest, ...] = ()
     request_positions: tuple[tuple[int, int], ...] = ()
     counts: dict[str, int] = field(default_factory=dict)
+    background_positions: tuple[tuple[int, int], ...] = ()
 
 
 def prepare_delta_mass_candidates(
@@ -190,17 +191,11 @@ def prepare_delta_mass_candidates(
     counts["layer_2_passed"] = len(candidates)
     requests = []
     request_positions = []
-    window_sec = (
-        settings.background_outer_sec
-        if settings.lowest_position
-        else settings.shape_window_sec
-    )
     for index, candidate in enumerate(candidates):
         needed = {
             i
             for i, p in enumerate(candidate.positions)
-            if settings.lowest_position
-            or p.partner_source == "missing"
+            if p.partner_source == "missing"
             or p.position_label in settings.discriminating_positions
         }
         if needed:
@@ -218,14 +213,35 @@ def prepare_delta_mass_candidates(
             requests.append(
                 XICRequest(
                     p.expected_mz,
-                    max(0, candidate.base_rt_apex_min - window_sec / 60),
-                    candidate.base_rt_apex_min + window_sec / 60,
+                    max(0, candidate.base_rt_apex_min - settings.shape_window_sec / 60),
+                    candidate.base_rt_apex_min + settings.shape_window_sec / 60,
                     settings.mz_tolerance_ppm,
                 )
             )
             request_positions.append((index, position_index))
+    background_positions = []
+    if settings.lowest_position:
+        for index, candidate in enumerate(candidates):
+            for position_index, result in enumerate(candidate.positions):
+                requests.append(
+                    XICRequest(
+                        result.expected_mz,
+                        max(
+                            0,
+                            candidate.base_rt_apex_min
+                            - settings.background_outer_sec / 60,
+                        ),
+                        candidate.base_rt_apex_min + settings.background_outer_sec / 60,
+                        settings.mz_tolerance_ppm,
+                    )
+                )
+                background_positions.append((index, position_index))
     return DeltaMassPreparation(
-        tuple(candidates), tuple(requests), tuple(request_positions), counts
+        tuple(candidates),
+        tuple(requests),
+        tuple(request_positions),
+        counts,
+        tuple(background_positions),
     )
 
 
@@ -235,22 +251,12 @@ def complete_delta_mass_candidates(
     settings: DeltaMassPatternSettings,
 ) -> tuple[DeltaMassCandidate, ...]:
     """Consume the single acquisition batch; confirm missing positions then shape."""
-    full_trace_map = dict(zip(prepared.request_positions, traces, strict=True))
-    # Background context must not widen the existing apex/shape decision window.
-    trace_map = (
-        {
-            key: crop_xic_trace_by_rt(
-                trace,
-                prepared.candidates[key[0]].base_rt_apex_min
-                - settings.shape_window_sec / 60,
-                prepared.candidates[key[0]].base_rt_apex_min
-                + settings.shape_window_sec / 60,
-                assume_sorted_rt=True,
-            )
-            for key, trace in full_trace_map.items()
-        }
-        if settings.lowest_position
-        else full_trace_map
+    # Keep native acquisition windows: cropping a wider trace by exact RT would
+    # change the vendor's scan-rounded endpoints and therefore shape decisions.
+    split = len(prepared.request_positions)
+    trace_map = dict(zip(prepared.request_positions, traces[:split], strict=True))
+    background_trace_map = dict(
+        zip(prepared.background_positions, traces[split:], strict=True)
     )
     for index, candidate in enumerate(prepared.candidates):
         if candidate.status == "rejected":
@@ -322,7 +328,7 @@ def complete_delta_mass_candidates(
                 position.position_status = "fail"
                 _reject(candidate, 5, "discriminating_shape_below_threshold")
         if candidate.status != "rejected" and settings.lowest_position:
-            _apply_signal_gate(candidate, index, full_trace_map, settings)
+            _apply_signal_gate(candidate, index, background_trace_map, settings)
     return prepared.candidates
 
 
