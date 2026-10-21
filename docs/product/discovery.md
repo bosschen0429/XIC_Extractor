@@ -416,7 +416,7 @@ chemical pattern.
    support. These checks share the same final confirmation stage, not a new
    chemical-identity claim.
 
-The optional lowest-position check acquires all positions in the same RAW batch
+The optional lowest-position and base-support checks acquire all positions in the same RAW batch
 with wider background context. Separate short requests in that same batch
 preserve the vendor scan-rounded `shape_window_sec` apex/shape windows; wider
 traces are not recropped to silently change existing shape decisions. Every position's comparison height is its raw maximum
@@ -435,6 +435,23 @@ zero variation is not reported as infinite signal-to-noise. Net heights,
 background, variation, required height, and independent signal/lowest statuses
 are published in position evidence. This local screening statistic is not a
 calibrated detection limit.
+
+An optional `base_support_positions` list enables a one-sided base-strength
+check on these same RAW net heights. For the named non-base positions, sum
+their nonnegative net peak heights and divide by the sum of their reference
+ratios (the geometric centers of `ratio_min` and `ratio_max`). This gives
+`base_expected_net_height`. The nonnegative base net height divided by that
+expectation is `base_support_score`; it must be at least `min_base_support`.
+The candidate CSV records both values and `base_support_status`; insufficient
+support rejects with `base_support_below_threshold`. Missing background or a
+nonpositive reference sum cannot supply support. An empty reference-position
+list disables this check independently of `lowest_position`.
+
+This is one pooled lower-bound check, not separate ratio gates or an upper
+bound on base. Each height is its own central-window maximum, not a
+simultaneous spectrum or integrated area. Reference agreement does not establish
+chemical identity, and molecular isotope overlap or interference can affect
+the observed distribution.
 
 The pure method lives in `delta_mass_patterns`; the pipeline owns RAW access,
 local feature detection, and serialization. Table heights are detector-produced
@@ -466,6 +483,13 @@ The Pt presets require +4 to be the lowest net peak and to exceed the larger
 of 25,000 intensity units or five robust background deviations, using 20–30 s
 flanks. The absolute floor matches the detector noise setting; it does not
 establish instrument-wide sensitivity. +1 being highest is not required.
+Both Pt presets use +1 and +2 as the base-support reference, with
+`min_base_support = 0.25`: base must reach a quarter of the expected height
+`(H_+1 + H_+2) / 1.7951917224589167`. The tolerance is provisional, not a bound
+implied by natural abundance. +4 is excluded from this pooled test, so a weak
++4 does not fail it; the existing +4 presence, shape, background, and
+lowest-position requirements still apply. Per-position ratio ranges remain
+evidence only. There is no all-position relative-height floor.
 All these choices are configurable; an empty `lowest_position` disables the
 optional signal/order gate. Changing these provisional parameters does not
 change the generic method.

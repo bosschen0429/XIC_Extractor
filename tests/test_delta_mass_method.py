@@ -487,3 +487,72 @@ def test_lowest_position_requires_measured_net_height_and_background_support(
         assert four.lowest_status == "pass"
         assert four.signal_status == "pass"
         assert four.shape_r > 0.99
+
+
+@pytest.mark.parametrize(
+    "base,one,two,four,enabled,lowest,expected_reason",
+    [
+        (20, 150, 150, 0.25, True, True, "base_support_below_threshold"),
+        (25, 150, 150, 0.25, True, True, ""),
+        (26, 150, 150, 0.25, True, True, ""),
+        (25, 1, 299, 0.25, True, True, ""),
+        (25, 299, 1, 0.25, True, True, ""),
+        (25, 150, 150, 20, True, True, ""),
+        (20, 150, 150, 0.25, False, True, ""),
+        (20, 150, 150, 0.25, True, False, "base_support_below_threshold"),
+    ],
+)
+def test_base_support_uses_pooled_raw_net_heights_without_a_heavy_ratio_gate(
+    base, one, two, four, enabled, lowest, expected_reason
+):
+    from dataclasses import replace
+
+    import numpy as np
+
+    from xic_extractor.discovery.delta_mass_patterns import (
+        complete_delta_mass_candidates,
+    )
+    from xic_extractor.xic_models import XICTrace
+
+    settings = DeltaMassPatternSettings(
+        pattern_id="synthetic",
+        method_label="synthetic",
+        positions=(
+            DeltaMassPosition("base", 0, 1, 1),
+            DeltaMassPosition("one", 1, 0.5, 2),
+            DeltaMassPosition("two", 2, 1, 4),
+            DeltaMassPosition("four", 4, 0.1, 0.4),
+        ),
+        anchor_positions=("base",),
+        discriminating_positions=("four",),
+        lowest_position="four" if lowest else "",
+        min_height_above_background=0.1,
+        base_support_positions=("one", "two") if enabled else (),
+    )
+    features = tuple(
+        replace(
+            feature(p.label, 300 + p.delta_da, height=100),
+            trace_quality="OK" if i == 0 else "WEAK_SUPPORT",
+        )
+        for i, p in enumerate(settings.positions)
+    )
+    prepared = prepare_delta_mass_candidates(features, settings, scan_interval_sec=1)
+    heights = dict(zip((300, 301, 302, 304), (base, one, two, four), strict=True))
+    traces = []
+    for request in prepared.requests:
+        seconds = np.arange(-30, 31, dtype=float)
+        times = 1 + seconds / 60
+        # Different backgrounds and identical table heights must not determine support.
+        y = 1000 * (request.mz - 299) + heights[request.mz] * np.maximum(
+            0, 1 - np.abs(seconds) / 8
+        )
+        mask = (times >= request.rt_min) & (times <= request.rt_max)
+        traces.append(XICTrace(times[mask], y[mask]))
+    candidate = complete_delta_mass_candidates(prepared, traces, settings)[0]
+    assert candidate.reject_reason == expected_reason
+    if enabled:
+        assert candidate.base_expected_net_height == pytest.approx((one + two) / 3)
+        assert candidate.base_support_score == pytest.approx(base / ((one + two) / 3))
+        assert candidate.base_support_status == ("fail" if expected_reason else "pass")
+    else:
+        assert candidate.base_support_status == "not_required"

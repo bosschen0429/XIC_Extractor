@@ -32,6 +32,9 @@ CANDIDATE_COLUMNS = (
     "cid_nl_base_status",
     "cid_nl_base_candidate_id",
     "cid_nl_base_join_mode",
+    "base_expected_net_height",
+    "base_support_score",
+    "base_support_status",
 )
 POSITION_COLUMNS = (
     "candidate_id",

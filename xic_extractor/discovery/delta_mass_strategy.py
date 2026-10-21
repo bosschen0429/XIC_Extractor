@@ -43,6 +43,8 @@ class DeltaMassPatternSettings:
     background_outer_sec: float = 30.0
     min_height_above_background: float = 25_000.0
     min_background_sigma: float = 5.0
+    base_support_positions: tuple[str, ...] = ()
+    min_base_support: float = 0.25
 
     def __post_init__(self) -> None:
         if not isinstance(self.method_label, str) or not self.method_label.strip():
@@ -70,6 +72,17 @@ class DeltaMassPatternSettings:
             self.lowest_position and self.lowest_position not in labels
         ):
             raise ValueError("lowest_position must name a pattern position or be empty")
+        if len(set(self.base_support_positions)) != len(
+            self.base_support_positions
+        ) or not set(self.base_support_positions) <= set(labels[1:]):
+            raise ValueError(
+                "base_support_positions must name unique non-base positions"
+            )
+        require_finite_real(self.min_base_support, name="min_base_support")
+        if not 0 < self.min_base_support <= 1:
+            raise ValueError(
+                "min_base_support must be greater than zero and at most one"
+            )
         for name in (
             "background_inner_sec",
             "background_outer_sec",
@@ -79,7 +92,7 @@ class DeltaMassPatternSettings:
             value = require_finite_real(getattr(self, name), name=name)
             if value <= 0:
                 raise ValueError(f"{name} must be positive")
-        if self.lowest_position and not (
+        if (self.lowest_position or self.base_support_positions) and not (
             self.shape_window_sec
             < self.background_inner_sec
             < self.background_outer_sec

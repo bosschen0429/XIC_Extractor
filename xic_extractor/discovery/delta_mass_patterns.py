@@ -5,6 +5,7 @@ from __future__ import annotations
 from bisect import bisect_left, bisect_right
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from math import sqrt
 
 import numpy as np
 
@@ -61,6 +62,9 @@ class DeltaMassCandidate:
     cid_nl_base_status: str = ""
     cid_nl_base_candidate_id: str = ""
     cid_nl_base_join_mode: str = ""
+    base_expected_net_height: float | None = None
+    base_support_score: float | None = None
+    base_support_status: str = "not_required"
 
 
 @dataclass
@@ -220,7 +224,7 @@ def prepare_delta_mass_candidates(
             )
             request_positions.append((index, position_index))
     background_positions = []
-    if settings.lowest_position:
+    if settings.lowest_position or settings.base_support_positions:
         for index, candidate in enumerate(candidates):
             for position_index, result in enumerate(candidate.positions):
                 requests.append(
@@ -327,7 +331,9 @@ def complete_delta_mass_candidates(
             if position.shape_r is None or position.shape_r < settings.min_shape_r:
                 position.position_status = "fail"
                 _reject(candidate, 5, "discriminating_shape_below_threshold")
-        if candidate.status != "rejected" and settings.lowest_position:
+        if candidate.status != "rejected" and (
+            settings.lowest_position or settings.base_support_positions
+        ):
             _apply_signal_gate(candidate, index, background_trace_map, settings)
     return prepared.candidates
 
@@ -366,6 +372,15 @@ def _apply_signal_gate(
             1.4826 * np.median(np.abs(flank - background))
         )
         position.height_above_background = position.raw_peak_height - background
+    if settings.lowest_position:
+        _apply_lowest_position_gate(candidate, settings)
+    if candidate.status != "rejected" and settings.base_support_positions:
+        _apply_base_support_gate(candidate, settings)
+
+
+def _apply_lowest_position_gate(
+    candidate: DeltaMassCandidate, settings: DeltaMassPatternSettings
+) -> None:
     lowest = next(
         p for p in candidate.positions if p.position_label == settings.lowest_position
     )
@@ -401,6 +416,47 @@ def _apply_signal_gate(
     if lowest.lowest_status == "fail":
         lowest.position_status = "fail"
         _reject(candidate, 5, "lowest_position_not_lowest")
+
+
+def _apply_base_support_gate(
+    candidate: DeltaMassCandidate, settings: DeltaMassPatternSettings
+) -> None:
+    """Require only a lower bound on base versus pooled reference-position heights."""
+    base = candidate.positions[0]
+    reference = [
+        p
+        for p in candidate.positions
+        if p.position_label in settings.base_support_positions
+    ]
+    if base.height_above_background is None or any(
+        p.height_above_background is None for p in reference
+    ):
+        candidate.base_support_status = "unavailable"
+        base.position_status = "fail"
+        _reject(candidate, 5, "local_background_unavailable")
+        return
+    reference_ratio = sum(sqrt(p.ratio_min * p.ratio_max) for p in reference)
+    expected = (
+        sum(
+            max(0.0, p.height_above_background)
+            for p in reference
+            if p.height_above_background is not None
+        )
+        / reference_ratio
+    )
+    candidate.base_expected_net_height = expected
+    if expected <= 0:
+        candidate.base_support_status = "unavailable"
+        base.position_status = "fail"
+        _reject(candidate, 5, "base_support_reference_unavailable")
+        return
+    candidate.base_support_score = max(0.0, base.height_above_background) / expected
+    candidate.base_support_status = (
+        "pass" if candidate.base_support_score >= settings.min_base_support else "fail"
+    )
+    if candidate.base_support_status == "fail":
+        base.position_status = "fail"
+        _reject(candidate, 5, "base_support_below_threshold")
 
 
 def _record_ratio(position: DeltaMassPositionResult, base_height: float | None) -> None:

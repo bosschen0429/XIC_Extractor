@@ -53,7 +53,8 @@ smoothing_window_sec = 1
         preset.write_text(
             preset.read_text().replace(
                 'discriminating_positions = ["heavy"]',
-                'discriminating_positions = ["heavy"]\nlowest_position = "heavy"',
+                'discriminating_positions = ["heavy"]\nlowest_position = "heavy"\n'
+                'base_support_positions = ["heavy"]\nmin_base_support = 0.25',
             )
         )
     extra_args = []
@@ -198,6 +199,17 @@ smoothing_window_sec = 1
         heavy = [r for r in positions if r["position_label"] == "heavy"]
         assert [float(r["height_above_background"]) for r in heavy] == [5e5, 1e6]
         assert all(r["signal_status"] == r["lowest_status"] == "pass" for r in heavy)
+        assert all(r["base_support_status"] == "pass" for r in rows)
+        assert [float(r["base_expected_net_height"]) for r in rows] == pytest.approx(
+            [5e5 / np.sqrt(0.4 * ratio_max), 1e6 / np.sqrt(0.4 * ratio_max)],
+            rel=1e-5,
+        )
+        assert [float(r["base_support_score"]) for r in rows] == pytest.approx(
+            [2 * np.sqrt(0.4 * ratio_max)] * 2, rel=1e-5
+        )
+    else:
+        assert all(r["base_support_status"] == "not_required" for r in rows)
+        assert all(r["base_support_score"] == "" for r in rows)
 
     assert all(
         row["ratio_status"] == expected_ratio_status
@@ -213,6 +225,10 @@ smoothing_window_sec = 1
     sidecar = json.loads((output / "delta_mass_sidecar.json").read_text())
     assert sidecar["status"] == "diagnostic_only"
     assert sidecar["method"]["height_ratio_policy"] == "evidence_only"
+    assert sidecar["method"]["base_support_positions"] == (
+        ["heavy"] if signal_gate else []
+    )
+    assert sidecar["method"]["min_base_support"] == 0.25
     assert sidecar["method"]["detector"]["spectrum_mode"] == "vendor_centroid"
     assert [s["candidate_count"] for s in sidecar["samples"]] == [1, 1]
     assert {p.name for p in output.glob("*.*")} == {

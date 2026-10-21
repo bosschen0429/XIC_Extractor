@@ -262,8 +262,12 @@ def apply_to_delta_mass_discovery(preset: Preset) -> DeltaMassPatternSettings:
             )
         )
     roles = {}
-    for key in ("anchor_positions", "discriminating_positions"):
-        value = overrides.get(key)
+    for key in (
+        "anchor_positions",
+        "discriminating_positions",
+        "base_support_positions",
+    ):
+        value = overrides.get(key, [] if key == "base_support_positions" else None)
         if not isinstance(value, list) or any(not isinstance(v, str) for v in value):
             raise PresetError(f"{key} must be an array of labels")
         roles[key] = tuple(value)
@@ -285,6 +289,8 @@ def apply_to_delta_mass_discovery(preset: Preset) -> DeltaMassPatternSettings:
         shape_window_sec=_positive_float_setting(overrides, "shape_window_sec", 10),
         min_shape_r=cast(float, overrides.get("min_shape_r", 0.9)),
         lowest_position=_str_setting(overrides, "lowest_position", ""),
+        base_support_positions=roles["base_support_positions"],
+        min_base_support=cast(float, overrides.get("min_base_support", 0.25)),
         background_inner_sec=_positive_float_setting(
             overrides, "background_inner_sec", 20
         ),
