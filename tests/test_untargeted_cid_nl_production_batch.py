@@ -3698,6 +3698,45 @@ def test_production_composition_closes_observation_only_hold_without_membership(
         _assert_conservative_completion_projection(
             proof, position, coverage, handoff, hold_cell, batch, runtime_result
         )
+        # Without Backfill there is no threshold decision; local candidates remain.
+        disabled_config = AlignmentConfig(
+            anchor_min_seed_events=1, backfill_enabled=False
+        )
+        disabled = complete_dense_partition(
+            batch,
+            execute_dense_partition(
+                batch,
+                telemetry_provider=build_runtime_telemetry_samples_from_coordinator,
+                recovery_marker=OwnerPathRuntimeMarker(
+                    tmp_path / "hold-backfill-disabled.runtime.json",
+                    "production-hold-backfill-disabled",
+                ),
+                alignment_config=disabled_config,
+            ),
+            alignment_config=disabled_config,
+        )
+        (disabled_child,) = disabled.application_result.children
+        disabled_core = disabled_child.scientific_core
+        disabled_hold = next(
+            cell
+            for cell in disabled_core.cell_observations
+            if cell.canonical_sample.metadata.raw_stem == "Hold"
+        )
+        (disabled_position,) = (
+            item.position for item in disabled_hold.position_associations
+        )
+        assert disabled_position.no_request_decision is None
+        assert disabled_position.planning_reason == "retained_unresolved_candidates"
+        assert disabled_hold.evidence_states == ("unresolved",)
+        assert not disabled_hold.integrations
+        disabled_inputs = project_completed_untarget_batch_writer_inputs(
+            disabled.application_result
+        )
+        assert all(
+            not item.write_matrix_value and item.matrix_value is None
+            for item in disabled_inputs.production_decisions.cells.values()
+            if item.sample_stem == "Hold"
+        )
         return
     if scenario != "mixed":
         _assert_single_unsupported_exclusion(

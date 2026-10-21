@@ -69,7 +69,10 @@ Backfill is enabled by default. The Workbench switch, Alignment CLI
 planning and acquisition, not just publication. Completion retains existing
 sample-local evidence and exact no-input coverage. An otherwise empty local
 lane records `backfill_disabled` and becomes `not_searched`; it cannot mint a
-completed-empty receipt, zero value, or SUPPORT. Run metadata records
+completed-empty receipt, zero value, or SUPPORT. A HOLD lane with local
+candidates stays `unresolved`, because no group-support decision exists; with
+Backfill enabled, a group below that threshold reports the same lane as
+`not_searched`. Neither writes a Matrix value. Run metadata records
 `backfill_execution=not_run`. Existing direct observations remain available.
 
 Cross-subject groups retain each SUPPORT cell's exact assessment and hypothesis

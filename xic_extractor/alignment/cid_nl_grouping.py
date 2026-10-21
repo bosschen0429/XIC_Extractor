@@ -15,8 +15,8 @@ from xic_extractor.alignment.config import AlignmentConfig
 from xic_extractor.alignment.grouping_evidence import (
     DETECTION_LIMIT_SNR,
     QUANTITATION_LIMIT_SNR,
-    _min_owner_peak_snr,
     envelope_fraction,
+    min_owner_peak_snr,
     pair_ppm,
 )
 from xic_extractor.alignment.grouping_rules import (
@@ -304,7 +304,7 @@ def classify_seed_support(
     """
     left_event = left.primary_identity_event
     right_event = right.primary_identity_event
-    min_snr = _min_owner_peak_snr(left, right)
+    min_snr = min_owner_peak_snr(left, right)
     if left_event is None or right_event is None:
         if min_snr is not None and min_snr >= QUANTITATION_LIMIT_SNR:
             return "strong"

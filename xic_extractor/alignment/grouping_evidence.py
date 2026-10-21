@@ -57,7 +57,7 @@ def peak_shape_union_conflict(
     return None
 
 
-def _min_owner_peak_snr(
+def min_owner_peak_snr(
     left: SampleLocalMS1Owner,
     right: SampleLocalMS1Owner,
 ) -> float | None:

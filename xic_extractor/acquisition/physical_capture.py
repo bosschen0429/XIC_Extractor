@@ -68,7 +68,10 @@ class CapturedPhysicalPeak:
 
 
 class PhysicalPeakCapture:
-    """Sample-local acquisition and physical results shared by method hits."""
+    """Sample-local acquisition and physical results shared by method hits.
+
+    One instance answers one ``capture`` population; ``reselect`` extends it.
+    """
 
     def __init__(
         self,
