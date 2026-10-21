@@ -20,6 +20,7 @@ from types import MappingProxyType
 from typing import Literal, TypeAlias
 
 from xic_extractor.configuration.target_identity import ResolvedTargetDefinition
+from xic_extractor.precursor_evidence import Ms1PrecursorObservation
 from xic_extractor.processing_identity import (
     ProcessingOwnerReferences,
     ProcessingRequestIdentity,
@@ -302,6 +303,7 @@ class CidNlPhysicalProof:
     xic_ppm_tol: float
     rt: Iterable[float]
     raw: Iterable[float]
+    apex_centroids: tuple[Ms1PrecursorObservation, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -324,6 +326,20 @@ def _same_physical_core(
     rt_min: float,
     rt_max: float,
 ) -> bool:
+    if left.apex_centroids or right.apex_centroids:
+        # A shared, singly occupied ion at the apex and its adjacent MS1 scans
+        # identifies the measured peak even when query-window tails differ.
+        # Distinct or unresolved centroids cannot be overruled by equal XICs.
+        scans = left.apex_centroids
+        return (
+            len(scans) == 3
+            and scans == right.apex_centroids
+            and rt_min <= scans[0].rt_min < left.apex_rt_min
+            and scans[1].rt_min == left.apex_rt_min == right.apex_rt_min
+            and left.apex_rt_min < scans[2].rt_min <= rt_max
+            and len({scan.scan_number for scan in scans}) == 3
+            and all(len(scan.centroid_mzs) == 1 for scan in scans)
+        )
     sentinel = object()
     matched = False
     left_core = (
