@@ -138,7 +138,7 @@ def test_pt_export_uses_delta_mass_projection_for_explicit_overrides(
         tmp_path / "pt.toml",
         discovery_overrides={
             "delta_mass_mz_tolerance_ppm": 31.5,
-            "delta_mass_rt_tolerance_sec": 18.0,
+            "apex_floor_sec": 18.0,
         },
     )
 
@@ -151,7 +151,7 @@ def test_pt_export_uses_delta_mass_projection_for_explicit_overrides(
             discovery_overrides={
                 **original.discovery_overrides,
                 "delta_mass_mz_tolerance_ppm": 31.5,
-                "delta_mass_rt_tolerance_sec": 18.0,
+                "apex_floor_sec": 18.0,
             },
             alignment_overrides=original.alignment_overrides,
             source=original.source,

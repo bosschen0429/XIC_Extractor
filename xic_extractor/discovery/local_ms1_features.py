@@ -40,10 +40,6 @@ DIAGNOSTICS_COLUMNS = (
     "mz_ppm_std",
     "prominence",
     "boundary_quality",
-    "assignment_mode",
-    "component_size",
-    "component_edge_density",
-    "assignment_degraded_large_component",
     "split_peak",
     "overlap_suspected",
     "reason",
@@ -52,7 +48,6 @@ DIAGNOSTICS_COLUMNS = (
 
 @dataclass(frozen=True)
 class LocalMs1FeatureSettings:
-    trace_builder_mode: str = "mzmine_seeded"
     mass_detection_noise_level: float = 25_000.0
     min_trace_seed_intensity: float = 100_000.0
     min_consecutive_trace_intensity: float = 50_000.0
@@ -68,16 +63,9 @@ class LocalMs1FeatureSettings:
     max_weak_gap_fraction: float = 0.35
     max_ok_mz_ppm_std: float = 10.0
     max_weak_mz_ppm_std: float = 20.0
-    optimal_component_max_size: int = 12
-    optimal_component_max_edge_density: float = 0.35
-    optimal_component_max_edges: int = 24
     split_valley_fraction_of_smaller_apex: float = 0.50
 
     def __post_init__(self) -> None:
-        if self.trace_builder_mode not in {"mzmine_seeded", "scan_link"}:
-            raise ValueError(
-                "trace_builder_mode must be 'mzmine_seeded' or 'scan_link'"
-            )
         for name in (
             "mass_detection_noise_level",
             "min_trace_seed_intensity",
@@ -98,7 +86,6 @@ class LocalMs1FeatureSettings:
         for name in (
             "max_ok_gap_fraction",
             "max_weak_gap_fraction",
-            "optimal_component_max_edge_density",
             "split_valley_fraction_of_smaller_apex",
         ):
             value = require_finite_real(getattr(self, name), name=name)
@@ -111,8 +98,6 @@ class LocalMs1FeatureSettings:
         for name in (
             "min_observed_scans",
             "gaussian_window_points",
-            "optimal_component_max_size",
-            "optimal_component_max_edges",
         ):
             value = require_integer(getattr(self, name), name=name)
             if value <= 0:
@@ -138,7 +123,6 @@ class LocalMs1FeatureSummary:
     extraction_backend: str
     ms1_scan_selection_rule: str
     generator_version: str
-    trace_builder_mode: str
     parameters: Mapping[str, object]
     parameter_hash: str
     wall_time_sec: float
@@ -148,10 +132,6 @@ class LocalMs1FeatureSummary:
     effective_smoothing_seconds: float | None
     ms1_scan_count: int
     centroid_peak_count: int
-    candidate_edge_count: int
-    conflict_component_count: int
-    degraded_assignment_component_count: int
-    degraded_assignment_component_fraction: float
     total_traces: int
     total_peak_regions: int
     ok_feature_count: int
@@ -178,10 +158,6 @@ class LocalMs1FeatureDiagnosticRow:
     mz_ppm_std: float | None
     prominence: float | None
     boundary_quality: float | None
-    assignment_mode: str
-    component_size: int
-    component_edge_density: float
-    assignment_degraded_large_component: bool
     split_peak: bool
     overlap_suspected: bool
     reason: str
@@ -199,35 +175,8 @@ class _TraceBuilder:
     trace_id: int
     points: list[tuple[int, float, float, float]]
     scan_positions: list[int] = field(default_factory=list)
-    scan_position_set: set[int] = field(default_factory=set)
-    trailing_missing_scans: int = 0
     internal_missing_scan_count: int = 0
     internal_missing_gaps: list[tuple[int, int]] = field(default_factory=list)
-    assignment_mode: str = "new_trace"
-    component_size: int = 1
-    component_edge_density: float = 0.0
-    assignment_degraded_large_component: bool = False
-
-    @property
-    def last_mz(self) -> float:
-        return self.points[-1][2]
-
-    @property
-    def last_scan_number(self) -> int:
-        return self.points[-1][0]
-
-
-@dataclass(frozen=True)
-class _AssignmentEdge:
-    ppm_error_abs: float
-    trace_index: int
-    peak_index: int
-    intensity: float
-    scan_gap: int
-    assignment_mode: str
-    component_size: int
-    component_edge_density: float
-    assignment_degraded_large_component: bool
 
 
 @dataclass(frozen=True)
@@ -250,11 +199,6 @@ class _PeakRegion:
     left_index: int
     right_index: int
     missing_scan_count: int
-    candidate_edge_count: int
-    assignment_mode: str
-    component_size: int
-    component_edge_density: float
-    assignment_degraded_large_component: bool
     split_peak: bool
     overlap_suspected: bool
 
@@ -283,6 +227,7 @@ def build_local_ms1_feature_table(
     LocalMs1FeatureSummary,
     tuple[LocalMs1FeatureDiagnosticRow, ...],
 ]:
+    """Build chromatographic features from centroid ions, not profile samples."""
     sample_stem = normalize_local_ms1_sample_stem(sample_stem)
     if not isinstance(raw_path, str) or not raw_path.strip():
         raise ValueError("raw_path must be a non-empty string")
@@ -298,20 +243,7 @@ def build_local_ms1_feature_table(
     resolved = settings or LocalMs1FeatureSettings()
     validate_ms1_scan_index(index, require_nonempty=True)
     start = time.perf_counter()
-    if resolved.trace_builder_mode == "mzmine_seeded":
-        traces, edge_count, component_count, degraded_count = _build_seeded_traces(
-            index,
-            resolved,
-        )
-    elif resolved.trace_builder_mode == "scan_link":
-        traces, edge_count, component_count, degraded_count = _link_traces(
-            index,
-            resolved,
-        )
-    else:
-        raise ValueError(
-            f"unsupported local MS1 trace builder mode: {resolved.trace_builder_mode}",
-        )
+    traces = _build_seeded_traces(index, resolved)
     features: list[DetectedFeature] = []
     diagnostics: list[LocalMs1FeatureDiagnosticRow] = []
     peak_region_count = 0
@@ -355,11 +287,6 @@ def build_local_ms1_feature_table(
             smoothed=smoothed,
             internal_missing_scan_count=trace.internal_missing_scan_count,
             internal_missing_gaps=tuple(trace.internal_missing_gaps),
-            candidate_edge_count=edge_count,
-            assignment_mode=trace.assignment_mode,
-            component_size=trace.component_size,
-            component_edge_density=trace.component_edge_density,
-            assignment_degraded_large_component=trace.assignment_degraded_large_component,
             settings=resolved,
         )
         if not regions:
@@ -456,7 +383,6 @@ def build_local_ms1_feature_table(
         extraction_backend="local_ms1_scan_index",
         ms1_scan_selection_rule="MSOrder == Ms",
         generator_version="local_ms1_feature_generator",
-        trace_builder_mode=resolved.trace_builder_mode,
         parameters=asdict(resolved),
         parameter_hash=_parameter_hash(resolved),
         wall_time_sec=time.perf_counter() - start,
@@ -475,12 +401,6 @@ def build_local_ms1_feature_table(
         ),
         ms1_scan_count=len(index),
         centroid_peak_count=sum(len(scan.masses) for scan in index),
-        candidate_edge_count=edge_count,
-        conflict_component_count=component_count,
-        degraded_assignment_component_count=degraded_count,
-        degraded_assignment_component_fraction=(
-            degraded_count / component_count if component_count else 0.0
-        ),
         total_traces=len(traces),
         total_peak_regions=peak_region_count,
         ok_feature_count=ok_count,
@@ -571,11 +491,6 @@ def _peak_regions_from_smoothed_trace(
     smoothed: np.ndarray,
     internal_missing_scan_count: int,
     internal_missing_gaps: Sequence[tuple[int, int]] = (),
-    candidate_edge_count: int,
-    assignment_mode: str,
-    component_size: int,
-    component_edge_density: float,
-    assignment_degraded_large_component: bool,
     settings: LocalMs1FeatureSettings,
 ) -> tuple[_PeakRegion, ...]:
     if len(smoothed) < settings.min_observed_scans:
@@ -607,11 +522,6 @@ def _peak_regions_from_smoothed_trace(
                     right=right,
                     trace_length=len(smoothed),
                 ),
-                candidate_edge_count=candidate_edge_count,
-                assignment_mode=assignment_mode,
-                component_size=component_size,
-                component_edge_density=component_edge_density,
-                assignment_degraded_large_component=assignment_degraded_large_component,
                 split_peak=split_peak,
                 overlap_suspected=not split_peak and len(apices) > 1,
             )
@@ -725,7 +635,7 @@ def _region_missing_scan_count(
 def _build_seeded_traces(
     index: tuple[MS1Scan, ...],
     settings: LocalMs1FeatureSettings,
-) -> tuple[list[_TraceBuilder], int, int, int]:
+) -> list[_TraceBuilder]:
     """Build chromatogram traces from high-intensity m/z seeds.
 
     This follows the same shape as MZmine's chromatogram builder: start traces
@@ -795,12 +705,7 @@ def _build_seeded_traces(
     for trace in traces:
         _finalize_seeded_trace(trace)
 
-    return (
-        traces,
-        len(data_points),
-        len(ranges),
-        0,
-    )
+    return traces
 
 
 def _build_seed_range_traces(
@@ -862,8 +767,6 @@ def _append_seeded_trace_segment(
         trace_id=next_trace_id,
         points=list(points),
         scan_positions=list(scan_positions),
-        scan_position_set=set(scan_positions),
-        assignment_mode="mzmine_seeded_chromatogram",
     )
     seed_range.traces.append(trace)
     return next_trace_id + 1
@@ -917,7 +820,6 @@ def _finalize_seeded_trace(trace: _TraceBuilder) -> None:
     )
     trace.scan_positions = [scan_index for scan_index, _point in ordered]
     trace.points = [point for _scan_index, point in ordered]
-    trace.scan_position_set = set(trace.scan_positions)
     trace.internal_missing_gaps.clear()
     trace.internal_missing_scan_count = 0
     for point_index, (left, right) in enumerate(
@@ -954,135 +856,6 @@ def _trace_has_min_consecutive_intensity(
     return False
 
 
-def _link_traces(
-    index: tuple[MS1Scan, ...],
-    settings: LocalMs1FeatureSettings,
-) -> tuple[list[_TraceBuilder], int, int, int]:
-    active: list[_TraceBuilder] = []
-    complete: list[_TraceBuilder] = []
-    next_trace_id = 1
-    candidate_edge_count = 0
-    conflict_component_count = 0
-    degraded_component_count = 0
-
-    for scan_position, scan in enumerate(index):
-        peaks = _positive_scan_peaks(scan)
-        peak_mzs = np.asarray([mz for mz, _intensity in peaks], dtype=np.float64)
-        assigned_traces: set[int] = set()
-        assigned_peaks: set[int] = set()
-        edges: list[_AssignmentEdge] = []
-        if len(peak_mzs):
-            for trace_index, trace in enumerate(active):
-                tolerance = trace.last_mz * settings.feature_link_ppm * 1e-6
-                lower_mz = trace.last_mz - tolerance
-                upper_mz = trace.last_mz + tolerance
-                start = int(np.searchsorted(peak_mzs, lower_mz, side="left"))
-                stop = int(np.searchsorted(peak_mzs, upper_mz, side="right"))
-                for peak_index in range(start, stop):
-                    mz, intensity = peaks[peak_index]
-                    candidate_edge_count += 1
-                    edges.append(
-                        _AssignmentEdge(
-                            ppm_error_abs=abs(_ppm_error(mz, trace.last_mz)),
-                            trace_index=trace_index,
-                            peak_index=peak_index,
-                            intensity=intensity,
-                            scan_gap=max(
-                                1,
-                                int(scan.scan_number) - trace.last_scan_number,
-                            ),
-                            assignment_mode="unresolved",
-                            component_size=0,
-                            component_edge_density=0.0,
-                            assignment_degraded_large_component=False,
-                        )
-                    )
-
-        components = _edge_components(edges)
-        conflict_component_count += len(components)
-        for component in components:
-            component_trace_count = len({edge.trace_index for edge in component})
-            component_peak_count = len({edge.peak_index for edge in component})
-            component_size = component_trace_count + component_peak_count
-            component_edge_density = _component_edge_density(
-                component,
-                component_trace_count=component_trace_count,
-                component_peak_count=component_peak_count,
-            )
-            use_optimal = len(component) <= settings.optimal_component_max_edges and (
-                component_size <= settings.optimal_component_max_size
-                or component_edge_density <= settings.optimal_component_max_edge_density
-            )
-            if use_optimal:
-                assignment_mode = "optimal_component"
-                degraded = False
-                chosen_edges = _optimal_component_assignment(component)
-            else:
-                assignment_mode = (
-                    "greedy_edge_count_limited_component"
-                    if len(component) > settings.optimal_component_max_edges
-                    else "greedy_large_dense_component"
-                )
-                degraded = True
-                degraded_component_count += 1
-                chosen_edges = _greedy_component_assignment(component)
-            for edge in chosen_edges:
-                if (
-                    edge.trace_index in assigned_traces
-                    or edge.peak_index in assigned_peaks
-                ):
-                    continue
-                trace = active[edge.trace_index]
-                mz, intensity = peaks[edge.peak_index]
-                if trace.trailing_missing_scans:
-                    trace.internal_missing_gaps.append(
-                        (len(trace.points) - 1, trace.trailing_missing_scans)
-                    )
-                    trace.internal_missing_scan_count += trace.trailing_missing_scans
-                trace.points.append((scan.scan_number, scan.rt, mz, intensity))
-                trace.scan_positions.append(scan_position)
-                trace.scan_position_set.add(scan_position)
-                trace.trailing_missing_scans = 0
-                trace.assignment_mode = assignment_mode
-                trace.component_size = component_size
-                trace.component_edge_density = component_edge_density
-                trace.assignment_degraded_large_component = degraded
-                assigned_traces.add(edge.trace_index)
-                assigned_peaks.add(edge.peak_index)
-
-        still_active: list[_TraceBuilder] = []
-        for trace_index, trace in enumerate(active):
-            if trace_index in assigned_traces:
-                still_active.append(trace)
-                continue
-            trace.trailing_missing_scans += 1
-            if trace.trailing_missing_scans <= settings.max_missing_scans:
-                still_active.append(trace)
-            else:
-                complete.append(trace)
-        for peak_index, (mz, intensity) in enumerate(peaks):
-            if peak_index in assigned_peaks:
-                continue
-            still_active.append(
-                _TraceBuilder(
-                    trace_id=next_trace_id,
-                    points=[(scan.scan_number, scan.rt, mz, intensity)],
-                    scan_positions=[scan_position],
-                    scan_position_set={scan_position},
-                )
-            )
-            next_trace_id += 1
-        active = still_active
-
-    complete.extend(active)
-    return (
-        complete,
-        candidate_edge_count,
-        conflict_component_count,
-        degraded_component_count,
-    )
-
-
 def _positive_scan_peaks(scan: MS1Scan) -> list[tuple[float, float]]:
     masses = np.asarray(scan.masses, dtype=np.float64)
     intensities = np.asarray(scan.intensities, dtype=np.float64)
@@ -1099,102 +872,6 @@ def _positive_scan_peaks(scan: MS1Scan) -> list[tuple[float, float]]:
     ]
     peaks.sort(key=lambda item: item[0])
     return peaks
-
-
-def _edge_components(edges: Sequence[_AssignmentEdge]) -> list[list[_AssignmentEdge]]:
-    remaining = list(edges)
-    components: list[list[_AssignmentEdge]] = []
-    while remaining:
-        seed = remaining.pop()
-        component = [seed]
-        trace_ids = {seed.trace_index}
-        peak_ids = {seed.peak_index}
-        changed = True
-        while changed:
-            changed = False
-            kept: list[_AssignmentEdge] = []
-            for edge in remaining:
-                if edge.trace_index in trace_ids or edge.peak_index in peak_ids:
-                    component.append(edge)
-                    trace_ids.add(edge.trace_index)
-                    peak_ids.add(edge.peak_index)
-                    changed = True
-                else:
-                    kept.append(edge)
-            remaining = kept
-        components.append(component)
-    return components
-
-
-def _edge_sort_key(edge: _AssignmentEdge) -> tuple[float, int, float]:
-    return (edge.ppm_error_abs, edge.scan_gap, -edge.intensity)
-
-
-def _component_edge_density(
-    component: Sequence[_AssignmentEdge],
-    *,
-    component_trace_count: int,
-    component_peak_count: int,
-) -> float:
-    capacity = max(1, component_trace_count * component_peak_count)
-    return float(len(component)) / capacity
-
-
-def _greedy_component_assignment(
-    component: Sequence[_AssignmentEdge],
-) -> tuple[_AssignmentEdge, ...]:
-    selected: list[_AssignmentEdge] = []
-    used_traces: set[int] = set()
-    used_peaks: set[int] = set()
-    for edge in sorted(component, key=_edge_sort_key):
-        if edge.trace_index in used_traces or edge.peak_index in used_peaks:
-            continue
-        selected.append(edge)
-        used_traces.add(edge.trace_index)
-        used_peaks.add(edge.peak_index)
-    return tuple(selected)
-
-
-def _optimal_component_assignment(
-    component: Sequence[_AssignmentEdge],
-) -> tuple[_AssignmentEdge, ...]:
-    ordered = tuple(sorted(component, key=_edge_sort_key))
-    best: (
-        tuple[tuple[float, float, float, float], tuple[_AssignmentEdge, ...]] | None
-    ) = None
-
-    def _search(
-        index: int,
-        selected: tuple[_AssignmentEdge, ...],
-        used_traces: frozenset[int],
-        used_peaks: frozenset[int],
-    ) -> None:
-        nonlocal best
-        if index >= len(ordered):
-            score = (
-                -float(len(selected)),
-                sum(edge.ppm_error_abs for edge in selected),
-                float(sum(edge.scan_gap for edge in selected)),
-                -sum(edge.intensity for edge in selected),
-            )
-            candidate = (score, selected)
-            if best is None or candidate[0] < best[0]:
-                best = candidate
-            return
-
-        edge = ordered[index]
-        _search(index + 1, selected, used_traces, used_peaks)
-        if edge.trace_index in used_traces or edge.peak_index in used_peaks:
-            return
-        _search(
-            index + 1,
-            (*selected, edge),
-            frozenset((*used_traces, edge.trace_index)),
-            frozenset((*used_peaks, edge.peak_index)),
-        )
-
-    _search(0, (), frozenset(), frozenset())
-    return best[1] if best is not None else ()
 
 
 def _classify_region(
@@ -1280,10 +957,6 @@ def _diagnostic_from_trace(
         mz_ppm_std=_mz_ppm_std(mzs) if len(mzs) else None,
         prominence=None,
         boundary_quality=None,
-        assignment_mode=trace.assignment_mode,
-        component_size=trace.component_size,
-        component_edge_density=trace.component_edge_density,
-        assignment_degraded_large_component=trace.assignment_degraded_large_component,
         split_peak=False,
         overlap_suspected=False,
         reason=reason,
@@ -1317,10 +990,6 @@ def _diagnostic_from_region(
             region.left_index,
             region.right_index,
         ),
-        assignment_mode=region.assignment_mode,
-        component_size=region.component_size,
-        component_edge_density=region.component_edge_density,
-        assignment_degraded_large_component=region.assignment_degraded_large_component,
         split_peak=region.split_peak,
         overlap_suspected=region.overlap_suspected,
         reason=reason,
@@ -1339,18 +1008,6 @@ def _validate_summary(summary: LocalMs1FeatureSummary) -> None:
         + summary.fail_count
     ):
         raise ValueError("local MS1 feature peak-region count invariant failed")
-    expected_fraction = (
-        summary.degraded_assignment_component_count / summary.conflict_component_count
-        if summary.conflict_component_count
-        else 0.0
-    )
-    if not math.isclose(
-        summary.degraded_assignment_component_fraction,
-        expected_fraction,
-    ):
-        raise ValueError(
-            "local MS1 feature degraded assignment fraction invariant failed"
-        )
 
 
 def write_local_ms1_feature_outputs(

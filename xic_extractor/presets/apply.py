@@ -21,8 +21,8 @@ from xic_extractor.settings_schema import RESOLVER_MODES, normalize_resolver_mod
 
 if TYPE_CHECKING:
     from xic_extractor.discovery.delta_mass_strategy import (
+        DeltaMassDiscoveryStrategy,
         DeltaMassPatternSettings,
-        PtPatternDiscoveryStrategy,
     )
 
 _POSITIVE_FLOAT_FIELDS = frozenset(
@@ -209,76 +209,99 @@ def apply_to_discovery(
     )
 
 
-def resolve_pt_pattern_discovery(preset_name: str) -> PtPatternDiscoveryStrategy:
-    """Load a Pt pattern preset and resolve its Discovery strategy.
+def resolve_delta_mass_discovery(preset_name: str) -> DeltaMassDiscoveryStrategy:
+    """Resolve a preset into the method and detector settings for one run."""
+    from xic_extractor.discovery.delta_mass_strategy import DeltaMassDiscoveryStrategy
 
-    Rejects presets without a ``delta_mass`` tag; a ``neutral_loss`` tag marks
-    the composite Pt pattern + CID-NL(dR) strategy.
-    """
     preset = load_preset(preset_name)
-    if not any(tag.strategy == "delta_mass" for tag in preset.tags):
-        raise ValueError(
-            f"preset {preset_name!r} is not a 'pt_pattern' preset (no "
-            "'delta_mass' tag); use a Pt pattern preset such as 'pt_pattern' "
-            "or 'pt_pattern_cid_nl_dr'"
-        )
-    from xic_extractor.discovery.delta_mass_strategy import PtPatternDiscoveryStrategy
-
-    return PtPatternDiscoveryStrategy(
+    settings = apply_to_delta_mass_discovery(preset)
+    detector = preset.discovery_overrides.get("detector", {})
+    if not isinstance(detector, Mapping):
+        raise PresetError("discovery.detector must be a table")
+    unknown = set(detector) - {"smoothing_window_sec"}
+    if unknown:
+        raise PresetError(f"unknown delta-mass detector setting: {sorted(unknown)[0]}")
+    smoothing = _positive_float_setting(detector, "smoothing_window_sec", 6.6)
+    return DeltaMassDiscoveryStrategy(
         label=preset_name,
-        settings=apply_to_delta_mass_discovery(preset),
+        settings=settings,
         cid_nl_composite=any(tag.strategy == "neutral_loss" for tag in preset.tags),
+        smoothing_window_sec=smoothing,
     )
 
 
 def apply_to_delta_mass_discovery(preset: Preset) -> DeltaMassPatternSettings:
-    """Map a delta_mass (Pt pattern) preset onto ``DeltaMassPatternSettings``.
-
-    This is the delta_mass counterpart to ``apply_to_discovery()``. It never
-    constructs a ``NeutralLossProfile`` -- presets handled here are Pt-pattern
-    presets (``pt_pattern``) or Pt-pattern-plus-neutral-loss composites
-    (``pt_pattern_cid_nl_dr``); the neutral-loss tag on a composite preset is
-    intersection evidence handled downstream by the Discovery pipeline, not a
-    ``NeutralLossProfile`` to build here.
-    """
-    if not any(tag.strategy == "delta_mass" for tag in preset.tags):
-        raise PresetError(
-            f"preset {preset.name!r} has no 'delta_mass' tag; "
-            "use apply_to_discovery() for neutral-loss presets"
-        )
-    validate_delta_mass_preset_tags(
-        preset.tags,
-        combine_mode=preset.combine_mode,
+    """Admit preset positions and roles, without embedding a chemical pattern."""
+    from xic_extractor.discovery.delta_mass_strategy import (
+        DeltaMassPatternSettings,
+        DeltaMassPosition,
     )
 
-    overrides = dict(preset.discovery_overrides)
-    method_label = overrides.get("method_label")
-    if not isinstance(method_label, str) or not method_label.strip():
-        raise PresetError(
-            f"preset {preset.name!r} must set [discovery] method_label for "
-            "delta_mass presets"
+    validate_delta_mass_preset_tags(preset.tags, combine_mode=preset.combine_mode)
+    overrides = preset.discovery_overrides
+    raw_positions = overrides.get("positions")
+    if not isinstance(raw_positions, list):
+        raise PresetError("delta-mass discovery requires positions")
+    positions = []
+    for raw in raw_positions:
+        if not isinstance(raw, Mapping) or set(raw) != {
+            "label",
+            "delta_da",
+            "ratio_min",
+            "ratio_max",
+        }:
+            raise PresetError(
+                "each position requires label, delta_da, ratio_min, ratio_max"
+            )
+        positions.append(
+            DeltaMassPosition(
+                label=_str_setting(raw, "label", ""),
+                delta_da=cast(float, raw["delta_da"]),
+                ratio_min=cast(float, raw["ratio_min"]),
+                ratio_max=cast(float, raw["ratio_max"]),
+            )
         )
-
-    from xic_extractor.discovery.delta_mass_strategy import DeltaMassPatternSettings
-
-    defaults = DeltaMassPatternSettings()
+    roles = {}
+    for key in (
+        "anchor_positions",
+        "discriminating_positions",
+        "base_support_positions",
+    ):
+        value = overrides.get(key, [] if key == "base_support_positions" else None)
+        if not isinstance(value, list) or any(not isinstance(v, str) for v in value):
+            raise PresetError(f"{key} must be an array of labels")
+        roles[key] = tuple(value)
+    tag = next(t for t in preset.tags if t.strategy == "delta_mass")
+    assert tag.pattern_id is not None
     return DeltaMassPatternSettings(
-        method_label=method_label,
+        pattern_id=tag.pattern_id,
+        method_label=_str_setting(overrides, "method_label", tag.pattern_id),
+        positions=tuple(positions),
+        anchor_positions=roles["anchor_positions"],
+        discriminating_positions=roles["discriminating_positions"],
         mz_tolerance_ppm=_positive_float_setting(
-            overrides,
-            "delta_mass_mz_tolerance_ppm",
-            defaults.mz_tolerance_ppm,
+            overrides, "delta_mass_mz_tolerance_ppm", 20
         ),
-        rt_tolerance_sec=_positive_float_setting(
-            overrides,
-            "delta_mass_rt_tolerance_sec",
-            defaults.rt_tolerance_sec,
+        apex_floor_sec=_positive_float_setting(overrides, "apex_floor_sec", 1),
+        scan_interval_multiplier=_positive_float_setting(
+            overrides, "scan_interval_multiplier", 1.25
         ),
-        ratio_basis=_enum_str_setting(
-            overrides,
-            "delta_mass_ratio_basis",
-            defaults.ratio_basis,
-            choices=frozenset({"both"}),
+        shape_window_sec=_positive_float_setting(overrides, "shape_window_sec", 10),
+        min_shape_r=cast(float, overrides.get("min_shape_r", 0.9)),
+        lowest_position=_str_setting(overrides, "lowest_position", ""),
+        base_support_positions=roles["base_support_positions"],
+        min_base_support=cast(float, overrides.get("min_base_support", 0.25)),
+        background_inner_sec=_positive_float_setting(
+            overrides, "background_inner_sec", 20
+        ),
+        background_outer_sec=_positive_float_setting(
+            overrides, "background_outer_sec", 30
+        ),
+        min_height_above_background=_positive_float_setting(
+            overrides, "min_height_above_background", 25_000
+        ),
+        min_background_sigma=_positive_float_setting(
+            overrides, "min_background_sigma", 5
         ),
     )
 

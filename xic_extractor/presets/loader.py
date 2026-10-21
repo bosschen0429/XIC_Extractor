@@ -59,12 +59,24 @@ DELTA_MASS_DISCOVERY_OVERRIDE_KEYS = frozenset(
     {
         "method_label",
         "delta_mass_mz_tolerance_ppm",
-        "delta_mass_rt_tolerance_sec",
-        "delta_mass_ratio_basis",
+        "positions",
+        "anchor_positions",
+        "discriminating_positions",
+        "apex_floor_sec",
+        "scan_interval_multiplier",
+        "shape_window_sec",
+        "min_shape_r",
+        "lowest_position",
+        "base_support_positions",
+        "min_base_support",
+        "background_inner_sec",
+        "background_outer_sec",
+        "min_height_above_background",
+        "min_background_sigma",
+        "detector",
     }
 )
 
-_DELTA_MASS_PATTERN_ID = "pt"
 _DELTA_MASS_NEUTRAL_LOSS_TAG = "DNA_dR"
 _DELTA_MASS_NEUTRAL_LOSS_DA = 116.0474
 
@@ -233,13 +245,7 @@ def _parse_delta_mass_tag(tag_table: Mapping[str, Any], *, tag_name: str) -> str
         raise PresetError(
             f"tag {tag_name!r} uses strategy 'delta_mass' and must not set 'value'"
         )
-    pattern_id = tag_table.get("pattern_id")
-    if pattern_id != _DELTA_MASS_PATTERN_ID:
-        raise PresetError(
-            f"tag {tag_name!r} uses strategy 'delta_mass' and requires "
-            f"pattern_id={_DELTA_MASS_PATTERN_ID!r}"
-        )
-    return pattern_id
+    return _required_string(tag_table, "pattern_id")
 
 
 def _parse_tag_value(value: Any, *, tag_name: str) -> float:
@@ -259,8 +265,8 @@ def validate_delta_mass_preset_tags(
 ) -> None:
     """Accept only the two Delta Mass configurations implemented end-to-end.
 
-    The current pipeline supports Pt-only Discovery or the exact Pt + DNA_dR
-    intersection. Keeping this validator shared by loader/apply prevents a
+    The pipeline supports one configured delta-mass pattern, optionally
+    intersected with DNA_dR. Keeping this validator shared by loader/apply prevents a
     syntactically valid preset from silently selecting the pipeline's hard-coded
     DNA_dR join under a different neutral-loss name or mass.
     """
@@ -270,7 +276,7 @@ def validate_delta_mass_preset_tags(
     if len(delta_mass_tags) > 1:
         raise PresetError(
             "a delta_mass preset has more than one 'delta_mass' tag; "
-            "only one Pt pattern is supported"
+            "only one delta-mass pattern is supported"
         )
     if len(delta_mass_tags) != 1:
         raise PresetError("a delta_mass preset requires exactly one 'delta_mass' tag")
@@ -280,8 +286,8 @@ def validate_delta_mass_preset_tags(
             f"tag {delta_mass_tag.name!r} uses strategy 'delta_mass' and must not "
             "set 'value'"
         )
-    if delta_mass_tag.pattern_id != _DELTA_MASS_PATTERN_ID:
-        raise PresetError("a delta_mass preset currently supports only pattern_id='pt'")
+    if not delta_mass_tag.pattern_id or not delta_mass_tag.pattern_id.strip():
+        raise PresetError("a delta_mass preset requires a non-empty pattern_id")
 
     for neutral_loss_tag in neutral_loss_tags:
         if neutral_loss_tag.pattern_id is not None:
@@ -292,9 +298,7 @@ def validate_delta_mass_preset_tags(
 
     if len(tags) == 1:
         if combine_mode != "single":
-            raise PresetError(
-                'a Pt-only delta_mass preset requires combine_mode = "single"'
-            )
+            raise PresetError('a delta_mass preset requires combine_mode = "single"')
         return
 
     if combine_mode != "intersection":

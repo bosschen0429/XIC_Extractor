@@ -7,7 +7,7 @@ import math
 import os
 import tempfile
 from collections.abc import Mapping
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 from xic_extractor.presets.apply import (
@@ -39,12 +39,6 @@ _NL_DISCOVERY_FIELDS = (
     "rt_max",
     "resolver_mode",
 )
-_PT_DISCOVERY_FIELDS = (
-    "method_label",
-    "delta_mass_mz_tolerance_ppm",
-    "delta_mass_rt_tolerance_sec",
-    "delta_mass_ratio_basis",
-)
 
 
 def serialize_preset(
@@ -73,13 +67,12 @@ def serialize_preset(
     has_delta_mass = any(tag.strategy == "delta_mass" for tag in effective_preset.tags)
     if has_delta_mass:
         delta_mass_settings = apply_to_delta_mass_discovery(effective_preset)
-        discovery_values: Mapping[str, object] = {
-            "method_label": delta_mass_settings.method_label,
-            "delta_mass_mz_tolerance_ppm": delta_mass_settings.mz_tolerance_ppm,
-            "delta_mass_rt_tolerance_sec": delta_mass_settings.rt_tolerance_sec,
-            "delta_mass_ratio_basis": delta_mass_settings.ratio_basis,
-        }
-        discovery_fields: tuple[str, ...] = _PT_DISCOVERY_FIELDS
+        effective = asdict(delta_mass_settings)
+        effective.pop("pattern_id")
+        effective["delta_mass_mz_tolerance_ppm"] = effective.pop("mz_tolerance_ppm")
+        effective["detector"] = effective_preset.discovery_overrides.get("detector", {})
+        discovery_values: Mapping[str, object] = effective
+        discovery_fields: tuple[str, ...] = tuple(effective)
     else:
         discovery_settings = apply_to_discovery(effective_preset)
         discovery_values = {
@@ -211,7 +204,7 @@ def _render_preset(
     for field in discovery_fields:
         if field in {"rt_min", "rt_max"} and discovery_values[field] is None:
             continue
-        lines.append(f"{field} = {_toml_scalar(discovery_values[field], field=field)}")
+        lines.append(f"{field} = {_toml_value(discovery_values[field], field=field)}")
     lines.extend(
         (
             "",
@@ -253,3 +246,18 @@ def _toml_scalar(value: object, *, field: str) -> str:
     if isinstance(value, str):
         return _toml_string(value, field=field)
     raise PresetError(f"{field} must be a TOML scalar")
+
+
+def _toml_value(value: object, *, field: str) -> str:
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(_toml_value(item, field=field) for item in value) + "]"
+    if isinstance(value, Mapping):
+        return (
+            "{ "
+            + ", ".join(
+                f"{_toml_string(key, field=field)} = {_toml_value(item, field=field)}"
+                for key, item in value.items()
+            )
+            + " }"
+        )
+    return _toml_scalar(value, field=field)

@@ -277,11 +277,11 @@ contract 沒有 ignore，並包含間接依賴。
   peak_detection，由 `.importlinter` 的 `main-chain-layers` 強制。
 - `acquisition/` 是內層，不 import alignment、applications、discovery、extraction、
   untargeted_execution、output，由 `acquisition-stays-inner` 強制。
-- PT-pattern modules (`xic_extractor/discovery/pt_pattern_*.py`) must only be imported
-  by the PT-pattern family itself (foundation modules `detected_features`, `local_ms1_features`,
-  `delta_mass_*`, PT modules, and `scripts/run_pt_pattern_discovery.py`), `tools/`, and `tests/`.
-  Production packages and other scripts must not import PT modules (enforced by
-  `tests/test_pt_pattern_boundaries.py`).
+- Delta-mass method modules operate only on in-memory features and traces.
+  Their pipeline owns RAW acquisition and diagnostic CSV/JSON. Alignment,
+  applications, output, and retained Untargeted execution do not consume these
+  diagnostics. `tests/test_delta_mass_boundaries.py` enforces inward purity and
+  the no-product-publication boundary.
 - Keep a compatibility facade only for a current public/downstream contract or
   real external consumer. Tests and historical artifacts are not consumers.
 - When replacing an internal surface, remove its obsolete implementation,

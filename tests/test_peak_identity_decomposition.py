@@ -14,8 +14,6 @@ import numpy as np
 import pytest
 
 from tests.cid_nl_raw_fixture import TEST_PROFILE, fake_acquisition_source
-from xic_extractor.discovery.delta_mass_patterns import match_delta_mass_pattern
-from xic_extractor.discovery.detected_features import DetectedFeature
 from xic_extractor.discovery.grouping import group_discovery_seeds
 from xic_extractor.discovery.models import (
     DiscoveryCandidate,
@@ -179,27 +177,6 @@ def test_cid_nl_seed_changes_ms1_generation_window_before_peak_evaluation() -> N
     assert first.ms1_feature_row_id == second.ms1_feature_row_id
 
 
-def test_pt_hypothesis_composes_four_ms1_feature_observations() -> None:
-    features = (
-        _detected_feature("base", 500.0, 10.000),
-        _detected_feature("plus1", 501.002111, 10.001),
-        _detected_feature("plus2", 502.002271, 10.002),
-        _detected_feature("plus4", 504.005213, 10.003),
-    )
-
-    candidates = match_delta_mass_pattern(features)
-
-    assert len(candidates) == 1
-    candidate = candidates[0]
-    assert candidate.position_count == 4
-    assert (
-        candidate.base_feature_id,
-        candidate.pt_plus_1_feature_id,
-        candidate.pt_plus_2_feature_id,
-        candidate.pt_plus_4_feature_id,
-    ) == ("base", "plus1", "plus2", "plus4")
-
-
 def _trace() -> Trace:
     return Trace.from_arrays(
         sample_name="SampleA",
@@ -332,21 +309,4 @@ def _discovery_ms1_peak_probe(
         candidate.ms1_peak_rt_end,
         candidate.ms1_height,
         candidate.ms1_area,
-    )
-
-
-def _detected_feature(feature_id: str, mz: float, rt: float) -> DetectedFeature:
-    return DetectedFeature(
-        sample_stem="SampleA",
-        feature_id=feature_id,
-        source_feature_row_id=None,
-        mz=mz,
-        rt_apex_min=rt,
-        rt_start_min=rt - 0.05,
-        rt_end_min=rt + 0.05,
-        height=1000.0,
-        area=500.0,
-        trace_quality="GOOD",
-        shape_score=0.90,
-        source="synthetic_characterization",
     )

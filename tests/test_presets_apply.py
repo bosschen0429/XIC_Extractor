@@ -18,6 +18,38 @@ from xic_extractor.presets.loader import load_preset
 from xic_extractor.presets.models import Preset, PresetTag
 
 
+@pytest.mark.parametrize("name", ["pt_pattern", "pt_pattern_cid_nl_dr"])
+def test_pt_presets_require_pooled_base_support_without_using_plus_four(name):
+    from xic_extractor.presets import apply_to_delta_mass_discovery
+
+    settings = apply_to_delta_mass_discovery(load_preset(name))
+    assert settings.base_support_positions == ("plus_1", "plus_2")
+    assert settings.min_base_support == 0.25
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"base_support_positions": ["base"]},
+        {"base_support_positions": ["plus_1", "plus_1"]},
+        {"base_support_positions": "plus_1"},
+        {"min_base_support": 0},
+        {"min_base_support": float("nan")},
+    ],
+)
+def test_base_support_preset_rejects_invalid_reference_or_threshold(overrides):
+    from dataclasses import replace
+
+    from xic_extractor.presets import apply_to_delta_mass_discovery
+
+    preset = load_preset("pt_pattern")
+    changed = replace(
+        preset, discovery_overrides={**preset.discovery_overrides, **overrides}
+    )
+    with pytest.raises((ValueError, PresetError)):
+        apply_to_delta_mass_discovery(changed)
+
+
 def test_cid_nl_preset_filter_matches_the_package_binder() -> None:
     available = list_presets()
     filtered = filter_cid_nl_recipe_presets(available)

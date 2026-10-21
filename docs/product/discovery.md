@@ -20,7 +20,6 @@ This page owns candidate-generation and method evidence. For execution and
 review commands use the [Untargeted guide](../user/untargeted-discovery.md) and
 [Diagnostics Index](../../tools/diagnostics/INDEX.md). Dataset-specific Pt
 results and acquisition limitations are retained with the
-[Pt validation evidence](../superpowers/validation/pt_pattern_discovery/README.md),
 not as universal Discovery requirements.
 
 
@@ -74,11 +73,10 @@ new primitive strategies. The planned first composite is
 with existing `neutral_loss(tag=DNA_dR)` evidence on the same base peak. Union
 or OR modes are out of scope until separately designed.
 
-When an intersection method has a natural base seed, implement it seed-first
-instead of running a broad provider over every possible anchor and filtering
-afterward. For `pt_pattern + cid_nl(dR)`, CID-NL(dR) base candidates seed the
-base feature IDs, then Pt pattern evidence checks only those bases for
-`+1.002111`, `+2.002271`, and `+4.005213`.
+Delta Mass evaluates its own hypotheses first, then annotates the base's
+CID-NL(dR) match. Every hypothesis reaching layer 3 remains in the diagnostic
+CSV, including `unmatched` bases. Matching uses the existing eligible CID-NL
+states and sample-local m/z/RT predicate; it does not alter CID-NL decisions.
 
 ## CID-NL candidate contract
 
@@ -384,243 +382,147 @@ non-feature `product_plus_neutral_loss` rows are absent from Discovery artifacts
   tables when the accepted contract is matrix hygiene plus Targeted benchmark
   recall.
 
-## Pt Pattern Diagnostic Evidence
+## Delta Mass Discovery
 
-### Evidence layers and position roles
+Delta Mass finds sample-local MS1 peak combinations at preset-defined mass
+separations. A candidate must satisfy mass differences and co-elution;
+designated discriminating positions additionally satisfy apex-region shape
+correlation. Presets can additionally require a designated lowest position with
+clear local-background support. Height ratios are additional evidence, never
+admission gates. The method supports two or more positions and has no built-in
+chemical pattern.
 
-Delta Mass / Pt pattern diagnostic evidence has two layers. The first layer is a
-scan-level delta-pattern seed: base / `+1.002111` / `+2.002271` / `+4.005213` are
-seen together in MS1 scans often enough to propose a sample-local candidate.
-The `+1.002111` position, experimentally referred to as the 195 position in the
-current Pt workflow, is the preferred high-recall seed because it is expected to
-carry the strongest Pt isotope signal. That seed role does not make `+1` the
-candidate identity; when a Pt pattern is promoted to a candidate, the canonical
-identity anchor remains `base` / the lowest m/z 0 position. The pattern is
-defined as `0/+1/+2/+4`, not `-1/0/+1/+3`, because the `-1/0/+1/+3` frame would
-depend on two adjacent one-Da gaps (`-1 -> 0` and `0 -> +1`). Those paired
-one-Da relationships are more likely to be confounded by natural isotope
-structure from other elements such as `13C` and `15N` than the current
-`0/+1/+2/+4` evidence shape. The second layer is chromatographic co-elution
-confirmation: those four m/z positions, viewed as XIC traces or trace-like
-featurelets, have close RT/apex behavior and compatible peak shape. A
-scan-level hit by itself is a seed, not a complete Pt pattern detection. When
-both layers support the same row, the result is a stronger diagnostic
-hypothesis, not a final detector call. The current matcher greedily retains
-one compatible non-base feature per position for each base anchor. Its emitted
-rows therefore represent one serialized assignment per base, not enumeration
-of all compatible assignments; alternatives pruned during matching cannot be
-recovered by a later conflict-graph replay. The scan-level RAW proxy remains a
-diagnostic bridge for the seed layer; it must not become Matrix authority or
-the whole product detector by itself.
+### One-pass method
 
-Pt identity and quantitation intentionally use different position roles. The
-`base` / 0 position remains the canonical hypothesis identity anchor so the
-pattern frame does not move to the more isotope-confounded `-1/0/+1/+3`
-alternative. If a later authority contract permits Pt quantitation, the `+1`
-(experimental 195) position is the quantitative channel. The base position is
-not the quantitative channel, and the four positions are not summed by
-default. This role assignment does not grant current selected-area or product
-authority: Pt pattern remains `diagnostic_only`, and its selected area stays
-unavailable until a separate quantitation/activation contract is validated.
+1. Only detector-qualified features can anchor a hypothesis, in the roles named
+   by the preset. The matcher trusts detector qualification; it does not repeat
+   physical peak evaluation.
+2. Search the same feature table in both mass directions, using the lowest-mass
+   position as base. Partners must be within the ppm window and scan-aware apex
+   tolerance: `max(apex_floor_sec, scan_interval_multiplier × MS1 interval)`.
+   Equivalent position assignments are emitted once.
+3. Require a compatible table partner and record measured height ratios against
+   the preset's reference ranges. Out-of-range ratios do not reject candidates
+   or suppress RAW acquisition. A missing base has unavailable ratios until its
+   height is measured; expected abundance is not used to predict missing signal.
+4. Acquire one XIC batch per RAW for missing positions and shape-reference traces.
+   Confirm missing positions by apex alignment and apex-region Pearson correlation,
+   without the shared physical evaluator. A two-position method requires its
+   partner in the table; RAW never fills a solitary seed.
+5. Evaluate shape for the preset's discriminating positions, in addition to
+   missing-position confirmation. An empty discriminating list is supported.
+   If `lowest_position` is configured, also require that position to have the
+   lowest locally background-subtracted RAW peak height and clear background
+   support. These checks share the same final confirmation stage, not a new
+   chemical-identity claim.
 
-The science target for Pt pattern is a single Pt isotope envelope represented by
-the base/+1/+2/+4 positions. The current diagnostic proxy cannot prove that
-physical identity directly; it uses the observable proxy of a sample-local full
-pattern plus close-apex co-elution support while ratio behavior and envelope
-overlap remain under review. Therefore, dense RT clusters, suspected isotope
-envelope collisions, and distorted position ratios are review evidence and
-label-development signals first. In V1, a candidate that passes the full-pattern
-seed and close-apex co-elution rule receives diagnostic
-`trace_rule_call = accept` even when ratios look unusual. That field must not be
-read as counted detection or human truth. Ratio and collision concerns may add
-ambiguity/review flags, but they must not become a hard accept/reject gate until
-an independent truth set shows that they separate physical Pt envelopes from
-false patterns. Current human `uncertain` labels are unresolved evidence, not
-true rejects.
+The optional lowest-position and base-support checks acquire all positions in the same RAW batch
+with wider background context. Separate short requests in that same batch
+preserve the vendor scan-rounded `shape_window_sec` apex/shape windows; wider
+traces are not recropped to silently change existing shape decisions. Every position's comparison height is its raw maximum
+in that central window minus its local background; no table/smoothed height is
+mixed into this ordering decision. Background is the median of the lower-median
+flank, using the two configured `background_inner_sec`–`background_outer_sec`
+intervals around the base apex. A usable flank needs at least three samples;
+without a usable flank the hypothesis cannot pass. Selecting the lower flank
+reduces contamination from a neighboring peak or tail on one side.
 
-### Mass arithmetic and candidate matching
+Background variation is `1.4826 × MAD` on that same flank. The designated lowest
+position must have net height at least
+`max(min_height_above_background, min_background_sigma × background variation)`.
+The absolute floor remains necessary when sparse RAW flanks have zero MAD;
+zero variation is not reported as infinite signal-to-noise. Net heights,
+background, variation, required height, and independent signal/lowest statuses
+are published in position evidence. This local screening statistic is not a
+calibrated detection limit.
 
-Pt pattern m/z arithmetic uses shared mass-accuracy primitives: expected m/z is
-the ppm denominator, exact Pt deltas are part of the built-in pattern contract,
-and local `_ppm()` helpers should not be added to the core matcher path.
+An optional `base_support_positions` list enables a one-sided base-strength
+check on these same RAW net heights. For the named non-base positions, sum
+their nonnegative net peak heights and divide by the sum of their reference
+ratios (the geometric centers of `ratio_min` and `ratio_max`). This gives
+`base_expected_net_height`. The nonnegative base net height divided by that
+expectation is `base_support_score`; it must be at least `min_base_support`.
+The candidate CSV records both values and `base_support_status`; insufficient
+support rejects with `base_support_below_threshold`. Missing background or a
+nonpositive reference sum cannot supply support. An empty reference-position
+list disables this check independently of `lowest_position`.
 
-The Pt diagnostic candidate matcher consumes `DetectedFeature` rows, not centroid
-scan peaks. A detected-feature source must provide m/z, apex RT, positive
-height/intensity or area evidence. Area-only feature-detector tables are allowed
-as an intensity proxy for feature-level matching, but candidates from such rows
-are labelled `feature_source_detected` until trace/co-elution evidence evaluates
-them. `scripts/run_pt_pattern_discovery.py` can read an existing
-`detected_features.csv`, a normalized external feature table TSV, or a MZmine
-wide feature table CSV; for external source paths it writes a canonical
-`detected_features.csv` copy into the output directory before matching.
-`scripts/prepare_delta_mass_detected_features.py` keeps the same conversions
-available as a standalone preparation step.
+This is one pooled lower-bound check, not separate ratio gates or an upper
+bound on base. Each height is its own central-window maximum, not a
+simultaneous spectrum or integrated area. Reference agreement does not establish
+chemical identity, and molecular isotope overlap or interference can affect
+the observed distribution.
 
-`source_feature_row_id` is provenance, not automatic cross-provider identity
-authority. Pt + CID-NL composite matching may compare `feature_id` or
-`source_feature_row_id` directly with CID-NL `ms1_feature_row_id` only when the
-detected feature declares the exact shared-namespace capability
-`source = cid_nl_ms1_feature_handoff`. Local-MS1, MZmine, OpenMS, scan-proxy,
-and unknown source IDs remain detector-local even when their strings happen to
-match; they may participate only through the bounded same-sample m/z/RT
-fallback. A declared shared-namespace mismatch must not fall back.
+The pure method lives in `delta_mass_patterns`; the pipeline owns RAW access,
+local feature detection, and serialization. Table heights are detector-produced
+smoothed screening heights; missing-position heights are measured from the
+acquired XIC. These are diagnostic pattern evidence, not quantitative areas.
+Each position reports `ratio_status` (`within_range`, `below_range`,
+`above_range`, or `unavailable`) separately from `position_status`. The latter
+records required matching/confirmation checks, not abundance agreement.
+Ratio specificity is not validated; agreement is not a calibrated Pt probability.
+The RAW adapter supplies vendor-centroided MS1 ions to the local detector:
+profile samples on the sides of a mass peak are not separate features. The
+sidecar records this spectrum mode. Other scan-index consumers retain their
+existing stored-sample behavior.
 
-### Local MS1 feature tables
+### Presets and detector settings
 
-Local MS1 feature table generation is the candidate-source replacement path for
-the scan-level Pt proxy. It does not by itself create product detections.
-`scripts/build_local_ms1_feature_table.py` builds a
-single-sample `detected_features.csv` from one RAW file using a MZmine-inspired
-seeded chromatogram builder: mass-detected MS1 points above
-`mass_detection_noise_level` are collected once, high-intensity points above
-`min_trace_seed_intensity` define non-overlapping m/z seed ranges, and then all
-mass-detected points in a seed range are segmented in scan order. A seed range
-may contain multiple RT-local traces; `max_missing_scans` is enforced while
-segmenting scan-ordered points, not by intensity order and not only as a later
-quality score. The default `mass_detection_noise_level` is 25,000, matching the
-lab's routine screening threshold. This keeps the product path at feature-source
-level instead of tracing every centroid/noise point.
-Gaussian15-smoothed bounded peak regions then produce screening features. Rows with
-`source = local_ms1_feature` carry feature-source quality only:
-`trace_quality = OK` can seed a base, `trace_quality = WEAK_SUPPORT` can
-support non-base Pt positions, and neither value grants trace/co-elution
-authority. The local generator also writes `local_ms1_feature_summary.json` and
-`local_ms1_feature_diagnostics.csv`; its `height` and `area` values are
-screening evidence with `area_contract = screening_only` and
-`quant_ready = false`. The summary exposes `trace_builder_mode` at top level:
-in `mzmine_seeded` mode, `candidate_edge_count` means mass-detected point count,
-`conflict_component_count` means m/z seed range count, and degraded-assignment
-counts are not applicable because bipartite assignment is not used.
+The preset owns ordered positions, anchor/discriminating roles, height-ratio
+ranges, ppm tolerance, apex floor, scan-interval multiplier, shape window, and
+minimum correlation. Local MS1 smoothing is configured in seconds and converted
+per RAW to the nearest positive odd number of scan points. A 6.6 s setting with
+1.31 s scans gives five points. The shared Gaussian15 default is unchanged.
 
-The local generator and Discovery's same-scan evidence consumers share
-`xic_extractor.ms1_scan_index`. That owner fails closed when an MS1 scan has
-malformed mass/intensity arrays or when a RAW source contains no MS1 scans.
-Its index and Discovery consumer tests preserve this shared failure contract.
+`pt_pattern` and `pt_pattern_cid_nl_dr` are **provisional** applications: positions
+0/+1.002111/+2.002271/+4.005213, base/+1 anchors, and +4 discrimination. Their
+TOMLs own all numerical choices, including natural-abundance ratio bounds with
+factor-two tolerance. The abundance reference is
+[NIST platinum isotope composition](https://physics.nist.gov/cgi-bin/Compositions/stand_alone.pl?ele=Pt).
+The Pt presets require +4 to be the lowest net peak and to exceed the larger
+of 25,000 intensity units or five robust background deviations, using 20–30 s
+flanks. The absolute floor matches the detector noise setting; it does not
+establish instrument-wide sensitivity. +1 being highest is not required.
+Both Pt presets use +1 and +2 as the base-support reference, with
+`min_base_support = 0.25`: base must reach a quarter of the expected height
+`(H_+1 + H_+2) / 1.7951917224589167`. The tolerance is provisional, not a bound
+implied by natural abundance. +4 is excluded from this pooled test, so a weak
++4 does not fail it; the existing +4 presence, shape, background, and
+lowest-position requirements still apply. Per-position ratio ranges remain
+evidence only. There is no all-position relative-height floor.
+All these choices are configurable; an empty `lowest_position` disables the
+optional signal/order gate. Changing these provisional parameters does not
+change the generic method.
 
-The reusable co-elution support semantics belong in
-`xic_extractor.discovery.pt_pattern_trace_evidence`. Diagnostic tools may open
-RAW files and write CSV/JSON probes, but they should call this package owner
-instead of carrying their own Pt trace-support rules.
+### Inputs and results
 
-### Trace assessment
+Use `xic-delta-mass-discovery-cli` (or `python -m scripts.run_delta_mass_discovery`)
+with `--raw-dir`, `--dll-dir`, `--preset`, and `--output-dir`. Each RAW is detected
+and matched in the same run. The composite preset also requires
+`--cid-nl-candidates-csv`. Its base join retains sample-local CID-NL(dR) eligibility
+and the bounded m/z/RT join; detector-local IDs are not CID-NL identities.
 
-Pt pattern diagnostic trace assessments use Gaussian15-smoothed XIC intensity as the
-decision basis for apex, shape similarity, active overlap, and support status.
-Raw vendor trace points remain in the artifacts as audit/reference evidence;
-they are not the default machine decision basis and are not quantitation
-authority. The current positive `trace_rule_call` proxy is close-apex
-co-elution: the full base/+1/+2/+4 pattern must pass the combined diagnostic
-status, have all three non-base positions supported, keep the maximum apex
-delta at or below the larger of 0.6 seconds and 1.25 acquisition intervals,
-keep Pearson-to-base at least 0.90, and keep active overlap at least 0.50.
-Shift-aware shape metrics stay in the artifacts as review evidence only.
-A translated-shape match with shifted Pearson-to-base
-at least 0.85 and absolute shift at most 45 seconds is reported as
-`shifted_shape_review_only`, not as a positive trace-rule call; larger
-shifted-only matches receive diagnostic reason `shape_shift_above_threshold`.
-Neither reason is an adjudicated human reject or a product non-detection.
-The blind-overlay sealed `machine_call` is a trace-review projection only. For
-the current anchor-local schema, trace ambiguity, anchor segmentation, and boundary
-review must all be explicitly `clear`; any missing, unknown, or review-required
-state returns `uncertain` rather than becoming a threshold reject or final
-detector decision.
+- Each sample directory contains the detector's `detected_features.csv`.
+- `delta_mass_candidates.csv` contains every hypothesis reaching layer 3, with
+  candidate/rejected status, first rejecting layer, and one reason code.
+- `delta_mass_positions.csv` contains one row per hypothesis and position, with
+  source, mass/apex/height measurements, ratio evidence and reference bounds,
+  and applicable shape evidence.
+- `delta_mass_sidecar.json` records effective method settings, inputs, per-sample
+  layer counts, scan interval, XIC cost, `height_ratio_policy: evidence_only`,
+  and `status: diagnostic_only`. Layer 3 records evidence and cannot reject.
 
-### Diagnostic artifact identity
+Layer 1–2 failures are counted rather than emitted as candidate rows. The
+composite join retains all rows and records `matched` or `unmatched` independently
+of method status. It does not change CID-NL's own candidate decisions.
 
-Pt trace and review consumers distinguish `full_context` from `anchor_local`.
-A manifest binds the exact candidate population, RAW content, extraction and
-decision settings, and emitted artifacts. Mixed roles, stale fingerprints,
-missing manifests, or substituted bytes fail closed. A bounded review subset
-does not narrow validation of the source trace bundle: validate the complete
-bundle before selecting rows.
-
-Joins validate identity before filtering:
-- A candidate has zero or one trace-summary row, with matching normalized
-  `candidate_id`, `sample_stem`, `base_mz`, and `base_rt_apex_min`.
-- Candidate/evidence joins also bind `method_label` and `pattern_id`, require
-  the complete one-to-one key set, and validate rejected rows too.
-- Equivalent numeric serializations are accepted; discarded precision cannot
-  be inferred, and mismatched older artifacts must be regenerated.
-
-Human labels bind to the exact review packet, traces, gallery, and sealed
-machine calls. The historically named promotion operation retains
-`oracle_detection_status = not_asserted`. Calibration and replay require that
-same packet SHA and candidate/sample identity; labels without the chain remain
-pending or stale, not truth.
-
-An omitted optional artifact is unavailable. Malformed supplied evidence is
-an error, not zero/false: counts are exact non-negative integers, recall is in
-`0..1`, booleans are recognized, identity masses are finite and positive,
-subset counts fit their parent, and empty populations have no quantiles.
-
-The executable schema/role and bundle contracts are owned by
-[review bundle loaders](../../xic_extractor/discovery/pt_pattern_review_bundle.py)
-and [replay binding](../../xic_extractor/discovery/pt_pattern_oracle_replay_contract.py).
-Older trace summaries may omit optional shifted-shape columns: they cannot
-support shifted-shape acceptance, but do not invalidate otherwise valid
-close-apex evidence. This does not relax required identity or manifest checks.
-
-
-### Gaussian15 time width
-
-Because Gaussian15 is point-based, its time width depends on scan density.
-Trace diagnosis therefore records `median_rt_step_sec` and
-`effective_smoothing_window_sec` per position, plus
-`min_median_rt_step_sec`, `min_effective_smoothing_window_sec`, and
-`max_trace_point_count` per candidate. Scan-aware apex tolerance uses the direct
-observed RT step; it does not reconstruct scan spacing by dividing the effective
-window by the configured Gaussian15 point count because short traces use a
-smaller effective odd window.
-If the effective window is shorter than 8 seconds, the trace evidence adds
-`short_effective_smoothing_window` to the ambiguity flags. This is review
-context for dense or jagged traces; it does not by itself reject a Pt pattern
-candidate, grant authority, or change Matrix/Backfill/export behavior.
-Pt +4 can also carry `plus4_window_tail_dominance` when the own-max normalized
-Gaussian15 trace has much larger window area and 25%-height span than the
-base/+1/+2 reference traces and its normalized signal centroid is shifted late.
-This flag is tail/window-shape review evidence, not an apex-height rule, and it
-does not by itself reject a Pt pattern candidate.
-The blind overlay HTML is a review surface, not the decision basis: each case
-can display raw vendor traces, the current Gaussian15 point-smoothed trace, and
-a 20-second time-smoothed trace side by side while sealed machine calls continue
-to use the packet's trace-decision metrics.
-
-### Intensity ratios and RT shifts
-
-Ratios are review and ambiguity evidence, not a machine gate or independent
-truth. Profiling uses Fullscan close-apex accepted rows; rejected rows provide
-background distributions, not training truth. Outliers use quantiles/IQR from
-that population, not fixed theoretical or FeatureHunter thresholds. Keep flags
-column-level with a thin candidate summary, never ratio score/confidence/pass/fail.
-
-The profiler consumes retained artifacts without reopening RAW, extracting XIC,
-or redrawing overlays. A diagnostic HTML view may show distributions, RT/mz
-scatter, and outlier tables; it is not an interactive product UI or detector.
-Preserve scan-aware close-apex context. The current profile does not use RT bins;
-any separately designed sensitivity view is bounded at 0.05 min / 3 sec, not
-coarse 0.25-minute bins.
-
-Keep smoothed apex-height, local apex-window area, and full-window area ratios
-distinct: they describe crest distortion, the co-eluting core, and report-only
-tail/shoulder/background context respectively. A Pt-only envelope is a loose
-reference, not a hard threshold; composition, adducts, co-elution, saturation,
-and feature picking can distort it.
-
-FeatureHunter category-3 uses `Precursor ion / Precursor ion'`. In its positive
-delta-mass convention, the numerator is the lower-m/z member, so its historical
-+1/+2/+4 thresholds correspond to base/+1, base/+2, and base/+4. Using +1 as a
-reference instead produces derived review ratios (+1/base, +1/+2, +1/+4), not
-the same formula. These are comparators to study against adjudicated candidates,
-whose labels may remain uncertain; none grants Pt-pattern authority.
-
-Smoothed ratios must be labeled decision-trace ratios, not raw abundance.
-Raw trace and bounded-area ratios may be audit context, but do not replace the
-shape decision basis without independent evidence of improved discrimination.
-Small RT shifts beyond the close-apex threshold likewise remain review evidence
-expressed in scan steps and smoothing-width context. Turning ratios or shifts
-into detection requires independent evidence that they improve discrimination
-without nearby-coeluter or tail-following failures.
-
+There is no alignment handoff or Matrix, Backfill, counted-detection, or export
+activation authority. Alignment integration requires a separate stable physical
+base-record contract. The base remains the hypothesis identity; a future Pt
+quantitative channel would use +1 rather than summing the pattern. That direction
+does not grant selected-area authority. Shape similarity never establishes
+assignment membership by itself. Real-sample counts are **方法開發** evidence, not a claimed
+accuracy or production-readiness threshold.
 
 ## Method-specific validation
 
@@ -640,45 +542,17 @@ without nearby-coeluter or tail-following failures.
 
 | Surface | Role |
 | --- | --- |
-| `xic_extractor/discovery/` | Discovery domain package |
-| `xic_extractor/discovery/detected_features.py` | Shared sample-local feature contract, identity rules, validation, and feature-table adapters |
-| `xic_extractor/discovery/delta_mass_strategy.py` | Delta Mass / Pt pattern settings and resolved strategy |
-| `xic_extractor/discovery/local_ms1_features.py` | Local MS1 feature-source generator; screening evidence only, not trace/co-elution or quantitation authority |
-| `xic_extractor/discovery/delta_mass_pipeline.py` | Pt pattern Discovery pipeline; writes feature-level candidate/review output plus Discovery evidence rows |
-| `xic_extractor/discovery/pt_pattern_discovery_evidence.py` | Bridges feature-level Pt candidates with optional trace-summary rows; emits `pt_pattern_evidence.csv` rows and never grants Matrix/export authority |
-| `xic_extractor/discovery/pt_pattern_evidence_rule.py` | Package-owned reusable diagnostic trace-rule classifier for trace-diagnosed rows; its accept/reject vocabulary is not human truth, counted detection, or detector activation |
-| `xic_extractor/discovery/pt_pattern_trace_evidence.py` | Package-owned Pt trace/co-elution support semantics |
-| `xic_extractor/discovery/pt_pattern_review_packet.py` | Bounded Pt manual-review packet builder; reviewed labels remain adjudication evidence, not ground-truth oracle authority |
-| `xic_extractor/discovery/pt_pattern_blind_overlay.py` | Blind Pt MS1/XIC overlay review surface; visual traces and sealed machine calls share the Gaussian15 trace-decision basis, and sealed calls are not oracle authority |
-| `xic_extractor/discovery/pt_pattern_oracle_promotion.py` | Historical-named bounded adjudication-packet builder; exact packet/gallery/sealed-call provenance is required, and the result remains `diagnostic_only` rather than ground truth, detector, or Matrix authority |
-| `xic_extractor/discovery/pt_pattern_review_bundle.py` | Canonical sealed loaders for trace manifests, review-packet collections, blind-overlay bundles, and machine-call identity/role checks |
-| `xic_extractor/discovery/pt_pattern_oracle_replay_contract.py` | Shared fail-closed replay binding from promotion rows to current manifest-verified review packets before threshold calibration or reviewed-label replay |
-| `xic_extractor/discovery/pt_pattern_oracle_thresholds.py` | Diagnostic-only threshold calibration against an exact-SHA-bound reviewed-label packet using the reusable Pt evidence rule; resubstitution fit is not detector accuracy or activation |
-| `xic_extractor/discovery/pt_pattern_diagnostic_gate.py` | Diagnostic-only replay wrapper for the reusable Pt evidence rule against manifest-verified review packets or full trace bundles; optional reviewed-label replay requires exact packet provenance and is not detector validation or activation |
-| `xic_extractor/discovery/pt_pattern_ddms2_support_replay.py` | Diagnostic-only Fullscan-seeded DDMS2 support replay; not a DDMS2 global discovery denominator and not detector activation |
-| `scripts/run_discovery.py` | Discovery CLI entry point |
-| `scripts/prepare_delta_mass_detected_features.py` | Converts a normalized external detected-feature TSV or MZmine wide feature table CSV into standard `detected_features.csv`; no RAW access and no Matrix/Backfill authority |
-| `scripts/build_local_ms1_feature_table.py` | Builds single-sample local MS1 `detected_features.csv`, summary JSON, and diagnostics CSV from one RAW file; diagnostic-only feature-source evidence |
-| `tools/diagnostics/pt_pattern_replay.py` | Saved-CSV diagnostics: `assembly` explains candidate assembly failures, `conflicts` compares shared-feature claims, and `ddms2-support` checks support near Fullscan seeds; no RAW access or activation |
-| `discovery_candidates.csv` | Detailed candidate table for archival or downstream handoff |
-| `discovery_review.csv` | Compact review table |
-| `discovery_batch_index.csv` | Batch handoff index for downstream alignment |
-
-Pt pattern Discovery additionally writes `pt_pattern_evidence.csv`
-(`pt_pattern_discovery_evidence`) and `pt_pattern_sidecar.json`
-(`pt_pattern_sidecar`). `pt_pattern_evidence.csv` separates feature-level
-full-pattern seed status from trace-level evidence. If no trace summary is
-provided, trace rule fields are `not_evaluated`; if a trace summary is provided,
-the shared Pt rule writes diagnostic `accept`/`reject` and legacy
-`detected`/`non_detected` projections without changing Matrix, Backfill, counted
-detection, workbook, or export authority. These fields are proxy assessments,
-not final detector or human calls. The sidecar summary records trace
-status/call/reason counts so
-partial trace-summary coverage is visible without opening the full evidence CSV.
-Future ratio or small-shift fields must follow the same no-write authority
-contract: they can explain ambiguity or route manual review, but they do not
-activate Matrix, Backfill, counted detection, workbook, export, or ProductWriter
-behavior.
+| `xic_extractor/discovery/` | Discovery domain and orchestration owners |
+| `xic_extractor/discovery/detected_features.py` | Sample-local detected-feature model and CSV |
+| `xic_extractor/discovery/local_ms1_features.py` | Seeded local MS1 detector; screening evidence |
+| `xic_extractor/discovery/delta_mass_patterns.py` | Pure delta-mass preparation and trace completion |
+| `xic_extractor/discovery/delta_mass_strategy.py` | Generic method settings and strategy |
+| `xic_extractor/discovery/delta_mass_pipeline.py` | RAW-to-diagnostic delta-mass workflow |
+| `scripts/run_delta_mass_discovery.py` | Delta Mass CLI |
+| `scripts/run_discovery.py` | CID-NL Discovery CLI |
+| `discovery_candidates.csv` | CID-NL candidate handoff |
+| `discovery_review.csv` | CID-NL review table |
+| `discovery_batch_index.csv` | CID-NL downstream alignment index |
 
 ## Boundaries
 

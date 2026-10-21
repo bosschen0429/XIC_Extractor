@@ -1,5 +1,5 @@
 name = "Pt pattern + CID-NL dR"
-description = "Pt pattern intersected with CID neutral-loss dR evidence on base."
+description = "Provisional: Pt pattern intersected with CID neutral-loss dR evidence on base."
 combine_mode = "intersection"
 
 [[tag]]
@@ -13,7 +13,45 @@ name = "DNA_dR"
 value = 116.0474
 
 [discovery]
-method_label = "pt_pattern+cid_nl_dr"
+method_label = "pt_pattern_cid_nl_dr"
 delta_mass_mz_tolerance_ppm = 20.0
-delta_mass_rt_tolerance_sec = 30.0
-delta_mass_ratio_basis = "both"
+anchor_positions = ["base", "plus_1"]
+discriminating_positions = ["plus_4"]
+apex_floor_sec = 1.0
+scan_interval_multiplier = 1.25
+shape_window_sec = 10.0
+min_shape_r = 0.9
+lowest_position = "plus_4"
+base_support_positions = ["plus_1", "plus_2"]
+min_base_support = 0.25
+background_inner_sec = 20.0
+background_outer_sec = 30.0
+min_height_above_background = 25000.0
+min_background_sigma = 5.0
+
+[discovery.detector]
+smoothing_window_sec = 6.6
+
+[[discovery.positions]]
+label = "base"
+delta_da = 0.0
+ratio_min = 1.0
+ratio_max = 1.0
+
+[[discovery.positions]]
+label = "plus_1"
+delta_da = 1.002111
+ratio_min = 0.5139987827145466
+ratio_max = 2.0559951308581863
+
+[[discovery.positions]]
+label = "plus_2"
+delta_da = 2.002271
+ratio_min = 0.3835970785149117
+ratio_max = 1.5343883140596468
+
+[[discovery.positions]]
+label = "plus_4"
+delta_da = 4.005213
+ratio_min = 0.11192939744370055
+ratio_max = 0.4477175897748022

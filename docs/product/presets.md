@@ -38,6 +38,15 @@ surfaces. Presets are not product authority by themselves.
   must not turn that label into a separate primitive strategy or ProductWriter
   authority.
 
+## Delta Mass Parameters
+
+Delta Mass TOMLs specify `discovery.positions` (label, delta, height-ratio bounds),
+anchor/discriminating labels and co-elution/shape tolerances. The detector's
+`smoothing_window_sec` is converted per RAW to an odd scan-point window;
+shared peak-detection defaults remain unchanged. Both Pt presets are provisional.
+See [Delta Mass Discovery](discovery.md#delta-mass-discovery) for the method and
+one-pass RAW entry point. Preset export preserves these nested settings.
+
 ## Surfaces
 
 | Surface | Role |

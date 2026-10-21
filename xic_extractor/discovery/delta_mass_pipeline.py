@@ -1,55 +1,33 @@
-"""End-to-end Pt pattern Discovery pipeline.
-
-Wires the Pt-pattern matcher and CSV/JSON IO into a single
-``run_pt_pattern_discovery()`` entry point: Detected Features CSV (+ optional
-CID-NL(dR) candidates CSV for the composite strategy) in, Pt Candidate CSV,
-Pt Review CSV, Pt Discovery Evidence CSV, and Pt Sidecar JSON out.
-
-See ``docs/product/discovery.md`` for the current pipeline, CID-NL base-join,
-and authority contract this module implements.
-"""
+"""RAW-to-delta-mass orchestration and CID-NL(dR) composite admission."""
 
 from __future__ import annotations
 
-import bisect
 import math
+import time
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+
+import numpy as np
 
 from xic_extractor.discovery.delta_mass_csv import (
-    DeltaMassDiscoveryResult,
-    load_detected_features_csv,
-    write_pt_pattern_candidates_csv,
-    write_pt_pattern_evidence_csv,
-    write_pt_pattern_review_csv,
-    write_pt_pattern_sidecar_json,
+    DeltaMassDiscoveryOutputs,
+    write_delta_mass_outputs,
 )
 from xic_extractor.discovery.delta_mass_patterns import (
-    PtPatternCandidate,
-    match_delta_mass_pattern,
+    DeltaMassCandidate,
+    complete_delta_mass_candidates,
+    prepare_delta_mass_candidates,
 )
-from xic_extractor.discovery.delta_mass_strategy import (
-    PtPatternDiscoveryStrategy,
+from xic_extractor.discovery.delta_mass_strategy import DeltaMassDiscoveryStrategy
+from xic_extractor.discovery.detected_features import write_detected_features_csv
+from xic_extractor.discovery.local_ms1_features import (
+    LocalMs1FeatureSettings,
+    build_local_ms1_feature_table,
 )
-from xic_extractor.discovery.detected_features import (
-    ComparableDetectedFeatureIdentity,
-    comparable_cid_nl_identity,
-    detected_feature_identity,
-    load_external_feature_table_tsv,
-    load_mzmine_wide_feature_table_csv,
-    write_detected_features_csv,
-)
-from xic_extractor.discovery.pt_pattern_discovery_evidence import (
-    build_pt_pattern_evidence_rows,
-    load_pt_discovery_trace_bundle,
-)
-from xic_extractor.tabular_io import file_sha256, read_delimited_rows
-
-if TYPE_CHECKING:
-    from xic_extractor.discovery.detected_features import DetectedFeature
-    from xic_extractor.execution.timing import TimingRecorder
+from xic_extractor.ms1_scan_index import build_ms1_scan_index
+from xic_extractor.raw_reader import open_raw
+from xic_extractor.tabular_io import read_delimited_rows
 
 _ALLOWED_CID_NL_TAG = "DNA_dR"
 _ALLOWED_CID_NL_STATES = frozenset(
@@ -63,18 +41,151 @@ _CID_NL_REQUIRED_COLUMNS = (
 )
 _CID_NL_MZ_TOLERANCE_PPM = 20.0
 _CID_NL_RT_TOLERANCE_SEC = 30.0
-_SCAN_PROXY_SOURCE_LABEL = "raw_scan_proxy"
-_SCAN_PROXY_MARKER = "|scan_proxy|"
 
 
-@dataclass(frozen=True)
-class DeltaMassDiscoveryOutputs:
-    """Output artifact paths from a completed ``run_pt_pattern_discovery()`` run."""
+def detector_settings_for_interval(
+    strategy: DeltaMassDiscoveryStrategy, interval_sec: float
+) -> LocalMs1FeatureSettings:
+    """Convert preset seconds to the nearest positive odd smoothing window."""
+    if not math.isfinite(interval_sec) or interval_sec <= 0:
+        raise ValueError("at least two distinct MS1 scan times are required")
+    points = max(
+        1, 2 * round((strategy.smoothing_window_sec / interval_sec - 1) / 2) + 1
+    )
+    return LocalMs1FeatureSettings(gaussian_window_points=points)
 
-    candidates_csv: Path
-    review_csv: Path
-    evidence_csv: Path
-    sidecar_json: Path
+
+def run_delta_mass_discovery(
+    *,
+    raw_dir: Path,
+    dll_dir: Path,
+    output_dir: Path,
+    strategy: DeltaMassDiscoveryStrategy,
+    cid_nl_candidates_csv: Path | None = None,
+) -> DeltaMassDiscoveryOutputs:
+    """Detect features per RAW, acquire one batch, then write diagnostic results."""
+    raw_paths = sorted(
+        p for p in raw_dir.iterdir() if p.is_file() and p.suffix.lower() == ".raw"
+    )
+    if not raw_paths:
+        raise ValueError(f"no RAW files in {raw_dir}")
+    if strategy.cid_nl_composite and cid_nl_candidates_csv is None:
+        raise ValueError("composite preset requires --cid-nl-candidates-csv")
+    cid_rows = (
+        _load_cid_nl_candidate_rows(cid_nl_candidates_csv)
+        if cid_nl_candidates_csv is not None and strategy.cid_nl_composite
+        else ()
+    )
+    candidates: list[DeltaMassCandidate] = []
+    samples = []
+    for raw_path in raw_paths:
+        started = time.perf_counter()
+        with open_raw(raw_path, dll_dir=dll_dir) as reader:
+            index = build_ms1_scan_index(reader, centroid=True)
+            intervals = np.diff([scan.rt for scan in index]) * 60
+            interval = (
+                float(np.median(intervals[intervals > 0]))
+                if np.any(intervals > 0)
+                else 0.0
+            )
+            detector = detector_settings_for_interval(strategy, interval)
+            features, summary, _ = build_local_ms1_feature_table(
+                index,
+                sample_stem=raw_path.stem,
+                raw_path=str(raw_path),
+                settings=detector,
+            )
+            sample_dir = output_dir / raw_path.stem
+            sample_dir.mkdir(parents=True, exist_ok=True)
+            write_detected_features_csv(sample_dir / "detected_features.csv", features)
+            prepared = prepare_delta_mass_candidates(
+                features,
+                strategy.settings,
+                scan_interval_sec=interval,
+            )
+            acquisition_started = time.perf_counter()
+            traces = (
+                reader.extract_xic_many(prepared.requests) if prepared.requests else ()
+            )
+            acquisition_seconds = time.perf_counter() - acquisition_started
+            completed = complete_delta_mass_candidates(
+                prepared, traces, strategy.settings
+            )
+        if strategy.cid_nl_composite:
+            completed = _join_cid_nl(completed, cid_rows)
+        candidates.extend(completed)
+        counts = dict(prepared.counts)
+        for layer in (3, 4, 5):
+            counts[f"layer_{layer}_rejected"] = sum(
+                c.rejected_at_layer == layer for c in prepared.candidates
+            )
+        for layer in (3, 4, 5):
+            counts[f"layer_{layer}_passed"] = sum(
+                c.rejected_at_layer is None or c.rejected_at_layer > layer
+                for c in prepared.candidates
+            )
+        samples.append(
+            {
+                "sample_stem": raw_path.stem,
+                "feature_count": len(features),
+                **counts,
+                "candidate_count": sum(c.status == "candidate" for c in completed),
+                "layer_4_xic_requests": len(prepared.requests),
+                "layer_4_seconds": acquisition_seconds,
+                "median_ms1_scan_interval_sec": interval,
+                "gaussian_window_points": detector.gaussian_window_points,
+                "detector_seconds": summary.wall_time_sec,
+                "total_seconds": time.perf_counter() - started,
+            }
+        )
+    sidecar = {
+        "preset": strategy.label,
+        "method": {
+            **asdict(strategy.settings),
+            "height_ratio_policy": "evidence_only",
+            "detector": {
+                "smoothing_window_sec": strategy.smoothing_window_sec,
+                "spectrum_mode": "vendor_centroid",
+            },
+        },
+        "inputs": {
+            "raw_dir": str(raw_dir),
+            "raw_files": [p.name for p in raw_paths],
+            "cid_nl_candidates_csv": str(cid_nl_candidates_csv)
+            if cid_nl_candidates_csv
+            else None,
+        },
+        "samples": samples,
+        "status": "diagnostic_only",
+    }
+    return write_delta_mass_outputs(
+        output_dir, tuple(candidates), sidecar, strategy.settings
+    )
+
+
+def _join_cid_nl(
+    candidates: tuple[DeltaMassCandidate, ...], rows: tuple[_CidNlCandidateRow, ...]
+) -> tuple[DeltaMassCandidate, ...]:
+    """Join detector-local bases by the existing bounded m/z/RT predicate."""
+    eligible = _eligible_cid_nl_rows(rows)
+    joined = []
+    for candidate in candidates:
+        candidate.cid_nl_base_status = "unmatched"
+        matches = [
+            row
+            for row in eligible
+            if row.sample_stem == candidate.sample_stem
+            and _fallback_matches(candidate, row)
+        ]
+        if not matches:
+            joined.append(candidate)
+            continue
+        match = _best_fallback_match(candidate, matches)
+        candidate.cid_nl_base_status = "matched"
+        candidate.cid_nl_base_candidate_id = match.candidate_id
+        candidate.cid_nl_base_join_mode = "mz_rt_fallback"
+        joined.append(candidate)
+    return tuple(joined)
 
 
 @dataclass(frozen=True)
@@ -105,214 +216,6 @@ class _CidNlCandidateRow:
     precursor_mz: float | None
     ms1_apex_rt: float | None
     evidence_score: float | None
-
-
-def run_pt_pattern_discovery(
-    *,
-    detected_features_csv: Path | None = None,
-    external_feature_table_tsv: Path | None = None,
-    mzmine_feature_table_csv: Path | None = None,
-    output_dir: Path,
-    strategy: PtPatternDiscoveryStrategy,
-    cid_nl_candidates_csv: Path | None = None,
-    trace_summary_csv: Path | None = None,
-    trace_metrics_csv: Path | None = None,
-    trace_manifest_json: Path | None = None,
-    timing_recorder: "TimingRecorder | None" = None,
-) -> DeltaMassDiscoveryOutputs:
-    """Run the Pt pattern Discovery pipeline end-to-end.
-
-    Loads and matches the Detected Features CSV, optionally joins CID-NL(dR)
-    base evidence for the composite (``pt_pattern_cid_nl_dr``) strategy, and
-    writes ``pt_pattern_candidates.csv``, ``pt_pattern_review.csv``,
-    ``pt_pattern_evidence.csv``, and ``pt_pattern_sidecar.json`` into
-    ``output_dir``.
-    """
-
-    is_composite = strategy.cid_nl_composite
-    if is_composite and cid_nl_candidates_csv is None:
-        raise ValueError(
-            f"preset {strategy.label!r} requires cid_nl_candidates_csv (composite "
-            "Pt pattern + CID-NL(dR) strategy); pass --cid-nl-candidates-csv"
-        )
-
-    settings = strategy.settings
-
-    features, detected_features_source_csv = _load_feature_source(
-        detected_features_csv=detected_features_csv,
-        external_feature_table_tsv=external_feature_table_tsv,
-        mzmine_feature_table_csv=mzmine_feature_table_csv,
-        output_dir=output_dir,
-    )
-    if is_composite:
-        cid_nl_rows = _load_cid_nl_candidate_rows(cid_nl_candidates_csv)  # type: ignore[arg-type]
-        base_feature_ids = _cid_nl_seed_base_feature_ids(features, cid_nl_rows)
-        candidates = (
-            match_delta_mass_pattern(
-                features,
-                settings=settings,
-                base_feature_ids=base_feature_ids,
-            )
-            if base_feature_ids
-            else ()
-        )
-        comparable_identity_by_feature_identity = {
-            detected_feature_identity(feature): comparable_cid_nl_identity(feature)
-            for feature in features
-        }
-        candidates = _apply_cid_nl_composite_join(
-            candidates,
-            cid_nl_rows=cid_nl_rows,
-            comparable_identity_by_feature_identity=(
-                comparable_identity_by_feature_identity
-            ),
-        )
-    else:
-        candidates = match_delta_mass_pattern(features, settings=settings)
-
-    if timing_recorder is not None:
-        timing_recorder.record(
-            "pt_pattern_discovery",
-            elapsed_sec=0.0,
-            metrics={"candidate_count": len(candidates)},
-        )
-
-    if trace_summary_csv is None and (
-        trace_metrics_csv is not None or trace_manifest_json is not None
-    ):
-        raise ValueError("trace metrics/manifest overrides require trace_summary_csv")
-    trace_bundle = (
-        load_pt_discovery_trace_bundle(
-            trace_summary_csv,
-            metrics_csv=trace_metrics_csv,
-            manifest_json=trace_manifest_json,
-        )
-        if trace_summary_csv is not None
-        else None
-    )
-    evidence_rows = build_pt_pattern_evidence_rows(
-        candidates,
-        trace_summary_rows=(
-            trace_bundle.summary_rows if trace_bundle is not None else None
-        ),
-        trace_manifest_sha256=(
-            file_sha256(trace_bundle.manifest_json).lower()
-            if trace_bundle is not None
-            else None
-        ),
-    )
-
-    candidates_path = output_dir / "pt_pattern_candidates.csv"
-    review_path = output_dir / "pt_pattern_review.csv"
-    evidence_path = output_dir / "pt_pattern_evidence.csv"
-    sidecar_path = output_dir / "pt_pattern_sidecar.json"
-
-    write_pt_pattern_candidates_csv(candidates_path, candidates)
-    write_pt_pattern_review_csv(review_path, candidates)
-    write_pt_pattern_evidence_csv(evidence_path, evidence_rows)
-    write_pt_pattern_sidecar_json(
-        sidecar_path,
-        result=DeltaMassDiscoveryResult(
-            method_label=settings.method_label,
-            pattern=settings.pattern,
-            detected_features_csv=str(detected_features_source_csv),
-            external_feature_table_tsv=(
-                str(external_feature_table_tsv)
-                if external_feature_table_tsv is not None
-                else None
-            ),
-            mzmine_feature_table_csv=(
-                str(mzmine_feature_table_csv)
-                if mzmine_feature_table_csv is not None
-                else None
-            ),
-            cid_nl_candidates_csv=(
-                str(cid_nl_candidates_csv)
-                if cid_nl_candidates_csv is not None
-                else None
-            ),
-            candidates=candidates,
-            effective_mz_tolerance_ppm=settings.mz_tolerance_ppm,
-            effective_rt_tolerance_sec=settings.rt_tolerance_sec,
-            trace_summary_csv=(
-                str(trace_bundle.summary_csv) if trace_bundle is not None else None
-            ),
-            trace_metrics_csv=(
-                str(trace_bundle.metrics_csv) if trace_bundle is not None else None
-            ),
-            trace_manifest_json=(
-                str(trace_bundle.manifest_json) if trace_bundle is not None else None
-            ),
-            trace_summary_csv_sha256=(
-                file_sha256(trace_bundle.summary_csv).lower()
-                if trace_bundle is not None
-                else None
-            ),
-            trace_metrics_csv_sha256=(
-                file_sha256(trace_bundle.metrics_csv).lower()
-                if trace_bundle is not None
-                else None
-            ),
-            trace_manifest_json_sha256=(
-                file_sha256(trace_bundle.manifest_json).lower()
-                if trace_bundle is not None
-                else None
-            ),
-            trace_schema_version=(
-                trace_bundle.schema_version if trace_bundle is not None else None
-            ),
-            trace_artifact_role=(
-                trace_bundle.trace_artifact_role if trace_bundle is not None else None
-            ),
-            trace_extraction_sha256=(
-                trace_bundle.trace_extraction_sha256
-                if trace_bundle is not None
-                else None
-            ),
-            evidence_rows=evidence_rows,
-        ),
-    )
-
-    return DeltaMassDiscoveryOutputs(
-        candidates_csv=candidates_path,
-        review_csv=review_path,
-        evidence_csv=evidence_path,
-        sidecar_json=sidecar_path,
-    )
-
-
-def _load_feature_source(
-    *,
-    detected_features_csv: Path | None,
-    external_feature_table_tsv: Path | None,
-    mzmine_feature_table_csv: Path | None,
-    output_dir: Path,
-) -> tuple[tuple["DetectedFeature", ...], Path]:
-    source_count = sum(
-        source is not None
-        for source in (
-            detected_features_csv,
-            external_feature_table_tsv,
-            mzmine_feature_table_csv,
-        )
-    )
-    if source_count != 1:
-        raise ValueError(
-            "pass exactly one feature source: detected_features_csv, "
-            "external_feature_table_tsv, or mzmine_feature_table_csv"
-        )
-    if detected_features_csv is not None:
-        assert detected_features_csv is not None
-        return load_detected_features_csv(detected_features_csv), detected_features_csv
-
-    if external_feature_table_tsv is not None:
-        features = load_external_feature_table_tsv(external_feature_table_tsv)
-    else:
-        assert mzmine_feature_table_csv is not None
-        features = load_mzmine_wide_feature_table_csv(mzmine_feature_table_csv)
-    prepared_csv = output_dir / "detected_features.csv"
-    write_detected_features_csv(prepared_csv, features)
-    return features, prepared_csv
 
 
 def _load_cid_nl_candidate_rows(path: Path) -> tuple[_CidNlCandidateRow, ...]:
@@ -362,60 +265,6 @@ def _load_cid_nl_candidate_rows(path: Path) -> tuple[_CidNlCandidateRow, ...]:
     return tuple(parsed)
 
 
-def _cid_nl_seed_base_feature_ids(
-    features: tuple["DetectedFeature", ...],
-    cid_nl_rows: tuple[_CidNlCandidateRow, ...],
-) -> frozenset[tuple[str, str]]:
-    """Return sample-local feature identities CID-NL(dR) can seed as Pt bases.
-
-    Composite discovery should not run Pt matching over every feature and then
-    intersect after the fact. It first finds base features supported by eligible
-    CID-NL rows, then lets the Pt matcher look for +1/+2/+4 only from those
-    base anchors.
-    """
-
-    eligible_rows = _eligible_cid_nl_rows(cid_nl_rows)
-    if not eligible_rows:
-        return frozenset()
-
-    base_features = [feature for feature in features if _is_seed_base_feature(feature)]
-    identity_index: dict[tuple[str, str], set[tuple[str, str]]] = {}
-    fallback_features_by_sample: dict[str, list["DetectedFeature"]] = {}
-    for feature in base_features:
-        comparable_identity = comparable_cid_nl_identity(feature)
-        if comparable_identity is None:
-            fallback_features_by_sample.setdefault(feature.sample_stem, []).append(
-                feature
-            )
-            continue
-
-        for identity_value in comparable_identity.values:
-            identity_index.setdefault(
-                (feature.sample_stem, identity_value),
-                set(),
-            ).add(detected_feature_identity(feature))
-
-    sorted_fallback_by_sample: dict[
-        str, tuple[list[float], list["DetectedFeature"]]
-    ] = {}
-    for sample_stem, sample_features in fallback_features_by_sample.items():
-        ordered = sorted(sample_features, key=lambda item: item.mz)
-        sorted_fallback_by_sample[sample_stem] = (
-            [feature.mz for feature in ordered],
-            ordered,
-        )
-
-    seed_ids: set[tuple[str, str]] = set()
-    for row in eligible_rows:
-        identity_matches = identity_index.get((row.sample_stem, row.ms1_feature_row_id))
-        if identity_matches:
-            seed_ids.update(identity_matches)
-            continue
-        seed_ids.update(_fallback_seed_base_feature_ids(row, sorted_fallback_by_sample))
-
-    return frozenset(seed_ids)
-
-
 def _eligible_cid_nl_rows(
     cid_nl_rows: tuple[_CidNlCandidateRow, ...],
 ) -> tuple[_CidNlCandidateRow, ...]:
@@ -425,36 +274,6 @@ def _eligible_cid_nl_rows(
         if row.neutral_loss_tag == _ALLOWED_CID_NL_TAG
         and row.discovery_candidate_state in _ALLOWED_CID_NL_STATES
     )
-
-
-def _is_seed_base_feature(feature: "DetectedFeature") -> bool:
-    if feature.source != _SCAN_PROXY_SOURCE_LABEL:
-        return True
-    return _SCAN_PROXY_MARKER in feature.feature_id and feature.feature_id.endswith(
-        "|base"
-    )
-
-
-def _fallback_seed_base_feature_ids(
-    row: _CidNlCandidateRow,
-    sorted_by_sample: dict[str, tuple[list[float], list["DetectedFeature"]]],
-) -> set[tuple[str, str]]:
-    if row.precursor_mz is None or row.ms1_apex_rt is None:
-        return set()
-    sample_entry = sorted_by_sample.get(row.sample_stem)
-    if sample_entry is None:
-        return set()
-
-    sorted_mzs, sample_features = sample_entry
-    window_da = row.precursor_mz * _CID_NL_MZ_TOLERANCE_PPM * 1e-6
-    start_index = bisect.bisect_left(sorted_mzs, row.precursor_mz - window_da)
-    end_index = bisect.bisect_right(sorted_mzs, row.precursor_mz + window_da)
-    seed_ids: set[tuple[str, str]] = set()
-    for feature in sample_features[start_index:end_index]:
-        rt_delta_sec = abs(feature.rt_apex_min - row.ms1_apex_rt) * 60.0
-        if rt_delta_sec <= _CID_NL_RT_TOLERANCE_SEC:
-            seed_ids.add(detected_feature_identity(feature))
-    return seed_ids
 
 
 def _parse_cid_nl_row_state(
@@ -617,93 +436,7 @@ def _optional_finite_float(
     return parsed
 
 
-def _apply_cid_nl_composite_join(
-    candidates: tuple[PtPatternCandidate, ...],
-    *,
-    cid_nl_rows: tuple[_CidNlCandidateRow, ...],
-    comparable_identity_by_feature_identity: dict[
-        tuple[str, str], ComparableDetectedFeatureIdentity | None
-    ],
-) -> tuple[PtPatternCandidate, ...]:
-    """Join each Pt base candidate against CID-NL(dR) base evidence.
-
-    Implements the plan's CID-NL base join predicate (plan lines 814-838):
-    same-feature identity join is tried first and always wins over the m/z/RT
-    fallback join when both could apply; fallback is only used when Pt feature
-    identity cannot be compared (missing identity or a detector-local identity
-    namespace). Candidates with no CID-NL match are excluded from the composite
-    output entirely (plan line 839).
-    """
-
-    eligible_rows = _eligible_cid_nl_rows(cid_nl_rows)
-
-    joined: list[PtPatternCandidate] = []
-    for candidate in candidates:
-        sample_rows = [
-            row for row in eligible_rows if row.sample_stem == candidate.sample_stem
-        ]
-        base_identity = (candidate.sample_stem, candidate.base_feature_id)
-        try:
-            comparable_identity = comparable_identity_by_feature_identity[base_identity]
-        except KeyError as error:
-            raise ValueError(
-                "Pt candidate base feature has no DetectedFeature identity owner: "
-                f"{base_identity!r}"
-            ) from error
-
-        match: _CidNlCandidateRow | None = None
-        join_mode = ""
-        if comparable_identity is not None:
-            identity_matches = [
-                row
-                for row in sample_rows
-                if row.ms1_feature_row_id in comparable_identity.values
-            ]
-            if identity_matches:
-                match = _best_identity_match(candidate, identity_matches)
-                join_mode = "same_feature_id"
-
-        if match is None and comparable_identity is None:
-            fallback_matches = [
-                row for row in sample_rows if _fallback_matches(candidate, row)
-            ]
-            if fallback_matches:
-                match = _best_fallback_match(candidate, fallback_matches)
-                join_mode = "mz_rt_fallback"
-
-        if match is None:
-            continue
-
-        joined.append(
-            _mark_composite_supported(
-                candidate,
-                join_mode=join_mode,
-                cid_nl_match=match,
-            )
-        )
-
-    return tuple(joined)
-
-
-def _best_identity_match(
-    candidate: PtPatternCandidate, matches: list[_CidNlCandidateRow]
-) -> _CidNlCandidateRow:
-    """Tie-break for multiple same-feature-identity matches (plan line 833):
-    highest ``evidence_score``, then smallest absolute RT delta."""
-
-    def _key(row: _CidNlCandidateRow) -> tuple[float, float, str]:
-        rt_delta = (
-            abs(row.ms1_apex_rt - candidate.base_rt_apex_min)
-            if row.ms1_apex_rt is not None
-            else 0.0
-        )
-        evidence_score = row.evidence_score if row.evidence_score is not None else 0.0
-        return (-evidence_score, rt_delta, row.candidate_id)
-
-    return min(matches, key=_key)
-
-
-def _fallback_matches(candidate: PtPatternCandidate, row: _CidNlCandidateRow) -> bool:
+def _fallback_matches(candidate: DeltaMassCandidate, row: _CidNlCandidateRow) -> bool:
     if row.precursor_mz is None or row.ms1_apex_rt is None:
         return False
     base_mz = candidate.base_mz
@@ -715,7 +448,7 @@ def _fallback_matches(candidate: PtPatternCandidate, row: _CidNlCandidateRow) ->
 
 
 def _best_fallback_match(
-    candidate: PtPatternCandidate, matches: list[_CidNlCandidateRow]
+    candidate: DeltaMassCandidate, matches: list[_CidNlCandidateRow]
 ) -> _CidNlCandidateRow:
     """Tie-break for multiple m/z/RT fallback matches (plan lines 836-838):
     smallest absolute RT delta, then smallest absolute m/z ppm, then highest
@@ -737,25 +470,3 @@ def _best_fallback_match(
         )
 
     return min(matches, key=_key)
-
-
-def _mark_composite_supported(
-    candidate: PtPatternCandidate,
-    *,
-    join_mode: str,
-    cid_nl_match: _CidNlCandidateRow,
-) -> PtPatternCandidate:
-    reason = candidate.reason
-    if join_mode == "mz_rt_fallback":
-        reason = f"{reason}; CID-NL(dR) base matched via m/z/RT fallback"
-    else:
-        reason = f"{reason}; CID-NL(dR) base matched via same-feature identity"
-
-    return replace(
-        candidate,
-        candidate_state="pt_pattern_cid_nl_supported",
-        cid_nl_base_status="matched",
-        cid_nl_base_candidate_id=cid_nl_match.candidate_id,
-        cid_nl_base_join_mode=join_mode,
-        reason=reason,
-    )

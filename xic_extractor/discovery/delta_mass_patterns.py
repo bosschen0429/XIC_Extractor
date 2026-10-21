@@ -1,611 +1,493 @@
-"""Pt delta-mass pattern definition and sample-local Discovery matcher.
-
-Implements the first Delta Mass Discovery provider: ``delta_mass(pattern_id=pt)``.
-The matcher consumes typed, sample-local detected MS1 features
-(``xic_extractor.discovery.detected_features.DetectedFeature``) and emits
-``PtPatternCandidate`` rows only when a full four-position Pt pattern
-(``base``, ``pt_plus_1``, ``pt_plus_2``, ``pt_plus_4``) is found within the
-hard m/z and RT gates and has local signal support. No partial or base-only
-candidates are ever emitted.
-
-See ``docs/product/discovery.md`` for the binding numeric, evidence, and
-authority rules this module implements.
-"""
+"""Pure, sample-local delta-mass hypotheses; acquisition stays with the caller."""
 
 from __future__ import annotations
 
-import bisect
-from collections.abc import Collection
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Iterable
+from bisect import bisect_left, bisect_right
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from math import sqrt
 
-from xic_extractor.mass_accuracy import (
-    is_within_mz_tolerance,
-    mz_window,
-    signed_ppm_error,
-)
+import numpy as np
 
-if TYPE_CHECKING:
-    from xic_extractor.discovery.delta_mass_strategy import DeltaMassPatternSettings
-    from xic_extractor.discovery.detected_features import DetectedFeature
-
-_LOCAL_SIGNAL_SUPPORT_QUALITIES = {"GOOD", "OK", "PASS"}
-_LOCAL_SIGNAL_SUPPORT_SHAPE_SCORE_MIN = 0.80
-_REQUIRED_NON_BASE_SUPPORT_COUNT = 2
-
-_BASE_LABEL = "base"
-_NON_BASE_LABELS: tuple[str, ...] = ("pt_plus_1", "pt_plus_2", "pt_plus_4")
-_SCAN_PROXY_SOURCE_LABEL = "raw_scan_proxy"
-_SCAN_PROXY_MARKER = "|scan_proxy|"
-_SCAN_PROXY_LABELS = (_BASE_LABEL, *_NON_BASE_LABELS)
-_EXTERNAL_FEATURE_SOURCE_PREFIX = "external_feature_table:"
-_UNSPECIFIED_TRACE_QUALITY = "UNSPECIFIED"
-_LOCAL_MS1_FEATURE_SOURCE_LEVEL_STATUS = "feature_source_detected"
-PT_PATTERN_CANDIDATE_SCHEMA_VERSION = "pt_pattern_candidates"
+from xic_extractor.discovery.delta_mass_strategy import DeltaMassPatternSettings
+from xic_extractor.discovery.detected_features import DetectedFeature
+from xic_extractor.mass_accuracy import mz_window, signed_ppm_error
+from xic_extractor.xic_models import XICRequest, XICTrace
 
 
-@dataclass(frozen=True)
-class DeltaMassPatternPosition:
-    """A single named position within a delta-mass pattern.
-
-    ``delta_da`` is the mass shift, in Daltons, relative to the pattern's
-    ``base`` position (``delta_da == 0.0`` for ``base`` itself).
-    """
-
-    label: str
+@dataclass
+class DeltaMassPositionResult:
+    position_label: str
     delta_da: float
+    expected_mz: float
+    ratio_min: float
+    ratio_max: float
+    apex_threshold_sec: float
+    partner_source: str = "missing"
+    feature_id: str | None = None
+    observed_mz: float | None = None
+    mz_error_ppm: float | None = None
+    apex_rt_min: float | None = None
+    apex_delta_sec: float | None = None
+    height: float | None = None
+    height_ratio_to_base: float | None = None
+    ratio_status: str = "unavailable"
+    shape_r: float | None = None
+    shape_r_threshold: float | None = None
+    position_status: str = "skipped"
+    raw_peak_height: float | None = None
+    local_background: float | None = None
+    background_noise: float | None = None
+    height_above_background: float | None = None
+    required_height_above_background: float | None = None
+    signal_status: str = "not_required"
+    lowest_status: str = "not_required"
 
 
-@dataclass(frozen=True)
-class DeltaMassPattern:
-    """A named, charge/polarity-scoped delta-mass pattern definition.
-
-    ``mz_tolerance_ppm`` and ``rt_tolerance_sec`` are the pattern's own hard
-    gate tolerances so that the ``PT_PATTERN`` constant itself is a complete,
-    self-describing contract independent of any caller-supplied settings
-    object.
-    """
-
-    pattern_id: str
-    display_name: str
-    charge: int
-    polarity: str
-    positions: tuple[DeltaMassPatternPosition, ...]
-    mz_tolerance_ppm: float
-    rt_tolerance_sec: float
-
-
-PT_PATTERN = DeltaMassPattern(
-    pattern_id="pt",
-    display_name="Pt isotope pattern",
-    charge=1,
-    polarity="positive",
-    positions=(
-        DeltaMassPatternPosition(label="base", delta_da=0.0),
-        DeltaMassPatternPosition(label="pt_plus_1", delta_da=1.002111),
-        DeltaMassPatternPosition(label="pt_plus_2", delta_da=2.002271),
-        DeltaMassPatternPosition(label="pt_plus_4", delta_da=4.005213),
-    ),
-    mz_tolerance_ppm=20.0,
-    rt_tolerance_sec=30.0,
-)
-
-
-_PPM_GATE_EPSILON = 1e-9
-
-
-def is_within_ppm(
-    observed_mz: float, expected_mz: float, *, tolerance_ppm: float
-) -> bool:
-    """Return whether ``observed_mz`` is within ``tolerance_ppm`` of ``expected_mz``.
-
-    Uses ``expected_mz`` as the ppm denominator, per the Pt pattern Global
-    Constraint (``mz_error_ppm = (observed_mz - expected_mz) / expected_mz * 1e6``).
-    This helper is supporting coverage only; the matcher below inlines the
-    same formula so it can retain the signed ppm error for candidate fields.
-
-    A small epsilon is applied to the ``<=`` boundary comparison to absorb
-    floating-point round-trip error when a caller constructs ``observed_mz``
-    as ``expected_mz + expected_mz * tolerance_ppm * 1e-6`` (the exact-boundary
-    case), which can otherwise land a few ``1e-11`` ppm outside the nominal
-    tolerance purely from float arithmetic.
-    """
-
-    return is_within_mz_tolerance(
-        observed_mz,
-        expected_mz,
-        tolerance_ppm=tolerance_ppm,
-        boundary_epsilon_ppm=_PPM_GATE_EPSILON,
-    )
-
-
-@dataclass(frozen=True)
-class PtPatternCandidate:
-    """A fully-matched, sample-local Pt pattern candidate.
-
-    Field set mirrors the Pt Candidate CSV contract shared by the CSV writer
-    and Discovery pipeline. The
-    ``base_*`` fields describe the base position; ``pt_plus_1_*``,
-    ``pt_plus_2_*``, and ``pt_plus_4_*`` describe the three non-base
-    positions. The base position itself carries no per-position match fields
-    (no expected/observed delta, no ratios) since it is the ratio reference.
-    """
-
-    schema_version: str
+@dataclass
+class DeltaMassCandidate:
     sample_stem: str
     method_label: str
     pattern_id: str
     candidate_id: str
-    candidate_state: str
-    review_priority: str
-    evidence_tier: str
-    evidence_score: int
-    base_feature_id: str
+    anchor_position: str
+    anchor_feature_id: str
     base_mz: float
     base_rt_apex_min: float
-    base_height: float
-    base_area: float | None
-    position_count: int
-    required_position_count: int
-    rt_span_sec: float
-    pattern_rt_status: str
-    local_signal_support_status: str
-    cross_sample_support_status: str
-    ratio_basis: str
-    cid_nl_base_status: str
-    cid_nl_base_candidate_id: str
-    cid_nl_base_join_mode: str
-    reason: str
-    pt_plus_1_feature_id: str
-    pt_plus_1_mz: float
-    pt_plus_1_expected_mz: float
-    pt_plus_1_mz_error_ppm: float
-    pt_plus_1_delta_error_da: float
-    pt_plus_1_rt_delta_sec: float
-    pt_plus_1_height_ratio_to_base: float | None
-    pt_plus_1_area_ratio_to_base: float | None
-    pt_plus_2_feature_id: str
-    pt_plus_2_mz: float
-    pt_plus_2_expected_mz: float
-    pt_plus_2_mz_error_ppm: float
-    pt_plus_2_delta_error_da: float
-    pt_plus_2_rt_delta_sec: float
-    pt_plus_2_height_ratio_to_base: float | None
-    pt_plus_2_area_ratio_to_base: float | None
-    pt_plus_4_feature_id: str
-    pt_plus_4_mz: float
-    pt_plus_4_expected_mz: float
-    pt_plus_4_mz_error_ppm: float
-    pt_plus_4_delta_error_da: float
-    pt_plus_4_rt_delta_sec: float
-    pt_plus_4_height_ratio_to_base: float | None
-    pt_plus_4_area_ratio_to_base: float | None
+    base_height: float | None
+    positions: tuple[DeltaMassPositionResult, ...]
+    status: str = "candidate"
+    rejected_at_layer: int | None = None
+    reject_reason: str = ""
+    cid_nl_base_status: str = ""
+    cid_nl_base_candidate_id: str = ""
+    cid_nl_base_join_mode: str = ""
+    base_expected_net_height: float | None = None
+    base_support_score: float | None = None
+    base_support_status: str = "not_required"
 
 
-@dataclass(frozen=True)
-class _PositionMatch:
-    label: str
-    feature: "DetectedFeature"
-    expected_mz: float
-    mz_error_ppm: float
-    delta_error_da: float
-    rt_delta_sec: float
+@dataclass
+class DeltaMassPreparation:
+    candidates: tuple[DeltaMassCandidate, ...]
+    requests: tuple[XICRequest, ...] = ()
+    request_positions: tuple[tuple[int, int], ...] = ()
+    counts: dict[str, int] = field(default_factory=dict)
+    background_positions: tuple[tuple[int, int], ...] = ()
 
 
-def match_delta_mass_pattern(
-    features: Iterable["DetectedFeature"],
+def prepare_delta_mass_candidates(
+    features: Sequence[DetectedFeature],
+    settings: DeltaMassPatternSettings,
     *,
-    pattern: DeltaMassPattern | None = None,
-    settings: "DeltaMassPatternSettings | None" = None,
-    base_feature_ids: Collection[str | tuple[str, str]] | None = None,
-) -> tuple[PtPatternCandidate, ...]:
-    """Match sample-local detected features against ``pattern``.
-
-    Groups ``features`` by ``sample_stem`` and, within each group, tries
-    every feature as a possible ``base`` anchor (base is defined as the
-    lowest m/z position — see Global Constraints). For each base candidate,
-    looks up the best match for every non-base position using an m/z-bounded
-    window derived from the expected m/z, filters by absolute RT delta from
-    base, and requires all non-base positions plus local signal support
-    before emitting a candidate. No partial/base-only rows are ever emitted.
-    """
-
-    # The strategy owner imports the pattern defaults from this module, so
-    # resolve its settings after module initialization to avoid a cycle.
-    from xic_extractor.discovery.delta_mass_strategy import DeltaMassPatternSettings
-    from xic_extractor.discovery.detected_features import (
-        detected_feature_identity,
-        validate_detected_features,
+    scan_interval_sec: float,
+) -> DeltaMassPreparation:
+    """Find ±delta partners; record height ratios without using them for admission."""
+    threshold = max(
+        settings.apex_floor_sec, settings.scan_interval_multiplier * scan_interval_sec
     )
-
-    resolved_settings = settings if settings is not None else DeltaMassPatternSettings()
-    if resolved_settings.ratio_basis != "both":
-        raise ValueError(
-            f"unsupported Pt delta-mass ratio_basis: {resolved_settings.ratio_basis!r}"
-        )
-    resolved_pattern = pattern if pattern is not None else resolved_settings.pattern
-    if (
-        resolved_pattern != PT_PATTERN
-        or resolved_settings.pattern_id != PT_PATTERN.pattern_id
-    ):
-        raise ValueError(
-            "match_delta_mass_pattern currently supports only the built-in "
-            "PT_PATTERN with pattern_id='pt'"
-        )
-
-    non_base_positions = [
-        position
-        for position in resolved_pattern.positions
-        if position.label != _BASE_LABEL
-    ]
-
-    feature_rows = tuple(features)
-    validate_detected_features(
-        feature_rows,
-        source_label="match_delta_mass_pattern input",
-    )
-    features_by_sample: dict[str, list["DetectedFeature"]] = {}
-    for feature in feature_rows:
-        features_by_sample.setdefault(feature.sample_stem, []).append(feature)
-
-    allowed_base_feature_ids = (
-        set(base_feature_ids) if base_feature_ids is not None else None
-    )
-
-    candidates: list[PtPatternCandidate] = []
-    for sample_stem, sample_features in features_by_sample.items():
-        sorted_features = sorted(sample_features, key=lambda item: item.mz)
-        sorted_mzs = [item.mz for item in sorted_features]
-        for base in sorted_features:
-            if (
-                allowed_base_feature_ids is not None
-                and detected_feature_identity(base) not in allowed_base_feature_ids
-                # Backward-compatible support for callers that still pass the
-                # legacy feature-id-only allowlist. The pipeline itself passes
-                # canonical sample-local identities.
-                and base.feature_id not in allowed_base_feature_ids
-            ):
+    ordered = sorted(features, key=lambda f: f.mz)
+    masses = [f.mz for f in ordered]
+    candidates: list[DeltaMassCandidate] = []
+    seen: set[tuple[str, tuple[str | None, ...]]] = set()
+    counts = {
+        "eligible_anchors": 0,
+        "layer_1_rejected": 0,
+        "layer_2_rejected": 0,
+        "layer_2_deduplicated": 0,
+        "layer_3_rejected": 0,
+    }
+    for anchor in features:
+        if anchor.trace_quality != "OK":
+            counts["layer_1_rejected"] += 1
+            continue
+        counts["eligible_anchors"] += 1
+        for role in settings.positions:
+            if role.label not in settings.anchor_positions:
                 continue
-            if not _is_base_anchor_eligible(base):
+            base_mz = anchor.mz - role.delta_da
+            if base_mz <= 0:
+                counts["layer_2_rejected"] += 1
                 continue
-            candidate = _match_base(
-                sample_stem=sample_stem,
-                base=base,
-                sample_features=sorted_features,
-                sorted_mzs=sorted_mzs,
-                non_base_positions=non_base_positions,
-                settings=resolved_settings,
+            matches: list[DetectedFeature | None] = []
+            used_features = {anchor.feature_id}
+            reference_rt = anchor.rt_apex_min
+            for position in settings.positions:
+                expected = base_mz + position.delta_da
+                lower_mz, upper_mz = mz_window(expected, settings.mz_tolerance_ppm)
+                options = [
+                    f
+                    for f in ordered[
+                        bisect_left(masses, lower_mz) : bisect_right(masses, upper_mz)
+                    ]
+                    if f.sample_stem == anchor.sample_stem
+                    and f.feature_id not in used_features
+                    and abs(f.rt_apex_min - reference_rt) * 60 <= threshold
+                ]
+                match = (
+                    anchor
+                    if position.label == role.label
+                    else min(
+                        options,
+                        key=lambda f: (
+                            abs(f.mz - expected),
+                            abs(f.rt_apex_min - anchor.rt_apex_min),
+                            f.feature_id,
+                        ),
+                        default=None,
+                    )
+                )
+                matches.append(match)
+                if match is not None:
+                    used_features.add(match.feature_id)
+                    if position.delta_da == 0:
+                        base_mz = match.mz
+                        reference_rt = match.rt_apex_min
+            if sum(f is not None for f in matches) < 2:
+                counts["layer_2_rejected"] += 1
+                continue
+            key = (
+                anchor.sample_stem,
+                tuple(f.feature_id if f else None for f in matches),
             )
-            if candidate is not None:
-                candidates.append(candidate)
-
-    candidates.sort(
-        key=lambda candidate: (
-            candidate.sample_stem,
-            candidate.base_rt_apex_min,
-            candidate.base_mz,
-            candidate.candidate_id,
-        )
+            if key in seen:
+                counts["layer_2_deduplicated"] += 1
+                continue
+            seen.add(key)
+            base = matches[0]
+            height = base.height if base else None
+            rt = base.rt_apex_min if base else anchor.rt_apex_min
+            results = []
+            for position, match in zip(settings.positions, matches, strict=True):
+                row = DeltaMassPositionResult(
+                    position.label,
+                    position.delta_da,
+                    base_mz + position.delta_da,
+                    position.ratio_min,
+                    position.ratio_max,
+                    threshold,
+                )
+                if match:
+                    row.partner_source = "anchor" if match is anchor else "table"
+                    row.feature_id = match.feature_id
+                    row.observed_mz = match.mz
+                    row.mz_error_ppm = signed_ppm_error(match.mz, row.expected_mz)
+                    row.apex_rt_min = match.rt_apex_min
+                    row.apex_delta_sec = (match.rt_apex_min - rt) * 60
+                    row.height = match.height
+                    _record_ratio(row, height)
+                    row.position_status = "pass"
+                results.append(row)
+            candidate = DeltaMassCandidate(
+                anchor.sample_stem,
+                settings.method_label,
+                settings.pattern_id,
+                f"{anchor.sample_stem}|delta|{len(candidates) + 1}",
+                role.label,
+                anchor.feature_id,
+                base.mz if base else base_mz,
+                rt,
+                height,
+                tuple(results),
+            )
+            candidates.append(candidate)
+    counts["layer_1_passed"] = counts["eligible_anchors"]
+    counts["layer_2_passed"] = len(candidates)
+    requests = []
+    request_positions = []
+    for index, candidate in enumerate(candidates):
+        needed = {
+            i
+            for i, p in enumerate(candidate.positions)
+            if p.partner_source == "missing"
+            or p.position_label in settings.discriminating_positions
+        }
+        if needed:
+            needed.add(0)
+            if candidate.positions[0].partner_source == "missing":
+                needed.add(
+                    next(
+                        i
+                        for i, p in enumerate(candidate.positions)
+                        if p.partner_source == "anchor"
+                    )
+                )
+        for position_index in sorted(needed):
+            p = candidate.positions[position_index]
+            requests.append(
+                XICRequest(
+                    p.expected_mz,
+                    max(0, candidate.base_rt_apex_min - settings.shape_window_sec / 60),
+                    candidate.base_rt_apex_min + settings.shape_window_sec / 60,
+                    settings.mz_tolerance_ppm,
+                )
+            )
+            request_positions.append((index, position_index))
+    background_positions = []
+    if settings.lowest_position or settings.base_support_positions:
+        for index, candidate in enumerate(candidates):
+            for position_index, result in enumerate(candidate.positions):
+                requests.append(
+                    XICRequest(
+                        result.expected_mz,
+                        max(
+                            0,
+                            candidate.base_rt_apex_min
+                            - settings.background_outer_sec / 60,
+                        ),
+                        candidate.base_rt_apex_min + settings.background_outer_sec / 60,
+                        settings.mz_tolerance_ppm,
+                    )
+                )
+                background_positions.append((index, position_index))
+    return DeltaMassPreparation(
+        tuple(candidates),
+        tuple(requests),
+        tuple(request_positions),
+        counts,
+        tuple(background_positions),
     )
-    return tuple(candidates)
 
 
-def _match_base(
-    *,
-    sample_stem: str,
-    base: "DetectedFeature",
-    sample_features: list["DetectedFeature"],
-    sorted_mzs: list[float],
-    non_base_positions: list[DeltaMassPatternPosition],
-    settings: "DeltaMassPatternSettings",
-) -> PtPatternCandidate | None:
-    matches: dict[str, _PositionMatch] = {}
-    for position in non_base_positions:
-        match = _best_position_match(
-            base=base,
-            position=position,
-            sample_features=sample_features,
-            sorted_mzs=sorted_mzs,
-            mz_tolerance_ppm=settings.mz_tolerance_ppm,
-            rt_tolerance_sec=settings.rt_tolerance_sec,
-        )
-        if match is None:
-            return None
-        matches[position.label] = match
-
-    if len(matches) != len(_NON_BASE_LABELS):
-        return None
-
-    local_signal_support_status = _local_signal_support_status(base, matches)
-    if local_signal_support_status is None:
-        return None
-
-    rt_span_sec = _rt_span_sec(base, matches)
-    if rt_span_sec > settings.rt_tolerance_sec:
-        return None
-
-    return _build_candidate(
-        sample_stem=sample_stem,
-        base=base,
-        matches=matches,
-        rt_span_sec=rt_span_sec,
-        local_signal_support_status=local_signal_support_status,
-        settings=settings,
+def complete_delta_mass_candidates(
+    prepared: DeltaMassPreparation,
+    traces: Sequence[XICTrace],
+    settings: DeltaMassPatternSettings,
+) -> tuple[DeltaMassCandidate, ...]:
+    """Consume the single acquisition batch; confirm missing positions then shape."""
+    # Keep native acquisition windows: cropping a wider trace by exact RT would
+    # change the vendor's scan-rounded endpoints and therefore shape decisions.
+    split = len(prepared.request_positions)
+    trace_map = dict(zip(prepared.request_positions, traces[:split], strict=True))
+    background_trace_map = dict(
+        zip(prepared.background_positions, traces[split:], strict=True)
     )
-
-
-def _best_position_match(
-    *,
-    base: "DetectedFeature",
-    position: DeltaMassPatternPosition,
-    sample_features: list["DetectedFeature"],
-    sorted_mzs: list[float],
-    mz_tolerance_ppm: float,
-    rt_tolerance_sec: float,
-) -> _PositionMatch | None:
-    expected_mz = base.mz + position.delta_da
-    lower_mz, upper_mz = mz_window(expected_mz, mz_tolerance_ppm)
-
-    # ``sample_features`` is sorted ascending by m/z and ``sorted_mzs`` is the
-    # parallel list of its m/z values, so the [lower_mz, upper_mz] window's
-    # index range can be found in O(log n) via bisect instead of scanning
-    # every feature in the sample. This preserves the exact same inclusive
-    # ``lower_mz <= feature.mz <= upper_mz`` semantics as the prior linear
-    # scan: bisect_left(lower_mz) is the first index >= lower_mz, and
-    # bisect_right(upper_mz) is one past the last index <= upper_mz.
-    start_index = bisect.bisect_left(sorted_mzs, lower_mz)
-    end_index = bisect.bisect_right(sorted_mzs, upper_mz)
-
-    best: _PositionMatch | None = None
-    for feature in sample_features[start_index:end_index]:
-        if feature is base:
+    for index, candidate in enumerate(prepared.candidates):
+        if candidate.status == "rejected":
             continue
-        if not _is_position_match_eligible(base, feature, position.label):
+        base_trace = trace_map.get((index, 0))
+        base_was_missing = candidate.positions[0].partner_source == "missing"
+        anchor_index = next(
+            i for i, p in enumerate(candidate.positions) if p.partner_source == "anchor"
+        )
+        for position_index, position in enumerate(candidate.positions):
+            if position.partner_source != "missing":
+                continue
+            trace = trace_map[index, position_index]
+            reference = (
+                trace_map[index, anchor_index] if position_index == 0 else base_trace
+            )
+            r = _shape_correlation(reference, trace)
+            position.shape_r = r
+            position.shape_r_threshold = settings.min_shape_r
+            if trace.intensity.size:
+                apex_index = int(np.argmax(trace.intensity))
+                position.apex_rt_min = float(trace.rt[apex_index])
+                position.apex_delta_sec = (
+                    position.apex_rt_min - candidate.base_rt_apex_min
+                ) * 60
+                position.height = float(trace.intensity[apex_index])
+            if (
+                position_index == 0
+                and position.height
+                and position.apex_rt_min is not None
+            ):
+                candidate.base_height = position.height
+                candidate.base_rt_apex_min = position.apex_rt_min
+            _record_ratio(position, candidate.base_height)
+            confirmed = (
+                position.height is not None
+                and position.height > 0
+                and position.apex_delta_sec is not None
+                and abs(position.apex_delta_sec) <= position.apex_threshold_sec
+                and r is not None
+                and r >= settings.min_shape_r
+            )
+            position.position_status = "pass" if confirmed else "fail"
+            if confirmed:
+                position.partner_source = "raw"
+            else:
+                _reject(candidate, 4, "partner_not_confirmed_in_raw")
+        # The measured base owns ratio evidence and apex deltas for all partners.
+        if base_was_missing and candidate.base_height is not None:
+            for position in candidate.positions:
+                if position.apex_rt_min is not None:
+                    position.apex_delta_sec = (
+                        position.apex_rt_min - candidate.base_rt_apex_min
+                    ) * 60
+                    if abs(position.apex_delta_sec) > position.apex_threshold_sec:
+                        position.position_status = "fail"
+                        _reject(candidate, 4, "apex_out_of_range")
+                _record_ratio(position, candidate.base_height)
+        if candidate.status == "rejected":
             continue
-        rt_delta_sec = abs(feature.rt_apex_min - base.rt_apex_min) * 60.0
-        if rt_delta_sec > rt_tolerance_sec:
+        for position_index, position in enumerate(candidate.positions):
+            if position.position_label not in settings.discriminating_positions:
+                continue
+            position.shape_r = _shape_correlation(
+                base_trace, trace_map[index, position_index]
+            )
+            position.shape_r_threshold = settings.min_shape_r
+            if position.shape_r is None or position.shape_r < settings.min_shape_r:
+                position.position_status = "fail"
+                _reject(candidate, 5, "discriminating_shape_below_threshold")
+        if candidate.status != "rejected" and (
+            settings.lowest_position or settings.base_support_positions
+        ):
+            _apply_signal_gate(candidate, index, background_trace_map, settings)
+    return prepared.candidates
+
+
+def _apply_signal_gate(
+    candidate: DeltaMassCandidate,
+    candidate_index: int,
+    traces: dict[tuple[int, int], XICTrace],
+    settings: DeltaMassPatternSettings,
+) -> None:
+    """Compare all positions on raw, locally background-subtracted peak heights."""
+    for i, position in enumerate(candidate.positions):
+        trace = traces[candidate_index, i]
+        # Round sub-nanosecond subtraction error at inclusive window boundaries.
+        seconds = np.round((trace.rt - candidate.base_rt_apex_min) * 60, 9)
+        flanks = [
+            trace.intensity[
+                (seconds >= -settings.background_outer_sec)
+                & (seconds <= -settings.background_inner_sec)
+            ],
+            trace.intensity[
+                (seconds >= settings.background_inner_sec)
+                & (seconds <= settings.background_outer_sec)
+            ],
+        ]
+        flanks = [values for values in flanks if len(values) >= 3]
+        peak = trace.intensity[np.abs(seconds) <= settings.shape_window_sec]
+        if not flanks or not len(peak):
             continue
-        mz_error_ppm = signed_ppm_error(feature.mz, expected_mz)
-        candidate_match = _PositionMatch(
-            label=position.label,
-            feature=feature,
-            expected_mz=expected_mz,
-            mz_error_ppm=mz_error_ppm,
-            delta_error_da=feature.mz - expected_mz,
-            rt_delta_sec=rt_delta_sec,
+        # A neighboring peak/tail on one side must not set the background.
+        flank = min(flanks, key=lambda values: float(np.median(values)))
+        background = float(np.median(flank))
+        position.raw_peak_height = float(np.max(peak))
+        position.local_background = background
+        position.background_noise = float(
+            1.4826 * np.median(np.abs(flank - background))
         )
-        if best is None or _is_better_match(candidate_match, best):
-            best = candidate_match
-    return best
+        position.height_above_background = position.raw_peak_height - background
+    if settings.lowest_position:
+        _apply_lowest_position_gate(candidate, settings)
+    if candidate.status != "rejected" and settings.base_support_positions:
+        _apply_base_support_gate(candidate, settings)
 
 
-def _is_base_anchor_eligible(feature: "DetectedFeature") -> bool:
-    if feature.source != _SCAN_PROXY_SOURCE_LABEL:
-        return True
-    parsed = _scan_proxy_group_and_label(feature.feature_id)
-    return parsed is not None and parsed[1] == _BASE_LABEL
-
-
-def _is_position_match_eligible(
-    base: "DetectedFeature",
-    feature: "DetectedFeature",
-    expected_label: str,
-) -> bool:
-    if base.source == _SCAN_PROXY_SOURCE_LABEL:
-        base_parsed = _scan_proxy_group_and_label(base.feature_id)
-        feature_parsed = _scan_proxy_group_and_label(feature.feature_id)
-        if base_parsed is None or feature_parsed is None:
-            return False
-        base_group, base_label = base_parsed
-        feature_group, feature_label = feature_parsed
-        return (
-            base_label == _BASE_LABEL
-            and feature_group == base_group
-            and feature_label == expected_label
+def _apply_lowest_position_gate(
+    candidate: DeltaMassCandidate, settings: DeltaMassPatternSettings
+) -> None:
+    lowest = next(
+        p for p in candidate.positions if p.position_label == settings.lowest_position
+    )
+    if any(p.height_above_background is None for p in candidate.positions):
+        lowest.lowest_status = "unavailable"
+        lowest.signal_status = "unavailable"
+        lowest.position_status = "fail"
+        _reject(candidate, 5, "local_background_unavailable")
+        return
+    assert lowest.height_above_background is not None
+    assert lowest.background_noise is not None
+    lowest.required_height_above_background = max(
+        settings.min_height_above_background,
+        settings.min_background_sigma * lowest.background_noise,
+    )
+    lowest.signal_status = (
+        "pass"
+        if lowest.height_above_background >= lowest.required_height_above_background
+        else "fail"
+    )
+    lowest.lowest_status = (
+        "pass"
+        if all(
+            lowest.height_above_background <= p.height_above_background
+            for p in candidate.positions
+            if p.height_above_background is not None
         )
-
-    if _is_local_ms1_feature(base):
-        return _is_local_ms1_non_base_supported(feature)
-
-    if _is_local_ms1_feature(feature):
-        return False
-
-    return feature.source != _SCAN_PROXY_SOURCE_LABEL
-
-
-def _scan_proxy_group_and_label(feature_id: str) -> tuple[str, str] | None:
-    if _SCAN_PROXY_MARKER not in feature_id:
-        return None
-    _, suffix = feature_id.split(_SCAN_PROXY_MARKER, 1)
-    parts = suffix.rsplit("|", 1)
-    if len(parts) != 2:
-        return None
-    group_id, label = parts
-    if not group_id or label not in _SCAN_PROXY_LABELS:
-        return None
-    return group_id, label
-
-
-def _is_better_match(candidate: _PositionMatch, current_best: _PositionMatch) -> bool:
-    """Tiebreak: smallest |RT delta|, then smallest |ppm error|, then highest height."""
-
-    candidate_key = (
-        candidate.rt_delta_sec,
-        abs(candidate.mz_error_ppm),
-        -candidate.feature.height,
+        else "fail"
     )
-    best_key = (
-        current_best.rt_delta_sec,
-        abs(current_best.mz_error_ppm),
-        -current_best.feature.height,
-    )
-    return candidate_key < best_key
+    if lowest.signal_status == "fail":
+        lowest.position_status = "fail"
+        _reject(candidate, 5, "peak_not_above_background")
+    if lowest.lowest_status == "fail":
+        lowest.position_status = "fail"
+        _reject(candidate, 5, "lowest_position_not_lowest")
 
 
-def _local_signal_support_status(
-    base: "DetectedFeature", matches: dict[str, _PositionMatch]
-) -> str | None:
-    if _is_local_ms1_feature(base):
-        if not _is_local_ms1_base_supported(base):
-            return None
-        local_supported_non_base = sum(
-            1
-            for match in matches.values()
-            if _is_local_ms1_non_base_supported(match.feature)
-        )
-        if local_supported_non_base < _REQUIRED_NON_BASE_SUPPORT_COUNT:
-            return None
-        return _LOCAL_MS1_FEATURE_SOURCE_LEVEL_STATUS
-
-    if not _is_supported_feature(base):
-        return None
-
-    supported_non_base = sum(
-        1 for match in matches.values() if _is_supported_feature(match.feature)
-    )
-    if supported_non_base < _REQUIRED_NON_BASE_SUPPORT_COUNT:
-        return None
-
-    explicit_non_base = sum(
-        1
-        for match in matches.values()
-        if _has_explicit_local_signal_support(match.feature)
-    )
-    if (
-        _has_explicit_local_signal_support(base)
-        and explicit_non_base >= _REQUIRED_NON_BASE_SUPPORT_COUNT
-    ):
-        return "supported"
-    return "feature_source_detected"
-
-
-def _is_supported_feature(feature: "DetectedFeature") -> bool:
-    if _is_local_ms1_feature(feature):
-        return False
-    return _has_explicit_local_signal_support(feature) or (
-        feature.source.startswith(_EXTERNAL_FEATURE_SOURCE_PREFIX)
-        and feature.trace_quality == _UNSPECIFIED_TRACE_QUALITY
-    )
-
-
-def _is_local_ms1_feature(feature: "DetectedFeature") -> bool:
-    from xic_extractor.discovery.detected_features import is_local_ms1_feature_source
-
-    return is_local_ms1_feature_source(feature.source)
-
-
-def _is_local_ms1_base_supported(feature: "DetectedFeature") -> bool:
-    from xic_extractor.discovery.detected_features import (
-        LOCAL_MS1_FEATURE_TRACE_QUALITY_OK,
-    )
-
-    return (
-        _is_local_ms1_feature(feature)
-        and feature.trace_quality == LOCAL_MS1_FEATURE_TRACE_QUALITY_OK
-    )
-
-
-def _is_local_ms1_non_base_supported(feature: "DetectedFeature") -> bool:
-    from xic_extractor.discovery.detected_features import (
-        LOCAL_MS1_FEATURE_TRACE_QUALITIES,
-    )
-
-    return (
-        _is_local_ms1_feature(feature)
-        and feature.trace_quality in LOCAL_MS1_FEATURE_TRACE_QUALITIES
-    )
-
-
-def _has_explicit_local_signal_support(feature: "DetectedFeature") -> bool:
-    if feature.trace_quality in _LOCAL_SIGNAL_SUPPORT_QUALITIES:
-        return True
-    return (
-        feature.shape_score is not None
-        and feature.shape_score >= _LOCAL_SIGNAL_SUPPORT_SHAPE_SCORE_MIN
-    )
-
-
-def _rt_span_sec(base: "DetectedFeature", matches: dict[str, _PositionMatch]) -> float:
-    rt_values_min = [base.rt_apex_min] + [
-        match.feature.rt_apex_min for match in matches.values()
+def _apply_base_support_gate(
+    candidate: DeltaMassCandidate, settings: DeltaMassPatternSettings
+) -> None:
+    """Require only a lower bound on base versus pooled reference-position heights."""
+    base = candidate.positions[0]
+    reference = [
+        p
+        for p in candidate.positions
+        if p.position_label in settings.base_support_positions
     ]
-    return (max(rt_values_min) - min(rt_values_min)) * 60.0
-
-
-def _ratio(numerator: float | None, denominator: float | None) -> float | None:
-    if numerator is None or denominator is None or denominator == 0.0:
-        return None
-    return numerator / denominator
-
-
-def _build_candidate(
-    *,
-    sample_stem: str,
-    base: "DetectedFeature",
-    matches: dict[str, _PositionMatch],
-    rt_span_sec: float,
-    local_signal_support_status: str,
-    settings: "DeltaMassPatternSettings",
-) -> PtPatternCandidate:
-    # ``(sample_stem, base.feature_id)`` is the canonical identity and is
-    # validated unique before matching. The rounded m/z/RT suffix remains only
-    # for persisted candidate identity; it no longer supplies
-    # uniqueness or disambiguates duplicate feature rows.
-    candidate_id = (
-        f"{sample_stem}|pt|base:{base.feature_id}"
-        f"|mz:{base.mz:.6f}|rt:{base.rt_apex_min:.6f}"
-    )
-
-    position_fields: dict[str, object] = {}
-    for label in _NON_BASE_LABELS:
-        match = matches[label]
-        feature = match.feature
-        position_fields[f"{label}_feature_id"] = feature.feature_id
-        position_fields[f"{label}_mz"] = feature.mz
-        position_fields[f"{label}_expected_mz"] = match.expected_mz
-        position_fields[f"{label}_mz_error_ppm"] = match.mz_error_ppm
-        position_fields[f"{label}_delta_error_da"] = match.delta_error_da
-        position_fields[f"{label}_rt_delta_sec"] = match.rt_delta_sec
-        position_fields[f"{label}_height_ratio_to_base"] = _ratio(
-            feature.height, base.height
+    if base.height_above_background is None or any(
+        p.height_above_background is None for p in reference
+    ):
+        candidate.base_support_status = "unavailable"
+        base.position_status = "fail"
+        _reject(candidate, 5, "local_background_unavailable")
+        return
+    reference_ratio = sum(sqrt(p.ratio_min * p.ratio_max) for p in reference)
+    expected = (
+        sum(
+            max(0.0, p.height_above_background)
+            for p in reference
+            if p.height_above_background is not None
         )
-        position_fields[f"{label}_area_ratio_to_base"] = _ratio(feature.area, base.area)
+        / reference_ratio
+    )
+    candidate.base_expected_net_height = expected
+    if expected <= 0:
+        candidate.base_support_status = "unavailable"
+        base.position_status = "fail"
+        _reject(candidate, 5, "base_support_reference_unavailable")
+        return
+    candidate.base_support_score = max(0.0, base.height_above_background) / expected
+    candidate.base_support_status = (
+        "pass" if candidate.base_support_score >= settings.min_base_support else "fail"
+    )
+    if candidate.base_support_status == "fail":
+        base.position_status = "fail"
+        _reject(candidate, 5, "base_support_below_threshold")
 
-    explicit_trace_support = local_signal_support_status == "supported"
-    evidence_score = 90 if explicit_trace_support else 70
-    evidence_tier = "A" if explicit_trace_support else "B"
-    review_priority = "HIGH" if explicit_trace_support else "MEDIUM"
-    reason = (
-        "full Pt pattern within tolerance"
-        if explicit_trace_support
-        else "full Pt pattern within tolerance; feature source support only"
+
+def _record_ratio(position: DeltaMassPositionResult, base_height: float | None) -> None:
+    """Annotate measured abundance evidence independently of position admission."""
+    if position.height is None or base_height is None or base_height <= 0:
+        return
+    ratio = position.height / base_height
+    position.height_ratio_to_base = ratio
+    position.ratio_status = (
+        "below_range"
+        if ratio < position.ratio_min
+        else "above_range"
+        if ratio > position.ratio_max
+        else "within_range"
     )
 
-    return PtPatternCandidate(
-        schema_version=PT_PATTERN_CANDIDATE_SCHEMA_VERSION,
-        sample_stem=sample_stem,
-        method_label=settings.method_label,
-        pattern_id="pt",
-        candidate_id=candidate_id,
-        candidate_state="pt_pattern_candidate",
-        review_priority=review_priority,
-        evidence_tier=evidence_tier,
-        evidence_score=evidence_score,
-        base_feature_id=base.feature_id,
-        base_mz=base.mz,
-        base_rt_apex_min=base.rt_apex_min,
-        base_height=base.height,
-        base_area=base.area,
-        position_count=4,
-        required_position_count=4,
-        rt_span_sec=rt_span_sec,
-        pattern_rt_status=f"within_{settings.rt_tolerance_sec:g}s",
-        local_signal_support_status=local_signal_support_status,
-        cross_sample_support_status="not_evaluated",
-        ratio_basis=settings.ratio_basis,
-        cid_nl_base_status="not_required",
-        cid_nl_base_candidate_id="",
-        cid_nl_base_join_mode="not_required",
-        reason=reason,
-        **position_fields,  # type: ignore[arg-type]
-    )
+
+def _reject(candidate: DeltaMassCandidate, layer: int, reason: str) -> None:
+    if candidate.status != "rejected":
+        candidate.status = "rejected"
+        candidate.rejected_at_layer = layer
+        candidate.reject_reason = reason
+
+
+def _shape_correlation(base: XICTrace | None, other: XICTrace) -> float | None:
+    if base is None or len(base.rt) < 3 or len(other.rt) < 3:
+        return None
+    mask = (base.rt >= other.rt[0]) & (base.rt <= other.rt[-1])
+    left = base.intensity[mask]
+    right = np.interp(base.rt[mask], other.rt, other.intensity)
+    if len(left) < 3 or np.std(left) == 0 or np.std(right) == 0:
+        return None
+    correlation = float(np.corrcoef(left, right)[0, 1])
+    return correlation if np.isfinite(correlation) else None
