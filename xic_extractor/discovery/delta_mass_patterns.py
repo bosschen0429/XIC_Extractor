@@ -30,6 +30,7 @@ class DeltaMassPositionResult:
     apex_delta_sec: float | None = None
     height: float | None = None
     height_ratio_to_base: float | None = None
+    ratio_status: str = "unavailable"
     shape_r: float | None = None
     shape_r_threshold: float | None = None
     position_status: str = "skipped"
@@ -68,9 +69,8 @@ def prepare_delta_mass_candidates(
     settings: DeltaMassPatternSettings,
     *,
     scan_interval_sec: float,
-    noise_level: float,
 ) -> DeltaMassPreparation:
-    """Find ±delta partners from admitted detector features, then prune ratios."""
+    """Find ±delta partners; record height ratios without using them for admission."""
     threshold = max(
         settings.apex_floor_sec, settings.scan_interval_multiplier * scan_interval_sec
     )
@@ -144,16 +144,6 @@ def prepare_delta_mass_candidates(
             seen.add(key)
             base = matches[0]
             height = base.height if base else None
-            lower_height = max(
-                f.height / p.ratio_max
-                for p, f in zip(settings.positions, matches, strict=True)
-                if f is not None
-            )
-            upper_height = min(
-                f.height / p.ratio_min
-                for p, f in zip(settings.positions, matches, strict=True)
-                if f is not None
-            )
             rt = base.rt_apex_min if base else anchor.rt_apex_min
             results = []
             for position, match in zip(settings.positions, matches, strict=True):
@@ -173,19 +163,8 @@ def prepare_delta_mass_candidates(
                     row.apex_rt_min = match.rt_apex_min
                     row.apex_delta_sec = (match.rt_apex_min - rt) * 60
                     row.height = match.height
-                    row.height_ratio_to_base = (
-                        match.height / height if height is not None else None
-                    )
-                    ratio_ok = (
-                        (
-                            position.ratio_min
-                            <= row.height_ratio_to_base
-                            <= position.ratio_max
-                        )
-                        if row.height_ratio_to_base is not None
-                        else lower_height <= upper_height
-                    )
-                    row.position_status = "pass" if ratio_ok else "fail"
+                    _record_ratio(row, height)
+                    row.position_status = "pass"
                 results.append(row)
             candidate = DeltaMassCandidate(
                 anchor.sample_stem,
@@ -199,52 +178,18 @@ def prepare_delta_mass_candidates(
                 height,
                 tuple(results),
             )
-            if any(p.position_status == "fail" for p in results):
-                candidate.status = "rejected"
-                candidate.rejected_at_layer = 3
-                candidate.reject_reason = "ratio_out_of_range"
-                counts["layer_3_rejected"] += 1
             candidates.append(candidate)
     counts["layer_1_passed"] = counts["eligible_anchors"]
     counts["layer_2_passed"] = len(candidates)
     requests = []
     request_positions = []
     for index, candidate in enumerate(candidates):
-        if candidate.status == "rejected":
-            for p in candidate.positions:
-                if p.partner_source == "missing":
-                    p.partner_source = "not_requested"
-            continue
         needed = {
             i
             for i, p in enumerate(candidate.positions)
             if p.partner_source == "missing"
             or p.position_label in settings.discriminating_positions
         }
-        height_upper = (
-            candidate.base_height
-            if candidate.base_height is not None
-            else min(
-                p.height / p.ratio_min
-                for p in candidate.positions
-                if p.height is not None
-            )
-        )
-        below_noise = [
-            i
-            for i in needed
-            if candidate.positions[i].partner_source == "missing"
-            and height_upper * candidate.positions[i].ratio_max < noise_level
-        ]
-        if below_noise:
-            candidate.status = "rejected"
-            candidate.rejected_at_layer = 3
-            candidate.reject_reason = "expected_below_noise"
-            counts["layer_3_rejected"] += 1
-            for p in candidate.positions:
-                if p.partner_source == "missing":
-                    p.partner_source = "not_requested"
-            continue
         if needed:
             needed.add(0)
             if candidate.positions[0].partner_source == "missing":
@@ -310,8 +255,7 @@ def complete_delta_mass_candidates(
             ):
                 candidate.base_height = position.height
                 candidate.base_rt_apex_min = position.apex_rt_min
-            if position.height is not None and candidate.base_height is not None:
-                position.height_ratio_to_base = position.height / candidate.base_height
+            _record_ratio(position, candidate.base_height)
             confirmed = (
                 position.height is not None
                 and position.height > 0
@@ -319,18 +263,13 @@ def complete_delta_mass_candidates(
                 and abs(position.apex_delta_sec) <= position.apex_threshold_sec
                 and r is not None
                 and r >= settings.min_shape_r
-                and position.height_ratio_to_base is not None
-                and position.ratio_min
-                <= position.height_ratio_to_base
-                <= position.ratio_max
             )
             position.position_status = "pass" if confirmed else "fail"
             if confirmed:
                 position.partner_source = "raw"
             else:
                 _reject(candidate, 4, "partner_not_confirmed_in_raw")
-        # A missing base was only bounded by table ratios before acquisition.
-        # Its measured height/apex now own ratios/deltas, including table partners.
+        # The measured base owns ratio evidence and apex deltas for all partners.
         if base_was_missing and candidate.base_height is not None:
             for position in candidate.positions:
                 if position.apex_rt_min is not None:
@@ -340,17 +279,7 @@ def complete_delta_mass_candidates(
                     if abs(position.apex_delta_sec) > position.apex_threshold_sec:
                         position.position_status = "fail"
                         _reject(candidate, 4, "apex_out_of_range")
-                if position.height is not None:
-                    position.height_ratio_to_base = (
-                        position.height / candidate.base_height
-                    )
-                    if (
-                        not position.ratio_min
-                        <= position.height_ratio_to_base
-                        <= position.ratio_max
-                    ):
-                        position.position_status = "fail"
-                        _reject(candidate, 4, "ratio_out_of_range")
+                _record_ratio(position, candidate.base_height)
         if candidate.status == "rejected":
             continue
         for position_index, position in enumerate(candidate.positions):
@@ -364,6 +293,21 @@ def complete_delta_mass_candidates(
                 position.position_status = "fail"
                 _reject(candidate, 5, "discriminating_shape_below_threshold")
     return prepared.candidates
+
+
+def _record_ratio(position: DeltaMassPositionResult, base_height: float | None) -> None:
+    """Annotate measured abundance evidence independently of position admission."""
+    if position.height is None or base_height is None or base_height <= 0:
+        return
+    ratio = position.height / base_height
+    position.height_ratio_to_base = ratio
+    position.ratio_status = (
+        "below_range"
+        if ratio < position.ratio_min
+        else "above_range"
+        if ratio > position.ratio_max
+        else "within_range"
+    )
 
 
 def _reject(candidate: DeltaMassCandidate, layer: int, reason: str) -> None:

@@ -13,8 +13,11 @@ from xic_extractor.xic_models import XICTrace
 
 
 @pytest.mark.parametrize("composite", [False, True])
+@pytest.mark.parametrize(
+    "ratio_max, expected_ratio_status", [(0.6, "within_range"), (0.45, "above_range")]
+)
 def test_raw_cli_preserves_sample_attribution_and_batches_trace_acquisition(
-    tmp_path, monkeypatch, composite
+    tmp_path, monkeypatch, composite, ratio_max, expected_ratio_status
 ):
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
@@ -41,6 +44,9 @@ positions = [
 smoothing_window_sec = 1
 """,
         encoding="utf-8",
+    )
+    preset.write_text(
+        preset.read_text().replace("ratio_max=0.6", f"ratio_max={ratio_max}")
     )
     extra_args = []
     if composite:
@@ -175,12 +181,19 @@ smoothing_window_sec = 1
         positions = list(csv.DictReader(handle))
     assert len(positions) == 4
     assert all(
+        row["ratio_status"] == expected_ratio_status
+        and row["position_status"] == "pass"
+        for row in positions
+        if row["position_label"] == "heavy"
+    )
+    assert all(
         float(row["height_ratio_to_base"]) == 0.5
         for row in positions
         if row["position_label"] == "heavy"
     )
     sidecar = json.loads((output / "delta_mass_sidecar.json").read_text())
     assert sidecar["status"] == "diagnostic_only"
+    assert sidecar["method"]["height_ratio_policy"] == "evidence_only"
     assert sidecar["method"]["detector"]["spectrum_mode"] == "vendor_centroid"
     assert [s["candidate_count"] for s in sidecar["samples"]] == [1, 1]
     assert {p.name for p in output.glob("*.*")} == {

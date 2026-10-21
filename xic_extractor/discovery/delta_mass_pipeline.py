@@ -102,7 +102,6 @@ def run_delta_mass_discovery(
                 features,
                 strategy.settings,
                 scan_interval_sec=interval,
-                noise_level=detector.mass_detection_noise_level,
             )
             acquisition_started = time.perf_counter()
             traces = (
@@ -143,6 +142,7 @@ def run_delta_mass_discovery(
         "preset": strategy.label,
         "method": {
             **asdict(strategy.settings),
+            "height_ratio_policy": "evidence_only",
             "detector": {
                 "smoothing_window_sec": strategy.smoothing_window_sec,
                 "spectrum_mode": "vendor_centroid",

@@ -385,9 +385,9 @@ non-feature `product_plus_neutral_loss` rows are absent from Discovery artifacts
 ## Delta Mass Discovery
 
 Delta Mass finds sample-local MS1 peak combinations at preset-defined mass
-separations. A candidate must satisfy the mass differences, co-elution, and
-height-ratio pattern; designated discriminating positions additionally satisfy
-apex-region shape correlation. The method supports two or more positions and
+separations. A candidate must satisfy mass differences and co-elution;
+designated discriminating positions additionally satisfy apex-region shape
+correlation. Height ratios are additional evidence, never admission gates. The method supports two or more positions and
 has no built-in chemical pattern.
 
 ### One-pass method
@@ -399,10 +399,10 @@ has no built-in chemical pattern.
    position as base. Partners must be within the ppm window and scan-aware apex
    tolerance: `max(apex_floor_sec, scan_interval_multiplier × MS1 interval)`.
    Equivalent position assignments are emitted once.
-3. Require a compatible table partner and preset height ratios before acquiring
-   traces. A missing base is bounded by the table positions' permitted ratios;
-   its measured height replaces that bound after acquisition. Missing positions
-   whose expected upper-bound height is below detector noise are not requested.
+3. Require a compatible table partner and record measured height ratios against
+   the preset's reference ranges. Out-of-range ratios do not reject candidates
+   or suppress RAW acquisition. A missing base has unavailable ratios until its
+   height is measured; expected abundance is not used to predict missing signal.
 4. Acquire one XIC batch per RAW for missing positions and shape-reference traces.
    Confirm missing positions by apex alignment and apex-region Pearson correlation,
    without the shared physical evaluator. A two-position method requires its
@@ -414,6 +414,10 @@ The pure method lives in `delta_mass_patterns`; the pipeline owns RAW access,
 local feature detection, and serialization. Table heights are detector-produced
 smoothed screening heights; missing-position heights are measured from the
 acquired XIC. These are diagnostic pattern evidence, not quantitative areas.
+Each position reports `ratio_status` (`within_range`, `below_range`,
+`above_range`, or `unavailable`) separately from `position_status`. The latter
+records required matching/confirmation checks, not abundance agreement.
+Ratio specificity is not validated; agreement is not a calibrated Pt probability.
 The RAW adapter supplies vendor-centroided MS1 ions to the local detector:
 profile samples on the sides of a mass peak are not separate features. The
 sidecar records this spectrum mode. Other scan-index consumers retain their
@@ -446,9 +450,11 @@ and the bounded m/z/RT join; detector-local IDs are not CID-NL identities.
 - `delta_mass_candidates.csv` contains every hypothesis reaching layer 3, with
   candidate/rejected status, first rejecting layer, and one reason code.
 - `delta_mass_positions.csv` contains one row per hypothesis and position, with
-  source, mass/apex/height measurements, bounds, and applicable shape evidence.
+  source, mass/apex/height measurements, ratio evidence and reference bounds,
+  and applicable shape evidence.
 - `delta_mass_sidecar.json` records effective method settings, inputs, per-sample
-  layer counts, scan interval, XIC cost, and `status: diagnostic_only`.
+  layer counts, scan interval, XIC cost, `height_ratio_policy: evidence_only`,
+  and `status: diagnostic_only`. Layer 3 records evidence and cannot reject.
 
 Layer 1–2 failures are counted rather than emitted as candidate rows. The
 composite join retains all rows and records `matched` or `unmatched` independently

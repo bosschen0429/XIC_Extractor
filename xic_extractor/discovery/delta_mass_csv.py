@@ -48,6 +48,7 @@ POSITION_COLUMNS = (
     "apex_threshold_sec",
     "height",
     "height_ratio_to_base",
+    "ratio_status",
     "ratio_min",
     "ratio_max",
     "shape_r",

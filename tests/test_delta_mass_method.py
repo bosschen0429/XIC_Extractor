@@ -40,7 +40,6 @@ def test_two_position_pattern_searches_both_anchor_roles_and_deduplicates():
         (feature("light", 300), feature("heavy", 307, 50)),
         settings,
         scan_interval_sec=1,
-        noise_level=1,
     )
     assert len(result.candidates) == 1
     candidate = result.candidates[0]
@@ -66,12 +65,11 @@ def test_missing_position_requests_raw_only_after_a_table_partner_passes():
         (feature("base", 300), feature("middle", 307, 50)),
         settings,
         scan_interval_sec=1,
-        noise_level=1,
     )
     assert len(result.requests) == 2
     assert {r.mz for r in result.requests} == {300, 313}
     alone = prepare_delta_mass_candidates(
-        (feature("base", 300),), settings, scan_interval_sec=1, noise_level=1
+        (feature("base", 300),), settings, scan_interval_sec=1
     )
     assert alone.candidates == ()
     assert alone.requests == ()
@@ -100,20 +98,21 @@ def test_raw_confirmation_and_discriminating_shape_complete_the_hypothesis():
         (feature("base", 300), feature("middle", 307, 50)),
         settings,
         scan_interval_sec=1,
-        noise_level=1,
     )
     times = np.array([0.96, 0.98, 1, 1.02, 1.04])
     traces = (
         XICTrace(times, np.array([0, 50, 100, 50, 0])),
-        XICTrace(times, np.array([0, 10, 20, 10, 0])),
+        XICTrace(times, np.array([0, 100, 200, 100, 0])),
     )
     completed = complete_delta_mass_candidates(prepared, traces, settings)
     assert completed[0].status == "candidate"
     assert completed[0].positions[2].partner_source == "raw"
     assert completed[0].positions[2].shape_r > 0.99
+    assert completed[0].positions[2].height_ratio_to_base == 2
+    assert completed[0].positions[2].ratio_status == "above_range"
 
 
-def test_missing_base_uses_feasible_ratios_then_confirms_against_anchor_trace():
+def test_missing_base_measures_ratios_without_using_them_for_admission():
     import numpy as np
 
     from xic_extractor.discovery.delta_mass_patterns import (
@@ -133,10 +132,9 @@ def test_missing_base_uses_feasible_ratios_then_confirms_against_anchor_trace():
         discriminating_positions=(),
     )
     prepared = prepare_delta_mass_candidates(
-        (feature("anchor", 307, 80), feature("end", 313, 40)),
+        (feature("anchor", 307, 80), feature("end", 313, 400)),
         settings,
         scan_interval_sec=1,
-        noise_level=1,
     )
     assert {r.mz for r in prepared.requests} == {300, 307}
     times = np.array([0.96, 0.98, 1, 1.02, 1.04])
@@ -150,7 +148,8 @@ def test_missing_base_uses_feasible_ratios_then_confirms_against_anchor_trace():
     assert completed[0].status == "candidate"
     assert completed[0].base_height == 100
     assert completed[0].positions[1].height_ratio_to_base == 0.8
-    assert completed[0].positions[2].height_ratio_to_base == 0.4
+    assert completed[0].positions[2].height_ratio_to_base == 4
+    assert completed[0].positions[2].ratio_status == "above_range"
 
 
 def test_scan_aware_gate_and_anchor_role_are_method_parameters():
@@ -168,27 +167,21 @@ def test_scan_aware_gate_and_anchor_role_are_method_parameters():
     )
     rows = (feature("base", 300, rt=1), feature("heavy", 307, 50, rt=1.03))
     assert (
-        prepare_delta_mass_candidates(
-            rows, settings, scan_interval_sec=1, noise_level=1
-        ).candidates
+        prepare_delta_mass_candidates(rows, settings, scan_interval_sec=1).candidates
         == ()
     )
-    accepted = prepare_delta_mass_candidates(
-        rows, settings, scan_interval_sec=2, noise_level=1
-    )
+    accepted = prepare_delta_mass_candidates(rows, settings, scan_interval_sec=2)
     assert len(accepted.candidates) == 1
     assert accepted.candidates[0].anchor_position == "heavy"
     assert accepted.candidates[0].positions[1].apex_threshold_sec == 2.5
     weak = (rows[0], replace(rows[1], trace_quality="WEAK_SUPPORT"))
     assert (
-        prepare_delta_mass_candidates(
-            weak, settings, scan_interval_sec=1, noise_level=1
-        ).candidates
+        prepare_delta_mass_candidates(weak, settings, scan_interval_sec=1).candidates
         == ()
     )
 
 
-def test_ratio_and_noise_pruning_prevent_raw_acquisition():
+def test_outlying_ratios_do_not_prune_table_or_missing_raw_evidence():
     settings = DeltaMassPatternSettings(
         pattern_id="three",
         method_label="three",
@@ -204,19 +197,11 @@ def test_ratio_and_noise_pruning_prevent_raw_acquisition():
         (feature("base", 300), feature("middle", 307, 80)),
         settings,
         scan_interval_sec=1,
-        noise_level=1,
     )
-    assert ratio.candidates[0].reject_reason == "ratio_out_of_range"
-    assert ratio.requests == ()
-    noise = prepare_delta_mass_candidates(
-        (feature("base", 300), feature("middle", 307, 50)),
-        settings,
-        scan_interval_sec=1,
-        noise_level=40,
-    )
-    assert noise.candidates[0].reject_reason == "expected_below_noise"
-    assert noise.candidates[0].positions[2].partner_source == "not_requested"
-    assert noise.requests == ()
+    assert ratio.candidates[0].status == "candidate"
+    assert ratio.candidates[0].positions[1].ratio_status == "above_range"
+    assert {r.mz for r in ratio.requests} == {300, 313}
+    assert ratio.candidates[0].positions[1].position_status == "pass"
 
 
 def test_only_discriminating_table_positions_need_shape_and_can_reject():
@@ -239,10 +224,9 @@ def test_only_discriminating_table_positions_need_shape_and_can_reject():
         discriminating_positions=("end",),
     )
     prepared = prepare_delta_mass_candidates(
-        (feature("base", 300), feature("middle", 307, 50), feature("end", 313, 20)),
+        (feature("base", 300), feature("middle", 307, 80), feature("end", 313, 20)),
         settings,
         scan_interval_sec=1,
-        noise_level=1,
     )
     assert {r.mz for r in prepared.requests} == {300, 313}
     times = np.array([0.96, 0.98, 1, 1.02, 1.04])
@@ -272,7 +256,7 @@ def test_one_feature_cannot_fill_both_positions_inside_a_ppm_window():
     )
     assert (
         prepare_delta_mass_candidates(
-            (feature("only", 300),), settings, scan_interval_sec=1, noise_level=1
+            (feature("only", 300),), settings, scan_interval_sec=1
         ).candidates
         == ()
     )
@@ -302,7 +286,6 @@ def test_missing_raw_position_requires_an_aligned_apex():
         (feature("base", 300), feature("middle", 307, 50)),
         settings,
         scan_interval_sec=1,
-        noise_level=1,
     )
     times = np.array([0.94, 0.97, 1, 1.03, 1.06])
     completed = complete_delta_mass_candidates(
@@ -367,7 +350,6 @@ def test_raw_base_apex_owns_reported_deltas_and_table_partner_gate():
         (feature("anchor", 307, 80), feature("end", 313, 40, rt=0.98)),
         settings,
         scan_interval_sec=1,
-        noise_level=1,
     )
     times = np.array([0.98, 0.99, 1, 1.01, 1.02])
     traces = (
@@ -401,7 +383,6 @@ def test_table_base_owns_partner_mass_windows_even_from_a_heavy_anchor():
         ),
         settings,
         scan_interval_sec=1,
-        noise_level=1,
     )
     assert prepared.candidates[0].positions[2].partner_source == "missing"
     assert {r.mz for r in prepared.requests} == {300, 313}
