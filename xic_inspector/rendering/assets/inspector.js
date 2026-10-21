@@ -29,6 +29,8 @@
   const instanceId = `xic-inspector-${++nextInstance}-`;
   // Hosts own acquisition and navigation; offline never exposes a live request.
   const onRequestCurves = mode !== 'offline' && typeof options.onRequestCurves === 'function' ? options.onRequestCurves : null;
+  // The host owns writes; the Inspector only asks, and never offline.
+  const onRequestExclusion = mode !== 'offline' && typeof options.onRequestExclusion === 'function' ? options.onRequestExclusion : null;
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const $ = id => root.querySelector(`[data-inspector-id="${id}"]`);
   let destroyed = false;
@@ -286,8 +288,8 @@
       const head = element('tr');
       // A paired analyte reads beside its ISTD in the same sample row.
       const paired = Object.keys(istdRecords).length > 0;
-      const canLoadCurves = Boolean(onRequestCurves);
-      const titles = ['樣本', 'RT (min)', '面積', '計入偵測', ...(paired ? ['ISTD RT (min)', 'ISTD 面積'] : []), '檢閱註記', ...(canLoadCurves ? ['曲線'] : [])];
+      const canLoadCurves = Boolean(onRequestCurves), canExclude = Boolean(onRequestExclusion);
+      const titles = ['樣本', 'RT (min)', '面積', '計入偵測', ...(paired ? ['ISTD RT (min)', 'ISTD 面積'] : []), '檢閱註記', ...(canLoadCurves || canExclude ? ['操作'] : [])];
       for (const title of titles) head.append(element('th', title));
       const thead = element('thead');thead.append(head);
       const body = element('tbody');
@@ -341,11 +343,21 @@
           row.append(element('td', istd ? value(istd.RT) : '—', 'tgt-number tgt-istd'), istdArea);
         }
         row.append(element('td', reviewWhy(review), 'tgt-reason'));
-        if (canLoadCurves) {
-          const cell = element('td'), view = element('button', '看 XIC', 'tgt-xic');
-          view.type = 'button';view.setAttribute('aria-label', `看 ${record.SampleName} 的 ${item.title} XIC`);
-          view.addEventListener('click', () => onRequestCurves({item_id: item.id, sample_id: record.SampleName, opener: view}));
-          cell.append(view);row.append(cell);
+        if (canLoadCurves || canExclude) {
+          const cell = element('td', undefined, 'tgt-actions');
+          if (canLoadCurves) {
+            const view = element('button', '看 XIC', 'tgt-xic');
+            view.type = 'button';view.setAttribute('aria-label', `看 ${record.SampleName} 的 ${item.title} XIC`);
+            view.addEventListener('click', () => onRequestCurves({item_id: item.id, sample_id: record.SampleName, opener: view}));
+            cell.append(view);
+          }
+          if (canExclude) {
+            const exclude = element('button', '標記排除', 'tgt-exclude');
+            exclude.type = 'button';exclude.setAttribute('aria-label', `標記排除 ${record.SampleName}`);
+            exclude.addEventListener('click', () => onRequestExclusion({sample_id: record.SampleName, opener: exclude}));
+            cell.append(exclude);
+          }
+          row.append(cell);
         }
         button.addEventListener('click', () => {
           const same = openRow?.row === row;

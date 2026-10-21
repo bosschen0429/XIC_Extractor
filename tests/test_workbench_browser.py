@@ -2375,8 +2375,9 @@ def test_both_flows_confirm_groups_and_exclusions_before_a_run(
     with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
         editor.get_by_label("NormalBC1_DNA 組別", exact=True).fill(" normal ")
         editor.get_by_label("NormalBC1_DNA 組別", exact=True).press("Tab")
-    with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
-        editor.get_by_label("TumorBC2_DNA 排除", exact=True).check()
+    # The exclusion is saved once it has its reason.
+    editor.get_by_label("TumorBC2_DNA 排除", exact=True).check()
+    expect(editor.get_by_label("TumorBC2_DNA 排除原因", exact=True)).to_be_focused()
     with page.expect_response(lambda r: r.url.endswith("/api/samples/save")):
         editor.get_by_label("TumorBC2_DNA 排除原因", exact=True).fill("clogged")
         editor.get_by_label("TumorBC2_DNA 排除原因", exact=True).press("Tab")
@@ -2687,3 +2688,77 @@ def test_group_colours_match_between_samples_and_inspector(
             "Tumor" if expected == tumor else "Normal"
         )
         assert colour(cell.locator(".sample-dot")) == expected
+
+
+def test_review_marks_an_exclusion_for_the_runs_folder(
+    workbench, fake_runs, config_dir, tmp_path, monkeypatch
+):
+    page = workbench
+    install_fake_raw_headers(monkeypatch)
+    run_folder = tmp_path / "raw"
+    stems = ("TumorBC101_DNA", "TumorBC102_DNA", "NormalBC101_DNA")
+    _placeholder_batch(run_folder, stems)
+    page.locator("#t-samples-refresh").click()
+    expect(page.locator("#t-samples-count")).to_have_text("3 個樣本")
+    fake_runs.targeted_workbook = _grouped_workbook(
+        tmp_path / "run.xlsx", dict.fromkeys(stems, "")
+    )
+    fake_runs.release.set()
+    _start(page, "targeted")
+    _wait_for_analysis_status(page, "已完成")
+
+    # The next batch is another folder; the exclusion still goes to the run's.
+    page.locator("#t-data_dir").fill(str(tmp_path / "next-batch"))
+    page.get_by_role("button", name="在結果檢閱開啟", exact=True).click()
+    page.locator("#targeted-overview td button", has_text="Analyte").click()
+    review = page.locator("#recorded-review")
+    review.get_by_role("button", name="標記排除 TumorBC102_DNA", exact=True).click()
+    dialog = page.locator("#exclude-dialog")
+    expect(dialog).to_contain_text("重新執行後才會套用")
+    dialog.get_by_role("button", name="標記排除", exact=True).click()
+    expect(dialog).to_be_visible()  # A reason is required.
+    page.locator("#exclude-reason").fill("噴霧不穩")
+    with page.expect_response(lambda r: r.url.endswith("/api/samples/exclude")):
+        dialog.get_by_role("button", name="標記排除", exact=True).click()
+    expect(page.locator("#toasts")).to_contain_text(
+        "已標記排除 TumorBC102_DNA。目前結果不變；重新執行後才會套用。"
+    )
+    saved = {
+        row.raw_stem: row
+        for row in load_sample_metadata(sample_annotations_path(config_dir, run_folder))
+    }
+    assert (
+        saved["TumorBC102_DNA"].excluded,
+        saved["TumorBC102_DNA"].exclusion_reason,
+    ) == (
+        True,
+        "噴霧不穩",
+    )
+
+    assert not sample_annotations_path(config_dir, tmp_path / "next-batch").exists()
+
+    # The sample step on that folder shows it, and its export carries it.
+    _view(page, "targeted")
+    page.locator("#t-data_dir").fill(str(run_folder))
+    page.locator("#t-samples-refresh").click()
+    expect(page.locator("#t-samples-count")).to_have_text("3 個樣本")
+    expect(page.locator("#t-role-summary")).to_contain_text("排除 1")
+    expect(page.locator("#target-checklist")).to_contain_text(
+        "排除的樣本1 個：噴霧不穩 ×1"
+    )
+    exported = tmp_path / "exported.tsv"
+    page.locator("#t-samples-export").click()
+    page.locator("#path-dialog-value").fill(str(exported))
+    page.locator("#path-dialog").get_by_role("button", name="確定").click()
+    expect(page.locator("#toasts")).to_contain_text("樣本資料已匯出")
+    exported_rows = {row.raw_stem: row for row in load_sample_metadata(exported)}
+    assert exported_rows["TumorBC102_DNA"].excluded is True
+
+    # With that folder loaded, a later exclusion updates the step at once.
+    _view(page, "review")
+    review.get_by_role("button", name="標記排除 NormalBC101_DNA", exact=True).click()
+    page.locator("#exclude-reason").fill("hemolysed")
+    with page.expect_response(lambda r: r.url.endswith("/api/samples/exclude")):
+        dialog.get_by_role("button", name="標記排除", exact=True).click()
+    _view(page, "targeted")
+    expect(page.locator("#t-role-summary")).to_contain_text("排除 2")

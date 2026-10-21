@@ -326,3 +326,54 @@ def test_earlier_metadata_binds_its_own_raw_exactly(tmp_path, monkeypatch) -> No
         ("Other", ""),
     ]
     assert preview["ambiguous"] == []
+
+
+def test_review_exclusion_keeps_the_batch_annotations(tmp_path, monkeypatch) -> None:
+    import pytest
+
+    from xic_workbench.samples import exclude_sample
+
+    config = tmp_path / "config"
+    raw_dir = _raw_batch(tmp_path, monkeypatch, ("S1", "QC_1"))
+    sequence = _sequence(tmp_path / "list.csv", [("S1", "Blank", "Liver")])
+
+    # An unconfirmed folder is read with its batch's 上機資訊 first.
+    result = exclude_sample(
+        config, raw_dir, "s1", " clogged ", dll_dir=tmp_path, sequence_source=sequence
+    )
+    saved = {
+        row.raw_stem: row
+        for row in load_sample_metadata(sample_annotations_path(config, raw_dir))
+    }
+    assert (saved["S1"].excluded, saved["S1"].exclusion_reason) == (True, "clogged")
+    assert (saved["S1"].sample_role, saved["S1"].group) == ("blank", "Liver")
+    assert saved["QC_1"].excluded is False
+    assert result["overview"]["excluded"] == [{"raw_stem": "S1", "reason": "clogged"}]
+
+    # A confirmed folder keeps its edits; an exclusion needs its reason.
+    with pytest.raises(ValueError, match="請填寫排除原因"):
+        exclude_sample(config, raw_dir, "QC_1", " ", dll_dir=None)
+    exclude_sample(config, raw_dir, "QC_1", "carry-over", dll_dir=None)
+    assert {
+        row.raw_stem
+        for row in load_sample_metadata(sample_annotations_path(config, raw_dir))
+        if row.excluded
+    } == {"S1", "QC_1"}
+    with pytest.raises(ValueError, match="不在這個 RAW 資料夾"):
+        exclude_sample(config, raw_dir, "Missing", "", dll_dir=None)
+
+
+def test_an_exclusion_without_reason_is_never_written(tmp_path, monkeypatch) -> None:
+    import pytest
+
+    config = tmp_path / "config"
+    raw_dir = _raw_batch(tmp_path, monkeypatch, ("S1", "S2"))
+    rows = read_batch_samples(config, raw_dir, dll_dir=tmp_path)["samples"]
+    save_batch_samples(config, raw_dir, rows)
+
+    rows[1].update(excluded=True, exclusion_reason=" ")
+    with pytest.raises(ValueError, match="排除的樣本需要填排除原因：S2"):
+        save_batch_samples(config, raw_dir, rows)
+    # The folder's file stays readable and unchanged.
+    reread = read_batch_samples(config, raw_dir, dll_dir=tmp_path)["samples"]
+    assert reread[1]["excluded"] is False

@@ -1359,7 +1359,8 @@
       if (match.group && (overwrite || !row.group.trim())) row.group = match.group;
       if (match.excluded) {
         row.excluded = true;
-        row.exclusion_reason = match.exclusion_reason;
+        row.exclusion_reason =
+          match.exclusion_reason || `${annotationModes[state.annotation.mode].title}標記排除`;
       }
     }
     $("annotation-dialog").close();
@@ -1461,13 +1462,19 @@
       const reason = el("input");
       reason.value = row.exclusion_reason || "";
       reason.disabled = !row.excluded;
-      reason.placeholder = row.excluded ? "選填" : "";
+      reason.placeholder = row.excluded ? "必填" : "";
+      reason.required = Boolean(row.excluded);
       reason.setAttribute("aria-label", `${row.raw_stem} 排除原因`);
+      // An exclusion is saved once it has a reason.
       excluded.addEventListener("change", () => {
         row.excluded = excluded.checked;
         if (!row.excluded) row.exclusion_reason = "";
         renderSamples();
-        act(() => persistSamples(page));
+        if (row.excluded)
+          $("sample-rows")
+            .querySelector(`input[aria-label="${row.raw_stem} 排除原因"]`)
+            ?.focus();
+        else act(() => persistSamples(page));
       });
       reason.addEventListener("change", () => {
         row.exclusion_reason = reason.value.trim();
@@ -2238,6 +2245,22 @@
         .querySelectorAll("input[type=checkbox]")
         .forEach((node) => (node.checked = $("sample-select-all").checked));
     roleOptions($("sample-bulk-role"), "study_sample");
+    // A change confirmed elsewhere, such as an exclusion marked in review.
+    document.addEventListener("xic:samples-confirmed", (event) => {
+      const { raw_dir, samples, overview } = event.detail;
+      for (const [page, spec] of Object.entries(samplePages)) {
+        const set = state.sampleSets[page];
+        if (!set.rows.length || $(spec.rawDir).value !== raw_dir) continue;
+        state.sampleSets[page] = {
+          ...set,
+          rows: samples,
+          overview,
+          source: "confirmed",
+          cards: null,
+        };
+        renderRoleSummary(page);
+      }
+    });
     $("annotation-read").onclick = () => act(() => readAnnotations());
     $("annotation-confirmed").onchange = () => {
       if (!$("annotation-confirmed").value) return;
@@ -2252,11 +2275,18 @@
       applyToSelected((row) => (row.sample_role = $("sample-bulk-role").value));
     $("sample-apply-group").onclick = () =>
       applyToSelected((row) => (row.group = $("sample-bulk-group").value.trim()));
-    $("sample-exclude").onclick = () =>
+    $("sample-exclude").onclick = () => {
+      const reason = $("sample-bulk-reason").value.trim();
+      if (!reason) {
+        ui.toast("請先填寫排除原因。");
+        $("sample-bulk-reason").focus();
+        return;
+      }
       applyToSelected((row) => {
         row.excluded = true;
-        row.exclusion_reason = $("sample-bulk-reason").value.trim();
+        row.exclusion_reason = reason;
       });
+    };
     $("sample-include").onclick = () =>
       applyToSelected((row) => {
         row.excluded = false;

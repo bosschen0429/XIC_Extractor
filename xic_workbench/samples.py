@@ -27,6 +27,7 @@ from xic_extractor.sample_metadata import (
     is_sample_metadata_source,
     load_sample_metadata,
     match_sample_metadata,
+    parse_sample_metadata,
 )
 from xic_inspector.rendering.group_colors import group_colors
 
@@ -85,7 +86,7 @@ def read_batch_samples(
             for row in result["samples"]
         ]
     if importing and import_sequence:
-        export_samples(result["samples"], saved)
+        _write_confirmed(saved, from_payload(result["samples"]) or ())
         confirmed = True
     result["summary"]["annotation_source"] = (
         "sequence" if importing else "confirmed" if confirmed else "raw"
@@ -116,8 +117,22 @@ def save_batch_samples(
     config_dir: Path, raw_dir: Path, rows: list[dict[str, Any]]
 ) -> dict[str, Any]:
     path = sample_annotations_path(config_dir, raw_dir)
-    export_samples(rows, path)
-    return {"path": str(path), "overview": sample_overview(from_payload(rows) or ())}
+    metadata = from_payload(rows) or ()
+    _write_confirmed(path, metadata)
+    return {"path": str(path), "overview": sample_overview(metadata)}
+
+
+def _write_confirmed(path: Path, metadata: Sequence[SampleMetadata]) -> None:
+    """Write a folder's confirmed metadata only as the owner can read it back."""
+    unexplained = [
+        row.raw_stem
+        for row in metadata
+        if row.excluded and not row.exclusion_reason.strip()
+    ]
+    if unexplained:
+        raise ValueError(f"排除的樣本需要填排除原因：{'、'.join(unexplained)}")
+    parse_sample_metadata(_export_rows(metadata), source=str(path))
+    _write_rows(path, metadata)
 
 
 _TABLE_HINTS = {
@@ -290,6 +305,41 @@ def _table_rows(
     )
 
 
+def exclude_sample(
+    config_dir: Path,
+    raw_dir: Path,
+    raw_stem: str,
+    reason: str,
+    *,
+    dll_dir: Path | None,
+    sequence_source: Path | None = None,
+) -> dict[str, Any]:
+    """Mark one injection of a reviewed run excluded for the folder's next run.
+
+    A folder without confirmed metadata is read first, with the 上機資訊 its
+    batch settings name, so the exclusion does not drop its roles or groups.
+    """
+    path = sample_annotations_path(config_dir, raw_dir)
+    rows = (
+        [asdict(row) for row in load_sample_metadata(path)]
+        if path.is_file()
+        else read_batch_samples(
+            config_dir, raw_dir, dll_dir=dll_dir, sequence_source=sequence_source
+        )["samples"]
+    )
+    target = next(
+        (row for row in rows if row["raw_stem"].casefold() == raw_stem.casefold()),
+        None,
+    )
+    if target is None:
+        raise ValueError(f"{raw_stem} 不在這個 RAW 資料夾的樣品資訊中。")
+    if not reason.strip():
+        raise ValueError("請填寫排除原因。")
+    target["excluded"] = True
+    target["exclusion_reason"] = reason.strip()
+    return {**save_batch_samples(config_dir, raw_dir, rows), "samples": rows}
+
+
 def sample_overview(rows: Sequence[SampleMetadata]) -> dict[str, Any]:
     """Pre-run counts over the samples that will be analyzed."""
     groups: dict[str, dict[str, Any]] = {}
@@ -450,7 +500,25 @@ def from_payload(value: object) -> tuple[SampleMetadata, ...] | None:
 
 def export_samples(rows: list[dict[str, Any]], path: Path) -> dict[str, Any]:
     metadata = from_payload(rows) or ()
-    destination = Path(path)
+    _write_rows(Path(path), metadata)
+    return {"path": str(path), "row_count": len(metadata)}
+
+
+def _export_rows(metadata: Sequence[SampleMetadata]) -> list[dict[str, str]]:
+    return [
+        {
+            "schema_version": SAMPLE_METADATA_SCHEMA_VERSION,
+            **{
+                key: "" if value is None else str(value)
+                for key, value in asdict(row).items()
+            },
+            "excluded": "true" if row.excluded else "false",
+        }
+        for row in metadata
+    ]
+
+
+def _write_rows(destination: Path, metadata: Sequence[SampleMetadata]) -> None:
     suffix = destination.suffix.lower()
     if suffix not in {".tsv", ".csv"}:
         raise ValueError("sample metadata output must be .tsv or .csv")
@@ -463,15 +531,7 @@ def export_samples(rows: list[dict[str, Any]], path: Path) -> dict[str, Any]:
             delimiter=delimiter,
         )
         writer.writeheader()
-        for row in metadata:
-            writer.writerow(
-                {
-                    "schema_version": SAMPLE_METADATA_SCHEMA_VERSION,
-                    **asdict(row),
-                    "excluded": "true" if row.excluded else "false",
-                }
-            )
-    return {"path": str(destination), "row_count": len(metadata)}
+        writer.writerows(_export_rows(metadata))
 
 
 def _validate_row(row: SampleMetadata, *, index: int) -> None:

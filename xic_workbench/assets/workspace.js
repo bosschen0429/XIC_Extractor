@@ -216,6 +216,9 @@ window.XicUi = (() => {
           if (reviewSlots.get(id) === slot && state.detail === slot.detail)
             requestCurves(request);
         },
+        ...(mode === "result" && state.page?.source_kind === "targeted_workbook"
+          ? { onRequestExclusion: requestExclusion }
+          : {}),
       });
       $(id).dataset.viewId = view;
       return true;
@@ -224,6 +227,35 @@ window.XicUi = (() => {
       clearReview(id);
       if (mode === "curves") curveMessage(error.message, true);
       else status(error.message, "error");
+    }
+  }
+  // The run's RAW folder owns the exclusion; it applies on the next run.
+  async function requestExclusion({ sample_id }) {
+    const dialog = $("exclude-dialog");
+    $("exclude-message").textContent =
+      `把 ${sample_id} 標記為排除：之後分析這個 RAW 資料夾時不再分析它。`;
+    $("exclude-reason").value = "";
+    dialog.returnValue = "cancel";
+    dialog.showModal();
+    $("exclude-reason").focus();
+    const accepted = await new Promise(resolve =>
+      dialog.addEventListener("close", () => resolve(dialog.returnValue === "ok"), { once: true }));
+    if (!accepted) return;
+    try {
+      const raw_dir = $("raw-dir").value;
+      const result = await api("/api/samples/exclude", {
+        raw_dir,
+        dll_dir: $("dll-dir").value,
+        raw_stem: sample_id,
+        reason: $("exclude-reason").value,
+      });
+      document.dispatchEvent(new CustomEvent("xic:samples-confirmed", {
+        detail: { raw_dir, samples: result.samples, overview: result.overview },
+      }));
+      window.XicUi.toast(
+        `已標記排除 ${sample_id}。目前結果不變；重新執行後才會套用。`, "ok");
+    } catch (error) {
+      status(error.message, "error");
     }
   }
   let serverPage = null;
