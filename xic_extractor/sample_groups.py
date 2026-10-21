@@ -41,7 +41,7 @@ def suggest_sample_groups(names: Sequence[str]) -> dict[str, str]:
     """Suggest labels from names without applying them to sample metadata."""
     labels = []
     for name in names:
-        value = re.sub(r"\.[^.\\/]+$", "", name.strip())
+        value = re.sub(r"\.(raw|mzml)$", "", name.strip(), flags=re.IGNORECASE)
         value = SAMPLE_CODE.sub("", value)
         value = re.sub(r"[_-]\d+$", "", value)
         labels.append(re.sub(r"[_\s-]+", " ", value).strip())

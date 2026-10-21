@@ -99,3 +99,13 @@ def test_suggestions_for_real_sequence_names():
         "ColumnWash": 1,
         "StopFlow": 1,
     }
+
+
+def test_suggestions_preserve_decimal_concentrations():
+    names = ["Mix_0.5ppm", "Mix_1.0ppm.RAW", "Std 2.5uM_1", "Std 2.5uM_2.mzML"]
+    assert suggest_sample_groups(names) == {
+        "Mix_0.5ppm": "Mix 0.5ppm",
+        "Mix_1.0ppm.RAW": "Mix 1.0ppm",
+        "Std 2.5uM_1": "Std 2.5uM",
+        "Std 2.5uM_2.mzML": "Std 2.5uM",
+    }
